@@ -68,11 +68,11 @@ def test_fixtures_are_synthetic_manifest_matches(tmp_path: Path) -> None:
                 assert z.namelist()[0] == "mimetype"
                 assert z.getinfo("mimetype").compress_type == zipfile.ZIP_STORED
                 assert z.read("mimetype") == b"application/epub+zip"
-                container = ElementTree.fromstring(z.read("META-INF/container.xml"))
+                container = ElementTree.fromstring(z.read("META-INF/container.xml"))  # noqa: S314
                 rootfile = container.find(".//{*}rootfile")
                 assert rootfile is not None
                 opf_path = rootfile.attrib["full-path"]
-                package = ElementTree.fromstring(z.read(opf_path))
+                package = ElementTree.fromstring(z.read(opf_path))  # noqa: S314
                 assert package.tag.endswith("package")
 
 
@@ -130,7 +130,14 @@ def test_new_allowlisted_headers() -> None:
     rules = _load(CASSETTES / "header_allowlist.py", "cassette_rules")
     headers = {
         h: "1"
-        for h in ("Date", "Server", "Vary", "Content-Encoding", "X-RateLimit-Reset", "x-ratelimit-used")
+        for h in (
+            "Date",
+            "Server",
+            "Vary",
+            "Content-Encoding",
+            "X-RateLimit-Reset",
+            "x-ratelimit-used",
+        )
     }
     c = _cassette(response={"headers": headers})
     assert rules.check_cassette(c) == []
