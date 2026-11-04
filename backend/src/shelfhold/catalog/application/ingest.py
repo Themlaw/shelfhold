@@ -8,7 +8,7 @@ from dataclasses import replace
 
 from shelfhold.catalog.application.dto import IncomingUnit, IngestResult
 from shelfhold.catalog.application.ports import TeamStore, UnitStore
-from shelfhold.catalog.application.teams import check_binding, resolve_team
+from shelfhold.catalog.application.teams import check_binding, team_of_checked_binding
 from shelfhold.catalog.domain.numbering import NumberError, UnitNumber, parse_number
 from shelfhold.catalog.domain.placement import (
     IngestOutcome,
@@ -48,7 +48,7 @@ def ingest_unit(units: UnitStore, teams: TeamStore, item: IncomingUnit) -> Inges
     number = _number(item)
     place = place_of(number)
     team_id = (
-        resolve_team(teams, item.binding, item.team_label, item.seen_at).id
+        team_of_checked_binding(teams, item.binding, item.team_label, item.seen_at).id
         if item.team_label and item.team_label.strip()
         else None
     )

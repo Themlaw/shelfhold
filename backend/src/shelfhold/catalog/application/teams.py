@@ -20,6 +20,13 @@ def resolve_team(store: TeamStore, binding: BindingRef, label: str, seen_at: dat
     alias, and the priority list of the Edition is untouched.
     """
     check_binding(store, binding)
+    return team_of_checked_binding(store, binding, label, seen_at)
+
+
+def team_of_checked_binding(
+    store: TeamStore, binding: BindingRef, label: str, seen_at: datetime
+) -> TeamRef:
+    """`resolve_team` for a binding the caller has already checked (once per item)."""
     normalized = normalize_team_label(label)
     team_id = store.find(binding.edition_id, normalized.value)
     created = team_id is None

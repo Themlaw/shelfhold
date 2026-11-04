@@ -1,6 +1,7 @@
 """Teams belong to the Edition and survive a relink (EF-BIB-035); keys are never recomputed."""
 
 import pytest
+import sqlalchemy as sa
 
 from shelfhold.catalog.public import IncomingUnit
 from tests.catalog_env import at, harness
@@ -112,3 +113,21 @@ def test_identity_keys_keep_normalizer_version_and_raw() -> None:
         team = h.rows("SELECT label, label_raw, label_norm_by FROM team")[0]
         assert team["label_raw"] == "Éa  Team" and team["label"] == "éa team"
         assert team["label_norm_by"] == "team_label@1"
+
+
+@pytest.mark.req("EF-BIB-035")
+def test_binding_is_checked_once_per_item_and_cached() -> None:
+    with harness() as h:
+        edition = h.edition()
+        binding = h.binding(edition)
+        reads: list[str] = []
+
+        @sa.event.listens_for(h.connection.engine, "before_cursor_execute")
+        def count(_c, _cur, statement, *_a) -> None:  # type: ignore[no-untyped-def]
+            if "FROM source_binding" in statement:
+                reads.append(statement)
+
+        h.catalog.ingest(seen(binding, "1", "1", 0, "Alpha"))
+        assert len(reads) == 1  # one check for the item, though a team is resolved too
+        h.catalog.ingest(seen(binding, "2", "2", 1, "Alpha"))
+        assert len(reads) == 1  # cached for the life of the catalog

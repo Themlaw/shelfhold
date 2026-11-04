@@ -114,10 +114,17 @@ class SqlEditionStore:
 class SqlTeamStore:
     def __init__(self, connection: sa.Connection) -> None:
         self._c = connection
+        self._editions: dict[str, str] = {}
 
     def binding_edition(self, binding_id: str) -> str | None:
-        b = acquisition.source_binding.c
-        return self._c.execute(sa.select(b.edition_id).where(b.id == binding_id)).scalar()
+        """A binding never changes Edition: the answer is kept for the life of this store."""
+        if binding_id not in self._editions:
+            b = acquisition.source_binding.c
+            found = self._c.execute(sa.select(b.edition_id).where(b.id == binding_id)).scalar()
+            if found is None:
+                return None
+            self._editions[binding_id] = str(found)
+        return self._editions[binding_id]
 
     def find(self, edition_id: str, label: str) -> str | None:
         t = catalog.team.c
