@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from shelfhold.infrastructure.http_headers import attachment_disposition, with_frame_ancestors
 from shelfhold.interfaces.http_api.app import create_http_app
 from shelfhold.interfaces.http_api.content import content_response
 
@@ -54,6 +55,9 @@ ROUTES = [
     ("GET", "/"),
     ("GET", "/library/42"),
     ("HEAD", "/"),
+    ("HEAD", "/robots.txt"),
+    ("HEAD", "/healthz"),
+    ("HEAD", "/readyz"),
     ("GET", "/api/v1/nope"),
     ("GET", "/openapi.json"),
     ("GET", "/docs"),
@@ -78,11 +82,75 @@ def test_discretion_headers_on_every_route(tmp_path: Path, method: str, path: st
 @pytest.mark.req("ENF-PRIV-002", "ENF-SEC-004")
 def test_discretion_headers_on_unhandled_error(tmp_path: Path) -> None:
     with _client(_app(tmp_path, health=_Health(broken=True))) as client:
-        response = client.get("/readyz")
+        response = client.get("/readyz", headers={"X-Request-ID": "req-123"})
     assert response.status_code == 500
+    assert response.json() == {"code": "internal_error"}
+    assert "exploded" not in response.text
+    assert response.headers["x-request-id"] == "req-123"
     assert response.headers["x-robots-tag"] == "noindex, nofollow"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
+
+
+@pytest.mark.req("ENF-PRIV-002")
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_head_and_get_work_on_probe_and_robots_routes(tmp_path: Path, method: str) -> None:
+    with _client(_app(tmp_path)) as client:
+        for path in ("/robots.txt", "/healthz", "/readyz"):
+            assert client.request(method, path).status_code == 200
+
+
+@pytest.mark.req("ENF-PRIV-002")
+def test_readyz_hides_check_names_from_anonymous(tmp_path: Path) -> None:
+    with _client(_app(tmp_path, with_spa=False)) as client:
+        response = client.get("/readyz")
+    assert response.json() == {"state": "ready"}
+    assert "database_writable" not in response.text
+
+
+@pytest.mark.req("ENF-SEC-004")
+@pytest.mark.parametrize(
+    ("csp", "expected"),
+    [
+        ("default-src 'self'", "default-src 'self'; frame-ancestors 'none'"),
+        ("default-src 'self'; frame-ancestors *", "default-src 'self'; frame-ancestors 'none'"),
+        (
+            "Frame-Ancestors https://a.example; img-src 'self'",
+            "frame-ancestors 'none'; img-src 'self'",
+        ),
+        ("", "frame-ancestors 'none'"),
+    ],
+)
+def test_frame_ancestors_existing_directive_is_replaced(csp: str, expected: str) -> None:
+    assert with_frame_ancestors(csp) == expected
+
+
+@pytest.mark.req("ENF-SEC-004")
+def test_attachment_disposition_neutralises_hostile_names() -> None:
+    header = attachment_disposition('a"\r\nSet-Cookie: x=1\u00e9.svg')
+    assert "\r" not in header
+    assert "\n" not in header
+    assert header.count('"') == 2
+    assert "filename*=UTF-8''a%22%0D%0ASet-Cookie%3A%20x%3D1%C3%A9.svg" in header
+    assert attachment_disposition("\u00e9\u00e8").startswith('attachment; filename="download"')
+
+
+@pytest.mark.req("ENF-SEC-004")
+@pytest.mark.parametrize(
+    "media_type", ["image/svg+xml", "text/html", "text/xml", "application/xml"]
+)
+def test_non_raster_types_are_forced_to_attachment(media_type: str) -> None:
+    response = content_response(b"<x/>", media_type=media_type, filename="f")
+    assert response.headers["content-disposition"].startswith("attachment")
+
+
+@pytest.mark.req("ENF-SEC-004")
+@pytest.mark.parametrize(
+    "media_type", ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]
+)
+def test_raster_whitelist_stays_inline(media_type: str) -> None:
+    response = content_response(b"x", media_type=media_type, filename="f")
+    assert "content-disposition" not in response.headers
 
 
 @pytest.mark.req("ENF-SEC-004")
@@ -167,7 +235,7 @@ def test_svg_served_as_attachment_with_csp_sandbox(
         response = client.get("/untrusted")
     assert response.headers["content-security-policy"].startswith("sandbox")
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
-    assert response.headers["content-disposition"] == f'attachment; filename="{filename}"'
+    assert response.headers["content-disposition"].startswith(f'attachment; filename="{filename}"')
     assert response.headers["x-content-type-options"] == "nosniff"
 
 

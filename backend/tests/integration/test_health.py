@@ -26,7 +26,7 @@ def test_readyz_is_200_when_migrated_and_volumes_writable(settings: Settings) ->
     with TestClient(create_app(settings)) as client:
         response = client.get("/readyz")
     assert response.status_code == 200
-    assert all(response.json()["checks"].values())
+    assert response.json() == {"state": "ready"}
 
 
 @pytest.mark.req("ENF-OPS-003")
@@ -37,7 +37,7 @@ def test_readyz_fails_when_db_readonly(settings: Settings) -> None:
     with TestClient(create_app(settings)) as client:
         response = client.get("/readyz")
     assert response.status_code == 503
-    assert response.json()["checks"]["database_writable"] is False
+    assert response.json() == {"state": "not_ready"}
 
 
 @pytest.mark.req("ENF-OPS-003")
@@ -45,4 +45,4 @@ def test_readyz_fails_when_migrations_pending(settings: Settings) -> None:
     with TestClient(create_app(settings)) as client:
         response = client.get("/readyz")
     assert response.status_code == 503
-    assert response.json()["checks"]["migrations_applied"] is False
+    assert response.json() == {"state": "not_ready"}

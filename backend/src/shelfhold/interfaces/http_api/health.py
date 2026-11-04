@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from typing import Literal, Protocol
 
+import structlog
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -19,8 +20,7 @@ class HealthzResponse(BaseModel):
 
 
 class ReadyzResponse(BaseModel):
-    status: Literal["ready", "not_ready"]
-    checks: dict[str, bool]
+    state: Literal["ready", "not_ready"]  # check names are for authenticated callers (L05)
 
 
 class HealthPort(Protocol):
@@ -34,7 +34,12 @@ class HealthPort(Protocol):
 def build_health_router(health: HealthPort) -> APIRouter:
     router = APIRouter()
 
-    @router.get("/healthz", response_model=HealthzResponse, response_model_exclude_none=True)
+    @router.head("/healthz", include_in_schema=False)
+    @router.get(
+        "/healthz",
+        response_model=HealthzResponse,
+        response_model_exclude_none=True,
+    )
     def healthz() -> JSONResponse:
         progress = health.migration_progress()
         if progress is not None:
@@ -46,14 +51,20 @@ def build_health_router(health: HealthPort) -> APIRouter:
             body = {"state": "ok"}
         return JSONResponse(body)
 
+    @router.head("/readyz", include_in_schema=False)
     @router.get(
-        "/readyz", response_model=ReadyzResponse, responses={503: {"model": ReadyzResponse}}
+        "/readyz",
+        response_model=ReadyzResponse,
+        responses={503: {"model": ReadyzResponse}},
     )
     def readyz() -> JSONResponse:
         checks = dict(health.readiness())
-        ready = all(checks.values())
+        failed = sorted(name for name, passed in checks.items() if not passed)
+        if failed:
+            structlog.get_logger().warning("readiness_failed", checks=failed)
+        ready = not failed
         return JSONResponse(
-            {"status": "ready" if ready else "not_ready", "checks": checks},
+            {"state": "ready" if ready else "not_ready"},
             status_code=200 if ready else 503,
         )
 

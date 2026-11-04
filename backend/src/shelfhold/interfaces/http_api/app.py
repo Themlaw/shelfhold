@@ -12,6 +12,7 @@ from starlette.requests import Request
 from shelfhold.infrastructure.http_headers import ROBOTS_TXT, apply_security_headers
 from shelfhold.interfaces.http_api.health import HealthPort, build_health_router
 from shelfhold.interfaces.http_api.middleware import (
+    REQUEST_ID_HEADER,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
@@ -49,13 +50,16 @@ def create_http_app(
     app.add_middleware(SecurityHeadersMiddleware)  # outermost: wraps every response
 
     @app.exception_handler(Exception)
-    def unhandled(_request: Request, _exc: Exception) -> Response:
+    def unhandled(request: Request, _exc: Exception) -> Response:
         # Raised outside the middleware stack: the 500 needs the headers applied by hand.
         response = JSONResponse({"code": "internal_error"}, status_code=500)
         apply_security_headers(response.headers)
+        request_id = getattr(request.state, "request_id", None)
+        if request_id:
+            response.headers[REQUEST_ID_HEADER] = request_id
         return response
 
-    @app.get("/robots.txt", include_in_schema=False)
+    @app.api_route("/robots.txt", methods=["GET", "HEAD"], include_in_schema=False)
     def robots() -> Response:
         return PlainTextResponse(ROBOTS_TXT)
 

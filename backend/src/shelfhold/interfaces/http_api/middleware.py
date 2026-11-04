@@ -29,6 +29,7 @@ class RequestContextMiddleware:
             return
         request_id = _request_id_from(Headers(scope=scope))
         structlog.contextvars.bind_contextvars(request_id=request_id)
+        scope.setdefault("state", {})["request_id"] = request_id  # for the outer 500 handler
         status = 500
         started = time.perf_counter()
 

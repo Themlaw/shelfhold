@@ -4,7 +4,9 @@
 code adds `Content-Security-Policy`, `Cache-Control` or a sandbox, never the rest.
 """
 
+import re
 from typing import Protocol
+from urllib.parse import quote
 
 IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
 NO_CACHE = "no-cache"
@@ -16,6 +18,8 @@ FRAME_ANCESTORS = "frame-ancestors 'none'"
 CSP_SANDBOX = "sandbox"
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n"
 
+_FRAME_ANCESTORS_DIRECTIVE = re.compile(r"frame-ancestors[^;]*", re.IGNORECASE)
+
 _DEFAULTS = {
     "X-Content-Type-Options": NOSNIFF,
     "Referrer-Policy": REFERRER_POLICY,
@@ -26,8 +30,8 @@ _DEFAULTS = {
 
 def with_frame_ancestors(csp: str) -> str:
     """A `<meta>` CSP cannot carry `frame-ancestors`; the HTTP header must."""
-    if "frame-ancestors" in csp:
-        return csp
+    if _FRAME_ANCESTORS_DIRECTIVE.search(csp):
+        return _FRAME_ANCESTORS_DIRECTIVE.sub(FRAME_ANCESTORS, csp)
     return f"{csp}; {FRAME_ANCESTORS}" if csp else FRAME_ANCESTORS
 
 
@@ -49,6 +53,8 @@ def apply_security_headers(headers: HeaderBag) -> None:
 
 
 def attachment_disposition(filename: str) -> str:
-    """`Content-Disposition: attachment`, the name reduced to a header-safe ASCII subset."""
-    safe = "".join(c for c in filename if c.isascii() and (c.isalnum() or c in "._- "))
-    return f'attachment; filename="{safe}"'
+    """`Content-Disposition: attachment` with an ASCII fallback and an RFC 5987 name."""
+    safe = (
+        "".join(c for c in filename if c.isascii() and (c.isalnum() or c in "._- ")) or "download"
+    )
+    return f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(filename, safe='')}"
