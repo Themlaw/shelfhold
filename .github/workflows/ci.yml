@@ -2,6 +2,7 @@ name: ci
 
 on:
   pull_request:
+    types: [opened, edited, synchronize, reopened]  # edited: the PR title is checked
   push:
     branches: [main]
 
@@ -23,6 +24,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       openapi: ${{ steps.filter.outputs.openapi }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      image: ${{ steps.filter.outputs.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,6 +53,13 @@ jobs:
               - 'open-api/**'
               - 'e2e/**'
               - '.github/workflows/ci.yml'
+            image:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'docker/**'
+              - 'e2e/**'
+              - 'compose*'
+              - '.github/workflows/image*'
 
   lint:
     runs-on: ubuntu-24.04
@@ -114,12 +123,61 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - name: denylist-names
+      - name: denylist-names (files and commit messages)
         env:
           DENYLIST_NAMES: ${{ secrets.DENYLIST_NAMES }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
-        run: bash .github/scripts/denylist.sh
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSHED_SHA: ${{ github.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            export DENYLIST_LOG_ARGS="${BASE_SHA}..${HEAD_SHA}"
+          else
+            export DENYLIST_LOG_ARGS="-1 ${PUSHED_SHA}"
+          fi
+          bash .github/scripts/denylist.sh
+
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check Signed-off-by on every commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_USER: ${{ github.event.pull_request.user.login }}
+        run: |
+          # Bots are exempted on the identity of the PR author, never on a git author name.
+          if [ "$PR_USER" = "dependabot[bot]" ]; then
+            echo "pull request opened by ${PR_USER}: exempt"
+            exit 0
+          fi
+          status=0
+          # Only commits that belong to the PR (not already reachable from the base branch).
+          for sha in $(git rev-list --no-merges "${HEAD_SHA}" --not "${BASE_SHA}"); do
+            if ! git show -s --format=%B "$sha" | grep -Eq '^Signed-off-by: .+ <[^<>]+@[^<>]+>$'; then
+              echo "::error::commit $sha has no Signed-off-by line (use git commit -s)"
+              status=1
+            fi
+          done
+          exit $status
+
+  conventional-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   backend:
     needs: changes
@@ -261,8 +319,10 @@ jobs:
 
   # Image: two callers so that packages: write never reaches a pull_request run (including
   # branches of this repository). The reusable workflows narrow the token further.
+  # On a pull request the image (amd64 only) is built only when something it contains changed.
   image-pr:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.image == 'true'
     permissions:
       contents: read
       packages: read
@@ -276,22 +336,23 @@ jobs:
     uses: ./.github/workflows/image.yml  # zizmor: ignore[self-repository]
     with:
       cache-write: true
+      arm64: true
 
   image-publish:
     # Pushes the archives tested by image-main (same run), then the multi-arch manifest.
     # Also gated on the test jobs (not on ci-success, which needs this job). Filtered jobs may be
     # skipped, hence !failure(): a failed or cancelled needed job blocks the publication.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !cancelled() && !failure()
-    needs: [image-main, lint, denylist, fixtures, backend, e2e-front]
+    needs: [image-main, lint, denylist, fixtures, backend, frontend, openapi, e2e-front]
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/image-publish.yml  # zizmor: ignore[self-repository]
 
   traceability:
-    # Warning mode until M0 is closed: not in ci-success. Make it blocking at milestone exit.
+    # Blocking: every requirement of the milestone has a test, every test has a marker.
+    # The matrix is not committed: it is an artifact and the job summary.
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -310,10 +371,17 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit $status
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: traceability-M0
+          path: ${{ runner.temp }}/M0.md
+          if-no-files-found: ignore
+          retention-days: 14
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, backend, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish]
+    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
@@ -322,6 +390,10 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           LINT: ${{ needs.lint.result }}
           DENYLIST: ${{ needs.denylist.result }}
+          DCO: ${{ needs.dco.result }}
+          TITLE: ${{ needs.conventional-title.result }}
+          TRACEABILITY: ${{ needs.traceability.result }}
+          IMAGE_CHANGED: ${{ needs.changes.outputs.image }}
           BACKEND: ${{ needs.backend.result }}
           FIXTURES: ${{ needs.fixtures.result }}
           IMAGE_PR: ${{ needs.image-pr.result }}
@@ -336,11 +408,12 @@ jobs:
           E2E: ${{ needs.e2e-front.result }}
           E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
         run: |
+          echo "dco=${DCO} conventional-title=${TITLE} traceability=${TRACEABILITY} (image changed=${IMAGE_CHANGED})"
           echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH}"
           echo "backend=${BACKEND} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
           echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED})"
           ok=1
-          for r in "$CHANGES" "$LINT" "$DENYLIST" "$FIXTURES"; do
+          for r in "$CHANGES" "$LINT" "$DENYLIST" "$FIXTURES" "$TRACEABILITY"; do
             [ "$r" = "success" ] || ok=0
           done
           # A filtered job may be skipped only when its paths filter is false.
@@ -356,10 +429,14 @@ jobs:
           check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
           check_filtered "$E2E" "$E2E_CHANGED"
           # Exactly one image path per event: pull request -> image-pr, push -> image-main + image-publish.
+          # dco and conventional-title only run on pull requests.
           if [ "$EVENT" = "pull_request" ]; then
-            [ "$IMAGE_PR" = "success" ] || ok=0
+            [ "$DCO" = "success" ] && [ "$TITLE" = "success" ] || ok=0
+            # image-pr is skipped only when no file the image contains changed.
+            check_filtered "$IMAGE_PR" "$IMAGE_CHANGED"
             [ "$IMAGE_MAIN" = "skipped" ] && [ "$IMAGE_PUBLISH" = "skipped" ] || ok=0
           else
+            [ "$DCO" = "skipped" ] && [ "$TITLE" = "skipped" ] || ok=0
             [ "$IMAGE_PR" = "skipped" ] || ok=0
             [ "$IMAGE_MAIN" = "success" ] && [ "$IMAGE_PUBLISH" = "success" ] || ok=0
           fi

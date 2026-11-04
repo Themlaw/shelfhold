@@ -13,7 +13,7 @@ Règles complètes : [`docs/spec/03-roadmap-tdd.md`](docs/spec/03-roadmap-tdd.md
 
 ## Conventional Commits
 
-`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`, `ci:`… Les releases sont générées à partir de ces messages (release-please). Les PR sont fusionnées en squash, historique linéaire.
+`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`, `ci:`… Les releases sont générées à partir de ces messages. Les PR sont fusionnées en squash, historique linéaire.
 
 ## DCO 1.1 (pas de CLA)
 
@@ -23,7 +23,7 @@ Chaque commit porte une ligne `Signed-off-by:` ([Developer Certificate of Origin
 git commit -s
 ```
 
-Le contrôle `dco.yml` bloque toute PR dont un commit n'est pas signé, y compris ceux du mainteneur. Il n'y a **pas de CLA** et aucune cession de droits.
+Le contrôle `dco` (job de `ci.yml`) bloque toute PR dont un commit n'est pas signé, y compris ceux du mainteneur. Il n'y a **pas de CLA** et aucune cession de droits.
 
 ## Clause entrante
 

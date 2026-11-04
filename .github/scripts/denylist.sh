@@ -24,6 +24,13 @@ run_grep() {
   return 0
 }
 
+# Commit messages to scan too (git log arguments, e.g. "base..head" or "-1 <sha>"); optional.
+messages=""
+if [ -n "${DENYLIST_LOG_ARGS:-}" ]; then
+  # shellcheck disable=SC2086
+  messages=$(git log --format=%B $DENYLIST_LOG_ARGS)
+fi
+
 status=0
 n=0
 while IFS= read -r pattern || [ -n "$pattern" ]; do
@@ -33,6 +40,10 @@ while IFS= read -r pattern || [ -n "$pattern" ]; do
   hits=$(git ls-files | run_grep grep -i -E -e "$pattern")
   hits+=$'\n'$(run_grep git grep -I -i -l -E -e "$pattern")
   hits=$(printf '%s\n' "$hits" | sed '/^$/d' | sort -u)
+  if [ -n "$messages" ] && grep -q -i -E -e "$pattern" <<< "$messages"; then
+    status=1
+    echo "::error::denylist rule number $n matches a commit message"
+  fi
   if [ -n "$hits" ]; then
     status=1
     echo "::error::denylist rule number $n matches:"

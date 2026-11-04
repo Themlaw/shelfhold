@@ -1,7 +1,7 @@
 name: image
 
 # Reusable: build and test the image on both architectures. Called by ci.yml (job `image-pr` on
-# pull requests, `image-main` on main) and later by release.yml. Publishing is image-publish.yml.
+# pull requests, amd64 only, `image-main` on main, both architectures). Publishing is image-publish.yml.
 #
 # The jobs declare no `permissions` on purpose: they run with the token of the caller, which is
 # read-only on pull requests (image-pr) and write-capable on main only (image-main), where
@@ -15,6 +15,10 @@ on:
         description: "Refresh the layer cache in GHCR (main and releases only, never a pull request)"
         type: boolean
         default: false
+      arm64:
+        description: "Also build and test on arm64 (main only; pull requests are amd64 only)"
+        type: boolean
+        default: false
 
 env:
   IMAGE: ghcr.io/themlaw/shelfhold
@@ -26,11 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        include: ${{ fromJSON(inputs.arm64 && '[{"arch":"amd64","runner":"ubuntu-24.04"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' || '[{"arch":"amd64","runner":"ubuntu-24.04"}]') }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,11 +88,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        include: ${{ fromJSON(inputs.arm64 && '[{"arch":"amd64","runner":"ubuntu-24.04"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' || '[{"arch":"amd64","runner":"ubuntu-24.04"}]') }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read

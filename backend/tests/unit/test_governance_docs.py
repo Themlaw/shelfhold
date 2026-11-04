@@ -31,25 +31,16 @@ def test_license_has_provisional_plugin_exception() -> None:
 
 @pytest.mark.req("ENF-LEG-010", "ENF-SEC-007")
 def test_dco_is_enforced_in_ci_and_documented() -> None:
-    workflow = yaml.safe_load(_read(".github/workflows/dco.yml"))
-    on = workflow.get("on", workflow.get(True))
-    assert "pull_request" in on
-    runs = [str(s.get("run", "")) for j in workflow["jobs"].values() for s in j["steps"]]
+    workflow = yaml.safe_load(_read(".github/workflows/ci.yml"))
+    job = workflow["jobs"]["dco"]
+    assert job["if"] == "github.event_name == 'pull_request'"
+    runs = [str(s.get("run", "")) for s in job["steps"]]
     assert any("Signed-off-by" in r for r in runs)
+    assert "pull_request.user.login" in str(job["steps"])  # PR author, not git name
     contributing = _read("CONTRIBUTING.md")
     assert "DCO 1.1" in contributing
     assert "Signed-off-by:" in contributing
     assert "pas de CLA" in contributing
-
-
-@pytest.mark.req("ENF-SEC-007")
-def test_renovate_pins_digests_with_a_release_age() -> None:
-    import json
-
-    config = json.loads(_read("renovate.json"))
-    assert "config:best-practices" in config["extends"]
-    assert config["pinDigests"] is True
-    assert config["minimumReleaseAge"]
 
 
 @pytest.mark.req("ENF-SEC-007")

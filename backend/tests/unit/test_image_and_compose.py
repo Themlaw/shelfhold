@@ -156,7 +156,9 @@ def test_image_builds_natively_on_both_architectures_without_qemu() -> None:
     for name, jobs in (("image.yml", ("build", "e2e")), ("image-publish.yml", ("publish",))):
         wf = load(WORKFLOWS / name)
         for job in jobs:
-            runners = {i["runner"] for i in wf["jobs"][job]["strategy"]["matrix"]["include"]}
+            include = wf["jobs"][job]["strategy"]["matrix"]["include"]
+            # image.yml: amd64 on pull requests, both architectures with the `arm64` input
+            runners = set(re.findall(r"ubuntu-24\.04(?:-arm)?(?=\W)", str(include)))
             assert runners == {"ubuntu-24.04", "ubuntu-24.04-arm"}, f"{name}:{job}"
         assert "qemu" not in (WORKFLOWS / name).read_text(encoding="utf-8").lower()
 
@@ -191,7 +193,7 @@ def test_image_is_pushed_by_digest_on_main_only() -> None:
     needs = set(ci["image-publish"]["needs"])
     assert needs >= {"image-main", "backend", "lint", "e2e-front", "fixtures", "denylist"}
     assert "ci-success" not in needs
-    assert ci["image-pr"]["if"] == "github.event_name == 'pull_request'"
+    assert ci["image-pr"]["if"].startswith("github.event_name == 'pull_request'")
     merge = load(WORKFLOWS / "image-publish.yml")["jobs"]["merge"]
     assert merge["needs"] == "publish"
 
