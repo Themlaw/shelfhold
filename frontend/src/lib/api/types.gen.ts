@@ -13,10 +13,6 @@ export type HealthzResponse = {
      * State
      */
     state: 'ok' | 'migrating';
-    /**
-     * Version
-     */
-    version?: string | null;
 };
 
 /**

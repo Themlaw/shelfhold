@@ -20,17 +20,6 @@
             ],
             "title": "State",
             "type": "string"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
           }
         },
         "required": [

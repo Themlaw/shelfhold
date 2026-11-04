@@ -26,7 +26,7 @@ test('test_spa_loads_no_third_party_resource', async ({ page, baseURL }) => {
 
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1, name: 'Shelfhold — pré-alpha' })).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText(/Le serveur répond \(version /);
+  await expect(page.getByRole('status')).toHaveText('Le serveur répond.');
   await page.waitForLoadState('networkidle');
 
   expect(attempted, `third-party requests attempted: ${attempted.join(', ')}`).toEqual([]);

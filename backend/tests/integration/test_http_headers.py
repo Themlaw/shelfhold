@@ -31,9 +31,7 @@ class _Health:
         return {"database_writable": True}
 
 
-def _app(
-    tmp_path: Path, *, with_spa: bool = True, health: _Health | None = None
-) -> FastAPI:
+def _app(tmp_path: Path, *, with_spa: bool = True, health: _Health | None = None) -> FastAPI:
     build = tmp_path / "build"
     build.mkdir(exist_ok=True)
     (build / "index.html").write_text(INDEX, encoding="utf-8")

@@ -5,10 +5,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from fastapi.routing import APIRoute
+from starlette.requests import Request
 
+from shelfhold.infrastructure.http_headers import ROBOTS_TXT, apply_security_headers
 from shelfhold.interfaces.http_api.health import HealthPort, build_health_router
-from shelfhold.interfaces.http_api.middleware import RequestContextMiddleware
+from shelfhold.interfaces.http_api.middleware import (
+    RequestContextMiddleware,
+    SecurityHeadersMiddleware,
+)
 from shelfhold.interfaces.http_api.spa import mount_spa
 
 HttpApplication = FastAPI
@@ -34,12 +40,26 @@ def create_http_app(
         title="Shelfhold",
         version=version,
         lifespan=lifespan,
+        openapi_url=None,  # A6: no anonymous route; the snapshot is exported offline
         docs_url=None,
         redoc_url=None,
         generate_unique_id_function=_operation_id,  # stable names for the generated client
     )
     app.add_middleware(RequestContextMiddleware)
-    app.include_router(build_health_router(health, version))
+    app.add_middleware(SecurityHeadersMiddleware)  # outermost: wraps every response
+
+    @app.exception_handler(Exception)
+    def unhandled(_request: Request, _exc: Exception) -> Response:
+        # Raised outside the middleware stack: the 500 needs the headers applied by hand.
+        response = JSONResponse({"detail": "Internal Server Error"}, status_code=500)
+        apply_security_headers(response.headers)
+        return response
+
+    @app.get("/robots.txt", include_in_schema=False)
+    def robots() -> Response:
+        return PlainTextResponse(ROBOTS_TXT)
+
+    app.include_router(build_health_router(health))
     if frontend_dir is not None:
         mount_spa(app, frontend_dir)  # last: the API routes keep priority
     return app

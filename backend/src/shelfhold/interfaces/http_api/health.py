@@ -14,8 +14,7 @@ class MigrationProgress(BaseModel):
 
 
 class HealthzResponse(BaseModel):
-    state: Literal["ok", "migrating"]
-    version: str | None = None
+    state: Literal["ok", "migrating"]  # anonymous: no names, no version (O12, A7)
     progress: MigrationProgress | None = None
 
 
@@ -32,7 +31,7 @@ class HealthPort(Protocol):
     def readiness(self) -> Mapping[str, bool]: ...
 
 
-def build_health_router(health: HealthPort, version: str) -> APIRouter:
+def build_health_router(health: HealthPort) -> APIRouter:
     router = APIRouter()
 
     @router.get("/healthz", response_model=HealthzResponse, response_model_exclude_none=True)
@@ -44,7 +43,7 @@ def build_health_router(health: HealthPort, version: str) -> APIRouter:
                 "progress": {"done": progress[0], "total": progress[1]},
             }
         else:
-            body = {"state": "ok", "version": version}
+            body = {"state": "ok"}
         return JSONResponse(body)
 
     @router.get(

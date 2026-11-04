@@ -8,6 +8,8 @@ import structlog
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from shelfhold.infrastructure.http_headers import apply_security_headers
+
 REQUEST_ID_HEADER = "X-Request-ID"
 _SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 
@@ -51,3 +53,22 @@ class RequestContextMiddleware:
                 duration_ms=round((time.perf_counter() - started) * 1000, 2),
             )
             structlog.contextvars.unbind_contextvars("request_id")
+
+
+class SecurityHeadersMiddleware:
+    """Discretion headers on every HTTP response, errors and JSON included (ENF-PRIV-002)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                apply_security_headers(MutableHeaders(scope=message))
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)

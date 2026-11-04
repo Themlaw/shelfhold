@@ -22,12 +22,12 @@ describe('HealthStatus', () => {
   });
 
   // req: ENF-OPS-003
-  it('shows the server version when /healthz answers ok', async () => {
+  it('shows the server state when /healthz answers ok', async () => {
     server.use(
-      http.get('http://shelfhold.test/healthz', () => HttpResponse.json({ state: 'ok', version: '0.0.0' }))
+      http.get('http://shelfhold.test/healthz', () => HttpResponse.json({ state: 'ok' }))
     );
     render(HealthStatus);
-    expect(await screen.findByText('Le serveur répond (version 0.0.0).')).toBeInTheDocument();
+    expect(await screen.findByText('Le serveur répond.')).toBeInTheDocument();
   });
 
   // req: ENF-OPS-003, ENF-I18N-001
