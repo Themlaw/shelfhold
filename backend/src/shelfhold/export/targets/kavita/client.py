@@ -144,6 +144,10 @@ class KavitaClient:
             raise TargetUnreachable(f"{route.label}: {type(exc).__name__}") from None
         self._unreachable_announced = False
         if response.status == 404:
+            if _is_json(
+                response.body
+            ):  # a ProblemDetails or JSON body: the resource, not the route
+                raise ProtocolError(f"{route.label}: resource not found")
             self._route_missing(route)
         if response.status in (401, 403):
             self._forbidden(route)
@@ -318,6 +322,14 @@ class KavitaClient:
         """Replace and lock the cover: bare base64 (no `data:` prefix), as the DTO wants."""
         body = {"id": series_id, "url": base64.b64encode(image).decode("ascii"), "lockCover": True}
         await self._send(routes.UPLOAD_SERIES_COVER, body=body)
+
+
+def _is_json(raw: bytes) -> bool:
+    try:
+        json.loads(raw)
+    except ValueError:
+        return False
+    return True
 
 
 def _decode(raw: bytes, route: routes.Route) -> Any:

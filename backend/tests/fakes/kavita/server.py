@@ -103,6 +103,7 @@ class FakeKavita:
     is_admin: bool = True
     libraries: list[dict[str, Any]] = field(default_factory=default_libraries)
     missing: set[tuple[str, str]] = field(default_factory=set)  # (method, path) answered 404
+    problem_404: set[tuple[str, str]] = field(default_factory=set)  # 404 with a JSON body
     requests: list[RecordedRequest] = field(default_factory=list)
     violations: list[str] = field(default_factory=list)
     scans: list[str] = field(default_factory=list)
@@ -114,6 +115,10 @@ class FakeKavita:
     def demote(self) -> None:
         """The dedicated account loses its administrator role (EF-EXP-009, 403)."""
         self.is_admin = False
+
+    def not_found_resource(self, method: str, path: str) -> None:
+        """The route exists but answers 404 with a ProblemDetails body (a resource is missing)."""
+        self.problem_404.add((method.upper(), path.lower()))
 
     def remove_route(self, method: str, path: str) -> None:
         self.missing.add((method.upper(), path.lower()))
@@ -146,6 +151,8 @@ class FakeKavita:
             return self._violation(f"{request.method} {url.path} is not an allow-listed route")
         if any(name.lower() in {"apikey", "api_key", "key", "token"} for name in recorded.query):
             return self._violation("a credential travels in the URL")
+        if route in self.problem_404:
+            return self._json({"title": "Not Found", "status": 404}, 404)
         if route in self.missing:
             return self._text(404, "Not Found")
         if recorded.headers.get("x-api-key") != API_KEY:

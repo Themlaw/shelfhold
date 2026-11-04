@@ -26,6 +26,7 @@ from shelfhold.export.targets.kavita import (
     KavitaDestination,
     LibraryType,
     PlanNotVerified,
+    ProtocolError,
     RouteMissing,
     TargetDegraded,
     TargetForbidden,
@@ -408,3 +409,14 @@ def test_unreadable_version_is_degraded_readonly_and_blocks_plans() -> None:
     with pytest.raises(RouteMissing):  # and no write goes out meanwhile
         run(h.client.scan_folder("/manga/Series A"))
     assert h.fake.writes == []
+
+
+@pytest.mark.req("EF-EXP-009")
+def test_kavita_404_with_json_body_is_a_missing_resource_not_a_missing_route() -> None:
+    h = harness()
+    run(h.client.probe())
+    h.fake.not_found_resource("GET", "/api/Library/type")
+    with pytest.raises(ProtocolError):
+        run(h.client.library_type(7))
+    assert h.client.health.mode is TargetMode.FULL and h.client.health.missing_routes == ()
+    assert h.events.details("target.route_missing") == []
