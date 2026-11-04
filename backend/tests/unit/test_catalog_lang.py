@@ -1,8 +1,10 @@
 """ENF-I18N-005: normalize_lang is the single producer of BCP 47 tags (synthetic corpus)."""
 
+import configparser
 from pathlib import Path
 
 import pytest
+
 from shelfhold.catalog.lang import (
     LANG_NORMALIZER_ID,
     LanguageError,
@@ -89,3 +91,13 @@ def test_normalized_language_keeps_raw_and_normalizer_version() -> None:
     result = normalize_lang("PT_br")
     assert (result.tag, result.raw, result.by) == ("pt-BR", "PT_br", LANG_NORMALIZER_ID)
     assert LANG_NORMALIZER_ID == "lang@1"
+
+
+@pytest.mark.req("ENF-I18N-005")
+def test_lang_single_producer_contract_is_enforced_with_default_alerting() -> None:
+    config = Path(__file__).resolve().parents[2] / "importlinter.ini"
+    parser = configparser.ConfigParser()
+    parser.read(config)
+    section = parser["importlinter:contract:lang-single-producer"]
+    assert "unmatched_ignore_imports_alerting" not in section  # default: error
+    assert "shelfhold.catalog.lang -> langcodes" in section["ignore_imports"]
