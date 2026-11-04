@@ -181,6 +181,17 @@ async def run_source_conformance(
         report.add("unit_identity", not problems, "; ".join(problems))
         bad = [type(m).__name__ for m in [*d.models, *d.refs] if not _roundtrips(m)]
         report.add("json_roundtrip", not bad, f"not serialisable: {bad}" if bad else "")
+
+        async def idempotent() -> None:
+            again = await source.list_units(fetcher, d.series)
+            same = [u.model_dump_json() for u in again] == [u.model_dump_json() for u in d.units]
+            report.add(
+                "list_units_idempotent",
+                same,
+                "" if same else "two list_units calls on one instance returned different units",
+            )
+
+        await guarded("list_units_idempotent", idempotent)
         await _check_payloads(source, fetcher, d, report, guarded)
         await _check_reinstall(source, fetcher, d, reinstall, series_ref, report, guarded)
 
@@ -245,6 +256,13 @@ async def _check_payloads(
             if state != "ready":
                 problems.append(f"ticket never became ready (last state {state})")
                 continue
+            before = [u.model_dump_json() for u in await source.list_units(f, d.series)]
+            later = [await service.poll(f, ticket) for _ in range(2)]
+            after = [u.model_dump_json() for u in await source.list_units(f, d.series)]
+            if later != ["ready", "ready"]:
+                problems.append(f"poll must not change a ready ticket (then saw {later})")
+            if before != after:
+                problems.append("poll must not change what the service lists")
             payload = await service.fetch(f, ticket)
             if isinstance(target, RangeRef) != isinstance(payload, RangedPayload):
                 problems.append(
@@ -281,27 +299,33 @@ async def _check_reinstall(
     report: ConformanceReport,
     guarded: Callable[[str, Callable[[], Awaitable[None]]], Awaitable[None]],
 ) -> None:
-    if not isinstance(getattr(source, "connected", None), ConnectedCapability):
-        return  # a plain source has no tool to reinstall
+    connected = isinstance(getattr(source, "connected", None), ConnectedCapability)
     if reinstall is None:
-        report.add(
-            "simulated_reinstall",
-            False,
-            "a connected service needs a reinstall factory (EF-SRC-036)",
-        )
+        if connected:  # a plain source has no tool to reinstall; a connected service does
+            report.add(
+                "simulated_reinstall",
+                False,
+                "a connected service needs a reinstall factory (EF-SRC-036)",
+            )
         return
 
     async def replay() -> None:
-        again = await _discover(reinstall(), f, series_ref)
-        same_series = [r.remote_id for r in first.refs] == [r.remote_id for r in again.refs]
-        same_units = [u.remote_unit_id for u in first.units] == [
-            u.remote_unit_id for u in again.units
-        ]
-        ok = same_series and same_units
+        fresh = reinstall()
+        if fresh is source:
+            report.add("simulated_reinstall", False, "the factory must return a new instance")
+            return
+        again = await _discover(fresh, f, series_ref)
+        problems = []
+        if [(r.source_key, r.remote_id) for r in first.refs] != [
+            (r.source_key, r.remote_id) for r in again.refs
+        ]:
+            problems.append("series identities (source_key, remote_id) changed")
+        if [u.remote_unit_id for u in first.units] != [u.remote_unit_id for u in again.units]:
+            problems.append("remote_unit_id changed")
         report.add(
             "simulated_reinstall",
-            ok,
-            "" if ok else "identities changed after a reinstall: new Variants would appear",
+            not problems,
+            "; ".join(problems) + ": new Variants would appear" if problems else "",
         )
 
     await guarded("simulated_reinstall", replay)

@@ -154,3 +154,90 @@ def test_assert_conforms_and_pytest_tool_for_plugin_authors() -> None:
     assert offline_fetcher.__wrapped__().record_mode == "none"  # type: ignore[attr-defined]
     run = check_conformance.__wrapped__()  # type: ignore[attr-defined]
     assert run(service, fake_ranged_fetcher(), reinstall=service.reinstall).ok
+
+
+class _Plain(FakeRangedConnectedService):
+    """A simple Source: no connected capability at all."""
+
+    def __init__(self, handle_offset: int = 0) -> None:
+        super().__init__(handle_offset)
+        self.connected = None  # type: ignore[assignment]
+
+
+def _failed(report: ConformanceReport) -> set[str]:
+    return {c.name for c in report.failures}
+
+
+@pytest.mark.req("ENF-QUAL-003")
+def test_kit_rejects_non_idempotent_list_units() -> None:
+    class Drifting(FakeRangedConnectedService):
+        calls = 0
+
+        async def list_units(self, f, ref):  # type: ignore[no-untyped-def]
+            units = await super().list_units(f, ref)
+            type(self).calls += 1
+            return units[: len(units) - (type(self).calls % 2)]
+
+    assert "list_units_idempotent" in _failed(_run(Drifting()))
+
+
+@pytest.mark.req("ENF-QUAL-003", "EF-SRC-036")
+def test_kit_reinstall_compares_source_key_and_needs_a_fresh_instance() -> None:
+    class Rekeyed(FakeRangedConnectedService):
+        async def search(self, f, q, filters, cursor, *, sub=None):  # type: ignore[no-untyped-def]
+            page = await super().search(f, q, filters, cursor, sub=sub)
+            key = f"fake-{self.handle_offset}"
+            page.items = [i.model_copy(update={"source_key": key}) for i in page.items]
+            return page
+
+        def reinstall(self) -> "Rekeyed":
+            return Rekeyed(handle_offset=self.handle_offset + 1)
+
+    service = Rekeyed()
+    report = asyncio.run(
+        run_source_conformance(service, fake_ranged_fetcher(), reinstall=service.reinstall)
+    )
+    assert "simulated_reinstall" in _failed(report)
+
+    same = FakeRangedConnectedService()
+    report = asyncio.run(
+        run_source_conformance(same, fake_ranged_fetcher(), reinstall=lambda: same)
+    )
+    assert any(
+        c.name == "simulated_reinstall" and "new instance" in c.detail for c in report.failures
+    )
+
+
+@pytest.mark.req("ENF-QUAL-003", "EF-SRC-036")
+def test_kit_runs_the_reinstall_check_for_a_plain_source_too() -> None:
+    plain = _Plain()
+    fetcher = fake_ranged_fetcher()
+    good = asyncio.run(run_source_conformance(plain, fetcher, reinstall=plain.reinstall))
+    assert good.ok, good.failures
+    # no factory and no tool to reinstall: nothing to demand of a plain source
+    assert "simulated_reinstall" not in {
+        c.name for c in asyncio.run(run_source_conformance(_Plain(), fetcher)).checks
+    }
+
+    class Unstable(_Plain):
+        async def list_units(self, f, ref):  # type: ignore[no-untyped-def]
+            units = await super().list_units(f, ref)
+            prefix = self.handle_offset
+            return [
+                u.model_copy(update={"remote_unit_id": f"{prefix}-{u.source_order}"}) for u in units
+            ]
+
+    bad = Unstable()
+    report = asyncio.run(run_source_conformance(bad, fetcher, reinstall=bad.reinstall))
+    assert "simulated_reinstall" in _failed(report)
+
+
+@pytest.mark.req("ENF-QUAL-003")
+def test_kit_rejects_a_poll_that_changes_state() -> None:
+    class Consuming(FakeRangedConnectedService):
+        async def poll(self, f, t):  # type: ignore[no-untyped-def]
+            state = await super().poll(f, t)
+            return "gone" if state == "ready" and self._tickets[t.token][1] > 3 else state
+
+    report = _run(Consuming())
+    assert any(c.name == "server_queue" and "poll" in c.detail for c in report.failures)
