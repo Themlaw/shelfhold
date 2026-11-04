@@ -50,6 +50,7 @@ build-backend = "uv_build"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers -m 'not contract'"
 markers = [
+    "req(*ids): requirement IDs (EF-/ENF-) the test verifies; see tools/traceability.py",
     "contract: contract bench against a real pinned Suwayomi (needs Docker; run with -m contract)",
 ]
 
@@ -71,6 +72,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+"tests/unit/test_governance_docs.py" = ["S101", "S603", "S607"]
 "tests/contract/**" = ["S101", "S106", "E501"]
 "../e2e/**" = ["S101"]
 

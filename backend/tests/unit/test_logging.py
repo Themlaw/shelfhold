@@ -21,6 +21,7 @@ def request_record(captured: str) -> dict[str, object]:
     return records[0]
 
 
+@pytest.mark.req("ENF-OBS-001")
 def test_log_is_json_and_contains_request_id(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -37,6 +38,7 @@ def test_log_is_json_and_contains_request_id(
     assert "timestamp" in record
 
 
+@pytest.mark.req("ENF-OBS-001")
 @pytest.mark.parametrize("header", [None, "bad id with spaces", "x" * 200])
 def test_request_id_is_generated_when_absent_or_unsafe(
     settings: Settings, capsys: pytest.CaptureFixture[str], header: str | None
@@ -51,6 +53,7 @@ def test_request_id_is_generated_when_absent_or_unsafe(
     assert request_record(capsys.readouterr().out)["request_id"] == generated
 
 
+@pytest.mark.req("ENF-OBS-001", "ENF-SEC-005")
 def test_secret_looking_fields_are_redacted(capsys: pytest.CaptureFixture[str]) -> None:
     import structlog
 
@@ -61,6 +64,7 @@ def test_secret_looking_fields_are_redacted(capsys: pytest.CaptureFixture[str]) 
     assert record["note"] == "visible"
 
 
+@pytest.mark.req("ENF-OBS-001")
 def test_console_format_is_available_for_development(capsys: pytest.CaptureFixture[str]) -> None:
     import structlog
 
@@ -71,6 +75,7 @@ def test_console_format_is_available_for_development(capsys: pytest.CaptureFixtu
     assert not out.startswith("{")
 
 
+@pytest.mark.req("ENF-OBS-001")
 def test_unhandled_http_exception_and_library_logs_are_json_with_request_id(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:

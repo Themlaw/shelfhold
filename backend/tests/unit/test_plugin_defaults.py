@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from shelfhold.config import ResolvedSettings, load_settings
 from shelfhold.plugin_host.public import load_plugin_state
 
@@ -14,6 +16,7 @@ def _fresh(tmp_path: Path) -> ResolvedSettings:
     return load_settings(env)
 
 
+@pytest.mark.req("ENF-LEG-001")
 def test_fresh_install_has_zero_plugin_repos(tmp_path: Path) -> None:
     resolved = _fresh(tmp_path)
     assert resolved.values.plugin_repos == ()
@@ -21,6 +24,7 @@ def test_fresh_install_has_zero_plugin_repos(tmp_path: Path) -> None:
     assert load_plugin_state(resolved.values).plugin_repos == ()
 
 
+@pytest.mark.req("ENF-LEG-001")
 def test_meta_sources_ship_with_no_active_source(tmp_path: Path) -> None:
     resolved = _fresh(tmp_path)
     assert resolved.values.active_sources == ()
@@ -29,6 +33,7 @@ def test_meta_sources_ship_with_no_active_source(tmp_path: Path) -> None:
     assert state.active_meta_sources == ()
 
 
+@pytest.mark.req("ENF-LEG-001")
 def test_plugin_lists_accept_comma_separated_env(tmp_path: Path) -> None:
     env = {
         "SHELFHOLD_DATA_DIR": str(tmp_path / "data"),

@@ -5,6 +5,7 @@ import json
 import shutil
 import sqlite3
 import stat
+import time
 from contextlib import closing
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from shelfhold.infrastructure.migrate import (
 )
 from shelfhold.main import create_app
 
+MIGRATION_BUDGET_SECONDS = 600
 REVISION_TEMPLATE = '''"""test revision"""
 
 from alembic import op
@@ -67,6 +69,7 @@ def table_names(path: Path) -> set[str]:
         return {row[0] for row in db.execute("SELECT name FROM sqlite_master")}
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_migrate_creates_schema_at_head(settings: Settings) -> None:
     result = migrate(settings)
     assert result.to_revision == head_revision()
@@ -76,6 +79,16 @@ def test_migrate_creates_schema_at_head(settings: Settings) -> None:
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
+@pytest.mark.req("ENF-OPS-002")
+def test_migration_fits_the_ten_minute_budget(settings: Settings) -> None:
+    # ENF-OPS-002: budget <= 10 min on the reference profile. At M0 the schema is the
+    # initial one, so this guards the order of magnitude; the volume profile comes with M1a.
+    started = time.monotonic()
+    migrate(settings)
+    assert time.monotonic() - started < MIGRATION_BUDGET_SECONDS
+
+
+@pytest.mark.req("ENF-OPS-002")
 def test_migrate_command_idempotent_on_double_run(settings: Settings) -> None:
     first = migrate(settings)
     second = migrate(settings)
@@ -86,6 +99,7 @@ def test_migrate_command_idempotent_on_double_run(settings: Settings) -> None:
     assert not (settings.data_dir / "backups").exists()
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_broken_migration_aborts_with_explicit_log(
     settings: Settings, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -114,6 +128,7 @@ def test_broken_migration_aborts_with_explicit_log(
     assert "extra" in table_names(settings.database_path)
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_failed_first_migration_leaves_no_database(settings: Settings, tmp_path: Path) -> None:
     scripts = scripts_with_extra_revision(tmp_path, CREATE_THEN_FAIL)
     with pytest.raises(MigrationError):
@@ -124,6 +139,7 @@ def test_failed_first_migration_leaves_no_database(settings: Settings, tmp_path:
     assert migrate(settings, script_location=scripts).to_revision == "0002"
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_rerun_after_failure_keeps_the_original_backup_intact(
     settings: Settings, tmp_path: Path
 ) -> None:
@@ -140,6 +156,7 @@ def test_rerun_after_failure_keeps_the_original_backup_intact(
     assert len(list(directory.glob("*.db"))) == 2  # the second run wrote its own copy
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_backup_is_private_and_written_atomically(settings: Settings, tmp_path: Path) -> None:
     migrate(settings)
     scripts = scripts_with_extra_revision(tmp_path, CREATE_ONLY)
@@ -149,6 +166,7 @@ def test_backup_is_private_and_written_atomically(settings: Settings, tmp_path: 
     assert [p.name for p in result.backup.parent.iterdir()] == [result.backup.name]  # no .tmp
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_alembic_cli_fallback_uses_the_configured_url(tmp_path: Path) -> None:
     from alembic import command
     from alembic.config import Config
@@ -161,6 +179,7 @@ def test_alembic_cli_fallback_uses_the_configured_url(tmp_path: Path) -> None:
     assert current_revision(database) == head_revision()
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_backup_named_by_revision_taken_before_migration(
     settings: Settings, tmp_path: Path
 ) -> None:
@@ -188,6 +207,7 @@ def stamp_future_revision(settings: Settings) -> None:
         db.commit()
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_refuses_to_start_on_newer_schema(settings: Settings) -> None:
     stamp_future_revision(settings)
     with (
@@ -197,6 +217,7 @@ def test_refuses_to_start_on_newer_schema(settings: Settings) -> None:
         pass
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_migrate_refuses_a_newer_schema(settings: Settings) -> None:
     stamp_future_revision(settings)
     with pytest.raises(SchemaTooNewError):

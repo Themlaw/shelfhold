@@ -288,6 +288,29 @@ jobs:
       packages: write
     uses: ./.github/workflows/image-publish.yml  # zizmor: ignore[self-repository]
 
+  traceability:
+    # Warning mode until M0 is closed: not in ci-success. Make it blocking at milestone exit.
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the M0 traceability matrix
+        run: |
+          set +e
+          python3 tools/traceability.py --milestone M0 --output "$RUNNER_TEMP/M0.md" 2> "$RUNNER_TEMP/errors.txt"
+          status=$?
+          {
+            cat "$RUNNER_TEMP/M0.md"
+            echo
+            echo '## Erreurs et avertissements'
+            echo '```'
+            cat "$RUNNER_TEMP/errors.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
   ci-success:
     if: always()
     needs: [changes, lint, denylist, backend, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish]

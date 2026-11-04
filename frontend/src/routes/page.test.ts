@@ -21,6 +21,7 @@ describe('home page', () => {
     await screen.findByText(/Le serveur répond/);
   });
 
+  // req: ENF-OPS-003
   it('calls /healthz through the generated client', async () => {
     render(Page);
     expect(await screen.findByText('Le serveur répond (version 0.0.0).')).toBeInTheDocument();

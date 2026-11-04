@@ -1,0 +1,71 @@
+# Tests allowed to carry no `req` marker. Each entry needs a justification.
+[[exception]]
+path = "backend/tests/unit/test_traceability.py"
+reason = "tests de l'outil de traçabilité lui-même (pas une exigence du produit)"
+
+# Squelette M0 (spikes S2/S4, ADR-0013) : comportements utiles mais qui ne vérifient
+# aucune exigence EF-/ENF- propre. Ils ne comptent pour aucune exigence.
+[[exception]]
+path = "backend/tests/unit/test_spa.py"
+tests = [
+  "test_index_html_served_at_root_when_build_present",
+  "test_static_asset_served",
+  "test_unknown_client_route_falls_back_to_index",
+  "test_api_routes_win_over_the_fallback",
+  "test_unknown_api_path_is_404_not_index",
+  "test_path_traversal_and_nul_are_index_or_404",
+  "test_symlink_escaping_the_build_is_not_served",
+  "test_missing_file_or_app_path_is_404_not_index",
+  "test_api_paths_are_404_without_slash_too",
+  "test_head_is_supported",
+  "test_without_build_only_the_api_answers",
+]
+reason = "service du SPA statique par FastAPI (spike S2) : aucune exigence propre avant ENF-SEC-004 complet (M1a)"
+
+[[exception]]
+path = "backend/tests/unit/test_cli.py"
+tests = ["test_app_factory_reads_the_environment"]
+reason = "câblage de la commande `serve` (squelette), aucune exigence propre"
+
+[[exception]]
+path = "backend/tests/unit/test_package.py"
+tests = ["test_package_exposes_semver_version"]
+reason = "version SemVer du paquet (squelette), aucune exigence propre"
+
+[[exception]]
+path = "frontend/src/routes/page.test.ts"
+tests = ["has the pre-alpha title as level-one heading"]
+reason = "page d'accueil pré-alpha (spike S2), aucune exigence propre"
+
+[[exception]]
+path = "e2e/tests/test_spa_loads_no_third_party_resource.spec.ts"
+tests = ["the SPA fallback serves client routes"]
+reason = "repli SPA vers l'index (spike S2), aucune exigence propre"
+
+[[exception]]
+path = "backend/tests/unit/test_image_and_compose.py"
+tests = [
+  "test_compose_image_is_edge_on_ghcr",
+  "test_dev_compose_builds_the_dev_target",
+  "test_image_name_is_defined_in_one_place",
+  "test_image_workflow_is_reusable",
+]
+reason = "décisions d'exécution M0 (tag edge, image définie en un seul endroit, cible de développement, workflow réutilisable) : cohérence de l'outillage sans exigence propre"
+
+[[exception]]
+path = "e2e/tests/test_image_smoke.py"
+tests = ["test_root_serves_the_spa_index"]
+reason = "fumée du SPA servi par l'image (spike S2), aucune exigence propre"
+
+# Tests that do not run in the required CI (`ci-success`): accepted for M0 only when the
+# workflow that runs them is named and justified.
+[[out_of_required_ci]]
+path = "backend/tests/contract/suwayomi/test_suwayomi_contract.py"
+workflow = "contract.yml"
+reason = "banc de contrat contre un Suwayomi réel épinglé (Docker, spike S5) : workflow_dispatch et hebdomadaire, non requis par décision M0 5"
+
+# Aspects of multi-part requirements not yet testable at M0, with the milestone that owns them.
+[[deferred]]
+requirement = "ENF-OPS-002"
+aspect = "« pas de migration dans une release patch » (contrôle CI)"
+reason = "n'a de sens qu'à partir de la première release patch (0.1.x) ; contrôle à ajouter avec la sortie de v0.1.0 (release-please), avant la clôture de M1a"

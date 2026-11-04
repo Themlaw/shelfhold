@@ -3,6 +3,8 @@
 import json
 import time
 
+import pytest
+
 from conftest import compose, exec_python, wait_for
 
 READYZ = (
@@ -38,12 +40,14 @@ def egress_lines() -> list[str]:
     return [line for line in logs.splitlines() if line.startswith("EGRESS")]
 
 
+@pytest.mark.req("ENF-OPS-003")
 def test_stack_is_ready_after_up_wait(stack: None) -> None:
     status, body = exec_python("shelfhold", READYZ).split(" ", 1)
     assert status == "200"
     assert json.loads(body)["status"] == "ready"
 
 
+@pytest.mark.req("ENF-SEC-006")
 def test_container_runs_as_uid_1000_with_read_only_root(stack: None) -> None:
     out = exec_python(
         "shelfhold",
@@ -53,6 +57,7 @@ def test_container_runs_as_uid_1000_with_read_only_root(stack: None) -> None:
     assert out == ["1000", "30"]  # EROFS
 
 
+@pytest.mark.req("ENF-OPS-012")
 def test_volumes_are_distinct_and_writable(stack: None) -> None:
     out = exec_python(
         "shelfhold",
@@ -62,6 +67,7 @@ def test_volumes_are_distinct_and_writable(stack: None) -> None:
     assert out.split() == ["True"] * 4
 
 
+@pytest.mark.req("ENF-PRIV-001")
 def test_no_outbound_request_on_fresh_install(stack: None) -> None:
     assert wait_for(lambda: "WATCH-READY" in compose("logs", "egress-watch").stdout)
     exec_python("shelfhold", READYZ)
@@ -70,6 +76,7 @@ def test_no_outbound_request_on_fresh_install(stack: None) -> None:
     assert unexpected == []
 
 
+@pytest.mark.req("ENF-PRIV-001")
 def test_egress_watch_detects_tcp_http_and_dns(stack: None) -> None:
     """Positive control: the watcher would notice a raw connection, an HTTP call and a DNS query."""
     for probe in (PROBE_TCP, PROBE_HTTP, PROBE_DNS):

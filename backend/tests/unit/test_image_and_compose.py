@@ -43,6 +43,7 @@ def compose() -> dict[str, Any]:
     return load(ROOT / "compose.yaml")
 
 
+@pytest.mark.req("ENF-SEC-006")
 def test_compose_runtime_service_is_hardened(compose: dict[str, Any]) -> None:
     svc = compose["services"]["shelfhold"]
     assert svc["user"] == "1000:1000"
@@ -61,6 +62,7 @@ def test_compose_runtime_service_is_hardened(compose: dict[str, Any]) -> None:
     assert health["start_period"] and health["test"]
 
 
+@pytest.mark.req("ENF-SEC-006", "ENF-OPS-002")
 def test_compose_migrate_runs_first_and_is_hardened_too(compose: dict[str, Any]) -> None:
     migrate = compose["services"]["shelfhold-migrate"]
     assert migrate["command"] == ["shelfhold", "migrate"]
@@ -71,6 +73,7 @@ def test_compose_migrate_runs_first_and_is_hardened_too(compose: dict[str, Any])
     assert depends["condition"] == "service_completed_successfully"
 
 
+@pytest.mark.req("ENF-OPS-012")
 def test_compose_has_distinct_data_and_store_volumes(compose: dict[str, Any]) -> None:
     for name in ("shelfhold", "shelfhold-migrate"):
         pairs = [v.split(":")[:2] for v in compose["services"][name]["volumes"]]
@@ -82,6 +85,7 @@ def test_compose_image_is_edge_on_ghcr(compose: dict[str, Any]) -> None:
     assert compose["services"]["shelfhold"]["image"] == f"{IMAGE_NAME}:edge"
 
 
+@pytest.mark.req("ENF-SEC-006")
 def test_e2e_compose_is_hardened_and_image_is_injected() -> None:
     e2e = load(ROOT / "e2e" / "compose.yaml")
     for name in ("shelfhold", "shelfhold-migrate"):
@@ -102,6 +106,7 @@ def test_dev_compose_builds_the_dev_target() -> None:
 # --- Dockerfile ----------------------------------------------------------------------------
 
 
+@pytest.mark.req("ENF-SEC-006")
 def test_dockerfile_is_pinned_unprivileged_and_healthchecked() -> None:
     text = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
     base_images = re.findall(r"^FROM (\S+)", text, flags=re.MULTILINE)
@@ -122,6 +127,7 @@ def test_dockerfile_is_pinned_unprivileged_and_healthchecked() -> None:
 # --- workflows -------------------------------------------------------------------------------
 
 
+@pytest.mark.req("ENF-QUAL-007")
 def test_ci_uses_registry_cache(image_wf: dict[str, Any]) -> None:
     step = build_steps(image_wf["jobs"]["build"])[0]["with"]
     assert "type=registry,ref={0}-cache:{1}" in step["cache-from"]
@@ -136,6 +142,7 @@ def test_ci_uses_registry_cache(image_wf: dict[str, Any]) -> None:
         )  # never the 10 GB Actions cache
 
 
+@pytest.mark.req("ENF-QUAL-007")
 def test_cache_is_read_with_a_login_except_on_fork_pull_requests(image_wf: dict[str, Any]) -> None:
     login = next(
         s for s in steps_of(image_wf["jobs"]["build"]) if "login-action" in s.get("uses", "")
@@ -144,6 +151,7 @@ def test_cache_is_read_with_a_login_except_on_fork_pull_requests(image_wf: dict[
     assert login["with"]["password"] == "${{ github.token }}"  # noqa: S105
 
 
+@pytest.mark.req("ENF-PORT-001")
 def test_image_builds_natively_on_both_architectures_without_qemu() -> None:
     for name, jobs in (("image.yml", ("build", "e2e")), ("image-publish.yml", ("publish",))):
         wf = load(WORKFLOWS / name)
@@ -153,6 +161,7 @@ def test_image_builds_natively_on_both_architectures_without_qemu() -> None:
         assert "qemu" not in (WORKFLOWS / name).read_text(encoding="utf-8").lower()
 
 
+@pytest.mark.req("ENF-PORT-001")
 def test_published_image_is_the_tested_archive_never_a_rebuild() -> None:
     publish = load(WORKFLOWS / "image-publish.yml")
     text = (WORKFLOWS / "image-publish.yml").read_text(encoding="utf-8")
@@ -171,6 +180,7 @@ def test_published_image_is_the_tested_archive_never_a_rebuild() -> None:
     )  # e2e loads the archive built on that arch
 
 
+@pytest.mark.req("ENF-SEC-007")
 def test_image_is_pushed_by_digest_on_main_only() -> None:
     ci = load(WORKFLOWS / "ci.yml")["jobs"]
     main_only = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
@@ -196,6 +206,7 @@ def _writes_packages(workflow: Path) -> bool:
     return any((j.get("permissions") or {}).get("packages") == "write" for j in jobs.values())
 
 
+@pytest.mark.req("ENF-SEC-007")
 def test_no_job_reachable_on_pull_request_has_packages_write() -> None:
     """A pull_request run, even from a branch of this repository, never gets packages: write."""
     ci = load(WORKFLOWS / "ci.yml")
@@ -217,6 +228,7 @@ def test_no_job_reachable_on_pull_request_has_packages_write() -> None:
     assert not _writes_packages(WORKFLOWS / "image.yml")
 
 
+@pytest.mark.req("ENF-SEC-007")
 def test_packages_write_only_on_jobs_that_push() -> None:
     publish = load(WORKFLOWS / "image-publish.yml")
     assert {
@@ -234,12 +246,14 @@ def test_packages_write_only_on_jobs_that_push() -> None:
     }
 
 
+@pytest.mark.req("ENF-QUAL-007")
 def test_concurrency_cancels_only_pull_requests() -> None:
     assert load(WORKFLOWS / "ci.yml")["concurrency"]["cancel-in-progress"] == (
         "${{ github.event_name == 'pull_request' }}"
     )
 
 
+@pytest.mark.req("ENF-SEC-007")
 def test_docker_actions_are_pinned_by_full_sha() -> None:
     for workflow in WORKFLOWS.glob("*.yml"):
         for use in re.findall(r"uses: (\S+)", workflow.read_text(encoding="utf-8")):
@@ -263,6 +277,7 @@ def test_image_name_is_defined_in_one_place() -> None:
         assert load(WORKFLOWS / name)["env"]["IMAGE"] == IMAGE_NAME
 
 
+@pytest.mark.req("ENF-PERF-002")
 def test_image_size_gate_is_300_mb_and_ci_requires_the_image_jobs(image_wf: dict[str, Any]) -> None:
     assert image_wf["env"]["IMAGE_MAX_BYTES"] == "300000000"
     runs = " ".join(str(s.get("run", "")) for s in steps_of(image_wf["jobs"]["build"]))
@@ -296,10 +311,12 @@ def _run_size_check(
     )
 
 
+@pytest.mark.req("ENF-PERF-002")
 def test_size_gate_passes_under_the_limit(tmp_path: Path) -> None:
     assert _run_size_check(tmp_path, 10_000, 1_000).returncode == 0
 
 
+@pytest.mark.req("ENF-PERF-002")
 def test_size_gate_fails_over_the_limit(tmp_path: Path) -> None:
     result = _run_size_check(tmp_path, 100_000, 10)
     assert result.returncode == 1

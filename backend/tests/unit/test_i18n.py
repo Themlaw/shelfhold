@@ -26,6 +26,7 @@ def _all_py() -> list[Path]:
     return sorted(p for p in SRC.rglob("*.py"))
 
 
+@pytest.mark.req("ENF-I18N-001")
 def test_ui_strings_extracted_no_hardcoded_text() -> None:
     catalog = load_catalog("fr")
     assert catalog, "the French catalog must not be empty"
@@ -59,11 +60,13 @@ def test_ui_strings_extracted_no_hardcoded_text() -> None:
     assert set(catalog) - used == set(), "catalog keys never used"
 
 
+@pytest.mark.req("ENF-I18N-001")
 def test_catalog_is_french_and_interpolates() -> None:
     assert t("migrate.up_to_date") == load_catalog("fr")["migrate.up_to_date"]
     assert "0042" in t("migrate.applied", count=1, revision="0042")
 
 
+@pytest.mark.req("ENF-I18N-001")
 def test_unknown_key_is_reported_not_silently_empty() -> None:
     with pytest.raises(KeyError):
         t("no.such.key")

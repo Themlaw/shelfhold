@@ -14,12 +14,14 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe('HealthStatus', () => {
+  // req: ENF-OPS-003
   it('shows a loading message first', () => {
     server.use(http.get('http://shelfhold.test/healthz', () => new Promise(() => {})));
     render(HealthStatus);
     expect(screen.getByText('Vérification en cours…')).toBeInTheDocument();
   });
 
+  // req: ENF-OPS-003
   it('shows the server version when /healthz answers ok', async () => {
     server.use(
       http.get('http://shelfhold.test/healthz', () => HttpResponse.json({ state: 'ok', version: '0.0.0' }))
@@ -28,6 +30,7 @@ describe('HealthStatus', () => {
     expect(await screen.findByText('Le serveur répond (version 0.0.0).')).toBeInTheDocument();
   });
 
+  // req: ENF-OPS-003, ENF-I18N-001
   it('shows the migration progress with an ICU plural', async () => {
     server.use(
       http.get('http://shelfhold.test/healthz', () =>
@@ -40,6 +43,7 @@ describe('HealthStatus', () => {
     ).toBeInTheDocument();
   });
 
+  // req: ENF-OPS-003
   it('shows an alert when the server is unreachable', async () => {
     server.use(http.get('http://shelfhold.test/healthz', () => HttpResponse.error()));
     render(HealthStatus);
