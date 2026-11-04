@@ -41,7 +41,16 @@ def test_contract_job_has_no_extension_repo_and_no_egress() -> None:
     assert all(net.get("internal") is True for net in networks.values())
     for service in compose["services"].values():
         assert "ports" not in service, "no published port: the bench stays on the internal net"
-        assert service.get("network_mode") not in {"host", "bridge"}
+        assert "network_mode" not in service
+        for forbidden in (
+            "dns",
+            "extra_hosts",
+            "cap_add",
+            "privileged",
+            "devices",
+            "external_links",
+        ):
+            assert forbidden not in service, forbidden
         assert set(service["networks"]) <= set(networks)
         assert DIGEST_IMAGE.match(service["image"]), "image must be pinned by digest"
     # No extension store/repo configured anywhere; the explicit list is empty.
@@ -56,6 +65,20 @@ def test_contract_job_has_no_extension_repo_and_no_egress() -> None:
     assert not re.search(r"(?i)extension_?repo|keiyoushi|extensions\.json", workflow_text)
 
 
+def test_contract_compose_has_no_override_and_is_the_only_file_used() -> None:
+    siblings = {p.name for p in COMPOSE.parent.iterdir()}
+    assert not {n for n in siblings if "override" in n}
+    assert not list(ROOT.glob("compose.override.y*ml")) + list(
+        ROOT.glob("docker-compose.override.y*ml")
+    )
+    harness = (CONTRACT_DIR / "harness.py").read_text(encoding="utf-8")
+    assert (
+        harness.count('"-f", str(COMPOSE_FILE)') == 1
+    )  # one explicit compose file, nothing merged
+    assert 'environ["COMPOSE_FILE"]' not in harness and "COMPOSE_PATH_SEPARATOR" not in harness
+    assert "e2e/suwayomi/compose.yaml" in WORKFLOW.read_text(encoding="utf-8")
+
+
 def test_contract_workflow_triggers_and_permissions() -> None:
     workflow = _load(WORKFLOW)
     triggers = workflow.get("on", workflow.get(True))  # YAML 1.1 reads `on` as True
@@ -63,14 +86,23 @@ def test_contract_workflow_triggers_and_permissions() -> None:
     assert triggers["pull_request"]["paths"] == [
         "e2e/suwayomi/**",
         "backend/tests/contract/**",
+        "backend/tests/fixtures/synthetic/**",
+        "backend/pyproject.toml",
+        "backend/uv.lock",
         ".github/workflows/contract.yml",
     ]
+    assert triggers["schedule"]
     assert workflow["permissions"] == {"contents": "read"}
     for job in workflow["jobs"].values():
         for step in job["steps"]:
             uses = step.get("uses")
             if uses:
                 assert re.search(r"@[0-9a-f]{40}$", uses), f"action not pinned by SHA: {uses}"
+
+
+def test_contract_pinned_version_is_exact() -> None:
+    compose = _load(COMPOSE)
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", compose["x-suwayomi-version"])
 
 
 def test_contract_suwayomi_uses_local_source_only() -> None:

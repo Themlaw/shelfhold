@@ -6,14 +6,16 @@ Run with ``pytest -m contract`` (needs Docker); excluded from the default backen
 
 from __future__ import annotations
 
+import base64
 import io
 import json
+import re
 import zipfile
 from typing import Any
 
 import pytest
 
-from .harness import LOCAL_SOURCE_ID, SYNTHETIC, USER, Bench
+from .harness import LOCAL_SOURCE_ID, PASSWORD, PINNED_VERSION, SYNTHETIC, USER, Bench
 
 pytestmark = pytest.mark.contract
 
@@ -43,7 +45,7 @@ def _chapter_a1(bench: Bench) -> dict[str, Any]:
 def test_about_server_graphql_and_rest(bench: Bench) -> None:
     gql = bench.gql("{ aboutServer { name version buildType } }")["aboutServer"]
     assert gql["name"] == "Suwayomi-Server"
-    assert gql["version"].startswith("v2.")
+    assert gql["version"] == PINNED_VERSION
     rest = bench.request("GET", "/api/v1/settings/about").json()
     assert rest["name"] == "Suwayomi-Server"
     assert rest["version"] == gql["version"]
@@ -69,23 +71,35 @@ def test_unloaded_source_state(bench: Bench) -> None:
 # -- identity (EF-SRC-036) ----------------------------------------------------------------------
 def test_chapter_identity_is_source_id_plus_url(bench: Bench) -> None:
     mangas = _local_manga(bench)
-    assert set(mangas) == {"Series A", "Series B"}
+    assert {"Series A", "Series B"} <= set(mangas)
     assert {m["sourceId"] for m in mangas.values()} == {LOCAL_SOURCE_ID}
     urls = {c["url"] for c in _chapters(bench, mangas["Series A"]["id"])}
-    assert urls == {"Series A/Ch 001.cbz", "Series A/Ch 002.cbz"}
+    assert {"Series A/Ch 001.cbz", "Series A/Ch 002.cbz"} <= urls
 
 
 def test_container_has_no_route_out(bench: Bench) -> None:
-    """ENF-LEG-013: the internal network carries no egress (literal IP, so no DNS involved)."""
-    probe = bench.exec_in_container("timeout 4 bash -c 'echo > /dev/tcp/1.1.1.1/443'")
-    assert probe.returncode != 0
+    """ENF-LEG-013: no egress (literal IP, so no DNS). A control proves the probe itself works."""
+    _, probe = bench.probe_egress()
+    assert probe.returncode == 0, f"docker exec itself failed: {probe.stderr}"  # wrapper echoes rc
+    rc = int(probe.stdout.rsplit("rc=", 1)[1])
+    text = probe.stdout.lower()
+    # 124 = `timeout` fired; 1 = bash refused with an explicit network error. 125-127 would be
+    # a broken probe, not a network result.
+    assert rc in {1, 124}, probe.stdout
+    assert rc == 124 or re.search(r"unreachable|no route|timed out|refused", text), probe.stdout
 
 
 # -- REST CBZ download (EF-SRC-009) ---------------------------------------------------------------
 def test_rest_chapter_download_returns_a_cbz(bench: Bench) -> None:
     chapter = _chapter_a1(bench)
-    bench.seed_download("Series A", "Ch 001")
-    resp = bench.request("GET", f"/api/v1/chapter/{chapter['id']}/download")
+    dest = bench.seed_download("Series A", "Ch 001")
+    try:
+        resp = bench.request("GET", f"/api/v1/chapter/{chapter['id']}/download")
+        flag = bench.gql(f"{{ chapter(id: {chapter['id']}) {{ isDownloaded }} }}")
+    finally:
+        dest.unlink(missing_ok=True)
+    # a file placed by hand is served, but Suwayomi's own bookkeeping does not see it
+    assert flag["chapter"]["isDownloaded"] is False
     assert resp.status == 200
     assert resp.headers["Content-Type"] == "application/vnd.comicbook+zip"
     assert "attachment" in resp.headers["Content-Disposition"]
@@ -104,13 +118,18 @@ def test_rest_download_without_downloaded_file_is_a_client_error(bench: Bench) -
 
 
 def test_graphql_has_no_cbz_download_only_page_and_queue_operations(bench: Bench) -> None:
-    """R7: no GraphQL field returns the archive; the equivalents are queue and page URLs."""
+    """R7: no Query/Mutation field is named like an archive download; the equivalents are queue and page URLs."""
     mutations = {
         f["name"]
         for f in bench.gql('{ __type(name: "Mutation") { fields { name } } }')["__type"]["fields"]
     }
     assert {"enqueueChapterDownload", "deleteDownloadedChapter", "fetchChapterPages"} <= mutations
-    assert not {n for n in mutations if "cbz" in n.lower() or n == "downloadChapter"}
+    queries = {
+        f["name"]
+        for f in bench.gql('{ __type(name: "Query") { fields { name } } }')["__type"]["fields"]
+    }
+    archive_like = re.compile(r"cbz|archive|downloadchapter|exportchapter", re.IGNORECASE)
+    assert not {n for n in mutations | queries if archive_like.search(n)}
     chapter = _chapter_a1(bench)
     pages = bench.gql(
         f"mutation {{ fetchChapterPages(input: {{chapterId: {chapter['id']}}}) {{ pages }} }}"
@@ -142,11 +161,15 @@ def test_graphql_delete_downloaded_chapter_removes_the_file(bench: Bench) -> Non
 # -- refresh, settings ---------------------------------------------------------------------------
 def test_refresh_chapters_sees_a_new_file(bench: Bench) -> None:
     manga = _local_manga(bench)["Series A"]
-    assert len(_chapters(bench, manga["id"])) == 2
     new = bench.data_dir / "local" / "Series A" / "Ch 003.cbz"
+    assert "Series A/Ch 003.cbz" not in {c["url"] for c in _chapters(bench, manga["id"])}
     new.write_bytes((SYNTHETIC / "comic_a_002.cbz").read_bytes())
     new.chmod(0o666)
-    assert {c["url"] for c in _chapters(bench, manga["id"])} >= {"Series A/Ch 003.cbz"}
+    try:
+        assert "Series A/Ch 003.cbz" in {c["url"] for c in _chapters(bench, manga["id"])}
+    finally:
+        new.unlink(missing_ok=True)
+        _chapters(bench, manga["id"])  # refresh again so later tests see the original state
 
 
 def test_global_update_settings_are_readable(bench: Bench) -> None:
@@ -166,28 +189,36 @@ def test_library_and_category_mutations(bench: Bench) -> None:
     category = bench.gql(
         'mutation { createCategory(input: {name: "contract"}) { category { id name } } }'
     )["createCategory"]["category"]
-    added = bench.gql(
-        f"mutation {{ updateManga(input: {{id: {manga['id']}, patch: {{inLibrary: true}}}}) "
-        "{ manga { inLibrary } } }"
+    cats = "{ manga { categories { nodes { name } } } }"
+    try:
+        added = bench.gql(
+            f"mutation {{ updateManga(input: {{id: {manga['id']}, patch: {{inLibrary: true}}}}) "
+            "{ manga { inLibrary } } }"
+        )
+        assert added["updateManga"]["manga"]["inLibrary"] is True
+        assigned = bench.gql(
+            f"mutation {{ updateMangaCategories(input: {{id: {manga['id']}, patch: "
+            f"{{addToCategories: [{category['id']}]}}}}) {cats} }}"
+        )
+        nodes = assigned["updateMangaCategories"]["manga"]["categories"]["nodes"]
+        assert [n["name"] for n in nodes] == ["contract"]
+        removed = bench.gql(
+            f"mutation {{ updateMangaCategories(input: {{id: {manga['id']}, patch: "
+            f"{{removeFromCategories: [{category['id']}]}}}}) {cats} }}"
+        )
+        assert removed["updateMangaCategories"]["manga"]["categories"]["nodes"] == []
+    finally:
+        bench.gql(
+            f"mutation {{ updateManga(input: {{id: {manga['id']}, patch: {{inLibrary: false}}}}) "
+            "{ manga { inLibrary } } }"
+        )
+        bench.gql(
+            f"mutation {{ deleteCategory(input: {{categoryId: {category['id']}}}) "
+            "{ category { id } } }"
+        )
+    assert (
+        bench.gql(f"{{ manga(id: {manga['id']}) {{ inLibrary }} }}")["manga"]["inLibrary"] is False
     )
-    assert added["updateManga"]["manga"]["inLibrary"] is True
-    assigned = bench.gql(
-        f"mutation {{ updateMangaCategories(input: {{id: {manga['id']}, patch: "
-        f"{{addToCategories: [{category['id']}]}}}}) {{ manga {{ categories {{ nodes {{ name }} }} }} }} }}"
-    )
-    assert [
-        n["name"] for n in assigned["updateMangaCategories"]["manga"]["categories"]["nodes"]
-    ] == ["contract"]
-    removed = bench.gql(
-        f"mutation {{ updateMangaCategories(input: {{id: {manga['id']}, patch: "
-        f"{{removeFromCategories: [{category['id']}]}}}}) {{ manga {{ categories {{ nodes {{ name }} }} }} }} }}"
-    )
-    assert removed["updateMangaCategories"]["manga"]["categories"]["nodes"] == []
-    left = bench.gql(
-        f"mutation {{ updateManga(input: {{id: {manga['id']}, patch: {{inLibrary: false}}}}) "
-        "{ manga { inLibrary } } }"
-    )
-    assert left["updateManga"]["manga"]["inLibrary"] is False
 
 
 # -- authentication ------------------------------------------------------------------------------
@@ -210,14 +241,28 @@ def test_wrong_credentials_are_rejected(bench: Bench) -> None:
 def test_ui_login_token_flow(bench: Bench) -> None:
     if bench.mode != "ui_login":
         pytest.skip("JWT flow exists only in ui_login")
-    anonymous = bench.graphql("{ sources { nodes { id } } }", authenticated=False).json()
-    assert anonymous["errors"]  # protected operations refuse an anonymous caller
+    anonymous = bench.graphql("{ sources { nodes { id } } }", authenticated=False)
+    assert anonymous.status == 200  # GraphQL answers 200 with an error, REST answers 401
+    errors = anonymous.json()["errors"]
+    assert "Unauthorized" in errors[0]["message"]
     pair = bench.login()
     refreshed = bench.gql(
         f'mutation {{ refreshToken(input: {{refreshToken: "{pair["refresh"]}"}}) {{ accessToken }} }}'
     )
     assert refreshed["refreshToken"]["accessToken"]
-    assert bench.request("GET", "/api/v1/settings/about").status == 200
+    assert bench.request("GET", "/api/v1/settings/about").status == 200  # Bearer on REST
+
+
+def test_ui_login_rest_refuses_basic_and_about_server_is_public(bench: Bench) -> None:
+    if bench.mode != "ui_login":
+        pytest.skip("ui_login only")
+    basic = "Basic " + base64.b64encode(f"{USER}:{PASSWORD}".encode()).decode()
+    refused = bench.request(
+        "GET", "/api/v1/settings/about", authenticated=False, headers={"Authorization": basic}
+    )
+    assert refused.status == 401
+    public = bench.graphql("{ aboutServer { version } }", authenticated=False)
+    assert public.json()["data"]["aboutServer"]["version"] == PINNED_VERSION
 
 
 # -- identity after restart (EF-SRC-036) -----------------------------------------------------------

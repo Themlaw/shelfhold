@@ -5,6 +5,8 @@
 #
 # Pinned: v2.4.2366 (stable, published 2026-09-30). Bump through a reviewed PR only (Renovate
 # opens it) and keep the stable at least 14 days old (ADR-0016).
+x-suwayomi-version: v2.4.2366
+
 services:
   suwayomi:
     image: ghcr.io/suwayomi/suwayomi-server@sha256:1fac27c387dc2ea9949e1a01ad7f6d6de9d72d3988338a95476748e5c45c4582

@@ -19,9 +19,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[4]
 COMPOSE_FILE = ROOT / "e2e" / "suwayomi" / "compose.yaml"
 SYNTHETIC = ROOT / "backend" / "tests" / "fixtures" / "synthetic"
+PINNED_VERSION: str = yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))["x-suwayomi-version"]
 LOCAL_SOURCE_ID = "0"
 LOCAL_SOURCE_DIR = "Local source"  # downloads/mangas/<this>/<manga>/<chapter>.cbz
 USER = "shelfhold"
@@ -44,9 +47,9 @@ class Bench:
     mode: str
     data_dir: Path
     project: str
-    password: str = PASSWORD
+    password: str = field(default=PASSWORD, repr=False)
     base_url: str = ""
-    token: str | None = None
+    token: str | None = field(default=None, repr=False)
     extra: dict[str, str] = field(default_factory=dict)
 
     # -- docker -----------------------------------------------------------------
@@ -95,6 +98,17 @@ class Bench:
             timeout=30,
             check=False,
         )
+
+    def probe_egress(self) -> tuple[str, subprocess.CompletedProcess[str]]:
+        """Return (control, probe): bash/timeout exist, loopback works, an external IP does not."""
+        tools = self.exec_in_container("command -v bash && command -v timeout")
+        assert tools.returncode == 0, f"probe tools missing in the image: {tools.stderr}"
+        control = self.exec_in_container(f"timeout 4 bash -c 'echo > /dev/tcp/127.0.0.1/{PORT}'")
+        assert control.returncode == 0, f"probe control failed: {control.stderr}"
+        probe = self.exec_in_container(
+            "timeout 4 bash -c 'echo > /dev/tcp/1.1.1.1/443' 2>&1; echo rc=$?"
+        )
+        return control.stdout, probe
 
     def logs(self) -> str:
         return self._compose("logs", "--no-color", "suwayomi").stdout
