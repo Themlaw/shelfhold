@@ -10,6 +10,7 @@ Priorities: a Huey task carries the numeric priority of its class, `new` > `requ
 so a backlog (catch-up in batches) never delays a new chapter.
 """
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -86,11 +87,13 @@ class JobPools:
         self._hueys: dict[str, Huey] = {}
         self._run_job: dict[str, Any] = {}
         for name in POOLS:
+            queue_file = data_dir / f"huey-{name}.db"
+            # 0600 from the first byte: created here, before Huey opens them (it only opens), and
+            # the SQLite side files too, which do not always inherit the mode of the main file
+            for suffix in ("", "-wal", "-shm"):
+                os.close(os.open(f"{queue_file}{suffix}", os.O_CREAT | os.O_WRONLY, 0o600))
             huey = SqliteHuey(
-                name=f"shelfhold-{name}",
-                filename=str(data_dir / f"huey-{name}.db"),
-                utc=True,
-                results=False,
+                name=f"shelfhold-{name}", filename=str(queue_file), utc=True, results=False
             )
             self._hueys[name] = huey
             self._run_job[name] = huey.task(name="run_job")(self._execute)
