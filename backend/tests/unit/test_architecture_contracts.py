@@ -286,12 +286,13 @@ def test_every_new_contract_is_declared_in_the_config() -> None:
     assert {v[0] for v in VIOLATIONS} <= declared
 
 
-# --- EF-EXP-060, review of PR #30: nothing but fsops (and two /data writers) writes files ---
+# --- EF-EXP-060, review of PR #30: nothing but fsops (and the /data writers) writes files ---
 
 WRITERS_ALLOWED = (
     "shelfhold/infrastructure/fsops/",
     "shelfhold/infrastructure/migrate.py",
     "shelfhold/infrastructure/volumes.py",
+    "shelfhold/infrastructure/secrets/atomic.py",  # keyring and export file, owner-only
 )
 PATH_WRITE_METHODS = {
     "write_text", "write_bytes", "unlink", "rename", "mkdir", "rmdir", "touch",

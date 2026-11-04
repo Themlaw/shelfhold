@@ -17,3 +17,4 @@ s'il est lisible par tous.
 | `SHELFHOLD_LOG_FORMAT` | `json` | `json` (conteneur) ou `console` (développement) |
 | `SHELFHOLD_PUBLIC_URL` | aucune | URL publique de l'instance |
 | `SHELFHOLD_API_TOKEN` | aucun | Jeton d'API réservé à l'interface headless (M1a), secret : masqué partout |
+| `SHELFHOLD_SECRET_KEY_FILE` | `/data/keyring` | Chemin du trousseau des secrets (JSON, 0600). Absent : créé dans `/data` au premier démarrage. **Recommandé hors de `/data`** (secret Docker, volume distinct) ; `shelfhold secrets status` avertit tant qu'il est dans `/data`. Fichier configuré mais absent, ou base qui contient déjà des secrets sans trousseau : démarrage refusé (jamais de nouvelle clé qui rendrait les secrets illisibles). Variable seule |

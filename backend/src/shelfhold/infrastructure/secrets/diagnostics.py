@@ -1,0 +1,89 @@
+"""Boot check of the keyring and the warnings `status` shows (ENF-SEC-005)."""
+
+import base64
+from dataclasses import dataclass
+from pathlib import Path
+
+import structlog
+
+from shelfhold.config import Settings
+from shelfhold.infrastructure.logging import register_secret_value
+from shelfhold.infrastructure.secrets import registry
+from shelfhold.infrastructure.secrets.errors import KeyringMissingError
+from shelfhold.infrastructure.secrets.keyring import Keyring, KeyringStore
+from shelfhold.infrastructure.volumes import ensure_volumes
+
+KEYRING_NAME = "keyring"
+LOCK_NAME = "keyring.lock"
+
+
+def keyring_path(settings: Settings) -> Path:
+    return settings.secret_key_file or settings.data_dir / KEYRING_NAME
+
+
+def store_for(settings: Settings) -> KeyringStore:
+    return KeyringStore(keyring_path(settings), lock_path=settings.data_dir / LOCK_NAME)
+
+
+def _register_for_scrubbing(keyring: Keyring) -> None:
+    for key in keyring.keys:
+        register_secret_value(base64.b64encode(key.material).decode("ascii"))
+
+
+def boot_check(settings: Settings, *, create: bool = True, announce: bool = True) -> Keyring:
+    """Load the keyring or fail the start.
+
+    An unreadable or corrupt keyring raises. A missing one is generated in `/data` only on a
+    first start: if `SHELFHOLD_SECRET_KEY_FILE` names a file that is not there, or the database
+    already holds keys or sealed secrets, a new keyring would orphan them, so the start fails.
+    """
+    store = store_for(settings)
+    if not store.exists():
+        if settings.secret_key_file is not None:
+            raise KeyringMissingError(store.path, reason="configured_file_absent")
+        if registry.registry_has_keys(settings.database_path):
+            raise KeyringMissingError(store.path, reason="database_holds_keys")
+        if not create:
+            raise KeyringMissingError(store.path, reason="absent")
+        ensure_volumes(settings)
+        try:
+            store.create(Keyring.generate())
+            if announce:
+                structlog.get_logger().warning("keyring_generated", path=str(store.path))
+        except FileExistsError:
+            pass  # another process created it first: use theirs
+    keyring = store.load()
+    _register_for_scrubbing(keyring)
+    return keyring
+
+
+@dataclass(frozen=True)
+class KeyringWarning:
+    code: str
+    detail: str = ""
+
+
+def collect_warnings(settings: Settings) -> list[KeyringWarning]:
+    """What `status` tells the admin about the keyring. Never reads key material."""
+    store = store_for(settings)
+    warnings: list[KeyringWarning] = []
+    path = store.path
+    try:
+        inside = path.resolve().is_relative_to(settings.data_dir.resolve())
+    except OSError:
+        inside = False
+    if inside:
+        warnings.append(KeyringWarning("key_in_data", str(path)))
+    if store.exists() and path.stat().st_mode & 0o077:
+        warnings.append(KeyringWarning("keyring_mode_open", str(path)))
+    if not store.exists():
+        warnings.append(KeyringWarning("keyring_absent", str(path)))
+        return warnings
+    keyring = store.load()
+    if keyring.rotation is not None:
+        warnings.append(KeyringWarning("rotation_incomplete"))
+    if keyring.exported_at is None:
+        warnings.append(KeyringWarning("never_exported"))
+    elif keyring.rotated_at is not None and keyring.exported_at < keyring.rotated_at:
+        warnings.append(KeyringWarning("export_older_than_rotation"))
+    return warnings
