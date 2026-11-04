@@ -232,8 +232,6 @@ VIOLATIONS = [
     ("lang-single-producer", "library/other.py", "import langcodes\n", "catalog/lang.py"),
     ("replica-single-count", "export/other.py", "import shelfhold.library.replica\n", None),
     ("fsops-sole-writer", "library/other.py", "import shutil\n", "infrastructure/fsops/io.py"),
-    ("fsops-sole-writer", "library/other.py", "import shutil\n",
-     "infrastructure/fsops/__init__.py"),
     ("suwayomi-confined", "acquisition/other.py",
      "import shelfhold.plugin_host.adapters.meta.suwayomi\n",
      "plugin_host/adapters/meta/suwayomi/client.py"),

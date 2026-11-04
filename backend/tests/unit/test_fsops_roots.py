@@ -5,8 +5,8 @@ import shutil
 from pathlib import Path
 
 import pytest
-from shelfhold.export.domain.physical_roots import RootState
 
+from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.infrastructure.fsops import (
     Fsops,
     RootBlockedError,
@@ -28,14 +28,16 @@ def set_sentinel(root: Path, **changes: object) -> None:
     path.write_text(json.dumps(content), encoding="utf-8")
 
 
-def assert_blocked(env: Env, root: Path, state: RootState) -> None:
-    probe = root / "X" / "1.cbz"
+def assert_blocked(env: Env, root: Path, state: RootState, *, via: Path | None = None) -> None:
+    """A write through `via` (a path-map entry inside `root`) is refused and creates nothing."""
+    base = via or root
+    probe = base / "X" / "1.cbz"
     with pytest.raises(RootBlockedError) as caught:
         env.fsops.write_atomic(str(probe), b"x", parents=True)
     assert caught.value.state is state
     assert caught.value.root_path == str(root)
     assert not probe.exists()
-    assert not (root / "X").exists()
+    assert not (base / "X").exists()
 
 
 @pytest.mark.req("EF-EXP-029")
@@ -45,7 +47,7 @@ def test_sentinel_missing_blocks_reconcile(env: Env) -> None:
         env.fsops.require_scan_allowed(str(env.manga))
     assert caught.value.state is RootState.MISSING
     assert env.fsops.status(str(env.manga)).state is RootState.MISSING
-    assert_blocked(env, env.library, RootState.MISSING)  # via manga: same root
+    assert_blocked(env, env.library, RootState.MISSING, via=env.manga)
     with pytest.raises(RootBlockedError):
         env.fsops.require_delete_allowed(str(env.manga / "X"))
 
@@ -75,7 +77,7 @@ def test_sentinel_different_blocks_deletions_and_scans(env: Env, field: str) -> 
 def test_stale_generation_sentinel_blocks_writes(tmp_path: Path) -> None:
     env = make_env(tmp_path, generation=5)
     set_sentinel(env.library, generation=2)  # an old copy of the folder mounted by mistake
-    assert_blocked(env, env.library, RootState.STALE)
+    assert_blocked(env, env.library, RootState.STALE, via=env.manga)
     assert env.sentinel_of(env.library)["generation"] == 2  # never "fixed" automatically
 
 
@@ -83,7 +85,7 @@ def test_stale_generation_sentinel_blocks_writes(tmp_path: Path) -> None:
 def test_database_behind_the_sentinel_blocks_writes_as_restored_behind(tmp_path: Path) -> None:
     env = make_env(tmp_path, generation=5)
     set_sentinel(env.library, generation=9)
-    assert_blocked(env, env.library, RootState.RESTORED_BEHIND)
+    assert_blocked(env, env.library, RootState.RESTORED_BEHIND, via=env.manga)
     assert env.sentinel_of(env.library)["generation"] == 9
 
 
@@ -148,7 +150,7 @@ def test_newer_major_sentinel_is_never_rewritten(env: Env) -> None:
 @pytest.mark.req("EF-EXP-029")
 def test_garbage_sentinel_blocks_like_a_different_one(env: Env) -> None:
     (env.library / ".shelfhold-mount-id").write_bytes(b"\x00garbage")
-    assert_blocked(env, env.library, RootState.MISMATCH)
+    assert_blocked(env, env.library, RootState.MISMATCH, via=env.manga)
 
 
 @pytest.mark.req("EF-EXP-029")
@@ -157,7 +159,7 @@ def test_sentinel_symlink_is_not_followed(env: Env, tmp_path: Path) -> None:
     other.write_bytes((env.library / ".shelfhold-mount-id").read_bytes())
     (env.library / ".shelfhold-mount-id").unlink()
     (env.library / ".shelfhold-mount-id").symlink_to(other)
-    assert_blocked(env, env.library, RootState.MISSING)
+    assert_blocked(env, env.library, RootState.MISSING, via=env.manga)
 
 
 @pytest.mark.req("EF-EXP-059")
@@ -210,7 +212,7 @@ def test_orphan_staging_purged_at_boot(tmp_path: Path) -> None:
     env = make_env(tmp_path)
     for root in (env.library, env.books):
         staging = root / ".shelfhold" / "staging"
-        staging.mkdir(parents=True)
+        staging.mkdir(parents=True, exist_ok=True)
         (staging / "0f0f").write_bytes(b"half a file")
         (staging / "dir").mkdir()
         (staging / "dir" / "inner").write_bytes(b"x")
@@ -233,7 +235,7 @@ def test_orphan_staging_purged_at_boot(tmp_path: Path) -> None:
 def test_orphan_staging_of_a_blocked_root_is_left_alone(tmp_path: Path) -> None:
     env = make_env(tmp_path)
     staging = env.books / ".shelfhold" / "staging"
-    staging.mkdir(parents=True)
+    staging.mkdir(parents=True, exist_ok=True)
     (staging / "orphan").write_bytes(b"x")
     set_sentinel(env.books, instance_id="01ARZ3NDEKTSV4RRFFQ69G5FAV")
     report = env.fsops.boot()

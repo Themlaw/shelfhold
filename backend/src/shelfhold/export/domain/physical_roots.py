@@ -1,0 +1,223 @@
+"""Physical roots and the mount sentinel, as pure rules (EF-EXP-029, EF-EXP-059, ENF-OPS-013).
+
+A physical root is a distinct file system under (or beside) /library. Each read-write root has
+its own `.shelfhold-mount-id`, `.shelfhold/staging` and `.shelfhold/recycle`. The sentinel says
+which instance last wrote the root and how many write sessions it has seen; comparing it to the
+database tells an intact root from an emptied mount point or an old copy of the folder.
+"""
+
+import json
+import posixpath
+import re
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any, Self
+
+from shelfhold.export.domain.path_map import PathEntry, PathMap, clean_absolute, within
+
+__all__ = [
+    "RECYCLE_DIR",
+    "RESERVED_DIR",
+    "SENTINEL_FILE",
+    "SENTINEL_SCHEMA_VERSION",
+    "STAGING_DIR",
+    "ExpectedRoot",
+    "RootSpec",
+    "RootState",
+    "SentinelDocument",
+    "SentinelFormatError",
+    "SentinelVerdict",
+    "discover_physical_roots",
+    "is_reserved",
+    "judge_sentinel",
+]
+
+SENTINEL_FILE = ".shelfhold-mount-id"
+RESERVED_DIR = ".shelfhold"
+STAGING_DIR = f"{RESERVED_DIR}/staging"
+RECYCLE_DIR = f"{RESERVED_DIR}/recycle"
+SENTINEL_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
+SUPPORTED_SENTINEL_MAJOR = 1
+_VERSION = re.compile(r"^(\d+)\.(\d+)$")
+_KNOWN_KEYS = ("schema_version", "root_id", "instance_id", "generation")
+
+
+class SentinelFormatError(ValueError):
+    """The sentinel cannot be read, or is of a newer major format and must not be rewritten."""
+
+
+class RootState(StrEnum):
+    OK = "ok"
+    MISSING = "missing"
+    MISMATCH = "mismatch"
+    STALE = "stale"  # the sentinel is behind the database: an old copy of the folder
+    # The database is behind the sentinel (restore, rollback): not a mount_sentinel state, the
+    # instance goes to `restored_behind` (EF-INT-026).
+    RESTORED_BEHIND = "restored_behind"
+
+
+@dataclass(frozen=True)
+class ExpectedRoot:
+    """What the database says about one physical root (`physical_root` and `instance`)."""
+
+    root_id: str
+    path: str
+    instance_id: str
+    generation: int
+
+
+@dataclass(frozen=True)
+class SentinelDocument:
+    root_id: str
+    instance_id: str
+    generation: int
+    schema_version: str = SENTINEL_SCHEMA_VERSION
+    # Fields written by a newer minor version (tombstone counters, kid registry, predecessors,
+    # ...) are kept as they are on every rewrite (ENF-OPS-013).
+    extra: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def major(self) -> int:
+        match = _VERSION.match(self.schema_version)
+        return int(match.group(1)) if match else 0
+
+    @property
+    def read_only(self) -> bool:
+        return self.major > SUPPORTED_SENTINEL_MAJOR
+
+    @classmethod
+    def parse(cls, raw: bytes) -> Self:
+        try:
+            data = json.loads(raw)
+        except (ValueError, UnicodeDecodeError) as error:
+            raise SentinelFormatError("sentinel is not JSON") from error
+        if not isinstance(data, dict):
+            raise SentinelFormatError("sentinel is not a JSON object")
+        version = data.get("schema_version", SENTINEL_SCHEMA_VERSION)
+        root_id, instance_id, generation = (
+            data.get("root_id"),
+            data.get("instance_id"),
+            data.get("generation"),
+        )
+        if not isinstance(version, str) or not _VERSION.match(version):
+            raise SentinelFormatError("bad schema_version")
+        if not isinstance(root_id, str) or not isinstance(instance_id, str):
+            raise SentinelFormatError("root_id and instance_id must be strings")
+        if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+            raise SentinelFormatError("generation must be a non-negative integer")
+        extra = {k: v for k, v in data.items() if k not in _KNOWN_KEYS}
+        return cls(root_id, instance_id, generation, version, extra)
+
+    def restamped(self, generation: int) -> Self:
+        if self.read_only:
+            raise SentinelFormatError(
+                f"sentinel is format {self.schema_version}, newer than this build: read only"
+            )
+        return type(self)(
+            self.root_id, self.instance_id, generation, self.schema_version, self.extra
+        )
+
+    def dumps(self) -> bytes:
+        body: dict[str, Any] = {
+            "schema_version": self.schema_version,
+            "root_id": self.root_id,
+            "instance_id": self.instance_id,
+            "generation": self.generation,
+            **self.extra,
+        }
+        return (json.dumps(body, sort_keys=False, indent=2) + "\n").encode("utf-8")
+
+
+@dataclass(frozen=True)
+class SentinelVerdict:
+    state: RootState
+    restamp: bool = False  # the database is one step ahead: rewrite the sentinel, nothing else
+
+    @property
+    def blocks_writes(self) -> bool:
+        return self.state is not RootState.OK
+
+    @property
+    def blocks_scans_and_deletions(self) -> bool:
+        return self.state is not RootState.OK
+
+
+def judge_sentinel(doc: SentinelDocument | None, expected: ExpectedRoot) -> SentinelVerdict:
+    """Missing, different, behind or ahead (EF-EXP-029, I39)."""
+    if doc is None:
+        return SentinelVerdict(RootState.MISSING)
+    if doc.read_only:
+        return SentinelVerdict(RootState.MISMATCH)  # never touched by a build that cannot read it
+    if doc.root_id != expected.root_id or doc.instance_id != expected.instance_id:
+        return SentinelVerdict(RootState.MISMATCH)
+    if doc.generation == expected.generation:
+        return SentinelVerdict(RootState.OK)
+    if doc.generation + 1 == expected.generation:
+        # Stopped between the database commit and the sentinel rewrite: consistent.
+        return SentinelVerdict(RootState.OK, restamp=True)
+    if doc.generation < expected.generation:
+        return SentinelVerdict(RootState.STALE)
+    return SentinelVerdict(RootState.RESTORED_BEHIND)
+
+
+def is_reserved(rel: str) -> bool:
+    """Host-only names at the top of a root: the sentinel and everything under `.shelfhold/`."""
+    parts: list[str] = []
+    for part in rel.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    return bool(parts) and parts[0] in (SENTINEL_FILE, RESERVED_DIR)
+
+
+@dataclass(frozen=True)
+class RootSpec:
+    path: str
+    st_dev: int | None  # None: the entry could not be probed (absent)
+    entries: tuple[PathEntry, ...]
+
+
+def discover_physical_roots(
+    path_map: PathMap, library_root: str, dev_of: Callable[[str], int]
+) -> list[RootSpec]:
+    """Group the entries by file system: one root per distinct device (EF-EXP-059).
+
+    Entries on the device of `library_root` share it. Any other device is a root of its own, at
+    the common parent of its entries; an entry that cannot be probed is an absent root, never
+    folded into the root of its parent folder (an unmounted disk leaves an empty directory).
+    """
+    library = clean_absolute(library_root)
+    try:
+        library_dev: int | None = dev_of(library)
+    except OSError:
+        library_dev = None
+    inside: list[PathEntry] = []
+    groups: dict[int, list[PathEntry]] = {}
+    absent: list[PathEntry] = []
+    for entry in path_map.entries:
+        try:
+            dev = dev_of(entry.local)
+        except OSError:
+            absent.append(entry)
+            continue
+        under = within(entry.local, library) is not None
+        if under and library_dev is not None and dev == library_dev:
+            inside.append(entry)
+        else:
+            groups.setdefault(dev, []).append(entry)
+    roots: list[RootSpec] = []
+    if inside and library_dev is not None:
+        roots.append(RootSpec(library, library_dev, tuple(inside)))
+    for dev, entries in groups.items():
+        roots.append(RootSpec(_common_parent(entries), dev, tuple(entries)))
+    roots.extend(RootSpec(entry.local, None, (entry,)) for entry in absent)
+    return sorted(roots, key=lambda root: root.path)
+
+
+def _common_parent(entries: Iterable[PathEntry]) -> str:
+    return posixpath.commonpath([entry.local for entry in entries])

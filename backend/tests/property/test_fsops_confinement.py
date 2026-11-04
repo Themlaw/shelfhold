@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from shelfhold.infrastructure.fsops import ConfinedRoot, FsopsError, Strategy, openat2_supported
@@ -89,7 +89,9 @@ def apply(root_dir: Path, root: ConfinedRoot, op: tuple[str, object, object], ou
         elif kind == "write":
             assert isinstance(extra, bytes)
             if str(Path(rel).parent) != ".":
-                root.mkdir(str(Path(rel).parent), parents=True, exist_ok=True)
+                # best effort: a refusal here must not stop the write from being attempted
+                with contextlib.suppress(FsopsError, OSError):
+                    root.mkdir(str(Path(rel).parent), parents=True, exist_ok=True)
             fd = root.open_file(rel, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
             os.write(fd, extra)
             os.close(fd)
@@ -115,6 +117,36 @@ def apply(root_dir: Path, root: ConfinedRoot, op: tuple[str, object, object], ou
 
 
 STRATEGIES = [Strategy.OPENAT2, Strategy.FALLBACK]
+Ops = list[tuple[str, object, object]]
+
+
+@st.composite
+def attacks(draw: st.DrawFn) -> Ops:
+    """Plants first (links at one or two levels), then arbitrary operations through them."""
+    plants = draw(
+        st.lists(
+            st.tuples(
+                st.just("plant"),
+                st.lists(st.sampled_from(NAMES), min_size=1, max_size=2).map("/".join),
+                link_targets,
+            ),
+            min_size=1,
+            max_size=3,
+        )
+    )
+    rest = draw(st.lists(operations, min_size=1, max_size=20))
+    return [*plants, *rest]
+
+
+# Known escapes, so that the baseline does not depend on the search finding them.
+KNOWN: list[Ops] = [
+    [("plant", "link", "OUT"), ("write", "link/x.cbz", b"a")],
+    [("plant", "a", "OUT"), ("mkdir", "a/new", True), ("unlink", "a/secret", None)],
+    [("plant", "a", "OUT/d"), ("write", "a/secret", b"a"), ("rename", "a/secret", "b")],
+    [("plant", "x.cbz", "OUT/secret"), ("write", "x.cbz", b"a"), ("truncate", "x.cbz", b"")],
+    [("plant", "a", "PROC"), ("listdir", "a/tmp", None), ("write", "a/tmp/f", b"a")],
+    [("mkdir", "a", False), ("plant", "a/b", "OUT"), ("rmdir", "a/b/d", None)],
+]
 
 
 @pytest.mark.req("ENF-SEC-012")
@@ -124,7 +156,13 @@ STRATEGIES = [Strategy.OPENAT2, Strategy.FALLBACK]
     deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture, HealthCheck.too_slow],
 )
-@given(ops=st.lists(operations, min_size=1, max_size=25))
+@example(ops=KNOWN[0])
+@example(ops=KNOWN[1])
+@example(ops=KNOWN[2])
+@example(ops=KNOWN[3])
+@example(ops=KNOWN[4])
+@example(ops=KNOWN[5])
+@given(ops=attacks())
 def test_fsops_never_escapes_root_with_planted_symlinks(
     tmp_path_factory: pytest.TempPathFactory,
     strategy: Strategy,
@@ -141,7 +179,9 @@ def test_fsops_never_escapes_root_with_planted_symlinks(
     # Nothing the root holds is a regular file or directory that was reached through a link.
     for current, _dirs, files in os.walk(root_dir, followlinks=False):
         for name in files:
-            assert (Path(current) / name).stat().st_dev == root_dir.stat().st_dev
+            path = Path(current) / name
+            if not path.is_symlink():  # planted by the test itself
+                assert path.stat().st_dev == root_dir.stat().st_dev
 
 
 @pytest.mark.req("ENF-SEC-012")

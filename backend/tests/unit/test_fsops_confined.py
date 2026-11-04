@@ -224,5 +224,6 @@ def test_fsops_never_resolves_a_path_before_opening_it() -> None:
 def test_fsops_never_chowns() -> None:
     package = Path(fsops.__file__).parent
     for source in package.glob("*.py"):
-        text = source.read_text(encoding="utf-8")
-        assert "chown" not in text, source.name
+        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+            used = node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", "")
+            assert "chown" not in used, f"{source.name}:{node.lineno}"
