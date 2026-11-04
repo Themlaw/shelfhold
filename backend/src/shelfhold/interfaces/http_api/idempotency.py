@@ -16,6 +16,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from shelfhold.infrastructure.idempotency_store import (
+    Claim,
     Fresh,
     IdempotencyStore,
     InFlight,
@@ -30,19 +31,14 @@ REPLAYED_HEADER = "Idempotent-Replayed"
 MAX_BODY_BYTES = 1024 * 1024  # a keyed request is buffered to be hashed
 MAX_STORED_BYTES = 1024 * 1024
 _KEY = re.compile(r"[\x21-\x7e]{1,255}")
+_DETERMINISTIC_ERRORS = frozenset({400, 404, 409, 422})
 _REPLAYED_HEADERS = ("location", "etag", "content-type")
 
 ActorOf = Callable[[Scope], str]
 
 
-def anonymous_actor(_scope: Scope) -> str:
-    return "anonymous"
-
-
 class IdempotencyMiddleware:
-    def __init__(
-        self, app: ASGIApp, store: IdempotencyStore, actor_of: ActorOf = anonymous_actor
-    ) -> None:
+    def __init__(self, app: ASGIApp, store: IdempotencyStore, actor_of: ActorOf) -> None:
         self.app = app
         self.store = store
         self.actor_of = actor_of
@@ -90,7 +86,7 @@ class IdempotencyMiddleware:
                     extensions=extensions, headers={"Retry-After": "1"},
                 )  # fmt: skip
             case Fresh():
-                await self._run(scope, body, send, actor, key)
+                await self._run(scope, body, send, outcome.claim)
 
     @staticmethod
     async def _read_body(receive: Receive) -> bytes | None:
@@ -108,7 +104,7 @@ class IdempotencyMiddleware:
             if not message.get("more_body", False):
                 return b"".join(chunks)
 
-    async def _run(self, scope: Scope, body: bytes, send: Send, actor: str, key: str) -> None:
+    async def _run(self, scope: Scope, body: bytes, send: Send, claim: Claim) -> None:
         sent = False
 
         async def receive_again() -> Message:
@@ -136,7 +132,7 @@ class IdempotencyMiddleware:
         try:
             await self.app(scope, receive_again, capture)
         except BaseException:
-            await run_in_threadpool(self.store.release, actor_id=actor, key=key)
+            await run_in_threadpool(self.store.release, claim)
             raise
         if response_headers is not None and self._storable(
             status, response_headers, overflow, bytes(captured)
@@ -144,18 +140,19 @@ class IdempotencyMiddleware:
             kept = {n: response_headers[n] for n in _REPLAYED_HEADERS if n in response_headers}
             await run_in_threadpool(
                 self.store.complete,
-                actor_id=actor,
-                key=key,
+                claim,
                 status=status,
                 headers=kept,
                 body=bytes(captured),
             )
         else:
-            await run_in_threadpool(self.store.release, actor_id=actor, key=key)
+            await run_in_threadpool(self.store.release, claim)
 
     @staticmethod
     def _storable(status: int, headers: Headers, overflow: bool, body: bytes) -> bool:
-        if status >= 500 or overflow:
+        # Retained: successes and deterministic client errors. 401, 403, 408, 429, 5xx and the
+        # rest depend on state or time that a retry may have fixed: the key is released.
+        if overflow or not (200 <= status < 300 or status in _DETERMINISTIC_ERRORS):
             return False
         if "no-store" in headers.get("cache-control", "").lower():
             return False

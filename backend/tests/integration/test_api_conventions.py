@@ -1,11 +1,23 @@
 """EF-INT-001 / EF-UX-003: RFC 9457 problems, cursor pagination, idempotency, If-Match, 202."""
 
+import json
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
-from tests.api_env import build_env
+from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.idempotency_store import (
+    IN_FLIGHT_LEASE,
+    Fresh,
+    IdempotencyStore,
+    InFlight,
+    Replay,
+)
+from shelfhold.infrastructure.schema import metadata
+from shelfhold.interfaces.http_api.pagination import encode_cursor
+from shelfhold.interfaces.http_api.preconditions import etag_for_version
+from tests.api_env import T0, build_env
 
 PROBLEM_JSON = "application/problem+json"
 
@@ -209,3 +221,134 @@ def test_long_operation_returns_202_with_job_location(tmp_path: Path) -> None:
     job_id = env.exports_started[0]
     assert response.headers["location"] == f"/api/v1/jobs/{job_id}"
     assert response.json() == {"job_id": job_id, "status_url": f"/api/v1/jobs/{job_id}"}
+
+
+@pytest.mark.req("EF-INT-001")
+def test_unknown_api_path_under_the_spa_is_a_404_problem(tmp_path: Path) -> None:
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / "index.html").write_text("<!doctype html><title>Shelfhold</title>", encoding="utf-8")
+    env = build_env(tmp_path, frontend_dir=build)
+    for path in ("/api/v1/nothing-here", "/api", "/healthz/x"):
+        response = env.client.get(path)
+        assert response.status_code == 404, path
+        assert response.headers["content-type"].startswith(PROBLEM_JSON)
+        assert response.json()["type"] == "/api/v1/problems/not-found"
+    assert env.client.get("/some/client/route").text.startswith("<!doctype html>")
+
+
+@pytest.mark.req("EF-INT-001")
+def test_non_api_405_stays_plain(tmp_path: Path) -> None:
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / "index.html").write_text("<!doctype html><title>Shelfhold</title>", encoding="utf-8")
+    env = build_env(tmp_path, frontend_dir=build)
+    response = env.client.post("/some/client/route")
+    assert response.status_code == 405
+    assert not response.headers["content-type"].startswith(PROBLEM_JSON)
+
+
+@pytest.mark.req("EF-INT-001")
+def test_idempotency_stores_only_deterministic_answers(tmp_path: Path) -> None:
+    env = build_env(tmp_path)
+    for status in (401, 403, 408, 429, 412):
+        headers = {"Idempotency-Key": f"st-{status}"}
+        env.client.post(f"/api/v1/status/{status}", headers=headers)
+        second = env.client.post(f"/api/v1/status/{status}", headers=headers)
+        assert "idempotent-replayed" not in second.headers, status
+    assert env.status_calls == [s for s in (401, 403, 408, 429, 412) for _ in (0, 1)]
+    for status in (404, 409):
+        headers = {"Idempotency-Key": f"st-{status}"}
+        env.client.post(f"/api/v1/status/{status}", headers=headers)
+        assert (
+            env.client.post(f"/api/v1/status/{status}", headers=headers).headers[
+                "idempotent-replayed"
+            ]
+            == "true"
+        )
+
+
+@pytest.mark.req("EF-INT-001")
+def test_idempotency_key_is_scoped_to_the_actor(tmp_path: Path) -> None:
+    env = build_env(tmp_path)
+    key = {"Idempotency-Key": "shared-key"}
+    alice = env.client.post(
+        "/api/v1/things", json={"name": "a"}, headers={**key, "X-Test-Actor": "alice"}
+    )
+    bob = env.client.post(
+        "/api/v1/things", json={"name": "a"}, headers={**key, "X-Test-Actor": "bob"}
+    )
+    assert "idempotent-replayed" not in bob.headers
+    assert alice.json()["id"] != bob.json()["id"]
+    again = env.client.post(
+        "/api/v1/things", json={"name": "a"}, headers={**key, "X-Test-Actor": "alice"}
+    )
+    assert again.json() == alice.json()
+
+
+@pytest.mark.req("EF-INT-001")
+def test_idempotency_requires_an_actor_resolver(tmp_path: Path) -> None:
+    from shelfhold.interfaces.http_api.app import create_http_app
+    from tests.api_env import _Health
+
+    engine = create_db_engine(tmp_path / "x.db")
+    with pytest.raises(ValueError, match="idempotency_requires_actor_of"):
+        create_http_app(
+            health=_Health(),
+            on_startup=lambda: None,
+            version="0",
+            idempotency=IdempotencyStore(engine),
+        )
+
+
+@pytest.mark.req("EF-INT-001")
+def test_lost_idempotency_claim_does_not_overwrite_the_new_owner(tmp_path: Path) -> None:
+    engine = create_db_engine(tmp_path / "claims.db")
+    metadata.create_all(engine)
+    now = [T0]
+    store = IdempotencyStore(engine, clock=lambda: now[0])
+    args = {
+        "actor_id": "a",
+        "key": "k",
+        "method": "POST",
+        "path": "/p",
+        "request_hash": "sha256:" + "a" * 64,
+    }
+    first = store.begin(**args)
+    assert isinstance(first, Fresh)
+    now[0] += IN_FLIGHT_LEASE + timedelta(seconds=1)  # the lease of the first one lapses
+    second = store.begin(**args)  # same request retried: the key is granted again
+    assert isinstance(second, Fresh)
+
+    assert store.complete(first.claim, status=201, headers={}, body=b'{"n":1}') is False
+    store.release(first.claim)  # nor can it delete the new owner's reservation
+    assert isinstance(store.begin(**args), InFlight)
+    assert store.complete(second.claim, status=201, headers={}, body=b'{"n":2}') is True
+    replay = store.begin(**args)
+    assert isinstance(replay, Replay)
+    assert json.loads(replay.body) == {"n": 2}
+
+
+@pytest.mark.req("EF-INT-001")
+@pytest.mark.parametrize(
+    "cursor",
+    [
+        "",  # empty is malformed, not "absent"
+        encode_cursor([2**63]),
+        encode_cursor([-(2**63) - 1]),
+        encode_cursor(["text"]),  # the consumer issues one integer
+        encode_cursor([1, 2]),
+    ],
+)
+def test_cursor_range_layout_and_empty_are_refused(tmp_path: Path, cursor: str) -> None:
+    env = build_env(tmp_path)
+    response = env.client.get("/api/v1/things", params={"cursor": cursor})
+    assert response.status_code == 400
+    assert response.json()["type"] == "/api/v1/problems/invalid-cursor"
+
+
+@pytest.mark.req("EF-INT-001")
+def test_etag_value_refuses_a_comma() -> None:
+    with pytest.raises(ValueError, match="invalid_etag_value"):
+        etag_for_version("1,2")
+    assert etag_for_version("v-1.2") == '"v-1.2"'

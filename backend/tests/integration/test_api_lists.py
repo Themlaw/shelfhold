@@ -73,7 +73,9 @@ def test_since_token_too_old_returns_resync_required(tmp_path: Path) -> None:
 
 
 @pytest.mark.req("EF-INT-001")
-@pytest.mark.parametrize("token", ["", "100", "s1.", "s1.!!!", "s2.MTAw", "s1.LTU", "x" * 300])
+@pytest.mark.parametrize(
+    "token", ["", "100", "s1.", "s1.!!!", "s2.MTAw", "s1.LTU", "x" * 300, encode_since(2**63)]
+)
 def test_since_token_malformed_is_a_400_problem(tmp_path: Path, token: str) -> None:
     env = build_env(tmp_path, extra=_router())
     response = env.client.get("/api/v1/changes", params={"since": token})

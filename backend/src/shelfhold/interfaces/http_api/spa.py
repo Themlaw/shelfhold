@@ -5,8 +5,11 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
+from starlette.requests import Request
 
 from shelfhold.infrastructure.http_headers import IMMUTABLE_CACHE, NO_CACHE
+from shelfhold.interfaces.http_api.catalog import error_code
+from shelfhold.interfaces.http_api.problems import build_problem_response
 
 API_SEGMENTS = frozenset({"api", "healthz", "readyz", "openapi.json"})
 IMMUTABLE_PREFIX = "_app/immutable/"
@@ -37,9 +40,12 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
         return response
 
     @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
-    def spa(path: str) -> Response:
-        if "\0" in path or path.split("/", 1)[0] in API_SEGMENTS:
+    def spa(path: str, request: Request) -> Response:
+        if "\0" in path:
             return Response(status_code=404)
+        if path.split("/", 1)[0] in API_SEGMENTS:  # an API client expects a problem, not a blank
+            request_id = getattr(request.state, "request_id", None)
+            return build_problem_response(error_code("not_found"), request_id=request_id)
         candidate = (root / path).resolve()
         if path and candidate.is_file() and candidate.is_relative_to(root):
             immutable = path.startswith(IMMUTABLE_PREFIX)

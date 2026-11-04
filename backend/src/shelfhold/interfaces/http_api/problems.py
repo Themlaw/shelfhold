@@ -9,8 +9,9 @@ from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 from fastapi import FastAPI
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
@@ -22,6 +23,11 @@ from shelfhold.interfaces.http_api.catalog import error_code
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 REQUEST_ID_HEADER = "X-Request-ID"  # kept in step with middleware.REQUEST_ID_HEADER
+
+
+def is_api_path(path: str) -> bool:
+    return path == "/api" or path.startswith("/api/")
+
 
 _STATUS_TO_CODE = {400: "bad_request", 404: "not_found", 405: "method_not_allowed"}
 
@@ -144,8 +150,10 @@ def install_problem_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(StarletteHTTPException)
-    def _http(request: Request, exc: Exception) -> JSONResponse:
+    async def _http(request: Request, exc: Exception) -> Response:
         error = cast(StarletteHTTPException, exc)
+        if not is_api_path(request.url.path):
+            return await http_exception_handler(request, error)  # the SPA side stays plain
         code = _STATUS_TO_CODE.get(
             error.status_code, "bad_request" if error.status_code < 500 else "internal_error"
         )

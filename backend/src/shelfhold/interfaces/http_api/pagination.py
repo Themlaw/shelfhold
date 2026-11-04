@@ -21,6 +21,7 @@ DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 _MAX_CURSOR_CHARS = 512
 _MAX_KEY_PARTS = 8
+INT_BOUND = 2**63  # SQLite integers: a larger one is never a key we issued
 
 CursorValue = str | int
 
@@ -41,7 +42,10 @@ def encode_cursor(key: Sequence[CursorValue]) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
-def decode_cursor(token: str) -> tuple[CursorValue, ...]:
+def decode_cursor(
+    token: str, shape: Sequence[type[str] | type[int]] | None = None
+) -> tuple[CursorValue, ...]:
+    """Parse a cursor. `shape` is the key layout the consumer issues (one type per part)."""
     try:
         if not token or len(token) > _MAX_CURSOR_CHARS or not token.isascii():
             raise ValueError("size")
@@ -50,16 +54,30 @@ def decode_cursor(token: str) -> tuple[CursorValue, ...]:
         ok = isinstance(value, list) and 0 < len(value) <= _MAX_KEY_PARTS
         if not ok or not all(type(p) in (str, int) for p in value):
             raise ValueError("shape")
+        if any(type(p) is int and not -INT_BOUND <= p < INT_BOUND for p in value):
+            raise ValueError("range")
+        if shape is not None and [type(p) for p in value] != list(shape):
+            raise ValueError("layout")
     except (ValueError, binascii.Error) as exc:
         raise ProblemError("invalid_cursor") from exc
     return tuple(value)
 
 
-def page_params(
-    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
-    cursor: str | None = Query(None),
-) -> PageParams:
-    return PageParams(limit=limit, after=decode_cursor(cursor) if cursor else None)
+def page_params_for(
+    *shape: type[str] | type[int],
+) -> Callable[[int, str | None], PageParams]:
+    """Dependency for a list whose sort key has this layout, e.g. `page_params_for(str, int)`."""
+
+    def page_params(
+        limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+        cursor: str | None = Query(None),
+    ) -> PageParams:
+        # An empty `cursor=` is malformed, not "no cursor" (same as `since=`).
+        return PageParams(
+            limit=limit, after=decode_cursor(cursor, shape) if cursor is not None else None
+        )
+
+    return page_params
 
 
 def make_page[T](

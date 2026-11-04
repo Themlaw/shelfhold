@@ -18,6 +18,7 @@ class ErrorCode:
     code: str
     status: int  # HTTP status when the error is returned by the API
     audience: Audience  # who is expected to act (EF-UX-003)
+    event: bool = False  # also an operating event of the same name (events/operating.py)
 
     @property
     def type_uri(self) -> str:

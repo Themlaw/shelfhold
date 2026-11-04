@@ -45,7 +45,7 @@ def decode_since(token: str) -> Since:
         body = token[len(_PREFIX) :]
         text = base64.b64decode(body + "=" * (-len(body) % 4), altchars=b"-_", validate=True)
         seq = int(text.decode("ascii"))
-        if seq < 0 or str(seq) != text.decode("ascii"):
+        if not 0 <= seq < 2**63 or str(seq) != text.decode("ascii"):
             raise ValueError("range")
     except (ValueError, binascii.Error) as exc:
         raise ProblemError("invalid_cursor") from exc

@@ -14,7 +14,6 @@ from shelfhold.interfaces.http_api.health import HealthPort, build_health_router
 from shelfhold.interfaces.http_api.idempotency import (
     ActorOf,
     IdempotencyMiddleware,
-    anonymous_actor,
 )
 from shelfhold.interfaces.http_api.middleware import (
     RequestContextMiddleware,
@@ -42,7 +41,7 @@ def create_http_app(
     frontend_dir: Path | None = None,
     routers: Sequence[APIRouter] = (),
     idempotency: IdempotencyStore | None = None,
-    actor_of: ActorOf = anonymous_actor,
+    actor_of: ActorOf | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -62,6 +61,8 @@ def create_http_app(
     install_problem_handlers(app)
     install_problem_openapi(app)
     if idempotency is not None:
+        if actor_of is None:  # a ledger without actors would share keys between users
+            raise ValueError("idempotency_requires_actor_of")
         app.add_middleware(IdempotencyMiddleware, store=idempotency, actor_of=actor_of)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)  # outermost: wraps every response

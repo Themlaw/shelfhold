@@ -5,27 +5,19 @@ from pathlib import Path
 
 import pytest
 
+from shelfhold.events.operating import (
+    M1B,
+    OPERATING_EVENTS,
+    WAITING_STATE_EVENT,
+    WAITING_WITHOUT_EVENT,
+)
+from shelfhold.events.waiting_state import WaitingState
 from shelfhold.i18n import load_catalog
 from shelfhold.infrastructure.fetcher import errors as fetch_errors
 from shelfhold.interfaces.http_api.catalog import all_error_codes, error_code_modules
 from shelfhold.sdk import source as sdk_source
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
-
-# Operating events of EF-INT-006 that M1a emits: each has a code of the same identifier.
-EF_INT_006_EVENTS = {
-    "backup.failed", "backup.stale", "disk.low", "job.dead_lettered", "target.unreachable",
-    "target.version_unsupported", "reconcile.drift", "secret.undecryptable",
-    "mount.sentinel_missing", "source.broken", "source.not_loaded", "source.downloads_dropped",
-    "series.stale", "source.version_unsupported", "target.key_expiring",
-    "target.foreign_writer_detected", "instance.lease_conflict", "unit.safeguard_failed",
-    "target.instance_changed", "target.forbidden", "target.not_indexed", "source.auth_expired",
-    "wake.deferred", "metadata.provider_down", "unit.safeguard_backlog", "notify.failed",
-    "target.permission_denied", "target.child_exposure", "source.auth_mode_unsupported",
-    "instance.restored_behind", "series.tombstoned_upstream", "tombstone.unverified",
-    "tombstone.migration_hit", "tombstone.key_unknown", "target.route_missing",
-    "tombstone.root_mismatch", "source.dns_blocked",
-}  # fmt: skip
 
 
 def _subclasses(base: type) -> list[type]:
@@ -63,7 +55,38 @@ def test_error_catalog_codes_unique_and_type_uris_stable() -> None:
 
 @pytest.mark.req("EF-UX-003", "EF-INT-006")
 def test_error_catalog_has_a_code_for_every_ef_int_006_event() -> None:
-    assert EF_INT_006_EVENTS - {c.code for c in all_error_codes()} == set()
+    """Both ways: every event has its code, and every failure-matrix code is an event."""
+    codes = all_error_codes()
+    declared = {c.code for c in codes}
+    flagged = {c.code for c in codes if c.event}
+    assert OPERATING_EVENTS - declared == set(), "event without a code"
+    assert flagged - OPERATING_EVENTS == set(), "failure-matrix code that is not an event"
+    assert OPERATING_EVENTS - flagged == set(), "event whose code is not flagged"
+    assert M1B <= OPERATING_EVENTS
+    # Follow events (Q3e) and the late additions are present.
+    for name in (
+        "source.fallback",
+        "series.gap",
+        "source.instance_changed",
+        "tombstone.journal_truncated",
+    ):
+        assert name in OPERATING_EVENTS
+
+
+@pytest.mark.req("EF-UX-003", "EF-INT-023")
+def test_every_waiting_state_has_its_event_or_is_declared_without() -> None:
+    assert set(WAITING_STATE_EVENT) | WAITING_WITHOUT_EVENT == set(WaitingState)
+    assert not set(WAITING_STATE_EVENT) & WAITING_WITHOUT_EVENT
+    assert set(WAITING_STATE_EVENT.values()) <= OPERATING_EVENTS
+    assert len(set(WAITING_STATE_EVENT.values())) == len(WAITING_STATE_EVENT)  # one event each
+
+
+@pytest.mark.req("EF-UX-003")
+def test_job_ledger_error_codes_are_in_the_catalog() -> None:
+    from shelfhold.jobs.ledger import PREEMPTED
+
+    declared = {c.code for c in all_error_codes()}
+    assert {PREEMPTED, "job.unknown_kind", "job.failed"} <= declared
 
 
 @pytest.mark.req("EF-UX-003")

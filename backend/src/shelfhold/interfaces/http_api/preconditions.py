@@ -6,7 +6,7 @@ from shelfhold.interfaces.http_api.problems import ProblemError
 def etag_for_version(version: int | str) -> str:
     """Strong validator derived from a version counter or a content hash."""
     text = str(version)
-    if not text or '"' in text or any(ord(c) < 0x21 or ord(c) > 0x7E for c in text):
+    if not text or '"' in text or "," in text or any(ord(c) < 0x21 or ord(c) > 0x7E for c in text):
         raise ValueError("invalid_etag_value")
     return f'"{text}"'
 
