@@ -34,11 +34,11 @@
     "globals": "^17.13.0",
     "jsdom": "^30.1.3",
     "msw": "^2.15.0",
-    "svelte": "^5.57.2",
+    "svelte": "^5.57.3",
     "svelte-check": "^4.7.7",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.72.0",
-    "vite": "^8.3.4",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
     "vitest": "^5.0.5"
   },
   "dependencies": {
