@@ -9,6 +9,7 @@ the segment).
 
 import random
 from contextlib import ExitStack
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 import pytest
@@ -25,11 +26,13 @@ from hypothesis.stateful import (
 from shelfhold.catalog.domain.numbering import (
     NUMBER_NORMALIZER_ID,
     NumberError,
+    UnitNumber,
     follow_from,
     is_beyond,
     parse_number,
 )
-from shelfhold.catalog.lang import normalize_lang
+from shelfhold.catalog.domain.placement import place_of
+from shelfhold.catalog.lang import LanguageError, normalize_lang
 from shelfhold.catalog.public import BindingRef, EditionRef, IncomingUnit, IngestOutcome
 from tests.catalog_env import Harness, at, harness
 
@@ -127,7 +130,17 @@ def check_i23(h: Harness) -> None:
         assert row["lang"] == normalize_lang(str(row["lang_raw"])).tag
         assert str(row["lang"]).lower() not in {"all", "multi", "und", "mul"}
     for row in h.rows("SELECT lang, lang_raw FROM unit_variant"):
-        assert row["lang"] == "und" or row["lang"] == normalize_lang(str(row["lang"])).tag
+        assert row["lang"] == expected_variant_lang(row["lang_raw"])  # type: ignore[arg-type]
+
+
+def expected_variant_lang(raw: str | None) -> str:
+    """`und` unless the source gave a tag `normalize_lang()` accepts (a placeholder is not one)."""
+    if raw is None:
+        return "und"
+    try:
+        return str(normalize_lang(raw).tag)
+    except LanguageError:
+        return "und"
 
 
 def check_i29(h: Harness) -> None:
@@ -143,23 +156,32 @@ def check_i29(h: Harness) -> None:
         assert row["label"] == " ".join(str(row["label_raw"]).casefold().split())
 
 
+def parsed(raw: object) -> UnitNumber | None:
+    """What the normalizer makes of a stored raw number (`None`: unreadable, so unnumbered)."""
+    try:
+        return parse_number(str(raw))
+    except NumberError:
+        return None
+
+
 def check_i34(h: Harness) -> None:
-    for row in h.rows("SELECT number_segment, number_segment_ordinal FROM unit"):
-        ordinal = int(row["number_segment_ordinal"])  # type: ignore[call-overload]
-        assert row["number_segment"] == (f"S{ordinal}" if ordinal else "")
+    """The place carries the segment the normalizer finds in the raw number, and the watermark
+    comparison (segment ordinal first) agrees with the pair computed from that raw number."""
+    units = h.rows(
+        "SELECT id, edition_id, number_raw, number_segment, number_segment_ordinal FROM unit"
+    )
+    for row in units:
+        p = parsed(row["number_raw"])
+        assert row["number_segment"] == (p.segment if p else "")
+        assert row["number_segment_ordinal"] == (p.segment_ordinal if p else 0)
     for edition in h.rows("SELECT id FROM edition"):
         for mark in ((0, Decimal(0)), (1, Decimal(2)), (2, Decimal(1))):
-            beyond = set(h.catalog.units_beyond(str(edition["id"]), mark))
-            expected = {
-                str(r["id"])
-                for r in h.rows(
-                    "SELECT id, number_norm, number_segment_ordinal FROM unit "
-                    "WHERE edition_id = :e AND track <> 'unnumbered'",
-                    e=edition["id"],
-                )
-                if (int(r["number_segment_ordinal"]), Decimal(str(r["number_norm"]))) > mark  # type: ignore[call-overload]
-            }
-            assert beyond == expected
+            expected = set()
+            for row in units:
+                p = parsed(row["number_raw"])
+                if row["edition_id"] == edition["id"] and p and p.norm and is_beyond(p, mark):
+                    expected.add(str(row["id"]))
+            assert set(h.catalog.units_beyond(str(edition["id"]), mark)) == expected
 
 
 def check_i32(h: Harness) -> None:
@@ -182,8 +204,38 @@ def check_i32(h: Harness) -> None:
             assert old and old[0]["source_binding_id"] == v["source_binding_id"]
 
 
+@dataclass
+class Shadow:
+    """What the test believes about a Variant, computed apart from the repositories."""
+
+    id: str
+    binding: str
+    remote: str
+    unit_id: str
+    place: tuple[object, ...]
+    team: str | None
+    hint: str | None
+    arrival: int
+    removed: bool = False
+
+
+def shadow_place(edition_id: str, raw: str, order: int) -> tuple[object, ...]:
+    try:
+        number = parse_number(raw, source_order=order)
+    except NumberError:
+        number = replace(parse_number(None, source_order=order), raw=raw)
+    p = place_of(number)
+    if p.unnumbered:
+        return (edition_id, "unnumbered", p.source_order)
+    return (edition_id, p.track, p.segment, p.number_norm, p.part)
+
+
+def shadow_team(label: str | None) -> str | None:
+    return " ".join(label.casefold().split()) if label and label.strip() else None
+
+
 class ModelInvariants(RuleBasedStateMachine):
-    """Random catalog histories; every invariant is checked after every step."""
+    """Random histories: a shadow model predicts each outcome, invariants checked every step."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -192,10 +244,9 @@ class ModelInvariants(RuleBasedStateMachine):
         self.editions: list[EditionRef] = []
         self.bindings: dict[str, list[BindingRef]] = {}
         self.clock = 0
-        # independent shadow model: variant -> (binding, remote id), and the order of arrival
-        self.identity: dict[str, tuple[str, str]] = {}
-        self.arrival: dict[str, tuple[int, str]] = {}
-        self.units_of: dict[str, str] = {}
+        self.shadow: dict[str, Shadow] = {}
+        self.by_key: dict[tuple[str, str], str] = {}
+        self.in_conflict: set[str] = set()
 
     def teardown(self) -> None:
         self.stack.close()
@@ -223,6 +274,15 @@ class ModelInvariants(RuleBasedStateMachine):
         self.h.deactivate(current[-1])
         current.append(self.h.binding(edition))
 
+    def peers(
+        self, s_binding: str, team: str | None, place: tuple[object, ...], skip: str = ""
+    ) -> list[Shadow]:
+        return [
+            o
+            for o in self.shadow.values()
+            if (o.binding, o.team, o.place) == (s_binding, team, place) and o.id != skip
+        ]
+
     @rule(
         i=st.integers(0, 5),
         b=st.integers(0, 3),
@@ -245,13 +305,45 @@ class ModelInvariants(RuleBasedStateMachine):
         team=st.sampled_from([None, "A", "B", " a "]),
         order=st.integers(0, 3),
         hint=st.sampled_from([None, "v1", "v2"]),
+        lang=st.sampled_from([None, "en_us", "multi", "ja"]),
     )
     def ingest(
-        self, i: int, b: int, remote: str, raw: str, team: str | None, order: int, hint: str | None
+        self,
+        i: int,
+        b: int,
+        remote: str,
+        raw: str,
+        team: str | None,
+        order: int,
+        hint: str | None,
+        lang: str | None,
     ) -> None:
         edition = self.editions[i % len(self.editions)]
         binding = self.bindings[edition.id][b % len(self.bindings[edition.id])]
         self.clock += 1
+        known = self.by_key.get((binding.id, remote))
+        place = shadow_place(edition.id, raw, order)
+        key = shadow_team(team)
+        # prediction, before the call
+        rival: list[Shadow] = []
+        if known:
+            me = self.shadow[known]
+            rival = [o for o in self.peers(me.binding, me.team, me.place, known) if not o.removed]
+            changed = hint is not None and hint != me.hint
+            expected = IngestOutcome.REVISION if changed else IngestOutcome.UNCHANGED
+            opens_conflict = me.removed and bool(rival)
+        else:
+            same = self.peers(binding.id, key, place)
+            live = [o for o in same if not o.removed]
+            gone = [o for o in same if o.removed]
+            expected = (
+                IngestOutcome.NUMBERING_CONFLICT
+                if live
+                else IngestOutcome.SUPERSEDING
+                if gone
+                else IngestOutcome.NEW_VARIANT
+            )
+            opens_conflict = bool(live)
         result = self.h.catalog.ingest(
             IncomingUnit(
                 binding=binding,
@@ -261,33 +353,84 @@ class ModelInvariants(RuleBasedStateMachine):
                 source_order=order,
                 team_label=team,
                 revision_hint=hint,
+                lang=lang,
             )
         )
-        key = (binding.id, remote)
-        if result.outcome in {
-            IngestOutcome.NEW_VARIANT,
-            IngestOutcome.SUPERSEDING,
-            IngestOutcome.NUMBERING_CONFLICT,
-        }:
-            assert key not in self.identity.values()
-            self.identity[result.variant_id] = key
-            self.arrival[result.variant_id] = (self.clock, result.variant_id)
+        assert result.outcome == expected
+        assert (result.suggestion_id is not None) == opens_conflict
+        if known:
+            assert result.variant_id == known  # a known pair is the same Variant
+            me.removed = False
+            if expected is IngestOutcome.REVISION:
+                me.hint = hint
+            if opens_conflict:
+                older = min(rival, key=lambda o: o.arrival)
+                self.in_conflict |= {older.id, known}
+            return
+        if expected is IngestOutcome.NUMBERING_CONFLICT:
+            older = min(live, key=lambda o: o.arrival)
+            self.in_conflict |= {older.id, result.variant_id}
+        if expected is IngestOutcome.SUPERSEDING:
+            assert result.supersedes_variant_id == max(gone, key=lambda o: o.arrival).id
         else:
-            assert self.identity[result.variant_id] == key  # a known pair is the same Variant
-        self.units_of[result.variant_id] = result.unit_id
+            assert result.supersedes_variant_id is None
+        self.shadow[result.variant_id] = Shadow(
+            result.variant_id, binding.id, remote, result.unit_id, place, key, hint, self.clock
+        )
+        self.by_key[(binding.id, remote)] = result.variant_id
 
     @rule(n=st.integers(0, 40))
     def remove(self, n: int) -> None:
-        if self.identity:
-            variant = sorted(self.identity)[n % len(self.identity)]
+        if self.shadow:
+            variant = sorted(self.shadow)[n % len(self.shadow)]
             self.clock += 1
             self.h.catalog.mark_removed(variant, at(self.clock))
+            self.shadow[variant].removed = True
 
     @rule(n=st.integers(0, 40))
     def elect(self, n: int) -> None:
-        units = sorted(set(self.units_of.values()))
-        if units:
-            self.h.catalog.elect_preferred(units[n % len(units)])
+        units = sorted({s.unit_id for s in self.shadow.values()})
+        if not units:
+            return
+        unit_id = units[n % len(units)]
+        ranks = {
+            str(r["team_id"]): int(r["rank"])  # type: ignore[call-overload]
+            for r in self.h.rows(
+                "SELECT p.team_id, p.rank FROM team_priority p "
+                "JOIN unit u ON u.edition_id = p.edition_id WHERE u.id = :u",
+                u=unit_id,
+            )
+        }
+        team_of = {
+            str(r["id"]): r["team_id"]
+            for r in self.h.rows(
+                "SELECT id, team_id FROM unit_variant WHERE unit_id = :u", u=unit_id
+            )
+        }
+        candidates = [
+            s
+            for s in self.shadow.values()
+            if s.unit_id == unit_id and not s.removed and s.id not in self.in_conflict
+        ]
+        oracle = min(
+            candidates,
+            key=lambda s: (
+                ranks.get(str(team_of[s.id])) is None,
+                ranks.get(str(team_of[s.id]), 0),
+                s.arrival,
+            ),
+            default=None,
+        )
+        chosen = self.h.catalog.elect_preferred(unit_id)
+        assert chosen == (oracle.id if oracle else None)
+        flagged = [
+            str(r["id"])
+            for r in self.h.rows(
+                "SELECT id FROM unit_variant WHERE unit_id = :u AND preferred",
+                u=unit_id,
+            )
+        ]
+        assert flagged == ([oracle.id] if oracle else [])
 
     @rule(i=st.integers(0, 5), swap=st.booleans())
     def prioritise(self, i: int, swap: bool) -> None:
@@ -315,17 +458,30 @@ class ModelInvariants(RuleBasedStateMachine):
             str(r["id"]): (str(r["source_binding_id"]), str(r["remote_unit_id"]))
             for r in self.h.rows("SELECT id, source_binding_id, remote_unit_id FROM unit_variant")
         }
-        assert stored == self.identity  # I32: no remote id rewritten, none lost
+        assert stored == {s.id: (s.binding, s.remote) for s in self.shadow.values()}  # I32
+
+    @invariant()
+    def one_live_variant_per_binding_team_place(self) -> None:
+        """Two live Variants of one binding and Team on a place exist only under a conflict."""
+        rows = self.h.rows(
+            "SELECT id, source_binding_id, team_id, unit_id "
+            "FROM unit_variant WHERE removed_at IS NULL"
+        )
+        groups: dict[tuple[object, ...], list[str]] = {}
+        for r in rows:
+            groups.setdefault((r["source_binding_id"], r["team_id"], r["unit_id"]), []).append(
+                str(r["id"])
+            )
+        for members in groups.values():
+            if len(members) > 1:
+                assert set(members) <= self.in_conflict
 
     @invariant()
     def oldest_variant_keeps_the_place(self) -> None:  # I4
-        for unit_id in set(self.units_of.values()):
-            rows = self.h.rows(
-                "SELECT id, removed_at FROM unit_variant WHERE unit_id = :u", u=unit_id
-            )
-            live = [str(r["id"]) for r in rows if r["removed_at"] is None]
-            pool = live or [str(r["id"]) for r in rows]
-            assert self.h.catalog.place_owner(unit_id) == min(pool, key=lambda v: self.arrival[v])
+        for unit_id in {s.unit_id for s in self.shadow.values()}:
+            mine = [s for s in self.shadow.values() if s.unit_id == unit_id]
+            pool = [s for s in mine if not s.removed] or mine
+            assert self.h.catalog.place_owner(unit_id) == min(pool, key=lambda s: s.arrival).id
 
 
 @pytest.mark.req(
@@ -335,7 +491,9 @@ def test_model_invariants_property_suite() -> None:
     """ENF-QUAL-006: stateful suite on a migrated database (I1-I5, I15, I23, I27, I29, I32, I34)."""
     run_state_machine_as_test(
         ModelInvariants,
-        settings=settings(max_examples=15, stateful_step_count=30, deadline=None, derandomize=True),
+        settings=settings(
+            max_examples=100, stateful_step_count=25, deadline=None, derandomize=True
+        ),
     )
 
 

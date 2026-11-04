@@ -66,3 +66,10 @@ Dernière migration libre de M1a. Les colonnes viennent de 02 (3.2, 3.3, 3.4, pu
 6. **Préférence minimale.** `elect_preferred(unit)` ne prépare que l'invariant I3 (une seule Variante `preferred` par Unité, vivante) : rang dans la liste de priorité de l'Édition, puis la plus ancienne. La règle d'EF-BIB-028 (équipe majoritaire sur disque, inactivité) reste au lot d'export.
 7. **`text_version`.** Valeur de clé dérivée de la référence : `contributor:<ULID>` ou `label:<libellé contrôlé>` (`abridged`, `youth`, `revised`). `translation_discriminant(kind, nature)` : `community` donne une Équipe, `published` une `text_version`, `unknown` et `machine` suivent le `kind`.
 8. **Suite d'invariants.** `tests/property/test_model_invariants.py` : machine d'états Hypothesis sur une base SQLite migrée (copie d'un gabarit par exemple), modèle d'ombre indépendant pour I4 et I32. Invariants couverts : I1, I3, I4, I5, I15, I23, I27, I29, I32, I34 ; I2 par `test_n_teams_m_chapters_yield_m_units_nm_variants_m_files`.
+
+### L15 : suites de la relecture
+
+9. **Conflit ouvert.** Toute Variante nommée par une suggestion `numbering_conflict` ouverte (l'ancienne comme la nouvelle) est exclue de `elect_preferred` : rien n'est exporté pour cette place sans décision de l'admin. Une Variante retirée qui réapparaît alors qu'une autre Variante vivante (même liaison, même équipe) a pris sa place ouvre le même conflit.
+10. **Rattachement par titre (EF-BIB-034).** Une Unité non numérotée dont le titre normalisé (NFC, casse pliée) est celui d'une autre Unité de l'Édition ouvre une suggestion `unnumbered_title_match` entre les deux Variantes. Aucune action automatique, et cette suggestion ne bloque pas l'export.
+11. **Révision.** Seuls les champs fournis par la source comptent (`None` n'est pas un changement) ; la nouvelle ligne reprend la valeur précédente d'un champ absent.
+12. **Concurrence.** `ingest_isolated(engine, item)` ouvre `BEGIN IMMEDIATE` et rejoue une seule fois sur `IntegrityError` ou `SQLITE_BUSY`. `Catalog.ingest` reste dans la transaction de l'appelant. La liaison est vérifiée une fois par item et son Édition mise en cache pour la durée de vie du `Catalog`.
