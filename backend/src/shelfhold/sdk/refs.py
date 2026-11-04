@@ -11,7 +11,9 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
-from shelfhold.sdk.models import LanguageTag, SdkModel
+from shelfhold.sdk.age import AgeRating
+from shelfhold.sdk.lang import LanguageTag
+from shelfhold.sdk.models import SdkModel
 
 Nature = Literal["published", "community", "machine", "unknown"]
 
@@ -54,7 +56,7 @@ class SeriesInfo(SdkModel):
     authors: list[str] = Field(default_factory=list)
     external_ids: dict[str, str] = Field(default_factory=dict)
     series_hint: str | None = None
-    # `age_rating` (sdk.age.AgeRating) joins this model with the age module (lot L14).
+    age_rating: AgeRating | None = None  # suggested by the source; the host decides (EF-EXP-011)
 
 
 class UnitInfo(SdkModel):

@@ -14,6 +14,7 @@ from shelfhold.sdk.connected import (
     TicketState,
 )
 from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
+from shelfhold.sdk.lang import LanguageTag
 from shelfhold.sdk.models import API_VERSION, Cursor, FilterSpec, Page, PluginKind, RateLimit
 from shelfhold.sdk.refs import (
     FileAsset,
@@ -134,7 +135,7 @@ class FakeRangedConnectedService:
             version="1.0.0",
             api=API_VERSION,
             name="Fake ranged connected service",
-            langs=["en"],
+            langs=[LanguageTag("en")],
             content_kinds={"file"},
             url_patterns=[],
             capabilities=Capability.SEARCH | Capability.RANGED_CONTENT,
@@ -187,7 +188,7 @@ class FakeRangedConnectedService:
                     number_sort=Decimal(n),
                     volume_label="Vol.1" if first_volume else "Vol.2",
                     volume_closed=first_volume,
-                    lang="en",
+                    lang=LanguageTag("en"),
                     memo={"fetch_handle": self.handle_offset + n},
                 )
             )

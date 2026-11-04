@@ -10,6 +10,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from shelfhold.sdk import connected, export_target, fetcher, models, refs, source
+from shelfhold.sdk.age import AgeRating
 
 OPAQUE = "opaque-handle"
 URL = "https://a.invalid/t"
@@ -98,7 +99,12 @@ def _samples() -> dict[type[BaseModel], BaseModel]:
             source_key="sample:1", name="Sub", lang="mul", content_warning="mixed", limit_key="up-1"
         ),
         _series(),
-        refs.SeriesInfo(ref=_series(), title="A series", external_ids={"isbn": "x"}),
+        refs.SeriesInfo(
+            ref=_series(),
+            title="A series",
+            external_ids={"isbn": "x"},
+            age_rating=AgeRating(min_age=18, x=True),
+        ),
         _unit(),
         _image_request(),
         refs.ScrambleInfo(processor="descramble", params={"n": 3}),
@@ -243,5 +249,5 @@ def test_typos_exceptions_are_exact_identifiers_not_global_words() -> None:
 
     config = tomllib.loads((Path(__file__).parents[3] / "typos.toml").read_text(encoding="utf-8"))
     words = config["default"]["extend-words"]
-    assert set(words) == {"cours", "sur"}  # the French words only
+    assert set(words) == {"cours", "sur", "opf"}  # French words and the OPF package document
     assert config["default"]["extend-identifiers"] == {"ser_json_bytes": "ser_json_bytes"}

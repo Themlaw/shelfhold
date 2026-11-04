@@ -15,12 +15,10 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator, WithJsonSchema
 
+from shelfhold.sdk.lang import LanguageTag
+
 API_VERSION = 1
 """Major of the plugin data contract. The host accepts API_VERSION and API_VERSION - 1 (shim)."""
-
-LanguageTag = str
-"""BCP 47 tag. Validated and canonicalised by the host, never by the plugin, which forwards the
-value it received (ENF-I18N-005, ADR-0042)."""
 
 
 class SdkModel(BaseModel):

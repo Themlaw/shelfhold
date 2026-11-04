@@ -7,11 +7,11 @@ from typing import Annotated, Any, Literal, Protocol
 from pydantic import Field, PlainSerializer, PlainValidator, WithJsonSchema
 
 from shelfhold.sdk.fetcher import Fetcher
+from shelfhold.sdk.lang import LanguageTag
 from shelfhold.sdk.models import (
     AuthFlow,
     Cursor,
     FilterSpec,
-    LanguageTag,
     Page,
     PluginManifest,
     RateLimit,
