@@ -121,6 +121,7 @@ def test_broken_migration_aborts_with_explicit_log(
     # The half-applied DDL is gone: the database is exactly what it was.
     assert current_revision(settings.database_path) == "0001"
     assert "extra" not in table_names(settings.database_path)
+    assert settings.database_path.stat().st_mode & 0o777 == 0o600  # restore keeps it private
     # Once the revision is fixed, the next run succeeds.
     write_extra_revision(scripts, CREATE_ONLY)
     result = migrate(settings, script_location=scripts)

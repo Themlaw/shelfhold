@@ -71,6 +71,7 @@ def _show_config(resolved: ResolvedSettings, as_json: bool) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    os.umask(0o077)  # before any file is created: database, state and logs are owner-only
     args = _build_parser().parse_args(argv)
     try:
         resolved = _resolve()

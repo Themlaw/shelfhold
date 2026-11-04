@@ -213,8 +213,15 @@ def _restore_database(backup: Path | None, database: Path) -> None:
         database.unlink(missing_ok=True)  # the run created it
         return
     temporary = database.with_name(database.name + ".restore")
-    shutil.copyfile(backup, temporary)
+    with backup.open("rb") as source:
+        descriptor = os.open(temporary, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+        with os.fdopen(descriptor, "wb") as target:
+            shutil.copyfileobj(source, target)
+            target.flush()
+            os.fsync(target.fileno())
+    os.chmod(temporary, 0o600)  # an existing file keeps its old mode otherwise
     os.replace(temporary, database)
+    _fsync_directory(database.parent)
 
 
 def _steps_after(script: ScriptDirectory, current: str | None) -> list[str]:

@@ -3,7 +3,7 @@
 # Before 0.1.0 only the `edge` tag exists; pin X.Y once releases are published.
 #
 # Hardened by default (ENF-SEC-006). Shelfhold still starts if you run it differently
-# (root, writable filesystem): `shelfhold status` then warns and points back to this profile.
+# (root, writable filesystem), but this profile is the one that is tested.
 #
 # Host directories must be writable by uid 1000:  mkdir -p data store && chown 1000:1000 data store
 
@@ -16,7 +16,7 @@ x-shelfhold: &shelfhold
   ulimits:
     core: 0            # no core dump of decrypted data
   environment: &shelfhold-env
-    TZ: Europe/Paris
+    TZ: Etc/UTC
   volumes:
     - ./data:/data     # database, config, thumbnails (local disk, SSD advised, not NFS)
     - ./store:/store   # kept copies only; a separate volume from /data (ENF-OPS-012)

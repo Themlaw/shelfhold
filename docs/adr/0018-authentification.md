@@ -9,7 +9,7 @@ decision-makers: mainteneur
 > **Amendée le 2026-11-02 (passe 1).** En cas de divergence, la section « Amendement passe 1 » prévaut sur le texte d'origine, conservé pour l'historique.
 
 ## Contexte et problème
-Shelfhold est exposé derrière un reverse proxy (Pangolin dans le foyer de référence ; aucun proxy n'est supposé depuis l'amendement porteur 1), utilisé par un foyer (dont des enfants) et consommé par des clients non navigateur (OPDS, KOReader, CLI, webhooks, plus tard Mihon et Kobo). Kavita et Suwayomi ont dû greffer le multi-utilisateur et OIDC après coup (Suwayomi #298 restée longtemps ouverte ; comptes utilisateurs fusionnés en 2026 par la PR #623, voir l'amendement passe 5). Les demandes OIDC figurent parmi les plus votées (CWA #90 : 73 👍, ABS #998 : 54 👍, Kavita #2518 : 47 👍).
+Shelfhold est exposé derrière un reverse proxy (par exemple un proxy générique comme Caddy ou Traefik ; aucun proxy n'est supposé depuis l'amendement porteur 1), utilisé par un foyer (dont des enfants) et consommé par des clients non navigateur (OPDS, KOReader, CLI, webhooks, plus tard Mihon et Kobo). Kavita et Suwayomi ont dû greffer le multi-utilisateur et OIDC après coup (Suwayomi #298 restée longtemps ouverte ; comptes utilisateurs fusionnés en 2026 par la PR #623, voir l'amendement passe 5). Les demandes OIDC figurent parmi les plus votées (CWA #90 : 73 👍, ABS #998 : 54 👍, Kavita #2518 : 47 👍).
 
 ## Facteurs de décision
 - Intégration au reverse proxy (forward-auth) sans usurpation d'en-tête.

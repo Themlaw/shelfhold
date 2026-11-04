@@ -55,7 +55,7 @@ def wait_for_state(client: TestClient, state: str, timeout: float = 20) -> dict[
 
 
 @pytest.mark.req("ENF-OPS-003", "ENF-OPS-002")
-def test_healthz_reports_migrating_while_a_real_migrate_process_runs(
+def test_healthz_reports_migrating_state(
     settings: Settings, slow_migrator: subprocess.Popen[bytes]
 ) -> None:
     with TestClient(create_app(settings)) as client:

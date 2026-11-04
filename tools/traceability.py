@@ -4,7 +4,8 @@
 Standard library only. Reads the requirement list and milestones from
 docs/spec/01-cahier-des-charges.md (EF-/ENF- tables) and the per-milestone
 "Exigences couvertes" lists of docs/spec/03-roadmap-tdd.md, collects the `req`
-markers of the tests, writes docs/traceability/<milestone>.md and exits 1 when,
+markers of the tests, writes the matrix to the path given by --output (never committed:
+CI publishes it as an artifact) and exits 1 when,
 for the requested milestone, a requirement has no test, a test cites an unknown
 ID, or a test has no marker and is not listed in tools/traceability-exceptions.toml.
 
@@ -279,6 +280,11 @@ def load_out_of_required_ci(root: Path) -> list[dict[str, Any]]:
     return _load_table(root, "out_of_required_ci", ("path", "workflow"))
 
 
+def load_partial(root: Path) -> list[dict[str, Any]]:
+    """Requirements honestly declared PARTIELLE: tested in part, completion milestone named."""
+    return _load_table(root, "partial", ("requirement", "milestone"))
+
+
 def load_deferred(root: Path) -> list[dict[str, Any]]:
     return _load_table(root, "deferred", ("requirement", "aspect"))
 
@@ -304,6 +310,7 @@ def render(
     issues: list[str],
     exceptions: list[dict[str, Any]],
     deferred: list[dict[str, Any]],
+    partial: dict[str, dict[str, Any]],
 ) -> str:
     covered = [r for r in required if by_req.get(r) or cond_req.get(r)]
     out = [
@@ -319,7 +326,9 @@ def render(
     for r in required:
         tests = by_req.get(r, [])
         cond = cond_req.get(r, [])
-        if tests:
+        if r in partial:
+            status = f"PARTIELLE (complétée en {partial[r]['milestone']})"
+        elif tests:
             status = "couverte"
         elif cond:
             status = "COUVERTE (hors CI requise)"
@@ -337,6 +346,10 @@ def render(
         f"- `{e['path']}`{(' (' + ', '.join(e.get('tests') or [e['test']]) + ')') if (e.get('tests') or e.get('test')) else ''} : {e['reason']}"
         for e in exceptions
     ] or ["Aucun."]
+    out += ["", "## Exigences partielles déclarées", ""]
+    out += [
+        f"- {r} : jusqu'à {p['milestone']} — {p['reason']}" for r, p in sorted(partial.items())
+    ] or ["Aucune."]
     out += ["", "## Volets reportés (exigences à plusieurs volets)", ""]
     out += [
         f"- {d['requirement']} : {d['aspect']} — {d['reason']}" for d in deferred
@@ -348,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--milestone", required=True, help="e.g. M0")
     ap.add_argument("--root", default=str(Path(__file__).resolve().parents[1]))
-    ap.add_argument("--output", help="default: docs/traceability/<milestone>.md")
+    ap.add_argument("--output", required=True, help="where to write the matrix (not committed)")
     args = ap.parse_args(argv)
     ms = args.milestone
     if not MILESTONE_RE.fullmatch(ms):
@@ -393,14 +406,14 @@ def main(argv: list[str] | None = None) -> int:
                 f"{r}: couverte seulement hors CI requise, workflow non justifié dans {EXCEPTIONS}"
             )
 
+    partial = {p["requirement"]: p for p in load_partial(root)}
+    for r in partial:
+        if r not in reqs:
+            errors.append(f"{r}: exigence partielle inconnue de 01")
     matrix = render(
-        ms, required, reqs, by_req, cond_req, issues, exceptions, load_deferred(root)
+        ms, required, reqs, by_req, cond_req, issues, exceptions, load_deferred(root), partial
     )
-    out = (
-        Path(args.output)
-        if args.output
-        else root / "docs" / "traceability" / f"{ms}.md"
-    )
+    out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(matrix, encoding="utf-8")
     for i in issues:
