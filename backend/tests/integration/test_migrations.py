@@ -29,8 +29,8 @@ REVISION_TEMPLATE = '''"""test revision"""
 
 from alembic import op
 
-revision = "0002"
-down_revision = "0001"
+revision = "9000"
+down_revision = "{down}"
 branch_labels = None
 depends_on = None
 
@@ -46,8 +46,8 @@ def downgrade() -> None:
 
 def write_extra_revision(scripts: Path, body: str) -> None:
     indented = body.replace("\n", "\n    ")
-    (scripts / "versions" / "0002_extra.py").write_text(
-        REVISION_TEMPLATE.format(body=indented), encoding="utf-8"
+    (scripts / "versions" / "9000_extra.py").write_text(
+        REVISION_TEMPLATE.format(body=indented, down=head_revision()), encoding="utf-8"
     )
 
 
@@ -106,7 +106,7 @@ def test_broken_migration_aborts_with_explicit_log(
     configure_logging(level="INFO", log_format="json")
     migrate(settings)
     scripts = scripts_with_extra_revision(tmp_path, CREATE_THEN_FAIL)
-    with pytest.raises(MigrationError, match="0002"):
+    with pytest.raises(MigrationError, match="9000"):
         migrate(settings, script_location=scripts)
     records = [
         json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")
@@ -114,18 +114,18 @@ def test_broken_migration_aborts_with_explicit_log(
     failed = [r for r in records if r["event"] == "migration_failed"]
     assert len(failed) == 1
     assert failed[0]["level"] == "error"
-    assert failed[0]["revision"] == "0002"
+    assert failed[0]["revision"] == "9000"
     assert "boom" in failed[0]["error"]
     assert failed[0]["backup"].endswith(".db")
     assert any(r["event"] == "migration_restored" for r in records)
     # The half-applied DDL is gone: the database is exactly what it was.
-    assert current_revision(settings.database_path) == "0001"
+    assert current_revision(settings.database_path) == head_revision()
     assert "extra" not in table_names(settings.database_path)
     assert settings.database_path.stat().st_mode & 0o777 == 0o600  # restore keeps it private
     # Once the revision is fixed, the next run succeeds.
     write_extra_revision(scripts, CREATE_ONLY)
     result = migrate(settings, script_location=scripts)
-    assert result.applied == ("0002",)
+    assert result.applied == ("9000",)
     assert "extra" in table_names(settings.database_path)
 
 
@@ -137,7 +137,7 @@ def test_failed_first_migration_leaves_no_database(settings: Settings, tmp_path:
     assert not settings.database_path.exists()
     assert not list(settings.data_dir.glob("shelfhold.db*"))
     write_extra_revision(scripts, CREATE_ONLY)
-    assert migrate(settings, script_location=scripts).to_revision == "0002"
+    assert migrate(settings, script_location=scripts).to_revision == "9000"
 
 
 @pytest.mark.req("ENF-OPS-002")
@@ -185,16 +185,17 @@ def test_backup_named_by_revision_taken_before_migration(
     settings: Settings, tmp_path: Path
 ) -> None:
     migrate(settings)
+    head = head_revision()
     scripts = scripts_with_extra_revision(tmp_path, "op.execute('CREATE TABLE extra (id INTEGER)')")
     result = migrate(settings, script_location=scripts)
-    assert result.applied == ("0002",)
+    assert result.applied == ("9000",)
     assert result.backup is not None
     assert result.backup.parent == settings.data_dir / "backups" / "pre-migration"
-    assert "0001" in result.backup.name
-    assert "0002" in result.backup.name
-    assert current_revision(settings.database_path) == "0002"
+    assert head in result.backup.name
+    assert "9000" in result.backup.name
+    assert current_revision(settings.database_path) == "9000"
     # The copy holds the schema as it was before the migration.
-    assert current_revision(result.backup) == "0001"
+    assert current_revision(result.backup) == head
     with closing(sqlite3.connect(result.backup)) as db:
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master")}
     assert "extra" not in tables
