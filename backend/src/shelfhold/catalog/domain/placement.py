@@ -14,6 +14,7 @@ from enum import StrEnum
 from shelfhold.catalog.domain.numbering import Track, UnitNumber
 
 NUMBERING_CONFLICT = "numbering_conflict"
+TITLE_MATCH = "unnumbered_title_match"  # an unnumbered release may be an existing Unit
 
 
 @dataclass(frozen=True)

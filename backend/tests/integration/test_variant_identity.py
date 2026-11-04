@@ -306,3 +306,22 @@ def test_variant_in_open_conflict_is_never_preferred() -> None:
         assert h.catalog.elect_preferred(new.unit_id) is None  # both are named by the suggestion
         h.connection.execute(sa.text("UPDATE merge_suggestion SET state = 'rejected'"))
         assert h.catalog.elect_preferred(new.unit_id) == old.variant_id  # decided: the oldest
+
+
+@pytest.mark.req("EF-BIB-034")
+def test_unnumbered_release_with_known_title_is_only_suggested() -> None:
+    with harness() as h:
+        binding = h.binding(h.edition())
+        numbered = h.catalog.ingest(unit(binding, "n", "12", 0, title="The  Long Night"))
+        extra = h.catalog.ingest(
+            unit(binding, "x", "Extra", 1, source_order=1, title="the long night")
+        )
+        assert extra.unit_id != numbered.unit_id  # never attached on its own
+        assert extra.suggestion_id is not None
+        row = h.rows("SELECT a, b, reason, state FROM merge_suggestion")[0]
+        assert {row["a"], row["b"]} == {numbered.variant_id, extra.variant_id}
+        assert (row["reason"], row["state"]) == ("unnumbered_title_match", "open")
+        other = h.catalog.ingest(unit(binding, "y", "Extra", 2, source_order=2, title="Other"))
+        assert other.suggestion_id is None
+        # a title match does not block the export of either Variant
+        assert h.catalog.elect_preferred(extra.unit_id) == extra.variant_id

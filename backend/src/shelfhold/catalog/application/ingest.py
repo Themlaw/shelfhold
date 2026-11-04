@@ -9,8 +9,11 @@ from dataclasses import replace
 from shelfhold.catalog.application.dto import IncomingUnit, IngestResult
 from shelfhold.catalog.application.ports import StoredVariant, TeamStore, UnitStore
 from shelfhold.catalog.application.teams import check_binding, team_of_checked_binding
+from shelfhold.catalog.domain.identity import sort_title
 from shelfhold.catalog.domain.numbering import NumberError, UnitNumber, parse_number
 from shelfhold.catalog.domain.placement import (
+    NUMBERING_CONFLICT,
+    TITLE_MATCH,
     IngestOutcome,
     decide_new_variant,
     place_of,
@@ -38,7 +41,7 @@ def _reappear(units: UnitStore, variant: StoredVariant) -> str | None:
     others = [f for f in facts if f.id != variant.id]
     decision = decide_new_variant(binding_id=me.binding_id, team_id=me.team_id, at_place=others)
     if decision.outcome is IngestOutcome.NUMBERING_CONFLICT and decision.other_id:
-        return units.open_conflict(decision.other_id, variant.id)
+        return units.open_suggestion(decision.other_id, variant.id, NUMBERING_CONFLICT)
     return None
 
 
@@ -85,7 +88,13 @@ def ingest_unit(units: UnitStore, teams: TeamStore, item: IncomingUnit) -> Inges
     variant_id = units.insert_variant(unit_id, team_id, supersedes, item)
     suggestion_id = None
     if decision.outcome is IngestOutcome.NUMBERING_CONFLICT and decision.other_id:
-        suggestion_id = units.open_conflict(decision.other_id, variant_id)
+        suggestion_id = units.open_suggestion(decision.other_id, variant_id, NUMBERING_CONFLICT)
+    elif place.unnumbered and item.title and unit_created:
+        # No number to place it by: if its title is that of an existing Unit, propose it (never
+        # attach by itself, EF-BIB-034).
+        match = units.titled_variant(edition_id, sort_title(item.title), unit_id)
+        if match is not None:
+            suggestion_id = units.open_suggestion(match, variant_id, TITLE_MATCH)
     return IngestResult(
         decision.outcome, unit_id, variant_id, team_id, 1, unit_created, supersedes, suggestion_id
     )

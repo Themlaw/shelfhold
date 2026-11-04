@@ -356,8 +356,23 @@ class SqlUnitStore:
         )
         return variant_id
 
-    def open_conflict(self, first: str, second: str) -> str:
-        """One open suggestion per unordered pair (the table keeps `a < b`)."""
+    def titled_variant(self, edition_id: str, norm_title: str, not_unit_id: str) -> str | None:
+        """The oldest Variant of another Unit of the Edition whose normalized title is this one."""
+        u, v = catalog.unit.c, catalog.unit_variant.c
+        rows = self._c.execute(
+            sa.select(u.id, u.title).where(
+                u.edition_id == edition_id, u.id != not_unit_id, u.title.is_not(None)
+            )
+        )
+        wanted = [r.id for r in rows if sort_title(r.title) == norm_title]
+        if not wanted:
+            return None
+        return self._c.execute(
+            sa.select(v.id).where(v.unit_id.in_(wanted)).order_by(v.first_seen_at, v.id).limit(1)
+        ).scalar()
+
+    def open_suggestion(self, first: str, second: str, reason: str) -> str:
+        """One open suggestion per unordered pair and reason (the table keeps `a < b`)."""
         a, b = sorted((first, second))
         m = catalog.merge_suggestion
         existing = self._c.execute(
@@ -372,9 +387,7 @@ class SqlUnitStore:
             return str(existing)
         suggestion_id = new_ulid()
         self._c.execute(
-            sa.insert(m).values(
-                id=suggestion_id, entity_type="variant", a=a, b=b, reason=NUMBERING_CONFLICT
-            )
+            sa.insert(m).values(id=suggestion_id, entity_type="variant", a=a, b=b, reason=reason)
         )
         return suggestion_id
 
