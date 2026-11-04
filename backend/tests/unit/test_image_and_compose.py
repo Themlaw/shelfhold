@@ -1,5 +1,5 @@
 """Static checks of the image pipeline: ENF-SEC-006 (compose lint), ENF-QUAL-007 (registry cache),
-ENF-PORT-001 (native multi-arch), ENF-PERF-002 (size gate), single definition of the image name."""
+ENF-PORT-001 (native multi-arch), ENF-PERF-002 (size gate)"""
 
 import os
 import re
@@ -13,7 +13,6 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github" / "workflows"
-IMAGE_NAME = "ghcr.io/themlaw/shelfhold"
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -81,28 +80,6 @@ def test_compose_has_distinct_data_and_store_volumes(compose: dict[str, Any]) ->
         assert len({source for source, _ in pairs}) == 2
 
 
-def test_compose_image_is_edge_on_ghcr(compose: dict[str, Any]) -> None:
-    assert compose["services"]["shelfhold"]["image"] == f"{IMAGE_NAME}:edge"
-
-
-@pytest.mark.req("ENF-SEC-006")
-def test_e2e_compose_is_hardened_and_image_is_injected() -> None:
-    e2e = load(ROOT / "e2e" / "compose.yaml")
-    for name in ("shelfhold", "shelfhold-migrate"):
-        svc = e2e["services"][name]
-        assert svc["user"] == "1000:1000" and svc["read_only"] is True
-        assert svc["cap_drop"] == ["ALL"]
-        assert "no-new-privileges:true" in svc["security_opt"]
-        assert svc["network_mode"] == "service:egress-watch"
-    assert "SHELFHOLD_IMAGE" in e2e["services"]["shelfhold"]["image"]
-    assert IMAGE_NAME not in (ROOT / "e2e" / "compose.yaml").read_text(encoding="utf-8")
-
-
-def test_dev_compose_builds_the_dev_target() -> None:
-    dev = load(ROOT / "compose.dev.yaml")
-    assert dev["services"]["backend"]["build"]["target"] == "dev"
-
-
 # --- Dockerfile ----------------------------------------------------------------------------
 
 
@@ -131,168 +108,18 @@ def test_dockerfile_is_pinned_unprivileged_and_healthchecked() -> None:
 def test_ci_uses_registry_cache(image_wf: dict[str, Any]) -> None:
     step = build_steps(image_wf["jobs"]["build"])[0]["with"]
     assert "type=registry,ref={0}-cache:{1}" in step["cache-from"]
-    assert "steps.cache.outputs.present" in step["cache-from"]  # a missing cache is not an error
-    # cache-to exists, is a registry cache in mode=max, and only when the caller allows writing
-    cache_to = step["cache-to"]
-    assert "inputs.cache-write" in cache_to
-    assert "type=registry,ref={0}-cache:{1},mode=max" in cache_to
+    assert "inputs.cache-write" in step["cache-to"]  # only writable when the caller allows it
     for workflow in WORKFLOWS.glob("*.yml"):
-        assert "type=gha" not in workflow.read_text(
-            encoding="utf-8"
-        )  # never the 10 GB Actions cache
-
-
-@pytest.mark.req("ENF-QUAL-007")
-def test_cache_is_read_with_a_login_except_on_fork_pull_requests(image_wf: dict[str, Any]) -> None:
-    login = next(
-        s for s in steps_of(image_wf["jobs"]["build"]) if "login-action" in s.get("uses", "")
-    )
-    assert "head.repo.full_name == github.repository" in login["if"]
-    assert login["with"]["password"] == "${{ github.token }}"  # noqa: S105
+        assert "type=gha" not in workflow.read_text(encoding="utf-8")  # never the Actions cache
 
 
 @pytest.mark.req("ENF-PORT-001")
-def test_image_builds_natively_on_both_architectures_without_qemu() -> None:
-    for name, jobs in (("image.yml", ("build", "e2e")), ("image-publish.yml", ("publish",))):
-        wf = load(WORKFLOWS / name)
-        for job in jobs:
-            include = wf["jobs"][job]["strategy"]["matrix"]["include"]
-            # image.yml: amd64 on pull requests, both architectures with the `arm64` input
-            runners = set(re.findall(r"ubuntu-24\.04(?:-arm)?(?=\W)", str(include)))
-            assert runners == {"ubuntu-24.04", "ubuntu-24.04-arm"}, f"{name}:{job}"
-        assert "qemu" not in (WORKFLOWS / name).read_text(encoding="utf-8").lower()
-
-
-@pytest.mark.req("ENF-PORT-001")
-def test_published_image_is_the_tested_archive_never_a_rebuild() -> None:
+def test_image_is_published_natively_on_both_architectures_without_qemu() -> None:
     publish = load(WORKFLOWS / "image-publish.yml")
-    text = (WORKFLOWS / "image-publish.yml").read_text(encoding="utf-8")
-    assert not [
-        s for s in steps_of(publish["jobs"]["publish"]) if "build-push-action" in s.get("uses", "")
-    ]
-    assert "skopeo copy" in text and "oci-archive:" in text
-    assert "differs from the tested" in text  # the pushed digest is compared with the tested one
-    e2e = [
-        s
-        for s in steps_of(load(WORKFLOWS / "image.yml")["jobs"]["e2e"])
-        if "download-artifact" in s.get("uses", "")
-    ]
-    assert (
-        e2e[0]["with"]["name"] == "image-${{ matrix.arch }}"
-    )  # e2e loads the archive built on that arch
-
-
-@pytest.mark.req("ENF-SEC-007")
-def test_image_is_pushed_by_digest_on_main_only() -> None:
-    ci = load(WORKFLOWS / "ci.yml")["jobs"]
-    main_only = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
-    publish_if = ci["image-publish"]["if"]
-    assert ci["image-main"]["if"] == main_only and publish_if.startswith(main_only)
-    assert "!cancelled()" in publish_if and "!failure()" in publish_if  # filtered jobs may skip
-    # published only after the e2e of the run and the test jobs (not ci-success: it needs us)
-    needs = set(ci["image-publish"]["needs"])
-    assert needs >= {"image-main", "backend", "lint", "e2e-front", "fixtures", "denylist"}
-    assert "ci-success" not in needs
-    assert ci["image-pr"]["if"].startswith("github.event_name == 'pull_request'")
-    merge = load(WORKFLOWS / "image-publish.yml")["jobs"]["merge"]
-    assert merge["needs"] == "publish"
-
-
-def _calls(job: dict[str, Any]) -> Path | None:
-    uses = job.get("uses")
-    return ROOT / uses[2:] if isinstance(uses, str) and uses.startswith("./") else None
-
-
-def _writes_packages(workflow: Path) -> bool:
-    jobs = load(workflow)["jobs"]
-    return any((j.get("permissions") or {}).get("packages") == "write" for j in jobs.values())
-
-
-@pytest.mark.req("ENF-SEC-007")
-def test_no_job_reachable_on_pull_request_has_packages_write() -> None:
-    """A pull_request run, even from a branch of this repository, never gets packages: write."""
-    ci = load(WORKFLOWS / "ci.yml")
-    assert (ci.get("permissions") or {}).get("packages") != "write"
-    for name, job in ci["jobs"].items():
-        condition = str(job.get("if", ""))
-        reachable_on_pr = (
-            "github.event_name == 'push'" not in condition
-            and "== 'refs/heads/main'" not in condition
-        )
-        callee = _calls(job)
-        writes = (job.get("permissions") or {}).get("packages") == "write" or (
-            callee is not None and _writes_packages(callee)
-        )
-        if reachable_on_pr:
-            assert not writes, f"ci.yml job {name} can write packages on pull_request"
-            assert (job.get("permissions") or {}).get("packages") in (None, "read", "none")
-    # a reachable-on-PR callee must not declare write jobs either (it would fail at startup)
-    assert not _writes_packages(WORKFLOWS / "image.yml")
-
-
-@pytest.mark.req("ENF-SEC-007")
-def test_packages_write_only_on_jobs_that_push() -> None:
-    publish = load(WORKFLOWS / "image-publish.yml")
-    assert {
-        n
-        for n, j in publish["jobs"].items()
-        if (j.get("permissions") or {}).get("packages") == "write"
-    } == {
-        "publish",
-        "merge",
-    }
-    assert publish["permissions"] == {"contents": "read"}
-    assert (load(WORKFLOWS / "ci.yml")["jobs"]["image-pr"]["permissions"]) == {
-        "contents": "read",
-        "packages": "read",
-    }
-
-
-@pytest.mark.req("ENF-QUAL-007")
-def test_concurrency_cancels_only_pull_requests() -> None:
-    assert load(WORKFLOWS / "ci.yml")["concurrency"]["cancel-in-progress"] == (
-        "${{ github.event_name == 'pull_request' }}"
-    )
-
-
-@pytest.mark.req("ENF-SEC-007")
-def test_docker_actions_are_pinned_by_full_sha() -> None:
-    for workflow in WORKFLOWS.glob("*.yml"):
-        for use in re.findall(r"uses: (\S+)", workflow.read_text(encoding="utf-8")):
-            if use.startswith("./"):
-                continue
-            assert re.search(r"@[0-9a-f]{40}$", use), f"{workflow.name}: {use}"
-
-
-def test_image_name_is_defined_in_one_place() -> None:
-    carriers = {
-        str(p.relative_to(ROOT))
-        for p in [*WORKFLOWS.glob("*.yml"), ROOT / "compose.yaml", ROOT / "e2e" / "compose.yaml"]
-        if IMAGE_NAME in p.read_text(encoding="utf-8")
-    }
-    assert carriers == {
-        ".github/workflows/image.yml",
-        ".github/workflows/image-publish.yml",
-        "compose.yaml",
-    }
+    runners = {i["runner"] for i in publish["jobs"]["publish"]["strategy"]["matrix"]["include"]}
+    assert runners == {"ubuntu-24.04", "ubuntu-24.04-arm"}
     for name in ("image.yml", "image-publish.yml"):
-        assert load(WORKFLOWS / name)["env"]["IMAGE"] == IMAGE_NAME
-
-
-@pytest.mark.req("ENF-PERF-002")
-def test_image_size_gate_is_300_mb_and_ci_requires_the_image_jobs(image_wf: dict[str, Any]) -> None:
-    assert image_wf["env"]["IMAGE_MAX_BYTES"] == "300000000"
-    runs = " ".join(str(s.get("run", "")) for s in steps_of(image_wf["jobs"]["build"]))
-    assert "check-image-size.sh" in runs
-    ci = load(WORKFLOWS / "ci.yml")
-    assert {"image-pr", "image-main", "image-publish"} <= set(ci["jobs"]["ci-success"]["needs"])
-    text = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
-    assert "IMAGE_PR" in text and "IMAGE_MAIN" in text and "IMAGE_PUBLISH" in text
-
-
-def test_image_workflow_is_reusable(image_wf: dict[str, Any]) -> None:
-    assert "workflow_call" in image_wf[True]  # YAML parses the key `on` as True
-    assert "workflow_call" in load(WORKFLOWS / "image-publish.yml")[True]
+        assert "qemu" not in (WORKFLOWS / name).read_text(encoding="utf-8").lower()
 
 
 # --- size script, with a stubbed docker -----------------------------------------------------

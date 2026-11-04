@@ -292,3 +292,15 @@ def test_deferred_aspects_are_listed_in_the_matrix(tmp_path: Path) -> None:
     text = (root / "o.md").read_text(encoding="utf-8")
     assert "Volets reportés" in text
     assert "budget" in text
+
+
+def test_partial_requirement_is_labelled_partielle_with_its_milestone(tmp_path: Path) -> None:
+    exc = (
+        '[[partial]]\nrequirement = "ENF-BBB-001"\nmilestone = "M1b"\n'
+        'reason = "entretiens reportés"\n'
+    )
+    root = _mini_repo(tmp_path, FULL, exc)
+    assert tr.main(["--milestone", "M0", "--root", str(root), "--output", str(root / "o.md")]) == 0
+    text = (root / "o.md").read_text(encoding="utf-8")
+    assert "PARTIELLE (complétée en M1b)" in text
+    assert "entretiens reportés" in text
