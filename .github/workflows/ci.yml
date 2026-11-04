@@ -20,6 +20,9 @@ jobs:
       pull-requests: read
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      openapi: ${{ steps.filter.outputs.openapi }}
+      e2e: ${{ steps.filter.outputs.e2e }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,6 +33,21 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'frontend/**'
+              - 'open-api/**'
+              - '.github/workflows/ci.yml'
+            openapi:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'open-api/**'
+              - '.github/workflows/ci.yml'
+            e2e:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'open-api/**'
+              - 'e2e/**'
               - '.github/workflows/ci.yml'
 
   lint:
@@ -139,9 +157,101 @@ jobs:
           uv sync --project backend --locked
           uv run --project backend --locked pytest backend/tests/unit/test_fixtures_synthetic.py -k cassettes
 
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: eslint
+        run: npm run lint
+      - name: svelte-check (TypeScript strict)
+        run: npm run check
+      - name: vitest
+        run: npm test
+      - name: build (adapter-static)
+        run: npm run build
+
+  openapi:
+    needs: changes
+    if: needs.changes.outputs.openapi == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: uv sync --project backend --locked
+      - run: npm ci
+        working-directory: frontend
+      - name: regenerate the schema and the client
+        run: ./open-api/generate.sh
+      - name: the committed schema and client must be up to date
+        run: |
+          git diff --exit-code -- open-api frontend/src/lib/api
+          untracked="$(git status --porcelain -- open-api frontend/src/lib/api)"
+          if [ -n "$untracked" ]; then
+            echo "::error::generated files differ from the committed ones:"
+            echo "$untracked"
+            exit 1
+          fi
+
+  e2e-front:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - run: uv sync --project backend --locked
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Playwright (chromium)
+        working-directory: e2e
+        run: npx playwright test
+
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, backend, fixtures]
+    needs: [changes, lint, denylist, backend, fixtures, frontend, openapi, e2e-front]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
@@ -153,17 +263,32 @@ jobs:
           BACKEND: ${{ needs.backend.result }}
           FIXTURES: ${{ needs.fixtures.result }}
           BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
+          FRONTEND: ${{ needs.frontend.result }}
+          FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
+          OPENAPI: ${{ needs.openapi.result }}
+          OPENAPI_CHANGED: ${{ needs.changes.outputs.openapi }}
+          E2E: ${{ needs.e2e-front.result }}
+          E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
         run: |
-          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} backend=${BACKEND} fixtures=${FIXTURES} (changed=${BACKEND_CHANGED})"
+          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES}"
+          echo "backend=${BACKEND} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
+          echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED})"
           ok=1
           for r in "$CHANGES" "$LINT" "$DENYLIST" "$FIXTURES"; do
             [ "$r" = "success" ] || ok=0
           done
-          if [ "$BACKEND" = "skipped" ]; then
-            [ "$BACKEND_CHANGED" != "true" ] || ok=0
-          else
-            [ "$BACKEND" = "success" ] || ok=0
-          fi
+          # A filtered job may be skipped only when its paths filter is false.
+          check_filtered() {
+            if [ "$1" = "skipped" ]; then
+              [ "$2" != "true" ] || ok=0
+            else
+              [ "$1" = "success" ] || ok=0
+            fi
+          }
+          check_filtered "$BACKEND" "$BACKEND_CHANGED"
+          check_filtered "$FRONTEND" "$FRONTEND_CHANGED"
+          check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
+          check_filtered "$E2E" "$E2E_CHANGED"
           if [ "$ok" != "1" ]; then
             echo "::error::a required job failed, was cancelled, or was skipped unexpectedly"
             exit 1

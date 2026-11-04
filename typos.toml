@@ -1,4 +1,9 @@
 # The repository is written in French: typos only checks code, config and workflows.
 # French message catalogs are excluded for the same reason.
 [files]
-extend-exclude = ["*.md", "docs/", "backend/uv.lock", "backend/src/shelfhold/locales/", ".github/ISSUE_TEMPLATE/", "LICENSE", "backend/src/shelfhold/sdk/LICENSE"]
+extend-exclude = ["*.md", "docs/", "backend/uv.lock", "backend/src/shelfhold/locales/", "frontend/src/lib/i18n/", "spikes/", ".github/ISSUE_TEMPLATE/", "LICENSE", "backend/src/shelfhold/sdk/LICENSE"]
+
+# French words in UI strings asserted by the frontend tests.
+[default.extend-words]
+cours = "cours"
+sur = "sur"

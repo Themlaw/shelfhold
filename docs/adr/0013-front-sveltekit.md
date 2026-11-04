@@ -1,7 +1,7 @@
 ---
-status: accepté (sous réserve du spike S2 en M0)
+status: accepté (spike S2 conclu le 2026-11-04 : SvelteKit retenu)
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-04 (porteur 2)
+amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-04 (porteur 2) ; 2026-11-04 (spike S2)
 decision-makers: mainteneur
 ---
 # ADR-0013 — Front : SvelteKit (adapter-static, SPA) + vite-pwa
@@ -59,6 +59,13 @@ Moyenne avant M2 (peu d'écrans), faible après M3 (lecteur et écrans à rééc
 
 ## Amendement porteur 2 (2026-11-04)
 - **Quatre thèmes, A par défaut** (`review/ARBITRAGES-porteur2.md`, Q2 ; ADR-0051, EF-UX-012) : les directions A « Bibliothèque », B « Console », C « Galerie », D « Calme » deviennent des thèmes choisis par chaque utilisateur, sur **un seul socle de composants et d'écrans**. La règle de la passe 1 « une seule direction de design pour la 1.0 » (Q18) est conservée pour la livraison : la 1.0 (M3) livre le mécanisme de thèmes et A ; B, C, D et le sélecteur arrivent en M4. `src/lib/tokens.css` devient `src/lib/themes/<thème>/tokens.json` compilé en propriétés CSS.
+
+## Amendement spike S2 (2026-11-04)
+- **Décision confirmée : SvelteKit 3 est retenu**, le repli React 19 n'est pas déclenché. Mesures détaillées dans `spikes/s2/RESULTATS.md` : build statique servi par FastAPI, client généré branché, liste virtualisée de 2 000 éléments (p95 18,1 ms par image, aucune tâche longue), pluriels ICU français, axe sans violation serious/critical sur 3 écrans, bundle initial de l'accueil à 49 ko gzip.
+- **Versions réellement épinglées** (dernières stables d'au moins 14 jours au 2026-11-04) : `@sveltejs/kit` 3.1.0 (la 3.1.1 date du 2026-10-29), `svelte` 5.57.2, `@sveltejs/adapter-static` 4.0.0, `vite` 8.3.4, `typescript` 6.0.3. Les versions citées en passe 1 (3.1.1, 5.57.3, 4.0.1) sont les plus récentes mais trop jeunes pour la règle des 14 jours.
+- **Écarts SvelteKit 3** : configuration dans `vite.config.ts` (plus de `svelte.config.js`), imports `#lib/*` avec extension au lieu de `$lib`, `style-src-attr` avec empreinte dans la CSP à hash. Client OpenAPI : `@hey-api/openapi-ts` (`openapi-typescript` incompatible avec TypeScript 6). Tests : `msw` 2.15 (la 3.0.3 échoue sous Vitest 5).
+- **Linter** : ESLint (plugin Svelte) et `svelte-check`, Biome ne couvrant pas Svelte entièrement.
+- Reste à évaluer en M3/M5 : le lecteur foliate, le TTI sur matériel modeste et `@vite-pwa/sveltekit`.
 
 ## Exigences liées
 EF-UX-001, EF-UX-005, ENF-A11Y-001, ENF-A11Y-004, ENF-I18N-001, ENF-I18N-004, ENF-PERF-004, ENF-PERF-010, ENF-SEC-004, ENF-COMP-002.
