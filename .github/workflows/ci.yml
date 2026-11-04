@@ -136,7 +136,7 @@ jobs:
           curl -sSfL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum --check --strict
           tar -xzf gitleaks.tgz gitleaks
-          ./gitleaks git --redact --no-banner --verbose .
+          ./gitleaks git --redact --no-banner --verbose --log-opts="HEAD" .
 
   denylist:
     runs-on: ubuntu-24.04

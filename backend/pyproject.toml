@@ -130,6 +130,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "src/shelfhold/infrastructure/fetcher/**" = ["TID251"]
 # tests are not production egress (the contract bench talks to a pinned Suwayomi container)
 "tests/**" = ["S101", "TID251"]
+"src/shelfhold/infrastructure/secrets/atomic.py" = ["TID251"]  # /data and the operator-chosen export file
 "tests/unit/test_governance_docs.py" = ["S101", "S603", "S607"]
 "tests/contract/**" = ["S101", "S106", "E501", "TID251"]
 # 0.0.0.0 is the sinkhole answer under test, not a bind address
@@ -144,5 +145,6 @@ packages = ["shelfhold"]
 
 [[tool.mypy.overrides]]
 # defusedxml ships no types; it is only imported by shelfhold.infrastructure.xml (ENF-SEC-014).
-module = ["defusedxml", "defusedxml.*"]
+# pyrage (age) ships no types; it is only imported by shelfhold.infrastructure.secrets.export.
+module = ["defusedxml", "defusedxml.*", "pyrage", "pyrage.*"]
 ignore_missing_imports = true

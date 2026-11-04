@@ -8,6 +8,7 @@ from shelfhold.config import Settings, load_settings
 from shelfhold.infrastructure.health import HealthProbe
 from shelfhold.infrastructure.logging import configure_logging
 from shelfhold.infrastructure.migrate import check_schema_not_newer
+from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.interfaces.http_api.app import HttpApplication, create_http_app
@@ -21,6 +22,7 @@ def create_app(settings: Settings | None = None) -> HttpApplication:
     def on_startup() -> None:
         ensure_volumes(resolved)
         check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
+        boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops the start
 
     return create_http_app(
         health=HealthProbe(resolved),

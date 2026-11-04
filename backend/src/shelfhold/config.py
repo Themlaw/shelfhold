@@ -28,7 +28,7 @@ CONFIG_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
 SUPPORTED_CONFIG_MAJOR = 1
 
 # Fields that locate the other layers: they can only come from the environment.
-ENV_ONLY_FIELDS = frozenset({"data_dir"})
+ENV_ONLY_FIELDS = frozenset({"data_dir", "secret_key_file"})
 
 Source = Literal["env", "toml", "db", "default"]
 DbLoader = Callable[[Path], Mapping[str, str]]
@@ -49,6 +49,8 @@ class Settings(BaseModel):
     log_format: Literal["json", "console"] = "json"
     public_url: str | None = None
     api_token: SecretStr | None = None
+    # Where the keyring lives when it must not be in /data (ENF-SEC-005); a path, not a secret.
+    secret_key_file: Path | None = None
     frontend_dir: Path | None = None  # built SPA to serve; None = the packaged build, if any
     # ENF-LEG-001: a fresh install has no plugin repository and no active source.
     plugin_repos: tuple[str, ...] = ()
