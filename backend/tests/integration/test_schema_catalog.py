@@ -543,13 +543,15 @@ def test_unit_numbering_provenance_and_vocabularies(engine: Engine, chain: dict[
             rejected(
                 connection,
                 sa.insert(catalog.unit).values(
-                    id=new_ulid(),
-                    edition_id=chain["edition"],
-                    number_raw="9",
-                    number_norm="9",
-                    track="main",
-                    kind="chapter",
-                    **{column: bad},
+                    **{
+                        "id": new_ulid(),
+                        "edition_id": chain["edition"],
+                        "number_raw": "9",
+                        "number_norm": "9",
+                        "track": "main",
+                        "kind": "chapter",
+                        column: bad,
+                    }
                 ),
                 constraint,
             )
@@ -809,7 +811,9 @@ def test_binding_belongs_to_one_edition_of_its_work(engine: Engine, chain: dict[
         rejected(
             connection,
             sa.insert(acquisition.source_binding).values(
-                **binding_values(stranger, chain["edition"], add_source_item(connection, "s-3"))
+                **binding_values(
+                    stranger, chain["edition"], add_source_item(connection, "s-3"), priority=3
+                )
             ),
             "FOREIGN KEY constraint failed",
         )

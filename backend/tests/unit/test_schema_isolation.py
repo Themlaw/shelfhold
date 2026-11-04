@@ -25,7 +25,14 @@ def _imports(path: Path) -> set[str]:
 @pytest.mark.req("ENF-QUAL-002")
 def test_schema_modules_import_no_business_context() -> None:
     modules = sorted(SCHEMA.glob("*.py"))
-    assert {m.name for m in modules} >= {"_base.py", "platform.py", "identity.py", "coherence.py"}
+    assert {m.name for m in modules} >= {
+        "_base.py",
+        "platform.py",
+        "identity.py",
+        "coherence.py",
+        "catalog.py",
+        "acquisition.py",
+    }
     for module in modules:
         for name in _imports(module):
             parts = name.split(".")
@@ -37,9 +44,16 @@ def test_schema_modules_import_no_business_context() -> None:
 
 @pytest.mark.req("ENF-QUAL-002")
 def test_every_table_lives_on_the_single_metadata() -> None:
-    from shelfhold.infrastructure.schema import coherence, identity, metadata, platform
+    from shelfhold.infrastructure.schema import (
+        acquisition,
+        catalog,
+        coherence,
+        identity,
+        metadata,
+        platform,
+    )
 
-    for module in (coherence, identity, platform):
+    for module in (acquisition, catalog, coherence, identity, platform):
         tables = [v for v in vars(module).values() if hasattr(v, "metadata") and hasattr(v, "c")]
         assert tables
         assert all(t.metadata is metadata for t in tables)
