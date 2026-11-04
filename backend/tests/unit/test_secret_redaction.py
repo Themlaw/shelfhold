@@ -116,3 +116,90 @@ def test_existing_redaction_contract_is_unchanged() -> None:
         "api_key": REDACTED,
         "count": 3,
     }
+
+
+# --- review of PR #34: 15 of 22 proof-of-concept cases leaked ---------------------------------
+
+VALUE = "S3" + secrets.token_hex(8).upper()
+
+
+def _leaks(payload: object) -> bool:
+    import base64
+
+    out = json.dumps(redact_value(payload), default=str)
+    return VALUE in out or base64.b64encode(VALUE.encode()).decode() in out
+
+
+@pytest.mark.req("ENF-SEC-005")
+@pytest.mark.parametrize(
+    "name",
+    ["X-Kavita-Key", "kavita_key", "komga-token", "pwd", "pass", "key", "auth", "Session",
+     "sessionid", "COOKIE", "basicAuthPassword", "authPassword"],
+)  # fmt: skip
+def test_review_sensitive_names_cover_the_service_vocabulary(name: str) -> None:
+    assert not _leaks({name: VALUE})
+    assert not _leaks({"headers": {name: VALUE}})
+    assert not _leaks(f"{name}: {VALUE}")
+
+
+@pytest.mark.req("ENF-SEC-005")
+@pytest.mark.parametrize(
+    "text",
+    [
+        "http://admin:{v}@suwayomi:4567/api/graphql",
+        "GET http://kavita:5000/api/opds/{v}/series",
+        'password="ab {v}"',
+        "password=ab;{v}",
+        "password=ab&{v}",
+        "{{'password': b'{v}'}}",
+        "{{'password': \"{v}\"}}",
+        'authPassword:\\"{v}\\"',
+    ],
+)
+def test_review_free_text_shapes(text: str) -> None:
+    assert not _leaks(text.format(v=VALUE))
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_asgi_headers_as_byte_pairs() -> None:
+    headers = [(b"authorization", f"Bearer {VALUE}".encode()), (b"x-kavita-key", VALUE.encode())]
+    assert not _leaks(headers)
+    assert not _leaks({"scope": {"headers": headers}})
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_plaintext_sealed_or_opened_is_scrubbed_by_value(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from datetime import UTC, datetime
+
+    from shelfhold.infrastructure.secrets.keyring import Keyring
+    from shelfhold.infrastructure.secrets.vault import SecretVault
+
+    configure_logging(level="INFO", log_format="json")
+    where = {"table": "t", "column": "secret_ct", "row_id": "1"}
+    vault = SecretVault(Keyring.generate(datetime(2026, 11, 4, tzinfo=UTC)))
+    try:
+        vault.seal(json.dumps({"password": VALUE}).encode(), **where)
+        structlog.get_logger().info(f"KavitaError: 401 for key {VALUE}")
+        try:
+            raise RuntimeError(f"upstream refused key {VALUE}")
+        except RuntimeError:
+            structlog.get_logger().exception("boom")
+        logging.getLogger("x").warning("lib saw %s", VALUE)
+    finally:
+        out = capsys.readouterr().out
+        forget_secret_values()
+    assert VALUE not in out
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_registered_value_is_also_scrubbed_in_base64() -> None:
+    import base64
+
+    register_secret_value(VALUE)
+    try:
+        assert VALUE not in str(redact_value(base64.b64encode(VALUE.encode()).decode()))
+        assert not _leaks(base64.b64encode(VALUE.encode()).decode())
+    finally:
+        forget_secret_values()

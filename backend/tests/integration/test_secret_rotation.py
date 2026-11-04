@@ -284,3 +284,38 @@ def test_rotation_never_touches_the_tombstone_table(engine: Engine, store: Keyri
     rotate(store, engine, now=LATER)
     with engine.connect() as connection:
         assert connection.exec_driver_sql(sql).scalar_one() == before
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_rows_left_under_a_retired_key_are_reported(
+    engine: Engine, store: KeyringStore, settings: Settings
+) -> None:
+    from dataclasses import replace
+
+    from shelfhold.infrastructure.secrets import diagnostics
+
+    seed(engine, store, 2)
+    first = store.load()
+    rotate(store, engine, now=LATER)
+    assert "rows_on_retired_key" not in {w.code for w in diagnostics.collect_warnings(settings)}
+    # a process that kept the pre-rotation keyring in memory seals under the retired key
+    stale = replace(
+        first,
+        keys=tuple(
+            replace(k, state="active", retired_at=None)
+            if k.kid == first.active.kid
+            else replace(k, state="retired", retired_at=LATER)
+            for k in store.load().keys
+        ),
+        rotation=None,
+    )
+    with engine.begin() as connection:
+        SecretVault(stale).seal_row(connection, "source_config", "plugin-00", b"late")
+    warnings = {w.code: w for w in diagnostics.collect_warnings(settings)}
+    assert warnings["rows_on_retired_key"].detail == "1"
+    # the retired key is therefore still in use and cannot be dropped
+    with pytest.raises(KeyRetirementRefusedError) as info:
+        retire_key(store, engine, first.active.kid)
+    assert info.value.reason == "in_use"
+    rotate(store, engine, now=LATER)  # a second run catches the straggler
+    assert "rows_on_retired_key" not in {w.code for w in diagnostics.collect_warnings(settings)}

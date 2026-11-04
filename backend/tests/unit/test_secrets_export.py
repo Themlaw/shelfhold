@@ -2,7 +2,6 @@
 
 import base64
 import json
-import os
 import stat
 from datetime import UTC, datetime
 from pathlib import Path
@@ -162,16 +161,22 @@ def test_cli_export_with_a_missing_or_weak_passphrase_file_fails_without_output(
 
 
 @pytest.mark.req("ENF-SEC-005")
-def test_cli_export_replaces_atomically_and_leaves_no_temporary_file(
-    cli_env: dict[str, str], passphrase_file: Path, tmp_path: Path
+def test_review_cli_export_never_overwrites_an_existing_file(
+    cli_env: dict[str, str],
+    passphrase_file: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     out = tmp_path / "keyring.age"
-    out.write_text("previous", encoding="utf-8")
+    out.write_text("precious", encoding="utf-8")
     argv = ["secrets", "export", "--passphrase-file", str(passphrase_file), "--out", str(out)]
+    assert cli.main(argv) == 1
+    assert out.read_text(encoding="utf-8") == "precious"
+    assert str(out) in capsys.readouterr().err
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".")] == []
+    out.unlink()
     assert cli.main(argv) == 0
     assert out.read_text(encoding="ascii").startswith(ARMOR_BEGIN)
-    assert sorted(p.name for p in tmp_path.iterdir() if p.name.startswith(".")) == []
-    assert os.listdir(tmp_path).count("keyring.age") == 1
 
 
 @pytest.mark.req("ENF-SEC-005")

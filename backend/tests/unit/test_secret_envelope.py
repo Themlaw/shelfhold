@@ -165,3 +165,39 @@ def test_plaintext_and_key_never_appear_in_reprs(vault: SecretVault, sealed: Env
     text = repr(key) + repr(vault.keyring) + repr(vault) + repr(sealed)
     assert base64.b64encode(key.material).decode() not in text
     assert key.material.hex() not in text
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_wire_form_is_strict_canonical_base64url(sealed: Envelope) -> None:
+    wire = sealed.to_wire()
+    standard = base64.b64encode(base64.urlsafe_b64decode(wire["ct"])).decode()
+    candidates = [
+        {**wire, "ct": wire["ct"].rstrip("=")},  # unpadded
+        {**wire, "ct": wire["ct"] + "\n"},
+        {**wire, "ct": " " + wire["ct"]},
+    ]
+    if standard != wire["ct"]:
+        candidates.append({**wire, "ct": standard})  # the + / alphabet
+    for candidate in candidates:
+        with pytest.raises(EnvelopeFormatError):
+            Envelope.from_wire(candidate)
+    assert Envelope.from_wire(wire) == sealed
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_wire_form_refuses_non_canonical_trailing_bits(sealed: Envelope) -> None:
+    wire = sealed.to_wire()
+    packed = wire["ct"]
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    pad = len(packed) - len(packed.rstrip("="))
+    if pad:
+        index = len(packed) - pad - 1
+        tweaked = packed[:index] + alphabet[alphabet.index(packed[index]) ^ 1] + packed[index + 1 :]
+        with pytest.raises(EnvelopeFormatError):
+            Envelope.from_wire({**wire, "ct": tweaked})
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_wire_form_refuses_unknown_fields(sealed: Envelope) -> None:
+    with pytest.raises(EnvelopeFormatError):
+        Envelope.from_wire({**sealed.to_wire(), "evil": 1})

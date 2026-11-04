@@ -12,6 +12,7 @@ from shelfhold.infrastructure.secrets import diagnostics
 from shelfhold.infrastructure.secrets.errors import (
     KeyringCorruptError,
     KeyringMissingError,
+    KeyringPermissionsError,
     KeyringUnreadableError,
 )
 from shelfhold.infrastructure.secrets.keyring import Keyring, KeyringStore
@@ -96,6 +97,7 @@ def test_rotation_keeps_retired_keys_and_one_active(tmp_path: Path) -> None:
 def test_corrupt_or_unsupported_keyring_is_refused(tmp_path: Path, content: bytes) -> None:
     store = store_in(tmp_path)
     store.path.write_bytes(content)
+    store.path.chmod(0o600)
     with pytest.raises(KeyringCorruptError):
         store.load()
 
@@ -225,3 +227,84 @@ def test_status_warns_after_rotation_until_a_new_export(tmp_path: Path) -> None:
     assert "export_older_than_rotation" not in {
         w.code for w in diagnostics.collect_warnings(settings)
     }
+
+
+# --- review of PR #34 ----------------------------------------------------------------------------
+
+
+@pytest.mark.req("ENF-SEC-005")
+@pytest.mark.parametrize("mode", [0o644, 0o640, 0o602, 0o666])
+def test_review_keyring_with_loose_permissions_is_refused_with_the_fix(
+    tmp_path: Path, mode: int
+) -> None:
+    store = store_in(tmp_path)
+    store.create(Keyring.generate(NOW))
+    store.path.chmod(mode)
+    with pytest.raises(KeyringPermissionsError) as info:
+        store.load()
+    assert f"chmod 600 {store.path}" in str(info.value)
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_keyring_symlink_is_not_followed(tmp_path: Path) -> None:
+    store = store_in(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.write_bytes(Keyring.generate(NOW).to_json())
+    elsewhere.chmod(0o600)
+    store.path.symlink_to(elsewhere)
+    with pytest.raises(KeyringUnreadableError):
+        store.load()
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_keyring_owned_by_another_uid_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = store_in(tmp_path)
+    store.create(Keyring.generate(NOW))
+    monkeypatch.setattr(os, "geteuid", lambda: os.stat(store.path).st_uid + 1)
+    with pytest.raises(KeyringPermissionsError):
+        store.load()
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_lock_file_symlink_is_not_followed(tmp_path: Path) -> None:
+    store = store_in(tmp_path)
+    target = tmp_path / "target"
+    target.write_text("keep", encoding="utf-8")
+    store.lock_path.symlink_to(target)
+    with pytest.raises(OSError), store.lock():
+        pass
+    assert target.read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_database_that_cannot_be_inspected_refuses_the_start(tmp_path: Path) -> None:
+    import sqlite3
+
+    settings = data_settings(tmp_path)
+    settings.data_dir.mkdir()
+    database = sqlite3.connect(settings.database_path)
+    database.execute("CREATE TABLE secret_key (kid TEXT PRIMARY KEY)")
+    database.execute("INSERT INTO secret_key VALUES ('k-old')")
+    database.commit()
+    writer = sqlite3.connect(settings.database_path, isolation_level=None, timeout=0)
+    writer.execute("BEGIN EXCLUSIVE")
+    try:
+        with pytest.raises(KeyringMissingError):
+            diagnostics.boot_check(settings)
+        assert not (settings.data_dir / "keyring").exists()
+    finally:
+        writer.execute("ROLLBACK")
+        writer.close()
+        database.close()
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_review_unmigrated_database_is_not_an_obstacle_to_a_first_start(tmp_path: Path) -> None:
+    import sqlite3
+
+    settings = data_settings(tmp_path)
+    settings.data_dir.mkdir()
+    sqlite3.connect(settings.database_path).close()  # exists, no table at all
+    assert diagnostics.boot_check(settings).active.state == "active"
