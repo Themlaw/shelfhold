@@ -161,7 +161,10 @@ def test_ui_login_mode_detected_and_refused_m1a() -> None:
     server = FakeSuwayomi(auth_mode="ui_login")
     service = SuwayomiService(BASE_URL)
     f = AuthInjectingFetcher(
-        FakeSuwayomiFetcher(server), AuthBasic(), {"username": USER, "password": PASSWORD}
+        FakeSuwayomiFetcher(server),
+        AuthBasic(),
+        {"username": USER, "password": PASSWORD},
+        origin=BASE_URL,
     )
     assert run(service.auth_mode(f)) == "ui_login"
     for attempt in (service.followed_series(f), service.search(f, "", {}, None)):

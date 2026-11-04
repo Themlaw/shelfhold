@@ -86,7 +86,7 @@ def test_suwayomi_basic_auth_m1(engine: Engine) -> None:
         raw: Any = conn.execute(sa.select(source_account.c.secret_ct)).scalar_one()
     assert PASSWORD.encode() not in bytes(raw)
 
-    authed: Any = AuthInjectingFetcher(_stack(server), AuthBasic(), secret)
+    authed: Any = AuthInjectingFetcher(_stack(server), AuthBasic(), secret, origin=BASE_URL)
     health = asyncio.run(service.semantic_health(authed))
     assert health.ok  # the request succeeded with the secret injected by the Fetcher
     assert asyncio.run(service.auth_mode(authed)) == "basic_auth"
@@ -98,7 +98,10 @@ def test_suwayomi_basic_auth_m1(engine: Engine) -> None:
     with pytest.raises(AuthRequired):
         asyncio.run(service.semantic_health(_stack(server)))  # type: ignore[arg-type]
     wrong: Any = AuthInjectingFetcher(
-        _stack(server), AuthBasic(), {"username": USER, "password": "changed"}
+        _stack(server),
+        AuthBasic(),
+        {"username": USER, "password": "changed"},
+        origin=BASE_URL,
     )
     with pytest.raises(AuthRequired):
         asyncio.run(service.semantic_health(wrong))
