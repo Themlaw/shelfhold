@@ -5,6 +5,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import zipfile
+from xml.etree import ElementTree
+
+import pytest
 from pathlib import Path
 from types import ModuleType
 
@@ -63,6 +66,14 @@ def test_fixtures_are_synthetic_manifest_matches(tmp_path: Path) -> None:
         if name.endswith(".epub"):
             with zipfile.ZipFile(path) as z:
                 assert z.namelist()[0] == "mimetype"
+                assert z.getinfo("mimetype").compress_type == zipfile.ZIP_STORED
+                assert z.read("mimetype") == b"application/epub+zip"
+                container = ElementTree.fromstring(z.read("META-INF/container.xml"))
+                rootfile = container.find(".//{*}rootfile")
+                assert rootfile is not None
+                opf_path = rootfile.attrib["full-path"]
+                package = ElementTree.fromstring(z.read(opf_path))
+                assert package.tag.endswith("package")
 
 
 def test_cassettes_header_allowlist() -> None:
@@ -84,3 +95,53 @@ def test_cassettes_header_allowlist() -> None:
     found = " ".join(rules.check_cassette(bad)).lower()
     for header in ("authorization", "cookie", "set-cookie", "x-unknown"):
         assert header in found
+
+
+def _cassette(uri: str = "https://example.invalid/x", **over: object) -> dict[str, object]:
+    inter: dict[str, object] = {
+        "request": {"uri": uri, "headers": {"Accept": "*/*"}},
+        "response": {"headers": {"Content-Type": "text/plain"}},
+    }
+    inter.update(over)
+    return {"interactions": [inter]}
+
+
+def test_cassette_structure_is_strict() -> None:
+    rules = _load(CASSETTES / "header_allowlist.py", "cassette_rules")
+    assert rules.check_cassette({}) != []
+    assert rules.check_cassette({"interactions": "x"}) != []
+    assert rules.check_cassette({"interactions": ["x"]}) != []
+    assert rules.check_cassette(_cassette(request="x")) != []
+    assert rules.check_cassette(_cassette(response=[])) != []
+    assert rules.check_cassette(_cassette(request={"uri": "u", "headers": []})) != []
+    assert rules.check_cassette(_cassette(response={"headers": "x"})) != []
+    assert rules.check_cassette(_cassette()) == []
+
+
+@pytest.mark.parametrize("param", ["api_key", "TOKEN", "Key", "password", "Auth"])
+def test_cassette_rejects_sensitive_query_params(param: str) -> None:
+    rules = _load(CASSETTES / "header_allowlist.py", "cassette_rules")
+    violations = rules.check_cassette(_cassette(f"https://example.invalid/x?a=1&{param}=zz"))
+    assert violations != []
+    assert rules.check_cassette(_cassette("https://example.invalid/x?page=2")) == []
+
+
+def test_new_allowlisted_headers() -> None:
+    rules = _load(CASSETTES / "header_allowlist.py", "cassette_rules")
+    headers = {
+        h: "1"
+        for h in ("Date", "Server", "Vary", "Content-Encoding", "X-RateLimit-Reset", "x-ratelimit-used")
+    }
+    c = _cassette(response={"headers": headers})
+    assert rules.check_cassette(c) == []
+
+
+def test_cassettes_dir_only_json_files() -> None:
+    allowed = {"header_allowlist.py", "__init__.py"}
+    for p in CASSETTES.rglob("*"):
+        if p.is_file() and "__pycache__" not in p.parts:
+            assert p.suffix == ".json" or p.name in allowed, p
+    rules = _load(CASSETTES / "header_allowlist.py", "cassette_rules")
+    assert rules.is_allowed_file(Path("cassettes/a/b.json"))
+    assert rules.is_allowed_file(Path("cassettes/header_allowlist.py"))
+    assert not rules.is_allowed_file(Path("cassettes/a/b.yaml"))
