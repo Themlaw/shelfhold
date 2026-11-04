@@ -1,7 +1,7 @@
 """Huey, behind its adapter (ENF-GOV-002): one instance per pool, one periodic, no business logic.
 
 Pools (02 section 3.5): `io` (network, several threads), `cpu` (one thread), `maint` (one thread,
-the maintenance window). Each has its own SQLite file in `/data`, so a long job in one pool never
+the maintenance window). Each has its own SQLite file in `/data` (which `ensure_volumes` has created), so a long job in one pool never
 holds the lock another pool's queue needs (spike S1). The only periodic Huey knows is `tick`,
 every minute, which calls `Scheduler.scan`; everything periodic is a row of `schedule`.
 
@@ -73,7 +73,6 @@ class JobPools:
         seed: str,
         window: MaintenanceWindow = DEFAULT_WINDOW,
     ) -> None:
-        data_dir.mkdir(parents=True, exist_ok=True)
         self.clock = clock
         self.window = window
         self.ledger = JobLedger(engine, clock)

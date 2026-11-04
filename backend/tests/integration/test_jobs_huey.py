@@ -39,6 +39,7 @@ def clock() -> ManualClock:
 
 @pytest.fixture
 def pools(tmp_path: Path, engine: Engine, clock: ManualClock) -> JobPools:
+    (tmp_path / "data").mkdir()
     return JobPools(tmp_path / "data", engine=engine, clock=clock, seed="instance-1")
 
 
