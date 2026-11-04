@@ -27,3 +27,14 @@ def test_meta_sources_ship_with_no_active_source(tmp_path: Path) -> None:
     state = load_plugin_state(resolved.values)
     assert state.active_sources == ()
     assert state.active_meta_sources == ()
+
+
+def test_plugin_lists_accept_comma_separated_env(tmp_path: Path) -> None:
+    env = {
+        "SHELFHOLD_DATA_DIR": str(tmp_path / "data"),
+        "SHELFHOLD_STORE_DIR": str(tmp_path / "store"),
+        "SHELFHOLD_PLUGIN_REPOS": "https://a.invalid/x, https://b.invalid/y,",
+    }
+    resolved = load_settings(env)
+    assert resolved.values.plugin_repos == ("https://a.invalid/x", "https://b.invalid/y")
+    assert resolved.fields["plugin_repos"].source == "env"
