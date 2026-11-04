@@ -105,3 +105,8 @@ strict = true
 python_version = "3.13"
 mypy_path = "src"
 packages = ["shelfhold"]
+
+[[tool.mypy.overrides]]
+# defusedxml ships no types; it is only imported by shelfhold.infrastructure.xml (ENF-SEC-014).
+module = ["defusedxml", "defusedxml.*"]
+ignore_missing_imports = true

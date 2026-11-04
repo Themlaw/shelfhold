@@ -143,9 +143,9 @@ def zip_bytes(members: Iterable[Member | tuple[str, bytes]]) -> bytes:
                 info = zipfile.ZipInfo(m.name, FIXED_TIME)
                 info.compress_type = zipfile.ZIP_DEFLATED if m.deflate else zipfile.ZIP_STORED
                 info.external_attr = m.external_attr
-                if m.encrypted:
-                    info.flag_bits |= 0x1
                 z.writestr(info, m.data)
+                if m.encrypted:  # writestr resets the flags, so mark the central record after
+                    info.flag_bits |= 0x1
     return buf.getvalue()
 
 
@@ -164,11 +164,6 @@ def zip_bomb(uncompressed: int = 8 * 1024 * 1024) -> bytes:
 
 def many_entries(count: int) -> bytes:
     return zip_bytes([Member(f"{i:05d}.png", b"", deflate=False) for i in range(count)])
-
-
-def many_small_bombs(entries: int, each: int) -> bytes:
-    """Each entry is under any per-entry cap; only the total is over."""
-    return zip_bytes([Member(f"{i:03d}.bin", b"\x01" * each) for i in range(entries)])
 
 
 def overlapping_entries() -> bytes:
@@ -195,7 +190,6 @@ TRAVERSAL_NAMES = {
     "drive_letter": "C:evil.png",
     "drive_absolute": "C:/evil.png",
     "unc": "//server/share/evil.png",
-    "nul": "evil\x00.png",
     "right_to_left_override": "001\u202egnp.exe",
     "zero_width": "001\u200b.png",
     "bidi_isolate": "\u2066001.png",

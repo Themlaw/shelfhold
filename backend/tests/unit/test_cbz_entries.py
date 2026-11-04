@@ -33,8 +33,8 @@ def _refused(tmp_path: Path, data: bytes) -> UntrustedEntryError:
 @pytest.mark.req("EF-BIB-051")
 def test_cbz_allowlist_accepts_the_synthetic_comic(malicious: ModuleType, tmp_path: Path) -> None:
     listing = _check(tmp_path, malicious.good_cbz(4))
-    assert listing.images == ("001.png", "002.png", "003.png", "004.png")  # type: ignore[attr-defined]
-    assert listing.comicinfo == "ComicInfo.xml"  # type: ignore[attr-defined]
+    assert listing.images == ("001.png", "002.png", "003.png", "004.png")
+    assert listing.comicinfo == "ComicInfo.xml"
 
 
 @pytest.mark.req("EF-BIB-051")
@@ -52,7 +52,7 @@ def test_cbz_every_allowlisted_format_is_accepted(
 ) -> None:
     payload = getattr(malicious, head) + b"\x00" * 32
     listing = _check(tmp_path, malicious.cbz_with((name, payload)))
-    assert listing.images == (name,)  # type: ignore[attr-defined]
+    assert listing.images == (name,)
 
 
 @pytest.mark.req("EF-BIB-051")
@@ -125,7 +125,7 @@ def test_cbz_without_pages_or_with_two_comicinfo_is_refused(
 @pytest.mark.req("EF-BIB-051")
 def test_cbz_directory_entries_are_ignored(malicious: ModuleType, tmp_path: Path) -> None:
     data = malicious.zip_bytes([("pages/", b""), ("pages/001.png", malicious.tiny_png())])
-    assert _check(tmp_path, data).images == ("pages/001.png",)  # type: ignore[attr-defined]
+    assert _check(tmp_path, data).images == ("pages/001.png",)
 
 
 @pytest.mark.req("EF-BIB-051")

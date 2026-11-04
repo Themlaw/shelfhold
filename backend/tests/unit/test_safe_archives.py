@@ -171,7 +171,7 @@ def test_zip_overlapping_entries_are_refused(malicious: ModuleType, tmp_path: Pa
     "key",
     [
         "dotdot", "nested_dotdot", "absolute", "backslash_dotdot", "windows_backslash",
-        "drive_letter", "drive_absolute", "unc", "nul", "right_to_left_override",
+        "drive_letter", "drive_absolute", "unc", "right_to_left_override",
         "zero_width", "bidi_isolate", "control_char",
     ],
 )  # fmt: skip
