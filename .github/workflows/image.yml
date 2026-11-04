@@ -1,0 +1,185 @@
+name: image
+
+# Reusable: called by ci.yml (edge) and, later, release.yml (version tags).
+# PR or push=false : build natively on both architectures, load locally, size check, e2e.
+# push=true        : additionally push by digest, then assemble the multi-arch manifest.
+on:
+  workflow_call:
+    inputs:
+      push:
+        description: "Push the image to GHCR (main and releases only, never a pull request)"
+        type: boolean
+        default: false
+      tags:
+        description: "Newline-separated tags of the manifest; empty = edge and sha-<long>"
+        type: string
+        default: ""
+
+env:
+  IMAGE: ghcr.io/themlaw/shelfhold
+  IMAGE_MAX_BYTES: "300000000"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Detect the frontend
+        id: frontend
+        run: echo "present=$([ -f frontend/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Build and load locally (registry cache, read only)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          push: false
+          provenance: false
+          tags: shelfhold:ci
+          build-args: |
+            WITH_FRONTEND=${{ steps.frontend.outputs.present }}
+            REVISION=${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}-cache:${{ matrix.arch }}
+      - name: Image size (ENF-PERF-002)
+        run: docker/check-image-size.sh shelfhold:ci "$IMAGE_MAX_BYTES"
+      - name: Save the image for e2e
+        if: matrix.arch == 'amd64'
+        run: docker save shelfhold:ci | gzip -1 > "$RUNNER_TEMP/image.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.arch == 'amd64'
+        with:
+          name: image-amd64
+          path: ${{ runner.temp }}/image.tar.gz
+          retention-days: 1
+          compression-level: 0
+
+  e2e:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.x"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-amd64
+          path: ${{ runner.temp }}
+      - name: Load the image of the run
+        run: gunzip -c "$RUNNER_TEMP/image.tar.gz" | docker load
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: Smoke (up --wait, /readyz) and no outbound request
+        working-directory: e2e
+        env:
+          SHELFHOLD_IMAGE: shelfhold:ci
+        run: uv run --project ../backend --locked pytest tests
+
+  publish:
+    name: publish (${{ matrix.arch }})
+    if: inputs.push
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Detect the frontend
+        id: frontend
+        run: echo "present=$([ -f frontend/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Build and push by digest (layer cache in the registry)
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          provenance: false
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            WITH_FRONTEND=${{ steps.frontend.outputs.present }}
+            REVISION=${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}-cache:${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.IMAGE }}-cache:${{ matrix.arch }},mode=max
+      - name: Export the digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    if: inputs.push
+    needs: [publish, e2e]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digests-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Create the multi-arch manifest
+        env:
+          TAGS: ${{ inputs.tags }}
+          SHA: ${{ github.sha }}
+        run: |
+          tags="${TAGS:-$(printf 'edge\nsha-%s' "$SHA")}"
+          args=()
+          while read -r tag; do [ -n "$tag" ] && args+=(-t "${IMAGE}:${tag}"); done <<< "$tags"
+          sources=()
+          for digest in "$RUNNER_TEMP"/digests/*; do sources+=("${IMAGE}@sha256:$(basename "$digest")"); done
+          [ "${#sources[@]}" -eq 2 ] || { echo "::error::expected 2 platform digests"; exit 1; }
+          docker buildx imagetools create "${args[@]}" "${sources[@]}"
+          docker buildx imagetools inspect "${IMAGE}:$(head -n1 <<< "$tags")"

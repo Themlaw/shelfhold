@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/home/themlaw/shelfhold-wt-pr5/spikes/s1/periodic.py", line 50, in <module>
+    wait_ticks(5, 0, 400)
+    ~~~~~~~~~~^^^^^^^^^^^
+  File "/home/themlaw/shelfhold-wt-pr5/spikes/s1/periodic.py", line 44, in wait_ticks
+    while time.time() < end and sum(1 for k, _ in runs() if k == "cron") < since + n:
+                                                  ~~~~^^
+  File "/home/themlaw/shelfhold-wt-pr5/spikes/s1/periodic.py", line 37, in runs
+    rows = db.execute("SELECT kind, at FROM runs ORDER BY at").fetchall()
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: runs

@@ -33,6 +33,8 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              - 'docker/**'
+              - 'compose*.yaml'
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
@@ -54,6 +56,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       GITLEAKS_VERSION: "8.30.1"
+      HADOLINT_VERSION: "2.15.1"
+      HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
       GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,6 +96,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: uv run --locked zizmor --format=plain ../.github/workflows
+      - name: hadolint
+        run: |
+          curl -sSfL -o hadolint "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+          echo "${HADOLINT_SHA256}  hadolint" | sha256sum --check --strict
+          chmod +x hadolint
+          ./hadolint docker/Dockerfile
       - name: gitleaks
         run: |
           curl -sSfL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
@@ -249,9 +259,19 @@ jobs:
         working-directory: e2e
         run: npx playwright test
 
+  image:
+    # Native amd64 + arm64 build, size check, e2e; push and manifest only on main (image.yml).
+    # The called jobs that push declare packages: write themselves and are skipped on pull requests.
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml  # zizmor: ignore[self-repository]
+    with:
+      push: ${{ github.event_name == 'push' }}
+
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, backend, fixtures, frontend, openapi, e2e-front]
+    needs: [changes, lint, denylist, backend, fixtures, frontend, openapi, e2e-front, image]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
@@ -262,6 +282,7 @@ jobs:
           DENYLIST: ${{ needs.denylist.result }}
           BACKEND: ${{ needs.backend.result }}
           FIXTURES: ${{ needs.fixtures.result }}
+          IMAGE_RESULT: ${{ needs.image.result }}
           BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
           FRONTEND: ${{ needs.frontend.result }}
           FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
@@ -270,11 +291,11 @@ jobs:
           E2E: ${{ needs.e2e-front.result }}
           E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
         run: |
-          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES}"
+          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} image=${IMAGE_RESULT}"
           echo "backend=${BACKEND} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
           echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED})"
           ok=1
-          for r in "$CHANGES" "$LINT" "$DENYLIST" "$FIXTURES"; do
+          for r in "$CHANGES" "$LINT" "$DENYLIST" "$FIXTURES" "$IMAGE_RESULT"; do
             [ "$r" = "success" ] || ok=0
           done
           # A filtered job may be skipped only when its paths filter is false.

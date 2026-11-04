@@ -1,0 +1,69 @@
+# E2E stack: the image under test, with a sidecar recording every connection attempt that
+# leaves the network namespace (ENF-PRIV-001). An `internal: true` network would only make
+# attempts fail silently (ENETUNREACH, no packet), so the stack observes instead: the sidecar
+# owns the namespace, which also covers start-up. SHELFHOLD_IMAGE is set by the workflow (image of the run) or by the developer.
+name: shelfhold-e2e
+
+x-hardened: &hardened
+  user: "1000:1000"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  network_mode: service:egress-watch
+
+services:
+  egress-watch:
+    image: ${SHELFHOLD_IMAGE:?set SHELFHOLD_IMAGE to the image under test}
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_RAW]
+    security_opt: ["no-new-privileges:true"]
+    command: ["python", "/watch/egress_watch.py", "172.31.250.0/24", "egress-watch", "shelfhold", "shelfhold-migrate"]
+    volumes:
+      - ./fakes/egress_watch.py:/watch/egress_watch.py:ro
+    networks: [isolated]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys; sys.exit(0 if os.path.exists('/tmp/watch-ready') else 1)"]
+      interval: 1s
+      retries: 30
+    tmpfs: ["/tmp"]
+
+  shelfhold-migrate:
+    <<: *hardened
+    image: ${SHELFHOLD_IMAGE:?}
+    command: ["shelfhold", "migrate"]
+    restart: "no"
+    depends_on:
+      egress-watch: { condition: service_healthy }
+    volumes:
+      - data:/data
+      - store:/store
+    tmpfs: ["/tmp"]
+
+  shelfhold:
+    <<: *hardened
+    image: ${SHELFHOLD_IMAGE:?}
+    init: true
+    depends_on:
+      shelfhold-migrate: { condition: service_completed_successfully }
+    volumes:
+      - data:/data
+      - store:/store
+    tmpfs: ["/tmp:size=256m"]
+    healthcheck:
+      test: ["CMD", "python", "/usr/local/bin/shelfhold-healthcheck"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+networks:
+  isolated:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
+volumes:
+  data:
+  store:

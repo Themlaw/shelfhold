@@ -1,0 +1,18 @@
+[project]
+name = "shelfhold-spike-s1"
+version = "0.0.0"
+description = "Throwaway spike S1 (ADR-0005): Huey SqliteHuey. Deleted after the decision."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "huey>=3.5.4,<3.6",
+    # same stack as the backend, to measure the RSS overhead of Huey on top of it
+    "fastapi>=0.156.4",
+    "uvicorn>=0.54.0",
+    "sqlalchemy>=2.1.5",
+    "alembic>=1.20.0",
+    "structlog>=26.1.0",
+    "pydantic>=2.14.1",
+]
+
+[tool.uv]
+package = false
