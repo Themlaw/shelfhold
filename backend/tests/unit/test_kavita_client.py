@@ -426,3 +426,45 @@ def test_kavita_404_with_json_body_is_a_missing_resource_not_a_missing_route() -
         run(h.client.library_type(7))
     assert h.client.health.mode is TargetMode.FULL and h.client.health.missing_routes == ()
     assert h.events.details("target.route_missing") == []
+
+
+@pytest.mark.req("ENF-SEC-013")
+def test_scan_folder_always_carries_the_key_and_refuses_a_non_object_body() -> None:
+    h = harness()
+    run(h.client.probe())
+    run(
+        h.client.execute(
+            ApiCall(method="POST", path="/api/Library/scan-folder", auth="target_admin")
+        )
+    )
+    assert h.fake.ignored_scans == [] and len(h.fake.scans) == 1  # the key was in the body
+    before = len(h.fake.requests)
+    bad = ApiCall(
+        method="POST", path="/api/Library/scan-folder", json_body=["x"], auth="target_admin"
+    )
+    with pytest.raises(ProtocolError):
+        run(h.client.execute(bad))
+    assert len(h.fake.requests) == before
+
+
+@pytest.mark.req("ENF-SEC-013")
+def test_public_config_filters_recursively_by_whole_word() -> None:
+    cfg = public_config({
+        "author": "A", "library_type": "Manga", "apiKey": "x", "X-Api-Key": "x",
+        "nested": {"token": "x", "author_name": "B", "deep": [{"password": "x", "ok": 1}]},
+    })  # fmt: skip
+    assert cfg == {
+        "author": "A", "library_type": "Manga",
+        "nested": {"author_name": "B", "deep": [{"ok": 1}]},
+    }  # fmt: skip
+
+
+@pytest.mark.req("EF-EXP-009")
+def test_ids_are_coerced_to_int_at_entry() -> None:
+    h = harness()
+    assert run(h.client.library_type("7")) is LibraryType.MANGA  # type: ignore[arg-type]
+    assert run(h.client.ensure_exclude_patterns("7", HIDDEN_DIR_PATTERNS)).changed  # type: ignore[arg-type]
+    run(h.client.upload_series_cover("42", b"x"))  # type: ignore[arg-type]
+    assert h.fake.requests_to("/upload/series")[0].json()["id"] == 42
+    with pytest.raises(ValueError):
+        run(h.client.library_type("7; DROP"))  # type: ignore[arg-type]

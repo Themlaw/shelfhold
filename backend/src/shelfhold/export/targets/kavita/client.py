@@ -105,8 +105,10 @@ class KavitaClient:
         """Run a call described by a destination, if and only if its route is on the list."""
         route = routes.resolve(call.method, call.path)
         body = call.json_body
-        if route is routes.SCAN_FOLDER and isinstance(body, dict):
-            body = {**body, "apiKey": self._key.reveal()}  # the DTO of Kavita asks for it
+        if route is routes.SCAN_FOLDER:
+            if body is not None and not isinstance(body, dict):
+                raise ProtocolError("scan-folder takes a JSON object")
+            body = {**(body or {}), "apiKey": self._key.reveal()}  # the DTO of Kavita asks for it
         return await self._send(route, query=call.query, body=body, expect=call.expect)
 
     async def _send(
@@ -255,6 +257,7 @@ class KavitaClient:
         return [item for item in data if isinstance(item, dict)]
 
     async def library_type(self, library_id: int) -> dto.LibraryType:
+        library_id = int(library_id)
         data = (await self._send(routes.LIBRARY_TYPE, query={"libraryId": library_id})).data
         try:
             return dto.LibraryType(int(data))
@@ -289,6 +292,7 @@ class KavitaClient:
         An adopted library is never touched without the admin's confirmation (EF-EXP-009); the
         patterns it had are returned so that detaching can put them back.
         """
+        library_id = int(library_id)
         current = next(
             (lib for lib in await self.list_libraries() if lib.get("id") == library_id), None
         )
@@ -320,7 +324,11 @@ class KavitaClient:
 
     async def upload_series_cover(self, series_id: int, image: bytes) -> None:
         """Replace and lock the cover: bare base64 (no `data:` prefix), as the DTO wants."""
-        body = {"id": series_id, "url": base64.b64encode(image).decode("ascii"), "lockCover": True}
+        body = {
+            "id": int(series_id),
+            "url": base64.b64encode(image).decode("ascii"),
+            "lockCover": True,
+        }
         await self._send(routes.UPLOAD_SERIES_COVER, body=body)
 
 
