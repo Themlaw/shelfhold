@@ -11,8 +11,8 @@
 
 ## 1. Contexte et problème
 
-### 1.1 Situation de référence (homelab type visé)
-- Un hôte Docker unique, **Kavita** déjà en place (médias sous un dossier parent de l'hôte, par exemple `/srv/media/kavita/{manga,books,comics}`, montés en `/manga`, `/books`, `/comics`), un reverse proxy éventuel (au choix de l'hébergeur : Caddy, Traefik, Authelia/Authentik en forward-auth, Pangolin…, aucun n'est supposé — arbitrage porteur P5), **Sablier** (démarrage à la demande de certains services), déploiement par un **outil GitOps** qui tire un compose minimal ; images construites par la CI GitHub et publiées sur GHCR.
+### 1.1 Situation de référence (foyer type visé, à titre d'exemple)
+- Un hôte Docker unique, **Kavita** déjà en place (médias sous un dossier parent de l'hôte, par exemple `/srv/media/kavita/{manga,books,comics}`, montés en `/manga`, `/books`, `/comics`), un reverse proxy éventuel (au choix de l'hébergeur : par exemple Caddy, Traefik, Authelia/Authentik en forward-auth, aucun n'est supposé — arbitrage porteur P5), par exemple un outil de démarrage à la demande de certains services, un déploiement par un **outil GitOps** qui tire un compose minimal ; images construites par la CI GitHub et publiées sur GHCR.
 - La famille lit surtout dans **Kavita / Kover** (et KOReader via l'OPDS et le kosync de Kavita).
 - Les contenus viennent d'outils dispersés : Suwayomi (manga/webtoon via extensions Mihon installées par l'utilisateur), lightnovel-crawler (instance de l'utilisateur), téléchargements manuels d'ebooks du domaine public, fichiers achetés **sans mesure technique de protection** (souvent **tatoués** au nom de l'acheteur, ADR-0033).
 - Une **automatisation maison** existe souvent déjà : dossier de téléchargement de Suwayomi monté directement dans les dossiers de Kavita, scripts planifiés qui renomment, dédoublonnent ou posent les couvertures, script de mise à jour des extensions. Shelfhold doit la **remplacer par une bascule ordonnée** (ADR-0034, EF-EXP-043, EF-EXP-044), jamais cohabiter avec elle sur les mêmes dossiers.

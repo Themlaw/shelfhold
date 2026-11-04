@@ -54,7 +54,7 @@ Haute : workflows et outils interchangeables.
   - **M1** : attestations de provenance + SBOM, Grype, CodeQL, zizmor.
   - **M3** : cosign, OpenSSF Scorecard, site de docs.
   - **Abandonnés** : nightly Postgres (ENF-PORT-002 retirée), mutation testing obligatoire (devenu optionnel, mensuel), benchmarks nocturnes (remplacés par une mesure avant release).
-- **Merge queue** (09-closure-B) : réservée aux dépôts d'**organisation** ; les rulesets fonctionnent sur un dépôt personnel public. **Décision : dépôt sous une organisation GitHub gratuite** (Q14 close), e-mail de commit `noreply`, 2FA matérielle (ENF-GOV-001).
+- **Merge queue** (09-closure-B) : réservée aux dépôts d'**organisation** ; les rulesets fonctionnent sur un dépôt personnel public. **Décision : dépôt sous le compte du porteur** (organisation GitHub gratuite plus tard, voir ADR-0019 ; pas de merge queue d'ici là), e-mail de commit `noreply`, 2FA matérielle (ENF-GOV-001).
 - **Cooldown** : Dependabot applique 3 jours par défaut, **pas aux mises à jour de sécurité** ; Renovate n'a **pas** de `minimumReleaseAge` par défaut → `config:best-practices` + `security:minimumReleaseAgePypi` (3 jours), relevé à **7 jours** pour toutes les dépendances.
 - **Tags** (A24, ENF-OPS-008) : on recommande d'épingler `X.Y` (`0.Y` avant 1.0) ; mise à jour automatique sur les patchs seulement ; pas de variante `:full` publiée en V1 (ENF-PERF-002).
 - **Politique de divulgation** : SECURITY.md + signalement privé GitHub + GHSA dès M0 (ENF-SEC-011).

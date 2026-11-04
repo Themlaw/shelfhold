@@ -43,19 +43,16 @@ tests = ["the SPA fallback serves client routes"]
 reason = "repli SPA vers l'index (spike S2), aucune exigence propre"
 
 [[exception]]
-path = "backend/tests/unit/test_image_and_compose.py"
-tests = [
-  "test_compose_image_is_edge_on_ghcr",
-  "test_dev_compose_builds_the_dev_target",
-  "test_image_name_is_defined_in_one_place",
-  "test_image_workflow_is_reusable",
-]
-reason = "décisions d'exécution M0 (tag edge, image définie en un seul endroit, cible de développement, workflow réutilisable) : cohérence de l'outillage sans exigence propre"
-
-[[exception]]
 path = "e2e/tests/test_image_smoke.py"
 tests = ["test_root_serves_the_spa_index"]
 reason = "fumée du SPA servi par l'image (spike S2), aucune exigence propre"
+
+# Requirements honestly declared PARTIELLE: some tests exist, the full requirement is not
+# yet verifiable. Each entry names the milestone that completes it.
+[[partial]]
+requirement = "ENF-GOV-006"
+milestone = "M1a"
+reason = "porte P0 et règles d'arrêt documentées (portes.md) et relevé de départ documentaire générique (docs/recherche/releve-depart.md) ; les entretiens utilisateurs dépendent du porteur et sont reportés (décision M0 9)"
 
 # Tests that do not run in the required CI (`ci-success`): accepted for M0 only when the
 # workflow that runs them is named and justified.

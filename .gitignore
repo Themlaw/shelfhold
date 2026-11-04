@@ -32,8 +32,9 @@ coverage.xml
 frontend/src/lib/themes/themes.css
 test-results/
 playwright-report/
-spikes/s2/src/lib/api/
+
 
 # Spike run logs
 spikes/**/*.err
 spikes/**/err.txt
+docs/traceability/
