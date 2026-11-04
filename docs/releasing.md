@@ -5,7 +5,8 @@ Une release est une action manuelle du mainteneur, en quatre étapes. Aucun jeto
 1. **Préparer la PR de version** (titre `chore(release): X.Y.Z`) :
    - `CHANGELOG.md` : nouvelle section `## X.Y.Z - AAAA-MM-JJ` avec les changements, et la ligne
      `Migration : oui|non, réversible : oui|non` (ENF-OPS-002) ;
-   - la version dans `backend/pyproject.toml` et `backend/src/shelfhold/__init__.py` (`__version__`).
+   - la version dans `backend/pyproject.toml` et `backend/src/shelfhold/__init__.py` (`__version__`) ;
+   - le champ `info.version` de `open-api/openapi.json` (sinon le job `openapi` échoue).
 2. **Fusionner la PR** : `ci-success` doit être vert sur le commit fusionné, l'image `sha-<commit>` est alors publiée sur GHCR.
 3. **Créer la release** (le tag `vX.Y.Z` est créé sur `main`) :
    ```sh
