@@ -17,7 +17,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8",
-    "httpx>=0.28.1",
     "pytest-cov>=6",
     "ruff>=0.8",
     "mypy>=1.13",
@@ -25,6 +24,7 @@ dev = [
     "diff-cover>=9",
     "actionlint-py>=1.7",
     "zizmor>=1.0",
+    "httpx2>=2.16.0",
 ]
 
 [project.scripts]

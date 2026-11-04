@@ -3,6 +3,7 @@
 import json
 import shutil
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -55,7 +56,7 @@ def test_migrate_creates_schema_at_head(settings: Settings) -> None:
     assert result.to_revision == head_revision()
     assert current_revision(settings.database_path) == head_revision()
     assert result.backup is None  # nothing to save on a fresh database
-    with sqlite3.connect(settings.database_path) as db:
+    with closing(sqlite3.connect(settings.database_path)) as db:
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
@@ -89,7 +90,9 @@ def test_broken_migration_aborts_with_explicit_log(
     assert current_revision(settings.database_path) == "0001"
 
 
-def test_backup_named_by_revision_taken_before_migration(settings: Settings, tmp_path: Path) -> None:
+def test_backup_named_by_revision_taken_before_migration(
+    settings: Settings, tmp_path: Path
+) -> None:
     migrate(settings)
     scripts = scripts_with_extra_revision(tmp_path, "op.execute('CREATE TABLE extra (id INTEGER)')")
     result = migrate(settings, script_location=scripts)
@@ -101,22 +104,24 @@ def test_backup_named_by_revision_taken_before_migration(settings: Settings, tmp
     assert current_revision(settings.database_path) == "0002"
     # The copy holds the schema as it was before the migration.
     assert current_revision(result.backup) == "0001"
-    with sqlite3.connect(result.backup) as db:
+    with closing(sqlite3.connect(result.backup)) as db:
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master")}
     assert "extra" not in tables
 
 
 def stamp_future_revision(settings: Settings) -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(settings.database_path) as db:
+    with closing(sqlite3.connect(settings.database_path)) as db:
         db.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
         db.execute("INSERT INTO alembic_version VALUES ('from_the_future')")
+        db.commit()
 
 
 def test_refuses_to_start_on_newer_schema(settings: Settings) -> None:
     stamp_future_revision(settings)
-    with pytest.raises(SchemaTooNewError, match="from_the_future"), TestClient(
-        create_app(settings)
+    with (
+        pytest.raises(SchemaTooNewError, match="from_the_future"),
+        TestClient(create_app(settings)),
     ):
         pass
 

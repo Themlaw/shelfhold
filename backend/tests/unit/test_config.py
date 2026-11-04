@@ -61,7 +61,11 @@ def test_file_suffix_conflicts_and_missing_files_are_refused(
 ) -> None:
     secret_file = tmp_path / "kavita_key"
     secret_file.write_text("x", encoding="utf-8")
-    both = {**env, "SHELFHOLD_KAVITA_API_KEY": "y", "SHELFHOLD_KAVITA_API_KEY_FILE": str(secret_file)}
+    both = {
+        **env,
+        "SHELFHOLD_KAVITA_API_KEY": "y",
+        "SHELFHOLD_KAVITA_API_KEY_FILE": str(secret_file),
+    }
     with pytest.raises(ConfigError, match="KAVITA_API_KEY"):
         load_settings(both)
     missing = {**env, "SHELFHOLD_KAVITA_API_KEY_FILE": str(tmp_path / "absent")}
