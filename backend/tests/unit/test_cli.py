@@ -1,6 +1,8 @@
 """Command line wiring: exit codes, messages, `serve`."""
 
+import os
 import sqlite3
+import stat
 from contextlib import closing
 from pathlib import Path
 
@@ -135,3 +137,15 @@ def test_settings_store_only_tolerates_a_missing_table(settings: Settings) -> No
         db.commit()
     with pytest.raises(OperationalError):
         SettingsStore(settings.database_path).all()
+
+
+@pytest.mark.req("ENF-OPS-002")
+def test_cli_migrate_creates_the_database_private(
+    cli_env: dict[str, str], settings: Settings
+) -> None:
+    previous = os.umask(0o022)  # a permissive umask must not leak into the created files
+    try:
+        assert cli.main(["migrate"]) == 0
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(settings.database_path.stat().st_mode) == 0o600
