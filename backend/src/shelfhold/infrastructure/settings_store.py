@@ -21,8 +21,10 @@ class SettingsStore:
             with engine.connect() as connection:
                 rows = connection.execute(text("SELECT key, value FROM app_setting"))
                 return {key: value for key, value in rows}
-        except OperationalError:  # table not created yet: migrations pending
-            return {}
+        except OperationalError as exc:
+            if "no such table" in str(exc):  # migrations pending
+                return {}
+            raise
         finally:
             engine.dispose()
 

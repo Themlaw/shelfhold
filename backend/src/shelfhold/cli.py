@@ -8,11 +8,18 @@ from collections.abc import Sequence
 
 import structlog
 import uvicorn
+from pydantic import SecretStr
 
 from shelfhold.config import ConfigError, ResolvedSettings, load_settings
 from shelfhold.i18n import t
 from shelfhold.infrastructure.logging import configure_logging
-from shelfhold.infrastructure.migrate import MigrationError, SchemaTooNewError, migrate
+from shelfhold.infrastructure.migrate import (
+    MigrationError,
+    MigrationInProgressError,
+    SchemaTooNewError,
+    check_schema_not_newer,
+    migrate,
+)
 from shelfhold.infrastructure.settings_store import load_db_settings
 
 MASK = "***"
@@ -39,7 +46,7 @@ def _display(resolved: ResolvedSettings, name: str) -> object:
     value = getattr(resolved.values, name)
     if value is None:
         return None
-    if name == "kavita_api_key":
+    if isinstance(value, SecretStr):
         return MASK
     return str(value) if not isinstance(value, str | int) else value
 
@@ -71,6 +78,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(t("config.invalid", detail=exc), file=sys.stderr)
         return 2
     settings = resolved.values
+    for path in resolved.world_readable_secret_files:
+        print(t("config.secret_file_world_readable", path=path), file=sys.stderr)
 
     if args.command == "config":
         _show_config(resolved, args.json)
@@ -78,6 +87,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     configure_logging(level=settings.log_level, log_format=settings.log_format)
     if args.command == "serve":
+        try:
+            check_schema_not_newer(settings)  # refuse early, with a clear message
+        except SchemaTooNewError as exc:
+            print(t("migrate.schema_too_new", revision=exc.revision), file=sys.stderr)
+            return 1
         uvicorn.run(
             "shelfhold.main:app_from_env",
             factory=True,
@@ -94,6 +108,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = migrate(settings)
     except SchemaTooNewError as exc:
         print(t("migrate.schema_too_new", revision=exc.revision), file=sys.stderr)
+        return 1
+    except MigrationInProgressError:
+        print(t("migrate.in_progress"), file=sys.stderr)
         return 1
     except MigrationError as exc:
         print(t("migrate.failed", revision=exc.revision, detail=exc.detail), file=sys.stderr)

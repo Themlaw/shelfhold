@@ -4,11 +4,12 @@ Pure module: no database or framework import. The database layer is injected
 as a loader so that this module stays testable with a plain mapping.
 """
 
+import stat
 import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
 
@@ -39,7 +40,7 @@ class Settings(BaseModel):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["json", "console"] = "json"
     public_url: str | None = None
-    kavita_api_key: SecretStr | None = None
+    api_token: SecretStr | None = None
 
     @property
     def database_path(self) -> Path:
@@ -69,10 +70,12 @@ class ResolvedSettings:
     values: Settings
     fields: Mapping[str, FieldState]
     schema_version: str
+    world_readable_secret_files: tuple[str, ...] = ()
 
 
-def _env_layer(env: Mapping[str, str]) -> dict[str, str]:
+def _env_layer(env: Mapping[str, str]) -> tuple[dict[str, str], tuple[str, ...]]:
     values: dict[str, str] = {}
+    exposed: list[str] = []
     for name in Settings.model_fields:
         key = f"{ENV_PREFIX}{name.upper()}"
         direct = env.get(key) or None
@@ -81,15 +84,18 @@ def _env_layer(env: Mapping[str, str]) -> dict[str, str]:
             raise ConfigError(f"{key} and {key}{FILE_SUFFIX} are both set")
         if file_path is not None:
             try:
-                direct = Path(file_path).read_text(encoding="utf-8").rstrip("\r\n")
-            except OSError as exc:
+                secret_path = Path(file_path)
+                direct = secret_path.read_text(encoding="utf-8").rstrip("\r\n")
+                if secret_path.stat().st_mode & stat.S_IROTH:
+                    exposed.append(file_path)
+            except (OSError, UnicodeDecodeError) as exc:
                 raise ConfigError(f"cannot read {key}{FILE_SUFFIX}: {exc}") from exc
         if direct is not None:
             values[name] = direct
-    return values
+    return values, tuple(exposed)
 
 
-def _toml_layer(path: Path) -> tuple[dict[str, str], str]:
+def _toml_layer(path: Path) -> tuple[dict[str, Any], str]:
     if not path.is_file():
         return {}, CONFIG_SCHEMA_VERSION
     try:
@@ -100,20 +106,20 @@ def _toml_layer(path: Path) -> tuple[dict[str, str], str]:
     if not version.split(".")[0].isdigit() or int(version.split(".")[0]) > SUPPORTED_CONFIG_MAJOR:
         raise ConfigError(f"{path} has schema_version {version}, newer than this release supports")
     # Unknown keys are ignored here and left untouched on disk.
-    return {k: str(v) for k, v in raw.items() if k in Settings.model_fields}, version
+    return {k: v for k, v in raw.items() if k in Settings.model_fields}, version
 
 
 def load_settings(env: Mapping[str, str], db_loader: DbLoader | None = None) -> ResolvedSettings:
     """Resolve every field from env, then config.toml, then the database, then defaults."""
-    env_values = _env_layer(env)
+    env_values, exposed = _env_layer(env)
     data_dir = Path(env_values.get("data_dir", str(Settings.model_fields["data_dir"].default)))
     toml_values, schema_version = _toml_layer(data_dir / CONFIG_FILE_NAME)
-    db_values = dict(db_loader(data_dir)) if db_loader else {}
+    db_values: dict[str, Any] = dict(db_loader(data_dir)) if db_loader else {}
 
-    merged: dict[str, str] = {}
+    merged: dict[str, Any] = {}
     sources: dict[str, Source] = {}
     for name in Settings.model_fields:
-        layers: list[tuple[Source, Mapping[str, str]]] = [("env", env_values)]
+        layers: list[tuple[Source, Mapping[str, Any]]] = [("env", env_values)]
         if name not in ENV_ONLY_FIELDS:
             layers += [("toml", toml_values), ("db", db_values)]
         for source, layer in layers:
@@ -133,4 +139,9 @@ def load_settings(env: Mapping[str, str], db_loader: DbLoader | None = None) -> 
         )
         raise ConfigError(detail) from exc
     fields = {name: FieldState(name, source) for name, source in sources.items()}
-    return ResolvedSettings(values=values, fields=fields, schema_version=schema_version)
+    return ResolvedSettings(
+        values=values,
+        fields=fields,
+        schema_version=schema_version,
+        world_readable_secret_files=exposed,
+    )

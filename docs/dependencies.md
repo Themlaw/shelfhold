@@ -30,3 +30,13 @@ ouvre une issue `dependency-risk` et fait basculer vers le repli décrit.
   `suwayomi` ou `lncrawl` hors de son adaptateur » (EF-SRC-033) à l'écriture de chaque adaptateur.
 - FastAPI et Starlette sont confinés à `shelfhold.interfaces` (contrat
   `fastapi-only-in-interfaces`).
+
+## Autres dépendances notables
+
+Non critiques (remplaçables sans réécriture), listées pour mémoire :
+
+- **httpx2** (BSD-3-Clause, dépendance de développement) : client HTTP du `TestClient` de
+  Starlette, qui déprécie `httpx` ; repli : `httpx`. Il n'est pas importé par le code de
+  l'application.
+- **uvicorn**, **SQLAlchemy**, **Alembic**, **structlog**, **pydantic** : socle du squelette,
+  versions minimales et verrou dans `backend/pyproject.toml` et `backend/uv.lock`.

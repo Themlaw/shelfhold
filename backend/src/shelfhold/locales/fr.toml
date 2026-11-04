@@ -12,10 +12,12 @@ json_help = "Sortie au format JSON."
 up_to_date = "La base est déjà à jour."
 applied = "{count} migration(s) appliquée(s) ; la base est à la révision {revision}."
 backup = "Sauvegarde préalable : {path}"
-failed = "La migration {revision} a échoué : {detail}. Restaurez la sauvegarde indiquée dans les journaux."
+failed = "La migration {revision} a échoué : {detail}. La base a été remise dans son état d'avant."
+in_progress = "Une autre migration est déjà en cours : abandon."
 schema_too_new = "La base est à la révision {revision}, plus récente que cette version de Shelfhold : démarrage refusé."
 
 [config]
+secret_file_world_readable = "Avertissement : le fichier de secret {path} est lisible par tous ; limitez ses droits (chmod 600)."
 invalid = "Configuration invalide : {detail}"
 row = "{name} = {value} [{source}]"
 row_readonly = "{name} = {value} [{source}] (lecture seule, définie par l'environnement)"

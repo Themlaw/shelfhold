@@ -55,9 +55,9 @@ def test_secret_looking_fields_are_redacted(capsys: pytest.CaptureFixture[str]) 
     import structlog
 
     configure_logging(level="INFO", log_format="json")
-    structlog.get_logger().info("probe", api_token="hunter2", note="visible")
+    structlog.get_logger().info("probe", api_token="hunter2", note="visible")  # noqa: S106
     record = json_records(capsys.readouterr().out)[0]
-    assert record["api_token"] == "***"
+    assert record["api_token"] == "***"  # noqa: S105
     assert record["note"] == "visible"
 
 

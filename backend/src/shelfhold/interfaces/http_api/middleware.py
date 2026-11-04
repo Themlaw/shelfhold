@@ -26,7 +26,6 @@ class RequestContextMiddleware:
             await self.app(scope, receive, send)
             return
         request_id = _request_id_from(Headers(scope=scope))
-        structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
         status = 500
         started = time.perf_counter()
@@ -40,6 +39,9 @@ class RequestContextMiddleware:
 
         try:
             await self.app(scope, receive, send_with_request_id)
+        except Exception:
+            structlog.get_logger().exception("http_unhandled_exception")
+            raise
         finally:
             structlog.get_logger().info(
                 "http_request",
@@ -48,4 +50,4 @@ class RequestContextMiddleware:
                 status=status,
                 duration_ms=round((time.perf_counter() - started) * 1000, 2),
             )
-            structlog.contextvars.clear_contextvars()
+            structlog.contextvars.unbind_contextvars("request_id")
