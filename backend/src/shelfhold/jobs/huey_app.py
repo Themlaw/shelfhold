@@ -11,9 +11,9 @@ so a backlog (catch-up in batches) never delays a new chapter.
 """
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -26,7 +26,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.jobs.ledger import Created, JobLedger, PendingJob
 from shelfhold.jobs.scheduler import ScanReport, Scheduler
 from shelfhold.jobs.slots import RETRY_DELAY_S, DomainSlots
-from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow
+from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow, WindowRun, run_until
 
 POOLS = ("io", "cpu", "maint")
 # Worker threads each pool's consumer is started with (`huey_consumer -w N -k thread`).
@@ -46,14 +46,30 @@ class InstanceLock(Protocol):
     def is_held(self) -> bool: ...
 
 
-@dataclass(frozen=True)
+@dataclass
 class JobContext:
     job_id: str
     kind: str
     dedupe_key: str
     scope_key: str
     limit_key: str | None
-    window_end: datetime | None  # the end of the open window, for a job that has to stop by then
+    window_end: datetime | None  # a window job has to stop by then
+    cursor: int  # the step a preempted window job resumes from (0 on a first run)
+    clock: Clock
+    ledger: JobLedger
+    preempted: bool = False
+
+    def run_steps(self, steps: Sequence[Callable[[], None]]) -> WindowRun:
+        """Run `steps[cursor:]` until the window closes, between two steps (ENF-OPS-014).
+
+        The cursor is persisted on `job_view`: stopped at the end of the window, the job is parked
+        with `next_index` and tonight's or tomorrow's run starts there, not at the beginning.
+        """
+        deadline = self.window_end or datetime.max.replace(tzinfo=UTC)
+        report = run_until(steps, deadline=deadline, clock=self.clock, start=self.cursor)
+        self.ledger.save_cursor(self.job_id, report.next_index if report.preempted else None)
+        self.preempted = report.preempted
+        return report
 
 
 Handler = Callable[[JobContext], None]
@@ -183,33 +199,37 @@ class JobPools:
             self.ledger.mark_finished(job_id, error="no handler", error_code="job.unknown_kind")
             return
         window_end = None
-        if route[2]:  # a window job: its window is the one it was queued in, never today's
+        if route[2]:  # a window job runs in the window it was queued for, as persisted
             now = self.clock.now()
-            span = self.window.span_containing(job.created_at) if job.created_at else None
-            if span is None or now >= span.end:
-                following = self.window.next_span(now)
-                if self.ledger.reschedule_to(job_id, following.start):
-                    raise RetryTask(eta=following.start.replace(tzinfo=None))
-                return  # not queued any more: a duplicate of a job that already ran
-            if now < span.start:
-                raise RetryTask(eta=span.start.replace(tzinfo=None))
-            window_end = span.end
+            end = job.window_end
+            if end is None or now >= end:  # queued by hand, or its night is over: the next one
+                span = self.window.next_span(now)
+                if not self.ledger.set_window_end(job_id, span.end):
+                    return  # not queued any more: a duplicate of a job that already ran
+                end = span.end
+            start = self.window.next_span(end - timedelta(seconds=1)).start
+            if now < start:
+                raise RetryTask(eta=start.replace(tzinfo=None))
+            window_end = end
         if not self.ledger.claim_running(job_id):
             return  # the same job reached us twice: the other task has it, or it is done
         if job.limit_key is not None and not self.slots.try_acquire(job.limit_key):
             self.ledger.mark_deferred(job_id)
             raise RetryTask(delay=RETRY_DELAY_S)  # asked again later, no thread kept waiting
         try:
-            route[1](
-                JobContext(
-                    job_id, job.kind, job.dedupe_key, job.scope_key, job.limit_key, window_end
-                )
-            )
+            context = JobContext(
+                job_id, job.kind, job.dedupe_key, job.scope_key, job.limit_key, window_end,
+                job.cursor_index, self.clock, self.ledger,
+            )  # fmt: skip
+            route[1](context)
         except Exception as exc:
             # the class name only: an upstream message may carry a title (EF-BIB-053)
             self.ledger.mark_finished(job_id, error=type(exc).__name__, error_code="job.failed")
         else:
-            self.ledger.mark_finished(job_id)
+            if context.preempted:
+                self.ledger.mark_preempted(job_id)
+            else:
+                self.ledger.mark_finished(job_id)
         finally:
             if job.limit_key is not None:
                 self.slots.release(job.limit_key)

@@ -1,7 +1,7 @@
 """Review of L12 (PR #35): double execution, window jobs, upsert, last_run_at, 0600 files."""
 
 import stat
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -91,7 +91,8 @@ def test_window_job_is_not_run_outside_its_window(
     with engine.connect() as conn:
         row = conn.execute(sa.select(platform.job_view)).one()
     assert row.status == "queued"
-    assert row.created_at == utc(2026, 11, 6, 2)  # the next window
+    assert row.created_at == utc(2026, 11, 5, 2, 0, 5)  # untouched
+    assert row.window_end == utc(2026, 11, 6, 6)  # the next window, persisted
     clock.set(utc(2026, 11, 6, 2, 0, 10))
     pools._execute(row.id)
     assert [(c.kind, c.window_end) for c in seen] == [("store_verify", utc(2026, 11, 6, 6))]
@@ -183,3 +184,42 @@ def test_queue_files_are_private(pools: JobPools, tmp_path: Path) -> None:
     files = sorted((tmp_path / "data").glob("huey-*.db*"))
     assert {"huey-cpu.db", "huey-io.db", "huey-maint.db"} <= {f.name for f in files}
     assert all(stat.S_IMODE(f.stat().st_mode) == 0o600 for f in files)
+
+
+@pytest.mark.req("ENF-OPS-014")
+def test_window_job_resumes_from_its_cursor_without_redoing_steps(
+    pools: JobPools, engine: Engine, clock: ManualClock
+) -> None:
+    done: list[int] = []
+
+    def step(n: int) -> Callable[[], None]:
+        def run() -> None:
+            done.append(n)
+            clock.advance(seconds=50)  # an operation is never cut in the middle
+
+        return run
+
+    steps = [step(n) for n in range(5)]
+    pools.register(
+        "integrity_rolling", pool="maint", handler=lambda ctx: ctx.run_steps(steps), windowed=True
+    )
+    pools.scheduler.add("integrity_rolling", "0 3 * * *", windowed=True)
+    clock.set(utc(2026, 11, 5, 5, 58))  # two minutes before the window closes
+    pools.tick()
+    run_all(pools, "maint")
+    assert done == [0, 1, 2]  # the third began at 05:59:40 and ended after the end
+    with engine.connect() as conn:
+        row = conn.execute(sa.select(platform.job_view)).one()
+    assert (row.status, row.error_code, row.cursor) == (
+        "paused",
+        "window.preempted",
+        '{"next_index": 3}',
+    )
+
+    clock.set(utc(2026, 11, 6, 2, 0, 5))  # tomorrow's window
+    pools.tick()  # the occurrence that is due continues the parked job, it is not a second one
+    run_all(pools, "maint")
+    assert done == [0, 1, 2, 3, 4]  # nothing done twice
+    with engine.connect() as conn:
+        rows = conn.execute(sa.select(platform.job_view)).all()
+    assert [(r.status, r.cursor) for r in rows] == [("succeeded", None)]

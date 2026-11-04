@@ -5,6 +5,7 @@ job found `running` at boot goes back to the queue. The idempotency unit is the 
 download, the chapter): at most one active row per key (partial unique index).
 """
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -17,6 +18,7 @@ from shelfhold.infrastructure.schema import platform
 
 job_view = platform.job_view
 ACTIVE = ("queued", "running", "paused")
+PREEMPTED = "window.preempted"  # `error_code` of a window job stopped at the end of its window
 
 
 @dataclass(frozen=True)
@@ -30,14 +32,15 @@ class PendingJob:
     source_key: str | None = None
     limit_key: str | None = None
     priority_class: str = "new"
-    window_end: datetime | None = None  # a window job must stop by then
-    created_at: datetime | None = None
+    window_end: datetime | None = None  # a window job must stop by then (persisted, 0005)
+    cursor_index: int = 0  # where a preempted window job resumes (persisted, 0005)
 
 
 @dataclass(frozen=True)
 class Created:
     job_id: str
     created: bool  # False: an active job with the same dedupe key already existed
+    resumed: bool = False  # that job was a preempted window job, now queued again
 
 
 class JobLedger:
@@ -54,9 +57,12 @@ class JobLedger:
         source_key: str | None = None,
         limit_key: str | None = None,
         priority_class: str = "new",
+        window_end: datetime | None = None,
     ) -> Created:
         existing = self._active(conn, dedupe_key)
         if existing is not None:
+            if window_end is not None and self._resume(conn, existing, window_end):
+                return Created(existing, created=False, resumed=True)
             return Created(existing, created=False)
         job_id = new_ulid()
         try:
@@ -70,6 +76,7 @@ class JobLedger:
                         source_key=source_key,
                         limit_key=limit_key,
                         priority_class=priority_class,
+                        window_end=window_end,
                         created_at=self._clock.now(),
                     )
                 )
@@ -79,6 +86,27 @@ class JobLedger:
                 raise
             return Created(raced, created=False)
         return Created(job_id, created=True)
+
+    @staticmethod
+    def _resume(conn: Connection, job_id: str, window_end: datetime) -> bool:
+        """A window job preempted last night goes back to the queue for tonight's window, with
+        its cursor: the occurrence that is due now is that continuation, not a second job."""
+        return bool(
+            conn.execute(
+                sa.update(job_view)
+                .where(
+                    job_view.c.id == job_id,
+                    job_view.c.status == "paused",
+                    job_view.c.error_code == PREEMPTED,
+                )
+                .values(
+                    status="queued",
+                    error_code=None,
+                    huey_task_id=None,
+                    window_end=window_end,
+                )
+            ).rowcount
+        )
 
     @staticmethod
     def _active(conn: Connection, dedupe_key: str) -> str | None:
@@ -110,17 +138,30 @@ class JobLedger:
                 ).rowcount
             )
 
-    def reschedule_to(self, job_id: str, instant: datetime) -> bool:
-        """Move a still-queued window job that found its window closed. `created_at` is the
-        instant the job belongs to (no column holds a window end, no migration): the window that
-        contains it is the window the job may run in."""
+    def set_window_end(self, job_id: str, window_end: datetime) -> bool:
+        """Move a still-queued window job to another window; False if it is not queued."""
         with self._engine.begin() as conn:
             return bool(
                 conn.execute(
                     sa.update(job_view)
                     .where(job_view.c.id == job_id, job_view.c.status == "queued")
-                    .values(created_at=instant)
+                    .values(window_end=window_end)
                 ).rowcount
+            )
+
+    def save_cursor(self, job_id: str, next_index: int | None) -> None:
+        """Keep (or, with None, clear) where the job resumes."""
+        value = None if next_index is None else json.dumps({"next_index": next_index})
+        with self._engine.begin() as conn:
+            conn.execute(sa.update(job_view).where(job_view.c.id == job_id).values(cursor=value))
+
+    def mark_preempted(self, job_id: str) -> None:
+        """The window closed before the job was done: parked, with its cursor, until the next."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                sa.update(job_view)
+                .where(job_view.c.id == job_id)
+                .values(status="paused", error_code=PREEMPTED, started_at=None, window_end=None)
             )
 
     def mark_finished(
@@ -193,5 +234,6 @@ class JobLedger:
             source_key=row.source_key,
             limit_key=row.limit_key,
             priority_class=row.priority_class,
-            created_at=row.created_at,
+            window_end=row.window_end,
+            cursor_index=int(json.loads(row.cursor)["next_index"]) if row.cursor else 0,
         )

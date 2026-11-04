@@ -239,8 +239,9 @@ class Scheduler:
                 dedupe_key=dedupe_key,
                 source_key=row.scope_key or None,
                 priority_class=priority_class,
+                window_end=_span_of(row.window).end if windowed else None,
             )
-            if not created.created:
+            if not created.created and not created.resumed:
                 return None  # the previous run of this periodic is still active: coalesced
             conn.execute(sa.update(schedule).where(schedule.c.id == row.id).values(last_run_at=now))
         return PendingJob(
