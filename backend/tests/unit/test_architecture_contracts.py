@@ -17,7 +17,7 @@ CONFIG = BACKEND / "importlinter.ini"
 
 CORE_TOP_LEVEL = {
     "catalog", "acquisition", "library", "export", "identity", "integrations",
-    "jobs", "events", "plugin_host", "interfaces", "infrastructure", "config", "main", "cli",
+    "jobs", "events", "plugin_host", "interfaces", "infrastructure", "config", "main",
 }  # fmt: skip
 
 
@@ -192,6 +192,9 @@ def _run_in_copy(tmp_path: Path, files: dict[str, str]) -> subprocess.CompletedP
         SRC / "shelfhold", tmp_path / "shelfhold", ignore=shutil.ignore_patterns("__pycache__")
     )
     shutil.copy(CONFIG, tmp_path / "importlinter.ini")
+    replica = tmp_path / "shelfhold" / "library" / "replica.py"
+    if not replica.exists():  # the registry module of a later lot, so the contract has a target
+        replica.touch()
     for rel, code in files.items():
         target = tmp_path / "shelfhold" / rel
         for parent in reversed([target.parent, *target.parent.parents]):
@@ -217,12 +220,17 @@ VIOLATIONS = [
     ("sanitize-single-entry", "catalog/other.py", "import nh3\n",
      "infrastructure/content_trust/sanitize.py"),
     ("lang-single-producer", "library/other.py", "import langcodes\n", "catalog/lang.py"),
-    ("replica-single-count", "export/other.py", "from shelfhold.library import replica\n", None),
+    ("replica-single-count", "export/other.py", "import shelfhold.library.replica\n", None),
     ("fsops-sole-writer", "library/other.py", "import shutil\n", "infrastructure/fsops/io.py"),
     ("suwayomi-confined", "acquisition/other.py",
-     "import shelfhold.plugin_host.adapters.meta.suwayomi\n", None),
+     "import shelfhold.plugin_host.adapters.meta.suwayomi\n",
+     "plugin_host/adapters/meta/suwayomi/client.py"),
     ("lncrawl-confined", "export/other.py",
      "import shelfhold.plugin_host.adapters.meta.lncrawl\n", None),
+    ("suwayomi-confined", "plugin_host/adapters/meta/lncrawl/other.py",
+     "import shelfhold.plugin_host.adapters.meta.suwayomi\n", None),
+    ("suwayomi-confined", "plugin_host/registry.py",
+     "import shelfhold.plugin_host.adapters.meta.suwayomi\n", None),
     ("export-not-acquisition", "export/application/other.py",
      "from shelfhold.acquisition import public\n", None),
     ("library-layers", "library/domain/other.py",
