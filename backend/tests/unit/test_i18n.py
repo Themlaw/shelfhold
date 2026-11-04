@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from shelfhold.i18n import load_catalog, t
+from shelfhold.interfaces.http_api.catalog import all_error_codes
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
 USER_FACING = [SRC / "main.py", *sorted((SRC / "interfaces").rglob("*.py"))]
@@ -56,6 +57,8 @@ def test_ui_strings_extracted_no_hardcoded_text() -> None:
                 and isinstance(node.args[0], ast.Constant)
             ):
                 used.add(str(node.args[0].value))
+    # Error texts are looked up by code (EF-UX-003): the declarations are the usages.
+    used |= {key for spec in all_error_codes() for key in (spec.title_key, spec.action_key)}
     assert used - set(catalog) == set(), "keys missing from the catalog"
     assert set(catalog) - used == set(), "catalog keys never used"
 

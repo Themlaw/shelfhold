@@ -84,7 +84,7 @@ def test_discretion_headers_on_unhandled_error(tmp_path: Path) -> None:
     with _client(_app(tmp_path, health=_Health(broken=True))) as client:
         response = client.get("/readyz", headers={"X-Request-ID": "req-123"})
     assert response.status_code == 500
-    assert response.json() == {"code": "internal_error"}
+    assert response.json()["code"] == "internal_error"
     assert "exploded" not in response.text
     assert response.headers["x-request-id"] == "req-123"
     assert response.headers["x-robots-tag"] == "noindex, nofollow"

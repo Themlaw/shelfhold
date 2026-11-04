@@ -30,6 +30,43 @@ export type MigrationProgress = {
 };
 
 /**
+ * Problem
+ *
+ * RFC 9457 body, as documented in the OpenAPI schema.
+ */
+export type Problem = {
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Request Id
+     */
+    request_id?: string | null;
+    /**
+     * Status
+     */
+    status: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Type
+     */
+    type: string;
+    [key: string]: unknown;
+};
+
+/**
  * ReadyzResponse
  */
 export type ReadyzResponse = {
@@ -45,6 +82,15 @@ export type HealthzData = {
     query?: never;
     url: '/healthz';
 };
+
+export type HealthzErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type HealthzError = HealthzErrors[keyof HealthzErrors];
 
 export type HealthzResponses = {
     /**
@@ -67,6 +113,10 @@ export type ReadyzErrors = {
      * Service Unavailable
      */
     503: ReadyzResponse;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
 };
 
 export type ReadyzError = ReadyzErrors[keyof ReadyzErrors];
