@@ -277,3 +277,20 @@ def test_absent_field_is_not_a_revision() -> None:
             unit(binding, "r", "1", 3, revision_hint="v2", content_hash="sha256:" + "a" * 64)
         )
         assert again.outcome is IngestOutcome.UNCHANGED
+
+
+@pytest.mark.req("EF-BIB-050")
+def test_reappearing_variant_conflicts_with_its_replacement() -> None:
+    with harness() as h:
+        binding = h.binding(h.edition())
+        a = h.catalog.ingest(unit(binding, "a", "7", 0))
+        h.catalog.mark_removed(a.variant_id, at(5))
+        b = h.catalog.ingest(unit(binding, "b", "7", 10))
+        assert b.outcome is IngestOutcome.SUPERSEDING
+        back = h.catalog.ingest(unit(binding, "a", "7", 20))
+        assert back.variant_id == a.variant_id and back.suggestion_id is not None
+        pair = h.rows("SELECT a, b, reason, state FROM merge_suggestion")
+        assert [{pair[0]["a"], pair[0]["b"]}, pair[0]["reason"], pair[0]["state"]] == [
+            {a.variant_id, b.variant_id}, "numbering_conflict", "open",
+        ]  # fmt: skip
+        assert h.scalar("SELECT removed_at IS NULL FROM unit_variant WHERE id = :i", i=a.variant_id)

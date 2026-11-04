@@ -7,7 +7,7 @@ exported file (no upgrade before EF-EXP-016), and a revision never moves a Varia
 from dataclasses import replace
 
 from shelfhold.catalog.application.dto import IncomingUnit, IngestResult
-from shelfhold.catalog.application.ports import TeamStore, UnitStore
+from shelfhold.catalog.application.ports import StoredVariant, TeamStore, UnitStore
 from shelfhold.catalog.application.teams import check_binding, team_of_checked_binding
 from shelfhold.catalog.domain.numbering import NumberError, UnitNumber, parse_number
 from shelfhold.catalog.domain.placement import (
@@ -26,11 +26,27 @@ def _number(item: IncomingUnit) -> UnitNumber:
         )
 
 
+def _reappear(units: UnitStore, variant: StoredVariant) -> str | None:
+    """A removed Variant seen again lives again; if another live one took its place meanwhile
+    (same binding, same Team), that is a numbering conflict, decided like any other (EF-BIB-050).
+    """
+    facts = units.facts_at(variant.unit_id)
+    me = next((f for f in facts if f.id == variant.id), None)
+    if me is None or not me.removed:
+        return None
+    units.reappear(variant.id)
+    others = [f for f in facts if f.id != variant.id]
+    decision = decide_new_variant(binding_id=me.binding_id, team_id=me.team_id, at_place=others)
+    if decision.outcome is IngestOutcome.NUMBERING_CONFLICT and decision.other_id:
+        return units.open_conflict(decision.other_id, variant.id)
+    return None
+
+
 def ingest_unit(units: UnitStore, teams: TeamStore, item: IncomingUnit) -> IngestResult:
     check_binding(teams, item.binding)
     existing = units.find_variant(item.binding.id, item.remote_unit_id)
     if existing is not None:  # same (binding, remote id): the same Variant, whatever it now says
-        units.reappear(existing.id)
+        suggestion_id = _reappear(units, existing)
         if not units.revision_changed(existing, item):
             return IngestResult(
                 IngestOutcome.UNCHANGED,
@@ -38,10 +54,16 @@ def ingest_unit(units: UnitStore, teams: TeamStore, item: IncomingUnit) -> Inges
                 existing.id,
                 existing.team_id,
                 existing.revision,
+                suggestion_id=suggestion_id,
             )
         revision = units.add_revision(existing, item)
         return IngestResult(
-            IngestOutcome.REVISION, existing.unit_id, existing.id, existing.team_id, revision
+            IngestOutcome.REVISION,
+            existing.unit_id,
+            existing.id,
+            existing.team_id,
+            revision,
+            suggestion_id=suggestion_id,
         )
 
     edition_id = item.binding.edition_id
