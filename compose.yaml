@@ -1,0 +1,59 @@
+# Shelfhold reference compose (= homelab example, docs/spec/04-structure-repo.md section 5).
+# The image is defined here and in env.IMAGE of the workflows, nowhere else.
+# Before 0.1.0 only the `edge` tag exists; pin X.Y once releases are published.
+#
+# Hardened by default (ENF-SEC-006). Shelfhold still starts if you run it differently
+# (root, writable filesystem): `shelfhold status` then warns and points back to this profile.
+#
+# Host directories must be writable by uid 1000:  mkdir -p data store && chown 1000:1000 data store
+
+x-shelfhold: &shelfhold
+  image: ghcr.io/themlaw/shelfhold:edge
+  user: "1000:1000"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  ulimits:
+    core: 0            # no core dump of decrypted data
+  environment: &shelfhold-env
+    TZ: Europe/Paris
+  volumes:
+    - ./data:/data     # database, config, thumbnails (local disk, SSD advised, not NFS)
+    - ./store:/store   # kept copies only; a separate volume from /data (ENF-OPS-012)
+
+services:
+  # Applies migrations, then exits. Shelfhold only starts after it succeeded.
+  shelfhold-migrate:
+    <<: *shelfhold
+    command: ["shelfhold", "migrate"]
+    restart: "no"
+    pids_limit: 64
+    mem_limit: 512m
+    tmpfs: ["/tmp:size=64m"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  shelfhold:
+    <<: *shelfhold
+    container_name: shelfhold
+    depends_on:
+      shelfhold-migrate:
+        condition: service_completed_successfully
+    init: true
+    tmpfs: ["/tmp:size=256m"]
+    stop_grace_period: 60s
+    mem_limit: 768m
+    pids_limit: 256
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "/usr/local/bin/shelfhold-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    restart: unless-stopped

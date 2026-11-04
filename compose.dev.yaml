@@ -1,0 +1,41 @@
+# Development stack: `docker compose -f compose.dev.yaml up --build`
+# Backend with hot reload on http://localhost:8080; add `--profile frontend` for Vite on :5173
+# once frontend/ exists. Not hardened on purpose (source mounted, writable filesystem).
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: dev
+    user: "1000:1000"
+    environment:
+      SHELFHOLD_DATA_DIR: /data
+      SHELFHOLD_STORE_DIR: /store
+      SHELFHOLD_LOG_FORMAT: console
+    volumes:
+      - ./backend/src:/src/src:ro
+      - dev-data:/data
+      - dev-store:/store
+    ports:
+      - "127.0.0.1:8080:8080"
+    command: >
+      sh -c "shelfhold migrate && exec python -m uvicorn shelfhold.main:app_from_env
+      --factory --reload --reload-dir /src/src --host 0.0.0.0 --port 8080"
+
+  frontend:
+    profiles: [frontend]
+    image: node:24-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+    working_dir: /app/frontend
+    user: "1000:1000"
+    environment:
+      HOME: /tmp
+    volumes:
+      - ./frontend:/app/frontend
+      - ./open-api:/app/open-api
+    ports:
+      - "127.0.0.1:5173:5173"
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+
+volumes:
+  dev-data:
+  dev-store:

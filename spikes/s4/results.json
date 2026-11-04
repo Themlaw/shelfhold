@@ -1,0 +1,42 @@
+{
+  "image": "shelfhold:test",
+  "arch": "x86_64",
+  "image_size": {
+    "compressed_gzip_of_docker_save": "image shelfhold:test: 57455534 bytes compressed (limit 300000000)",
+    "content_size_mb_not_uncompressed": 57.8
+  },
+  "rss_idle_30s_after_ready": {
+    "process_mb": {
+      "VmHWM": 68.3,
+      "VmRSS": 68.3,
+      "Threads": 2.0,
+      "Pss": 64.3,
+      "Private_Dirty": 51.2,
+      "Anonymous": 51.2
+    },
+    "container_cgroup_mb": 61.0
+  },
+  "load": "requests 8000 non-2xx or errors (404 on /nope expected) 0",
+  "rss_right_after_load": {
+    "process_mb": {
+      "VmHWM": 72.0,
+      "VmRSS": 72.0,
+      "Threads": 18.0,
+      "Pss": 68.0,
+      "Private_Dirty": 54.7,
+      "Anonymous": 54.7
+    },
+    "container_cgroup_mb": 79.0
+  },
+  "rss_15s_after_load": {
+    "process_mb": {
+      "VmHWM": 72.0,
+      "VmRSS": 71.7,
+      "Threads": 2.0,
+      "Pss": 67.7,
+      "Private_Dirty": 54.4,
+      "Anonymous": 54.4
+    },
+    "container_cgroup_mb": 67.2
+  }
+}

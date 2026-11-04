@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -33,6 +33,8 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              - 'docker/**'
+              - 'compose*.yaml'
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
@@ -54,6 +56,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       GITLEAKS_VERSION: "8.30.1"
+      HADOLINT_VERSION: "2.15.1"
+      HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
       GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,6 +96,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: uv run --locked zizmor --format=plain ../.github/workflows
+      - name: hadolint
+        run: |
+          curl -sSfL -o hadolint "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+          echo "${HADOLINT_SHA256}  hadolint" | sha256sum --check --strict
+          chmod +x hadolint
+          ./hadolint docker/Dockerfile
       - name: gitleaks
         run: |
           curl -sSfL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
@@ -249,9 +259,36 @@ jobs:
         working-directory: e2e
         run: npx playwright test
 
+  # Image: two callers so that packages: write never reaches a pull_request run (including
+  # branches of this repository). The reusable workflows narrow the token further.
+  image-pr:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/image.yml  # zizmor: ignore[self-repository]
+
+  image-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml  # zizmor: ignore[self-repository]
+    with:
+      cache-write: true
+
+  image-publish:
+    # Pushes the archives tested by image-main (same run), then the multi-arch manifest.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: image-main
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image-publish.yml  # zizmor: ignore[self-repository]
+
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, backend, fixtures, frontend, openapi, e2e-front]
+    needs: [changes, lint, denylist, backend, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
@@ -262,6 +299,10 @@ jobs:
           DENYLIST: ${{ needs.denylist.result }}
           BACKEND: ${{ needs.backend.result }}
           FIXTURES: ${{ needs.fixtures.result }}
+          IMAGE_PR: ${{ needs.image-pr.result }}
+          IMAGE_MAIN: ${{ needs.image-main.result }}
+          IMAGE_PUBLISH: ${{ needs.image-publish.result }}
+          EVENT: ${{ github.event_name }}
           BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
           FRONTEND: ${{ needs.frontend.result }}
           FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
@@ -270,7 +311,7 @@ jobs:
           E2E: ${{ needs.e2e-front.result }}
           E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
         run: |
-          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES}"
+          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH}"
           echo "backend=${BACKEND} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
           echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED})"
           ok=1
@@ -289,6 +330,14 @@ jobs:
           check_filtered "$FRONTEND" "$FRONTEND_CHANGED"
           check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
           check_filtered "$E2E" "$E2E_CHANGED"
+          # Exactly one image path per event: pull request -> image-pr, push -> image-main + image-publish.
+          if [ "$EVENT" = "pull_request" ]; then
+            [ "$IMAGE_PR" = "success" ] || ok=0
+            [ "$IMAGE_MAIN" = "skipped" ] && [ "$IMAGE_PUBLISH" = "skipped" ] || ok=0
+          else
+            [ "$IMAGE_PR" = "skipped" ] || ok=0
+            [ "$IMAGE_MAIN" = "success" ] && [ "$IMAGE_PUBLISH" = "success" ] || ok=0
+          fi
           if [ "$ok" != "1" ]; then
             echo "::error::a required job failed, was cancelled, or was skipped unexpectedly"
             exit 1

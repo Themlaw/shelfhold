@@ -1,0 +1,94 @@
+name: image-publish
+
+# Reusable: publishes the OCI archives that image.yml built and the e2e tested (same run, same
+# artifacts: nothing is rebuilt), then assembles the multi-arch manifest. Called only from jobs
+# that run on push to main (ci.yml) or on a release (release.yml), never on a pull request.
+on:
+  workflow_call:
+    inputs:
+      tags:
+        description: "Newline-separated tags of the manifest; empty = edge and sha-<long>"
+        type: string
+        default: ""
+
+env:
+  IMAGE: ghcr.io/themlaw/shelfhold
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: ${{ runner.temp }}
+      - name: Push the tested archive as is (digest preserved)
+        env:
+          ARCH: ${{ matrix.arch }}
+          SHA: ${{ github.sha }}
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          command -v skopeo >/dev/null || sudo apt-get install -y --no-install-recommends skopeo
+          archive="$RUNNER_TEMP/image-${ARCH}.tar"
+          expected="$(tar -xOf "$archive" index.json | jq -r '.manifests[0].digest')"
+          # Temporary per-architecture tag: a digest-only destination cannot be pushed to.
+          skopeo copy --dest-creds "${GH_ACTOR}:${GH_TOKEN}" --digestfile "$RUNNER_TEMP/digest" \
+            "oci-archive:${archive}" "docker://${IMAGE}:build-${SHA}-${ARCH}"
+          pushed="$(cat "$RUNNER_TEMP/digest")"
+          [ "$pushed" = "$expected" ] || { echo "::error::pushed digest ${pushed} differs from the tested ${expected}"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${pushed#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digests-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Create the multi-arch manifest
+        env:
+          TAGS: ${{ inputs.tags }}
+          SHA: ${{ github.sha }}
+        run: |
+          tags="${TAGS:-$(printf 'edge\nsha-%s' "$SHA")}"
+          args=()
+          while read -r tag; do [ -n "$tag" ] && args+=(-t "${IMAGE}:${tag}"); done <<< "$tags"
+          sources=()
+          for digest in "$RUNNER_TEMP"/digests/*; do sources+=("${IMAGE}@sha256:$(basename "$digest")"); done
+          [ "${#sources[@]}" -eq 2 ] || { echo "::error::expected 2 platform digests"; exit 1; }
+          docker buildx imagetools create "${args[@]}" "${sources[@]}"
+          docker buildx imagetools inspect "${IMAGE}:$(head -n1 <<< "$tags")"

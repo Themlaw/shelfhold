@@ -1,0 +1,118 @@
+name: image
+
+# Reusable: build and test the image on both architectures. Called by ci.yml (job `image-pr` on
+# pull requests, `image-main` on main) and later by release.yml. Publishing is image-publish.yml.
+#
+# The jobs declare no `permissions` on purpose: they run with the token of the caller, which is
+# read-only on pull requests (image-pr) and write-capable on main only (image-main), where
+# `cache-write` lets the build refresh the registry layer cache. The e2e jobs narrow it to read.
+# Registry cache on a fork pull request: the token cannot read the package, the cache is missed
+# (accepted, documented in docs/ci-image.md); the build is then simply slower.
+on:
+  workflow_call:
+    inputs:
+      cache-write:
+        description: "Refresh the layer cache in GHCR (main and releases only, never a pull request)"
+        type: boolean
+        default: false
+
+env:
+  IMAGE: ghcr.io/themlaw/shelfhold
+  IMAGE_MAX_BYTES: "300000000"
+
+jobs:
+  build:
+    name: build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to GHCR (read the layer cache; write it on main)
+        # Not on a fork pull request: its token cannot read packages.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Detect the frontend
+        id: frontend
+        run: echo "present=$([ -f frontend/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Probe the layer cache (absent until the first build on main, or on a fork pull request)
+        id: cache
+        env:
+          CACHE_REF: ${{ env.IMAGE }}-cache:${{ matrix.arch }}
+        run: |
+          if docker buildx imagetools inspect "$CACHE_REF" >/dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no layer cache at ${CACHE_REF}, building from scratch"
+          fi
+      - name: Build (registry layer cache) and export the OCI archive that is tested then published
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          provenance: false
+          outputs: type=oci,dest=${{ runner.temp }}/image-${{ matrix.arch }}.tar,name=shelfhold:ci
+          build-args: |
+            WITH_FRONTEND=${{ steps.frontend.outputs.present }}
+            REVISION=${{ github.sha }}
+          cache-from: ${{ steps.cache.outputs.present == 'true' && format('type=registry,ref={0}-cache:{1}', env.IMAGE, matrix.arch) || '' }}
+          cache-to: ${{ inputs.cache-write && format('type=registry,ref={0}-cache:{1},mode=max', env.IMAGE, matrix.arch) || '' }}
+      - name: Image size (ENF-PERF-002)
+        run: |
+          docker/load-oci.sh "$RUNNER_TEMP/image-${{ matrix.arch }}.tar"
+          docker/check-image-size.sh shelfhold:ci "$IMAGE_MAX_BYTES"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: ${{ runner.temp }}/image-${{ matrix.arch }}.tar
+          retention-days: 1
+          compression-level: 1
+
+  e2e:
+    name: e2e (${{ matrix.arch }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.x"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: ${{ runner.temp }}
+      - name: Load the image that will be published
+        run: docker/load-oci.sh "$RUNNER_TEMP/image-${{ matrix.arch }}.tar"
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: Smoke (up --wait, /readyz, SPA index) and no outbound request
+        working-directory: e2e
+        env:
+          SHELFHOLD_IMAGE: shelfhold:ci
+        run: uv run --project ../backend --locked pytest tests

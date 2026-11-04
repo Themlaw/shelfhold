@@ -1,0 +1,68 @@
+{
+  "1_no_database_locked": {
+    "executed": 1000,
+    "all_1000_executed": true,
+    "enqueue_errors": 0,
+    "database_is_locked_occurrences": 0,
+    "seconds_to_enqueue_1000": 0.12,
+    "seconds_to_run_1000": 1.12,
+    "workers": 8,
+    "producers": 4,
+    "pass": true
+  },
+  "2_kill9_flush_locks": {
+    "lock_survived_kill9": true,
+    "pending_after_kill": 5,
+    "done_after_restart_without_flush": 0,
+    "tasks_after_flush_all_ran": true,
+    "pending_at_end": 0,
+    "lost_in_flight_tasks": 1,
+    "note": "the task running at kill time is dequeued, not acked: lost to Huey; the Shelfhold jobs table (status=running) re-enqueues it, idempotent per chapter",
+    "pass": true
+  },
+  "4_domain_slot_n2": {
+    "limit": 2,
+    "peak_concurrency_per_domain": {
+      "a.example": 2,
+      "b.example": 2,
+      "c.example": 2
+    },
+    "all_60_ran": true,
+    "workers": 8,
+    "pass": true
+  },
+  "5_enqueue_latency": {
+    "idle_consumer": {
+      "n": 3000,
+      "p50_ms": 0.045,
+      "p99_ms": 0.129,
+      "max_ms": 1.324
+    },
+    "consumer_running_8_workers": {
+      "n": 3000,
+      "p50_ms": 0.045,
+      "p99_ms": 0.155,
+      "max_ms": 8.482
+    },
+    "pass": true
+  },
+  "6_rss_overhead": {
+    "baseline_mb": [
+      62.3,
+      62.2,
+      62.2
+    ],
+    "with_huey_3_pools_idle_mb": [
+      65.7,
+      65.6,
+      65.6
+    ],
+    "delta_mb": [
+      3.5,
+      3.3,
+      3.4
+    ],
+    "pool_layout": "io 4 threads, cpu 1, maint 1 (in process)",
+    "pass": true
+  }
+}

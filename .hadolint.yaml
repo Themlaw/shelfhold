@@ -1,4 +1,4 @@
-# No Dockerfile before the M0 image; the configuration is in place already.
+# Dockerfile: docker/Dockerfile (run in CI by the lint job).
 failure-threshold: warning
 trustedRegistries:
   - docker.io
