@@ -142,6 +142,7 @@ def test_no_interactive_docs(tmp_path: Path, path: str) -> None:
         assert client.get(path).status_code == 404
 
 
+@pytest.mark.req("ENF-PRIV-002")
 def test_offline_schema_export_still_works(tmp_path: Path) -> None:
     schema = _app(tmp_path).openapi()
     assert schema["info"]["version"] == "9.9.9"
