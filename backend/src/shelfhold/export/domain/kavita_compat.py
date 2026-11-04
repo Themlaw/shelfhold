@@ -68,7 +68,15 @@ class KnownBad:
         return version < self.below
 
 
-KNOWN_BAD_VERSIONS: tuple[KnownBad, ...] = ()
+KNOWN_BAD_VERSIONS: tuple[KnownBad, ...] = (
+    # Account takeover without authentication (GHSA-m2v3-fcjh-hm22), fixed in 0.9.0.2.
+    KnownBad("CVE-2026-47202", "auth", below=KavitaVersion((0, 9, 0, 2))),
+    # Page download and annotation reads without library or age control (advisory of 2026-09-05).
+    # No advisory number in the deliverables: the identifier is ours until the project gives one.
+    KnownBad(
+        "kavita-access-control-2026-09-05", "access_control", below=KavitaVersion((0, 9, 0, 3))
+    ),
+)
 
 
 @dataclass(frozen=True)

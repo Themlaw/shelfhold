@@ -18,8 +18,10 @@ from typing import Any, Final
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.target_health import TargetHealth
 from shelfhold.export.domain.kavita_compat import (
+    KNOWN_BAD_VERSIONS,
     MINIMUM_VERSION,
     Assessment,
+    KnownBad,
     TargetMode,
     assess_version,
 )
@@ -61,7 +63,9 @@ class KavitaClient:
         clock: Clock,
         health: TargetHealth | None = None,
         scan_quiet: timedelta = DEFAULT_QUIET,
+        known_bad: tuple[KnownBad, ...] | None = None,
     ) -> None:
+        self._known_bad = KNOWN_BAD_VERSIONS if known_bad is None else known_bad
         self._fetcher = fetcher
         self._base_url = base_url.rstrip("/")
         self._key = key
@@ -165,7 +169,9 @@ class KavitaClient:
         """Read the version and decide the mode (ENF-COMP-001); known-bad versions only warn."""
         result = await self._send(routes.SERVER_INFO)
         raw = result.data.get("kavitaVersion") if isinstance(result.data, dict) else None
-        assessment = assess_version(raw if isinstance(raw, str) else None)
+        assessment = assess_version(
+            raw if isinstance(raw, str) else None, known_bad=self._known_bad
+        )
         health = self.health
         health.version, health.version_mode = assessment.raw or None, assessment.mode
         health.warnings = tuple(f"{k.advisory} ({k.category})" for k in assessment.known_bad)
