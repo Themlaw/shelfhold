@@ -1,6 +1,6 @@
 # Journal des modifications
 
-Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Ce fichier est complété par release-please à chaque release.
+Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
 ## [0.1.0] — M0 fondations
 
