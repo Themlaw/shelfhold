@@ -58,7 +58,13 @@ def test_healthz_reports_migrating_while_a_real_migrate_process_runs(
     settings: Settings, slow_migrator: subprocess.Popen[bytes]
 ) -> None:
     with TestClient(create_app(settings)) as client:
-        body = wait_for_state(client, "migrating")
+        wait_for_state(client, "migrating")
+        # The lock appears slightly before the progress file is written: wait for it.
+        deadline = time.monotonic() + 20
+        body: dict[str, object] = client.get("/healthz").json()
+        while body.get("progress") != {"done": 0, "total": 1} and time.monotonic() < deadline:
+            time.sleep(0.05)
+            body = client.get("/healthz").json()
         assert body == {"state": "migrating", "progress": {"done": 0, "total": 1}}
         assert client.get("/healthz").status_code == 200
         assert slow_migrator.wait(timeout=30) == 0
