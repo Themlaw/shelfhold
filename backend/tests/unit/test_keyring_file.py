@@ -308,3 +308,64 @@ def test_review_unmigrated_database_is_not_an_obstacle_to_a_first_start(tmp_path
     settings.data_dir.mkdir()
     sqlite3.connect(settings.database_path).close()  # exists, no table at all
     assert diagnostics.boot_check(settings).active.state == "active"
+
+
+def external_store(tmp_path: Path) -> tuple[KeyringStore, Path]:
+    real = tmp_path / "run" / "secrets" / "keyring-real"
+    real.parent.mkdir(parents=True)
+    real.write_bytes(Keyring.generate(NOW).to_json())
+    link = tmp_path / "run" / "keyring"
+    link.symlink_to(real)
+    return KeyringStore(link, lock_path=tmp_path / "lock", external=True), real
+
+
+@pytest.mark.req("ENF-SEC-005")
+@pytest.mark.parametrize("mode", [0o400, 0o440, 0o444, 0o600, 0o644])
+def test_external_keyring_may_be_a_symlink_and_read_only_or_world_readable(
+    tmp_path: Path, mode: int
+) -> None:
+    store, real = external_store(tmp_path)
+    real.chmod(mode)
+    assert store.load().active.state == "active"
+
+
+@pytest.mark.req("ENF-SEC-005")
+@pytest.mark.parametrize("mode", [0o620, 0o602, 0o666, 0o660])
+def test_external_keyring_modifiable_by_group_or_others_is_refused(
+    tmp_path: Path, mode: int
+) -> None:
+    store, real = external_store(tmp_path)
+    real.chmod(mode)
+    with pytest.raises(KeyringPermissionsError):
+        store.load()
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_external_keyring_owned_by_a_stranger_is_refused_but_root_is_accepted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, real = external_store(tmp_path)
+    real.chmod(0o400)
+    owner = real.stat().st_uid
+    monkeypatch.setattr(os, "geteuid", lambda: owner + 1)
+    if owner != 0:
+        with pytest.raises(KeyringPermissionsError):
+            store.load()
+    real_stat = os.fstat
+    monkeypatch.setattr(
+        os,
+        "fstat",
+        lambda fd: type("S", (), {"st_mode": real_stat(fd).st_mode, "st_uid": 0})(),
+    )
+    assert store.load().active.state == "active"  # owned by root
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_status_warns_for_a_world_readable_external_keyring(tmp_path: Path) -> None:
+    store, real = external_store(tmp_path)
+    settings = data_settings(tmp_path, SHELFHOLD_SECRET_KEY_FILE=str(store.path))
+    settings.data_dir.mkdir()
+    real.chmod(0o644)
+    assert "keyring_world_readable" in {w.code for w in diagnostics.collect_warnings(settings)}
+    real.chmod(0o400)
+    assert "keyring_world_readable" not in {w.code for w in diagnostics.collect_warnings(settings)}

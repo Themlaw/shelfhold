@@ -216,16 +216,22 @@ def _require(value: datetime | None) -> datetime:
 class KeyringStore:
     """Where the keyring lives, and the only code that reads or writes it."""
 
-    def __init__(self, path: Path, *, lock_path: Path) -> None:
+    def __init__(self, path: Path, *, lock_path: Path, external: bool = False) -> None:
+        """`external`: a file provided by the operator (`SHELFHOLD_SECRET_KEY_FILE`, Docker or
+        Kubernetes secret). It may be a symlink, read-only, owned by root; only a file that
+        group or others can modify is refused. The file Shelfhold writes itself in `/data` is
+        held to 0600, same uid, no symlink."""
         self.path = path
         self.lock_path = lock_path
+        self.external = external
 
     def exists(self) -> bool:
         return os.path.lexists(self.path)
 
     def load(self) -> Keyring:
         try:
-            descriptor = os.open(self.path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+            flags = os.O_RDONLY | os.O_CLOEXEC | (0 if self.external else os.O_NOFOLLOW)
+            descriptor = os.open(self.path, flags)
             with os.fdopen(descriptor, "rb") as handle:
                 self._check_permissions(os.fstat(handle.fileno()))
                 raw = handle.read()
@@ -238,6 +244,12 @@ class KeyringStore:
     def _check_permissions(self, status: os.stat_result) -> None:
         if not stat.S_ISREG(status.st_mode):
             raise KeyringPermissionsError(self.path, "is not a regular file")
+        if self.external:
+            if status.st_mode & 0o022:
+                raise KeyringPermissionsError(self.path, "can be modified by other users")
+            if status.st_uid not in (0, os.geteuid()):
+                raise KeyringPermissionsError(self.path, "belongs to another user")
+            return
         if status.st_mode & 0o077:
             raise KeyringPermissionsError(self.path, "is accessible by other users")
         if status.st_uid != os.geteuid():

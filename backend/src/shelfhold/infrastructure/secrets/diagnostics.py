@@ -1,6 +1,7 @@
 """Boot check of the keyring and the warnings `status` shows (ENF-SEC-005)."""
 
 import base64
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +24,11 @@ def keyring_path(settings: Settings) -> Path:
 
 
 def store_for(settings: Settings) -> KeyringStore:
-    return KeyringStore(keyring_path(settings), lock_path=settings.data_dir / LOCK_NAME)
+    return KeyringStore(
+        keyring_path(settings),
+        lock_path=settings.data_dir / LOCK_NAME,
+        external=settings.secret_key_file is not None,
+    )
 
 
 def _register_for_scrubbing(keyring: Keyring) -> None:
@@ -80,6 +85,8 @@ def collect_warnings(settings: Settings) -> list[KeyringWarning]:
         inside = False
     if inside:
         warnings.append(KeyringWarning("key_in_data", str(path)))
+    if store.external and store.exists() and os.stat(path).st_mode & 0o004:
+        warnings.append(KeyringWarning("keyring_world_readable", str(path)))
     if not store.exists():
         warnings.append(KeyringWarning("keyring_absent", str(path)))
         return warnings

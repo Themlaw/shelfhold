@@ -140,6 +140,7 @@ def _warning_text(warning: diagnostics.KeyringWarning) -> str:
     texts = {
         "key_in_data": t("secrets.warning_key_in_data", detail=detail),
         "rows_on_retired_key": t("secrets.warning_rows_on_retired_key", detail=detail),
+        "keyring_world_readable": t("secrets.warning_keyring_world_readable", detail=detail),
         "keyring_absent": t("secrets.warning_keyring_absent", detail=detail),
         "rotation_incomplete": t("secrets.warning_rotation_incomplete"),
         "never_exported": t("secrets.warning_never_exported"),
