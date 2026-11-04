@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 5) ; 2026-11-03 (passe 6)
+amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 5) ; 2026-11-03 (passe 6) ; 2026-11-04 (spike S5)
 decision-makers: mainteneur
 ---
 # ADR-0008 — Méta-sources (Suwayomi, lncrawl, OPDS) plutôt qu'embarquer la JVM
@@ -101,3 +101,6 @@ EF-SRC-006, EF-SRC-008, EF-SRC-009, EF-SRC-010, EF-SRC-021, EF-INT-008, EF-INT-0
 - `deliverables/review/chasseur-trous-passe5.md`
 - `deliverables/review/explorateur-passe5.md`
 - `deliverables/review/ARBITRAGES-passe5.md`
+
+## Amendement spike S5 (2026-11-04)
+Constats contre Suwayomi v2.4.2366 (détail : `spikes/s5/RESULTATS.md`). La route `GET /api/v1/chapter/{id}/download` renvoie bien un CBZ (`application/vnd.comicbook+zip`, signature `PK`) : le mode CBZ de la V1 est confirmé et le mode pages reste hors périmètre. Précisions : (1) GraphQL ne sait pas renvoyer l'archive, seule la route REST la sert (risque R7 maintenu : pas de repli GraphQL) ; (2) le téléchargeur de Suwayomi ignore la source locale, donc le banc de contrat simule le téléchargement en posant le CBZ synthétique et ne couvre pas la production du CBZ par une source distante ; (3) les dépôts d'extensions s'appellent `extensionStores` ; (4) `ui_login` v2.4 est mono-compte (JWT, `login` / `refreshToken`), les comptes multiples et leurs permissions ne sont pas testables.

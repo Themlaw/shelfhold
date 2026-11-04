@@ -1,0 +1,29 @@
+# Suwayomi contract bench (spike S5, ENF-LEG-013).
+# Real Suwayomi, pinned by digest, on an internal-only network: no route out, no published
+# port, no extension store. Only Suwayomi's built-in local source is fed, with the synthetic
+# CBZ of backend/tests/fixtures/synthetic/. Driven by backend/tests/contract/suwayomi/.
+#
+# Pinned: v2.4.2366 (stable, published 2026-09-30). Bump through a reviewed PR only (Renovate
+# opens it) and keep the stable at least 14 days old (ADR-0016).
+services:
+  suwayomi:
+    image: ghcr.io/suwayomi/suwayomi-server@sha256:1fac27c387dc2ea9949e1a01ad7f6d6de9d72d3988338a95476748e5c45c4582
+    restart: "no"
+    networks: [contract]
+    environment:
+      TZ: Etc/UTC
+      AUTH_MODE: ${SUWAYOMI_AUTH_MODE:-basic_auth}
+      AUTH_USERNAME: ${SUWAYOMI_USER:-shelfhold}
+      AUTH_PASSWORD: ${SUWAYOMI_PASSWORD:-contract-bench-only}
+      # Empty extension-store list: nothing to fetch, nothing third-party can be installed.
+      EXTENSION_STORES: "[]"
+      WEB_UI_ENABLED: "false"
+      KCEF_ENABLED: "false"
+      FLARESOLVERR_ENABLED: "false"
+      DOWNLOAD_AS_CBZ: "false"
+    volumes:
+      - ${SUWAYOMI_DATA:?set SUWAYOMI_DATA to a writable directory}:/home/suwayomi/.local/share/Tachidesk
+
+networks:
+  contract:
+    internal: true
