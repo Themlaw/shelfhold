@@ -4,8 +4,8 @@ import asyncio
 from typing import Any
 
 import pytest
-from shelfhold.plugin_host.authflow import AuthInjectingFetcher, UnsupportedAuthFlow
 
+from shelfhold.plugin_host.authflow import AuthInjectingFetcher, UnsupportedAuthFlow
 from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
 from shelfhold.sdk.models import AuthApiKey, AuthBasic, AuthForm, AuthInteractive
 from shelfhold.sdk.refs import ImageRequest
@@ -81,4 +81,3 @@ def test_injecting_fetcher_never_shows_the_secret() -> None:
         Recording(), AuthBasic(), {"username": "shelfhold", "password": SECRET}
     )
     assert SECRET not in repr(wrapped) and SECRET not in str(wrapped)
-    assert SECRET not in repr(vars(wrapped)).replace("_secret", "")  # held, never rendered

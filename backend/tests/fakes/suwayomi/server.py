@@ -288,7 +288,7 @@ class FakeSuwayomi:
         wanted = self._wanted_id(query, variables, "id")
         for manga in self.state["mangas"]:
             if manga["id"] == wanted:
-                manga["inLibrary"] = "false" not in query.lower().replace("inlibrary", "")
+                manga["inLibrary"] = bool(variables.get("inLibrary", True))
         return {"manga": {"id": wanted}}
 
     # -- as a transport, to exercise the real IntegrationFetcher ----------------------------

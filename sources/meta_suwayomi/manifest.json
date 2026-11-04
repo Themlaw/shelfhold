@@ -58,5 +58,9 @@
   "rights_jurisdiction": null,
   "translation_nature": "unknown",
   "content_trust": "untrusted",
-  "tests": []
+  "tests": [],
+  "supported_versions": {
+    "min": "2.4.2366",
+    "max_exclusive": "3.0.0"
+  }
 }

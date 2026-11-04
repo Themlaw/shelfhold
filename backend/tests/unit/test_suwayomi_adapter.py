@@ -12,12 +12,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from shelfhold.plugin_host.authflow import AuthInjectingFetcher
-from shelfhold.plugin_host.errors import (
-    AuthModeUnsupported,
-    ServiceVersionMismatch,
-    failure_class_of,
-)
 from sqlalchemy import Engine
 
 from shelfhold.events.waiting_state import WaitingState
@@ -26,6 +20,12 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.schema import metadata
 from shelfhold.jobs.slots import DomainSlots
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
+from shelfhold.plugin_host.authflow import AuthInjectingFetcher
+from shelfhold.plugin_host.errors import (
+    AuthModeUnsupported,
+    ServiceVersionMismatch,
+    failure_class_of,
+)
 from shelfhold.sdk.connected import ConnectedCapability
 from shelfhold.sdk.models import AuthBasic
 from shelfhold.sdk.refs import FileAsset, ImageRequest, SeriesRef, UnitInfo, UnitRef
@@ -146,7 +146,7 @@ def test_csrf_mismatch_classified_version_not_auth() -> None:
         run(service.semantic_health(f))
     assert failure_class_of(raised.value) == "version"
     assert not isinstance(raised.value, AuthRequired)
-    assert raised.value.code == "source.version_mismatch"
+    assert raised.value.code == "source.version_unsupported"
 
     # a plain 401 stays an authentication failure: the two are told apart
     plain, g, _ = make(FakeSuwayomi(auth_mode="basic_auth"))
@@ -194,7 +194,7 @@ def test_suwayomi_version_out_of_range_reported(version: str, supported: bool) -
     health = run(service.semantic_health(f))
     assert health.version == version
     assert health.ok is supported
-    assert health.detail == (None if supported else "source.version_out_of_range")
+    assert health.detail == (None if supported else "source.version_unsupported")
 
 
 # --- EF-SRC-021: sub-sources and the limit key of the upstream source -------------------------
@@ -303,3 +303,32 @@ def test_unit_dates_zero_upload_is_none_and_team_is_carried() -> None:
     assert units[0].published_at == datetime.fromtimestamp(1760000000, UTC)
     assert units[1].published_at is None  # a zero upload date is never 1970-01-01
     assert [u.source_order for u in units] == sorted(u.source_order for u in units)
+
+
+@pytest.mark.req("EF-SRC-008", "EF-SRC-033")
+def test_error_codes_and_version_range_follow_catalog_and_manifest() -> None:
+    import json as _json
+
+    from shelfhold.events.operating import OPERATING_EVENTS
+    from shelfhold.interfaces.http_api.catalog import all_error_codes
+    from shelfhold.plugin_host.adapters.meta.suwayomi.versions import (
+        MAX_EXCLUSIVE,
+        MIN_VERSION,
+        is_supported,
+    )
+    from shelfhold.plugin_host.errors import AuthExpired
+
+    catalog = {c.code: c for c in all_error_codes()}
+    for error in (ServiceVersionMismatch, AuthModeUnsupported, AuthExpired):
+        assert error.code in catalog and catalog[error.code].event
+        assert error.code in OPERATING_EVENTS  # same identifier as the event (EF-UX-003)
+
+    manifest = Path(__file__).resolve().parents[3] / "sources" / "meta_suwayomi" / "manifest.json"
+    declared = _json.loads(manifest.read_text("utf-8"))["supported_versions"]
+    assert declared == {
+        "min": ".".join(map(str, MIN_VERSION)),
+        "max_exclusive": ".".join(map(str, MAX_EXCLUSIVE)),
+    }
+    assert is_supported("v2.4.2366") and is_supported("v2.9.0")
+    assert not is_supported("v2.4.2365") and not is_supported("v3.0.0")
+    assert not is_supported("nightly")

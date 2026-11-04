@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.plugin_host.authflow import AuthInjectingFetcher, load_account_secret
 from sqlalchemy import Engine
 
 from shelfhold.config import Settings
@@ -23,6 +22,7 @@ from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
+from shelfhold.plugin_host.authflow import AuthInjectingFetcher, load_account_secret
 from shelfhold.sdk.models import AuthBasic
 from shelfhold.sdk.source import AuthRequired
 from tests.fakes.suwayomi import BASE_URL, PASSWORD, USER, FakeSuwayomi
