@@ -1,4 +1,4 @@
-"""Dates partielles (EF-BIB-047) : ISO 8601 partiel, jamais plus précis que la donnée."""
+"""Partial dates (EF-BIB-047): partial ISO 8601, never more precise than the data."""
 
 import calendar
 import re
@@ -22,7 +22,7 @@ _MS_THRESHOLD = 100_000_000_000  # above this a Unix timestamp is in millisecond
 @total_ordering
 @dataclass(frozen=True)
 class PartialDate:
-    """Année, mois facultatif, jour facultatif (un jour exige un mois)."""
+    """Year, optional month, optional day (a day requires a month)."""
 
     year: int
     month: int | None = None
@@ -63,7 +63,7 @@ class PartialDate:
     __str__ = iso
 
     def coarsened_to(self, precision: DatePrecision) -> "PartialDate":
-        """Réduit la précision ; en demander plus que la donnée est une erreur."""
+        """Lower the precision; asking for more than the data holds is an error."""
         order = list(DatePrecision)
         if order.index(precision) > order.index(self.precision):
             raise ValueError(f"cannot raise precision from {self.precision} to {precision}")
@@ -75,7 +75,7 @@ class PartialDate:
 
 
 def parse_partial_date(value: str | int | float | None) -> "PartialDate | None":
-    """`2023`, `2023-05`, `2023-05-14` ; une valeur nulle ou à zéro de la source donne `None`."""
+    """`2023`, `2023-05`, `2023-05-14`; a null or zero value from a source gives `None`."""
     if value is None:
         return None
     text = str(value).strip()
@@ -92,7 +92,7 @@ def parse_partial_date(value: str | int | float | None) -> "PartialDate | None":
 
 
 def from_upload_timestamp(value: str | int | float | None) -> datetime | None:
-    """Date de mise en ligne d'une source (secondes ou millisecondes Unix) ; 0 ou nul → `None`."""
+    """Upload date from a source (Unix seconds or milliseconds); 0 or null gives `None`."""
     if value is None or (isinstance(value, str) and value.strip() in _ZERO_TEXTS):
         return None
     number = float(value)
@@ -104,7 +104,7 @@ def from_upload_timestamp(value: str | int | float | None) -> datetime | None:
 
 
 def comicinfo_date_fields(date: PartialDate) -> dict[str, int]:
-    """Champs `Year`/`Month`/`Day` de ComicInfo, sans aucun champ plus fin que la donnée."""
+    """ComicInfo `Year`/`Month`/`Day` fields, none finer than the data."""
     fields = {"Year": date.year}
     if date.month is not None:
         fields["Month"] = date.month
@@ -114,5 +114,5 @@ def comicinfo_date_fields(date: PartialDate) -> dict[str, int]:
 
 
 def opf_date(date: PartialDate) -> str:
-    """`dc:date` de l'OPF, à la précision de la donnée."""
+    """OPF `dc:date`, at the precision of the data."""
     return date.iso()

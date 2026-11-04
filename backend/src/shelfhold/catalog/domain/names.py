@@ -1,7 +1,7 @@
-"""Noms de contributeurs (EF-BIB-046, invariant I21).
+"""Contributor names (EF-BIB-046, invariant I21).
 
-Un champ de personne exporté (ComicInfo `Writer`…) ne contient jamais de virgule (Kavita coupe à la
-virgule) et jamais le nom de tri (`sort`), qui ne sert qu'à `file-as` dans l'OPF.
+An exported person field (ComicInfo `Writer`...) never holds a comma (Kavita splits on commas) and
+never the sort name (`sort`), which only serves OPF `file-as`.
 """
 
 import re
@@ -33,7 +33,7 @@ class PersonField:
 
 
 class NoPersonFieldName(ValueError):
-    """Aucun nom utilisable dans un champ de personne (il n'existe que des noms de tri)."""
+    """No name usable in a person field (only sort names exist)."""
 
 
 _PREFERENCE = (NameKind.DISPLAY, NameKind.NATIVE, NameKind.ROMANIZED)
@@ -47,11 +47,11 @@ def _primary(lang: str) -> str:
 def person_field_name(
     names: Sequence[ContributorName], lang: str | None = None, *, is_org: bool = False
 ) -> PersonField:
-    """Forme d'affichage d'un contributeur pour un champ de personne.
+    """Display form of a contributor for a person field.
 
-    Ordre de préférence : la langue demandée (`display`, `native`, `romanized`), puis les autres
-    langues. Une forme d'autorité « Nom, Prénom » d'une personne passe à l'ordre naturel ; toute
-    autre virgule est remplacée (et signalée pour le journal).
+    Preference: the requested language (`display`, `native`, `romanized`), then other languages. An
+    authority form "Family, Given" of a person switches to natural order; any other comma is
+    replaced (and reported for the log).
     """
     usable = [n for n in names if n.kind is not NameKind.SORT]
     if not usable:
@@ -71,5 +71,5 @@ def person_field_name(
 
 
 def join_people(names: Iterable[str]) -> str:
-    """Plusieurs personnes dans un champ ComicInfo : jointes par `, `."""
+    """Several people in one ComicInfo field are joined by `, `."""
     return ", ".join(names)

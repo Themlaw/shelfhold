@@ -1,9 +1,9 @@
-"""Normaliseurs versionnés (ENF-OPS-021, ENF-I18N-002).
+"""Versioned normalizers (ENF-OPS-021, ENF-I18N-002).
 
-Toute clé d'identité est enregistrée sous `normalizer_id@version`, stockée avec la valeur brute.
-Changer le comportement est une nouvelle version ; les lignes d'une ancienne version restent
-valides tant qu'un plan de migration explicite (avec l'aperçu des fusions) n'est pas appliqué.
-Rien n'est jamais recalculé à la lecture : `resolve_key` rend la valeur stockée.
+Every identity key is registered under `normalizer_id@version` and stored with the raw value. A
+change of behaviour is a new version; rows of an older version stay valid until an explicit
+migration plan (with the merge preview) is applied. Nothing is ever recomputed on read:
+`resolve_key` returns the stored value.
 """
 
 import unicodedata
@@ -43,7 +43,7 @@ class NormalizerId:
 
 @dataclass(frozen=True)
 class Normalized:
-    """Valeur normalisée, valeur brute et normaliseur, stockés ensemble (`*_norm_by`)."""
+    """Normalized value, raw value and normalizer, stored together (`*_norm_by`)."""
 
     value: str
     raw: str
@@ -55,13 +55,13 @@ class Normalized:
 
 
 def resolve_key(stored: Normalized) -> str:
-    """Clé d'identité d'une ligne stockée : celle de sa version, jamais recalculée."""
+    """Identity key of a stored row: that of its own version, never recomputed."""
     return stored.value
 
 
 @dataclass(frozen=True)
 class Merge:
-    """Aperçu : des valeurs brutes qui deviendraient une seule clé après migration."""
+    """Preview: raw values that would become a single key after migration."""
 
     new_value: str
     raws: tuple[str, ...]
@@ -70,12 +70,12 @@ class Merge:
 @dataclass(frozen=True)
 class MigrationPlan:
     target: NormalizerId
-    changes: tuple[Normalized, ...]  # lignes d'une ancienne version, à recalculer
-    results: tuple[Normalized, ...]  # leur valeur sous la version cible, dans le même ordre
+    changes: tuple[Normalized, ...]  # rows of an older version, to recompute
+    results: tuple[Normalized, ...]  # their value under the target version, same order
     merges: tuple[Merge, ...]
 
     def apply(self) -> tuple[Normalized, ...]:
-        """Les lignes migrées ; les lignes d'origine ne sont pas modifiées."""
+        """The migrated rows; the original rows are not modified."""
         return self.results
 
 
@@ -108,7 +108,7 @@ class NormalizerRegistry:
         return Normalized(self._functions[nid](raw), raw, str(nid))
 
     def plan_migration(self, rows: Iterable[Normalized], name: str) -> MigrationPlan:
-        """Aperçu d'une migration vers la version courante de `name`, sans rien appliquer."""
+        """Preview of a migration to the current version of `name`, applying nothing."""
         target = self.current(name)
         changes = tuple(r for r in rows if NormalizerId.parse(r.by) != target)
         results = tuple(
@@ -127,12 +127,12 @@ class NormalizerRegistry:
 
 
 def to_nfc(text: str) -> str:
-    """Texte d'affichage : NFC, contrôles bidi et ordre logique conservés."""
+    """Display text: NFC, with bidi controls and logical order kept."""
     return unicodedata.normalize("NFC", text)
 
 
 def _key_text(text: str) -> str:
-    """Clé de rapprochement : NFC, sans caractère de format invisible (bidi), casse pliée."""
+    """Matching key: NFC, no invisible format character (bidi), case-folded."""
     kept = "".join(c for c in to_nfc(text) if unicodedata.category(c) != "Cf")
     return " ".join(kept.casefold().split())
 

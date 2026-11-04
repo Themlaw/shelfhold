@@ -1,13 +1,13 @@
-"""`normalize_lang()` : seul producteur d'étiquettes de langue (ENF-I18N-005, ENF-OPS-021).
+"""`normalize_lang()`: the only producer of language tags (ENF-I18N-005, ENF-OPS-021).
 
-Étiquette BCP 47 canonique (RFC 5646) : langue en minuscules, écriture en casse de titre, région
-en majuscules. La valeur reçue est gardée à côté (`raw`) avec l'identifiant `lang@1` du normaliseur.
-Le contrat import-linter `lang-single-producer` réserve `langcodes` à ce module ; les plugins ne
-normalisent pas (le SDK ne porte que le type `LanguageTag`).
+Canonical BCP 47 tag (RFC 5646): lowercase language, title-case script, uppercase region. The
+received value is kept next to it (`raw`) with the normalizer id `lang@1`. The import-linter
+contract `lang-single-producer` reserves `langcodes` for this module; plugins do not normalize (the
+SDK only carries the `LanguageTag` type).
 
-Choix de la version 1 : pour le chinois, seule l'écriture compte dans la clé (`zh-Hans`,
-`zh-Hant`), la région est abandonnée ; `zh` nu reste une étiquette valide mais n'entre jamais dans
-une clé d'Édition (`edition_key_lang`). Les ajouts à la table d'alias sont une nouvelle version.
+Version 1 choice: for Chinese only the script matters in the key (`zh-Hans`, `zh-Hant`), the region
+is dropped; a bare `zh` is a valid tag but never enters an Edition key (`edition_key_lang`). Any
+addition to the alias table is a new version.
 """
 
 from dataclasses import dataclass
@@ -20,8 +20,8 @@ LANG_NORMALIZER_NAME = "lang"
 LANG_NORMALIZER_VERSION = 1
 LANG_NORMALIZER_ID = f"{LANG_NORMALIZER_NAME}@{LANG_NORMALIZER_VERSION}"
 
-# Alias appliqués avant langcodes : codes obsolètes ou usuels chez les sources, et romanisations
-# (`ja-ro` désigne du japonais en écriture latine). Clés en minuscules, séparateur `-`.
+# Aliases applied before langcodes: obsolete or source-specific codes, and romanizations (`ja-ro`
+# is Japanese in Latin script). Lowercase keys, `-` separator.
 _ALIASES: dict[str, str] = {
     "tl": "fil",
     "iw": "he",
@@ -39,7 +39,7 @@ _ZH_HANT_REGIONS = frozenset({"TW", "HK", "MO"})
 
 
 class LanguageError(ValueError):
-    """Étiquette refusée ; `code` ∈ {`placeholder`, `invalid`, `script_required`}."""
+    """Refused tag; `code` is one of `placeholder`, `invalid`, `script_required`."""
 
     def __init__(self, code: str, raw: str) -> None:
         super().__init__(f"{code}: {raw!r}")
@@ -84,12 +84,12 @@ def _canonical(raw: str) -> str:
 
 
 def normalize_lang(raw: str) -> NormalizedLang:
-    """Étiquette canonique de `raw` ; `LanguageError` si c'est un joker ou si elle est invalide."""
+    """Canonical tag of `raw`; `LanguageError` for a placeholder or an invalid tag."""
     return NormalizedLang(LanguageTag(_canonical(raw)), raw)
 
 
 def edition_key_lang(raw: str) -> LanguageTag:
-    """Langue admise dans la clé d'Édition (ni joker, ni `zh` sans écriture)."""
+    """Language allowed in an Edition key (no placeholder, no `zh` without a script)."""
     tag = normalize_lang(raw).tag
     if tag == "zh":
         raise LanguageError("script_required", raw)
@@ -97,9 +97,9 @@ def edition_key_lang(raw: str) -> LanguageTag:
 
 
 def variant_lang(source_lang: str | None, chapter_lang: str | None) -> LanguageTag | None:
-    """Langue d'une Variante : celle du chapitre si la source la donne, sinon celle de la source.
+    """Language of a Variant: the chapter's if the source gives it, else the source's.
 
-    `None` : langue inconnue, l'Unité passe en `waiting_state = language_unknown`.
+    `None` means unknown language: the Unit goes to `waiting_state = language_unknown`.
     """
     for candidate in (chapter_lang, source_lang):
         if candidate is None:

@@ -1,16 +1,15 @@
 # SPDX-License-Identifier: MIT
-"""Type de langue du SDK (ENF-I18N-005).
+"""Language type of the SDK (ENF-I18N-005).
 
-`LanguageTag` est une étiquette BCP 47 canonique, validée **par l'hôte** (`normalize_lang`, côté
-catalogue) : un plugin ne normalise jamais, il transmet la valeur reçue de l'amont et l'hôte la
-convertit à l'ingestion. Le SDK ne porte donc que le type et la liste des valeurs qui ne sont pas
-des langues.
+`LanguageTag` is a canonical BCP 47 tag validated by the host (`normalize_lang`, catalog side): a
+plugin never normalizes, it passes on the value received from upstream and the host converts it at
+ingestion. The SDK therefore only carries the type and the list of values that are not languages.
 """
 
 from typing import NewType
 
 LanguageTag = NewType("LanguageTag", str)
 
-# Valeurs « jokers » : jamais une langue d'Édition. Une source multilingue (`all`, `multi`) ou
-# inconnue (`und`, `mul`, vide) cède la place à la langue du chapitre, sinon l'Unité attend.
+# Placeholder values, never an Edition language. A multi-language source (`all`, `multi`) or an
+# unknown one (`und`, `mul`, empty) yields to the chapter's language, otherwise the Unit waits.
 PLACEHOLDER_LANGUAGES: frozenset[str] = frozenset({"all", "multi", "und", "mul", ""})

@@ -1,15 +1,14 @@
-"""Numérotation des Unités (EF-BIB-002, EF-BIB-050, ENF-OPS-021).
+"""Unit numbering (EF-BIB-002, EF-BIB-050, ENF-OPS-021).
 
-Un numéro brut devient `(track, segment, number_norm, part)` plus une clé de tri décimale. Le
-normaliseur est versionné (`number@1`) et la valeur brute est gardée. Le tri est total :
+A raw number becomes `(track, segment, number_norm, part)` plus a decimal sort key. The normalizer
+is versioned (`number@1`) and the raw value is kept. The order is total:
 
     (track, segment_ordinal, number_sort, part, source_order, published_at, remote_unit_id)
 
-Le segment (saison) précède le numéro dans la clé car la place de l'Unité est
-`(edition, track, number_segment, number_norm, part)` ; l'ordinal, jamais le texte, ordonne les
-segments (`S10` après `S2`). `part` vaut 1 par défaut, si bien que « 10 » et « 10 part 1 » désignent
-la même place. Un numéro absent ou illisible tombe dans la piste « non numéroté », rangée par
-`source_order`.
+The segment (season) precedes the number in the key because the Unit's place is
+`(edition, track, number_segment, number_norm, part)`; the ordinal, never the text, orders segments
+(`S10` after `S2`). `part` defaults to 1, so "10" and "10 part 1" are the same place. A missing or
+unreadable number falls into the "unnumbered" track, ordered by `source_order`.
 """
 
 import re
@@ -24,7 +23,7 @@ NUMBER_NORMALIZER_ID = f"{NUMBER_NORMALIZER_NAME}@{NUMBER_NORMALIZER_VERSION}"
 
 
 class Track(StrEnum):
-    """Pistes, dans l'ordre du tri ; `UNNUMBERED` est le repli d'EF-BIB-034."""
+    """Tracks in sort order; `UNNUMBERED` is the EF-BIB-034 fallback."""
 
     MAIN = "main"
     ANNUAL = "annual"
@@ -73,7 +72,7 @@ def _canonical_decimal(token: str) -> Decimal:
 def parse_number(
     raw: str | None, *, source_order: int = 0, track_hint: Track | None = None
 ) -> UnitNumber:
-    """Normalise un numéro brut ; ne lève jamais d'exception."""
+    """Normalize a raw number; never raises."""
     text = raw or ""
     work = text
     segment, ordinal = "", 0
@@ -110,7 +109,7 @@ def parse_number(
 def unit_sort_key(
     unit: UnitNumber, published_at: datetime | None = None, remote_unit_id: str = ""
 ) -> tuple[int, int, Decimal, int, int, tuple[int, datetime], str]:
-    """Clé de tri totale ; une date absente passe après toute date connue."""
+    """Total sort key; a missing date sorts after any known date."""
     if published_at is None:
         when = (1, datetime.min.replace(tzinfo=UTC))
     else:
@@ -128,10 +127,10 @@ def unit_sort_key(
 
 
 def follow_from(unit: UnitNumber) -> tuple[int, Decimal]:
-    """Filigrane `follow_from` : le couple `(segment_ordinal, number_sort)` (EF-BIB-050)."""
+    """`follow_from` watermark: the pair `(segment_ordinal, number_sort)` (EF-BIB-050)."""
     return (unit.segment_ordinal, unit.sort)
 
 
 def is_beyond(unit: UnitNumber, mark: tuple[int, Decimal]) -> bool:
-    """Vrai si l'Unité est strictement au-delà du filigrane."""
+    """True if the Unit is strictly beyond the watermark."""
     return follow_from(unit) > mark

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: MIT
-"""Âge conseillé (EF-EXP-011) : âge minimal entier et drapeau X séparé.
+"""Advised age (EF-EXP-011): integer minimum age plus a separate X flag.
 
-Le maximum et la comparaison avec le plafond d'une étagère sont arithmétiques ; X est toujours le
-plus restrictif. La correspondance ComicInfo est figée (B4) ; un palier de plus s'ajoute sans
-migration (la table des paliers n'est qu'une validation de forme, pas un schéma).
+The maximum, and the comparison with a shelf ceiling, are arithmetic; X is always the most
+restrictive. The ComicInfo mapping is frozen (B4); one more tier is added without a migration (the
+tier table only validates the shape, it is not a schema).
 """
 
 from collections.abc import Iterable
@@ -17,7 +17,7 @@ X_MIN_AGE = 18
 @total_ordering
 @dataclass(frozen=True)
 class AgeRating:
-    """Âge minimal entier (0 = tous publics) et drapeau X ; « non classé » = `None` ailleurs."""
+    """Integer minimum age (0 = all audiences) and X flag; "unrated" is `None` elsewhere."""
 
     min_age: int
     x: bool = False
@@ -37,24 +37,24 @@ class AgeRating:
         return self._rank() < other._rank()
 
     def allowed_under(self, ceiling: "AgeRating") -> bool:
-        """Vrai si cet âge tient sous le plafond (`shelf.max_age_rating`)."""
+        """True if this age fits under the ceiling (`shelf.max_age_rating`)."""
         return self._rank() <= ceiling._rank()
 
 
 def max_rating(ratings: Iterable[AgeRating]) -> AgeRating | None:
-    """Âge le plus restrictif (âge effectif d'une Œuvre) ; `None` si aucun âge n'est donné."""
+    """Most restrictive age (effective age of a Work); `None` when no age is given."""
     return max(ratings, default=None)
 
 
 def to_columns(rating: AgeRating | None) -> tuple[int | None, bool]:
-    """Valeurs stockées : `(age_rating, age_x)`."""
+    """Stored values: `(age_rating, age_x)`."""
     if rating is None:
         return (None, False)
     return (rating.min_age, rating.x)
 
 
 def label_key(rating: AgeRating | None) -> str:
-    """Clé du catalogue i18n du libellé (« Tous publics », « 12+ »…)."""
+    """i18n catalogue key of the label ("All audiences", "12+"...)."""
     if rating is None:
         return "age.unrated"
     if rating.x:
@@ -64,7 +64,7 @@ def label_key(rating: AgeRating | None) -> str:
     return f"age.min.{rating.min_age}"
 
 
-# Table de correspondance figée vers ComicInfo : valeur la plus proche supérieure (B4).
+# Frozen ComicInfo mapping table: the nearest value above (B4).
 _COMICINFO_CEILINGS: tuple[tuple[int, str], ...] = (
     (0, "Everyone"),
     (10, "Everyone 10+"),
@@ -76,7 +76,7 @@ _COMICINFO_X = "X18+"
 
 
 def to_comicinfo(rating: AgeRating | None) -> str | None:
-    """`AgeRating` ComicInfo ; `None` (non classé) n'écrit aucune valeur."""
+    """ComicInfo `AgeRating`; `None` (unrated) writes no value."""
     if rating is None:
         return None
     if rating.x:
@@ -100,8 +100,8 @@ _REVERSE: dict[str, AgeRating | None] = {
 
 
 def from_comicinfo(value: str) -> AgeRating | None:
-    """Règle inverse à l'adoption : un âge **suggéré**, jamais un classement.
+    """Reverse rule at adoption: a **suggested** age, never a rating.
 
-    Les valeurs inconnues donnent `None` (non classé).
+    Unknown values give `None` (unrated).
     """
     return _REVERSE.get(value.strip().casefold())
