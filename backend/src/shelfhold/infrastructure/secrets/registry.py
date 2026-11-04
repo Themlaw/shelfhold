@@ -109,21 +109,61 @@ def stale_row_ids(connection: Connection, sealed: SealedTable, active_kid: str) 
     return [str(value) for value in connection.execute(statement.order_by(sealed.pk)).scalars()]
 
 
+def _read_only(database_path: Path) -> sqlite3.Connection:
+    return sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True, timeout=1)
+
+
+def _first_row(connection: sqlite3.Connection, sql: str, *params: str) -> object:
+    """The first row of `sql`, or None when the table is not there yet (not migrated).
+
+    Any other database error (locked, unreadable, corrupt) is raised: the caller must not read
+    "I could not look" as "there is nothing".
+    """
+    try:
+        return connection.execute(sql, params).fetchone()
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return None
+        raise
+
+
 def registry_has_keys(database_path: Path) -> bool:
-    """True if the database already knows a key or holds a sealed secret (read only)."""
+    """True if the database already knows a key or holds a sealed secret (read only).
+
+    Raises `sqlite3.Error` if it cannot tell.
+    """
     if not database_path.exists():
         return False
-    connection = sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
+    connection = _read_only(database_path)
     try:
-        if connection.execute("SELECT 1 FROM secret_key LIMIT 1").fetchone():
+        if _first_row(connection, "SELECT 1 FROM secret_key LIMIT 1"):
             return True
+        return any(
+            _first_row(
+                connection,
+                f'SELECT 1 FROM "{name}" WHERE secret_kid IS NOT NULL LIMIT 1',  # noqa: S608
+            )
+            for name in sealed_tables()
+        )
+    finally:
+        connection.close()
+
+
+def rows_not_on_key(database_path: Path, active_kid: str) -> int:
+    """How many sealed rows are not under `active_kid` (a stale process, a half rotation)."""
+    if not database_path.exists():
+        return 0
+    connection = _read_only(database_path)
+    try:
+        total = 0
         for name in sealed_tables():
-            if connection.execute(
-                f'SELECT 1 FROM "{name}" WHERE secret_kid IS NOT NULL LIMIT 1'  # noqa: S608
-            ).fetchone():
-                return True
-        return False
-    except sqlite3.OperationalError:
-        return False  # not migrated yet
+            row = _first_row(
+                connection,
+                f'SELECT count(*) FROM "{name}" WHERE secret_kid IS NOT NULL '  # noqa: S608
+                "AND secret_kid <> ?",
+                active_kid,
+            )
+            total += int(row[0]) if isinstance(row, tuple) else 0
+        return total
     finally:
         connection.close()

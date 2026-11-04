@@ -31,6 +31,7 @@ SUPPORTED_VERSIONS = frozenset({FORMAT_VERSION})
 KEY_BYTES = nacl.bindings.crypto_aead_xchacha20poly1305_ietf_KEYBYTES  # 32
 NONCE_BYTES = nacl.bindings.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES  # 24
 TAG_BYTES = nacl.bindings.crypto_aead_xchacha20poly1305_ietf_ABYTES  # 16
+_WIRE_FIELDS = frozenset({"v", "kid", "alg", "ct"})
 _AAD_DOMAIN = b"shelfhold/secret-envelope"
 
 
@@ -61,6 +62,8 @@ class Envelope:
     @classmethod
     def from_wire(cls, wire: dict[str, Any]) -> "Envelope":
         try:
+            if set(wire) != _WIRE_FIELDS:
+                raise EnvelopeFormatError("envelope fields are not exactly v, kid, alg, ct")
             version, kid, alg, packed = wire["v"], wire["kid"], wire["alg"], wire["ct"]
         except (KeyError, TypeError) as exc:
             raise EnvelopeFormatError("envelope field missing") from exc
@@ -69,9 +72,11 @@ class Envelope:
         if not (isinstance(kid, str) and isinstance(alg, str) and isinstance(packed, str)):
             raise EnvelopeFormatError("envelope field has the wrong type")
         try:
-            raw = base64.b64decode(packed, altchars=b"-_", validate=True)
+            raw = base64.urlsafe_b64decode(packed.encode("ascii"))
         except (binascii.Error, ValueError) as exc:
-            raise EnvelopeFormatError("envelope ct is not base64") from exc
+            raise EnvelopeFormatError("envelope ct is not base64url") from exc
+        if base64.urlsafe_b64encode(raw).decode("ascii") != packed:  # padded, canonical, no '+/'
+            raise EnvelopeFormatError("envelope ct is not canonical base64url")
         if len(raw) < NONCE_BYTES + TAG_BYTES:
             raise EnvelopeFormatError("envelope ct is too short")
         return cls(version, kid, alg, raw[:NONCE_BYTES], raw[NONCE_BYTES:])

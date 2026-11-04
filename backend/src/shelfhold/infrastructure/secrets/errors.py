@@ -52,6 +52,17 @@ class KeyringUnreadableError(KeyringError):
         self.path = path
 
 
+class KeyringPermissionsError(KeyringError):
+    """The keyring is group/world accessible or owned by another uid: refuse, say how to fix."""
+
+    def __init__(self, path: object, reason: str) -> None:
+        super().__init__(
+            f"the keyring {path} {reason}; fix it with: chmod 600 {path} "
+            f"(and chown the file to the user running Shelfhold)"
+        )
+        self.path = path
+
+
 class KeyringCorruptError(KeyringError):
     def __init__(self, path: object, detail: str) -> None:
         super().__init__(f"the keyring {path} is not usable: {detail}")

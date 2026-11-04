@@ -1,11 +1,13 @@
 """Seal and open secrets with the keyring; the one place that knows both keys and rows."""
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.envelope import (
     Envelope,
@@ -17,6 +19,29 @@ from shelfhold.infrastructure.secrets.errors import EnvelopeFormatError, Unknown
 from shelfhold.infrastructure.secrets.keyring import Keyring
 
 
+def _remember(plaintext: bytes) -> None:
+    """Scrub this secret by value from every later log line, exceptions included.
+
+    The whole text is registered, and when it is a JSON document every string in it, since the
+    value that leaks is usually one field (a password), not the document.
+    """
+    text = plaintext.decode("utf-8", errors="replace")
+    register_secret_value(text)
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return
+    pending = [parsed]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            register_secret_value(item)
+        elif isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+
+
 class SecretVault:
     def __init__(self, keyring: Keyring) -> None:
         self.keyring = keyring
@@ -25,6 +50,7 @@ class SecretVault:
         return f"SecretVault(active={self.keyring.active.kid!r})"
 
     def seal(self, plaintext: bytes, *, table: str, column: str, row_id: str) -> Envelope:
+        _remember(plaintext)
         key = self.keyring.active
         return seal(key.material, key.kid, plaintext, table=table, column=column, row_id=row_id)
 
@@ -33,7 +59,9 @@ class SecretVault:
         key = self.keyring.find(envelope.kid)
         if key is None:
             raise UnknownKidError(envelope.kid)
-        return open_with(key.material, envelope, table=table, column=column, row_id=row_id)
+        plaintext = open_with(key.material, envelope, table=table, column=column, row_id=row_id)
+        _remember(plaintext)
+        return plaintext
 
     # --- rows with sealed columns -------------------------------------------------------------
 

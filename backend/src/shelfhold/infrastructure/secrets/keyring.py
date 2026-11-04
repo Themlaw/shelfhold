@@ -12,6 +12,7 @@ import dataclasses
 import fcntl
 import json
 import os
+import stat
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -25,6 +26,7 @@ from shelfhold.infrastructure.secrets.envelope import ALG, KEY_BYTES
 from shelfhold.infrastructure.secrets.errors import (
     KeyringCorruptError,
     KeyringMissingError,
+    KeyringPermissionsError,
     KeyringUnreadableError,
     RotationInProgressError,
 )
@@ -223,14 +225,23 @@ class KeyringStore:
 
     def load(self) -> Keyring:
         try:
-            descriptor = os.open(self.path, os.O_RDONLY | os.O_CLOEXEC)
+            descriptor = os.open(self.path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
             with os.fdopen(descriptor, "rb") as handle:
+                self._check_permissions(os.fstat(handle.fileno()))
                 raw = handle.read()
         except FileNotFoundError:
             raise KeyringMissingError(self.path, reason="absent") from None
         except OSError as exc:
             raise KeyringUnreadableError(self.path, exc.strerror or type(exc).__name__) from None
         return Keyring.from_json(raw, source=self.path)
+
+    def _check_permissions(self, status: os.stat_result) -> None:
+        if not stat.S_ISREG(status.st_mode):
+            raise KeyringPermissionsError(self.path, "is not a regular file")
+        if status.st_mode & 0o077:
+            raise KeyringPermissionsError(self.path, "is accessible by other users")
+        if status.st_uid != os.geteuid():
+            raise KeyringPermissionsError(self.path, "belongs to another user")
 
     def create(self, keyring: Keyring) -> None:
         """First write: atomic, 0600, and never over an existing keyring."""
@@ -242,7 +253,9 @@ class KeyringStore:
     @contextlib.contextmanager
     def lock(self) -> Iterator[None]:
         """Serialise `secrets rotate`/`export`; raises at once if another process holds it."""
-        descriptor = os.open(self.lock_path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
+        descriptor = os.open(
+            self.lock_path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600
+        )
         try:
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)

@@ -172,10 +172,11 @@ def test_review_wire_form_is_strict_canonical_base64url(sealed: Envelope) -> Non
     wire = sealed.to_wire()
     standard = base64.b64encode(base64.urlsafe_b64decode(wire["ct"])).decode()
     candidates = [
-        {**wire, "ct": wire["ct"].rstrip("=")},  # unpadded
         {**wire, "ct": wire["ct"] + "\n"},
         {**wire, "ct": " " + wire["ct"]},
     ]
+    if wire["ct"].endswith("="):
+        candidates.append({**wire, "ct": wire["ct"].rstrip("=")})  # unpadded
     if standard != wire["ct"]:
         candidates.append({**wire, "ct": standard})  # the + / alphabet
     for candidate in candidates:

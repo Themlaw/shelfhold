@@ -69,11 +69,13 @@ def run_export(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         if args.out == STDOUT:
             sys.stdout.write(armored)
         else:
-            write_private(Path(args.out), armored.encode("ascii"), overwrite=True)
+            write_private(Path(args.out), armored.encode("ascii"), overwrite=False)
     except ExportError as exc:
         return _fail(t("secrets.export_failed", detail=exc))
     except KeyringError as exc:
         return _fail(t("secrets.keyring_error", detail=exc))
+    except FileExistsError:
+        return _fail(t("secrets.out_exists", path=args.out))
     except OSError as exc:
         return _fail(t("secrets.write_failed", detail=exc.strerror or exc))
     try:  # remembered so `status` stops asking; a read-only keyring only costs the reminder
@@ -137,7 +139,7 @@ def _warning_text(warning: diagnostics.KeyringWarning) -> str:
     detail = warning.detail
     texts = {
         "key_in_data": t("secrets.warning_key_in_data", detail=detail),
-        "keyring_mode_open": t("secrets.warning_keyring_mode_open", detail=detail),
+        "rows_on_retired_key": t("secrets.warning_rows_on_retired_key", detail=detail),
         "keyring_absent": t("secrets.warning_keyring_absent", detail=detail),
         "rotation_incomplete": t("secrets.warning_rotation_incomplete"),
         "never_exported": t("secrets.warning_never_exported"),

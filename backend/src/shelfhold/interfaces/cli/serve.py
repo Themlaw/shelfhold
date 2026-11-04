@@ -14,6 +14,7 @@ from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.errors import (
     KeyringCorruptError,
     KeyringMissingError,
+    KeyringPermissionsError,
     KeyringUnreadableError,
 )
 
@@ -33,6 +34,9 @@ def run(_args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         boot_check(settings)  # ENF-SEC-005: refuse early, with a clear message
     except KeyringUnreadableError as exc:
         print(t("secrets.boot_keyring_unreadable", detail=exc), file=sys.stderr)
+        return 1
+    except KeyringPermissionsError as exc:
+        print(t("secrets.boot_keyring_permissions", path=exc.path), file=sys.stderr)
         return 1
     except KeyringCorruptError as exc:
         print(t("secrets.boot_keyring_corrupt", detail=exc), file=sys.stderr)

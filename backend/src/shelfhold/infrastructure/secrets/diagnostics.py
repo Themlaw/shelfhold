@@ -1,6 +1,7 @@
 """Boot check of the keyring and the warnings `status` shows (ENF-SEC-005)."""
 
 import base64
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,7 +42,12 @@ def boot_check(settings: Settings, *, create: bool = True, announce: bool = True
     if not store.exists():
         if settings.secret_key_file is not None:
             raise KeyringMissingError(store.path, reason="configured_file_absent")
-        if registry.registry_has_keys(settings.database_path):
+        try:
+            holds_keys = registry.registry_has_keys(settings.database_path)
+        except sqlite3.Error:
+            # could not look: a fresh keyring over existing secrets would orphan them
+            raise KeyringMissingError(store.path, reason="database_unreadable") from None
+        if holds_keys:
             raise KeyringMissingError(store.path, reason="database_holds_keys")
         if not create:
             raise KeyringMissingError(store.path, reason="absent")
@@ -74,14 +80,18 @@ def collect_warnings(settings: Settings) -> list[KeyringWarning]:
         inside = False
     if inside:
         warnings.append(KeyringWarning("key_in_data", str(path)))
-    if store.exists() and path.stat().st_mode & 0o077:
-        warnings.append(KeyringWarning("keyring_mode_open", str(path)))
     if not store.exists():
         warnings.append(KeyringWarning("keyring_absent", str(path)))
         return warnings
     keyring = store.load()
     if keyring.rotation is not None:
         warnings.append(KeyringWarning("rotation_incomplete"))
+    try:
+        stale = registry.rows_not_on_key(settings.database_path, keyring.active.kid)
+    except sqlite3.Error:
+        stale = 0
+    if stale:
+        warnings.append(KeyringWarning("rows_on_retired_key", str(stale)))
     if keyring.exported_at is None:
         warnings.append(KeyringWarning("never_exported"))
     elif keyring.rotated_at is not None and keyring.exported_at < keyring.rotated_at:
