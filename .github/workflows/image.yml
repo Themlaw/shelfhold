@@ -32,6 +32,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.arm64 && '[{"arch":"amd64","runner":"ubuntu-24.04"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' || '[{"arch":"amd64","runner":"ubuntu-24.04"}]') }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,6 +91,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.arm64 && '[{"arch":"amd64","runner":"ubuntu-24.04"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' || '[{"arch":"amd64","runner":"ubuntu-24.04"}]') }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
