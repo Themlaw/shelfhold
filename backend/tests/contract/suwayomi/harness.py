@@ -214,5 +214,9 @@ def _open_permissions(path: Path) -> None:
         if not root.is_dir():
             continue
         for item in [root, *root.rglob("*")]:
-            if not item.is_symlink():
+            if item.is_symlink():
+                continue
+            try:
                 item.chmod(0o777 if item.is_dir() else 0o666)
+            except PermissionError:
+                continue  # created by the container user: already its own
