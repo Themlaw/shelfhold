@@ -104,8 +104,8 @@ def test_dev_compose_builds_the_dev_target() -> None:
 
 def test_dockerfile_is_pinned_unprivileged_and_healthchecked() -> None:
     text = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
-    froms = re.findall(r"^FROM (\S+)", text, flags=re.MULTILINE)
-    external = [f for f in froms if "/" in f or ":" in f]
+    base_images = re.findall(r"^FROM (\S+)", text, flags=re.MULTILINE)
+    external = [f for f in base_images if "/" in f or ":" in f]
     assert external and all(
         re.search(r"@sha256:[0-9a-f]{64}$", f) for f in external if "$" not in f
     )
