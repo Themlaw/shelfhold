@@ -73,7 +73,7 @@ jobs:
           cache-to: ${{ inputs.cache-write && format('type=registry,ref={0}-cache:{1},mode=max', env.IMAGE, matrix.arch) || '' }}
       - name: Image size (ENF-PERF-002)
         run: |
-          docker load -i "$RUNNER_TEMP/image-${{ matrix.arch }}.tar"
+          docker/load-oci.sh "$RUNNER_TEMP/image-${{ matrix.arch }}.tar"
           docker/check-image-size.sh shelfhold:ci "$IMAGE_MAX_BYTES"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -108,7 +108,7 @@ jobs:
           name: image-${{ matrix.arch }}
           path: ${{ runner.temp }}
       - name: Load the image that will be published
-        run: docker load -i "$RUNNER_TEMP/image-${{ matrix.arch }}.tar"
+        run: docker/load-oci.sh "$RUNNER_TEMP/image-${{ matrix.arch }}.tar"
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: Smoke (up --wait, /readyz, SPA index) and no outbound request

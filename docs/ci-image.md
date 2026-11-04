@@ -10,7 +10,7 @@
   (`test_no_job_reachable_on_pull_request_has_packages_write`). C'est pourquoi la publication est dans un second
   workflow réutilisable : un workflow appelé ne peut pas déclarer plus de droits que son appelant, même pour un job sauté.
 - **On publie ce qui a été testé.** `image.yml` exporte une archive OCI par architecture ; l'e2e la charge
-  (`docker load`) sur un runner de la même architecture ; `image-publish.yml` la pousse telle quelle avec `skopeo copy`
+  (`docker/load-oci.sh`, skopeo : `docker load` ne lit pas les archives OCI hors magasin containerd) sur un runner de la même architecture ; `image-publish.yml` la pousse telle quelle avec `skopeo copy`
   et vérifie que le digest poussé est celui de l'archive. Rien n'est reconstruit. Le tag temporaire
   `build-<sha>-<arch>` sert de support à ce push (un push vers un digest seul est impossible) ; le manifeste public
   référence les digests. Le nettoyage de ces tags relève de `cleanup.yml` (M1b, tags `pr-*` et `build-*`).
