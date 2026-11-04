@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+
 from shelfhold.catalog.domain.numbering import (
     NUMBER_NORMALIZER_ID,
     Track,

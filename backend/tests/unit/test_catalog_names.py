@@ -1,6 +1,7 @@
 """EF-BIB-046 (naming rule, I21): person fields never hold commas nor a sort name."""
 
 import pytest
+
 from shelfhold.catalog.domain.names import (
     ContributorName,
     NameKind,

@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+
 from shelfhold.catalog.domain.numbering import (
     Track,
     follow_from,

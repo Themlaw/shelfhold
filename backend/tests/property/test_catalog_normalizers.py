@@ -5,6 +5,7 @@ import unicodedata
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+
 from shelfhold.catalog.domain.normalizers import (
     NormalizerRegistry,
     default_registry,

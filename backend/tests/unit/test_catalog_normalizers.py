@@ -4,6 +4,7 @@ import re
 import unicodedata
 
 import pytest
+
 from shelfhold.catalog.domain.normalizers import (
     Normalized,
     NormalizerId,

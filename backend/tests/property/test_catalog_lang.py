@@ -5,6 +5,7 @@ import contextlib
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+
 from shelfhold.catalog.lang import LanguageError, normalize_lang
 
 TAGS = st.sampled_from(

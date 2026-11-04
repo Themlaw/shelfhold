@@ -3,6 +3,7 @@
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+
 from shelfhold.catalog.domain.dates import (
     PartialDate,
     comicinfo_date_fields,

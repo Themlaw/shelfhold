@@ -1,6 +1,7 @@
 """EF-EXP-011: age stored as minimal integer age plus an X flag; frozen ComicInfo table."""
 
 import pytest
+
 from shelfhold.sdk.age import (
     AGE_TIERS,
     AgeRating,
