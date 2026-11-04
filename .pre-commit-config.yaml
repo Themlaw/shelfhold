@@ -1,0 +1,50 @@
+# Run by prek (or pre-commit). Same checks as CI, except denylist-names (CI only).
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        language: system
+        entry: uv run --project backend ruff check --config backend/pyproject.toml
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: uv run --project backend ruff format --check --config backend/pyproject.toml
+        types: [python]
+      - id: mypy
+        name: mypy
+        language: system
+        entry: uv run --project backend mypy --config-file backend/pyproject.toml
+        pass_filenames: false
+        files: ^backend/
+      - id: import-linter
+        name: import-linter
+        language: system
+        entry: bash -c 'cd backend && uv run lint-imports --config importlinter.ini'
+        pass_filenames: false
+        files: ^backend/
+      - id: actionlint
+        name: actionlint
+        language: system
+        entry: uv run --project backend actionlint
+        files: ^\.github/workflows/
+      - id: zizmor
+        name: zizmor
+        language: system
+        entry: uv run --project backend zizmor --offline
+        files: ^\.github/workflows/
+      - id: typos
+        name: typos
+        language: system
+        entry: typos
+        types: [text]
+      - id: gitleaks
+        name: gitleaks
+        language: system
+        entry: gitleaks git --staged --redact
+        pass_filenames: false
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker

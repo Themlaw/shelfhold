@@ -1,0 +1,5 @@
+# No Dockerfile before the M0 image; the configuration is in place already.
+failure-threshold: warning
+trustedRegistries:
+  - docker.io
+  - ghcr.io

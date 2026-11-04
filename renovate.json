@@ -1,0 +1,42 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    "security:minimumReleaseAgePypi"
+  ],
+  "minimumReleaseAge": "7 days",
+  "dependencyDashboard": true,
+  "pinDigests": true,
+  "labels": [
+    "dependencies"
+  ],
+  "packageRules": [
+    {
+      "description": "Keep huey below 3.6 (ADR-0005)",
+      "matchPackageNames": [
+        "huey"
+      ],
+      "allowedVersions": "<3.6"
+    },
+    {
+      "description": "Automerge patches and dev dependencies once CI is green",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "automerge": true
+    },
+    {
+      "matchDepTypes": [
+        "dependency-groups"
+      ],
+      "automerge": true,
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ]
+    }
+  ]
+}
