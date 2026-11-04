@@ -123,7 +123,7 @@ def add_record(connection: sa.Connection, destination: str, item: str, **extra: 
         "shelf_destination_id": destination,
         "export_item_id": item,
         "locator_type": "path",
-        "rel_path": "manga/Serie/Serie - 1.cbz",
+        "rel_path": "manga/Series/Series - 1.cbz",
         "state": "written",
         **extra,
     }
@@ -692,7 +692,7 @@ def add_series(
     connection: sa.Connection,
     chain: dict[str, str],
     library: str,
-    name: str = "serie",
+    name: str = "a-series",
     **extra: Any,
 ) -> str:
     return insert(
@@ -1031,7 +1031,7 @@ def test_a_path_resolves_to_one_live_record_per_destination(
             connection,
             sa.insert(export.export_record).values(
                 shelf_destination_id=chain["destination"], export_item_id=third,
-                locator_type="path", rel_path="manga/Serie/Serie - 1.cbz", state="planned",
+                locator_type="path", rel_path="manga/Series/Series - 1.cbz", state="planned",
             ),
             "UNIQUE constraint failed",
         )  # fmt: skip
