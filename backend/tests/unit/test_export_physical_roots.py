@@ -3,6 +3,8 @@
 import json
 
 import pytest
+from ulid import ULID
+
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode
 from shelfhold.export.domain.physical_roots import (
     SENTINEL_FILE,
@@ -14,7 +16,6 @@ from shelfhold.export.domain.physical_roots import (
     is_reserved,
     judge_sentinel,
 )
-from ulid import ULID
 
 ROOT, INSTANCE = str(ULID()), str(ULID())
 

@@ -1,6 +1,7 @@
 """EF-EXP-003 and EF-EXP-060: the path map between Shelfhold's mount and Kavita's."""
 
 import pytest
+
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMapError, PathMode
 
 
