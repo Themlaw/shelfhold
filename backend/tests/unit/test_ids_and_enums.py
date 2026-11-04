@@ -82,3 +82,42 @@ def test_waiting_state_values_are_stable_snake_case_strings() -> None:
         assert state.name.lower() == state.value
         assert re.fullmatch(r"[a-z]+(_[a-z]+)*", state.value)
     assert WaitingState("restored_behind") is WaitingState.RESTORED_BEHIND
+
+
+@pytest.mark.req("ENF-OPS-020")
+def test_ulid_stays_monotonic_when_the_clock_steps_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shelfhold.infrastructure import ids
+
+    now = 1_800_000_000_000_000_000  # ns
+    monkeypatch.setattr(ids.time, "time_ns", lambda: now)
+    first = ids.new_ulid()
+    monkeypatch.setattr(ids.time, "time_ns", lambda: now - 5_000_000_000)  # five seconds back
+    second = ids.new_ulid()
+    third = ids.new_ulid()
+    assert first < second < third
+    assert ids.is_ulid(second)
+
+
+@pytest.mark.req("ENF-OPS-020")
+def test_ulid_state_is_reset_in_a_forked_child(monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    from shelfhold.infrastructure import ids
+
+    monkeypatch.setattr(ids.time, "time_ns", lambda: 1_800_000_000_000_000_000)  # frozen clock
+    ids.new_ulid()
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # child: never return into pytest
+        try:
+            os.write(write_fd, ids.new_ulid().encode())
+        finally:
+            os._exit(0)
+    os.waitpid(pid, 0)
+    child = os.read(read_fd, 26).decode()
+    os.close(read_fd)
+    os.close(write_fd)
+    parent = ids.new_ulid()
+    assert ids.is_ulid(child)
+    assert child != parent  # same millisecond, yet no shared counter
+    assert child[10:] != ids._encode(ids._last_random, 16)

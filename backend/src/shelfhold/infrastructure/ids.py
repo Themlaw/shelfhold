@@ -5,6 +5,7 @@ Within one millisecond the random part is incremented, so identifiers sort by cr
 a given process. No dependency: the format is fixed and tiny.
 """
 
+import os
 import re
 import secrets
 import threading
@@ -37,6 +38,16 @@ def new_ulid() -> str:
         else:
             _last_random += 1  # same millisecond (or clock stepped back): keep the order
         return _encode(_last_ms, 10) + _encode(_last_random, 16)
+
+
+def _reset_after_fork() -> None:
+    """A forked worker must not continue the parent's counter (identical ids) nor its lock."""
+    global _lock, _last_ms, _last_random
+    _lock = threading.Lock()
+    _last_ms, _last_random = -1, 0
+
+
+os.register_at_fork(after_in_child=_reset_after_fork)
 
 
 def is_ulid(value: str) -> bool:
