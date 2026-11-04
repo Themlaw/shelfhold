@@ -2,7 +2,7 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
-## [0.1.0] — M0 fondations
+## [0.1.0] - 2026-11-04 — M0 fondations
 
 Migration : oui (schéma initial), réversible : oui
 
