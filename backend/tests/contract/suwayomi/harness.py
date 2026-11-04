@@ -188,6 +188,8 @@ class Bench:
             (local / series).mkdir(parents=True, exist_ok=True)
             for chapter, fixture in names:
                 shutil.copyfile(SYNTHETIC / fixture, local / series / f"{chapter}.cbz")
+        # Created by the runner so it can still write there when the container user differs.
+        (self.data_dir / "downloads" / "mangas").mkdir(parents=True, exist_ok=True)
         _open_permissions(self.data_dir)
 
     def seed_download(self, series: str, chapter: str, fixture: str = "comic_a_001.cbz") -> Path:
