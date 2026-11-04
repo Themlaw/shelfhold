@@ -34,7 +34,7 @@ from shelfhold.export.targets.kavita import (
 )
 from shelfhold.sdk.export_target import ApiCall
 from tests.fakes.kavita import API_KEY, BASE_URL, build_fetcher
-from tests.kavita_env import NOW, harness, run
+from tests.kavita_env import NOW, OPENAPI_DIR, harness, run
 
 EPUB = "Novel Z - Ch.003.epub"
 CBZ = "Series A - Ch.012.cbz"
@@ -152,9 +152,15 @@ def test_kavita_library_update_get_then_faithful_put() -> None:
     # the document sent is the one read, with the single change wanted
     assert sent["excludePatterns"] == ["*.tmp", *HIDDEN_DIR_PATTERNS]
     assert sent["fileGroupTypes"] == before["libraryFileTypes"]
-    for key in ("name", "type", "folders", "folderWatching", "includeInSearch", "defaultLanguage",
-                "metadataProvider", "manageReadingLists", "removePrefixForSortName"):  # fmt: skip
-        assert sent[key] == before[key], key
+    # the whole write DTO, derived from `before` independently of the code under test; the
+    # only documented differences: `fileGroupTypes` is read as `libraryFileTypes`, and the
+    # patterns gain the hidden-dir one
+    document = json.loads((OPENAPI_DIR / "pinned.json").read_text("utf-8"))
+    writable = set(document["components"]["schemas"]["UpdateLibraryDto"]["properties"])
+    expected = {k: before[k] for k in writable if k in before}
+    expected["fileGroupTypes"] = before["libraryFileTypes"]
+    expected["excludePatterns"] = ["*.tmp", *HIDDEN_DIR_PATTERNS]
+    assert sent == expected
     after = h.fake.libraries[0]
     assert {k: v for k, v in after.items() if k != "excludePatterns"} == {
         k: v for k, v in before.items() if k != "excludePatterns"

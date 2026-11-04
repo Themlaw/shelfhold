@@ -264,7 +264,12 @@ class FakeKavita:
         found = self._library(body["id"])
         if found is None:
             return self._text(400, "unknown library")
-        found.update(self._stored(body))
+        # a replacement, as Kavita does: a field the document omits falls back to its default
+        # (read-only attributes of LibraryDto, absent from UpdateLibraryDto, are kept)
+        writable = set(_schema("UpdateLibraryDto")["properties"]) | {"libraryFileTypes"}
+        kept = {k: v for k, v in found.items() if k not in writable}
+        found.clear()
+        found.update({**kept, **self._stored(body)})
         return self._text(200, "")
 
     def _scan_folder(self, recorded: RecordedRequest) -> httpx2.Response:
