@@ -14,7 +14,7 @@ from shelfhold.sdk.source import (
     SourceError,
 )
 
-AUTH_MODE_MESSAGE = "mode multi-comptes non pris en charge dans cette version"
+AUTH_MODE_MESSAGE = "mode multi-comptes indisponible dans cette version"
 
 
 class AuthExpired(AuthRequired):
