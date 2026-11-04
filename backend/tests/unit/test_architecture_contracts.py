@@ -232,8 +232,6 @@ VIOLATIONS = [
     ("lang-single-producer", "library/other.py", "import langcodes\n", "catalog/lang.py"),
     ("replica-single-count", "export/other.py", "import shelfhold.library.replica\n", None),
     ("fsops-sole-writer", "library/other.py", "import shutil\n", "infrastructure/fsops/io.py"),
-    ("fsops-sole-writer", "library/other.py", "import shutil\n",
-     "infrastructure/fsops/__init__.py"),
     ("suwayomi-confined", "acquisition/other.py",
      "import shelfhold.plugin_host.adapters.meta.suwayomi\n",
      "plugin_host/adapters/meta/suwayomi/client.py"),
@@ -277,3 +275,112 @@ def test_each_contract_breaks_on_a_violation_and_allows_its_sanctioned_module(
 def test_every_new_contract_is_declared_in_the_config() -> None:
     declared = {s.split(":", 2)[2] for s in _config().sections() if s.startswith("importlinter:c")}
     assert {v[0] for v in VIOLATIONS} <= declared
+
+
+# --- EF-EXP-060, review of PR #30: nothing but fsops (and two /data writers) writes files ---
+
+WRITERS_ALLOWED = (
+    "shelfhold/infrastructure/fsops/",
+    "shelfhold/infrastructure/migrate.py",
+    "shelfhold/infrastructure/volumes.py",
+)
+PATH_WRITE_METHODS = {
+    "write_text", "write_bytes", "unlink", "rename", "mkdir", "rmdir", "touch",
+}  # fmt: skip
+OS_WRITE_FUNCTIONS = (
+    "replace", "rename", "renames", "unlink", "remove", "rmdir", "removedirs", "link",
+    "symlink", "mkdir", "makedirs", "truncate",
+)  # fmt: skip
+
+
+def _opens_for_writing(node: ast.Call) -> bool:
+    mode: ast.expr | None = node.args[1] if len(node.args) > 1 else None
+    if isinstance(node.func, ast.Attribute):  # Path.open(mode)
+        mode = node.args[0] if node.args else None
+    for keyword in node.keywords:
+        if keyword.arg == "mode":
+            mode = keyword.value
+    return (
+        isinstance(mode, ast.Constant)
+        and isinstance(mode.value, str)
+        and any(flag in mode.value for flag in "wax+")
+    )
+
+
+def path_write_offences(source: str) -> list[tuple[int, str]]:
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            if func.attr in PATH_WRITE_METHODS:
+                found.append((node.lineno, func.attr))
+            elif func.attr == "replace" and len(node.args) == 1 and not node.keywords:
+                found.append((node.lineno, "replace"))  # str.replace takes two arguments
+            elif func.attr == "open" and _opens_for_writing(node):
+                found.append((node.lineno, "open(write)"))
+        elif isinstance(func, ast.Name) and func.id == "open" and _opens_for_writing(node):
+            found.append((node.lineno, "open(write)"))
+    return found
+
+
+@pytest.mark.req("EF-EXP-060", "ENF-SEC-012")
+def test_only_fsops_and_the_data_writers_write_files() -> None:
+    offences = []
+    for path in sorted(SRC.rglob("*.py")):
+        rel = path.relative_to(SRC).as_posix()
+        if rel.startswith(WRITERS_ALLOWED):
+            continue
+        offences += [
+            f"{rel}:{line}:{what}"
+            for line, what in path_write_offences(path.read_text(encoding="utf-8"))
+        ]
+    assert offences == []
+
+
+@pytest.mark.req("EF-EXP-060")
+@pytest.mark.parametrize(
+    "code",
+    [
+        "p.write_text('x')",
+        "p.write_bytes(b'x')",
+        "p.open('w')",
+        "p.open(mode='ab')",
+        "open(p, 'x')",
+        "p.unlink()",
+        "p.rename(q)",
+        "p.replace(q)",
+        "p.mkdir()",
+        "p.rmdir()",
+        "p.touch()",
+    ],
+)
+def test_the_path_write_scan_catches_each_write_form(code: str) -> None:
+    assert path_write_offences(code)
+
+
+@pytest.mark.req("EF-EXP-060")
+@pytest.mark.parametrize(
+    "code", ["s.replace('a', 'b')", "open(p)", "p.open('rb')", "p.read_text()"]
+)
+def test_the_path_write_scan_lets_reads_and_str_replace_through(code: str) -> None:
+    assert path_write_offences(code) == []
+
+
+@pytest.mark.req("EF-EXP-060", "ENF-SEC-012")
+def test_ruff_bans_os_file_mutations_outside_fsops() -> None:
+    import tomllib
+
+    config = tomllib.loads((BACKEND / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["ruff"]
+    lint = config["lint"]
+    assert "TID251" in lint["select"] or "TID" in lint["select"]
+    banned = lint["flake8-tidy-imports"]["banned-api"]
+    assert {f"os.{name}" for name in OS_WRITE_FUNCTIONS} <= set(banned)
+    ignores = lint["per-file-ignores"]
+    exempt = {pattern for pattern, rules in ignores.items() if "TID251" in rules}
+    assert {
+        "src/shelfhold/infrastructure/fsops/**",
+        "src/shelfhold/infrastructure/migrate.py",
+        "src/shelfhold/infrastructure/volumes.py",
+    } <= exempt
