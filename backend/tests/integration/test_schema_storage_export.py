@@ -114,7 +114,8 @@ def add_content(connection: sa.Connection, chain: dict[str, str], **extra: Any) 
 
 
 def add_export_item(connection: sa.Connection, edition_id: str, **extra: Any) -> str:
-    return insert(connection, export.export_item, edition_id=edition_id, kind="unit", **extra)
+    values: dict[str, Any] = {"kind": "unit", **extra}
+    return insert(connection, export.export_item, edition_id=edition_id, **values)
 
 
 def add_record(connection: sa.Connection, destination: str, item: str, **extra: Any) -> None:
@@ -202,6 +203,7 @@ def test_edition_shelf_id_is_nullable_and_points_at_a_shelf(
     assert column.nullable
     assert {fk.target_fullname for fk in column.foreign_keys} == {"shelf.id"}
     with engine.begin() as connection:
+        spare = add_shelf(connection)
         edition = catalog.edition
         assert (
             connection.execute(
@@ -215,12 +217,10 @@ def test_edition_shelf_id_is_nullable_and_points_at_a_shelf(
             "FOREIGN KEY constraint failed",
         )
         connection.execute(
-            sa.update(edition)
-            .where(edition.c.id == chain["edition"])
-            .values(shelf_id=chain["shelf"])
+            sa.update(edition).where(edition.c.id == chain["edition"]).values(shelf_id=spare)
         )
         # deleting a shelf does not delete its Editions: they go back to "À ranger"
-        connection.execute(sa.delete(export.shelf).where(export.shelf.c.id == chain["shelf"]))
+        connection.execute(sa.delete(export.shelf).where(export.shelf.c.id == spare))
         assert (
             connection.execute(
                 sa.select(edition.c.shelf_id).where(edition.c.id == chain["edition"])
@@ -537,7 +537,17 @@ def test_shelf_destination_declares_transport_and_egress(
 ) -> None:
     with engine.begin() as connection:
         for field, bad in (("transport", "ftp"), ("egress", "cloud"), ("mode", "broken")):
+            values: dict[str, Any] = {
+                "id": new_ulid(), "shelf_id": chain["shelf"], "target_id": chain["target"],
+                "transport": "tree", "egress": "foyer", "root_subpath": "other", "template": "t",
+                "template_origin": "default@1", field: bad,
+            }  # fmt: skip
             rejected(
+                connection,
+                sa.insert(export.shelf_destination).values(**values),
+                f"ck_shelf_destination_{field}_values",
+            )
+        rejected(
                 connection,
                 sa.insert(export.shelf_destination).values(
                     id=new_ulid(), shelf_id=chain["shelf"], target_id=chain["target"],

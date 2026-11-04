@@ -71,12 +71,17 @@ resource_lock = sa.Table(
 )
 
 # `base_version` fingerprints what the plan was computed from; a plan whose base moved is stale
-# (EF-EXP-042). The destination column is a plain ULID: its table arrives in migration 0004.
+# (EF-EXP-042). A plan outlives its destination, which is then unset.
 export_plan = sa.Table(
     "export_plan",
     metadata,
     ulid_column("plan_id", primary_key=True),
-    ulid_column("shelf_destination_id", nullable=True),
+    sa.Column(
+        "shelf_destination_id",
+        sa.String(26),
+        sa.ForeignKey("shelf_destination.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
     sa.Column("kind", sa.String(), nullable=False),
     sa.Column("dry_run", sa.Boolean(), nullable=False),
     sa.Column("base_version", sa.Integer(), nullable=False),  # version counter (02 section 6.4)

@@ -4,8 +4,11 @@ from shelfhold.infrastructure.schema import (
     acquisition,
     catalog,
     coherence,
+    export,
     identity,
     platform,
+    reading,
+    storage,
 )
 from shelfhold.infrastructure.schema._base import UtcDateTime, metadata
 
@@ -14,7 +17,10 @@ __all__ = [
     "acquisition",
     "catalog",
     "coherence",
+    "export",
     "identity",
     "metadata",
     "platform",
+    "reading",
+    "storage",
 ]

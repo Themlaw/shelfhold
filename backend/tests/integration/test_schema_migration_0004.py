@@ -16,7 +16,12 @@ from alembic.script import ScriptDirectory
 from shelfhold.config import Settings
 from shelfhold.infrastructure.migrate import current_revision, default_script_location, migrate
 from shelfhold.infrastructure.schema import export, metadata, reading, storage
-from tests.integration.test_schema_migration_0002 import PLATFORM_TABLES, alembic_config, tables
+from tests.integration.test_schema_migration_0002 import (
+    PLATFORM_TABLES,
+    alembic_config,
+    normalized_ddl,
+    tables,
+)
 from tests.integration.test_schema_migration_0003 import ACQUISITION_TABLES, CATALOG_TABLES
 
 STORAGE_TABLES = {"content", "trash_item", "replica"}
@@ -140,12 +145,11 @@ def test_downgrade_to_0003_removes_exactly_the_new_objects(tmp_path: Path) -> No
     database = tmp_path / "down.db"
     config = alembic_config(database)
     command.upgrade(config, "0003")
-    with closing(sqlite3.connect(database)) as db:
-        before = db.execute("SELECT type, name, sql FROM sqlite_master ORDER BY 1, 2").fetchall()
+    before = normalized_ddl(database)
     command.upgrade(config, "head")
     command.downgrade(config, "0003")
+    after = normalized_ddl(database)
     with closing(sqlite3.connect(database)) as db:
-        after = db.execute("SELECT type, name, sql FROM sqlite_master ORDER BY 1, 2").fetchall()
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
     assert after == before  # tables, indexes, triggers and the former export_plan, unchanged
     command.upgrade(config, "head")  # and back up again
@@ -176,3 +180,28 @@ def test_new_triggers_are_in_the_migrated_database(tmp_path: Path) -> None:
         "export_item_coverage_cleanup",
         "content_coverage_cleanup",
     } <= names
+
+
+@pytest.mark.req("EF-EXP-060", "EF-EXP-059")
+def test_physical_root_has_a_mode_rw_or_adopt_ro(tmp_path: Path) -> None:
+    database = tmp_path / "mode.db"
+    config = alembic_config(database)
+    command.upgrade(config, "0003")
+    with closing(sqlite3.connect(database)) as db:
+        db.execute(
+            "INSERT INTO physical_root (root_id, path_entry) VALUES (?, '/library/a')", (ULID,)
+        )
+        db.commit()
+    command.upgrade(config, "head")
+    with closing(sqlite3.connect(database)) as db:
+        assert db.execute("SELECT mode FROM physical_root").fetchall() == [("rw",)]  # the default
+        db.execute(
+            "INSERT INTO physical_root (root_id, path_entry, mode) "
+            "VALUES (?, '/library/b', 'adopt_ro')",
+            (OTHER,),
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="ck_physical_root_mode_values"):
+            db.execute(
+                "INSERT INTO physical_root (root_id, path_entry, mode) "
+                "VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAX', '/library/c', 'rw+')"
+            )

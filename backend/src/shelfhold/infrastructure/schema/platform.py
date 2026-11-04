@@ -15,6 +15,7 @@ from shelfhold.infrastructure.schema._base import (
 )
 
 REFRESH_MODES = ("piloted", "always_on")
+ROOT_MODES = ("rw", "adopt_ro")  # PathMap mode: `adopt_ro` is never written (EF-EXP-060)
 SENTINEL_STATES = ("ok", "missing", "mismatch", "stale")
 JOB_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled", "dead_letter", "paused")
 PRIORITY_CLASSES = ("new", "request", "backfill")
@@ -58,11 +59,13 @@ physical_root = sa.Table(
     metadata,
     ulid_column("root_id", primary_key=True),
     sa.Column("path_entry", sa.String(), nullable=False),
+    sa.Column("mode", sa.String(), nullable=False, server_default="rw"),
     sa.Column("st_dev", sa.BigInteger(), nullable=True),
     sa.Column("generation", sa.Integer(), nullable=False, server_default="0"),
     sa.Column("predecessor_instance_ids", sa.JSON(), nullable=False, server_default="[]"),
     now_column(),
     ulid_check("root_id"),
+    in_check("mode", ROOT_MODES),
     positive_check("generation"),
     sa.UniqueConstraint("path_entry"),
 )
