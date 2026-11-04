@@ -901,7 +901,7 @@ def test_series_follow_keyed_by_edition_not_binding(engine: Engine, chain: dict[
                 follow.c.backfill_mode, follow.c.upgrade_policy, follow.c.filters, follow.c.cap
             )
         ).one()
-        assert row == ("none", "keep_first", {}, None)
+        assert row == ("none", "keep_first", None, None)  # filters NULL: inherit
         rejected(  # one follow per edition, whichever bindings it has
             connection,
             sa.insert(follow).values(edition_id=chain["edition"], work_id=chain["work"]),
@@ -1141,20 +1141,30 @@ def test_source_secrets_are_sealed_or_absent(engine: Engine) -> None:
                 kid="k1", state="active", alg="xchacha20poly1305"
             )
         )
-        sealed = {"secret_kid": "k1", "secret_nonce": b"n" * 24, "secret_ct": b"ct"}
-        connection.execute(
-            sa.update(config).where(config.c.plugin_id == "suwayomi").values(**sealed)
-        )
+        sealed = {
+            "secret_kid": "k1",
+            "secret_v": 1,
+            "secret_nonce": b"n" * 12,  # any algorithm's nonce: the alg is read from secret_key
+            "secret_ct": b"c" * 16,
+        }
         for broken in (
             {"secret_kid": None},  # ciphertext without key id
-            {"secret_nonce": b"short"},
+            {"secret_v": None},
+            {"secret_v": 0},
+            {"secret_nonce": None},
             {"secret_ct": None},
+            {"secret_ct": b"short"},  # less than an AEAD tag
         ):
             rejected(
                 connection,
-                sa.update(config).where(config.c.plugin_id == "suwayomi").values(**broken),
+                sa.update(config)
+                .where(config.c.plugin_id == "suwayomi")
+                .values(**{**sealed, **broken}),
                 "ck_source_config_secret_sealed",
             )
+        connection.execute(
+            sa.update(config).where(config.c.plugin_id == "suwayomi").values(**sealed)
+        )
 
 
 def coherence_secret_key() -> sa.Table:
@@ -1561,3 +1571,25 @@ def test_purge_deletes_variant_and_unit_despite_download_tickets(
         covered = acquisition.download_request_unit
         assert connection.execute(count.select_from(covered)).scalar_one() == 0
         assert connection.execute(count.select_from(acquisition.revision_pending)).scalar_one() == 0
+
+
+@pytest.mark.req("EF-SRC-039")
+def test_series_follow_filters_are_null_or_a_json_object(
+    engine: Engine, chain: dict[str, str]
+) -> None:
+    follow = acquisition.series_follow
+    with engine.begin() as connection:
+        connection.execute(
+            sa.insert(follow).values(
+                edition_id=chain["edition"], work_id=chain["work"], filters={"lang": ["fr"]}
+            )
+        )
+        for bad in ("[]", "3", '"x"', "not json", "null"):
+            rejected(
+                connection,
+                sa.text("UPDATE series_follow SET filters = :f").bindparams(f=bad),
+                "ck_series_follow_filters_json_object",
+            )
+        connection.execute(sa.update(follow).values(filters=None))
+        stored = connection.execute(sa.select(sa.text("filters IS NULL")).select_from(follow))
+        assert stored.scalar_one() == 1  # a real SQL NULL, not the JSON text 'null'

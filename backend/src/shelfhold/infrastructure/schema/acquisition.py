@@ -42,7 +42,6 @@ ACCOUNT_KINDS = ("admin", "service")
 PLUGIN_ORIGINS = ("builtin", "local")  # `repo` joins in M6
 REVISION_NATURES = ("metadata_only", "rewrite")
 REVISION_STATES = ("open", "applied", "dismissed")
-SEALED_NONCE_BYTES = 24  # XChaCha20-Poly1305, as for tombstones
 
 
 def _fk(
@@ -54,19 +53,23 @@ def _fk(
 
 
 def sealed_secret_columns() -> list[SchemaItem]:
-    """An AEAD envelope (key id, nonce, ciphertext) for secrets, or nothing at all.
+    """An AEAD envelope (key id, format version, nonce, ciphertext) for secrets, or nothing.
 
     The cleartext (tokens, passwords, cookie jar) is one sealed JSON document; it never sits in a
-    plain column (ENF-SEC-005, EF-SRC-013).
+    plain column (ENF-SEC-005, EF-SRC-013). The algorithm is read from `secret_key.alg`, so the
+    nonce length is not constrained here; a ciphertext is at least one 16-byte AEAD tag.
     """
     return [
         sa.Column("secret_kid", sa.String(), sa.ForeignKey("secret_key.kid"), nullable=True),
+        sa.Column("secret_v", sa.Integer(), nullable=True),  # envelope format, part of the AAD
         sa.Column("secret_nonce", sa.LargeBinary(), nullable=True),
         sa.Column("secret_ct", sa.LargeBinary(), nullable=True),
         sa.CheckConstraint(
-            '("secret_kid" IS NULL AND "secret_nonce" IS NULL AND "secret_ct" IS NULL) '
-            'OR ("secret_kid" IS NOT NULL AND "secret_ct" IS NOT NULL '
-            f'AND length("secret_nonce") = {SEALED_NONCE_BYTES})',
+            '("secret_kid" IS NULL AND "secret_v" IS NULL AND "secret_nonce" IS NULL '
+            'AND "secret_ct" IS NULL) '
+            'OR ("secret_kid" IS NOT NULL AND "secret_v" IS NOT NULL AND "secret_v" >= 1 '
+            'AND "secret_nonce" IS NOT NULL AND "secret_ct" IS NOT NULL '
+            'AND length("secret_ct") >= 16)',
             name="secret_sealed",
         ),
     ]
@@ -181,7 +184,8 @@ series_follow = sa.Table(
     sa.Column("cap", sa.Integer(), nullable=True),  # per cycle, in Units
     sa.Column("upgrade_policy", sa.String(), nullable=False, server_default="keep_first"),
     sa.Column("check_override", sa.String(), nullable=True),
-    sa.Column("filters", sa.JSON(), nullable=False, server_default="{}"),
+    # NULL: inherit the shelf's filters (EF-SRC-039); otherwise a JSON object
+    sa.Column("filters", sa.JSON(none_as_null=True), nullable=True),
     now_column(),
     sa.Column("updated_at", UtcDateTime(), nullable=True),
     sa.PrimaryKeyConstraint("edition_id"),
@@ -191,6 +195,11 @@ series_follow = sa.Table(
     in_check("check_override", CHECK_OVERRIDES),
     positive_check("cap", minimum=1),
     norm_by_check("follow_from_norm_by"),
+    sa.CheckConstraint(
+        '"filters" IS NULL OR CASE WHEN json_valid("filters") '
+        "THEN json_type(\"filters\") = 'object' ELSE 0 END",
+        name="filters_json_object",
+    ),
 )
 
 # A gap the admin accepted: it is not a hole to backfill (EF-BIB-056).

@@ -537,6 +537,7 @@ def upgrade() -> None:
         sa.Column("auth_mode", sa.String(), nullable=True),
         sa.Column("auth_kind", sa.String(), nullable=True),
         sa.Column("secret_kid", sa.String(), nullable=True),
+        sa.Column("secret_v", sa.Integer(), nullable=True),
         sa.Column("secret_nonce", sa.LargeBinary(), nullable=True),
         sa.Column("secret_ct", sa.LargeBinary(), nullable=True),
         sa.Column("session_expires_at", sa.DateTime(), nullable=True),
@@ -550,7 +551,7 @@ def upgrade() -> None:
             "\"kind\" IN ('admin', 'service')", name=op.f("ck_source_account_kind_values")
         ),
         sa.CheckConstraint(
-            '("secret_kid" IS NULL AND "secret_nonce" IS NULL AND "secret_ct" IS NULL) OR ("secret_kid" IS NOT NULL AND "secret_ct" IS NOT NULL AND length("secret_nonce") = 24)',
+            '("secret_kid" IS NULL AND "secret_v" IS NULL AND "secret_nonce" IS NULL AND "secret_ct" IS NULL) OR ("secret_kid" IS NOT NULL AND "secret_v" IS NOT NULL AND "secret_v" >= 1 AND "secret_nonce" IS NOT NULL AND "secret_ct" IS NOT NULL AND length("secret_ct") >= 16)',
             name=op.f("ck_source_account_secret_sealed"),
         ),
         sa.CheckConstraint(
@@ -576,6 +577,7 @@ def upgrade() -> None:
         sa.Column("plugin_id", sa.String(), nullable=False),
         sa.Column("settings", sa.JSON(), server_default="{}", nullable=False),
         sa.Column("secret_kid", sa.String(), nullable=True),
+        sa.Column("secret_v", sa.Integer(), nullable=True),
         sa.Column("secret_nonce", sa.LargeBinary(), nullable=True),
         sa.Column("secret_ct", sa.LargeBinary(), nullable=True),
         sa.Column("user_agent", sa.String(), nullable=True),
@@ -596,7 +598,7 @@ def upgrade() -> None:
             '"consecutive_failures" >= 0', name=op.f("ck_source_config_consecutive_failures_min")
         ),
         sa.CheckConstraint(
-            '("secret_kid" IS NULL AND "secret_nonce" IS NULL AND "secret_ct" IS NULL) OR ("secret_kid" IS NOT NULL AND "secret_ct" IS NOT NULL AND length("secret_nonce") = 24)',
+            '("secret_kid" IS NULL AND "secret_v" IS NULL AND "secret_nonce" IS NULL AND "secret_ct" IS NULL) OR ("secret_kid" IS NOT NULL AND "secret_v" IS NOT NULL AND "secret_v" >= 1 AND "secret_nonce" IS NOT NULL AND "secret_ct" IS NOT NULL AND length("secret_ct") >= 16)',
             name=op.f("ck_source_config_secret_sealed"),
         ),
         sa.ForeignKeyConstraint(
@@ -853,7 +855,7 @@ def upgrade() -> None:
         sa.Column("cap", sa.Integer(), nullable=True),
         sa.Column("upgrade_policy", sa.String(), server_default="keep_first", nullable=False),
         sa.Column("check_override", sa.String(), nullable=True),
-        sa.Column("filters", sa.JSON(), server_default="{}", nullable=False),
+        sa.Column("filters", sa.JSON(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(),
@@ -866,6 +868,10 @@ def upgrade() -> None:
             name=op.f("ck_series_follow_backfill_mode_values"),
         ),
         sa.CheckConstraint('"cap" >= 1', name=op.f("ck_series_follow_cap_min")),
+        sa.CheckConstraint(
+            '"filters" IS NULL OR CASE WHEN json_valid("filters") THEN json_type("filters") = \'object\' ELSE 0 END',
+            name=op.f("ck_series_follow_filters_json_object"),
+        ),
         sa.CheckConstraint(
             "\"check_override\" IN ('completed', 'paused')",
             name=op.f("ck_series_follow_check_override_values"),
