@@ -294,3 +294,15 @@ def test_reappearing_variant_conflicts_with_its_replacement() -> None:
             {a.variant_id, b.variant_id}, "numbering_conflict", "open",
         ]  # fmt: skip
         assert h.scalar("SELECT removed_at IS NULL FROM unit_variant WHERE id = :i", i=a.variant_id)
+
+
+@pytest.mark.req("EF-BIB-050", "EF-BIB-028")
+def test_variant_in_open_conflict_is_never_preferred() -> None:
+    with harness() as h:
+        binding = h.binding(h.edition())
+        old = h.catalog.ingest(unit(binding, "old", "1", 0))
+        new = h.catalog.ingest(unit(binding, "new", "1", 5))
+        assert new.outcome is IngestOutcome.NUMBERING_CONFLICT
+        assert h.catalog.elect_preferred(new.unit_id) is None  # both are named by the suggestion
+        h.connection.execute(sa.text("UPDATE merge_suggestion SET state = 'rejected'"))
+        assert h.catalog.elect_preferred(new.unit_id) == old.variant_id  # decided: the oldest

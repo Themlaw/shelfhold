@@ -298,7 +298,19 @@ class SqlUnitStore:
                 )
             )
             .where(v.unit_id == unit_id)
+        ).all()
+        m = catalog.merge_suggestion.c
+        flagged = set(
+            self._c.execute(
+                sa.select(m.a, m.b).where(
+                    m.entity_type == "variant",
+                    m.reason == NUMBERING_CONFLICT,
+                    m.state == "open",
+                    sa.or_(m.a.in_([r.id for r in rows]), m.b.in_([r.id for r in rows])),
+                )
+            ).all()
         )
+        in_conflict = {x for pair in flagged for x in pair}
         return [
             VariantFacts(
                 r.id,
@@ -307,6 +319,7 @@ class SqlUnitStore:
                 r.first_seen_at,
                 r.removed_at is not None,
                 r.rank,
+                r.id in in_conflict,
             )
             for r in rows
         ]

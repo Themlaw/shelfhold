@@ -52,6 +52,7 @@ class VariantFacts:
     first_seen_at: datetime
     removed: bool = False
     rank: int | None = None  # position of its Team in the Edition's priority list
+    in_conflict: bool = False  # named by an open numbering_conflict suggestion
 
     @property
     def age(self) -> tuple[datetime, str]:
@@ -90,8 +91,12 @@ def place_owner(variants: Iterable[VariantFacts]) -> str | None:
 
 
 def choose_preferred(variants: Iterable[VariantFacts]) -> str | None:
-    """The one Variant exported for a Unit (I3): Team priority, then the oldest live one."""
-    live = [v for v in variants if not v.removed]
+    """The one Variant exported for a Unit (I3): Team priority, then the oldest live one.
+
+    A Variant in an open numbering conflict is never chosen: nothing is exported for it without
+    the admin's decision (EF-BIB-050).
+    """
+    live = [v for v in variants if not v.removed and not v.in_conflict]
     if not live:
         return None
     return min(live, key=lambda v: (v.rank is None, v.rank or 0, *v.age)).id
