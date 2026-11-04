@@ -7,3 +7,4 @@ extend-exclude = ["*.md", "docs/", "backend/uv.lock", "backend/src/shelfhold/loc
 [default.extend-words]
 cours = "cours"
 sur = "sur"
+opf = "opf"  # EPUB package document (OPF)

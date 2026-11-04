@@ -118,15 +118,24 @@ def make_epub(path: Path) -> None:
     )
 
 
+def make_lang_tags(out_dir: Path) -> None:
+    """Copy the hand-written synthetic BCP 47 corpus (text, identical on every run)."""
+    source = Path(__file__).resolve().parent / "lang_tags" / "cases.tsv"
+    target = out_dir / "lang_tags"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "cases.tsv").write_bytes(source.read_bytes())
+
+
 def generate(out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
+    make_lang_tags(out_dir)
     make_cbz(out_dir / "comic_a_001.cbz", "Synthetic Series A", 1, 3)
     make_cbz(out_dir / "comic_a_002.cbz", "Synthetic Series A", 2, 4)
     make_epub(out_dir / "book_a.epub")
     lines = [
-        f"{sha256_file(p)}  {p.name}"
-        for p in sorted(out_dir.iterdir())
-        if p.suffix in {".cbz", ".epub"}
+        f"{sha256_file(p)}  {p.relative_to(out_dir).as_posix()}"
+        for p in sorted(out_dir.rglob("*"))
+        if p.suffix in {".cbz", ".epub", ".tsv"}
     ]
     (out_dir / "MANIFEST.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
