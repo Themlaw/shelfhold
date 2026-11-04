@@ -234,3 +234,14 @@ def test_unknown_fields_are_ignored_in_manifests_but_refused_in_host_plans() -> 
 @pytest.mark.req("EF-SRC-001")
 def test_export_target_module_warns_that_it_is_provisional_until_m4() -> None:
     assert "UNSTABLE" in (export_target.__doc__ or "")
+
+
+@pytest.mark.req("ENF-LEG-010")
+def test_typos_exceptions_are_exact_identifiers_not_global_words() -> None:
+    import tomllib
+    from pathlib import Path
+
+    config = tomllib.loads((Path(__file__).parents[3] / "typos.toml").read_text(encoding="utf-8"))
+    words = config["default"]["extend-words"]
+    assert "ser" not in words and "opf" not in words
+    assert config["default"]["extend-identifiers"] == {"ser_json_bytes": "ser_json_bytes"}
