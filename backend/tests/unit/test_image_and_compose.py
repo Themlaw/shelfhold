@@ -124,7 +124,8 @@ def test_dockerfile_is_pinned_unprivileged_and_healthchecked() -> None:
 
 def test_ci_uses_registry_cache(image_wf: dict[str, Any]) -> None:
     step = build_steps(image_wf["jobs"]["build"])[0]["with"]
-    assert step["cache-from"] == "type=registry,ref=${{ env.IMAGE }}-cache:${{ matrix.arch }}"
+    assert "type=registry,ref={0}-cache:{1}" in step["cache-from"]
+    assert "steps.cache.outputs.present" in step["cache-from"]  # a missing cache is not an error
     # cache-to exists, is a registry cache in mode=max, and only when the caller allows writing
     cache_to = step["cache-to"]
     assert "inputs.cache-write" in cache_to

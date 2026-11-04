@@ -48,6 +48,17 @@ jobs:
       - name: Detect the frontend
         id: frontend
         run: echo "present=$([ -f frontend/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Probe the layer cache (absent until the first build on main, or on a fork pull request)
+        id: cache
+        env:
+          CACHE_REF: ${{ env.IMAGE }}-cache:${{ matrix.arch }}
+        run: |
+          if docker buildx imagetools inspect "$CACHE_REF" >/dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no layer cache at ${CACHE_REF}, building from scratch"
+          fi
       - name: Build (registry layer cache) and export the OCI archive that is tested then published
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -58,7 +69,7 @@ jobs:
           build-args: |
             WITH_FRONTEND=${{ steps.frontend.outputs.present }}
             REVISION=${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.IMAGE }}-cache:${{ matrix.arch }}
+          cache-from: ${{ steps.cache.outputs.present == 'true' && format('type=registry,ref={0}-cache:{1}', env.IMAGE, matrix.arch) || '' }}
           cache-to: ${{ inputs.cache-write && format('type=registry,ref={0}-cache:{1},mode=max', env.IMAGE, matrix.arch) || '' }}
       - name: Image size (ENF-PERF-002)
         run: |
