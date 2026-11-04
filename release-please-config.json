@@ -14,8 +14,7 @@
           "jsonpath": "$.project.version"
         },
         "backend/src/shelfhold/__init__.py"
-      ],
-      "release-as": "0.1.0"
+      ]
     }
   }
 }

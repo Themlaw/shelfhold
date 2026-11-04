@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Appends (or replaces) the "Migration : oui/non, réversible : oui/non" line (ENF-OPS-002) in the
 # body of the release PR, computed from the Alembic revisions changed since the last v* tag, then
-# checks that the line is present. Reversible = every changed revision defines a real downgrade().
+# checks that the line is present. Reversible = every changed revision defines a real downgrade() (not just a docstring or pass).
 set -euo pipefail
 : "${PR:?}" "${GH_TOKEN:?}"
 marker='Migration : '
@@ -11,8 +11,7 @@ migration=non; reversible=oui
 if [ "${#revs[@]}" -gt 0 ]; then
   migration=oui
   for f in "${revs[@]}"; do
-    awk '/^def downgrade/{d=1;next} d&&/^[^ \t#]/{exit} d&&!/^[ \t]*(#|pass|$)/{ok=1} END{exit !ok}' "$f" \
-      && ! grep -q 'irreversible\|NotImplementedError' "$f" || reversible=non
+    python3 -I "$(dirname "$0")/is-reversible.py" "$f" || reversible=non
   done
 fi
 line="${marker}${migration}, réversible : ${reversible}"

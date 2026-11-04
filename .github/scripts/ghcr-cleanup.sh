@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Deletes expired temporary build-* tags of the image (see ghcr-cleanup.jq). The per-architecture
 # build-<sha>-<arch> version IS the platform manifest of the multi-arch index: it is kept as long
-# as an index carrying a kept tag references it. DRY_RUN=true only prints.
+# as an index carrying a kept tag references it. Dry-run unless DRY_RUN is exactly "false".
 set -euo pipefail
 : "${OWNER:?}" "${PACKAGE:?}" "${GH_TOKEN:?}"
+OWNER="${OWNER,,}"
 days="${MAX_AGE_DAYS:-7}"
 here="$(cd "$(dirname "$0")" && pwd)"
 kind="$(gh api "users/${OWNER}" --jq '.type')"
@@ -20,5 +21,5 @@ done < <(jq -r '.[] | select([(.metadata.container.tags // [])[] | select(starts
 jq -c --arg cutoff "$cutoff" --argjson protected "$protected" -f "$here/ghcr-cleanup.jq" "$RUNNER_TEMP/versions.json" > "$RUNNER_TEMP/doomed.json"
 jq -r '.[] | "\(.id) \(.name) \(.tags | join(","))"' "$RUNNER_TEMP/doomed.json" | while read -r id name tags; do
   echo "delete version ${id} (${name}; ${tags})"
-  [ "${DRY_RUN:-false}" = true ] || gh api -X DELETE "${base}/${id}"
+  [ "${DRY_RUN:-true}" != false ] || gh api -X DELETE "${base}/${id}"
 done

@@ -1,5 +1,7 @@
 name: cleanup
 
+# DRY-RUN BY DEFAULT, scheduled runs included: they only list. Real deletion happens only on a
+# manual run with dry_run=false.
 # Weekly purge of the temporary build-<sha>-<arch> tags of the image (see image-publish.yml).
 # Never touches edge, sha-*, X.Y.Z, X.Y, untagged versions, or a platform manifest that a kept
 # multi-arch index still references. Never runs on pull_request.
@@ -8,8 +10,8 @@ on:
     - cron: "17 3 * * 0"
   workflow_dispatch:
     inputs:
-      dry-run:
-        description: "Only list what would be deleted"
+      dry_run:
+        description: "List only (default). Set to false to really delete"
         type: boolean
         default: true
 
@@ -36,5 +38,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           OWNER: ${{ github.repository_owner }}
           PACKAGE: shelfhold
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || 'false' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.dry_run) || 'true' }}
         run: .github/scripts/ghcr-cleanup.sh

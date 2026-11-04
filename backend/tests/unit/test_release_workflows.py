@@ -37,7 +37,7 @@ def test_actions_are_pinned_by_sha_and_token_defaults_to_nothing(name: str) -> N
     wf = load(name)
     assert wf["permissions"] == {}
     for job in wf["jobs"].values():
-        for step in job["steps"]:
+        for step in job.get("steps", []):
             if "uses" in step:
                 assert PINNED.match(f"{step['uses']} # x"), step["uses"]
 
@@ -57,7 +57,12 @@ def test_release_permissions_are_minimal_per_job() -> None:
         "contents": "write",
         "pull-requests": "write",
     }
-    assert jobs["image-tags"]["permissions"] == {"contents": "read", "packages": "write"}
+    tags = jobs["image-tags"]
+    assert tags["permissions"] == {"contents": "read", "packages": "write", "checks": "read"}
+    # the commit of the release, never github.sha (the run's own commit)
+    assert tags["with"]["sha"] == "${{ needs.release-please.outputs.sha }}"
+    assert "github.sha" not in (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+    assert tags["uses"] == "./.github/workflows/image-retag.yml"
     assert jobs["image-tags"]["if"] == "needs.release-please.outputs.release_created == 'true'"
     rp = [
         s for s in jobs["release-please"]["steps"] if "release-please-action" in s.get("uses", "")
@@ -68,6 +73,8 @@ def test_release_permissions_are_minimal_per_job() -> None:
 def test_release_retags_the_published_digest_never_latest_never_rebuilds() -> None:
     for path in (
         WORKFLOWS / "release.yml",
+        WORKFLOWS / "retag.yml",
+        WORKFLOWS / "image-retag.yml",
         SCRIPTS / "release-retag.sh",
         WORKFLOWS / "cleanup.yml",
     ):
@@ -84,14 +91,28 @@ def test_release_retags_the_published_digest_never_latest_never_rebuilds() -> No
     assert "WAIT_SECONDS:-" in script  # bounded wait for the ci image
 
 
-def test_release_please_bootstraps_at_0_1_0_and_requires_migration_line() -> None:
+def test_release_please_has_no_sticky_release_as_and_requires_migration_line() -> None:
     cfg = json.loads((ROOT / "release-please-config.json").read_text(encoding="utf-8"))
-    assert cfg["packages"]["."]["release-as"] == "0.1.0"
-    assert json.loads((ROOT / ".release-please-manifest.json").read_text())["."] == "0.0.0"
+    assert (
+        "release-as" not in cfg["packages"]["."]
+    )  # bootstrap = Release-As footer, see release.yml
+    assert "Release-As: 0.1.0" in (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
     script = (SCRIPTS / "release-migration-line.sh").read_text(encoding="utf-8")
     assert "Migration : " in script and "réversible : " in script
     steps = load("release.yml")["jobs"]["release-please"]["steps"]
     assert any("release-migration-line.sh" in s.get("run", "") for s in steps)
+
+
+def test_manual_retag_is_a_dispatch_on_an_existing_version_tag() -> None:
+    wf = load("retag.yml")
+    assert triggers(wf) == {"workflow_dispatch"}
+    assert wf["permissions"] == {}
+    inputs = _on(wf)["workflow_dispatch"]["inputs"]
+    assert set(inputs) == {"version"} and inputs["version"]["required"] is True
+    callee = load("image-retag.yml")
+    assert triggers(callee) == {"workflow_call"}
+    assert callee["jobs"]["retag"]["permissions"]["packages"] == "write"
+    assert "checks" in callee["jobs"]["retag"]["permissions"]
 
 
 def test_cleanup_never_runs_on_pull_request_and_writes_packages_on_one_job() -> None:
@@ -99,6 +120,12 @@ def test_cleanup_never_runs_on_pull_request_and_writes_packages_on_one_job() -> 
     assert triggers(wf) == {"schedule", "workflow_dispatch"}
     writers = [n for n, j in wf["jobs"].items() if j["permissions"].get("packages") == "write"]
     assert writers == ["purge-build-tags"]
+    text = (WORKFLOWS / "cleanup.yml").read_text(encoding="utf-8")
+    assert _on(wf)["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True
+    # dry-run by default, cron included: only an explicit dry_run=false deletes
+    assert "|| 'true'" in text and "format('{0}', inputs.dry_run)" in text
+    assert "DRY_RUN:-true" in (SCRIPTS / "ghcr-cleanup.sh").read_text(encoding="utf-8")
+    assert "${OWNER,,}" in (SCRIPTS / "ghcr-cleanup.sh").read_text(encoding="utf-8")
 
 
 def _select(versions: list[dict[str, Any]], protected: list[str]) -> list[int]:
