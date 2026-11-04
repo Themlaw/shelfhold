@@ -1626,3 +1626,95 @@ def test_team_priority_only_ranks_teams_of_its_own_edition(
 def test_edition_has_no_shelf_column_before_the_shelf_table_exists() -> None:
     """`shelf_id` arrives with the `shelf` table (0004), as a nullable column with its FK."""
     assert "shelf_id" not in catalog.edition.c
+
+
+@pytest.mark.req("EF-BIB-049")
+def test_blank_text_version_carries_no_reference(engine: Engine) -> None:
+    with engine.begin() as connection:
+        work_id = add_work(connection)
+        for extra in ({"text_version_label": "abridged"},):
+            rejected(
+                connection,
+                sa.insert(catalog.edition).values(**edition_values(work_id, **extra)),
+                "ck_edition_text_version_has_reference",
+            )
+        translator = new_ulid()
+        connection.execute(
+            sa.insert(catalog.contributor).values(id=translator, kind="person", primary_name="T")
+        )
+        rejected(
+            connection,
+            sa.insert(catalog.edition).values(
+                **edition_values(work_id, text_version_contributor_id=translator)
+            ),
+            "ck_edition_text_version_has_reference",
+        )
+
+
+@pytest.mark.req("EF-BIB-056")
+def test_gap_ack_needs_a_number(engine: Engine, chain: dict[str, str]) -> None:
+    with engine.begin() as connection:
+        rejected(
+            connection,
+            sa.insert(acquisition.gap_ack).values(
+                edition_id=chain["edition"], track="main", number_norm="", acked_at=NOW
+            ),
+            "ck_gap_ack_number_norm_not_empty",
+        )
+
+
+@pytest.mark.req("EF-BIB-028")
+def test_one_preferred_variant_per_unit(engine: Engine, chain: dict[str, str]) -> None:
+    table = catalog.unit_variant
+    with engine.begin() as connection:
+        second = add_variant(connection, chain["unit"], chain["binding"], "ch-1-bis")
+        connection.execute(
+            sa.update(table).where(table.c.id == chain["variant"]).values(preferred=True)
+        )
+        rejected(
+            connection,
+            sa.update(table).where(table.c.id == second).values(preferred=True),
+            "UNIQUE constraint failed",
+        )
+        other_unit = add_unit(connection, chain["edition"], "2")
+        third = add_variant(connection, other_unit, chain["binding"], "ch-2")
+        connection.execute(sa.update(table).where(table.c.id == third).values(preferred=True))
+
+
+@pytest.mark.req("EF-BIB-037")
+def test_work_is_adult_flag_defaults_to_false(engine: Engine) -> None:
+    with engine.begin() as connection:
+        work_id = add_work(connection)
+        flag = connection.execute(
+            sa.select(catalog.work.c.is_adult).where(catalog.work.c.id == work_id)
+        ).scalar_one()
+        assert flag is False
+        add_work(connection, is_adult=True)
+
+
+@pytest.mark.req("EF-BIB-039")
+def test_related_works_stay_distinct(engine: Engine) -> None:
+    table = catalog.work_relation
+    with engine.begin() as connection:
+        connection.execute(
+            sa.insert(catalog.work_relation_kind).values(key="adaptation_of", label_fr="Adaptation")
+        )
+        first, second = add_work(connection), add_work(connection)
+        values = {
+            "from_work_id": first,
+            "to_work_id": second,
+            "kind": "adaptation_of",
+            "origin": "manual",
+        }
+        connection.execute(sa.insert(table).values(**values))
+        rejected(connection, sa.insert(table).values(**values), "UNIQUE constraint failed")
+        rejected(
+            connection,
+            sa.insert(table).values(**{**values, "to_work_id": first, "kind": "adaptation_of"}),
+            "ck_work_relation_distinct_works",
+        )
+        rejected(
+            connection,
+            sa.insert(table).values(**{**values, "kind": "rival_of"}),
+            "FOREIGN KEY constraint failed",
+        )

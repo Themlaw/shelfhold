@@ -22,7 +22,7 @@ CATALOG_TABLES = {
     "work_kind", "series", "series_member", "work", "work_title", "contributor",
     "contributor_name", "contribution", "external_id", "edition", "volume", "unit",
     "unit_variant", "variant_revision", "team", "team_alias", "team_priority",
-    "merge_suggestion", "age_suggestion", "normalizer",
+    "merge_suggestion", "age_suggestion", "normalizer", "work_relation", "work_relation_kind",
 }  # fmt: skip
 ACQUISITION_TABLES = {
     "source_item", "sub_source", "source_alias", "source_binding", "series_follow", "gap_ack",
@@ -128,3 +128,12 @@ def test_new_triggers_are_in_the_migrated_database(tmp_path: Path) -> None:
         "variant_revision_no_replace",
         "variant_revision_no_delete",
     } <= names
+
+
+@pytest.mark.req("EF-BIB-039")
+def test_work_relation_kinds_are_seeded_by_the_migration(tmp_path: Path) -> None:
+    database = tmp_path / "relations.db"
+    command.upgrade(alembic_config(database), "head")
+    with closing(sqlite3.connect(database)) as db:
+        keys = {r[0] for r in db.execute("SELECT key FROM work_relation_kind")}
+    assert keys == {"adaptation_of", "sequel_of", "prequel_of", "spin_off_of"}

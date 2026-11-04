@@ -152,6 +152,7 @@ work = sa.Table(
     sa.Column("first_published", sa.String(), nullable=True),
     sa.Column("date_precision", sa.String(), nullable=True),
     *age_columns(),
+    bool_column("is_adult", default=False),
     sa.Column("reading_direction", sa.String(), nullable=True),  # null: the kind's default
     sa.Column("locked_fields", sa.JSON(), nullable=False, server_default="[]"),
     now_column(),
@@ -274,6 +275,29 @@ external_id = sa.Table(
     sa.Index("ix_external_id_entity", "entity_type", "entity_id"),
 )
 
+# Works related without being merged (EF-BIB-039): a hook of V1, open vocabulary like work_kind.
+work_relation_kind = sa.Table(
+    "work_relation_kind",
+    metadata,
+    sa.Column("key", sa.String(), primary_key=True),
+    sa.Column("label_fr", sa.String(), nullable=False),
+    sa.CheckConstraint("\"key\" <> '' AND \"key\" NOT GLOB '*[^a-z0-9_]*'", name="key_slug"),
+)
+
+work_relation = sa.Table(
+    "work_relation",
+    metadata,
+    _fk("from_work_id", "work.id", ondelete="CASCADE"),
+    _fk("to_work_id", "work.id", ondelete="CASCADE"),
+    sa.Column("kind", sa.String(), sa.ForeignKey("work_relation_kind.key"), nullable=False),
+    sa.Column("origin", sa.String(), nullable=False),
+    now_column(),
+    sa.PrimaryKeyConstraint("from_work_id", "to_work_id", "kind"),
+    sa.CheckConstraint('"from_work_id" <> "to_work_id"', name="distinct_works"),
+    sa.CheckConstraint("\"origin\" <> ''", name="origin_not_empty"),
+    sa.Index("ix_work_relation_to", "to_work_id"),
+)
+
 # The sextuplet of ADR-0021 plus `performance` (audio readings, K6) and `packaging` (reissues,
 # GAP-8-03). Every part of the key is NOT NULL with '' as sentinel: SQLite treats NULLs as
 # distinct in a unique index, which would let duplicates in.
@@ -317,8 +341,10 @@ edition = sa.Table(
     in_check("volume_policy", VOLUME_POLICIES),
     norm_by_check("text_version_norm_by"),
     sa.CheckConstraint(
-        '"text_version" = \'\' OR "text_version_contributor_id" IS NOT NULL '
-        'OR "text_version_label" IS NOT NULL',
+        '("text_version" = \'\' AND "text_version_contributor_id" IS NULL '
+        'AND "text_version_label" IS NULL) '
+        'OR ("text_version" <> \'\' AND ("text_version_contributor_id" IS NOT NULL '
+        'OR "text_version_label" IS NOT NULL))',
         name="text_version_has_reference",
     ),
     sa.CheckConstraint(
@@ -506,6 +532,14 @@ unit_variant = sa.Table(
     sa.Index("ix_unit_variant_unit", "unit_id"),
     sa.Index("ix_unit_variant_team", "team_id"),
     sa.Index("ix_unit_variant_supersedes", "supersedes_variant_id"),
+)
+
+# At most one preferred Variant per Unit (the one exported, EF-BIB-028).
+sa.Index(
+    "uq_unit_variant_preferred",
+    unit_variant.c.unit_id,
+    unique=True,
+    sqlite_where=sa.text('"preferred"'),
 )
 
 # Append-only history of a Variant's revisions (H2). Read by the suspect-revision guard (M2)

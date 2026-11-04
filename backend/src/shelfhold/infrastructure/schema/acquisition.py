@@ -214,6 +214,7 @@ gap_ack = sa.Table(
     sa.Column("acked_at", UtcDateTime(), nullable=False),
     sa.PrimaryKeyConstraint("edition_id", "track", "number_segment", "number_norm"),
     in_check("track", UNIT_TRACKS),
+    sa.CheckConstraint("\"number_norm\" <> ''", name="number_norm_not_empty"),
 )
 
 # The persistent ticket of the connected service's `server_queue` capability. Only chapters

@@ -16,6 +16,8 @@ branch_labels = None
 depends_on = None
 
 TABLES = (
+    "work_relation",
+    "work_relation_kind",
     "download_request_unit",
     "variant_revision",
     "revision_pending",
@@ -90,6 +92,14 @@ WORK_KINDS = (
     ("light_novel", "Light novel", None, "text"),
     ("novel", "Roman", None, "text"),
     ("ebook", "Livre numérique", None, "text"),
+)
+
+# Relations between distinct Works, never a merge (EF-BIB-039). Open vocabulary.
+WORK_RELATION_KINDS = (
+    ("adaptation_of", "Adaptation de"),
+    ("sequel_of", "Suite de"),
+    ("prequel_of", "Préquelle de"),
+    ("spin_off_of", "Dérivé de"),
 )
 
 
@@ -618,6 +628,7 @@ def upgrade() -> None:
         sa.Column("date_precision", sa.String(), nullable=True),
         sa.Column("age_rating", sa.Integer(), nullable=True),
         sa.Column("age_x", sa.Boolean(), server_default=sa.text("0"), nullable=False),
+        sa.Column("is_adult", sa.Boolean(), server_default=sa.text("0"), nullable=False),
         sa.Column("rated_at", sa.DateTime(), nullable=True),
         sa.Column("reading_direction", sa.String(), nullable=True),
         sa.Column("locked_fields", sa.JSON(), server_default="[]", nullable=False),
@@ -655,6 +666,51 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_work")),
     )
     op.create_index("ix_work_kind", "work", ["kind"], unique=False)
+    op.create_table(
+        "work_relation_kind",
+        sa.Column("key", sa.String(), nullable=False),
+        sa.Column("label_fr", sa.String(), nullable=False),
+        sa.CheckConstraint(
+            "\"key\" <> '' AND \"key\" NOT GLOB '*[^a-z0-9_]*'",
+            name=op.f("ck_work_relation_kind_key_slug"),
+        ),
+        sa.PrimaryKeyConstraint("key", name=op.f("pk_work_relation_kind")),
+    )
+    op.create_table(
+        "work_relation",
+        sa.Column("from_work_id", sa.String(length=26), nullable=False),
+        sa.Column("to_work_id", sa.String(length=26), nullable=False),
+        sa.Column("kind", sa.String(), nullable=False),
+        sa.Column("origin", sa.String(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False
+        ),
+        sa.CheckConstraint(
+            '"from_work_id" <> "to_work_id"', name=op.f("ck_work_relation_distinct_works")
+        ),
+        sa.CheckConstraint("\"origin\" <> ''", name=op.f("ck_work_relation_origin_not_empty")),
+        sa.ForeignKeyConstraint(
+            ["from_work_id"],
+            ["work.id"],
+            name=op.f("fk_work_relation_from_work_id_work"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["kind"],
+            ["work_relation_kind.key"],
+            name=op.f("fk_work_relation_kind_work_relation_kind"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["to_work_id"],
+            ["work.id"],
+            name=op.f("fk_work_relation_to_work_id_work"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "from_work_id", "to_work_id", "kind", name=op.f("pk_work_relation")
+        ),
+    )
+    op.create_index("ix_work_relation_to", "work_relation", ["to_work_id"], unique=False)
     op.create_table(
         "edition",
         sa.Column("id", sa.String(length=26), nullable=False),
@@ -699,7 +755,7 @@ def upgrade() -> None:
             "\"media\" IN ('images', 'text', 'file', 'audio')", name=op.f("ck_edition_media_values")
         ),
         sa.CheckConstraint(
-            '"text_version" = \'\' OR "text_version_contributor_id" IS NOT NULL OR "text_version_label" IS NOT NULL',
+            '("text_version" = \'\' AND "text_version_contributor_id" IS NULL AND "text_version_label" IS NULL) OR ("text_version" <> \'\' AND ("text_version_contributor_id" IS NOT NULL OR "text_version_label" IS NOT NULL))',
             name=op.f("ck_edition_text_version_has_reference"),
         ),
         sa.CheckConstraint(
@@ -826,6 +882,7 @@ def upgrade() -> None:
             "\"track\" IN ('main', 'annual', 'special', 'extra', 'oneshot', 'unnumbered')",
             name=op.f("ck_gap_ack_track_values"),
         ),
+        sa.CheckConstraint("\"number_norm\" <> ''", name=op.f("ck_gap_ack_number_norm_not_empty")),
         sa.ForeignKeyConstraint(
             ["acked_by"], ["user.id"], name=op.f("fk_gap_ack_acked_by_user"), ondelete="SET NULL"
         ),
@@ -1267,6 +1324,13 @@ def upgrade() -> None:
     )
     op.create_index("ix_unit_variant_team", "unit_variant", ["team_id"], unique=False)
     op.create_index("ix_unit_variant_unit", "unit_variant", ["unit_id"], unique=False)
+    op.create_index(
+        "uq_unit_variant_preferred",
+        "unit_variant",
+        ["unit_id"],
+        unique=True,
+        sqlite_where=sa.text('"preferred"'),
+    )
     op.create_table(
         "download_request",
         sa.Column("id", sa.String(length=26), nullable=False),
@@ -1430,6 +1494,14 @@ def upgrade() -> None:
             {"key": key, "label_fr": label, "default_direction": direction, "default_media": media}
             for key, label, direction, media in WORK_KINDS
         ],
+    )
+
+    relation_kind = sa.table(
+        "work_relation_kind", sa.column("key", sa.String), sa.column("label_fr", sa.String)
+    )
+    op.bulk_insert(
+        relation_kind,
+        [{"key": key, "label_fr": label} for key, label in WORK_RELATION_KINDS],
     )
 
     for statement in TRIGGERS.values():
