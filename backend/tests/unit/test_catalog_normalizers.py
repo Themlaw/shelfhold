@@ -108,3 +108,33 @@ def test_series_key_is_nfc_casefolded_and_blind_to_invisible_marks() -> None:
     b = registry.normalize("series_name", f"{LRM}Amélie la  série")
     assert a.key == b.key == "amélie la série"
     assert a.raw == "  Amélie   LA Série "  # raw is kept verbatim
+
+
+@pytest.mark.req("ENF-OPS-021")
+def test_plan_shows_collisions_with_rows_already_on_the_target_version() -> None:
+    registry = NormalizerRegistry()
+    registry.register("k", 1, str.lower)
+    old = registry.normalize("k", "Berserk")
+    registry.register("k", 2, lambda s: s.lower().replace("e", ""))
+    current = registry.normalize("k", "brsrk")  # already v2, same key as Berserk will get
+    plan = registry.plan_migration([old, current], "k")
+    assert [(m.new_value, m.raws) for m in plan.merges] == [("brsrk", ("Berserk", "brsrk"))]
+    assert plan.changes == (old,)
+
+
+@pytest.mark.req("ENF-OPS-021")
+def test_plan_lists_refused_raw_values_instead_of_failing() -> None:
+    def v2(raw: str) -> str:
+        if not raw:
+            raise ValueError("empty")
+        return raw.lower()
+
+    registry = NormalizerRegistry()
+    registry.register("k", 1, lambda s: s)
+    rows = [registry.normalize("k", raw) for raw in ("A", "", "a")]
+    registry.register("k", 2, v2)
+    plan = registry.plan_migration(rows, "k")
+    assert [u.row.raw for u in plan.unresolved] == [""]
+    assert "empty" in plan.unresolved[0].reason
+    assert [r.raw for r in plan.apply()] == ["A", "a"]
+    assert [(m.new_value, m.raws) for m in plan.merges] == [("a", ("A", "a"))]

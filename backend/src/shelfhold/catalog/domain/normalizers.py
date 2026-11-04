@@ -68,14 +68,23 @@ class Merge:
 
 
 @dataclass(frozen=True)
+class Unresolved:
+    """A row whose raw value the target version refuses: the admin must resolve it."""
+
+    row: Normalized
+    reason: str
+
+
+@dataclass(frozen=True)
 class MigrationPlan:
     target: NormalizerId
     changes: tuple[Normalized, ...]  # rows of an older version, to recompute
     results: tuple[Normalized, ...]  # their value under the target version, same order
     merges: tuple[Merge, ...]
+    unresolved: tuple[Unresolved, ...] = ()
 
     def apply(self) -> tuple[Normalized, ...]:
-        """The migrated rows; the original rows are not modified."""
+        """The migrated rows; the original rows are not modified, unresolved rows stay as is."""
         return self.results
 
 
@@ -108,22 +117,38 @@ class NormalizerRegistry:
         return Normalized(self._functions[nid](raw), raw, str(nid))
 
     def plan_migration(self, rows: Iterable[Normalized], name: str) -> MigrationPlan:
-        """Preview of a migration to the current version of `name`, applying nothing."""
+        """Preview of a migration to the current version of `name`, applying nothing.
+
+        Merges are computed over the migrated rows **and** the rows already at the target version,
+        so a collision with an up-to-date row shows too. A raw value the target version refuses
+        becomes an `Unresolved` entry instead of failing the whole plan.
+        """
         target = self.current(name)
-        changes = tuple(r for r in rows if NormalizerId.parse(r.by) != target)
-        results = tuple(
-            Normalized(self._functions[target](r.raw), r.raw, str(target)) for r in changes
-        )
+        fn = self._functions[target]
+        changes: list[Normalized] = []
+        results: list[Normalized] = []
+        unresolved: list[Unresolved] = []
+        up_to_date: list[Normalized] = []
+        for row in rows:
+            if NormalizerId.parse(row.by) == target:
+                up_to_date.append(row)
+                continue
+            try:
+                results.append(Normalized(fn(row.raw), row.raw, str(target)))
+            except ValueError as exc:
+                unresolved.append(Unresolved(row, str(exc)))
+            else:
+                changes.append(row)
         groups: dict[str, set[str]] = defaultdict(set)
-        for result in results:
-            groups[result.value].add(result.raw)
-        existing = {r.value for r in results}
+        for row in (*results, *up_to_date):
+            groups[row.value].add(row.raw)
+        migrated_values = {r.value for r in results}
         merges = tuple(
             Merge(value, tuple(sorted(raws)))
             for value, raws in sorted(groups.items())
-            if len(raws) > 1 and value in existing
+            if len(raws) > 1 and value in migrated_values
         )
-        return MigrationPlan(target, changes, results, merges)
+        return MigrationPlan(target, tuple(changes), tuple(results), merges, tuple(unresolved))
 
 
 def to_nfc(text: str) -> str:

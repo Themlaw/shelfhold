@@ -7,30 +7,47 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from shelfhold.catalog.domain.normalizers import (
-    NormalizerRegistry,
     default_registry,
     resolve_key,
     to_nfc,
 )
 
 
+def _alnum_only(text: str) -> str:
+    return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
 @pytest.mark.req("ENF-OPS-021")
 @given(st.lists(st.text(max_size=15), max_size=12))
 def test_normalizer_upgrade_produces_no_new_key_without_plan_property(raws: list[str]) -> None:
-    registry = NormalizerRegistry()
-    registry.register("k", 1, lambda s: s.strip().lower())
-    stored = [registry.normalize("k", raw) for raw in raws]
-    keys_before = [resolve_key(s) for s in stored]
-    registry.register("k", 2, lambda s: "".join(ch for ch in s.lower() if ch.isalnum()))
-    assert [resolve_key(s) for s in stored] == keys_before  # v(n+1) over v(n) data: nothing moves
-    plan = registry.plan_migration(stored, "k")
+    registry = default_registry()
+    v1 = registry.current("series_name")
+    stored = [registry.normalize("series_name", raw) for raw in raws]
+    expected_v1 = [registry.get(v1)(raw) for raw in raws]
+    v2 = registry.register("series_name", 2, _alnum_only)
+    # New rows get v2 keys; the rows stored under v1 keep exactly the v1 key, unrecomputed.
+    assert [resolve_key(s) for s in stored] == expected_v1
+    assert all(s.by == str(v1) for s in stored)
+    fresh = [registry.normalize("series_name", raw) for raw in raws]
+    assert [f.key for f in fresh] == [_alnum_only(raw) for raw in raws]
+    # Only an explicit plan produces v2 keys, and it leaves the stored rows untouched.
+    plan = registry.plan_migration(stored, "series_name")
     migrated = plan.apply()
-    assert [m.raw for m in migrated] == raws
+    assert [m.key for m in migrated] == [f.key for f in fresh]
+    assert [m.by for m in migrated] == [str(v2)] * len(raws)
+    assert [resolve_key(s) for s in stored] == expected_v1
+    # Every merge preview is a real collision of two different raw values on one new key.
     for merge in plan.merges:
         assert len(merge.raws) >= 2
-    # every merged group really collapses to one new key, and nothing else does
-    collapsed = {m.key for m in migrated}
-    assert len(collapsed) == len({s.key for s in migrated})
+        assert {_alnum_only(raw) for raw in merge.raws} == {merge.new_value}
+    new_keys = [m.key for m in migrated]
+    for key in {
+        k
+        for k in new_keys
+        if new_keys.count(k) > 1
+        and len({r for r, m in zip(raws, new_keys, strict=True) if m == k}) > 1
+    }:
+        assert key in {m.new_value for m in plan.merges}
 
 
 @pytest.mark.req("ENF-I18N-002")
