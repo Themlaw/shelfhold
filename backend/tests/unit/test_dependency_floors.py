@@ -12,8 +12,10 @@ FLOORS: dict[str, tuple[str, str | None]] = {
     "pillow": ("13.0.0", None),
     "starlette": ("1.3.1", None),
     "python-multipart": ("0.0.30", None),
-    "apprise": ("2.1", "3"),
-    "huey": ("3.5.4", "3.6"),
+    # ENF-SEC-016 says 2.1; 2.1.0 is inside the 14-day window until 2026-11-07 (see pyproject).
+    "apprise": ("2.0.1", "3"),
+    # plan: 3.5.4, which is inside the 14-day window until 2026-11-15 (see pyproject).
+    "huey": ("3.4.0", "3.6"),
 }
 M1A_RUNTIME = {
     "huey", "argon2-cffi", "pynacl", "pyrage", "defusedxml", "nh3", "httpx2", "apprise",

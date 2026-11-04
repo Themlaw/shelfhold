@@ -1,4 +1,4 @@
-"""CI test split: tests/{property,golden,faults} exist, carry their marker and have their own job."""
+"""CI test split: tests/{property,golden,faults} carry their marker and have their own job."""
 
 import subprocess
 import sys
@@ -22,7 +22,7 @@ def test_suite_directory_marker_and_tests_exist(suite: str) -> None:
     markers = pyproject["tool"]["pytest"]["ini_options"]["markers"]
     assert any(m.startswith(f"{suite}:") for m in markers)
     # the marker is applied from the directory: `-m <suite>` selects exactly that directory
-    out = subprocess.run(
+    out = subprocess.run(  # noqa: S603
         [sys.executable, "-m", "pytest", f"tests/{suite}", "-m", suite, "--collect-only", "-q"],
         cwd=BACKEND, capture_output=True, text=True, check=False,
     )  # fmt: skip
