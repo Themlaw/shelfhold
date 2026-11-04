@@ -1,0 +1,32 @@
+name: Demande de fonctionnalité
+description: Proposer une amélioration
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Rappel : pas de nom de site ni de lien vers du contenu non autorisé.** Les demandes visant une source non autorisée ou un moyen de contourner une protection sont fermées. Consultez d'abord la liste « Jamais » du cahier des charges (`docs/spec/01-cahier-des-charges.md`, section 5.4) et la feuille de route.
+  - type: textarea
+    id: need
+    attributes:
+      label: Besoin
+      description: Quel problème du foyer ou de l'atelier cela résout-il ?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposition
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives et recouvrement avec Kavita, Komga ou Suwayomi
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Vérifications
+      options:
+        - label: Je n'ai cité aucun nom de site non autorisé ni lien vers du contenu non autorisé.
+          required: true

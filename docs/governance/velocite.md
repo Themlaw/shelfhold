@@ -1,0 +1,22 @@
+# Vélocité
+
+Source : [`docs/spec/03-roadmap-tdd.md`](../spec/03-roadmap-tdd.md) §1 bis, ENF-GOV-005, [ADR-0035](../adr/0035-decoupage-m1-et-budget-temps.md).
+
+Le développement est fait par des agents d'IA orchestrés par le mainteneur. Les boîtes de temps en heures-homme de la spécification sont donc converties en **effort agent** (sessions, PR fusionnées, exigences fermées), suivi ici. L'hypothèse d'heures par semaine du porteur (Q34) est sans objet tant qu'il en est ainsi.
+
+## Règles
+
+1. Relever à chaque jalon : effort agent consommé, exigences (EF/ENF) fermées, PR fusionnées, temps de relecture du mainteneur.
+2. La revue de jalon publie la vélocité et une projection du jalon suivant.
+3. Règle de coupe : à 150 % de l'effort prévu, les éléments marqués « coupables » dans la section du jalon passent en « Plus tard », sans débat. Les garanties de cohérence, la sécurité, le contrôle parental et la surface d'exploitation ne sont jamais coupables.
+4. Règle d'arrêt : voir [portes.md](portes.md).
+
+## Relevé
+
+| Jalon | Période | Effort agent | Exigences fermées | PR fusionnées | Relecture mainteneur | Remarques |
+|---|---|---|---|---|---|---|
+| M0 | | | | | | |
+| M1a | | | | | | |
+| M1b | | | | | | |
+| M2 | | | | | | |
+| M3 | | | | | | |

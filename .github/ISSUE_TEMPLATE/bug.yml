@@ -1,0 +1,39 @@
+name: Bug
+description: Signaler un bug reproductible
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Rappel : pas de nom de site ni de lien vers du contenu non autorisé.** Retirez des logs toute URL, jeton et clé d'API. Ces éléments sont supprimés. Shelfhold ne prend en charge que des sources légales ; les questions d'aide vont dans les Discussions.
+  - type: input
+    id: version
+    attributes:
+      label: Version de Shelfhold
+      description: Tag d'image ou commit (par exemple edge, 0.1.0).
+    validations:
+      required: true
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module concerné
+      options: [Configuration, Migration, Pont Kavita, Pont Suwayomi, Stockage, Interface, API, Autre]
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Étapes pour reproduire
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu et observé
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (sans URL ni jeton)
+      render: text
