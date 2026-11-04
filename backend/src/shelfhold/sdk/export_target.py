@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: MIT
 """ExportTarget contract v1 (02 section 4.2): destinations describe, the core calls.
 
+UNSTABLE: provisional until M4. Only the shapes spelled out in the spec are modelled; ExportItem,
+VersionRange, EventSubscription and the others are untyped dicts and will change, as will
+``ApiCall.body``, which is missing. No third-party destination should be written against it yet.
+
 The core holds every destination key and never hands one to a plugin. A destination returns pure
 values or call descriptions (`ApiCall`, `FsOp`) that the host validates and executes. The richer
 parts (version ranges, events, progress) are fixed by the lot that implements the first destination.
@@ -11,7 +15,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import Field
 
-from shelfhold.sdk.models import SdkModel
+from shelfhold.sdk.models import SdkModel, StrictSdkModel
 
 JsonObject = dict[str, Any]
 """Placeholder shape for the types the destination lot (M4) will refine: ExportItem, SidecarFile,
@@ -52,7 +56,7 @@ class TargetCapabilities(SdkModel):
     series_grouping: Literal["name", "folder"] = "name"
 
 
-class ApiCall(SdkModel):
+class ApiCall(StrictSdkModel):
     """Described, not executed: the core runs it with its own secrets through its Fetcher."""
 
     method: str
@@ -63,14 +67,14 @@ class ApiCall(SdkModel):
     expect: list[int] = Field(default_factory=lambda: [200])
 
 
-class ContentRef(SdkModel):
+class ContentRef(StrictSdkModel):
     """Reference to bytes the host owns; a plan never carries raw content."""
 
     kind: Literal["export_item", "sidecar"]
     ref: str
 
 
-class FsOp(SdkModel):
+class FsOp(StrictSdkModel):
     """Serialisable file operation plan; the host validates and executes it (passe 8, H3)."""
 
     op: Literal["mkdir", "write", "write_inline", "rename", "recycle", "touch_mtime", "unlink"]

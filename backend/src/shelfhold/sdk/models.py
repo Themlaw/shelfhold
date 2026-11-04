@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: MIT
 """Common SDK types: plugin manifest, pagination, filters, authentication flows.
 
+Extra-field policy: ``SdkModel`` ignores unknown fields (compatibility between N and N-1);
+``StrictSdkModel`` forbids them, for the plans that the host executes.
+
 Every type here round-trips through JSON (EF-SRC-001): bytes travel as base64, Decimal as a string,
 flag sets as lists of names. Nothing in this module imports the AGPL core (ENF-LEG-010).
 """
@@ -21,9 +24,20 @@ value it received (ENF-I18N-005, ADR-0042)."""
 
 
 class SdkModel(BaseModel):
-    """Base of every SDK type: strict fields, JSON-safe forms for bytes."""
+    """Base of the SDK types read from a plugin or a manifest.
 
-    model_config = ConfigDict(extra="forbid", ser_json_bytes="base64", val_json_bytes="base64")
+    Unknown fields are ignored, so that an addition to the contract stays compatible between api N
+    and N-1 (ADR-0024: additions are optional fields). Bytes travel as base64.
+    """
+
+    model_config = ConfigDict(extra="ignore", ser_json_bytes="base64", val_json_bytes="base64")
+
+
+class StrictSdkModel(SdkModel):
+    """Types the host validates and executes (plans): an unknown field is an error, because
+    silently dropping part of an operation would execute something other than what was described."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 def flag_parser[F: Flag](flag_cls: type[F]) -> Callable[[Any], F]:
@@ -181,6 +195,7 @@ __all__ = [
     "RateLimit",
     "SdkModel",
     "SessionState",
+    "StrictSdkModel",
     "flag_names",
     "flag_parser",
 ]

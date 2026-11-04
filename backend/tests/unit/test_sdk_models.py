@@ -160,7 +160,7 @@ def _exported_models() -> list[type[BaseModel]]:
             if (
                 issubclass(cls, BaseModel)
                 and cls.__module__ == module.__name__
-                and cls is not models.SdkModel
+                and cls not in (models.SdkModel, models.StrictSdkModel)
                 and not cls.__pydantic_generic_metadata__["parameters"]  # unparametrised generic
             ):
                 found.append(cls)
@@ -216,3 +216,21 @@ def test_sdk_manifest_carries_the_v1_fields() -> None:
         "settings_schema", "rate_limit", "terms_url", "content_warning", "content_trust",
     }  # fmt: skip
     assert expected <= fields
+
+
+@pytest.mark.req("EF-SRC-001")
+def test_unknown_fields_are_ignored_in_manifests_but_refused_in_host_plans() -> None:
+    wire = json.loads(_manifest().model_dump_json())
+    wire["added_in_a_later_api"] = {"x": 1}
+    wire["rate_limit"]["burst"] = 3
+    assert source.SourceManifest.model_validate(wire).key == "sample"  # N reads N-1 and back
+    assert not hasattr(source.SourceManifest.model_validate(wire), "added_in_a_later_api")
+    with pytest.raises(ValidationError):
+        export_target.FsOp.model_validate({"op": "mkdir", "rel_path": "a", "surprise": 1})
+    with pytest.raises(ValidationError):
+        export_target.ApiCall.model_validate({"method": "GET", "path": "/", "auth": "none", "x": 1})
+
+
+@pytest.mark.req("EF-SRC-001")
+def test_export_target_module_warns_that_it_is_provisional_until_m4() -> None:
+    assert "UNSTABLE" in (export_target.__doc__ or "")
