@@ -14,6 +14,7 @@ from shelfhold.infrastructure.fetcher import (
     FetchTimeout,
     FetchTooLarge,
     GuardedFetcher,
+    IntegrationFetcher,
     InvalidFetchUrl,
     LanTargets,
     SsrfBlocked,
@@ -38,10 +39,11 @@ def _fetcher(
     lan: LanTargets | None = None,
     limits: FetchLimits | None = None,
 ) -> GuardedFetcher:
-    return GuardedFetcher(
-        resolver, transport=rec.transport, lan_targets=lan or LanTargets.empty(),
-        limits=limits or FetchLimits(),
-    )  # fmt: skip
+    if lan is not None:  # an integration fetcher: the only kind that may reach a LAN target
+        return IntegrationFetcher(
+            resolver, lan_targets=lan, transport=rec.transport, limits=limits or FetchLimits()
+        )
+    return GuardedFetcher(resolver, transport=rec.transport, limits=limits or FetchLimits())
 
 
 def _get(f: GuardedFetcher, url: str, **kw: object) -> object:
@@ -166,7 +168,7 @@ def test_redirect_loop_and_scheme_downgrade_to_other_schemes() -> None:
             _get(_fetcher(dns, rec), "http://loop.example.org/")
 
 
-SECRETS = {"Authorization": "Bearer s3cret", "Cookie": "sid=1", "X-Api-Key": "k",
+SECRETS = {"Accept": "text/html", "Authorization": "Bearer s3cret", "Cookie": "sid=1", "X-Api-Key": "k",
            "Proxy-Authorization": "Basic eA==", "X-Custom": "keep"}  # fmt: skip
 
 
@@ -194,7 +196,8 @@ def test_redirect_drops_auth_headers(location: str, kept: bool) -> None:
     for name in ("Authorization", "Cookie", "X-Api-Key", "Proxy-Authorization"):
         assert name.lower() in first.headers
         assert (name.lower() in second.headers) is kept
-    assert second.headers["x-custom"] == "keep"  # only credentials are dropped
+    assert ("x-custom" in second.headers) is kept  # off origin, only the allow-list travels
+    assert second.headers["accept"] == "text/html"
 
 
 @pytest.mark.req("ENF-SEC-001")

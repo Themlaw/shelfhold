@@ -16,6 +16,7 @@ import pytest
 from shelfhold.infrastructure.fetcher import (
     FetchUnreachable,
     GuardedFetcher,
+    IntegrationFetcher,
     LanTargets,
     SsrfBlocked,
 )
@@ -56,7 +57,7 @@ def test_loopback_server_reached_only_through_an_explicit_lan_target(port: int) 
 
     async def scenario() -> None:
         lan = await LanTargets.declare([f"suwayomi.lan:{port}"], dns)
-        f = GuardedFetcher(dns, lan_targets=lan)
+        f = IntegrationFetcher(dns, lan_targets=lan)
         response = await f.get(
             f"http://suwayomi.lan:{port}/x", headers={"Authorization": "Bearer t"}
         )
@@ -101,7 +102,7 @@ def test_https_to_the_pinned_ip_still_verifies_the_certificate_of_the_name(tmp_p
 
     async def scenario() -> None:
         lan = await LanTargets.declare([f"secure.test:{port}", f"wrong.test:{port}"], dns)
-        f = GuardedFetcher(dns, lan_targets=lan, tls_context=client_context)
+        f = IntegrationFetcher(dns, lan_targets=lan, tls_context=client_context)
         ok = await f.get(f"https://secure.test:{port}/")
         assert ok.status == 200 and ok.body.startswith(b"secure.test")
         # same IP, another name: the certificate does not cover it, so TLS must fail
