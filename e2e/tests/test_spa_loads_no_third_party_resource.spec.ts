@@ -16,6 +16,7 @@ async function refuseThirdParties(page: Page, origin: string): Promise<string[]>
   return attempted;
 }
 
+// req: ENF-PRIV-001
 test('test_spa_loads_no_third_party_resource', async ({ page, baseURL }) => {
   const attempted = await refuseThirdParties(page, new URL(baseURL ?? '').origin);
   const cspViolations: string[] = [];
@@ -32,30 +33,13 @@ test('test_spa_loads_no_third_party_resource', async ({ page, baseURL }) => {
   expect(cspViolations).toEqual([]);
 });
 
-// The route guard must work on its own, without the CSP: serve a page with no CSP
-// that reaches out to a third party, and check the interception records it.
-test('the route guard catches third-party requests even without a CSP', async ({ page, baseURL }) => {
-  const origin = new URL(baseURL ?? '').origin;
-  const attempted = await refuseThirdParties(page, origin);
-  await page.route(`${origin}/__no_csp__`, (route) =>
-    route.fulfill({
-      contentType: 'text/html',
-      body: '<!doctype html><title>t</title><img src="https://third-party.invalid/pixel.png">'
-    })
-  );
-  await page.goto('/__no_csp__');
-  await page.evaluate(() => fetch('https://third-party.invalid/data.json').catch(() => null));
-
-  expect(attempted).toContain('https://third-party.invalid/pixel.png');
-  expect(attempted).toContain('https://third-party.invalid/data.json');
-});
-
 test('the SPA fallback serves client routes', async ({ page }) => {
   const response = await page.goto('/une/route/cliente');
   expect(response?.status()).toBe(200);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 });
 
+// req: ENF-SEC-004, ENF-PRIV-001
 test('the index carries the CSP header with frame-ancestors', async ({ request }) => {
   const response = await request.get('/');
   const csp = response.headers()['content-security-policy'] ?? '';

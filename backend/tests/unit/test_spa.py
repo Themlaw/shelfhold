@@ -110,6 +110,7 @@ def test_api_paths_are_404_without_slash_too(
     assert INDEX not in response.text
 
 
+@pytest.mark.req("ENF-SEC-004", "ENF-PRIV-001")
 def test_security_and_cache_headers(settings: Settings, build_dir: Path) -> None:
     with _client(settings, build_dir) as client:
         index = client.get("/")
@@ -141,6 +142,7 @@ def test_without_build_only_the_api_answers(settings: Settings, tmp_path: Path) 
         assert client.get("/healthz").status_code == 200
 
 
+@pytest.mark.req("ENF-OPS-003")
 def test_openapi_describes_healthz_response(settings: Settings) -> None:
     with _client(settings, None) as client:
         schema = client.get("/openapi.json").json()

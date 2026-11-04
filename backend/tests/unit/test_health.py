@@ -11,6 +11,7 @@ from shelfhold.infrastructure.migrate import migrate
 from shelfhold.main import create_app
 
 
+@pytest.mark.req("ENF-OPS-003")
 def test_healthz_returns_200(settings: Settings) -> None:
     migrate(settings)
     with TestClient(create_app(settings)) as client:
@@ -19,6 +20,7 @@ def test_healthz_returns_200(settings: Settings) -> None:
     assert response.json()["state"] == "ok"
 
 
+@pytest.mark.req("ENF-OPS-003")
 def test_readyz_is_200_when_migrated_and_volumes_writable(settings: Settings) -> None:
     migrate(settings)
     with TestClient(create_app(settings)) as client:
@@ -27,6 +29,7 @@ def test_readyz_is_200_when_migrated_and_volumes_writable(settings: Settings) ->
     assert all(response.json()["checks"].values())
 
 
+@pytest.mark.req("ENF-OPS-003")
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
 def test_readyz_fails_when_db_readonly(settings: Settings) -> None:
     migrate(settings)
@@ -37,6 +40,7 @@ def test_readyz_fails_when_db_readonly(settings: Settings) -> None:
     assert response.json()["checks"]["database_writable"] is False
 
 
+@pytest.mark.req("ENF-OPS-003")
 def test_readyz_fails_when_migrations_pending(settings: Settings) -> None:
     with TestClient(create_app(settings)) as client:
         response = client.get("/readyz")

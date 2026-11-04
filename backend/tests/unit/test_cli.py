@@ -21,6 +21,7 @@ def cli_env(env: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> dict[str, s
     return env
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_migrate_command_reports_then_is_up_to_date(
     cli_env: dict[str, str], settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -31,6 +32,7 @@ def test_migrate_command_reports_then_is_up_to_date(
     assert current_revision(settings.database_path) == head_revision()
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_migrate_command_exits_1_on_a_newer_schema(
     cli_env: dict[str, str], settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -43,6 +45,7 @@ def test_migrate_command_exits_1_on_a_newer_schema(
     assert "from_the_future" in capsys.readouterr().err
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_migrate_command_exits_1_and_names_the_failed_revision(
     cli_env: dict[str, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -54,6 +57,7 @@ def test_migrate_command_exits_1_and_names_the_failed_revision(
     assert "0002" in capsys.readouterr().err
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_invalid_configuration_exits_2(
     cli_env: dict[str, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -62,6 +66,7 @@ def test_invalid_configuration_exits_2(
     assert "log_level" in capsys.readouterr().err
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_serve_starts_uvicorn_with_the_resolved_host_and_port(
     cli_env: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -79,6 +84,7 @@ def test_app_factory_reads_the_environment(cli_env: dict[str, str]) -> None:
     assert app.title == "Shelfhold"
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_db_settings_are_empty_before_the_first_migration(settings: Settings) -> None:
     assert load_db_settings(settings.data_dir) == {}
     settings.data_dir.mkdir(parents=True)
@@ -86,6 +92,7 @@ def test_db_settings_are_empty_before_the_first_migration(settings: Settings) ->
     assert load_db_settings(settings.data_dir) == {}
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_settings_store_updates_an_existing_key(settings: Settings) -> None:
     migrate(settings)
     store = SettingsStore(settings.database_path)
@@ -94,12 +101,14 @@ def test_settings_store_updates_an_existing_key(settings: Settings) -> None:
     assert store.all() == {"log_level": "ERROR"}
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_current_revision_is_none_for_an_unmigrated_database(tmp_path: Path) -> None:
     path = tmp_path / "x.db"
     sqlite3.connect(path).close()
     assert current_revision(path) is None
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_serve_refuses_a_newer_schema_before_starting_uvicorn(
     cli_env: dict[str, str],
     settings: Settings,
@@ -118,6 +127,7 @@ def test_serve_refuses_a_newer_schema_before_starting_uvicorn(
     assert "démarrage refusé" in capsys.readouterr().err
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_settings_store_only_tolerates_a_missing_table(settings: Settings) -> None:
     settings.data_dir.mkdir(parents=True)
     with closing(sqlite3.connect(settings.database_path)) as db:
