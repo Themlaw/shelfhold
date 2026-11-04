@@ -8,6 +8,7 @@ from shelfhold.catalog.adapters.repo import (
     SqlUnitStore,
     SqlWorkStore,
 )
+from shelfhold.catalog.adapters.tx import run_immediate
 from shelfhold.catalog.application.dto import (
     BindingRef,
     EditionRef,
@@ -39,6 +40,11 @@ class Catalog(CatalogService):
         )
 
 
+def ingest_isolated(engine: sa.Engine, item: IncomingUnit) -> IngestResult:
+    """Ingest one release in its own `BEGIN IMMEDIATE` transaction, replayed once on a clash."""
+    return run_immediate(engine, lambda connection: Catalog(connection).ingest(item))
+
+
 __all__ = [
     "TEXT_VERSION_LABELS",
     "BindingRef",
@@ -52,5 +58,6 @@ __all__ = [
     "TeamRef",
     "TextVersionRef",
     "UnitView",
+    "ingest_isolated",
     "translation_discriminant",
 ]

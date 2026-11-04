@@ -1,19 +1,26 @@
 """Two-level identity (EF-BIB-034, EF-BIB-050, EF-BIB-049): places, variants, revisions."""
 
+import threading
+
 import pytest
 import sqlalchemy as sa
+from sqlalchemy import exc
 
+from shelfhold.catalog.adapters.tx import run_immediate
 from shelfhold.catalog.public import (
+    Catalog,
     Discriminant,
     EditionSpec,
     IncomingUnit,
     IngestOutcome,
     TextVersionRef,
+    ingest_isolated,
     translation_discriminant,
 )
+from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import storage
-from tests.catalog_env import at, harness
+from tests.catalog_env import Harness, at, database, harness
 
 
 def unit(binding, remote: str, raw: str | None, minute: int = 0, **kw) -> IncomingUnit:  # type: ignore[no-untyped-def]
@@ -325,3 +332,58 @@ def test_unnumbered_release_with_known_title_is_only_suggested() -> None:
         assert other.suggestion_id is None
         # a title match does not block the export of either Variant
         assert h.catalog.elect_preferred(extra.unit_id) == extra.variant_id
+
+
+@pytest.mark.req("EF-BIB-050")
+def test_concurrent_ingests_of_one_release_make_one_variant() -> None:
+    with database() as path:
+        engine = create_db_engine(path)
+        with engine.begin() as connection:
+            h = Harness(connection, Catalog(connection))
+            binding = h.binding(h.edition())
+        item = unit(binding, "race", "5", 0, team_label="Alpha")
+        outcomes: list[IngestOutcome] = []
+        barrier = threading.Barrier(2)
+
+        def worker() -> None:
+            mine = create_db_engine(path)  # its own connection, as another process would have
+            barrier.wait()
+            outcomes.append(ingest_isolated(mine, item).outcome)
+            mine.dispose()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert sorted(outcomes) == [IngestOutcome.NEW_VARIANT, IngestOutcome.UNCHANGED]
+        with engine.connect() as connection:
+            assert connection.execute(sa.text("SELECT count(*) FROM unit_variant")).scalar() == 1
+            assert connection.execute(sa.text("SELECT count(*) FROM team")).scalar() == 1
+        engine.dispose()
+
+
+@pytest.mark.req("EF-BIB-050")
+def test_ingest_transaction_is_replayed_once_on_a_clash() -> None:
+    with database() as path:
+        engine = create_db_engine(path)
+        calls: list[int] = []
+
+        def flaky(connection: sa.Connection) -> str:
+            calls.append(1)
+            connection.execute(sa.text("UPDATE app_setting SET value = value"))
+            if len(calls) == 1:
+                raise exc.IntegrityError("stmt", {}, Exception("UNIQUE constraint failed"))
+            return "ok"
+
+        assert run_immediate(engine, flaky) == "ok" and len(calls) == 2  # one replay
+        calls.clear()
+
+        def always(connection: sa.Connection) -> str:
+            calls.append(1)
+            raise exc.IntegrityError("stmt", {}, Exception("UNIQUE constraint failed"))
+
+        with pytest.raises(exc.IntegrityError):
+            run_immediate(engine, always)
+        assert len(calls) == 2  # never a third try
+        engine.dispose()

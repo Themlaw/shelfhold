@@ -106,10 +106,17 @@ class Harness:
 
 
 @contextmanager
-def harness() -> Iterator[Harness]:
+def database() -> Iterator[Path]:
+    """A private copy of the migrated database file."""
     with tempfile.TemporaryDirectory(prefix="shelfhold-catalog-") as tmp:
         path = Path(tmp) / "shelfhold.db"
         shutil.copyfile(_template(), path)
+        yield path
+
+
+@contextmanager
+def harness() -> Iterator[Harness]:
+    with database() as path:
         engine = create_db_engine(path)
         try:
             with engine.begin() as connection:
