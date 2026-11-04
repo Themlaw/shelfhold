@@ -53,19 +53,17 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
 - Développement : **hypothesis** (MPL-2.0), **syrupy** (MIT), **pytest-xdist** (MIT) et
   **xmlschema** (MIT) pour les suites `tests/property`, `tests/golden` et la validation de schémas.
 
-### Planchers et fenêtre `exclude-newer`
+### Exception à la fenêtre `exclude-newer`
 
-Le verrou n'accepte que des publications vieilles de 14 jours (`exclude-newer`). Deux planchers du
-plan ne sont pas encore atteignables et sont abaissés jusqu'à ce que la version ait 14 jours :
+Le verrou n'accepte que des publications vieilles de 14 jours (`exclude-newer`). Deux paquets font
+l'objet d'une exception ciblée (`exclude-newer-package` dans `[tool.uv]`), parce que leur version
+a été vérifiée explicitement :
 
-- apprise : plancher du plan `>=2.1,<3` (2.1.0 publiée le 2026-10-24), plancher posé
-  `>=2.0.1,<3`, version verrouillée 2.0.1, à relever le 2026-11-07.
-- huey : plancher du plan `>=3.5.4,<3.6` (3.5.4 publiée le 2026-11-01), plancher posé
-  `>=3.4.0,<3.6`, version verrouillée 3.4.0, à relever le 2026-11-15.
+- huey 3.5.4 (publiée le 2026-11-01), vérifiée par le spike S1 : plancher `>=3.5.4,<3.6`.
+- apprise 2.1.0 (publiée le 2026-10-24), plancher d'ENF-SEC-016 : `>=2.1,<3`.
 
-Les deux planchers de sécurité ENF-SEC-016 restent satisfaits (le correctif Apprise date de 1.11.0).
-Huey n'est importé par aucun code avant le lot qui écrit `jobs/huey_app.py` : ce lot relève le
-plancher à 3.5.4, la version vérifiée par le spike S1.
+Retrait possible le 2026-11-15, quand les deux versions ont plus de 14 jours : supprimer la ligne
+`exclude-newer-package` et relancer `uv lock`. Aucun autre paquet n'est concerné.
 
 - **uvicorn**, **SQLAlchemy**, **Alembic**, **structlog**, **pydantic** : socle du squelette,
   versions minimales et verrou dans `backend/pyproject.toml` et `backend/uv.lock`.
