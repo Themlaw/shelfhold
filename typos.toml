@@ -3,8 +3,12 @@
 [files]
 extend-exclude = ["*.md", "docs/", "backend/uv.lock", "backend/src/shelfhold/locales/", "frontend/src/lib/i18n/", "spikes/", "tools/traceability-exceptions.toml", "backend/tests/unit/test_traceability.py", "backend/tests/unit/test_governance_docs.py", ".github/ISSUE_TEMPLATE/", "LICENSE", "backend/src/shelfhold/sdk/LICENSE"]
 
-# French words in UI strings asserted by the frontend tests.
+# French words in UI strings asserted by the frontend tests, and the EPUB package document (OPF).
 [default.extend-words]
 cours = "cours"
 sur = "sur"
-opf = "opf"  # EPUB package document (OPF)
+opf = "opf"
+
+# Exact identifier: a pydantic setting.
+[default.extend-identifiers]
+ser_json_bytes = "ser_json_bytes"

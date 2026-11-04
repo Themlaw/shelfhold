@@ -1,0 +1,62 @@
+{
+  "key": "suwayomi",
+  "kind": "source",
+  "version": "0.1.0",
+  "api": 1,
+  "name": "Suwayomi (connected service)",
+  "permissions": {
+    "domains": [],
+    "lan_targets": [],
+    "needs_browser": false,
+    "needs_solver": false
+  },
+  "settings_schema": {
+    "type": "object",
+    "required": [
+      "base_url"
+    ],
+    "properties": {
+      "base_url": {
+        "type": "string",
+        "title": "Suwayomi address"
+      },
+      "username": {
+        "type": "string"
+      },
+      "password": {
+        "type": "string",
+        "secret": true
+      }
+    }
+  },
+  "content_warning": "mixed",
+  "terms_url": null,
+  "respects_robots": true,
+  "attribution": null,
+  "homepage": "https://github.com/Suwayomi/Suwayomi-Server",
+  "langs": [],
+  "content_kinds": [
+    "file"
+  ],
+  "url_patterns": [],
+  "capabilities": [
+    "FOLLOW",
+    "SEARCH",
+    "SUB_SOURCES"
+  ],
+  "rate_limit": {
+    "requests_per_second": 5.0,
+    "concurrency": 2
+  },
+  "auth": [
+    {
+      "kind": "basic"
+    }
+  ],
+  "id_scheme": "v1",
+  "rights_basis": null,
+  "rights_jurisdiction": null,
+  "translation_nature": "unknown",
+  "content_trust": "untrusted",
+  "tests": []
+}
