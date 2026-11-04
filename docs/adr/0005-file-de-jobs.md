@@ -1,5 +1,5 @@
 ---
-status: accepté (spike S1 mené en M0 : Huey retenu, critère de précision des périodiques reformulé)
+status: accepté (spike S1 mené en M0 : Huey retenu malgré l'échec du critère 3, dette de mesure sur 24 h)
 date: 2026-11-02
 amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 11) ; 2026-11-04 (spike S1)
 decision-makers: mainteneur
@@ -67,10 +67,12 @@ L6 (Z2), M1b. Trois **classes de priorité Huey fixes** : nouveautés suivies > 
 
 ## Amendement spike S1 (2026-11-04)
 Mesures complètes : `spikes/s1/RESULTATS.md` (Huey 3.5.4, `SqliteHuey`, consommateur à fils).
-- **Retenu : Huey `>=3.5.4,<3.6`** avec la couche Shelfhold. Critères 1 (1 000 tâches, 0 « database is locked »), 2 (`kill -9` puis `flush_locks`), 4 (slot par domaine N = 2, pic mesuré 2), 5 (enfilement p99 0,13 à 0,16 ms pour 5 ms permis) et 6 (+3,4 Mo de RSS pour +20 Mo permis) passent.
+- **Résultat : 5 critères sur 6 passent ; le critère 3 est ÉCHOUÉ.** Passent : 1 (1 000 tâches, 0 « database is locked »), 2 (`kill -9` puis `flush_locks`), 4 (slot par domaine N = 2, pic mesuré 2), 5 (enfilement p99 0,13 à 0,16 ms pour 5 ms permis), 6 (+3,4 Mo de RSS pour +20 Mo permis).
+- **Critère 3 échoué** : écart de -28 à +11 s au passage de minute, mesuré sur 9,5 minutes (8 ticks) pour une cible de +-2 s. Cause (code de Huey 3.5.4) : le planificateur se réveille toutes les 60 s sur l'horloge monotone depuis le démarrage du consommateur, puis évalue le crontab sur la minute murale ; la phase dépend de l'instant de démarrage et la gigue atteint quelques secondes. **Un tick peut être sauté** (deux réveils de part et d'autre d'une minute) ; aucun saut observé sur 8 ticks, ce qui ne le prouve pas impossible. Le rattrapage au redémarrage, lui, est conforme : Huey ne rejoue rien, la couche `last_run_at` enfile exactement une exécution.
+- **Décision : Huey `>=3.5.4,<3.6` est retenu malgré l'échec**, car les périodiques de Shelfhold sont horaires ou quotidiennes avec `jitter_s` (table `schedule`, 02-architecture), idempotentes, sans exigence à la seconde. La couche Shelfhold ne se fie pas au seul crontab : elle scrute `last_run_at` au démarrage et à chaque minute (run-once).
+- **Dette explicite** : mesure sur 24 h (dérive cumulative, ticks sautés) avant la 1.0, hors CI ; critère de référence reformulé « gigue <= 15 s, aucun tick perdu non rattrapé ». Cette mesure n'a **pas** été faite.
 - **`flush_locks` au démarrage est indispensable** : sans lui, les tâches qui suivent un `kill -9` échouent toutes sur le verrou orphelin (5 sur 5 dans le spike). La tâche en cours au moment du kill est perdue pour Huey (pas d'acquittement) : la table `jobs` (statut `running`) la remet en file, chaque tâche est idempotente.
-- **Critère 3 amendé.** Le rattrapage passe (Huey n'exécute aucun tick manqué ; la couche `last_run_at` en enfile exactement un). La précision « +-2 s » échoue : le crontab de Huey s'évalue toutes les 60 s à partir du démarrage du consommateur, avec un décalage de phase (-28 à +11 s observés) et une gigue de quelques secondes. Contournement retenu dans la couche Shelfhold : les périodiques sont de granularité horaire ou quotidienne, idempotents, sans exigence à la seconde ; le critère devient « gigue <= 15 s et aucune dérive cumulative sur 24 h ». La mesure sur 24 h n'a pas été faite (version accélérée de 9,5 min seulement) : elle reste à exécuter avant la 1.0, hors CI.
-- Le prototype (`spikes/s1/layer.py`) fixe le contrat de la couche : table `domain_slot` (acquisition en `BEGIN IMMEDIATE`, purge au démarrage), table `periodic(last_run_at)` avec politique *run-once* au démarrage.
+- Le prototype (`spikes/s1/layer.py`) fixe le contrat de la couche : table `domain_slot` (acquisition en `BEGIN IMMEDIATE`, purge au démarrage), table `periodic(last_run_at)` avec politique *run-once*.
 
 ## Exigences liées
 EF-INT-003, EF-INT-004, EF-INT-002, EF-SRC-009, EF-SRC-021, EF-BIB-012, ENF-OPS-007, ENF-PERF-001, EF-INT-017.

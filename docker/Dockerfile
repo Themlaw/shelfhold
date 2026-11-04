@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.24
+# syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 # Shelfhold image: multi-stage, base pinned by digest (Renovate bumps the digests), uid 1000.
 #
 # Frontend: the SPA is built only when the context has frontend/package.json. The CI passes

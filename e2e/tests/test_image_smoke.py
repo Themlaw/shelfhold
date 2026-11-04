@@ -9,10 +9,26 @@ READYZ = (
     "import urllib.request as u; r = u.urlopen('http://127.0.0.1:8080/readyz', timeout=5); "
     "print(r.status, r.read().decode())"
 )
-PROBE_EGRESS = (
+# Deliberate attempts of the positive controls; the fresh-install test ignores exactly these, so
+# that the tests do not depend on their execution order.
+CONTROL_TCP = "192.0.2.1:80"
+CONTROL_HTTP = "192.0.2.2:8080"
+CONTROL_DNS = "control-probe.example.org"
+CONTROLS = (CONTROL_TCP, CONTROL_HTTP, CONTROL_DNS)
+PROBE_TCP = (
     "import socket\n"
     "s = socket.socket(); s.settimeout(1)\n"
     "try: s.connect(('192.0.2.1', 80))\n"
+    "except OSError: pass\n"
+)
+PROBE_HTTP = (
+    "import urllib.request as u\n"
+    "try: u.urlopen('http://192.0.2.2:8080/', timeout=1)\n"
+    "except OSError: pass\n"
+)
+PROBE_DNS = (
+    "import socket\n"
+    "try: socket.getaddrinfo('control-probe.example.org', 80)\n"
     "except OSError: pass\n"
 )
 
@@ -50,12 +66,16 @@ def test_no_outbound_request_on_fresh_install(stack: None) -> None:
     assert wait_for(lambda: "WATCH-READY" in compose("logs", "egress-watch").stdout)
     exec_python("shelfhold", READYZ)
     time.sleep(5)  # a fresh install idles: no update check, no telemetry (ENF-GOV-004)
-    assert egress_lines() == []
+    unexpected = [line for line in egress_lines() if not any(c in line for c in CONTROLS)]
+    assert unexpected == []
 
 
-def test_egress_watch_detects_a_deliberate_connection(stack: None) -> None:
-    exec_python("shelfhold", PROBE_EGRESS)
-    assert wait_for(lambda: any("192.0.2.1:80" in line for line in egress_lines()))
+def test_egress_watch_detects_tcp_http_and_dns(stack: None) -> None:
+    """Positive control: the watcher would notice a raw connection, an HTTP call and a DNS query."""
+    for probe in (PROBE_TCP, PROBE_HTTP, PROBE_DNS):
+        exec_python("shelfhold", probe)
+    for marker in CONTROLS:
+        assert wait_for(lambda m=marker: any(m in line for line in egress_lines())), marker
 
 
 def test_root_serves_the_spa_index(stack: None) -> None:

@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -259,19 +259,36 @@ jobs:
         working-directory: e2e
         run: npx playwright test
 
-  image:
-    # Native amd64 + arm64 build, size check, e2e; push and manifest only on main (image.yml).
-    # The called jobs that push declare packages: write themselves and are skipped on pull requests.
+  # Image: two callers so that packages: write never reaches a pull_request run (including
+  # branches of this repository). The reusable workflows narrow the token further.
+  image-pr:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/image.yml  # zizmor: ignore[self-repository]
+
+  image-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/image.yml  # zizmor: ignore[self-repository]
     with:
-      push: ${{ github.event_name == 'push' }}
+      cache-write: true
+
+  image-publish:
+    # Pushes the archives tested by image-main (same run), then the multi-arch manifest.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: image-main
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image-publish.yml  # zizmor: ignore[self-repository]
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, backend, fixtures, frontend, openapi, e2e-front, image]
+    needs: [changes, lint, denylist, backend, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
@@ -282,7 +299,10 @@ jobs:
           DENYLIST: ${{ needs.denylist.result }}
           BACKEND: ${{ needs.backend.result }}
           FIXTURES: ${{ needs.fixtures.result }}
-          IMAGE_RESULT: ${{ needs.image.result }}
+          IMAGE_PR: ${{ needs.image-pr.result }}
+          IMAGE_MAIN: ${{ needs.image-main.result }}
+          IMAGE_PUBLISH: ${{ needs.image-publish.result }}
+          EVENT: ${{ github.event_name }}
           BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
           FRONTEND: ${{ needs.frontend.result }}
           FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
@@ -291,11 +311,11 @@ jobs:
           E2E: ${{ needs.e2e-front.result }}
           E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
         run: |
-          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} image=${IMAGE_RESULT}"
+          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH}"
           echo "backend=${BACKEND} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
           echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED})"
           ok=1
-          for r in "$CHANGES" "$LINT" "$DENYLIST" "$FIXTURES" "$IMAGE_RESULT"; do
+          for r in "$CHANGES" "$LINT" "$DENYLIST" "$FIXTURES"; do
             [ "$r" = "success" ] || ok=0
           done
           # A filtered job may be skipped only when its paths filter is false.
@@ -310,6 +330,14 @@ jobs:
           check_filtered "$FRONTEND" "$FRONTEND_CHANGED"
           check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
           check_filtered "$E2E" "$E2E_CHANGED"
+          # Exactly one image path per event: pull request -> image-pr, push -> image-main + image-publish.
+          if [ "$EVENT" = "pull_request" ]; then
+            [ "$IMAGE_PR" = "success" ] || ok=0
+            [ "$IMAGE_MAIN" = "skipped" ] && [ "$IMAGE_PUBLISH" = "skipped" ] || ok=0
+          else
+            [ "$IMAGE_PR" = "skipped" ] || ok=0
+            [ "$IMAGE_MAIN" = "success" ] && [ "$IMAGE_PUBLISH" = "success" ] || ok=0
+          fi
           if [ "$ok" != "1" ]; then
             echo "::error::a required job failed, was cancelled, or was skipped unexpectedly"
             exit 1
