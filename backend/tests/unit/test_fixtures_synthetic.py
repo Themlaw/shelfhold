@@ -71,8 +71,8 @@ def test_fixtures_are_synthetic_manifest_matches(tmp_path: Path) -> None:
                 container = ElementTree.fromstring(z.read("META-INF/container.xml"))  # noqa: S314
                 rootfile = container.find(".//{*}rootfile")
                 assert rootfile is not None
-                opf_path = rootfile.attrib["full-path"]
-                package = ElementTree.fromstring(z.read(opf_path))  # noqa: S314
+                package_path = rootfile.attrib["full-path"]
+                package = ElementTree.fromstring(z.read(package_path))  # noqa: S314
                 assert package.tag.endswith("package")
 
 
