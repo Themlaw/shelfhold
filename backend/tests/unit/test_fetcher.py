@@ -168,8 +168,10 @@ def test_redirect_loop_and_scheme_downgrade_to_other_schemes() -> None:
             _get(_fetcher(dns, rec), "http://loop.example.org/")
 
 
-SECRETS = {"Accept": "text/html", "Authorization": "Bearer s3cret", "Cookie": "sid=1", "X-Api-Key": "k",
-           "Proxy-Authorization": "Basic eA==", "X-Custom": "keep"}  # fmt: skip
+SECRETS = {
+    "Accept": "text/html", "Authorization": "Bearer s3cret", "Cookie": "sid=1", "X-Api-Key": "k",
+    "Proxy-Authorization": "Basic eA==", "X-Custom": "keep",
+}  # fmt: skip
 
 
 @pytest.mark.req("ENF-SEC-001")

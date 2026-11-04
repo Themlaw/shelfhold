@@ -113,16 +113,25 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "os.mkdir".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
 "os.makedirs".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
 "os.truncate".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+# ENF-SEC-001: every outbound connection goes through the Fetcher (SSRF guard). Allowed only in
+# infrastructure/fetcher and, later, in the local CLI over a Unix socket (L23, PLAN section 7).
+"urllib.request".msg = "Outbound HTTP goes through shelfhold.infrastructure.fetcher (ENF-SEC-001)."
+"http.client".msg = "Outbound HTTP goes through shelfhold.infrastructure.fetcher (ENF-SEC-001)."
+"asyncio.open_connection".msg = "Outbound connections go through the Fetcher (ENF-SEC-001)."
+"socket.create_connection".msg = "Outbound connections go through the Fetcher (ENF-SEC-001)."
+"socket.socket".msg = "Outbound connections go through the Fetcher (ENF-SEC-001)."
 
 [tool.ruff.lint.per-file-ignores]
 # the CLI registry discovers its own command modules by name (package-local, never user input)
 "src/shelfhold/interfaces/cli/registry.py" = ["TID251"]
-"tests/**" = ["S101", "TID251"]
 "src/shelfhold/infrastructure/fsops/**" = ["TID251"]
 "src/shelfhold/infrastructure/migrate.py" = ["TID251"]
 "src/shelfhold/infrastructure/volumes.py" = ["TID251"]
+"src/shelfhold/infrastructure/fetcher/**" = ["TID251"]
+# tests are not production egress (the contract bench talks to a pinned Suwayomi container)
+"tests/**" = ["S101", "TID251"]
 "tests/unit/test_governance_docs.py" = ["S101", "S603", "S607"]
-"tests/contract/**" = ["S101", "S106", "E501"]
+"tests/contract/**" = ["S101", "S106", "E501", "TID251"]
 # 0.0.0.0 is the sinkhole answer under test, not a bind address
 "tests/**/test_fetcher*.py" = ["S104"]
 "../e2e/**" = ["S101"]

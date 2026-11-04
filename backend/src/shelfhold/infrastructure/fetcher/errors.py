@@ -40,6 +40,12 @@ class TooManyRedirects(FetchError):
     code: ClassVar[str] = "fetch.too_many_redirects"
 
 
+class UnsafeRedirect(FetchError):
+    """A redirection that would carry a request, or its body, to another origin."""
+
+    code: ClassVar[str] = "fetch.unsafe_redirect"
+
+
 class FetchTooLarge(FetchError):
     code: ClassVar[str] = "fetch.too_large"
 

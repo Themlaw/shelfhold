@@ -234,6 +234,8 @@ VIOLATIONS = [
     ("http-client-single-entry", "export/other.py", "import requests\n", None),
     ("http-client-single-entry", "export/other.py", "import httpcore2\n", None),
     ("http-client-single-entry", "acquisition/other.py", "import aiohttp\n", None),
+    ("http-client-single-entry", "export/other.py", "import socket\n",
+     "infrastructure/fetcher/other.py"),
     ("lang-single-producer", "library/other.py", "import langcodes\n", "catalog/lang.py"),
     ("replica-single-count", "export/other.py", "import shelfhold.library.replica\n", None),
     ("fsops-sole-writer", "library/other.py", "import shutil\n", "infrastructure/fsops/io.py"),

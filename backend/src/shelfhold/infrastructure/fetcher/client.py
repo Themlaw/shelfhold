@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import re
 import ssl
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -22,12 +21,14 @@ from shelfhold import __version__
 from shelfhold.infrastructure.fetcher.errors import (
     DnsBlocked,
     DnsResolutionError,
+    FetchError,
     FetchTimeout,
     FetchTooLarge,
     FetchUnreachable,
     InvalidFetchUrl,
     SsrfBlocked,
     TooManyRedirects,
+    UnsafeRedirect,
 )
 from shelfhold.infrastructure.fetcher.guard import (
     IPAddress,
@@ -41,7 +42,10 @@ from shelfhold.infrastructure.fetcher.resolver import Resolver
 from shelfhold.sdk.fetcher import Response
 
 _REDIRECTS: Final = frozenset({301, 302, 303, 307, 308})
-_CREDENTIALS: Final = re.compile(r"auth|cookie|token|secret|api-?key|session|password", re.I)
+# Off origin, only these request headers travel: an allow-list cannot miss a new credential name.
+_CROSS_ORIGIN_HEADERS: Final = frozenset(
+    {"accept", "accept-language", "accept-encoding", "user-agent"}
+)
 _DEFAULT_PORT: Final = {"http": 80, "https": 443}
 
 
@@ -59,16 +63,19 @@ class GuardedFetcher:
         self,
         resolver: Resolver,
         *,
-        lan_targets: LanTargets | None = None,
         limits: FetchLimits | None = None,
         transport: httpx2.AsyncBaseTransport | None = None,
         tls_context: ssl.SSLContext | None = None,
         user_agent: str = f"Shelfhold/{__version__}",
     ) -> None:
         self._resolver = resolver
-        self._lan = lan_targets or LanTargets.empty()
+        self._lan = LanTargets.empty()  # the default fetcher, used for upstream URLs, has none
         self._limits = limits or FetchLimits()
         self._user_agent = user_agent
+        if tls_context is not None and (
+            tls_context.verify_mode == ssl.CERT_NONE or not tls_context.check_hostname
+        ):
+            raise ValueError("tls_context must verify certificates and host names")
         # No keep-alive: a pooled connection is keyed by address, and two names that share an
         # address must never share a TLS session validated for only one of them.
         transport = transport or httpx2.AsyncHTTPTransport(
@@ -130,6 +137,8 @@ class GuardedFetcher:
                 return await self._follow(method, url, headers, params, body, max_bytes)
         except (TimeoutError, httpx2.TimeoutException) as exc:
             raise FetchTimeout("the response took too long") from exc
+        except (httpx2.HTTPError, httpx2.StreamError) as exc:
+            raise FetchUnreachable(f"the request failed: {type(exc).__name__}") from exc
 
     async def _follow(
         self,
@@ -144,21 +153,28 @@ class GuardedFetcher:
         if params:
             url = url.copy_merge_params(params)
         cap = self._limits.max_bytes if max_bytes is None else max_bytes
+        first = _origin(url)
         for _ in range(self._limits.max_redirects + 1):
-            addresses = await self._pin(url)
+            # a LAN target is reachable only as the origin the caller asked for, never by redirect
+            on_lan = _origin(url) == first and self._lan.addresses(url.host, _port(url)) is not None
+            addresses = await self._pin(url, allow_lan=on_lan)
             response = await self._send(method, url, addresses, headers, body, cap)
             location = response.headers.get("location")
             if response.status not in _REDIRECTS or not location:
                 return response
             target = _parse_url(str(url.join(location)))
             if _origin(target) != _origin(url):
-                headers = {k: v for k, v in headers.items() if not _CREDENTIALS.search(k)}
+                if on_lan:
+                    raise SsrfBlocked("a LAN target may not redirect to another origin")
+                if response.status in (307, 308):
+                    raise UnsafeRedirect("a 307/308 redirection to another origin is refused")
+                headers = {k: v for k, v in headers.items() if k.lower() in _CROSS_ORIGIN_HEADERS}
             if response.status == 303 or (response.status in (301, 302) and method == "POST"):
                 method, body = "GET", {}
             url = target
         raise TooManyRedirects(f"more than {self._limits.max_redirects} redirections")
 
-    async def _pin(self, url: httpx2.URL) -> list[IPAddress]:
+    async def _pin(self, url: httpx2.URL, *, allow_lan: bool) -> list[IPAddress]:
         """Resolve once and return the only addresses that may be connected to."""
         host, port = url.host, _port(url)
         literal = parse_host(host)
@@ -175,7 +191,7 @@ class GuardedFetcher:
             raise DnsResolutionError(f"{host} does not resolve")
         if literal is None and all(is_sinkhole(a) for a in answers):
             raise DnsBlocked(f"{host} is blocked by the DNS resolver")
-        declared = self._lan.addresses(host, port)
+        declared = self._lan.addresses(host, port) if allow_lan else None
         if declared is not None:
             usable = [a for a in answers if a in declared and lan_block_reason(a) is None]
             if not usable:
@@ -223,7 +239,12 @@ class GuardedFetcher:
                 raise
             except httpx2.HTTPError as exc:
                 raise FetchUnreachable(f"request to {host} failed: {type(exc).__name__}") from exc
-            return await _read(response, cap)
+            try:
+                return await _read(response, cap)
+            except (httpx2.TimeoutException, FetchError):
+                raise
+            except (httpx2.HTTPError, httpx2.StreamError) as exc:
+                raise FetchUnreachable(f"reading from {host} failed: {type(exc).__name__}") from exc
         raise FetchUnreachable(f"cannot connect to {host}") from last
 
 
@@ -274,3 +295,27 @@ def _authority(url: httpx2.URL) -> str:
 
 def _origin(url: httpx2.URL) -> tuple[str, str, int]:
     return url.scheme, url.host.lower(), _port(url)
+
+
+class IntegrationFetcher(GuardedFetcher):
+    """The Fetcher of a configured service (Kavita, Suwayomi): the only kind with `lan_targets`.
+
+    A target is reachable only as the first hop of a call and only on its exact host and port; a
+    redirection never enters one and never leaves one.
+    """
+
+    def __init__(
+        self,
+        resolver: Resolver,
+        *,
+        lan_targets: LanTargets,
+        limits: FetchLimits | None = None,
+        transport: httpx2.AsyncBaseTransport | None = None,
+        tls_context: ssl.SSLContext | None = None,
+        user_agent: str = f"Shelfhold/{__version__}",
+    ) -> None:
+        super().__init__(
+            resolver, limits=limits, transport=transport, tls_context=tls_context,
+            user_agent=user_agent,
+        )  # fmt: skip
+        self._lan = lan_targets

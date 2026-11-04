@@ -30,6 +30,7 @@ _V4_BLOCKED: Final = [
         ("192.0.0.0/24", "IETF protocol assignments"),
         ("192.0.2.0/24", "documentation"),
         ("192.168.0.0/16", "private"),
+        ("192.88.99.0/24", "6to4 relay anycast"),
         ("198.18.0.0/15", "benchmarking"),
         ("198.51.100.0/24", "documentation"),
         ("203.0.113.0/24", "documentation"),
@@ -42,6 +43,7 @@ _V6_BLOCKED: Final = [
     for n, why in (
         ("::/96", "unspecified, loopback and IPv4-compatible"),
         ("100::/64", "discard-only"),
+        ("::ffff:0:0:0/96", "SIIT translated"),
         ("2001::/32", "Teredo"),
         ("2001:db8::/32", "documentation"),
         ("64:ff9b:1::/48", "local-use NAT64"),
@@ -101,7 +103,7 @@ def block_reason(ip: IPAddress) -> str | None:
         for net, why in _V4_BLOCKED:
             if v4 in net:
                 return why if v4 is ip else f"{why} (carried by {ip})"
-        return None
+        return None if v4.is_global else "not globally routable"
     for net6, why in _V6_BLOCKED:
         if ip in net6:
             return why

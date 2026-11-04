@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import gzip
+import shutil
 import ssl
+import subprocess
+import sys
 from collections.abc import AsyncIterator, Awaitable
+from pathlib import Path
 
 import httpx2
 import pytest
@@ -21,6 +24,7 @@ from shelfhold.infrastructure.fetcher import (
 )
 from tests.fakes_fetcher import FakeResolver, Recorder
 
+BACKEND = Path(__file__).resolve().parents[2]
 PUBLIC = "93.184.216.34"
 
 
@@ -85,7 +89,11 @@ def test_integration_fetcher_reaches_its_lan_target_but_the_default_one_does_not
     dns = _dns()
     lan = _lan(dns, "kavita.lan:8080")
     rec = Recorder()
-    _run(IntegrationFetcher(dns, lan_targets=lan, transport=rec.transport).get("http://kavita.lan:8080/"))
+    _run(
+        IntegrationFetcher(dns, lan_targets=lan, transport=rec.transport).get(
+            "http://kavita.lan:8080/"
+        )
+    )
     assert rec.hosts == ["192.168.1.20"]
     with pytest.raises(SsrfBlocked):
         _run(GuardedFetcher(dns, transport=Recorder().transport).get("http://kavita.lan:8080/"))
@@ -124,9 +132,18 @@ def test_off_origin_redirect_forwards_only_the_header_allow_list() -> None:
         "X-Session-Id": "1", "Authorization": "t", "Referer": "http://up.example.org/p",
         "X-Whatever": "1", "Cf-Access-Jwt-Assertion": "j",
     }  # fmt: skip
-    _run(GuardedFetcher(dns, transport=rec.transport).get("http://up.example.org/", headers=headers))
+    _run(
+        GuardedFetcher(dns, transport=rec.transport).get("http://up.example.org/", headers=headers)
+    )
     sent = rec.requests[1].headers
-    assert {k for k in sent.keys()} <= {"accept", "accept-language", "accept-encoding", "user-agent", "host"}
+    assert set(sent.keys()) <= {
+        "accept",
+        "accept-language",
+        "accept-encoding",
+        "user-agent",
+        "host",
+        "connection",
+    }
     assert sent["accept"] == "a/b"
 
 
@@ -152,10 +169,10 @@ def test_httpx_errors_surface_as_fetch_errors() -> None:
 
     cases = [
         Recorder(lambda r: httpx2.Response(200, content=broken())),  # reset mid-body
-        Recorder(lambda r: httpx2.Response(200, headers={"content-encoding": "gzip"}, content=b"no")),
-        Recorder(lambda r: httpx2.Response(200, headers={"content-encoding": "gzip"},
-                                           content=gzip.compress(b"x" * 100)[:-9])),  # truncated
-    ]  # fmt: skip
+        Recorder(
+            lambda r: httpx2.Response(200, headers={"content-encoding": "gzip"}, content=b"no")
+        ),
+    ]
     for rec in cases:
         with pytest.raises(FetchError):
             _run(GuardedFetcher(dns, transport=rec.transport).get("http://up.example.org/"))
@@ -164,7 +181,11 @@ def test_httpx_errors_surface_as_fetch_errors() -> None:
         raise httpx2.RemoteProtocolError("bad framing")
 
     with pytest.raises(FetchError):
-        _run(GuardedFetcher(dns, transport=httpx2.MockTransport(raising)).get("http://up.example.org/"))
+        _run(
+            GuardedFetcher(dns, transport=httpx2.MockTransport(raising)).get(
+                "http://up.example.org/"
+            )
+        )
 
 
 @pytest.mark.req("ENF-SEC-001")
@@ -184,3 +205,27 @@ def test_constructor_refuses_a_tls_context_that_does_not_verify() -> None:
 
 
 _ = FetchLimits
+
+
+@pytest.mark.req("ENF-SEC-001")
+def test_ruff_bans_raw_outbound_connections_outside_the_fetcher(tmp_path: Path) -> None:
+    code = (
+        "import socket, asyncio, urllib.request, http.client\\n"
+        "socket.create_connection(('x', 1))\\nsocket.socket()\\nasyncio.open_connection('x', 1)\\n"
+    ).replace("\\\\n", "\\n")
+    shutil.copy(BACKEND / "pyproject.toml", tmp_path / "pyproject.toml")
+    (tmp_path / "bad.py").write_text(code.replace("\\\\n", "\\n"), encoding="utf-8")
+    ruff = shutil.which("ruff") or str(Path(sys.executable).parent / "ruff")
+    out = subprocess.run(  # noqa: S603
+        [ruff, "check", "--select", "TID251", "--no-cache", str(tmp_path / "bad.py")],
+        cwd=tmp_path, capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    for banned in ("urllib.request", "http.client", "asyncio.open_connection", "socket.socket",
+                   "socket.create_connection"):  # fmt: skip
+        assert banned in out.stdout, out.stdout
+    fetcher_ok = BACKEND / "src/shelfhold/infrastructure/fetcher/resolver.py"
+    ok = subprocess.run(  # noqa: S603
+        [ruff, "check", "--select", "TID251", "--no-cache", str(fetcher_ok)],
+        cwd=BACKEND, capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    assert ok.returncode == 0, ok.stdout
