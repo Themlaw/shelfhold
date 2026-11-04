@@ -19,6 +19,7 @@ from shelfhold.infrastructure.schema._base import (
     bool_column,
     in_check,
     json_shape_check,
+    json_valid_check,
     metadata,
     now_column,
     positive_check,
@@ -263,6 +264,9 @@ unit_coverage = sa.Table(
     in_check("extent", COVERAGE_EXTENTS),
     in_check("origin", COVERAGE_ORIGINS),
     positive_check("position"),
+    # an invalid document would break `reading_progress` (json_extract) for every reader
+    json_valid_check("start_locator"),
+    json_valid_check("end_locator"),
     sa.CheckConstraint(
         '"confidence" IS NULL OR "confidence" BETWEEN 0 AND 1', name="confidence_range"
     ),

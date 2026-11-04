@@ -88,6 +88,10 @@ content = sa.Table(
     norm_by_check("derived_hash_by"),
     processor_check("derived_by"),
     sa.CheckConstraint('("derived_hash" IS NULL) = ("derived_by" IS NULL)', name="derived_pair"),
+    sa.CheckConstraint(
+        '"store_provenance" <> \'extracted_derived\' OR "derived_hash" IS NOT NULL',
+        name="extracted_derived_has_derived_hash",
+    ),
     json_shape_check("derived_chain", "array"),
     positive_check("size"),
     positive_check("page_count"),
@@ -155,6 +159,7 @@ replica = sa.Table(
     prefixed_hash_check("content_hash"),
     prefixed_hash_check("file_hash"),
     positive_check("size"),
+    relative_path_check("rel_path"),
     sa.CheckConstraint('"unit_id" IS NOT NULL OR "export_item_id" IS NOT NULL', name="has_owner"),
     sa.CheckConstraint('"rel_path" IS NOT NULL OR "remote_ref" IS NOT NULL', name="is_located"),
     sa.CheckConstraint(

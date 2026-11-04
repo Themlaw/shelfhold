@@ -141,3 +141,9 @@ def add_view(table: sa.Table, name: str, select: str) -> None:
         "before_drop",
         sa.DDL(f"DROP VIEW IF EXISTS {name}").execute_if(dialect="sqlite"),  # type: ignore[no-untyped-call]
     )
+
+
+def json_valid_check(column: str) -> sa.CheckConstraint:
+    """The column is NULL or a valid JSON document, of any shape."""
+    c = _quoted(column)
+    return sa.CheckConstraint(f"{c} IS NULL OR json_valid({c})", name=f"{column}_json")

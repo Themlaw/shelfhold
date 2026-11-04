@@ -1256,3 +1256,55 @@ def test_reading_progress_is_a_recomputable_projection(
         exact = connection.execute(sa.select(progress).where(progress.c.unit_id == units[1])).one()
         assert exact.state == "in_progress"
         assert not exact.approximate
+
+
+@pytest.mark.req("EF-LEC-014")
+@pytest.mark.parametrize("field", ["start_locator", "end_locator"])
+def test_coverage_locator_must_be_valid_json(
+    engine: Engine, chain: dict[str, str], field: str
+) -> None:
+    """An invalid document would break `reading_progress` (json_extract) for every reader."""
+    with engine.begin() as connection:
+        item = add_export_item(connection, chain["edition"])
+        rejected(
+            connection,
+            sa.insert(export.unit_coverage).values(
+                carrier_type="export_item",
+                carrier_id=item,
+                unit_id=chain["unit"],
+                position=0,
+                extent="full",
+                origin="manual",
+                **{field: sa.literal_column("'{not json'")},
+            ),
+            f"ck_unit_coverage_{field}_json",
+        )
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_extracted_derived_content_names_its_derived_hash(
+    engine: Engine, chain: dict[str, str]
+) -> None:
+    with engine.begin() as connection:
+        rejected(
+            connection,
+            sa.insert(storage.content).values(
+                id=new_ulid(), unit_id=chain["unit"], variant_id=chain["variant"], kind="text",
+                media_type="application/epub+zip", format="epub", retention="keep", path="e",
+                original_sha256=SHA, store_provenance="extracted_derived", size=1,
+            ),
+            "ck_content_extracted_derived_has_derived_hash",
+        )  # fmt: skip
+
+
+@pytest.mark.req("EF-BIB-045")
+@pytest.mark.parametrize("bad", ["/etc/passwd", "../x.cbz", "a/../b.cbz", "a/.."])
+def test_replica_path_stays_relative(engine: Engine, chain: dict[str, str], bad: str) -> None:
+    with engine.begin() as connection:
+        rejected(
+            connection,
+            sa.insert(storage.replica).values(
+                id=new_ulid(), unit_id=chain["unit"], location="store", rel_path=bad
+            ),
+            "ck_replica_rel_path_relative",
+        )

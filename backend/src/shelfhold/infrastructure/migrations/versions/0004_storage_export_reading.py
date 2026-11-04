@@ -655,6 +655,14 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint('"position" >= 0', name=op.f("ck_unit_coverage_position_min")),
         sa.CheckConstraint(
+            '"start_locator" IS NULL OR json_valid("start_locator")',
+            name=op.f("ck_unit_coverage_start_locator_json"),
+        ),
+        sa.CheckConstraint(
+            '"end_locator" IS NULL OR json_valid("end_locator")',
+            name=op.f("ck_unit_coverage_end_locator_json"),
+        ),
+        sa.CheckConstraint(
             'length("carrier_id") = 26 AND "carrier_id" NOT GLOB \'*[^0-9A-HJKMNP-TV-Z]*\'',
             name=op.f("ck_unit_coverage_carrier_id_ulid"),
         ),
@@ -737,6 +745,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             '("derived_hash" IS NULL) = ("derived_by" IS NULL)',
             name=op.f("ck_content_derived_pair"),
+        ),
+        sa.CheckConstraint(
+            '"store_provenance" <> \'extracted_derived\' OR "derived_hash" IS NOT NULL',
+            name=op.f("ck_content_extracted_derived_has_derived_hash"),
         ),
         sa.CheckConstraint(
             '("retention" = \'keep\') = ("path" IS NOT NULL)', name=op.f("ck_content_path_iff_keep")
@@ -965,6 +977,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             '"unit_id" IS NOT NULL OR "export_item_id" IS NOT NULL',
             name=op.f("ck_replica_has_owner"),
+        ),
+        sa.CheckConstraint(
+            "\"rel_path\" NOT GLOB '/*' AND \"rel_path\" <> '..' AND \"rel_path\" NOT GLOB '../*' AND \"rel_path\" NOT GLOB '*/../*' AND \"rel_path\" NOT GLOB '*/..'",
+            name=op.f("ck_replica_rel_path_relative"),
         ),
         sa.CheckConstraint(
             'length("content_hash") = 71 AND "content_hash" GLOB \'sha256:*\' AND substr("content_hash", 8) NOT GLOB \'*[^0-9a-f]*\'',

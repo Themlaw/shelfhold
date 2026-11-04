@@ -205,3 +205,34 @@ def test_physical_root_has_a_mode_rw_or_adopt_ro(tmp_path: Path) -> None:
                 "INSERT INTO physical_root (root_id, path_entry, mode) "
                 "VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAX', '/library/c', 'rw+')"
             )
+
+
+@pytest.mark.req("ENF-OPS-002")
+def test_filled_0003_database_migrates_then_downgrades_without_losing_rows(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "round.db"
+    config = alembic_config(database)
+    command.upgrade(config, "0003")
+    with closing(sqlite3.connect(database)) as db:
+        db.execute(
+            "INSERT INTO work (id, kind, title, sort_title) VALUES (?, 'manga', 't', 't')", (ULID,)
+        )
+        db.execute(
+            "INSERT INTO edition (id, work_id, lang, translation_type, media) "
+            "VALUES (?, ?, 'fr', 'official', 'images')",
+            (ULID, ULID),
+        )
+        db.execute(
+            "INSERT INTO unit (id, edition_id, number_raw, number_norm) VALUES (?, ?, '1', '1')",
+            (ULID, ULID),
+        )
+        db.commit()
+    command.upgrade(config, "head")
+    with closing(sqlite3.connect(database)) as db:
+        assert db.execute("SELECT shelf_id FROM edition").fetchall() == [(None,)]
+    command.downgrade(config, "0003")
+    with closing(sqlite3.connect(database)) as db:
+        assert db.execute("SELECT id FROM edition").fetchall() == [(ULID,)]
+        assert db.execute("SELECT id FROM unit").fetchall() == [(ULID,)]
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
