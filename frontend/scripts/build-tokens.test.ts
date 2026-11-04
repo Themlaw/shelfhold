@@ -14,7 +14,7 @@ describe('design tokens', () => {
     expect(css).toContain('[data-color-scheme="dark"]');
   });
 
-  // req: EF-UX-012, ENF-PRIV-001
+  // req: EF-UX-012
   it('ships the "Bibliothèque" theme with a light and a dark palette and no web font', () => {
     expect(tokens.light.color.bg.$value).toBe('#F6F1E7');
     expect(tokens.dark.color.bg.$value).toBe('#1A1714');

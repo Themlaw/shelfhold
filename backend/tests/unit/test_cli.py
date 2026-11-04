@@ -66,6 +66,7 @@ def test_invalid_configuration_exits_2(
     assert "log_level" in capsys.readouterr().err
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_serve_starts_uvicorn_with_the_resolved_host_and_port(
     cli_env: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

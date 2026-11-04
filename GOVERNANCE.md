@@ -39,7 +39,7 @@ Triage au mieux (voir la politique de support de [CONTRIBUTING.md](CONTRIBUTING.
 
 ## Revue de chevauchement
 
-À chaque jalon, les exigences restantes sont comparées aux notes de version de Kavita, Komga et Suwayomi ; ce qu'ils livrent est retiré du périmètre.
+À chaque jalon, les exigences restantes sont comparées aux notes de version de Kavita, Komga et Suwayomi ; ce qu'ils livrent est retiré du périmètre. Liste de veille en plus : Uchiyomi, Tranga, Mangarr, BookOrbit (premier tour dans [`docs/governance/chevauchement-M0.md`](docs/governance/chevauchement-M0.md)).
 
 ## Sécurité du compte
 

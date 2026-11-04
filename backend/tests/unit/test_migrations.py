@@ -5,6 +5,7 @@ import json
 import shutil
 import sqlite3
 import stat
+import time
 from contextlib import closing
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from shelfhold.infrastructure.migrate import (
 )
 from shelfhold.main import create_app
 
+MIGRATION_BUDGET_SECONDS = 600
 REVISION_TEMPLATE = '''"""test revision"""
 
 from alembic import op
@@ -75,6 +77,15 @@ def test_migrate_creates_schema_at_head(settings: Settings) -> None:
     assert result.backup is None  # nothing to save on a fresh database
     with closing(sqlite3.connect(settings.database_path)) as db:
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+@pytest.mark.req("ENF-OPS-002")
+def test_migration_fits_the_ten_minute_budget(settings: Settings) -> None:
+    # ENF-OPS-002: budget <= 10 min on the reference profile. At M0 the schema is the
+    # initial one, so this guards the order of magnitude; the volume profile comes with M1a.
+    started = time.monotonic()
+    migrate(settings)
+    assert time.monotonic() - started < MIGRATION_BUDGET_SECONDS
 
 
 @pytest.mark.req("ENF-OPS-002")

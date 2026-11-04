@@ -19,16 +19,12 @@ tests = [
   "test_api_paths_are_404_without_slash_too",
   "test_head_is_supported",
   "test_without_build_only_the_api_answers",
-  "test_openapi_describes_healthz_response",
 ]
 reason = "service du SPA statique par FastAPI (spike S2) : aucune exigence propre avant ENF-SEC-004 complet (M1a)"
 
 [[exception]]
 path = "backend/tests/unit/test_cli.py"
-tests = [
-  "test_serve_starts_uvicorn_with_the_resolved_host_and_port",
-  "test_app_factory_reads_the_environment",
-]
+tests = ["test_app_factory_reads_the_environment"]
 reason = "câblage de la commande `serve` (squelette), aucune exigence propre"
 
 [[exception]]
@@ -60,3 +56,16 @@ reason = "décisions d'exécution M0 (tag edge, image définie en un seul endroi
 path = "e2e/tests/test_image_smoke.py"
 tests = ["test_root_serves_the_spa_index"]
 reason = "fumée du SPA servi par l'image (spike S2), aucune exigence propre"
+
+# Tests that do not run in the required CI (`ci-success`): accepted for M0 only when the
+# workflow that runs them is named and justified.
+[[out_of_required_ci]]
+path = "backend/tests/contract/suwayomi/test_suwayomi_contract.py"
+workflow = "contract.yml"
+reason = "banc de contrat contre un Suwayomi réel épinglé (Docker, spike S5) : workflow_dispatch et hebdomadaire, non requis par décision M0 5"
+
+# Aspects of multi-part requirements not yet testable at M0, with the milestone that owns them.
+[[deferred]]
+requirement = "ENF-OPS-002"
+aspect = "« pas de migration dans une release patch » (contrôle CI)"
+reason = "n'a de sens qu'à partir de la première release patch (0.1.x) ; contrôle à ajouter avec la sortie de v0.1.0 (release-please), avant la clôture de M1a"

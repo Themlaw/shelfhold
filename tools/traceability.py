@@ -41,6 +41,8 @@ class TestRef:
     path: str
     name: str
     reqs: list[str] = field(default_factory=list)
+    # Why the test may not run in the required CI: contract, skip, skipif, xfail...
+    conditional: list[str] = field(default_factory=list)
 
     @property
     def label(self) -> str:
@@ -96,7 +98,9 @@ def parse_roadmap_coverage(text: str) -> dict[str, set[str]]:
     return cov
 
 
-def compare_specs(reqs: dict[str, list[str]], cov: dict[str, set[str]], ms: str) -> list[str]:
+def compare_specs(
+    reqs: dict[str, list[str]], cov: dict[str, set[str]], ms: str
+) -> list[str]:
     issues: list[str] = []
     in_01 = {i for i, m in reqs.items() if earliest(m) == ms}
     in_03 = cov.get(ms, set())
@@ -136,8 +140,26 @@ def _req_args(node: ast.expr) -> list[str] | None:
         and node.func.value.attr == "mark"
     ):
         return [
-            a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str)
+            a.value
+            for a in node.args
+            if isinstance(a, ast.Constant) and isinstance(a.value, str)
         ]
+    return None
+
+
+CONDITIONAL_MARKS = {"contract", "skip", "skipif", "xfail"}
+
+
+def _mark_name(node: ast.expr) -> str | None:
+    """`pytest.mark.<name>` or `pytest.mark.<name>(...)` -> name."""
+    if isinstance(node, ast.Call):
+        node = node.func
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "mark"
+    ):
+        return node.attr
     return None
 
 
@@ -148,6 +170,10 @@ def _decorator_reqs(decorators: list[ast.expr]) -> list[str]:
     return out
 
 
+def _decorator_flags(decorators: list[ast.expr]) -> list[str]:
+    return [n for d in decorators if (n := _mark_name(d)) in CONDITIONAL_MARKS]
+
+
 def collect_python(root: Path) -> list[TestRef]:
     refs: list[TestRef] = []
     for f in _iter_files(root, "backend/tests", ("test_*.py",)) + _iter_files(
@@ -156,6 +182,7 @@ def collect_python(root: Path) -> list[TestRef]:
         rel = f.relative_to(root).as_posix()
         tree = ast.parse(f.read_text(encoding="utf-8"))
         module: list[str] = []
+        module_flags: list[str] = []
         for node in tree.body:
             if isinstance(node, ast.Assign) and any(
                 isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets
@@ -167,23 +194,39 @@ def collect_python(root: Path) -> list[TestRef]:
                 )
                 for item in items:
                     module += _req_args(item) or []
+                    module_flags += _decorator_flags([item])
         for node in tree.body:
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith(
-                "test"
-            ):
-                refs.append(TestRef(rel, node.name, _decorator_reqs(node.decorator_list) + module))
+            if isinstance(
+                node, ast.FunctionDef | ast.AsyncFunctionDef
+            ) and node.name.startswith("test"):
+                refs.append(
+                    TestRef(
+                        rel,
+                        node.name,
+                        _decorator_reqs(node.decorator_list) + module,
+                        _decorator_flags(node.decorator_list) + module_flags,
+                    )
+                )
             elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
                 cls = _decorator_reqs(node.decorator_list)
+                cls_flags = _decorator_flags(node.decorator_list)
                 for sub in node.body:
                     if isinstance(
                         sub, ast.FunctionDef | ast.AsyncFunctionDef
                     ) and sub.name.startswith("test"):
                         reqs = _decorator_reqs(sub.decorator_list) + cls + module
-                        refs.append(TestRef(rel, f"{node.name}::{sub.name}", reqs))
+                        flags = (
+                            _decorator_flags(sub.decorator_list)
+                            + cls_flags
+                            + module_flags
+                        )
+                        refs.append(
+                            TestRef(rel, f"{node.name}::{sub.name}", reqs, flags)
+                        )
     return refs
 
 
-_TS_TEST = re.compile(r"^\s*(?:test|it)(?:\.\w+)*\(\s*(['\"`])(.+?)\1")
+_TS_TEST = re.compile(r"^\s*(?:test|it)((?:\.\w+)*)\(\s*(['\"`])(.+?)\2")
 _TS_REQ = re.compile(r"^\s*//\s*req:\s*(.*)$")
 _TS_REQ_FILE = re.compile(r"^\s*//\s*req-file:\s*(.*)$")
 
@@ -207,22 +250,37 @@ def collect_typescript(root: Path) -> list[TestRef]:
                     continue
                 t = _TS_TEST.match(line)
                 if t:
-                    refs.append(TestRef(rel, t.group(2), pending + file_level))
+                    mods = [m for m in t.group(1).split(".") if m]
+                    flags = [m for m in mods if m in ("skip", "fixme", "todo")]
+                    refs.append(TestRef(rel, t.group(3), pending + file_level, flags))
                 if line.strip() and not line.lstrip().startswith("//"):
                     pending = []
     return refs
 
 
-def load_exceptions(root: Path) -> list[dict[str, Any]]:
+def _load_table(root: Path, table: str, keys: tuple[str, ...]) -> list[dict[str, Any]]:
     path = root / EXCEPTIONS
     if not path.is_file():
         return []
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
-    items = data.get("exception", [])
+    items = tomllib.loads(path.read_text(encoding="utf-8")).get(table, [])
     for item in items:
-        if not item.get("path") or not item.get("reason", "").strip():
-            raise SystemExit(f"{EXCEPTIONS}: every exception needs `path` and a justified `reason`")
+        if any(not str(item.get(k, "")).strip() for k in (*keys, "reason")):
+            raise SystemExit(
+                f"{EXCEPTIONS}: every [[{table}]] needs {', '.join(keys)} and a justified `reason`"
+            )
     return list(items)
+
+
+def load_exceptions(root: Path) -> list[dict[str, Any]]:
+    return _load_table(root, "exception", ("path",))
+
+
+def load_out_of_required_ci(root: Path) -> list[dict[str, Any]]:
+    return _load_table(root, "out_of_required_ci", ("path", "workflow"))
+
+
+def load_deferred(root: Path) -> list[dict[str, Any]]:
+    return _load_table(root, "deferred", ("requirement", "aspect"))
 
 
 def _excepted(ref: TestRef, exceptions: list[dict[str, Any]]) -> bool:
@@ -242,10 +300,12 @@ def render(
     required: list[str],
     reqs: dict[str, list[str]],
     by_req: dict[str, list[str]],
+    cond_req: dict[str, list[str]],
     issues: list[str],
     exceptions: list[dict[str, Any]],
+    deferred: list[dict[str, Any]],
 ) -> str:
-    covered = [r for r in required if by_req.get(r)]
+    covered = [r for r in required if by_req.get(r) or cond_req.get(r)]
     out = [
         f"# Matrice de traçabilité — {ms}",
         "",
@@ -253,20 +313,33 @@ def render(
         f"Exigences du jalon {ms} : **{len(required)}**, couvertes : **{len(covered)}**, "
         f"non couvertes : **{len(required) - len(covered)}**.",
         "",
-        "| Exigence | Jalons (01) | Statut | Tests |",
-        "|---|---|---|---|",
+        "| Exigence | Jalons (01) | Statut | Tests (CI requise) | Hors CI requise / conditionnel |",
+        "|---|---|---|---|---|",
     ]
     for r in required:
         tests = by_req.get(r, [])
-        status = "couverte" if tests else "NON COUVERTE"
+        cond = cond_req.get(r, [])
+        if tests:
+            status = "couverte"
+        elif cond:
+            status = "COUVERTE (hors CI requise)"
+        else:
+            status = "NON COUVERTE"
         cell = "<br>".join(f"`{t}`" for t in tests) if tests else "—"
-        out.append(f"| {r} | {' / '.join(reqs.get(r, [])) or '—'} | {status} | {cell} |")
+        cond_cell = "<br>".join(f"`{t}`" for t in cond) if cond else "—"
+        out.append(
+            f"| {r} | {' / '.join(reqs.get(r, [])) or '—'} | {status} | {cell} | {cond_cell} |"
+        )
     out += ["", "## Écarts entre 01 (cahier des charges) et 03 (feuille de route)", ""]
     out += [f"- {i}" for i in issues] or ["Aucun."]
     out += ["", "## Tests exemptés du marqueur `req`", ""]
     out += [
         f"- `{e['path']}`{(' (' + ', '.join(e.get('tests') or [e['test']]) + ')') if (e.get('tests') or e.get('test')) else ''} : {e['reason']}"
         for e in exceptions
+    ] or ["Aucun."]
+    out += ["", "## Volets reportés (exigences à plusieurs volets)", ""]
+    out += [
+        f"- {d['requirement']} : {d['aspect']} — {d['reason']}" for d in deferred
     ] or ["Aucun."]
     return "\n".join(out) + "\n"
 
@@ -293,26 +366,51 @@ def main(argv: list[str] | None = None) -> int:
 
     errors: list[str] = []
     by_req: dict[str, list[str]] = {}
+    cond_req: dict[str, list[str]] = {}
+    ci_exc = {e["path"]: e for e in load_out_of_required_ci(root)}
     for t in tests:
         for r in t.reqs:
             if r not in reqs:
                 errors.append(f"{t.label}: ID inconnu {r}")
+            elif t.conditional:
+                wf = ci_exc.get(t.path, {}).get("workflow", "?")
+                cond_req.setdefault(r, []).append(
+                    f"{t.label} [{'/'.join(t.conditional)} ; {wf}]"
+                )
             else:
                 by_req.setdefault(r, []).append(t.label)
         if not t.reqs and not _excepted(t, exceptions):
-            errors.append(f"{t.label}: test orphelin (aucun marqueur req, hors exceptions)")
-    errors += [f"{r}: exigence {ms} sans aucun test" for r in required if not by_req.get(r)]
+            errors.append(
+                f"{t.label}: test orphelin (aucun marqueur req, hors exceptions)"
+            )
+    for r in required:
+        if by_req.get(r):
+            continue
+        if not cond_req.get(r):
+            errors.append(f"{r}: exigence {ms} sans aucun test")
+        elif any("[" in c and c.endswith("; ?]") for c in cond_req[r]):
+            errors.append(
+                f"{r}: couverte seulement hors CI requise, workflow non justifié dans {EXCEPTIONS}"
+            )
 
-    matrix = render(ms, required, reqs, by_req, issues, exceptions)
-    out = Path(args.output) if args.output else root / "docs" / "traceability" / f"{ms}.md"
+    matrix = render(
+        ms, required, reqs, by_req, cond_req, issues, exceptions, load_deferred(root)
+    )
+    out = (
+        Path(args.output)
+        if args.output
+        else root / "docs" / "traceability" / f"{ms}.md"
+    )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(matrix, encoding="utf-8")
     for i in issues:
         print(f"warning: {i}", file=sys.stderr)
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
-    covered = sum(1 for r in required if by_req.get(r))
-    print(f"{ms}: {covered}/{len(required)} exigences couvertes, {len(errors)} erreur(s)")
+    covered = sum(1 for r in required if by_req.get(r) or cond_req.get(r))
+    print(
+        f"{ms}: {covered}/{len(required)} exigences couvertes, {len(errors)} erreur(s)"
+    )
     return 1 if errors else 0
 
 

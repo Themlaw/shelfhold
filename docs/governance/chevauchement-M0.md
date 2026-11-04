@@ -11,7 +11,7 @@ Source : ENF-GOV-002, ENF-GOV-003 ; [GOVERNANCE.md](../../GOVERNANCE.md), [ADR-0
 | Suwayomi-Server | v2.4.2366 (2026-09-30, version épinglée du banc de contrat) | <https://github.com/Suwayomi/Suwayomi-Server/releases> |
 | BookOrbit | v3.6.0 (2026-10-28) | <https://github.com/bookorbit/bookorbit> |
 | Uchiyomi | description du dépôt (pas de version publiée lue) | <https://github.com/AngeloSha/uchiyomi> |
-| Tranga | dernière version 1.5 (2023-06-20) | <https://github.com/C9Glax/tranga> |
+| Tranga | dernière version publiée 1.5 (2023-06-20) ; dépôt toujours actif (dernier commit 2026-10-26) | <https://github.com/C9Glax/tranga> |
 | Mangarr | dépôts `donderjoekel/Mangarr` (inactif depuis 2025-04) et forks | <https://github.com/donderjoekel/Mangarr> |
 
 ## Constats
@@ -23,7 +23,15 @@ Source : ENF-GOV-002, ENF-GOV-003 ; [GOVERNANCE.md](../../GOVERNANCE.md), [ADR-0
 | Suwayomi | Synchronisation SyncYomi v2, mutation GraphQL de réordonnancement des téléchargements, `isDefaultCategory` « en préparation de changements incompatibles », et **« Skip LocalSource downloading »**. | Aucune EF retirée. Deux points à suivre : (1) les changements d'API de catégories annoncés touchent EF-SRC-029 (M1b) ; (2) le saut du téléchargement de la source locale est à rapprocher du banc S5, qui s'appuie sur cette source : le contrat est passé sur la version épinglée, à rejouer à chaque montée de version. |
 | BookOrbit | Serveur de lecture actif (releases fréquentes, plugins). | Concurrent à suivre ; rien dans sa description ne couvre le pont Suwayomi vers Kavita. |
 | Uchiyomi | Serveur et lecteur de manga avec téléchargeur (« Sonarr pour manga, avec lecteur »). | Concurrent partiel (suivi et téléchargement) ; ne range pas dans une bibliothèque Kavita existante d'après sa description. À suivre pour la porte P0. |
-| Tranga, Mangarr | Téléchargeurs de manga automatiques ; Tranga sans version depuis 2023, Mangarr principal inactif. | Pas de menace pour M0. |
+| Tranga, Mangarr | Téléchargeurs de manga automatiques ; Tranga sans version publiée depuis 2023 mais commits en 2026, Mangarr principal inactif (forks actifs). | Pas de menace pour M0 ; Tranga à resurveiller. |
+
+## Relecture du registre de pré-mortem
+
+[pre-mortem.md](pre-mortem.md) relu le 2026-11-04. Ligne 3 (« Kavita, Komga ou Suwayomi livrent la fonction ») : signal non déclenché, voir les constats ci-dessus ; date de revue mise à jour. Les autres lignes n'ont pas de signal nouveau à ce stade (aucune mesure de vélocité encore).
+
+## Vélocité
+
+[velocite.md](velocite.md) relu : le relevé de M0 est vide, aucune mesure d'effort agent n'a encore été consignée ; à renseigner à la clôture de M0, avec la projection de M1a (ENF-GOV-005).
 
 ## Décision
 

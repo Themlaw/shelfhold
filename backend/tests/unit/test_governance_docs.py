@@ -25,9 +25,38 @@ def test_license_has_provisional_plugin_exception() -> None:
     assert "Additional permission (provisional plugin exception)" in text
     assert "PROVISIONAL TEXT" in text
     assert "WILL BE REVIEWED before version 1.0" in text
-    assert (ROOT / "backend/src/shelfhold/sdk/LICENSE").read_text(encoding="utf-8").startswith(
-        ("MIT License", "The MIT License")
-    ) or "MIT" in _read("backend/src/shelfhold/sdk/LICENSE")
+    sdk_license = _read("backend/src/shelfhold/sdk/LICENSE")
+    assert "MIT License" in sdk_license.splitlines()[0]
+
+
+@pytest.mark.req("ENF-LEG-010", "ENF-SEC-007")
+def test_dco_is_enforced_in_ci_and_documented() -> None:
+    workflow = yaml.safe_load(_read(".github/workflows/dco.yml"))
+    on = workflow.get("on", workflow.get(True))
+    assert "pull_request" in on
+    runs = [str(s.get("run", "")) for j in workflow["jobs"].values() for s in j["steps"]]
+    assert any("Signed-off-by" in r for r in runs)
+    contributing = _read("CONTRIBUTING.md")
+    assert "DCO 1.1" in contributing
+    assert "Signed-off-by:" in contributing
+    assert "pas de CLA" in contributing
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_renovate_pins_digests_with_a_release_age() -> None:
+    import json
+
+    config = json.loads(_read("renovate.json"))
+    assert "config:best-practices" in config["extends"]
+    assert config["pinDigests"] is True
+    assert config["minimumReleaseAge"]
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_ci_lints_workflows_with_actionlint_and_zizmor() -> None:
+    runs = _lint_runs()
+    assert any("actionlint" in r for r in runs)
+    assert any("zizmor" in r for r in runs)
 
 
 @pytest.mark.req("ENF-LEG-011", "ENF-SEC-011")
@@ -76,6 +105,7 @@ def test_readme_shows_project_status() -> None:
     first_line = _read("README.md").splitlines()[0]
     assert first_line.startswith("**Statut du projet")
     assert "pré-alpha" in first_line
+    assert "](AI_POLICY.md)" in _read("README.md")
 
 
 @pytest.mark.req("ENF-GOV-001")
@@ -154,13 +184,18 @@ def test_overlap_review_m0_has_sources_and_a_decision() -> None:
         assert re.search(rf"\| {project}.*https://github\.com/", text), project
     assert "## Décision" in text
     assert "## Constats" in text
+    assert "pre-mortem.md" in text
+    assert "velocite.md" in text
     assert re.search(r"20\d\d-\d\d-\d\d", text)
 
 
 @pytest.mark.req("ENF-GOV-003")
 def test_overlap_review_is_an_exit_criterion_of_each_milestone() -> None:
     assert "revue de chevauchement" in _read("ROADMAP.md")
-    assert "## Revue de chevauchement" in _read("GOVERNANCE.md")
+    governance = _read("GOVERNANCE.md")
+    assert "## Revue de chevauchement" in governance
+    for name in ("Uchiyomi", "Tranga", "Mangarr", "BookOrbit"):
+        assert name in governance, name
 
 
 @pytest.mark.req("ENF-QUAL-001")
@@ -174,8 +209,27 @@ def test_coverage_gates_are_configured() -> None:
 
 
 @pytest.mark.req("ENF-QUAL-002")
-def test_import_linter_runs_in_ci() -> None:
-    assert "lint-imports" in _read(".github/workflows/ci.yml")
+def test_import_linter_runs_in_a_ci_step() -> None:
+    assert any(re.search(r"\blint-imports\b", r) for r in _lint_runs())
+
+
+def _lint_runs() -> list[str]:
+    ci = yaml.safe_load(_read(".github/workflows/ci.yml"))
+    return [str(step["run"]) for step in ci["jobs"]["lint"]["steps"] if "run" in step]
+
+
+@pytest.mark.req("ENF-PRIV-001")
+def test_frontend_sources_load_no_web_font_or_remote_resource() -> None:
+    remote = re.compile(
+        r"@font-face|@import|url\(\s*['\"]?https?:|\b(?:src|href)\s*=\s*['\"]https?:"
+    )
+    offenders = []
+    for f in (ROOT / "frontend" / "src").rglob("*"):
+        if f.suffix not in {".css", ".html", ".svelte", ".json"} or ".test." in f.name:
+            continue
+        if remote.search(f.read_text(encoding="utf-8")):
+            offenders.append(str(f.relative_to(ROOT)))
+    assert not offenders, offenders
 
 
 @pytest.mark.req("ENF-SEC-007")

@@ -217,3 +217,78 @@ def test_an_exception_without_reason_is_refused(tmp_path: Path) -> None:
     root = _mini_repo(tmp_path, FULL, '[[exception]]\npath = "backend/tests/unit/test_x.py"\n')
     with pytest.raises(SystemExit):
         tr.main(["--milestone", "M0", "--root", str(root), "--output", str(root / "o.md")])
+
+
+def test_conditional_tests_are_flagged_in_python_and_typescript(tmp_path: Path) -> None:
+    py = tmp_path / "backend" / "tests" / "contract" / "test_c.py"
+    py.parent.mkdir(parents=True)
+    py.write_text(
+        "import pytest\n"
+        "pytestmark = pytest.mark.contract\n"
+        "@pytest.mark.req('ENF-BBB-001')\n"
+        "def test_a(): pass\n",
+        encoding="utf-8",
+    )
+    py2 = tmp_path / "backend" / "tests" / "unit" / "test_d.py"
+    py2.parent.mkdir(parents=True)
+    py2.write_text(
+        "import pytest\n"
+        "@pytest.mark.req('ENF-BBB-001')\n"
+        "@pytest.mark.skipif(True, reason='x')\n"
+        "def test_b(): pass\n"
+        "@pytest.mark.req('ENF-BBB-001')\n"
+        "@pytest.mark.xfail\n"
+        "def test_c(): pass\n"
+        "@pytest.mark.req('ENF-BBB-001')\n"
+        "def test_plain(): pass\n",
+        encoding="utf-8",
+    )
+    ts = tmp_path / "frontend" / "a.test.ts"
+    ts.parent.mkdir(parents=True)
+    ts.write_text("// req: ENF-BBB-001\nit.skip('s', () => {});\n", encoding="utf-8")
+    flags = {t.name: bool(t.conditional) for t in tr.collect_python(tmp_path)}
+    assert flags == {"test_a": True, "test_b": True, "test_c": True, "test_plain": False}
+    assert [bool(t.conditional) for t in tr.collect_typescript(tmp_path)] == [True]
+
+
+COND = (
+    "import pytest\n"
+    "@pytest.mark.req('ENF-BBB-001', 'ENF-BBB-002')\n"
+    "def test_all(): pass\n"
+    "@pytest.mark.req('EF-AAA-003')\n"
+    "@pytest.mark.skipif(True, reason='needs docker')\n"
+    "def test_cond(): pass\n"
+)
+COND_EXC = (
+    '[[out_of_required_ci]]\npath = "backend/tests/unit/test_x.py"\n'
+    'workflow = "contract.yml"\nreason = "banc de contrat hebdomadaire"\n'
+)
+
+
+def test_requirement_only_covered_conditionally_needs_a_justified_workflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _mini_repo(tmp_path, COND)
+    args = ["--milestone", "M0", "--root", str(root), "--output", str(root / "o.md")]
+    assert tr.main(args) == 1
+    assert "EF-AAA-003" in capsys.readouterr().err
+    (root / "tools" / "traceability-exceptions.toml").write_text(COND_EXC, encoding="utf-8")
+    assert tr.main(args) == 0
+    text = (root / "o.md").read_text(encoding="utf-8")
+    assert "COUVERTE (hors CI requise)" in text
+    assert "contract.yml" in text
+
+
+def test_an_out_of_required_ci_entry_needs_workflow_and_reason(tmp_path: Path) -> None:
+    root = _mini_repo(tmp_path, COND, '[[out_of_required_ci]]\npath = "a.py"\n')
+    with pytest.raises(SystemExit):
+        tr.main(["--milestone", "M0", "--root", str(root), "--output", str(root / "o.md")])
+
+
+def test_deferred_aspects_are_listed_in_the_matrix(tmp_path: Path) -> None:
+    exc = '[[deferred]]\nrequirement = "ENF-BBB-001"\naspect = "budget"\nreason = "plus tard"\n'
+    root = _mini_repo(tmp_path, FULL, exc)
+    assert tr.main(["--milestone", "M0", "--root", str(root), "--output", str(root / "o.md")]) == 0
+    text = (root / "o.md").read_text(encoding="utf-8")
+    assert "Volets reportés" in text
+    assert "budget" in text
