@@ -96,9 +96,7 @@ def parse_roadmap_coverage(text: str) -> dict[str, set[str]]:
     return cov
 
 
-def compare_specs(
-    reqs: dict[str, list[str]], cov: dict[str, set[str]], ms: str
-) -> list[str]:
+def compare_specs(reqs: dict[str, list[str]], cov: dict[str, set[str]], ms: str) -> list[str]:
     issues: list[str] = []
     in_01 = {i for i, m in reqs.items() if earliest(m) == ms}
     in_03 = cov.get(ms, set())
@@ -138,9 +136,7 @@ def _req_args(node: ast.expr) -> list[str] | None:
         and node.func.value.attr == "mark"
     ):
         return [
-            a.value
-            for a in node.args
-            if isinstance(a, ast.Constant) and isinstance(a.value, str)
+            a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str)
         ]
     return None
 
@@ -154,7 +150,9 @@ def _decorator_reqs(decorators: list[ast.expr]) -> list[str]:
 
 def collect_python(root: Path) -> list[TestRef]:
     refs: list[TestRef] = []
-    for f in _iter_files(root, "backend/tests", ("test_*.py",)):
+    for f in _iter_files(root, "backend/tests", ("test_*.py",)) + _iter_files(
+        root, "e2e", ("test_*.py",)
+    ):
         rel = f.relative_to(root).as_posix()
         tree = ast.parse(f.read_text(encoding="utf-8"))
         module: list[str] = []
@@ -170,14 +168,10 @@ def collect_python(root: Path) -> list[TestRef]:
                 for item in items:
                     module += _req_args(item) or []
         for node in tree.body:
-            if isinstance(
-                node, ast.FunctionDef | ast.AsyncFunctionDef
-            ) and node.name.startswith("test"):
-                refs.append(
-                    TestRef(
-                        rel, node.name, _decorator_reqs(node.decorator_list) + module
-                    )
-                )
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith(
+                "test"
+            ):
+                refs.append(TestRef(rel, node.name, _decorator_reqs(node.decorator_list) + module))
             elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
                 cls = _decorator_reqs(node.decorator_list)
                 for sub in node.body:
@@ -227,9 +221,7 @@ def load_exceptions(root: Path) -> list[dict[str, Any]]:
     items = data.get("exception", [])
     for item in items:
         if not item.get("path") or not item.get("reason", "").strip():
-            raise SystemExit(
-                f"{EXCEPTIONS}: every exception needs `path` and a justified `reason`"
-            )
+            raise SystemExit(f"{EXCEPTIONS}: every exception needs `path` and a justified `reason`")
     return list(items)
 
 
@@ -268,9 +260,7 @@ def render(
         tests = by_req.get(r, [])
         status = "couverte" if tests else "NON COUVERTE"
         cell = "<br>".join(f"`{t}`" for t in tests) if tests else "—"
-        out.append(
-            f"| {r} | {' / '.join(reqs.get(r, [])) or '—'} | {status} | {cell} |"
-        )
+        out.append(f"| {r} | {' / '.join(reqs.get(r, [])) or '—'} | {status} | {cell} |")
     out += ["", "## Écarts entre 01 (cahier des charges) et 03 (feuille de route)", ""]
     out += [f"- {i}" for i in issues] or ["Aucun."]
     out += ["", "## Tests exemptés du marqueur `req`", ""]
@@ -310,19 +300,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 by_req.setdefault(r, []).append(t.label)
         if not t.reqs and not _excepted(t, exceptions):
-            errors.append(
-                f"{t.label}: test orphelin (aucun marqueur req, hors exceptions)"
-            )
-    errors += [
-        f"{r}: exigence {ms} sans aucun test" for r in required if not by_req.get(r)
-    ]
+            errors.append(f"{t.label}: test orphelin (aucun marqueur req, hors exceptions)")
+    errors += [f"{r}: exigence {ms} sans aucun test" for r in required if not by_req.get(r)]
 
     matrix = render(ms, required, reqs, by_req, issues, exceptions)
-    out = (
-        Path(args.output)
-        if args.output
-        else root / "docs" / "traceability" / f"{ms}.md"
-    )
+    out = Path(args.output) if args.output else root / "docs" / "traceability" / f"{ms}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(matrix, encoding="utf-8")
     for i in issues:
@@ -330,9 +312,7 @@ def main(argv: list[str] | None = None) -> int:
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
     covered = sum(1 for r in required if by_req.get(r))
-    print(
-        f"{ms}: {covered}/{len(required)} exigences couvertes, {len(errors)} erreur(s)"
-    )
+    print(f"{ms}: {covered}/{len(required)} exigences couvertes, {len(errors)} erreur(s)")
     return 1 if errors else 0
 
 

@@ -45,3 +45,18 @@ reason = "page d'accueil pré-alpha (spike S2), aucune exigence propre"
 path = "e2e/tests/test_spa_loads_no_third_party_resource.spec.ts"
 tests = ["the SPA fallback serves client routes"]
 reason = "repli SPA vers l'index (spike S2), aucune exigence propre"
+
+[[exception]]
+path = "backend/tests/unit/test_image_and_compose.py"
+tests = [
+  "test_compose_image_is_edge_on_ghcr",
+  "test_dev_compose_builds_the_dev_target",
+  "test_image_name_is_defined_in_one_place",
+  "test_image_workflow_is_reusable",
+]
+reason = "décisions d'exécution M0 (tag edge, image définie en un seul endroit, cible de développement, workflow réutilisable) : cohérence de l'outillage sans exigence propre"
+
+[[exception]]
+path = "e2e/tests/test_image_smoke.py"
+tests = ["test_root_serves_the_spa_index"]
+reason = "fumée du SPA servi par l'image (spike S2), aucune exigence propre"

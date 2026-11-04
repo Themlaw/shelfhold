@@ -115,6 +115,15 @@ def test_python_markers_function_class_and_module_level(tmp_path: Path) -> None:
     assert "helper" not in found
 
 
+def test_python_markers_are_also_collected_in_e2e(tmp_path: Path) -> None:
+    f = tmp_path / "e2e" / "tests" / "test_s.py"
+    f.parent.mkdir(parents=True)
+    f.write_text("import pytest\n@pytest.mark.req('ENF-BBB-001')\ndef test_s(): pass\n")
+    assert [(t.path, t.reqs) for t in tr.collect_python(tmp_path)] == [
+        ("e2e/tests/test_s.py", ["ENF-BBB-001"])
+    ]
+
+
 def test_typescript_markers_comment_before_test_and_file_level(tmp_path: Path) -> None:
     f = tmp_path / "e2e" / "tests" / "a.spec.ts"
     f.parent.mkdir(parents=True)
