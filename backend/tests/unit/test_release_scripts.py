@@ -106,6 +106,7 @@ def run(script: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
 # --- release-retag.sh ----------------------------------------------------------------------
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_retag_uses_the_given_sha_and_tags_version_and_minor(env: dict[str, str]) -> None:
     put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
     r = run("release-retag.sh", env)
@@ -113,6 +114,7 @@ def test_retag_uses_the_given_sha_and_tags_version_and_minor(env: dict[str, str]
     assert created(env) == {f"{IMG}:0.1.0", f"{IMG}:0.1"}
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_retag_refuses_to_rewrite_an_existing_version_with_another_digest(
     env: dict[str, str],
 ) -> None:
@@ -123,6 +125,7 @@ def test_retag_refuses_to_rewrite_an_existing_version_with_another_digest(
     assert created(env) == set()  # nothing written, not even X.Y
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_retag_is_idempotent_when_the_version_already_points_to_the_digest(
     env: dict[str, str],
 ) -> None:
@@ -131,6 +134,7 @@ def test_retag_is_idempotent_when_the_version_already_points_to_the_digest(
     assert run("release-retag.sh", env).returncode == 0
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_retag_fails_on_a_registry_error_instead_of_treating_it_as_absent(
     env: dict[str, str],
 ) -> None:
@@ -141,12 +145,14 @@ def test_retag_fails_on_a_registry_error_instead_of_treating_it_as_absent(
     assert created(env) == set()
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_retag_waits_boundedly_for_the_image(env: dict[str, str]) -> None:
     r = run("release-retag.sh", env)  # sha-<long> never appears
     assert r.returncode != 0 and "absent" in r.stdout + r.stderr
 
 
 @pytest.mark.parametrize("conclusion", ["failure", "pending", "cancelled"])
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_retag_requires_ci_success_on_the_commit(env: dict[str, str], conclusion: str) -> None:
     put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
     (Path(env["STUB_STATE"]) / "ci").write_text(conclusion)
@@ -155,6 +161,7 @@ def test_retag_requires_ci_success_on_the_commit(env: dict[str, str], conclusion
     assert created(env) == set()
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_retag_never_moves_the_minor_tag_backwards(env: dict[str, str]) -> None:
     env["VERSION"] = "0.1.1"
     put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
@@ -169,6 +176,7 @@ def test_retag_never_moves_the_minor_tag_backwards(env: dict[str, str]) -> None:
 # --- ghcr-cleanup.sh -----------------------------------------------------------------------
 
 
+@pytest.mark.req("ENF-QUAL-007")
 def test_cleanup_lowercases_the_image_name_and_defaults_to_dry_run(env: dict[str, str]) -> None:
     state = Path(env["STUB_STATE"])
     old = {
@@ -196,6 +204,7 @@ def test_cleanup_lowercases_the_image_name_and_defaults_to_dry_run(env: dict[str
     assert "-X DELETE" not in log  # dry-run unless DRY_RUN=false
 
 
+@pytest.mark.req("ENF-QUAL-007")
 def test_cleanup_deletes_only_when_dry_run_is_explicitly_false(env: dict[str, str]) -> None:
     state = Path(env["STUB_STATE"])
     old = {
@@ -236,6 +245,7 @@ def reversible(tmp_path: Path, body: str) -> bool:
         ('    """doc"""\n    op.drop_table("t")', True),
     ],
 )
+@pytest.mark.req("ENF-OPS-002")
 def test_downgrade_with_only_docstring_or_pass_is_not_reversible(
     tmp_path: Path, body: str, expected: bool
 ) -> None:

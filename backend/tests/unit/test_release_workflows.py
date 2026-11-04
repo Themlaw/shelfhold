@@ -33,6 +33,7 @@ def _on(wf: dict[Any, Any]) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize("name", ["release.yml", "cleanup.yml"])
+@pytest.mark.req("ENF-SEC-007")
 def test_actions_are_pinned_by_sha_and_token_defaults_to_nothing(name: str) -> None:
     wf = load(name)
     assert wf["permissions"] == {}
@@ -42,6 +43,7 @@ def test_actions_are_pinned_by_sha_and_token_defaults_to_nothing(name: str) -> N
                 assert PINNED.match(f"{step['uses']} # x"), step["uses"]
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_release_runs_on_push_to_main_only() -> None:
     wf = load("release.yml")
     assert triggers(wf) == {"push"}
@@ -51,6 +53,7 @@ def test_release_runs_on_push_to_main_only() -> None:
     assert "pull_request" not in code.replace("pull-requests", "")
 
 
+@pytest.mark.req("ENF-SEC-007")
 def test_release_permissions_are_minimal_per_job() -> None:
     jobs = load("release.yml")["jobs"]
     assert jobs["release-please"]["permissions"] == {
@@ -70,6 +73,7 @@ def test_release_permissions_are_minimal_per_job() -> None:
     assert len(rp) == 1 and "@v" not in rp[0]["uses"].split(" ")[0]
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_release_retags_the_published_digest_never_latest_never_rebuilds() -> None:
     for path in (
         WORKFLOWS / "release.yml",
@@ -91,6 +95,7 @@ def test_release_retags_the_published_digest_never_latest_never_rebuilds() -> No
     assert "WAIT_SECONDS:-" in script  # bounded wait for the ci image
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_release_please_has_no_sticky_release_as_and_requires_migration_line() -> None:
     cfg = json.loads((ROOT / "release-please-config.json").read_text(encoding="utf-8"))
     assert (
@@ -103,6 +108,7 @@ def test_release_please_has_no_sticky_release_as_and_requires_migration_line() -
     assert any("release-migration-line.sh" in s.get("run", "") for s in steps)
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_manual_retag_is_a_dispatch_on_an_existing_version_tag() -> None:
     wf = load("retag.yml")
     assert triggers(wf) == {"workflow_dispatch"}
@@ -115,6 +121,7 @@ def test_manual_retag_is_a_dispatch_on_an_existing_version_tag() -> None:
     assert "checks" in callee["jobs"]["retag"]["permissions"]
 
 
+@pytest.mark.req("ENF-QUAL-007")
 def test_cleanup_never_runs_on_pull_request_and_writes_packages_on_one_job() -> None:
     wf = load("cleanup.yml")
     assert triggers(wf) == {"schedule", "workflow_dispatch"}
@@ -151,6 +158,7 @@ def _v(id_: int, tags: list[str], created: str = "2026-10-01T00:00:00Z") -> dict
     }
 
 
+@pytest.mark.req("ENF-QUAL-007")
 def test_ghcr_cleanup_selects_only_expired_unreferenced_build_tags() -> None:
     versions = [
         _v(1, ["build-abc-amd64"]),
