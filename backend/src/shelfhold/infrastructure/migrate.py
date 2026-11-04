@@ -18,7 +18,11 @@ from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
 
 from shelfhold.config import Settings
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import (
+    check_foreign_keys,
+    create_db_engine,
+    foreign_keys_disabled,
+)
 from shelfhold.infrastructure.volumes import ensure_volumes
 
 STATE_FILE_NAME = "migration-state.json"
@@ -267,9 +271,11 @@ def _migrate_locked(
         for index, revision in enumerate(steps):
             log.info("migration_started", revision=revision, step=index + 1, total=len(steps))
             try:
-                with engine.begin() as connection:
+                with engine.connect() as connection, foreign_keys_disabled(connection):
                     config.attributes["connection"] = connection
                     command.upgrade(config, revision)
+                    check_foreign_keys(connection)  # a violation restores the backup, below
+                    connection.commit()
             except Exception as exc:
                 engine.dispose()
                 _restore_database(backup, settings.database_path)

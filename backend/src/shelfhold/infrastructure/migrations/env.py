@@ -8,6 +8,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Connection
 
+from shelfhold.infrastructure.db import check_foreign_keys, foreign_keys_disabled
 from shelfhold.infrastructure.schema import metadata
 
 config = context.config
@@ -33,5 +34,7 @@ else:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    with engine.begin() as connection:
+    with engine.connect() as connection, foreign_keys_disabled(connection):
         run(connection)
+        check_foreign_keys(connection)
+        connection.commit()

@@ -95,3 +95,12 @@ def bool_column(name: str, *, default: bool, nullable: bool = False) -> sa.Colum
     return sa.Column(
         name, sa.Boolean(), nullable=nullable, server_default=sa.true() if default else sa.false()
     )
+
+
+def add_trigger(table: sa.Table, name: str, sql: str) -> None:
+    """Create a trigger with the table, in `create_all` as in the (frozen) migration.
+
+    The migration carries its own copy of the statement; the DDL parity test keeps both equal.
+    """
+    statement = f"CREATE TRIGGER {name} {sql}"
+    sa.event.listen(table, "after_create", sa.DDL(statement).execute_if(dialect="sqlite"))  # type: ignore[no-untyped-call]
