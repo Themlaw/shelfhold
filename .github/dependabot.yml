@@ -19,6 +19,9 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]  # LTS only: bumped by hand
     groups:
       docker-base-images:
         patterns: ["*"]
@@ -29,6 +32,9 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]  # LTS only: bumped by hand
     groups:
       compose-images:
         patterns: ["*"]
@@ -52,6 +58,11 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]  # deferred: svelte-check peer range stops at 6
+      - dependency-name: msw
+        update-types: ["version-update:semver-major"]  # deferred: msw 3 breaks vitest with the browser condition
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
