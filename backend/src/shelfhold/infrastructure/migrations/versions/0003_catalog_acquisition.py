@@ -62,6 +62,13 @@ TRIGGERS = {
         "BEFORE UPDATE ON variant_revision "
         "BEGIN SELECT RAISE(ABORT, 'variant_revision is append-only'); END"
     ),
+    "variant_revision_no_replace": (
+        "CREATE TRIGGER variant_revision_no_replace "
+        "BEFORE INSERT ON variant_revision "
+        "WHEN EXISTS (SELECT 1 FROM variant_revision "
+        "WHERE variant_id = NEW.variant_id AND revision = NEW.revision) "
+        "BEGIN SELECT RAISE(ABORT, 'variant_revision is append-only'); END"
+    ),
     "variant_revision_no_delete": (
         "CREATE TRIGGER variant_revision_no_delete "
         "BEFORE DELETE ON variant_revision "

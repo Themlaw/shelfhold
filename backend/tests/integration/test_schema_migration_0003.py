@@ -123,4 +123,8 @@ def test_new_triggers_are_in_the_migrated_database(tmp_path: Path) -> None:
     command.upgrade(alembic_config(database), "head")
     with closing(sqlite3.connect(database)) as db:
         names = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
-    assert {"variant_revision_no_update", "variant_revision_no_delete"} <= names
+    assert {
+        "variant_revision_no_update",
+        "variant_revision_no_replace",
+        "variant_revision_no_delete",
+    } <= names

@@ -653,7 +653,7 @@ def test_variant_revision_append_only(engine: Engine, chain: dict[str, str]) -> 
             sa.insert(catalog.variant_revision).values(
                 variant_id=chain["variant"], revision=2, seen_at=NOW
             ),
-            "UNIQUE constraint failed",
+            "append-only",
         )
     for statement in (
         sa.update(catalog.variant_revision).values(page_count=99),
@@ -1478,4 +1478,30 @@ def test_volume_is_a_numbered_closable_part_of_an_edition(
             sa.update(catalog.unit)
             .where(catalog.unit.c.id == chain["unit"])
             .values(volume_id=volume)
+        )
+
+
+@pytest.mark.req("EF-BIB-050")
+def test_variant_revision_cannot_be_overwritten_by_insert_or_replace(
+    engine: Engine, chain: dict[str, str]
+) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            sa.insert(catalog.variant_revision).values(
+                variant_id=chain["variant"], revision=1, seen_at=NOW, page_count=20
+            )
+        )
+    for verb in ("INSERT OR REPLACE", "REPLACE"):
+        with engine.begin() as connection:
+            rejected(
+                connection,
+                sa.text(
+                    f"{verb} INTO variant_revision (variant_id, revision, seen_at, page_count) "
+                    f"VALUES ('{chain['variant']}', 1, '2026-11-04 12:00:00.000000', 1)"
+                ),
+                "append-only",
+            )
+    with engine.begin() as connection:
+        assert (
+            connection.execute(sa.select(catalog.variant_revision.c.page_count)).scalar_one() == 20
         )

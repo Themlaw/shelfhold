@@ -528,6 +528,16 @@ add_trigger(
     "BEFORE UPDATE ON variant_revision "
     "BEGIN SELECT RAISE(ABORT, 'variant_revision is append-only'); END",
 )
+# `INSERT OR REPLACE` resolves a conflict by deleting the old row, and SQLite fires no DELETE
+# trigger for that unless `recursive_triggers` is on: refuse the colliding insert itself.
+add_trigger(
+    variant_revision,
+    "variant_revision_no_replace",
+    "BEFORE INSERT ON variant_revision "
+    "WHEN EXISTS (SELECT 1 FROM variant_revision "
+    "WHERE variant_id = NEW.variant_id AND revision = NEW.revision) "
+    "BEGIN SELECT RAISE(ABORT, 'variant_revision is append-only'); END",
+)
 # A direct delete is refused while the Variant lives; the cascade of an erasure runs once the
 # Variant row is gone, so the guard lets it through.
 add_trigger(
