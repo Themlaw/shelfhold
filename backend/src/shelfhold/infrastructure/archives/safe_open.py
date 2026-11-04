@@ -15,15 +15,15 @@ supported in M1a; anything else is refused until a lot adds it behind this same 
 from __future__ import annotations
 
 import io
-import itertools
 import stat
+import struct
 import unicodedata
 import zipfile
 import zlib
 from dataclasses import dataclass
 from pathlib import Path, PurePath
 from types import TracebackType
-from typing import BinaryIO, Final, Self
+from typing import IO, BinaryIO, Final, Self
 
 _ZIP_MAGICS: Final = (b"PK\x03\x04", b"PK\x05\x06")  # a local header, or an empty archive
 _OTHER_MAGICS: Final = {b"Rar!\x1a\x07": "rar", b"7z\xbc\xaf\x27\x1c": "7z"}
@@ -34,6 +34,11 @@ _EXTENSIONS: Final = {
 _FIRST_LOCAL_HEADER: Final = 30  # bytes of a local file header before the name
 _CHUNK: Final = 64 * 1024
 _MAX_NAME_BYTES: Final = 1024
+_CD_RECORD_BYTES: Final = 46  # fixed part of a central directory record
+_CD_EXTRA_MARGIN: Final = 1024  # extra field and comment allowance per record
+_EOCD_BYTES: Final = 22
+_EOCD_SEARCH: Final = _EOCD_BYTES + 0xFFFF + 20  # comment is at most 64 KiB; plus the ZIP64 locator
+_DESCRIPTOR_GAPS: Final = frozenset({12, 16, 20, 24})  # data descriptor with/without signature
 _FORBIDDEN_CATEGORIES: Final = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
 
 
@@ -53,6 +58,7 @@ class ArchiveLimits:
     max_total_bytes: int = 4 * 1024 * 1024 * 1024
     max_ratio: int = 100  # decompressed / compressed, per entry and for the whole archive
     ratio_floor_bytes: int = 1024 * 1024  # below this size the ratio is not a signal
+    max_buffered_bytes: int = 32 * 1024 * 1024  # default cap of read(); streaming has its own
     max_read_bytes: int | None = None  # bytes produced across all reads; None = max_total_bytes
 
     @property
@@ -72,6 +78,8 @@ class ArchiveEntry:
 
 
 def _check_name(name: str) -> None:
+    """`name` is the name as stored (ZipInfo.orig_filename), before zipfile truncates at a NUL."""
+
     def bad(why: str) -> UnsafeArchiveError:
         return UnsafeArchiveError("unsafe_path", why, entry=ascii(name))
 
@@ -91,6 +99,45 @@ def _dedup_key(name: str) -> str:
     return unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", name).casefold()).rstrip("/")
 
 
+def _scan_directory(stream: BinaryIO, limits: ArchiveLimits) -> tuple[int, int]:
+    """Read the end-of-central-directory records by hand, before zipfile loads the directory.
+
+    zipfile builds one ZipInfo per record before we can look at any of them, so the entry cap and
+    the directory size cap are applied here, from the EOCD (and ZIP64 EOCD) fields, to a file
+    that costs at most 64 KiB of reading. Returns (central directory offset, entry count).
+    """
+    size = stream.seek(0, io.SEEK_END)
+    start = max(0, size - _EOCD_SEARCH)
+    stream.seek(start)
+    tail = stream.read(size - start)
+    found = tail.rfind(b"PK\x05\x06")  # the last one, as zipfile does
+    if found < 0 or len(tail) - found < _EOCD_BYTES:
+        raise UnsafeArchiveError("corrupt", "no end of central directory")
+    eocd_at = start + found
+    fields = struct.unpack("<4s4H2LH", tail[found : found + _EOCD_BYTES])
+    total, cd_size, cd_offset = fields[4:7]
+    directory_end = eocd_at
+    if total == 0xFFFF or 0xFFFFFFFF in (cd_size, cd_offset):
+        stream.seek(max(0, eocd_at - 20))
+        locator = stream.read(20) if eocd_at >= 20 else b""
+        if locator[:4] == b"PK\x06\x07":
+            record_at = struct.unpack("<4sLQL", locator)[2]
+            stream.seek(record_at)
+            record = stream.read(56)
+            if len(record) < 56 or record[:4] != b"PK\x06\x06":
+                raise UnsafeArchiveError("corrupt", "bad ZIP64 end of central directory")
+            total, cd_size, cd_offset = struct.unpack("<3Q", record[32:56])
+            directory_end = record_at
+    per_record = _CD_RECORD_BYTES + _MAX_NAME_BYTES + _CD_EXTRA_MARGIN
+    if total > limits.max_entries or cd_size > limits.max_entries * per_record:
+        raise UnsafeArchiveError(
+            "too_many_entries", f"{total} entries, directory of {cd_size} bytes"
+        )
+    if cd_offset + cd_size != directory_end:
+        raise UnsafeArchiveError("hidden_data", "bytes between the entries and the directory end")
+    return cd_offset, total
+
+
 def _detect(head: bytes) -> str | None:
     if head.startswith(_ZIP_MAGICS):
         return "zip"
@@ -105,6 +152,7 @@ class EntryStream(io.RawIOBase):
 
     def __init__(self, archive: SafeArchive, info: zipfile.ZipInfo) -> None:
         super().__init__()
+        self._inner: IO[bytes] | None = None  # set first: close() runs even if opening fails
         self._archive = archive
         self._name = info.filename
         self._left = info.file_size
@@ -120,6 +168,7 @@ class EntryStream(io.RawIOBase):
         want = min(
             len(buffer), self._left + 1
         )  # one byte more than declared exposes a lying header
+        assert self._inner is not None  # noqa: S101
         try:
             chunk = self._inner.read(want)
         except (zipfile.BadZipFile, EOFError, zlib.error) as error:
@@ -134,7 +183,7 @@ class EntryStream(io.RawIOBase):
         return len(chunk)
 
     def close(self) -> None:
-        if not self.closed:
+        if not self.closed and self._inner is not None:
             self._inner.close()
         super().close()
 
@@ -143,8 +192,14 @@ class SafeArchive:
     """An audited ZIP container. Use as a context manager; never extracts."""
 
     def __init__(
-        self, source: BinaryIO, owned: bool, zf: zipfile.ZipFile, limits: ArchiveLimits
+        self,
+        source: BinaryIO,
+        owned: bool,
+        zf: zipfile.ZipFile,
+        limits: ArchiveLimits,
+        directory_offset: int,
     ) -> None:
+        self._directory_offset = directory_offset
         self._source = source
         self._owned = owned
         self._zip = zf
@@ -163,6 +218,7 @@ class SafeArchive:
         total = packed = 0
         for info in infos:
             name = info.filename
+            _check_name(info.orig_filename)
             _check_name(name)
             key = _dedup_key(name)
             if key in seen:
@@ -173,6 +229,15 @@ class SafeArchive:
             mode = info.external_attr >> 16
             if stat.S_ISLNK(mode):
                 raise UnsafeArchiveError("symlink", "symbolic link", entry=ascii(name))
+            is_dir_name = name.endswith("/")
+            if is_dir_name and (info.file_size != 0 or stat.S_IFMT(mode) not in (0, stat.S_IFDIR)):
+                raise UnsafeArchiveError(
+                    "unsafe_directory", "directory with data", entry=ascii(name)
+                )
+            if stat.S_ISDIR(mode) and not is_dir_name:
+                raise UnsafeArchiveError(
+                    "unsafe_directory", "file marked as directory", entry=ascii(name)
+                )
             if stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR):
                 raise UnsafeArchiveError("special_file", "device or fifo", entry=ascii(name))
             if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
@@ -189,7 +254,7 @@ class SafeArchive:
                 raise UnsafeArchiveError("total_too_large", f"{total} declared")
         if self._ratio_exceeded(total, packed):
             raise UnsafeArchiveError("ratio", "compression ratio of the whole archive")
-        self._audit_overlap(infos)
+        self._audit_layout(infos)
         self._by_name = {i.filename: i for i in infos}
         self.entries = tuple(
             ArchiveEntry(i.filename, i.file_size, i.compress_size, i.filename.endswith("/"))
@@ -201,15 +266,36 @@ class SafeArchive:
             return False
         return packed * self.limits.max_ratio < size
 
-    @staticmethod
-    def _audit_overlap(infos: list[zipfile.ZipInfo]) -> None:
-        ordered = sorted(infos, key=lambda i: i.header_offset)
-        for current, following in itertools.pairwise(ordered):
-            lowest_end = current.header_offset + _FIRST_LOCAL_HEADER + current.compress_size
-            if lowest_end > following.header_offset:
+    def _audit_layout(self, infos: list[zipfile.ZipInfo]) -> None:
+        """Local records and their data must tile the file from byte 0 to the directory.
+
+        A local header the directory does not list is an entry that readers which walk the file
+        (streaming extractors) would see and zipfile would not; two records over the same bytes
+        is an overlap bomb. Neither gap nor surplus is tolerated, except a data descriptor.
+        """
+        position = 0
+        descriptor = False  # the previous entry is followed by a data descriptor
+
+        def check_gap(until: int, entry: str | None) -> None:
+            gap = until - position
+            if gap < 0:
+                raise UnsafeArchiveError("overlap", "entries share bytes", entry=entry)
+            if gap and not (descriptor and gap in _DESCRIPTOR_GAPS):
                 raise UnsafeArchiveError(
-                    "overlap", "entries share bytes", entry=ascii(following.filename)
+                    "hidden_data", "bytes outside any listed entry", entry=entry
                 )
+
+        for info in sorted(infos, key=lambda i: i.header_offset):
+            check_gap(info.header_offset, ascii(info.filename))
+            self._source.seek(info.header_offset)
+            local = self._source.read(_FIRST_LOCAL_HEADER)
+            if len(local) < _FIRST_LOCAL_HEADER or local[:4] != b"PK\x03\x04":
+                raise UnsafeArchiveError("corrupt", "bad local header", entry=ascii(info.filename))
+            name_len, extra_len = struct.unpack("<2H", local[26:30])
+            position = info.header_offset + _FIRST_LOCAL_HEADER + name_len + extra_len
+            position += info.compress_size
+            descriptor = bool(struct.unpack("<H", local[6:8])[0] & 0x08)
+        check_gap(self._directory_offset, None)
 
     # -- reading ----------------------------------------------------------------------------
     def _account(self, produced: int, name: str) -> None:
@@ -227,14 +313,28 @@ class SafeArchive:
         """A bounded stream over one entry (KeyError if there is none)."""
         return EntryStream(self, self._info(name))
 
-    def read(self, name: str, max_bytes: int | None = None) -> bytes:
-        """The whole entry, refused if it exceeds `max_bytes` (default: the per-entry cap)."""
-        cap = self.limits.max_entry_bytes if max_bytes is None else max_bytes
+    def read(self, name: str, max_bytes: int | None = None) -> bytearray:
+        """The whole entry in one buffer sized from the header (no second copy).
+
+        Refused if it exceeds `max_bytes` (default: ArchiveLimits.max_buffered_bytes); use open()
+        to stream anything larger.
+        """
+        cap = self.limits.max_buffered_bytes if max_bytes is None else max_bytes
         info = self._info(name)
         if info.file_size > cap:
             raise UnsafeArchiveError("entry_too_large", f"{info.file_size} > {cap}", entry=name)
+        buffer = bytearray(info.file_size)
+        view = memoryview(buffer)
+        filled = 0
         with self.open(name) as stream:
-            return stream.read()
+            while filled < len(buffer):
+                got = stream.readinto(view[filled:])
+                if not got:
+                    raise UnsafeArchiveError("corrupt", "entry shorter than declared", entry=name)
+                filled += got
+            if stream.read(1):  # the header understated the size
+                raise UnsafeArchiveError("entry_too_large", "more data than declared", entry=name)
+        return buffer
 
     def read_head(self, name: str, size: int) -> bytes:
         """The first `size` bytes of an entry, for magic-byte checks."""
@@ -283,11 +383,13 @@ def safe_open_archive(
             raise UnsafeArchiveError("magic_mismatch", "extension and magic bytes disagree")
         if found != "zip":
             raise UnsafeArchiveError("unsupported_format", f"{found} archives are not supported")
+        directory_offset, _ = _scan_directory(stream, limits)
+        stream.seek(0)
         try:
             zf = zipfile.ZipFile(stream)
         except (zipfile.BadZipFile, NotImplementedError, OSError, EOFError) as error:
             raise UnsafeArchiveError("corrupt", str(error)) from None
-        archive = SafeArchive(stream, owned, zf, limits)
+        archive = SafeArchive(stream, owned, zf, limits, directory_offset)
         try:
             archive._audit()
         except BaseException:

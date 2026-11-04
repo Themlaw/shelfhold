@@ -31,7 +31,8 @@ class UnsafeXmlError(ValueError):
 class XmlLimits:
     max_bytes: int = 8 * 1024 * 1024
     max_depth: int = 64
-    max_elements: int = 500_000
+    max_elements: int = 100_000
+    max_attributes: int = 256  # per element
 
 
 DEFAULT_LIMITS: Final = XmlLimits()
@@ -44,11 +45,12 @@ _REASONS: Final[dict[type[Exception], str]] = {
 }
 
 
-def safe_parse_xml(data: bytes, *, limits: XmlLimits = DEFAULT_LIMITS) -> Element:
+def safe_parse_xml(data: bytes | bytearray, *, limits: XmlLimits = DEFAULT_LIMITS) -> Element:
     """Parse `data` and return the root element, or raise UnsafeXmlError.
 
     Only bytes are accepted: the encoding declaration is the parser's business, and a str would
-    let a caller decode it wrongly first.
+    let a caller decode it wrongly first. The attribute cap is checked once the parser has built
+    an element, so it is the size cap that bounds a single element.
     """
     if not isinstance(data, bytes | bytearray | memoryview):
         raise TypeError("safe_parse_xml expects bytes")
@@ -66,17 +68,23 @@ def safe_parse_xml(data: bytes, *, limits: XmlLimits = DEFAULT_LIMITS) -> Elemen
                     root = element
                 depth += 1
                 count += 1
+                if len(element.attrib) > limits.max_attributes:
+                    raise UnsafeXmlError("too_many_attributes", f"beyond {limits.max_attributes}")
                 if depth > limits.max_depth:
                     raise UnsafeXmlError("too_deep", f"nesting beyond {limits.max_depth}")
                 if count > limits.max_elements:
                     raise UnsafeXmlError("too_many_elements", f"beyond {limits.max_elements}")
             else:
                 depth -= 1
+    except UnsafeXmlError:
+        raise
     except defusedxml.DefusedXmlException as error:
         reason = next((r for t, r in _REASONS.items() if isinstance(error, t)), "external")
         raise UnsafeXmlError(reason, type(error).__name__) from None
     except ParseError as error:
         raise UnsafeXmlError("malformed", str(error)) from None
+    except (ValueError, LookupError) as error:  # unsupported or unknown declared encoding
+        raise UnsafeXmlError("encoding", str(error)) from None
     if root is None:
         raise UnsafeXmlError("malformed", "no root element")
     return root

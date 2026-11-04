@@ -197,6 +197,107 @@ TRAVERSAL_NAMES = {
 }
 
 
+# --- Raw ZIP records, for traps zipfile refuses to write -----------------------------------------
+
+
+def raw_local(name: bytes, data: bytes, extra: bytes = b"") -> bytes:
+    header = struct.pack(
+        "<4s5H3L2H",
+        b"PK\x03\x04", 20, 0, 0, 0, 0, zlib.crc32(data),
+        len(data), len(data), len(name), len(extra),
+    )  # fmt: skip
+    return header + name + extra + data
+
+
+def raw_central(name: bytes, data: bytes, offset: int, attr: int = 0) -> bytes:
+    fixed = struct.pack(
+        "<4s6H3L5H2L",
+        b"PK\x01\x02",
+        20,
+        20,
+        0,
+        0,
+        0,
+        0,
+        zlib.crc32(data),
+        len(data),
+        len(data),
+        len(name),
+        0,
+        0,
+        0,
+        0,
+        attr,
+        offset,
+    )
+    return fixed + name
+
+
+def raw_eocd(count: int, cd_size: int, cd_offset: int) -> bytes:
+    return struct.pack("<4s4H2LH", b"PK\x05\x06", 0, 0, count, count, cd_size, cd_offset, 0)
+
+
+def hidden_local_entry() -> bytes:
+    """A local header the central directory does not list (seen by streaming readers only)."""
+    hidden = raw_local(b"001.svg", SVG_WITH_SCRIPT)
+    page = raw_local(b"002.png", tiny_png())
+    directory = raw_central(b"002.png", tiny_png(), len(hidden))
+    return hidden + page + directory + raw_eocd(1, len(directory), len(hidden) + len(page))
+
+
+def trailing_hidden_data() -> bytes:
+    """Bytes between the last entry and the central directory."""
+    page = raw_local(b"001.png", tiny_png())
+    junk = raw_local(b"002.svg", SVG_WITH_SCRIPT)
+    directory = raw_central(b"001.png", tiny_png(), 0)
+    return page + junk + directory + raw_eocd(1, len(directory), len(page) + len(junk))
+
+
+def nul_in_name() -> bytes:
+    """`002.png\\0.svg` as stored; zipfile would show `002.png`."""
+    name = b"002.png\x00.svg"
+    local = raw_local(name, tiny_png())
+    directory = raw_central(name, tiny_png(), 0)
+    return local + directory + raw_eocd(1, len(directory), len(local))
+
+
+def directory_with_data() -> bytes:
+    """An entry named like a directory that carries a regular file's bytes."""
+    name = b"index.html/"
+    page = raw_local(b"002.png", tiny_png())
+    local = raw_local(name, HTML_WITH_SCRIPT)
+    directory = raw_central(name, HTML_WITH_SCRIPT, 0, 0o100644 << 16) + raw_central(
+        b"002.png", tiny_png(), len(local)
+    )
+    return local + page + directory + raw_eocd(2, len(directory), len(local) + len(page))
+
+
+def many_central_records(count: int) -> bytes:
+    """A small file whose directory declares `count` records (every one points at offset 0)."""
+    local = raw_local(b"a", b"")
+    directory = b"".join(raw_central(b"%x" % i, b"", 0) for i in range(count))
+    return local + directory + raw_eocd(min(count, 0xFFFF), len(directory), len(local))
+
+
+def zip64_claiming(count: int, directory_size: int) -> bytes:
+    """Tiny file whose ZIP64 end records claim `count` entries and a huge directory."""
+    local = raw_local(b"a", b"")
+    record = struct.pack(
+        "<4sQ2H2L4Q", b"PK\x06\x06", 44, 45, 45, 0, 0, count, count, directory_size, len(local)
+    )
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, len(local), 1)
+    eocd = struct.pack("<4s4H2LH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0)
+    return local + record + locator + eocd
+
+
+def utf7_xml() -> bytes:
+    return b'<?xml version="1.0" encoding="UTF-7"?>+ADw-a/+AD4-'
+
+
+def many_attributes(count: int) -> bytes:
+    return b"<a " + b" ".join(b"a%d=''" % i for i in range(count)) + b"/>"
+
+
 def encrypted_entry() -> bytes:
     return zip_bytes([Member("001.png", tiny_png(), encrypted=True)])
 
