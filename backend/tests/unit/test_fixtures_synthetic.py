@@ -14,7 +14,7 @@ import pytest
 TESTS = Path(__file__).resolve().parents[1]
 SYNTH = TESTS / "fixtures" / "synthetic"
 CASSETTES = TESTS / "cassettes"
-NON_FIXTURE = {"generate.py", "MANIFEST.sha256", "__pycache__"}
+NON_FIXTURE = {"generate.py", "generate_malicious.py", "MANIFEST.sha256", "__pycache__"}
 
 
 def _load(path: Path, name: str) -> ModuleType:

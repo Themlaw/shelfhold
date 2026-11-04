@@ -1,0 +1,269 @@
+"""Booby-trapped fixtures, built by code on demand (ENF-SEC-002, ENF-SEC-014, EF-BIB-051).
+
+Nothing here is downloaded or committed as a binary: every trap is produced from a few lines, so
+the corpus is reviewable and deterministic in intent. Every archive builder returns bytes; XML
+builders return bytes too. `write_all(out_dir)` dumps the whole corpus for manual inspection:
+python generate_malicious.py [OUT_DIR]
+"""
+
+from __future__ import annotations
+
+import struct
+import sys
+import warnings
+import zipfile
+import zlib
+from collections.abc import Iterable
+from dataclasses import dataclass
+from io import BytesIO
+from pathlib import Path
+
+FIXED_TIME = (2020, 1, 1, 0, 0, 0)
+
+# --- Magic-byte samples ------------------------------------------------------------------------
+
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+JPEG_MAGIC = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00"
+GIF_MAGIC = b"GIF89a"
+WEBP_MAGIC = b"RIFF\x24\x00\x00\x00WEBPVP8 "
+AVIF_MAGIC = b"\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1"
+JXL_CODESTREAM_MAGIC = b"\xff\x0a"
+JXL_CONTAINER_MAGIC = b"\x00\x00\x00\x0cJXL \r\n\x87\n"
+
+
+def _chunk(kind: bytes, data: bytes) -> bytes:
+    body = kind + data
+    return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+
+def tiny_png() -> bytes:
+    """A valid 1x1 PNG."""
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    idat = zlib.compress(b"\x00\x10\x20\x30")
+    return PNG_MAGIC + _chunk(b"IHDR", ihdr) + _chunk(b"IDAT", idat) + _chunk(b"IEND", b"")
+
+
+SVG_WITH_SCRIPT = (
+    b'<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)">'
+    b"<script>alert(1)</script></svg>"
+)
+HTML_WITH_SCRIPT = b"<!doctype html><html><body><script>alert(1)</script></body></html>"
+COMICINFO = b"<ComicInfo><Series>Synthetic</Series><Number>1</Number></ComicInfo>"
+
+# --- XML ---------------------------------------------------------------------------------------
+
+
+def xxe_file() -> bytes:
+    return (
+        b'<?xml version="1.0"?>\n<!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]>\n<r>&x;</r>'
+    )
+
+
+def xxe_http() -> bytes:
+    return (
+        b'<?xml version="1.0"?>\n'
+        b'<!DOCTYPE r [<!ENTITY x SYSTEM "http://127.0.0.1:9/leak">]>\n<r>&x;</r>'
+    )
+
+
+def external_dtd() -> bytes:
+    return b'<?xml version="1.0"?>\n<!DOCTYPE r SYSTEM "http://127.0.0.1:9/evil.dtd">\n<r/>'
+
+
+def parameter_entity() -> bytes:
+    return (
+        b'<?xml version="1.0"?>\n<!DOCTYPE r [<!ENTITY % p SYSTEM "http://127.0.0.1:9/p">%p;]>\n'
+        b"<r/>"
+    )
+
+
+def billion_laughs(levels: int = 9, fanout: int = 10) -> bytes:
+    lines = ['<?xml version="1.0"?>', "<!DOCTYPE lolz [", '<!ENTITY l0 "lol">']
+    for i in range(1, levels):
+        lines.append(f'<!ENTITY l{i} "' + f"&l{i - 1};" * fanout + '">')
+    lines += ["]>", f"<lolz>&l{levels - 1};</lolz>"]
+    return "\n".join(lines).encode()
+
+
+def quadratic_blowup(size: int = 20_000, uses: int = 2_000) -> bytes:
+    return (
+        f'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "{"a" * size}">]><r>' + "&a;" * uses + "</r>"
+    ).encode()
+
+
+def internal_entity() -> bytes:
+    return b'<!DOCTYPE r [<!ENTITY e "v">]><r>&e;</r>'
+
+
+def deeply_nested(depth: int) -> bytes:
+    return b"<a>" * depth + b"</a>" * depth
+
+
+def wide(children: int) -> bytes:
+    return b"<r>" + b"<c/>" * children + b"</r>"
+
+
+def oversized(size: int) -> bytes:
+    return b"<r>" + b"x" * size + b"</r>"
+
+
+def malformed() -> bytes:
+    return b"<r><unclosed></r>"
+
+
+XML_CORPUS = {
+    "xxe_file": xxe_file,
+    "xxe_http": xxe_http,
+    "external_dtd": external_dtd,
+    "parameter_entity": parameter_entity,
+    "billion_laughs": billion_laughs,
+    "quadratic_blowup": quadratic_blowup,
+    "internal_entity": internal_entity,
+}
+
+# --- ZIP ---------------------------------------------------------------------------------------
+
+
+@dataclass
+class Member:
+    name: str
+    data: bytes = b""
+    deflate: bool = True
+    external_attr: int = 0o644 << 16
+    encrypted: bool = False
+
+
+def zip_bytes(members: Iterable[Member | tuple[str, bytes]]) -> bytes:
+    buf = BytesIO()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # duplicate names are the point of some traps
+        with zipfile.ZipFile(buf, "w") as z:
+            for m in members:
+                m = Member(*m) if isinstance(m, tuple) else m
+                info = zipfile.ZipInfo(m.name, FIXED_TIME)
+                info.compress_type = zipfile.ZIP_DEFLATED if m.deflate else zipfile.ZIP_STORED
+                info.external_attr = m.external_attr
+                if m.encrypted:
+                    info.flag_bits |= 0x1
+                z.writestr(info, m.data)
+    return buf.getvalue()
+
+
+def good_cbz(pages: int = 3) -> bytes:
+    members: list[Member | tuple[str, bytes]] = [
+        (f"{i + 1:03d}.png", tiny_png()) for i in range(pages)
+    ]
+    members.append(("ComicInfo.xml", COMICINFO))
+    return zip_bytes(members)
+
+
+def zip_bomb(uncompressed: int = 8 * 1024 * 1024) -> bytes:
+    """One entry of zeros: a few KiB on disk, a huge ratio."""
+    return zip_bytes([Member("zeros.bin", b"\x00" * uncompressed)])
+
+
+def many_entries(count: int) -> bytes:
+    return zip_bytes([Member(f"{i:05d}.png", b"", deflate=False) for i in range(count)])
+
+
+def many_small_bombs(entries: int, each: int) -> bytes:
+    """Each entry is under any per-entry cap; only the total is over."""
+    return zip_bytes([Member(f"{i:03d}.bin", b"\x01" * each) for i in range(entries)])
+
+
+def overlapping_entries() -> bytes:
+    """Two central-directory records for the same local data (an overlap bomb)."""
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(zipfile.ZipInfo("a.bin", FIXED_TIME), b"\x00" * 100_000, zipfile.ZIP_DEFLATED)
+        z.writestr(zipfile.ZipInfo("b.bin", FIXED_TIME), b"\x00" * 100_000, zipfile.ZIP_DEFLATED)
+        infos = z.infolist()
+        infos[1].header_offset = infos[0].header_offset
+    return buf.getvalue()
+
+
+def traversal(name: str) -> bytes:
+    return zip_bytes([("001.png", tiny_png()), (name, tiny_png())])
+
+
+TRAVERSAL_NAMES = {
+    "dotdot": "../evil.png",
+    "nested_dotdot": "pages/../../evil.png",
+    "absolute": "/etc/evil.png",
+    "backslash_dotdot": "..\\evil.png",
+    "windows_backslash": "pages\\001.png",
+    "drive_letter": "C:evil.png",
+    "drive_absolute": "C:/evil.png",
+    "unc": "//server/share/evil.png",
+    "nul": "evil\x00.png",
+    "right_to_left_override": "001\u202egnp.exe",
+    "zero_width": "001\u200b.png",
+    "bidi_isolate": "\u2066001.png",
+    "control_char": "001\n.png",
+}
+
+
+def encrypted_entry() -> bytes:
+    return zip_bytes([Member("001.png", tiny_png(), encrypted=True)])
+
+
+def symlink_entry() -> bytes:
+    return zip_bytes([Member("link.png", b"/etc/passwd", external_attr=(0o120777 << 16))])
+
+
+def device_entry() -> bytes:
+    return zip_bytes([Member("dev.png", b"", external_attr=(0o020666 << 16))])
+
+
+def duplicate_names() -> bytes:
+    return zip_bytes([("001.png", tiny_png()), ("001.png", tiny_png())])
+
+
+def case_duplicate_names() -> bytes:
+    return zip_bytes([("001.png", tiny_png()), ("001.PNG", tiny_png())])
+
+
+def unicode_duplicate_names() -> bytes:
+    return zip_bytes([("\u00e9.png", tiny_png()), ("e\u0301.png", tiny_png())])
+
+
+def exotic_compression() -> bytes:
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(zipfile.ZipInfo("001.png", FIXED_TIME), tiny_png(), zipfile.ZIP_LZMA)
+    return buf.getvalue()
+
+
+def zip_with_prefix(prefix: bytes = b"<html><script>1</script></html>") -> bytes:
+    """A valid archive behind junk: zipfile opens it, the magic bytes must not."""
+    return prefix + good_cbz()
+
+
+def rar_bytes() -> bytes:
+    return b"Rar!\x1a\x07\x01\x00" + b"\x00" * 64
+
+
+def sevenzip_bytes() -> bytes:
+    return b"7z\xbc\xaf\x27\x1c\x00\x04" + b"\x00" * 64
+
+
+def cbz_with(*members: tuple[str, bytes]) -> bytes:
+    return zip_bytes([*members, ("ComicInfo.xml", COMICINFO)])
+
+
+def write_all(out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, build in XML_CORPUS.items():
+        (out_dir / f"{name}.xml").write_bytes(build())
+    (out_dir / "zip_bomb.cbz").write_bytes(zip_bomb())
+    (out_dir / "overlap.cbz").write_bytes(overlapping_entries())
+    (out_dir / "symlink.cbz").write_bytes(symlink_entry())
+    (out_dir / "encrypted.cbz").write_bytes(encrypted_entry())
+    (out_dir / "duplicates.cbz").write_bytes(duplicate_names())
+    (out_dir / "svg.cbz").write_bytes(cbz_with(("001.svg", SVG_WITH_SCRIPT)))
+    for key, name in TRAVERSAL_NAMES.items():
+        (out_dir / f"traversal_{key}.cbz").write_bytes(traversal(name))
+
+
+if __name__ == "__main__":
+    write_all(Path(sys.argv[1]) if len(sys.argv) > 1 else Path("malicious"))
