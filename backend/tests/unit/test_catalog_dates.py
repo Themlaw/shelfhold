@@ -35,7 +35,7 @@ def test_partial_dates_never_gain_precision() -> None:
 
 
 @pytest.mark.req("EF-BIB-047")
-@pytest.mark.parametrize("zero", [None, 0, "0", "", "0000", "0000-00-00", "1970-01-01", 0.0])
+@pytest.mark.parametrize("zero", [None, 0, "0", "", "0000", "0000-00-00", 0.0])
 def test_zero_or_null_upload_date_becomes_null(zero: object) -> None:
     assert parse_partial_date(zero) is None  # type: ignore[arg-type]
     assert from_upload_timestamp(zero) is None  # type: ignore[arg-type]
@@ -64,3 +64,27 @@ def test_partial_date_invariants() -> None:
         PartialDate(2023, None, 14)
     assert str(PartialDate(2023, 5)) == "2023-05"
     assert PartialDate(2023) < PartialDate(2023, 5) < PartialDate(2023, 5, 1) < PartialDate(2024)
+
+
+@pytest.mark.req("EF-BIB-047")
+@pytest.mark.parametrize(
+    "junk",
+    [float("nan"), float("inf"), -float("inf"), 1e300, 10**30, "abc", "1970-01-01", [], {}, True],
+)
+def test_unusable_upload_timestamps_become_null(junk: object) -> None:
+    assert from_upload_timestamp(junk) is None
+
+
+@pytest.mark.req("EF-BIB-047")
+def test_epoch_date_text_is_a_real_date_but_timestamp_zero_is_not() -> None:
+    assert parse_partial_date("1970-01-01") == PartialDate(1970, 1, 1)
+    assert from_upload_timestamp(0) is None
+
+
+@pytest.mark.req("EF-BIB-047")
+def test_whole_floats_are_years_and_other_floats_are_refused() -> None:
+    assert parse_partial_date(2023.0) == PartialDate(2023)
+    assert parse_partial_date(2023) == PartialDate(2023)
+    for bad in (2023.5, float("nan"), float("inf"), True):
+        with pytest.raises(ValueError, match="partial date"):
+            parse_partial_date(bad)

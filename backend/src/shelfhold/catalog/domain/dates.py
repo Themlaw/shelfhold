@@ -1,6 +1,7 @@
 """Partial dates (EF-BIB-047): partial ISO 8601, never more precise than the data."""
 
 import calendar
+import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,7 +16,7 @@ class DatePrecision(StrEnum):
 
 
 _PARTIAL = re.compile(r"^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$")
-_ZERO_TEXTS = frozenset({"", "0", "0000", "0000-00", "0000-00-00", "1970-01-01"})
+_ZERO_TEXTS = frozenset({"", "0", "0000", "0000-00", "0000-00-00"})
 _MS_THRESHOLD = 100_000_000_000  # above this a Unix timestamp is in milliseconds (year 5138 in s)
 
 
@@ -75,11 +76,21 @@ class PartialDate:
 
 
 def parse_partial_date(value: str | int | float | None) -> "PartialDate | None":
-    """`2023`, `2023-05`, `2023-05-14`; a null or zero value from a source gives `None`."""
+    """`2023`, `2023-05`, `2023-05-14`; a null or zero value from a source gives `None`.
+
+    A whole float (`2023.0`) is read as the integer; NaN, infinity, other floats and booleans are
+    invalid. `1970-01-01` is a real date here: only an upload timestamp of 0 means "no date".
+    """
     if value is None:
         return None
+    if isinstance(value, bool):
+        raise ValueError(f"invalid partial date: {value!r}")
+    if isinstance(value, float):
+        if not math.isfinite(value) or value != int(value):
+            raise ValueError(f"invalid partial date: {value!r}")
+        value = int(value)
     text = str(value).strip()
-    if text in _ZERO_TEXTS or text == "0.0":
+    if text in _ZERO_TEXTS:
         return None
     match = _PARTIAL.match(text)
     if match is None:
@@ -91,16 +102,30 @@ def parse_partial_date(value: str | int | float | None) -> "PartialDate | None":
         raise ValueError(f"invalid partial date: {text!r}") from exc
 
 
-def from_upload_timestamp(value: str | int | float | None) -> datetime | None:
-    """Upload date from a source (Unix seconds or milliseconds); 0 or null gives `None`."""
-    if value is None or (isinstance(value, str) and value.strip() in _ZERO_TEXTS):
+def from_upload_timestamp(value: object) -> datetime | None:
+    """Upload date from a source (Unix seconds or milliseconds).
+
+    Null, zero, negative, NaN, infinite, out-of-range or non-numeric values give `None`.
+    """
+    if value is None or isinstance(value, bool):
         return None
-    number = float(value)
-    if number <= 0:
+    if isinstance(value, str):
+        text = value.strip()
+        if text in _ZERO_TEXTS:
+            return None
+        value = text
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number <= 0:
         return None
     if number >= _MS_THRESHOLD:
         number /= 1000
-    return datetime.fromtimestamp(number, tz=UTC)
+    try:
+        return datetime.fromtimestamp(number, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def comicinfo_date_fields(date: PartialDate) -> dict[str, int]:
