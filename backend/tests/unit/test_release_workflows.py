@@ -73,7 +73,11 @@ def test_release_retags_the_published_digest_never_latest_never_rebuilds() -> No
     ):
         text = path.read_text(encoding="utf-8")
         assert ":latest" not in text and "-t latest" not in text, path.name
-        assert "build-push-action" not in text and "docker build" not in text
+        assert (
+            "build-push-action" not in text
+            and "docker build " not in text
+            and "buildx build" not in text
+        )
     script = (SCRIPTS / "release-retag.sh").read_text(encoding="utf-8")
     assert "sha-${SHA}" in script and "imagetools create" in script
     assert "refusing to rewrite" in script  # existing X.Y.Z with another digest fails
