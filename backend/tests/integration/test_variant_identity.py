@@ -97,7 +97,7 @@ def test_republication_before_m2_never_replaces_exported_file() -> None:
                 path="a/b.cbz",
                 original_sha256="sha256:" + "a" * 64,
                 size=10,
-                store_provenance="original",
+                store_provenance="received",
             )
         )
         before = h.rows("SELECT * FROM content")
