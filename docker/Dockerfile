@@ -5,7 +5,7 @@
 # --build-arg WITH_FRONTEND=true in that case (the default); false builds an API-only image.
 ARG WITH_FRONTEND=true
 
-FROM ghcr.io/astral-sh/uv:0.12@sha256:3af4716e991d6956a41e573eab705d0ee08500cd829ed30293eb8472f372c65a AS uv
+FROM ghcr.io/astral-sh/uv:0.13@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
 
 FROM python:3.13-slim@sha256:ae14d4ce8771606477a81446e7ef429edd6762305fc50c84507c1041fa8285d1 AS python-base
 
@@ -33,7 +33,7 @@ CMD ["python", "-m", "uvicorn", "shelfhold.main:app_from_env", "--factory", "--r
 # --- Frontend: either nothing (default) or the static build ---
 FROM scratch AS frontend-false
 
-FROM node:24-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS frontend-build
+FROM node:25-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
