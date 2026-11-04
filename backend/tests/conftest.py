@@ -1,7 +1,10 @@
 """Shared fixtures: every test works in its own temporary /data and /store."""
 
+import importlib.util
+import sys
 import zlib
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -49,3 +52,16 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     kept = [i for i in items if zlib.crc32(i.nodeid.encode()) % count == mine]
     config.hook.pytest_deselected(items=[i for i in items if i not in kept])
     items[:] = kept
+
+
+@pytest.fixture(scope="session")
+def malicious() -> ModuleType:
+    """The generator of booby-trapped XML and archives (tests/fixtures/synthetic)."""
+    path = Path(__file__).parent / "fixtures" / "synthetic" / "generate_malicious.py"
+    spec = importlib.util.spec_from_file_location("synthetic_generate_malicious", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses resolve their module through sys.modules
+    spec.loader.exec_module(module)
+    return module
