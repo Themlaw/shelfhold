@@ -92,6 +92,8 @@ class KavitaClient:
 
     def require_verified_plan(self) -> None:
         """The planner calls this before applying a plan: never without the collision check."""
+        if self.health.version is None:
+            raise TargetDegraded("the Kavita version is unreadable: preview only")
         if self.health.mode is TargetMode.DEGRADED_READONLY:
             raise TargetDegraded("the Kavita version is out of range: preview only")
         if not self.collision_check_available:

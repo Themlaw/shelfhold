@@ -393,3 +393,18 @@ def test_key_without_expiry_is_reported_not_notified() -> None:
     h.fake.key_expires_at = None
     assert run(h.client.check_key_expiry()) == []
     assert h.client.health.key_expires_at is None and h.events.emitted == []
+
+
+@pytest.mark.req("ENF-COMP-001")
+def test_unreadable_version_is_degraded_readonly_and_blocks_plans() -> None:
+    assert assess_version(None).mode is TargetMode.DEGRADED_READONLY
+    h = harness()
+    h.fake.remove_route("GET", "/api/Server/server-info-slim")
+    with pytest.raises(RouteMissing):
+        run(h.client.probe())
+    assert h.client.health.version is None
+    with pytest.raises(TargetDegraded):
+        h.client.require_verified_plan()
+    with pytest.raises(RouteMissing):  # and no write goes out meanwhile
+        run(h.client.scan_folder("/manga/Series A"))
+    assert h.fake.writes == []
