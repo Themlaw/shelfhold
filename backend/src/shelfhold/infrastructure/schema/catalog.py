@@ -331,6 +331,9 @@ edition = sa.Table(
     sa.Column("translator", sa.String(), nullable=True),  # derived cache (F11)
     sa.Column("translator_death_year", sa.Integer(), nullable=True),
     sa.Column("volume_policy", sa.String(), nullable=False, server_default="closed_only"),
+    # The shelf this Edition is filed on; NULL = unshelved ("À ranger", never exported). The
+    # shelf table arrives in 0004; deleting a shelf leaves its Editions unshelved (GAP-12-11).
+    _fk("shelf_id", "shelf.id", ondelete="SET NULL", nullable=True),
     now_column(),
     ulid_check("id"),
     lang_check("lang", allow_wildcards=False),
@@ -367,6 +370,7 @@ edition = sa.Table(
     sa.UniqueConstraint("id", "work_id", name="uq_edition_id_work_id"),
     sa.Index("ix_edition_text_version_contributor", "text_version_contributor_id"),
     sa.Index("ix_edition_translated_from", "translated_from_edition_id"),
+    sa.Index("ix_edition_shelf", "shelf_id"),
 )
 
 volume = sa.Table(
@@ -529,6 +533,8 @@ unit_variant = sa.Table(
     positive_check("revision", minimum=1),
     sa.CheckConstraint("\"remote_unit_id\" <> ''", name="remote_unit_id_not_empty"),
     sa.UniqueConstraint("source_binding_id", "remote_unit_id"),
+    # target of the composite foreign key that keeps a content within its Variant's own Unit
+    sa.UniqueConstraint("id", "unit_id"),
     sa.Index("ix_unit_variant_unit", "unit_id"),
     sa.Index("ix_unit_variant_team", "team_id"),
     sa.Index("ix_unit_variant_supersedes", "supersedes_variant_id"),

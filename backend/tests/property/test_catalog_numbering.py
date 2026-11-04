@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from hypothesis import given
+from hypothesis import assume, example, given
 from hypothesis import strategies as st
 
 from shelfhold.catalog.domain.numbering import (
@@ -36,12 +36,16 @@ def test_number_sort_key_decimal_and_text_property(a: Decimal, b: Decimal) -> No
 
 @pytest.mark.req("EF-BIB-002")
 @given(st.lists(RAW_TEXT, min_size=1, max_size=15), st.randoms(use_true_random=False))
+@example(["-0"], random.Random(0))  # noqa: S311  (a negative number is refused on purpose)
 def test_total_order_is_stable_and_collision_free(raws: list[str], rnd: random.Random) -> None:
     base = datetime(2020, 1, 1, tzinfo=UTC)
-    units = [
-        (parse_number(r, source_order=i), base if i % 2 else None, f"remote-{i}")
-        for i, r in enumerate(raws)
-    ]
+    try:
+        units = [
+            (parse_number(r, source_order=i), base if i % 2 else None, f"remote-{i}")
+            for i, r in enumerate(raws)
+        ]
+    except NumberError:
+        assume(False)
     keys = [unit_sort_key(u, d, rid) for u, d, rid in units]
     assert len(set(keys)) == len(keys)  # distinct remote ids never collide
     shuffled = units[:]

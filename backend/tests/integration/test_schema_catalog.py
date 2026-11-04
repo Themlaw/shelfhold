@@ -1622,12 +1622,6 @@ def test_team_priority_only_ranks_teams_of_its_own_edition(
         assert remaining.scalar_one() == 0  # cascades with its team
 
 
-@pytest.mark.req("EF-EXP-046")
-def test_edition_has_no_shelf_column_before_the_shelf_table_exists() -> None:
-    """`shelf_id` arrives with the `shelf` table (0004), as a nullable column with its FK."""
-    assert "shelf_id" not in catalog.edition.c
-
-
 @pytest.mark.req("EF-BIB-049")
 def test_blank_text_version_carries_no_reference(engine: Engine) -> None:
     with engine.begin() as connection:

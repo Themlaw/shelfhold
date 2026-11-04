@@ -104,3 +104,46 @@ def add_trigger(table: sa.Table, name: str, sql: str) -> None:
     """
     statement = f"CREATE TRIGGER {name} {sql}"
     sa.event.listen(table, "after_create", sa.DDL(statement).execute_if(dialect="sqlite"))  # type: ignore[no-untyped-call]
+
+
+def json_shape_check(column: str, shape: str) -> sa.CheckConstraint:
+    """The JSON document is an `array` or an `object` (a bare scalar is a bug, not data).
+
+    SQLite allows no sub-query in a CHECK: the shape of the elements is the application's job.
+    """
+    c = _quoted(column)
+    label = "list" if shape == "array" else "object"
+    return sa.CheckConstraint(
+        f"json_valid({c}) AND json_type({c}) = '{shape}'", name=f"{column}_{label}"
+    )
+
+
+def relative_path_check(column: str) -> sa.CheckConstraint:
+    """A path relative to its root: absolute paths and `..` segments never get in."""
+    c = _quoted(column)
+    return sa.CheckConstraint(
+        f"{c} NOT GLOB '/*' AND {c} <> '..' AND {c} NOT GLOB '../*' "
+        f"AND {c} NOT GLOB '*/../*' AND {c} NOT GLOB '*/..'",
+        name=f"{column}_relative",
+    )
+
+
+def add_view(table: sa.Table, name: str, select: str) -> None:
+    """Create a view once `table` exists, in `create_all` as in the (frozen) migration.
+
+    SQLite checks nothing about the tables a view reads until it is queried, so the view hangs on
+    one of them. It goes before them when the metadata is dropped.
+    """
+    statement = f"CREATE VIEW {name} AS {select}"
+    sa.event.listen(table, "after_create", sa.DDL(statement).execute_if(dialect="sqlite"))  # type: ignore[no-untyped-call]
+    sa.event.listen(
+        table.metadata,
+        "before_drop",
+        sa.DDL(f"DROP VIEW IF EXISTS {name}").execute_if(dialect="sqlite"),  # type: ignore[no-untyped-call]
+    )
+
+
+def json_valid_check(column: str) -> sa.CheckConstraint:
+    """The column is NULL or a valid JSON document, of any shape."""
+    c = _quoted(column)
+    return sa.CheckConstraint(f"{c} IS NULL OR json_valid({c})", name=f"{column}_json")
