@@ -30,7 +30,14 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+SUITES = ("property", "golden", "faults")  # tests/<suite>/ implies the marker of the same name
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    for item in items:
+        for suite in SUITES:
+            if f"/tests/{suite}/" in item.path.as_posix():
+                item.add_marker(getattr(pytest.mark, suite))
     spec = config.getoption("--shard")
     if not spec:
         return

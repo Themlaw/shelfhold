@@ -35,8 +35,35 @@ ouvre une issue `dependency-risk` et fait basculer vers le repli décrit.
 
 Non critiques (remplaçables sans réécriture), listées pour mémoire :
 
-- **httpx2** (BSD-3-Clause, dépendance de développement) : client HTTP du `TestClient` de
-  Starlette, qui déprécie `httpx` ; repli : `httpx`. Il n'est pas importé par le code de
-  l'application.
+- **httpx2** (BSD-3-Clause) : client HTTP sortant du fetcher (M1a) et du `TestClient` de
+  Starlette, qui déprécie `httpx` ; repli : `httpx`. Le domaine ne l'importe jamais (contrat
+  `domain-pure`).
+- **argon2-cffi** (MIT) : hachage `argon2id` des mots de passe. **pynacl** (Apache-2.0) :
+  XChaCha20-Poly1305 pour les secrets et les pierres tombales. **pyrage** (MIT/Apache-2.0) :
+  age/scrypt pour l'export du trousseau par phrase secrète. Repli commun : `cryptography`.
+- **defusedxml** (PSF-2.0) : seule porte d'entrée XML (`infrastructure/xml`, ENF-SEC-014) ; repli :
+  lxml durci. **nh3** (MIT) : assainissement du HTML amont, derrière `sanitize_upstream_text`
+  (ENF-SEC-015) ; repli : `bleach`. Les contrats `xml-single-entry` et `sanitize-single-entry`
+  interdisent l'import de `xml`, `lxml`, `nh3` et `bleach` ailleurs que dans leur porte d'entrée.
+- **apprise** (BSD-2-Clause) : notifications ; planchers de sécurité ENF-SEC-016.
+  **Pillow** (MIT-CMU) et **python-multipart** (Apache-2.0) : planchers ENF-SEC-016, vérifiés dans
+  le verrou par `test_dependency_floors_enforced_in_lockfile`.
+- **python-ulid** (MIT) : identifiants. **langcodes** (MIT) : `normalize_lang()` (ADR-0042) ; repli :
+  table d'alias figée et versionnée. Contrat `lang-single-producer`.
+- Développement : **hypothesis** (MPL-2.0), **syrupy** (MIT), **pytest-xdist** (MIT) et
+  **xmlschema** (MIT) pour les suites `tests/property`, `tests/golden` et la validation de schémas.
+
+### Exception à la fenêtre `exclude-newer`
+
+Le verrou n'accepte que des publications vieilles de 14 jours (`exclude-newer`). Deux paquets font
+l'objet d'une exception ciblée (`exclude-newer-package` dans `[tool.uv]`), parce que leur version
+a été vérifiée explicitement :
+
+- huey 3.5.4 (publiée le 2026-11-01), vérifiée par le spike S1 : plancher `>=3.5.4,<3.6`.
+- apprise 2.1.0 (publiée le 2026-10-24), plancher d'ENF-SEC-016 : `>=2.1,<3`.
+
+Retrait possible le 2026-11-15, quand les deux versions ont plus de 14 jours : supprimer la ligne
+`exclude-newer-package` et relancer `uv lock`. Aucun autre paquet n'est concerné.
+
 - **uvicorn**, **SQLAlchemy**, **Alembic**, **structlog**, **pydantic** : socle du squelette,
   versions minimales et verrou dans `backend/pyproject.toml` et `backend/uv.lock`.

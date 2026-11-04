@@ -217,7 +217,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.x"
           enable-cache: true
@@ -246,7 +246,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.x"
           enable-cache: true
@@ -265,11 +265,46 @@ jobs:
           include-hidden-files: true
           retention-days: 1
 
+  backend-suites:
+    # Property (Hypothesis), golden (syrupy) and fault-injection suites: one job each, so that none
+    # becomes the bottleneck. A suite that outgrows 10 minutes gets `--shard`, like backend-unit.
+    name: backend-${{ matrix.suite }}
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [property, golden, faults]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: pytest (suite, coverage data only)
+        working-directory: backend
+        env:
+          COVERAGE_FILE: .coverage.${{ matrix.suite }}
+        run: uv run --locked pytest tests/${{ matrix.suite }} -n auto --cov --cov-report= --cov-fail-under=0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-${{ matrix.suite }}
+          path: backend/.coverage.${{ matrix.suite }}
+          include-hidden-files: true
+          retention-days: 1
+
   # The contract bench (real Suwayomi, needs Docker) is not a required check: see contract.yml.
 
   coverage:
     # Combines the coverage data of every backend shard, then applies the thresholds.
-    needs: [changes, backend-unit, backend-integration]
+    needs: [changes, backend-unit, backend-integration, backend-suites]
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -456,7 +491,7 @@ jobs:
     # Also gated on the test jobs (not on ci-success, which needs this job). Filtered jobs may be
     # skipped, hence !failure(): a failed or cancelled needed job blocks the publication.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !cancelled() && !failure()
-    needs: [image-main, lint, denylist, fixtures, backend-unit, backend-integration, coverage, frontend, openapi, e2e-front]
+    needs: [image-main, lint, denylist, fixtures, backend-unit, backend-integration, backend-suites, coverage, frontend, openapi, e2e-front]
     permissions:
       contents: read
       packages: write
@@ -495,7 +530,7 @@ jobs:
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, coverage, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish]
+    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, coverage, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}

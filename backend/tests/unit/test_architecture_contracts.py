@@ -2,6 +2,7 @@
 
 import ast
 import configparser
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -16,7 +17,7 @@ CONFIG = BACKEND / "importlinter.ini"
 
 CORE_TOP_LEVEL = {
     "catalog", "acquisition", "library", "export", "identity", "integrations",
-    "jobs", "events", "plugin_host", "interfaces", "infrastructure", "config", "main", "cli",
+    "jobs", "events", "plugin_host", "interfaces", "infrastructure", "config", "i18n", "main",
 }  # fmt: skip
 
 
@@ -30,12 +31,17 @@ def _lines(value: str) -> list[str]:
     return [line.strip() for line in value.splitlines() if line.strip()]
 
 
-def _imported_modules(path: Path) -> list[str]:
-    """Absolute dotted names imported by an SDK file, relative imports resolved."""
-    rel = path.relative_to(SRC).with_suffix("")
-    package = list(rel.parts) if path.name == "__init__.py" else list(rel.parts[:-1])
-    if path.name == "__init__.py":
-        package = package[:-1]
+def _imported_modules(path: Path, package: list[str] | None = None) -> list[str]:
+    """Absolute dotted names imported by an SDK file, relative imports resolved.
+
+    `package` is the dotted package of the file, as a list; by default it is derived from the
+    path under src/, which a file elsewhere (a test probe in tmp_path) cannot do.
+    """
+    if package is None:
+        rel = path.relative_to(SRC).with_suffix("")
+        package = list(rel.parts) if path.name == "__init__.py" else list(rel.parts[:-1])
+        if path.name == "__init__.py":
+            package = package[:-1]
     found: list[str] = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
@@ -66,8 +72,7 @@ def test_sdk_never_imports_core() -> None:
 
 @pytest.mark.req("ENF-LEG-010")
 def test_core_import_detector_catches_all_import_forms(tmp_path: Path) -> None:
-    sdk = SRC / "shelfhold" / "sdk"
-    probe = sdk / "_probe.py"
+    probe = tmp_path / "_probe.py"  # never write into src/: other tests walk it under xdist
     for code in (
         "from shelfhold import catalog",
         "import shelfhold.catalog.domain",
@@ -76,10 +81,7 @@ def test_core_import_detector_catches_all_import_forms(tmp_path: Path) -> None:
         "from ..catalog import x",
     ):
         probe.write_text(code + "\n", encoding="utf-8")
-        try:
-            assert any(_is_core(n) for n in _imported_modules(probe)), code
-        finally:
-            probe.unlink()
+        assert any(_is_core(n) for n in _imported_modules(probe, ["shelfhold", "sdk"])), code
 
 
 @pytest.mark.req("ENF-QUAL-002")
@@ -178,3 +180,96 @@ def test_sdk_files_have_mit_spdx_header() -> None:
         if "SPDX-License-Identifier: MIT" not in p.read_text(encoding="utf-8").split("\n", 3)[0]
     ]
     assert not missing, missing
+
+
+# --- L00: single-entry-point and layering contracts, each proven by a violation -------------------
+
+FORBIDDEN_IN = "BROKEN"
+
+
+def _run_in_copy(tmp_path: Path, files: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run the real importlinter.ini against a copy of the package plus extra modules."""
+    shutil.copytree(
+        SRC / "shelfhold", tmp_path / "shelfhold", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    shutil.copy(CONFIG, tmp_path / "importlinter.ini")
+    replica = tmp_path / "shelfhold" / "library" / "replica.py"
+    if not replica.exists():  # the registry module of a later lot, so the contract has a target
+        replica.touch()
+    for rel, code in files.items():
+        target = tmp_path / "shelfhold" / rel
+        for parent in reversed([target.parent, *target.parent.parents]):
+            if parent == tmp_path / "shelfhold" or tmp_path / "shelfhold" in parent.parents:
+                parent.mkdir(exist_ok=True)
+                (parent / "__init__.py").touch()
+        target.write_text(code, encoding="utf-8")
+    return _run_lint_imports(tmp_path)
+
+
+def _contract_name(contract: str) -> str:
+    return _config()[f"importlinter:contract:{contract}"]["name"]
+
+
+# (contract, offending module, code, sanctioned module where the same code is allowed or None)
+VIOLATIONS = [
+    ("xml-single-entry", "infrastructure/other.py", "import xml.etree.ElementTree\n",
+     "infrastructure/xml/safe_parse.py"),
+    ("xml-single-entry", "library/other.py", "import lxml.etree\n", None),
+    ("xml-single-entry", "library/other.py", "import defusedxml.ElementTree\n",
+     "infrastructure/xml/__init__.py"),
+    ("archives-single-entry", "library/other.py", "import zipfile\n",
+     "infrastructure/archives/safe_open.py"),
+    ("archives-single-entry", "export/other.py", "import tarfile\n",
+     "infrastructure/archives/__init__.py"),
+    ("sanitize-single-entry", "catalog/other.py", "import nh3\n",
+     "infrastructure/content_trust/sanitize.py"),
+    ("sanitize-single-entry", "catalog/other.py", "import nh3\n",
+     "infrastructure/content_trust/__init__.py"),
+    ("lang-single-producer", "library/other.py", "import langcodes\n", "catalog/lang.py"),
+    ("replica-single-count", "export/other.py", "import shelfhold.library.replica\n", None),
+    ("fsops-sole-writer", "library/other.py", "import shutil\n", "infrastructure/fsops/io.py"),
+    ("fsops-sole-writer", "library/other.py", "import shutil\n",
+     "infrastructure/fsops/__init__.py"),
+    ("suwayomi-confined", "acquisition/other.py",
+     "import shelfhold.plugin_host.adapters.meta.suwayomi\n",
+     "plugin_host/adapters/meta/suwayomi/client.py"),
+    ("lncrawl-confined", "export/other.py",
+     "import shelfhold.plugin_host.adapters.meta.lncrawl\n", None),
+    ("suwayomi-confined", "plugin_host/adapters/meta/lncrawl/other.py",
+     "import shelfhold.plugin_host.adapters.meta.suwayomi\n", None),
+    ("suwayomi-confined", "plugin_host/registry.py",
+     "import shelfhold.plugin_host.adapters.meta.suwayomi\n", None),
+    ("export-not-acquisition", "export/application/other.py",
+     "from shelfhold.acquisition import public\n", None),
+    ("library-layers", "library/domain/other.py",
+     "import shelfhold.library.application\n", None),
+    ("acquisition-layers", "acquisition/domain/other.py",
+     "import shelfhold.acquisition.adapters\n", None),
+    ("export-layers", "export/domain/other.py", "import shelfhold.export.targets\n", None),
+    ("identity-layers", "identity/application/other.py",
+     "import shelfhold.identity.adapters\n", None),
+]  # fmt: skip
+
+
+@pytest.mark.req("ENF-QUAL-002", "ENF-SEC-014", "ENF-SEC-002", "ENF-SEC-015", "ENF-I18N-005")
+@pytest.mark.parametrize(
+    ("contract", "module", "code", "sanctioned"),
+    VIOLATIONS,
+    ids=[f"{v[0]}:{v[1]}" for v in VIOLATIONS],
+)
+def test_each_contract_breaks_on_a_violation_and_allows_its_sanctioned_module(
+    tmp_path: Path, contract: str, module: str, code: str, sanctioned: str | None
+) -> None:
+    result = _run_in_copy(tmp_path / "bad", {module: code})
+    assert result.returncode != 0, result.stdout
+    assert f"{_contract_name(contract)} BROKEN" in result.stdout, result.stdout
+    if sanctioned:
+        ok = _run_in_copy(tmp_path / "ok", {sanctioned: code})
+        assert f"{_contract_name(contract)} BROKEN" not in ok.stdout, ok.stdout
+        assert ok.returncode == 0, ok.stdout
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_every_new_contract_is_declared_in_the_config() -> None:
+    declared = {s.split(":", 2)[2] for s in _config().sections() if s.startswith("importlinter:c")}
+    assert {v[0] for v in VIOLATIONS} <= declared

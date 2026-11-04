@@ -1,0 +1,11 @@
+# serializer version: 1
+# name: test_log_event_redaction_golden
+  dict({
+    'Authorization': '***',
+    'api_key': '***',
+    'count': 3,
+    'event': 'login',
+    'set_cookie': '***',
+    'user': 'alice',
+  })
+# ---

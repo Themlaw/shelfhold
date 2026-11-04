@@ -12,6 +12,19 @@ dependencies = [
     "sqlalchemy>=2.1.5",
     "alembic>=1.20.0",
     "structlog>=26.1.0",
+    # M1a (L00). Floors are ENF-SEC-016; the rationale of each is in docs/dependencies.md.
+    "huey>=3.5.4,<3.6",  # job queue behind shelfhold.jobs.huey_app (spike S1 verified 3.5.4)
+    "argon2-cffi>=25.1.0",  # password hashing (argon2id)
+    "pynacl>=1.6.2",  # XChaCha20-Poly1305 for secrets and tombstones
+    "pyrage>=1.4.0",  # age/scrypt for the passphrase-protected keyring export
+    "defusedxml>=0.7.1",  # hardened XML parsing (ENF-SEC-014)
+    "nh3>=0.3.7",  # HTML sanitising of upstream text (ENF-SEC-015)
+    "httpx2>=2.16.0",  # outbound HTTP client (the fetcher); httpx is the fallback
+    "apprise>=2.1,<3",  # notifications (ENF-SEC-016)
+    "pillow>=13.0.0",  # ENF-SEC-016 floor (GHSA-wqgw-9xfh-qf2g, GHSA-xcvg-w56q-r89m)
+    "python-multipart>=0.0.30",  # ENF-SEC-016 floor (CVE-2026-53539, CVE-2026-53538)
+    "python-ulid>=3.0.0",  # identifiers
+    "langcodes>=3.5.1",  # normalize_lang() (ADR-0042); fallback: a frozen alias table
 ]
 
 [dependency-groups]
@@ -25,17 +38,23 @@ dev = [
     "diff-cover>=9",
     "actionlint-py>=1.7",
     "zizmor>=1.0",
-    "httpx2>=2.16.0",
+    "hypothesis>=6.140",
+    "syrupy>=6.1.1",
+    "xmlschema>=4.3.2",
     "pyyaml>=6.0.3",
     "types-pyyaml>=6.0.12.20260906",
 ]
 
 [project.scripts]
-shelfhold = "shelfhold.cli:main"
+shelfhold = "shelfhold.interfaces.cli:main"
 
 [tool.uv]
 # Supply chain: only releases published at least 14 days ago (decision M0 10, ADR-0016).
 exclude-newer = "14 days"
+# Targeted exceptions to the 14-day window, removable once both versions are older than 14 days
+# (2026-11-15): huey 3.5.4 (2026-11-01) was verified by spike S1 and apprise 2.1.0 (2026-10-24) is
+# the floor required by ENF-SEC-016. See docs/dependencies.md.
+exclude-newer-package = { huey = "2026-11-02T00:00:00Z", apprise = "2026-11-02T00:00:00Z" }
 # ENF-SEC-016 security floors for packages that may arrive transitively or later.
 constraint-dependencies = [
     "python-multipart>=0.0.30",
@@ -52,6 +71,9 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers -m 'not contract'"
 markers = [
     "req(*ids): requirement IDs (EF-/ENF-) the test verifies; see tools/traceability.py",
+    "property: Hypothesis property tests (tests/property); marker applied from the directory",
+    "golden: syrupy snapshot / golden-file tests (tests/golden); marker applied from the directory",
+    "faults: fault-injection and crash tests (tests/faults); marker applied from the directory",
     "contract: contract bench against a real pinned Suwayomi (needs Docker; run with -m contract)",
 ]
 
