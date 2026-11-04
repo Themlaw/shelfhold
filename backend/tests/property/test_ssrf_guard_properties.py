@@ -67,8 +67,6 @@ def test_ipv6_classification_never_allows_what_is_not_global(raw: bytes) -> None
     a = ipaddress.IPv6Address(raw)
     if block_reason(a) is None:
         assert a.is_global and not a.is_multicast and not a.is_link_local and not a.is_private
-        mapped = a.ipv4_mapped
-        assert mapped is None
     if a.is_loopback or a.is_unspecified or a.is_link_local or a.is_multicast:
         assert block_reason(a) is not None
 

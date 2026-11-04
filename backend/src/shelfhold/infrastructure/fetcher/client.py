@@ -1,0 +1,276 @@
+"""GuardedFetcher: the one outbound HTTP path (ENF-SEC-001).
+
+Per hop: validate the URL, resolve the host once, validate every answer, then connect to the
+validated address itself (the URL is rewritten to the IP; `Host` and the TLS SNI keep the name, so
+there is no second resolution to rebind). Redirects are followed by hand and each one goes through
+the same steps; credentials never follow a redirect to another origin. No proxy is ever used.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import ipaddress
+import re
+import ssl
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, Final
+
+import httpx2
+
+from shelfhold import __version__
+from shelfhold.infrastructure.fetcher.errors import (
+    DnsBlocked,
+    DnsResolutionError,
+    FetchTimeout,
+    FetchTooLarge,
+    FetchUnreachable,
+    InvalidFetchUrl,
+    SsrfBlocked,
+    TooManyRedirects,
+)
+from shelfhold.infrastructure.fetcher.guard import (
+    IPAddress,
+    block_reason,
+    is_sinkhole,
+    lan_block_reason,
+    parse_host,
+)
+from shelfhold.infrastructure.fetcher.lan import LanTargets
+from shelfhold.infrastructure.fetcher.resolver import Resolver
+from shelfhold.sdk.fetcher import Response
+
+_REDIRECTS: Final = frozenset({301, 302, 303, 307, 308})
+_CREDENTIALS: Final = re.compile(r"auth|cookie|token|secret|api-?key|session|password", re.I)
+_DEFAULT_PORT: Final = {"http": 80, "https": 443}
+
+
+@dataclass(frozen=True)
+class FetchLimits:
+    max_bytes: int = 32 * 1024 * 1024  # decoded body
+    total_timeout: float = 60.0  # whole call: every hop, every byte
+    connect_timeout: float = 10.0
+    read_timeout: float = 30.0  # between two chunks
+    max_redirects: int = 5
+
+
+class GuardedFetcher:
+    def __init__(
+        self,
+        resolver: Resolver,
+        *,
+        lan_targets: LanTargets | None = None,
+        limits: FetchLimits | None = None,
+        transport: httpx2.AsyncBaseTransport | None = None,
+        tls_context: ssl.SSLContext | None = None,
+        user_agent: str = f"Shelfhold/{__version__}",
+    ) -> None:
+        self._resolver = resolver
+        self._lan = lan_targets or LanTargets.empty()
+        self._limits = limits or FetchLimits()
+        self._user_agent = user_agent
+        # No keep-alive: a pooled connection is keyed by address, and two names that share an
+        # address must never share a TLS session validated for only one of them.
+        transport = transport or httpx2.AsyncHTTPTransport(
+            verify=tls_context if tls_context is not None else True,
+            limits=httpx2.Limits(max_keepalive_connections=0),
+            trust_env=False,
+        )
+        timeout = httpx2.Timeout(self._limits.read_timeout, connect=self._limits.connect_timeout)
+        self._client = httpx2.AsyncClient(
+            transport=transport, trust_env=False, follow_redirects=False, timeout=timeout
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def get(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, Any] | None = None,
+        referer: str | None = None,
+        max_bytes: int | None = None,
+    ) -> Response:
+        merged = dict(headers or {})
+        if referer:
+            merged["Referer"] = referer
+        return await self._fetch("GET", url, merged, params, {}, max_bytes)
+
+    async def post(
+        self,
+        url: str,
+        *,
+        data: Mapping[str, Any] | None = None,
+        json: Any = None,
+        headers: Mapping[str, str] | None = None,
+        max_bytes: int | None = None,
+    ) -> Response:
+        body: dict[str, Any] = {}
+        if data is not None:
+            body["data"] = dict(data)
+        if json is not None:
+            body["json"] = json
+        return await self._fetch("POST", url, dict(headers or {}), None, body, max_bytes)
+
+    # -- internals -----------------------------------------------------------------------------
+
+    async def _fetch(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        params: Mapping[str, Any] | None,
+        body: dict[str, Any],
+        max_bytes: int | None,
+    ) -> Response:
+        try:
+            async with asyncio.timeout(self._limits.total_timeout):
+                return await self._follow(method, url, headers, params, body, max_bytes)
+        except (TimeoutError, httpx2.TimeoutException) as exc:
+            raise FetchTimeout("the response took too long") from exc
+
+    async def _follow(
+        self,
+        method: str,
+        raw_url: str,
+        headers: dict[str, str],
+        params: Mapping[str, Any] | None,
+        body: dict[str, Any],
+        max_bytes: int | None,
+    ) -> Response:
+        url = _parse_url(raw_url)
+        if params:
+            url = url.copy_merge_params(params)
+        cap = self._limits.max_bytes if max_bytes is None else max_bytes
+        for _ in range(self._limits.max_redirects + 1):
+            addresses = await self._pin(url)
+            response = await self._send(method, url, addresses, headers, body, cap)
+            location = response.headers.get("location")
+            if response.status not in _REDIRECTS or not location:
+                return response
+            target = _parse_url(str(url.join(location)))
+            if _origin(target) != _origin(url):
+                headers = {k: v for k, v in headers.items() if not _CREDENTIALS.search(k)}
+            if response.status == 303 or (response.status in (301, 302) and method == "POST"):
+                method, body = "GET", {}
+            url = target
+        raise TooManyRedirects(f"more than {self._limits.max_redirects} redirections")
+
+    async def _pin(self, url: httpx2.URL) -> list[IPAddress]:
+        """Resolve once and return the only addresses that may be connected to."""
+        host, port = url.host, _port(url)
+        literal = parse_host(host)
+        if literal is not None:
+            answers = [literal]
+        else:
+            try:
+                answers = [
+                    ipaddress.ip_address(a) for a in await self._resolver.resolve(host, port)
+                ]
+            except ValueError as exc:
+                raise DnsResolutionError(f"the resolver returned a non-address for {host}") from exc
+        if not answers:
+            raise DnsResolutionError(f"{host} does not resolve")
+        if literal is None and all(is_sinkhole(a) for a in answers):
+            raise DnsBlocked(f"{host} is blocked by the DNS resolver")
+        declared = self._lan.addresses(host, port)
+        if declared is not None:
+            usable = [a for a in answers if a in declared and lan_block_reason(a) is None]
+            if not usable:
+                raise SsrfBlocked(f"{host}:{port} no longer answers with its declared addresses")
+            return usable
+        for address in answers:
+            reason = block_reason(address)
+            if reason is not None:
+                raise SsrfBlocked(f"{host} -> {address} is refused: {reason}")
+        return answers
+
+    async def _send(
+        self,
+        method: str,
+        url: httpx2.URL,
+        addresses: list[IPAddress],
+        headers: dict[str, str],
+        body: dict[str, Any],
+        cap: int,
+    ) -> Response:
+        host = url.host
+        # the caller cannot choose the Host: it must name the host that was validated
+        wire = {k: v for k, v in headers.items() if k.lower() != "host"}
+        if not any(k.lower() == "user-agent" for k in wire):
+            wire["User-Agent"] = self._user_agent
+        wire["Host"] = _authority(url)
+        extensions: dict[str, Any] = {}
+        if url.scheme == "https" and parse_host(host) is None:
+            extensions["sni_hostname"] = host
+        last: Exception | None = None
+        for address in addresses:
+            request = self._client.build_request(
+                method,
+                url.copy_with(host=str(address)),
+                headers=wire,
+                extensions=extensions,
+                **body,
+            )
+            try:
+                response = await self._client.send(request, stream=True)
+            except httpx2.ConnectError as exc:
+                last = exc
+                continue
+            except httpx2.TimeoutException:
+                raise
+            except httpx2.HTTPError as exc:
+                raise FetchUnreachable(f"request to {host} failed: {type(exc).__name__}") from exc
+            return await _read(response, cap)
+        raise FetchUnreachable(f"cannot connect to {host}") from last
+
+
+async def _read(response: httpx2.Response, cap: int) -> Response:
+    try:
+        declared = response.headers.get("content-length")
+        if (
+            declared
+            and declared.isdigit()
+            and int(declared) > cap
+            and not response.headers.get("content-encoding")
+        ):
+            raise FetchTooLarge(f"the response declares {declared} bytes, above {cap}")
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in response.aiter_bytes():
+            total += len(chunk)
+            if total > cap:
+                raise FetchTooLarge(f"the response is larger than {cap} bytes")
+            chunks.append(chunk)
+        return Response(
+            status=response.status_code, headers=dict(response.headers), body=b"".join(chunks)
+        )
+    finally:
+        await response.aclose()
+
+
+def _parse_url(raw: str) -> httpx2.URL:
+    try:
+        url = httpx2.URL(raw)
+    except httpx2.InvalidURL as exc:
+        raise InvalidFetchUrl(f"invalid URL: {exc}") from exc
+    if url.scheme not in _DEFAULT_PORT or not url.host:
+        raise InvalidFetchUrl("only absolute http and https URLs are fetched")
+    if url.userinfo:
+        raise InvalidFetchUrl("credentials in a URL are refused; use an AuthFlow")
+    return url
+
+
+def _port(url: httpx2.URL) -> int:
+    return url.port or _DEFAULT_PORT[url.scheme]
+
+
+def _authority(url: httpx2.URL) -> str:
+    name = f"[{url.host}]" if ":" in url.host else url.host
+    return name if _port(url) == _DEFAULT_PORT[url.scheme] else f"{name}:{_port(url)}"
+
+
+def _origin(url: httpx2.URL) -> tuple[str, str, int]:
+    return url.scheme, url.host.lower(), _port(url)

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable
-from typing import TypeVar
+from collections.abc import AsyncIterator, Awaitable
 
 import httpx2
 import pytest
@@ -22,11 +21,10 @@ from shelfhold.infrastructure.fetcher import (
 )
 from tests.fakes_fetcher import FakeResolver, Recorder
 
-T = TypeVar("T")
 PUBLIC = "93.184.216.34"
 
 
-def _run(coro: Awaitable[T]) -> T:
+def _run[T](coro: Awaitable[T]) -> T:
     async def go() -> T:
         return await coro
 
@@ -114,13 +112,22 @@ def test_literal_destinations_are_refused_before_any_connection(url: str) -> Non
 def test_names_resolving_to_forbidden_addresses_are_refused(answer: str) -> None:
     rec = Recorder()
     with pytest.raises(SsrfBlocked):
-        _get(_fetcher(FakeResolver({"evil.example.org": [answer]}), rec), "http://evil.example.org/")
+        _get(
+            _fetcher(FakeResolver({"evil.example.org": [answer]}), rec), "http://evil.example.org/"
+        )
     assert rec.requests == []
 
 
 @pytest.mark.req("ENF-SEC-001")
-@pytest.mark.parametrize("target", ["http://169.254.169.254/latest/", "http://127.0.0.1:8000/admin",
-                                    "http://internal.example.org/", "http://[fd00:ec2::254]/"])  # fmt: skip
+@pytest.mark.parametrize(
+    "target",
+    [
+        "http://169.254.169.254/latest/",
+        "http://127.0.0.1:8000/admin",
+        "http://internal.example.org/",
+        "http://[fd00:ec2::254]/",
+    ],
+)
 def test_redirect_to_a_forbidden_address_is_revalidated(target: str) -> None:
     rec = Recorder(lambda r: httpx2.Response(302, headers={"location": target}))
     dns = FakeResolver({"start.example.org": [PUBLIC], "internal.example.org": ["10.0.0.9"]})
@@ -191,29 +198,36 @@ def test_redirect_drops_auth_headers(location: str, kept: bool) -> None:
 
 
 @pytest.mark.req("ENF-SEC-001")
-def test_post_redirect_303_becomes_get_and_307_keeps_the_method() -> None:
-    for status, method in ((303, "GET"), (307, "POST")):
-        def respond(r: httpx2.Request, status: int = status) -> httpx2.Response:
-            if len(rec.requests) == 1:
-                return httpx2.Response(status, headers={"location": "/next"})
-            return httpx2.Response(200)
+@pytest.mark.parametrize(("status", "method"), [(303, "GET"), (302, "GET"), (307, "POST")])
+def test_post_redirect_303_becomes_get_and_307_keeps_the_method(status: int, method: str) -> None:
+    def respond(r: httpx2.Request) -> httpx2.Response:
+        if len(rec.requests) == 1:
+            return httpx2.Response(status, headers={"location": "/next"})
+        return httpx2.Response(200)
 
-        rec = Recorder(respond)
-        dns = FakeResolver({"a.example.org": [PUBLIC]})
-        _run(_fetcher(dns, rec).post("http://a.example.org/", json={"a": 1}))
-        assert rec.requests[1].method == method
+    rec = Recorder(respond)
+    dns = FakeResolver({"a.example.org": [PUBLIC]})
+    _run(_fetcher(dns, rec).post("http://a.example.org/", json={"a": 1}))
+    assert rec.requests[1].method == method
 
 
 @pytest.mark.req("ENF-SEC-001")
 def test_userinfo_and_unsupported_schemes_refused() -> None:
     f = _fetcher(FakeResolver({"a.example.org": [PUBLIC]}), Recorder())
-    for url in ("http://user:pw@a.example.org/", "ftp://a.example.org/", "a.example.org/x", "http:///x"):
+    for url in (
+        "http://user:pw@a.example.org/",
+        "ftp://a.example.org/",
+        "a.example.org/x",
+        "http:///x",
+    ):
         with pytest.raises(InvalidFetchUrl):
             _get(f, url)
 
 
 @pytest.mark.req("ENF-SEC-001")
-def test_no_proxy_is_used_even_when_the_environment_sets_one(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_proxy_is_used_even_when_the_environment_sets_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:3128")
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
     monkeypatch.setenv("ALL_PROXY", "http://proxy.invalid:3128")
@@ -242,8 +256,15 @@ def test_lan_target_is_reachable_only_on_its_declared_host_and_port() -> None:
 @pytest.mark.req("ENF-SEC-001")
 def test_lan_target_name_pinned_to_declared_addresses() -> None:
     dns = FakeResolver(
-        {"nas.lan": [["192.168.1.20", "fd00::20", "fe80::20"], ["fd00::20"], ["10.9.9.9"],
-                     ["fd00::20", "10.9.9.9"], ["fe80::20", "fd00::21"]]}  # fmt: skip
+        {
+            "nas.lan": [
+                ["192.168.1.20", "fd00::20", "fe80::20"],
+                ["fd00::20"],
+                ["10.9.9.9"],
+                ["fd00::20", "10.9.9.9"],
+                ["fe80::20", "fd00::21"],
+            ]
+        }
     )
     lan = _run(LanTargets.declare(["nas.lan:80"], dns))  # call 1: the declaration
     rec = Recorder()
@@ -282,11 +303,15 @@ def test_dns_sinkhole_reported_as_dns_blocked(sink: str) -> None:
 
 @pytest.mark.req("EF-UX-003")
 def test_dns_sinkhole_with_both_families_and_nxdomain() -> None:
-    dns = FakeResolver({"b.example.org": ["0.0.0.0", "::"], "m.example.org": ["0.0.0.0", "10.0.0.1"]})
+    dns = FakeResolver(
+        {"b.example.org": ["0.0.0.0", "::"], "m.example.org": ["0.0.0.0", "10.0.0.1"]}
+    )
     f = _fetcher(dns, Recorder())
     with pytest.raises(DnsBlocked):
         _get(f, "http://b.example.org/")
-    with pytest.raises(SsrfBlocked) as caught:  # a sinkhole mixed with a private address is no sinkhole
+    with pytest.raises(
+        SsrfBlocked
+    ) as caught:  # a sinkhole mixed with a private address is no sinkhole
         _get(f, "http://m.example.org/")
     assert caught.value.code == "ssrf.blocked"
 
@@ -298,11 +323,11 @@ def test_response_size_limit_on_declared_and_actual_length() -> None:
     with pytest.raises(FetchTooLarge):
         _get(_fetcher(dns, big, limits=FetchLimits(max_bytes=1000)), "http://a.example.org/")
 
-    def chunks() -> object:
+    async def chunks() -> AsyncIterator[bytes]:
         for _ in range(10):
             yield b"y" * 500
 
-    lying = Recorder(lambda r: httpx2.Response(200, content=chunks()))  # type: ignore[arg-type]
+    lying = Recorder(lambda r: httpx2.Response(200, content=chunks()))
     with pytest.raises(FetchTooLarge):
         _get(_fetcher(dns, lying, limits=FetchLimits(max_bytes=1000)), "http://a.example.org/")
     ok = Recorder(lambda r: httpx2.Response(200, content=b"x" * 1000))
@@ -314,7 +339,9 @@ def test_decompressed_size_is_capped_not_only_the_wire_size() -> None:
     import gzip
 
     bomb = gzip.compress(b"\0" * 2_000_000)
-    rec = Recorder(lambda r: httpx2.Response(200, headers={"content-encoding": "gzip"}, content=bomb))
+    rec = Recorder(
+        lambda r: httpx2.Response(200, headers={"content-encoding": "gzip"}, content=bomb)
+    )
     dns = FakeResolver({"a.example.org": [PUBLIC]})
     with pytest.raises(FetchTooLarge):
         _get(_fetcher(dns, rec, limits=FetchLimits(max_bytes=100_000)), "http://a.example.org/")
@@ -327,7 +354,9 @@ def test_total_time_limit_covers_a_stalled_response() -> None:
         return httpx2.Response(200)
 
     dns = FakeResolver({"a.example.org": [PUBLIC]})
-    f = GuardedFetcher(dns, transport=httpx2.MockTransport(slow), limits=FetchLimits(total_timeout=0.2))
+    f = GuardedFetcher(
+        dns, transport=httpx2.MockTransport(slow), limits=FetchLimits(total_timeout=0.2)
+    )
     with pytest.raises(FetchTimeout):
         _get(f, "http://a.example.org/")
 
@@ -342,3 +371,9 @@ def test_user_agent_params_and_referer() -> None:
     assert "shelfhold" in request.headers["user-agent"].lower()
 
 
+@pytest.mark.req("ENF-SEC-001")
+def test_caller_cannot_override_the_host_header() -> None:
+    rec = Recorder()
+    dns = FakeResolver({"a.example.org": [PUBLIC]})
+    _get(_fetcher(dns, rec), "http://a.example.org/", headers={"host": "169.254.169.254"})
+    assert rec.requests[0].headers.get_list("host") == ["a.example.org"]

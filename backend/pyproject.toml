@@ -123,6 +123,8 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "src/shelfhold/infrastructure/volumes.py" = ["TID251"]
 "tests/unit/test_governance_docs.py" = ["S101", "S603", "S607"]
 "tests/contract/**" = ["S101", "S106", "E501"]
+# 0.0.0.0 is the sinkhole answer under test, not a bind address
+"tests/**/test_fetcher*.py" = ["S104"]
 "../e2e/**" = ["S101"]
 
 [tool.mypy]
