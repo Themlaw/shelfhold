@@ -114,6 +114,11 @@ class FakeSuwayomi:
     def cbz_sha256(self, chapter_url: str) -> str:
         return hashlib.sha256(self.cbz_bytes(chapter_url)).hexdigest()
 
+    def cbz_sha256_of_id(self, chapter_id: int) -> str:
+        chapter = self._chapter(chapter_id)
+        assert chapter is not None
+        return hashlib.sha256((SYNTHETIC / chapter["cbz"]).read_bytes()).hexdigest()
+
     def requests_to(self, fragment: str) -> list[RecordedRequest]:
         return [r for r in self.requests if fragment in r.path]
 
@@ -253,6 +258,7 @@ class FakeSuwayomi:
 
     def _chapter_node(self, chapter: dict[str, Any]) -> dict[str, Any]:
         node = {k: v for k, v in chapter.items() if k != "cbz"}
+        node["mangaId"] = next(m["id"] for m in self.state["mangas"] if chapter in m["chapters"])
         node["isDownloaded"] = chapter["id"] in self._downloaded
         return node
 

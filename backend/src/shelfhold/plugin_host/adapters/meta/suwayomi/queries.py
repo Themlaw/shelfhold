@@ -14,7 +14,9 @@ CHAPTERS = (
     "query ($mangaId: Int!) { chapters(condition: {mangaId: $mangaId}) { nodes "
     "{ id url name chapterNumber sourceOrder scanlator uploadDate } } }"
 )
-CHAPTER = "query ($id: Int!) { chapter(id: $id) { id url isDownloaded } }"
+CHAPTER = (
+    "query ($id: Int!) { chapter(id: $id) { id mangaId url name chapterNumber isDownloaded } }"
+)
 ENQUEUE = (
     "mutation ($id: Int!) { enqueueChapterDownload(input: {id: $id}) { downloadStatus { state } } }"
 )

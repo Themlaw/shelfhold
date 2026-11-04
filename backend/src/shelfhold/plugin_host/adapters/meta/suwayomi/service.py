@@ -6,8 +6,11 @@ one. GraphQL goes out as JSON and nothing else. Identities are upstream: a serie
 ids of Suwayomi's own database are only cached `fetch_handle`s, re-resolved when they stop matching.
 """
 
+import hashlib
 import json
 import re
+import time
+import unicodedata
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -15,7 +18,11 @@ from typing import Any, Literal
 from shelfhold.catalog.lang import LanguageError, normalize_lang
 from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
 from shelfhold.plugin_host.adapters.meta.suwayomi.versions import is_supported
-from shelfhold.plugin_host.errors import AuthModeUnsupported, ServiceVersionMismatch
+from shelfhold.plugin_host.errors import (
+    AuthExpired,
+    AuthModeUnsupported,
+    ServiceVersionMismatch,
+)
 from shelfhold.sdk.connected import (
     ConnectedCapability,
     ServiceHealth,
@@ -57,7 +64,10 @@ from shelfhold.sdk.source import (
 
 KEY = "suwayomi"
 CBZ_MIME = "application/vnd.comicbook+zip"
-_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
+SUPPORTED_MODES = frozenset({"none", "basic_auth"})  # every other mode is refused (EF-SRC-031)
+MANGA_CACHE_SECONDS = 60.0  # one follow cycle; `begin_cycle` drops it earlier
+MAX_FILENAME_BYTES = 120
+_FORBIDDEN_NAME = re.compile(r'[\\/:*?"<>|]')
 
 
 def build_manifest() -> SourceManifest:
@@ -107,6 +117,7 @@ class SuwayomiService:
         )
         self._mode_verified = False
         self._handles: dict[str, int] = {}  # ticket token -> last known local chapter id
+        self._mangas: tuple[float, list[dict[str, Any]]] | None = None
 
     # -- transport ---------------------------------------------------------------------------
     async def _post(self, f: Fetcher, query: str, variables: dict[str, Any] | None = None) -> Any:
@@ -118,7 +129,7 @@ class SuwayomiService:
             json=body,
             headers={"Content-Type": "application/json", "Accept": "application/json"},
         )
-        self._raise_for_status(response)
+        self._raise_for_status(response, f)
         try:
             payload = json.loads(response.body)
         except ValueError as exc:
@@ -128,12 +139,20 @@ class SuwayomiService:
         return payload
 
     @staticmethod
-    def _raise_for_status(response: Response) -> None:
+    def _refused(f: Fetcher) -> AuthRequired:
+        """Credentials were given and refused: the session is no longer good (`auth_expired`);
+        without credentials, they are simply required."""
+        if getattr(f, "has_credentials", False):
+            return AuthExpired("the server refused the credentials")
+        return AuthRequired("the server requires credentials")
+
+    @classmethod
+    def _raise_for_status(cls, response: Response, f: Fetcher) -> None:
         status = response.status
         if status == 401:
             if b"csrf" in response.body.lower():
                 raise ServiceVersionMismatch("CSRF mismatch: not an authentication problem")
-            raise AuthRequired("the server refused the credentials")
+            raise cls._refused(f)
         if status == 429:
             raise RateLimited("rate limited by the server")
         if status >= 500:
@@ -143,8 +162,21 @@ class SuwayomiService:
 
     @staticmethod
     def _unauthorized(payload: dict[str, Any]) -> bool:
-        errors = payload.get("errors") or []
-        return any("unauthorized" in str(e.get("message", "")).lower() for e in errors)
+        errors = payload.get("errors")
+        if not isinstance(errors, list):
+            return False
+        for error in errors:
+            if not isinstance(error, dict):
+                continue
+            extensions = error.get("extensions")
+            classification = (
+                extensions.get("classification") if isinstance(extensions, dict) else ""
+            )
+            if str(error.get("message", "")).strip().casefold() == "unauthorized" or (
+                str(classification).upper() == "UNAUTHORIZED"
+            ):
+                return True
+        return False
 
     async def _query(
         self, f: Fetcher, query: str, variables: dict[str, Any] | None = None
@@ -153,7 +185,7 @@ class SuwayomiService:
         await self._ensure_supported_mode(f)
         payload = await self._post(f, query, variables)
         if self._unauthorized(payload):
-            raise AuthRequired("the server refused the credentials")
+            raise self._refused(f)
         if payload.get("errors") or not isinstance(payload.get("data"), dict):
             raise SourceChanged("GraphQL error: " + str(payload.get("errors"))[:200])
         data: dict[str, Any] = payload["data"]
@@ -161,14 +193,17 @@ class SuwayomiService:
 
     # -- EF-SRC-031: authentication mode -----------------------------------------------------
     async def auth_mode(self, f: Fetcher) -> str:
-        """`basic_auth`, `ui_login` or `none`: the `authMode` the server reports comes first.
+        """`none`, `basic_auth`, or the mode the server reports (`ui_login`...), which is refused.
 
-        Fallback, not verified by S5 for this very query: a 200 answer carrying an
-        `Unauthorized` error means a token-only mode, hence `ui_login`.
+        The reported `authMode` comes first. Without it, a 200 answer carrying an `Unauthorized`
+        error means a token-only mode, hence `ui_login`: per S5 this fallback is the real path in
+        `ui_login`, where an unauthenticated GraphQL call answers exactly that. It is not verified
+        for this very query.
         """
         payload = await self._post(f, q.AUTH_MODE)
         data = payload.get("data")
-        reported = ((data or {}).get("settings") or {}).get("authMode")
+        settings = (data.get("settings") if isinstance(data, dict) else None) or {}
+        reported = settings.get("authMode")
         if isinstance(reported, str) and reported:
             return reported.lower()
         if self._unauthorized(payload):
@@ -178,17 +213,17 @@ class SuwayomiService:
     async def _ensure_supported_mode(self, f: Fetcher) -> None:
         if self._mode_verified:
             return
-        if await self.auth_mode(f) == "ui_login":
+        if await self.auth_mode(f) not in SUPPORTED_MODES:
             raise AuthModeUnsupported()
         self._mode_verified = True
 
     # -- HEALTH_PROBE ------------------------------------------------------------------------
     async def semantic_health(self, f: Fetcher) -> ServiceHealth:
-        about = (await self._post(f, q.ABOUT)).get("data", {}).get("aboutServer") or {}
+        about = ((await self._post(f, q.ABOUT)).get("data") or {}).get("aboutServer") or {}
         version = str(about.get("version", ""))
         if not is_supported(version):
             return ServiceHealth(ok=False, version=version, detail="source.version_unsupported")
-        if await self.auth_mode(f) == "ui_login":
+        if await self.auth_mode(f) not in SUPPORTED_MODES:
             return ServiceHealth(ok=False, version=version, detail="source.auth_mode_unsupported")
         return ServiceHealth(ok=True, version=version)
 
@@ -231,7 +266,7 @@ class SuwayomiService:
             source_key=f"{KEY}:{node['sourceId']}",
             remote_id=str(node["url"]),
             title=str(node["title"]),
-            cover=ImageRequest(url=self.base_url + q.THUMBNAIL_PATH.format(id=node["id"])),
+            cover=ImageRequest(url=self.base_url + q.THUMBNAIL_PATH.format(id=int(node["id"]))),
             memo={"fetch_handle": node["id"]},
         )
 
@@ -258,13 +293,29 @@ class SuwayomiService:
     async def resolve_url(self, f: Fetcher, url: str) -> SeriesRef | UnitInfo | None:
         return None
 
+    def begin_cycle(self) -> None:
+        """Forget what was read about the library: the next follow cycle starts fresh."""
+        self._mangas = None
+
+    async def _all_mangas(self, f: Fetcher, *, fresh: bool = False) -> list[dict[str, Any]]:
+        """Every manga, read once per cycle: one query for the library, not one per series."""
+        now = time.monotonic()
+        if fresh or self._mangas is None or now - self._mangas[0] > MANGA_CACHE_SECONDS:
+            data = await self._query(f, q.ALL_MANGAS)
+            self._mangas = (now, list(data["mangas"]["nodes"]))
+        return self._mangas[1]
+
     async def _manga(self, f: Fetcher, ref: SeriesRef) -> dict[str, Any]:
-        """The manga of a reference, found by `(sourceId, manga.url)`, never by its local id."""
-        data = await self._query(f, q.ALL_MANGAS)
-        for node in data["mangas"]["nodes"]:
-            if f"{KEY}:{node['sourceId']}" == ref.source_key and str(node["url"]) == ref.remote_id:
-                found: dict[str, Any] = node
-                return found
+        """The manga of a reference, found by `(sourceId, manga.url)`, never by its local id.
+
+        A miss in the cache is checked once against the server: the cache never hides a manga.
+        """
+        for fresh in (False, True):
+            for node in await self._all_mangas(f, fresh=fresh):
+                same = f"{KEY}:{node['sourceId']}" == ref.source_key
+                if same and str(node["url"]) == ref.remote_id:
+                    found: dict[str, Any] = node
+                    return found
         raise ContentRemoved(f"{ref.remote_id} is no longer known to the server")
 
     async def get_series(self, f: Fetcher, ref: SeriesRef) -> SeriesInfo:
@@ -290,10 +341,14 @@ class SuwayomiService:
         return f"{source_key}:{chapter_url}"
 
     async def _chapters(self, f: Fetcher, ref: SeriesRef) -> list[dict[str, Any]]:
-        manga = await self._manga(f, ref)
-        data = await self._query(f, q.CHAPTERS, {"mangaId": manga["id"]})
-        nodes: list[dict[str, Any]] = data["chapters"]["nodes"]
-        return nodes
+        for attempt in (0, 1):
+            manga = await self._manga(f, ref)
+            data = await self._query(f, q.CHAPTERS, {"mangaId": manga["id"]})
+            nodes: list[dict[str, Any]] = data["chapters"]["nodes"]
+            if nodes or attempt:
+                return nodes
+            self.begin_cycle()  # empty: maybe a stale cached id (reinstall), look once more
+        return []
 
     async def list_units(self, f: Fetcher, ref: SeriesRef) -> list[UnitInfo]:
         units = [self._unit(ref, c) for c in await self._chapters(f, ref)]
@@ -325,20 +380,28 @@ class SuwayomiService:
         re-resolved by `(sourceId, chapter.url)` (after a reinstall or a restore, EF-SRC-036)."""
         if hint is not None:
             node = (await self._query(f, q.CHAPTER, {"id": hint}))["chapter"]
-            if node and node.get("url") == chapter_url:
+            if node and await self._matches(f, ref, node, chapter_url):
                 return hint
         for chapter in await self._chapters(f, ref):
             if str(chapter["url"]) == chapter_url:
                 return int(chapter["id"])
         raise ContentRemoved(f"{chapter_url} is no longer known to the server")
 
-    def _asset(self, handle: int, chapter_url: str) -> FileAsset:
-        stem = _UNSAFE.sub("_", chapter_url.rsplit("/", 1)[-1]) or "chapter"
-        stem = stem.removesuffix(".cbz")
+    async def _matches(
+        self, f: Fetcher, ref: SeriesRef, node: dict[str, Any], chapter_url: str
+    ) -> bool:
+        """A cached handle still names this chapter: same url *and* same manga (two series can
+        share a chapter url after a reinstall)."""
+        manga = await self._manga(f, ref)
+        return node.get("url") == chapter_url and node.get("mangaId") == manga["id"]
+
+    def _asset(
+        self, handle: int, unit_id: str, number: str | None, name: str | None, chapter_url: str
+    ) -> FileAsset:
         return FileAsset(
             request=ImageRequest(url=self.base_url + q.DOWNLOAD_PATH.format(id=handle)),
             mime=CBZ_MIME,
-            filename=f"{stem}.cbz",
+            filename=_filename(unit_id, number, name or chapter_url.rsplit("/", 1)[-1]),
         )
 
     async def fetch_unit(self, f: Fetcher, ref: SeriesRef, u: UnitInfo) -> UnitPayload:
@@ -347,7 +410,7 @@ class SuwayomiService:
         handle = await self._current_handle(
             f, ref, chapter_url, hint if isinstance(hint, int) else None
         )
-        return self._asset(handle, chapter_url)
+        return self._asset(handle, u.remote_unit_id, u.number, u.title, chapter_url)
 
     async def resolve_page(self, f: Fetcher, u: Any, p: Any) -> ImageRequest:
         raise NotImplementedError("Suwayomi is acquired as CBZ, never page by page (EF-SRC-008)")
@@ -382,7 +445,7 @@ class SuwayomiService:
         hint = self._handles.get(t.token)
         if hint is not None:  # one query in the common case: the cached handle still matches
             node = (await self._query(f, q.CHAPTER, {"id": hint}))["chapter"]
-            if node and node.get("url") == chapter_url:
+            if node and await self._matches(f, ref, node, chapter_url):
                 return hint, node
         try:
             handle = await self._current_handle(f, ref, chapter_url, None)
@@ -404,7 +467,11 @@ class SuwayomiService:
             raise ContentRemoved("the chapter is gone from the server")
         if not found[1].get("isDownloaded"):
             raise TemporarilyUnavailable("the chapter is not downloaded yet")
-        return self._asset(found[0], self._decode(t)[1])
+        ref, chapter_url = self._decode(t)
+        number = found[1].get("chapterNumber")
+        label = format(Decimal(str(number)).normalize(), "f") if _known_number(number) else None
+        unit_id = self._unit_id(ref.source_key, chapter_url)
+        return self._asset(found[0], unit_id, label, found[1].get("name"), chapter_url)
 
     async def cancel(self, f: Fetcher, t: Ticket) -> None:
         found = await self._ticket_node(f, t)
@@ -418,6 +485,30 @@ def _chapter_url(unit: UnitInfo) -> str:
         return memo_url
     _, _, rest = unit.remote_unit_id.partition(":")
     return rest.split(":", 1)[1] if ":" in rest else rest
+
+
+def _known_number(number: Any) -> bool:
+    return isinstance(number, int | float) and number >= 0
+
+
+def _clean_name(raw: str) -> str:
+    """A file name kept as Unicode when safe: no separators, controls or reserved characters."""
+    text = unicodedata.normalize("NFC", raw)
+    text = "".join(" " if unicodedata.category(c).startswith(("C", "Z")) else c for c in text)
+    text = _FORBIDDEN_NAME.sub("_", text)
+    text = " ".join(text.split()).strip(" .")
+    return text.removesuffix(".cbz").strip(" .")
+
+
+def _filename(unit_id: str, number: str | None, name: str) -> str:
+    """`<number or short hash> - <sanitised name>.cbz`, at most ~120 bytes."""
+    prefix = number if number else hashlib.sha256(unit_id.encode()).hexdigest()[:8]
+    prefix = _clean_name(prefix) or hashlib.sha256(unit_id.encode()).hexdigest()[:8]
+    budget = MAX_FILENAME_BYTES - len(b".cbz")
+    stem = f"{prefix} - {_clean_name(name)}" if _clean_name(name) else prefix
+    while len(stem.encode()) > budget:
+        stem = stem[:-1]
+    return f"{stem.rstrip(' .-')}.cbz"
 
 
 def _lang(raw: str) -> LanguageTag | Literal["mul"]:
