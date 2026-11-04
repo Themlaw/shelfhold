@@ -299,7 +299,6 @@ edition = sa.Table(
     sa.Column("date_precision", sa.String(), nullable=True),
     bool_column("is_official", default=False),
     bool_column("preferred", default=False),
-    ulid_column("shelf_id", nullable=True),  # NULL: unshelved. The table arrives in 0004
     *age_columns(),
     sa.Column("rights", sa.Text(), nullable=True),  # SPDX or text + origin URL
     sa.Column("rights_basis", sa.String(), nullable=True),
@@ -310,7 +309,6 @@ edition = sa.Table(
     sa.Column("volume_policy", sa.String(), nullable=False, server_default="closed_only"),
     now_column(),
     ulid_check("id"),
-    ulid_check("shelf_id"),
     lang_check("lang", allow_wildcards=False),
     in_check("translation_type", TRANSLATION_TYPES),
     in_check("media", MEDIA),

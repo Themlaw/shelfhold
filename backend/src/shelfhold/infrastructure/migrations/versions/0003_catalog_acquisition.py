@@ -675,7 +675,6 @@ def upgrade() -> None:
         sa.Column("date_precision", sa.String(), nullable=True),
         sa.Column("is_official", sa.Boolean(), server_default=sa.text("0"), nullable=False),
         sa.Column("preferred", sa.Boolean(), server_default=sa.text("0"), nullable=False),
-        sa.Column("shelf_id", sa.String(length=26), nullable=True),
         sa.Column("age_rating", sa.Integer(), nullable=True),
         sa.Column("age_x", sa.Boolean(), server_default=sa.text("0"), nullable=False),
         sa.Column("rated_at", sa.DateTime(), nullable=True),
@@ -730,10 +729,6 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "length(\"lang\") > 0 AND \"lang\" NOT GLOB '*[^A-Za-z0-9-]*' AND \"lang\" NOT GLOB '-*' AND \"lang\" NOT GLOB '*-' AND lower(\"lang\") NOT IN ('all', 'multi', 'und', 'mul')",
             name=op.f("ck_edition_lang"),
-        ),
-        sa.CheckConstraint(
-            'length("shelf_id") = 26 AND "shelf_id" NOT GLOB \'*[^0-9A-HJKMNP-TV-Z]*\'',
-            name=op.f("ck_edition_shelf_id_ulid"),
         ),
         sa.CheckConstraint(
             "typeof(\"author_death_year\") IN ('integer', 'null') AND typeof(\"translator_death_year\") IN ('integer', 'null')",
