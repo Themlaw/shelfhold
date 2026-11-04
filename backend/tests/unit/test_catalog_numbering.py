@@ -7,6 +7,7 @@ import pytest
 
 from shelfhold.catalog.domain.numbering import (
     NUMBER_NORMALIZER_ID,
+    NumberError,
     Track,
     follow_from,
     is_beyond,
@@ -111,3 +112,50 @@ def test_parsed_number_keeps_raw_and_normalizer_version() -> None:
     assert parsed.raw == " Ch. 012 "
     assert parsed.normalized_by == NUMBER_NORMALIZER_ID
     assert NUMBER_NORMALIZER_ID == "number@1"
+
+
+@pytest.mark.req("EF-BIB-002")
+@pytest.mark.parametrize(
+    ("raw", "code"),
+    [
+        ("1" * 19, "too_long"),
+        ("1" * 40, "too_long"),
+        ("0.1234567", "too_precise"),
+        ("1." + "0" * 27 + "1", "too_precise"),
+        ("Ch.-5", "negative"),
+        ("-3", "negative"),
+        ("\u22123", "negative"),
+    ],
+)
+def test_out_of_bounds_numbers_are_refused_with_a_typed_error(raw: str, code: str) -> None:
+    with pytest.raises(NumberError) as err:
+        parse_number(raw)
+    assert err.value.code == code
+
+
+@pytest.mark.req("EF-BIB-002")
+def test_bounds_are_inclusive_and_padding_is_free() -> None:
+    assert parse_number("9" * 18).norm == "9" * 18
+    assert parse_number("0" * 30 + "7").norm == "7"
+    assert parse_number("1.500000").norm == "1.5"
+    assert parse_number("1.1234560000000000000").norm == "1.123456"
+    near = [parse_number(f"1.{i:06d}") for i in (1, 2)]
+    assert near[0].sort != near[1].sort  # no collision at the last accepted decimal
+    assert parse_number("Hors-série 1").norm == "1"  # a hyphen inside a word is not a sign
+    assert parse_number("10-12").norm == "10"
+
+
+@pytest.mark.req("EF-BIB-002")
+def test_ties_are_broken_by_source_order_not_by_the_number() -> None:
+    """Different places that share one sort key: only `source_order` separates them."""
+    s0 = parse_number("S0 Ch.5", source_order=2)
+    plain = parse_number("5", source_order=1)
+    assert (s0.segment, plain.segment) == ("S0", "")  # two distinct places...
+    assert unit_sort_key(s0)[:4] == unit_sort_key(plain)[:4]  # ...with one number-level key
+    assert [u.source_order for u in sorted([s0, plain], key=unit_sort_key)] == [1, 2]
+
+    extra = parse_number("Extra", source_order=4)
+    extra0 = parse_number("Extra 0", source_order=3)
+    assert (extra.norm, extra0.norm) == ("", "0")
+    assert unit_sort_key(extra)[:4] == unit_sort_key(extra0)[:4]
+    assert [u.source_order for u in sorted([extra, extra0], key=unit_sort_key)] == [3, 4]

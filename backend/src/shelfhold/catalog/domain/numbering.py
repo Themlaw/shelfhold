@@ -14,7 +14,7 @@ unreadable number falls into the "unnumbered" track, ordered by `source_order`.
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal
 from enum import StrEnum
 
 NUMBER_NORMALIZER_NAME = "number"
@@ -48,7 +48,27 @@ _SEGMENT = re.compile(
     r"\b(?:s|season|saison|staffel)\s*\.?\s*(\d{1,4})(?:\s*e(?=\d)|\b)", re.IGNORECASE
 )
 _PART = re.compile(r"\b(?:part|pt|partie|teil)\s*\.?\s*(\d{1,3})\b", re.IGNORECASE)
-_NUMBER = re.compile(r"(?<!\d)(?<!\d[.,])(\d+(?:[.,]\d+)?)")
+_DECIMAL = r"\d+(?:[.,\u066b]\d+)?"
+_NUMBER = re.compile(rf"(?<!\d)(?<!\d[.,\u066b])({_DECIMAL})")
+# A number introduced by a chapter/episode marker wins over any other number ("Vol.2 Ch.10" is 10).
+_MARKED_NUMBER = re.compile(
+    rf"(?:\b(?:ch(?:apter|apitre|ap)?|ep(?:isode)?)|#)\s*\.?\s*(?<!\d)({_DECIMAL})", re.IGNORECASE
+)
+_NEGATIVE = re.compile(r"(?<!\w)[-\u2212]\s?\d")
+
+MAX_INTEGER_DIGITS = 18
+MAX_FRACTION_DIGITS = 6
+# Explicit context: every accepted value (at most 18 + 6 digits) is represented exactly.
+_CONTEXT = Context(prec=MAX_INTEGER_DIGITS + MAX_FRACTION_DIGITS + 4)
+
+
+class NumberError(ValueError):
+    """A number the normalizer refuses; `code` is `negative`, `too_long` or `too_precise`."""
+
+    def __init__(self, code: str, raw: str) -> None:
+        super().__init__(f"{code}: {raw!r}")
+        self.code = code
+        self.raw = raw
 
 
 @dataclass(frozen=True)
@@ -64,15 +84,31 @@ class UnitNumber:
     normalized_by: str = NUMBER_NORMALIZER_ID
 
 
-def _canonical_decimal(token: str) -> Decimal:
-    value = Decimal(token.replace(",", "."))
-    return value.quantize(Decimal(1)) if value == value.to_integral_value() else value.normalize()
+def _canonical_decimal(token: str, raw: str) -> Decimal:
+    """Exact decimal of a token within the documented bounds.
+
+    The comma is always a decimal separator ("10,5" is 10.5), so "1,000" is 1, not one thousand:
+    thousands separators do not occur in chapter numbers, decimal commas do.
+    """
+    text = token.replace(",", ".").replace("\u066b", ".")
+    whole, _, fraction = text.partition(".")
+    whole = whole.lstrip("0")
+    fraction = fraction.rstrip("0")
+    if len(whole) > MAX_INTEGER_DIGITS:
+        raise NumberError("too_long", raw)
+    if len(fraction) > MAX_FRACTION_DIGITS:
+        raise NumberError("too_precise", raw)
+    return Decimal(f"{whole or '0'}.{fraction}" if fraction else whole or "0", context=_CONTEXT)
 
 
 def parse_number(
     raw: str | None, *, source_order: int = 0, track_hint: Track | None = None
 ) -> UnitNumber:
-    """Normalize a raw number; never raises."""
+    """Normalize a raw number.
+
+    Raises `NumberError` for a negative number or one beyond the documented bounds (18 integer
+    digits, 6 decimals); anything else unreadable falls back to the unnumbered track.
+    """
     text = raw or ""
     work = text
     segment, ordinal = "", 0
@@ -90,14 +126,10 @@ def parse_number(
             track = candidate
             work = pattern.sub(" ", work)
             break
-    number_match = _NUMBER.search(work)
-    if number_match is not None:
-        try:
-            value = _canonical_decimal(number_match.group(1))
-        except InvalidOperation:  # pragma: no cover - the pattern only admits digits
-            value = None
-    else:
-        value = None
+    if _NEGATIVE.search(work):
+        raise NumberError("negative", text)
+    number_match = _MARKED_NUMBER.search(work) or _NUMBER.search(work)
+    value = _canonical_decimal(number_match.group(1), text) if number_match else None
     if value is None:
         resolved = track if track is not None else Track.UNNUMBERED
         return UnitNumber(text, "", Decimal(0), part, resolved, segment, ordinal, source_order)
