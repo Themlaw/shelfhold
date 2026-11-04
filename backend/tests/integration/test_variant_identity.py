@@ -304,15 +304,18 @@ def test_reappearing_variant_conflicts_with_its_replacement() -> None:
 
 
 @pytest.mark.req("EF-BIB-050", "EF-BIB-028")
-def test_variant_in_open_conflict_is_never_preferred() -> None:
+def test_older_variant_stays_preferred_in_open_conflict() -> None:
     with harness() as h:
         binding = h.binding(h.edition())
         old = h.catalog.ingest(unit(binding, "old", "1", 0))
         new = h.catalog.ingest(unit(binding, "new", "1", 5))
         assert new.outcome is IngestOutcome.NUMBERING_CONFLICT
-        assert h.catalog.elect_preferred(new.unit_id) is None  # both are named by the suggestion
+        # the chapter does not vanish from the export; the newcomer waits for the admin
+        assert h.catalog.elect_preferred(new.unit_id) == old.variant_id
+        h.catalog.mark_removed(old.variant_id, at(9))
+        assert h.catalog.elect_preferred(new.unit_id) is None  # still open: never the newcomer
         h.connection.execute(sa.text("UPDATE merge_suggestion SET state = 'rejected'"))
-        assert h.catalog.elect_preferred(new.unit_id) == old.variant_id  # decided: the oldest
+        assert h.catalog.elect_preferred(new.unit_id) == new.variant_id  # decided
 
 
 @pytest.mark.req("EF-BIB-034")

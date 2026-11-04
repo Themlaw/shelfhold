@@ -246,7 +246,8 @@ class ModelInvariants(RuleBasedStateMachine):
         self.clock = 0
         self.shadow: dict[str, Shadow] = {}
         self.by_key: dict[tuple[str, str], str] = {}
-        self.in_conflict: set[str] = set()
+        self.in_conflict: set[str] = set()  # every Variant named by an open conflict
+        self.newcomers: set[str] = set()  # the one of each pair that arrived in the conflict
 
     def teardown(self) -> None:
         self.stack.close()
@@ -366,10 +367,12 @@ class ModelInvariants(RuleBasedStateMachine):
             if opens_conflict:
                 older = min(rival, key=lambda o: o.arrival)
                 self.in_conflict |= {older.id, known}
+                self.newcomers.add(max((older, me), key=lambda o: o.arrival).id)
             return
         if expected is IngestOutcome.NUMBERING_CONFLICT:
             older = min(live, key=lambda o: o.arrival)
             self.in_conflict |= {older.id, result.variant_id}
+            self.newcomers.add(result.variant_id)
         if expected is IngestOutcome.SUPERSEDING:
             assert result.supersedes_variant_id == max(gone, key=lambda o: o.arrival).id
         else:
@@ -410,7 +413,7 @@ class ModelInvariants(RuleBasedStateMachine):
         candidates = [
             s
             for s in self.shadow.values()
-            if s.unit_id == unit_id and not s.removed and s.id not in self.in_conflict
+            if s.unit_id == unit_id and not s.removed and s.id not in self.newcomers
         ]
         oracle = min(
             candidates,

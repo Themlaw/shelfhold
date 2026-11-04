@@ -310,7 +310,11 @@ class SqlUnitStore:
                 )
             ).all()
         )
-        in_conflict = {x for pair in flagged for x in pair}
+        age = {r.id: (r.first_seen_at, r.id) for r in rows}
+        # the one that arrived in the conflict is the newer of the pair; the older keeps its place
+        in_conflict = {
+            max(pair, key=age.__getitem__) for pair in flagged if pair[0] in age and pair[1] in age
+        }
         return [
             VariantFacts(
                 r.id,

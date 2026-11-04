@@ -69,7 +69,7 @@ Dernière migration libre de M1a. Les colonnes viennent de 02 (3.2, 3.3, 3.4, pu
 
 ### L15 : suites de la relecture
 
-9. **Conflit ouvert.** Toute Variante nommée par une suggestion `numbering_conflict` ouverte (l'ancienne comme la nouvelle) est exclue de `elect_preferred` : rien n'est exporté pour cette place sans décision de l'admin. Une Variante retirée qui réapparaît alors qu'une autre Variante vivante (même liaison, même équipe) a pris sa place ouvre le même conflit.
+9. **Conflit ouvert.** Seule la Variante arrivée en conflit (la plus récente de la paire de la suggestion `numbering_conflict` ouverte) est exclue de `elect_preferred` : la plus ancienne garde sa place et reste exportable (EF-BIB-034), la nouvelle n'est jamais exportée sans décision de l'admin. Une Variante retirée qui réapparaît alors qu'une autre Variante vivante (même liaison, même équipe) a pris sa place ouvre le même conflit.
 10. **Rattachement par titre (EF-BIB-034).** Une Unité non numérotée dont le titre normalisé (NFC, casse pliée) est celui d'une autre Unité de l'Édition ouvre une suggestion `unnumbered_title_match` entre les deux Variantes. Aucune action automatique, et cette suggestion ne bloque pas l'export.
 11. **Révision.** Seuls les champs fournis par la source comptent (`None` n'est pas un changement) ; la nouvelle ligne reprend la valeur précédente d'un champ absent.
 12. **Concurrence.** `ingest_isolated(engine, item)` ouvre `BEGIN IMMEDIATE` et rejoue une seule fois sur `IntegrityError` ou `SQLITE_BUSY`. `Catalog.ingest` reste dans la transaction de l'appelant. La liaison est vérifiée une fois par item et son Édition mise en cache pour la durée de vie du `Catalog`.
