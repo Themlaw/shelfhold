@@ -5,9 +5,10 @@ received value is kept next to it (`raw`) with the normalizer id `lang@1`. The i
 contract `lang-single-producer` reserves `langcodes` for this module; plugins do not normalize (the
 SDK only carries the `LanguageTag` type).
 
-Version 1 choice: for Chinese only the script matters in the key (`zh-Hans`, `zh-Hant`), the region
-is dropped; a bare `zh` is a valid tag but never enters an Edition key (`edition_key_lang`). Any
-addition to the alias table is a new version.
+Version 1 choice: Chinese is handled like any other language (region and extensions are kept), but
+the script is mandatory: it is inferred from the region when absent (`zh-HK` gives `zh-Hant-HK`,
+`zh-CN` gives `zh-Hans-CN`), and a tag without script (a bare `zh`) is a valid tag that never
+enters an Edition key (`edition_key_lang`). Any addition to the alias table is a new version.
 """
 
 from dataclasses import dataclass
@@ -71,15 +72,10 @@ def _canonical(raw: str) -> str:
     except (ValueError, langcodes.tag_parser.LanguageTagError) as exc:
         raise LanguageError("invalid", raw) from exc
     language = langcodes.Language.get(tag)
-    if language.language == "zh":
-        script = language.script or (
-            "Hant"
-            if language.territory in _ZH_HANT_REGIONS
-            else "Hans"
-            if language.territory
-            else ""
-        )
-        return f"zh-{script}" if script else "zh"
+    if language.language == "zh" and language.script is None and language.territory:
+        # Chinese needs its script: infer it from the region, keep the region and any extension.
+        script = "Hant" if language.territory in _ZH_HANT_REGIONS else "Hans"
+        tag = f"zh-{script}{tag[2:]}"
     return tag
 
 
@@ -89,9 +85,9 @@ def normalize_lang(raw: str) -> NormalizedLang:
 
 
 def edition_key_lang(raw: str) -> LanguageTag:
-    """Language allowed in an Edition key (no placeholder, no `zh` without a script)."""
+    """Language allowed in an Edition key (no placeholder, no Chinese without a script)."""
     tag = normalize_lang(raw).tag
-    if tag == "zh":
+    if tag.startswith("zh") and langcodes.Language.get(tag).script is None:
         raise LanguageError("script_required", raw)
     return tag
 

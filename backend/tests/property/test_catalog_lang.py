@@ -9,7 +9,25 @@ from hypothesis import strategies as st
 from shelfhold.catalog.lang import LanguageError, normalize_lang
 
 TAGS = st.sampled_from(
-    ["fr", "en-US", "pt-BR", "zh-Hans", "zh-Hant", "sr-Latn-RS", "es-419", "ja", "tl", "iw", "fil"]
+    [
+        "fr",
+        "en-US",
+        "pt-BR",
+        "zh-Hans",
+        "zh-Hant",
+        "zh-Hans-CN",
+        "zh-Hant-TW",
+        "zh-Hant-HK",
+        "zh-CN",
+        "zh-TW",
+        "zh-HK",
+        "sr-Latn-RS",
+        "es-419",
+        "ja",
+        "tl",
+        "iw",
+        "fil",
+    ]
 )
 
 
@@ -39,3 +57,13 @@ def test_normalize_lang_is_idempotent(tag: str) -> None:
 def test_normalize_lang_only_raises_language_error(raw: str) -> None:
     with contextlib.suppress(LanguageError):
         normalize_lang(raw)
+
+
+@pytest.mark.req("ENF-I18N-005")
+@given(st.sampled_from(["zh-CN", "zh-SG", "zh-TW", "zh-HK", "zh-MO", "zh-Hans", "zh-Hant"]))
+def test_chinese_edition_keys_always_carry_a_script(tag: str) -> None:
+    from shelfhold.catalog.lang import edition_key_lang
+
+    key = edition_key_lang(tag)
+    assert key.split("-")[1] in {"Hans", "Hant"}
+    assert edition_key_lang(key) == key

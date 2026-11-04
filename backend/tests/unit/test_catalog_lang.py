@@ -54,8 +54,10 @@ def test_equivalent_language_tags_same_edition() -> None:
         ["he", "iw"],
         ["es-419", "es-la", "es_LA"],
         ["ja-Latn", "ja-ro"],
-        ["zh-Hans", "zh-CN", "zh-hans-cn", "zh_SG"],
-        ["zh-Hant", "zh-TW", "zh-HK", "zh-hant"],
+        ["zh-Hans-CN", "zh-CN", "zh-hans-cn", "zh_CN"],
+        ["zh-Hans-SG", "zh_SG"],
+        ["zh-Hant-TW", "zh-TW", "zh-hant-tw"],
+        ["zh-Hant-HK", "zh-HK", "zh-hk"],
     ]
     for group in groups:
         assert len({edition_key_lang(raw) for raw in group}) == 1, group
@@ -68,7 +70,11 @@ def test_zh_requires_script() -> None:
     assert err.value.code == "script_required"
     assert normalize_lang("zh").tag == "zh"  # storable elsewhere, never in an edition key
     assert edition_key_lang("zh-Hans") == "zh-Hans"
-    assert edition_key_lang("zh-TW") == "zh-Hant"
+    assert edition_key_lang("zh-TW") == "zh-Hant-TW"
+    assert edition_key_lang("zh-hk") == "zh-Hant-HK"
+    assert edition_key_lang("zh-Hans-CN") == "zh-Hans-CN"
+    assert edition_key_lang("zh-CN-x-foo") == "zh-Hans-CN-x-foo"  # extensions kept, as elsewhere
+    assert edition_key_lang("zh-TW") != edition_key_lang("zh-HK")  # regions stay distinct
 
 
 @pytest.mark.req("ENF-I18N-005", "EF-BIB-001")
