@@ -8,11 +8,19 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Connection
 
+from shelfhold.infrastructure.db import check_foreign_keys, foreign_keys_disabled
+from shelfhold.infrastructure.schema import metadata
+
 config = context.config
 
 
 def run(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=None, render_as_batch=True)
+    context.configure(
+        connection=connection,
+        target_metadata=metadata,  # `alembic revision --autogenerate` compares against it
+        render_as_batch=True,
+        compare_type=True,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
@@ -26,5 +34,7 @@ else:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    with engine.begin() as connection:
+    with engine.connect() as connection, foreign_keys_disabled(connection):
         run(connection)
+        check_foreign_keys(connection)
+        connection.commit()
