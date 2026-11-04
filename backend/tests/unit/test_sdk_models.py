@@ -1,0 +1,191 @@
+"""SDK data contracts: JSON round trip of every exported type, content_trust default (EF-SRC-001)."""
+
+import inspect
+import json
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Any
+
+import pytest
+from pydantic import BaseModel, ValidationError
+
+from shelfhold.sdk import connected, export_target, fetcher, models, refs, source
+
+
+def _manifest(**extra: Any) -> source.SourceManifest:
+    return source.SourceManifest(
+        key="sample",
+        kind=models.PluginKind.SOURCE,
+        version="1.0.0",
+        api=models.API_VERSION,
+        name="Sample",
+        langs=["en"],
+        content_kinds={"images", "file"},
+        url_patterns=[r"^https://sample\.invalid/"],
+        capabilities=source.Capability.SEARCH | source.Capability.RANGED_CONTENT,
+        rate_limit=models.RateLimit(requests_per_second=2.0, concurrency=1),
+        **extra,
+    )
+
+
+def _series() -> refs.SeriesRef:
+    return refs.SeriesRef(source_key="sample", remote_id="series/1", title="A series")
+
+
+def _unit(n: int = 1) -> refs.UnitInfo:
+    return refs.UnitInfo(
+        remote_unit_id=f"sample:ch-{n}",
+        source_order=n,
+        number=str(n),
+        number_sort=Decimal(n) + Decimal("0.5"),
+        title=None,
+        volume=None,
+        volume_label="Vol.1",
+        volume_closed=True,
+        team=None,
+        lang="en",
+        published_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+
+
+def _image_request() -> refs.ImageRequest:
+    return refs.ImageRequest(
+        url="https://sample.invalid/p/1.png",
+        method="POST",
+        body=b"\x00\xffbinary",
+        expires_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+
+
+def _asset() -> refs.FileAsset:
+    return refs.FileAsset(request=_image_request(), mime="application/epub+zip", filename="v1.epub")
+
+
+def _range() -> refs.RangeRef:
+    return refs.RangeRef(series=_series(), first=_unit(1), last=_unit(8), volume_label="Vol.1")
+
+
+def _samples() -> dict[type[BaseModel], BaseModel]:
+    samples: list[BaseModel] = [
+        models.DomainRule(pattern="*.sample.invalid", purpose="api"),
+        models.Permissions(domains=[models.DomainRule(pattern="sample.invalid", purpose="pages")]),
+        models.RateLimit(requests_per_second=1.5, concurrency=2),
+        models.PluginManifest(
+            key="plain", kind=models.PluginKind.EXPORT_TARGET, version="1", api=1, name="Plain"
+        ),
+        models.Cursor(token="opaque"),
+        models.Page[refs.SeriesRef](items=[_series()], next=models.Cursor(token="n")),
+        models.FilterSpec(
+            key="sort",
+            kind="group",
+            label="Sort",
+            options=[("a", "A")],
+            children=[models.FilterSpec(key="c", kind="checkbox", label="C", default=True)],
+        ),
+        models.AuthBasic(),
+        models.AuthForm(fields=["user", "password"]),
+        models.AuthApiKey(location="header", name="X-Key"),
+        models.AuthCookieImport(domains=["sample.invalid"]),
+        models.AuthDeviceCode(device_url="https://a.invalid/d", token_url="https://a.invalid/t", scopes=["r"]),
+        models.AuthInteractive(reason="captcha"),
+        models.SessionState(expires_at=datetime(2026, 1, 2, tzinfo=UTC), opaque={"k": [1, 2]}),
+        _manifest(),
+        source.SourceTestCase(name="smoke", cassette="cassettes/smoke.json"),
+        source.SubSource(
+            source_key="sample:1", name="Sub", lang="mul", content_warning="mixed", limit_key="up-1"
+        ),
+        _series(),
+        refs.SeriesInfo(ref=_series(), title="A series", external_ids={"isbn": "x"}),
+        _unit(),
+        _image_request(),
+        refs.ScrambleInfo(processor="descramble", params={"n": 3}),
+        refs.PageRef(index=0, token="t", scrambled=refs.ScrambleInfo(processor="p", params={})),
+        refs.ImagePages(pages=[refs.PageRef(index=0, token="t")]),
+        refs.TextContent(xhtml="<p>x</p>", assets=[_image_request()]),
+        _asset(),
+        refs.UnitRef(series=_series(), unit=_unit()),
+        _range(),
+        refs.RangedPayload(
+            asset=_asset(),
+            covers=["sample:ch-1", "sample:ch-2"],
+            bounds={"sample:ch-1": ("start", "end")},
+            volume_closed=False,
+        ),
+        connected.Ticket(token="t-1", target_kind="range"),
+        connected.ServiceHealth(ok=False, version="1.2.3", detail="extension not loaded"),
+        connected.ReleaseResult(released=True),
+        fetcher.Response(status=200, headers={"x": "y"}, body=b"\x00\x01"),
+        fetcher.DownloadedFile(sha256="0" * 64, size=3, content=b"abc"),
+        fetcher.CookieJarView(cookies={"sid": "snapshot"}),
+        export_target.ApiCall(method="GET", path="/api/x", query={"a": 1}, auth="target_admin"),
+        export_target.FsOp(op="rename", rel_path="a/b", dst_rel_path="a/c"),
+        export_target.NamingConstraints(
+            max_segment_bytes=255, max_path_bytes=4096, forbidden="/\\", case_insensitive=False
+        ),
+    ]
+    return {type(m): m for m in samples}
+
+
+def _exported_models() -> list[type[BaseModel]]:
+    found: list[type[BaseModel]] = []
+    for module in (models, refs, source, connected, export_target, fetcher):
+        for _, cls in inspect.getmembers(module, inspect.isclass):
+            if (
+                issubclass(cls, BaseModel)
+                and cls.__module__ == module.__name__
+                and cls is not models.SdkModel
+                and not cls.__pydantic_generic_metadata__["parameters"]  # unparametrised generic
+            ):
+                found.append(cls)
+    return found
+
+
+@pytest.mark.req("EF-SRC-001")
+def test_sdk_models_json_roundtrip() -> None:
+    samples = _samples()
+    for instance in samples.values():
+        again = type(instance).model_validate_json(instance.model_dump_json())
+        assert again == instance, type(instance).__name__
+    # a new type of the SDK must come with a sample: the contract is "every type"
+    missing = [cls.__name__ for cls in _exported_models() if cls not in samples]
+    assert not missing, missing
+
+
+@pytest.mark.req("EF-SRC-001")
+def test_sdk_json_forms_bytes_base64_decimal_string() -> None:
+    wire = json.loads(_image_request().model_dump_json())
+    assert wire["body"] == "AP9iaW5hcnk="  # bytes travel as base64
+    assert json.loads(_unit(2).model_dump_json())["number_sort"] == "2.5"  # Decimal as a string
+    cookies = json.loads(fetcher.CookieJarView(cookies={"a": "b"}).model_dump_json())
+    assert cookies == {"cookies": {"a": "b"}}  # a snapshot, never a live jar
+
+
+@pytest.mark.req("EF-SRC-001")
+def test_sdk_manifest_capabilities_travel_as_names() -> None:
+    wire = json.loads(_manifest().model_dump_json())
+    assert sorted(wire["capabilities"]) == ["RANGED_CONTENT", "SEARCH"]
+    assert sorted(wire["content_kinds"]) == ["file", "images"]
+    with pytest.raises(ValidationError):
+        source.SourceManifest.model_validate({**wire, "capabilities": ["NOPE"]})
+
+
+@pytest.mark.req("EF-SRC-001", "EF-BIB-051")
+def test_sdk_manifest_content_trust_defaults_untrusted() -> None:
+    manifest = _manifest()
+    assert manifest.content_trust == "untrusted"
+    wire = json.loads(manifest.model_dump_json())
+    wire.pop("content_trust")
+    assert source.SourceManifest.model_validate(wire).content_trust == "untrusted"
+    assert _manifest(content_trust="publisher").content_trust == "publisher"
+    with pytest.raises(ValidationError):
+        _manifest(content_trust="trusted")
+
+
+@pytest.mark.req("EF-SRC-001")
+def test_sdk_manifest_carries_the_v1_fields() -> None:
+    fields = set(source.SourceManifest.model_fields)
+    expected = {
+        "key", "version", "api", "langs", "content_kinds", "url_patterns", "capabilities",
+        "settings_schema", "rate_limit", "terms_url", "content_warning", "content_trust",
+    }  # fmt: skip
+    assert expected <= fields
