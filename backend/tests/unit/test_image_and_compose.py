@@ -184,8 +184,13 @@ def test_published_image_is_the_tested_archive_never_a_rebuild() -> None:
 def test_image_is_pushed_by_digest_on_main_only() -> None:
     ci = load(WORKFLOWS / "ci.yml")["jobs"]
     main_only = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
-    assert ci["image-main"]["if"] == main_only and ci["image-publish"]["if"] == main_only
-    assert ci["image-publish"]["needs"] == "image-main"  # published only after the e2e of the run
+    publish_if = ci["image-publish"]["if"]
+    assert ci["image-main"]["if"] == main_only and publish_if.startswith(main_only)
+    assert "!cancelled()" in publish_if and "!failure()" in publish_if  # filtered jobs may skip
+    # published only after the e2e of the run and the test jobs (not ci-success: it needs us)
+    needs = set(ci["image-publish"]["needs"])
+    assert needs >= {"image-main", "backend", "lint", "e2e-front", "fixtures", "denylist"}
+    assert "ci-success" not in needs
     assert ci["image-pr"]["if"] == "github.event_name == 'pull_request'"
     merge = load(WORKFLOWS / "image-publish.yml")["jobs"]["merge"]
     assert merge["needs"] == "publish"

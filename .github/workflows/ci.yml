@@ -279,8 +279,10 @@ jobs:
 
   image-publish:
     # Pushes the archives tested by image-main (same run), then the multi-arch manifest.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: image-main
+    # Also gated on the test jobs (not on ci-success, which needs this job). Filtered jobs may be
+    # skipped, hence !failure(): a failed or cancelled needed job blocks the publication.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !cancelled() && !failure()
+    needs: [image-main, lint, denylist, fixtures, backend, e2e-front]
     permissions:
       contents: read
       packages: write
