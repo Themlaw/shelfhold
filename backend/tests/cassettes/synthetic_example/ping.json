@@ -1,0 +1,16 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://example.invalid/ping",
+        "headers": {"Accept": "application/json", "User-Agent": "Shelfhold/0.0 (+https://example.invalid)"}
+      },
+      "response": {
+        "status": 200,
+        "headers": {"Content-Type": "application/json"},
+        "body": "{\"ok\": true}"
+      }
+    }
+  ]
+}

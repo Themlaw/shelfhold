@@ -11,7 +11,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 ENV_PREFIX = "SHELFHOLD_"
 FILE_SUFFIX = "_FILE"
@@ -41,6 +49,16 @@ class Settings(BaseModel):
     log_format: Literal["json", "console"] = "json"
     public_url: str | None = None
     api_token: SecretStr | None = None
+    # ENF-LEG-001: a fresh install has no plugin repository and no active source.
+    plugin_repos: tuple[str, ...] = ()
+    active_sources: tuple[str, ...] = ()
+
+    @field_validator("plugin_repos", "active_sources", mode="before")
+    @classmethod
+    def _split_list(cls, value: object) -> object:
+        if isinstance(value, str):
+            return tuple(part.strip() for part in value.split(",") if part.strip())
+        return value
 
     @property
     def database_path(self) -> Path:
