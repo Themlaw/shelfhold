@@ -134,8 +134,12 @@ job_view = sa.Table(
     now_column(),
     sa.Column("started_at", UtcDateTime(), nullable=True),
     sa.Column("finished_at", UtcDateTime(), nullable=True),
+    # A window job stops at `window_end`; `cursor` is where it resumes the next night (0005).
+    sa.Column("window_end", UtcDateTime(), nullable=True),
+    sa.Column("cursor", sa.Text(), nullable=True),
     ulid_check("id"),
     ulid_check("request_id"),
+    sa.CheckConstraint('cursor IS NULL OR json_valid("cursor")', name="cursor_json"),
     in_check("status", JOB_STATUSES),
     in_check("priority_class", PRIORITY_CLASSES),
     positive_check("attempts"),

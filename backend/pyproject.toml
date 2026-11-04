@@ -25,6 +25,7 @@ dependencies = [
     "python-multipart>=0.0.30",  # ENF-SEC-016 floor (CVE-2026-53539, CVE-2026-53538)
     "python-ulid>=3.0.0",  # identifiers
     "langcodes>=3.5.1",  # normalize_lang() (ADR-0042); fallback: a frozen alias table
+    "tzdata>=2026.1",  # Europe/Paris for the maintenance window; python-slim ships no zoneinfo
 ]
 
 [dependency-groups]
@@ -142,6 +143,11 @@ strict = true
 python_version = "3.13"
 mypy_path = "src"
 packages = ["shelfhold"]
+
+[[tool.mypy.overrides]]
+# huey ships no types; it is only imported by shelfhold.jobs.huey_app (ENF-GOV-002).
+module = ["huey", "huey.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # defusedxml ships no types; it is only imported by shelfhold.infrastructure.xml (ENF-SEC-014).
