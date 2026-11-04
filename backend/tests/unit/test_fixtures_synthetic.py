@@ -5,11 +5,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import zipfile
+from pathlib import Path
+from types import ModuleType
 from xml.etree import ElementTree
 
 import pytest
-from pathlib import Path
-from types import ModuleType
 
 TESTS = Path(__file__).resolve().parents[1]
 SYNTH = TESTS / "fixtures" / "synthetic"
