@@ -1,0 +1,42 @@
+{
+  "version": "v2.4.2366",
+  "name": "Suwayomi-Server",
+  "user": "shelfhold",
+  "sources": [
+    {"id": "7001", "displayName": "Synthetic Source One", "lang": "en", "isNsfw": false},
+    {"id": "7002", "displayName": "Synthetic Source Two", "lang": "fr", "isNsfw": false},
+    {"id": "7003", "displayName": "Synthetic Source Three", "lang": "all", "isNsfw": true}
+  ],
+  "mangas": [
+    {
+      "id": 101, "sourceId": "7001", "url": "/series-alpha", "title": "Series Alpha",
+      "inLibrary": true,
+      "chapters": [
+        {"id": 5001, "url": "/series-alpha/ch-001", "name": "Chapter 1", "chapterNumber": 1.0,
+         "sourceOrder": 0, "scanlator": "Synthetic Team A", "uploadDate": "1760000000000",
+         "cbz": "comic_a_001.cbz"},
+        {"id": 5002, "url": "/series-alpha/ch-002", "name": "Chapter 2", "chapterNumber": 2.0,
+         "sourceOrder": 1, "scanlator": "Synthetic Team B", "uploadDate": "0",
+         "cbz": "comic_a_002.cbz"}
+      ]
+    },
+    {
+      "id": 102, "sourceId": "7002", "url": "/series-beta", "title": "Series Beta",
+      "inLibrary": true,
+      "chapters": [
+        {"id": 5003, "url": "/series-beta/ch-001", "name": "Chapter 1", "chapterNumber": 1.0,
+         "sourceOrder": 0, "scanlator": null, "uploadDate": "1760000000000",
+         "cbz": "comic_a_001.cbz"}
+      ]
+    },
+    {
+      "id": 103, "sourceId": "7003", "url": "/series-gamma", "title": "Series Gamma",
+      "inLibrary": false,
+      "chapters": [
+        {"id": 5004, "url": "/series-gamma/ch-001", "name": "Chapter 1", "chapterNumber": 1.0,
+         "sourceOrder": 0, "scanlator": null, "uploadDate": "1760000000000",
+         "cbz": "comic_a_001.cbz"}
+      ]
+    }
+  ]
+}
