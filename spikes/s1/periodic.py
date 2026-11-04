@@ -34,6 +34,7 @@ def consumer() -> subprocess.Popen[bytes]:
 
 def runs() -> list[tuple[str, float]]:
     db = sqlite3.connect(workdir / "periodic.db", timeout=30)
+    db.execute("CREATE TABLE IF NOT EXISTS runs (kind TEXT, at REAL)")
     rows = db.execute("SELECT kind, at FROM runs ORDER BY at").fetchall()
     db.close()
     return rows

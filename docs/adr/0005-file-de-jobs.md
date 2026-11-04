@@ -1,7 +1,7 @@
 ---
-status: accepté (sous réserve du spike S1 en M0)
+status: accepté (spike S1 mené en M0 : Huey retenu, critère de précision des périodiques reformulé)
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 11)
+amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 11) ; 2026-11-04 (spike S1)
 decision-makers: mainteneur
 ---
 # ADR-0005 — File de jobs durable sur SQLite : Huey SqliteHuey épinglé + couche Shelfhold
@@ -64,6 +64,13 @@ Moyenne : grâce au port `JobQueue`, changer d'implémentation demande une migra
 
 ## Amendement passe 11 (2026-11-03)
 L6 (Z2), M1b. Trois **classes de priorité Huey fixes** : nouveautés suivies > demandes approuvées > rattrapage (`backfill`) ; un rattrapage est découpé en lots par cycle pour laisser passer les autres travaux ; champ additif `job_view.request_id?` (« pour qui » dans l'Activité). Pas de quota disque par utilisateur : le modèle est partagé et dédoublonné. Les jobs étant éphémères, ce réglage ne demande aucune migration (`test_huey_priority_classes_new_before_backfill`).
+
+## Amendement spike S1 (2026-11-04)
+Mesures complètes : `spikes/s1/RESULTATS.md` (Huey 3.5.4, `SqliteHuey`, consommateur à fils).
+- **Retenu : Huey `>=3.5.4,<3.6`** avec la couche Shelfhold. Critères 1 (1 000 tâches, 0 « database is locked »), 2 (`kill -9` puis `flush_locks`), 4 (slot par domaine N = 2, pic mesuré 2), 5 (enfilement p99 0,13 à 0,16 ms pour 5 ms permis) et 6 (+3,4 Mo de RSS pour +20 Mo permis) passent.
+- **`flush_locks` au démarrage est indispensable** : sans lui, les tâches qui suivent un `kill -9` échouent toutes sur le verrou orphelin (5 sur 5 dans le spike). La tâche en cours au moment du kill est perdue pour Huey (pas d'acquittement) : la table `jobs` (statut `running`) la remet en file, chaque tâche est idempotente.
+- **Critère 3 amendé.** Le rattrapage passe (Huey n'exécute aucun tick manqué ; la couche `last_run_at` en enfile exactement un). La précision « +-2 s » échoue : le crontab de Huey s'évalue toutes les 60 s à partir du démarrage du consommateur, avec un décalage de phase (-28 à +11 s observés) et une gigue de quelques secondes. Contournement retenu dans la couche Shelfhold : les périodiques sont de granularité horaire ou quotidienne, idempotents, sans exigence à la seconde ; le critère devient « gigue <= 15 s et aucune dérive cumulative sur 24 h ». La mesure sur 24 h n'a pas été faite (version accélérée de 9,5 min seulement) : elle reste à exécuter avant la 1.0, hors CI.
+- Le prototype (`spikes/s1/layer.py`) fixe le contrat de la couche : table `domain_slot` (acquisition en `BEGIN IMMEDIATE`, purge au démarrage), table `periodic(last_run_at)` avec politique *run-once* au démarrage.
 
 ## Exigences liées
 EF-INT-003, EF-INT-004, EF-INT-002, EF-SRC-009, EF-SRC-021, EF-BIB-012, ENF-OPS-007, ENF-PERF-001, EF-INT-017.
