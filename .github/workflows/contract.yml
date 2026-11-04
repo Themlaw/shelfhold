@@ -1,0 +1,47 @@
+name: contract
+
+# Suwayomi contract bench (spike S5, ENF-LEG-013). Not a required check.
+# Real Suwayomi pinned by digest (e2e/suwayomi/compose.yaml), internal network only,
+# local source only, synthetic CBZ, no extension store.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+  pull_request:
+    paths:
+      - "e2e/suwayomi/**"
+      - "backend/tests/contract/**"
+      - "backend/tests/fixtures/synthetic/**"
+      - "backend/pyproject.toml"
+      - "backend/uv.lock"
+      - ".github/workflows/contract.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suwayomi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.x"
+          enable-cache: false
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: Pull the pinned image (the only network use; the bench network is internal)
+        run: docker compose -f e2e/suwayomi/compose.yaml pull
+        env:
+          SUWAYOMI_DATA: ${{ runner.temp }}
+      - name: Contract tests (basic_auth and ui_login)
+        working-directory: backend
+        run: uv run --locked pytest -m contract tests/contract -v

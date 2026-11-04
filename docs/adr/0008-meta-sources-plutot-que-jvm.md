@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 5) ; 2026-11-03 (passe 6)
+amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 5) ; 2026-11-03 (passe 6) ; 2026-11-04 (spike S5)
 decision-makers: mainteneur
 ---
 # ADR-0008 — Méta-sources (Suwayomi, lncrawl, OPDS) plutôt qu'embarquer la JVM
@@ -101,3 +101,6 @@ EF-SRC-006, EF-SRC-008, EF-SRC-009, EF-SRC-010, EF-SRC-021, EF-INT-008, EF-INT-0
 - `deliverables/review/chasseur-trous-passe5.md`
 - `deliverables/review/explorateur-passe5.md`
 - `deliverables/review/ARBITRAGES-passe5.md`
+
+## Amendement spike S5 (2026-11-04)
+Constats contre Suwayomi v2.4.2366 (détail : `spikes/s5/RESULTATS.md`). **La route `GET /api/v1/chapter/{id}/download` sert un CBZ existant** (`application/vnd.comicbook+zip`, signature `PK`). **Le mode de production du CBZ par le téléchargeur n'est pas exercé** : le téléchargeur de Suwayomi ignore la source locale et le banc interdit toute source distante (ENF-LEG-013) ; le fichier est donc posé à la main. Le mode CBZ de la V1 reste l'hypothèse de travail, à confirmer en M1a contre une source réelle de l'utilisateur ; le mode pages reste hors périmètre. Autres précisions : (1) aucun champ de `Query` ni de `Mutation` ne renvoie l'archive, seule la route REST la sert (risque R7 maintenu) ; (2) les dépôts d'extensions s'appellent `extensionStores` ; (3) `ui_login` v2.4 est mono-compte (JWT, `login` / `refreshToken`) : les comptes multiples et leurs permissions ne sont pas testables ; (4) la branche principale de Suwayomi n'est pas jouée.
