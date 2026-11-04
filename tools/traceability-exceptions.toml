@@ -6,7 +6,7 @@ reason = "tests de l'outil de traçabilité lui-même (pas une exigence du produ
 # Squelette M0 (spikes S2/S4, ADR-0013) : comportements utiles mais qui ne vérifient
 # aucune exigence EF-/ENF- propre. Ils ne comptent pour aucune exigence.
 [[exception]]
-path = "backend/tests/unit/test_spa.py"
+path = "backend/tests/integration/test_spa.py"
 tests = [
   "test_index_html_served_at_root_when_build_present",
   "test_static_asset_served",

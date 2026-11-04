@@ -41,6 +41,14 @@ Tests, fixtures et cassettes sont **synthétiques ou du domaine public**. Jamais
 
 Une source passe le kit de conformité (`shelfhold.sdk.testing`), déclare ses conditions (`terms_url`, robots, limites) et passe par la **liste d'admission** : preuve d'autorisation ou licence libre. Toute PR visant une source non autorisée est fermée (voir [ADR-0015](docs/adr/0015-posture-legale.md)).
 
+## Tests découpés en shards
+
+- La CI lance `backend-unit` en matrice (hash du nom de chaque test), `backend-integration`, puis `coverage` qui combine les `.coverage.*` et applique les seuils (80 % global, 85 % sur le diff).
+- Un shard en local : `cd backend && uv run pytest tests/unit -n auto --shard 2/4 --no-cov` (intégration : `tests/integration`).
+- Augmenter N : changer `BACKEND_SHARDS` (ou `E2E_SHARDS` pour Playwright) dans le job `changes` de `.github/workflows/ci.yml`, seul endroit à toucher.
+- Playwright en local : `cd e2e && npx playwright test --shard=1/2`.
+- Un nouveau test va dans `tests/unit` (rapide, sans E/S lourde) ou `tests/integration` (base, application, sous-processus).
+
 ## Politique de support
 
 Support « au mieux », sans garantie, par un mainteneur bénévole.

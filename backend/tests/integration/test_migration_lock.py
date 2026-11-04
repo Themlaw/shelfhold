@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from shelfhold.config import Settings
 from shelfhold.infrastructure.migrate import MigrationInProgressError, migrate
 from shelfhold.main import create_app
-from tests.unit.test_migrations import scripts_with_extra_revision
+from tests.integration.test_migrations import scripts_with_extra_revision
 
 RUNNER = """
 import os, sys

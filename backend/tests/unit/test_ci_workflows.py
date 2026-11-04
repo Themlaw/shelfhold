@@ -53,3 +53,32 @@ def test_image_paths_filter_covers_every_dockerfile_copy_source() -> None:
     assert ".dockerignore" in patterns
     uncovered = [s for s in sources if not covered(s.removeprefix("./"))]
     assert not uncovered, uncovered
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_backend_is_sharded_and_coverage_is_combined_with_unchanged_thresholds() -> None:
+    ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
+    jobs = ci["jobs"]
+    assert "backend" not in jobs  # replaced by the jobs below
+    assert {"backend-unit", "backend-integration", "coverage"} <= set(jobs)
+    assert set(jobs["coverage"]["needs"]) >= {"backend-unit", "backend-integration"}
+    # same path filter as the former job: a backend-unrelated change skips all of them
+    for name in ("backend-unit", "backend-integration", "coverage"):
+        assert jobs[name]["if"] == "needs.changes.outputs.backend == 'true'"
+    # the number of shards is defined once, in the `changes` job
+    assert jobs["changes"]["env"]["BACKEND_SHARDS"].isdigit()
+    assert jobs["e2e-front"]["strategy"]["matrix"]["shard"]
+    text = CI.read_text(encoding="utf-8")
+    assert "--fail-under=85" in text  # diff coverage threshold kept
+    pyproject = (CI.parents[2] / "backend" / "pyproject.toml").read_text(encoding="utf-8")
+    assert "fail_under = 80" in pyproject  # applied by `coverage report` in the coverage job
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_every_job_has_a_timeout_of_at_most_15_minutes() -> None:
+    ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
+    for name, job in ci["jobs"].items():
+        if "uses" in job:  # reusable workflow: its own jobs carry the timeout
+            continue
+        assert 0 < job.get("timeout-minutes", 0) <= 15, name
+    assert ci["concurrency"]["cancel-in-progress"]
