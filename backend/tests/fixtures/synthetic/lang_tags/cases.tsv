@@ -1,0 +1,28 @@
+# Synthetic BCP 47 corpus (ENF-I18N-005): raw<TAB>normalize_lang<TAB>edition_key_lang. "!code" = refused.
+fr	fr	fr
+FR	fr	fr
+fr_FR	fr-FR	fr-FR
+en-us	en-US	en-US
+pt-br	pt-BR	pt-BR
+PT_BR	pt-BR	pt-BR
+sr-latn-rs	sr-Latn-RS	sr-Latn-RS
+tl	fil	fil
+iw	he	he
+in	id	id
+jp	ja	ja
+es-la	es-419	es-419
+ja-ro	ja-Latn	ja-Latn
+zh	zh	!script_required
+zh-CN	zh-Hans	zh-Hans
+zh-SG	zh-Hans	zh-Hans
+zh-Hans-CN	zh-Hans	zh-Hans
+zh-TW	zh-Hant	zh-Hant
+zh-hk	zh-Hant	zh-Hant
+zh-hant	zh-Hant	zh-Hant
+all	!placeholder	!placeholder
+multi	!placeholder	!placeholder
+und	!placeholder	!placeholder
+mul	!placeholder	!placeholder
+	!placeholder	!placeholder
+12345	!invalid	!invalid
+not a tag	!invalid	!invalid
