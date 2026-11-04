@@ -229,6 +229,13 @@ VIOLATIONS = [
      "infrastructure/content_trust/sanitize.py"),
     ("sanitize-single-entry", "catalog/other.py", "import nh3\n",
      "infrastructure/content_trust/__init__.py"),
+    ("http-client-single-entry", "library/other.py", "import httpx2\n",
+     "infrastructure/fetcher/other.py"),
+    ("http-client-single-entry", "export/other.py", "import requests\n", None),
+    ("http-client-single-entry", "export/other.py", "import httpcore2\n", None),
+    ("http-client-single-entry", "acquisition/other.py", "import aiohttp\n", None),
+    ("http-client-single-entry", "export/other.py", "import socket\n",
+     "infrastructure/fetcher/other.py"),
     ("lang-single-producer", "library/other.py", "import langcodes\n", "catalog/lang.py"),
     ("replica-single-count", "export/other.py", "import shelfhold.library.replica\n", None),
     ("fsops-sole-writer", "library/other.py", "import shutil\n", "infrastructure/fsops/io.py"),
@@ -253,7 +260,9 @@ VIOLATIONS = [
 ]  # fmt: skip
 
 
-@pytest.mark.req("ENF-QUAL-002", "ENF-SEC-014", "ENF-SEC-002", "ENF-SEC-015", "ENF-I18N-005")
+@pytest.mark.req(
+    "ENF-QUAL-002", "ENF-SEC-014", "ENF-SEC-002", "ENF-SEC-015", "ENF-I18N-005", "ENF-SEC-001"
+)
 @pytest.mark.parametrize(
     ("contract", "module", "code", "sanctioned"),
     VIOLATIONS,
