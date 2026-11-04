@@ -99,11 +99,28 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "shutil.unpack_archive".msg = "Use shelfhold.infrastructure.archives.safe_open_archive (ENF-SEC-002)."
 "importlib.import_module".msg = "Dynamic imports can hide a banned module; import statically."
 "builtins.__import__".msg = "Dynamic imports can hide a banned module; import statically."
+# EF-EXP-060 / ENF-SEC-012: files are written through infrastructure.fsops only. The exceptions
+# (per-file-ignores) write under /data, never under a library root.
+"os.replace".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.rename".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.renames".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.unlink".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.remove".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.rmdir".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.removedirs".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.link".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.symlink".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.mkdir".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.makedirs".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.truncate".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
 
 [tool.ruff.lint.per-file-ignores]
 # the CLI registry discovers its own command modules by name (package-local, never user input)
 "src/shelfhold/interfaces/cli/registry.py" = ["TID251"]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "TID251"]
+"src/shelfhold/infrastructure/fsops/**" = ["TID251"]
+"src/shelfhold/infrastructure/migrate.py" = ["TID251"]
+"src/shelfhold/infrastructure/volumes.py" = ["TID251"]
 "tests/unit/test_governance_docs.py" = ["S101", "S603", "S607"]
 "tests/contract/**" = ["S101", "S106", "E501"]
 "../e2e/**" = ["S101"]

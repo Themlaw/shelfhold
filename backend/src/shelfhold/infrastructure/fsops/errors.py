@@ -8,6 +8,7 @@ __all__ = [
     "CopyVerificationError",
     "CrossRootError",
     "FsopsError",
+    "NotRegularFileError",
     "OutsidePathMapError",
     "PathEscapeError",
     "ReadOnlyRootError",
@@ -33,6 +34,10 @@ class PathEscapeError(FsopsError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, code=errno.ELOOP)
+
+
+class NotRegularFileError(FsopsError):
+    """A FIFO, a device, a socket or a directory where a file was expected: never opened."""
 
 
 class ReservedPathError(FsopsError):

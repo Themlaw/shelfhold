@@ -7,6 +7,7 @@ the operation done, through descriptors, in the same open root that the sentinel
 Nothing here ever reads a path that was checked by a separate call.
 """
 
+import contextlib
 import os
 import uuid
 from collections.abc import Iterator, Sequence
@@ -147,7 +148,8 @@ class Fsops:
         expected = self._expected[root.path]
         try:
             return judge_sentinel(read_sentinel(root), expected)
-        except SentinelFormatError:
+        except (SentinelFormatError, OSError):
+            # unreadable, a FIFO, a directory...: fail closed, this root only (EF-EXP-059)
             return SentinelVerdict(RootState.MISMATCH)
 
     @contextmanager
@@ -206,8 +208,8 @@ class Fsops:
                     report.ok.append(root_path)
             except RootBlockedError as error:
                 report.blocked[root_path] = error.state
-            except PathEscapeError:
-                # The host folder is a link or has been tampered with: not a root to trust.
+            except OSError:
+                # The host folder is a link, a special file or tampered with: not a root to trust.
                 report.blocked[root_path] = RootState.MISMATCH
         return report
 
@@ -272,24 +274,31 @@ class Fsops:
         with self._gated(located) as root:
             root.rmdir(located.rel)
 
-    def rename(self, src: str, dst: str) -> None:
-        """Within one physical root only; between two roots it would be a copy (I24)."""
+    def rename(self, src: str, dst: str, *, replace: bool = False) -> None:
+        """Within one physical root only; between two roots it would be a copy (I24).
+
+        An existing target is an error (`FileExistsError`) unless `replace=True`."""
         a, b = self._locate(src), self._locate(dst)
         if a.read_only or b.read_only:
             raise ReadOnlyRootError("an adoption root is never written")
         if a.root_path != b.root_path:
             raise CrossRootError(f"{a.root_path} and {b.root_path} are different physical roots")
         with self._gated(a) as root:
-            root.rename(a.rel, b.rel)
+            root.rename(a.rel, b.rel, replace=replace)
 
     def recycle(self, local: str) -> str:
         """Move into the same root's `.shelfhold/recycle`; returns where it went."""
         located = self._locate(local)
         with self._gated(located) as root:
-            target = f"{RECYCLE_DIR}/{uuid.uuid4().hex}/{located.rel}"
-            parent = target.rpartition("/")[0]
-            root.mkdir(parent, parents=True, exist_ok=True, durable=False)
-            root.rename(located.rel, target)
+            folder = f"{RECYCLE_DIR}/{uuid.uuid4().hex}"
+            target = f"{folder}/{located.rel}"
+            try:
+                root.mkdir(target.rpartition("/")[0], parents=True, exist_ok=True, durable=False)
+                root.rename(located.rel, target, replace=False)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    root.remove_tree(folder)  # only empty folders made just above
+                raise
             return f"{root.path}/{target}"
 
     def copy_across(

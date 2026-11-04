@@ -16,8 +16,13 @@ from pathlib import Path
 from types import TracebackType
 from typing import Literal, Self
 
-from shelfhold.infrastructure.fsops.errors import FsopsError, PathEscapeError
-from shelfhold.infrastructure.fsops.openat2 import CONFINED, openat2, openat2_supported
+from shelfhold.infrastructure.fsops.errors import FsopsError, NotRegularFileError, PathEscapeError
+from shelfhold.infrastructure.fsops.openat2 import (
+    CONFINED,
+    openat2,
+    openat2_supported,
+    renameat2_noreplace,
+)
 
 __all__ = ["ConfinedRoot", "Strategy"]
 
@@ -25,6 +30,18 @@ DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 # What the kernel says when a link or a climb stops a resolution.
 ESCAPE_ERRNOS = (errno.ELOOP, errno.EXDEV)
 Kind = Literal["file", "dir", "symlink", "other"]
+
+
+def mount_id_of(fd: int) -> int | None:
+    """The mount a descriptor lives on, from `/proc/self/fdinfo`; None when unreadable."""
+    try:
+        with open(f"/proc/self/fdinfo/{fd}", encoding="ascii") as info:
+            for line in info:
+                if line.startswith("mnt_id:"):
+                    return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
 
 
 class Strategy(StrEnum):
@@ -54,16 +71,21 @@ class ConfinedRoot:
         self.strategy = strategy
         self.umask = umask
         self.st_dev = os.fstat(fd).st_dev
+        self._mount = mount_id_of(fd)
 
     @classmethod
     def open(
         cls, path: str | Path, *, strategy: Strategy = Strategy.AUTO, umask: int | None = None
     ) -> Self:
-        if strategy is Strategy.AUTO:
-            strategy = Strategy.OPENAT2 if openat2_supported() else Strategy.FALLBACK
-        elif strategy is Strategy.OPENAT2 and not openat2_supported():
-            raise FsopsError("openat2 is not available on this kernel")
         fd = os.open(os.fspath(path), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            if strategy is Strategy.AUTO:
+                strategy = Strategy.OPENAT2 if openat2_supported(fd) else Strategy.FALLBACK
+            elif strategy is Strategy.OPENAT2 and not openat2_supported(fd):
+                raise FsopsError("openat2 is not available on this kernel")
+        except BaseException:
+            os.close(fd)
+            raise
         return cls(fd, os.fspath(path), strategy, umask)
 
     # -- lifecycle --------------------------------------------------------------------------
@@ -99,9 +121,23 @@ class ConfinedRoot:
 
     def _open_dir_at(self, dir_fd: int, name: str) -> int:
         try:
-            return os.open(name, DIR_FLAGS, dir_fd=dir_fd)
+            fd = os.open(name, DIR_FLAGS, dir_fd=dir_fd)
         except OSError as error:
             raise self._translate(error, dir_fd, name) from error
+        if not self._on_root_mount(fd):
+            os.close(fd)
+            raise PathEscapeError(f"{name!r} is on another mount than the root")
+        return fd
+
+    def _on_root_mount(self, fd: int) -> bool:
+        """Same mount as the root. `mnt_id` tells two mounts of one device apart; where
+        `/proc/self/fdinfo` is unreadable only `st_dev` is compared, so a bind mount of the same
+        device is then not detected (openat2's RESOLVE_NO_XDEV has no such limit)."""
+        if self._mount is not None:
+            mount = mount_id_of(fd)
+            if mount is not None:
+                return mount == self._mount
+        return os.fstat(fd).st_dev == self.st_dev
 
     @staticmethod
     def _translate(error: OSError, dir_fd: int | None, name: str) -> OSError:
@@ -150,21 +186,31 @@ class ConfinedRoot:
         parts = split_rel(rel)
         if not parts:
             raise PathEscapeError("the root itself is not a file")
-        flags |= os.O_NOFOLLOW | os.O_CLOEXEC
+        # O_NONBLOCK: opening a FIFO must not wait for a writer; only regular files are returned.
+        flags |= os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
         # openat2 insists on a zero mode when nothing is created.
         create_mode = self.file_mode(mode) if flags & os.O_CREAT else 0
         if self.strategy is Strategy.OPENAT2:
             try:
-                return openat2(self._root_fd(), "/".join(parts), flags, create_mode, CONFINED)
+                fd = openat2(self._root_fd(), "/".join(parts), flags, create_mode, CONFINED)
             except OSError as error:
                 raise self._translate(error, None, rel) from error
-        parent = self._walk(parts[:-1])
+        else:
+            parent = self._walk(parts[:-1])
+            try:
+                fd = os.open(parts[-1], flags, create_mode, dir_fd=parent)
+            except OSError as error:
+                raise self._translate(error, parent, parts[-1]) from error
+            finally:
+                os.close(parent)
         try:
-            return os.open(parts[-1], flags, create_mode, dir_fd=parent)
-        except OSError as error:
-            raise self._translate(error, parent, parts[-1]) from error
-        finally:
-            os.close(parent)
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise NotRegularFileError(f"{rel!r} is not a regular file")
+            os.set_blocking(fd, True)
+        except BaseException:
+            os.close(fd)
+            raise
+        return fd
 
     def open_dir(self, rel: str = ".") -> int:
         return self._walk(split_rel(rel))
@@ -276,17 +322,36 @@ class ConfinedRoot:
         finally:
             os.close(parent)
 
-    def rename(self, src: str, dst: str) -> None:
-        """POSIX `rename` within this root, both ends relative to their parent descriptors."""
+    def rename(self, src: str, dst: str, *, replace: bool) -> None:
+        """Rename within this root. `replace=False` fails with `FileExistsError` rather than
+        overwrite (renameat2 RENAME_NOREPLACE); `replace=True` is the POSIX replacing rename, for
+        the atomic write of a file that is meant to be replaced."""
         src_parent, src_name = self._parent(src)
         try:
             dst_parent, dst_name = self._parent(dst)
             try:
-                os.rename(src_name, dst_name, src_dir_fd=src_parent, dst_dir_fd=dst_parent)
+                if replace:
+                    os.rename(src_name, dst_name, src_dir_fd=src_parent, dst_dir_fd=dst_parent)
+                else:
+                    self._rename_noreplace(src_parent, src_name, dst_parent, dst_name)
             finally:
                 os.close(dst_parent)
         finally:
             os.close(src_parent)
+
+    @staticmethod
+    def _rename_noreplace(src_parent: int, src: str, dst_parent: int, dst: str) -> None:
+        try:
+            renameat2_noreplace(src_parent, src, dst_parent, dst)
+        except OSError as error:
+            if error.errno not in (errno.ENOSYS, errno.EINVAL):
+                raise
+            # No renameat2 here (old kernel, or a file system without it): a hard link fails if
+            # the target exists, which is the same guarantee for a regular file.
+            if not stat.S_ISREG(os.stat(src, dir_fd=src_parent, follow_symlinks=False).st_mode):
+                raise
+            os.link(src, dst, src_dir_fd=src_parent, dst_dir_fd=dst_parent, follow_symlinks=False)
+            os.unlink(src, dir_fd=src_parent)
 
     def link(self, src: str, dst: str) -> None:
         """A hard link that fails with `FileExistsError`: the no-clobber way to put a file."""
