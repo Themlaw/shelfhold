@@ -1505,3 +1505,59 @@ def test_variant_revision_cannot_be_overwritten_by_insert_or_replace(
         assert (
             connection.execute(sa.select(catalog.variant_revision.c.page_count)).scalar_one() == 20
         )
+
+
+@pytest.mark.req("EF-BIB-052")
+def test_purge_deletes_variant_and_unit_despite_download_tickets(
+    engine: Engine, chain: dict[str, str]
+) -> None:
+    """Erasure really deletes: tickets are closed first, then outlive their Variant."""
+    table = acquisition.download_request
+    with engine.begin() as connection:
+        request, ranged = new_ulid(), new_ulid()
+        connection.execute(
+            sa.insert(table).values(
+                id=request,
+                target_kind="unit",
+                variant_id=chain["variant"],
+                source_binding_id=chain["binding"],
+                ticket="t",
+            )
+        )
+        connection.execute(
+            sa.insert(table).values(
+                id=ranged,
+                target_kind="range",
+                range_ref={"edition_id": chain["edition"]},
+                source_binding_id=chain["binding"],
+            )
+        )
+        connection.execute(
+            sa.insert(acquisition.download_request_unit).values(
+                download_request_id=ranged, unit_id=chain["unit"]
+            )
+        )
+        connection.execute(
+            sa.insert(acquisition.revision_pending).values(
+                id=new_ulid(), variant_id=chain["variant"], revision=2, nature="rewrite"
+            )
+        )
+        # a live unit ticket needs its Variant; closing it by purge releases the link
+        rejected(
+            connection,
+            sa.update(table).where(table.c.id == request).values(variant_id=None),
+            "ck_download_request_target_matches_kind",
+        )
+        connection.execute(
+            sa.update(table).where(table.c.id == request).values(state="closed_by_purge")
+        )
+        connection.execute(sa.delete(catalog.unit_variant))
+        connection.execute(sa.delete(catalog.unit))
+        row = connection.execute(
+            sa.select(table.c.state, table.c.variant_id).where(table.c.id == request)
+        ).one()
+        assert row == ("closed_by_purge", None)  # the ticket stays, closed on Shelfhold's side
+        count = sa.select(sa.func.count())
+        covered = acquisition.download_request_unit
+        assert connection.execute(count.select_from(covered)).scalar_one() == 0
+        assert connection.execute(count.select_from(acquisition.revision_pending)).scalar_one() == 0

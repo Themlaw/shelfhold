@@ -214,7 +214,7 @@ download_request = sa.Table(
     metadata,
     ulid_column("id", primary_key=True),
     sa.Column("target_kind", sa.String(), nullable=False),
-    _fk("variant_id", "unit_variant.id", nullable=True),
+    _fk("variant_id", "unit_variant.id", ondelete="SET NULL", nullable=True),
     sa.Column("range_ref", sa.JSON(), nullable=True),  # edition, first and last Unit, volume label
     _fk("source_binding_id", "source_binding.id"),
     sa.Column("ticket", sa.String(), nullable=True),  # opaque; set once the service answered
@@ -227,7 +227,8 @@ download_request = sa.Table(
     in_check("state", DOWNLOAD_STATES),
     positive_check("attempts"),
     sa.CheckConstraint(
-        '("target_kind" = \'unit\' AND "variant_id" IS NOT NULL AND "range_ref" IS NULL) '
+        '("target_kind" = \'unit\' AND ("variant_id" IS NOT NULL OR "state" = \'closed_by_purge\') '
+        'AND "range_ref" IS NULL) '
         'OR ("target_kind" = \'range\' AND "variant_id" IS NULL AND "range_ref" IS NOT NULL)',
         name="target_matches_kind",
     ),
@@ -247,7 +248,7 @@ download_request_unit = sa.Table(
     "download_request_unit",
     metadata,
     _fk("download_request_id", "download_request.id", ondelete="CASCADE"),
-    _fk("unit_id", "unit.id"),
+    _fk("unit_id", "unit.id", ondelete="CASCADE"),
     sa.Column("state", sa.String(), nullable=False, server_default="requested"),
     sa.PrimaryKeyConstraint("download_request_id", "unit_id"),
     in_check("state", DOWNLOAD_UNIT_STATES),

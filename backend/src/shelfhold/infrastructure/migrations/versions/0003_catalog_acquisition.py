@@ -1289,7 +1289,7 @@ def upgrade() -> None:
             name=op.f("ck_download_request_target_kind_values"),
         ),
         sa.CheckConstraint(
-            '("target_kind" = \'unit\' AND "variant_id" IS NOT NULL AND "range_ref" IS NULL) OR ("target_kind" = \'range\' AND "variant_id" IS NULL AND "range_ref" IS NOT NULL)',
+            '("target_kind" = \'unit\' AND ("variant_id" IS NOT NULL OR "state" = \'closed_by_purge\') AND "range_ref" IS NULL) OR ("target_kind" = \'range\' AND "variant_id" IS NULL AND "range_ref" IS NOT NULL)',
             name=op.f("ck_download_request_target_matches_kind"),
         ),
         sa.CheckConstraint(
@@ -1305,6 +1305,7 @@ def upgrade() -> None:
             ["variant_id"],
             ["unit_variant.id"],
             name=op.f("fk_download_request_variant_id_unit_variant"),
+            ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_download_request")),
     )
@@ -1398,7 +1399,10 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["unit_id"], ["unit.id"], name=op.f("fk_download_request_unit_unit_id_unit")
+            ["unit_id"],
+            ["unit.id"],
+            name=op.f("fk_download_request_unit_unit_id_unit"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint(
             "download_request_id", "unit_id", name=op.f("pk_download_request_unit")
