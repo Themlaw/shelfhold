@@ -1,8 +1,8 @@
 """M1a schema, platform / identity / coherence (PLAN-M1a L02).
 
 Tables only: catalog and acquisition arrive in 0003, storage / export / reading in 0004.
-The revision is a frozen snapshot: it does not import the live metadata, and the parity test
-`test_metadata_matches_migrations` keeps the two honest.
+The revision is a frozen snapshot: it does not import the live metadata, and the parity tests
+`test_metadata_matches_migrations` and `test_migrated_ddl_equals_create_all` keep the two honest.
 """
 
 # ruff: noqa: E501  (frozen, generated constraint expressions)
@@ -39,6 +39,28 @@ TABLES = (
     "audit",
 )
 
+# Append-only guards. Statements are copies of the ones in infrastructure/schema.
+TRIGGERS = {
+    "event_append_only": (
+        "CREATE TRIGGER event_append_only "
+        "BEFORE UPDATE ON event BEGIN SELECT RAISE(ABORT, 'event is append-only'); END"
+    ),
+    "tombstone_kid_no_update": (
+        "CREATE TRIGGER tombstone_kid_no_update "
+        "BEFORE UPDATE ON tombstone_kid BEGIN SELECT RAISE(ABORT, 'tombstone_kid is append-only'); END"
+    ),
+    "tombstone_kid_no_delete": (
+        "CREATE TRIGGER tombstone_kid_no_delete "
+        "BEFORE DELETE ON tombstone_kid BEGIN SELECT RAISE(ABORT, 'tombstone_kid is append-only'); END"
+    ),
+    "secret_key_cited_kid_kept": (
+        "CREATE TRIGGER secret_key_cited_kid_kept "
+        "BEFORE DELETE ON secret_key "
+        "WHEN EXISTS (SELECT 1 FROM tombstone_kid WHERE kid = OLD.kid) "
+        "BEGIN SELECT RAISE(ABORT, 'kid is cited by a tombstone'); END"
+    ),
+}
+
 
 def upgrade() -> None:
     op.create_table(
@@ -48,9 +70,15 @@ def upgrade() -> None:
         sa.Column("action", sa.String(), nullable=False),
         sa.Column("target", sa.String(), nullable=True),
         sa.Column("at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        sa.Column("session_id", sa.String(length=26), nullable=True),
+        sa.Column("auth_time", sa.DateTime(), nullable=True),
         sa.CheckConstraint(
             'length("id") = 26 AND "id" NOT GLOB \'*[^0-9A-HJKMNP-TV-Z]*\'',
             name=op.f("ck_audit_id_ulid"),
+        ),
+        sa.CheckConstraint(
+            'length("session_id") = 26 AND "session_id" NOT GLOB \'*[^0-9A-HJKMNP-TV-Z]*\'',
+            name=op.f("ck_audit_session_id_ulid"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_audit")),
     )
@@ -93,7 +121,7 @@ def upgrade() -> None:
         sa.Column("shelf_destination_id", sa.String(length=26), nullable=True),
         sa.Column("kind", sa.String(), nullable=False),
         sa.Column("dry_run", sa.Boolean(), nullable=False),
-        sa.Column("base_version", sa.String(), nullable=False),
+        sa.Column("base_version", sa.Integer(), nullable=False),
         sa.Column("files_fingerprint", sa.String(), nullable=True),
         sa.Column("batches", sa.JSON(), server_default="[]", nullable=False),
         sa.Column("status", sa.String(), server_default="planned", nullable=False),
@@ -102,16 +130,16 @@ def upgrade() -> None:
         ),
         sa.Column("updated_at", sa.DateTime(), nullable=True),
         sa.CheckConstraint(
+            "typeof(base_version) = 'integer' AND base_version >= 0",
+            name=op.f("ck_export_plan_base_version_min"),
+        ),
+        sa.CheckConstraint(
             "\"kind\" IN ('export', 'adopt', 'rename_plan', 'detach', 'remove')",
             name=op.f("ck_export_plan_kind_values"),
         ),
         sa.CheckConstraint(
             "\"status\" IN ('planned', 'applying', 'done', 'cancelled', 'failed', 'stale')",
             name=op.f("ck_export_plan_status_values"),
-        ),
-        sa.CheckConstraint(
-            'length("base_version") = 71 AND "base_version" GLOB \'sha256:*\' AND substr("base_version", 8) NOT GLOB \'*[^0-9a-f]*\'',
-            name=op.f("ck_export_plan_base_version_sha256_prefixed"),
         ),
         sa.CheckConstraint(
             'length("files_fingerprint") = 71 AND "files_fingerprint" GLOB \'sha256:*\' AND substr("files_fingerprint", 8) NOT GLOB \'*[^0-9a-f]*\'',
@@ -157,6 +185,8 @@ def upgrade() -> None:
         sa.Column("restore_epoch", sa.Integer(), server_default="0", nullable=False),
         sa.Column("restore_epoch_at", sa.DateTime(), nullable=True),
         sa.Column("restore_generation", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("tombstone_count", sa.Integer(), nullable=True),
+        sa.Column("tombstone_last_tag", sa.String(), nullable=True),
         sa.Column(
             "created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False
         ),
@@ -269,6 +299,7 @@ def upgrade() -> None:
         "schedule",
         sa.Column("id", sa.String(length=26), nullable=False),
         sa.Column("job_kind", sa.String(), nullable=False),
+        sa.Column("scope_key", sa.String(), server_default=sa.text("''"), nullable=False),
         sa.Column("cron", sa.String(), nullable=False),
         sa.Column("jitter_s", sa.Integer(), server_default="0", nullable=False),
         sa.Column("window", sa.JSON(), nullable=True),
@@ -284,7 +315,7 @@ def upgrade() -> None:
             name=op.f("ck_schedule_id_ulid"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_schedule")),
-        sa.UniqueConstraint("job_kind", name=op.f("uq_schedule_job_kind")),
+        sa.UniqueConstraint("job_kind", "scope_key", name=op.f("uq_schedule_job_kind_scope_key")),
     )
     op.create_index("ix_schedule_due", "schedule", ["enabled", "next_due_at"], unique=False)
     op.create_table(
@@ -319,7 +350,7 @@ def upgrade() -> None:
         "user",
         sa.Column("id", sa.String(length=26), nullable=False),
         sa.Column("username", sa.String(collation="NOCASE"), nullable=False),
-        sa.Column("password_hash", sa.String(), nullable=False),
+        sa.Column("password_hash", sa.String(), nullable=True),
         sa.Column("role", sa.String(), nullable=False),
         sa.Column("can_rate", sa.Boolean(), server_default=sa.text("0"), nullable=False),
         sa.Column("locale", sa.String(), server_default="fr", nullable=False),
@@ -335,7 +366,8 @@ def upgrade() -> None:
             name=op.f("ck_user_color_scheme_values"),
         ),
         sa.CheckConstraint(
-            "\"password_hash\" GLOB '$argon2id$*'", name=op.f("ck_user_password_hash_argon2id")
+            '"password_hash" IS NULL OR "password_hash" GLOB \'$argon2id$*\'',
+            name=op.f("ck_user_password_hash_argon2id"),
         ),
         sa.CheckConstraint(
             '"role" <> \'admin\' OR "can_rate"', name=op.f("ck_user_admin_can_rate")
@@ -406,6 +438,7 @@ def upgrade() -> None:
     op.create_table(
         "content_tombstone",
         sa.Column("id", sa.String(length=26), nullable=False),
+        sa.Column("v", sa.Integer(), nullable=False),
         sa.Column("scope", sa.String(), nullable=False),
         sa.Column("seq", sa.Integer(), nullable=False),
         sa.Column("kid", sa.String(), nullable=False),
@@ -426,11 +459,15 @@ def upgrade() -> None:
             name=op.f("ck_content_tombstone_scope_values"),
         ),
         sa.CheckConstraint('"seq" >= 1', name=op.f("ck_content_tombstone_seq_min")),
+        sa.CheckConstraint('"v" >= 1', name=op.f("ck_content_tombstone_v_min")),
         sa.CheckConstraint(
             'length("id") = 26 AND "id" NOT GLOB \'*[^0-9A-HJKMNP-TV-Z]*\'',
             name=op.f("ck_content_tombstone_id_ulid"),
         ),
         sa.CheckConstraint('length("nonce") = 24', name=op.f("ck_content_tombstone_nonce_length")),
+        sa.CheckConstraint(
+            'length("reason") <= 64', name=op.f("ck_content_tombstone_reason_length")
+        ),
         sa.ForeignKeyConstraint(
             ["kid"], ["tombstone_kid.kid"], name=op.f("fk_content_tombstone_kid_tombstone_kid")
         ),
@@ -527,6 +564,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_fs_intent")),
     )
+    op.create_index("ix_fs_intent_plan", "fs_intent", ["plan_id"], unique=False)
     op.create_index("ix_fs_intent_state", "fs_intent", ["state"], unique=False)
     op.create_table(
         "mount_sentinel",
@@ -537,6 +575,8 @@ def upgrade() -> None:
         sa.Column("generation", sa.Integer(), nullable=False),
         sa.Column("checked_at", sa.DateTime(), nullable=False),
         sa.Column("state", sa.String(), nullable=False),
+        sa.Column("tombstone_count", sa.Integer(), nullable=True),
+        sa.Column("tombstone_last_tag", sa.String(), nullable=True),
         sa.CheckConstraint('"generation" >= 0', name=op.f("ck_mount_sentinel_generation_min")),
         sa.CheckConstraint(
             "\"state\" IN ('ok', 'missing', 'mismatch', 'stale')",
@@ -575,6 +615,9 @@ def upgrade() -> None:
     )
     op.create_index(
         "ix_notification_pending_due", "notification_pending", ["next_try_at"], unique=False
+    )
+    op.create_index(
+        "ix_notification_pending_event", "notification_pending", ["event_id"], unique=False
     )
     op.create_table(
         "session",
@@ -623,14 +666,13 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("root_id", "seq", name=op.f("pk_tombstone_pending_root")),
     )
-    # Append-only event log (EF-INT-002). DELETE stays allowed for the 90-day purge (ENF-OPS-009).
-    op.execute(
-        "CREATE TRIGGER event_append_only BEFORE UPDATE ON event "
-        "BEGIN SELECT RAISE(ABORT, 'event is append-only'); END"
-    )
+
+    for statement in TRIGGERS.values():
+        op.execute(statement)
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS event_append_only")
+    for name in TRIGGERS:
+        op.execute(f"DROP TRIGGER IF EXISTS {name}")
     for table in TABLES:  # children first; indexes go with their table
         op.drop_table(table)

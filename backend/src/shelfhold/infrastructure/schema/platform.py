@@ -4,6 +4,7 @@ import sqlalchemy as sa
 
 from shelfhold.infrastructure.schema._base import (
     UtcDateTime,
+    add_trigger,
     bool_column,
     in_check,
     metadata,
@@ -39,6 +40,9 @@ instance = sa.Table(
     sa.Column("restore_epoch", sa.Integer(), nullable=False, server_default="0"),
     sa.Column("restore_epoch_at", UtcDateTime(), nullable=True),
     sa.Column("restore_generation", sa.Integer(), nullable=False, server_default="0"),
+    # Truncation detection of the tombstone journal (EF-BIB-054, 02 section 3.12; used from M1b).
+    sa.Column("tombstone_count", sa.Integer(), nullable=True),
+    sa.Column("tombstone_last_tag", sa.String(), nullable=True),
     now_column(),
     ulid_check("instance_id"),
     sa.CheckConstraint("singleton = 1", name="single_row"),
@@ -79,6 +83,8 @@ mount_sentinel = sa.Table(
     sa.Column("generation", sa.Integer(), nullable=False),
     sa.Column("checked_at", UtcDateTime(), nullable=False),
     sa.Column("state", sa.String(), nullable=False),
+    sa.Column("tombstone_count", sa.Integer(), nullable=True),
+    sa.Column("tombstone_last_tag", sa.String(), nullable=True),
     in_check("state", SENTINEL_STATES),
     positive_check("generation"),
 )
@@ -89,6 +95,9 @@ schedule = sa.Table(
     metadata,
     ulid_column("id", primary_key=True),
     sa.Column("job_kind", sa.String(), nullable=False),
+    sa.Column(
+        "scope_key", sa.String(), nullable=False, server_default=sa.text("''")
+    ),  # e.g. one per source
     sa.Column("cron", sa.String(), nullable=False),
     sa.Column("jitter_s", sa.Integer(), nullable=False, server_default="0"),
     sa.Column("window", sa.JSON(), nullable=True),  # UTC bounds, rendered local by the interface
@@ -98,7 +107,7 @@ schedule = sa.Table(
     now_column(),
     ulid_check("id"),
     positive_check("jitter_s"),
-    sa.UniqueConstraint("job_kind"),
+    sa.UniqueConstraint("job_kind", "scope_key"),
     sa.Index("ix_schedule_due", "enabled", "next_due_at"),
 )
 
@@ -187,4 +196,11 @@ notification_pending = sa.Table(
     ulid_check("id"),
     positive_check("attempts"),
     sa.Index("ix_notification_pending_due", "next_try_at"),
+    sa.Index("ix_notification_pending_event", "event_id"),
 )
+
+add_trigger(
+    event,
+    "event_append_only",
+    "BEFORE UPDATE ON event BEGIN SELECT RAISE(ABORT, 'event is append-only'); END",
+)  # DELETE stays allowed: the 90-day purge (ENF-OPS-009)

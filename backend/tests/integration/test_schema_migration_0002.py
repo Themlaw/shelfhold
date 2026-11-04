@@ -146,3 +146,54 @@ def test_migrated_database_enforces_foreign_keys_when_opened_by_the_app(settings
             )
     finally:
         engine.dispose()
+
+
+def normalized_ddl(database: Path) -> dict[str, str]:
+    """`sqlite_master` statements by object, whitespace- and member-order-insensitive.
+
+    Alembic does not compare CHECK constraints or triggers; this does, so a drifting
+    expression in either the metadata or the migration is caught.
+    """
+    import re
+
+    with closing(sqlite3.connect(database)) as db:
+        rows = db.execute(
+            "SELECT type, name, sql FROM sqlite_master "
+            "WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name <> 'alembic_version'"
+        ).fetchall()
+    result: dict[str, str] = {}
+    for kind, name, sql in rows:
+        text = re.sub(r"\s+", " ", sql.replace('"', "")).strip().lower()
+        if kind == "table":
+            head, _, rest = text.partition("(")
+            body = rest.rsplit(")", 1)[0]
+            parts, depth, current = [], 0, ""
+            for char in body:
+                depth += char == "("
+                depth -= char == ")"
+                if char == "," and depth == 0:
+                    parts.append(current.strip())
+                    current = ""
+                else:
+                    current += char
+            parts.append(current.strip())
+            text = head + "(" + " | ".join(sorted(parts)) + ")"
+        result[f"{kind}:{name}"] = text
+    return result
+
+
+@pytest.mark.req("ENF-OPS-002")
+def test_migrated_ddl_equals_create_all(tmp_path: Path) -> None:
+    migrated = tmp_path / "migrated.db"
+    command.upgrade(alembic_config(migrated), "head")
+    created = tmp_path / "created.db"
+    engine = sa.create_engine(f"sqlite:///{created}")
+    try:
+        metadata.create_all(engine)
+    finally:
+        engine.dispose()
+    from_migrations, from_metadata = normalized_ddl(migrated), normalized_ddl(created)
+    assert from_migrations.keys() == from_metadata.keys()
+    assert any(key.startswith("trigger:") for key in from_metadata)
+    for key in from_metadata:
+        assert from_migrations[key] == from_metadata[key], key

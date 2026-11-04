@@ -4,6 +4,7 @@ import sqlalchemy as sa
 
 from shelfhold.infrastructure.schema._base import (
     UtcDateTime,
+    add_trigger,
     in_check,
     metadata,
     now_column,
@@ -56,6 +57,7 @@ fs_intent = sa.Table(
     in_check("state", INTENT_STATES),
     positive_check("epoch"),
     sa.Index("ix_fs_intent_state", "state"),
+    sa.Index("ix_fs_intent_plan", "plan_id"),
 )
 
 resource_lock = sa.Table(
@@ -77,7 +79,7 @@ export_plan = sa.Table(
     ulid_column("shelf_destination_id", nullable=True),
     sa.Column("kind", sa.String(), nullable=False),
     sa.Column("dry_run", sa.Boolean(), nullable=False),
-    sa.Column("base_version", sa.String(), nullable=False),
+    sa.Column("base_version", sa.Integer(), nullable=False),  # version counter (02 section 6.4)
     sa.Column("files_fingerprint", sa.String(), nullable=True),
     sa.Column("batches", sa.JSON(), nullable=False, server_default="[]"),
     sa.Column("status", sa.String(), nullable=False, server_default="planned"),
@@ -85,7 +87,9 @@ export_plan = sa.Table(
     sa.Column("updated_at", UtcDateTime(), nullable=True),
     ulid_check("plan_id"),
     ulid_check("shelf_destination_id"),
-    prefixed_hash_check("base_version"),
+    sa.CheckConstraint(
+        "typeof(base_version) = 'integer' AND base_version >= 0", name="base_version_min"
+    ),
     prefixed_hash_check("files_fingerprint"),
     in_check("kind", PLAN_KINDS),
     in_check("status", PLAN_STATUSES),
@@ -148,6 +152,7 @@ content_tombstone = sa.Table(
     "content_tombstone",
     metadata,
     ulid_column("id", primary_key=True),
+    sa.Column("v", sa.Integer(), nullable=False),  # format version, part of the AAD (EF-BIB-054)
     sa.Column("scope", sa.String(), nullable=False),
     sa.Column("seq", sa.Integer(), nullable=False),
     sa.Column("kid", sa.String(), sa.ForeignKey("tombstone_kid.kid"), nullable=False),
@@ -161,7 +166,9 @@ content_tombstone = sa.Table(
     in_check("scope", TOMBSTONE_SCOPES),
     sa.CheckConstraint(f"\"alg\" = '{TOMBSTONE_ALGORITHM}'", name="alg_known"),
     sa.CheckConstraint(f'length("nonce") = {TOMBSTONE_NONCE_BYTES}', name="nonce_length"),
+    positive_check("v", minimum=1),
     positive_check("seq", minimum=1),
+    sa.CheckConstraint('length("reason") <= 64', name="reason_length"),
     positive_check("epoch"),
     sa.UniqueConstraint("seq"),
 )
@@ -176,4 +183,24 @@ tombstone_pending_root = sa.Table(
     sa.Column("line", sa.Text(), nullable=False),  # the encrypted JSON line, as it will be written
     now_column(),
     sa.PrimaryKeyConstraint("root_id", "seq"),
+)
+
+# The registry only grows (GAP-13-01), and a key cited by it is never removed from the registry
+# of keys (ENF-SEC-005, "a cited kid is never retired").
+add_trigger(
+    tombstone_kid,
+    "tombstone_kid_no_update",
+    "BEFORE UPDATE ON tombstone_kid BEGIN SELECT RAISE(ABORT, 'tombstone_kid is append-only'); END",
+)
+add_trigger(
+    tombstone_kid,
+    "tombstone_kid_no_delete",
+    "BEFORE DELETE ON tombstone_kid BEGIN SELECT RAISE(ABORT, 'tombstone_kid is append-only'); END",
+)
+add_trigger(
+    secret_key,
+    "secret_key_cited_kid_kept",
+    "BEFORE DELETE ON secret_key "
+    "WHEN EXISTS (SELECT 1 FROM tombstone_kid WHERE kid = OLD.kid) "
+    "BEGIN SELECT RAISE(ABORT, 'kid is cited by a tombstone'); END",
 )

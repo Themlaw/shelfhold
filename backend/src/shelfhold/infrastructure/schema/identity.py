@@ -22,7 +22,9 @@ user = sa.Table(
     metadata,
     ulid_column("id", primary_key=True),
     sa.Column("username", sa.String(collation="NOCASE"), nullable=False),
-    sa.Column("password_hash", sa.String(), nullable=False),  # argon2id, self-describing
+    sa.Column(
+        "password_hash", sa.String(), nullable=True
+    ),  # argon2id; null: forward-auth, OIDC, passkey only
     sa.Column("role", sa.String(), nullable=False),
     bool_column("can_rate", default=False),
     sa.Column("locale", sa.String(), nullable=False, server_default="fr"),
@@ -32,7 +34,10 @@ user = sa.Table(
     sa.Column("color_scheme", sa.String(), nullable=False, server_default="auto"),
     now_column(),
     ulid_check("id"),
-    sa.CheckConstraint("\"password_hash\" GLOB '$argon2id$*'", name="password_hash_argon2id"),
+    sa.CheckConstraint(
+        '"password_hash" IS NULL OR "password_hash" GLOB \'$argon2id$*\'',
+        name="password_hash_argon2id",
+    ),
     in_check("role", ROLES),
     in_check("theme", THEMES),
     in_check("color_scheme", COLOR_SCHEMES),
@@ -101,7 +106,11 @@ audit = sa.Table(
     sa.Column("action", sa.String(), nullable=False),
     sa.Column("target", sa.String(), nullable=True),
     sa.Column("at", UtcDateTime(), nullable=False, server_default=sa.func.current_timestamp()),
+    # Session and last password entry behind the action (EF-USR-022 (3)); no foreign key either.
+    ulid_column("session_id", nullable=True),
+    sa.Column("auth_time", UtcDateTime(), nullable=True),
     ulid_check("id"),
+    ulid_check("session_id"),
     sa.Index("ix_audit_at", "at"),
     sa.Index("ix_audit_actor", "actor_id", "at"),
 )
