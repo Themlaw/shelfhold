@@ -2,9 +2,9 @@
 
 | Workflow / job | Quand | Jeton | Rôle |
 | --- | --- | --- | --- |
-| `ci.yml` / `image-pr` | `pull_request` | `contents: read`, `packages: read` | `image.yml` : build natif amd64 et arm64, taille <= 300 Mo, e2e sur les deux architectures |
-| `ci.yml` / `image-main` | `push` sur `main` | `packages: write` | idem, plus rafraîchissement du cache de couches dans GHCR |
-| `ci.yml` / `image-publish` | `push` sur `main`, après `image-main` | `packages: write` | `image-publish.yml` : publie les archives OCI **déjà testées**, puis le manifeste multi-arch (`edge`, `sha-<long>`) |
+| `ci.yml` / `image-pr` | `pull_request`, seulement si `backend/`, `frontend/`, `docker/`, `e2e/`, `compose*` ou `.github/workflows/image*` changent | `contents: read`, `packages: read` | `image.yml` : build natif **amd64 seul**, taille <= 300 Mo, e2e |
+| `ci.yml` / `image-main` | `push` sur `main` | `packages: write` | idem sur amd64 **et arm64**, plus rafraîchissement du cache de couches dans GHCR |
+| `ci.yml` / `image-publish` | `push` sur `main`, après `image-main`, `frontend` et `openapi` (ou filtrés) | `packages: write` | `image-publish.yml` : publie les archives OCI **déjà testées**, puis le manifeste multi-arch (`edge`, `sha-<long>`) |
 
 - **`packages: write` n'atteint jamais une exécution `pull_request`**, y compris pour une branche du dépôt
   (`test_no_job_reachable_on_pull_request_has_packages_write`). C'est pourquoi la publication est dans un second
@@ -13,7 +13,7 @@
   (`docker/load-oci.sh`, skopeo : `docker load` ne lit pas les archives OCI hors magasin containerd) sur un runner de la même architecture ; `image-publish.yml` la pousse telle quelle avec `skopeo copy`
   et vérifie que le digest poussé est celui de l'archive. Rien n'est reconstruit. Le tag temporaire
   `build-<sha>-<arch>` sert de support à ce push (un push vers un digest seul est impossible) ; le manifeste public
-  référence les digests. Le nettoyage de ces tags relève de `cleanup.yml` (M1b, tags `pr-*` et `build-*`).
+  référence les digests. Ces tags `build-*` sont des enfants de l'index `sha-*` : aucun nettoyage dédié n'est nécessaire. La rétention des `sha-*` (et des tags `edge`/versions) est à prévoir plus tard.
 - **Cache.** `ghcr.io/themlaw/shelfhold-cache:<arch>`, lu avec le `GITHUB_TOKEN` sur les PR du dépôt, écrit
   (`mode=max`) seulement sur `main`. **PR de fork** : le jeton ne peut pas lire le paquet, le cache est manqué
   (accepté) ; le build est plus lent, jamais faux.

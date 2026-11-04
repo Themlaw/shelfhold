@@ -68,4 +68,4 @@ reason = "banc de contrat contre un Suwayomi réel épinglé (Docker, spike S5) 
 [[deferred]]
 requirement = "ENF-OPS-002"
 aspect = "« pas de migration dans une release patch » (contrôle CI)"
-reason = "n'a de sens qu'à partir de la première release patch (0.1.x) ; contrôle à ajouter avec la sortie de v0.1.0 (release-please), avant la clôture de M1a"
+reason = "n'a de sens qu'à partir de la première release patch (0.1.x) ; contrôle à ajouter avec la sortie de v0.1.0 (release publiée à la main), avant la clôture de M1a"

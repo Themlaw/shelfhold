@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Adds the version tags X.Y.Z and X.Y to the image ALREADY published for the release commit
-# (digest of sha-<long>, built and tested by the ci run of that commit): no rebuild, no floating
-# "latest". Idempotent. X.Y.Z is immutable (refused if it exists with another digest, checked
-# before anything is written); X.Y is the floating minor tag and never moves backwards.
+# Adds the version tags X.Y.Z and X.Y to the image ALREADY published for a release tag (digest of
+# sha-<long>, built and tested by the ci run of the tagged commit): no rebuild, no "latest".
+# Idempotent. X.Y.Z is immutable (refused if it exists with another digest, checked before anything
+# is written); X.Y is the floating minor tag and never moves backwards.
 set -euo pipefail
-: "${IMAGE:?}" "${REPO:?}" "${SHA:?}" "${VERSION:?}" "${GH_TOKEN:?}"
+: "${IMAGE:?}" "${REPO:?}" "${TAG:?}" "${GH_TOKEN:?}"
 IMAGE="${IMAGE,,}"
-[[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "::error::bad version ${VERSION}"; exit 1; }
+[[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "::error::tag must be vX.Y.Z, got ${TAG}"; exit 1; }
+VERSION="${TAG#v}"
 minor="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
 deadline=$((SECONDS + ${WAIT_SECONDS:-2400}))
 
@@ -22,6 +23,11 @@ digest_of() {
     echo "::error::cannot inspect $1: ${out}" >&2; return 1
   fi
 }
+
+# 0. the commit the tag points to (annotated or lightweight)
+SHA="$(gh api "repos/${REPO}/commits/${TAG}" --jq .sha)"
+[[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::cannot resolve ${TAG} to a commit"; exit 1; }
+echo "${TAG} -> ${SHA}"
 
 # 1. the commit must have passed ci-success (wait, bounded, while it is not concluded)
 while :; do

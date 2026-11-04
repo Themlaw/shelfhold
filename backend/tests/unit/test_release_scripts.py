@@ -1,10 +1,9 @@
-"""Behavioural tests of the release/cleanup scripts, run against stubbed docker, gh and curl."""
+"""Behavioural tests of release-retag.sh, run against stubbed docker, gh and curl."""
 
 import json
 import os
 import stat
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -44,9 +43,7 @@ GH = r"""#!/usr/bin/env bash
 state="$STUB_STATE"; echo "gh $*" >> "$state/log"
 case "$*" in
   *check-runs*) cat "$state/ci" ;;
-  *"-X DELETE"*) ;;
-  *versions*) cat "$state/versions.json" ;;
-  *users/*) echo "${STUB_OWNER_TYPE:-User}" ;;
+  *commits/v*) cat "$state/tag_sha" ;;
 esac
 """
 CURL = r"""#!/usr/bin/env bash
@@ -65,6 +62,7 @@ def env(tmp_path: Path) -> dict[str, str]:
     state = tmp_path / "state"
     state.mkdir()
     (state / "ci").write_text("success")
+    (state / "tag_sha").write_text("c" * 40)
     (state / "tags.json").write_text(json.dumps({"tags": []}))
     return {
         **os.environ,
@@ -74,9 +72,7 @@ def env(tmp_path: Path) -> dict[str, str]:
         "GH_TOKEN": "x",
         "IMAGE": "ghcr.io/Themlaw/shelfhold",
         "REPO": "Themlaw/shelfhold",
-        "SHA": "c" * 40,
-        "VERSION": "0.1.0",
-        "ACTOR": "me",
+        "TAG": "v0.1.0",
         "WAIT_SECONDS": "0",
     }
 
@@ -163,7 +159,7 @@ def test_retag_requires_ci_success_on_the_commit(env: dict[str, str], conclusion
 
 @pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_retag_never_moves_the_minor_tag_backwards(env: dict[str, str]) -> None:
-    env["VERSION"] = "0.1.1"
+    env["TAG"] = "v0.1.1"
     put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
     (Path(env["STUB_STATE"]) / "tags.json").write_text(
         json.dumps({"tags": ["0.1.0", "0.1.2", "0.1", "edge"]})
@@ -173,80 +169,11 @@ def test_retag_never_moves_the_minor_tag_backwards(env: dict[str, str]) -> None:
     assert created(env) == {f"{IMG}:0.1.1"}
 
 
-# --- ghcr-cleanup.sh -----------------------------------------------------------------------
-
-
-@pytest.mark.req("ENF-QUAL-007")
-def test_cleanup_lowercases_the_image_name_and_defaults_to_dry_run(env: dict[str, str]) -> None:
-    state = Path(env["STUB_STATE"])
-    old = {
-        "id": 1,
-        "name": OTHER,
-        "created_at": "2020-01-01T00:00:00Z",
-        "metadata": {"container": {"tags": ["build-x-amd64"]}},
-    }
-    kept = {
-        "id": 2,
-        "name": DIGEST,
-        "created_at": "2020-01-01T00:00:00Z",
-        "metadata": {"container": {"tags": ["edge"]}},
-    }
-    (state / "versions.json").write_text(json.dumps(old) + json.dumps(kept))
-    (state / "raw_index").write_text(json.dumps({"manifests": []}))
-    e = {**env, "OWNER": "Themlaw", "PACKAGE": "shelfhold"}
-    e.pop("DRY_RUN", None)
-    r = run("ghcr-cleanup.sh", e)
-    assert r.returncode == 0, r.stderr
-    log = (state / "log").read_text()
-    assert "ghcr.io/themlaw/shelfhold@" in log and "Themlaw" not in log.replace(
-        "users/Themlaw", ""
-    ).replace("orgs/Themlaw", "").replace("users/themlaw", "")
-    assert "-X DELETE" not in log  # dry-run unless DRY_RUN=false
-
-
-@pytest.mark.req("ENF-QUAL-007")
-def test_cleanup_deletes_only_when_dry_run_is_explicitly_false(env: dict[str, str]) -> None:
-    state = Path(env["STUB_STATE"])
-    old = {
-        "id": 1,
-        "name": OTHER,
-        "created_at": "2020-01-01T00:00:00Z",
-        "metadata": {"container": {"tags": ["build-x-amd64"]}},
-    }
-    (state / "versions.json").write_text(json.dumps(old))
-    (state / "raw_index").write_text(json.dumps({"manifests": []}))
-    e = {**env, "OWNER": "Themlaw", "PACKAGE": "shelfhold", "DRY_RUN": "false"}
-    assert run("ghcr-cleanup.sh", e).returncode == 0
-    assert "-X DELETE" in (state / "log").read_text()
-
-
-# --- is-reversible.py ----------------------------------------------------------------------
-
-
-def reversible(tmp_path: Path, body: str) -> bool:
-    f = tmp_path / "rev.py"
-    f.write_text(f"def upgrade():\n    pass\n\n\ndef downgrade():\n{body}\n")
-    return (
-        subprocess.run(  # noqa: S603
-            [sys.executable, "-I", str(SCRIPTS / "is-reversible.py"), str(f)], check=False
-        ).returncode
-        == 0
-    )
-
-
-@pytest.mark.parametrize(
-    ("body", "expected"),
-    [
-        ('    """nothing to undo"""', False),
-        ("    pass", False),
-        ('    """doc"""\n    pass', False),
-        ("    raise NotImplementedError", False),
-        ('    op.drop_table("t")', True),
-        ('    """doc"""\n    op.drop_table("t")', True),
-    ],
-)
-@pytest.mark.req("ENF-OPS-002")
-def test_downgrade_with_only_docstring_or_pass_is_not_reversible(
-    tmp_path: Path, body: str, expected: bool
-) -> None:
-    assert reversible(tmp_path, body) is expected
+@pytest.mark.parametrize("tag", ["0.1.0", "v0.1", "v0.1.0-rc1", "vX.Y.Z", "v1.2.3; id"])
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
+def test_retag_refuses_anything_but_a_vx_y_z_tag(env: dict[str, str], tag: str) -> None:
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    env["TAG"] = tag
+    r = run("release-retag.sh", env)
+    assert r.returncode != 0 and "vX.Y.Z" in r.stdout + r.stderr
+    assert created(env) == set()
