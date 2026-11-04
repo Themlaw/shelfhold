@@ -106,7 +106,9 @@ def test_job_idempotent_per_chapter(pools: JobPools, engine: Engine) -> None:
 
 
 @pytest.mark.req("EF-INT-003")
-def test_busy_domain_slot_defers_the_job(pools: JobPools, engine: Engine, clock: ManualClock) -> None:
+def test_busy_domain_slot_defers_the_job(
+    pools: JobPools, engine: Engine, clock: ManualClock
+) -> None:
     ran: list[str] = []
     slots = pools.slots
     slots.declare("example.org", 1)

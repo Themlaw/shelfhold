@@ -207,7 +207,9 @@ def test_jitter_is_seeded_per_instance_and_bounded(engine: Engine) -> None:
     offsets = {jitter_for(f"inst-{n}", "check", "", base, 300) for n in range(20)}
     assert all(0 <= o <= 300 for o in offsets)
     assert len(offsets) > 5  # instances do not all fire together
-    assert jitter_for("inst-1", "check", "", base, 300) == jitter_for("inst-1", "check", "", base, 300)
+    assert jitter_for("inst-1", "check", "", base, 300) == jitter_for(
+        "inst-1", "check", "", base, 300
+    )
     assert jitter_for("inst-1", "check", "", base, 0) == 0
 
     clock = ManualClock(utc(2026, 11, 4, 10, 30))

@@ -81,7 +81,7 @@ def test_window_jobs_preempted_at_window_end() -> None:
     deadline = utc(2026, 11, 4, 6)
     done: list[int] = []
 
-    def step(n: int):  # noqa: ANN202
+    def step(n: int):
         def run() -> None:
             done.append(n)
             clock.advance(seconds=50)  # an operation is never cut in the middle

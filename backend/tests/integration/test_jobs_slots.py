@@ -1,10 +1,10 @@
 """EF-INT-003, ENF-OPS-007: per-domain concurrency slots in `domain_slot`."""
 
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from sqlalchemy import Engine
@@ -58,9 +58,8 @@ def test_domain_slot_under_parallel_acquirers(engine: Engine) -> None:
 def test_slot_context_manager_releases_and_reports_busy(engine: Engine) -> None:
     slots = DomainSlots(engine, ManualClock(NOW))
     slots.declare("d", 1)
-    with slots.slot("d"):
-        with pytest.raises(SlotBusyError), slots.slot("d"):
-            pass
+    with slots.slot("d"), pytest.raises(SlotBusyError), slots.slot("d"):
+        pass
     with slots.slot("d"):
         pass
     assert slots.in_use("d") == 0

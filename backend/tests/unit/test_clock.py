@@ -22,9 +22,7 @@ def test_lww_uses_server_receive_timestamp() -> None:
     first = merge_last_write_wins(None, "a", clock=clock)
     clock.advance(seconds=5)
     # the second device's own clock is hours behind: its claim does not matter
-    second = merge_last_write_wins(
-        first, "b", clock=clock, client_ts=T0 - timedelta(hours=3)
-    )
+    second = merge_last_write_wins(first, "b", clock=clock, client_ts=T0 - timedelta(hours=3))
     assert second == Stamped("b", T0 + timedelta(seconds=5))
     assert second.received_at > first.received_at
 
