@@ -110,6 +110,7 @@ def test_api_paths_are_404_without_slash_too(
     assert INDEX not in response.text
 
 
+@pytest.mark.req("ENF-SEC-004", "ENF-PRIV-001")
 def test_security_and_cache_headers(settings: Settings, build_dir: Path) -> None:
     with _client(settings, build_dir) as client:
         index = client.get("/")

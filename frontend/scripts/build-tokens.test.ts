@@ -3,6 +3,7 @@ import { compileTheme } from './build-tokens.ts';
 import tokens from '../src/lib/themes/bibliotheque/tokens.json';
 
 describe('design tokens', () => {
+  // req: EF-UX-012
   it('compiles tokens to custom properties under :root[data-theme]', () => {
     const css: string = compileTheme('demo', {
       light: { color: { bg: { $type: 'color', $value: '#fff' } } },
@@ -13,6 +14,7 @@ describe('design tokens', () => {
     expect(css).toContain('[data-color-scheme="dark"]');
   });
 
+  // req: EF-UX-012, ENF-PRIV-001
   it('ships the "Bibliothèque" theme with a light and a dark palette and no web font', () => {
     expect(tokens.light.color.bg.$value).toBe('#F6F1E7');
     expect(tokens.dark.color.bg.$value).toBe('#1A1714');

@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -33,6 +34,7 @@ def _service_env(service: dict[str, Any]) -> dict[str, str]:
     return {key: str(value) for key, value in env.items()}
 
 
+@pytest.mark.req("ENF-LEG-013")
 def test_contract_job_has_no_extension_repo_and_no_egress() -> None:
     compose = _load(COMPOSE)
     # Every network is internal: no route out of the bench.
@@ -65,6 +67,7 @@ def test_contract_job_has_no_extension_repo_and_no_egress() -> None:
     assert not re.search(r"(?i)extension_?repo|keiyoushi|extensions\.json", workflow_text)
 
 
+@pytest.mark.req("ENF-LEG-013")
 def test_contract_compose_has_no_override_and_is_the_only_file_used() -> None:
     siblings = {p.name for p in COMPOSE.parent.iterdir()}
     assert not {n for n in siblings if "override" in n}
@@ -79,6 +82,7 @@ def test_contract_compose_has_no_override_and_is_the_only_file_used() -> None:
     assert "e2e/suwayomi/compose.yaml" in WORKFLOW.read_text(encoding="utf-8")
 
 
+@pytest.mark.req("ENF-LEG-013")
 def test_contract_workflow_triggers_and_permissions() -> None:
     workflow = _load(WORKFLOW)
     triggers = workflow.get("on", workflow.get(True))  # YAML 1.1 reads `on` as True
@@ -100,11 +104,13 @@ def test_contract_workflow_triggers_and_permissions() -> None:
                 assert re.search(r"@[0-9a-f]{40}$", uses), f"action not pinned by SHA: {uses}"
 
 
+@pytest.mark.req("ENF-LEG-013")
 def test_contract_pinned_version_is_exact() -> None:
     compose = _load(COMPOSE)
     assert re.fullmatch(r"v\d+\.\d+\.\d+", compose["x-suwayomi-version"])
 
 
+@pytest.mark.req("ENF-LEG-013")
 def test_contract_suwayomi_uses_local_source_only() -> None:
     compose = _load(COMPOSE)
     env = _service_env(compose["services"]["suwayomi"])

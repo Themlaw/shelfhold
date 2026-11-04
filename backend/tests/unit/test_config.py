@@ -14,6 +14,7 @@ from shelfhold.infrastructure.settings_store import SettingsStore
 from shelfhold.main import create_app
 
 
+@pytest.mark.req("ENF-OPS-004")
 @pytest.mark.parametrize(
     ("in_env", "in_toml", "in_db", "expected", "source"),
     [
@@ -45,6 +46,7 @@ def test_config_precedence_env_over_toml_over_db(
     assert resolved.fields["log_level"].source == source
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_file_suffix_secret_is_read(env: dict[str, str], tmp_path: Path) -> None:
     secret_file = tmp_path / "token_file"
     secret_file.write_text("s3cret-value\n", encoding="utf-8")
@@ -56,6 +58,7 @@ def test_file_suffix_secret_is_read(env: dict[str, str], tmp_path: Path) -> None
     assert "s3cret-value" not in repr(resolved.values)
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_file_suffix_conflicts_and_missing_files_are_refused(
     env: dict[str, str], tmp_path: Path
 ) -> None:
@@ -73,11 +76,13 @@ def test_file_suffix_conflicts_and_missing_files_are_refused(
         load_settings(missing)
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_invalid_value_is_a_config_error(env: dict[str, str]) -> None:
     with pytest.raises(ConfigError, match="log_level"):
         load_settings({**env, "SHELFHOLD_LOG_LEVEL": "LOUD"})
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_env_defined_field_reported_readonly(
     env: dict[str, str], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -95,6 +100,7 @@ def test_env_defined_field_reported_readonly(
     assert by_name["public_url"]["readonly"] is False
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_settings_store_roundtrip_feeds_the_db_layer(env: dict[str, str]) -> None:
     settings = load_settings(env).values
     migrate(settings)
@@ -110,10 +116,12 @@ SECRET_FIELDS = [
 ]
 
 
+@pytest.mark.req("ENF-OPS-004", "ENF-SEC-005")
 def test_there_is_at_least_one_secret_field() -> None:
     assert SECRET_FIELDS
 
 
+@pytest.mark.req("ENF-OPS-004", "ENF-SEC-005")
 @pytest.mark.parametrize("field", SECRET_FIELDS)
 @pytest.mark.parametrize("as_json", [False, True])
 def test_every_secret_value_is_masked_by_config_show(
@@ -130,6 +138,7 @@ def test_every_secret_value_is_masked_by_config_show(
     assert "top-secret" not in capsys.readouterr().out
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_secret_file_that_is_not_utf8_is_a_config_error(
     env: dict[str, str], tmp_path: Path
 ) -> None:
@@ -139,6 +148,7 @@ def test_secret_file_that_is_not_utf8_is_a_config_error(
         load_settings({**env, "SHELFHOLD_API_TOKEN_FILE": str(secret_file)})
 
 
+@pytest.mark.req("ENF-OPS-004")
 @pytest.mark.parametrize(("mode", "warned"), [(0o644, True), (0o640, False), (0o600, False)])
 def test_world_readable_secret_file_is_reported(
     env: dict[str, str], tmp_path: Path, mode: int, warned: bool
@@ -150,6 +160,7 @@ def test_world_readable_secret_file_is_reported(
     assert (str(secret_file) in resolved.world_readable_secret_files) is warned
 
 
+@pytest.mark.req("ENF-OPS-004")
 def test_cli_warns_in_french_about_a_world_readable_secret_file(
     env: dict[str, str],
     tmp_path: Path,
@@ -166,6 +177,7 @@ def test_cli_warns_in_french_about_a_world_readable_secret_file(
     assert "lisible par tous" in capsys.readouterr().err
 
 
+@pytest.mark.req("ENF-OPS-012")
 def test_data_and_store_volumes_distinct_and_configurable(env: dict[str, str]) -> None:
     defaults = load_settings({}).values
     assert defaults.data_dir == Path("/data")

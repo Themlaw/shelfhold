@@ -34,6 +34,7 @@ def _committed_files() -> dict[str, Path]:
     }
 
 
+@pytest.mark.req("ENF-LEG-002")
 def test_fixtures_are_synthetic_manifest_matches(tmp_path: Path) -> None:
     gen = _load(SYNTH / "generate.py", "synthetic_generate")
     manifest_lines = (SYNTH / "MANIFEST.sha256").read_text(encoding="utf-8").splitlines()
@@ -76,6 +77,7 @@ def test_fixtures_are_synthetic_manifest_matches(tmp_path: Path) -> None:
                 assert package.tag.endswith("package")
 
 
+@pytest.mark.req("ENF-LEG-002")
 def test_cassettes_header_allowlist() -> None:
     rules = _load(CASSETTES / "header_allowlist.py", "cassette_rules")
     files = sorted(CASSETTES.rglob("*.json"))
@@ -106,6 +108,7 @@ def _cassette(uri: str = "https://example.invalid/x", **over: object) -> dict[st
     return {"interactions": [inter]}
 
 
+@pytest.mark.req("ENF-LEG-002")
 def test_cassette_structure_is_strict() -> None:
     rules = _load(CASSETTES / "header_allowlist.py", "cassette_rules")
     assert rules.check_cassette({}) != []
@@ -118,6 +121,7 @@ def test_cassette_structure_is_strict() -> None:
     assert rules.check_cassette(_cassette()) == []
 
 
+@pytest.mark.req("ENF-LEG-002")
 @pytest.mark.parametrize("param", ["api_key", "TOKEN", "Key", "password", "Auth"])
 def test_cassette_rejects_sensitive_query_params(param: str) -> None:
     rules = _load(CASSETTES / "header_allowlist.py", "cassette_rules")
@@ -126,6 +130,7 @@ def test_cassette_rejects_sensitive_query_params(param: str) -> None:
     assert rules.check_cassette(_cassette("https://example.invalid/x?page=2")) == []
 
 
+@pytest.mark.req("ENF-LEG-002")
 def test_new_allowlisted_headers() -> None:
     rules = _load(CASSETTES / "header_allowlist.py", "cassette_rules")
     headers = {
@@ -143,6 +148,7 @@ def test_new_allowlisted_headers() -> None:
     assert rules.check_cassette(c) == []
 
 
+@pytest.mark.req("ENF-LEG-002")
 def test_cassettes_dir_only_json_files() -> None:
     allowed = {"header_allowlist.py", "__init__.py"}
     for p in CASSETTES.rglob("*"):

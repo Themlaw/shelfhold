@@ -3,6 +3,8 @@
 import configparser
 from pathlib import Path
 
+import pytest
+
 BACKEND = Path(__file__).resolve().parents[2]
 DOC = BACKEND.parent / "docs" / "dependencies.md"
 CRITICAL = ["Huey", "foliate-js", "lncrawl", "Kavita", "kepubify", "Suwayomi", "comicbox"]
@@ -29,6 +31,7 @@ def _rows() -> dict[str, dict[str, str]]:
     return rows
 
 
+@pytest.mark.req("ENF-GOV-002")
 def test_dependencies_md_lists_every_critical_dependency() -> None:
     rows = _rows()
     for name in CRITICAL:
@@ -38,6 +41,7 @@ def test_dependencies_md_lists_every_critical_dependency() -> None:
             assert "TODO" not in rows[name][column]
 
 
+@pytest.mark.req("ENF-GOV-002", "ENF-QUAL-002")
 def test_python_critical_dependencies_are_confined_to_their_adapter() -> None:
     parser = configparser.ConfigParser()
     parser.read(BACKEND / "importlinter.ini")
@@ -51,6 +55,7 @@ def test_python_critical_dependencies_are_confined_to_their_adapter() -> None:
     assert {"huey", "comicbox"} <= confined
 
 
+@pytest.mark.req("ENF-QUAL-002")
 def test_fastapi_is_confined_to_interfaces() -> None:
     parser = configparser.ConfigParser()
     parser.read(BACKEND / "importlinter.ini")

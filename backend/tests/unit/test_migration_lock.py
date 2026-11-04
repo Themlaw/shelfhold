@@ -54,6 +54,7 @@ def wait_for_state(client: TestClient, state: str, timeout: float = 20) -> dict[
     raise AssertionError(f"/healthz never reported {state}")
 
 
+@pytest.mark.req("ENF-OPS-003", "ENF-OPS-002")
 def test_healthz_reports_migrating_while_a_real_migrate_process_runs(
     settings: Settings, slow_migrator: subprocess.Popen[bytes]
 ) -> None:
@@ -71,6 +72,7 @@ def test_healthz_reports_migrating_while_a_real_migrate_process_runs(
         assert client.get("/healthz").json()["state"] == "ok"
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_a_second_migrate_is_refused_while_one_runs(
     settings: Settings, slow_migrator: subprocess.Popen[bytes]
 ) -> None:
@@ -80,6 +82,7 @@ def test_a_second_migrate_is_refused_while_one_runs(
         migrate(settings)
 
 
+@pytest.mark.req("ENF-OPS-002")
 def test_a_killed_migrator_does_not_leave_the_state_stuck(
     settings: Settings, slow_migrator: subprocess.Popen[bytes]
 ) -> None:

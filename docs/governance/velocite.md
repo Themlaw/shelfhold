@@ -20,3 +20,6 @@ Le développement est fait par des agents d'IA orchestrés par le mainteneur. Le
 | M1b | | | | | | |
 | M2 | | | | | | |
 | M3 | | | | | | |
+| M4 | | | | | | |
+| M5 | | | | | | |
+| M6 | | | | | | |

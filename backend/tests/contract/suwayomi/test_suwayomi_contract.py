@@ -42,6 +42,7 @@ def _chapter_a1(bench: Bench) -> dict[str, Any]:
 
 
 # -- version, bench hygiene ---------------------------------------------------------------------
+@pytest.mark.req("EF-SRC-008")
 def test_about_server_graphql_and_rest(bench: Bench) -> None:
     gql = bench.gql("{ aboutServer { name version buildType } }")["aboutServer"]
     assert gql["name"] == "Suwayomi-Server"
@@ -51,6 +52,7 @@ def test_about_server_graphql_and_rest(bench: Bench) -> None:
     assert rest["version"] == gql["version"]
 
 
+@pytest.mark.req("ENF-LEG-013")
 def test_bench_has_no_extension_store_and_only_the_local_source(bench: Bench) -> None:
     """The start-of-job assertion of ENF-LEG-013: empty lists, source 0 alone."""
     assert (
@@ -61,6 +63,7 @@ def test_bench_has_no_extension_store_and_only_the_local_source(bench: Bench) ->
     assert [s["id"] for s in sources] == [LOCAL_SOURCE_ID]
 
 
+@pytest.mark.req("EF-SRC-008")
 def test_unloaded_source_state(bench: Bench) -> None:
     """A source whose extension is absent is not listed; asking for it is a GraphQL error."""
     resp = bench.graphql('{ source(id: "123456789") { id name } }').json()
@@ -69,6 +72,7 @@ def test_unloaded_source_state(bench: Bench) -> None:
 
 
 # -- identity (EF-SRC-036) ----------------------------------------------------------------------
+@pytest.mark.req("EF-SRC-008")
 def test_chapter_identity_is_source_id_plus_url(bench: Bench) -> None:
     mangas = _local_manga(bench)
     assert {"Series A", "Series B"} <= set(mangas)
@@ -77,6 +81,7 @@ def test_chapter_identity_is_source_id_plus_url(bench: Bench) -> None:
     assert {"Series A/Ch 001.cbz", "Series A/Ch 002.cbz"} <= urls
 
 
+@pytest.mark.req("ENF-LEG-013")
 def test_container_has_no_route_out(bench: Bench) -> None:
     """ENF-LEG-013: no egress (literal IP, so no DNS). A control proves the probe itself works."""
     _, probe = bench.probe_egress()
@@ -90,6 +95,7 @@ def test_container_has_no_route_out(bench: Bench) -> None:
 
 
 # -- REST CBZ download (EF-SRC-009) ---------------------------------------------------------------
+@pytest.mark.req("EF-SRC-008")
 def test_rest_chapter_download_returns_a_cbz(bench: Bench) -> None:
     chapter = _chapter_a1(bench)
     dest = bench.seed_download("Series A", "Ch 001")
@@ -110,6 +116,7 @@ def test_rest_chapter_download_returns_a_cbz(bench: Bench) -> None:
         assert "ComicInfo.xml" in archive.namelist()
 
 
+@pytest.mark.req("EF-SRC-008")
 def test_rest_download_without_downloaded_file_is_a_client_error(bench: Bench) -> None:
     """The local source is never downloaded by Suwayomi: nothing to serve until a file exists."""
     manga = _local_manga(bench)["Series B"]
@@ -117,6 +124,7 @@ def test_rest_download_without_downloaded_file_is_a_client_error(bench: Bench) -
     assert bench.request("GET", f"/api/v1/chapter/{chapter['id']}/download").status == 400
 
 
+@pytest.mark.req("EF-SRC-008")
 def test_graphql_has_no_cbz_download_only_page_and_queue_operations(bench: Bench) -> None:
     """R7: no Query/Mutation field is named like an archive download; the equivalents are queue and page URLs."""
     mutations = {
@@ -138,6 +146,7 @@ def test_graphql_has_no_cbz_download_only_page_and_queue_operations(bench: Bench
 
 
 # -- deletion of a downloaded chapter (B6) -------------------------------------------------------
+@pytest.mark.req("EF-SRC-008")
 def test_rest_delete_removes_the_downloaded_file(bench: Bench) -> None:
     chapter = _chapter_a1(bench)
     dest = bench.seed_download("Series A", "Ch 001")
@@ -148,6 +157,7 @@ def test_rest_delete_removes_the_downloaded_file(bench: Bench) -> None:
     assert not dest.exists()
 
 
+@pytest.mark.req("EF-SRC-008")
 def test_graphql_delete_downloaded_chapter_removes_the_file(bench: Bench) -> None:
     chapter = _chapter_a1(bench)
     dest = bench.seed_download("Series A", "Ch 001")
@@ -159,6 +169,7 @@ def test_graphql_delete_downloaded_chapter_removes_the_file(bench: Bench) -> Non
 
 
 # -- refresh, settings ---------------------------------------------------------------------------
+@pytest.mark.req("EF-SRC-008")
 def test_refresh_chapters_sees_a_new_file(bench: Bench) -> None:
     manga = _local_manga(bench)["Series A"]
     new = bench.data_dir / "local" / "Series A" / "Ch 003.cbz"
@@ -172,6 +183,7 @@ def test_refresh_chapters_sees_a_new_file(bench: Bench) -> None:
         _chapters(bench, manga["id"])  # refresh again so later tests see the original state
 
 
+@pytest.mark.req("EF-SRC-008")
 def test_global_update_settings_are_readable(bench: Bench) -> None:
     settings = bench.gql(
         "{ settings { globalUpdateInterval updateMangas excludeCompleted excludeNotStarted "
@@ -184,6 +196,7 @@ def test_global_update_settings_are_readable(bench: Bench) -> None:
 
 
 # -- library and categories (EF-SRC-029) ---------------------------------------------------------
+@pytest.mark.req("EF-SRC-008")
 def test_library_and_category_mutations(bench: Bench) -> None:
     manga = _local_manga(bench)["Series B"]
     category = bench.gql(
@@ -222,6 +235,7 @@ def test_library_and_category_mutations(bench: Bench) -> None:
 
 
 # -- authentication ------------------------------------------------------------------------------
+@pytest.mark.req("EF-SRC-008")
 def test_wrong_credentials_are_rejected(bench: Bench) -> None:
     if bench.mode == "basic_auth":
         assert bench.request("GET", "/api/v1/settings/about", password="changed").status == 401
@@ -238,6 +252,7 @@ def test_wrong_credentials_are_rejected(bench: Bench) -> None:
         assert bad["errors"]
 
 
+@pytest.mark.req("EF-SRC-008")
 def test_ui_login_token_flow(bench: Bench) -> None:
     if bench.mode != "ui_login":
         pytest.skip("JWT flow exists only in ui_login")
@@ -253,6 +268,7 @@ def test_ui_login_token_flow(bench: Bench) -> None:
     assert bench.request("GET", "/api/v1/settings/about").status == 200  # Bearer on REST
 
 
+@pytest.mark.req("EF-SRC-008")
 def test_ui_login_rest_refuses_basic_and_about_server_is_public(bench: Bench) -> None:
     if bench.mode != "ui_login":
         pytest.skip("ui_login only")
@@ -266,6 +282,7 @@ def test_ui_login_rest_refuses_basic_and_about_server_is_public(bench: Bench) ->
 
 
 # -- identity after restart (EF-SRC-036) -----------------------------------------------------------
+@pytest.mark.req("EF-SRC-008")
 def test_chapter_identity_is_stable_after_container_restart(bench: Bench) -> None:
     before = {
         m["url"]: (m["sourceId"], sorted((c["url"], c["id"]) for c in _chapters(bench, m["id"])))
