@@ -7,21 +7,36 @@
   "minimumReleaseAge": "7 days",
   "dependencyDashboard": true,
   "pinDigests": true,
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "packageRules": [
     {
       "description": "Keep huey below 3.6 (ADR-0005)",
-      "matchPackageNames": ["huey"],
+      "matchPackageNames": [
+        "huey"
+      ],
       "allowedVersions": "<3.6"
     },
     {
       "description": "Automerge patches and dev dependencies once CI is green",
-      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
       "automerge": true
     },
     {
-      "matchDepTypes": ["dependency-groups"],
-      "automerge": true
+      "matchDepTypes": [
+        "dependency-groups"
+      ],
+      "automerge": true,
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ]
     }
   ]
 }
