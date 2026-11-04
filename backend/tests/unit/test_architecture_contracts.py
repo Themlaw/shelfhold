@@ -2,6 +2,7 @@
 
 import ast
 import configparser
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -178,3 +179,81 @@ def test_sdk_files_have_mit_spdx_header() -> None:
         if "SPDX-License-Identifier: MIT" not in p.read_text(encoding="utf-8").split("\n", 3)[0]
     ]
     assert not missing, missing
+
+
+# --- L00: single-entry-point and layering contracts, each proven by a violation -------------------
+
+FORBIDDEN_IN = "BROKEN"
+
+
+def _run_in_copy(tmp_path: Path, files: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run the real importlinter.ini against a copy of the package plus extra modules."""
+    shutil.copytree(
+        SRC / "shelfhold", tmp_path / "shelfhold", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    shutil.copy(CONFIG, tmp_path / "importlinter.ini")
+    for rel, code in files.items():
+        target = tmp_path / "shelfhold" / rel
+        for parent in reversed([target.parent, *target.parent.parents]):
+            if parent == tmp_path / "shelfhold" or tmp_path / "shelfhold" in parent.parents:
+                parent.mkdir(exist_ok=True)
+                (parent / "__init__.py").touch()
+        target.write_text(code, encoding="utf-8")
+    return _run_lint_imports(tmp_path)
+
+
+def _contract_name(contract: str) -> str:
+    return _config()[f"importlinter:contract:{contract}"]["name"]
+
+
+# (contract, offending module, code, sanctioned module where the same code is allowed or None)
+VIOLATIONS = [
+    ("xml-single-entry", "infrastructure/other.py", "import xml.etree.ElementTree\n",
+     "infrastructure/xml/safe_parse.py"),
+    ("xml-single-entry", "library/other.py", "import lxml.etree\n", None),
+    ("archives-single-entry", "library/other.py", "import zipfile\n",
+     "infrastructure/archives/safe_open.py"),
+    ("archives-single-entry", "export/other.py", "import tarfile\n", None),
+    ("sanitize-single-entry", "catalog/other.py", "import nh3\n",
+     "infrastructure/content_trust/sanitize.py"),
+    ("lang-single-producer", "library/other.py", "import langcodes\n", "catalog/lang.py"),
+    ("replica-single-count", "export/other.py", "from shelfhold.library import replica\n", None),
+    ("fsops-sole-writer", "library/other.py", "import shutil\n", "infrastructure/fsops/io.py"),
+    ("suwayomi-confined", "acquisition/other.py",
+     "import shelfhold.plugin_host.adapters.meta.suwayomi\n", None),
+    ("lncrawl-confined", "export/other.py",
+     "import shelfhold.plugin_host.adapters.meta.lncrawl\n", None),
+    ("export-not-acquisition", "export/application/other.py",
+     "from shelfhold.acquisition import public\n", None),
+    ("library-layers", "library/domain/other.py",
+     "import shelfhold.library.application\n", None),
+    ("acquisition-layers", "acquisition/domain/other.py",
+     "import shelfhold.acquisition.adapters\n", None),
+    ("export-layers", "export/domain/other.py", "import shelfhold.export.targets\n", None),
+    ("identity-layers", "identity/application/other.py",
+     "import shelfhold.identity.adapters\n", None),
+]  # fmt: skip
+
+
+@pytest.mark.req("ENF-QUAL-002", "ENF-SEC-014", "ENF-SEC-002", "ENF-SEC-015", "ENF-I18N-005")
+@pytest.mark.parametrize(
+    ("contract", "module", "code", "sanctioned"),
+    VIOLATIONS,
+    ids=[f"{v[0]}:{v[1]}" for v in VIOLATIONS],
+)
+def test_each_contract_breaks_on_a_violation_and_allows_its_sanctioned_module(
+    tmp_path: Path, contract: str, module: str, code: str, sanctioned: str | None
+) -> None:
+    result = _run_in_copy(tmp_path / "bad", {module: code})
+    assert result.returncode != 0, result.stdout
+    assert f"{_contract_name(contract)} BROKEN" in result.stdout, result.stdout
+    if sanctioned:
+        ok = _run_in_copy(tmp_path / "ok", {sanctioned: code})
+        assert f"{_contract_name(contract)} BROKEN" not in ok.stdout, ok.stdout
+        assert ok.returncode == 0, ok.stdout
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_every_new_contract_is_declared_in_the_config() -> None:
+    declared = {s.split(":", 2)[2] for s in _config().sections() if s.startswith("importlinter:c")}
+    assert {v[0] for v in VIOLATIONS} <= declared
