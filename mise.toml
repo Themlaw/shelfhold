@@ -1,6 +1,7 @@
 [tools]
 python = "3.13"
 uv = "0.12"
+node = "24"
 
 [tasks.setup]
 description = "Install backend dependencies"
@@ -25,3 +26,12 @@ run = [
 description = "Format the backend"
 dir = "backend"
 run = ["uv run ruff check --fix .", "uv run ruff format ."]
+
+[tasks."openapi"]
+description = "Regenerate open-api/openapi.json and the TypeScript client"
+run = "open-api/generate.sh"
+
+[tasks."lint:front"]
+description = "ESLint and svelte-check on the frontend"
+dir = "frontend"
+run = ["npm run lint", "npm run check"]

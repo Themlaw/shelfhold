@@ -27,3 +27,9 @@ docs/recherche/prive/
 *.db-wal
 *.db-shm
 coverage.xml
+
+# Frontend / e2e
+frontend/src/lib/themes/themes.css
+test-results/
+playwright-report/
+spikes/s2/src/lib/api/

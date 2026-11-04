@@ -1,0 +1,47 @@
+{
+  "name": "shelfhold-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=24"
+  },
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
+  "scripts": {
+    "tokens": "node scripts/build-tokens.ts",
+    "api:generate": "svelte-kit sync && openapi-ts",
+    "dev": "npm run tokens && vite dev",
+    "build": "npm run tokens && vite build",
+    "check": "npm run tokens && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "lint": "eslint .",
+    "test": "npm run tokens && svelte-kit sync && vitest run"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@hey-api/openapi-ts": "^0.99.0",
+    "@sveltejs/adapter-static": "^4.0.0",
+    "@sveltejs/kit": "^3.1.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/svelte": "^5.4.2",
+    "@testing-library/user-event": "^14.6.8",
+    "@vitest/coverage-v8": "^5.0.5",
+    "eslint": "^10.13.0",
+    "eslint-plugin-svelte": "^3.23.1",
+    "globals": "^17.13.0",
+    "jsdom": "^30.1.3",
+    "msw": "^2.15.0",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "intl-messageformat": "^12.1.4"
+  }
+}

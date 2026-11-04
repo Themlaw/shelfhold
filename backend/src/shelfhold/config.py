@@ -49,6 +49,7 @@ class Settings(BaseModel):
     log_format: Literal["json", "console"] = "json"
     public_url: str | None = None
     api_token: SecretStr | None = None
+    frontend_dir: Path | None = None  # built SPA to serve; None = the packaged build, if any
     # ENF-LEG-001: a fresh install has no plugin repository and no active source.
     plugin_repos: tuple[str, ...] = ()
     active_sources: tuple[str, ...] = ()

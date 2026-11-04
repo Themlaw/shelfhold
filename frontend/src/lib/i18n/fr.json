@@ -1,0 +1,10 @@
+{
+  "app.name": "Shelfhold",
+  "home.title": "Shelfhold — pré-alpha",
+  "home.tagline": "L'atelier de la bibliothèque personnelle de votre foyer.",
+  "health.heading": "État du serveur",
+  "health.loading": "Vérification en cours…",
+  "health.ok": "Le serveur répond (version {version}).",
+  "health.migrating": "Migration en cours : {done, plural, =0 {aucune étape terminée} one {# étape terminée} other {# étapes terminées}} sur {total}.",
+  "health.error": "Le serveur est injoignable."
+}
