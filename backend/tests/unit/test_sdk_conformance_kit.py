@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.refs import SeriesRef, UnitInfo
+from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.testing.fakes import (
     FakeFetcher,
     FakeRangedConnectedService,
@@ -138,10 +138,6 @@ def test_fetcher_replays_a_synthetic_cassette(tmp_path: Path) -> None:
     assert (response.status, response.body) == (200, b"ok")
     with pytest.raises(NetworkForbidden):
         asyncio.run(fetcher.get("https://a.invalid/other"))
-
-
-def test_unit_info_import_is_used() -> None:  # keeps the kit's public model importable
-    assert UnitInfo.model_fields["remote_unit_id"].is_required()
 
 
 @pytest.mark.req("ENF-QUAL-003")

@@ -8,3 +8,4 @@ extend-exclude = ["*.md", "docs/", "backend/uv.lock", "backend/src/shelfhold/loc
 cours = "cours"
 sur = "sur"
 opf = "opf"  # EPUB package document (OPF)
+ser = "ser"  # pydantic `ser_json_bytes`
