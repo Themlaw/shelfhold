@@ -2,7 +2,7 @@
 
 from fastapi.responses import Response
 
-from shelfhold.infrastructure.http_headers import CSP_SANDBOX
+from shelfhold.infrastructure.http_headers import CSP_SANDBOX, attachment_disposition
 
 _ATTACHMENT_TYPES = frozenset({"image/svg+xml", "text/html", "application/xhtml+xml"})
 
@@ -12,6 +12,5 @@ def content_response(body: bytes, *, media_type: str, filename: str) -> Response
     response = Response(body, media_type=media_type)
     response.headers["Content-Security-Policy"] = CSP_SANDBOX
     if media_type.split(";", 1)[0].strip().lower() in _ATTACHMENT_TYPES:
-        safe = "".join(c for c in filename if c.isalnum() or c in "._- ")
-        response.headers["Content-Disposition"] = f'attachment; filename="{safe}"'
+        response.headers["Content-Disposition"] = attachment_disposition(filename)
     return response

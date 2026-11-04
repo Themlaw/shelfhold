@@ -46,3 +46,9 @@ def apply_security_headers(headers: HeaderBag) -> None:
     headers["Content-Security-Policy"] = with_frame_ancestors(
         headers.get("Content-Security-Policy", "")
     )
+
+
+def attachment_disposition(filename: str) -> str:
+    """`Content-Disposition: attachment`, the name reduced to a header-safe ASCII subset."""
+    safe = "".join(c for c in filename if c.isascii() and (c.isalnum() or c in "._- "))
+    return f'attachment; filename="{safe}"'

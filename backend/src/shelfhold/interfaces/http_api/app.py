@@ -51,7 +51,7 @@ def create_http_app(
     @app.exception_handler(Exception)
     def unhandled(_request: Request, _exc: Exception) -> Response:
         # Raised outside the middleware stack: the 500 needs the headers applied by hand.
-        response = JSONResponse({"detail": "Internal Server Error"}, status_code=500)
+        response = JSONResponse({"code": "internal_error"}, status_code=500)
         apply_security_headers(response.headers)
         return response
 
