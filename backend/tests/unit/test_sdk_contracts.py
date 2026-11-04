@@ -52,7 +52,9 @@ def test_rolling_volume_is_not_closed() -> None:
 
     async def run() -> RangedPayload:
         series, *units = await _units(service)
-        return await service.fetch_range(fetcher, RangeRef(series=series, first=units[8], last=units[9]))
+        return await service.fetch_range(
+            fetcher, RangeRef(series=series, first=units[8], last=units[9])
+        )
 
     payload = asyncio.run(run())
     assert payload.covers == ["fake-ranged:ch-9", "fake-ranged:ch-10"]
@@ -81,7 +83,9 @@ def test_server_queue_target_is_a_unit_or_a_range() -> None:
 
     async def run() -> tuple[RangedPayload, object, list[str]]:
         series, *units = await _units(service)
-        range_ticket = await service.request(fetcher, RangeRef(series=series, first=units[0], last=units[7]))
+        range_ticket = await service.request(
+            fetcher, RangeRef(series=series, first=units[0], last=units[7])
+        )
         unit_ticket = await service.request(fetcher, UnitRef(series=series, unit=units[0]))
         states = []
         for _ in range(3):

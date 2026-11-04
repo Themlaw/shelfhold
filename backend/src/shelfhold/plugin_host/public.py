@@ -10,6 +10,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from shelfhold.config import Settings
+from shelfhold.plugin_host.registry import (
+    PluginCandidate,
+    PluginOrigin,
+    PluginRecord,
+    PluginRegistry,
+    PluginStatus,
+    discover,
+)
+
+__all__ = [
+    "PluginCandidate",
+    "PluginOrigin",
+    "PluginRecord",
+    "PluginRegistry",
+    "PluginState",
+    "PluginStatus",
+    "discover",
+    "load_plugin_state",
+]
 
 
 @dataclass(frozen=True)

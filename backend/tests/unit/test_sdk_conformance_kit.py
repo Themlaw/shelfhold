@@ -17,7 +17,9 @@ from shelfhold.sdk.testing.fakes import (
 from shelfhold.sdk.testing.kit import ConformanceReport, run_source_conformance
 
 
-def _run(service: FakeRangedConnectedService, fetcher: FakeFetcher | None = None) -> ConformanceReport:
+def _run(
+    service: FakeRangedConnectedService, fetcher: FakeFetcher | None = None
+) -> ConformanceReport:
     return asyncio.run(
         run_source_conformance(
             service, fetcher or fake_ranged_fetcher(), reinstall=lambda: service.reinstall()
@@ -81,7 +83,9 @@ def test_kit_simulated_reinstall_detects_unstable_identities() -> None:
 
 @pytest.mark.req("ENF-QUAL-003", "EF-SRC-036")
 def test_kit_requires_a_reinstall_factory_for_a_connected_service() -> None:
-    report = asyncio.run(run_source_conformance(FakeRangedConnectedService(), fake_ranged_fetcher()))
+    report = asyncio.run(
+        run_source_conformance(FakeRangedConnectedService(), fake_ranged_fetcher())
+    )
     assert [c.name for c in report.failures] == ["simulated_reinstall"]
 
 
@@ -138,3 +142,19 @@ def test_fetcher_replays_a_synthetic_cassette(tmp_path: Path) -> None:
 
 def test_unit_info_import_is_used() -> None:  # keeps the kit's public model importable
     assert UnitInfo.model_fields["remote_unit_id"].is_required()
+
+
+@pytest.mark.req("ENF-QUAL-003")
+def test_assert_conforms_and_pytest_tool_for_plugin_authors() -> None:
+    from shelfhold.sdk.testing import assert_conforms
+    from shelfhold.sdk.testing.pytest_plugin import check_conformance, offline_fetcher
+
+    service = FakeRangedConnectedService()
+    report = assert_conforms(service, fake_ranged_fetcher(), reinstall=service.reinstall)
+    assert report.ok
+    with pytest.raises(AssertionError, match="simulated_reinstall"):
+        assert_conforms(service, fake_ranged_fetcher())  # no reinstall factory
+    # the fixtures wrap the same functions
+    assert offline_fetcher.__wrapped__().record_mode == "none"  # type: ignore[attr-defined]
+    run = check_conformance.__wrapped__()  # type: ignore[attr-defined]
+    assert run(service, fake_ranged_fetcher(), reinstall=service.reinstall).ok

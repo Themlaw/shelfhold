@@ -28,7 +28,9 @@ def _plugin(raw: dict[str, Any]) -> Any:
     return SimpleNamespace(manifest=raw)
 
 
-def _candidate(key: str, api: int, origin: PluginOrigin = PluginOrigin.FIRST_PARTY) -> PluginCandidate:
+def _candidate(
+    key: str, api: int, origin: PluginOrigin = PluginOrigin.FIRST_PARTY
+) -> PluginCandidate:
     return PluginCandidate(key=key, origin=origin, load=lambda: _plugin(_raw(key, api)))
 
 
@@ -109,8 +111,8 @@ def test_entry_point_origin_comes_from_the_distribution_never_from_loading() -> 
 
         return SimpleNamespace(name=name, dist=SimpleNamespace(name=dist), load=load)
 
-    eps = [entry_point("mine", "shelfhold"), entry_point("theirs", "shelfhold-evil"),
-           SimpleNamespace(name="nodist", dist=None, load=lambda: loaded.append("nodist"))]  # fmt: skip
+    nodist = SimpleNamespace(name="nodist", dist=None, load=lambda: loaded.append("nodist"))
+    eps = [entry_point("mine", "shelfhold"), entry_point("theirs", "shelfhold-evil"), nodist]
     candidates = candidates_from_entry_points(eps)
     assert {c.key: c.origin for c in candidates} == {
         "mine": PluginOrigin.FIRST_PARTY,
@@ -162,3 +164,26 @@ def test_meta_suwayomi_manifest_is_valid_untrusted_and_inactive() -> None:
     assert manifest.content_trust == "untrusted"  # fetches from the web
     assert "SUB_SOURCES" in manifest.model_dump(mode="json")["capabilities"]
     assert manifest.permissions.domains == []  # the instance is the user's, via lan_targets only
+
+
+@pytest.mark.req("ENF-SEC-009")
+def test_discover_reads_the_entry_point_group_without_loading_anything() -> None:
+    from shelfhold.plugin_host.registry import discover
+
+    assert all(c.origin in set(PluginOrigin) for c in discover())  # none registered in M1a
+
+
+@pytest.mark.req("ENF-SEC-009")
+def test_duplicate_plugin_key_is_refused() -> None:
+    registry = PluginRegistry()
+    first = registry.load_all([_candidate("same", API_VERSION)])[0]
+    again = registry.load_all([_candidate("same", API_VERSION)])[0]
+    assert first.status is PluginStatus.LOADED
+    assert again.status is PluginStatus.INCOMPATIBLE and "duplicate" in (again.reason or "")
+
+
+@pytest.mark.req("ENF-LEG-001")
+def test_fresh_registry_switches_no_plugin_on() -> None:
+    registry = PluginRegistry(active_keys=())
+    registry.load_all([_candidate("native", API_VERSION)])
+    assert registry.active() == []

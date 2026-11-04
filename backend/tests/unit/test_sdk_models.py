@@ -1,4 +1,4 @@
-"""SDK data contracts: JSON round trip of every exported type, content_trust default (EF-SRC-001)."""
+"""SDK data contracts: JSON round trip of every exported type, content_trust default."""
 
 import inspect
 import json
@@ -10,6 +10,9 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from shelfhold.sdk import connected, export_target, fetcher, models, refs, source
+
+OPAQUE = "opaque-handle"
+URL = "https://a.invalid/t"
 
 
 def _manifest(**extra: Any) -> source.SourceManifest:
@@ -73,8 +76,8 @@ def _samples() -> dict[type[BaseModel], BaseModel]:
         models.PluginManifest(
             key="plain", kind=models.PluginKind.EXPORT_TARGET, version="1", api=1, name="Plain"
         ),
-        models.Cursor(token="opaque"),
-        models.Page[refs.SeriesRef](items=[_series()], next=models.Cursor(token="n")),
+        models.Cursor(token=OPAQUE),
+        models.Page[refs.SeriesRef](items=[_series()], next=models.Cursor(token=OPAQUE)),
         models.FilterSpec(
             key="sort",
             kind="group",
@@ -86,7 +89,7 @@ def _samples() -> dict[type[BaseModel], BaseModel]:
         models.AuthForm(fields=["user", "password"]),
         models.AuthApiKey(location="header", name="X-Key"),
         models.AuthCookieImport(domains=["sample.invalid"]),
-        models.AuthDeviceCode(device_url="https://a.invalid/d", token_url="https://a.invalid/t", scopes=["r"]),
+        models.AuthDeviceCode(device_url="https://a.invalid/d", token_url=URL, scopes=["r"]),
         models.AuthInteractive(reason="captcha"),
         models.SessionState(expires_at=datetime(2026, 1, 2, tzinfo=UTC), opaque={"k": [1, 2]}),
         _manifest(),
@@ -99,8 +102,8 @@ def _samples() -> dict[type[BaseModel], BaseModel]:
         _unit(),
         _image_request(),
         refs.ScrambleInfo(processor="descramble", params={"n": 3}),
-        refs.PageRef(index=0, token="t", scrambled=refs.ScrambleInfo(processor="p", params={})),
-        refs.ImagePages(pages=[refs.PageRef(index=0, token="t")]),
+        refs.PageRef(index=0, token=OPAQUE, scrambled=refs.ScrambleInfo(processor="p", params={})),
+        refs.ImagePages(pages=[refs.PageRef(index=0, token=OPAQUE)]),
         refs.TextContent(xhtml="<p>x</p>", assets=[_image_request()]),
         _asset(),
         refs.UnitRef(series=_series(), unit=_unit()),
@@ -111,13 +114,37 @@ def _samples() -> dict[type[BaseModel], BaseModel]:
             bounds={"sample:ch-1": ("start", "end")},
             volume_closed=False,
         ),
-        connected.Ticket(token="t-1", target_kind="range"),
+        connected.Ticket(token=OPAQUE, target_kind="range"),
         connected.ServiceHealth(ok=False, version="1.2.3", detail="extension not loaded"),
         connected.ReleaseResult(released=True),
         fetcher.Response(status=200, headers={"x": "y"}, body=b"\x00\x01"),
         fetcher.DownloadedFile(sha256="0" * 64, size=3, content=b"abc"),
         fetcher.CookieJarView(cookies={"sid": "snapshot"}),
         export_target.ApiCall(method="GET", path="/api/x", query={"a": 1}, auth="target_admin"),
+        export_target.ContentRef(kind="export_item", ref=OPAQUE),
+        export_target.TargetCapabilities(
+            media_kinds={"manga"},
+            formats={"cbz"},
+            transport="tree",
+            egress="foyer",
+            can_update=True,
+            can_delete=True,
+            confirms_arrival=True,
+            reconcilable=True,
+            accepted_content_types=["cbz"],
+            sidecars={"comicinfo"},
+            path_scoped_scan=True,
+            access_partitioning="library",
+            accepted_image_types={"jpeg"},
+            events="signalr",
+            collections="api",
+            progress="api",
+            manage_libraries=True,
+            naming=export_target.NamingConstraints(
+                max_segment_bytes=255, max_path_bytes=4096, forbidden="/", case_insensitive=False
+            ),
+            name_normalizer="kavita-v1",
+        ),
         export_target.FsOp(op="rename", rel_path="a/b", dst_rel_path="a/c"),
         export_target.NamingConstraints(
             max_segment_bytes=255, max_path_bytes=4096, forbidden="/\\", case_insensitive=False
