@@ -194,34 +194,50 @@ class SqlUnitStore:
         ).first()
         return None if row is None else StoredVariant(*row)
 
-    def revision_changed(self, variant: StoredVariant, item: IncomingUnit) -> bool:
+    def _last_revision(self, variant: StoredVariant) -> tuple[str | None, str | None, int | None]:
         r = catalog.variant_revision.c
-        last = self._c.execute(
+        row = self._c.execute(
             sa.select(r.revision_hint, r.content_hash, r.page_count).where(
                 r.variant_id == variant.id, r.revision == variant.revision
             )
         ).first()
+        return (None, None, None) if row is None else (row[0], row[1], row[2])
+
+    def revision_changed(self, variant: StoredVariant, item: IncomingUnit) -> bool:
+        """Only the fields the source gave count: an absent field (`None`) is not a change."""
+        last = self._last_revision(variant)
         seen = (item.revision_hint, item.content_hash, item.page_count)
-        return last is None or tuple(last) != seen
+        return any(new is not None and new != old for new, old in zip(seen, last, strict=True))
 
     def add_revision(self, variant: StoredVariant, item: IncomingUnit) -> int:
-        """Append-only: the history gains a row, the Variant's identity is not touched."""
+        """Append-only: the history gains a row, the Variant's identity is not touched.
+
+        A field the source left out keeps its previous value in the new row, so the next
+        comparison does not read the gap as a change.
+        """
         revision = variant.revision + 1
+        last = self._last_revision(variant)
+        hint, content_hash, pages = (
+            (new if new is not None else old)
+            for new, old in zip(
+                (item.revision_hint, item.content_hash, item.page_count),
+                last,
+                strict=True,
+            )
+        )
         self._c.execute(
             sa.insert(catalog.variant_revision).values(
                 variant_id=variant.id,
                 revision=revision,
                 seen_at=item.seen_at,
-                page_count=item.page_count,
-                content_hash=item.content_hash,
-                revision_hint=item.revision_hint,
+                page_count=pages,
+                content_hash=content_hash,
+                revision_hint=hint,
             )
         )
         v = catalog.unit_variant
         self._c.execute(
-            sa.update(v)
-            .where(v.c.id == variant.id)
-            .values(revision=revision, revision_hint=item.revision_hint)
+            sa.update(v).where(v.c.id == variant.id).values(revision=revision, revision_hint=hint)
         )
         return revision
 

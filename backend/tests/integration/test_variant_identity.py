@@ -258,3 +258,22 @@ def test_community_translation_relay_single_edition() -> None:
         assert len(h.rows("SELECT id FROM edition")) == 1
         assert len(h.rows("SELECT id FROM team")) == 2
         assert h.catalog.missing_numbers(edition.id) == []  # backfill --gaps sees nothing
+
+
+@pytest.mark.req("EF-BIB-050")
+def test_absent_field_is_not_a_revision() -> None:
+    with harness() as h:
+        binding = h.binding(h.edition())
+        first = h.catalog.ingest(
+            unit(binding, "r", "1", 0, revision_hint="v1", content_hash="sha256:" + "a" * 64)
+        )
+        # the source stopped sending the hash and the hint: nothing changed
+        bare = h.catalog.ingest(unit(binding, "r", "1", 1))
+        assert bare.outcome is IngestOutcome.UNCHANGED and bare.revision == 1
+        changed = h.catalog.ingest(unit(binding, "r", "1", 2, revision_hint="v2"))
+        assert changed.outcome is IngestOutcome.REVISION and changed.variant_id == first.variant_id
+        # the new row kept the hash the source did not repeat, so a repeat is still unchanged
+        again = h.catalog.ingest(
+            unit(binding, "r", "1", 3, revision_hint="v2", content_hash="sha256:" + "a" * 64)
+        )
+        assert again.outcome is IngestOutcome.UNCHANGED
