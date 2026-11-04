@@ -28,7 +28,7 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 
 [tool.coverage.run]
-source = ["shelfhold"]
+source = ["src/shelfhold"]
 branch = true
 
 [tool.coverage.report]

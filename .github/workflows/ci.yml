@@ -1,0 +1,130 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/ci.yml'
+
+  lint:
+    runs-on: ubuntu-24.04
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: ruff check
+        working-directory: backend
+        run: uv run --locked ruff check .
+      - name: ruff format
+        working-directory: backend
+        run: uv run --locked ruff format --check .
+      - name: mypy
+        working-directory: backend
+        run: uv run --locked mypy
+      - name: import-linter
+        working-directory: backend
+        run: uv run --locked lint-imports --config importlinter.ini
+      - name: typos
+        uses: crate-ci/typos@7f9d0819ca1c008ade73f4b41fa9d258d48f605b # v1.51.1
+      - name: actionlint
+        working-directory: backend
+        run: uv run --locked actionlint ../.github/workflows/*.yml
+      - name: zizmor
+        working-directory: backend
+        run: uv run --locked zizmor --offline ../.github/workflows
+      - name: gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum --check --strict
+          tar -xzf gitleaks.tgz gitleaks
+          ./gitleaks git --redact --no-banner --verbose .
+
+  denylist:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: denylist-names
+        env:
+          DENYLIST_NAMES: ${{ secrets.DENYLIST_NAMES }}
+        run: bash .github/scripts/denylist.sh
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: pytest (global coverage >= 80 %)
+        working-directory: backend
+        run: uv run --locked pytest --cov --cov-report=xml
+      - name: diff coverage >= 85 %
+        if: github.event_name == 'pull_request'
+        working-directory: backend
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: uv run --locked diff-cover coverage.xml --compare-branch="origin/${BASE_REF}" --fail-under=85
+
+  ci-success:
+    if: always()
+    needs: [changes, lint, denylist, backend]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Verify required jobs
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: ${RESULTS}"
+          for r in ${RESULTS}; do
+            case "$r" in
+              success|skipped) ;;
+              *) echo "::error::a required job ended with: $r"; exit 1 ;;
+            esac
+          done

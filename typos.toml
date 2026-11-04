@@ -1,0 +1,2 @@
+[files]
+extend-exclude = ["backend/uv.lock", "docs/spec/front-propositions.html"]
