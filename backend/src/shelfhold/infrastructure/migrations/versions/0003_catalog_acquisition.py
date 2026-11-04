@@ -998,6 +998,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_team")),
         sa.UniqueConstraint("edition_id", "label", name=op.f("uq_team_edition_id_label")),
+        sa.UniqueConstraint("id", "edition_id", name=op.f("uq_team_id_edition_id")),
     )
     op.create_table(
         "volume",
@@ -1088,7 +1089,10 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["team_id"], ["team.id"], name=op.f("fk_team_priority_team_id_team"), ondelete="CASCADE"
+            ["team_id", "edition_id"],
+            ["team.id", "team.edition_id"],
+            name=op.f("fk_team_priority_team_id_edition_id_team"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("edition_id", "team_id", name=op.f("pk_team_priority")),
         sa.UniqueConstraint("edition_id", "rank", name=op.f("uq_team_priority_edition_id_rank")),

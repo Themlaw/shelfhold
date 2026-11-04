@@ -1593,3 +1593,30 @@ def test_series_follow_filters_are_null_or_a_json_object(
         connection.execute(sa.update(follow).values(filters=None))
         stored = connection.execute(sa.select(sa.text("filters IS NULL")).select_from(follow))
         assert stored.scalar_one() == 1  # a real SQL NULL, not the JSON text 'null'
+
+
+@pytest.mark.req("EF-BIB-028", "EF-BIB-035")
+def test_team_priority_only_ranks_teams_of_its_own_edition(
+    engine: Engine, chain: dict[str, str]
+) -> None:
+    with engine.begin() as connection:
+        other_edition = add_edition(connection, chain["work"], lang="en")
+        team = new_ulid()
+        connection.execute(
+            sa.insert(catalog.team).values(id=team, edition_id=other_edition, label="elsewhere")
+        )
+        rejected(
+            connection,
+            sa.insert(catalog.team_priority).values(
+                edition_id=chain["edition"], team_id=team, rank=1
+            ),
+            "FOREIGN KEY constraint failed",
+        )
+        connection.execute(
+            sa.insert(catalog.team_priority).values(edition_id=other_edition, team_id=team, rank=1)
+        )
+        connection.execute(sa.delete(catalog.team).where(catalog.team.c.id == team))
+        remaining = connection.execute(
+            sa.select(sa.func.count()).select_from(catalog.team_priority)
+        )
+        assert remaining.scalar_one() == 0  # cascades with its team

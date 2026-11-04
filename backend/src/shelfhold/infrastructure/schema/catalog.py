@@ -446,6 +446,8 @@ team = sa.Table(
     ulid_check("id"),
     norm_by_check("label_norm_by"),
     sa.UniqueConstraint("edition_id", "label"),
+    # target of the composite foreign key that keeps a team_priority within its own Edition
+    sa.UniqueConstraint("id", "edition_id"),
 )
 
 team_alias = sa.Table(
@@ -463,8 +465,11 @@ team_priority = sa.Table(
     "team_priority",
     metadata,
     _fk("edition_id", "edition.id", ondelete="CASCADE"),
-    _fk("team_id", "team.id", ondelete="CASCADE"),
+    sa.Column("team_id", sa.String(26), nullable=False),
     sa.Column("rank", sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(
+        ["team_id", "edition_id"], ["team.id", "team.edition_id"], ondelete="CASCADE"
+    ),
     sa.PrimaryKeyConstraint("edition_id", "team_id"),
     sa.UniqueConstraint("edition_id", "rank"),
     positive_check("rank", minimum=1),
