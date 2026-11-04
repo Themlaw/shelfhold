@@ -50,15 +50,19 @@ def test_openat2_is_available_where_the_suite_runs() -> None:
 def test_fallback_is_chosen_when_openat2_is_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(fsops, "openat2_supported", lambda: False)
-    monkeypatch.setattr("shelfhold.infrastructure.fsops.confined.openat2_supported", lambda: False)
+    monkeypatch.setattr(fsops, "openat2_supported", lambda *_: False)
+    monkeypatch.setattr(
+        "shelfhold.infrastructure.fsops.confined.openat2_supported", lambda *_: False
+    )
     assert ConfinedRoot.open(tmp_path, strategy=Strategy.AUTO).strategy is Strategy.FALLBACK
 
 
 def test_forcing_openat2_without_kernel_support_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("shelfhold.infrastructure.fsops.confined.openat2_supported", lambda: False)
+    monkeypatch.setattr(
+        "shelfhold.infrastructure.fsops.confined.openat2_supported", lambda *_: False
+    )
     with pytest.raises(FsopsError):
         ConfinedRoot.open(tmp_path, strategy=Strategy.OPENAT2)
 
@@ -71,7 +75,7 @@ def test_regular_operations_stay_beneath_the_root(root: ConfinedRoot) -> None:
     assert (Path(root.path) / "a/b/f").read_bytes() == b"x"
     assert sorted(root.listdir("a")) == ["b"]
     assert stat.S_ISREG(root.stat("a/b/f").st_mode)
-    root.rename("a/b/f", "a/g")
+    root.rename("a/b/f", "a/g", replace=False)
     root.unlink("a/g")
     root.rmdir("a/b")
     assert root.listdir("a") == []
@@ -95,7 +99,7 @@ def test_symlink_as_a_component_is_refused(root: ConfinedRoot, target_kind: str)
         lambda: root.mkdir("link/sub"),
         lambda: root.listdir("link"),
         lambda: root.stat("link/secret"),
-        lambda: root.rename("d", "link/d"),
+        lambda: root.rename("d", "link/d", replace=False),
         lambda: root.unlink("link/secret"),
     ):
         with pytest.raises((PathEscapeError, OSError)):

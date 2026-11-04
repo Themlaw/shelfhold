@@ -105,7 +105,7 @@ def apply(root_dir: Path, root: ConfinedRoot, op: tuple[str, object, object], ou
             root.rmdir(rel)
         elif kind == "rename":
             assert isinstance(extra, str)
-            root.rename(rel, extra)
+            root.rename(rel, extra, replace=False)
         elif kind == "read":
             os.close(root.open_file(rel, os.O_RDONLY))
         elif kind == "listdir":
