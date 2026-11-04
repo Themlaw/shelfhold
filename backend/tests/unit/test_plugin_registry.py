@@ -187,3 +187,56 @@ def test_fresh_registry_switches_no_plugin_on() -> None:
     registry = PluginRegistry(active_keys=())
     registry.load_all([_candidate("native", API_VERSION)])
     assert registry.active() == []
+
+
+def _counting(key: str, origin: PluginOrigin, calls: list[str], tag: str) -> PluginCandidate:
+    def load() -> Any:
+        calls.append(tag)
+        return _plugin(_raw(key, API_VERSION))
+
+    return PluginCandidate(key=key, origin=origin, load=load)
+
+
+@pytest.mark.req("ENF-SEC-009")
+@pytest.mark.parametrize("third_first", [True, False])
+def test_third_party_homonym_never_shadows_the_first_party_plugin(third_first: bool) -> None:
+    calls: list[str] = []
+    mine = _counting("same", PluginOrigin.FIRST_PARTY, calls, "mine")
+    theirs = _counting("same", PluginOrigin.THIRD_PARTY, calls, "theirs")
+    registry = PluginRegistry()
+    records = registry.load_all([theirs, mine] if third_first else [mine, theirs])
+    assert calls == ["mine"]  # the homonym is never loaded
+    by_origin = {r.origin: r for r in records}
+    assert by_origin[PluginOrigin.FIRST_PARTY].status is PluginStatus.LOADED
+    refused = by_origin[PluginOrigin.THIRD_PARTY]
+    assert refused.status is PluginStatus.INCOMPATIBLE
+    assert refused.reason and refused.reason.startswith("duplicate_key")
+    assert registry.get("same") is by_origin[PluginOrigin.FIRST_PARTY]
+    assert [r.origin for r in registry.active()] == [PluginOrigin.FIRST_PARTY]
+
+
+@pytest.mark.req("ENF-SEC-009")
+def test_two_first_party_plugins_with_one_key_are_all_refused_unloaded() -> None:
+    calls: list[str] = []
+    registry = PluginRegistry()
+    records = registry.load_all(
+        [
+            _counting("same", PluginOrigin.FIRST_PARTY, calls, "a"),
+            _counting("same", PluginOrigin.FIRST_PARTY, calls, "b"),
+            _counting("other", PluginOrigin.FIRST_PARTY, calls, "c"),
+        ]
+    )
+    assert calls == ["c"]  # neither homonym was loaded
+    assert [r.status for r in records[:2]] == [PluginStatus.INCOMPATIBLE] * 2
+    assert all("duplicate_key" in (r.reason or "") for r in records[:2])
+    assert records[2].status is PluginStatus.LOADED
+    assert registry.active() == [records[2]]
+
+
+@pytest.mark.req("ENF-SEC-009")
+def test_distribution_names_are_normalised_per_pep_503() -> None:
+    def ep(name: str, dist: str) -> Any:
+        return SimpleNamespace(name=name, dist=SimpleNamespace(name=dist), load=lambda: None)
+
+    found = candidates_from_entry_points([ep("a", "Shelfhold"), ep("b", "shelf.hold")])
+    assert [c.origin for c in found] == [PluginOrigin.FIRST_PARTY, PluginOrigin.THIRD_PARTY]

@@ -10,6 +10,7 @@ that rewrites the old manifest into the current shape; any other value is refuse
 the remaining plugins still load.
 """
 
+import re
 from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -22,6 +23,7 @@ from shelfhold.sdk.source import SourceManifest
 ENTRY_POINT_GROUP = "shelfhold.plugins"
 FIRST_PARTY_DISTRIBUTIONS = frozenset({"shelfhold"})
 
+_LOADED = frozenset({"loaded", "loaded_shim"})
 ManifestShim = Callable[[dict[str, Any]], dict[str, Any]]
 
 
@@ -76,7 +78,8 @@ class PluginRecord:
 
 
 def _normalise(name: str) -> str:
-    return name.lower().replace("_", "-")
+    """PEP 503 normalisation of a distribution name."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def candidates_from_entry_points(entry_points: Iterable[Any]) -> list[PluginCandidate]:
@@ -108,34 +111,57 @@ class PluginRegistry:
         self._api = api_version
         self._shims = dict(shims or {})
         self._active_keys = None if active_keys is None else frozenset(active_keys)
-        self._records: dict[str, PluginRecord] = {}
+        self._records: list[PluginRecord] = []
 
     @property
     def records(self) -> list[PluginRecord]:
-        return list(self._records.values())
+        return list(self._records)
 
     def get(self, key: str) -> PluginRecord | None:
-        return self._records.get(key)
+        """The record that holds the key: the loaded one if any, else the first seen."""
+        matching = [r for r in self._records if r.key == key]
+        loaded = [r for r in matching if r.status in _LOADED]
+        return (loaded or matching)[0] if matching else None
 
     def active(self) -> list[PluginRecord]:
         """Loaded plugins that are switched on; a fresh install switches none on (ENF-LEG-001)."""
-        loaded = (PluginStatus.LOADED, PluginStatus.LOADED_SHIM)
         return [
             r
-            for r in self._records.values()
-            if r.status in loaded and (self._active_keys is None or r.key in self._active_keys)
+            for r in self._records
+            if r.status in _LOADED and (self._active_keys is None or r.key in self._active_keys)
         ]
 
     def load_all(self, candidates: Iterable[PluginCandidate]) -> list[PluginRecord]:
-        """Load every candidate; one failing plugin never prevents the others from loading."""
-        loaded = [self._load(c) for c in candidates]
-        self._records.update({r.key: r for r in loaded if r.key not in self._records})
-        return loaded
+        """Load every candidate; one failing plugin never prevents the others from loading.
+
+        Candidates are grouped by key before any ``load()``: a key is decided on origins alone, so
+        a homonym can neither shadow a first-party plugin nor make two plugins load. One first-party
+        candidate wins and its third-party homonyms are refused unloaded; several first-party
+        candidates with one key are all refused.
+        """
+        items = list(candidates)
+        groups: dict[str, list[PluginCandidate]] = {}
+        for candidate in items:
+            groups.setdefault(candidate.key, []).append(candidate)
+        decided: dict[int, PluginRecord] = {}
+        for key, group in groups.items():
+            firsts = [c for c in group if c.origin is PluginOrigin.FIRST_PARTY]
+            taken = self.get(key)
+            held = taken is not None and taken.status in _LOADED
+            for c in group:
+                if len(firsts) > 1 and c.origin is PluginOrigin.FIRST_PARTY:
+                    why = f"duplicate_key: {len(firsts)} first-party plugins declare {key!r}"
+                elif held or (firsts and c.origin is not PluginOrigin.FIRST_PARTY):
+                    why = f"duplicate_key: {key!r} is already held by a first-party plugin"
+                else:
+                    continue
+                decided[id(c)] = PluginRecord(key, c.origin, PluginStatus.INCOMPATIBLE, why)
+        records = [decided.get(id(c)) or self._load(c) for c in items]
+        self._records.extend(records)
+        return records
 
     def _load(self, candidate: PluginCandidate) -> PluginRecord:
         key, origin = candidate.key, candidate.origin
-        if key in self._records:
-            return PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, f"duplicate key {key!r}")
         if origin is not PluginOrigin.FIRST_PARTY:
             return PluginRecord(
                 key, origin, PluginStatus.DISABLED, "third-party plugins are disabled in M1a"
