@@ -12,6 +12,9 @@ export default defineConfig({
         directives: {
           'default-src': ['self'],
           'script-src': ['self'],
+          'base-uri': ['none'],
+          'form-action': ['self'],
+          'object-src': ['none'],
           // SvelteKit's route announcer carries a style attribute; allow only that hash.
           'style-src-attr': ['unsafe-hashes', 'sha256-S8qMpvofolR8Mpjy4kQvEm7m1q8clzU4dfDH0AmvZjo=']
         }

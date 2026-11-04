@@ -207,7 +207,14 @@ jobs:
       - name: regenerate the schema and the client
         run: ./open-api/generate.sh
       - name: the committed schema and client must be up to date
-        run: git diff --exit-code -- open-api frontend/src/lib/api
+        run: |
+          git diff --exit-code -- open-api frontend/src/lib/api
+          untracked="$(git status --porcelain -- open-api frontend/src/lib/api)"
+          if [ -n "$untracked" ]; then
+            echo "::error::generated files differ from the committed ones:"
+            echo "$untracked"
+            exit 1
+          fi
 
   e2e-front:
     needs: changes
