@@ -1,0 +1,829 @@
+{
+ "components": {
+  "schemas": {
+   "AuthKeyExpiresAtDto": {
+    "additionalProperties": false,
+    "properties": {
+     "expiresAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "required": [
+     "expiresAt"
+    ],
+    "type": "object"
+   },
+   "FileTypeGroup": {
+    "description": "Members:\n- `1` \u2014 Archive\n- `2` \u2014 EPub (Epub)\n- `3` \u2014 Pdf\n- `4` \u2014 Images",
+    "enum": [
+     1,
+     2,
+     3,
+     4
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Archive",
+     "EPub",
+     "Pdf",
+     "Images"
+    ],
+    "x-enum-varnames": [
+     "Archive",
+     "Epub",
+     "Pdf",
+     "Images"
+    ]
+   },
+   "LibraryDto": {
+    "additionalProperties": false,
+    "properties": {
+     "allowMetadataMatching": {
+      "type": "boolean"
+     },
+     "allowScrobbling": {
+      "type": "boolean"
+     },
+     "collapseSeriesRelationships": {
+      "type": "boolean"
+     },
+     "coverImage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "defaultLanguage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "enableMetadata": {
+      "type": "boolean"
+     },
+     "excludePatterns": {
+      "items": {
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "folderWatching": {
+      "type": "boolean"
+     },
+     "folders": {
+      "items": {
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "includeInDashboard": {
+      "type": "boolean"
+     },
+     "includeInRecommended": {
+      "type": "boolean"
+     },
+     "includeInSearch": {
+      "type": "boolean"
+     },
+     "inheritWebLinksFromFirstChapter": {
+      "type": "boolean"
+     },
+     "lastScanned": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "libraryFileTypes": {
+      "items": {
+       "$ref": "#/components/schemas/FileTypeGroup"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "manageCollections": {
+      "type": "boolean"
+     },
+     "manageReadingLists": {
+      "type": "boolean"
+     },
+     "metadataProvider": {
+      "$ref": "#/components/schemas/MetadataProvider"
+     },
+     "name": {
+      "nullable": true,
+      "type": "string"
+     },
+     "removePrefixForSortName": {
+      "type": "boolean"
+     },
+     "type": {
+      "$ref": "#/components/schemas/LibraryType"
+     }
+    },
+    "type": "object"
+   },
+   "LibraryType": {
+    "description": "Members:\n- `0` \u2014 Manga\n- `1` \u2014 Comic (Flexible) (Comic)\n- `2` \u2014 Book\n- `3` \u2014 Image\n- `4` \u2014 Light Novel (LightNovel)\n- `5` \u2014 Comic (ComicVine)",
+    "enum": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Manga",
+     "Comic (Flexible)",
+     "Book",
+     "Image",
+     "Light Novel",
+     "Comic"
+    ],
+    "x-enum-varnames": [
+     "Manga",
+     "Comic",
+     "Book",
+     "Image",
+     "LightNovel",
+     "ComicVine"
+    ]
+   },
+   "MetadataProvider": {
+    "description": "Members:\n- `2` \u2014 Hardcover\n- `3` \u2014 Mangabaka\n- `4` \u2014 ComicBookRoundup",
+    "enum": [
+     2,
+     3,
+     4
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Hardcover",
+     "Mangabaka",
+     "ComicBookRoundup"
+    ],
+    "x-enum-varnames": [
+     "Hardcover",
+     "Mangabaka",
+     "ComicBookRoundup"
+    ]
+   },
+   "ParseBulkRequestDto": {
+    "additionalProperties": false,
+    "properties": {
+     "libraryType": {
+      "$ref": "#/components/schemas/LibraryType"
+     },
+     "names": {
+      "items": {
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "ParseBulkResponseDto": {
+    "additionalProperties": false,
+    "properties": {
+     "errorCounts": {
+      "format": "int32",
+      "readOnly": true,
+      "type": "integer"
+     },
+     "errors": {
+      "additionalProperties": {
+       "nullable": true,
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "object"
+     },
+     "results": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/ParseResultDto"
+      },
+      "nullable": true,
+      "type": "object"
+     }
+    },
+    "type": "object"
+   },
+   "ParseResultDto": {
+    "additionalProperties": false,
+    "properties": {
+     "maxChapterNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "maxVolumeNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "minChapterNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "minVolumeNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "seriesName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "seriesYear": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ScanFolderDto": {
+    "additionalProperties": false,
+    "properties": {
+     "abortOnNoSeriesMatch": {
+      "type": "boolean"
+     },
+     "apiKey": {
+      "nullable": true,
+      "type": "string"
+     },
+     "folderPath": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ServerInfoSlimDto": {
+    "additionalProperties": false,
+    "properties": {
+     "firstInstallDate": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+     },
+     "firstInstallVersion": {
+      "nullable": true,
+      "type": "string"
+     },
+     "installId": {
+      "nullable": true,
+      "type": "string"
+     },
+     "isDocker": {
+      "type": "boolean"
+     },
+     "kavitaVersion": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "required": [
+     "installId",
+     "kavitaVersion"
+    ],
+    "type": "object"
+   },
+   "UpdateLibraryDto": {
+    "additionalProperties": false,
+    "properties": {
+     "allowMetadataMatching": {
+      "type": "boolean"
+     },
+     "allowScrobbling": {
+      "type": "boolean"
+     },
+     "defaultLanguage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "enableMetadata": {
+      "type": "boolean"
+     },
+     "excludePatterns": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "fileGroupTypes": {
+      "items": {
+       "$ref": "#/components/schemas/FileTypeGroup"
+      },
+      "type": "array"
+     },
+     "folderWatching": {
+      "type": "boolean"
+     },
+     "folders": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "includeInDashboard": {
+      "type": "boolean"
+     },
+     "includeInSearch": {
+      "type": "boolean"
+     },
+     "inheritWebLinksFromFirstChapter": {
+      "type": "boolean"
+     },
+     "manageCollections": {
+      "type": "boolean"
+     },
+     "manageReadingLists": {
+      "type": "boolean"
+     },
+     "metadataProvider": {
+      "$ref": "#/components/schemas/MetadataProvider"
+     },
+     "name": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "removePrefixForSortName": {
+      "type": "boolean"
+     },
+     "type": {
+      "$ref": "#/components/schemas/LibraryType"
+     }
+    },
+    "required": [
+     "allowMetadataMatching",
+     "allowScrobbling",
+     "enableMetadata",
+     "excludePatterns",
+     "fileGroupTypes",
+     "folders",
+     "folderWatching",
+     "id",
+     "includeInDashboard",
+     "includeInSearch",
+     "inheritWebLinksFromFirstChapter",
+     "manageCollections",
+     "manageReadingLists",
+     "name",
+     "removePrefixForSortName",
+     "type"
+    ],
+    "type": "object"
+   },
+   "UploadCoverFileDto": {
+    "additionalProperties": false,
+    "properties": {
+     "fileName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "lockCover": {
+      "type": "boolean"
+     },
+     "url": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "required": [
+     "id"
+    ],
+    "type": "object"
+   }
+  },
+  "securitySchemes": {
+   "AuthKey": {
+    "description": "Auth Key authentication. Enter your Auth key from your user settings",
+    "in": "header",
+    "name": "x-api-key",
+    "type": "apiKey"
+   }
+  }
+ },
+ "info": {
+  "description": "Kavita provides a set of APIs authenticated via an Auth Key passed in the `x-api-key` header. Generate an Auth Key under User Settings \u2192 Manage Auth Keys, paste it into the Authorize panel, and all Try It requests will include it. Assume all fields of a payload are required unless marked optional. Built against v0.9.1.0",
+  "license": {
+   "name": "GPL-3.0",
+   "url": "https://github.com/Kareadita/Kavita/blob/develop/LICENSE"
+  },
+  "title": "Kavita",
+  "version": "0.9.1.0"
+ },
+ "openapi": "3.0.4",
+ "paths": {
+  "/api/Library/create": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateLibraryDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateLibraryDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateLibraryDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LibraryDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LibraryDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/LibraryDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Creates a new Library. Upon library creation, adds new library to all Admin accounts.",
+    "tags": [
+     "Library"
+    ]
+   }
+  },
+  "/api/Library/libraries": {
+   "get": {
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/LibraryDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/LibraryDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/LibraryDto"
+         },
+         "type": "array"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Return all libraries in the Server",
+    "tags": [
+     "Library"
+    ]
+   }
+  },
+  "/api/Library/scan-folder": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/ScanFolderDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ScanFolderDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ScanFolderDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Given a valid path, will invoke either a Scan Series or Scan Library. If the folder does not exist within Kavita, the request will be ignored",
+    "tags": [
+     "Library"
+    ]
+   }
+  },
+  "/api/Library/type": {
+   "get": {
+    "parameters": [
+     {
+      "description": "",
+      "in": "query",
+      "name": "libraryId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LibraryType"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LibraryType"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/LibraryType"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns the type of the underlying library",
+    "tags": [
+     "Library"
+    ]
+   }
+  },
+  "/api/Library/update": {
+   "post": {
+    "description": "Any folder or type change will invoke a scan.",
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateLibraryDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateLibraryDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateLibraryDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Updates an existing Library with new name, folders, and/or type.",
+    "tags": [
+     "Library"
+    ]
+   }
+  },
+  "/api/Plugin/authkey-expires": {
+   "get": {
+    "description": "Will always return null if the Auth Key does not belong to this account",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthKeyExpiresAtDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthKeyExpiresAtDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthKeyExpiresAtDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns the expiration (UTC) of the authenticated Auth key (or null if none set)",
+    "tags": [
+     "Plugin"
+    ]
+   }
+  },
+  "/api/Plugin/parse": {
+   "get": {
+    "parameters": [
+     {
+      "description": "String to parse",
+      "in": "query",
+      "name": "name",
+      "schema": {
+       "maxLength": 1000,
+       "minLength": 0,
+       "type": "string"
+      }
+     },
+     {
+      "description": "Determines the set of pattern matching to use",
+      "in": "query",
+      "name": "libraryType",
+      "schema": {
+       "$ref": "#/components/schemas/LibraryType"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ParseResultDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ParseResultDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/ParseResultDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Parse a string and return Parsed information from it. Does not support any directory fallback parsing",
+    "tags": [
+     "Plugin"
+    ]
+   }
+  },
+  "/api/Plugin/parse-bulk": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/ParseBulkRequestDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ParseBulkRequestDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ParseBulkRequestDto"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ParseBulkResponseDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ParseBulkResponseDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/ParseBulkResponseDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "tags": [
+     "Plugin"
+    ]
+   }
+  },
+  "/api/Server/server-info-slim": {
+   "get": {
+    "description": "This is just for the UI and is extremely lightweight",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServerInfoSlimDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServerInfoSlimDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/ServerInfoSlimDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns non-sensitive information about the current system",
+    "tags": [
+     "Server"
+    ]
+   }
+  },
+  "/api/Upload/series": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/UploadCoverFileDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UploadCoverFileDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UploadCoverFileDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Replaces series cover image and locks it with a base64 encoded image",
+    "tags": [
+     "Upload"
+    ]
+   }
+  }
+ },
+ "security": [
+  {
+   "AuthKey": []
+  }
+ ]
+}
