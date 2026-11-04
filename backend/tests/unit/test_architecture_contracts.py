@@ -17,7 +17,7 @@ CONFIG = BACKEND / "importlinter.ini"
 
 CORE_TOP_LEVEL = {
     "catalog", "acquisition", "library", "export", "identity", "integrations",
-    "jobs", "events", "plugin_host", "interfaces", "infrastructure", "config", "main",
+    "jobs", "events", "plugin_host", "interfaces", "infrastructure", "config", "i18n", "main",
 }  # fmt: skip
 
 
@@ -31,12 +31,17 @@ def _lines(value: str) -> list[str]:
     return [line.strip() for line in value.splitlines() if line.strip()]
 
 
-def _imported_modules(path: Path) -> list[str]:
-    """Absolute dotted names imported by an SDK file, relative imports resolved."""
-    rel = path.relative_to(SRC).with_suffix("")
-    package = list(rel.parts) if path.name == "__init__.py" else list(rel.parts[:-1])
-    if path.name == "__init__.py":
-        package = package[:-1]
+def _imported_modules(path: Path, package: list[str] | None = None) -> list[str]:
+    """Absolute dotted names imported by an SDK file, relative imports resolved.
+
+    `package` is the dotted package of the file, as a list; by default it is derived from the
+    path under src/, which a file elsewhere (a test probe in tmp_path) cannot do.
+    """
+    if package is None:
+        rel = path.relative_to(SRC).with_suffix("")
+        package = list(rel.parts) if path.name == "__init__.py" else list(rel.parts[:-1])
+        if path.name == "__init__.py":
+            package = package[:-1]
     found: list[str] = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
@@ -67,8 +72,7 @@ def test_sdk_never_imports_core() -> None:
 
 @pytest.mark.req("ENF-LEG-010")
 def test_core_import_detector_catches_all_import_forms(tmp_path: Path) -> None:
-    sdk = SRC / "shelfhold" / "sdk"
-    probe = sdk / "_probe.py"
+    probe = tmp_path / "_probe.py"  # never write into src/: other tests walk it under xdist
     for code in (
         "from shelfhold import catalog",
         "import shelfhold.catalog.domain",
@@ -77,10 +81,7 @@ def test_core_import_detector_catches_all_import_forms(tmp_path: Path) -> None:
         "from ..catalog import x",
     ):
         probe.write_text(code + "\n", encoding="utf-8")
-        try:
-            assert any(_is_core(n) for n in _imported_modules(probe)), code
-        finally:
-            probe.unlink()
+        assert any(_is_core(n) for n in _imported_modules(probe, ["shelfhold", "sdk"])), code
 
 
 @pytest.mark.req("ENF-QUAL-002")
@@ -214,14 +215,21 @@ VIOLATIONS = [
     ("xml-single-entry", "infrastructure/other.py", "import xml.etree.ElementTree\n",
      "infrastructure/xml/safe_parse.py"),
     ("xml-single-entry", "library/other.py", "import lxml.etree\n", None),
+    ("xml-single-entry", "library/other.py", "import defusedxml.ElementTree\n",
+     "infrastructure/xml/__init__.py"),
     ("archives-single-entry", "library/other.py", "import zipfile\n",
      "infrastructure/archives/safe_open.py"),
-    ("archives-single-entry", "export/other.py", "import tarfile\n", None),
+    ("archives-single-entry", "export/other.py", "import tarfile\n",
+     "infrastructure/archives/__init__.py"),
     ("sanitize-single-entry", "catalog/other.py", "import nh3\n",
      "infrastructure/content_trust/sanitize.py"),
+    ("sanitize-single-entry", "catalog/other.py", "import nh3\n",
+     "infrastructure/content_trust/__init__.py"),
     ("lang-single-producer", "library/other.py", "import langcodes\n", "catalog/lang.py"),
     ("replica-single-count", "export/other.py", "import shelfhold.library.replica\n", None),
     ("fsops-sole-writer", "library/other.py", "import shutil\n", "infrastructure/fsops/io.py"),
+    ("fsops-sole-writer", "library/other.py", "import shutil\n",
+     "infrastructure/fsops/__init__.py"),
     ("suwayomi-confined", "acquisition/other.py",
      "import shelfhold.plugin_host.adapters.meta.suwayomi\n",
      "plugin_host/adapters/meta/suwayomi/client.py"),
