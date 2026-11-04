@@ -1,4 +1,4 @@
-# Execute par prek (ou pre-commit). Memes controles qu'en CI, sauf denylist-names (CI seulement).
+# Run by prek (or pre-commit). Same checks as CI, except denylist-names (CI only).
 repos:
   - repo: local
     hooks:

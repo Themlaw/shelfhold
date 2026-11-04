@@ -1,4 +1,4 @@
-# Aucun Dockerfile avant l'image M0 ; la configuration est posee des maintenant.
+# No Dockerfile before the M0 image; the configuration is in place already.
 failure-threshold: warning
 trustedRegistries:
   - docker.io

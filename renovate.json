@@ -10,12 +10,12 @@
   "labels": ["dependencies"],
   "packageRules": [
     {
-      "description": "Huey reste sous 3.6 (ADR-0005)",
+      "description": "Keep huey below 3.6 (ADR-0005)",
       "matchPackageNames": ["huey"],
       "allowedVersions": "<3.6"
     },
     {
-      "description": "Automerge des patchs et des dependances de dev apres CI verte",
+      "description": "Automerge patches and dev dependencies once CI is green",
       "matchUpdateTypes": ["patch", "pin", "digest"],
       "automerge": true
     },

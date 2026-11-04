@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Echoue si une regex de DENYLIST_NAMES (une par ligne) matche le nom ou le contenu
-# d'un fichier suivi par git. N'affiche jamais la regex ni le texte trouve.
+# Fails if a regex from DENYLIST_NAMES (one per line) matches the name or content
+# of a git-tracked file. Never prints the regex or the matched text.
 set -euo pipefail
 
 if [ -z "${DENYLIST_NAMES:-}" ]; then
-  echo "::warning::DENYLIST_NAMES est vide ou absent (PR de fork ?) : controle saute, a relancer avant fusion."
+  echo "::warning::DENYLIST_NAMES is empty or missing (fork PR?): check skipped, rerun before merge."
   exit 0
 fi
 
@@ -18,10 +18,10 @@ while IFS= read -r pattern || [ -n "$pattern" ]; do
   hits=$(printf '%s\n' "$hits" | sed '/^$/d' | sort -u)
   if [ -n "$hits" ]; then
     status=1
-    echo "::error::la regle numero $n de la denylist matche :"
+    echo "::error::denylist rule number $n matches:"
     printf '%s\n' "$hits" | sed 's/^/  - /'
   fi
 done <<< "$DENYLIST_NAMES"
 
-echo "denylist : $n regle(s) evaluee(s)"
+echo "denylist: $n rule(s) evaluated"
 exit $status

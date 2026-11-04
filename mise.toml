@@ -3,11 +3,11 @@ python = "3.13"
 uv = "0.12"
 
 [tasks.setup]
-description = "Installe les dependances du backend"
+description = "Install backend dependencies"
 run = "uv sync --project backend --locked"
 
 [tasks.test]
-description = "Tests du backend avec couverture"
+description = "Backend tests with coverage"
 run = "uv run --project backend pytest --cov"
 dir = "backend"
 
@@ -22,6 +22,6 @@ run = [
 ]
 
 [tasks.fmt]
-description = "Formate le backend"
+description = "Format the backend"
 dir = "backend"
 run = ["uv run ruff check --fix .", "uv run ruff format ."]

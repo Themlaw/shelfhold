@@ -1,2 +1,3 @@
+# The repository is written in French: typos only checks code, config and workflows.
 [files]
-extend-exclude = ["backend/uv.lock", "docs/spec/front-propositions.html"]
+extend-exclude = ["*.md", "docs/", "backend/uv.lock", ".github/ISSUE_TEMPLATE/", "LICENSE", "backend/src/shelfhold/sdk/LICENSE"]
