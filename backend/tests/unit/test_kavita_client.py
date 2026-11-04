@@ -8,6 +8,8 @@ import json
 from datetime import timedelta
 
 import pytest
+
+from shelfhold.events.waiting_state import WaitingState
 from shelfhold.export.application.target_health import TargetHealth
 from shelfhold.export.domain.kavita_compat import (
     MINIMUM_VERSION,
@@ -29,8 +31,6 @@ from shelfhold.export.targets.kavita import (
     TargetForbidden,
     public_config,
 )
-
-from shelfhold.events.waiting_state import WaitingState
 from shelfhold.sdk.export_target import ApiCall
 from tests.fakes.kavita import API_KEY, BASE_URL, build_fetcher
 from tests.kavita_env import NOW, harness, run
@@ -137,10 +137,12 @@ def test_kavita_route_404_elsewhere_cuts_only_that_feature() -> None:
 @pytest.mark.req("EF-EXP-009")
 def test_kavita_library_update_get_then_faithful_put() -> None:
     h = harness()
+    run(h.client.probe())
+    start = len(h.fake.requests)
     before = copy.deepcopy(h.fake.libraries[0])
     update = run(h.client.ensure_exclude_patterns(7, HIDDEN_DIR_PATTERNS))
     assert update.changed and update.previous_exclude_patterns == ("*.tmp",)
-    assert [(r.method, r.path) for r in h.fake.requests] == [
+    assert [(r.method, r.path) for r in h.fake.requests[start:]] == [
         ("GET", "/api/Library/libraries"),
         ("POST", "/api/Library/update"),
     ]  # read first, then write
