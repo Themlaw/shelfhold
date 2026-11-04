@@ -145,6 +145,6 @@ def test_without_build_only_the_api_answers(settings: Settings, tmp_path: Path) 
 @pytest.mark.req("ENF-OPS-003")
 def test_openapi_describes_healthz_response(settings: Settings) -> None:
     with _client(settings, None) as client:
-        schema = client.get("/openapi.json").json()
+        schema = client.app.openapi()  # type: ignore[attr-defined]
     ok = schema["paths"]["/healthz"]["get"]["responses"]["200"]["content"]["application/json"]
     assert "$ref" in ok["schema"]

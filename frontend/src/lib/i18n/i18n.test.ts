@@ -4,7 +4,7 @@ import { t } from './index';
 describe('i18n', () => {
   // req: ENF-I18N-001
   it('formats simple messages', () => {
-    expect(t('health.ok', { version: '1.2.3' })).toBe('Le serveur répond (version 1.2.3).');
+    expect(t('health.ok')).toBe('Le serveur répond.');
   });
 
   // req: ENF-I18N-001

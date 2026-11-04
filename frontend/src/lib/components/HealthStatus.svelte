@@ -15,7 +15,7 @@
           total: data.progress?.total ?? 0
         });
       } else {
-        message = t('health.ok', { version: data.version ?? '' });
+        message = t('health.ok');
       }
     } catch {
       failed = true;

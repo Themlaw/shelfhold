@@ -13,10 +13,6 @@ export type HealthzResponse = {
      * State
      */
     state: 'ok' | 'migrating';
-    /**
-     * Version
-     */
-    version?: string | null;
 };
 
 /**
@@ -38,15 +34,9 @@ export type MigrationProgress = {
  */
 export type ReadyzResponse = {
     /**
-     * Checks
+     * State
      */
-    checks: {
-        [key: string]: boolean;
-    };
-    /**
-     * Status
-     */
-    status: 'ready' | 'not_ready';
+    state: 'ready' | 'not_ready';
 };
 
 export type HealthzData = {

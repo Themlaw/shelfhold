@@ -44,7 +44,7 @@ def egress_lines() -> list[str]:
 def test_stack_is_ready_after_up_wait(stack: None) -> None:
     status, body = exec_python("shelfhold", READYZ).split(" ", 1)
     assert status == "200"
-    assert json.loads(body)["status"] == "ready"
+    assert json.loads(body) == {"state": "ready"}
 
 
 @pytest.mark.req("ENF-SEC-006")

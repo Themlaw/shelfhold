@@ -20,17 +20,6 @@
             ],
             "title": "State",
             "type": "string"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
           }
         },
         "required": [
@@ -59,25 +48,17 @@
       },
       "ReadyzResponse": {
         "properties": {
-          "checks": {
-            "additionalProperties": {
-              "type": "boolean"
-            },
-            "title": "Checks",
-            "type": "object"
-          },
-          "status": {
+          "state": {
             "enum": [
               "ready",
               "not_ready"
             ],
-            "title": "Status",
+            "title": "State",
             "type": "string"
           }
         },
         "required": [
-          "status",
-          "checks"
+          "state"
         ],
         "title": "ReadyzResponse",
         "type": "object"

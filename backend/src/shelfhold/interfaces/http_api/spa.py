@@ -6,12 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 
-from shelfhold.infrastructure.http_headers import (
-    IMMUTABLE_CACHE,
-    NO_CACHE,
-    NOSNIFF,
-    with_frame_ancestors,
-)
+from shelfhold.infrastructure.http_headers import IMMUTABLE_CACHE, NO_CACHE
 
 API_SEGMENTS = frozenset({"api", "healthz", "readyz", "openapi.json"})
 IMMUTABLE_PREFIX = "_app/immutable/"
@@ -21,9 +16,9 @@ CSP_META = re.compile(
 
 
 def _header_csp(index: Path) -> str | None:
-    """The build's CSP (hashes change with each build), plus what a meta tag cannot carry."""
+    """The build's CSP (hashes change with each build); the middleware adds `frame-ancestors`."""
     match = CSP_META.search(index.read_text(encoding="utf-8"))
-    return with_frame_ancestors(match.group(1)) if match else None
+    return match.group(1) if match else None
 
 
 def mount_spa(app: FastAPI, build_dir: Path) -> bool:
@@ -36,7 +31,6 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
 
     def respond(file: Path, cache: str) -> Response:
         response = FileResponse(file)
-        response.headers["X-Content-Type-Options"] = NOSNIFF
         response.headers["Cache-Control"] = cache
         if csp is not None and file == index:
             response.headers["Content-Security-Policy"] = csp

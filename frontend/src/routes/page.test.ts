@@ -6,7 +6,7 @@ import { client } from '#lib/api/client.gen.ts';
 import Page from './+page.svelte';
 
 const server = setupServer(
-  http.get('http://shelfhold.test/healthz', () => HttpResponse.json({ state: 'ok', version: '0.0.0' }))
+  http.get('http://shelfhold.test/healthz', () => HttpResponse.json({ state: 'ok' }))
 );
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' } as never);
@@ -24,6 +24,6 @@ describe('home page', () => {
   // req: ENF-OPS-003
   it('calls /healthz through the generated client', async () => {
     render(Page);
-    expect(await screen.findByText('Le serveur répond (version 0.0.0).')).toBeInTheDocument();
+    expect(await screen.findByText('Le serveur répond.')).toBeInTheDocument();
   });
 });
