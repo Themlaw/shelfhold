@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from shelfhold.cli import main as cli_main
-from shelfhold.config import ConfigError, load_settings
+from shelfhold.config import ConfigError, Settings, load_settings
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.settings_store import SettingsStore
 from shelfhold.main import create_app
@@ -46,30 +46,30 @@ def test_config_precedence_env_over_toml_over_db(
 
 
 def test_file_suffix_secret_is_read(env: dict[str, str], tmp_path: Path) -> None:
-    secret_file = tmp_path / "kavita_key"
+    secret_file = tmp_path / "token_file"
     secret_file.write_text("s3cret-value\n", encoding="utf-8")
-    env["SHELFHOLD_KAVITA_API_KEY_FILE"] = str(secret_file)
+    env["SHELFHOLD_API_TOKEN_FILE"] = str(secret_file)
     resolved = load_settings(env)
-    assert resolved.values.kavita_api_key is not None
-    assert resolved.values.kavita_api_key.get_secret_value() == "s3cret-value"
-    assert resolved.fields["kavita_api_key"].readonly
+    assert resolved.values.api_token is not None
+    assert resolved.values.api_token.get_secret_value() == "s3cret-value"
+    assert resolved.fields["api_token"].readonly
     assert "s3cret-value" not in repr(resolved.values)
 
 
 def test_file_suffix_conflicts_and_missing_files_are_refused(
     env: dict[str, str], tmp_path: Path
 ) -> None:
-    secret_file = tmp_path / "kavita_key"
+    secret_file = tmp_path / "token_file"
     secret_file.write_text("x", encoding="utf-8")
     both = {
         **env,
-        "SHELFHOLD_KAVITA_API_KEY": "y",
-        "SHELFHOLD_KAVITA_API_KEY_FILE": str(secret_file),
+        "SHELFHOLD_API_TOKEN": "y",
+        "SHELFHOLD_API_TOKEN_FILE": str(secret_file),
     }
-    with pytest.raises(ConfigError, match="KAVITA_API_KEY"):
+    with pytest.raises(ConfigError, match="API_TOKEN"):
         load_settings(both)
-    missing = {**env, "SHELFHOLD_KAVITA_API_KEY_FILE": str(tmp_path / "absent")}
-    with pytest.raises(ConfigError, match="KAVITA_API_KEY_FILE"):
+    missing = {**env, "SHELFHOLD_API_TOKEN_FILE": str(tmp_path / "absent")}
+    with pytest.raises(ConfigError, match="API_TOKEN_FILE"):
         load_settings(missing)
 
 
@@ -105,14 +105,65 @@ def test_settings_store_roundtrip_feeds_the_db_layer(env: dict[str, str]) -> Non
     assert resolved.fields["log_level"].source == "db"
 
 
-def test_secret_values_are_masked_by_config_show(
-    env: dict[str, str], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+SECRET_FIELDS = [
+    name for name, field in Settings.model_fields.items() if "SecretStr" in str(field.annotation)
+]
+
+
+def test_there_is_at_least_one_secret_field() -> None:
+    assert SECRET_FIELDS
+
+
+@pytest.mark.parametrize("field", SECRET_FIELDS)
+@pytest.mark.parametrize("as_json", [False, True])
+def test_every_secret_value_is_masked_by_config_show(
+    field: str,
+    as_json: bool,
+    env: dict[str, str],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    env["SHELFHOLD_KAVITA_API_KEY"] = "top-secret"
+    env[f"SHELFHOLD_{field.upper()}"] = "top-secret"
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    assert cli_main(["config", "show", *(["--json"] if as_json else [])]) == 0
+    assert "top-secret" not in capsys.readouterr().out
+
+
+def test_secret_file_that_is_not_utf8_is_a_config_error(
+    env: dict[str, str], tmp_path: Path
+) -> None:
+    secret_file = tmp_path / "binary"
+    secret_file.write_bytes(b"\xff\xfe\x00")
+    with pytest.raises(ConfigError, match="API_TOKEN_FILE"):
+        load_settings({**env, "SHELFHOLD_API_TOKEN_FILE": str(secret_file)})
+
+
+@pytest.mark.parametrize(("mode", "warned"), [(0o644, True), (0o640, False), (0o600, False)])
+def test_world_readable_secret_file_is_reported(
+    env: dict[str, str], tmp_path: Path, mode: int, warned: bool
+) -> None:
+    secret_file = tmp_path / "token"
+    secret_file.write_text("value", encoding="utf-8")
+    secret_file.chmod(mode)
+    resolved = load_settings({**env, "SHELFHOLD_API_TOKEN_FILE": str(secret_file)})
+    assert (str(secret_file) in resolved.world_readable_secret_files) is warned
+
+
+def test_cli_warns_in_french_about_a_world_readable_secret_file(
+    env: dict[str, str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret_file = tmp_path / "token"
+    secret_file.write_text("value", encoding="utf-8")
+    secret_file.chmod(0o644)
+    env["SHELFHOLD_API_TOKEN_FILE"] = str(secret_file)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     assert cli_main(["config", "show"]) == 0
-    assert "top-secret" not in capsys.readouterr().out
+    assert "lisible par tous" in capsys.readouterr().err
 
 
 def test_data_and_store_volumes_distinct_and_configurable(env: dict[str, str]) -> None:

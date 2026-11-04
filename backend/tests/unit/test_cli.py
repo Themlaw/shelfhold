@@ -5,6 +5,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from shelfhold import cli
 from shelfhold.config import Settings
@@ -97,3 +98,30 @@ def test_current_revision_is_none_for_an_unmigrated_database(tmp_path: Path) -> 
     path = tmp_path / "x.db"
     sqlite3.connect(path).close()
     assert current_revision(path) is None
+
+
+def test_serve_refuses_a_newer_schema_before_starting_uvicorn(
+    cli_env: dict[str, str],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    settings.data_dir.mkdir(parents=True)
+    with closing(sqlite3.connect(settings.database_path)) as db:
+        db.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        db.execute("INSERT INTO alembic_version VALUES ('from_the_future')")
+        db.commit()
+    started: list[object] = []
+    monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **k: started.append(a))
+    assert cli.main(["serve"]) == 1
+    assert started == []
+    assert "démarrage refusé" in capsys.readouterr().err
+
+
+def test_settings_store_only_tolerates_a_missing_table(settings: Settings) -> None:
+    settings.data_dir.mkdir(parents=True)
+    with closing(sqlite3.connect(settings.database_path)) as db:
+        db.execute("CREATE TABLE app_setting (unexpected TEXT)")
+        db.commit()
+    with pytest.raises(OperationalError):
+        SettingsStore(settings.database_path).all()

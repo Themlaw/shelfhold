@@ -55,9 +55,9 @@ def test_secret_looking_fields_are_redacted(capsys: pytest.CaptureFixture[str]) 
     import structlog
 
     configure_logging(level="INFO", log_format="json")
-    structlog.get_logger().info("probe", kavita_api_key="hunter2", note="visible")
+    structlog.get_logger().info("probe", api_token="hunter2", note="visible")
     record = json_records(capsys.readouterr().out)[0]
-    assert record["kavita_api_key"] == "***"
+    assert record["api_token"] == "***"
     assert record["note"] == "visible"
 
 
@@ -69,3 +69,30 @@ def test_console_format_is_available_for_development(capsys: pytest.CaptureFixtu
     out = capsys.readouterr().out
     assert "probe" in out
     assert not out.startswith("{")
+
+
+def test_unhandled_http_exception_and_library_logs_are_json_with_request_id(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import logging
+
+    configure_logging(level="INFO", log_format="json")
+    migrate(settings)
+    app = create_app(settings)
+
+    def boom() -> None:
+        logging.getLogger("uvicorn.error").warning("library line")
+        raise RuntimeError("kaboom")
+
+    app.add_api_route("/boom", boom)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/boom", headers={"X-Request-ID": "req-boom"})
+    assert response.status_code == 500
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    records = [json.loads(line) for line in lines]  # every single line is JSON
+    library = next(r for r in records if r["event"] == "library line")
+    assert library["request_id"] == "req-boom"
+    failure = next(r for r in records if r["event"] == "http_unhandled_exception")
+    assert failure["request_id"] == "req-boom"
+    assert failure["level"] == "error"
+    assert "kaboom" in str(failure["exception"])
