@@ -17,13 +17,16 @@ COMPOSE_FILE = Path(__file__).resolve().parents[1] / "compose.yaml"
 
 
 def compose(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603
+    result = subprocess.run(  # noqa: S603
         ["docker", "compose", "-f", str(COMPOSE_FILE), *args],  # noqa: S607
         capture_output=True,
         text=True,
-        check=check,
+        check=False,
         timeout=300,
     )
+    if check and result.returncode:
+        raise RuntimeError(f"docker compose {' '.join(args)} failed:\n{result.stderr}")
+    return result
 
 
 def exec_python(service: str, code: str) -> str:

@@ -19,7 +19,7 @@ services:
     cap_drop: [ALL]
     cap_add: [NET_RAW]
     security_opt: ["no-new-privileges:true"]
-    command: ["python", "/watch/egress_watch.py", "172.31.250.0/24", "egress-watch", "shelfhold", "shelfhold-migrate"]
+    command: ["python", "/watch/egress_watch.py", "auto", "egress-watch", "shelfhold", "shelfhold-migrate"]
     volumes:
       - ./fakes/egress_watch.py:/watch/egress_watch.py:ro
     networks: [isolated]
@@ -60,9 +60,6 @@ services:
 
 networks:
   isolated:
-    ipam:
-      config:
-        - subnet: 172.31.250.0/24
 
 volumes:
   data:

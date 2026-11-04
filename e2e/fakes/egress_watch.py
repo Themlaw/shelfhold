@@ -4,9 +4,10 @@ subnet (ENF-PRIV-001), and every DNS query for a name that is not a compose serv
 Prints `EGRESS ...` lines. Needs CAP_NET_RAW; runs in the container that owns the namespace so
 that nothing is missed during start-up. Test double, not shipped in the image.
 
-Usage: egress_watch.py <allowed-subnet> [allowed-dns-name ...]
+Usage: egress_watch.py <allowed-subnet|auto> [allowed-dns-name ...]
 """
 
+import fcntl
 import ipaddress
 import socket
 import struct
@@ -60,8 +61,17 @@ def inspect(frame: bytes, allowed: ipaddress.IPv4Network, dns_ok: set[str]) -> s
     return None
 
 
+def own_subnet(interface: str = "eth0") -> ipaddress.IPv4Network:
+    """Subnet of the container's own network (SIOCGIFADDR / SIOCGIFNETMASK)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        request = struct.pack("256s", interface.encode())
+        address = socket.inet_ntoa(fcntl.ioctl(probe.fileno(), 0x8915, request)[20:24])
+        netmask = socket.inet_ntoa(fcntl.ioctl(probe.fileno(), 0x891B, request)[20:24])
+    return ipaddress.IPv4Network(f"{address}/{netmask}", strict=False)
+
+
 def main(subnet: str, dns_names: list[str]) -> None:
-    allowed = ipaddress.IPv4Network(subnet)
+    allowed = own_subnet() if subnet == "auto" else ipaddress.IPv4Network(subnet)
     dns_ok = set(dns_names)
     sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ALL))
     READY.write_text("ready", encoding="utf-8")

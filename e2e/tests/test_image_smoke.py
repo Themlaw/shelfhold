@@ -56,3 +56,14 @@ def test_no_outbound_request_on_fresh_install(stack: None) -> None:
 def test_egress_watch_detects_a_deliberate_connection(stack: None) -> None:
     exec_python("shelfhold", PROBE_EGRESS)
     assert wait_for(lambda: any("192.0.2.1:80" in line for line in egress_lines()))
+
+
+def test_root_serves_the_spa_index(stack: None) -> None:
+    out = exec_python(
+        "shelfhold",
+        "import urllib.request as u; r = u.urlopen('http://127.0.0.1:8080/', timeout=5); "
+        "print(r.status, r.headers.get_content_type()); print(r.read(2000).decode().lower())",
+    )
+    status, content_type = out.splitlines()[0].split()
+    assert (status, content_type) == ("200", "text/html")
+    assert "<html" in out

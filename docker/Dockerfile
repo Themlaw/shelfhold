@@ -2,8 +2,8 @@
 # Shelfhold image: multi-stage, base pinned by digest (Renovate bumps the digests), uid 1000.
 #
 # Frontend: the SPA is built only when the context has frontend/package.json. The CI passes
-# --build-arg WITH_FRONTEND=true in that case; without the build, the image serves the API only.
-ARG WITH_FRONTEND=false
+# --build-arg WITH_FRONTEND=true in that case (the default); false builds an API-only image.
+ARG WITH_FRONTEND=true
 
 FROM ghcr.io/astral-sh/uv:0.12@sha256:3af4716e991d6956a41e573eab705d0ee08500cd829ed30293eb8472f372c65a AS uv
 

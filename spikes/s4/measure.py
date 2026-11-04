@@ -80,6 +80,6 @@ uncompressed = subprocess.run(["docker", "image", "inspect", IMAGE, "--format", 
                               capture_output=True, text=True, check=True).stdout.strip()
 print(json.dumps({
     "image": IMAGE, "arch": os.uname().machine,
-    "image_size": {"compressed_gzip_of_docker_save": size.stdout.strip(), "uncompressed_mb": round(int(uncompressed) / 1e6, 1)},
+    "image_size": {"compressed_gzip_of_docker_save": size.stdout.strip(), "content_size_mb_not_uncompressed": round(int(uncompressed) / 1e6, 1)},
     "rss_idle_30s_after_ready": idle, "load": load_report, "rss_right_after_load": peak, "rss_15s_after_load": after,
 }, indent=2))
