@@ -4,6 +4,7 @@ import errno
 import hashlib
 import io
 import os
+import shutil
 import stat
 from pathlib import Path
 from types import SimpleNamespace
@@ -355,3 +356,19 @@ def test_strategy_auto_and_forced_agree(tmp_path: Path) -> None:
         env.fsops.write_atomic(str(env.manga / "X" / "1.cbz"), b"same", parents=True)
         results.append((env.manga / "X" / "1.cbz").read_bytes())
     assert results == [b"same"] * 3
+
+
+@pytest.mark.req("ENF-SEC-012", "EF-EXP-006")
+def test_planted_host_folder_link_never_receives_staging_or_recycle(env: Env) -> None:
+    """`.shelfhold` replaced by a link to the outside: refused, nothing leaves the root."""
+    elsewhere = env.tmp / "elsewhere"
+    elsewhere.mkdir()
+    shutil.rmtree(env.library / ".shelfhold")
+    (env.library / ".shelfhold").symlink_to(elsewhere)
+    target = env.manga / "p.cbz"
+    with pytest.raises(PathEscapeError):
+        env.fsops.write_atomic(str(target), b"x")
+    assert not target.exists()
+    assert list(elsewhere.iterdir()) == []
+    env.fsops.boot()
+    assert list(elsewhere.iterdir()) == []

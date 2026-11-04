@@ -206,6 +206,9 @@ class Fsops:
                     report.ok.append(root_path)
             except RootBlockedError as error:
                 report.blocked[root_path] = error.state
+            except PathEscapeError:
+                # The host folder is a link or has been tampered with: not a root to trust.
+                report.blocked[root_path] = RootState.MISMATCH
         return report
 
     def stamp_sentinel(self, root_path: str, *, generation: int) -> None:
