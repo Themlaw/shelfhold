@@ -1,9 +1,12 @@
-"""interfaces/cli is a registry of sub-command groups: a new group is a new module, no shared file."""
+"""interfaces/cli is a registry of command groups: a new group is a new module."""
+
+from __future__ import annotations
 
 import argparse
 import types
 
 import pytest
+
 from shelfhold.interfaces.cli import registry
 
 

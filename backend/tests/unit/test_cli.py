@@ -9,10 +9,17 @@ from pathlib import Path
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from shelfhold import cli
 from shelfhold.config import Settings
-from shelfhold.infrastructure.migrate import current_revision, head_revision, migrate
+from shelfhold.infrastructure.migrate import (
+    MigrationError,
+    current_revision,
+    head_revision,
+    migrate,
+)
 from shelfhold.infrastructure.settings_store import SettingsStore, load_db_settings
+from shelfhold.interfaces import cli
+from shelfhold.interfaces.cli import migrate as migrate_command
+from shelfhold.interfaces.cli import serve as serve_command
 from shelfhold.main import app_from_env
 
 
@@ -52,9 +59,9 @@ def test_migrate_command_exits_1_and_names_the_failed_revision(
     cli_env: dict[str, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     def broken(_settings: Settings) -> None:
-        raise cli.MigrationError("0002", "boom")
+        raise MigrationError("0002", "boom")
 
-    monkeypatch.setattr(cli, "migrate", broken)
+    monkeypatch.setattr(migrate_command, "migrate", broken)
     assert cli.main(["migrate"]) == 1
     assert "0002" in capsys.readouterr().err
 
@@ -74,7 +81,7 @@ def test_serve_starts_uvicorn_with_the_resolved_host_and_port(
 ) -> None:
     monkeypatch.setenv("SHELFHOLD_PORT", "9090")
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
-    monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **k: calls.append((a, k)))
+    monkeypatch.setattr(serve_command.uvicorn, "run", lambda *a, **k: calls.append((a, k)))
     assert cli.main(["serve"]) == 0
     assert calls[0][0] == ("shelfhold.main:app_from_env",)
     assert calls[0][1]["port"] == 9090
@@ -123,7 +130,7 @@ def test_serve_refuses_a_newer_schema_before_starting_uvicorn(
         db.execute("INSERT INTO alembic_version VALUES ('from_the_future')")
         db.commit()
     started: list[object] = []
-    monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **k: started.append(a))
+    monkeypatch.setattr(serve_command.uvicorn, "run", lambda *a, **k: started.append(a))
     assert cli.main(["serve"]) == 1
     assert started == []
     assert "démarrage refusé" in capsys.readouterr().err

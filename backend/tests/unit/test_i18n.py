@@ -9,7 +9,7 @@ import pytest
 from shelfhold.i18n import load_catalog, t
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
-USER_FACING = [SRC / "cli.py", SRC / "main.py", *sorted((SRC / "interfaces").rglob("*.py"))]
+USER_FACING = [SRC / "main.py", *sorted((SRC / "interfaces").rglob("*.py"))]
 
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:

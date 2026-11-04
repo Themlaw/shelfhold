@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from shelfhold.cli import main as cli_main
 from shelfhold.config import ConfigError, Settings, load_settings
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.settings_store import SettingsStore
+from shelfhold.interfaces.cli import main as cli_main
 from shelfhold.main import create_app
 
 
