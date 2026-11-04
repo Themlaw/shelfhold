@@ -79,7 +79,7 @@ def make_epub(path: Path) -> None:
         'media-type="application/oebps-package+xml"/></rootfiles>\n'
         "</container>\n"
     )
-    opf = (
+    package_doc = (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">\n'
         '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
@@ -111,7 +111,7 @@ def make_epub(path: Path) -> None:
         [
             ("mimetype", b"application/epub+zip"),
             ("META-INF/container.xml", container.encode()),
-            ("OEBPS/content.opf", opf.encode()),
+            ("OEBPS/content.opf", package_doc.encode()),
             ("OEBPS/nav.xhtml", nav.encode()),
             ("OEBPS/c1.xhtml", chapter.encode()),
         ],
