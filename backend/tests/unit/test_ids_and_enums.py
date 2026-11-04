@@ -4,6 +4,7 @@ import re
 from datetime import UTC, datetime
 
 import pytest
+
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.ids import is_ulid, new_ulid
 

@@ -8,11 +8,11 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import coherence, identity, metadata, platform
 from sqlalchemy import Engine, exc
 
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.schema import coherence, identity, metadata, platform
 
 SHA = "sha256:" + "a" * 64
 ARGON = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"

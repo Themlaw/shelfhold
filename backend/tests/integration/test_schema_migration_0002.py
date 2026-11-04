@@ -11,7 +11,6 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from shelfhold.infrastructure.schema import metadata
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.migrate import (
@@ -20,6 +19,7 @@ from shelfhold.infrastructure.migrate import (
     head_revision,
     migrate,
 )
+from shelfhold.infrastructure.schema import metadata
 
 PLATFORM_TABLES = {
     "app_setting", "user", "session", "api_key", "audit", "idempotency_key",
