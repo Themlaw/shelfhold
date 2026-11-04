@@ -61,3 +61,288 @@ boot_keyring_unreadable = "Démarrage refusé : le trousseau est illisible pour 
 boot_keyring_corrupt = "Démarrage refusé : trousseau inutilisable ({detail})."
 boot_keyring_permissions = "Démarrage refusé : le trousseau {path} est non conforme (droits trop ouverts, propriétaire inattendu, ou modifiable par d'autres). Corrigez : chmod 600 {path} (et chown au compte qui lance Shelfhold)."
 boot_keyring_missing = "Démarrage refusé : trousseau absent ({detail}). En créer un autre rendrait les secrets existants illisibles."
+
+[api]
+problem_description = "Détail du problème (RFC 9457)."
+
+# Catalogue d'erreurs (EF-UX-003) : un titre et une action par code ; le code est la clé.
+
+[errors."backup.failed"]
+title = "La sauvegarde a échoué."
+action = "Vérifiez que la destination de sauvegarde est présente et inscriptible, puis relancez la sauvegarde."
+
+[errors."backup.stale"]
+title = "La dernière sauvegarde est trop ancienne."
+action = "Vérifiez la destination de sauvegarde et la planification, puis lancez une sauvegarde."
+
+[errors."bad_request"]
+title = "Requête incorrecte."
+action = "Corrigez la requête puis recommencez."
+
+[errors."credential_not_allowed"]
+title = "Cette action est réservée à une session."
+action = "Effectuez l'action depuis l'interface après connexion ; les clés d'API et les jetons d'appareil sont refusés."
+
+[errors."disk.low"]
+title = "Espace disque presque épuisé."
+action = "Libérez de la place (vider la corbeille, supprimer des copies inutiles) ; les files reprennent d'elles-mêmes."
+
+[errors."fetch.dns_failed"]
+title = "Le nom de domaine n'a pas pu être résolu."
+action = "Vérifiez l'adresse saisie et le DNS du serveur."
+
+[errors."fetch.error"]
+title = "La requête vers un service externe a échoué."
+action = "Réessayez plus tard ; si le problème persiste, consultez les journaux."
+
+[errors."fetch.invalid_url"]
+title = "L'adresse n'est pas valide."
+action = "Corrigez l'adresse : schéma http ou https, sans identifiants dans l'URL."
+
+[errors."fetch.timeout"]
+title = "Le service externe a mis trop de temps à répondre."
+action = "Réessayez plus tard ou vérifiez que le service est en marche."
+
+[errors."fetch.too_large"]
+title = "La réponse dépasse la taille autorisée."
+action = "Vérifiez que l'adresse désigne bien le contenu attendu."
+
+[errors."fetch.too_many_redirects"]
+title = "Trop de redirections."
+action = "Utilisez directement l'adresse finale du service."
+
+[errors."fetch.unreachable"]
+title = "Le service externe est injoignable."
+action = "Vérifiez que le service est en marche et joignable depuis Shelfhold."
+
+[errors."fetch.unsafe_redirect"]
+title = "Redirection refusée par prudence."
+action = "Utilisez directement l'adresse finale du service."
+
+[errors."forbidden"]
+title = "Action non autorisée pour ce compte."
+action = "Demandez à un administrateur de vous accorder le droit nécessaire."
+
+[errors."idempotency_in_progress"]
+title = "Une requête avec cette clé est déjà en cours."
+action = "Patientez puis renvoyez la même requête avec la même clé."
+
+[errors."idempotency_key_invalid"]
+title = "La clé d'idempotence est invalide."
+action = "Utilisez une clé de 1 à 255 caractères ASCII imprimables, sans espace."
+
+[errors."idempotency_key_reused"]
+title = "Cette clé d'idempotence a déjà servi pour une autre requête."
+action = "Générez une nouvelle clé pour chaque nouvelle requête."
+
+[errors."instance.lease_conflict"]
+title = "Une autre instance de Shelfhold écrit sur ces données."
+action = "Arrêtez l'autre instance ; une seule instance doit utiliser ces volumes."
+
+[errors."instance.restored_behind"]
+title = "La base est en retard sur les fichiers : lecture seule."
+action = "Lancez « shelfhold reconcile --adopt-after-restore » pour rapprocher la base et les fichiers."
+
+[errors."internal_error"]
+title = "Erreur interne de Shelfhold."
+action = "Réessayez ; si l'erreur persiste, relevez l'identifiant de requête et consultez les journaux."
+
+[errors."invalid_cursor"]
+title = "Le curseur de pagination est invalide."
+action = "Repartez de la première page, sans curseur."
+
+[errors."job.dead_lettered"]
+title = "Des tâches ont définitivement échoué."
+action = "Ouvrez l'Activité, consultez les tâches en échec puis relancez-les ou abandonnez-les."
+
+[errors."metadata.provider_down"]
+title = "Le fournisseur de métadonnées ne répond plus."
+action = "Aucune action immédiate : l'enrichissement reprend quand le fournisseur revient."
+
+[errors."method_not_allowed"]
+title = "Méthode non autorisée sur cette adresse."
+action = "Utilisez l'une des méthodes indiquées dans l'en-tête Allow."
+
+[errors."mount.sentinel_missing"]
+title = "Un disque monté est absent ou différent de celui attendu."
+action = "Montez le bon disque, puis lancez « shelfhold target recheck »."
+
+[errors."not_found"]
+title = "Ressource introuvable."
+action = "Vérifiez l'adresse ou l'identifiant demandé."
+
+[errors."notify.failed"]
+title = "Les notifications n'ont pas pu être envoyées."
+action = "Vérifiez l'adresse de notification dans les réglages, puis envoyez une notification de test."
+
+[errors."precondition_failed"]
+title = "La ressource a changé depuis votre lecture."
+action = "Relisez la ressource pour obtenir son ETag actuel, puis recommencez."
+
+[errors."precondition_required"]
+title = "L'en-tête If-Match est obligatoire pour cette action."
+action = "Relisez la ressource et envoyez son ETag dans If-Match."
+
+[errors."reauth_required"]
+title = "Confirmez votre mot de passe pour continuer."
+action = "Saisissez de nouveau votre mot de passe, puis recommencez l'action."
+
+[errors."reconcile.drift"]
+title = "Les fichiers ne correspondent plus à la base."
+action = "Lancez la réconciliation, puis ré-adoptez ou re-téléchargez les éléments signalés."
+
+[errors."request_too_large"]
+title = "La requête est trop volumineuse pour une clé d'idempotence."
+action = "Réduisez la taille de la requête ou retirez l'en-tête Idempotency-Key."
+
+[errors."resync_required"]
+title = "Le jeton de synchronisation est trop ancien."
+action = "Rechargez la liste complète puis repartez du nouveau jeton."
+
+[errors."secret.undecryptable"]
+title = "Un secret n'a pas pu être déchiffré."
+action = "Restaurez le trousseau de clés depuis son export (« shelfhold secrets import »), puis redémarrez Shelfhold."
+
+[errors."series.stale"]
+title = "Des séries ne sont plus mises à jour."
+action = "Vérifiez l'état de la source, puis relancez le suivi."
+
+[errors."series.tombstoned_upstream"]
+title = "La série a été retirée de la source."
+action = "Décidez de la conserver ou de la retirer de la bibliothèque."
+
+[errors."source.auth_expired"]
+title = "La connexion à la source a expiré."
+action = "Renouvelez les identifiants avec « shelfhold source set-secret »."
+
+[errors."source.auth_mode_unsupported"]
+title = "Le mode d'authentification de la source n'est pas pris en charge."
+action = "Changez le mode d'authentification du service, puis lancez « shelfhold source recheck »."
+
+[errors."source.auth_required"]
+title = "La source demande une connexion."
+action = "Enregistrez les identifiants de la source avec « shelfhold source set-secret »."
+
+[errors."source.broken"]
+title = "La source ne fonctionne plus correctement."
+action = "Vérifiez la source ; le suivi reprend dès qu'elle répond."
+
+[errors."source.changed"]
+title = "La source a changé de format."
+action = "Mettez l'extension de la source à jour."
+
+[errors."source.content_removed"]
+title = "Le contenu a été retiré de la source."
+action = "Aucune action : la copie déjà conservée est gardée."
+
+[errors."source.dns_blocked"]
+title = "Le résolveur DNS du foyer bloque cette source."
+action = "Autorisez le domaine de la source dans le bloqueur DNS (liste blanche), puis relancez."
+
+[errors."source.downloads_dropped"]
+title = "La source a abandonné des téléchargements."
+action = "Relancez les téléchargements abandonnés depuis l'Activité."
+
+[errors."source.error"]
+title = "La source a signalé une erreur."
+action = "Consultez l'état de la source dans la page Sources."
+
+[errors."source.instance_changed"]
+title = "Le service de la source semble avoir été réinstallé."
+action = "Confirmez avec « shelfhold source reconnect » ; rien n'est supprimé en attendant."
+
+[errors."source.not_loaded"]
+title = "Une source n'est pas chargée."
+action = "Vérifiez l'extension de la source dans le service, puis relancez-la."
+
+[errors."source.rate_limited"]
+title = "La source limite le nombre de requêtes."
+action = "Aucune action : Shelfhold réessaie après le délai demandé par la source."
+
+[errors."source.temporarily_unavailable"]
+title = "La source est momentanément indisponible."
+action = "Aucune action : la file est en pause et reprend d'elle-même."
+
+[errors."source.version_unsupported"]
+title = "La version de la source n'est pas prise en charge."
+action = "Mettez le service de la source à jour vers une version prise en charge."
+
+[errors."ssrf.blocked"]
+title = "Adresse refusée par la protection contre les requêtes internes."
+action = "Si l'adresse est un service de votre réseau, déclarez-la explicitement (hôte et port) dans les réglages."
+
+[errors."target.child_exposure"]
+title = "Une bibliothèque Kavita est accessible à un compte enfant."
+action = "Retirez l'accès du compte enfant à cette bibliothèque dans Kavita, puis lancez « shelfhold target recheck »."
+
+[errors."target.forbidden"]
+title = "Le compte Kavita n'a plus les droits nécessaires."
+action = "Rendez au compte dédié ses droits d'administrateur dans Kavita."
+
+[errors."target.foreign_writer_detected"]
+title = "Un autre programme écrit dans un dossier géré par Shelfhold."
+action = "Retirez les fichiers étrangers ou excluez ce dossier de l'autre programme, puis relancez l'export."
+
+[errors."target.instance_changed"]
+title = "Kavita semble avoir été réinstallé."
+action = "Confirmez avec « shelfhold target reconnect » ; rien n'est recréé tant que vous ne l'avez pas fait."
+
+[errors."target.key_expiring"]
+title = "La clé d'API de Kavita expire bientôt."
+action = "Générez une nouvelle clé dans Kavita et enregistrez-la dans Shelfhold."
+
+[errors."target.not_indexed"]
+title = "Le fichier écrit n'apparaît pas dans Kavita."
+action = "Vérifiez l'exclusion de dossier, le type de bibliothèque et la surveillance des dossiers dans Kavita."
+
+[errors."target.permission_denied"]
+title = "Shelfhold ne peut pas écrire dans ce dossier."
+action = "Corrigez les droits du dossier de série, puis lancez « shelfhold target recheck »."
+
+[errors."target.route_missing"]
+title = "Kavita n'a pas la fonction attendue."
+action = "Mettez Kavita à jour, puis lancez « shelfhold target recheck »."
+
+[errors."target.unreachable"]
+title = "Kavita ne répond pas."
+action = "Vérifiez que le conteneur Kavita tourne, ou reconnectez-le avec « shelfhold target reconnect »."
+
+[errors."target.version_unsupported"]
+title = "La version de Kavita n'est pas prise en charge."
+action = "Mettez Kavita à jour vers une version prise en charge (voir les notes de version)."
+
+[errors."tombstone.key_unknown"]
+title = "Une clé citée par une pierre tombale est inconnue."
+action = "Importez le trousseau (« shelfhold secrets import ») ou acceptez la perte avec « shelfhold tombstone accept-lost-keyring »."
+
+[errors."tombstone.migration_hit"]
+title = "Une migration a rencontré un contenu effacé."
+action = "Examinez le contenu concerné ; rien n'a été réacquis."
+
+[errors."tombstone.root_mismatch"]
+title = "Le journal d'effacement appartient à une autre racine."
+action = "Consultez le rapport : les lignes ont été appliquées à la racine connue, rien n'a été supprimé."
+
+[errors."tombstone.unverified"]
+title = "Une pierre tombale n'a pas pu être vérifiée."
+action = "Examinez la ligne signalée au rapport et décidez de la garder ou de l'écarter."
+
+[errors."unauthenticated"]
+title = "Connexion requise."
+action = "Connectez-vous, ou fournissez une clé d'API valide."
+
+[errors."unit.safeguard_backlog"]
+title = "La file de mise à l'abri est saturée."
+action = "Laissez la file se vider ou augmentez le quota de mise à l'abri."
+
+[errors."unit.safeguard_failed"]
+title = "La mise à l'abri d'un chapitre a échoué."
+action = "Consultez l'Activité et relancez la mise à l'abri du chapitre."
+
+[errors."validation_failed"]
+title = "Des champs de la requête sont invalides."
+action = "Corrigez les champs listés puis recommencez."
+
+[errors."wake.deferred"]
+title = "Le service est resté endormi : des lots sont différés."
+action = "Vérifiez le réveil automatique du service ou démarrez-le à la main."

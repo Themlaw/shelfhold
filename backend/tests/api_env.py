@@ -57,7 +57,9 @@ def build_env(tmp_path: Path, *, extra: APIRouter | None = None) -> ApiEnv:
     clock = [T0]
     env_state: dict[str, ApiEnv] = {}
     router = APIRouter(prefix="/api/v1")
-    things: dict[int, Thing] = {n: Thing(id=n, name=f"thing-{n:03d}", version=1) for n in range(1, 8)}
+    things: dict[int, Thing] = {
+        n: Thing(id=n, name=f"thing-{n:03d}", version=1) for n in range(1, 8)
+    }
 
     @router.post("/things", status_code=201)
     def create_thing(body: NewThing) -> Thing:
@@ -87,8 +89,8 @@ def build_env(tmp_path: Path, *, extra: APIRouter | None = None) -> ApiEnv:
         things[thing_id] = thing = Thing(id=thing_id, name=body.name, version=thing.version + 1)
         return thing
 
-    @router.post("/exports", status_code=202)
-    def start_export() -> JobAccepted:
+    @router.post("/exports", status_code=202, response_model=JobAccepted)
+    def start_export() -> Response:
         job_id = f"01JEXPORT{len(env_state['env'].exports_started):017d}"
         env_state["env"].exports_started.append(job_id)
         return accepted_job(job_id)

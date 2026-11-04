@@ -46,6 +46,63 @@
         "title": "MigrationProgress",
         "type": "object"
       },
+      "Problem": {
+        "additionalProperties": true,
+        "description": "RFC 9457 body, as documented in the OpenAPI schema.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "action"
+        ],
+        "title": "Problem",
+        "type": "object"
+      },
       "ReadyzResponse": {
         "properties": {
           "state": {
@@ -84,6 +141,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
           }
         },
         "summary": "Healthz"
@@ -112,6 +179,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
           }
         },
         "summary": "Readyz"
