@@ -229,7 +229,7 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.unit-${{ matrix.shard }}
           SHARD: ${{ matrix.shard }}/${{ needs.changes.outputs.backend_shard_total }}
-        run: uv run --locked pytest tests/unit -n auto --shard "$SHARD" --cov --cov-report=
+        run: uv run --locked pytest tests/unit -n auto --shard "$SHARD" --cov --cov-report= --cov-fail-under=0
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-unit-${{ matrix.shard }}
@@ -257,7 +257,7 @@ jobs:
         working-directory: backend
         env:
           COVERAGE_FILE: .coverage.integration
-        run: uv run --locked pytest tests/integration -n auto --cov --cov-report=
+        run: uv run --locked pytest tests/integration -n auto --cov --cov-report= --cov-fail-under=0
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-integration
