@@ -57,6 +57,8 @@ jobs:
               - 'backend/**'
               - 'frontend/**'
               - 'docker/**'
+              - 'open-api/**'
+              - '.dockerignore'
               - 'e2e/**'
               - 'compose*'
               - '.github/workflows/image*'
