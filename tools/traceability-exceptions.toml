@@ -66,3 +66,8 @@ reason = "banc de contrat contre un Suwayomi réel épinglé (Docker, spike S5) 
 requirement = "ENF-OPS-002"
 aspect = "« pas de migration dans une release patch » (contrôle CI)"
 reason = "n'a de sens qu'à partir de la première release patch (0.1.x) ; contrôle à ajouter avec la sortie de v0.1.0 (release publiée à la main), avant la clôture de M1a"
+
+[[deferred]]
+requirement = "ENF-OPS-014"
+aspect = "curseur de reprise des jobs de fenêtre conservé d'une nuit à l'autre"
+reason = "`run_until` rend le curseur mais `job_view` n'a aucune colonne pour le garder et aucune migration n'est permise sans le jeton ; en M1a un job interrompu recommence au début. Le lot qui lèvera le jeton de migration (M1b, fenêtre réglable) ajoute le curseur (docs/decisions/M1a.md, L12 point 11)"

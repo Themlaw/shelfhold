@@ -31,6 +31,7 @@ class PendingJob:
     limit_key: str | None = None
     priority_class: str = "new"
     window_end: datetime | None = None  # a window job must stop by then
+    created_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -93,16 +94,33 @@ class JobLedger:
                 sa.update(job_view).where(job_view.c.id == job_id).values(huey_task_id=huey_task_id)
             )
 
-    def mark_running(self, job_id: str) -> None:
+    def claim_running(self, job_id: str) -> bool:
+        """`queued` -> `running`, once: False when another task of the same job got there first
+        (a job can reach Huey twice, e.g. a crash between enqueue and `mark_dispatched`)."""
         with self._engine.begin() as conn:
-            conn.execute(
-                sa.update(job_view)
-                .where(job_view.c.id == job_id)
-                .values(
-                    status="running",
-                    started_at=self._clock.now(),
-                    attempts=job_view.c.attempts + 1,
-                )
+            return bool(
+                conn.execute(
+                    sa.update(job_view)
+                    .where(job_view.c.id == job_id, job_view.c.status == "queued")
+                    .values(
+                        status="running",
+                        started_at=self._clock.now(),
+                        attempts=job_view.c.attempts + 1,
+                    )
+                ).rowcount
+            )
+
+    def reschedule_to(self, job_id: str, instant: datetime) -> bool:
+        """Move a still-queued window job that found its window closed. `created_at` is the
+        instant the job belongs to (no column holds a window end, no migration): the window that
+        contains it is the window the job may run in."""
+        with self._engine.begin() as conn:
+            return bool(
+                conn.execute(
+                    sa.update(job_view)
+                    .where(job_view.c.id == job_id, job_view.c.status == "queued")
+                    .values(created_at=instant)
+                ).rowcount
             )
 
     def mark_finished(
@@ -175,4 +193,5 @@ class JobLedger:
             source_key=row.source_key,
             limit_key=row.limit_key,
             priority_class=row.priority_class,
+            created_at=row.created_at,
         )

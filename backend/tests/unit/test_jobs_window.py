@@ -131,3 +131,20 @@ def test_no_store_access_outside_window_unless_user_request() -> None:
 @pytest.mark.req("ENF-OPS-014")
 def test_event_driven_export_allowed_outside_window() -> None:
     ensure_store_access(StoreOrigin.EVENT, now=utc(2026, 11, 4, 11))
+
+
+@pytest.mark.req("ENF-TIME-001")
+def test_frequent_cron_runs_in_both_passes_of_the_repeated_hour() -> None:
+    def count(expr: str, first: datetime, last: datetime) -> int:
+        spec, at, n = CronSpec.parse(expr), first, 0
+        while (at := spec.next_after(at)) <= last:
+            n += 1
+        return n
+
+    # Paris, Sunday 2026-10-25 (25 h long): from 00:00 CEST to 23:59 CET
+    day = (utc(2026, 10, 24, 21, 59), utc(2026, 10, 25, 22, 59))
+    assert count("*/30 * * * *", *day) == 50
+    assert count("0 * * * *", *day) == 25
+    assert count("30 2 * * *", *day) == 1  # a daily cron still runs once
+    spring = (utc(2026, 3, 28, 22, 59), utc(2026, 3, 29, 21, 59))  # 23 h long
+    assert count("0 * * * *", *spring) == 23

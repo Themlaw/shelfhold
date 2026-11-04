@@ -2,11 +2,12 @@
 
 Local wall-clock rules around a change of hour: a time that does not exist (02:30 on the spring
 day) runs once, shifted past the gap; a time that happens twice (02:30 on the autumn day) runs
-once, the first time. Results are UTC instants.
+once, the first time, unless the cron runs at least hourly (`frequent`), which keeps the real
+cadence and runs in both passes. Results are UTC instants.
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from shelfhold.jobs.window import PARIS
@@ -81,19 +82,30 @@ class CronSpec:
             return in_days
         return in_days or in_weekdays  # both restricted: either, as classic cron
 
+    @property
+    def frequent(self) -> bool:
+        """Runs at least hourly: its cadence is real time, so a repeated hour runs twice."""
+        return len(self.minutes) > 1 or len(self.hours) == 24
+
+    def _day_instants(self, day: date, tz: ZoneInfo) -> set[datetime]:
+        instants: set[datetime] = set()
+        for h in self.hours:
+            for m in self.minutes:
+                local = datetime.combine(day, time(h, m), tzinfo=tz)
+                instants.add(local.astimezone(UTC))
+                if self.frequent:  # autumn: the second pass through 02:00-03:00 local
+                    second = local.replace(fold=1).astimezone(UTC)
+                    if second.astimezone(tz).replace(tzinfo=None) == local.replace(tzinfo=None):
+                        instants.add(second)  # skipped for a time that does not exist
+        return instants
+
     def next_after(self, after: datetime, tz: ZoneInfo = PARIS) -> datetime:
         """The first occurrence strictly after `after`, as a UTC instant."""
         after = after.astimezone(UTC)
         day = after.astimezone(tz).date()
         for _ in range(_SEARCH_DAYS):
             if day.month in self.months and self._day_matches(day.day, (day.weekday() + 1) % 7):
-                found = sorted(
-                    {
-                        datetime.combine(day, time(h, m), tzinfo=tz).astimezone(UTC)
-                        for h in self.hours
-                        for m in self.minutes
-                    }
-                )
+                found = sorted(self._day_instants(day, tz))
                 for instant in found:
                     if instant > after:
                         return instant

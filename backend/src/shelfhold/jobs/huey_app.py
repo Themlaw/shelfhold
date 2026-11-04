@@ -31,7 +31,9 @@ POOLS = ("io", "cpu", "maint")
 # Worker threads each pool's consumer is started with (`huey_consumer -w N -k thread`).
 POOL_WORKERS = {"io": 4, "cpu": 1, "maint": 1}
 CLASS_PRIORITY = {"new": 30, "request": 20, "backfill": 10}
-TICK_POOL = "io"  # the pool that never runs a long job
+TICK_POOL = "io"
+TICK_PRIORITY = 100  # above every class: queued downloads never delay the scan (a task already
+# running is not preempted, so `io` keeps a spare worker thread)
 _LOCK_MARK = ".lock."
 
 
@@ -80,7 +82,7 @@ class JobPools:
         self.slots = DomainSlots(engine, clock)
         self.scheduler = Scheduler(engine, clock=clock, seed=seed, dispatcher=self, window=window)
         self._engine = engine
-        self._handlers: dict[str, tuple[str, Handler]] = {}
+        self._handlers: dict[str, tuple[str, Handler, bool]] = {}
         self._hueys: dict[str, Huey] = {}
         self._run_job: dict[str, Any] = {}
         for name in POOLS:
@@ -92,7 +94,9 @@ class JobPools:
             )
             self._hueys[name] = huey
             self._run_job[name] = huey.task(name="run_job")(self._execute)
-        self._hueys[TICK_POOL].periodic_task(crontab(minute="*"), name="tick")(self.tick)
+        self._hueys[TICK_POOL].periodic_task(
+            crontab(minute="*"), name="tick", priority=TICK_PRIORITY
+        )(self.tick)
 
     # -- Huey instances ---------------------------------------------------------------------
 
@@ -119,10 +123,11 @@ class JobPools:
 
     # -- registration and submission --------------------------------------------------------
 
-    def register(self, kind: str, *, pool: str, handler: Handler) -> None:
+    def register(self, kind: str, *, pool: str, handler: Handler, windowed: bool = False) -> None:
+        """`windowed`: the job runs only inside the maintenance window and stops at its end."""
         if pool not in self._hueys:
             raise KeyError(pool)
-        self._handlers[kind] = (pool, handler)
+        self._handlers[kind] = (pool, handler, windowed)
 
     def submit(
         self,
@@ -174,14 +179,23 @@ class JobPools:
         if route is None:
             self.ledger.mark_finished(job_id, error="no handler", error_code="job.unknown_kind")
             return
+        window_end = None
+        if route[2]:  # a window job: its window is the one it was queued in, never today's
+            now = self.clock.now()
+            span = self.window.span_containing(job.created_at) if job.created_at else None
+            if span is None or now >= span.end:
+                following = self.window.next_span(now)
+                if self.ledger.reschedule_to(job_id, following.start):
+                    raise RetryTask(eta=following.start.replace(tzinfo=None))
+                return  # not queued any more: a duplicate of a job that already ran
+            if now < span.start:
+                raise RetryTask(eta=span.start.replace(tzinfo=None))
+            window_end = span.end
+        if not self.ledger.claim_running(job_id):
+            return  # the same job reached us twice: the other task has it, or it is done
         if job.limit_key is not None and not self.slots.try_acquire(job.limit_key):
             self.ledger.mark_deferred(job_id)
             raise RetryTask(delay=RETRY_DELAY_S)  # asked again later, no thread kept waiting
-        self.ledger.mark_running(job_id)
-        window_end = None
-        if job.priority_class == "backfill":
-            span = self.window.span_containing(self.clock.now())
-            window_end = span.end if span else None
         try:
             route[1](
                 JobContext(

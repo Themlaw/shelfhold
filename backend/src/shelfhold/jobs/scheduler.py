@@ -87,16 +87,42 @@ class Scheduler:
         windowed: bool = False,
         enabled: bool = True,
     ) -> None:
-        """Register a periodic, or change its cron; its next due time is computed now."""
+        """Register a periodic. Registering it again unchanged keeps its `next_due_at` and
+        `last_run_at` (a restart must not push a pending run a period further); a changed cron,
+        jitter or window plans it afresh."""
         CronSpec.parse(cron)  # refuse a bad expression at registration, not at 03:00
         now = self._clock.now()
         with self._engine.begin() as conn:
-            conn.execute(
-                sa.delete(schedule).where(
+            existing = conn.execute(
+                sa.select(schedule).where(
                     schedule.c.job_kind == kind, schedule.c.scope_key == scope_key
                 )
-            )
+            ).first()
+            if (
+                existing is not None
+                and existing.cron == cron
+                and existing.jitter_s == jitter_s
+                and (existing.window is not None) == windowed
+                and existing.next_due_at is not None
+            ):
+                conn.execute(
+                    sa.update(schedule).where(schedule.c.id == existing.id).values(enabled=enabled)
+                )
+                return
             due, window = self._plan(kind, scope_key, cron, jitter_s, windowed, now)
+            if existing is not None:
+                conn.execute(
+                    sa.update(schedule)
+                    .where(schedule.c.id == existing.id)
+                    .values(
+                        cron=cron,
+                        jitter_s=jitter_s,
+                        window=window,
+                        enabled=enabled,
+                        next_due_at=due,
+                    )
+                )
+                return
             conn.execute(
                 sa.insert(schedule).values(
                     id=new_ulid(),
@@ -163,41 +189,65 @@ class Scheduler:
             if now < span.start:
                 return None  # not open yet (jitter is clamped into the window, so a safety net)
             if now >= span.end:
-                # that night is over and nothing ran: no disk access by day, wait for the next
-                self._advance(row, now, enqueue=False)
+                self._miss(row, now)
                 return None
-        return self._advance(row, now, enqueue=True)
+        return self._advance(row, now)
 
-    def _advance(self, row: "sa.Row[Any]", now: datetime, *, enqueue: bool) -> PendingJob | None:
-        due, window = self._plan(
-            row.job_kind, row.scope_key, row.cron, row.jitter_s, row.window is not None, now
-        )
+    def _miss(self, row: "sa.Row[Any]", now: datetime) -> None:
+        """That night is over and nothing ran: no disk access by day.
+
+        Whatever the cron says, the job is replayed at the start of the next window, and the miss
+        is recorded as an `ops.window_missed` event."""
+        span = self._window.next_span(now)
+        jitter = jitter_for(self._seed, row.job_kind, row.scope_key, span.start, row.jitter_s)
+        due = min(span.start + timedelta(seconds=jitter), span.end - timedelta(seconds=1))
         with self._engine.begin() as conn:
             won = conn.execute(
                 sa.update(schedule)
                 .where(schedule.c.id == row.id, schedule.c.next_due_at == row.next_due_at)
-                .values(
-                    next_due_at=due,
-                    window=window,
-                    last_run_at=now if enqueue else row.last_run_at,
-                )
+                .values(next_due_at=due, window=_window_json(span))
             ).rowcount
-            if not won or not enqueue:
+            if won:
+                conn.execute(
+                    sa.insert(platform.event).values(
+                        type="ops.window_missed",
+                        schema_version=1,
+                        payload={"job_kind": row.job_kind, "scope_key": row.scope_key},
+                        occurred_at=now,
+                        visibility="ops",
+                    )
+                )
+
+    def _advance(self, row: "sa.Row[Any]", now: datetime) -> PendingJob | None:
+        due, window = self._plan(
+            row.job_kind, row.scope_key, row.cron, row.jitter_s, row.window is not None, now
+        )
+        windowed = row.window is not None
+        dedupe_key = f"periodic:{row.job_kind}:{row.scope_key}"
+        priority_class = "backfill" if windowed else "new"
+        with self._engine.begin() as conn:
+            won = conn.execute(
+                sa.update(schedule)
+                .where(schedule.c.id == row.id, schedule.c.next_due_at == row.next_due_at)
+                .values(next_due_at=due, window=window)
+            ).rowcount
+            if not won:
                 return None  # another scan claimed this occurrence first
             created = self._ledger.create(
                 conn,
                 kind=row.job_kind,
-                dedupe_key=f"periodic:{row.job_kind}:{row.scope_key}",
+                dedupe_key=dedupe_key,
                 source_key=row.scope_key or None,
-                priority_class="backfill" if row.window else "new",
+                priority_class=priority_class,
             )
-        if not created.created:
-            return None  # the previous run of this periodic is still active: coalesced
+            if not created.created:
+                return None  # the previous run of this periodic is still active: coalesced
+            conn.execute(sa.update(schedule).where(schedule.c.id == row.id).values(last_run_at=now))
         return PendingJob(
             job_id=created.job_id,
             kind=row.job_kind,
-            dedupe_key=f"periodic:{row.job_kind}:{row.scope_key}",
+            dedupe_key=dedupe_key,
             scope_key=row.scope_key,
-            priority_class="backfill" if row.window else "new",
-            window_end=_span_of(row.window).end if row.window else None,
+            priority_class=priority_class,
+            window_end=_span_of(row.window).end if windowed else None,
         )
