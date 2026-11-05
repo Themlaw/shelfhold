@@ -11,7 +11,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from shelfhold.config import Settings
-from shelfhold.infrastructure.migrate import MigrationInProgressError, migrate
+from shelfhold.infrastructure.migrate import (
+    MigrationInProgressError,
+    MigrationStateFile,
+    migrate,
+)
 from shelfhold.main import create_app
 from tests.integration.test_migrations import scripts_with_extra_revision
 
@@ -37,6 +41,10 @@ def slow_migrator(
     process = subprocess.Popen(  # noqa: S603
         [sys.executable, str(runner), str(scripts)], env={**os.environ, **env}, cwd=tmp_path
     )
+    state = MigrationStateFile(settings.data_dir)
+    deadline = time.monotonic() + 20
+    while state.read() is None and time.monotonic() < deadline:  # the migration owns `.lock` first
+        time.sleep(0.05)
     try:
         yield process
     finally:
