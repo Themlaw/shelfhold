@@ -630,6 +630,18 @@
       "code": "disk.low",
       "status": 503
     },
+    "/api/v1/problems/export.name-misread-number": {
+      "code": "export.name_misread_number",
+      "status": 422
+    },
+    "/api/v1/problems/export.segment-policy-unconfirmed": {
+      "code": "export.segment_policy_unconfirmed",
+      "status": 409
+    },
+    "/api/v1/problems/export.series-name-yields-volume": {
+      "code": "export.series_name_yields_volume",
+      "status": 422
+    },
     "/api/v1/problems/fetch.dns-failed": {
       "code": "fetch.dns_failed",
       "status": 502

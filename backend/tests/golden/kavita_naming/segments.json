@@ -1,0 +1,54 @@
+[
+  {
+    "input": {
+      "series": "Tower of God",
+      "track": "main",
+      "number_norm": "1",
+      "segment": ""
+    },
+    "rel_path": "Tower of God/Tower of God - Ch.1.cbz",
+    "series": "Tower of God",
+    "chapter": 1.0,
+    "volume": -100000.0,
+    "volume_deduced": false
+  },
+  {
+    "input": {
+      "series": "Tower of God",
+      "track": "main",
+      "number_norm": "1",
+      "segment": "S2"
+    },
+    "rel_path": "Tower of God Saga 2/Tower of God Saga 2 - Ch.1.cbz",
+    "series": "Tower of God Saga 2",
+    "chapter": 1.0,
+    "volume": -100000.0,
+    "volume_deduced": false
+  },
+  {
+    "input": {
+      "series": "Tower of God",
+      "track": "main",
+      "number_norm": "40",
+      "segment": "S2"
+    },
+    "rel_path": "Tower of God Saga 2/Tower of God Saga 2 - Ch.40.cbz",
+    "series": "Tower of God Saga 2",
+    "chapter": 40.0,
+    "volume": -100000.0,
+    "volume_deduced": false
+  },
+  {
+    "input": {
+      "series": "Tower of God",
+      "track": "main",
+      "number_norm": "1",
+      "segment": "S10"
+    },
+    "rel_path": "Tower of God Saga 10/Tower of God Saga 10 - Ch.1.cbz",
+    "series": "Tower of God Saga 10",
+    "chapter": 1.0,
+    "volume": -100000.0,
+    "volume_deduced": false
+  }
+]

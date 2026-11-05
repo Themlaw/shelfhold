@@ -9,11 +9,13 @@ from shelfhold.infrastructure.archives.safe_open import (
     UnsafeArchiveError,
     safe_open_archive,
 )
+from shelfhold.infrastructure.archives.writer import ArchiveWriter
 
 __all__ = [
     "DEFAULT_LIMITS",
     "ArchiveEntry",
     "ArchiveLimits",
+    "ArchiveWriter",
     "EntryStream",
     "SafeArchive",
     "UnsafeArchiveError",
