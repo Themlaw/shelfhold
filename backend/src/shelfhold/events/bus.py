@@ -36,7 +36,7 @@ SCHEMA_VERSION: Final = 1
 VISIBILITIES: Final = ("private", "household", "ops")
 _ULID: Final = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}\Z")
 _CODE: Final = re.compile(r"[a-z][a-z0-9_]*(?:[.:-][a-z0-9_]+)*\Z")
-_ENUM_KEYS: Final = ("reason", "kind", "state", "code", "error_code")
+_ENUM_KEYS: Final = ("reason", "kind", "state", "code", "error_code", "scope")
 _FREE_CODE_KEYS: Final = frozenset({"job_kind"})  # a job kind is named in code, never typed in
 GENERIC_REASONS: Final = frozenset(
     {
@@ -51,18 +51,26 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     "notify.failed": {"reason": frozenset({"retries_exhausted"})},
     "job.dead_lettered": {"reason": frozenset({"retries_exhausted", "handler_error"})},
     "ops.window_missed": {"reason": frozenset({"window_over"})},
+    # EF-BIB-053 (3): why a tombstone line is inert; never a value of the line.
+    "tombstone.unverified": {
+        "reason": frozenset(
+            {"authentication_failed", "kid_unregistered", "lost_keyring", "malformed"}
+        )
+    },
 }
 CODE_VALUES: Final = frozenset(
     OPERATING_EVENTS | {"job.failed", "job.unknown_kind", "window.preempted"}
 )
 KIND_VALUES: Final = frozenset({"manual", "scheduled", "cbz", "epub"})
 STATE_VALUES: Final = frozenset(str(s.value) for s in WaitingState)
+SCOPE_VALUES: Final = frozenset({"variant", "place", "series_binding", "work"})  # tombstones
 _DEFAULT_ENUMS: Final[dict[str, frozenset[str]]] = {
     "reason": GENERIC_REASONS,
     "kind": KIND_VALUES,
     "state": STATE_VALUES,
     "code": CODE_VALUES,
     "error_code": CODE_VALUES,
+    "scope": SCOPE_VALUES,
 }
 _EXTENSION_TYPE: Final = re.compile(r"plugin\.[a-z0-9_]+\.[a-z0-9_.]+\Z")
 _OPS_TYPE: Final = re.compile(r"ops\.[a-z0-9_]+\Z")

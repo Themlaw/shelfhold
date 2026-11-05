@@ -41,7 +41,7 @@ def _probes(word: str) -> list[bytes]:
         hashlib.sha256(INSTANCE_ID.encode() + raw).digest(),
         hmac.new(INSTANCE_ID.encode(), raw, hashlib.sha256).digest(),
     ]
-    out = [raw]
+    out = [raw] if len(raw) >= 12 else []  # a short bare word is in any file by chance
     for digest in digests:
         out += [digest, digest.hex().encode(), base64.urlsafe_b64encode(digest).rstrip(b"=")]
     return out
@@ -60,10 +60,11 @@ def _everything_on_disk(env_tmp: Path, database: Path) -> bytes:
 
 
 @settings(max_examples=12)
-@given(words=st.lists(slugs, min_size=1, max_size=5, unique=True), hex_hash=st.binary(32, 32))
-def test_tombstone_values_encrypted_not_dictionary_reversible(
-    words: list[str], hex_hash: bytes
-) -> None:
+@given(
+    words=st.lists(slugs, min_size=1, max_size=5, unique=True),
+    seed=st.integers(0, 2**32),
+)
+def test_tombstone_values_encrypted_not_dictionary_reversible(words: list[str], seed: int) -> None:
     """Table, journal, a dictionary of title slugs and the known instance_id: no match, and no
     `content_hash` in clear."""
     with tempfile.TemporaryDirectory() as raw:
@@ -71,6 +72,7 @@ def test_tombstone_values_encrypted_not_dictionary_reversible(
         env = make_tomb_env(tmp)
         service = env.service()
         service.replay(env.roots)
+        hex_hash = hashlib.sha256(seed.to_bytes(8, "big")).digest()  # a real digest's entropy
         content = "sha256:" + hex_hash.hex()
         for word in words:
             hashes = (ContentHash("content-hash@1", content),)
@@ -78,7 +80,8 @@ def test_tombstone_values_encrypted_not_dictionary_reversible(
             service.record(SeriesBindingRef("suwayomi", "77", f"/manga/{word}"), env.roots)
         everything = _everything_on_disk(tmp, tmp / "shelfhold.db")
         for word in words:
-            for probe in _probes(word) + _probes(f"/manga/{word}"):
+            values = (word, f"/manga/{word}", f"/chapter/{word}")
+            for probe in [p for value in values for p in _probes(value)]:
                 assert probe not in everything
         assert hex_hash.hex().encode() not in everything
         assert hex_hash not in everything

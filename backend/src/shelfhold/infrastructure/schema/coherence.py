@@ -193,6 +193,18 @@ tombstone_pending_root = sa.Table(
     sa.PrimaryKeyConstraint("root_id", "seq"),
 )
 
+# The "lost keyring" waiver (EF-BIB-054 (5), R62): the registered kids that were absent from the
+# keyring when the admin typed the waiver. Lines under them are inert from then on (they neither
+# block nor delete); before it they block. Append-only: a waiver is never taken back by a write,
+# only by importing the key again, which makes the lines decrypt (and block) anyway.
+tombstone_lost_kid = sa.Table(
+    "tombstone_lost_kid",
+    metadata,
+    sa.Column("kid", sa.String(), sa.ForeignKey("tombstone_kid.kid"), primary_key=True),
+    sa.Column("actor_id", sa.String(), nullable=True),
+    now_column("accepted_at"),
+)
+
 # The registry only grows (GAP-13-01), and a key cited by it is never removed from the registry
 # of keys (ENF-SEC-005, "a cited kid is never retired").
 add_trigger(
@@ -211,4 +223,16 @@ add_trigger(
     "BEFORE DELETE ON secret_key "
     "WHEN EXISTS (SELECT 1 FROM tombstone_kid WHERE kid = OLD.kid) "
     "BEGIN SELECT RAISE(ABORT, 'kid is cited by a tombstone'); END",
+)
+add_trigger(
+    tombstone_lost_kid,
+    "tombstone_lost_kid_no_update",
+    "BEFORE UPDATE ON tombstone_lost_kid "
+    "BEGIN SELECT RAISE(ABORT, 'tombstone_lost_kid is append-only'); END",
+)
+add_trigger(
+    tombstone_lost_kid,
+    "tombstone_lost_kid_no_delete",
+    "BEFORE DELETE ON tombstone_lost_kid "
+    "BEGIN SELECT RAISE(ABORT, 'tombstone_lost_kid is append-only'); END",
 )

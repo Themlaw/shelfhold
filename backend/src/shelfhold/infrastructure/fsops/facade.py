@@ -63,6 +63,12 @@ from shelfhold.infrastructure.fsops.mirror import (
     write_mirror_file,
 )
 from shelfhold.infrastructure.fsops.sentinel import read_sentinel, write_sentinel
+from shelfhold.infrastructure.fsops.tombstone_journal import (
+    add_sentinel_kid,
+    append_line,
+    read_journal,
+    sentinel_kids,
+)
 from shelfhold.infrastructure.fsops.writer import (
     HashingReader,
     Readable,
@@ -421,6 +427,38 @@ class Fsops:
     def list_mirror(self, root_path: str) -> list[str]:
         with self._root(self._mirror_root(root_path)) as root:
             return list_mirror_files(root)
+
+    # -- the tombstone journal and kid registry of a root (EF-BIB-053, EF-BIB-054) ---------------
+
+    def _host_root(self, root_path: str) -> _Located:
+        key = clean_absolute(root_path)
+        if key not in self._expected:
+            raise OutsidePathMapError(f"{root_path!r} is not a writable physical root")
+        return _Located(key, ".", False)
+
+    def append_tombstone_line(self, root_path: str, line: bytes, *, header: bytes) -> None:
+        """Append one line to the root's journal: a write like any other (sentinel, lease)."""
+        with self._gated(self._host_root(root_path)) as root:
+            append_line(root, line, header=header)
+
+    def record_tombstone_kid(self, root_path: str, kid: str) -> None:
+        """Add `kid` to the registry of the root's sentinel, before any line under it."""
+        with self._gated(self._host_root(root_path)) as root:
+            add_sentinel_kid(root, kid)
+
+    def read_tombstone_journal(self, root_path: str, *, max_bytes: int) -> bytes | None:
+        """The raw journal. Not gated by the sentinel: it is replayed even when the root is
+        behind or foreign (I36); what a line means is decided by its authentication."""
+        with self._root(self._host_root(root_path).root_path) as root:
+            return read_journal(root, max_bytes)
+
+    def tombstone_kids(self, root_path: str) -> frozenset[str]:
+        """The kids the root's sentinel registers (none when it is absent or unreadable)."""
+        with self._root(self._host_root(root_path).root_path) as root:
+            try:
+                return sentinel_kids(read_sentinel(root))
+            except (SentinelFormatError, OSError):
+                return frozenset()
 
     # -- writes -----------------------------------------------------------------------------
 

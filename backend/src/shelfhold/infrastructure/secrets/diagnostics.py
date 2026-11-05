@@ -103,4 +103,24 @@ def collect_warnings(settings: Settings) -> list[KeyringWarning]:
         warnings.append(KeyringWarning("never_exported"))
     elif keyring.rotated_at is not None and keyring.exported_at < keyring.rotated_at:
         warnings.append(KeyringWarning("export_older_than_rotation"))
+    warnings.extend(_tombstone_warnings(settings, keyring))
+    return warnings
+
+
+def _tombstone_warnings(settings: Settings, keyring: Keyring) -> list[KeyringWarning]:
+    """Without the keyring the tombstones cannot be read (EF-BIB-054 (5), Q64): export it after
+    the first one; and a registered kid missing from the keyring is the start-up check of
+    "a cited kid is never retired" (ENF-SEC-005)."""
+    try:
+        kids = registry.tombstone_kids(settings.database_path)
+    except sqlite3.Error:
+        return []
+    warnings: list[KeyringWarning] = []
+    if kids.first_at is not None and (
+        keyring.exported_at is None or keyring.exported_at < kids.first_at
+    ):
+        warnings.append(KeyringWarning("tombstones_not_exported"))
+    missing = kids.kids - {key.kid for key in keyring.keys} - kids.lost
+    if missing:
+        warnings.append(KeyringWarning("tombstone_kid_missing", str(len(missing))))
     return warnings

@@ -35,6 +35,7 @@ from shelfhold.catalog.domain.names import (
     join_people,
     person_field_name,
 )
+from shelfhold.catalog.domain.normalizers import NormalizerId, NormalizerRegistry, default_registry
 from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, place_of
 
@@ -98,11 +99,14 @@ __all__ = [
     "IngestResult",
     "NameKind",
     "NoPersonFieldName",
+    "NormalizerId",
+    "NormalizerRegistry",
     "PersonField",
     "TeamRef",
     "TextVersionRef",
     "UnitView",
     "VariantFacts",
+    "default_registry",
     "ingest_isolated",
     "join_people",
     "person_field_name",
