@@ -46,14 +46,15 @@ Si quoi que ce soit a changé depuis l'aperçu, la confirmation est refusée
 
 ## Après l'adoption
 
-1. **Apparier** les séries adoptées au suivi Suwayomi **[câblage]** :
-   `shelfhold adopt pair --destination <id>` propose, pour chaque série, la source de même titre
-   normalisé (score de 0 à 1) ; vous confirmez. Les cas ambigus ne sont jamais tranchés seuls.
-   `--pair-auto` confirme en lot les propositions sans ambiguïté, d'après un rapport et son
+1. **Apparier** les séries adoptées au suivi Suwayomi :
+   `shelfhold adopt pair [--destination <id>]` propose, pour chaque série, la source de même titre
+   normalisé (score de 0 à 1) ; vous confirmez avec `adopt pair --series <id> --source-key <clé>
+   --remote-id <id>` (la destination se devine s'il n'y en a qu'une). Les cas ambigus ne sont jamais tranchés seuls.
+   `shelfhold adopt --pair-auto` (puis `--confirm <empreinte>`) confirme en lot les propositions sans ambiguïté, d'après un rapport et son
    empreinte.
 2. Le suivi part du **plus haut chapitre adopté** : si vous avez les chapitres 1 à 50, la première
    demande est le 51. Pour une série en volumes seuls, aucun filigrane ne se devine :
-   `shelfhold adopt set-follow-from` **[câblage]** fixe le premier chapitre voulu (état `coverage_unknown`,
+   `shelfhold adopt set-follow-from <série> <chapitre>` fixe le premier chapitre voulu (état `coverage_unknown`,
    [etats-attente-et-sorties.md](etats-attente-et-sorties.md)).
 3. Si Suwayomi alimente aujourd'hui les dossiers de Kavita, l'appariement est refusé tant que
    [migration-depuis-scripts.md](migration-depuis-scripts.md) n'est pas confirmée.

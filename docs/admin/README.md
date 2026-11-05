@@ -4,10 +4,8 @@ Pages pour qui installe et fait vivre une instance Shelfhold. Les clés de confi
 [`docs/configuration.md`](../configuration.md), les décisions d'exécution dans
 [`docs/decisions/M1a.md`](../decisions/M1a.md).
 
-Une commande marquée **[câblage]** est celle que la page vise pour la version 0.2 : son code
-existe sous forme de service testé, mais son branchement sur la ligne de commande ou l'API est
-livré par la PR de câblage du jalon M1a. `shelfhold <commande> --help` fait foi sur ce que votre
-version propose.
+Une commande marquée **[M1b]** n'existe pas encore en 0.2 : la page dit ce qu'on fait d'ici là.
+`shelfhold <commande> --help` fait foi sur ce que votre version propose.
 
 | Je veux… | Page |
 | --- | --- |

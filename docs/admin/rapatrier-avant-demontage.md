@@ -18,7 +18,7 @@ ce dossier dans Suwayomi.
 
 ## Procédure
 
-1. Aperçu obligatoire **[câblage]** :
+1. Aperçu obligatoire :
    ```sh
    shelfhold adopt --repatriate --dry-run --destination <id>
    ```
@@ -28,8 +28,9 @@ ce dossier dans Suwayomi.
    nombre de fichiers, la taille et l'espace requis sont indiqués, avec une empreinte.
 2. Si un fichier est `missing`, `changed` ou `conflict`, l'application est refusée en bloc :
    corrigez, refaites l'aperçu.
-3. Application **[câblage]** : `shelfhold adopt --repatriate --confirm <empreinte> --destination
-   <id>`. Chaque copie passe par le journal d'intentions : un arrêt en cours de route est repris au
+3. Application : `shelfhold adopt --repatriate --confirm <empreinte> --destination
+   <id>` (ou `--source <racine>` s'il y a plusieurs volumes en lecture seule). La commande copie, puis
+   contrôle chaque fichier copié ; elle ne se termine bien que si le contrôle réussit. Chaque copie passe par le journal d'intentions : un arrêt en cours de route est repris au
    démarrage (copie absente : annulée ; copie au bon hachage : terminée). Relancer ne recopie rien.
 4. **Contrôle avant de démonter** : comparez le nombre de séries et de chapitres, côté Shelfhold et
    côté Kavita (lancez un scan de la bibliothèque), à ceux de l'aperçu. La progression de lecture

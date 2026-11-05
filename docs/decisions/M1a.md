@@ -546,10 +546,16 @@ Ce lot ne change pas le comportement : il documente, et clôt la liste des ambig
    restauration), de purge, de garde disque, de redéploiement, de racines physiques, de montage
    `adopt_ro`, d'exposition publique et de budget mémoire et disque. `durcir.md` gagne la visibilité
    anonyme (A5, A6, A7) ; `velocite.md` reçoit le relevé de M1a.
-2. **Ce qui est documenté mais pas encore branché.** Chaque page marque **[câblage]** une
-   commande dont le service est livré et testé mais dont la ligne de commande ou la route est
-   fournie par la PR de câblage. Câblage : voir la PR du volet A de L41 (la liste des écarts
-   restants y figure ; elle n'est pas répétée ici).
+2. **Câblage (volet A de L41).** Branchés : `follow.cycle`, `export.run` (détecteur d'écrivain
+   étranger, plan vérifié par `plugin/parse`, garde de bascule, préflight), `reconcile.cycle` et
+   `reconcile.hash`, l'audit d'accès quotidien avec les clients connectés, `notify.dispatch` et les
+   canaux Apprise sur le bus de tous les éditeurs, les pierres tombales dans le suivi et le
+   passthrough ; `adopt pair|--pair-auto|set-follow-from|--confirm-migration|--repatriate`,
+   `detach --restore-upstream`, `purge --now`, `probe`, avec leurs méthodes de socket et leurs
+   routes. **Reste non branché** : `root takeover|reinit|restored` (aucun service, états hors M1a :
+   M1b) ; `adoption_refused` et `coverage_unknown` ne sont pas persistés dans l'état d'attente lu
+   par `status` ; la route HTTP `/plans` en application reste refusée (plan non vérifié) ;
+   l'exclusion de `.received` par Kavita est à confirmer par le test de nuit.
 3. **Étiquette d'image.** Le compose d'exemple épingle `0.2` (la règle `X.Y` de ENF-OPS-008), qui
    n'existe qu'à la publication de 0.2.0 : tant qu'elle n'est pas faite, utilisez `edge`. Ce lot ne
    crée aucun tag.

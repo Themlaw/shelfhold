@@ -21,9 +21,9 @@ les autres continuent.
 ## Procédure
 
 1. Sauvegarde ([restauration.md](restauration.md)).
-2. **[câblage]** `shelfhold detach --restore-upstream`, pour une étagère, une Édition, ou (sans portée) tout ce qui est suivi
-   par appariement. C'est une action réservée :
-   mot de passe récent ou CLI locale, jamais une clé d'API.
+2. `shelfhold detach --restore-upstream [--shelf <id>|--series <id>]` (sans portée : tout ce qui est suivi
+   par appariement). Suwayomi retrouve ses catégories et sa stratégie de mise à jour ; aucun fichier n'est
+   supprimé, donc ce n'est pas une action réservée (le détachement qui supprime des fichiers en est une).
 3. Réactivez vos scripts et montages d'avant si vous les aviez retirés
    ([migration-depuis-scripts.md](migration-depuis-scripts.md)). Si vous avez rapatrié des fichiers
    ([rapatrier-avant-demontage.md](rapatrier-avant-demontage.md)), ils sont désormais sous

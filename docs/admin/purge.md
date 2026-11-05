@@ -6,7 +6,8 @@ le retrouver. **Purger** est l'inverse : toutes les copies que Shelfhold gère d
 
 ## Lancer une purge
 
-**[câblage]** `shelfhold purge --now <unité|œuvre>` (et la route d'administration équivalente).
+`shelfhold purge --now --unit <id> --confirm <id>` (ou `--work <id>`), et les routes d'administration
+`POST /api/v1/units/{id}/purge` et `POST /api/v1/works/{id}/purge`.
 
 - Action **réservée** : administrateur, mot de passe saisi il y a moins de 15 minutes, ou ligne de
   commande locale. Une clé d'API est refusée.

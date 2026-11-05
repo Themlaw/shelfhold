@@ -30,8 +30,8 @@ moins de 15 minutes, ou la ligne de commande locale ; une clé d'API est refusé
 | `not_indexed` | Le fichier écrit n'apparaît pas dans Kavita | corrigez l'exclusion, le type ou la surveillance de dossier de Kavita, puis `jobs retry <tâche>` | non |
 | `auth_expired` | Suwayomi refuse les identifiants | `shelfhold source set-secret --secret-file <fichier>` | oui |
 | `auth_mode_unsupported` | Suwayomi est en mode `ui_login` | passez-le en `none` ou `basic_auth`, puis `shelfhold source recheck` | non |
-| `adoption_refused` | Bascule non confirmée | `shelfhold adopt --confirm-migration` **[câblage]**, après [migration-depuis-scripts.md](migration-depuis-scripts.md) | non |
-| `coverage_unknown` | Série en volumes seuls : point de départ du suivi inconnu | `shelfhold adopt set-follow-from` **[câblage]** | non |
+| `adoption_refused` | Bascule non confirmée | `shelfhold adopt --confirm-migration`, après [migration-depuis-scripts.md](migration-depuis-scripts.md) | non |
+| `coverage_unknown` | Série en volumes seuls : point de départ du suivi inconnu | `shelfhold adopt set-follow-from` | non |
 | `permission_denied` | Shelfhold ne peut pas écrire dans le dossier d'une série | appliquez la correction affichée (ACL, `group_add`, `user:`), puis `shelfhold target recheck <cible>` | non |
 | `child_exposure` | Un compte Kavita d'enfant voit la bibliothèque | retirez l'accès dans Kavita, puis `target recheck <cible>` | oui |
 | `route_missing` | Kavita n'a pas une fonction attendue | mettez Kavita à jour, puis `target recheck <cible>` | non |
