@@ -40,9 +40,24 @@ def _check(name: str, specs: list[dict[str, object]]) -> list[dict[str, object]]
 
 
 CHAPTERS: list[dict[str, object]] = [
-    {"series": "Dr Stone", "track": "main", "number_norm": "311", "upstream_title": "Chapter 311 - {S1 END}"},
-    {"series": "Dr Stone", "track": "main", "number_norm": "12", "upstream_title": "Chapter 12 [S1 END]"},
-    {"series": "Dr Stone", "track": "main", "number_norm": "40", "upstream_title": "Ch.40 - S5 Start"},
+    {
+        "series": "Dr Stone",
+        "track": "main",
+        "number_norm": "311",
+        "upstream_title": "Chapter 311 - {S1 END}",
+    },
+    {
+        "series": "Dr Stone",
+        "track": "main",
+        "number_norm": "12",
+        "upstream_title": "Chapter 12 [S1 END]",
+    },
+    {
+        "series": "Dr Stone",
+        "track": "main",
+        "number_norm": "40",
+        "upstream_title": "Ch.40 - S5 Start",
+    },
     {"series": "Dr Stone", "track": "main", "number_norm": "10.5"},
     {"series": "One Piece", "track": "main", "number_norm": "1"},
     {"series": "Who? Am I", "track": "main", "number_norm": "7"},

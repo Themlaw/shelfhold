@@ -64,14 +64,15 @@ def test_no_two_files_same_number_in_series_dir() -> None:
     names.append(export_path(chapter("10", part=2)).filename)
     collisions = find_number_collisions(names, simulate_parse)
     assert len(collisions) == 1
-    assert {export_path(chapter("10")).filename, export_path(chapter("10", part=2)).filename} == set(
-        collisions[0].names
-    )
+    assert {
+        export_path(chapter("10")).filename,
+        export_path(chapter("10", part=2)).filename,
+    } == set(collisions[0].names)
 
 
 @pytest.mark.req("EF-EXP-045")
 def test_adopted_file_with_same_number_wins_by_default() -> None:
-    """An adopted Ch.112 is attached as the exported Variant: nothing is written, nothing replaced."""
+    """An adopted Ch.112 becomes the exported Variant: nothing written, nothing replaced."""
     existing = ["Dr Stone - Ch.111.cbz", "Dr Stone - Ch.112 [Team].cbz"]
     decision = check_incoming(export_path(chapter("112")).filename, existing, simulate_parse)
     assert decision is not None
@@ -85,7 +86,7 @@ def test_series_name_normalised_like_kavita_for_collisions() -> None:
     from shelfhold.export.domain.naming import normalize_series_name
 
     assert normalize_series_name("Dr. STONE") == normalize_series_name("dr stone")
-    assert normalize_series_name("Frieren: Beyond Journey’s End") == normalize_series_name(
+    assert normalize_series_name("Frieren: Beyond Journey\u2019s End") == normalize_series_name(
         "Frieren Beyond Journey's End"
     )
     assert normalize_series_name("Re:Zero") != normalize_series_name("Re Zero 2")
@@ -126,7 +127,7 @@ def test_manifest_records_template_id_and_version_per_file() -> None:
     items = [chapter("1"), chapter("2"), FrozenAttrs("Dr Stone", "main", "0")]
     entries = [manifest_entry(i, export_path(i)) for i in items]
     assert {e.template_ref for e in entries} == {DEFAULT_TEMPLATE_REF}
-    assert DEFAULT_TEMPLATE_REF == f"{DEFAULT_TEMPLATE.template_id}@{DEFAULT_TEMPLATE.version}"
+    assert f"{DEFAULT_TEMPLATE.template_id}@{DEFAULT_TEMPLATE.version}" == DEFAULT_TEMPLATE_REF
     assert [e.rel_path for e in entries] == [export_path(i).rel_path for i in items]
     # a file made by an older template keeps naming itself with that template
     old = NamingTemplate("kavita-manga", 0, chapter="{series} - Chapter {number}")

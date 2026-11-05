@@ -23,7 +23,8 @@ def kavita_schema() -> xmlschema.XMLSchema:
     text = (PINNED / "v2.1-draft" / "ComicInfo.xsd").read_text("utf-8")
     assert _SERIES in text
     extra = "".join(
-        f'\n            <xs:element minOccurs="0" maxOccurs="1" default="" name="{n}" type="xs:string"/>'
+        f'\n            <xs:element minOccurs="0" maxOccurs="1" default="" name="{n}" '
+        'type="xs:string"/>'
         for n in KAVITA_ELEMENTS
     )
     return xmlschema.XMLSchema(text.replace(_SERIES, _SERIES + extra))

@@ -17,7 +17,14 @@ from shelfhold.export.domain.naming import (
 from tests.fakes.kavita.plugin_parse import simulate_parse
 
 FORBIDDEN = set('/\\:*?"<>|')
-RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+RESERVED = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
 
 
 @pytest.mark.req("EF-EXP-013")

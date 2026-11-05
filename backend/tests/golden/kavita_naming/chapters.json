@@ -1,0 +1,89 @@
+[
+  {
+    "input": {
+      "series": "Dr Stone",
+      "track": "main",
+      "number_norm": "311",
+      "upstream_title": "Chapter 311 - {S1 END}"
+    },
+    "rel_path": "Dr Stone/Dr Stone - Ch.311.cbz",
+    "series": "Dr Stone",
+    "chapter": 311.0,
+    "volume": -100000.0,
+    "volume_deduced": false
+  },
+  {
+    "input": {
+      "series": "Dr Stone",
+      "track": "main",
+      "number_norm": "12",
+      "upstream_title": "Chapter 12 [S1 END]"
+    },
+    "rel_path": "Dr Stone/Dr Stone - Ch.12.cbz",
+    "series": "Dr Stone",
+    "chapter": 12.0,
+    "volume": -100000.0,
+    "volume_deduced": false
+  },
+  {
+    "input": {
+      "series": "Dr Stone",
+      "track": "main",
+      "number_norm": "40",
+      "upstream_title": "Ch.40 - S5 Start"
+    },
+    "rel_path": "Dr Stone/Dr Stone - Ch.40.cbz",
+    "series": "Dr Stone",
+    "chapter": 40.0,
+    "volume": -100000.0,
+    "volume_deduced": false
+  },
+  {
+    "input": {
+      "series": "Dr Stone",
+      "track": "main",
+      "number_norm": "10.5"
+    },
+    "rel_path": "Dr Stone/Dr Stone - Ch.10.5.cbz",
+    "series": "Dr Stone",
+    "chapter": 10.5,
+    "volume": -100000.0,
+    "volume_deduced": false
+  },
+  {
+    "input": {
+      "series": "One Piece",
+      "track": "main",
+      "number_norm": "1"
+    },
+    "rel_path": "One Piece/One Piece - Ch.1.cbz",
+    "series": "One Piece",
+    "chapter": 1.0,
+    "volume": -100000.0,
+    "volume_deduced": false
+  },
+  {
+    "input": {
+      "series": "Who? Am I",
+      "track": "main",
+      "number_norm": "7"
+    },
+    "rel_path": "Who Am I/Who Am I - Ch.7.cbz",
+    "series": "Who Am I",
+    "chapter": 7.0,
+    "volume": -100000.0,
+    "volume_deduced": false
+  },
+  {
+    "input": {
+      "series": "Dr Stone",
+      "track": "main",
+      "number_norm": "0"
+    },
+    "rel_path": "Dr Stone/Specials/Dr Stone - Special 0.cbz",
+    "series": "Dr Stone",
+    "chapter": -100000.0,
+    "volume": 100000.0,
+    "volume_deduced": false
+  }
+]

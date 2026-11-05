@@ -88,7 +88,6 @@ def test_comicinfo_writer_never_contains_inverted_name() -> None:
         series="S",
         people={
             "Writer": (person("Inagaki, Riichiro"), person("Boichi")),
-            "Publisher": (),
             "Editor": (person("Éditeur, Ltd.", org=True),),
         },
     )
@@ -99,7 +98,9 @@ def test_comicinfo_writer_never_contains_inverted_name() -> None:
     # a sort name is never a person field
     with pytest.raises(ValueError, match="sort"):
         render_comicinfo(
-            ComicInfoData(series="S", people={"Writer": (person("Inagaki, R", kind=NameKind.SORT),)})
+            ComicInfoData(
+                series="S", people={"Writer": (person("Inagaki, R", kind=NameKind.SORT),)}
+            )
         )
 
 

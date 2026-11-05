@@ -40,3 +40,27 @@ def test_age_rating_mapping_table_golden(
     if os.environ.get("SHELFHOLD_UPDATE_GOLDEN") == "1":
         target.write_bytes(xml)
     assert target.read_bytes() == xml
+
+
+@pytest.mark.req("EF-EXP-011", "ENF-QUAL-004")
+def test_full_comicinfo_golden() -> None:
+    from shelfhold.catalog.public import ContributorName, NameKind
+    from shelfhold.infrastructure.packaging.comicinfo import ComicInfoPerson
+
+    def who(name: str) -> ComicInfoPerson:
+        return ComicInfoPerson((ContributorName(name, "fr", "Latn", NameKind.DISPLAY),))
+
+    data = ComicInfoData(
+        series="Dr Stone", title="Chapitre 311", number="311", volume=35,
+        series_sort="Stone, Dr", localized_series="ドクターストーン", summary="Un <b>résumé</b>.",
+        year=2019, month=3, day=8,
+        people={"Writer": (who("Inagaki, Riichiro"),), "Penciller": (who("Boichi"),)},
+        team_label="Équipe Exemple", publisher="Éditeur", genres=("Aventure", "Science-fiction"),
+        language_iso="fr", age=AgeRating(13), right_to_left=True, page_count=18,
+    )  # fmt: skip
+    xml = render_comicinfo(data).xml
+    kavita_schema().validate(xml.decode("utf-8"))
+    target = GOLDEN / "full.xml"
+    if os.environ.get("SHELFHOLD_UPDATE_GOLDEN") == "1":
+        target.write_bytes(xml)
+    assert target.read_bytes() == xml

@@ -25,6 +25,14 @@ from shelfhold.catalog.domain.identity import (
     TextVersionRef,
     translation_discriminant,
 )
+from shelfhold.catalog.domain.names import (
+    ContributorName,
+    NameKind,
+    NoPersonFieldName,
+    PersonField,
+    join_people,
+    person_field_name,
+)
 from shelfhold.catalog.domain.placement import IngestOutcome
 
 
@@ -49,15 +57,21 @@ __all__ = [
     "TEXT_VERSION_LABELS",
     "BindingRef",
     "Catalog",
+    "ContributorName",
     "Discriminant",
     "EditionRef",
     "EditionSpec",
     "IncomingUnit",
     "IngestOutcome",
     "IngestResult",
+    "NameKind",
+    "NoPersonFieldName",
+    "PersonField",
     "TeamRef",
     "TextVersionRef",
     "UnitView",
     "ingest_isolated",
+    "join_people",
+    "person_field_name",
     "translation_discriminant",
 ]
