@@ -147,6 +147,7 @@ def test_title_with_reserved_characters_gives_a_valid_path() -> None:
     assert path.filename.endswith(" - Ch.3.cbz")
 
 
+@pytest.mark.req("EF-EXP-045")
 def test_loose_leaf_constant_is_kavitas() -> None:
     assert LOOSE_LEAF == -100000.0
 
