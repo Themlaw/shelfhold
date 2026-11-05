@@ -21,13 +21,16 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog, platform, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, export, platform, storage
 
 __all__ = [
     "LibraryCopy",
+    "has_readable_copy",
     "independent_copies",
     "library_copies",
     "manifest_file_hashes",
+    "median_unit_bytes",
+    "readable_unit_ids",
     "record_replica",
     "reference_content_hash",
     "rendered_file_hashes",
@@ -36,6 +39,9 @@ __all__ = [
 
 replica_table = storage.replica
 _ORIGINAL_PLACES = ("library", "destination")
+# Where a file is readable by Shelfhold itself: its library, its store, an adopted read-only
+# root. A destination copy or the upstream is not "a file we hold" (I20, EF-BIB-044).
+_READABLE_PLACES = ("library", "store", "adopted_ro")
 
 
 def reference_content_hash(connection: Connection, unit_id: str) -> str | None:
@@ -226,3 +232,69 @@ def manifest_file_hashes(connection: Connection, unit_id: str) -> list[dict[str,
         }
         for r in rows
     ]
+
+
+def _readable_rows() -> sa.Select[tuple[str]]:
+    """Units with a readable copy of their own, or covered by an item that has one."""
+    coverage = export.unit_coverage
+    own = sa.select(replica_table.c.unit_id.label("unit_id")).where(
+        replica_table.c.location.in_(_READABLE_PLACES), replica_table.c.unit_id.is_not(None)
+    )
+    via_item = (
+        sa.select(coverage.c.unit_id.label("unit_id"))
+        .select_from(
+            coverage.join(
+                replica_table,
+                sa.and_(
+                    coverage.c.carrier_type == "export_item",
+                    replica_table.c.export_item_id == coverage.c.carrier_id,
+                ),
+            )
+        )
+        .where(replica_table.c.location.in_(_READABLE_PLACES))
+    )
+    both = own.union(via_item).subquery()
+    return sa.select(both.c.unit_id).where(both.c.unit_id.is_not(None))
+
+
+def readable_unit_ids(connection: Connection, edition_id: str) -> set[str]:
+    """The Units of an Edition that are present for acquisition (I20): a readable copy of their
+    own, or a carrier (an adopted volume, an item) that covers them and has one."""
+    both = _readable_rows().subquery()
+    unit = catalog.unit
+    return set(
+        connection.execute(
+            sa.select(unit.c.id).where(
+                unit.c.edition_id == edition_id, unit.c.id.in_(sa.select(both.c.unit_id))
+            )
+        ).scalars()
+    )
+
+
+def has_readable_copy(connection: Connection, unit_id: str) -> bool:
+    both = _readable_rows().subquery()
+    return (
+        connection.execute(
+            sa.select(sa.literal(1)).where(sa.literal(unit_id).in_(sa.select(both.c.unit_id)))
+        ).first()
+        is not None
+    )
+
+
+def median_unit_bytes(connection: Connection, edition_id: str) -> int | None:
+    """The typical size of a chapter archive already held in this Edition, to size an estimate."""
+    sizes = list(
+        connection.execute(
+            sa.select(replica_table.c.size)
+            .select_from(
+                replica_table.join(catalog.unit, catalog.unit.c.id == replica_table.c.unit_id)
+            )
+            .where(
+                catalog.unit.c.edition_id == edition_id,
+                replica_table.c.location.in_(_READABLE_PLACES),
+                replica_table.c.size.is_not(None),
+            )
+            .order_by(replica_table.c.size)
+        ).scalars()
+    )
+    return sizes[len(sizes) // 2] if sizes else None

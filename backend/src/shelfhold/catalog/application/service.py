@@ -15,7 +15,12 @@ from shelfhold.catalog.application.dto import (
 )
 from shelfhold.catalog.application.ports import EditionStore, TeamStore, UnitStore, WorkStore
 from shelfhold.catalog.domain.identity import TextVersionRef
-from shelfhold.catalog.domain.placement import choose_preferred, missing_numbers, place_owner
+from shelfhold.catalog.domain.placement import (
+    VariantFacts,
+    choose_preferred,
+    missing_numbers,
+    place_owner,
+)
 
 
 class CatalogService:
@@ -84,6 +89,13 @@ class CatalogService:
         chosen = choose_preferred(self._units.facts_at(unit_id))
         self._units.set_preferred(unit_id, chosen)
         return chosen
+
+    def variant_facts(self, unit_id: str) -> list[VariantFacts]:
+        """What the election of the exported Variant needs to know of a Unit's Variants."""
+        return self._units.facts_at(unit_id)
+
+    def set_preferred(self, unit_id: str, variant_id: str | None) -> None:
+        self._units.set_preferred(unit_id, variant_id)
 
     def units_in_order(self, edition_id: str) -> list[UnitView]:
         return self._units.units_in_order(edition_id)

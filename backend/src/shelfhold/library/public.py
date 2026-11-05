@@ -47,7 +47,13 @@ from shelfhold.library.domain.unit_json import (
     UnitJson,
     UnitJsonCorruptError,
 )
-from shelfhold.library.replica import independent_copies
+from shelfhold.library.replica import (
+    has_readable_copy,
+    independent_copies,
+    median_unit_bytes,
+    readable_unit_ids,
+    record_replica,
+)
 
 __all__ = [
     "CONTENT_HASH_BY",
@@ -75,13 +81,17 @@ __all__ = [
     "confirmation_phrase",
     "content_hash",
     "export_sources",
+    "has_readable_copy",
     "independent_copies",
     "irreplaceability",
     "is_rendered_sidecar",
+    "median_unit_bytes",
     "meta_path",
     "meta_rel",
+    "readable_unit_ids",
     "receive_cbz",
     "record_destination_copy",
+    "record_replica",
     "require_deletion_allowed",
     "safe_to_clean",
 ]
