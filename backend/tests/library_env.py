@@ -43,12 +43,21 @@ def cbz_bytes(
     pages: tuple[tuple[str, bytes], ...] = (("001.png", PNG), ("002.jpg", JPEG)),
     comicinfo: bytes | None = None,
 ) -> bytes:
+    """A CBZ whose bytes depend only on its arguments: `writestr(name, ...)` would stamp the
+    current time in each entry, so two calls straddling a 2-second tick built two different
+    archives (and so two hashes) of the "same" file."""
     buffer = io.BytesIO()
+
+    def entry(name: str) -> zipfile.ZipInfo:
+        info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_STORED
+        return info
+
     with zipfile.ZipFile(buffer, "w") as zf:
         for name, data in pages:
-            zf.writestr(name, data)
+            zf.writestr(entry(name), data)
         if comicinfo is not None:
-            zf.writestr("ComicInfo.xml", comicinfo)
+            zf.writestr(entry("ComicInfo.xml"), comicinfo)
     return buffer.getvalue()
 
 

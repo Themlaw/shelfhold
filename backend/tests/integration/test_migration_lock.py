@@ -27,19 +27,36 @@ from shelfhold.infrastructure.migrate import migrate
 
 migrate(load_settings(os.environ).values, script_location=Path(sys.argv[1]))
 """
-SLOW_REVISION = "import time\ntime.sleep(5)"
+# The slow revision waits for the test to release it, instead of a fixed sleep: a timed one raced
+# the 5 s busy_timeout of the other connections and the test's own polling under load.
+SLOW_REVISION = (
+    "import os, time\n"
+    "from pathlib import Path\n"
+    "release = Path(os.environ['SHELFHOLD_TEST_RELEASE'])\n"
+    "deadline = time.monotonic() + 120\n"
+    "while not release.exists() and time.monotonic() < deadline:\n"
+    "    time.sleep(0.05)\n"
+)
+
+
+@pytest.fixture
+def release(tmp_path: Path) -> Path:
+    """Creating this file lets the slow migration finish."""
+    return tmp_path / "release-migration"
 
 
 @pytest.fixture
 def slow_migrator(
-    settings: Settings, env: dict[str, str], tmp_path: Path
+    settings: Settings, env: dict[str, str], tmp_path: Path, release: Path
 ) -> Iterator[subprocess.Popen[bytes]]:
     migrate(settings)
     scripts = scripts_with_extra_revision(tmp_path, SLOW_REVISION)
     runner = tmp_path / "runner.py"
     runner.write_text(RUNNER, encoding="utf-8")
     process = subprocess.Popen(  # noqa: S603
-        [sys.executable, str(runner), str(scripts)], env={**os.environ, **env}, cwd=tmp_path
+        [sys.executable, str(runner), str(scripts)],
+        env={**os.environ, **env, "SHELFHOLD_TEST_RELEASE": str(release)},
+        cwd=tmp_path,
     )
     state = MigrationStateFile(settings.data_dir)
     deadline = time.monotonic() + 20
@@ -64,7 +81,7 @@ def wait_for_state(client: TestClient, state: str, timeout: float = 20) -> dict[
 
 @pytest.mark.req("ENF-OPS-003", "ENF-OPS-002")
 def test_healthz_reports_migrating_state(
-    settings: Settings, slow_migrator: subprocess.Popen[bytes]
+    settings: Settings, slow_migrator: subprocess.Popen[bytes], release: Path
 ) -> None:
     with TestClient(create_app(settings)) as client:
         wait_for_state(client, "migrating")
@@ -76,7 +93,8 @@ def test_healthz_reports_migrating_state(
             body = client.get("/healthz").json()
         assert body == {"state": "migrating", "progress": {"done": 0, "total": 1}}
         assert client.get("/healthz").status_code == 200
-        assert slow_migrator.wait(timeout=30) == 0
+        release.touch()  # the migration may finish now
+        assert slow_migrator.wait(timeout=60) == 0
         assert client.get("/healthz").json()["state"] == "ok"
 
 
