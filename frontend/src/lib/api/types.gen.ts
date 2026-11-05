@@ -100,6 +100,12 @@ export type HealthzResponse = {
      * Paused Queues
      */
     paused_queues?: Array<string> | null;
+    /**
+     * Paused Reasons
+     */
+    paused_reasons?: {
+        [key: string]: string;
+    } | null;
     progress?: MigrationProgress | null;
     /**
      * State

@@ -114,6 +114,7 @@ def run_until(
     deadline: datetime,
     clock: Clock,
     start: int = 0,
+    stop: Callable[[], bool] | None = None,
 ) -> WindowRun:
     """Run `steps[start:]`, stopping between two steps once `deadline` has passed.
 
@@ -121,7 +122,7 @@ def run_until(
     """
     index = start
     while index < len(steps):
-        if clock.now() >= deadline:
+        if clock.now() >= deadline or (stop is not None and stop()):  # window over, or SIGTERM
             return WindowRun(index, preempted=True)
         steps[index]()
         index += 1

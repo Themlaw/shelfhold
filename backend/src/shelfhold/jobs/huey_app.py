@@ -11,6 +11,7 @@ so a backlog (catch-up in batches) never delays a new chapter.
 """
 
 import os
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -58,6 +59,11 @@ class JobContext:
     clock: Clock
     ledger: JobLedger
     preempted: bool = False
+    stop: Callable[[], bool] = lambda: False  # SIGTERM was received: checkpoint and leave
+
+    @property
+    def stop_requested(self) -> bool:
+        return self.stop()
 
     def run_steps(self, steps: Sequence[Callable[[], None]]) -> WindowRun:
         """Run `steps[cursor:]` until the window closes, between two steps (ENF-OPS-014).
@@ -66,7 +72,9 @@ class JobContext:
         with `next_index` and tonight's or tomorrow's run starts there, not at the beginning.
         """
         deadline = self.window_end or datetime.max.replace(tzinfo=UTC)
-        report = run_until(steps, deadline=deadline, clock=self.clock, start=self.cursor)
+        report = run_until(
+            steps, deadline=deadline, clock=self.clock, start=self.cursor, stop=self.stop
+        )
         self.ledger.save_cursor(self.job_id, report.next_index if report.preempted else None)
         self.preempted = report.preempted
         return report
@@ -99,7 +107,12 @@ class JobPools:
         self.slots = DomainSlots(engine, clock)
         self.scheduler = Scheduler(engine, clock=clock, seed=seed, dispatcher=self, window=window)
         self._engine = engine
-        self._handlers: dict[str, tuple[str, Handler, bool]] = {}
+        self._handlers: dict[str, tuple[str, Handler, bool, bool]] = {}
+        self._pause_lock = threading.RLock()  # pause, resume and the park of one job agree
+        self._paused_reason: str | None = None  # a queue-wide pause of the write jobs (disk guard)
+        self._stopping = False  # SIGTERM: no task is claimed any more (ENF-OPS-007)
+        self._running = 0
+        self._idle = threading.Condition()
         self._hueys: dict[str, Huey] = {}
         self._run_job: dict[str, Any] = {}
         for name in POOLS:
@@ -142,11 +155,87 @@ class JobPools:
 
     # -- registration and submission --------------------------------------------------------
 
-    def register(self, kind: str, *, pool: str, handler: Handler, windowed: bool = False) -> None:
-        """`windowed`: the job runs only inside the maintenance window and stops at its end."""
+    def register(
+        self,
+        kind: str,
+        *,
+        pool: str,
+        handler: Handler,
+        windowed: bool = False,
+        writes: bool = True,
+    ) -> None:
+        """`windowed`: the job runs only inside the maintenance window and stops at its end.
+        `writes`: the job writes to a volume, so a disk-guard pause parks it (reads go on)."""
         if pool not in self._hueys:
             raise KeyError(pool)
-        self._handlers[kind] = (pool, handler, windowed)
+        self._handlers[kind] = (pool, handler, windowed, writes)
+
+    # -- queue-wide pause (ENF-OPS-006) -------------------------------------------------------
+
+    @property
+    def paused_reason(self) -> str | None:
+        return self._paused_reason
+
+    def pause_writes(self, code: str) -> int:
+        """Park every write job (queued now, or reaching a worker later) under `code`: no attempt
+        is spent and no retry is scheduled. Nothing is deleted; reads and the UI are untouched."""
+        with self._pause_lock:
+            self._paused_reason = code
+            kinds = [kind for kind, route in self._handlers.items() if route[3]]
+            return self.ledger.pause_queued(code, kinds)
+
+    def resume_writes(self, code: str) -> int:
+        with self._pause_lock:
+            if self._paused_reason == code:
+                self._paused_reason = None
+            return self._send_again(self.ledger.resume_paused(code))
+
+    def _send_again(self, jobs: list[PendingJob]) -> int:
+        for job in jobs:
+            self.ledger.mark_dispatched(job.job_id, self.dispatch(job))
+        return len(jobs)
+
+    def _park_if_paused(self, job_id: str) -> bool:
+        """True when the job was parked. Compare-and-set: if the pause ended while the row was
+        being written, the job is taken back at once instead of staying parked for ever."""
+        with self._pause_lock:
+            code = self._paused_reason
+            if code is None:
+                return False
+            self.ledger.pause_one(job_id, code)
+            if self._paused_reason != code:  # resumed in between
+                self._send_again(self.ledger.resume_paused(code, job_id))
+            return True
+
+    def flush_huey_locks(self) -> int:
+        """`flush_locks` on every pool: the locks a worker of this run still held (boot and
+        shutdown both)."""
+        flushed = 0
+        for name in self.names:
+            huey = self.huey(name)
+            prefix = f"{huey.name}{_LOCK_MARK}"
+            names = [k[len(prefix) :] for k in huey.storage.result_items() if k.startswith(prefix)]
+            flushed += len(huey.flush_locks(*names))
+        return flushed
+
+    # -- shutdown (ENF-OPS-007) ---------------------------------------------------------------
+
+    @property
+    def stopping(self) -> bool:
+        return self._stopping
+
+    def stop_claiming(self) -> None:
+        """Step 1 of the shutdown: a task that reaches a worker now is left in the queue."""
+        self._stopping = True
+
+    @property
+    def running(self) -> int:
+        return self._running
+
+    def wait_idle(self, timeout: float) -> bool:
+        """Step 2: True when every job in flight has finished within `timeout` seconds."""
+        with self._idle:
+            return self._idle.wait_for(lambda: self._running == 0, timeout)
 
     def submit(
         self,
@@ -175,6 +264,8 @@ class JobPools:
 
     def tick(self) -> ScanReport:
         """The one periodic: scan `schedule` and queue what is due."""
+        if self._stopping:
+            return ScanReport(())
         return self.scheduler.scan()
 
     # -- Dispatcher -------------------------------------------------------------------------
@@ -193,11 +284,16 @@ class JobPools:
     # -- the task body, run by a worker thread ----------------------------------------------
 
     def _execute(self, job_id: str) -> None:
+        if self._stopping:
+            self.ledger.forget_dispatch(job_id)  # the task is consumed: the next boot re-sends it
+            return
         job = self.ledger.get(job_id)
         route = self._handlers.get(job.kind)
         if route is None:
             self.ledger.mark_finished(job_id, error="no handler", error_code="job.unknown_kind")
             return
+        if route[3] and self._park_if_paused(job_id):
+            return  # parked, not failed, not retried
         window_end = None
         if route[2]:  # a window job runs in the window it was queued for, as persisted
             now = self.clock.now()
@@ -216,12 +312,20 @@ class JobPools:
         if job.limit_key is not None and not self.slots.try_acquire(job.limit_key):
             self.ledger.mark_deferred(job_id)
             raise RetryTask(delay=RETRY_DELAY_S)  # asked again later, no thread kept waiting
+        with self._idle:
+            self._running += 1
         try:
             context = JobContext(
                 job_id, job.kind, job.dedupe_key, job.scope_key, job.limit_key, window_end,
-                job.cursor_index, self.clock, self.ledger,
+                job.cursor_index, self.clock, self.ledger, stop=lambda: self._stopping,
             )  # fmt: skip
             route[1](context)
+        except OSError as exc:
+            if getattr(exc, "code", None) != "disk.low":  # DiskLowError: the disk filled mid-job
+                self.ledger.mark_finished(job_id, error=type(exc).__name__, error_code="job.failed")
+            else:
+                self.ledger.park_running(job_id, "disk.low")
+                self.pause_writes("disk.low")
         except Exception as exc:
             # the class name only: an upstream message may carry a title (EF-BIB-053)
             self.ledger.mark_finished(job_id, error=type(exc).__name__, error_code="job.failed")
@@ -233,6 +337,9 @@ class JobPools:
         finally:
             if job.limit_key is not None:
                 self.slots.release(job.limit_key)
+            with self._idle:
+                self._running -= 1
+                self._idle.notify_all()
 
 
 def boot_jobs(
@@ -255,12 +362,7 @@ def boot_jobs(
     resolve_intents()
     if release_resource_locks is not None:
         release_resource_locks()
-    flushed = 0
-    for name in pools.names:
-        huey = pools.huey(name)
-        prefix = f"{huey.name}{_LOCK_MARK}"
-        names = [k[len(prefix) :] for k in huey.storage.result_items() if k.startswith(prefix)]
-        flushed += len(huey.flush_locks(*names))
+    flushed = pools.flush_huey_locks()
     released = pools.slots.release_all()
     requeued = pools.ledger.requeue_running()
     report = pools.scheduler.startup_scan()  # also sends the requeued rows

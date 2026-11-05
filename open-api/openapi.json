@@ -149,6 +149,20 @@
             ],
             "title": "Paused Queues"
           },
+          "paused_reasons": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Reasons"
+          },
           "progress": {
             "anyOf": [
               {

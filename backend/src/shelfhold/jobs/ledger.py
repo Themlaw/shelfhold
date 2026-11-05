@@ -6,6 +6,7 @@ download, the chapter): at most one active row per key (partial unique index).
 """
 
 import json
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -163,6 +164,82 @@ class JobLedger:
                 .where(job_view.c.id == job_id)
                 .values(status="paused", error_code=PREEMPTED, started_at=None, window_end=None)
             )
+
+    def pause_queued(self, code: str, kinds: Collection[str]) -> int:
+        """Queue-wide pause (disk guard): queued jobs of these kinds park with `code`. No attempt
+        is spent and nothing is rescheduled; `resume_paused` puts them back."""
+        with self._engine.begin() as conn:
+            return int(
+                conn.execute(
+                    sa.update(job_view)
+                    .where(job_view.c.status == "queued", job_view.c.kind.in_(list(kinds)))
+                    .values(status="paused", error_code=code)
+                ).rowcount
+            )
+
+    def pause_one(self, job_id: str, code: str) -> bool:
+        with self._engine.begin() as conn:
+            return bool(
+                conn.execute(
+                    sa.update(job_view)
+                    .where(job_view.c.id == job_id, job_view.c.status == "queued")
+                    .values(status="paused", error_code=code)
+                ).rowcount
+            )
+
+    def park_running(self, job_id: str, code: str) -> bool:
+        """A job that hit a pause condition mid-flight (the disk filled): back to `paused`
+        under `code`, the attempt it spent given back, nothing recorded as a failure."""
+        with self._engine.begin() as conn:
+            return bool(
+                conn.execute(
+                    sa.update(job_view)
+                    .where(job_view.c.id == job_id, job_view.c.status == "running")
+                    .values(
+                        status="paused",
+                        error_code=code,
+                        started_at=None,
+                        attempts=sa.case(
+                            (job_view.c.attempts > 0, job_view.c.attempts - 1), else_=0
+                        ),
+                    )
+                ).rowcount
+            )
+
+    def forget_dispatch(self, job_id: str) -> None:
+        """The Huey task was consumed without running the job (shutdown): `undispatched()` will
+        send it again at the next boot."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                sa.update(job_view)
+                .where(job_view.c.id == job_id, job_view.c.status == "queued")
+                .values(huey_task_id=None)
+            )
+
+    def resume_paused(self, code: str, job_id: str | None = None) -> list[PendingJob]:
+        """The jobs parked with `code` go back to the queue, to be sent again."""
+        with self._engine.begin() as conn:
+            where: tuple[object, ...] = (
+                job_view.c.status == "paused", job_view.c.error_code == code,
+                *((job_view.c.id == job_id,) if job_id else ()),
+            )  # fmt: skip
+            rows = conn.execute(sa.select(job_view).where(*where)).all()  # type: ignore[arg-type]
+            conn.execute(
+                sa.update(job_view)
+                .where(*where)  # type: ignore[arg-type]
+                .values(status="queued", error_code=None, huey_task_id=None)
+            )
+        return [self._pending(r) for r in rows]
+
+    def paused_reasons(self) -> dict[str, str]:
+        """Kind -> the code a queue-wide pause parked it with."""
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(job_view.c.kind, job_view.c.error_code).where(
+                    job_view.c.status == "paused", job_view.c.error_code.is_not(None)
+                )
+            )
+            return {str(r.kind): str(r.error_code) for r in rows}
 
     def mark_finished(
         self, job_id: str, *, error: str | None = None, error_code: str | None = None

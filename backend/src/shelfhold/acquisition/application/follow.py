@@ -100,6 +100,7 @@ def submit_follow(pools: JobPools, plugin_id: str) -> Created:
 
 MISSING_CYCLES = 2  # consecutive cycles of absence before a series is deemed removed
 FINISHED_STATUSES = ("completed", "cancelled")  # work status: nothing more is expected
+OUTAGE_CYCLES = 3  # cycles in a row without an answer before the service is "unavailable"
 NOT_CHECKED = ("completed", "paused")  # series_follow.check_override: the user said so
 
 
@@ -113,6 +114,7 @@ class FollowReport:
     reactivated: int = 0
     stale: int = 0
     paused: str | None = None  # the waiting state (or failure class) the service is paused in
+    unavailable: bool = False  # the service has not answered for OUTAGE_CYCLES cycles in a row
     tickets: TicketReport = field(default_factory=TicketReport)
 
 
@@ -195,15 +197,33 @@ class FollowCycle:
             return report
         try:
             await self._cycle(report)
+            self._end_outage()
         except Exception as error:
             failure_class = classify(error)
             if disposition_of(failure_class) is not Disposition.PAUSE:
                 log.warning("follow.cycle_interrupted", failure_class=failure_class)
+                if failure_class == "infra":
+                    self._note_outage(report)
                 return report  # asleep, busy, unreachable: the next cycle tries again
             self._pause(failure_class, error, report)
         finally:
             self._flush()
         return report
+
+    def _note_outage(self, report: FollowReport) -> None:
+        """A cycle that could not reach the service. A blip is nothing; `OUTAGE_CYCLES` in a row
+        is an outage: `source.broken` (reason `unreachable`) once, counted against no series. The
+        next cycle is the probe: the first that gets through ends the outage by itself."""
+        with self._engine.begin() as connection:
+            if self._ledger.bump_outage(connection) < OUTAGE_CYCLES:
+                return
+            report.unavailable = True
+            if self._ledger.mark_unavailable(connection):
+                self._emit(connection, "source.broken", {"reason": "unreachable"})
+
+    def _end_outage(self) -> None:
+        with self._engine.begin() as connection:
+            self._ledger.clear_outage(connection)
 
     def resume(self) -> None:
         """The admin dealt with the cause (renewed the secret, updated the tool): follow again."""

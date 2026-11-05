@@ -78,6 +78,14 @@ class Settings(BaseModel):
     # container (the host, another container that mounts /data) unless this is set. The uid of
     # Shelfhold on the host is then as powerful as an admin.
     cli_allow_host: bool = False
+    # ENF-OPS-010: `/data` on NFS or CIFS is refused at start-up (statfs) unless this is set.
+    allow_network_data_dir: bool = False
+    # ENF-OPS-006: the disk guard's marks on `/data`, `/store` and the library. Writes pause under
+    # max(pause_percent, pause_gib) free and resume at max(resume_percent, resume_gib).
+    disk_pause_percent: float = Field(default=5.0, ge=0, le=50)
+    disk_pause_gib: float = Field(default=10.0, ge=0)
+    disk_resume_percent: float = Field(default=8.0, ge=0, le=60)
+    disk_resume_gib: float = Field(default=15.0, ge=0)
 
     @field_validator("forward_auth_trusted_cidrs")
     @classmethod
@@ -94,6 +102,15 @@ class Settings(BaseModel):
     @property
     def database_path(self) -> Path:
         return self.data_dir / "shelfhold.db"
+
+    @model_validator(mode="after")
+    def _resume_above_pause(self) -> Self:
+        if (
+            self.disk_resume_percent <= self.disk_pause_percent
+            or self.disk_resume_gib <= self.disk_pause_gib
+        ):
+            raise ValueError("the disk resume marks must be strictly above the pause marks")
+        return self
 
     @model_validator(mode="after")
     def _volumes_are_distinct(self) -> Self:

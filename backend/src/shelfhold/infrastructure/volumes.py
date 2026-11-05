@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 import structlog
 
 from shelfhold.config import CONFIG_FILE_NAME, CONFIG_SCHEMA_VERSION, Settings
+from shelfhold.infrastructure.observability.network_fs import refuse_network_data_dir
 from shelfhold.infrastructure.secrets.atomic import write_private
 
 
@@ -22,6 +23,7 @@ def data_dir_writable_by_others(data_dir: Path) -> bool:
 
 def ensure_volumes(settings: Settings) -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    refuse_network_data_dir(settings.data_dir, allow=settings.allow_network_data_dir)
     if data_dir_writable_by_others(settings.data_dir):
         structlog.get_logger().warning("data_dir_writable_by_others", path=str(settings.data_dir))
     settings.store_dir.mkdir(parents=True, exist_ok=True)

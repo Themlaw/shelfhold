@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import select
+import selectors
 import signal
 import subprocess
 import sys
@@ -117,20 +117,19 @@ def _collect(proc: subprocess.Popen[bytes], request: bytes, deadline: float) -> 
     fd = stdout.fileno()
     chunks: list[bytes] = []
     total = 0
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise _out_of_budget("timeout")
-        ready, _, _ = select.select([fd], [], [], remaining)
-        if not ready:
-            raise _out_of_budget("timeout")
-        chunk = os.read(fd, 1 << 20)
-        if not chunk:
-            return b"".join(chunks)
-        total += len(chunk)
-        if total > MAX_REPLY_BYTES:
-            raise _failed("reply too large")
-        chunks.append(chunk)
+    with selectors.DefaultSelector() as selector:  # not select.select: it breaks past fd 1024
+        selector.register(fd, selectors.EVENT_READ)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not selector.select(remaining):
+                raise _out_of_budget("timeout")
+            chunk = os.read(fd, 1 << 20)
+            if not chunk:
+                return b"".join(chunks)
+            total += len(chunk)
+            if total > MAX_REPLY_BYTES:
+                raise _failed("reply too large")
+            chunks.append(chunk)
 
 
 def run_worker(

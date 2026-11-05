@@ -187,6 +187,24 @@ class FailureLedger:
     def resume(self, connection: Connection) -> bool:
         return self._unset(connection, "$.pause")
 
+    # -- outage: the service does not answer at all (matrix, "Suwayomi injoignable") ------------
+    def bump_outage(self, connection: Connection) -> int:
+        """One more cycle in a row that could not reach the service; returns the count."""
+        self._ensure(connection)
+        connection.execute(_COUNT_FAILED, {"path": "$.outage", "plugin": self._plugin_id})
+        return int(self._read(connection).get("outage", 0))
+
+    def mark_unavailable(self, connection: Connection) -> bool:
+        """True the first time of an episode: the one notification is due."""
+        return self._set(connection, "$.unavailable", True, if_unset=True)
+
+    def unavailable(self, connection: Connection) -> bool:
+        return bool(self._read(connection).get("unavailable"))
+
+    def clear_outage(self, connection: Connection) -> None:
+        self._unset(connection, "$.outage")
+        self._unset(connection, "$.unavailable")
+
     # -- absence from the service's library (EF-SRC-027) ---------------------------------------
     def bump_missing(self, connection: Connection, binding_id: str) -> int:
         """One more consecutive cycle in which the binding's series is absent; returns the count."""
