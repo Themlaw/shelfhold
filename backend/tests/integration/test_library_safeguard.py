@@ -151,7 +151,7 @@ def test_safeguard_reads_upstream_when_library_file_differs_from_manifest() -> N
                 sa.select(storage.replica).where(storage.replica.c.location == "library")
             ).one()
             assert library.content_hash == hash_of(third_party) and library.file_hash == sha(
-                third_party
+                render(received)
             )
 
 

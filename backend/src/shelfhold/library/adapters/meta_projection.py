@@ -17,8 +17,9 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import catalog, storage
-from shelfhold.infrastructure.volumes import write_data_file
+from shelfhold.infrastructure.volumes import read_data_file, write_data_file
 from shelfhold.library.domain.unit_json import (
+    MAX_BYTES,
     NewerFormatError,
     UnitJson,
     UnitJsonCorruptError,
@@ -88,7 +89,7 @@ class MetaProjection:
         path = meta_path(self._data_dir, unit_id)
         wanted: UnitJson
         try:
-            raw = path.read_bytes()
+            raw = read_data_file(path, MAX_BYTES + 1)
         except FileNotFoundError:
             wanted = UnitJson.new(known)
         else:

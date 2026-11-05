@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, platform, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, platform, storage
 
 __all__ = [
     "LibraryCopy",
@@ -51,6 +51,22 @@ def reference_content_hash(connection: Connection, unit_id: str) -> str | None:
     ).scalar()
 
 
+def _source_is_alive(unit_id: str) -> sa.ColumnElement[bool]:
+    variant, binding = catalog.unit_variant, acquisition.source_binding
+    listed = (
+        sa.select(variant.c.id)
+        .join(binding, binding.c.id == variant.c.source_binding_id)
+        .where(variant.c.unit_id == unit_id, variant.c.removed_at.is_(None), binding.c.active)
+        .exists()
+    )
+    still_there = (
+        ~sa.select(catalog.unit.c.id)
+        .where(catalog.unit.c.id == unit_id, catalog.unit.c.availability == "removed")
+        .exists()
+    )
+    return sa.and_(listed, still_there)
+
+
 def independent_copies(connection: Connection, unit_id: str) -> int:
     reference = reference_content_hash(connection, unit_id)
     if reference is None:
@@ -60,6 +76,9 @@ def independent_copies(connection: Connection, unit_id: str) -> int:
             replica_table.c.unit_id == unit_id,
             replica_table.c.independent,
             replica_table.c.content_hash == reference,
+            # the origin is a copy only while it still lists the Unit: decided here, at counting
+            # time, not by a row someone must remember to update
+            sa.or_(replica_table.c.location != "upstream", _source_is_alive(unit_id)),
         )
     )
     keys: set[tuple[Any, ...]] = {
@@ -143,19 +162,17 @@ def update_observation(
     connection: Connection,
     replica_id: str,
     *,
-    file_hash: str | None,
     content_hash: str | None,
     independent: bool,
     verified_at: datetime,
     size: int | None = None,
     mtime_ns: int | None = None,
 ) -> None:
-    """What was seen on disk: the row now describes the file as it is."""
+    """What was seen on disk. `file_hash`, the exporter's manifest, is deliberately not settable."""
     connection.execute(
         sa.update(replica_table)
         .where(replica_table.c.id == replica_id)
         .values(
-            file_hash=file_hash,
             content_hash=content_hash,
             independent=independent,
             verified_at=verified_at,

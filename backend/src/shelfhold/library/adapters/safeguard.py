@@ -96,11 +96,15 @@ class Safeguard:
     # -- the registry, brought up to what is on disk ------------------------------------------
 
     def _refresh_library(
-        self, connection: Connection, unit_id: str
+        self, connection: Connection, unit_id: str, reference: str
     ) -> tuple[bool | None, list[LibraryCopy]]:
-        """Look at each library copy. Returns (does a copy still match its manifest?, the copies);
-        the rows are rewritten to describe the files as they are (a changed payload stops
-        counting as a copy of this one)."""
+        """Look at each library copy. Returns (does a copy still match its manifest?, the copies).
+
+        The manifest (`file_hash`, what the exporter wrote) is never rewritten: a file that is
+        not that file stays "not the manifest's" on every later pass, so a third party's file can
+        never become a source by being looked at twice. What is observed goes to `content_hash`
+        (the payload it carries now, NULL if it is not a valid archive) and `independent` is
+        recomputed from it."""
         copies = list(library_copies(connection, unit_id))
         matching: bool | None = None if not copies else False
         now = datetime.now(UTC)
@@ -110,12 +114,18 @@ class Safeguard:
                 identity = self._fsops.observe(copy.local)
             except (FileNotFoundError, FsopsError):
                 update_observation(
-                    connection, copy.replica_id, file_hash=copy.file_hash,
-                    content_hash=copy.content_hash, independent=False, verified_at=now,
+                    connection, copy.replica_id, content_hash=copy.content_hash,
+                    independent=False, verified_at=now,
                 )  # fmt: skip
                 continue
+            size = identity[1].size if identity else None
+            mtime_ns = identity[1].mtime_ns if identity else None
             if seen == copy.file_hash:
                 matching = True
+                update_observation(
+                    connection, copy.replica_id, content_hash=reference, independent=True,
+                    verified_at=now, size=size, mtime_ns=mtime_ns,
+                )  # fmt: skip
                 continue
             try:  # altered by a third party: what does it carry now?
                 with self._fsops.open_read(copy.local) as stream:
@@ -123,10 +133,8 @@ class Safeguard:
             except (UnsafeArchiveError, UntrustedEntryError, FsopsError):
                 payload = None
             update_observation(
-                connection, copy.replica_id, file_hash=seen, content_hash=payload,
-                independent=payload is not None, verified_at=now,
-                size=identity[1].size if identity else None,
-                mtime_ns=identity[1].mtime_ns if identity else None,
+                connection, copy.replica_id, content_hash=payload,
+                independent=payload is not None, verified_at=now, size=size, mtime_ns=mtime_ns,
             )  # fmt: skip
         return matching, copies
 
@@ -144,7 +152,7 @@ class Safeguard:
             ).first()
             if content is None or content.content_hash is None:
                 raise SafeguardFailedError("no_content", "nothing in passthrough to keep")
-            matching, copies = self._refresh_library(connection, unit_id)
+            matching, copies = self._refresh_library(connection, unit_id, content.content_hash)
             rendered = rendered_file_hashes(connection, unit_id, original=content.original_sha256)
         choice = choose_source(
             upstream_available=upstream is not None, library_matches_manifest=matching
@@ -152,7 +160,9 @@ class Safeguard:
         rel = f"units/{unit_id[:2]}/{unit_id}/{content.id}.cbz"
         local = f"{self._store}/{rel}"
         if choice.source == "library":
-            matching_copy = next(c for c in copies if self._still_matches(c))
+            matching_copy = next((c for c in copies if self._still_matches(c)), None)
+            if matching_copy is None:
+                raise SafeguardFailedError("library_differs_from_manifest")
             provenance = "extracted"
             with tempfile.TemporaryFile(dir=self._staging(), suffix=".cbz") as scratch:
                 with (

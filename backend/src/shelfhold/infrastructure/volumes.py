@@ -1,6 +1,7 @@
 """The two volumes of ENF-OPS-012: /data (hot, local) and /store (kept copies)."""
 
 import os
+import stat
 from pathlib import Path, PurePosixPath
 
 from shelfhold.config import CONFIG_FILE_NAME, CONFIG_SCHEMA_VERSION, Settings
@@ -35,3 +36,23 @@ def write_data_file(data_dir: Path, rel: str, data: bytes) -> None:
             raise ValueError(f"{folder} is a link")
     folder.mkdir(parents=True, exist_ok=True)
     write_private(data_dir.joinpath(*parts), data, overwrite=True)
+
+
+def read_data_file(path: Path, limit: int) -> bytes:
+    """The file's bytes, never following a link and never more than `limit`.
+
+    `FileNotFoundError` when absent. A link, a special file or an oversized file comes back as
+    bytes that cannot parse (the caller then treats the file as corrupt and replaces it)."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except FileNotFoundError:
+        raise
+    except OSError:  # ELOOP: a link; others: unreadable
+        return b""
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return b""
+        with os.fdopen(os.dup(fd), "rb") as stream:
+            return stream.read(limit)
+    finally:
+        os.close(fd)

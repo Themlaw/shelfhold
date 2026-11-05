@@ -23,6 +23,19 @@ _HASH = re.compile(r"sha256:[0-9a-f]{64}")
 _HASH_FIELDS: Final = ("original_sha256", "content_hash", "derived_hash", "file_hash")
 
 
+MAX_BYTES: Final = 1024 * 1024  # a unit.json is a few KiB; more is not one
+
+
+def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """A repeated key hides one value behind another (e.g. a newer `schema_version`)."""
+    found: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in found:
+            raise UnitJsonCorruptError(f"duplicate key {key!r}")
+        found[key] = value
+    return found
+
+
 class UnitJsonCorruptError(ValueError):
     """Not readable at all: the database is the authority and rewrites it."""
 
@@ -64,16 +77,21 @@ class UnitJson:
 
     @classmethod
     def parse(cls, raw: bytes) -> "UnitJson":
+        if len(raw) > MAX_BYTES:
+            raise UnitJsonCorruptError(f"larger than {MAX_BYTES} bytes")
         try:
-            fields = json.loads(raw)
-        except ValueError as error:
-            raise UnitJsonCorruptError(str(error)) from None
+            fields = json.loads(raw, object_pairs_hook=_no_duplicate_keys)
+        except (ValueError, RecursionError) as error:
+            raise UnitJsonCorruptError(type(error).__name__) from None
         if not isinstance(fields, dict) or "schema_version" not in fields:
             raise UnitJsonCorruptError("not an object with a schema_version")
         found = _parse_version(fields["schema_version"])
-        _check_hashes(fields)
-        if found > _CURRENT:
+        if found > _CURRENT:  # the version first: a newer file may use what we do not know
             return cls(fields, f"{found[0]}.{found[1]}", read_only=True)
+        try:
+            _check_hashes(fields)
+        except RecursionError:
+            raise UnitJsonCorruptError("RecursionError") from None
         if found == _CURRENT:
             return cls(fields, UNIT_JSON_VERSION)
         return cls(_migrate(fields), UNIT_JSON_VERSION, migrated_from=f"{found[0]}.{found[1]}")
