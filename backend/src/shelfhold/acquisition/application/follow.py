@@ -12,7 +12,7 @@ the whole service and counts against nothing; the pause ends with `resume`.
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import NamedTuple
 
 import sqlalchemy as sa
@@ -21,6 +21,7 @@ import structlog
 from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
 from shelfhold.acquisition.application.tickets import (
     MAX_ATTEMPTS,
+    STALL_AFTER,
     DownloadTickets,
     Placement,
     Receiver,
@@ -110,6 +111,7 @@ class FollowCycle:
         slots: DomainSlots | None = None,
         stale_k: int = DEFAULT_K,
         max_attempts: int = MAX_ATTEMPTS,
+        stall_after: timedelta = STALL_AFTER,
     ) -> None:
         self._engine = engine
         self._bus = bus
@@ -122,6 +124,7 @@ class FollowCycle:
         self._tickets = DownloadTickets(
             engine, clock, service, fetcher, self._ledger, store, receive, place,
             plugin_id=self._plugin_id, sleep=sleep, slots=slots, max_attempts=max_attempts,
+            stall_after=stall_after,
         )  # fmt: skip
         self._pending: list[PublishedEvent] = []
 
@@ -149,6 +152,7 @@ class FollowCycle:
         """The admin dealt with the cause (renewed the secret, updated the tool): follow again."""
         with self._engine.begin() as connection:
             self._ledger.resume(connection)
+        self._tickets.reopen_abandoned()
 
     async def _cycle(self, report: FollowReport) -> None:
         if ConnectedCapability.HEALTH_PROBE in self._service.connected:
@@ -169,6 +173,13 @@ class FollowCycle:
                 await self._discover_isolated(binding, report)
         report.tickets = await self._tickets.advance()
         report.fetched = report.tickets.fetched
+        if report.tickets.fetched:  # the source delivers: what was given up may be tried again
+            self._tickets.reopen_abandoned()
+        if report.tickets.dropped:
+            with self._engine.begin() as connection:
+                self._emit(
+                    connection, "source.downloads_dropped", {"count": report.tickets.dropped}
+                )
         report.stale = len(self._check_freshness())
 
     def _reconcile_library(
@@ -310,7 +321,7 @@ class FollowCycle:
                 return
             DownloadTickets.open(
                 connection, binding_id=binding.id, variant_id=result.variant_id,
-                unit_id=result.unit_id,
+                unit_id=result.unit_id, now=now,
             )  # fmt: skip
             opened.add(result.variant_id)
 

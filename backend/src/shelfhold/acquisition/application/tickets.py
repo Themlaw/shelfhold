@@ -14,6 +14,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, suppress
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -24,7 +25,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from shelfhold.acquisition.application.failures import FailureLedger, from_service
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.fetcher import GuardedFetcher
+from shelfhold.infrastructure.fetcher import FetchError, FetchTooLarge, GuardedFetcher
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
@@ -41,6 +42,8 @@ from shelfhold.sdk.refs import FileAsset, SeriesRef, UnitInfo, UnitRef
 from shelfhold.sdk.source import RateLimited, SourceChanged, TemporarilyUnavailable
 
 MAX_ATTEMPTS = 8
+STALL_AFTER = timedelta(hours=6)  # EF-SRC-026 b: a chapter still not downloaded after N hours
+MAX_REQUEUE = 20  # per cycle: the cap of source.downloads_dropped
 MAX_WAIT_S = 120.0  # the most one cycle sleeps for the pace of the sources
 CLOCK_GRAIN_S = 1e-3  # a wait shorter than this is over (clocks tick in microseconds)
 JITTER = 0.5  # each gap is `interval x (1 + up to JITTER)`, so instances never march in step
@@ -87,6 +90,17 @@ def bounded_receiver(
     return receive
 
 
+def _is_transport(error: BaseException) -> bool:
+    """The server or the network, not the file: nothing to count and no attempt to spend."""
+    if isinstance(error, FetchTooLarge):
+        return False  # the same bytes will be too large again
+    return isinstance(error, RateLimited | TemporarilyUnavailable | FetchError | OSError)
+
+
+def _utc(moment: datetime) -> datetime:
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
 @dataclass
 class TicketReport:
     submitted: int = 0
@@ -94,6 +108,9 @@ class TicketReport:
     fetched: int = 0
     retried: int = 0
     abandoned: int = 0
+    dropped: int = (
+        0  # asked again after N hours, or given up: announced as source.downloads_dropped
+    )
     deferred: int = 0  # held back by the pace or by a busy slot, tried again next cycle
 
 
@@ -110,6 +127,7 @@ class OpenRequest:
     remote_id: str
     number: str
     source_order: int
+    requested_at: datetime
 
 
 class DownloadTickets:
@@ -129,6 +147,7 @@ class DownloadTickets:
         slots: DomainSlots | None = None,
         max_attempts: int = MAX_ATTEMPTS,
         max_wait_s: float = MAX_WAIT_S,
+        stall_after: timedelta = STALL_AFTER,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -143,17 +162,20 @@ class DownloadTickets:
         self._slots = slots
         self._max_attempts = max_attempts
         self._max_wait_s = max_wait_s
+        self._stall_after = stall_after
 
     # -- opening -----------------------------------------------------------------------------
     @staticmethod
-    def open(connection: Connection, *, binding_id: str, variant_id: str, unit_id: str) -> bool:
+    def open(
+        connection: Connection, *, binding_id: str, variant_id: str, unit_id: str, now: datetime
+    ) -> bool:
         """One open ticket per Variant: a second call while one is open changes nothing."""
         request_id = new_ulid()
         inserted = connection.execute(
             sqlite_insert(acquisition.download_request)
             .values(
                 id=request_id, target_kind="unit", variant_id=variant_id,
-                source_binding_id=binding_id, state="requested",
+                source_binding_id=binding_id, state="requested", requested_at=now,
             )
             .on_conflict_do_nothing()  # the partial unique index: one open ticket per Variant
         ).rowcount  # fmt: skip
@@ -173,7 +195,7 @@ class DownloadTickets:
             sa.select(
                 r.c.id, r.c.source_binding_id, r.c.variant_id, v.c.unit_id, v.c.remote_unit_id,
                 r.c.ticket, r.c.attempts, si.c.source_key, si.c.remote_id, u.c.number_raw,
-                u.c.source_order,
+                u.c.source_order, r.c.requested_at,
             )
             .select_from(
                 r.join(v, v.c.id == r.c.variant_id)
@@ -188,7 +210,7 @@ class DownloadTickets:
             .order_by(r.c.requested_at, r.c.id)
         )  # fmt: skip
         with self._engine.connect() as connection:
-            return [OpenRequest(*row) for row in connection.execute(query)]
+            return [OpenRequest(*tuple(row)) for row in connection.execute(query)]
 
     # -- advancing ---------------------------------------------------------------------------
     async def advance(self) -> TicketReport:
@@ -266,7 +288,7 @@ class DownloadTickets:
         ticket = Ticket(token=str(request.ticket), target_kind="unit")
         state = await from_service(self._service.poll(self._fetcher, ticket))
         if state in ("queued", "downloading"):
-            report.waiting += 1  # Suwayomi has not finished: wait, no failure
+            self._wait(request, report)  # Suwayomi has not finished: wait, no failure
             return
         if state in ("failed", "gone"):  # dropped or renumbered on the server: ask again
             self._retry(request, report, new_ticket=True)
@@ -331,10 +353,20 @@ class DownloadTickets:
                 self._ledger.record_download(connection, request.source_key, ok=False, now=now)
             self._update(request.id, state="abandoned")
             report.abandoned += 1
-        elif isinstance(error, RateLimited | TemporarilyUnavailable):
-            report.waiting += 1  # the server is asleep or busy: not a failed attempt
-        else:  # truncated archive, reset connection...: another attempt, nothing counted
+        elif _is_transport(error):
+            self._wait(request, report)  # asleep, busy, unreachable, a 5xx: not a failed attempt
+        else:  # a truncated archive...: another attempt, nothing counted against the source
             self._retry(request, report)
+
+    def _wait(self, request: OpenRequest, report: TicketReport) -> None:
+        """Wait for the server. Only past N hours is the chapter asked again (EF-SRC-026 b), within
+        the per-cycle cap; a chapter the user never asked for is not in this table at all."""
+        stalled = self._clock.now() - _utc(request.requested_at) > self._stall_after
+        if stalled and report.dropped < MAX_REQUEUE:
+            report.dropped += 1
+            self._retry(request, report, new_ticket=True)
+        else:
+            report.waiting += 1
 
     def _retry(
         self, request: OpenRequest, report: TicketReport, *, new_ticket: bool = False
@@ -347,12 +379,33 @@ class DownloadTickets:
                     connection, request.source_key, ok=False, now=self._clock.now()
                 )
             report.abandoned += 1
+            report.dropped += 1
             return
         values: dict[str, object] = {"state": "requested", "attempts": attempts}
         if new_ticket:
             values["ticket"] = None
         self._update(request.id, **values)
         report.retried += 1
+
+    def reopen_abandoned(self) -> int:
+        """The source is healthy again: what was given up after repeated attempts is asked once
+        more (EF-SRC-026 b). A chapter the server reported gone for good (`content`) stays closed.
+        """
+        r = acquisition.download_request
+        other = sa.alias(r)
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                sa.update(r)
+                .where(
+                    r.c.state == "abandoned",
+                    r.c.attempts >= self._max_attempts,
+                    ~sa.exists().where(
+                        other.c.variant_id == r.c.variant_id, other.c.state.in_(OPEN_STATES)
+                    ),
+                )
+                .values(state="requested", attempts=0, ticket=None, updated_at=self._clock.now())
+            )
+        return int(result.rowcount)
 
     def _update(self, request_id: str, **values: object) -> None:
         table = acquisition.download_request

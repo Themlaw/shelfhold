@@ -314,7 +314,7 @@ def test_one_follow_job_per_service_and_one_open_ticket_per_variant(tmp_path: Pa
         with bench.lib.engine.begin() as connection:  # a racing writer opens it again: refused
             again = DownloadTickets.open(
                 connection, binding_id=row["source_binding_id"],
-                variant_id=row["variant_id"], unit_id=unit[0]["unit_id"],
+                variant_id=row["variant_id"], unit_id=unit[0]["unit_id"], now=bench.clock.now(),
             )  # fmt: skip
         assert again is False
         assert len(bench.rows("SELECT id FROM download_request")) == 1
@@ -403,3 +403,83 @@ def test_a_variant_never_exists_without_its_ticket(monkeypatch: pytest.MonkeyPat
         monkeypatch.setattr(DownloadTickets, "open", staticmethod(real))
         assert bench.run().requested == 1
         assert len(bench.rows("SELECT id FROM download_request")) == 1
+
+
+def _stuck(bench: Bench, monkeypatch: pytest.MonkeyPatch, state: str) -> None:
+    async def poll(f: Any, t: Any) -> str:
+        return state
+
+    monkeypatch.setattr(bench.service, "poll", poll)
+
+
+@pytest.mark.req("EF-SRC-026", "EF-SRC-028")
+def test_a_5xx_while_receiving_spends_no_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    with follow_bench() as bench:
+        bench.run()
+        bench.add_chapter(3)
+        bench.run()
+        real = bench.server._download
+
+        def unavailable(path: str) -> Response:
+            return Response(status=503, headers={}, body=b"")
+
+        monkeypatch.setattr(bench.server, "_download", unavailable)
+        for _ in range(12):  # more than any budget of attempts
+            assert bench.run().fetched == 0
+        row = bench.rows("SELECT state, attempts FROM download_request")[0]
+        assert row["state"] in ("requested", "downloaded") and row["attempts"] == 0
+        assert bench.rows("SELECT * FROM source_failure") == []
+        monkeypatch.setattr(bench.server, "_download", real)
+        assert bench.run().fetched == 1
+
+
+@pytest.mark.req("EF-SRC-026")
+def test_a_chapter_still_not_downloaded_after_six_hours_is_asked_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with follow_bench() as bench:
+        bench.run()
+        bench.add_chapter(3)
+        bench.run()
+        _stuck(bench, monkeypatch, "downloading")
+        bench.clock.advance(hours=5, minutes=50)
+        bench.run()
+        assert bench.rows("SELECT attempts FROM download_request")[0]["attempts"] == 0
+        assert bench.events("source.downloads_dropped") == []
+        bench.clock.advance(minutes=20)  # past N = 6 h
+        bench.run()
+        assert bench.rows("SELECT attempts FROM download_request")[0]["attempts"] == 1
+        assert [e["count"] for e in bench.events("source.downloads_dropped")] == [1]
+        assert any(e.type == "source.downloads_dropped" for e in bench.delivered)
+
+
+@pytest.mark.req("EF-SRC-026")
+def test_given_up_tickets_are_announced_and_reopened_when_the_source_is_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with follow_bench(max_attempts=2) as bench:
+        bench.run()
+        bench.add_chapter(3)
+        bench.run()
+        _stuck(bench, monkeypatch, "failed")  # the server keeps dropping the chapter
+        for _ in range(4):
+            bench.run()
+        row = bench.rows("SELECT state, attempts FROM download_request")[0]
+        assert row["state"] == "abandoned" and row["attempts"] == 2
+        assert len(bench.events("source.downloads_dropped")) == 1
+        assert bench.rows("SELECT * FROM source_failure") == []
+
+        monkeypatch.undo()  # the source is back; the admin resumes following
+        bench.cycle.resume()
+        assert bench.rows("SELECT state, attempts FROM download_request")[0] == {
+            "state": "requested",
+            "attempts": 0,
+        }
+        bench.run()
+        assert (
+            bench.run().fetched
+            + bench.rows("SELECT count(*) AS n FROM download_request WHERE state = 'fetched'")[0][
+                "n"
+            ]
+            >= 1
+        )

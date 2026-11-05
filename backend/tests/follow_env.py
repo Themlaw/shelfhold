@@ -139,6 +139,7 @@ def follow_bench(
     stale_k: int = 3,
     has_credentials: bool = False,
     service: Any = None,
+    max_attempts: int = 8,
 ) -> Iterator[Bench]:
     server = server or FakeSuwayomi(auth_mode="none")
     with lib_env() as lib:
@@ -180,7 +181,7 @@ def follow_bench(
                 lib.engine, bus, clock, service, fetcher,
                 store=PassthroughStore(lib.engine, lib.fsops, lib.locate, lib.data),
                 receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
-                place=_placement(lib), sleep=sleep, stale_k=stale_k,
+                place=_placement(lib), sleep=sleep, stale_k=stale_k, max_attempts=max_attempts,
             )  # fmt: skip
 
         cycle = new_cycle()
