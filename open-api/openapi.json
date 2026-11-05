@@ -19,6 +19,24 @@
         "title": "About",
         "type": "object"
       },
+      "AppliedOut": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "applied"
+        ],
+        "title": "AppliedOut",
+        "type": "object"
+      },
       "CsrfToken": {
         "properties": {
           "csrf_token": {
@@ -30,6 +48,71 @@
           "csrf_token"
         ],
         "title": "CsrfToken",
+        "type": "object"
+      },
+      "DestinationIn": {
+        "properties": {
+          "attested_egress": {
+            "anyOf": [
+              {
+                "enum": [
+                  "foyer",
+                  "externe"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attested Egress"
+          },
+          "plugin_egress": {
+            "default": "foyer",
+            "enum": [
+              "foyer",
+              "externe"
+            ],
+            "title": "Plugin Egress",
+            "type": "string"
+          },
+          "root_subpath": {
+            "default": "",
+            "title": "Root Subpath",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "transport": {
+            "default": "tree",
+            "enum": [
+              "tree",
+              "dropbox",
+              "pull"
+            ],
+            "title": "Transport",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id"
+        ],
+        "title": "DestinationIn",
+        "type": "object"
+      },
+      "DestinationOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "DestinationOut",
         "type": "object"
       },
       "HealthzResponse": {
@@ -148,6 +231,72 @@
           "password"
         ],
         "title": "PasswordReauth",
+        "type": "object"
+      },
+      "PlanIn": {
+        "properties": {
+          "shelf_destination_id": {
+            "title": "Shelf Destination Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "shelf_destination_id"
+        ],
+        "title": "PlanIn",
+        "type": "object"
+      },
+      "PlanOut": {
+        "properties": {
+          "base_version": {
+            "title": "Base Version",
+            "type": "integer"
+          },
+          "blocked": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Blocked",
+            "type": "array"
+          },
+          "checks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "ops": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Ops",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plan_id",
+          "base_version",
+          "ops",
+          "blocked",
+          "warnings",
+          "checks"
+        ],
+        "title": "PlanOut",
         "type": "object"
       },
       "Problem": {
@@ -295,6 +444,61 @@
           "credential"
         ],
         "title": "SessionInfo",
+        "type": "object"
+      },
+      "ShelfIn": {
+        "properties": {
+          "max_age_rating": {
+            "anyOf": [
+              {
+                "maximum": 99.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Rating"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "phrase": {
+            "minLength": 1,
+            "title": "Phrase",
+            "type": "string"
+          },
+          "retention_mode": {
+            "default": "passthrough",
+            "enum": [
+              "passthrough",
+              "keep"
+            ],
+            "title": "Retention Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "phrase"
+        ],
+        "title": "ShelfIn",
+        "type": "object"
+      },
+      "ShelfOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ShelfOut",
         "type": "object"
       }
     }
@@ -538,6 +742,262 @@
         "summary": "Session"
       }
     },
+    "/api/v1/plans": {
+      "post": {
+        "operationId": "preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Preview",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/v1/plans/{plan_id}/apply": {
+      "post": {
+        "operationId": "apply",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppliedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Apply",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/v1/shelves": {
+      "post": {
+        "operationId": "create_shelf",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShelfIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShelfOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Create Shelf",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
+    "/api/v1/shelves/{shelf_id}/destinations": {
+      "post": {
+        "operationId": "bind_destination",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shelf_id",
+            "required": true,
+            "schema": {
+              "title": "Shelf Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DestinationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Bind Destination",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "healthz",
@@ -630,17 +1090,41 @@
       "code": "disk.low",
       "status": 503
     },
+    "/api/v1/problems/export.destination-occupied": {
+      "code": "export.destination_occupied",
+      "status": 409
+    },
     "/api/v1/problems/export.name-misread-number": {
       "code": "export.name_misread_number",
       "status": 422
+    },
+    "/api/v1/problems/export.no-remote-library": {
+      "code": "export.no_remote_library",
+      "status": 409
     },
     "/api/v1/problems/export.segment-policy-unconfirmed": {
       "code": "export.segment_policy_unconfirmed",
       "status": 409
     },
+    "/api/v1/problems/export.series-name-collision": {
+      "code": "export.series_name_collision",
+      "status": 409
+    },
     "/api/v1/problems/export.series-name-yields-volume": {
       "code": "export.series_name_yields_volume",
       "status": 422
+    },
+    "/api/v1/problems/export.source-missing": {
+      "code": "export.source_missing",
+      "status": 409
+    },
+    "/api/v1/problems/export.transport-unsupported": {
+      "code": "export.transport_unsupported",
+      "status": 409
+    },
+    "/api/v1/problems/export.watermarked-external-egress": {
+      "code": "export.watermarked_external_egress",
+      "status": 409
     },
     "/api/v1/problems/fetch.dns-failed": {
       "code": "fetch.dns_failed",
@@ -802,6 +1286,10 @@
       "code": "series.tombstoned_upstream",
       "status": 409
     },
+    "/api/v1/problems/shelf.parental-control-unavailable": {
+      "code": "shelf.parental_control_unavailable",
+      "status": 422
+    },
     "/api/v1/problems/source.auth-expired": {
       "code": "source.auth_expired",
       "status": 503
@@ -894,9 +1382,17 @@
       "code": "target.permission_denied",
       "status": 403
     },
+    "/api/v1/problems/target.pull-needs-readable-copy": {
+      "code": "target.pull_needs_readable_copy",
+      "status": 409
+    },
     "/api/v1/problems/target.route-missing": {
       "code": "target.route_missing",
       "status": 503
+    },
+    "/api/v1/problems/target.tree-overlap": {
+      "code": "target.tree_overlap",
+      "status": 409
     },
     "/api/v1/problems/target.unreachable": {
       "code": "target.unreachable",

@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog, export
+from shelfhold.infrastructure.schema import catalog, export, platform
 from shelfhold.library.public import PassthroughStore
 from tests.fakes.kavita.plugin_parse import simulate_parse
 from tests.fakes_clock import ManualClock
@@ -75,7 +75,9 @@ class ExportEnv:
         with self.engine.connect() as connection:
             return list(connection.execute(sa.select(table)))
 
-    def new_series(self, title: str = "Dr Stone", *, lang: str = "fr", shelf_id: str | None = None) -> Series:
+    def new_series(
+        self, title: str = "Dr Stone", *, lang: str = "fr", shelf_id: str | None = None
+    ) -> Series:
         """Another Work, with its Edition on the shelf (`shelf_id=""` leaves it unshelved)."""
         with self.engine.begin() as connection:
             work = add_work(connection, title=title, sort_title=title.lower())
@@ -102,7 +104,9 @@ class ExportEnv:
         with self.engine.begin() as connection:
             unit = add_unit(connection, series.edition_id, number)
             variant = add_variant(connection, unit, series.binding_id, f"ch-{new_ulid()}")
-        pages = ((f"{number}-001.png", b"\x89PNG\r\n\x1a\n" + tag + number.encode() + b"\x00" * 16),)
+        pages = (
+            (f"{number}-001.png", b"\x89PNG\r\n\x1a\n" + tag + number.encode() + b"\x00" * 16),
+        )
         received = self.lib.manga / ".received" / f"{unit}.cbz"
         PassthroughStore(self.engine, self.lib.fsops, self.lib.locate, self.lib.data).ingest(
             unit_id=unit,
@@ -125,6 +129,9 @@ def export_env(*, max_age_rating: int | None = 18, transport: str = "tree") -> I
         destination_id, library_id = new_ulid(), new_ulid()
         path_map = [{"local": str(lib.manga), "remote": "/manga", "mode": "rw"}]
         with lib.engine.begin() as connection:
+            connection.execute(
+                sa.insert(platform.instance).values(instance_id=new_ulid(), jurisdiction="FR")
+            )
             connection.execute(
                 sa.insert(export.export_target).values(
                     id=target_id, kind="kavita", name="Kavita", path_map=path_map
@@ -161,6 +168,7 @@ def export_env(*, max_age_rating: int | None = 18, transport: str = "tree") -> I
                 )
             )
         (lib.manga / ROOT_SUBPATH).mkdir()
+        (lib.data / "tmp").mkdir(exist_ok=True)  # the staging folder `ensure_volumes` creates
         clock = ManualClock(NOW)
         scans: list[str] = []
         pipeline = ExportPipeline(
@@ -172,7 +180,9 @@ def export_env(*, max_age_rating: int | None = 18, transport: str = "tree") -> I
             parse=simulate_parse,
             request_scan=scans.append,
         )
-        yield ExportEnv(lib, clock, target_id, shelf_id, destination_id, library_id, pipeline, scans)
+        yield ExportEnv(
+            lib, clock, target_id, shelf_id, destination_id, library_id, pipeline, scans
+        )
 
 
 def add_second_shelf(env: ExportEnv, *, max_age_rating: int | None = 99) -> tuple[str, str]:
@@ -214,9 +224,11 @@ def state_of(env: ExportEnv) -> dict[str, object]:
         str(p.relative_to(env.root)): (p.stat().st_mtime_ns, p.stat().st_ino) for p in env.files()
     }
     with env.engine.connect() as connection:
-        manifest = connection.execute(
-            sa.text("SELECT * FROM export_record ORDER BY export_item_id")
-        ).mappings().all()
+        manifest = (
+            connection.execute(sa.text("SELECT * FROM export_record ORDER BY export_item_id"))
+            .mappings()
+            .all()
+        )
         intents = connection.execute(sa.text("SELECT count(*) FROM fs_intent")).scalar_one()
         series = connection.execute(sa.text("SELECT * FROM export_series")).mappings().all()
         links = connection.execute(sa.text("SELECT * FROM edition_export_series")).mappings().all()
@@ -232,7 +244,6 @@ def state_of(env: ExportEnv) -> dict[str, object]:
 __all__ = [
     "ExportEnv",
     "Series",
-    "acquisition",
     "add_second_shelf",
     "export_env",
     "sha",

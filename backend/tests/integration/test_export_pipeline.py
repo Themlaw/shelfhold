@@ -10,6 +10,7 @@ import shelfhold.export.application.pipeline as pipeline_module
 from shelfhold.export.application.export_items import CoverageError, add_coverage
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.domain.export_item import check_coverage
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from tests.export_env import add_second_shelf, export_env, sha, state_of
 
@@ -31,7 +32,7 @@ def test_dry_run_and_apply_share_planner(monkeypatch: pytest.MonkeyPatch) -> Non
         preview = env.pipeline.preview(env.destination_id)
         assert env.files() == []  # a dry run writes nothing
         assert env.rows(export.export_record) == []
-        applied = env.pipeline.run(env.destination_id, job_id="job-1")
+        applied = env.pipeline.run(env.destination_id, job_id=new_ulid())
         assert len(calls) == 2  # the one planner, once for each
         assert applied.ops == preview.ops  # the operations are identical
         assert sorted(p.name for p in env.files()) == [
@@ -48,12 +49,12 @@ def test_apply_after_a_change_is_refused_and_the_preview_recomputed() -> None:
         preview = env.pipeline.preview(env.destination_id)
         env.add_chapter(series, "3")  # a chapter arrived between the preview and the click
         with pytest.raises(StalePlanError) as raised:
-            env.pipeline.apply(preview.plan_id, if_match=preview.base_version, job_id="job-1")
+            env.pipeline.apply(preview.plan_id, if_match=preview.base_version, job_id=new_ulid())
         assert raised.value.status == 412
         assert env.files() == []
         fresh = env.pipeline.preview(env.destination_id)
         assert fresh.base_version != preview.base_version and len(fresh.ops) == 2
-        env.pipeline.apply(fresh.plan_id, if_match=fresh.base_version, job_id="job-2")
+        env.pipeline.apply(fresh.plan_id, if_match=fresh.base_version, job_id=new_ulid())
         assert len(env.files()) == 2
 
 
@@ -63,11 +64,11 @@ def test_export_idempotent_second_run_noop() -> None:
         series = env.new_series()
         env.add_chapter(series, "2")
         env.add_chapter(series, "3")
-        first = env.pipeline.run(env.destination_id, job_id="job-1")
+        first = env.pipeline.run(env.destination_id, job_id=new_ulid())
         assert len(first.ops) == 2
         before = state_of(env)
         env.scans.clear()
-        second = env.pipeline.run(env.destination_id, job_id="job-2")
+        second = env.pipeline.run(env.destination_id, job_id=new_ulid())
         assert second.ops == ()
         assert state_of(env) == before  # no write, no intent, no manifest change
         assert env.scans == []  # and nothing to scan
@@ -78,7 +79,7 @@ def test_rendered_file_differs_from_the_original_but_not_its_content_hash() -> N
     with export_env() as env:
         series = env.new_series()
         unit = env.add_chapter(series, "2")
-        env.pipeline.run(env.destination_id, job_id="job-1")
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
         (record,) = env.rows(export.export_record)
         (path,) = env.files()
         data = path.read_bytes()
@@ -99,7 +100,7 @@ def test_manifest_keyed_by_shelf_destination_and_export_item() -> None:
     with export_env() as env:
         series = env.new_series()
         env.add_chapter(series, "2")
-        env.pipeline.run(env.destination_id, job_id="job-1")
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
         (record,) = env.rows(export.export_record)
         (item,) = env.rows(export.export_item)
         assert record.shelf_destination_id == env.destination_id
@@ -118,7 +119,7 @@ def test_shelfhold_written_export_item_covers_exactly_one_unit() -> None:
         series = env.new_series()
         first = env.add_chapter(series, "2")
         second = env.add_chapter(series, "3")
-        env.pipeline.run(env.destination_id, job_id="job-1")
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
         coverage = env.rows(export.unit_coverage)
         assert len(coverage) == len(env.rows(export.export_item)) == 2
         assert {c.unit_id for c in coverage} == {first, second}
@@ -137,12 +138,12 @@ def test_export_series_id_never_recomputed() -> None:
     with export_env() as env:
         series = env.new_series("Dr Stone")
         env.add_chapter(series, "2")
-        env.pipeline.run(env.destination_id, job_id="job-1")
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
         (first,) = env.rows(export.export_series)
         with env.engine.begin() as connection:  # the Work is renamed afterwards
             connection.execute(sa.text("UPDATE work SET title = 'Dr. Stone (new)'"))
         env.add_chapter(series, "3")
-        plan = env.pipeline.run(env.destination_id, job_id="job-2")
+        plan = env.pipeline.run(env.destination_id, job_id=new_ulid())
         (after,) = env.rows(export.export_series)
         assert after.id == first.id and after.name_raw == "Dr Stone"
         assert [op.kind for op in plan.ops] == ["write"]  # a new chapter, no rename of the old
@@ -155,7 +156,7 @@ def test_second_shelf_on_the_same_remote_library_is_blocked_by_the_loaded_series
     with export_env() as env:
         series = env.new_series("Monster")
         env.add_chapter(series, "2")
-        env.pipeline.run(env.destination_id, job_id="job-1")
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
         other_shelf, other_destination = add_second_shelf(env)
         other = env.new_series("monster", shelf_id=other_shelf)
         env.add_chapter(other, "2")
@@ -163,4 +164,3 @@ def test_second_shelf_on_the_same_remote_library_is_blocked_by_the_loaded_series
         assert [b.code for b in preview.blocked] == ["export.series_name_collision"]
         assert preview.ops == ()
         assert {w.code for w in preview.warnings} == {"age_tier_mix"}  # 18 and X in one library
-

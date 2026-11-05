@@ -33,11 +33,15 @@ def destination(**extra: object) -> DestinationFacts:
     return DestinationFacts(**{**values, **extra})  # type: ignore[arg-type]
 
 
-def edition(edition_id: str = "ed-1", work_id: str = "w-1", title: str = "Dr Stone") -> EditionFacts:
+def edition(
+    edition_id: str = "ed-1", work_id: str = "w-1", title: str = "Dr Stone"
+) -> EditionFacts:
     return EditionFacts(edition_id=edition_id, work_id=work_id, work_title=title, lang="fr")
 
 
-def unit(unit_id: str = "u-1", edition_id: str = "ed-1", number: str = "1", **extra: object) -> UnitFacts:
+def unit(
+    unit_id: str = "u-1", edition_id: str = "ed-1", number: str = "1", **extra: object
+) -> UnitFacts:
     values: dict[str, object] = {
         "unit_id": unit_id,
         "edition_id": edition_id,

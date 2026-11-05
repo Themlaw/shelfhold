@@ -1,6 +1,7 @@
 """`/api/v1/shelves` and `/api/v1/plans` (EF-EXP-002, EF-EXP-008, EF-INT-024)."""
 
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 import pytest
 import sqlalchemy as sa
@@ -17,7 +18,7 @@ from tests.auth_env import auth_env
 @dataclass
 class FakePreview:
     plan_id: str = "01JPLAN00000000000000000A1"
-    base_version: int = 4242
+    base_version: ClassVar[int] = 4242
     ops: tuple[object, ...] = ()
     blocked: tuple[object, ...] = ()
     warnings: tuple[object, ...] = ()
@@ -33,7 +34,7 @@ class FakePipeline:
         return FakePreview()
 
     def apply(self, plan_id: str, *, if_match: int, job_id: str) -> None:
-        if self.stale:
+        if self.stale or if_match != FakePreview.base_version:
             raise StalePlanError("the preview changed: recompute it")
         self.applied.append((plan_id, if_match))
 
@@ -59,7 +60,9 @@ def test_shelf_route_refuses_below_18_and_creates_an_adult_shelf(
             assert created.status_code == 201, created.text
         engine = create_db_engine(settings.database_path)
         with engine.connect() as connection:
-            rows = connection.execute(sa.text("SELECT name FROM shelf ORDER BY name")).scalars().all()
+            rows = (
+                connection.execute(sa.text("SELECT name FROM shelf ORDER BY name")).scalars().all()
+            )
         engine.dispose()
         assert rows == ["Adultes", "Sans plafond", "X"]  # nothing was stored for the refused one
 
@@ -71,7 +74,9 @@ def test_plan_routes_preview_then_apply_with_if_match(
     pipeline = FakePipeline()
     with auth_env(monkeypatch, settings, routers=[build_plans_router(lambda: pipeline)]) as api:
         assert api.login().status_code == 200
-        preview = api.post("/api/v1/plans", json={"shelf_destination_id": "01JDEST0000000000000000A1"})
+        preview = api.post(
+            "/api/v1/plans", json={"shelf_destination_id": "01JDEST0000000000000000A1"}
+        )
         assert preview.status_code == 201
         assert preview.headers["ETag"] == '"4242"'
         assert preview.json()["plan_id"] == FakePreview.plan_id

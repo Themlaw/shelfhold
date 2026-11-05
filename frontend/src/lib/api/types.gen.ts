@@ -19,6 +19,20 @@ export type About = {
 };
 
 /**
+ * AppliedOut
+ */
+export type AppliedOut = {
+    /**
+     * Applied
+     */
+    applied: number;
+    /**
+     * Plan Id
+     */
+    plan_id: string;
+};
+
+/**
  * CsrfToken
  */
 export type CsrfToken = {
@@ -26,6 +40,42 @@ export type CsrfToken = {
      * Csrf Token
      */
     csrf_token: string;
+};
+
+/**
+ * DestinationIn
+ */
+export type DestinationIn = {
+    /**
+     * Attested Egress
+     */
+    attested_egress?: 'foyer' | 'externe' | null;
+    /**
+     * Plugin Egress
+     */
+    plugin_egress?: 'foyer' | 'externe';
+    /**
+     * Root Subpath
+     */
+    root_subpath?: string;
+    /**
+     * Target Id
+     */
+    target_id: string;
+    /**
+     * Transport
+     */
+    transport?: 'tree' | 'dropbox' | 'pull';
+};
+
+/**
+ * DestinationOut
+ */
+export type DestinationOut = {
+    /**
+     * Id
+     */
+    id: string;
 };
 
 /**
@@ -91,6 +141,52 @@ export type PasswordReauth = {
      * Password
      */
     password: string;
+};
+
+/**
+ * PlanIn
+ */
+export type PlanIn = {
+    /**
+     * Shelf Destination Id
+     */
+    shelf_destination_id: string;
+};
+
+/**
+ * PlanOut
+ */
+export type PlanOut = {
+    /**
+     * Base Version
+     */
+    base_version: number;
+    /**
+     * Blocked
+     */
+    blocked: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Checks
+     */
+    checks: Array<string>;
+    /**
+     * Ops
+     */
+    ops: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Plan Id
+     */
+    plan_id: string;
+    /**
+     * Warnings
+     */
+    warnings: Array<{
+        [key: string]: unknown;
+    }>;
 };
 
 /**
@@ -184,6 +280,38 @@ export type SessionInfo = {
      * Username
      */
     username: string;
+};
+
+/**
+ * ShelfIn
+ */
+export type ShelfIn = {
+    /**
+     * Max Age Rating
+     */
+    max_age_rating?: number | null;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Phrase
+     */
+    phrase: string;
+    /**
+     * Retention Mode
+     */
+    retention_mode?: 'passthrough' | 'keep';
+};
+
+/**
+ * ShelfOut
+ */
+export type ShelfOut = {
+    /**
+     * Id
+     */
+    id: string;
 };
 
 export type AboutData = {
@@ -342,6 +470,148 @@ export type SessionResponses = {
 };
 
 export type SessionResponse = SessionResponses[keyof SessionResponses];
+
+export type PreviewData = {
+    body: PlanIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/plans';
+};
+
+export type PreviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PreviewError = PreviewErrors[keyof PreviewErrors];
+
+export type PreviewResponses = {
+    /**
+     * Successful Response
+     */
+    201: PlanOut;
+};
+
+export type PreviewResponse = PreviewResponses[keyof PreviewResponses];
+
+export type ApplyData = {
+    body?: never;
+    path: {
+        /**
+         * Plan Id
+         */
+        plan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/plans/{plan_id}/apply';
+};
+
+export type ApplyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ApplyError = ApplyErrors[keyof ApplyErrors];
+
+export type ApplyResponses = {
+    /**
+     * Successful Response
+     */
+    200: AppliedOut;
+};
+
+export type ApplyResponse = ApplyResponses[keyof ApplyResponses];
+
+export type CreateShelfData = {
+    body: ShelfIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/shelves';
+};
+
+export type CreateShelfErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type CreateShelfError = CreateShelfErrors[keyof CreateShelfErrors];
+
+export type CreateShelfResponses = {
+    /**
+     * Successful Response
+     */
+    201: ShelfOut;
+};
+
+export type CreateShelfResponse = CreateShelfResponses[keyof CreateShelfResponses];
+
+export type BindDestinationData = {
+    body: DestinationIn;
+    path: {
+        /**
+         * Shelf Id
+         */
+        shelf_id: string;
+    };
+    query?: never;
+    url: '/api/v1/shelves/{shelf_id}/destinations';
+};
+
+export type BindDestinationErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type BindDestinationError = BindDestinationErrors[keyof BindDestinationErrors];
+
+export type BindDestinationResponses = {
+    /**
+     * Successful Response
+     */
+    201: DestinationOut;
+};
+
+export type BindDestinationResponse = BindDestinationResponses[keyof BindDestinationResponses];
 
 export type HealthzData = {
     body?: never;

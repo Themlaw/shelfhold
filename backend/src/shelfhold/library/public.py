@@ -1,5 +1,10 @@
 """What the interfaces and the composition root may use from the library context."""
 
+from shelfhold.library.adapters.export_source import (
+    ExportSource,
+    export_sources,
+    record_destination_copy,
+)
 from shelfhold.library.adapters.meta_projection import (
     MetaProjection,
     RepairReport,
@@ -47,6 +52,7 @@ __all__ = [
     "ConfirmationRequiredError",
     "DeletionAuthorization",
     "DeletionRefusedError",
+    "ExportSource",
     "Ingested",
     "Irreplaceability",
     "MetaProjection",
@@ -63,12 +69,14 @@ __all__ = [
     "UnitJsonCorruptError",
     "confirmation_phrase",
     "content_hash",
+    "export_sources",
     "independent_copies",
     "irreplaceability",
     "is_rendered_sidecar",
     "meta_path",
     "meta_rel",
     "receive_cbz",
+    "record_destination_copy",
     "require_deletion_allowed",
     "safe_to_clean",
 ]
