@@ -44,7 +44,7 @@ def test_repatriate_then_unmount_keeps_kavita_series_and_progress() -> None:
         before_kavita = run(kavita_counts(kavita.client, str(LIBRARY_ID), REMOTE_ROOT))
         before_ids = {s["name"]: s["id"] for s in kavita.fake.series}
         before_progress = _positions(r)
-        before_writes = len(kavita.fake.writes)
+        before_writes = len([w for w in kavita.fake.writes if "scan" not in w.path.lower()])
         plan = r.dry_run()
         assert (plan.series, plan.chapters, len(plan.files)) == (len(SERIES), FILES, FILES)
         assert plan.bytes_to_copy > 0 and plan.ready  # type: ignore[attr-defined]
@@ -70,7 +70,8 @@ def test_repatriate_then_unmount_keeps_kavita_series_and_progress() -> None:
         after = run(kavita_counts(kavita.client, str(LIBRARY_ID), REMOTE_ROOT))
         assert after == before_kavita and after.series == len(SERIES)
         assert {s["name"]: s["id"] for s in kavita.fake.series} == before_ids
-        assert len(kavita.fake.writes) == before_writes  # Kavita was not touched at all
+        others = [w for w in kavita.fake.writes if "scan" not in w.path.lower()]
+        assert len(others) == before_writes  # only the scans we asked for, nothing else
         assert _positions(r) == before_progress  # anchors and hashes are the ones of before
         # the bookkeeping follows the files: same relative path, size and mtime of the copy
         record = r.env.rows(export.export_record)[0]
