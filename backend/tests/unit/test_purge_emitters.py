@@ -38,7 +38,9 @@ def test_every_unlink_emitter_is_reserved_action() -> None:
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {
         n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)
     }
-    assert "authorize_reserved" in names  # re-checked in the service, not only at the route
+    assert "require_purge_allowed" in names  # re-checked in the service, not only at the route
+    units = (SRC / "library/adapters/units.py").read_text(encoding="utf-8")
+    assert "authorize_reserved" in units.split("def require_purge_allowed")[1]
     # the deleting primitives are fsops' purge pair and the data helper, nothing else
     raw = {"unlink", "rmtree", "remove_tree", "rmdir", "empty_dir", "system_unlink"}
     assert not [n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in raw]

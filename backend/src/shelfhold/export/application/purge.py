@@ -48,13 +48,7 @@ from shelfhold.export.domain.provenance_mirror import (
     MirrorFormatError,
     drop_unit_lines,
 )
-from shelfhold.identity.public import (
-    RESERVED_ACTIONS,
-    Allowed,
-    Principal,
-    Verdict,
-    authorize_reserved,
-)
+from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import (
     FileIdentity,
@@ -81,20 +75,21 @@ from shelfhold.infrastructure.schema import (
 from shelfhold.infrastructure.volumes import erase_data_path
 from shelfhold.library.public import (
     EDITION_KEY_COLUMNS,
-    ConfirmationRequiredError,
     ContentHash,
     Copy,
     PlaceRef,
+    PurgeAuthorization,
+    PurgeRefusedError,
     SeriesBindingRef,
     TombstoneRoot,
     TombstoneService,
     VariantRef,
-    confirmation_phrase,
     content_hashes,
     content_ids,
     copies,
     derived_rels,
-    erase_rows,
+    erase_units,
+    require_purge_allowed,
     unresolved_bin_items,
     upstream_claims,
     withdraw_upstream_claims,
@@ -122,16 +117,7 @@ OUT_OF_REACH: Final = (
 )
 ALERT_DELETE_UPSTREAM: Final = "unit.delete_in_suwayomi"
 OPEN_TICKETS: Final = ("requested", "downloaded")
-_ACTION = RESERVED_ACTIONS["purge.now"]
 _RW = "rw"
-
-
-class PurgeRefusedError(PermissionError):
-    """The reserved-action rule refused the actor (a key, a stale session, a non-admin)."""
-
-    def __init__(self, verdict: Verdict) -> None:
-        super().__init__(f"purge.now refused: {type(verdict).__name__}")
-        self.verdict = verdict
 
 
 class PurgeUnknownError(LookupError):
@@ -236,10 +222,12 @@ class PurgeService:
         job_id: str | None = None,
         fresh_auth_s: int = 900,
     ) -> PurgeReport:
-        self._authorize(principal, unit_id, typed, now, fresh_auth_s)
+        allowed = require_purge_allowed(
+            unit_id, principal=principal, now=now, typed=typed, fresh_auth_s=fresh_auth_s
+        )
         with self._engine.connect() as connection:
             plan = self._plan_unit(connection, unit_id)
-        return self._run(plan, principal, job_id or new_ulid())
+        return self._run(plan, allowed, job_id or new_ulid())
 
     def purge_work(
         self,
@@ -254,19 +242,12 @@ class PurgeService:
         """Every Unit of the Work, and a `series_binding` tombstone per binding, so that the
         follow cycle ignores the series upstream (M1a: the series is told, not removed from
         Suwayomi). The Work's and Editions' own metadata rows stay until M1b (EF-BIB-053 (4))."""
-        self._authorize(principal, work_id, typed, now, fresh_auth_s)
+        allowed = require_purge_allowed(
+            work_id, principal=principal, now=now, typed=typed, fresh_auth_s=fresh_auth_s
+        )
         with self._engine.connect() as connection:
             plan = self._plan_work(connection, work_id)
-        return self._run(plan, principal, job_id or new_ulid())
-
-    def _authorize(
-        self, principal: Principal, anchor: str, typed: str | None, now: datetime, fresh_s: int
-    ) -> None:
-        verdict = authorize_reserved(principal, _ACTION, now=now, fresh_auth_s=fresh_s)
-        if not isinstance(verdict, Allowed):
-            raise PurgeRefusedError(verdict)
-        if typed != confirmation_phrase(anchor):  # always typed, irreplaceable or not
-            raise ConfirmationRequiredError(anchor)
+        return self._run(plan, allowed, job_id or new_ulid())
 
     # -- the plan: read only ------------------------------------------------------------------
 
@@ -406,16 +387,33 @@ class PurgeService:
 
     # -- the run ------------------------------------------------------------------------------
 
-    def _run(self, plan: _Plan, principal: Principal, job_id: str) -> PurgeReport:
-        with self._locks.hold_resources(job_id, plan.resources):
-            self._audit(plan, principal)
-            roots = self._roots()
-            recorded = self._tombstone(plan, roots)  # steps 1 and 2
-            progress = _Progress()
-            self._erase_copies(plan, roots, progress)  # steps 3 and 4
-            self._erase_derived(plan, progress)
-            self._clean_mirror(plan, roots, progress)
-            return self._close(plan, recorded, progress)  # step 5
+    def _run(self, plan: _Plan, allowed: PurgeAuthorization, job_id: str) -> PurgeReport:
+        held = plan
+        for _ in range(3):
+            with self._locks.hold_resources(job_id, held.resources):
+                fresh = self._replan(held)  # what arrived while the locks were awaited counts
+                if set(fresh.resources) <= set(held.resources):
+                    return self._execute(fresh, allowed)
+            held = fresh  # a folder the first look did not know: hold it too, look again
+        raise PurgeCollateralError(0)  # pragma: no cover (three changes in a row: refuse)
+
+    def _replan(self, plan: _Plan) -> _Plan:
+        with self._engine.connect() as connection:
+            if plan.kind == "work":
+                return self._plan_work(connection, plan.anchor)
+            return self._plan_unit(connection, plan.anchor)
+
+    def _execute(self, plan: _Plan, allowed: PurgeAuthorization) -> PurgeReport:
+        self._audit(plan, allowed)
+        roots = self._roots()
+        recorded = self._tombstone(plan, roots)  # steps 1 and 2
+        # a root that still owes its line gets no deletion: the line is first, on every root
+        roots = [r if not self._tombstones.has_pending(r.root_id) else _away(r) for r in roots]
+        progress = _Progress()
+        self._erase_copies(plan, roots, progress)  # steps 3 and 4
+        self._erase_derived(plan, progress)
+        self._clean_mirror(plan, roots, progress)
+        return self._close(plan, allowed, recorded, progress)  # step 5
 
     def _roots(self) -> list[TombstoneRoot]:
         with self._engine.connect() as connection:
@@ -433,13 +431,12 @@ class PurgeService:
             roots.append(TombstoneRoot(row.root_id, row.path_entry, mounted=mounted))
         return roots
 
-    def _audit(self, plan: _Plan, principal: Principal) -> None:
+    def _audit(self, plan: _Plan, allowed: PurgeAuthorization) -> None:
         with self._engine.begin() as connection:
             connection.execute(
                 sa.insert(identity.audit).values(
-                    id=new_ulid(), actor_id=principal.actor_id, action="purge.now",
-                    target=f"{plan.kind}:{plan.anchor}", session_id=principal.session_id,
-                    auth_time=principal.auth_time,
+                    id=new_ulid(), actor_id=allowed.actor, action="purge.now",
+                    target=f"{plan.kind}:{plan.anchor}",
                 )
             )  # fmt: skip
 
@@ -624,7 +621,9 @@ class PurgeService:
 
     # -- step 5: the closing ------------------------------------------------------------------
 
-    def _close(self, plan: _Plan, pending: set[str], progress: _Progress) -> PurgeReport:
+    def _close(
+        self, plan: _Plan, allowed: PurgeAuthorization, pending: set[str], progress: _Progress
+    ) -> PurgeReport:
         complete = not (progress.refused or progress.unreachable or self._unresolved_bin(plan))
         events: list[PublishedEvent] = []
         with self._engine.begin() as connection:
@@ -634,7 +633,7 @@ class PurgeService:
             upstream = upstream_claims(connection, plan.unit_ids)
             withdraw_upstream_claims(connection, plan.unit_ids)
             if complete:
-                self._erase_rows(connection, plan)
+                self._erase_rows(connection, plan, allowed)
                 self._scrub_journals(connection, plan)
             events.append(
                 self._bus.publish(
@@ -702,7 +701,7 @@ class PurgeService:
         )
 
     @staticmethod
-    def _erase_rows(connection: Connection, plan: _Plan) -> None:
+    def _erase_rows(connection: Connection, plan: _Plan, allowed: PurgeAuthorization) -> None:
         position = reading.reading_position
         connection.execute(
             sa.delete(position).where(
@@ -718,13 +717,14 @@ class PurgeService:
                 )
             )
         )
-        erase_rows(connection, plan.unit_ids, plan.items)
         connection.execute(
             sa.delete(export.export_item).where(export.export_item.c.id.in_(plan.items))
         )
-        v = catalog.unit_variant
-        connection.execute(sa.delete(v).where(v.c.unit_id.in_(plan.unit_ids)))
-        connection.execute(sa.delete(catalog.unit).where(catalog.unit.c.id.in_(plan.unit_ids)))
+        erase_units(connection, plan.unit_ids, plan.items, authorization=allowed)
+
+
+def _away(root: TombstoneRoot) -> TombstoneRoot:
+    return TombstoneRoot(root.root_id, root.path, mounted=False, predecessor_root_ids=())
 
 
 def _reason(error: FsopsError) -> str:

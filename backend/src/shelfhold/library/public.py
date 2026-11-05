@@ -12,16 +12,11 @@ from shelfhold.library.adapters.meta_projection import (
     meta_rel,
 )
 from shelfhold.library.adapters.purge_inventory import (
-    Copy,
-    Hash,
     content_hashes,
     content_ids,
     copies,
     derived_rels,
-    erase_rows,
     unresolved_bin_items,
-    upstream_claims,
-    withdraw_upstream_claims,
 )
 from shelfhold.library.adapters.receive import Received, receive_cbz
 from shelfhold.library.adapters.safeguard import Safeguard, SafeguardResult
@@ -35,8 +30,12 @@ from shelfhold.library.adapters.units import (
     DeletionAuthorization,
     DeletionRefusedError,
     Irreplaceability,
+    PurgeAuthorization,
+    PurgeRefusedError,
+    erase_units,
     irreplaceability,
     require_deletion_allowed,
+    require_purge_allowed,
     safe_to_clean,
 )
 from shelfhold.library.domain.content_hash import (
@@ -44,6 +43,7 @@ from shelfhold.library.domain.content_hash import (
     content_hash,
     is_rendered_sidecar,
 )
+from shelfhold.library.domain.copies import Copy, Hash
 from shelfhold.library.domain.failures import (
     ReceivedTooLargeError,
     SafeguardFailedError,
@@ -68,6 +68,8 @@ from shelfhold.library.replica import (
     readable_unit_ids,
     record_replica,
     refresh_destination_identity,
+    upstream_claims,
+    withdraw_upstream_claims,
 )
 from shelfhold.library.tombstones import (
     EDITION_KEY_COLUMNS,
@@ -101,6 +103,8 @@ __all__ = [
     "NewerFormatError",
     "PassthroughStore",
     "PlaceRef",
+    "PurgeAuthorization",
+    "PurgeRefusedError",
     "Received",
     "ReceivedTooLargeError",
     "RepairReport",
@@ -127,7 +131,7 @@ __all__ = [
     "copies",
     "derived_rels",
     "destination_identities",
-    "erase_rows",
+    "erase_units",
     "export_sources",
     "has_readable_copy",
     "independent_copies",
@@ -142,6 +146,7 @@ __all__ = [
     "record_replica",
     "refresh_destination_identity",
     "require_deletion_allowed",
+    "require_purge_allowed",
     "safe_to_clean",
     "unresolved_bin_items",
     "upstream_claims",
