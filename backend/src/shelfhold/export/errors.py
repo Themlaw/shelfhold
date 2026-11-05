@@ -19,4 +19,15 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("export.series_name_yields_volume", 422, "user"),
     ErrorCode("export.name_misread_number", 422, "user"),
     ErrorCode("export.segment_policy_unconfirmed", 409, "admin"),
+    # L27: planner and bindings (EF-EXP-002, EF-EXP-032, EF-EXP-058, EF-EXP-062)
+    ErrorCode("shelf.parental_control_unavailable", 422, "user"),
+    ErrorCode("target.tree_overlap", 409, "admin"),
+    ErrorCode("shelf.destination_exists", 409, "admin"),
+    ErrorCode("target.pull_needs_readable_copy", 409, "admin"),
+    ErrorCode("export.watermarked_external_egress", 409, "user"),
+    ErrorCode("export.series_name_collision", 409, "admin"),
+    ErrorCode("export.no_remote_library", 409, "admin"),
+    ErrorCode("export.transport_unsupported", 409, "admin"),
+    ErrorCode("export.destination_occupied", 409, "admin"),
+    ErrorCode("export.source_missing", 409, "admin"),
 )

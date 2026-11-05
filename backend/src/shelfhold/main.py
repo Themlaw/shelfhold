@@ -1,10 +1,13 @@
 """Composition root: wires infrastructure into the HTTP interface."""
 
 import os
+from functools import cache
 from pathlib import Path
 
 from shelfhold import __version__
 from shelfhold.config import Settings, load_settings
+from shelfhold.export.application.shelves import ShelfService
+from shelfhold.export.application.wiring import open_pipeline
 from shelfhold.identity.public import local_auth
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
@@ -17,6 +20,8 @@ from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
 from shelfhold.interfaces.http_api.auth import AuthGate
+from shelfhold.interfaces.http_api.plans import build_plans_router
+from shelfhold.interfaces.http_api.shelves import build_shelves_router
 from shelfhold.runtime import InstanceRuntime
 
 PACKAGED_FRONTEND = Path(__file__).parent / "static"
@@ -35,6 +40,16 @@ def create_app(
     # Opened lazily: no connection before the first request, after the start-up checks.
     engine = create_db_engine(resolved.database_path)
     gate = AuthGate(local_auth(engine, resolved, clock), public_url=resolved.public_url)
+
+    @cache
+    def pipeline() -> object:
+        # Plans can be previewed; applying one needs the Kavita `plugin/parse` check (L29).
+        return open_pipeline(resolved)
+
+    export_routers = (
+        build_shelves_router(lambda: ShelfService(engine)),
+        build_plans_router(pipeline),  # type: ignore[arg-type]
+    )
 
     def on_shutdown() -> None:
         runtime.stop()
@@ -57,7 +72,7 @@ def create_app(
         on_shutdown=on_shutdown,
         version=__version__,
         frontend_dir=resolved.frontend_dir or PACKAGED_FRONTEND,
-        routers=routers,
+        routers=(*routers, *export_routers),
         auth=gate,
         idempotency=IdempotencyStore(engine, clock=clock.now),  # actor: the real principal
         source_url=resolved.source_url,

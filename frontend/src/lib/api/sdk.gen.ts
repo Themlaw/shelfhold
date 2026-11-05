@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AboutData, AboutErrors, AboutResponses, HealthzData, HealthzErrors, HealthzResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, SessionData, SessionErrors, SessionResponses } from './types.gen';
+import type { AboutData, AboutErrors, AboutResponses, ApplyData, ApplyErrors, ApplyResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, HealthzData, HealthzErrors, HealthzResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, PreviewData, PreviewErrors, PreviewResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, SessionData, SessionErrors, SessionResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -56,6 +56,47 @@ export const reauth = <ThrowOnError extends boolean = false>(options: Options<Re
  * Session
  */
 export const session = <ThrowOnError extends boolean = false>(options?: Options<SessionData, ThrowOnError>): RequestResult<SessionResponses, SessionErrors, ThrowOnError> => (options?.client ?? client).get<SessionResponses, SessionErrors, ThrowOnError>({ url: '/api/v1/auth/session', ...options });
+
+/**
+ * Preview
+ */
+export const preview = <ThrowOnError extends boolean = false>(options: Options<PreviewData, ThrowOnError>): RequestResult<PreviewResponses, PreviewErrors, ThrowOnError> => (options.client ?? client).post<PreviewResponses, PreviewErrors, ThrowOnError>({
+    url: '/api/v1/plans',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Apply
+ */
+export const apply = <ThrowOnError extends boolean = false>(options: Options<ApplyData, ThrowOnError>): RequestResult<ApplyResponses, ApplyErrors, ThrowOnError> => (options.client ?? client).post<ApplyResponses, ApplyErrors, ThrowOnError>({ url: '/api/v1/plans/{plan_id}/apply', ...options });
+
+/**
+ * Create Shelf
+ */
+export const createShelf = <ThrowOnError extends boolean = false>(options: Options<CreateShelfData, ThrowOnError>): RequestResult<CreateShelfResponses, CreateShelfErrors, ThrowOnError> => (options.client ?? client).post<CreateShelfResponses, CreateShelfErrors, ThrowOnError>({
+    url: '/api/v1/shelves',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Bind Destination
+ */
+export const bindDestination = <ThrowOnError extends boolean = false>(options: Options<BindDestinationData, ThrowOnError>): RequestResult<BindDestinationResponses, BindDestinationErrors, ThrowOnError> => (options.client ?? client).post<BindDestinationResponses, BindDestinationErrors, ThrowOnError>({
+    url: '/api/v1/shelves/{shelf_id}/destinations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Healthz

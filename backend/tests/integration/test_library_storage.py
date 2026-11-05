@@ -116,6 +116,7 @@ def test_irreplaceable_never_deleted_without_typed_confirmation() -> None:
             c.execute(
                 sa.update(acquisition.source_binding).values(active=False, disabled_reason="manual")
             )
+        other, _ = env.new_unit()  # before the read below: a read now holds its snapshot
         with env.engine.connect() as c:
             assert irreplaceability(c, unit).irreplaceable
             for typed in (None, "", "yes", unit.lower()):
@@ -126,7 +127,6 @@ def test_irreplaceable_never_deleted_without_typed_confirmation() -> None:
             )
             assert (granted.actor, granted.irreplaceable) == ("session:s1", True)
             # a retention policy or a clean-up never gets to it, with or without words
-            other, _ = env.new_unit()
             allowed, kept = safe_to_clean(c, [unit, other])
             assert (allowed, kept) == ([], [unit, other])  # the other one has no live source either
         with env.engine.begin() as c:

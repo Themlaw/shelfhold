@@ -17,6 +17,7 @@ from sqlalchemy import Engine
 from shelfhold.config import Settings
 from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
+from shelfhold.export.application.manifest_write import adopt_written_hook
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.infrastructure.clock import SystemClock
@@ -87,7 +88,8 @@ class InstanceRuntime:
             sessions.enforce()  # no write path skips the lease from here on
             journal = IntentJournal(engine, fsops, clock=clock)
             with sessions.open(*ready):
-                result = journal.resolve_open()
+                hook = adopt_written_hook(fsops, loaded.locate, clock)
+                result = journal.resolve_open(on_done=hook)
             for intent_id in result.drifted:
                 structlog.get_logger().warning(
                     "reconcile.drift", intent=intent_id, reason=result.drift_reasons[intent_id]

@@ -98,14 +98,14 @@ def test_i10_a_plan_whose_base_version_is_stale_is_never_applied(
     with tempfile.TemporaryDirectory() as tmp:
         ienv = make_intent_env(Path(tmp))
         version = [base]
-        store = PlanStore(ienv.engine, clock=ienv.clock, current_version=lambda: version[0])
+        store = PlanStore(ienv.engine, clock=ienv.clock, current_version=lambda: str(version[0]))
         plan = store.create(kind="rename_plan", files=[], ops=[])
         version[0] = now
         ran: list[object] = []
         if now == base == if_match:
-            store.apply(plan.plan_id, if_match=if_match, run=ran.append)
+            store.apply(plan.plan_id, if_match=str(if_match), run=ran.append)
         else:
             with pytest.raises(StalePlanError):
-                store.apply(plan.plan_id, if_match=if_match, run=ran.append)
+                store.apply(plan.plan_id, if_match=str(if_match), run=ran.append)
         assert ran == []
         ienv.engine.dispose()

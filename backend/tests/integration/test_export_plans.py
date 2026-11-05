@@ -26,7 +26,7 @@ class Preview:
     store: PlanStore
     file: Path
     plan_id: str
-    base_version: int
+    base_version: str
     ran: list[str] = field(default_factory=list)
 
 
@@ -34,7 +34,7 @@ class Preview:
 def preview(tmp_path: Path) -> Preview:
     ienv = make_intent_env(tmp_path)
     counter = Counter()
-    store = PlanStore(ienv.engine, clock=ienv.clock, current_version=lambda: counter.value)
+    store = PlanStore(ienv.engine, clock=ienv.clock, current_version=lambda: str(counter.value))
     file = ienv.fs.manga / "Series" / "1.cbz"
     ienv.fs.fsops.write_atomic(str(file), b"chapter", parents=True)
     renamed = file.with_name("1 renamed.cbz")
@@ -57,11 +57,11 @@ def plan_status(p: Preview) -> str:
 
 @pytest.mark.req("EF-EXP-042")
 def test_plan_records_base_version_and_fingerprint(preview: Preview) -> None:
-    assert preview.base_version == 7
+    assert preview.base_version == "7"
     with preview.env.engine.connect() as conn:
         row = conn.execute(sa.select(coherence.export_plan)).one()
         ops = conn.execute(sa.select(coherence.export_op)).all()
-    assert row.base_version == 7
+    assert row.base_version == "7"
     assert row.files_fingerprint.startswith("sha256:")
     assert row.status == "planned"
     assert [(o.op, o.status) for o in ops] == [("rename", "pending")]
@@ -99,9 +99,7 @@ def test_plan_refused_when_a_file_changed_under_it(preview: Preview) -> None:
 @pytest.mark.req("EF-EXP-042")
 def test_if_match_of_an_older_preview_is_refused(preview: Preview) -> None:
     with pytest.raises(StalePlanError):
-        preview.store.apply(
-            preview.plan_id, if_match=preview.base_version - 1, run=preview.ran.append
-        )
+        preview.store.apply(preview.plan_id, if_match="6", run=preview.ran.append)
     assert preview.ran == []
 
 

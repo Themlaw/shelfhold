@@ -28,6 +28,7 @@ __all__ = [
     "LockBusyError",
     "LockLostError",
     "ResourceLocks",
+    "library_resource",
     "path_resource",
     "work_resource",
 ]
@@ -52,6 +53,11 @@ def work_resource(work_id: str) -> str:
 
 def path_resource(series: str) -> str:
     return f"path:{series}"
+
+
+def library_resource(remote_library_id: str, normalized_name: str) -> str:
+    """A series name of a remote library, whichever shelf writes it (EF-EXP-062)."""
+    return f"library:{remote_library_id}/{normalized_name}"
 
 
 class HeldLocks:
@@ -89,12 +95,15 @@ class ResourceLocks:
         *,
         work: str,
         series: str,
+        library: str | None = None,
         timeout: float = 0.0,
         heartbeat: float | None = None,
     ) -> Iterator[HeldLocks]:
         """Both locks or none. A heartbeat thread renews them every `heartbeat` seconds (a third
         of the lease by default); a job that cannot renew finds out at `ensure()`."""
         resources = [work_resource(work), path_resource(series)]  # the fixed order
+        if library is not None:
+            resources.append(library)  # always last: `work`, `path`, then `library`
         deadline = time.monotonic() + timeout
         while True:
             try:

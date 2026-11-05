@@ -105,12 +105,14 @@ def record_replica(
     mtime_ns: int | None = None,
     fidelity: str = "original",
     verified_at: datetime | None = None,
+    export_item_id: str | None = None,
 ) -> str:
     replica_id = new_ulid()
     connection.execute(
         sa.insert(replica_table).values(
             id=replica_id,
             unit_id=unit_id,
+            export_item_id=export_item_id,
             location=location,
             content_hash=content_hash,
             file_hash=file_hash,

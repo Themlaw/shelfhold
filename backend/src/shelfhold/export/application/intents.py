@@ -81,6 +81,7 @@ class ResolveReport:
     stale_from_backup: list[str] = field(default_factory=list)
     refused: list[str] = field(default_factory=list)  # unknown schema version: left open
     drifted: list[str] = field(default_factory=list)  # unknown disk state: left open, untouched
+    abandoned: list[str] = field(default_factory=list)  # a write that never reached the disk
     drift_reasons: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -188,6 +189,10 @@ class IntentJournal:
         with self._engine.begin() as conn:
             conn.execute(statement)
 
+    def cancel(self, intent_id: str) -> None:
+        """The operation failed before it touched the disk: nothing is left to settle."""
+        self._close_open(intent_id, "cancelled")
+
     def apply_rename(self, step: RenameStep, *, on_done: ManifestHook | None = None) -> None:
         observed = self._disk.observe(step.src)
         if observed is None or observed[0] != "file":
@@ -242,6 +247,15 @@ class IntentJournal:
                 self._resolve_one(intent, report, on_done)
         return report
 
+    def _close_open(self, intent_id: str, state: str) -> None:
+        with self._engine.begin() as conn:
+            conn.execute(
+                sa.update(coherence.fs_intent)
+                .where(coherence.fs_intent.c.id == intent_id)
+                .where(coherence.fs_intent.c.state.in_(OPEN_STATES))
+                .values(state=state, resolved_at=self._clock.now())
+            )
+
     def _close(self, intent_id: str, state: str) -> None:
         with self._engine.begin() as conn:
             conn.execute(
@@ -262,9 +276,11 @@ class IntentJournal:
                 self._resolve_rename(intent, report, on_done)
             elif intent.op == "rmdir" and intent.src:
                 self._resolve_rmdir(intent, report, on_done)
+            elif intent.op == "write" and intent.dst:
+                self._resolve_write(intent, report, on_done)
             else:
                 self._drift(intent, report, f"no replay rule for op {intent.op!r}")
-        except (FsopsError, OSError) as error:
+        except (FsopsError, OSError, LookupError) as error:
             self._drift(intent, report, f"{type(error).__name__}: {error}")
 
     def _finish(self, intent: OpenIntent, on_done: ManifestHook | None) -> None:
@@ -303,6 +319,24 @@ class IntentJournal:
             report.completed.append(intent.id)
         else:
             self._drift(intent, report, "neither one source-only nor one target-only state")
+
+    def _resolve_write(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """A file Shelfhold was writing (02 section 5): the expected file is there, the manifest
+        is completed (`on_done`); nothing is there, the write never happened and the intent is
+        closed; anything else is somebody else's file or a damaged one, so nothing is touched."""
+        if intent.dst is None:
+            return self._drift(intent, report, "a write needs its target")
+        found = self._disk.observe(intent.dst)
+        if found is None:
+            self._close(intent.id, "cancelled")
+            report.abandoned.append(intent.id)
+        elif found[0] == "file" and self._is_expected(intent, intent.dst, found[1]):
+            self._finish(intent, on_done)
+            report.completed.append(intent.id)
+        else:
+            self._drift(intent, report, "the target is not the file that was being written")
 
     def _resolve_rmdir(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

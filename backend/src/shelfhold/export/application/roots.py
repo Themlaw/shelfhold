@@ -33,6 +33,14 @@ class LoadedRoots:
     expected: list[ExpectedRoot]
     roots: tuple[RootRow, ...]
 
+    def locate(self, local: str) -> tuple[str, str]:
+        """`(root id, path relative to that root)` of a local path."""
+        root = self.root_id_for(local)
+        if root is None:
+            raise ValueError(local)
+        base = next(r.path for r in self.roots if r.root_id == root)
+        return root, local.removeprefix(base.rstrip("/") + "/")
+
     def root_id_for(self, local: str) -> str | None:
         """The `root_id` of the physical root that contains `local`."""
         found = _containing(self.roots, clean_absolute(local))

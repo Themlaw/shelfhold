@@ -7,6 +7,9 @@ serve_help = "Démarre le serveur HTTP."
 config_help = "Consulte la configuration."
 config_show_help = "Affiche chaque champ avec son origine (env, toml, db, défaut)."
 json_help = "Sortie au format JSON."
+export_help = "Calcule les exportations vers une destination (aperçu, sans écriture)."
+export_dry_run_help = "Affiche le plan sans rien écrire."
+export_destination_help = "Identifiant de la destination (étagère x serveur)."
 meta_help = "Fichiers unit.json : régénère ou vérifie ces projections de la base."
 meta_rebuild_help = "Réécrit les unit.json divergents, manquants ou illisibles à partir de la base."
 meta_check_help = "Liste les unit.json qui divergent de la base (code 1 s'il y en a)."
@@ -131,6 +134,13 @@ no_keys = "Aucune clé d'API."
 key_line = "{prefix}  {name}  {scopes}  {state}"
 database_missing = "Base absente ou pas à jour : lancez d'abord « shelfhold migrate »."
 
+[export]
+apply_needs_the_instance = "L'application d'un plan passe par l'instance en marche (API ou socket local) : utilisez --dry-run ici."
+plan_header = "Plan {plan} : {ops} opération(s), {blocked} bloquée(s)."
+op_line = "{kind} {path}"
+blocked_line = "Bloqué ({code}) : chapitre {unit}"
+warning_line = "Avertissement ({code}) : chapitre {unit}"
+
 [meta]
 unknown_unit = "Chapitre inconnu : {unit}"
 rebuilt = "{written} fichier(s) unit.json réécrit(s) à partir de la base."
@@ -162,6 +172,30 @@ action = "Rechargez la page puis recommencez ; un script utilise une clé d'API 
 [errors."disk.low"]
 title = "Espace disque presque épuisé."
 action = "Libérez de la place (vider la corbeille, supprimer des copies inutiles) ; les files reprennent d'elles-mêmes."
+
+[errors."export.destination_occupied"]
+title = "Un fichier occupe déjà l'emplacement prévu."
+action = "Rien n'est écrasé : déplacez ou rattachez ce fichier, puis recalculez l'aperçu."
+
+[errors."export.no_remote_library"]
+title = "Aucune bibliothèque distante n'est liée à cette destination."
+action = "Liez la destination à une bibliothèque du serveur, puis recalculez l'aperçu."
+
+[errors."export.series_name_collision"]
+title = "Deux séries porteraient le même nom dans cette bibliothèque."
+action = "Définissez un nom de série exporté distinct pour l'une des deux Éditions, puis recalculez l'aperçu."
+
+[errors."export.source_missing"]
+title = "L'archive reçue de ce chapitre est introuvable."
+action = "Recalculez l'aperçu ; si le fichier a disparu, relancez le téléchargement du chapitre."
+
+[errors."export.transport_unsupported"]
+title = "Ce type de destination n'est pas encore pris en charge."
+action = "Utilisez une destination en arborescence ; les autres transports arrivent plus tard."
+
+[errors."export.watermarked_external_egress"]
+title = "Un fichier tatoué ne part jamais vers une destination hors du foyer."
+action = "Gardez ce fichier sur une destination du foyer, ou retirez-le de l'étagère liée à cette destination."
 
 [errors."fetch.dns_failed"]
 title = "Le nom de domaine n'a pas pu être résolu."
@@ -307,6 +341,10 @@ action = "Vérifiez l'état de la source, puis relancez le suivi."
 title = "La série a été retirée de la source."
 action = "Décidez de la conserver ou de la retirer de la bibliothèque."
 
+[errors."shelf.parental_control_unavailable"]
+title = "Le contrôle parental n'est pas encore disponible."
+action = "En M1a seule une étagère 18+ ou X peut être créée ; les étagères famille arrivent avec M1b."
+
 [errors."source.auth_expired"]
 title = "La connexion à la source a expiré."
 action = "Renouvelez les identifiants avec « shelfhold source set-secret »."
@@ -395,9 +433,21 @@ action = "Vérifiez l'exclusion de dossier, le type de bibliothèque et la surve
 title = "Shelfhold ne peut pas écrire dans ce dossier."
 action = "Corrigez les droits du dossier de série, puis lancez « shelfhold target recheck »."
 
+[errors."target.pull_needs_readable_copy"]
+title = "Cette destination à la demande n'a aucune copie lisible à servir."
+action = "Conservez les copies de l'étagère, ou liez aussi une destination en arborescence."
+
 [errors."target.route_missing"]
 title = "Kavita n'a pas la fonction attendue."
 action = "Mettez Kavita à jour, puis lancez « shelfhold target recheck »."
+
+[errors."shelf.destination_exists"]
+title = "Cette étagère a déjà une destination."
+action = "Une seule destination par étagère pour l'instant ; plusieurs viendront avec la version suivante."
+
+[errors."target.tree_overlap"]
+title = "Deux destinations en écriture se recouvrent."
+action = "Choisissez des dossiers distincts : deux indexeurs ne partagent pas encore le même arbre."
 
 [errors."target.unreachable"]
 title = "Kavita ne répond pas."
