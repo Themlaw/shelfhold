@@ -3,7 +3,7 @@
 import unicodedata
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from shelfhold.export.domain.naming import (
@@ -28,6 +28,20 @@ RESERVED = {
 
 
 @pytest.mark.req("EF-EXP-013")
+@example("con", 200)
+@example("nul", 200)
+@example("..", 200)
+@example("COM¹", 200)
+@example("LPT¹", 200)
+@example("CONIN$", 200)
+@example("CONOUT$", 200)
+@example(".hidden", 200)
+@example("a\u200bb\u2028c\u2029d", 200)
+@example("\u2028", 200)
+@example("\u200b", 200)
+@example("con     x", 200)
+@example("CON.txt", 200)
+@example("COM².cbz", 200)
 @given(st.text(max_size=400), st.integers(min_value=8, max_value=255))
 def test_sanitize_names_property(text: str, max_bytes: int) -> None:
     name = sanitize_name(text, max_bytes=max_bytes)
@@ -37,7 +51,8 @@ def test_sanitize_names_property(text: str, max_bytes: int) -> None:
     assert name == unicodedata.normalize("NFC", name)
     assert name == name.strip() and not name.endswith(".")
     assert len(name.encode("utf-8")) <= max_bytes  # ext4: 255 bytes per component
-    assert name.split(".")[0].lower() not in RESERVED  # SMB / Windows device names
+    assert name.split(".")[0].strip().casefold() not in RESERVED
+    assert not name.startswith(".")  # SMB / Windows device names
     assert sanitize_name(name, max_bytes=max_bytes) == name  # idempotent
 
 
@@ -92,3 +107,12 @@ def test_no_two_files_same_number_in_series_dir_property(nums: list[str], series
     distinct = {float(n) for n in nums if float(n) != 0.0}
     assert len(distinct) == len(names)
     assert find_number_collisions(names, simulate_parse) == []
+
+
+@pytest.mark.req("EF-EXP-013")
+@pytest.mark.parametrize("name", ["COM\u00b9", "lpt\u00b3", "CONIN$", "conout$", "Con.txt"])
+def test_sanitize_names_refuses_every_device_name(name: str) -> None:
+    from shelfhold.export.domain.naming import is_reserved_name
+
+    assert is_reserved_name(name)
+    assert not is_reserved_name(sanitize_name(name))

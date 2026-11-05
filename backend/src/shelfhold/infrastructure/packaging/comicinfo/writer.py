@@ -8,7 +8,8 @@ What it never writes: the Shelfhold identity (no `Notes`, `ScanInformation`, `Ta
 `Web` only when the caller gives one, empty by default), an inverted person name ("Family, Given"
 becomes "Given Family"; any other comma is replaced and reported), a sort name in a person field,
 and any untrusted markup (the summary goes through `sanitize_upstream_text`, then XML escaping).
-`Translator` is the Team label, a public metadata.
+`Translator` is the Team label, a public metadata. Commas inside a value of a person-like field
+(`Translator`, `Publisher`, one genre, every person) are replaced and reported (I21).
 """
 
 from __future__ import annotations
@@ -84,6 +85,14 @@ def _xml_text(text: str) -> str:
     return cleaned.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _no_comma(text: str, field_name: str, warnings: list[str]) -> str:
+    """Kavita splits person-like fields at commas (I21): a comma inside one value is replaced."""
+    if "," not in text:
+        return text
+    warnings.append(f"{field_name}: comma replaced")
+    return " ".join(text.replace(",", " ").split())
+
+
 def _people(
     persons: Sequence[ComicInfoPerson], role: str, lang: str | None, warnings: list[str]
 ) -> str:
@@ -116,16 +125,27 @@ def render_comicinfo(data: ComicInfoData, *, lang: str | None = None) -> Rendere
         return "" if value is None else str(value)
 
     values: dict[str, str] = {
-        "Title": data.title, "Series": data.series, "LocalizedSeries": data.localized_series,
-        "SeriesSort": data.series_sort, "Number": data.number, "Count": number(data.count),
-        "Volume": number(data.volume), "Summary": summary, "Year": number(data.year),
-        "Month": number(data.month), "Day": number(data.day),
-        "Translator": data.team_label, "Publisher": data.publisher,
-        "Genre": ", ".join(data.genres), "Web": data.web, "PageCount": number(data.page_count),
-        "LanguageISO": data.language_iso, "Format": data.format,
+        "Title": data.title,
+        "Series": data.series,
+        "LocalizedSeries": data.localized_series,
+        "SeriesSort": data.series_sort,
+        "Number": data.number,
+        "Count": number(data.count),
+        "Volume": number(data.volume),
+        "Summary": summary,
+        "Year": number(data.year),
+        "Month": number(data.month),
+        "Day": number(data.day),
+        "Translator": _no_comma(data.team_label, "Translator", warnings),
+        "Publisher": _no_comma(data.publisher, "Publisher", warnings),
+        "Genre": ", ".join(_no_comma(g, "Genre", warnings) for g in data.genres),
+        "Web": data.web,
+        "PageCount": number(data.page_count),
+        "LanguageISO": data.language_iso,
+        "Format": data.format,
         "Manga": {None: "", True: "YesAndRightToLeft", False: "No"}[data.right_to_left],
         "AgeRating": to_comicinfo(data.age) or "",
-    }  # fmt: skip
+    }
     for role in PERSON_ROLES:
         values[role] = _people(data.people.get(role, ()), role, lang, warnings)
     lines = ['<?xml version="1.0" encoding="utf-8"?>', "<ComicInfo>"]

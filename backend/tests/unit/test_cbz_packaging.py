@@ -61,6 +61,7 @@ def test_exported_file_carries_no_shelfhold_identity() -> None:
         repackage_cbz(src, COMICINFO, out)
     raw = out.getvalue()
     assert b"shelfhold" not in raw.lower()
+    assert b"rayonnage" not in raw.lower()
     out.seek(0)
     with zipfile.ZipFile(out) as zf:
         assert zf.comment == b""

@@ -149,3 +149,17 @@ def test_title_with_reserved_characters_gives_a_valid_path() -> None:
 
 def test_loose_leaf_constant_is_kavitas() -> None:
     assert LOOSE_LEAF == -100000.0
+
+
+@pytest.mark.req("EF-BIB-050", "EF-EXP-045")
+def test_segment_names_are_lossless() -> None:
+    """`S2` (normalised) and `2` (any other text) never share a name; `S2` is not `S02`."""
+    from shelfhold.export.domain.naming import exported_series_name
+
+    names = {
+        s: exported_series_name("Tower of God", s)
+        for s in ("", "S1", "S2", "2", "S10", "10", "No 2", "Winter")
+    }
+    assert len(set(names.values())) == len(names)
+    assert names["S2"] == "Tower of God Saga 2"
+    assert names["2"] == "Tower of God Saga No 2"

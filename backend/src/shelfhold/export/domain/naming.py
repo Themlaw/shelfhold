@@ -34,14 +34,11 @@ _FORBIDDEN: Final = re.compile(r'[/\\:*?"<>|]')
 _DROPPED_CATEGORIES: Final = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 _RESERVED: Final = frozenset(
     {
-        "con",
-        "prn",
-        "aux",
-        "nul",
-        *(f"com{i}" for i in range(1, 10)),
-        *(f"lpt{i}" for i in range(1, 10)),
+        "con", "prn", "aux", "nul", "conin$", "conout$",
+        *(f"com{c}" for c in "123456789\u00b9\u00b2\u00b3"),
+        *(f"lpt{c}" for c in "123456789\u00b9\u00b2\u00b3"),
     }
-)
+)  # fmt: skip
 _BLANKS: Final = re.compile(r"\s+")
 
 
@@ -49,6 +46,11 @@ def _truncate(text: str, max_bytes: int) -> str:
     while len(text.encode("utf-8")) > max_bytes:
         text = text[:-1]
     return text
+
+
+def is_reserved_name(name: str) -> bool:
+    """A device name on Windows and SMB: the part before the first dot, in any case."""
+    return name.split(".", 1)[0].strip().casefold() in _RESERVED
 
 
 def sanitize_name(text: str, *, max_bytes: int = MAX_COMPONENT_BYTES) -> str:
@@ -65,13 +67,13 @@ def sanitize_name(text: str, *, max_bytes: int = MAX_COMPONENT_BYTES) -> str:
         cleaned = _BLANKS.sub(" ", cleaned).strip(" .")
         if not cleaned:
             return "_"
-        if cleaned.split(".", 1)[0].strip().lower() in _RESERVED:
-            cleaned = f"{cleaned.split('.', 1)[0].rstrip()}_" + (
-                "." + cleaned.split(".", 1)[1] if "." in cleaned else ""
-            )
+        if is_reserved_name(cleaned):
+            stem, dot, rest = cleaned.partition(".")
+            cleaned = f"{stem.rstrip()}_{dot}{rest}"
         if len(cleaned.encode("utf-8")) <= max_bytes:
             return cleaned
-    return _truncate(cleaned, max_bytes).strip(" .") or "_"
+    cleaned = _truncate(cleaned, max_bytes).strip(" .")
+    return "_" if not cleaned or is_reserved_name(cleaned) else cleaned
 
 
 _KEEP: Final = frozenset("+!" + chr(0xFF0A) + chr(0xFF01) + chr(0xFF0B))

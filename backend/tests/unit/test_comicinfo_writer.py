@@ -119,6 +119,7 @@ def test_exported_file_carries_no_shelfhold_identity() -> None:
     xml = render_comicinfo(FULL).xml
     lowered = xml.lower()
     assert b"shelfhold" not in lowered
+    assert b"rayonnage" not in lowered  # the former name of the tool
     for tag in ("Notes", "ScanInformation", "Web", "GTIN", "Tags"):
         assert text_of(xml, tag) is None
     assert "Identifiant" not in xml.decode()
@@ -129,3 +130,19 @@ def test_text_is_xml_escaped_and_control_characters_removed() -> None:
     rendered = render_comicinfo(ComicInfoData(series="A & B <c> \x00\x0b d", title="\ud800x"))
     assert text_of(rendered.xml, "Series") == "A & B <c>  d"
     kavita_schema().validate(rendered.xml.decode("utf-8"))
+
+
+@pytest.mark.req("EF-BIB-046")
+def test_commas_replaced_in_translator_publisher_and_genres() -> None:
+    rendered = render_comicinfo(
+        ComicInfoData(
+            series="S",
+            team_label="Équipe, Exemple",
+            publisher="Éditeur, Ltd.",
+            genres=("Aventure, Action", "Drame"),
+        )
+    )
+    assert text_of(rendered.xml, "Translator") == "Équipe Exemple"
+    assert text_of(rendered.xml, "Publisher") == "Éditeur Ltd."
+    assert text_of(rendered.xml, "Genre") == "Aventure Action, Drame"  # the only commas separate
+    assert len(rendered.warnings) == 3
