@@ -1,0 +1,154 @@
+"""Harness of the operating-surface tests (L36): the services over an export environment, with the
+ports of the other lots replaced by recorders (nothing leaves the test)."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
+
+import sqlalchemy as sa
+
+from shelfhold.events.bus import EventBus
+from shelfhold.export.application.target_state import save_health
+from shelfhold.export.application.target_health import TargetHealth
+from shelfhold.export.targets.kavita.audit import AccessAuditor
+from shelfhold.export.targets.kavita.reinstall import InstanceService
+from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.schema import acquisition, catalog, platform
+from shelfhold.ops import KavitaTargetOps, OpsServices, WaitingItem
+from tests.export_env import ExportEnv
+from tests.kavita_export_env import Wired
+
+LOCAL_CLI = Principal(
+    user_id="1000", username="uid:1000", role="admin", credential=Credential.LOCAL_CLI
+)
+NOW = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
+
+
+@dataclass
+class FakeRestore:
+    """The `RestoreExit` port of L35: waits when told to, records the call."""
+
+    behind: bool = True
+    calls: list[bool] = field(default_factory=list)
+
+    def waiting(self) -> list[WaitingItem]:
+        if not self.behind:
+            return []
+        return [WaitingItem("restored_behind", "instance", "instance", "database older than disk")]
+
+    def adopt_after_restore(self, *, confirm_deletion: bool, principal: Principal) -> None:
+        self.calls.append(confirm_deletion)
+        self.behind = False
+
+
+@dataclass
+class FakeKeyring:
+    """The `KeyringExit` port: kids the keyring lacks, until the waiver."""
+
+    kids: list[str] = field(default_factory=lambda: ["kid-lost"])
+    waived: list[tuple[str, str]] = field(default_factory=list)
+
+    def waiting(self) -> list[WaitingItem]:
+        return [
+            WaitingItem("tombstone_key_unknown", "tombstones", kid, "kid not in the keyring")
+            for kid in self.kids
+        ]
+
+    def accept_lost_keyring(self, *, confirmation: str, principal: Principal) -> list[str]:
+        self.waived.append((confirmation, principal.credential.value))
+        gone, self.kids = self.kids, []
+        return gone
+
+
+@dataclass
+class FakeAdoption:
+    """The `AdoptionExit` port: two adopted series waiting for a human."""
+
+    pending: dict[str, str] = field(
+        default_factory=lambda: {"series-a": "adoption_refused", "series-b": "coverage_unknown"}
+    )
+    calls: list[tuple[str, str]] = field(default_factory=list)
+
+    def waiting(self) -> list[WaitingItem]:
+        return [WaitingItem(state, "adoption", subject, state) for subject, state in self.pending.items()]
+
+    def set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
+        self.calls.append(("set_follow_from", series))
+        self.pending.pop(series, None)
+
+    def confirm_migration(self, *, destination_id: str, fingerprint: str) -> None:
+        self.calls.append(("confirm_migration", fingerprint))
+        for subject in [s for s, st in self.pending.items() if st == "adoption_refused"]:
+            self.pending.pop(subject)
+
+
+def make_ops(env: ExportEnv, wired: Wired | None = None, **ports: Any) -> OpsServices:
+    targets = None
+    if wired is not None:
+        auditor = AccessAuditor(env.engine, env.clock, wired.events)
+        targets = KavitaTargetOps(
+            env.engine,
+            clock=env.clock,
+            client_for=lambda _target_id: wired.rebuild_client(),
+            instance=InstanceService(env.engine, env.clock, wired.events),
+            auditor=auditor,
+        )
+    return OpsServices(
+        env.engine, clock=env.clock, bus=EventBus(env.clock), fsops=env.lib.fsops,
+        targets=targets, **ports,
+    )  # fmt: skip
+
+
+def put_health(env: ExportEnv, **flags: Any) -> TargetHealth:
+    """Store a target health with the given flags, as the client would have left it."""
+    health = TargetHealth(**flags)
+    health.refresh_waiting()
+    with env.engine.begin() as connection:
+        save_health(connection, env.target_id, health)
+    return health
+
+
+def add_job(engine: sa.Engine, *, kind: str, status: str, code: str | None = None) -> str:
+    job_id = new_ulid()
+    with engine.begin() as connection:
+        connection.execute(
+            sa.insert(platform.job_view).values(
+                id=job_id, kind=kind, status=status, dedupe_key=f"{kind}:{job_id}",
+                error_code=code, last_error="boom" if code else None, attempts=5,
+                huey_task_id="task",
+            )
+        )  # fmt: skip
+    return job_id
+
+
+def job_status(engine: sa.Engine, job_id: str) -> str:
+    with engine.connect() as connection:
+        return str(
+            connection.execute(
+                sa.select(platform.job_view.c.status).where(platform.job_view.c.id == job_id)
+            ).scalar_one()
+        )
+
+
+def edition_lang(engine: sa.Engine, edition_id: str) -> str:
+    with engine.connect() as connection:
+        return str(
+            connection.execute(
+                sa.select(catalog.edition.c.lang).where(catalog.edition.c.id == edition_id)
+            ).scalar_one()
+        )
+
+
+def pause_follow(engine: sa.Engine, *, failure_class: str, state: str | None) -> None:
+    """The follow cycle paused on a source failure (EF-SRC-026)."""
+    pause = {"failure_class": failure_class, "event_type": "source.x", "waiting_state": state,
+             "since": NOW.isoformat()}  # fmt: skip
+    with engine.begin() as connection:
+        connection.execute(
+            sa.update(acquisition.source_config)
+            .where(acquisition.source_config.c.plugin_id == "suwayomi")
+            .values(health={"pause": pause})
+        )
