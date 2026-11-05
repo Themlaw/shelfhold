@@ -33,7 +33,8 @@ from shelfhold.catalog.public import BindingRef, IncomingUnit, IngestOutcome, in
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
-from shelfhold.jobs.public import DomainSlots, JobContext
+from shelfhold.jobs.ledger import Created
+from shelfhold.jobs.public import DomainSlots, JobContext, JobPools
 from shelfhold.library.public import PassthroughStore
 from shelfhold.plugin_host.errors import AuthModeUnsupported, ServiceVersionMismatch
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
@@ -44,6 +45,19 @@ from shelfhold.sdk.source import SourceError
 log = structlog.get_logger(__name__)
 
 FOLLOW_JOB_KIND = "follow.cycle"
+
+
+def follow_dedupe_key(plugin_id: str) -> str:
+    """One follow job per service at a time: a second submission joins the one in flight."""
+    return f"{FOLLOW_JOB_KIND}:{plugin_id}"
+
+
+def submit_follow(pools: JobPools, plugin_id: str) -> Created:
+    return pools.submit(
+        FOLLOW_JOB_KIND, dedupe_key=follow_dedupe_key(plugin_id), source_key=plugin_id
+    )
+
+
 FINISHED_STATUSES = ("completed", "cancelled")  # work status: nothing more is expected
 NOT_CHECKED = ("completed", "paused")  # series_follow.check_override: the user said so
 
@@ -180,15 +194,16 @@ class FollowCycle:
         Units are irreplaceable by calculation; no file and no follow row is touched."""
         table = acquisition.source_binding
         with self._engine.begin() as connection:
-            connection.execute(
+            changed = connection.execute(
                 sa.update(table)
                 .where(table.c.id == binding.id, table.c.active)
                 .values(active=False, disabled_reason="removed_upstream")
-            )
-            self._emit(
-                connection, "series.tombstoned_upstream",
-                {"edition_id": binding.edition_id, "work_id": binding.work_id},
-            )  # fmt: skip
+            ).rowcount
+            if changed:  # a concurrent cycle that got there first already announced it
+                self._emit(
+                    connection, "series.tombstoned_upstream",
+                    {"edition_id": binding.edition_id, "work_id": binding.work_id},
+                )  # fmt: skip
 
     def _reactivate(self, binding: _Binding) -> bool:
         table = acquisition.source_binding
@@ -202,12 +217,13 @@ class FollowCycle:
             ).first()
             if taken is not None:  # another binding took its rank meanwhile: M1b decides
                 return False
-            connection.execute(
-                sa.update(table)
-                .where(table.c.id == binding.id)
-                .values(active=True, disabled_reason=None)
+            return bool(
+                connection.execute(
+                    sa.update(table)
+                    .where(table.c.id == binding.id, sa.not_(table.c.active))
+                    .values(active=True, disabled_reason=None)
+                ).rowcount
             )
-        return True
 
     # -- discovery ---------------------------------------------------------------------------
     async def _discover(self, binding: _Binding, report: FollowReport) -> None:

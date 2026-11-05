@@ -253,6 +253,14 @@ sa.Index(
     sqlite_where=sa.text('"ticket" IS NOT NULL'),
 )
 
+# One open ticket per Variant, whatever the writers (two cycles, a retry): the database says no.
+sa.Index(
+    "uq_download_request_open_variant",
+    download_request.c.variant_id,
+    unique=True,
+    sqlite_where=sa.text("\"state\" IN ('requested', 'downloaded')"),
+)
+
 # The Units a ticket covers; the per-cycle cap of EF-EXP-053 counts these.
 download_request_unit = sa.Table(
     "download_request_unit",

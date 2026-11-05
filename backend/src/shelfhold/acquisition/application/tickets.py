@@ -17,6 +17,7 @@ from typing import Protocol
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
@@ -134,20 +135,17 @@ class DownloadTickets:
     @staticmethod
     def open(connection: Connection, *, binding_id: str, variant_id: str, unit_id: str) -> bool:
         """One open ticket per Variant: a second call while one is open changes nothing."""
-        table = acquisition.download_request
-        if connection.execute(
-            sa.select(table.c.id).where(
-                table.c.variant_id == variant_id, table.c.state.in_(OPEN_STATES)
-            )
-        ).first():
-            return False
         request_id = new_ulid()
-        connection.execute(
-            sa.insert(table).values(
+        inserted = connection.execute(
+            sqlite_insert(acquisition.download_request)
+            .values(
                 id=request_id, target_kind="unit", variant_id=variant_id,
                 source_binding_id=binding_id, state="requested",
             )
-        )  # fmt: skip
+            .on_conflict_do_nothing()  # the partial unique index: one open ticket per Variant
+        ).rowcount  # fmt: skip
+        if not inserted:
+            return False
         connection.execute(
             sa.insert(acquisition.download_request_unit).values(
                 download_request_id=request_id, unit_id=unit_id, state="requested"

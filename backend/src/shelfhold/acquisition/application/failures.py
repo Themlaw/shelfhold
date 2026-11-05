@@ -5,6 +5,7 @@ plugin), is announced once when it starts, and ends with `resume` (the admin ren
 updated the tool...). Nothing here ever touches `source_config.consecutive_failures`.
 """
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -42,6 +43,25 @@ def pause_of(failure_class: str, error: BaseException) -> Pause:
     if state is None and failure_class == "auth":
         state = WaitingState.AUTH_EXPIRED
     return Pause(failure_class, event, str(state) if state else None)
+
+
+_SET = sa.text(
+    "UPDATE source_config SET health = json_set(coalesce(health, '{}'), :path, json(:value)) "
+    "WHERE plugin_id = :plugin"
+)
+_SET_IF_UNSET = sa.text(
+    "UPDATE source_config SET health = json_set(coalesce(health, '{}'), :path, json(:value)) "
+    "WHERE plugin_id = :plugin AND json_extract(coalesce(health, '{}'), :path) IS NULL"
+)
+_COUNT_OK = sa.text(
+    "UPDATE source_config SET health = json_set(coalesce(health, '{}'), :path, "
+    "coalesce(json_extract(coalesce(health, '{}'), :path), 0) + 1, :last, :now) "
+    "WHERE plugin_id = :plugin"
+)
+_COUNT_FAILED = sa.text(
+    "UPDATE source_config SET health = json_set(coalesce(health, '{}'), :path, "
+    "coalesce(json_extract(coalesce(health, '{}'), :path), 0) + 1) WHERE plugin_id = :plugin"
+)
 
 
 class FailureLedger:
@@ -83,7 +103,16 @@ class FailureLedger:
         )
 
     # -- source_config.health ----------------------------------------------------------------
-    def _health(self, connection: Connection) -> dict[str, Any]:
+    # Every write is ONE statement on the JSON document (json_set / json_remove), so two writers
+    # (a cycle and the admin's `resume`, two instances of a job) never overwrite each other's key.
+    def _ensure(self, connection: Connection) -> None:
+        connection.execute(
+            sqlite_insert(acquisition.source_config)
+            .values(plugin_id=self._plugin_id, health={})
+            .on_conflict_do_nothing(index_elements=["plugin_id"])
+        )
+
+    def _read(self, connection: Connection) -> dict[str, Any]:
         raw = connection.execute(
             sa.select(acquisition.source_config.c.health).where(
                 acquisition.source_config.c.plugin_id == self._plugin_id
@@ -91,45 +120,60 @@ class FailureLedger:
         ).scalar()
         return dict(raw) if isinstance(raw, dict) else {}
 
-    def _save(self, connection: Connection, health: dict[str, Any]) -> None:
-        table = acquisition.source_config
-        stmt = sqlite_insert(table).values(plugin_id=self._plugin_id, health=health)
-        connection.execute(
-            stmt.on_conflict_do_update(index_elements=["plugin_id"], set_={"health": health})
+    def _set(
+        self, connection: Connection, path: str, value: object, *, if_unset: bool = False
+    ) -> bool:
+        """Set `path` of the health document; True if a row changed (`if_unset`: only if absent)."""
+        self._ensure(connection)
+        result = connection.execute(
+            _SET_IF_UNSET if if_unset else _SET,
+            {"path": path, "value": json.dumps(value), "plugin": self._plugin_id},
         )
+        return result.rowcount > 0
+
+    def _unset(self, connection: Connection, path: str) -> bool:
+        result = connection.execute(
+            sa.text(
+                "UPDATE source_config SET health = json_remove(coalesce(health, '{}'), :path) "
+                "WHERE plugin_id = :plugin AND json_extract(coalesce(health, '{}'), :path) "
+                "IS NOT NULL"
+            ),
+            {"path": path, "plugin": self._plugin_id},
+        )
+        return result.rowcount > 0
 
     def paused(self, connection: Connection) -> Pause | None:
-        raw = self._health(connection).get("pause")
+        raw = self._read(connection).get("pause")
         if not isinstance(raw, dict):
             return None
         return Pause(raw["failure_class"], raw["event_type"], raw.get("waiting_state"))
 
     def pause(self, connection: Connection, pause: Pause, now: datetime) -> bool:
         """Start a pause; False when the service was already paused (nothing to announce)."""
-        health = self._health(connection)
-        if "pause" in health:
-            return False
-        health["pause"] = {
+        value = {
             "failure_class": pause.failure_class,
             "event_type": pause.event_type,
             "waiting_state": pause.waiting_state,
             "since": now.isoformat(),
         }
-        self._save(connection, health)
-        return True
+        return self._set(connection, "$.pause", value, if_unset=True)
 
-    def resume(self, connection: Connection) -> None:
-        health = self._health(connection)
-        if health.pop("pause", None) is not None:
-            self._save(connection, health)
+    def resume(self, connection: Connection) -> bool:
+        return self._unset(connection, "$.pause")
 
     def record_download(
         self, connection: Connection, limit_key: str, *, ok: bool, now: datetime
     ) -> None:
         """Last good download and the outcomes counted per upstream source (EF-SRC-026 c)."""
-        health = self._health(connection)
-        entry = health.setdefault("by_source", {}).setdefault(limit_key, {"ok": 0, "failed": 0})
-        entry["ok" if ok else "failed"] += 1
-        if ok:
-            entry["last_ok_at"] = now.isoformat()
-        self._save(connection, health)
+        self._ensure(connection)
+        base = f"$.by_source.{json.dumps(limit_key)}"
+        counter = "ok" if ok else "failed"
+        connection.execute(
+            _COUNT_OK if ok else _COUNT_FAILED,
+            {
+                "path": f"{base}.{counter}",
+                "last": f"{base}.last_ok_at",
+                "now": now.isoformat(),
+                "plugin": self._plugin_id,
+            },
+        )

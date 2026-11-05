@@ -5,7 +5,9 @@ from shelfhold.acquisition.application.follow import (
     FOLLOW_JOB_KIND,
     FollowCycle,
     FollowReport,
+    follow_dedupe_key,
     follow_job,
+    submit_follow,
 )
 from shelfhold.acquisition.application.tickets import (
     DownloadTickets,
@@ -33,7 +35,9 @@ __all__ = [
     "cadence",
     "classify",
     "disposition_of",
+    "follow_dedupe_key",
     "follow_job",
     "is_stale",
     "stale_threshold",
+    "submit_follow",
 ]

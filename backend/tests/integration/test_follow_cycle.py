@@ -4,6 +4,7 @@ Everything runs against the simulated Suwayomi (`tests/fakes/suwayomi`) and a re
 /library: the cycle's own behaviour is what is under test, not a mock of it.
 """
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -250,3 +251,49 @@ def test_minimal_connected_service_passes_follow_cycle() -> None:
         report = bench.run()
         assert report.discovered == 1 and report.requested == 1 and report.fetched == 1
         assert [p.suffix for p in bench.library_files()] == [".cbz"]
+
+
+@pytest.mark.req("EF-SRC-009")
+def test_one_follow_job_per_service_and_one_open_ticket_per_variant(tmp_path: Path) -> None:
+    from shelfhold.acquisition.public import (
+        FOLLOW_JOB_KIND,
+        DownloadTickets,
+        follow_dedupe_key,
+        submit_follow,
+    )
+    from shelfhold.jobs.public import JobPools
+
+    assert follow_dedupe_key("suwayomi") == "follow.cycle:suwayomi"
+    with follow_bench() as bench:
+        pools = JobPools(tmp_path, engine=bench.lib.engine, clock=bench.clock, seed="s")
+        pools.register(FOLLOW_JOB_KIND, pool="io", handler=lambda context: None)
+        first, second = submit_follow(pools, "suwayomi"), submit_follow(pools, "suwayomi")
+        assert first.created and not second.created and first.job_id == second.job_id
+
+        bench.run()
+        bench.add_chapter(3)
+        bench.run()
+        row = bench.rows("SELECT variant_id, source_binding_id FROM download_request")[0]
+        unit = bench.rows("SELECT unit_id FROM unit_variant WHERE id = :v", v=row["variant_id"])
+        with bench.lib.engine.begin() as connection:  # a racing writer opens it again: refused
+            again = DownloadTickets.open(
+                connection, binding_id=row["source_binding_id"],
+                variant_id=row["variant_id"], unit_id=unit[0]["unit_id"],
+            )  # fmt: skip
+        assert again is False
+        assert len(bench.rows("SELECT id FROM download_request")) == 1
+
+
+@pytest.mark.req("EF-SRC-009")
+def test_pause_is_announced_once_even_if_two_writers_race() -> None:
+    from shelfhold.acquisition.public import FailureLedger, Pause
+
+    with follow_bench() as bench:
+        ledger = FailureLedger("suwayomi")
+        pause = Pause("auth", "source.auth_expired", "auth_expired")
+        with bench.lib.engine.begin() as connection:
+            assert ledger.pause(connection, pause, bench.clock.now()) is True
+            assert ledger.pause(connection, pause, bench.clock.now()) is False
+            ledger.record_download(connection, "suwayomi:7001", ok=True, now=bench.clock.now())
+            assert ledger.paused(connection) is not None  # the counters did not erase the pause
+            assert ledger.resume(connection) is True and ledger.resume(connection) is False
