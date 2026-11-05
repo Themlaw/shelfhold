@@ -10,6 +10,8 @@ import pytest
 from shelfhold.export.application.migration_detect import SwitchoverUnconfirmed
 from shelfhold.export.application.pairing import (
     AlreadyPairedError,
+    BatchStaleError,
+    PairingResult,
 )
 from shelfhold.sdk.refs import SeriesRef
 from tests.adopt_env import tree_state
@@ -147,3 +149,23 @@ def test_switchover_confirmation_needs_every_step_then_follow_starts() -> None:
         assert done.paired
         assert p.settle() == 2
         assert len(p.downloads()) == 2  # chapters 4 and 5, none of the three adopted ones
+
+
+@pytest.mark.req("EF-EXP-038")
+def test_pair_auto_min_score_batch_confirmation() -> None:
+    """`--pair-auto --min-score 0.9`: a report first, one confirmation, nothing before it."""
+    with paired_env() as p:
+        p.adopt_files(CHAPTERS)
+        p.upstream(51)
+        p.a.adopt()
+        library = p.library()
+        report = p.pairing.pair_auto(p.destination, library, min_score=0.9)
+        assert [x.series_name for x in report.ready] == [SERIES] and report.held == ()
+        assert p.rows("SELECT * FROM source_binding WHERE linked_from_adoption") == []
+        strict = p.pairing.pair_auto(p.destination, library, min_score=1.01)  # nothing is sure
+        assert strict.ready == () and [x.series_name for x in strict.held] == [SERIES]
+        with pytest.raises(BatchStaleError):  # a report that is not the one seen
+            p.pairing.confirm_batch(p.destination, library, fingerprint=strict.fingerprint)
+        (done,) = p.pairing.confirm_batch(p.destination, library, fingerprint=report.fingerprint)
+        assert isinstance(done, PairingResult) and done.paired and done.follow_from == "50"
+        assert p.settle() == 1 and len(p.downloads()) == 1  # only the 51st
