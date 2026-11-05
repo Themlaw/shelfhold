@@ -165,10 +165,16 @@ class Fsops:
         self._lease_verifier: Callable[[str, bytes | None], None] | None = None
         self._tombstones_owed: Callable[[str], bool] | None = None
         self._frozen = frozen
+        self._behind_hook: Callable[[], None] | None = None
 
     @property
     def frozen(self) -> bool:
         return self._frozen
+
+    def on_restored_behind(self, hook: Callable[[], None] | None) -> None:
+        """Called when a write finds a root whose sentinel is ahead of the database (a root that
+        came back after the start): the composition root persists the freeze (EF-INT-026)."""
+        self._behind_hook = hook
 
     def freeze(self) -> None:
         """Read-only for the whole instance, every root, until `unfreeze`: the database is older
@@ -283,6 +289,8 @@ class Fsops:
         with self._root(located.root_path) as root:
             verdict = self._verdict(root)
             if verdict.blocks_writes:
+                if verdict.state is RootState.RESTORED_BEHIND and self._behind_hook is not None:
+                    self._behind_hook()
                 raise RootBlockedError(located.root_path, verdict.state)
             if lease and self._lease_verifier is not None:
                 self._lease_verifier(located.root_path, _read_lease(root))
@@ -393,7 +401,7 @@ class Fsops:
             raise RootBlockedError(root.path, RootState.MISMATCH)  # never overwrite a foreign one
         write_sentinel(root, current.restamped(generation, restore_epoch=restore_epoch))
 
-    def sentinel_of(self, root_path: str) -> SentinelDocument | None:
+    def sentinel_of(self, root_path: str, *, strict: bool = False) -> SentinelDocument | None:
         """The sentinel as it is on disk, for the restore check: read only, never gated, never
         followed through a link. None when absent or unreadable (the caller treats both as
         "not trusted")."""
@@ -404,6 +412,8 @@ class Fsops:
             with self._root(key) as root:
                 return read_sentinel(root)
         except (OSError, SentinelFormatError):
+            if strict:
+                raise
             return None
 
     def restamp_after_restore(self, root_path: str, *, generation: int, restore_epoch: int) -> None:

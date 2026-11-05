@@ -12,6 +12,7 @@ from shelfhold.events.bus import EventBus
 from shelfhold.export.application.restore import RestoreGuard
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
+from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.domain.restore import RestoreStatus
 from shelfhold.headless.applied import applied_public_url
 from shelfhold.i18n import t
@@ -39,6 +40,19 @@ def restored_behind_warning(status: RestoreStatus) -> dict[str, str] | None:
         "code": "restored_behind",
         "message": t("status.restored_behind", command=status.exit_command),
     }
+
+
+def mismatch_warnings(status: RestoreStatus) -> list[dict[str, str]]:
+    """A root whose sentinel is forged, unreadable or out of bounds is not trusted and not
+    frozen: it is left alone, and the operator is told what to fix."""
+    return [
+        {
+            "code": "root_sentinel_mismatch",
+            "message": t("status.root_sentinel_mismatch", path=finding.path),
+        }
+        for finding in status.findings
+        if finding.state is RootState.MISMATCH
+    ]
 
 
 def _restore_status(resolved: ResolvedSettings) -> RestoreStatus | None:
@@ -106,10 +120,12 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         pending.append({"code": "public_url_restart", "message": t("status.public_url_restart")})
     restore = _restore_status(resolved)
     behind = restored_behind_warning(restore) if restore is not None else None
+    mismatched = mismatch_warnings(restore) if restore is not None else []
     return (
         _environment_warnings(resolved)
         + pending
         + ([behind] if behind else [])
+        + mismatched
         + [
             {
                 "code": "identity_header_stripped",

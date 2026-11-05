@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from shelfhold.export.application.export_items import SeriesCollisionError
 from shelfhold.export.application.pipeline import SourceMissingError, UnverifiedParseError
 from shelfhold.export.application.plans import StalePlanError
+from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.target_state import DestinationPausedError
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
@@ -108,6 +109,7 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
             SourceMissingError,
             UnverifiedParseError,
             DestinationPausedError,
+            RestoredBehindError,
         ) as error:
             raise ProblemError(error.code) from None
         return AppliedOut(plan_id=plan_id, applied=len(getattr(report, "ops", ()) or ()))

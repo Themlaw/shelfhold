@@ -179,7 +179,7 @@ def judge_sentinel(doc: SentinelDocument | None, expected: ExpectedRoot) -> Sent
         return SentinelVerdict(RootState.MISMATCH)  # never touched by a build that cannot read it
     if doc.root_id != expected.root_id or doc.instance_id != expected.instance_id:
         return SentinelVerdict(RootState.MISMATCH)
-    if doc.restore_epoch > MAX_RESTORE_EPOCH:
+    if doc.restore_epoch > MAX_RESTORE_EPOCH or not 0 <= doc.generation <= MAX_RESTORE_EPOCH:
         return SentinelVerdict(RootState.MISMATCH)  # forged or damaged: never a reason to freeze
     if doc.restore_epoch > expected.restore_epoch:
         return SentinelVerdict(RootState.RESTORED_BEHIND)  # a restore the database never heard of

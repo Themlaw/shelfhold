@@ -85,6 +85,7 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # `reconcile --adopt-after-restore --confirm-deletion` (L35): the port to the purge, reached
         # only after the reserved action was authorised; it deletes nothing by itself
         f"{_EXPORT_APP}/restore.py::DeletionExecutor.purge": "reconcile.confirm_deletion",
+        f"{_EXPORT_APP}/restore_purge.py::RestoreDeletion._erase": "reconcile.confirm_deletion",
         # The probe file of the permission preflight (EF-EXP-054): a name the probe drew itself.
         f"{_EXPORT_APP}/preflight.py::FolderProbe._remove_probe_file": "probe_file_cleanup",
         f"{_FSOPS}/probe.py::_remove_probe_file": ("probe_file_cleanup"),

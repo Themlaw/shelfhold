@@ -8,6 +8,7 @@
 Every write under `/library` from then on is refused by `Fsops` without this instance's lease.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import sqlalchemy as sa
@@ -55,6 +56,7 @@ class InstanceRuntime:
     shutdown_report: ShutdownReport | None = field(default=None, init=False)
     barrier: WriteBarrier = field(default_factory=WriteBarrier, init=False)
     restored_behind: bool = field(default=False, init=False)  # EF-INT-026: read only
+    _recheck: Callable[[], None] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.lock = InstanceLock(self.settings.data_dir)
@@ -73,6 +75,8 @@ class InstanceRuntime:
 
     def require_writable(self) -> None:
         """The gate of every write the application starts: refused while `restored_behind`."""
+        if not self.restored_behind and self._recheck is not None:
+            self._recheck()  # a root that came back after the start may be ahead (EF-INT-026)
         if self.restored_behind:
             raise RestoredBehindError(
                 "restored_behind: run `shelfhold reconcile --adopt-after-restore`"
@@ -125,6 +129,8 @@ class InstanceRuntime:
                     if self.pools is not None:
                         self.pools.scheduler.hold()
 
+            fsops.on_restored_behind(freeze)
+            self._recheck = freeze
             status = restore_guard.enter_restored_behind()
             if status.behind:
                 freeze()

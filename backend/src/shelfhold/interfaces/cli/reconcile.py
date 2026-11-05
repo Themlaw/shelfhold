@@ -23,6 +23,7 @@ import sqlalchemy as sa
 
 from shelfhold.config import ResolvedSettings
 from shelfhold.events.bus import EventBus
+from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.restore import (
     AdoptionBlockedError,
     AdoptionPreview,
@@ -33,6 +34,7 @@ from shelfhold.export.application.restore import (
     RestoreAdopter,
     RestoreGuard,
 )
+from shelfhold.export.application.restore_purge import DeletionIncompleteError, RestoreDeletion
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.i18n import t
@@ -40,7 +42,12 @@ from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
+from shelfhold.infrastructure.instance import (
+    GenerationCounter,
+    InstanceLock,
+    InstanceLockHeldError,
+    WriteSessions,
+)
 from shelfhold.infrastructure.local_socket import Peer
 from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.schema import platform
@@ -87,9 +94,21 @@ def open_restore(resolved: ResolvedSettings) -> Iterator[tuple[RestoreAdopter, R
         guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)
         keyring = diagnostics.store_for(settings).load()
         service = TombstoneService(engine, keyring, fsops, bus)
+        with engine.connect() as connection:
+            instance_id = connection.execute(sa.select(platform.instance.c.instance_id)).scalar()
+        sessions = WriteSessions(
+            fsops, instance_id=str(instance_id), clock=clock, lock_path=lock.path,
+            generations=GenerationCounter(engine),
+        )  # fmt: skip
+        sessions.enforce()
+        purger = RestoreDeletion(
+            fsops, IntentJournal(engine, fsops, clock=clock), sessions.open,
+            {r.root_id: r.path for r in loaded.roots},
+        )  # fmt: skip
         adopter = RestoreAdopter(
-            engine, fsops, TombstoneScreenAdapter(service), clock=clock, bus=bus, guard=guard
-        )
+            engine, fsops, TombstoneScreenAdapter(service), clock=clock, bus=bus, guard=guard,
+            purger=purger,
+        )  # fmt: skip
         yield adopter, guard
     finally:
         engine.dispose()
@@ -117,6 +136,8 @@ def _show(preview: AdoptionPreview) -> None:
         print(t("reconcile.unknown_line", path=path))
     for path in report.missing_files:
         print(t("reconcile.missing_line", path=path))
+    for _destination, old, new in report.relocated:
+        print(t("reconcile.relocated_line", old=old, new=new))
     for series in report.upstream_drift:
         print(t("reconcile.drift_line", source=series.source_key, series=series.series_ref))
     if report.upstream_proposal:
@@ -174,9 +195,18 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     except PreviewStaleError:
         print(t("reconcile.preview_stale"), file=sys.stderr)
         return STALE
+    except DeletionIncompleteError as incomplete:
+        for path in incomplete.paths:
+            print(t("reconcile.by_hand_line", path=path), file=sys.stderr)
+        print(t("reconcile.by_hand"), file=sys.stderr)
+        return BLOCKED
     except (DeletionRefusedError, DeletionUnavailableError):
         print(t("reconcile.deletion_refused"), file=sys.stderr)
         return REFUSED
+    for candidate in result.pending_deletions:
+        print(t("reconcile.pending_line", path=candidate.local_path))
+    if result.pending_deletions:
+        print(t("reconcile.pending_exit"))
     print(
         t(
             "reconcile.done",

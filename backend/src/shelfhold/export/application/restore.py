@@ -46,6 +46,8 @@ from shelfhold.export.domain.physical_roots import (
     RESERVED_DIR,
     SENTINEL_FILE,
     ExpectedRoot,
+    RootState,
+    SentinelFormatError,
     judge_sentinel,
 )
 from shelfhold.export.domain.provenance_mirror import (
@@ -235,6 +237,8 @@ class RestoreReport:
     upstream_drift: tuple[UpstreamSeries, ...]
     upstream_proposal: str | None  # `remove_category` when no relevé covers the drift
     unverified_tombstone_lines: int = 0
+    # (destination, old path, new path): paired by item or hash, re-attached only when confirmed
+    relocated: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -281,7 +285,21 @@ class RestoreGuard:
             loaded = load_roots(connection, PathMap.same_path(paths))
         findings = []
         for expected in loaded.expected:
-            doc = self._fsops.sentinel_of(expected.path)
+            try:
+                doc = self._fsops.sentinel_of(expected.path, strict=True)
+            except (OSError, SentinelFormatError):
+                # present but unreadable (not JSON, a field of the wrong type): not trusted
+                findings.append(
+                    RootFinding(
+                        expected.root_id,
+                        expected.path,
+                        RootState.MISMATCH,
+                        expected.generation,
+                        None,
+                        None,
+                    )
+                )
+                continue
             state = judge_sentinel(doc, expected).state
             findings.append(
                 RootFinding(
@@ -314,7 +332,10 @@ class RestoreGuard:
                 ),
                 default=0,
             )
-            top = max((f.sentinel_generation or 0 for f in status.behind_roots), default=0)
+            top = max(
+                (min(f.sentinel_generation or 0, MAX_RESTORE_EPOCH) for f in status.behind_roots),
+                default=0,
+            )
             with self._engine.begin() as connection:
                 if status.epoch <= seen:
                     epoch = min(max(status.epoch, seen) + 1, MAX_RESTORE_EPOCH)
@@ -443,6 +464,7 @@ class RestoreAdopter:
             ),
             upstream_drift=drift,
             upstream_proposal=proposal,
+            relocated=tuple(sorted(survey.relocations)),
         )  # fmt: skip
 
     def _upstream_drift(self) -> tuple[tuple[UpstreamSeries, ...], str | None]:
@@ -616,7 +638,14 @@ class RestoreAdopter:
                     )
                 )  # fmt: skip
             for finding in survey.status.findings:
-                moved = max(finding.db_generation, finding.sentinel_generation or 0) + 1
+                moved = min(
+                    max(
+                        finding.db_generation,
+                        min(finding.sentinel_generation or 0, MAX_RESTORE_EPOCH),
+                    )
+                    + 1,
+                    MAX_RESTORE_EPOCH + 1,
+                )
                 new_generation[finding.root_id] = moved
                 connection.execute(
                     sa.update(platform.physical_root)
@@ -636,7 +665,12 @@ class RestoreAdopter:
         chosen = preview.deletions
         deleted: tuple[DeletionCandidate, ...] = ()
         if deletion is not None and chosen and self._purger is not None:
-            self._purger.purge(chosen)
+            self._fsops.unfreeze()  # the confirmed deletion runs under write sessions
+            try:
+                self._purger.purge(chosen)
+            except BaseException:
+                self._fsops.freeze()  # whatever was not deleted stays read only
+                raise
             deleted = chosen
         if not chosen or deleted:  # a deletion still waiting keeps the instance read only
             self._thaw()
