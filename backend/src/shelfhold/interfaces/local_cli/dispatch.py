@@ -231,12 +231,19 @@ def _source_add(admin: HeadlessAdmin, params: Params) -> object:
     return {"id": added.plugin_id, "auth_mode": added.auth_mode, "created": added.created}
 
 
+def _subpath(params: Params) -> str:
+    value = params.get("subpath", "")
+    if not isinstance(value, str):
+        raise _invalid("subpath", "text")
+    return value  # empty is the root of the destination
+
+
 def _shelf_create(admin: HeadlessAdmin, params: Params) -> object:
     created = admin.shelf_create(
         name=str(_text(params, "name")),
         max_age=str(_text(params, "max_age")),
         target=str(_text(params, "target")),
-        subpath=_text(params, "subpath", required=False) or "",
+        subpath=_subpath(params),
         phrase=_text(params, "phrase", required=False),
     )
     return {"shelf_id": created.shelf_id, "destination_id": created.destination_id,
