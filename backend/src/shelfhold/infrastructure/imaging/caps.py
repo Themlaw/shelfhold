@@ -43,8 +43,9 @@ class ImageCaps:
             raise ValueError("caps must be positive")
         if self.max_height is not None and self.max_height <= 0:
             raise ValueError("max_height must be positive")
-        if "EPS" in {name.upper() for name in self.formats}:
-            raise ValueError("EPS is never allowed (Ghostscript)")
+        unlisted = {name for name in self.formats if name not in ALLOWED_FORMATS}
+        if unlisted:  # EPS (Ghostscript) and every other format Pillow could open
+            raise ValueError(f"formats outside the allowlist: {sorted(unlisted)}")
 
 
 _MIB = 1024 * 1024

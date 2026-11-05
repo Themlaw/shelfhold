@@ -6,6 +6,7 @@ from types import ModuleType
 
 import pytest
 from PIL import Image
+
 from shelfhold.infrastructure.imaging import (
     ALLOWED_FORMATS,
     DEFAULT_CAPS,
@@ -108,3 +109,31 @@ def test_image_truncated_data_is_a_decode_failure_not_a_crash(malicious: ModuleT
 def test_image_pillow_global_cap_is_never_disabled() -> None:
     # importing the parent side must not touch Pillow's own guard
     assert Image.MAX_IMAGE_PIXELS == PILLOW_DEFAULT_MAX_PIXELS
+
+
+@pytest.mark.req("ENF-SEC-003")
+@pytest.mark.parametrize(
+    "formats", [("EPS",), ("jpeg", "eps"), ("PNG", "BMP"), ("TIFF",), ("PDF",)]
+)
+def test_image_caps_refuse_formats_outside_the_allowlist(formats: tuple[str, ...]) -> None:
+    with pytest.raises(ValueError, match="allowlist"):
+        ImageCaps(max_pixels=1_000, max_bytes=1_000, formats=formats)
+    assert ImageCaps(max_pixels=1_000, max_bytes=1_000, formats=("PNG",)).formats == ("PNG",)
+
+
+@pytest.mark.req("ENF-SEC-003")
+def test_decode_worker_intersects_the_formats_it_is_given(malicious: ModuleType) -> None:
+    """Even a request that bypassed ImageCaps cannot widen the allowlist inside the worker."""
+    from shelfhold.infrastructure.imaging import run_worker
+
+    request = {"max_pixels": 1_000_000, "max_bytes": 1_000_000, "max_height": None}
+    with pytest.raises(ImageRejected) as caught:
+        run_worker("probe", {"caps": {**request, "formats": ["EPS", "BMP"]}}, malicious.EPS_TEXT)
+    assert caught.value.code == "image.format_refused"
+    with pytest.raises(ImageRejected) as caught:
+        run_worker(
+            "probe",
+            {"caps": {**request, "formats": ["PNG", "BMP"]}},
+            malicious.unlisted_images()["bmp"],
+        )
+    assert caught.value.code == "image.format_refused"
