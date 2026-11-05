@@ -346,6 +346,67 @@ def cbz_with(*members: tuple[str, bytes]) -> bytes:
     return zip_bytes([*members, ("ComicInfo.xml", COMICINFO)])
 
 
+# --- Images (ENF-SEC-003) ----------------------------------------------------------------------
+
+
+def _png_ihdr(width: int, height: int, color_type: int = 0) -> bytes:
+    return _chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, color_type, 0, 0, 0))
+
+
+def png_solid(width: int, height: int) -> bytes:
+    """A valid 8-bit grey PNG of the given size, all zero: huge pixel counts, tiny file.
+
+    The rows are fed to zlib one by one, so a 100 Mpx image never exists in memory here.
+    """
+    packer = zlib.compressobj(9)
+    row = b"\x00" * (width + 1)
+    idat = b"".join(packer.compress(row) for _ in range(height)) + packer.flush()
+    return PNG_MAGIC + _png_ihdr(width, height) + _chunk(b"IDAT", idat) + _chunk(b"IEND", b"")
+
+
+def png_header_only(width: int, height: int) -> bytes:
+    """A PNG that claims a size and carries no pixel data: a size lie, caught at the header."""
+    return PNG_MAGIC + _png_ihdr(width, height) + _chunk(b"IEND", b"")
+
+
+EPS_TEXT = (
+    b"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 10 10\n0 0 moveto 10 10 lineto stroke\nshowpage\n"
+)
+EPS_DOS_BINARY = (
+    b"\xc5\xd0\xd3\xc6" + struct.pack("<5I", 30, len(EPS_TEXT), 0, 0, 0xFFFF) + EPS_TEXT
+)
+
+
+def unlisted_images() -> dict[str, bytes]:
+    """Real or plausible files of formats Pillow can open and Shelfhold never accepts."""
+    bmp = (
+        b"BM"
+        + struct.pack("<IHHI", 58, 0, 0, 54)
+        + struct.pack("<IiiHHIIiiII", 40, 1, 1, 1, 24, 0, 4, 2835, 2835, 0, 0)
+        + b"\x00\x00\xff\x00"
+    )
+    tiff = b"II*\x00\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    ico = (
+        b"\x00\x00\x01\x00\x01\x00\x01\x01\x00\x00\x01\x00\x18\x00"
+        + struct.pack("<II", 4, 22)
+        + bmp[14:]
+    )
+    return {
+        "eps": EPS_TEXT,
+        "eps_dos": EPS_DOS_BINARY,
+        "bmp": bmp,
+        "tiff": tiff,
+        "ppm": b"P6\n1 1\n255\n\xff\x00\x00",
+        "ico": ico,
+        "pdf": b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n",
+        "psd": b"8BPS\x00\x01" + b"\x00" * 40,
+        "svg": SVG_WITH_SCRIPT,
+        "html": HTML_WITH_SCRIPT,
+        "garbage": b"\x00\x01\x02\x03" * 64,
+        "empty": b"",
+    }
+
+
 def write_all(out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, build in XML_CORPUS.items():
@@ -356,6 +417,9 @@ def write_all(out_dir: Path) -> None:
     (out_dir / "encrypted.cbz").write_bytes(encrypted_entry())
     (out_dir / "duplicates.cbz").write_bytes(duplicate_names())
     (out_dir / "svg.cbz").write_bytes(cbz_with(("001.svg", SVG_WITH_SCRIPT)))
+    (out_dir / "bomb_90mpx.png").write_bytes(png_header_only(9500, 9500))
+    for key, data in unlisted_images().items():
+        (out_dir / f"unlisted_{key}.bin").write_bytes(data)
     for key, name in TRAVERSAL_NAMES.items():
         (out_dir / f"traversal_{key}.cbz").write_bytes(traversal(name))
 

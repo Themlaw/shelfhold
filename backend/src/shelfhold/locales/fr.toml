@@ -376,3 +376,19 @@ action = "Ouvrez l'Activité, consultez l'erreur de la tâche puis relancez-la."
 [errors."window.preempted"]
 title = "Une tâche de maintenance a été interrompue à la fin de la fenêtre."
 action = "Aucune action : elle reprendra à la prochaine fenêtre de maintenance."
+
+[errors."image.too_large"]
+title = "L'image dépasse les plafonds de taille ou de dimensions."
+action = "Utilisez une image plus petite ; les plafonds par type sont dans la référence de configuration."
+
+[errors."image.format_refused"]
+title = "Le format de l'image n'est pas accepté."
+action = "Fournissez une image JPEG, PNG, WebP, GIF, AVIF ou JPEG XL."
+
+[errors."image.decode_failed"]
+title = "L'image est illisible ou corrompue."
+action = "Téléchargez le fichier à nouveau ou choisissez une autre image."
+
+[errors."image.worker_failed"]
+title = "Le processus de décodage d'images a échoué."
+action = "Consultez les journaux ; si cela se répète, vérifiez la mémoire disponible du conteneur."
