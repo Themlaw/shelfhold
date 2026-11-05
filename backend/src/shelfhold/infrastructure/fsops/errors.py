@@ -7,6 +7,7 @@ from shelfhold.export.domain.physical_roots import RootState, SentinelFormatErro
 __all__ = [
     "CopyVerificationError",
     "CrossRootError",
+    "EmitterConditionError",
     "EmitterPerimeterError",
     "FsopsError",
     "NotRegularFileError",
@@ -76,3 +77,8 @@ class LeaseRaceError(FsopsError):
 
 class EmitterPerimeterError(FsopsError):
     """A system emitter tried to delete outside its perimeter, or is not a system emitter (N2)."""
+
+
+class EmitterConditionError(FsopsError):
+    """A system emitter is inside its perimeter but its condition does not hold (30-day trash,
+    disk guard actually triggered): nothing was deleted."""

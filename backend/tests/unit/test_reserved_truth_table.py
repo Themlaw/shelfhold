@@ -14,6 +14,7 @@ from hypothesis import strategies as st
 
 from shelfhold.identity.public import (
     CREDENTIAL_AXIS,
+    NO_REAUTH_EFFECTS,
     RESERVED_ACTIONS,
     Allowed,
     Credential,
@@ -22,6 +23,7 @@ from shelfhold.identity.public import (
     Principal,
     ReauthRequired,
     ReservedAction,
+    RoleNotAllowed,
     authorize_reserved,
     credential_axis,
 )
@@ -66,13 +68,40 @@ def principal_for(axis: str, role: str = "admin") -> Principal:
     raise AssertionError(axis)
 
 
+# Everything else, by hand. A new `Effect` must be placed in one of the two sets or CI fails:
+# the default of an unclassified effect is the safe one (freshness required).
+NON_P3 = {
+    "parental_control",
+    "rates_content",
+    "unmasks_request",
+    "manages_credentials",
+    "accepts_admin_risk",
+}
+
+
+def test_every_effect_is_classed_p3_or_not_by_hand() -> None:
+    assert {e.value for e in Effect} == P3 | NON_P3
+    assert not (P3 & NON_P3)
+    assert {Effect(v) for v in NON_P3} == NO_REAUTH_EFFECTS
+
+
+def test_an_unclassified_effect_would_require_freshness() -> None:
+    stale = principal_for("session")
+    action = ReservedAction("synthetic.new", frozenset({Effect.DELETES_PERMANENTLY}))
+    assert isinstance(
+        authorize_reserved(stale, action, now=T0, fresh_auth_s=FRESH_S), ReauthRequired
+    )
+
+
 def expected(
-    axis: str, effects: frozenset[Effect], *, restricted: bool, hardened: bool
-) -> type[Allowed] | type[CredentialNotAllowed] | type[ReauthRequired]:
+    axis: str, effects: frozenset[Effect], *, restricted: bool, hardened: bool, role: str = "admin"
+) -> type[Allowed] | type[CredentialNotAllowed] | type[RoleNotAllowed] | type[ReauthRequired]:
     if axis == "local_cli":
         return Allowed
     if axis != "fresh_session" and axis != "session":
         return CredentialNotAllowed  # every key scope (admin included) and every device token
+    if role != "admin":
+        return RoleNotAllowed  # review PR #43 (M4): reserved means admin unless a route says so
     needs_fresh = (
         hardened
         or bool({e.value for e in effects} & P3)
@@ -128,18 +157,25 @@ def test_truth_table_cell(
         hardened=hardened,
     )
     assert isinstance(
-        verdict, expected(axis, action.effects, restricted=restricted, hardened=hardened)
+        verdict,
+        expected(axis, action.effects, restricted=restricted, hardened=hardened, role=role),
     )
-    # The role does not weaken or strengthen the verdict at this layer: route policy owns roles.
-    other = authorize_reserved(
-        principal_for(axis, "admin"),
-        action,
-        now=T0,
-        fresh_auth_s=FRESH_S,
-        restricted_profile_exists=restricted,
-        hardened=hardened,
+
+
+@pytest.mark.req("EF-USR-024")
+def test_a_route_may_name_the_other_roles_it_admits() -> None:
+    action = RESERVED_ACTIONS["rate"]
+    member = principal_for("fresh_session", "member")
+    assert isinstance(authorize_reserved(member, action, now=T0), RoleNotAllowed)
+    allowed = authorize_reserved(
+        member, action, now=T0, allowed_roles=frozenset({"admin", "member"})
     )
-    assert type(verdict) is type(other)
+    assert isinstance(allowed, Allowed)
+    key = principal_for("api_key:admin", "member")  # a key is refused first, whatever the role
+    assert isinstance(
+        authorize_reserved(key, action, now=T0, allowed_roles=frozenset({"member"})),
+        CredentialNotAllowed,
+    )
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-010")
@@ -161,7 +197,9 @@ def test_truth_table_credential_axis_exhaustive(
         restricted_profile_exists=restricted, hardened=hardened,
     )  # fmt: skip
     # The "session" row is 3 h old, always beyond any `fresh_s` drawn here.
-    assert isinstance(verdict, expected(axis, effects, restricted=restricted, hardened=hardened))
+    assert isinstance(
+        verdict, expected(axis, effects, restricted=restricted, hardened=hardened, role=role)
+    )
     assert credential_axis(principal, now=T0, fresh_auth_s=fresh_s) == axis
 
 

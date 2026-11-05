@@ -306,7 +306,9 @@ WRITERS_ALLOWED = (
 )
 PATH_WRITE_METHODS = {
     "write_text", "write_bytes", "unlink", "rename", "mkdir", "rmdir", "touch",
+    "system_unlink", "system_remove_tree", "_system_empty",  # review PR #43: N2 entry points
 }  # fmt: skip
+LIBRARY_ONLY = ("rmtree", "move", "copyfile", "copy", "copy2", "copytree")  # os.open: TID251
 OS_WRITE_FUNCTIONS = (
     "replace", "rename", "renames", "unlink", "remove", "rmdir", "removedirs", "link",
     "symlink", "mkdir", "makedirs", "truncate",
@@ -333,6 +335,7 @@ FSOPS_CALLERS = (
     "shelfhold/export/application/intents.py",
     "shelfhold/infrastructure/instance/lease.py",
 )
+WRITE_NAMES = {*PATH_WRITE_METHODS, *OS_WRITE_FUNCTIONS, *LIBRARY_ONLY}
 FSOPS_TYPES = {"Fsops", "DiskPort", "WriteSession"}
 
 
@@ -401,6 +404,24 @@ def path_write_offences(source: str, module: str = "") -> list[tuple[int, str]]:
                 found.append((node.lineno, "open(write)"))
         elif isinstance(func, ast.Name) and func.id == "open" and _opens_for_writing(node):
             found.append((node.lineno, "open(write)"))
+        elif isinstance(func, ast.Name) and func.id == "getattr" and len(node.args) >= 2:
+            target, name = node.args[:2]
+            if isinstance(target, ast.Name) and target.id in {"os", "shutil", "Path", "pathlib"}:
+                literal = isinstance(name, ast.Constant) and isinstance(name.value, str)
+                if not literal or name.value in WRITE_NAMES:  # type: ignore[attr-defined]
+                    found.append((node.lineno, "getattr"))
+    seen = {line for line, _ in found}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.lineno not in seen:
+            # A reference that is not a call (`kill = Path.unlink`), or `os.replace`, `shutil.move`
+            library = isinstance(node.value, ast.Name) and node.value.id in {"os", "shutil"}
+            if node.attr in PATH_WRITE_METHODS and not _goes_through_fsops(node, typed):
+                found.append((node.lineno, node.attr))
+            elif library and node.attr in {*OS_WRITE_FUNCTIONS, *LIBRARY_ONLY}:
+                found.append((node.lineno, f"{node.value.id}.{node.attr}"))  # type: ignore[attr-defined]
+        elif isinstance(node, ast.ImportFrom) and (node.module or "") in {"os", "shutil"}:
+            if any(a.name in {*OS_WRITE_FUNCTIONS, *LIBRARY_ONLY} for a in node.names):
+                found.append((node.lineno, f"from {node.module} import"))
     return found
 
 
@@ -463,3 +484,22 @@ def test_ruff_bans_os_file_mutations_outside_fsops() -> None:
         "src/shelfhold/infrastructure/migrate.py",
         "src/shelfhold/infrastructure/volumes.py",
     } <= exempt
+
+
+@pytest.mark.req("EF-EXP-060", "EF-USR-024")
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import os\ngetattr(os, 'unl' + 'ink')(p)",
+        "import shutil\ngetattr(shutil, 'rmtree')(p)",
+        "from shutil import rmtree as rt\nrt(p)",
+        "from os import remove\nremove(p)",
+        "from pathlib import Path\nkill = Path.unlink\nkill(Path(p))",
+        "import os\nos.replace(a, b)",
+        "import shutil\nshutil.move(a, b)",
+        "fsops.system_remove_tree('trash_retention_purge', p)",
+        "fsops.system_unlink('probe_file_cleanup', p)",
+    ],
+)
+def test_the_path_write_scan_catches_the_review_pr43_bypasses(code: str) -> None:
+    assert path_write_offences(code)

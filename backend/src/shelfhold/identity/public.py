@@ -30,15 +30,24 @@ from shelfhold.identity.domain.credentials import (
     credential_axis,
     session_policy,
 )
-from shelfhold.identity.domain.emitters import DELETION_SITES, OWN_SCRATCH, PRIMITIVE, REPLAY
+from shelfhold.identity.domain.emitters import (
+    CLOSED_SITES,
+    DELETION_SITES,
+    OWN_SCRATCH,
+    PRIMITIVE,
+    REPLAY,
+    RESTORE,
+)
 from shelfhold.identity.domain.reserved import (
-    REAUTH_EFFECTS,
+    DEFAULT_RESERVED_ROLES,
+    NO_REAUTH_EFFECTS,
     SYSTEM_EMITTERS,
     Allowed,
     CredentialNotAllowed,
     Effect,
     ReauthRequired,
     ReservedAction,
+    RoleNotAllowed,
     Verdict,
     authorize_reserved,
 )
@@ -46,17 +55,20 @@ from shelfhold.identity.domain.throttle import LoginThrottle
 from shelfhold.identity.domain.tokens import same_secret
 
 __all__ = [
+    "CLOSED_SITES",
     "CREDENTIAL_AXIS",
+    "DEFAULT_RESERVED_ROLES",
     "DELETION_SITES",
     "EXIT_ROUTES",
     "EXIT_STATES_LATER",
     "IDENTITY_HEADER_AUDIT",
     "MAX_PASSWORD_LENGTH",
+    "NO_REAUTH_EFFECTS",
     "OWN_SCRATCH",
     "PRIMITIVE",
-    "REAUTH_EFFECTS",
     "REPLAY",
     "RESERVED_ACTIONS",
+    "RESTORE",
     "SYSTEM_EMITTERS",
     "AdminExistsError",
     "Allowed",
@@ -75,6 +87,7 @@ __all__ = [
     "ReauthMethod",
     "ReauthRequired",
     "ReservedAction",
+    "RoleNotAllowed",
     "SessionAuth",
     "SessionPolicy",
     "ThrottledError",

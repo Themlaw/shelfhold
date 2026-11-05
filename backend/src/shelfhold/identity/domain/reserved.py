@@ -9,6 +9,7 @@ admin risk declares the effect, and the rule follows.
 - A session: allowed; fresh (`auth_time` within `fresh_auth_s`, 900 s by default) only for the
   irreversible or secret-revealing effects, plus parental control when a restricted profile
   exists (P3). The hardened profile asks for freshness on every reserved action.
+- A session of a role outside `allowed_roles` (default `admin`): 403 `forbidden`.
 - The host CLI: allowed.
 
 The rule applies to actions triggered by a credential. The closed list `SYSTEM_EMITTERS` names the
@@ -38,17 +39,22 @@ class Effect(StrEnum):
     ACCEPTS_ADMIN_RISK = "accepts_admin_risk"  # `--accept-admin-risk`
 
 
-# P3: re-authentication only for what cannot be undone or reveals a secret.
-REAUTH_EFFECTS = frozenset(
+# P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody
+# classed is fresh-required (the safe side). Only these effects are listed as NOT needing it, and
+# a test pins `irreversible | these == set(Effect)` by hand, so a new effect fails CI until it is
+# placed in one of the two lists. PARENTAL_CONTROL is here but conditional: it needs freshness as
+# soon as a restricted profile exists.
+NO_REAUTH_EFFECTS = frozenset(
     {
-        Effect.DELETES_PERMANENTLY,
-        Effect.ERASES_RESERVED_DIR,
-        Effect.TOUCHES_SECRETS,
-        Effect.CONFIRMS_RESTORE_DELETION,
-        Effect.TOUCHES_TOMBSTONES,
-        Effect.REINITS_STORAGE,
+        Effect.PARENTAL_CONTROL,
+        Effect.RATES_CONTENT,
+        Effect.UNMASKS_REQUEST,
+        Effect.MANAGES_CREDENTIALS,
+        Effect.ACCEPTS_ADMIN_RISK,
     }
 )
+
+DEFAULT_RESERVED_ROLES = frozenset({"admin"})
 
 # N2: closed list. Adding a name here is a security decision, reviewed as such.
 SYSTEM_EMITTERS = frozenset(
@@ -71,7 +77,7 @@ class ReservedAction:
             raise ValueError("reserved_action_without_effect")
 
     def needs_fresh_auth(self, *, restricted_profile_exists: bool, hardened: bool) -> bool:
-        if hardened or self.effects & REAUTH_EFFECTS:
+        if hardened or self.effects - NO_REAUTH_EFFECTS:
             return True
         return Effect.PARENTAL_CONTROL in self.effects and restricted_profile_exists
 
@@ -87,12 +93,17 @@ class CredentialNotAllowed:
 
 
 @dataclass(frozen=True)
+class RoleNotAllowed:
+    role: str
+
+
+@dataclass(frozen=True)
 class ReauthRequired:
     auth_age_s: int
     max_age_s: int
 
 
-Verdict = Allowed | CredentialNotAllowed | ReauthRequired
+Verdict = Allowed | CredentialNotAllowed | RoleNotAllowed | ReauthRequired
 
 
 def authorize_reserved(
@@ -103,6 +114,7 @@ def authorize_reserved(
     fresh_auth_s: int = DEFAULT_FRESH_AUTH_S,
     restricted_profile_exists: bool = False,
     hardened: bool = False,
+    allowed_roles: frozenset[str] = DEFAULT_RESERVED_ROLES,
 ) -> Verdict:
     match principal.credential:
         case Credential.LOCAL_CLI:
@@ -111,6 +123,8 @@ def authorize_reserved(
             pass
         case _:  # keys and device tokens, whatever their scope
             return CredentialNotAllowed(principal.credential)
+    if principal.role not in allowed_roles:  # review PR #43 (M4): `admin` unless the route says
+        return RoleNotAllowed(principal.role)
     if not action.needs_fresh_auth(
         restricted_profile_exists=restricted_profile_exists, hardened=hardened
     ):

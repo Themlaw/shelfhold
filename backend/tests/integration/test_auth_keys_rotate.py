@@ -1,5 +1,6 @@
 """`admin keys rotate` (EF-USR-003, P4): the new key is shown once, the old one dies with it."""
 
+import os
 import re
 import sqlite3
 from collections.abc import Iterator
@@ -173,5 +174,9 @@ def test_rotate_writes_one_audit_entry_and_never_the_key(
     rows = db_rows(
         api.settings, "SELECT action, target FROM audit WHERE action = 'api_key.rotated'"
     )
-    assert rows == [("api_key.rotated", f"{_prefix(old)}>{_prefix(new)}")]
+    assert rows == [
+        ("api_key.rotated", f"{_prefix(old)}>{_prefix(new)} uid={os.getuid()}"),
+    ]
+    targets = db_rows(api.settings, "SELECT target FROM audit WHERE action LIKE 'api_key.%'")
+    assert all(f"uid={os.getuid()}" in str(t) for (t,) in targets)  # created, rotated: the host uid
     assert new not in db_dump(api.settings)

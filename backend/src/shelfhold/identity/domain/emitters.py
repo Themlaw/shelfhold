@@ -7,6 +7,7 @@ A site is `<path under src>::<qualified function>`. Its class is one of:
 - `PRIMITIVE`: the fsops layer itself; whoever calls it is classed on its own line;
 - `REPLAY`: the crash-recovery replay of the intent journal, which only completes an `rmdir` of an
   empty folder that a classed emitter journaled before the crash;
+- `RESTORE`: the rollback of the database file to its pre-migration copy;
 - `OWN_SCRATCH`: a file the process created for its own mechanism (temporary copy, progress
   marker, lease swap), never library data.
 
@@ -19,33 +20,57 @@ from types import MappingProxyType
 
 PRIMITIVE = "fsops_primitive"
 OWN_SCRATCH = "own_scratch"
+RESTORE = "restore"
 REPLAY = "intent_replay"
 
 _FSOPS = "shelfhold/infrastructure/fsops"
 
-DELETION_SITES: Mapping[str, str] = MappingProxyType(
+# Each closed class lists exactly the sites it admits; nothing is admitted by module.
+CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
     {
-        # The fsops layer: every caller of these is a site of its own below or elsewhere.
-        f"{_FSOPS}/confined.py::ConfinedRoot.unlink": PRIMITIVE,
-        f"{_FSOPS}/confined.py::ConfinedRoot.rmdir": PRIMITIVE,
-        f"{_FSOPS}/confined.py::ConfinedRoot.remove_tree": PRIMITIVE,
-        f"{_FSOPS}/confined.py::ConfinedRoot._empty": PRIMITIVE,
-        f"{_FSOPS}/confined.py::ConfinedRoot._rename_noreplace": PRIMITIVE,  # a moved source
-        f"{_FSOPS}/facade.py::Fsops.unlink": PRIMITIVE,
-        f"{_FSOPS}/facade.py::Fsops.rmdir": PRIMITIVE,
-        f"{_FSOPS}/facade.py::Fsops.recycle": PRIMITIVE,  # empty folders it just made
-        f"{_FSOPS}/facade.py::Fsops.system_unlink": PRIMITIVE,  # perimeter-checked, N2
-        f"{_FSOPS}/facade.py::Fsops.system_remove_tree": PRIMITIVE,
-        "shelfhold/infrastructure/instance/lease.py::WriteSession.unlink": PRIMITIVE,
-        "shelfhold/infrastructure/instance/lease.py::WriteSession.rmdir": PRIMITIVE,
-        # System emitters (closed list)
-        f"{_FSOPS}/facade.py::Fsops._system_empty": PRIMITIVE,  # checks the emitter's perimeter
-        f"{_FSOPS}/writer.py::_discard": "staging_orphan_cleanup",  # a failed write's staged file
-        # The process's own mechanism
-        f"{_FSOPS}/facade.py::_claim_lease": OWN_SCRATCH,
-        "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear": OWN_SCRATCH,
-        "shelfhold/infrastructure/migrate.py::_restore_database": OWN_SCRATCH,
-        "shelfhold/infrastructure/secrets/atomic.py::write_private": OWN_SCRATCH,
-        "shelfhold/export/application/intents.py::IntentJournal._resolve_rmdir": REPLAY,
+        # The fsops layer: every caller of these is a site of its own.
+        PRIMITIVE: frozenset(
+            {
+                f"{_FSOPS}/confined.py::ConfinedRoot.unlink",
+                f"{_FSOPS}/confined.py::ConfinedRoot.rmdir",
+                f"{_FSOPS}/confined.py::ConfinedRoot.remove_tree",
+                f"{_FSOPS}/confined.py::ConfinedRoot._empty",
+                f"{_FSOPS}/confined.py::ConfinedRoot._rename_noreplace",
+                f"{_FSOPS}/facade.py::Fsops.unlink",
+                f"{_FSOPS}/facade.py::Fsops.rmdir",
+                f"{_FSOPS}/facade.py::Fsops.recycle",  # empty folders it just made
+                f"{_FSOPS}/facade.py::Fsops.system_unlink",  # perimeter and condition checked
+                f"{_FSOPS}/facade.py::Fsops.system_remove_tree",
+                f"{_FSOPS}/facade.py::Fsops._system_empty",
+                "shelfhold/infrastructure/instance/lease.py::WriteSession.unlink",
+                "shelfhold/infrastructure/instance/lease.py::WriteSession.rmdir",
+            }
+        ),
+        # The process's own mechanism: temporary copy, progress marker, lease swap.
+        OWN_SCRATCH: frozenset(
+            {
+                f"{_FSOPS}/facade.py::_claim_lease",
+                "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",
+                "shelfhold/infrastructure/secrets/atomic.py::write_private",
+            }
+        ),
+        # Rolls the database file (and its sidecars) back to the copy taken before a migration.
+        RESTORE: frozenset({"shelfhold/infrastructure/migrate.py::_restore_database"}),
+        # Completes an `rmdir` of an empty folder a classed emitter journaled before a crash.
+        REPLAY: frozenset(
+            {"shelfhold/export/application/intents.py::IntentJournal._resolve_rmdir"}
+        ),
     }
+)
+
+_OTHER: Mapping[str, str] = MappingProxyType(
+    {
+        # System emitters (closed list): `system_*` calls name theirs as a literal.
+        f"{_FSOPS}/facade.py::Fsops.boot": "staging_orphan_cleanup",
+        f"{_FSOPS}/writer.py::_discard": "staging_orphan_cleanup",  # a failed write's staged file
+    }
+)
+
+DELETION_SITES: Mapping[str, str] = MappingProxyType(
+    {**{site: name for name, sites in CLOSED_SITES.items() for site in sites}, **_OTHER}
 )
