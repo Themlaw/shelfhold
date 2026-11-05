@@ -31,7 +31,8 @@ from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.domain.path_map import PathMode, clean_absolute
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.schema import export, storage
+from shelfhold.infrastructure.schema import export
+from shelfhold.library.public import relocate_destination_copy
 
 __all__ = [
     "DryRunRequiredError",
@@ -340,21 +341,12 @@ class Repatriator:
             raise RepatriationBlockedError((action,))
         identity = found[1]
         root_id, root_rel = self._locate(action.target)
-        replica = storage.replica
         with self._engine.begin() as connection:
-            values: dict[str, Any] = {
-                "physical_root_id": root_id, "rel_path": root_rel, "ino": identity.ino,
-                "dev": self._fsops.device_of(action.target), "size": identity.size,
-                "mtime_ns": identity.mtime_ns, "verified_at": self._clock.now(),
-            }  # fmt: skip
-            connection.execute(
-                sa.update(replica)
-                .where(
-                    replica.c.export_item_id == action.export_item_id,
-                    replica.c.location == "destination",
-                )
-                .values(**values)
-            )
+            relocate_destination_copy(
+                connection, action.export_item_id, physical_root_id=root_id, rel_path=root_rel,
+                dev=self._fsops.device_of(action.target), ino=identity.ino, size=identity.size,
+                mtime_ns=identity.mtime_ns, verified_at=self._clock.now(),
+            )  # fmt: skip
             connection.execute(
                 sa.update(export.export_record)
                 .where(export.export_record.c.export_item_id == action.export_item_id)
