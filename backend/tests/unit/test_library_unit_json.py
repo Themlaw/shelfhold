@@ -75,7 +75,14 @@ def test_minor_format_unknown_fields_preserved() -> None:
 @pytest.mark.req("ENF-OPS-013")
 @pytest.mark.parametrize(
     "raw",
-    [b"", b"[]", b"not json", b'{"unit_id": "x"}', b'{"schema_version": "0.9"}', b'{"schema_version": "x"}'],
+    [
+        b"",
+        b"[]",
+        b"not json",
+        b'{"unit_id": "x"}',
+        b'{"schema_version": "0.9"}',
+        b'{"schema_version": "x"}',
+    ],
 )
 def test_unit_json_without_a_usable_version_is_corrupt(raw: bytes) -> None:
     with pytest.raises(UnitJsonCorruptError):

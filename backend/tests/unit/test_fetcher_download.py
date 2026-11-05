@@ -46,7 +46,7 @@ def chunked(parts: int, size: int) -> AsyncIterator[bytes]:
     return gen()
 
 
-def run(fetcher: GuardedFetcher, url: str, sink: Sink, **kw: object):  # noqa: ANN201
+def run(fetcher: GuardedFetcher, url: str, sink: Sink, **kw: object):
     return asyncio.run(fetcher.download(url, sink, **kw))  # type: ignore[arg-type]
 
 
@@ -82,7 +82,12 @@ def test_download_stops_at_the_bound_even_when_the_length_header_lies() -> None:
     )
     sink = Sink()
     with pytest.raises(FetchTooLarge):
-        run(GuardedFetcher(DNS, transport=rec.transport), "http://files.example.org/c", sink, max_bytes=5000)
+        run(
+            GuardedFetcher(DNS, transport=rec.transport),
+            "http://files.example.org/c",
+            sink,
+            max_bytes=5000,
+        )
     assert len(sink.getvalue()) <= 5000 + 1000  # stopped at the first chunk past the bound
 
 
@@ -93,7 +98,12 @@ def test_download_declared_length_above_the_bound_is_refused_before_any_write() 
     )
     sink = Sink()
     with pytest.raises(FetchTooLarge):
-        run(GuardedFetcher(DNS, transport=rec.transport), "http://files.example.org/c", sink, max_bytes=1 << 20)
+        run(
+            GuardedFetcher(DNS, transport=rec.transport),
+            "http://files.example.org/c",
+            sink,
+            max_bytes=1 << 20,
+        )
     assert sink.writes == []
 
 
@@ -101,17 +111,29 @@ def test_download_declared_length_above_the_bound_is_refused_before_any_write() 
 def test_download_keeps_the_ssrf_guard_and_the_redirect_rules() -> None:
     rec = Recorder(lambda r: httpx2.Response(200, content=b"x"))
     with pytest.raises(SsrfBlocked):
-        run(GuardedFetcher(DNS, transport=rec.transport), "http://evil.example.org/c", Sink(), max_bytes=10)
+        run(
+            GuardedFetcher(DNS, transport=rec.transport),
+            "http://evil.example.org/c",
+            Sink(),
+            max_bytes=10,
+        )
     assert rec.requests == []  # refused before any connection
 
     def respond(request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/start":
-            return httpx2.Response(302, headers={"location": "http://evil.example.org/c"}, content=b"junk")
+            return httpx2.Response(
+                302, headers={"location": "http://evil.example.org/c"}, content=b"junk"
+            )
         return httpx2.Response(200, content=b"x")
 
     sink = Sink()
     with pytest.raises(SsrfBlocked):
-        run(GuardedFetcher(DNS, transport=Recorder(respond).transport), "http://files.example.org/start", sink, max_bytes=10)
+        run(
+            GuardedFetcher(DNS, transport=Recorder(respond).transport),
+            "http://files.example.org/start",
+            sink,
+            max_bytes=10,
+        )
     assert sink.getvalue() == b""  # the body of a redirection is never written
 
 
@@ -119,5 +141,10 @@ def test_download_keeps_the_ssrf_guard_and_the_redirect_rules() -> None:
 def test_download_writes_nothing_for_an_error_status() -> None:
     rec = Recorder(lambda r: httpx2.Response(404, content=b"<html>not found</html>"))
     sink = Sink()
-    result = run(GuardedFetcher(DNS, transport=rec.transport), "http://files.example.org/c", sink, max_bytes=1000)
+    result = run(
+        GuardedFetcher(DNS, transport=rec.transport),
+        "http://files.example.org/c",
+        sink,
+        max_bytes=1000,
+    )
     assert result.status == 404 and result.size == 0 and sink.getvalue() == b""

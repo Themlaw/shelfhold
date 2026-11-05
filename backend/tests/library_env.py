@@ -83,7 +83,9 @@ class LibEnv:
     def new_unit(self) -> tuple[str, str]:
         """Another Unit and Variant in the same Edition and binding."""
         with self.engine.begin() as connection:
-            number = str(int(connection.execute(sa.text("SELECT count(*) FROM unit")).scalar_one()) + 1)
+            number = str(
+                int(connection.execute(sa.text("SELECT count(*) FROM unit")).scalar_one()) + 1
+            )
             unit_id = add_unit(connection, self.chain["edition"], number)
             variant_id = add_variant(connection, unit_id, self.chain["binding"], f"ch-{number}")
         return unit_id, variant_id
@@ -111,7 +113,9 @@ def lib_env() -> Iterator[LibEnv]:
             ExpectedRoot(store_root, str(store), instance_id, 1),
         ]
         for root_id, path in ((library_root, library), (store_root, store)):
-            create_sentinel(path, SentinelDocument(root_id=root_id, instance_id=instance_id, generation=1))
+            create_sentinel(
+                path, SentinelDocument(root_id=root_id, instance_id=instance_id, generation=1)
+            )
         path_map = PathMap((PathEntry(str(manga), "/manga"), PathEntry(str(store), "/store")))
         engine = create_db_engine(db_path)
         with engine.begin() as connection:

@@ -1,6 +1,12 @@
 """The Fetcher: the only outbound HTTP path, behind the SSRF guard (ENF-SEC-001, EF-UX-003)."""
 
-from shelfhold.infrastructure.fetcher.client import FetchLimits, GuardedFetcher, IntegrationFetcher
+from shelfhold.infrastructure.fetcher.client import (
+    Download,
+    FetchLimits,
+    GuardedFetcher,
+    IntegrationFetcher,
+    Sink,
+)
 from shelfhold.infrastructure.fetcher.errors import (
     DnsBlocked,
     DnsResolutionError,
@@ -21,6 +27,7 @@ from shelfhold.infrastructure.fetcher.resolver import Resolver, SystemResolver
 __all__ = [
     "DnsBlocked",
     "DnsResolutionError",
+    "Download",
     "FetchError",
     "FetchLimits",
     "FetchTimeout",
@@ -32,6 +39,7 @@ __all__ = [
     "InvalidLanTarget",
     "LanTargets",
     "Resolver",
+    "Sink",
     "SsrfBlocked",
     "SystemResolver",
     "TooManyRedirects",

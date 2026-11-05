@@ -1,4 +1,4 @@
-"""content_hash: the hash of the original payload, whatever Shelfhold rendered around it (EF-BIB-048)."""
+"""content_hash: the hash of the original payload, not of what Shelfhold rendered (EF-BIB-048)."""
 
 import hashlib
 import io
@@ -57,8 +57,14 @@ def test_content_hash_follows_pages_bytes_order_and_names(other: bytes) -> None:
 @pytest.mark.req("EF-BIB-048")
 @pytest.mark.parametrize(
     ("name", "rendered"),
-    [("ComicInfo.xml", True), ("comicinfo.XML", True), ("sub/ComicInfo.xml", True)]
-    + [("001.png", False), ("ComicInfo.xml.png", False), ("notComicInfo.xml", False)],
+    [
+        ("ComicInfo.xml", True),
+        ("comicinfo.XML", True),
+        ("sub/ComicInfo.xml", True),
+        ("001.png", False),
+        ("ComicInfo.xml.png", False),
+        ("notComicInfo.xml", False),
+    ],
 )
 def test_rendered_sidecar_names(name: str, rendered: bool) -> None:
     assert is_rendered_sidecar(name) is rendered

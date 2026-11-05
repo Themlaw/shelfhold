@@ -51,6 +51,8 @@ def test_meta_rebuild_writes_every_unit_json_and_check_reports_drift(
 
 
 @pytest.mark.req("ENF-OPS-020")
-def test_meta_rebuild_refuses_an_unknown_unit(seeded: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_meta_rebuild_refuses_an_unknown_unit(
+    seeded: str, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert cli.main(["meta", "rebuild", "--unit", "01JC0000000000000000000000"]) == 1
     assert capsys.readouterr().err

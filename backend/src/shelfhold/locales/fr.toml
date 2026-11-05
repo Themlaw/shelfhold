@@ -7,6 +7,10 @@ serve_help = "Démarre le serveur HTTP."
 config_help = "Consulte la configuration."
 config_show_help = "Affiche chaque champ avec son origine (env, toml, db, défaut)."
 json_help = "Sortie au format JSON."
+meta_help = "Fichiers unit.json : régénère ou vérifie ces projections de la base."
+meta_rebuild_help = "Réécrit les unit.json divergents, manquants ou illisibles à partir de la base."
+meta_check_help = "Liste les unit.json qui divergent de la base (code 1 s'il y en a)."
+meta_unit_help = "Se limite à un chapitre (identifiant)."
 secrets_help = "Gère les secrets chiffrés au repos : export, rotation, état du trousseau."
 secrets_export_help = "Exporte le trousseau dans un fichier age protégé par une phrase de passe."
 secrets_passphrase_file_help = "Fichier contenant la phrase de passe (jamais en argument de ligne de commande)."
@@ -126,6 +130,12 @@ key_unknown = "Aucune clé active avec le préfixe {prefix}."
 no_keys = "Aucune clé d'API."
 key_line = "{prefix}  {name}  {scopes}  {state}"
 database_missing = "Base absente ou pas à jour : lancez d'abord « shelfhold migrate »."
+
+[meta]
+unknown_unit = "Chapitre inconnu : {unit}"
+rebuilt = "{written} fichier(s) unit.json réécrit(s) à partir de la base."
+drift = "unit.json diverge de la base : {unit}"
+newer_format = "unit.json d'un format plus récent, laissé tel quel (lecture seule) : {unit}"
 
 # Catalogue d'erreurs (EF-UX-003) : un titre et une action par code ; le code est la clé.
 
@@ -424,6 +434,10 @@ action = "Connectez-vous, ou fournissez une clé d'API valide."
 [errors."unit.safeguard_backlog"]
 title = "La file de mise à l'abri est saturée."
 action = "Laissez la file se vider ou augmentez le quota de mise à l'abri."
+
+[errors."unit.confirmation_required"]
+title = "Ce chapitre est irremplaçable : la suppression demande une confirmation."
+action = "Tapez l'identifiant du chapitre pour confirmer. Aucune copie ne sera supprimée sans cela."
 
 [errors."unit.safeguard_failed"]
 title = "La mise à l'abri d'un chapitre a échoué."

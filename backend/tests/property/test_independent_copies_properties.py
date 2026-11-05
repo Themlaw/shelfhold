@@ -1,4 +1,4 @@
-"""independent_copies counts by content_hash, whatever the file hash says (EF-BIB-045, EF-BIB-048)."""
+"""independent_copies counts by content_hash, whatever the file hash says (EF-BIB-045/048)."""
 
 import pytest
 import sqlalchemy as sa
@@ -17,7 +17,7 @@ rows = st.lists(
     st.fixed_dictionaries(
         {
             "content_hash": st.sampled_from([A, B, None]),
-            "file_hash": st.sampled_from(FILE_HASHES + [None]),
+            "file_hash": st.sampled_from([*FILE_HASHES, None]),
             "independent": st.booleans(),
             "inode": st.integers(1, 4),  # few inodes: collisions are hard links
             "location": st.sampled_from(["library", "store", "adopted_ro"]),

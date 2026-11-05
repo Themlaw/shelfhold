@@ -65,7 +65,7 @@ def ingest_and_render(env: LibEnv, received: bytes) -> Path:
     return dest
 
 
-def upstream_of(env: LibEnv, data: bytes):  # noqa: ANN201
+def upstream_of(env: LibEnv, data: bytes):
     @contextmanager
     def fetch() -> Iterator[Received]:
         path = env.stage(data)
@@ -94,8 +94,12 @@ def test_safeguard_from_library_strips_rendering_and_verifies_content_hash() -> 
             row = c.execute(sa.select(storage.content)).one()
             assert (row.retention, row.store_provenance) == ("keep", "extracted")
             assert row.path == stored.relative_to(env.store).as_posix()
-            assert row.original_sha256 == sha(received)  # what was received is still what was received
-            assert independent_copies(c, env.chain["unit"]) == 2  # library + a distinct inode in store
+            assert row.original_sha256 == sha(
+                received
+            )  # what was received is still what was received
+            assert (
+                independent_copies(c, env.chain["unit"]) == 2
+            )  # library + a distinct inode in store
         inodes = {stored.stat().st_ino, dest.stat().st_ino}
         assert len(inodes) == 2  # never a hard link (EF-BIB-027)
 
@@ -109,12 +113,24 @@ def test_safeguard_refuses_and_writes_nothing_when_the_content_hash_does_not_ver
         with env.engine.begin() as c:  # still the manifest's file hash: only the bytes changed
             c.execute(sa.update(storage.replica).values(file_hash=sha(tampered)))
         with pytest.raises(SafeguardFailedError) as raised:
-            safeguard(env).run(env.chain["unit"])  # no upstream, the library file is not the payload
-        assert raised.value.code == "unit.safeguard_failed" and raised.value.reason == "content_hash_mismatch"
+            safeguard(env).run(
+                env.chain["unit"]
+            )  # no upstream, the library file is not the payload
+        assert (
+            raised.value.code == "unit.safeguard_failed"
+            and raised.value.reason == "content_hash_mismatch"
+        )
         assert env.files_under(env.store) == []
         with env.engine.connect() as c:
             assert c.execute(sa.select(storage.content.c.retention)).scalar_one() == "passthrough"
-            assert c.execute(sa.select(sa.func.count()).select_from(storage.replica).where(storage.replica.c.location == "store")).scalar_one() == 0
+            assert (
+                c.execute(
+                    sa.select(sa.func.count())
+                    .select_from(storage.replica)
+                    .where(storage.replica.c.location == "store")
+                ).scalar_one()
+                == 0
+            )
 
 
 @pytest.mark.req("EF-BIB-045")
@@ -131,8 +147,12 @@ def test_safeguard_reads_upstream_when_library_file_differs_from_manifest() -> N
         with env.engine.connect() as c:
             # the registry reflects the real state: the altered library file is not a copy of it
             assert independent_copies(c, env.chain["unit"]) == 1
-            library = c.execute(sa.select(storage.replica).where(storage.replica.c.location == "library")).one()
-            assert library.content_hash == hash_of(third_party) and library.file_hash == sha(third_party)
+            library = c.execute(
+                sa.select(storage.replica).where(storage.replica.c.location == "library")
+            ).one()
+            assert library.content_hash == hash_of(third_party) and library.file_hash == sha(
+                third_party
+            )
 
 
 @pytest.mark.req("EF-BIB-045")

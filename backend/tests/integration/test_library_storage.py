@@ -31,7 +31,7 @@ def store_for(env: LibEnv, **kwargs: int) -> PassthroughStore:
     return PassthroughStore(env.engine, env.fsops, env.locate, env.data, **kwargs)
 
 
-def ingest(env: LibEnv, data: bytes, *, unit_id: str | None = None, variant_id: str | None = None):  # noqa: ANN201
+def ingest(env: LibEnv, data: bytes, *, unit_id: str | None = None, variant_id: str | None = None):
     unit_id = unit_id or env.chain["unit"]
     variant_id = variant_id or env.chain["variant"]
     dest = env.manga / "Dr Stone" / f"Dr Stone - {unit_id[-4:]}.cbz"
@@ -44,7 +44,9 @@ def ingest(env: LibEnv, data: bytes, *, unit_id: str | None = None, variant_id: 
 def content_row(env: LibEnv, unit_id: str | None = None) -> sa.Row[tuple[object, ...]]:
     with env.engine.connect() as c:
         return c.execute(
-            sa.select(storage.content).where(storage.content.c.unit_id == (unit_id or env.chain["unit"]))
+            sa.select(storage.content).where(
+                storage.content.c.unit_id == (unit_id or env.chain["unit"])
+            )
         ).one()
 
 
@@ -99,7 +101,9 @@ def test_irreplaceable_never_deleted_without_typed_confirmation() -> None:
             assert not irreplaceability(c, unit).irreplaceable  # a live source
             require_deletion_allowed(c, unit, typed=None)
         with env.engine.begin() as c:  # the source goes away
-            c.execute(sa.update(acquisition.source_binding).values(active=False, disabled_reason="manual"))
+            c.execute(
+                sa.update(acquisition.source_binding).values(active=False, disabled_reason="manual")
+            )
         with env.engine.connect() as c:
             assert irreplaceability(c, unit).irreplaceable
             for typed in (None, "", "yes", unit.lower()):
@@ -111,8 +115,14 @@ def test_irreplaceable_never_deleted_without_typed_confirmation() -> None:
             allowed, kept = safe_to_clean(c, [unit, other])
             assert (allowed, kept) == ([], [unit, other])  # the other one has no live source either
         with env.engine.begin() as c:
-            c.execute(sa.update(acquisition.source_binding).values(active=True, disabled_reason=None))
-            c.execute(sa.update(catalog.unit).where(catalog.unit.c.id == unit).values(availability="removed"))
+            c.execute(
+                sa.update(acquisition.source_binding).values(active=True, disabled_reason=None)
+            )
+            c.execute(
+                sa.update(catalog.unit)
+                .where(catalog.unit.c.id == unit)
+                .values(availability="removed")
+            )
         with env.engine.connect() as c:
             assert irreplaceability(c, unit).irreplaceable  # source "removed": kept and flagged
             assert safe_to_clean(c, [unit, other]) == ([other], [unit])
@@ -144,14 +154,18 @@ def test_received_cbz_off_the_allowlist_is_refused_and_nothing_is_ingested(bad: 
             ingest(env, bad)
         assert env.files_under(env.library) == [] and env.files_under(env.data) == []
         with env.engine.connect() as c:
-            assert c.execute(sa.select(sa.func.count()).select_from(storage.content)).scalar_one() == 0
+            assert (
+                c.execute(sa.select(sa.func.count()).select_from(storage.content)).scalar_one() == 0
+            )
 
 
 @pytest.mark.req("ENF-SEC-002")
 def test_received_cbz_above_the_bound_is_refused_before_it_is_opened() -> None:
     with lib_env() as env:
         data = cbz_bytes((("001.png", PNG + b"\0" * 5000),))
-        small = PassthroughStore(env.engine, env.fsops, env.locate, env.data, max_received_bytes=1000)
+        small = PassthroughStore(
+            env.engine, env.fsops, env.locate, env.data, max_received_bytes=1000
+        )
         with pytest.raises(ReceivedTooLargeError):
             small.ingest(
                 unit_id=env.chain["unit"], variant_id=env.chain["variant"],
@@ -164,7 +178,7 @@ def test_received_cbz_above_the_bound_is_refused_before_it_is_opened() -> None:
 def test_received_size_default_is_512_mib_and_settable() -> None:
     from shelfhold.config import load_settings
 
-    base = {"SHELFHOLD_DATA_DIR": "/tmp/x-data", "SHELFHOLD_STORE_DIR": "/tmp/x-store"}
+    base = {"SHELFHOLD_DATA_DIR": "/srv/d", "SHELFHOLD_STORE_DIR": "/srv/s"}
     assert load_settings(base).values.received_cbz_max_bytes == 512 * 1024 * 1024
     raised = load_settings({**base, "SHELFHOLD_RECEIVED_CBZ_MAX_BYTES": "1048576"})
     assert raised.values.received_cbz_max_bytes == 1048576

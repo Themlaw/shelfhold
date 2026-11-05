@@ -26,7 +26,9 @@ def meta_files(env: LibEnv) -> list[Path]:
 @pytest.mark.req("ENF-OPS-020")
 def test_meta_path_is_flat_and_by_ulid() -> None:
     unit = "01JC1234567890ABCDEFGHJKMN"
-    assert meta_path(Path("/data"), unit) == Path("/data/meta/units/01/01JC1234567890ABCDEFGHJKMN.json")
+    assert meta_path(Path("/data"), unit) == Path(
+        "/data/meta/units/01/01JC1234567890ABCDEFGHJKMN.json"
+    )
     with pytest.raises(ValueError):
         meta_path(Path("/data"), "../../etc/passwd")
 
@@ -59,6 +61,7 @@ def test_a_crash_between_the_commit_and_the_projection_is_repaired_at_boot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with lib_env() as env:
+
         def die(self: MetaProjection, unit_id: str) -> None:
             raise KeyboardInterrupt("kill -9")
 
@@ -112,4 +115,8 @@ def test_older_minor_on_disk_is_migrated_when_next_written_and_unknown_fields_su
         path.write_text(json.dumps(old), encoding="utf-8")
         assert MetaProjection(env.engine, env.data).repair().written == [env.chain["unit"]]
         new = json.loads(path.read_bytes())
-        assert new["schema_version"] == "1.1" and new["x_keep"] == {"a": 1} and new["file_hashes"] == []
+        assert (
+            new["schema_version"] == "1.1"
+            and new["x_keep"] == {"a": 1}
+            and len(new["file_hashes"]) == 1
+        )
