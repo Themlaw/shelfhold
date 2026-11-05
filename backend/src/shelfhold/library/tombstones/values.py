@@ -56,6 +56,12 @@ class PlaceRef:
 
     scope: Scope = field(default="place", init=False)
 
+    def __post_init__(self) -> None:
+        # Without the Work and the language a place would match chapter N of every Work.
+        key = dict(self.edition_key)
+        if not key.get("work_id") or not key.get("lang"):
+            raise TombstoneValueError("a place names its Work (work_id) and its language (lang)")
+
     @classmethod
     def of(
         cls,

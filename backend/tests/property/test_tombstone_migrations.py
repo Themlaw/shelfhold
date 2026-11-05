@@ -123,9 +123,9 @@ def test_tombstoned_number_blocked_under_every_cited_version(number: int, fracti
     """Property: a place purged under number@1 stays blocked for every spelling number@1 merges
     with it, whatever number@2 says."""
     index = MembershipIndex(normalizers_of(_with_number_v2(_strict)))
-    place = PlaceRef.of({"lang": "fr"}, track="main", number_segment="", number_raw=str(number),
-                        part="")  # fmt: skip
+    place = PlaceRef.of({"work_id": "W1", "lang": "fr"}, track="main", number_segment="",
+                        number_raw=str(number), part="")  # fmt: skip
     index.add_all([(place, {"number": "number@1", "lang": "lang@1"})])
-    spelled = PlaceRef.of({"lang": "FR"}, track="main", number_segment="",
+    spelled = PlaceRef.of({"work_id": "W1", "lang": "FR"}, track="main", number_segment="",
                           number_raw=f"{number:03d}{fraction}", part="")  # fmt: skip
     assert index.contains(spelled)

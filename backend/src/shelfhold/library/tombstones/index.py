@@ -30,8 +30,14 @@ from shelfhold.library.tombstones.values import (
 # field of the flattened values -> name of its normalizer (ENF-OPS-021)
 NORMALIZED_FIELDS: Final[Mapping[str, str]] = {
     "number_raw": "number",
+    # an output of the number normalizer: re-derived from `number_raw`, never compared as stored
+    "number_segment": "number_segment",
     "edition_key.lang": "lang",
+    "edition_key.publisher": "publisher",
+    "edition_key.text_version": "text_version",
 }
+# An empty number (unnumbered) says nothing; an empty segment or publisher is a real value.
+EMPTY_MEANS_UNKNOWN: Final = frozenset({"number_raw"})
 HashWith = Callable[[str], str | None]
 
 
@@ -73,7 +79,7 @@ def flatten(values: TombstoneValues) -> dict[str, str]:
         flat = {f"edition_key.{k}": v for k, v in values.edition_key}
         flat.update(
             track=values.track,
-            number_segment=values.number_segment,
+            number_segment=values.number_raw,  # derived again under each version (see above)
             number_raw=values.number_raw,
             part=values.part,
         )
@@ -143,14 +149,16 @@ class MembershipIndex:
             versions.add(self._normalizers.current_version(name))
         return sorted(versions)
 
-    def _form(self, version: str, raw: str) -> str:
+    def _form(self, field_name: str, version: str, raw: str) -> str:
         try:
             normalized = self._normalizers.apply(version, raw)
         except ValueError:
             return "r:" + raw  # refused by this version: compared as received
         # An empty form (an unnumbered chapter) says nothing about the place: compare the raw
         # value, or every unnumbered chapter of the Edition would collide with a purged one.
-        return "n:" + normalized if normalized else "r:" + raw
+        if not normalized and field_name in EMPTY_MEANS_UNKNOWN:
+            return "r:" + raw
+        return "n:" + normalized
 
     def _assignments(self, fields: frozenset[str]) -> list[tuple[tuple[str, str], ...]]:
         normalized = sorted(f for f in fields if f in NORMALIZED_FIELDS)
@@ -160,7 +168,7 @@ class MembershipIndex:
     def _key(self, flat: Mapping[str, str], assignment: tuple[tuple[str, str], ...]) -> _Key:
         chosen = dict(assignment)
         return tuple(
-            (name, self._form(chosen[name], value) if name in chosen else "r:" + value)
+            (name, self._form(name, chosen[name], value) if name in chosen else "r:" + value)
             for name, value in sorted(flat.items())
         )
 

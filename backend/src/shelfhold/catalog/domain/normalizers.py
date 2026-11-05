@@ -166,10 +166,14 @@ def default_registry() -> NormalizerRegistry:
     registry = NormalizerRegistry()
     for name in ("series_name", "team_label", "text_version"):
         registry.register(name, 1, _key_text)
+    # Edition key column kept as given but compared in NFC (tombstones, review PR #52).
+    registry.register("publisher", 1, to_nfc)
     # `number` and `lang` are owned by their modules; the registry only lists their version.
     registry.register(
         NUMBER_NORMALIZER_NAME, NUMBER_NORMALIZER_VERSION, lambda s: parse_number(s).norm
     )
+    # The segment is an output of the number normalizer, re-derived from the raw number.
+    registry.register("number_segment", 1, lambda s: parse_number(s).segment)
     registry.register(
         LANG_NORMALIZER_NAME, LANG_NORMALIZER_VERSION, lambda s: normalize_lang(s).tag
     )
