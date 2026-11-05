@@ -26,7 +26,8 @@ from shelfhold.library.tombstones import (
     VariantRef,
 )
 from tests.fsops_env import INSTANCE_ID
-from tests.tombstone_env import HASH, PLACE, SERIES, SLUG, TITLE, VARIANT, make_tomb_env
+from tests.intents_env import NOW
+from tests.tombstone_env import ADMIN, HASH, PLACE, SERIES, SLUG, TITLE, VARIANT, make_tomb_env
 
 pytestmark = pytest.mark.req("EF-BIB-054", "ENF-SEC-005")
 
@@ -163,7 +164,7 @@ def test_tombstone_and_audit_hold_no_title(tmp_path: Path) -> None:
     env.store.write(Keyring.generate())  # the keyring is lost
     lost = env.service()
     lost.replay(env.roots)
-    lost.accept_lost_keyring(env.roots, confirmation=LOST_KEYRING_PHRASE, actor_id=None)
+    lost.accept_lost_keyring(env.roots, confirmation=LOST_KEYRING_PHRASE, principal=ADMIN, now=NOW)
     everything = _everything_on_disk(tmp_path, tmp_path / "shelfhold.db")
     for secret in (TITLE, SLUG, HASH, HASH.removeprefix("sha256:"), "/chapter/", "/manga/"):
         assert secret.encode() not in everything, secret

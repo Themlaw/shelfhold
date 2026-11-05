@@ -15,7 +15,8 @@ pending lines first, then the table and every mounted journal, line by line:
   merged into it;
 - the kid is in the keyring but the line does not open (altered, copied from another root,
   forged), or the line is malformed: **inert**, `tombstone.unverified`;
-- the kid is not in the keyring but is in the registry (database or the root's sentinel): the
+- the kid is not in the keyring but is in the registry (the database's, or an entry of the root's
+  sentinel whose tag verifies under a key we hold, review PR #52): the
   reacquisition of its scope on that root **blocks**, and so does reconcile, `tombstone.key_unknown`
   (a backup older than a rotation, keyring not imported), until `secrets import` or the typed
   "lost keyring" waiver, after which the line is **inert**;
@@ -29,12 +30,14 @@ replay asks for is the purge's, after the admin confirmed it (EF-INT-026, L34/L3
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Final, Protocol
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
 from shelfhold.events.bus import EventBus, PublishedEvent
+from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, identity, platform
 from shelfhold.infrastructure.secrets import registry as key_registry
@@ -43,8 +46,10 @@ from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.tombstone_aead import (
     ALG,
     DB_ROOT,
+    kid_tag,
     open_values,
     seal_values,
+    verify_kid_tag,
 )
 from shelfhold.library.tombstones.cited import default_normalizers
 from shelfhold.library.tombstones.index import (
@@ -76,6 +81,9 @@ LOST_KEYRING_PHRASE: Final = "the keyring is lost"
 INERT_REASONS: Final = frozenset(
     {"authentication_failed", "kid_unregistered", "lost_keyring", "malformed"}
 )
+# `content_tombstone.reason`: a closed list, never free text (it could carry a title, I36).
+REASONS: Final = frozenset({"purge_unit", "purge_work", "replayed"})
+_LOST_KEYRING_ACTION = RESERVED_ACTIONS["tombstone.accept_lost_keyring"]
 
 _tomb, _kid, _lost = (
     coherence.content_tombstone,
@@ -90,11 +98,11 @@ class JournalDisk(Protocol):
 
     def append_tombstone_line(self, root_path: str, line: bytes, *, header: bytes) -> None: ...
 
-    def record_tombstone_kid(self, root_path: str, kid: str) -> None: ...
+    def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None: ...
 
     def read_tombstone_journal(self, root_path: str, *, max_bytes: int) -> bytes | None: ...
 
-    def tombstone_kids(self, root_path: str) -> frozenset[str]: ...
+    def tombstone_kids(self, root_path: str) -> dict[str, dict[str, str]]: ...
 
 
 @dataclass(frozen=True)
@@ -120,6 +128,7 @@ class InertLine:
     root_id: str  # `db` for a row of the table
     seq: int | None  # None when the line did not even parse
     reason: str
+    line: int | None = None  # line number in the journal of a line that did not parse
 
 
 @dataclass
@@ -147,6 +156,14 @@ class LostKeyringConfirmationError(ValueError):
     """The typed confirmation of `tombstone accept-lost-keyring` does not match."""
 
 
+class LostKeyringRefusedError(PermissionError):
+    """The principal may not waive the lost keyring (reserved action: admin, session or CLI)."""
+
+    def __init__(self, verdict: object) -> None:
+        super().__init__(f"tombstone.accept_lost_keyring refused: {type(verdict).__name__}")
+        self.verdict = verdict
+
+
 def _identity(values: TombstoneValues, cited: Mapping[str, str]) -> tuple[object, ...]:
     return (values, tuple(sorted(cited.items())))
 
@@ -168,7 +185,7 @@ class TombstoneService:
         self._normalizers = normalizers or default_normalizers()
         self._index: MembershipIndex | None = None
         self._report = ReplayReport()
-        self._sentinel_kids: dict[str, frozenset[str]] = {}
+        self._sentinel_kids: dict[str, frozenset[str]] = {}  # authenticated entries only
 
     def __repr__(self) -> str:
         return f"TombstoneService(index={self._index!r})"
@@ -192,6 +209,22 @@ class TombstoneService:
         key = self._keyring.active
         nonce, ct = seal_values(key.material, values, scope=scope, root=root_id, seq=seq)
         return JournalLine(seq, scope, key.kid, nonce, ct).dumps()
+
+    def _kid_tags(self, root_id: str, kid: str) -> dict[str, str]:
+        """The entry of `kid` in a root's sentinel, tagged under every key of the keyring: a
+        restored keyring that misses the newest key still verifies it under an older one."""
+        return {key.kid: kid_tag(key.material, root_id, kid) for key in self._keyring.keys}
+
+    def _authenticated(self, root_id: str, entries: Mapping[str, Mapping[str, str]]) -> set[str]:
+        """Registry entries of a sentinel whose tag verifies under a key we hold."""
+        verified: set[str] = set()
+        for kid, tags in entries.items():
+            for signer, tag in tags.items():
+                key = self._keyring.find(signer)
+                if key is not None and verify_kid_tag(key.material, root_id, kid, tag):
+                    verified.add(kid)
+                    break
+        return verified
 
     def _register_kid(self, connection: Connection, kid: str, seq: int) -> None:
         connection.execute(
@@ -228,6 +261,8 @@ class TombstoneService:
         *,
         reason: str | None = None,
     ) -> Recorded:
+        if reason is not None and reason not in REASONS:
+            raise ValueError(f"reason is one of {sorted(REASONS)}")
         cited = self.cited_now(values)
         plaintext = encode_plaintext(values, cited)
         kid = self._keyring.active.kid
@@ -253,7 +288,7 @@ class TombstoneService:
     def _write_line(self, root: TombstoneRoot, seq: int, kid: str, line: bytes) -> bool:
         """Registry of the sentinel first, then the line, then the pending row goes."""
         try:
-            self._disk.record_tombstone_kid(root.path, kid)
+            self._disk.record_tombstone_kid(root.path, kid, self._kid_tags(root.root_id, kid))
             self._disk.append_tombstone_line(root.path, line, header=header_bytes())
         except (OSError, ValueError, RuntimeError):
             return False  # stays pending: written at the next replay of this root
@@ -356,8 +391,15 @@ class TombstoneService:
         to_merge: list[tuple[TombstoneValues, dict[str, str]]],
         heal: set[tuple[str, int]],
     ) -> None:
-        sentinel = self._disk.tombstone_kids(root.path)
-        self._sentinel_kids[root.root_id] = sentinel
+        entries_on_disk = self._disk.tombstone_kids(root.path)
+        sentinel = self._authenticated(root.root_id, entries_on_disk)
+        self._sentinel_kids[root.root_id] = frozenset(sentinel)
+        # An entry whose tag does not verify is not a registration (a third party that writes
+        # the sentinel): an alert, never a block. Not reported for a kid the database knows.
+        report.inert.extend(
+            InertLine(root.root_id, None, "kid_unregistered")
+            for kid in sorted(set(entries_on_disk) - sentinel - db_kids)
+        )
         heal.update((kid, 1) for kid in sentinel - db_kids if self._keyring.find(kid) is not None)
         try:
             raw = self._disk.read_tombstone_journal(root.path, max_bytes=MAX_JOURNAL_BYTES)
@@ -367,7 +409,9 @@ class TombstoneService:
             return
         if journal is None:
             return
-        report.inert.extend(InertLine(root.root_id, None, "malformed") for _ in journal.malformed)
+        report.inert.extend(
+            InertLine(root.root_id, None, "malformed", line=bad.number) for bad in journal.malformed
+        )
         registered = db_kids | sentinel
         for line in journal.lines:
             if self._keyring.find(line.kid) is None:
@@ -402,8 +446,27 @@ class TombstoneService:
         def root_payload(root_id: str) -> dict[str, object]:
             return {} if root_id == DB_ROOT else {"root_id": root_id}
 
+        # One alert per (root, seq, reason): a replay at every start must not repeat it.
+        def unverified_key(payload: Mapping[str, object]) -> tuple[object, ...]:
+            return tuple(payload.get(k) for k in ("root_id", "seq", "reason", "line"))
+
+        seen = {
+            unverified_key(dict(row))
+            for row in connection.execute(
+                sa.select(platform.event.c.payload).where(
+                    platform.event.c.type == "tombstone.unverified"
+                )
+            ).scalars()
+        }
         for line in report.inert:
-            payload = {**root_payload(line.root_id), "reason": line.reason, "seq": line.seq}
+            payload: dict[str, object] = {
+                **root_payload(line.root_id), "reason": line.reason, "seq": line.seq,
+            }  # fmt: skip
+            if line.line is not None:
+                payload["line"] = line.line
+            if unverified_key(payload) in seen:
+                continue
+            seen.add(unverified_key(payload))
             published.append(self._bus.publish(connection, "tombstone.unverified", payload))
         for root_id, scope in sorted(report.key_unknown):
             payload = {**root_payload(root_id), "scope": scope}
@@ -423,10 +486,12 @@ class TombstoneService:
         if self._index is None:
             raise NotReplayedError("replay the tombstones before any reacquisition")
         report = self._report
-        if (root_id is None and report.unreadable_roots) or root_id in report.unreadable_roots:
+        # A root's state blocks reacquisition onto that root only; with no root known yet, only
+        # the database's own rows count (the root is checked again when the destination is).
+        if root_id is not None and root_id in report.unreadable_roots:
             return Verdict(True, "journal_unreadable")
         for where, scope in report.key_unknown:
-            if scope == candidate.scope and (where in (DB_ROOT, root_id) or root_id is None):
+            if scope == candidate.scope and where in (DB_ROOT, root_id):
                 return Verdict(True, "key_unknown")
         if self._index.contains(candidate, hash_with=hash_with):
             return Verdict(True, "tombstoned")
@@ -474,10 +539,21 @@ class TombstoneService:
     # -- the "lost keyring" waiver (R62) ----------------------------------------------------
 
     def accept_lost_keyring(
-        self, roots: Sequence[TombstoneRoot], *, confirmation: str, actor_id: str | None
+        self,
+        roots: Sequence[TombstoneRoot],
+        *,
+        confirmation: str,
+        principal: Principal,
+        now: datetime,
     ) -> list[str]:
-        """Reserved action, typed confirmation, audited: the registered kids missing from the
-        keyring become "lost", and their lines inert. Returns the kids waived."""
+        """Reserved action (checked here too, not only at the route), typed confirmation,
+        audited with its actor and the kids: the registered kids missing from the keyring
+        become "lost", and their lines inert. Only kids of the database's registry or of an
+        authenticated sentinel entry are waived. Returns the kids waived."""
+        verdict = authorize_reserved(principal, _LOST_KEYRING_ACTION, now=now)
+        if not isinstance(verdict, Allowed):
+            raise LostKeyringRefusedError(verdict)
+        actor_id = principal.actor_id
         if confirmation != LOST_KEYRING_PHRASE:
             raise LostKeyringConfirmationError("type the confirmation phrase exactly")
         self.replay(roots)
@@ -497,7 +573,9 @@ class TombstoneService:
                     id=new_ulid(),
                     actor_id=actor_id,
                     action="tombstone.accept_lost_keyring",
-                    target=f"kids:{len(missing)}",
+                    target="kids:" + ",".join(missing),
+                    session_id=principal.session_id,
+                    auth_time=principal.auth_time,
                 )
             )
         self.replay(roots)

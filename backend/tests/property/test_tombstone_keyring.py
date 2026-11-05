@@ -21,7 +21,7 @@ from shelfhold.library.tombstones import (
     LostKeyringConfirmationError,
 )
 from tests.intents_env import NOW
-from tests.tombstone_env import PLACE, SERIES, VARIANT, TombEnv, make_tomb_env
+from tests.tombstone_env import ADMIN, PLACE, SERIES, VARIANT, TombEnv, make_tomb_env
 
 pytestmark = pytest.mark.req("ENF-SEC-005", "EF-BIB-054")
 
@@ -46,9 +46,11 @@ def test_lost_keyring_tombstone_journal_inert(tmp_path: Path) -> None:
     assert not service.reconcile_allowed(env.library.root_id)
     assert env.events("tombstone.key_unknown")
     with pytest.raises(LostKeyringConfirmationError):
-        service.accept_lost_keyring(env.roots, confirmation="yes", actor_id=None)
+        service.accept_lost_keyring(env.roots, confirmation="yes", principal=ADMIN, now=NOW)
 
-    waived = service.accept_lost_keyring(env.roots, confirmation=LOST_KEYRING_PHRASE, actor_id=None)
+    waived = service.accept_lost_keyring(
+        env.roots, confirmation=LOST_KEYRING_PHRASE, principal=ADMIN, now=NOW
+    )
 
     assert len(waived) == 1
     for candidate in (VARIANT, PLACE, SERIES):

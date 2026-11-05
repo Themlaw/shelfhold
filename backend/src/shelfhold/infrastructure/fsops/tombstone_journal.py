@@ -65,14 +65,28 @@ def read_journal(root: ConfinedRoot, max_bytes: int) -> bytes | None:
         os.close(fd)
 
 
-def sentinel_kids(doc: SentinelDocument | None) -> frozenset[str]:
-    """The kids the sentinel lists; a malformed field counts as none listed."""
+def sentinel_kids(doc: SentinelDocument | None) -> dict[str, dict[str, str]]:
+    """The entries of the sentinel's registry: kid -> {signer kid: tag}. Whether a tag verifies
+    is the caller's business (it holds the keys); a malformed entry or field is skipped, and an
+    entry without tags (or of the first draft, a bare string) is listed with none."""
     if doc is None:
-        return frozenset()
+        return {}
     value = doc.extra.get(SENTINEL_KIDS_FIELD)
-    if not isinstance(value, list) or not all(isinstance(k, str) for k in value):
-        return frozenset()
-    return frozenset(value)
+    if not isinstance(value, list):
+        return {}
+    entries: dict[str, dict[str, str]] = {}
+    for item in value:
+        if isinstance(item, str):
+            entries.setdefault(item, {})
+        elif isinstance(item, dict) and isinstance(item.get("kid"), str):
+            tags = item.get("tags")
+            clean = (
+                {k: v for k, v in tags.items() if isinstance(k, str) and isinstance(v, str)}
+                if isinstance(tags, dict)
+                else {}
+            )
+            entries.setdefault(item["kid"], {}).update(clean)
+    return entries
 
 
 def _at_least(version: str, floor: str) -> str:
@@ -83,18 +97,28 @@ def _at_least(version: str, floor: str) -> str:
     return version if parts(version) >= parts(floor) else floor
 
 
-def add_sentinel_kid(root: ConfinedRoot, kid: str) -> bool:
-    """Add `kid` to the sentinel's registry; True when the sentinel was rewritten."""
+def add_sentinel_kid(root: ConfinedRoot, kid: str, tags: dict[str, str]) -> bool:
+    """Add `kid` (with its tags) to the sentinel's registry, or the missing tags of an entry that
+    is there; never removes an entry. True when the sentinel was rewritten."""
     doc = read_sentinel(root)
     if doc is None:
         raise SentinelFormatError("the root has no sentinel")
     if doc.read_only:
         raise SentinelFormatError("sentinel of a newer major format: read only")
     current = doc.extra.get(SENTINEL_KIDS_FIELD)
-    kids = list(current) if isinstance(current, list) else []
-    if kid in kids:
-        return False
-    extra = {**doc.extra, SENTINEL_KIDS_FIELD: [*kids, kid]}
+    items: list[object] = list(current) if isinstance(current, list) else []
+    for position, item in enumerate(items):
+        if isinstance(item, dict) and item.get("kid") == kid:
+            found = item.get("tags")
+            known: dict[str, object] = found if isinstance(found, dict) else {}
+            merged = {**tags, **known}  # an existing tag is never replaced
+            if merged == known:
+                return False
+            items[position] = {**item, "tags": merged}
+            break
+    else:
+        items.append({"kid": kid, "tags": dict(tags)})
+    extra = {**doc.extra, SENTINEL_KIDS_FIELD: items}
     write_sentinel(
         root,
         SentinelDocument(
@@ -106,3 +130,28 @@ def add_sentinel_kid(root: ConfinedRoot, kid: str) -> bool:
         ),
     )
     return True
+
+
+def sentinel_kid_names(path: str) -> frozenset[str] | None:
+    """Read only: every kid the sentinel of the root at `path` names, tagged or not (used by
+    `retire_key`, for which a forged entry can only keep a key). None when the root is not
+    mounted, has no sentinel, or its sentinel or its registry cannot be read (fail closed)."""
+    try:
+        with ConfinedRoot.open(path) as root:
+            doc = read_sentinel(root)
+    except (OSError, SentinelFormatError, ValueError):
+        return None
+    if doc is None:
+        return None
+    value = doc.extra.get(SENTINEL_KIDS_FIELD, [])
+    if not isinstance(value, list):
+        return None
+    names: set[str] = set()
+    for item in value:
+        if isinstance(item, str):
+            names.add(item)
+        elif isinstance(item, dict) and isinstance(item.get("kid"), str):
+            names.add(item["kid"])
+        else:
+            return None
+    return frozenset(names)

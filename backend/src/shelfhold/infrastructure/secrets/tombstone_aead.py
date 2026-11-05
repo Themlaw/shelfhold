@@ -11,6 +11,7 @@ table. A line copied to another root, given another scope or seq, or changed by 
 open (I41, I46). HKDF is RFC 5869 over the standard library's HMAC; the AEAD is libsodium's.
 """
 
+import base64
 import hashlib
 import hmac
 import struct
@@ -32,13 +33,16 @@ __all__ = [
     "TAG_BYTES",
     "build_aad",
     "hkdf_sha256",
+    "kid_tag",
     "open_values",
     "seal_values",
     "tombstone_key",
+    "verify_kid_tag",
 ]
 
 FORMAT: Final = "2.0"  # journal format 2.0; the table row carries `v = 2`
 HKDF_INFO: Final = b"shelfhold/tombstone/v1"
+KID_TAG_INFO: Final = b"shelfhold/tombstone-kid/v1"  # sentinel registry entries (review PR #52)
 DB_ROOT: Final = "db"  # the `root` coordinate of a row of `content_tombstone`
 _AAD_DOMAIN: Final = b"shelfhold/tombstone"
 _HASH_BYTES: Final = hashlib.sha256().digest_size
@@ -99,3 +103,28 @@ def open_values(
         )
     except nacl.exceptions.CryptoError:
         raise DecryptionError from None
+
+
+def _kid_tag_message(root_id: str, kid: str) -> bytes:
+    parts = [_AAD_DOMAIN + b"/kid"]
+    for coordinate in (root_id, kid):
+        raw = coordinate.encode("utf-8")
+        parts.append(struct.pack(">I", len(raw)) + raw)
+    return b"\x00".join(parts)
+
+
+def kid_tag(signer_material: bytes, root_id: str, kid: str) -> str:
+    """Tag of one entry `kid` of the registry in the sentinel of `root_id`, under one key of the
+    keyring (the signer). A third party that writes the sentinel cannot make one: an entry whose
+    tag does not verify under a key we hold is not a registration (EF-BIB-053, R58)."""
+    if len(signer_material) != KEY_BYTES:
+        raise ValueError("keyring key has the wrong length")
+    key = hkdf_sha256(signer_material, info=KID_TAG_INFO)
+    digest = hmac.new(key, _kid_tag_message(root_id, kid), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii")
+
+
+def verify_kid_tag(signer_material: bytes, root_id: str, kid: str, tag: object) -> bool:
+    if not isinstance(tag, str):
+        return False
+    return hmac.compare_digest(kid_tag(signer_material, root_id, kid), tag)

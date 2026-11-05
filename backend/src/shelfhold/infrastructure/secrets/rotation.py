@@ -17,6 +17,8 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
+from shelfhold.infrastructure.fsops.tombstone_journal import sentinel_kid_names
+from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.errors import KeyRetirementRefusedError, SecretsError
 from shelfhold.infrastructure.secrets.keyring import KeyringStore
@@ -145,4 +147,18 @@ def retire_key(store: KeyringStore, engine: Engine, kid: str) -> None:
                 raise KeyRetirementRefusedError(kid, "cited_by_tombstone")
             if kid in registry.kids_in_use(connection):
                 raise KeyRetirementRefusedError(kid, "in_use")
+            roots = list(
+                connection.execute(
+                    sa.select(_physical_root.c.path_entry).where(_physical_root.c.mode == "rw")
+                ).scalars()
+            )
+        for root in roots:  # N5: the copy of the registry in each root's sentinel counts too
+            cited = sentinel_kid_names(root)
+            if cited is None:
+                raise KeyRetirementRefusedError(kid, "root_unavailable")
+            if kid in cited:
+                raise KeyRetirementRefusedError(kid, "cited_by_tombstone")
         store.write(keyring.without(kid))
+
+
+_physical_root = platform.physical_root

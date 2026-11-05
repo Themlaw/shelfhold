@@ -8,7 +8,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.infrastructure.secrets.rotation import rotate
 from shelfhold.library.tombstones import (
     MembershipIndex,
     PlaceRef,
@@ -18,6 +18,7 @@ from shelfhold.library.tombstones import (
     default_normalizers,
 )
 from shelfhold.library.tombstones.journal import JournalLine, header_bytes
+from tests.intents_env import NOW
 from tests.tombstone_env import PLACE, SERIES, VARIANT, make_tomb_env
 
 pytestmark = pytest.mark.req("EF-BIB-053")
@@ -62,15 +63,19 @@ def test_forged_tombstone_line_never_deletes(tmp_path: Path, kid_kind: str) -> N
 
 def test_unregistered_kid_line_inert_registered_unknown_kid_blocks(tmp_path: Path) -> None:
     """Invented kid (absent from both registries): inert, `kid_unregistered`. Kid absent from the
-    keyring but in the sentinel's registry (database restored from before the rotation): the
+    keyring but in an authenticated entry of the sentinel's registry (database and keyring
+    restored from before the rotation; the entry verifies under the older key): the
     reacquisition of its scope on that root blocks, `tombstone.key_unknown`."""
     env = make_tomb_env(tmp_path)
+    before_rotation = env.store.load()
+    rotate(env.store, env.engine, now=NOW)
     old = env.service()
     old.replay(env.roots)
     old.record(SERIES, [env.library])
     issued = old.report  # nothing pending: the kid is in the library's sentinel
     assert issued.inert == []
-    assert env.store.load().active.kid in env.sentinel(env.library)["tombstone_kids"]
+    entries = env.sentinel(env.library)["tombstone_kids"]
+    assert [entry["kid"] for entry in entries] == [env.store.load().active.kid]
     env.fs.fsops.append_tombstone_line(
         env.books.path, _forged_line("k-" + "ab" * 8, seq=9), header=header_bytes()
     )
@@ -79,7 +84,7 @@ def test_unregistered_kid_line_inert_registered_unknown_kid_blocks(tmp_path: Pat
     restored = make_tomb_env(tmp_path / "restored")
     restored.fs = env.fs
     restored.roots = env.roots
-    service = restored.service(Keyring.generate())
+    service = restored.service(before_rotation)
 
     report = service.replay(env.roots)
 
@@ -110,7 +115,7 @@ def _values(draw: st.DrawFn) -> VariantRef | PlaceRef | SeriesBindingRef | WorkR
         return VariantRef("suwayomi", draw(refs), draw(refs))
     if kind == "place":
         return PlaceRef.of(
-            {"lang": draw(st.sampled_from(["fr", "en", "ja"])), "media": "images"},
+            {"work_id": "W1", "lang": draw(st.sampled_from(["fr", "en", "ja"])), "media": "images"},
             track="main",
             number_segment="",
             number_raw=str(draw(st.integers(1, 40))),

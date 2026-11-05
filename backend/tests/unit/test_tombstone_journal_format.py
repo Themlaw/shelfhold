@@ -115,12 +115,18 @@ def test_sentinel_kid_registry_only_grows_and_keeps_unknown_fields(tmp_path: Pat
     doc = json.loads(sentinel.read_text())
     doc["written_by_m1b"] = {"tombstone_count": 4}
     sentinel.write_text(json.dumps(doc))
-    for kid in ("k-a", "k-b", "k-a"):
-        env.fsops.record_tombstone_kid(str(env.library), kid)
+    for kid, tags in (("k-a", {"k-s": "t1"}), ("k-b", {}), ("k-a", {"k-s": "t2", "k-n": "t3"})):
+        env.fsops.record_tombstone_kid(str(env.library), kid, tags)
     after = json.loads(sentinel.read_text())
-    assert after["tombstone_kids"] == ["k-a", "k-b"]
+    assert after["tombstone_kids"] == [  # a tag already there is never replaced
+        {"kid": "k-a", "tags": {"k-s": "t1", "k-n": "t3"}},
+        {"kid": "k-b", "tags": {}},
+    ]
     assert after["written_by_m1b"] == {"tombstone_count": 4}
     assert after["schema_version"] == "1.1"
     assert after["generation"] == doc["generation"]
-    assert env.fsops.tombstone_kids(str(env.library)) == {"k-a", "k-b"}
-    assert env.fsops.tombstone_kids(str(env.books)) == frozenset()
+    assert env.fsops.tombstone_kids(str(env.library)) == {
+        "k-a": {"k-s": "t1", "k-n": "t3"},
+        "k-b": {},
+    }
+    assert env.fsops.tombstone_kids(str(env.books)) == {}

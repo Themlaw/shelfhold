@@ -441,10 +441,10 @@ class Fsops:
         with self._gated(self._host_root(root_path)) as root:
             append_line(root, line, header=header)
 
-    def record_tombstone_kid(self, root_path: str, kid: str) -> None:
-        """Add `kid` to the registry of the root's sentinel, before any line under it."""
+    def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None:
+        """Add `kid` and its tags to the registry of the root's sentinel, before any line."""
         with self._gated(self._host_root(root_path)) as root:
-            add_sentinel_kid(root, kid)
+            add_sentinel_kid(root, kid, tags)
 
     def read_tombstone_journal(self, root_path: str, *, max_bytes: int) -> bytes | None:
         """The raw journal. Not gated by the sentinel: it is replayed even when the root is
@@ -452,13 +452,14 @@ class Fsops:
         with self._root(self._host_root(root_path).root_path) as root:
             return read_journal(root, max_bytes)
 
-    def tombstone_kids(self, root_path: str) -> frozenset[str]:
-        """The kids the root's sentinel registers (none when it is absent or unreadable)."""
+    def tombstone_kids(self, root_path: str) -> dict[str, dict[str, str]]:
+        """The registry entries of the root's sentinel, kid -> tags (unverified: the caller
+        holds the keys). Empty when the sentinel is absent or unreadable."""
         with self._root(self._host_root(root_path).root_path) as root:
             try:
                 return sentinel_kids(read_sentinel(root))
             except (SentinelFormatError, OSError):
-                return frozenset()
+                return {}
 
     # -- writes -----------------------------------------------------------------------------
 

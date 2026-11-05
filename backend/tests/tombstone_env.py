@@ -11,6 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.events.bus import EventBus
+from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.schema import coherence, platform
 from shelfhold.infrastructure.secrets.keyring import Keyring, KeyringStore
 from shelfhold.library.tombstones import (
@@ -33,7 +34,12 @@ VARIANT = VariantRef(
     "suwayomi", "4422", f"/chapter/{SLUG}-ch-7", (ContentHash("content-hash@1", HASH),)
 )
 PLACE = PlaceRef.of(
-    {"lang": "fr", "translation_type": "official", "media": "images"},
+    {
+        "work_id": "01J0000000000000000000WORK",
+        "lang": "fr",
+        "translation_type": "official",
+        "media": "images",
+    },
     track="main",
     number_segment="",
     number_raw="7",
@@ -41,6 +47,9 @@ PLACE = PlaceRef.of(
 )
 SERIES = SeriesBindingRef("suwayomi", "4422", f"/manga/{SLUG}")
 JOURNAL = ".shelfhold/tombstones"
+WORK = "01J0000000000000000000WORK"
+# The reserved waiver of the lost keyring, from the local CLI as an admin.
+ADMIN = Principal("01J00000000000000000000ADM", "admin", "admin", Credential.LOCAL_CLI)
 
 
 @dataclass
