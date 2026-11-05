@@ -112,6 +112,7 @@ class PlanRequest:
     occupied: Callable[[str], bool] = lambda rel: False
     covered: Callable[[str], bool] = lambda rel: False
     library_ceilings: frozenset[int | None] = frozenset()  # shelves sharing the remote library
+    paused_series: frozenset[str] = frozenset()  # paused by a foreign writer (EF-EXP-043)
     segment_policy_confirmed: bool = False
 
 
@@ -209,6 +210,9 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
                     unit.unit_id, resolution.code, resolution.detail, None, resolution.suggestion
                 )
             )
+            continue
+        if resolution.export_series_id in request.paused_series:
+            blocked.append(Blocked(unit.unit_id, "target.foreign_writer_detected"))
             continue
         frozen = record.frozen if record is not None else _frozen(unit, resolution.name_raw, dest)
         if dest.transport == "pull":

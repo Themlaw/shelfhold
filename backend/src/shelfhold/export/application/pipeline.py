@@ -31,6 +31,7 @@ from shelfhold.export.application.snapshot import (
     inputs_version_of,
     load_context,
     load_request,
+    paused_series,
     version_of,
 )
 from shelfhold.export.domain.naming import Parsed
@@ -128,6 +129,7 @@ class ExportPipeline:
         segment_policy_confirmed: bool = False,
         renderer: CbzRenderer | None = None,
         mirror: ProvenanceMirror | None = None,
+        detector: Callable[[str], object] | None = None,
     ) -> None:
         self._engine = engine
         self._fsops = fsops
@@ -141,6 +143,7 @@ class ExportPipeline:
         self._renderer = renderer or CbzRenderer(fsops, staging_dir=data_dir / "tmp")
         self._locks = ResourceLocks(engine, clock=clock)
         self.mirror = mirror or ProvenanceMirror(engine, fsops, clock=clock)
+        self._detector = detector  # EF-EXP-043: looked at before every export
 
     def _require_verified(self) -> None:
         if not self._parse_verified:
@@ -189,6 +192,8 @@ class ExportPipeline:
     def run(self, destination_id: str, *, job_id: str) -> ApplyReport:
         """Plan, then apply; a plan with nothing to do is not even stored (idempotence)."""
         self._require_verified()
+        if self._detector is not None:
+            self._detector(destination_id)
         ctx, loaded, plan = self._compute(destination_id)
         self._heal_mirror(ctx)
         if not plan.ops:
@@ -258,6 +263,9 @@ class ExportPipeline:
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, job_id: str
     ) -> str | None:
         folder = planned.rel_path.split("/", 1)[0] if planned.rel_path else ""
+        with self._engine.connect() as connection:
+            if planned.series.export_series_id in paused_series(connection, ctx.destination_id):
+                return None  # paused since the plan was stored: nothing is written into it
         library = (
             library_resource(ctx.remote_library_id, planned.series.normalized_name)
             if ctx.remote_library_id is not None

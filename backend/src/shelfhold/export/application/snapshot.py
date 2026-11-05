@@ -39,6 +39,7 @@ __all__ = [
     "inputs_version_of",
     "load_context",
     "load_request",
+    "paused_series",
     "version_of",
 ]
 
@@ -152,10 +153,23 @@ def load_request(
         occupied=(lambda rel: root is not None and exists(f"{root}/{rel}")),
         covered=(lambda rel: root is not None and _within_any(f"{root}/{rel}", covered_locals)),
         library_ceilings=ceilings, segment_policy_confirmed=segment_policy_confirmed,
+        paused_series=paused_series(connection, ctx.destination_id),
     )  # fmt: skip
     return LoadedRequest(
         request,
         _version(ctx, editions, unit_rows, sources, _world(records, series, edition_series)),
+    )
+
+
+def paused_series(connection: Connection, destination_id: str) -> frozenset[str]:
+    """The series a foreign writer paused: nothing new is written into them (EF-EXP-043)."""
+    series = export.export_series
+    return frozenset(
+        connection.execute(
+            sa.select(series.c.id).where(
+                series.c.shelf_destination_id == destination_id, series.c.paused_reason.isnot(None)
+            )
+        ).scalars()
     )
 
 

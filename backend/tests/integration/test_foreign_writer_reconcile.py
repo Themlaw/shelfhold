@@ -2,13 +2,13 @@
 
 import os
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
 
 from shelfhold.events.bus import EventBus
+from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.domain.reconcile import missing_blocks
 from shelfhold.infrastructure.ids import new_ulid
@@ -167,11 +167,11 @@ def test_adopted_missing_reported_only() -> None:
 def test_reconcile_unknown_reported_never_touched() -> None:
     with export_env() as env:
         r, _series, _files = exported(env, 2)
-        stray = env.root / "Autre serie" / "x.cbz"
+        stray = env.root / "Other series" / "x.cbz"
         stray.parent.mkdir()
         stray.write_bytes(b"stray")
         report = r.reconcile()
-        assert report.unknown == ("Autre serie",)
+        assert report.unknown == ("Other series",)
         assert stray.read_bytes() == b"stray" and r.paused_series() == []
         assert len(r.events("reconcile.drift")) == 1
 
@@ -180,14 +180,8 @@ def test_reconcile_unknown_reported_never_touched() -> None:
 def test_reconcile_skips_paths_under_an_open_intent() -> None:
     with export_env() as env:
         r, _series, files = exported(env, 2)
-        with env.engine.begin() as connection:
-            connection.execute(
-                sa.text(
-                    "INSERT INTO fs_intent (id, op, dst_path, state, created_at) "
-                    "VALUES (:i, 'write', :p, 'applying', :t)"
-                ),
-                {"i": new_ulid(), "p": str(files[0]), "t": env.clock.now()},
-            )
+        journal = IntentJournal(env.engine, env.lib.fsops, clock=env.clock)
+        journal.mark_applying(journal.record(op="write", dst=str(files[0])))
         files[0].unlink()
         report = r.reconcile()
         assert report.reexport == () and report.missing == () and report.paused == ()

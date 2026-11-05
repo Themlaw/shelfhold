@@ -91,7 +91,14 @@ def record_destination_copy(
     verified_at: datetime,
 ) -> str:
     """The rendered file in a destination tree. Never counted as independent: Kavita may rewrite
-    it, and it is not the original (`independent_copies` counts the others)."""
+    it, and it is not the original (`independent_copies` counts the others). A file put back after
+    it vanished replaces the stale row of the same item (EF-EXP-018)."""
+    connection.execute(
+        sa.delete(storage.replica).where(
+            storage.replica.c.export_item_id == export_item_id,
+            storage.replica.c.location == "destination",
+        )
+    )
     return record_replica(
         connection,
         unit_id=unit_id,
