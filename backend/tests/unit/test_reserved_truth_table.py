@@ -79,12 +79,14 @@ NON_P3 = {
 }
 
 
+@pytest.mark.req("EF-USR-024")
 def test_every_effect_is_classed_p3_or_not_by_hand() -> None:
     assert {e.value for e in Effect} == P3 | NON_P3
     assert not (P3 & NON_P3)
     assert {Effect(v) for v in NON_P3} == NO_REAUTH_EFFECTS
 
 
+@pytest.mark.req("EF-USR-024")
 def test_an_unclassified_effect_would_require_freshness() -> None:
     stale = principal_for("session")
     action = ReservedAction("synthetic.new", frozenset({Effect.DELETES_PERMANENTLY}))
@@ -119,6 +121,7 @@ def synthetic_actions() -> list[ReservedAction]:
 ALL_ACTIONS = [*RESERVED_ACTIONS.values(), *synthetic_actions()]
 
 
+@pytest.mark.req("EF-USR-024")
 def test_axis_is_the_one_of_the_architecture() -> None:
     assert set(CREDENTIAL_AXIS) == {
         "fresh_session",
@@ -131,6 +134,7 @@ def test_axis_is_the_one_of_the_architecture() -> None:
     }
 
 
+@pytest.mark.req("EF-USR-024")
 def test_registry_is_not_empty_and_every_effect_is_carried_by_a_declared_action() -> None:
     assert RESERVED_ACTIONS
     carried = set().union(*(a.effects for a in RESERVED_ACTIONS.values()))
