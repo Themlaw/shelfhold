@@ -239,7 +239,16 @@ class GuardedFetcher:
 
     async def _pin(self, url: httpx2.URL, *, allow_lan: bool) -> list[IPAddress]:
         """Resolve once and return the only addresses that may be connected to."""
-        host, port = url.host, _port(url)
+        return await self.check_destination(url.host, _port(url), allow_lan=allow_lan)
+
+    async def check_destination(
+        self, host: str, port: int, *, allow_lan: bool = True
+    ) -> list[IPAddress]:
+        """The same verdict as a first hop, for a client that connects by itself (Apprise).
+
+        It cannot pin the answer it validated, so the check is a gate at configuration and at
+        send time, not a guarantee against a rebinding between the two (documented limit).
+        """
         literal = parse_host(host)
         if literal is not None:
             answers = [literal]
