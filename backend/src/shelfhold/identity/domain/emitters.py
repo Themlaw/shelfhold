@@ -38,6 +38,8 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 f"{_FSOPS}/confined.py::ConfinedRoot._rename_noreplace",
                 f"{_FSOPS}/facade.py::Fsops.unlink",
                 f"{_FSOPS}/facade.py::Fsops.rmdir",
+                f"{_FSOPS}/facade.py::Fsops.purge_remove_tree",  # L34: bin entries only
+                f"{_FSOPS}/facade.py::Fsops.purge_unlink",  # L34: one regular file, never reserved
                 f"{_FSOPS}/facade.py::Fsops.recycle",  # empty folders it just made
                 f"{_FSOPS}/facade.py::Fsops.system_unlink",  # perimeter and condition checked
                 f"{_FSOPS}/facade.py::Fsops.system_remove_tree",
@@ -71,6 +73,11 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # System emitters (closed list): `system_*` calls name theirs as a literal.
         f"{_FSOPS}/facade.py::Fsops.boot": "staging_orphan_cleanup",
         f"{_FSOPS}/writer.py::_discard": "staging_orphan_cleanup",  # a failed write's staged file
+        # `purge --now` (L34): the service, and the one helper that erases under /data
+        "shelfhold/export/application/purge.py::PurgeService.purge_unit": "purge.now",
+        "shelfhold/export/application/purge.py::PurgeService.purge_work": "purge.now",
+        "shelfhold/infrastructure/volumes.py::erase_data_path": "purge.now",
+        "shelfhold/infrastructure/volumes.py::_remove_tree": "purge.now",
     }
 )
 

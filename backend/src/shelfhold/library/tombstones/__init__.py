@@ -17,11 +17,13 @@ from shelfhold.library.tombstones.service import (
     NotReplayedError,
     Recorded,
     ReplayReport,
+    TombstoneGate,
     TombstoneRoot,
     TombstoneService,
     Verdict,
 )
 from shelfhold.library.tombstones.values import (
+    EDITION_KEY_COLUMNS,
     ContentHash,
     PlaceRef,
     SeriesBindingRef,
@@ -34,6 +36,7 @@ from shelfhold.library.tombstones.values import (
 __all__ = [
     "CITABLE_CONTENT_HASHES",
     "CITABLE_NORMALIZERS",
+    "EDITION_KEY_COLUMNS",
     "LOST_KEYRING_PHRASE",
     "CitedVersionMissingError",
     "ContentHash",
@@ -47,6 +50,7 @@ __all__ = [
     "Recorded",
     "ReplayReport",
     "SeriesBindingRef",
+    "TombstoneGate",
     "TombstoneRoot",
     "TombstoneService",
     "TombstoneValueError",

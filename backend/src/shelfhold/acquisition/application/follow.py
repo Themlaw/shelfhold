@@ -60,13 +60,22 @@ from shelfhold.catalog.public import (
     IngestResult,
     ingest_isolated,
     place_key,
+    place_parts,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
 from shelfhold.jobs.ledger import Created
 from shelfhold.jobs.public import DomainSlots, JobContext, JobPools
-from shelfhold.library.public import PassthroughStore, has_readable_copy
+from shelfhold.library.public import (
+    EDITION_KEY_COLUMNS,
+    PassthroughStore,
+    PlaceRef,
+    SeriesBindingRef,
+    TombstoneGate,
+    VariantRef,
+    has_readable_copy,
+)
 from shelfhold.plugin_host.errors import AuthModeUnsupported, ServiceVersionMismatch
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
@@ -100,6 +109,7 @@ class FollowReport:
     requested: int = 0
     fetched: int = 0
     removed: int = 0
+    tombstoned: int = 0  # releases and series left alone because they were purged (EF-BIB-053)
     reactivated: int = 0
     stale: int = 0
     paused: str | None = None  # the waiting state (or failure class) the service is paused in
@@ -153,6 +163,7 @@ class FollowCycle:
         service_cap: int = DEFAULT_SERVICE_CAP,
         key_cap: int = DEFAULT_KEY_CAP,
         inactive_months: int = DEFAULT_INACTIVE_MONTHS,
+        tombstones: TombstoneGate | None = None,
     ) -> None:
         self._engine = engine
         self._bus = bus
@@ -171,6 +182,8 @@ class FollowCycle:
         self._caps = (service_cap, key_cap)
         self._prefs = TeamPreference(inactive_months=inactive_months)
         self._series_taken: dict[str, int] = {}
+        self._tombstones = tombstones  # EF-BIB-053; None: a bench with nothing purged
+        self._told: set[str] = set()  # bindings already announced as tombstoned upstream
 
     # -- the cycle ---------------------------------------------------------------------------
     async def run(self) -> FollowReport:
@@ -216,6 +229,7 @@ class FollowCycle:
             if binding.active
             and binding.check_override != "paused"
             and (binding.source_key, binding.remote_id) in present
+            and not self._series_tombstoned(binding, report)
         ]
         for binding in followed:
             await self._discover_isolated(binding, report, budget)
@@ -274,6 +288,45 @@ class FollowCycle:
             ):
                 report.reactivated += 1
         return in_library
+
+    def _series_tombstoned(self, binding: _Binding, report: FollowReport) -> bool:
+        """A series purged for good is ignored, whatever Suwayomi still lists: no Work created, no
+        chapter asked. It is told once (`series.tombstoned_upstream`), the admin removes it from
+        Suwayomi by hand (EF-BIB-053 (2), M1a)."""
+        if self._tombstones is None:
+            return False
+        ref = SeriesBindingRef(self._plugin_id, binding.source_key, binding.remote_id)
+        if not self._tombstones.check(ref, root_id=None).blocked:
+            return False
+        report.tombstoned += 1
+        if binding.id not in self._told:
+            self._told.add(binding.id)
+            with self._engine.begin() as connection:
+                self._emit(
+                    connection, "series.tombstoned_upstream",
+                    {"edition_id": binding.edition_id, "work_id": binding.work_id},
+                )  # fmt: skip
+        return True
+
+    def _release_tombstoned(self, binding: _Binding, info: UnitInfo, key: dict[str, str]) -> bool:
+        """A release that matches a tombstone is never ingested: not by its reference (`variant`),
+        not at the place of a purged chapter under a new identifier (`place`)."""
+        if self._tombstones is None:
+            return False
+        track, segment, part = place_parts(info.number, info.source_order)
+        candidates = (
+            VariantRef(self._plugin_id, binding.source_key, info.remote_unit_id),
+            PlaceRef.of(
+                key, track=track, number_segment=segment, number_raw=info.number or "", part=part
+            ),
+        )  # fmt: skip
+        return any(self._tombstones.check(c, root_id=None).blocked for c in candidates)
+
+    def _edition_key(self, edition_id: str) -> dict[str, str]:
+        e = catalog.edition
+        with self._engine.connect() as connection:
+            row = connection.execute(select_key(e, edition_id)).one()
+        return {k: str(getattr(row, k)) for k in EDITION_KEY_COLUMNS}
 
     # -- bindings ----------------------------------------------------------------------------
     def _bindings(self) -> list[_Binding]:
@@ -367,7 +420,11 @@ class FollowCycle:
         # Without a watermark the first look only learns what is there (it becomes the watermark):
         # a series followed from now on is asked for what is new, never for its whole archive.
         look = _Look(binding, mark, self._clock.now(), _contested(units))
+        key = self._edition_key(binding.edition_id) if self._tombstones is not None else {}
         for info in units:
+            if self._release_tombstoned(binding, info, key):
+                report.tombstoned += 1
+                continue
             result = ingest_isolated(
                 self._engine,
                 IncomingUnit(
@@ -633,6 +690,10 @@ class FollowCycle:
         """Hand the events to in-process subscribers, after the transactions that wrote them."""
         pending, self._pending = self._pending, []
         self._bus.deliver(pending)
+
+
+def select_key(edition: sa.Table, edition_id: str) -> sa.Select[tuple[object, ...]]:
+    return sa.select(*(edition.c[k] for k in EDITION_KEY_COLUMNS)).where(edition.c.id == edition_id)
 
 
 def _place_of(info: UnitInfo) -> str:

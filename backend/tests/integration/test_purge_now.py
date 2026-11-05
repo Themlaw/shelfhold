@@ -2,11 +2,14 @@
 durable, then the intent, then the deletion, then the closing. Real files, real database, real
 cipher; the exported library comes from the real pipeline."""
 
+import ast
+import inspect
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
 
+import shelfhold.export.application.purge as purge_module
 from shelfhold.export.application.purge import (
     OUT_OF_REACH,
     PurgeCollateralError,
@@ -15,6 +18,7 @@ from shelfhold.export.application.purge import (
 )
 from shelfhold.infrastructure.fsops import Fsops, TombstonePendingError
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import (
     acquisition,
     catalog,
@@ -23,7 +27,7 @@ from shelfhold.infrastructure.schema import (
     platform,
     storage,
 )
-from shelfhold.library.public import ConfirmationRequiredError
+from shelfhold.library.public import ConfirmationRequiredError, record_replica
 from shelfhold.library.tombstones import PlaceRef
 from tests.export_env import ExportEnv, export_env
 from tests.purge_env import (
@@ -86,7 +90,13 @@ def test_purge_now_removes_all_replicas_and_thumbnails() -> None:
             text = path.read_text()
             assert unit not in text  # no line of the purged Unit
         for table in (catalog.unit, catalog.unit_variant, storage.content):
-            assert purge.count(table, table.c.unit_id == unit if table is not catalog.unit else table.c.id == unit) == 0
+            assert (
+                purge.count(
+                    table,
+                    table.c.unit_id == unit if table is not catalog.unit else table.c.id == unit,
+                )
+                == 0
+            )
         assert purge.count(storage.replica, storage.replica.c.unit_id == unit) == 0
         assert purge.count(storage.trash_item, storage.trash_item.c.ref == unit) == 0
         assert purge.count(catalog.unit, catalog.unit.c.id == other) == 1  # the neighbour is intact
@@ -107,14 +117,21 @@ def test_purge_writes_tombstone_before_any_deletion(monkeypatch: pytest.MonkeyPa
             with env.engine.connect() as connection:
                 seen.append(
                     {
-                        "rows": connection.execute(sa.select(sa.func.count()).select_from(coherence.content_tombstone)).scalar_one(),
-                        "pending": connection.execute(sa.select(sa.func.count()).select_from(coherence.tombstone_pending_root)).scalar_one(),
+                        "rows": connection.execute(
+                            sa.select(sa.func.count()).select_from(coherence.content_tombstone)
+                        ).scalar_one(),
+                        "pending": connection.execute(
+                            sa.select(sa.func.count()).select_from(coherence.tombstone_pending_root)
+                        ).scalar_one(),
                         "intent": connection.execute(
                             sa.select(coherence.fs_intent.c.state).where(
-                                coherence.fs_intent.c.src_path == local, coherence.fs_intent.c.op == "unlink"
+                                coherence.fs_intent.c.src_path == local,
+                                coherence.fs_intent.c.op == "unlink",
                             )
                         ).scalar(),
-                        "journals": [len(purge.journal(r)) for r in (env.lib.library, env.lib.store)],
+                        "journals": [
+                            len(purge.journal(r)) for r in (env.lib.library, env.lib.store)
+                        ],
                     }
                 )
             real(self, local)
@@ -128,12 +145,16 @@ def test_purge_writes_tombstone_before_any_deletion(monkeypatch: pytest.MonkeyPa
             assert all(size > 0 for size in step["journals"])  # type: ignore[attr-defined]
             assert step["intent"] == "applying"
         with env.engine.connect() as connection:
-            states = set(connection.execute(sa.select(coherence.fs_intent.c.state).where(coherence.fs_intent.c.op == "unlink")).scalars())
-        assert states == {"done"}  # the closing
+            left = connection.execute(
+                sa.select(coherence.fs_intent.c.state).where(coherence.fs_intent.c.op == "unlink")
+            ).all()
+        assert left == []  # closed (done), then scrubbed: their paths spell the title
 
 
 @pytest.mark.req("EF-BIB-052")
-def test_purge_crash_midway_keeps_tombstone_and_rerun_finishes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_purge_crash_midway_keeps_tombstone_and_rerun_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class Crash(BaseException):
         pass
 
@@ -161,7 +182,11 @@ def test_purge_crash_midway_keeps_tombstone_and_rerun_finishes(monkeypatch: pyte
         assert again.count(coherence.content_tombstone) == 2  # not written twice
         assert again.count(catalog.unit, catalog.unit.c.id == unit) == 0
         with env.engine.connect() as connection:
-            open_ones = connection.execute(sa.select(coherence.fs_intent.c.id).where(coherence.fs_intent.c.state.in_(("pending", "applying")))).all()
+            open_ones = connection.execute(
+                sa.select(coherence.fs_intent.c.id).where(
+                    coherence.fs_intent.c.state.in_(("pending", "applying"))
+                )
+            ).all()
         assert open_ones == []
 
 
@@ -204,17 +229,29 @@ def test_purge_with_absent_rw_root_writes_journal_on_remount() -> None:
 
         assert not report.complete
         assert report.unreachable_roots == (env.lib.store_root,)
-        assert purge.count(coherence.tombstone_pending_root, coherence.tombstone_pending_root.c.root_id == env.lib.store_root) == 2
+        assert (
+            purge.count(
+                coherence.tombstone_pending_root,
+                coherence.tombstone_pending_root.c.root_id == env.lib.store_root,
+            )
+            == 2
+        )
         assert purge.journal(env.lib.library)  # the mounted root has its lines already
         # never acquirable again, even while the root is away and its journal has no line
-        place = PlaceRef.of(_key(env, unit), track="main", number_segment="", number_raw="1", part="")
+        place = PlaceRef.of(
+            _key(env, unit), track="main", number_segment="", number_raw="1", part=""
+        )
         assert purge.tombstones.check(place, root_id=env.lib.store_root).blocked
         assert purge.count(catalog.unit, catalog.unit.c.id == unit) == 1  # the copy there is kept
 
         away.rename(env.lib.store)  # the root comes back
-        env.lib.fsops.enforce_tombstone_flush(lambda path: purge.tombstones.has_pending(_root_id(env, path)))
+        env.lib.fsops.enforce_tombstone_flush(
+            lambda path: purge.tombstones.has_pending(_root_id(env, path))
+        )
         with pytest.raises((TombstonePendingError, RootBlockedError)):
-            env.lib.fsops.write_atomic(str(env.lib.store / "intruder.cbz"), b"x")  # before the flush
+            env.lib.fsops.write_atomic(
+                str(env.lib.store / "intruder.cbz"), b"x"
+            )  # before the flush
         flushed = purge.tombstones.replay(purge.roots)
         assert flushed.flushed == 2
         assert purge.journal(env.lib.store)  # the lines are there, before any other write
@@ -228,9 +265,27 @@ def test_purge_with_absent_rw_root_writes_journal_on_remount() -> None:
 def _key(env: ExportEnv, unit: str) -> dict[str, str]:
     with env.engine.connect() as connection:
         row = connection.execute(
-            sa.select(catalog.edition).select_from(catalog.edition.join(catalog.unit, catalog.unit.c.edition_id == catalog.edition.c.id)).where(catalog.unit.c.id == unit)
+            sa.select(catalog.edition)
+            .select_from(
+                catalog.edition.join(
+                    catalog.unit, catalog.unit.c.edition_id == catalog.edition.c.id
+                )
+            )
+            .where(catalog.unit.c.id == unit)
         ).one()
-    return {k: str(getattr(row, k)) for k in ("work_id", "lang", "translation_type", "media", "publisher", "text_version", "performance", "packaging")}
+    return {
+        k: str(getattr(row, k))
+        for k in (
+            "work_id",
+            "lang",
+            "translation_type",
+            "media",
+            "publisher",
+            "text_version",
+            "performance",
+            "packaging",
+        )
+    }
 
 
 def _root_id(env: ExportEnv, path: str) -> str:
@@ -248,12 +303,12 @@ def test_purge_m1a_releases_claim_without_writing_suwayomi() -> None:
         assert purge.count(storage.replica, storage.replica.c.location == "upstream") == 0
         assert report.upstream_copies == 1
         assert report.alerts == ("unit.delete_in_suwayomi",)
-        # no client of the service exists in the purge: it cannot write upstream (structural)
-        import inspect
-
-        import shelfhold.export.application.purge as module
-
-        assert "suwayomi" not in inspect.getsource(module).lower().replace("delete_in_suwayomi", "")
+        # the purge holds no client of the service: it cannot write upstream (structural)
+        source = Path(inspect.getsourcefile(purge_module) or "").read_text(encoding="utf-8")
+        imported = [
+            n.module or "" for n in ast.walk(ast.parse(source)) if isinstance(n, ast.ImportFrom)
+        ]
+        assert not [m for m in imported if "plugin_host" in m or ".sdk" in m or "fetcher" in m]
 
 
 @pytest.mark.req("EF-BIB-052")
@@ -266,7 +321,9 @@ def test_purge_m1a_closes_download_tickets_shelfhold_side() -> None:
         assert report.closed_tickets == 1
         with env.engine.connect() as connection:
             row = connection.execute(
-                sa.select(acquisition.download_request).where(acquisition.download_request.c.id == open_one)
+                sa.select(acquisition.download_request).where(
+                    acquisition.download_request.c.id == open_one
+                )
             ).one()
         assert row.state == "closed_by_purge" and row.variant_id is None
 
@@ -276,21 +333,26 @@ def test_purge_never_deletes_in_an_adoption_root_and_says_so() -> None:
     with export_env() as env:
         purge = make_purge_env(env.lib)
         unit, _ = spread(env, env.new_series(TITLE))
+        ro_id = new_ulid()
         adopted = env.lib.tmp / "upstream-ro"
         adopted.mkdir()
         (adopted / "ch.cbz").write_bytes(b"read-only original")
         with env.engine.begin() as connection:
-            connection.execute(sa.insert(platform.physical_root).values(root_id="01J000000000000000000RO001", path_entry=str(adopted), mode="adopt_ro"))
             connection.execute(
-                sa.text(
-                    "INSERT INTO replica (id, unit_id, location, physical_root_id, rel_path, independent, mutable_by_third_party, fidelity) "
-                    "VALUES ('01J000000000000000000REP01', :u, 'adopted_ro', '01J000000000000000000RO001', 'ch.cbz', 0, 1, 'original')"
-                ),
-                {"u": unit},
+                sa.insert(platform.physical_root).values(
+                    root_id=ro_id, path_entry=str(adopted), mode="adopt_ro"
+                )
             )
+            record_replica(
+                connection, unit_id=unit, location="adopted_ro", content_hash=None,
+                independent=False, mutable_by_third_party=True, physical_root_id=ro_id,
+                rel_path="ch.cbz",
+            )  # fmt: skip
         report = run(purge, unit)
         assert (adopted / "ch.cbz").read_bytes() == b"read-only original"
-        assert [(r.reason, r.location) for r in report.refused] == [("read_only_root", "adopted_ro")]
+        assert [(r.reason, r.location) for r in report.refused] == [
+            ("read_only_root", "adopted_ro")
+        ]
         assert not report.complete  # it cannot be erased: the report says so
 
 
@@ -304,9 +366,18 @@ def test_purge_refuses_a_file_that_also_carries_another_unit() -> None:
         unit, _ = spread(env, series)
         neighbour = env.add_chapter(series, "2")
         with env.engine.begin() as connection:
-            item = connection.execute(sa.text("SELECT carrier_id FROM unit_coverage WHERE unit_id = :u AND carrier_type = 'export_item'"), {"u": unit}).scalar_one()
+            item = connection.execute(
+                sa.text(
+                    "SELECT carrier_id FROM unit_coverage "
+                    "WHERE unit_id = :u AND carrier_type = 'export_item'"
+                ),
+                {"u": unit},
+            ).scalar_one()
             connection.execute(
-                sa.text("INSERT INTO unit_coverage (carrier_type, carrier_id, unit_id, position, extent, origin) VALUES ('export_item', :i, :n, 2, 'full', 'manifest')"),
+                sa.text(
+                    "INSERT INTO unit_coverage (carrier_type, carrier_id, unit_id, position, "
+                    "extent, origin) VALUES ('export_item', :i, :n, 2, 'full', 'manual')"
+                ),
                 {"i": item, "n": neighbour},
             )
         before = files_everywhere(env)
@@ -325,9 +396,9 @@ def test_purge_waits_for_the_resource_locks_of_the_exporter() -> None:
         series = env.new_series(TITLE)
         unit, _ = spread(env, series)
         locks = ResourceLocks(env.engine, clock=env.clock)
-        with locks.hold("01J0000000000000000000JOB1", work=series.work_id, series="x/y"):
-            with pytest.raises(LockBusyError):
-                run(purge, unit)
+        held = locks.hold(new_ulid(), work=series.work_id, series="x/y")
+        with held, pytest.raises(LockBusyError):
+            run(purge, unit)
         assert purge.count(coherence.content_tombstone) == 0  # nothing started
 
 
@@ -337,11 +408,15 @@ def test_tombstone_and_audit_hold_no_title() -> None:
         purge = make_purge_env(env.lib)
         unit, _ = spread(env, env.new_series(TITLE))
         run(purge, unit)
-        text = purge.dump() + (purge.journal(env.lib.library) + purge.journal(env.lib.store)).decode("latin-1")
+        text = purge.dump() + (
+            purge.journal(env.lib.library) + purge.journal(env.lib.store)
+        ).decode("latin-1")
         assert TITLE not in text and TITLE.lower().replace(" ", "-") not in text
         with env.engine.connect() as connection:
             audit = connection.execute(sa.select(identity.audit)).all()
-            reasons = set(connection.execute(sa.select(coherence.content_tombstone.c.reason)).scalars())
+            reasons = set(
+                connection.execute(sa.select(coherence.content_tombstone.c.reason)).scalars()
+            )
         (entry,) = [a for a in audit if a.action == "purge.now"]
         assert entry.target == f"unit:{unit}" and entry.actor_id.startswith("local_cli:")
         assert reasons == {"purge_unit"}  # an enumeration, never free text
@@ -362,13 +437,11 @@ def test_purge_deletes_only_inside_the_roots_and_never_follows_links() -> None:
         keep.write_bytes(b"not ours")
         (env.lib.manga / "link").symlink_to(outside)
         with env.engine.begin() as connection:
-            connection.execute(
-                sa.text(
-                    "INSERT INTO replica (id, unit_id, location, physical_root_id, rel_path, independent, mutable_by_third_party, fidelity) "
-                    "VALUES ('01J000000000000000000REP02', :u, 'destination', :r, 'manga/link/precious.cbz', 0, 1, 'original')"
-                ),
-                {"u": unit, "r": env.lib.library_root},
-            )
+            record_replica(
+                connection, unit_id=unit, location="destination", content_hash=None,
+                independent=False, mutable_by_third_party=True,
+                physical_root_id=env.lib.library_root, rel_path="manga/link/precious.cbz",
+            )  # fmt: skip
         report = run(purge, unit)
         assert keep.read_bytes() == b"not ours"  # never followed
         assert any(r.reason == "path_escape" for r in report.refused)

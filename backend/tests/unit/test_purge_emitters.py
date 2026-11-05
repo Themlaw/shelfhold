@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from shelfhold.export.domain.physical_roots import RECYCLE_DIR, STAGING_DIR
 from shelfhold.identity.public import (
     CLOSED_SITES,
     DELETION_SITES,
@@ -15,7 +16,6 @@ from shelfhold.identity.public import (
     Effect,
 )
 from shelfhold.infrastructure.fsops.emitters import EMITTER_PERIMETERS
-from shelfhold.export.domain.physical_roots import RECYCLE_DIR, STAGING_DIR
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
 PURGE_MODULES = {

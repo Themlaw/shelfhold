@@ -21,3 +21,10 @@ class SafeguardFailedError(RuntimeError):
 
 class VariantAlreadyStoredError(FileExistsError):
     """The Variant already has its archive: the same release arrived twice (a replay is a no-op)."""
+
+
+class TombstonedContentError(PermissionError):
+    """The file's content matches a tombstone (EF-BIB-052): it is never filed again, whatever road
+    it came by (follow, "fill the gaps", import, adoption). Nothing was placed."""
+
+    code = "unit.tombstoned"

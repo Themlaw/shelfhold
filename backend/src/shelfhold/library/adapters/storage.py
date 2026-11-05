@@ -12,11 +12,11 @@ payload they carry.
 """
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
-from typing import Final
+from typing import Final, Protocol
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
@@ -28,11 +28,28 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, content_hash
-from shelfhold.library.domain.failures import ReceivedTooLargeError, VariantAlreadyStoredError
+from shelfhold.library.domain.failures import (
+    ReceivedTooLargeError,
+    TombstonedContentError,
+    VariantAlreadyStoredError,
+)
 from shelfhold.library.replica import record_replica
+from shelfhold.library.tombstones.values import ContentHash
 
 CBZ_MEDIA_TYPE: Final = "application/vnd.comicbook+zip"
 DEFAULT_MAX_RECEIVED_BYTES: Final = 512 * 1024 * 1024
+
+
+class ContentTombstones(Protocol):
+    """The part of `TombstoneService` a store needs: is this file's content tombstoned?"""
+
+    def check_content(
+        self,
+        hashes: Iterable[ContentHash] = (),
+        *,
+        hash_with: Callable[[str], str | None] | None = None,
+    ) -> bool: ...
+
 
 # local path -> (physical root id, path relative to that root); the composition root provides it
 RootLocator = Callable[[str], tuple[str, str]]
@@ -66,6 +83,7 @@ class PassthroughStore:
         *,
         max_received_bytes: int = DEFAULT_MAX_RECEIVED_BYTES,
         limits: ArchiveLimits = DEFAULT_LIMITS,
+        tombstones: ContentTombstones | None = None,
     ) -> None:
         self._engine = engine
         self._fsops = fsops
@@ -73,6 +91,7 @@ class PassthroughStore:
         self._projection = MetaProjection(engine, data_dir)
         self._max = max_received_bytes
         self._limits = limits
+        self._tombstones = tombstones
 
     def ingest(
         self,
@@ -91,6 +110,10 @@ class PassthroughStore:
         with safe_open_archive(staged, name=PurePath(dest).name, limits=self._limits) as archive:
             listing = check_cbz_entries(archive)
             payload_hash = content_hash(archive)
+        if self._tombstones is not None and self._tombstones.check_content(
+            [ContentHash(CONTENT_HASH_BY, payload_hash)]
+        ):
+            raise TombstonedContentError("the content was purged: it is not filed again")
         original = sha256_file(staged)
         if expected_sha256 is not None and expected_sha256 != original:
             raise ValueError("received_hash_mismatch: the file is not what the download counted")

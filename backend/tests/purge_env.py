@@ -27,7 +27,11 @@ from tests.library_env import LibEnv
 TITLE = "Dr Stone"
 ADMIN = Principal("01J00000000000000000000ADM", "admin", "admin", Credential.LOCAL_CLI)
 KEY = Principal(
-    "01J00000000000000000000ADM", "admin", "admin", Credential.API_KEY, key_id="01J0000000000000000000KEY0"
+    "01J00000000000000000000ADM",
+    "admin",
+    "admin",
+    Credential.API_KEY,
+    key_id="01J0000000000000000000KEY0",
 )
 STALE = Principal(
     "01J00000000000000000000ADM", "admin", "admin", Credential.SESSION,
@@ -63,7 +67,11 @@ class PurgeEnv:
 
     def count(self, table: sa.Table, *where: sa.ColumnElement[bool]) -> int:
         with self.lib.engine.connect() as connection:
-            return int(connection.execute(sa.select(sa.func.count()).select_from(table).where(*where)).scalar_one())
+            return int(
+                connection.execute(
+                    sa.select(sa.func.count()).select_from(table).where(*where)
+                ).scalar_one()
+            )
 
     def journal(self, root: Path) -> bytes:
         path = root / ".shelfhold" / "tombstones"
@@ -73,7 +81,13 @@ class PurgeEnv:
         """Every row of the tables a title could leak into, as text."""
         with self.lib.engine.connect() as connection:
             parts: list[str] = []
-            for name in ("audit", "event", "content_tombstone", "tombstone_pending_root", "fs_intent"):
+            for name in (
+                "audit",
+                "event",
+                "content_tombstone",
+                "tombstone_pending_root",
+                "fs_intent",
+            ):
                 rows = connection.execute(sa.text(f"SELECT * FROM {name}")).all()  # noqa: S608
                 parts.append(json.dumps([[str(c) for c in row] for row in rows]))
         return "\n".join(parts)
@@ -88,7 +102,8 @@ def make_purge_env(lib: LibEnv) -> PurgeEnv:
     keys = lib.tmp / "keys"
     keys.mkdir(exist_ok=True)
     store = KeyringStore(keys / "keyring", lock_path=keys / "keyring.lock")
-    store.create(Keyring.generate(NOW))
+    if not (keys / "keyring").exists():
+        store.create(Keyring.generate(NOW))
     clock = ManualClock(NOW)
     bus = EventBus(clock)
     tombstones = TombstoneService(lib.engine, store.load(), lib.fsops, bus)
@@ -137,7 +152,8 @@ def open_ticket(env: ExportEnv, unit: str, state: str = "requested") -> str:
     """A download ticket of the Unit's Variant, as the follow cycle would have opened it."""
     with env.engine.begin() as connection:
         variant, binding = connection.execute(
-            sa.text("SELECT id, source_binding_id FROM unit_variant WHERE unit_id = :u"), {"u": unit}
+            sa.text("SELECT id, source_binding_id FROM unit_variant WHERE unit_id = :u"),
+            {"u": unit},
         ).one()
         request = new_ulid()
         connection.execute(

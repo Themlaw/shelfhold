@@ -17,6 +17,7 @@ __all__ = [
     "ReservedPathError",
     "RootBlockedError",
     "SentinelFormatError",
+    "TombstonePendingError",
 ]
 
 
@@ -69,6 +70,15 @@ class RootBlockedError(FsopsError):
         super().__init__(f"root {root_path} blocked: sentinel {state.value}")
         self.root_path = root_path
         self.state = state
+
+
+class TombstonePendingError(FsopsError):
+    """A root that came back owes tombstone lines (a purge ran while it was away): nothing else
+    is written there before they are (EF-BIB-052, GAP-12-14). Replay the tombstones."""
+
+    def __init__(self, root_path: str) -> None:
+        super().__init__(f"root {root_path} has tombstone lines to write first")
+        self.root_path = root_path
 
 
 class LeaseRaceError(FsopsError):

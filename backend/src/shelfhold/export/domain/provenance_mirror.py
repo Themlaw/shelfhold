@@ -22,7 +22,7 @@ No URL, no domain name of a source and no secret is ever written to it.
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
@@ -37,6 +37,7 @@ __all__ = [
     "Lineage",
     "MirrorDocument",
     "MirrorFormatError",
+    "drop_unit_lines",
     "grant_lineage",
     "is_diagnostic_excluded",
     "is_mirror_rel",
@@ -334,3 +335,36 @@ def merge_with_database(
         merged.append({**old, "state": UNRESOLVED})
     head = {**on_disk.header, **{k: v for k, v in (header or {}).items() if k != "schema_version"}}
     return MirrorDocument(on_disk.schema_version, head, merged, list(on_disk.rejected))
+
+
+# -- purge: the lines of a Unit that no longer exists ---------------------------------------------
+
+
+def drop_unit_lines(
+    document: MirrorDocument,
+    *,
+    export_item_ids: Collection[str],
+    variant_ids: Collection[str],
+    hashes: Collection[str],
+) -> tuple[MirrorDocument, int]:
+    """The document without the lines of a purged Unit, and how many went (EF-BIB-052).
+
+    A line goes when it is one of these export items, when one of its coverage entries names one
+    of these Variants, or when its `content_hash` or `derived_hash` is one of `hashes`. This is the
+    one place that removes a line the database does not explain (`unresolved`): a purge must not
+    leave a trace of what it erased. A damaged line, kept verbatim, goes when it quotes one of the
+    identifiers or hashes. Every other line stays untouched."""
+    items, variants, digests = set(export_item_ids), set(variant_ids), set(hashes)
+    needles = items | variants | digests
+
+    def is_purged(entry: Mapping[str, Any]) -> bool:
+        if entry["export_item"]["id"] in items:
+            return True
+        if entry.get("content_hash") in digests or entry.get("derived_hash") in digests:
+            return True
+        return any(c.get("variant") in variants for c in entry["coverage"])
+
+    kept = [e for e in document.entries if not is_purged(e)]
+    rejected = [r for r in document.rejected if not any(n in r for n in needles)]
+    gone = (len(document.entries) - len(kept)) + (len(document.rejected) - len(rejected))
+    return MirrorDocument(document.schema_version, document.header, kept, rejected), gone

@@ -70,3 +70,44 @@ def read_data_file(path: Path, limit: int) -> bytes:
             return stream.read(limit)
     finally:
         os.close(fd)
+
+
+def _plain_parts(rel: str) -> tuple[str, ...]:
+    path = PurePosixPath(rel)
+    if not path.parts or path.is_absolute() or any(p in ("", ".", "..") for p in path.parts):
+        raise ValueError(f"not a plain relative path: {rel!r}")
+    return path.parts
+
+
+def erase_data_path(data_dir: Path, rel: str) -> bool:
+    """Remove a file or a folder under /data that `purge --now` names (EF-BIB-052): the unit.json
+    projection, the thumbnails and the content cache of a Unit. Returns whether something went.
+
+    `/data` is not a confined library root and the path comes from an identifier the caller
+    validated, so: `rel` must be relative with plain names, no folder on the way may be a link,
+    and a link at the end is removed as a link, never followed. Only the purge calls it."""
+    parts = _plain_parts(rel)
+    folder = data_dir
+    for part in parts[:-1]:
+        folder = folder / part
+        if folder.is_symlink():
+            raise ValueError(f"{folder} is a link")
+    target = folder / parts[-1]
+    if target.is_symlink() or target.is_file():
+        os.unlink(target)
+        return True
+    if target.is_dir():
+        _remove_tree(target)
+        return True
+    return False
+
+
+def _remove_tree(folder: Path) -> None:
+    """Depth first, a link inside is unlinked and never entered."""
+    with os.scandir(folder) as entries:
+        for entry in list(entries):
+            if entry.is_dir(follow_symlinks=False):
+                _remove_tree(Path(entry.path))
+            else:
+                os.unlink(entry.path)
+    os.rmdir(folder)

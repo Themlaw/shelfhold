@@ -19,6 +19,11 @@ SCOPES: Final[tuple[Scope, ...]] = ("variant", "place", "series_binding", "work"
 PLAINTEXT_FORMAT: Final = 1
 PAD_TO: Final = 256
 MAX_FIELD_CHARS: Final = 2048
+# The columns of the Edition key that a `place` cites, raw (one list for the purge and the cycles).
+EDITION_KEY_COLUMNS: Final = (
+    "work_id", "lang", "translation_type", "media", "publisher", "text_version", "performance",
+    "packaging",
+)  # fmt: skip
 
 
 class TombstoneValueError(ValueError):
