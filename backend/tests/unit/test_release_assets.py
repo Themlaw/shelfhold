@@ -145,7 +145,7 @@ def test_dictionary_lists_sentinels_formats_and_their_versions(
         assert f"`{name}`" in text
         assert version in text
     assert "`und`" in text  # the language sentinel
-    assert "'full', 'partial'" in text or "`full`" in text  # allowed values come from the CHECK constraints
+    assert "`'full', 'partial'`" in text  # allowed values come from the CHECK constraints
 
 
 @pytest.mark.req("EF-INT-027")
