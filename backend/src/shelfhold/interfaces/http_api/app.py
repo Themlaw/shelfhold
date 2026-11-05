@@ -37,6 +37,7 @@ def create_http_app(
     *,
     health: HealthPort,
     on_startup: Callable[[], None],
+    on_shutdown: Callable[[], None] | None = None,
     version: str,
     frontend_dir: Path | None = None,
     routers: Sequence[APIRouter] = (),
@@ -46,7 +47,11 @@ def create_http_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         on_startup()
-        yield
+        try:
+            yield
+        finally:
+            if on_shutdown is not None:
+                on_shutdown()
 
     app = FastAPI(
         title="Shelfhold",

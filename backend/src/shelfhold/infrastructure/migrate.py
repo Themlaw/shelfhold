@@ -23,6 +23,7 @@ from shelfhold.infrastructure.db import (
     create_db_engine,
     foreign_keys_disabled,
 )
+from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
 from shelfhold.infrastructure.volumes import ensure_volumes
 
 STATE_FILE_NAME = "migration-state.json"
@@ -40,6 +41,17 @@ class SchemaTooNewError(Exception):
 
 class MigrationInProgressError(Exception):
     """Another `shelfhold migrate` holds the migration lock."""
+
+
+class OpenIntentsError(Exception):
+    """Intents are still open: the running version has to resolve them first (ENF-OPS-019)."""
+
+    def __init__(self, count: int) -> None:
+        super().__init__(
+            f"{count} intention(s) de fichier encore ouverte(s) : démarrer une fois la version "
+            "actuelle pour les résoudre avant de migrer"
+        )
+        self.count = count
 
 
 class MigrationError(Exception):
@@ -143,6 +155,22 @@ def _read_only_uri(path: Path) -> str:
     return f"{path.resolve().as_uri()}?mode=ro"
 
 
+def open_intent_count(database_path: Path) -> int:
+    """`fs_intent` rows still `pending` or `applying`; 0 when there is no such table yet."""
+    if not database_path.exists():
+        return 0
+    try:
+        with contextlib.closing(sqlite3.connect(_read_only_uri(database_path), uri=True)) as db:
+            row = db.execute(
+                "SELECT count(*) FROM fs_intent WHERE state IN ('pending', 'applying')"
+            ).fetchone()
+    except sqlite3.OperationalError as error:
+        if "no such table" in str(error):  # a database older than 0002
+            return 0
+        raise  # locked, unreadable...: never "no intent" by default (fail closed)
+    return int(row[0])
+
+
 def current_revision(database_path: Path) -> str | None:
     """Revision recorded in the database, None when it is absent or never migrated."""
     if not database_path.exists():
@@ -236,12 +264,22 @@ def _steps_after(script: ScriptDirectory, current: str | None) -> list[str]:
 def migrate(settings: Settings, *, script_location: Path | None = None) -> MigrationResult:
     ensure_volumes(settings)
     state = MigrationStateFile(settings.data_dir)
-    with state.exclusive():
-        try:
-            return _migrate_locked(settings, script_location, state)
-        finally:
-            with contextlib.suppress(OSError):
-                state.clear()
+    instance = InstanceLock(settings.data_dir)  # first `.lock`, then `migrate.lock`, always
+    try:
+        instance.acquire()  # no migration under a live instance (ENF-OPS-015)
+    except InstanceLockHeldError:
+        if state.read() is not None:
+            raise MigrationInProgressError from None
+        raise
+    try:
+        with state.exclusive():
+            try:
+                return _migrate_locked(settings, script_location, state)
+            finally:
+                with contextlib.suppress(OSError):
+                    state.clear()
+    finally:
+        instance.release()
 
 
 def _migrate_locked(
@@ -249,6 +287,9 @@ def _migrate_locked(
 ) -> MigrationResult:
     log = structlog.get_logger()
     check_schema_not_newer(settings, script_location)
+    pending = open_intent_count(settings.database_path)
+    if pending:
+        raise OpenIntentsError(pending)
     script = _script(script_location)
     head = head_revision(script_location)
     current = current_revision(settings.database_path)

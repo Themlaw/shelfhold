@@ -67,3 +67,7 @@ class RootBlockedError(FsopsError):
         super().__init__(f"root {root_path} blocked: sentinel {state.value}")
         self.root_path = root_path
         self.state = state
+
+
+class LeaseRaceError(FsopsError):
+    """The lease file changed between its reading and its replacement: someone else won."""

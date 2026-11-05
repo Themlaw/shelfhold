@@ -17,6 +17,7 @@ from typing import Any, Self
 from shelfhold.export.domain.path_map import PathEntry, PathMap, clean_absolute, within
 
 __all__ = [
+    "LEASE_FILE",
     "RECYCLE_DIR",
     "RESERVED_DIR",
     "SENTINEL_FILE",
@@ -35,6 +36,7 @@ __all__ = [
 
 SENTINEL_FILE = ".shelfhold-mount-id"
 RESERVED_DIR = ".shelfhold"
+LEASE_FILE = f"{RESERVED_DIR}/lease"  # the per-root write lease (ENF-OPS-015)
 STAGING_DIR = f"{RESERVED_DIR}/staging"
 RECYCLE_DIR = f"{RESERVED_DIR}/recycle"
 SENTINEL_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039

@@ -9,9 +9,11 @@ import structlog
 
 from shelfhold.config import ResolvedSettings
 from shelfhold.i18n import t
+from shelfhold.infrastructure.instance import InstanceLockHeldError
 from shelfhold.infrastructure.migrate import (
     MigrationError,
     MigrationInProgressError,
+    OpenIntentsError,
     SchemaTooNewError,
     migrate,
 )
@@ -30,6 +32,12 @@ def run(_args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         return 1
     except MigrationInProgressError:
         print(t("migrate.in_progress"), file=sys.stderr)
+        return 1
+    except InstanceLockHeldError:
+        print(t("migrate.instance_running"), file=sys.stderr)
+        return 1
+    except OpenIntentsError as exc:
+        print(t("migrate.open_intents", count=exc.count), file=sys.stderr)
         return 1
     except MigrationError as exc:
         print(t("migrate.failed", revision=exc.revision, detail=exc.detail), file=sys.stderr)

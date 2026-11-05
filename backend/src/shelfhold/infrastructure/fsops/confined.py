@@ -322,10 +322,14 @@ class ConfinedRoot:
         finally:
             os.close(parent)
 
-    def rename(self, src: str, dst: str, *, replace: bool) -> None:
+    def rename(self, src: str, dst: str, *, replace: bool, durable: bool = True) -> None:
         """Rename within this root. `replace=False` fails with `FileExistsError` rather than
         overwrite (renameat2 RENAME_NOREPLACE); `replace=True` is the POSIX replacing rename, for
-        the atomic write of a file that is meant to be replaced."""
+        the atomic write of a file that is meant to be replaced.
+
+        `durable` flushes both parent folders before returning, so the rename survives a crash
+        before the caller commits `done` to the journal (EF-EXP-041); the atomic writer flushes
+        the folder itself and turns it off."""
         src_parent, src_name = self._parent(src)
         try:
             dst_parent, dst_name = self._parent(dst)
@@ -334,6 +338,9 @@ class ConfinedRoot:
                     os.rename(src_name, dst_name, src_dir_fd=src_parent, dst_dir_fd=dst_parent)
                 else:
                     self._rename_noreplace(src_parent, src_name, dst_parent, dst_name)
+                if durable:
+                    os.fsync(src_parent)
+                    os.fsync(dst_parent)
             finally:
                 os.close(dst_parent)
         finally:

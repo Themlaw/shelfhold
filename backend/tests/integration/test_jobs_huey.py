@@ -145,11 +145,11 @@ def test_flush_locks_at_boot(pools: JobPools, engine: Engine) -> None:
 
     refused = Lock(held=False)
     with pytest.raises(InstanceLockNotHeldError):
-        boot_jobs(pools, instance_lock=refused)
+        boot_jobs(pools, instance_lock=refused, resolve_intents=lambda: None)
     assert all(pools.huey(n).is_locked("job:orphan") for n in pools.names)  # nothing touched
     assert slots.in_use("example.org") == 1
 
-    report = boot_jobs(pools, instance_lock=Lock(held=True))
+    report = boot_jobs(pools, instance_lock=Lock(held=True), resolve_intents=lambda: None)
     assert not any(pools.huey(n).is_locked("job:orphan") for n in pools.names)
     assert not pools.huey("io").is_locked("job:chapter:1")
     assert slots.in_use("example.org") == 0
@@ -162,6 +162,6 @@ def test_boot_catches_up_once(pools: JobPools, clock: ManualClock) -> None:
     pools.register("updates_check", pool="io", handler=lambda job: None)
     pools.scheduler.add("updates_check", "0 * * * *")
     clock.advance(hours=3)
-    report = boot_jobs(pools, instance_lock=Lock(held=True))
+    report = boot_jobs(pools, instance_lock=Lock(held=True), resolve_intents=lambda: None)
     assert report.queued == 1
     assert pools.huey("io").pending_count() == 1
