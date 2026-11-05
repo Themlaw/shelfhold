@@ -39,6 +39,7 @@ from shelfhold.infrastructure.local_socket import (
     SOCKET_NAME,
     RpcFailure,
     ServerUnavailable,
+    UntrustedServer,
     call,
 )
 from shelfhold.infrastructure.migrate import current_revision, head_revision
@@ -167,6 +168,8 @@ def _command(
                 if auth is None:
                     return _fail(t("admin.database_missing"))
                 return handler(args, auth)
+        except UntrustedServer as untrusted:
+            return _fail(t("admin.socket_untrusted", detail=untrusted))
         except ChannelRefusedError as refused:
             return _fail(t("admin.socket_refused", detail=refused))
         except (ServerUnavailable, RpcFailure, PermissionError) as failure:

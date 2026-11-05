@@ -80,6 +80,8 @@ def create_app(
         if not runtime.owns_volumes:
             yield
             return
+        if resolved.cli_allow_host:
+            structlog.get_logger().warning("local_cli.allow_host_enabled")
         server = LocalSocketServer(
             resolved.data_dir / SOCKET_NAME,
             IdentityDispatcher(auth),

@@ -7,6 +7,7 @@ included (ADR-0049). Raw sockets are confined to this package (ruff TID251, impo
 from shelfhold.infrastructure.local_socket.client import (
     RpcFailure,
     ServerUnavailable,
+    UntrustedServer,
     call,
 )
 from shelfhold.infrastructure.local_socket.server import (
@@ -28,6 +29,7 @@ __all__ = [
     "RpcError",
     "RpcFailure",
     "ServerUnavailable",
+    "UntrustedServer",
     "call",
     "read_peer",
 ]
