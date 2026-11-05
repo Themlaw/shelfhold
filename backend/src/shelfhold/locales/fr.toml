@@ -237,6 +237,10 @@ action = "Montez le bon disque, puis lancez « shelfhold target recheck »."
 title = "Kavita lirait un autre numéro de chapitre dans ce nom de fichier."
 action = "Définissez un nom de série exporté qui ne ressemble pas à un marqueur de chapitre, puis relancez l'aperçu."
 
+[errors."export.segment_policy_unconfirmed"]
+title = "Le nommage des séries à numérotation par segments n'est pas encore confirmé."
+action = "L'unité reste en conflit de numérotation tant que le test nocturne contre un vrai Kavita n'a pas confirmé le nommage ; ne changez pas le réglage naming_segment_policy_confirmed avant."
+
 [errors."export.series_name_yields_volume"]
 title = "Kavita déduirait un tome du nom de cette série."
 action = "Définissez un nom de série exporté sans marqueur de tome ou de saison (S2, T1, v3, Vol.3, 第2巻, 시즌2), puis relancez l'aperçu."

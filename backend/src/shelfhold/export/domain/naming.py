@@ -291,6 +291,17 @@ class SeriesNameYieldsVolume(NamingGuardError):
     code = "export.series_name_yields_volume"
 
 
+class SegmentPolicyUnconfirmed(NamingGuardError):
+    """Q50: a non-empty numbering segment is not exported until the one-series-per-segment naming
+    is confirmed against a real Kavita (setting `naming_segment_policy_confirmed`, false by
+    default). The place stays in `numbering_conflict`."""
+
+    code = "export.segment_policy_unconfirmed"
+    suggestion = (
+        "leave the unit in numbering_conflict until the nightly confirms the segment naming"
+    )
+
+
 class NameMisreadNumber(NamingGuardError):
     """The chapter number Kavita reads in the file name is not the unit's."""
 
@@ -302,6 +313,8 @@ def checked_export_path(
     parse: Callable[[str], "Parsed"],
     template: NamingTemplate = DEFAULT_TEMPLATE,
     extension: str = ".cbz",
+    *,
+    segment_policy_confirmed: bool = False,
 ) -> ExportPath:
     """`export_path`, with the file name AND every folder component read by `plugin/parse`.
 
@@ -309,6 +322,8 @@ def checked_export_path(
     a chapter's path, refuses the export; so does a chapter number that is not the unit's. A
     closed volume (`kind = volume`) is meant to carry one: only its folders are checked.
     """
+    if frozen.segment and not segment_policy_confirmed:
+        raise SegmentPolicyUnconfirmed("segment naming not confirmed", component=frozen.segment)
     path = export_path(frozen, template, extension)
     components = list(path.directory)
     if frozen.kind != "volume":

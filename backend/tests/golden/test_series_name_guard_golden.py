@@ -14,6 +14,7 @@ from shelfhold.export import errors as export_errors
 from shelfhold.export.domain.naming import (
     FrozenAttrs,
     NamingGuardError,
+    SegmentPolicyUnconfirmed,
     SeriesNameYieldsVolume,
     checked_export_path,
 )
@@ -38,7 +39,11 @@ SERIES = [
 def outcome(series: str, segment: str = "") -> dict[str, str]:
     frozen = FrozenAttrs(series=series, track="main", number_norm="12", segment=segment)
     try:
-        return {"rel_path": checked_export_path(frozen, simulate_parse).rel_path}
+        return {
+            "rel_path": checked_export_path(
+                frozen, simulate_parse, segment_policy_confirmed=True
+            ).rel_path
+        }
     except NamingGuardError as error:
         return {"refused": error.code, "component": error.component}
 
@@ -70,3 +75,17 @@ def test_a_closed_volume_may_carry_its_volume_but_not_its_folder() -> None:
     assert ok.filename == "Dr Stone - Vol.5.cbz"
     with pytest.raises(SeriesNameYieldsVolume):
         checked_export_path(FrozenAttrs("Dr Stone S2", "main", "5", kind="volume"), simulate_parse)
+
+
+@pytest.mark.req("EF-EXP-045", "EF-BIB-050")
+def test_non_empty_segment_stays_unexported_until_the_policy_is_confirmed() -> None:
+    from shelfhold.config import Settings
+
+    assert Settings().naming_segment_policy_confirmed is False  # the shipped default
+    frozen = FrozenAttrs("Tower of God", "main", "1", segment="S2")
+    with pytest.raises(SegmentPolicyUnconfirmed) as caught:
+        checked_export_path(frozen, simulate_parse)
+    assert caught.value.code in {c.code for c in export_errors.CODES}
+    assert checked_export_path(frozen, simulate_parse, segment_policy_confirmed=True)
+    # an empty segment is never held back
+    assert checked_export_path(FrozenAttrs("Tower of God", "main", "1"), simulate_parse)

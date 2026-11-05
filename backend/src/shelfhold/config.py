@@ -64,6 +64,10 @@ class Settings(BaseModel):
     # (argon2id, CSRF, cookies, CSP, attempt limiting) have no setting at all.
     auth_hardened: bool = False
     fresh_auth_s: int = Field(default=900, ge=60, le=86_400)
+    # Q50: a non-empty numbering segment stays in `numbering_conflict`, unexported, until the
+    # naming golden (one Kavita series per segment) is confirmed by the nightly against a real
+    # Kavita (L40). Leave it false; the lot that records the confirmation flips the default.
+    naming_segment_policy_confirmed: bool = False
     # P5: forward-auth is off while this is empty. Proxy identity headers (Remote-User,
     # Tailscale-User-*...) are removed from every request whose peer is outside these networks.
     forward_auth_trusted_cidrs: tuple[str, ...] = ()

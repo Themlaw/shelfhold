@@ -18,4 +18,5 @@ CODES: tuple[ErrorCode, ...] = (
     # EF-EXP-045: a name `plugin/parse` would misread is refused, never written
     ErrorCode("export.series_name_yields_volume", 422, "user"),
     ErrorCode("export.name_misread_number", 422, "user"),
+    ErrorCode("export.segment_policy_unconfirmed", 409, "admin"),
 )
