@@ -44,6 +44,7 @@ ALLOWED_ROUTES = (
 ALLOWED_FIELDS = frozenset({
     "aboutServer", "settings", "sources", "mangas", "manga", "chapters", "chapter",
     "enqueueChapterDownload", "dequeueChapterDownload", "updateManga",
+    "categories", "updateMangaCategories",
 })  # fmt: skip
 FORBIDDEN_FIELDS = frozenset({
     "fetchChapterPages", "fetchChapters", "fetchManga", "fetchSourceManga", "updateLibrary",
@@ -83,6 +84,8 @@ class FakeSuwayomi:
     _polls: dict[int, int] = field(default_factory=dict)
     _downloaded: set[int] = field(default_factory=set)
     _enqueued: set[int] = field(default_factory=set)
+    categories: list[dict[str, Any]] = field(default_factory=list)  # id, name, includeInUpdate
+    updated_by_schedule: list[int] = field(default_factory=list)  # manga ids, in order
 
     # -- scenario helpers -------------------------------------------------------------------
     def reinstall(self) -> None:
@@ -94,6 +97,38 @@ class FakeSuwayomi:
             manga["id"] += RENUMBER_OFFSET
             for chapter in manga["chapters"]:
                 chapter["id"] += RENUMBER_OFFSET
+
+    def add_category(self, name: str, *, include_in_update: str = "UNSET") -> int:
+        """A category of the library (`EXCLUDE`: its series are left out of scheduled updates)."""
+        ident = 1 + max((c["id"] for c in self.categories), default=0)
+        self.categories.append({"id": ident, "name": name, "includeInUpdate": include_in_update})
+        return ident
+
+    def assign(self, manga_url: str, category_id: int) -> None:
+        manga = next(m for m in self.state["mangas"] if m["url"] == manga_url)
+        manga.setdefault("categoryIds", []).append(category_id)
+
+    def categories_of(self, manga_url: str) -> list[int]:
+        manga = next(m for m in self.state["mangas"] if m["url"] == manga_url)
+        return sorted(manga.get("categoryIds", []))
+
+    def strategy_of(self, manga_url: str) -> str:
+        manga = next(m for m in self.state["mangas"] if m["url"] == manga_url)
+        return str(manga.get("updateStrategy", "ALWAYS_UPDATE"))
+
+    def run_scheduled_update(self) -> list[int]:
+        """Suwayomi's own schedule: every library series that is not excluded and whose update
+        strategy is the default is looked at, and the manga ids that were are returned."""
+        excluded = {c["id"] for c in self.categories if c["includeInUpdate"] == "EXCLUDE"}
+        seen = [
+            m["id"]
+            for m in self.state["mangas"]
+            if m["inLibrary"]
+            and m.get("updateStrategy", "ALWAYS_UPDATE") == "ALWAYS_UPDATE"
+            and not excluded & set(m.get("categoryIds", []))
+        ]
+        self.updated_by_schedule.extend(seen)
+        return seen
 
     def add_source(self, source_id: str, name: str, lang: str = "en") -> None:
         self.state["sources"].append(
@@ -240,7 +275,9 @@ class FakeSuwayomi:
 
     @staticmethod
     def _manga_node(manga: dict[str, Any]) -> dict[str, Any]:
-        return {k: v for k, v in manga.items() if k != "chapters"}
+        return {
+            k: v for k, v in manga.items() if k not in ("chapters", "categoryIds", "updateStrategy")
+        }
 
     def _q_mangas(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         only_library = bool(re.search(r"inLibrary\s*:\s*true", query)) or (
@@ -254,7 +291,31 @@ class FakeSuwayomi:
     def _q_manga(self, query: str, variables: dict[str, Any]) -> dict[str, Any] | None:
         wanted = self._wanted_id(query, variables, "id")
         found = [m for m in self.state["mangas"] if m["id"] == wanted]
-        return self._manga_node(found[0]) if found else None
+        if not found:
+            return None
+        node = self._manga_node(found[0])
+        node["updateStrategy"] = found[0].get("updateStrategy", "ALWAYS_UPDATE")
+        node["categories"] = {
+            "nodes": [
+                {"id": c["id"], "name": c["name"]}
+                for c in self.categories
+                if c["id"] in found[0].get("categoryIds", [])
+            ]
+        }
+        return node
+
+    def _q_categories(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        return {"nodes": copy.deepcopy(self.categories)}
+
+    def _q_updateMangaCategories(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        wanted = self._wanted_id(query, variables, "id")
+        for manga in self.state["mangas"]:
+            if manga["id"] == wanted:
+                ids = set(manga.get("categoryIds", []))
+                ids |= set(variables.get("add", []))
+                ids -= set(variables.get("remove", []))
+                manga["categoryIds"] = sorted(ids)
+        return {"manga": {"id": wanted}}
 
     def _chapter_node(self, chapter: dict[str, Any]) -> dict[str, Any]:
         node = {k: v for k, v in chapter.items() if k != "cbz"}
@@ -294,7 +355,10 @@ class FakeSuwayomi:
         wanted = self._wanted_id(query, variables, "id")
         for manga in self.state["mangas"]:
             if manga["id"] == wanted:
-                manga["inLibrary"] = bool(variables.get("inLibrary", True))
+                if "strategy" in variables:
+                    manga["updateStrategy"] = str(variables["strategy"])
+                else:
+                    manga["inLibrary"] = bool(variables.get("inLibrary", True))
         return {"manga": {"id": wanted}}
 
     # -- as a transport, to exercise the real IntegrationFetcher ----------------------------
