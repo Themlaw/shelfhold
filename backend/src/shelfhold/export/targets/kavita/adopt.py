@@ -13,6 +13,8 @@ number of an adopted file here and the collision checks of the planner afterward
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import posixpath
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
@@ -58,6 +60,7 @@ __all__ = [
     "AdoptionSession",
     "BulkParse",
     "Duplicate",
+    "PreviewStale",
     "Rename",
 ]
 
@@ -74,6 +77,12 @@ class AdoptionRefused(Exception):
     def __init__(self, accounts: Sequence[str]) -> None:
         super().__init__("library exposed to children: " + ", ".join(accounts))
         self.accounts = tuple(accounts)
+
+
+class PreviewStale(Exception):
+    """What the admin confirmed is not what is there now: look again (`adopt --dry-run`)."""
+
+    code = "adopt.preview_stale"
 
 
 class NoFolderError(Exception):
@@ -137,6 +146,7 @@ class AdoptionReport:
     renames: tuple[Rename, ...]
     duplicates: tuple[Duplicate, ...]
     pre_adoption_settings: dict[str, Any]
+    fingerprint: str = ""  # of what was read: the confirmation names it (no check-then-act gap)
     adopted_files: int = 0  # filled once applied
     already_adopted: int = 0
     warnings: tuple[str, ...] = field(default=())
@@ -197,26 +207,37 @@ def library_type_named(name: str | None) -> LibraryType:
 # -- numbers and ComicInfo -----------------------------------------------------------------------
 
 
+MAX_NUMBER: Final = Decimal(10_000_000)  # no chapter or volume is numbered past this
+MAX_NUMBER_TEXT: Final = 32
+
+
 def _plain(value: float) -> str:
+    """The number as plain decimal text; `""` for NaN, infinity or an absurd size."""
     try:
-        text = format(Decimal(repr(value)).normalize(), "f")
+        wanted = Decimal(repr(value))
     except InvalidOperation:
         return ""
-    return text
+    if not wanted.is_finite() or not 0 < wanted < MAX_NUMBER:
+        return ""
+    return format(wanted.normalize(), "f")
 
 
 def number_of(parsed: ParseResult, info: Mapping[str, str]) -> tuple[str, str, str]:
-    """`(kind, number, origin)`: the name read by `plugin/parse` first, ComicInfo second."""
-    if parsed.min_chapter > 0:
-        return "chapter", _plain(parsed.min_chapter), "filename"
-    if parsed.min_volume > 0:
-        return "volume", _plain(parsed.min_volume), "filename"
-    try:
-        wanted = Decimal(info.get("Number", "").strip())
-    except InvalidOperation:
-        return "unknown", "", "filename"
-    if wanted > 0 and wanted.is_finite():
-        return "chapter", format(wanted.normalize(), "f"), "comicinfo"
+    """`(kind, number, origin)`: the name read by `plugin/parse` first, ComicInfo second.
+
+    A number that is not finite or beyond `MAX_NUMBER` is ignored, never an exception."""
+    if text := _plain(parsed.min_chapter):
+        return "chapter", text, "filename"
+    if text := _plain(parsed.min_volume):
+        return "volume", text, "filename"
+    raw = info.get("Number", "").strip()
+    if raw and len(raw) <= MAX_NUMBER_TEXT:
+        try:
+            wanted = Decimal(raw)
+        except InvalidOperation:
+            return "unknown", "", "filename"
+        if wanted.is_finite() and 0 < wanted < MAX_NUMBER:
+            return "chapter", format(wanted.normalize(), "f"), "comicinfo"
     return "unknown", "", "filename"
 
 
@@ -232,7 +253,12 @@ def read_comicinfo(fsops: Fsops, local: str) -> dict[str, str]:
         return {}
     try:
         with fsops.open_read(local) as stream, safe_open_archive(stream, name=local) as archive:
-            raw = archive.read("ComicInfo.xml", max_bytes=1 << 20)
+            name = next(
+                (e.name for e in archive.entries if e.name.lower() == "comicinfo.xml"), None
+            )  # any case: Kavita reads `comicinfo.xml` too
+            if name is None:
+                return {}
+            raw = archive.read(name, max_bytes=1 << 20)
         root = safe_parse_xml(raw)
     except (UnsafeArchiveError, UnsafeXmlError, KeyError, OSError):
         return {}
@@ -382,7 +408,13 @@ class Adopter:
         survey = [self._series(ctx, s, files[s.id], parsed, remote_root, known) for s in listed]
         renames, duplicates = self._proposals(survey)
         return AdoptionReport(
-            ctx.destination_id, ref, tuple(survey), tuple(renames), tuple(duplicates), settings
+            ctx.destination_id,
+            ref,
+            tuple(survey),
+            tuple(renames),
+            tuple(duplicates),
+            settings,
+            fingerprint=_fingerprint(ref, survey),
         )
 
     def _known_editions(self, ctx: DestinationContext) -> dict[str, str]:
@@ -495,15 +527,19 @@ class Adopter:
         client: KavitaClient,
         destination_id: str,
         *,
-        confirmed: bool,
+        confirm: str | None,
         library_ref: str | None = None,
     ) -> AdoptionReport:
+        """`confirm` is the fingerprint the preview gave: adoption goes ahead only on exactly
+        what the admin looked at (`PreviewStale` otherwise); none at all is no confirmation."""
         ctx = self._context(destination_id)
         report = await self._survey(client, ctx, library_ref)  # reads, and refuses a child library
-        if not confirmed:
+        if not confirm:
             raise ConfirmationRequired(
                 f"adopting {report.files} files of {len(report.series)} series needs confirmation"
             )
+        if confirm != report.fingerprint:
+            raise PreviewStale(report.fingerprint)
         self._ensure_link(ctx, report.library_ref)
         ctx = self._context(destination_id)
         now = self._clock.now()
@@ -776,6 +812,23 @@ class Adopter:
         )  # fmt: skip
 
 
+def _fingerprint(library_ref: str, series: Sequence[AdoptedSeries]) -> str:
+    """A digest of the series, their paths, sizes and `mtime_ns`: any change moves it."""
+    document = [
+        library_ref,
+        [
+            [
+                s.kavita_series_id,
+                s.name,
+                s.series_dir,
+                [[f.rel_path, f.size, f.mtime_ns, f.ino] for f in s.files],
+            ]
+            for s in sorted(series, key=lambda x: x.kavita_series_id)
+        ],
+    ]
+    return hashlib.sha256(json.dumps(document, ensure_ascii=True).encode()).hexdigest()[:32]
+
+
 def dto_type(library: Mapping[str, Any]) -> LibraryType:
     try:
         return LibraryType(int(library.get("type", 0)))
@@ -806,10 +859,10 @@ class AdoptionSession:
         )
 
     def adopt(
-        self, destination_id: str, *, confirmed: bool, library_ref: str | None = None
+        self, destination_id: str, *, confirm: str | None, library_ref: str | None = None
     ) -> AdoptionReport:
         return asyncio.run(
             self._adopter.adopt(
-                self._client, destination_id, confirmed=confirmed, library_ref=library_ref
+                self._client, destination_id, confirm=confirm, library_ref=library_ref
             )
         )

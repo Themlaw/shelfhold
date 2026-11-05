@@ -91,6 +91,16 @@ class Adoption:
         self.series[folder] = sid
         return sid
 
+    def adopt(self, *, confirm: bool = True) -> object:
+        """What the admin does: look at the preview, then confirm with its fingerprint."""
+        from tests.kavita_env import run
+
+        client, destination = self.wired.client, self.env.destination_id
+        seen = run(self.adopter.preview(client, destination))
+        return run(
+            self.adopter.adopt(client, destination, confirm=seen.fingerprint if confirm else None)
+        )
+
     def state(self) -> dict[str, tuple[str, int, int, int]]:
         """Everything that was there, minus Shelfhold's own reserved folder (`.shelfhold/`)."""
         return {

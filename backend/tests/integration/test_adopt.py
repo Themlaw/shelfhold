@@ -41,7 +41,7 @@ def _library(a: Adoption) -> None:
 
 
 def _adopt(a: Adoption, *, confirmed: bool = True) -> object:
-    return run(a.adopter.adopt(a.wired.client, a.env.destination_id, confirmed=confirmed))
+    return a.adopt(confirm=confirmed)
 
 
 @pytest.mark.req("EF-EXP-028")

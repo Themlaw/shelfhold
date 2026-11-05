@@ -8,6 +8,7 @@ write through a pause; every client of the application is built here.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -30,13 +31,20 @@ from shelfhold.infrastructure.fetcher import (
     GuardedFetcher,
     IntegrationFetcher,
     LanTargets,
+    Resolver,
     SystemResolver,
 )
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.infrastructure.secrets import SecretVault, diagnostics
 
-__all__ = ["guarded_client", "open_adoption", "open_client"]
+__all__ = [
+    "TargetUrlRefused",
+    "checked_target_url",
+    "guarded_client",
+    "open_adoption",
+    "open_client",
+]
 
 
 def guarded_client(client: KavitaClient, engine: Engine, target_id: str) -> KavitaClient:
@@ -63,6 +71,40 @@ def open_client(
         fetcher, base_url, key, events=events, clock=clock, health=health, **options
     )
     return guarded_client(client, engine, target_id)
+
+
+class TargetUrlRefused(ValueError):
+    """The address of a Kavita target is not one Shelfhold may send its key to."""
+
+
+async def checked_target_url(url: str, resolver: Resolver) -> tuple[str, int]:
+    """`(host, port)` of `export_target.config["url"]`, or `TargetUrlRefused`.
+
+    The shape is that of the headless configuration (http(s)://host[:port], no credentials, no
+    query). A Kavita is a server of the owner's network: a public address (literal, or a name
+    that resolves to one) is refused, and so is plain http to anything that is not LAN.
+    """
+    parts = urlsplit(url)
+    if (
+        parts.scheme not in {"http", "https"} or not parts.hostname
+        or parts.username is not None or parts.password is not None
+        or parts.query or parts.fragment
+    ):  # fmt: skip
+        raise TargetUrlRefused("the address must be http(s)://host[:port] without credentials")
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        found = await resolver.resolve(parts.hostname, port)
+    except Exception as error:
+        raise TargetUrlRefused("the address does not resolve") from error
+    addresses = [ipaddress.ip_address(a.split("%")[0]) for a in found]
+    if not addresses:
+        raise TargetUrlRefused("the address does not resolve")
+    public = [a for a in addresses if a.is_global]
+    if public:
+        raise TargetUrlRefused("a public address is refused: a Kavita is on the local network")
+    if parts.scheme != "https" and not all(a.is_private or a.is_loopback for a in addresses):
+        raise TargetUrlRefused("plain http is for the local network only")
+    return parts.hostname, port
 
 
 class _LogEvents:
@@ -94,12 +136,9 @@ def open_adoption(settings: Settings, destination_id: str) -> AdoptionSession:
             .where(export.shelf_destination.c.id == destination_id)
         ).one()
     url = str(row.config.get("url", ""))
-    parts = urlsplit(url)
-    if parts.hostname is None:
-        raise ValueError("the Kavita target has no `url` in its configuration")
-    port = parts.port or (443 if parts.scheme == "https" else 80)
     resolver = SystemResolver()
-    lan = asyncio.run(LanTargets.declare([f"{parts.hostname}:{port}"], resolver))
+    host, port = asyncio.run(checked_target_url(url, resolver))
+    lan = asyncio.run(LanTargets.declare([f"{host}:{port}"], resolver))
     clock = SystemClock()
     events = _LogEvents()
     vault = SecretVault(diagnostics.boot_check(settings, create=False, announce=False))

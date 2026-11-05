@@ -223,7 +223,7 @@ def test_scan_folder_debounced() -> None:
 
 @pytest.mark.req("EF-EXP-009")
 def test_plugin_parse_receives_library_type() -> None:
-    h = harness()
+    h = harness(manga_parse_only=False)  # only the transport of the type is looked at here
     result = run(h.client.parse_name(EPUB, LibraryType.LIGHT_NOVEL))
     assert (result.series_name, result.min_chapter) == ("Novel Z", 3.0)
     run(h.client.parse_bulk([CBZ, EPUB], LibraryType.COMIC))

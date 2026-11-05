@@ -11,18 +11,21 @@ import argparse
 import sys
 
 from shelfhold.config import ResolvedSettings
-from shelfhold.export.targets.kavita.adopt import AdoptionReport, AdoptionSession
+from shelfhold.export.targets.kavita.adopt import AdoptionReport, AdoptionSession, PreviewStale
 from shelfhold.i18n import t
 
 __all__ = ["AdoptionSession", "register", "run"]
 
 REFUSED = 3
+STALE = 4
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     adopt = commands.add_parser("adopt", help=t("adopt.help"), allow_abbrev=False)
     adopt.add_argument("--dry-run", action="store_true", help=t("adopt.dry_run_help"))
-    adopt.add_argument("--confirm", action="store_true", help=t("adopt.confirm_help"))
+    adopt.add_argument(
+        "--confirm", metavar="FINGERPRINT", default=None, help=t("adopt.confirm_help")
+    )
     adopt.add_argument("--destination", required=True, help=t("adopt.destination_help"))
     adopt.add_argument("--library", default=None, help=t("adopt.library_help"))
     adopt.set_defaults(handler=run)
@@ -36,6 +39,7 @@ def open_session(resolved: ResolvedSettings, destination_id: str) -> AdoptionSes
 
 
 def _show(report: AdoptionReport) -> None:
+    print(t("adopt.fingerprint_line", fingerprint=report.fingerprint))
     print(t("adopt.header", series=len(report.series), files=report.files))
     for series in report.series:
         if series.volume_only:
@@ -66,7 +70,10 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         if args.dry_run:
             _show(session.preview(args.destination, args.library))
             return 0
-        report = session.adopt(args.destination, confirmed=True, library_ref=args.library)
+        report = session.adopt(args.destination, confirm=args.confirm, library_ref=args.library)
+    except PreviewStale:
+        print(t("adopt.preview_stale"), file=sys.stderr)
+        return STALE
     except AdoptionRefused as refused:
         print(t("adopt.refused", accounts=",".join(refused.accounts)), file=sys.stderr)
         return REFUSED
