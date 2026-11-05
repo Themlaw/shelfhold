@@ -228,7 +228,11 @@ VIOLATIONS = [
     ("sanitize-single-entry", "catalog/other.py", "import nh3\n",
      "infrastructure/content_trust/sanitize.py"),
     ("sanitize-single-entry", "catalog/other.py", "import nh3\n",
-     "infrastructure/content_trust/__init__.py"),
+     "infrastructure/content_trust/other.py"),
+    ("sanitize-single-entry", "catalog/other.py", "import bleach\n", None),
+    ("pillow-confined", "library/other.py", "import PIL.Image\n",
+     "infrastructure/imaging/worker.py"),
+    ("pillow-confined", "infrastructure/imaging/other.py", "from PIL import ImageOps\n", None),
     ("http-client-single-entry", "library/other.py", "import httpx2\n",
      "infrastructure/fetcher/other.py"),
     ("http-client-single-entry", "export/other.py", "import requests\n", None),
@@ -261,7 +265,13 @@ VIOLATIONS = [
 
 
 @pytest.mark.req(
-    "ENF-QUAL-002", "ENF-SEC-014", "ENF-SEC-002", "ENF-SEC-015", "ENF-I18N-005", "ENF-SEC-001"
+    "ENF-QUAL-002",
+    "ENF-SEC-014",
+    "ENF-SEC-002",
+    "ENF-SEC-015",
+    "ENF-I18N-005",
+    "ENF-SEC-001",
+    "ENF-SEC-003",
 )
 @pytest.mark.parametrize(
     ("contract", "module", "code", "sanctioned"),
