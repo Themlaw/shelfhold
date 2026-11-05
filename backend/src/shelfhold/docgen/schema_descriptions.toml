@@ -1,0 +1,822 @@
+# Descriptions of the data dictionary (EF-INT-027). Hand-written, read by
+# `shelfhold.docgen.release_assets`; every table and every column of the migrated schema needs
+# one (`tests/unit/test_release_assets.py` fails otherwise, and also on a description that names
+# nothing). A column is described in `[tables.<table>.columns]`, else in `[common]`, which holds
+# only the names that mean the same thing wherever they appear.
+
+[common]
+created_at = "When the row was created (UTC)."
+updated_at = "When the row was last changed (UTC)."
+lang = "Language tag (BCP 47); `und` means not known."
+lang_raw = "Language exactly as the source gave it, kept for diagnosis."
+age_rating = "Minimum age (ordinal) set by the admin; NULL when none."
+age_x = "Stricter than any age: the content is rated X."
+rated_at = "When the rating was last set (audited)."
+date_precision = "Precision of the paired date: `year`, `month` or `day`."
+secret_kid = "Identifier of the key that sealed the secret document."
+secret_v = "Format version of the sealed secret envelope (part of the associated data)."
+secret_nonce = "Nonce of the sealed secret document."
+secret_ct = "Ciphertext of the sealed secret document; the clear text is never stored."
+edition_id = "Edition concerned (`edition.id`)."
+work_id = "Work concerned (`work.id`)."
+unit_id = "Unit concerned (`unit.id`)."
+variant_id = "Variant concerned (`unit_variant.id`)."
+team_id = "Translation team concerned (`team.id`)."
+user_id = "User concerned (`user.id`)."
+plugin_id = "Identifier of the source plugin."
+source_key = "Key of the upstream source (plugin and sub-source)."
+source_binding_id = "Binding of an Edition to an upstream series (`source_binding.id`)."
+source_item_id = "Upstream series identity (`source_item.id`)."
+shelf_id = "Shelf concerned (`shelf.id`)."
+shelf_destination_id = "Shelf destination concerned (`shelf_destination.id`)."
+export_target_id = "Export target (server) concerned (`export_target.id`)."
+target_id = "Export target (server) concerned (`export_target.id`)."
+export_item_id = "Exported file or object concerned (`export_item.id`)."
+export_series_id = "Exported series concerned (`export_series.id`)."
+remote_library_id = "Library of the remote server concerned (`remote_library.id`)."
+physical_root_id = "Physical root concerned (`physical_root.root_id`)."
+root_id = "Physical root concerned (`physical_root.root_id`)."
+contributor_id = "Contributor concerned (`contributor.id`)."
+plan_id = "Export plan concerned (`export_plan.plan_id`)."
+content_hash = "Hash of the content as received (`sha256:` plus hex), versioned by `content_hash_by`."
+file_hash = "Hash of the file as rendered for a destination (`sha256:` plus hex)."
+kid = "Identifier of an encryption key of the keyring."
+actor_id = "Opaque identifier of the actor; deliberately not a foreign key, it outlives the user."
+epoch = "Value of `instance.restore_epoch` when the row was written."
+seq = "Sequence number, increasing within its scope."
+payload = "JSON document of the row; its shape depends on the kind."
+state = "Lifecycle state; the allowed values are listed with the column."
+status = "Lifecycle status; the allowed values are listed with the column."
+kind = "Kind of the row; the allowed values are listed with the column when closed."
+origin = "Where the value came from (file, source, provider, admin)."
+label = "Display label."
+name = "Display name."
+title = "Title as displayed."
+sort_title = "Title normalized for sorting."
+position = "Rank within the parent, starting at 0."
+enabled = "Whether the row is active."
+revision = "Revision counter, starting at 1."
+revision_hint = "Revision indicator as the source exposed it, if any."
+version = "Version string."
+schema_version = "Version of the document format stored in the row (`major.minor` or integer)."
+size = "Size in bytes."
+path = "Path, relative to the volume or root it names."
+rel_path = "Path relative to the root, without `..`."
+mtime_ns = "File modification time in nanoseconds, for an exact comparison."
+page_count = "Number of pages."
+remote_id = "Identifier on the remote server or upstream source."
+remote_ref = "Cache of the remote reference, re-resolved when the server changes."
+error_code = "Stable error code of the last failure (see the error catalog)."
+paused_reason = "Why the series is paused (for example `foreign_writer`); NULL when running."
+seen_at = "When the value was last observed (UTC)."
+first_seen_at = "When the value was first observed (UTC)."
+resolved_at = "When the row was resolved (UTC); NULL while open."
+closed = "Whether the series or volume is closed (no more content expected)."
+attempts = "Number of attempts made so far."
+limit_key = "Rate-limit key shared by everything hitting the same upstream domain."
+lease_until = "When the lease expires (UTC); a lease past this instant may be taken over."
+expires_at = "When the row expires (UTC); NULL for no expiry."
+revoked_at = "When the row was revoked (UTC); NULL while valid."
+auth_time = "Last time the user typed the password for this session or action (UTC)."
+health = "JSON summary of the last health observations."
+mode = "Mount mode: `rw` or `adopt_ro`."
+alg = "Name of the algorithm."
+format = "File format (cbz, epub, pdf...)."
+reason = "Reason, free-form or from an open vocabulary."
+value = "Stored value."
+key = "Key of the entry."
+op = "Operation name."
+src_path = "Source path of the operation."
+dst_path = "Destination path of the operation."
+number_sort = "Number as a sortable decimal."
+number_norm = "Number as output by the versioned normalizer."
+number_segment = "Numbering segment of the place (season, arc...); empty string means none."
+number_norm_by = "Version of the normalizer that produced `number_norm`."
+name_raw = "Name exactly as the source gave it."
+name_norm_by = "Version of the normalizer that produced the normalized name."
+track = "Track of the Edition (main line, extras...)."
+script = "Writing system (ISO 15924), when known."
+id_scheme = "Scheme of the identifier (how the remote id is composed)."
+preferred = "Whether this row is the preferred one."
+role = "Role (MARC relator code, or user role)."
+st_dev = "Device number of the file system, to detect a remount."
+generation = "Generation counter, incremented on each remount or reset."
+carrier_type = "Kind of carrier the row points at (no foreign key, the type says where to look)."
+carrier_id = "Identifier of the carrier (no foreign key)."
+entity_type = "Kind of entity the row points at (no foreign key, the type says where to look)."
+entity_id = "Identifier of the entity (no foreign key)."
+rights_basis = "Legal basis declared for the content, free-form."
+tombstone_count = "Number of tombstone journal lines last written, to detect truncation."
+tombstone_last_tag = "Authentication tag of the last tombstone journal line, to detect truncation."
+
+[tables.age_suggestion]
+description = "Ages seen in files, sources and providers. A suggestion only, never a rating."
+[tables.age_suggestion.columns]
+id = "Suggestion identifier (ULID)."
+value = "Suggested minimum age."
+x = "The source flags the content as X."
+provenance = "Where the suggestion was read."
+
+[tables.app_setting]
+description = "Settings stored in the database: the lowest configuration layer."
+[tables.app_setting.columns]
+key = "Setting name."
+value = "Setting value, as text."
+
+[tables.audit]
+description = "Append-only audit trail of administrative actions. Never holds a title."
+[tables.audit.columns]
+id = "Entry identifier."
+action = "Action name, for example `admin.create`."
+target = "Target of the action, without any title."
+at = "When the action happened (UTC)."
+session_id = "Session behind the action; no foreign key."
+
+[tables.contributor]
+description = "A person or organization that contributes to Works and Editions."
+[tables.contributor.columns]
+id = "Contributor identifier (ULID)."
+kind = "`person` or `organization`."
+primary_name = "Main display name."
+birth_date = "Birth date, possibly partial."
+birth_precision = "Precision of `birth_date`."
+death_date = "Death date, possibly partial."
+death_precision = "Precision of `death_date`."
+
+[tables.domain_slot]
+description = "Concurrency slots per upstream domain, so a domain is never hit by too many jobs at once."
+[tables.domain_slot.columns]
+slots = "Number of slots allowed for the domain."
+in_use = "Number of slots currently held."
+
+[tables.event]
+description = "Append-only event log; its id is the server-sent-events id."
+[tables.event.columns]
+id = "Monotone sequence number, never reused."
+type = "Event type from the operating catalog (for example `source.broken`)."
+occurred_at = "When the event happened (UTC)."
+visibility = "Who may see it: `private`, `household` or `ops`."
+
+[tables.external_id]
+description = "Identifiers of entities in outside catalogs (ISBN, provider ids)."
+[tables.external_id.columns]
+provider = "Outside catalog the identifier belongs to."
+value = "The identifier."
+
+[tables.idempotency_key]
+description = "Client idempotency keys and their stored responses, kept 24 hours."
+[tables.idempotency_key.columns]
+key = "Key chosen by the client."
+method = "HTTP method of the first request."
+path = "HTTP path of the first request."
+request_hash = "Hash of the first request, to detect a key reused for another request."
+response_status = "Status of the stored response; NULL while still running."
+response_body = "Body of the stored response."
+
+[tables.instance]
+description = "One row: identity and restore bookkeeping of this instance."
+[tables.instance.columns]
+instance_id = "Instance identifier (ULID)."
+singleton = "Always 1; makes a second row impossible."
+jurisdiction = "Jurisdiction code chosen at installation."
+refresh_mode = "`piloted` or `always_on`."
+lease_heartbeat_at = "Last heartbeat of the running instance (UTC)."
+restore_epoch = "Incremented on any restore or rollback."
+restore_epoch_at = "When `restore_epoch` last changed (UTC)."
+restore_generation = "Generation counter changed by a restore or rollback."
+
+[tables.job_view]
+description = "Read model of the background jobs (the queue itself lives in Huey)."
+[tables.job_view.columns]
+id = "Job identifier (ULID)."
+huey_task_id = "Identifier of the task in the Huey queue."
+kind = "Job kind, for example `follow.cycle`."
+progress = "Progress, 0 to 1, or NULL."
+dedupe_key = "Key that makes a second identical job a no-op."
+last_error = "Last error message, redacted."
+priority_class = "`new`, `request` or `backfill`."
+request_id = "Request that created the job."
+started_at = "When the job started (UTC)."
+finished_at = "When the job finished (UTC)."
+window_end = "End of the maintenance window the job must stop at (UTC)."
+cursor = "Resume point of a job paused by the window (opaque)."
+
+[tables.merge_suggestion]
+description = "Pairs of entities the catalog suggests merging."
+[tables.merge_suggestion.columns]
+id = "Suggestion identifier (ULID)."
+a = "First entity of the pair; always smaller than `b`."
+b = "Second entity of the pair."
+score = "Similarity score, 0 to 1."
+decided_at = "When the admin decided (UTC)."
+
+[tables.normalizer]
+description = "Registry of versioned normalizers; a version cited by a tombstone is never removed from the code."
+[tables.normalizer.columns]
+id = "Normalizer name."
+version = "Normalizer version."
+introduced_in = "Shelfhold release that introduced the version."
+
+[tables.physical_root]
+description = "One row per physical root: an entry of the path map with a stable identity."
+[tables.physical_root.columns]
+path_entry = "Entry of the path map the root was created from."
+predecessor_instance_ids = "JSON list of earlier instance identifiers that wrote to this root."
+
+[tables.plugin_install]
+description = "Installed source plugins. A third-party plugin is installed disabled."
+[tables.plugin_install.columns]
+api = "Plugin API version the plugin targets."
+origin = "`builtin` or `local`."
+sha256 = "Hash of the installed plugin code."
+state_schema = "Version of the plugin's stored state format."
+installed_at = "When the plugin was installed (UTC)."
+
+[tables.plugin_state]
+description = "Private state of a plugin, one document per key."
+[tables.plugin_state.columns]
+payload_schema = "Version of the stored document format."
+
+[tables.resource_lock]
+description = "Resource locks taken by jobs, with a lease."
+[tables.resource_lock.columns]
+resource = "Locked resource: `work:<id>` or `path:<destination>/<dir>`."
+holder_job_id = "Job that holds the lock."
+acquired_at = "When the lock was taken (UTC)."
+
+[tables.schedule]
+description = "Recurring jobs and their next due time."
+[tables.schedule.columns]
+id = "Schedule identifier (ULID)."
+job_kind = "Kind of job to run."
+scope_key = "What the job runs for (for example a binding); empty for global jobs."
+cron = "Cron expression."
+jitter_s = "Random delay added to spread the load, in seconds."
+window = "Time window the job is restricted to, if any."
+last_run_at = "When the job last ran (UTC)."
+next_due_at = "When the job is next due (UTC)."
+
+[tables.secret_key]
+description = "Registry of the keys of the keyring. The key material lives in the keyring file, never here."
+[tables.secret_key.columns]
+state = "`active`, `previous` or `retired`."
+retired_at = "When the key was retired (UTC)."
+
+[tables.series]
+description = "A named series that groups Works (a magazine run, a franchise)."
+[tables.series.columns]
+id = "Series identifier (ULID)."
+reading_order = "Reading order of the members, free-form."
+issn = "ISSN of a prepublication magazine."
+
+[tables.shelf]
+description = "A place where a kind of Work goes, with its age ceiling and retention."
+[tables.shelf.columns]
+id = "Shelf identifier (ULID)."
+phrase = "Sentence shown to describe the shelf."
+default_kinds = "JSON list of Work kinds filed here by default."
+format_policy = "JSON policy on accepted formats."
+library_id = "Opaque parental-control scope key."
+max_age_rating = "Age ceiling; NULL means no ceiling (an adult shelf). X never passes under a ceiling."
+allowed_profiles = "JSON list of profiles allowed to see the shelf."
+retention_mode = "`passthrough` (files are not kept) or `keep`."
+purge_upstream_after_export = "Whether the upstream copy is released after export."
+hold_until_rated = "Hold exports until the admin rated the Work."
+follow_suspended = "Following is suspended for the Works of an adopted child library."
+
+[tables.source_alias]
+description = "Where an upstream series moved: old identity to new identity."
+[tables.source_alias.columns]
+id = "Alias identifier (ULID)."
+old_source_key = "Source key before the move."
+old_remote_id = "Remote identifier before the move."
+new_source_key = "Source key after the move."
+new_remote_id = "Remote identifier after the move."
+
+[tables.source_item]
+description = "Identity of an upstream series: plugin, source and remote id."
+[tables.source_item.columns]
+id = "Series identity (ULID)."
+url = "Public URL of the series upstream."
+memo = "Plugin memo, opaque to the core."
+memo_version = "Version of the memo format."
+last_seen = "When the series was last seen upstream (UTC)."
+
+[tables.sub_source]
+description = "Dynamic sub-sources exposed by a meta-source. None is active at installation."
+[tables.sub_source.columns]
+name = "Sub-source display name."
+content_warning = "Content warning declared by the source."
+
+[tables.tombstone_kid]
+description = "Registry of every key identifier ever used for a tombstone; only grows."
+[tables.tombstone_kid.columns]
+first_seq = "Sequence number of the first line sealed under the key."
+
+[tables.upstream_snapshot]
+description = "Settings read from the connected service at adoption, for `detach --restore-upstream`."
+[tables.upstream_snapshot.columns]
+id = "Snapshot identifier (ULID)."
+connected_service_id = "Connected service the snapshot was taken from."
+series_ref = "Series on the connected service."
+capability = "Capability the snapshot covers."
+taken_at = "When the snapshot was taken (UTC)."
+
+[tables.user]
+description = "Accounts: the admin and the household members."
+[tables.user.columns]
+id = "User identifier (ULID)."
+username = "Login name, unique."
+password_hash = "argon2id hash; NULL for accounts that only sign in through a proxy, OIDC or passkey."
+role = "`admin`, `member` or `child`."
+can_rate = "Whether the user may rate Works."
+locale = "Interface language."
+timezone = "IANA time zone of the user."
+title_lang_pref = "Preferred language of titles."
+theme = "Interface theme; NULL means the instance default."
+color_scheme = "Light or dark preference."
+
+[tables.work_kind]
+description = "Open vocabulary of Work kinds (manga, novel, comic...)."
+[tables.work_kind.columns]
+label_fr = "French label."
+default_shelf = "Shelf kind where Works of this kind go by default."
+default_direction = "Default reading direction."
+default_media = "Default media of the kind."
+
+[tables.work_relation_kind]
+description = "Open vocabulary of relations between Works that are not merged."
+[tables.work_relation_kind.columns]
+label_fr = "French label."
+
+[tables.api_key]
+description = "API keys. The secret is shown once and never stored; only its hash is."
+[tables.api_key.columns]
+id = "Key identifier (ULID)."
+name = "Name given by the admin."
+prefix = "Displayable part of the key."
+hash = "Hash of the secret part."
+scopes = "JSON list of scopes."
+read_only = "The key may only read."
+last_used_at = "When the key was last used (UTC)."
+rotated_from = "Key this one replaces."
+subject_user_id = "User the key acts as."
+issued_by = "Actor that issued the key."
+
+[tables.content_tombstone]
+description = "Tombstones of purged content: encrypted raw identifiers only, never a title."
+[tables.content_tombstone.columns]
+id = "Tombstone identifier (ULID)."
+v = "Format version, part of the associated data."
+scope = "`variant`, `place`, `series_binding` or `work`."
+nonce = "Nonce of the sealed line."
+ct = "Sealed line: the encrypted raw identifiers."
+reason = "Opaque reason."
+
+[tables.contribution]
+description = "Contributors attached to a Work or an Edition, with a role."
+[tables.contribution.columns]
+position = "Rank among the contributors of the entity."
+
+[tables.contributor_name]
+description = "Names and name forms of a contributor."
+[tables.contributor_name.columns]
+id = "Name identifier (ULID)."
+name = "Normalized name."
+kind = "Kind of name form (legal, pen name, transliteration...)."
+family_first = "The family name comes first in this form."
+
+[tables.export_target]
+description = "A destination server of the catalog (one Kavita in M1a). Secrets are one sealed document."
+[tables.export_target.columns]
+id = "Target identifier (ULID)."
+kind = "Target kind, for example `kavita`."
+access_partitioning = "How the target separates what each account may see."
+access_partitioning_attested_at = "When the admin attested the partitioning (UTC)."
+config = "JSON configuration; nothing secret."
+path_map = "JSON list of `{local, remote, mode}` entries."
+version_seen = "Server version last seen."
+
+[tables.mount_sentinel]
+description = "Per-root mount check state: detects a missing, swapped or stale mount."
+[tables.mount_sentinel.columns]
+capabilities = "JSON of the file-system capabilities probed."
+mount_id = "Identifier of the mount."
+checked_at = "When the sentinel was last checked (UTC)."
+
+[tables.notification_pending]
+description = "Notifications to send: written in the same transaction as the event, removed on success."
+[tables.notification_pending.columns]
+id = "Row identifier (ULID)."
+event_id = "Event to announce (`event.id`)."
+channel = "Notification channel."
+next_try_at = "When to try next (UTC)."
+
+[tables.reading_position]
+description = "History of reading positions; survives the file it was read on."
+[tables.reading_position.columns]
+id = "Position identifier (ULID)."
+locator = "JSON locator (href, cfi, progression, page...)."
+percent = "Progress, 0 to 100."
+client_ts = "Client clock when the position was recorded (UTC)."
+server_ts = "Server clock when the position arrived (UTC)."
+device_id = "Device that recorded the position."
+
+[tables.session]
+description = "Login sessions. Only the hash of the token is stored."
+[tables.session.columns]
+id = "Session identifier (ULID)."
+token_hash = "Hash of the cookie value."
+csrf_secret = "Secret of the CSRF check."
+last_seen_at = "When the session was last used (UTC)."
+absolute_expiry = "Latest instant the session can live to (UTC)."
+remember = "The user ticked \"remember me\"."
+user_agent_label = "Short label of the browser."
+ip = "Client address at login."
+
+[tables.source_account]
+description = "Per-user credentials of a connected service. Secrets are sealed."
+[tables.source_account.columns]
+id = "Account identifier (ULID)."
+kind = "The admin's own account or a dedicated service account."
+auth_mode = "What the service answered (for example `basic_auth`)."
+auth_kind = "Kind of credential the account holds."
+session_expires_at = "When the stored session ends (UTC)."
+
+[tables.source_config]
+description = "Per-plugin settings, with sealed secret settings."
+[tables.source_config.columns]
+settings = "JSON settings; nothing secret."
+user_agent = "User agent sent upstream."
+rate_limit_override = "Admin override of the rate limit."
+terms_url = "URL of the source's terms."
+consecutive_failures = "Failures in a row since the last success."
+family_safe = "Marked \"family\" by the admin."
+
+[tables.tombstone_lost_kid]
+description = "Keys declared lost by the admin; lines under them are inert from then on. Append-only."
+[tables.tombstone_lost_kid.columns]
+accepted_at = "When the admin typed the waiver (UTC)."
+
+[tables.tombstone_pending_root]
+description = "Journal lines for a read-write root that was absent during a purge, written first on remount."
+[tables.tombstone_pending_root.columns]
+line = "The encrypted JSON line, as it will be written."
+
+[tables.trash_item]
+description = "Contents of the bin of each physical root, emptied after 30 days."
+[tables.trash_item.columns]
+id = "Bin entry identifier (ULID)."
+kind = "What was binned: a Unit, a Work or an export item."
+ref = "Identifier of the binned object."
+deleted_at = "When the object was binned (UTC)."
+purge_after = "When the entry may be emptied (UTC)."
+
+[tables.work]
+description = "A creative work, independent of language and edition."
+[tables.work.columns]
+id = "Work identifier (ULID)."
+kind = "Kind of Work (`work_kind.key`)."
+description = "Synopsis, sanitized."
+status = "Publication status: ongoing, finished, hiatus..."
+first_published = "Date of first publication, possibly partial."
+is_adult = "The Work is adult content."
+reading_direction = "Reading direction; NULL means the kind's default."
+locked_fields = "JSON list of fields the admin locked against upstream changes."
+
+[tables.edition]
+description = "An Edition: a Work in a language, translation, media and packaging. Its key is sextuplet-based."
+[tables.edition.columns]
+id = "Edition identifier (ULID)."
+translation_type = "How the text was produced: original, official, fan..."
+media = "Medium: images, text, audio..."
+publisher = "Publisher; empty string when unknown."
+text_version = "Version of the text, derived from a reference, never from a name."
+performance = "Audio performance (narrator or cast); empty string when none."
+packaging = "Reissue or packaging variant; empty string when none."
+text_version_contributor_id = "Contributor behind the text version."
+text_version_label = "Label of the text version."
+text_version_norm_by = "Normalizer version that produced the label."
+translated_from_edition_id = "Edition this one was translated from (relay translation)."
+published_on = "Publication date, possibly partial."
+is_official = "Official release."
+rights = "SPDX identifier, or text plus origin URL."
+rights_jurisdiction = "Jurisdiction the rights statement applies to."
+author_death_year = "Derived cache: death year of the author."
+translator = "Derived cache: translator name."
+translator_death_year = "Derived cache: death year of the translator."
+volume_policy = "How volumes are handled for the Edition."
+
+[tables.kavita_instance]
+description = "Fingerprint of the Kavita server, to detect a reinstall."
+[tables.kavita_instance.columns]
+fingerprint = "URL plus creation ids and dates of its libraries."
+version = "Server version."
+
+[tables.remote_library]
+description = "A library of a remote server."
+[tables.remote_library.columns]
+id = "Library identifier (ULID)."
+kind_seen = "Library type last seen on the server."
+
+[tables.series_member]
+description = "Works that belong to a series."
+[tables.series_member.columns]
+series_id = "Series concerned (`series.id`)."
+position = "Decimal text: \"1\", \"1.5\", \"10\"."
+label = "Label of the member in the series."
+
+[tables.shelf_destination]
+description = "A shelf bound to a destination. The links to remote libraries are in `shelf_destination_remote_library`."
+[tables.shelf_destination.columns]
+id = "Binding identifier (ULID)."
+transport = "`tree`, `dropbox` or `pull`."
+egress = "Whether the plugin sends data outside the home network: `foyer` or `externe`."
+root_subpath = "Stable key: folder of the shelf under the root."
+template = "Naming template, copied at creation and never followed."
+template_origin = "Where the template came from, as `default@<version>`."
+import_mode = "How the server imports the files."
+kavita_library_type = "Library type to create on Kavita."
+adopted = "The library existed before Shelfhold and was adopted."
+pre_adoption_settings = "JSON of the library settings before adoption."
+sync_progress = "Reading progress sync (from M4)."
+kavita_series_age_locked = "Series ages are locked on Kavita (from M2)."
+
+[tables.work_relation]
+description = "Works related without being merged."
+[tables.work_relation.columns]
+from_work_id = "Source of the relation."
+to_work_id = "Target of the relation."
+kind = "Relation kind (`work_relation_kind.key`)."
+
+[tables.work_title]
+description = "Alternative titles of a Work."
+[tables.work_title.columns]
+id = "Title identifier (ULID)."
+kind = "Kind of title (official, alias, romanization...)."
+
+[tables.export_plan]
+description = "A computed export plan. A plan whose base moved is stale and refused."
+[tables.export_plan.columns]
+plan_id = "Plan identifier."
+kind = "Plan kind."
+dry_run = "The plan was only previewed."
+base_version = "128-bit digest (hex) of what the plan was computed from."
+files_fingerprint = "Fingerprint of the files the plan relies on."
+batches = "Number of batches."
+
+[tables.gap_ack]
+description = "A gap the admin accepted: it is not a hole to backfill."
+[tables.gap_ack.columns]
+number_segment = "Numbering segment of the gap."
+number_norm = "Normalized number of the gap."
+acked_by = "Actor that accepted the gap."
+acked_at = "When the gap was accepted (UTC)."
+
+[tables.kavita_access_audit]
+description = "Last read-only audit of the accounts that reach a library of the server."
+[tables.kavita_access_audit.columns]
+accounts = "JSON summary of the accounts."
+age_restriction = "Loosest age restriction among those accounts."
+include_unknowns = "Whether any account includes unrated content."
+exposed_to_children = "Whether a child account reaches the library."
+kavita_version = "Server version at the time of the audit."
+audited_at = "When the audit ran (UTC)."
+
+[tables.series_follow]
+description = "One follow per Edition, whatever its bindings."
+[tables.series_follow.columns]
+follow_from_segment = "Segment of the watermark: nothing at or below is requested."
+follow_from_number = "Number of the watermark; NULL means no watermark yet."
+follow_from_norm_by = "Normalizer version of the watermark."
+backfill_mode = "How older content is fetched."
+cap = "Maximum number of Units per cycle."
+upgrade_policy = "What to do when a better Variant appears."
+check_override = "`completed` or `paused`, set by the admin."
+filters = "JSON filters; NULL inherits the shelf's."
+
+[tables.shelf_destination_remote_library]
+description = "Links a shelf destination to the libraries of its server."
+[tables.shelf_destination_remote_library.columns]
+
+[tables.source_binding]
+description = "Ties an Edition to an upstream series, with a priority."
+[tables.source_binding.columns]
+id = "Binding identifier (ULID)."
+priority = "Rank within the Edition, unique among active bindings."
+active = "Whether the binding is in use."
+disabled_reason = "Why the binding was disabled."
+check_cron = "Observed check cadence."
+next_expected = "When a new release is expected (UTC)."
+last_checked = "When the source was last checked (UTC)."
+content_trust = "`publisher` or `untrusted` (default)."
+linked_from_adoption = "Created by the adoption of an existing library."
+
+[tables.team]
+description = "A translation team, attached to an Edition."
+[tables.team.columns]
+id = "Team identifier (ULID)."
+label = "Normalized team name."
+label_raw = "Team name as seen."
+label_norm_by = "Normalizer version of the label."
+last_release_at = "When the team last published (UTC)."
+
+[tables.volume]
+description = "A volume of an Edition."
+[tables.volume.columns]
+id = "Volume identifier (ULID)."
+number = "Volume number as displayed."
+title = "Volume title."
+isbn = "ISBN-13, digits only."
+cover_ref = "Reference to the cover."
+
+[tables.export_op]
+description = "Operations of an export plan, in order."
+[tables.export_op.columns]
+id = "Operation identifier (ULID)."
+batch = "Batch number."
+position = "Rank within the batch."
+payload = "JSON arguments of the operation."
+status = "Execution status."
+
+[tables.export_series]
+description = "The series of a remote library, with an identity of its own, assigned at first export."
+[tables.export_series.columns]
+id = "Series identifier (ULID)."
+proposal_key = "Key of the name proposal it came from."
+normalized_name = "Normalized series name."
+name_raw = "Series name as first proposed."
+kavita_series_id = "Cache of the Kavita series id."
+frozen_series = "Series name frozen at first export (re-read for an adopted series)."
+frozen_localized_series = "Localized name frozen at first export."
+frozen_series_sort = "Sort name frozen at first export."
+frozen_language = "Language frozen at first export."
+has_volume = "Whether the series uses volumes."
+series_dir = "Folder of the series."
+frozen_at = "When the values were frozen (UTC)."
+
+[tables.fs_intent]
+description = "Write-ahead record of a file operation, validated in the database. Replayed or settled at startup."
+[tables.fs_intent.columns]
+id = "Intent identifier (ULID)."
+intent_schema_version = "Frozen version of the intent format; an unknown version is never replayed."
+src_root = "Root of the source path."
+dst_root = "Root of the destination path."
+expected_sha256 = "Hash the source must have."
+expected_file_id = "Device, inode, size and mtime the source must have."
+resolved_at = "When the intent was settled (UTC)."
+
+[tables.source_failure]
+description = "Failures per upstream source and binding; only content errors make a Unit irreplaceable."
+[tables.source_failure.columns]
+failure_class = "Class of the failure."
+consecutive_content_errors = "Content errors in a row."
+last_error_code = "Code of the last error."
+last_error_at = "When the last error happened (UTC)."
+
+[tables.team_alias]
+description = "Names a team went by on each binding."
+[tables.team_alias.columns]
+label = "Name as seen on that binding."
+
+[tables.team_priority]
+description = "Order in which an Edition prefers its teams."
+[tables.team_priority.columns]
+rank = "Rank; 1 is preferred."
+
+[tables.unit]
+description = "A place in an Edition (track, segment, number, part). Which file fills it is a Variant."
+[tables.unit.columns]
+id = "Unit identifier (ULID)."
+volume_id = "Volume the Unit belongs to."
+number_raw = "Number exactly as received."
+number_segment_norm_by = "Normalizer version of the segment."
+number_segment_ordinal = "Ordinal of the segment."
+part = "Part of a split chapter."
+source_order = "Order in the source; the place of an extra without a number."
+title = "Title of the Unit."
+published_on = "Publication date, possibly partial."
+published_at = "Upload time, informative."
+availability = "Availability upstream."
+available_until = "When the upstream copy disappears (UTC)."
+follow_suppressed = "\"Stop following\": never lifted by itself."
+follow_suppressed_by = "Actor that stopped the follow."
+follow_suppressed_at = "When the follow was stopped (UTC)."
+
+[tables.edition_export_series]
+description = "Which series an Edition is exported to, per library."
+[tables.edition_export_series.columns]
+assigned_at = "When the assignment was made (UTC)."
+assigned_by = "`first_export` or `plan`."
+
+[tables.field_owner]
+description = "Fields Kavita holds locked by Shelfhold: only those are rewritten, a difference is drift."
+[tables.field_owner.columns]
+field = "Name of the metadata field."
+last_value = "Value last pushed."
+pushed_at = "When it was pushed (UTC); NULL means invalidated, to push again."
+
+[tables.unit_coverage]
+description = "Which Units a carrier (file, volume) covers, with their bounds in the carrier."
+[tables.unit_coverage.columns]
+unit_id = "Unit covered."
+start_locator = "JSON start bound in the carrier; NULL when unknown."
+end_locator = "JSON end bound in the carrier; NULL when unknown."
+extent = "Size of the covered part."
+confidence = "Confidence of the bounds, 0 to 1."
+
+[tables.unit_variant]
+description = "What one source and one team give for a place. Identity: the binding plus the upstream id."
+[tables.unit_variant.columns]
+id = "Variant identifier (ULID)."
+remote_unit_id = "Stable upstream identifier of the chapter."
+supersedes_variant_id = "Variant this one replaces after a new upstream identifier."
+fetch_handle = "Local integer of the upstream, a cache."
+fetch_handle_seen_at = "When the handle was last valid (UTC)."
+quality_score = "Quality estimate used to pick the preferred Variant."
+removed_at = "When the Variant disappeared upstream (UTC)."
+
+[tables.content]
+description = "A file for a Variant, one per media type. Nothing cascades: files are removed first."
+[tables.content.columns]
+id = "Content identifier (ULID)."
+kind = "Kind of content: images, text, audio..."
+media_type = "MIME type."
+watermarked = "A watermark was detected."
+retention = "`passthrough` or `keep`."
+path = "Path relative to the store, only when kept."
+original_sha256 = "Hash of the original file."
+content_hash_by = "Version of the `content_hash()` algorithm."
+store_provenance = "How the file entered the store: received, adopted, extracted..."
+derived_hash = "Hash of the neutralized derived file."
+derived_by = "Neutralizer that produced the derived file."
+derived_hash_by = "Neutralizer version of the derived hash."
+derived_chain = "JSON list of derivations applied."
+
+[tables.download_request]
+description = "Persistent ticket of a download asked through the connected service."
+[tables.download_request.columns]
+id = "Request identifier (ULID)."
+target_kind = "What is requested: a Unit or a range."
+range_ref = "JSON range: Edition, first and last Unit, volume label."
+ticket = "Opaque ticket, set once the service answered."
+requested_at = "When the request was made (UTC)."
+
+[tables.revision_pending]
+description = "Revisions seen before M2, never applied in bulk."
+[tables.revision_pending.columns]
+id = "Row identifier (ULID)."
+nature = "`metadata_only` or `rewrite`."
+koreader_impact = "Estimated impact on reading positions."
+
+[tables.variant_revision]
+description = "Append-only history of the revisions of a Variant."
+[tables.variant_revision.columns]
+id = "Row identifier (ULID)."
+
+[tables.download_request_unit]
+description = "The Units a download request covers."
+[tables.download_request_unit.columns]
+download_request_id = "Request concerned (`download_request.id`)."
+
+[tables.export_item]
+description = "A file or object exported, independent of the destination. It covers Units through `unit_coverage`."
+[tables.export_item.columns]
+id = "Item identifier (ULID)."
+frozen_attrs = "JSON attributes frozen at first export."
+content_id = "Content the item was made from."
+
+[tables.document_alias]
+description = "One row per rewrite of an exported file: a hash of a volume resolves one carrier. Filled from M4."
+[tables.document_alias.columns]
+koreader_partial_md5 = "Partial MD5 KOReader computes."
+
+[tables.export_record]
+description = "The manifest: what was written, where, for which destination."
+[tables.export_record.columns]
+locator_type = "Which locator is filled: `path`, `remote_id`, `idempotency_key` or `none`."
+rel_path = "Resolution key of a `tree` destination, unique among live records."
+idempotency_key = "Locator of a destination that identifies by key."
+template_ref = "Template used, as `template_id@version`."
+format = "Format written."
+sidecar_sha256 = "Hash of the sidecar file."
+written_by_shelfhold_at = "When Shelfhold wrote the file (UTC)."
+exported_at = "When the export reached the destination (UTC)."
+
+[tables.replica]
+description = "The single registry of copies of a Unit's file; `independent_copies` is its only reader."
+[tables.replica.columns]
+id = "Copy identifier (ULID)."
+export_item_id = "Exported item the copy is."
+location = "Where the copy lives: store, root or remote."
+dev = "Device number of the file."
+ino = "Inode number of the file."
+independent = "An inode distinct from every other copy is established."
+mutable_by_third_party = "Another program (Kavita, KOReader, the user) may change the file."
+fidelity = "How faithful the copy is to the original."
+verified_at = "When the copy was last verified (UTC)."
+
+[tables.alembic_version]
+description = "Alembic bookkeeping: the revision the database is at."
+[tables.alembic_version.columns]
+version_num = "Identifier of the applied migration revision (for example `0010`)."

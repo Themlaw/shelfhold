@@ -17,6 +17,10 @@ Une release est une action manuelle du mainteneur, en quatre étapes. Aucun jeto
    vérifie que le tag est `vX.Y.Z`, résout son commit, attend (borné) un `ci-success` vert sur ce commit, puis ajoute les tags
    `X.Y.Z` et `X.Y` au **digest déjà publié** (`sha-<commit>`) : jamais de reconstruction, jamais de `latest`.
    `X.Y.Z` est immuable (refus s'il existe avec un autre digest) ; `X.Y` ne recule jamais.
+5. **Assets de release** (EF-INT-027) : un second job de `release.yml` (`schema-assets`, `contents: write`) génère `schema.sql` et
+   `data-dictionary.md` avec `.github/scripts/release-assets.sh` et les attache à la release (`gh release upload --clobber`).
+   `schema.sql` vient des migrations Alembic appliquées à une base vide ; le dictionnaire ajoute une description par table et par colonne
+   (`backend/src/shelfhold/docgen/schema_descriptions.toml`) : un test échoue si l'une manque. Ni l'un ni l'autre ne s'écrit à la main.
 
 **Reprise** : si le job a échoué (CI encore rouge, image absente, erreur du registre), relancer le workflow `release` depuis l'onglet
 Actions (`workflow_dispatch`, entrée `tag` = `vX.Y.Z`). Le script est idempotent.

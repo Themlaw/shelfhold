@@ -1,0 +1,128 @@
+"""Local value indicators (EF-INT-025): computed on the instance, from existing tables only.
+
+`stats --since 30d` and `GET /api/v1/stats` read the same figures. Nothing is stored (no view,
+no table, no migration) and nothing leaves the instance: the module opens no connection but the
+database's (ENF-PRIV-001). The window is the last `since_days` days up to `now`.
+"""
+
+import re
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
+
+import sqlalchemy as sa
+from sqlalchemy import Engine
+
+from shelfhold.events.operating import WAITING_STATE_EVENT
+from shelfhold.infrastructure.schema import acquisition, catalog, export, platform, storage
+
+MAX_SINCE_DAYS = 3650
+DEFAULT_SINCE = "30d"
+_SINCE = re.compile(r"^([1-9][0-9]{0,3})d$")
+
+# Rows that count as an exported Unit, and the one that means "visible in Kavita": a scan found it.
+EXPORTED_STATES = ("written", "scanned", "resolved")
+VISIBLE_STATE = "resolved"
+SENTINEL_EVENTS = ("mount.sentinel_missing",)
+FOREIGN_WRITER_EVENTS = ("target.foreign_writer_detected",)
+_WAITING_EVENTS = tuple(sorted(set(WAITING_STATE_EVENT.values())))
+
+
+class InvalidSinceError(ValueError):
+    """`--since` is not `<N>d` with N between 1 and 3650."""
+
+
+def parse_since(text: str) -> int:
+    match = _SINCE.match(text.strip())
+    days = int(match.group(1)) if match else 0
+    if not match or days > MAX_SINCE_DAYS:
+        raise InvalidSinceError(text)
+    return days
+
+
+@dataclass(frozen=True)
+class Stats:
+    since_days: int
+    human_interventions: dict[str, int]
+    units_exported: int
+    median_detection_to_visible_s: int | None
+    guards_triggered: dict[str, int]
+
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def _events(connection: sa.Connection, types: tuple[str, ...], since: datetime) -> int:
+    event = platform.event
+    return int(
+        connection.execute(
+            sa.select(sa.func.count()).where(event.c.type.in_(types), event.c.occurred_at >= since)
+        ).scalar_one()
+    )
+
+
+def _median_delay(connection: sa.Connection, since: datetime) -> int | None:
+    """Detection (first time the Variant was seen) to visibility (the scan found the file), in
+    seconds. The median is taken by the database: one or two rows come back, never the set."""
+    record = export.export_record
+    delay = sa.func.round(
+        (
+            sa.func.julianday(record.c.exported_at)
+            - sa.func.julianday(catalog.unit_variant.c.first_seen_at)
+        )
+        * 86400.0
+    ).label("delay")
+    joined = (
+        sa.select(delay)
+        .select_from(
+            record.join(export.export_item, export.export_item.c.id == record.c.export_item_id)
+            .join(storage.content, storage.content.c.id == export.export_item.c.content_id)
+            .join(catalog.unit_variant, catalog.unit_variant.c.id == storage.content.c.variant_id)
+        )
+        .where(record.c.state == VISIBLE_STATE, record.c.exported_at >= since)
+        .subquery()
+    )
+    count = int(connection.execute(sa.select(sa.func.count()).select_from(joined)).scalar_one())
+    if count == 0:
+        return None
+    middle = (
+        connection.execute(
+            sa.select(joined.c.delay)
+            .order_by(joined.c.delay)
+            .limit(2 - count % 2)
+            .offset((count - 1) // 2)
+        )
+        .scalars()
+        .all()
+    )
+    return round(float(sum(middle) / len(middle)))
+
+
+def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
+    since = now - timedelta(days=since_days)
+    record = export.export_record
+    with engine.connect() as connection:
+        replays = connection.execute(
+            sa.select(sa.func.count()).where(
+                acquisition.revision_pending.c.state != "open",
+                acquisition.revision_pending.c.resolved_at >= since,
+            )
+        ).scalar_one()
+        exported = connection.execute(
+            sa.select(sa.func.count()).where(
+                record.c.state.in_(EXPORTED_STATES), record.c.exported_at >= since
+            )
+        ).scalar_one()
+        median = _median_delay(connection, since)
+        return Stats(
+            since_days=since_days,
+            human_interventions={
+                "waiting_states": _events(connection, _WAITING_EVENTS, since),
+                "needs_review_replays": int(replays),
+            },
+            units_exported=int(exported),
+            median_detection_to_visible_s=median,
+            guards_triggered={
+                "sentinel": _events(connection, SENTINEL_EVENTS, since),
+                "foreign_writer": _events(connection, FOREIGN_WRITER_EVENTS, since),
+            },
+        )

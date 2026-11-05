@@ -79,6 +79,20 @@ export type DestinationOut = {
 };
 
 /**
+ * GuardsTriggered
+ */
+export type GuardsTriggered = {
+    /**
+     * Foreign Writer
+     */
+    foreign_writer: number;
+    /**
+     * Sentinel
+     */
+    sentinel: number;
+};
+
+/**
  * HealthzResponse
  */
 export type HealthzResponse = {
@@ -95,6 +109,20 @@ export type HealthzResponse = {
      * Version
      */
     version?: string | null;
+};
+
+/**
+ * HumanInterventions
+ */
+export type HumanInterventions = {
+    /**
+     * Needs Review Replays
+     */
+    needs_review_replays: number;
+    /**
+     * Waiting States
+     */
+    waiting_states: number;
 };
 
 /**
@@ -312,6 +340,26 @@ export type ShelfOut = {
      * Id
      */
     id: string;
+};
+
+/**
+ * StatsOut
+ */
+export type StatsOut = {
+    guards_triggered: GuardsTriggered;
+    human_interventions: HumanInterventions;
+    /**
+     * Median Detection To Visible S
+     */
+    median_detection_to_visible_s: number | null;
+    /**
+     * Since Days
+     */
+    since_days: number;
+    /**
+     * Units Exported
+     */
+    units_exported: number;
 };
 
 export type AboutData = {
@@ -612,6 +660,44 @@ export type BindDestinationResponses = {
 };
 
 export type BindDestinationResponse = BindDestinationResponses[keyof BindDestinationResponses];
+
+export type StatsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Since
+         */
+        since?: string;
+    };
+    url: '/api/v1/stats';
+};
+
+export type StatsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type StatsError = StatsErrors[keyof StatsErrors];
+
+export type StatsResponses = {
+    /**
+     * Successful Response
+     */
+    200: StatsOut;
+};
+
+export type StatsResponse = StatsResponses[keyof StatsResponses];
 
 export type HealthzData = {
     body?: never;

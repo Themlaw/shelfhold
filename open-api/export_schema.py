@@ -13,6 +13,7 @@ from shelfhold import __version__
 from shelfhold.interfaces.http_api.app import create_http_app
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.shelves import build_shelves_router
+from shelfhold.interfaces.http_api.stats import build_stats_router
 
 
 class _NoHealth:
@@ -32,7 +33,11 @@ def main(argv: list[str]) -> None:
         health=_NoHealth(),
         on_startup=lambda: None,
         version=__version__,
-        routers=(build_shelves_router(_unwired), build_plans_router(_unwired)),
+        routers=(
+            build_shelves_router(_unwired),
+            build_plans_router(_unwired),
+            build_stats_router(_unwired, _unwired),
+        ),
     )
     text = json.dumps(app.openapi(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     if len(argv) > 1:

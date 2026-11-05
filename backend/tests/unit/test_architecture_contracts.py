@@ -304,6 +304,7 @@ WRITERS_ALLOWED = (
     "shelfhold/infrastructure/volumes.py",
     "shelfhold/infrastructure/secrets/atomic.py",  # keyring and export file, owner-only
     "shelfhold/infrastructure/local_socket/server.py",  # the CLI socket (and staging dir), /data
+    "shelfhold/docgen/release_assets.py",  # release tooling: two files in a directory it is given
 )
 PATH_WRITE_METHODS = {
     "write_text", "write_bytes", "unlink", "rename", "mkdir", "rmdir", "touch",

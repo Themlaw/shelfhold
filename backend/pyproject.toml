@@ -75,6 +75,7 @@ markers = [
     "property: Hypothesis property tests (tests/property); marker applied from the directory",
     "golden: syrupy snapshot / golden-file tests (tests/golden); marker applied from the directory",
     "faults: fault-injection and crash tests (tests/faults); marker applied from the directory",
+    "bench: culpable benches with a threshold from the spec (tests/bench); marker applied from the directory",
     "contract: contract bench against a real pinned Suwayomi (needs Docker; run with -m contract)",
 ]
 

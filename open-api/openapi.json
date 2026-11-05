@@ -115,6 +115,24 @@
         "title": "DestinationOut",
         "type": "object"
       },
+      "GuardsTriggered": {
+        "properties": {
+          "foreign_writer": {
+            "title": "Foreign Writer",
+            "type": "integer"
+          },
+          "sentinel": {
+            "title": "Sentinel",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sentinel",
+          "foreign_writer"
+        ],
+        "title": "GuardsTriggered",
+        "type": "object"
+      },
       "HealthzResponse": {
         "properties": {
           "paused_queues": {
@@ -165,6 +183,24 @@
           "state"
         ],
         "title": "HealthzResponse",
+        "type": "object"
+      },
+      "HumanInterventions": {
+        "properties": {
+          "needs_review_replays": {
+            "title": "Needs Review Replays",
+            "type": "integer"
+          },
+          "waiting_states": {
+            "title": "Waiting States",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "waiting_states",
+          "needs_review_replays"
+        ],
+        "title": "HumanInterventions",
         "type": "object"
       },
       "LoginRequest": {
@@ -499,6 +535,44 @@
           "id"
         ],
         "title": "ShelfOut",
+        "type": "object"
+      },
+      "StatsOut": {
+        "properties": {
+          "guards_triggered": {
+            "$ref": "#/components/schemas/GuardsTriggered"
+          },
+          "human_interventions": {
+            "$ref": "#/components/schemas/HumanInterventions"
+          },
+          "median_detection_to_visible_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Detection To Visible S"
+          },
+          "since_days": {
+            "title": "Since Days",
+            "type": "integer"
+          },
+          "units_exported": {
+            "title": "Units Exported",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "since_days",
+          "human_interventions",
+          "units_exported",
+          "median_detection_to_visible_s",
+          "guards_triggered"
+        ],
+        "title": "StatsOut",
         "type": "object"
       }
     }
@@ -995,6 +1069,69 @@
         "summary": "Bind Destination",
         "tags": [
           "shelves"
+        ]
+      }
+    },
+    "/api/v1/stats": {
+      "get": {
+        "operationId": "stats",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "default": "30d",
+              "title": "Since",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Stats",
+        "tags": [
+          "stats"
         ]
       }
     },

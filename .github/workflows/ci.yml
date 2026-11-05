@@ -300,6 +300,29 @@ jobs:
           include-hidden-files: true
           retention-days: 1
 
+  backend-bench:
+    # The culpable benches (tests/bench): a threshold from the spec fails the job. Alone on the
+    # runner and without xdist or coverage, so the median of its runs measures the code, not the
+    # neighbours. Synthetic data, no network.
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: pytest (bench)
+        working-directory: backend
+        run: uv run --locked pytest tests/bench -m bench --no-cov
+
   # The contract bench (real Suwayomi, needs Docker) is not a required check: see contract.yml.
 
   coverage:
@@ -530,7 +553,7 @@ jobs:
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, coverage, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish]
+    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}
@@ -546,6 +569,7 @@ jobs:
           IMAGE_CHANGED: ${{ needs.changes.outputs.image }}
           BACKEND_UNIT: ${{ needs.backend-unit.result }}
           BACKEND_INTEGRATION: ${{ needs.backend-integration.result }}
+          BACKEND_BENCH: ${{ needs.backend-bench.result }}
           COVERAGE: ${{ needs.coverage.result }}
           FIXTURES: ${{ needs.fixtures.result }}
           IMAGE_PR: ${{ needs.image-pr.result }}
@@ -562,7 +586,7 @@ jobs:
         run: |
           echo "dco=${DCO} conventional-title=${TITLE} traceability=${TRACEABILITY} (image changed=${IMAGE_CHANGED})"
           echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH}"
-          echo "backend-unit=${BACKEND_UNIT} backend-integration=${BACKEND_INTEGRATION} coverage=${COVERAGE} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
+          echo "backend-unit=${BACKEND_UNIT} backend-integration=${BACKEND_INTEGRATION} backend-bench=${BACKEND_BENCH} coverage=${COVERAGE} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
           echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED})"
           ok=1
           for r in "$CHANGES" "$LINT" "$DENYLIST" "$FIXTURES" "$TRACEABILITY"; do
@@ -578,6 +602,7 @@ jobs:
           }
           check_filtered "$BACKEND_UNIT" "$BACKEND_CHANGED"
           check_filtered "$BACKEND_INTEGRATION" "$BACKEND_CHANGED"
+          check_filtered "$BACKEND_BENCH" "$BACKEND_CHANGED"
           check_filtered "$COVERAGE" "$BACKEND_CHANGED"
           check_filtered "$FRONTEND" "$FRONTEND_CHANGED"
           check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
