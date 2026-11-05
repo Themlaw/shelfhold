@@ -41,6 +41,7 @@ def tree(root: Path) -> list[str]:
     return sorted(str(p.relative_to(root)) for p in root.rglob("*"))
 
 
+@pytest.mark.req("ENF-OPS-015")
 def test_spec_constants() -> None:
     assert timedelta(minutes=3) == LEASE_VALIDITY
     assert timedelta(seconds=30) == HEARTBEAT_INTERVAL
