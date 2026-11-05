@@ -31,6 +31,7 @@ from tests.integration.test_schema_catalog import (
 )
 from tests.intents_env import NOW
 from tests.library_env import LibEnv, cbz_bytes, lib_env
+from tests.null_tombstones import NONE_PURGED
 
 ROOT_SUBPATH = "Kavita"
 
@@ -108,7 +109,9 @@ class ExportEnv:
             (f"{number}-001.png", b"\x89PNG\r\n\x1a\n" + tag + number.encode() + b"\x00" * 16),
         )
         received = self.lib.manga / ".received" / f"{unit}.cbz"
-        PassthroughStore(self.engine, self.lib.fsops, self.lib.locate, self.lib.data).ingest(
+        PassthroughStore(
+            self.engine, self.lib.fsops, self.lib.locate, self.lib.data, tombstones=NONE_PURGED
+        ).ingest(
             unit_id=unit,
             variant_id=variant,
             staged=self.lib.stage(cbz_bytes(pages)),

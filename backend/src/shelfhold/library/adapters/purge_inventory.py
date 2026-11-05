@@ -15,7 +15,7 @@ from sqlalchemy import Connection
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import platform, storage
 from shelfhold.library.adapters.meta_projection import meta_rel
-from shelfhold.library.domain.content_hash import CONTENT_HASH_BY
+from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY
 from shelfhold.library.domain.copies import Copy, Hash
 from shelfhold.library.replica import erase_replicas, replica_copies, replica_hashes
 
@@ -81,20 +81,27 @@ def content_hashes(
     a `variant` tombstone cites, so the same file is refused wherever it comes back from."""
     payload: dict[tuple[str, str], Hash] = {}
     derived: dict[tuple[str, str], Hash] = {}
+    file_rows = []
     for row in connection.execute(
         sa.select(
-            _content.c.content_hash, _content.c.content_hash_by, _content.c.derived_hash,
-            _content.c.derived_hash_by, _content.c.derived_by,
+            _content.c.original_sha256, _content.c.content_hash, _content.c.content_hash_by,
+            _content.c.derived_hash, _content.c.derived_hash_by, _content.c.derived_by,
         ).where(_content.c.unit_id.in_(unit_ids))
     ):  # fmt: skip
+        file_rows.append(row)
         if row.content_hash:
             by = row.content_hash_by or CONTENT_HASH_BY
             payload[(by, row.content_hash)] = Hash(by, row.content_hash)
         if row.derived_hash:
             by = row.derived_hash_by or row.derived_by or CONTENT_HASH_BY
             derived[(by, row.derived_hash)] = Hash(by, row.derived_hash)
-    for value in replica_hashes(connection, unit_ids):
+    for value in {row.original_sha256 for row in file_rows}:
+        payload.setdefault((FILE_HASH_BY, value), Hash(FILE_HASH_BY, value))
+    by_content, by_file = replica_hashes(connection, unit_ids)
+    for value in by_content:
         payload.setdefault((CONTENT_HASH_BY, value), Hash(CONTENT_HASH_BY, value))
+    for value in by_file:  # the rendered file of a destination: what an adoption would see
+        payload.setdefault((FILE_HASH_BY, value), Hash(FILE_HASH_BY, value))
     return list(payload.values()), list(derived.values())
 
 

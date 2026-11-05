@@ -284,12 +284,12 @@ class TombstoneService:
                 connection.execute(
                     sa.insert(_pending).values(root_id=root_id, seq=seq, line=line.decode("ascii"))
                 )
+        if self._index is not None:  # the row is committed: it blocks now, whatever the disk does
+            self._index.add_all([(values, cited)])
         written: list[str] = []
         for root in roots:
             if root.mounted and self._write_line(root, seq, kid, lines[root.root_id]):
                 written.append(root.root_id)
-        if self._index is not None:
-            self._index.add_all([(values, cited)])
         pending = tuple(r.root_id for r in roots if r.root_id not in written)
         return Recorded(seq, kid, tuple(written), pending)
 
@@ -316,6 +316,13 @@ class TombstoneService:
                 ).first()
                 is not None
             )
+
+    def flush_pending(self, root: TombstoneRoot) -> bool:
+        """Write the lines a mounted root still owes (a transient error, or a root that was away).
+        True when nothing is owed any more. A root that is not mounted flushes nothing."""
+        if root.mounted:
+            self._flush_pending(root)
+        return not self.has_pending(root.root_id)
 
     def _flush_pending(self, root: TombstoneRoot) -> int:
         with self._engine.connect() as connection:

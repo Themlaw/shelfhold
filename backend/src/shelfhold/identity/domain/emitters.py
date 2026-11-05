@@ -77,7 +77,7 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/export/application/purge.py::PurgeService.purge_unit": "purge.now",
         "shelfhold/export/application/purge.py::PurgeService.purge_work": "purge.now",
         "shelfhold/infrastructure/volumes.py::erase_data_path": "purge.now",
-        "shelfhold/infrastructure/volumes.py::_remove_tree": "purge.now",
+        "shelfhold/infrastructure/volumes.py::_remove_tree_at": "purge.now",
     }
 )
 

@@ -95,6 +95,7 @@ class BootReport:
     blocked: dict[str, RootState] = field(default_factory=dict)
     restamped: list[str] = field(default_factory=list)
     purged_staging: int = 0
+    tombstone_owed: list[str] = field(default_factory=list)  # left alone: lines are due first
 
 
 def _read_lease(root: ConfinedRoot) -> bytes | None:
@@ -293,6 +294,10 @@ class Fsops:
             raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
         self.require_scan_allowed(local)
 
+    def _owes(self, root_path: str) -> bool:
+        owed = self._tombstones_owed
+        return owed is not None and owed(root_path)
+
     def boot(self) -> BootReport:
         """Per root: judge the sentinel, re-stamp a database one ahead, purge orphan staging."""
         report = BootReport()
@@ -302,6 +307,9 @@ class Fsops:
                     verdict = self._verdict(root)
                     if verdict.blocks_writes:
                         report.blocked[root_path] = verdict.state
+                        continue
+                    if self._owes(root_path):
+                        report.tombstone_owed.append(root_path)  # only the replay may write now
                         continue
                     if verdict.restamp:
                         self._stamp(root, self._expected[root_path].generation)
@@ -322,6 +330,8 @@ class Fsops:
         """After the database commit: rewrite the sentinel with the new generation (I39)."""
         key = clean_absolute(root_path)
         expected = self._expected[key]
+        if self._owes(key):
+            raise TombstonePendingError(key)
         with self._root(key) as root:
             self._stamp(root, generation)
         self._expected[key] = replace(expected, generation=generation)

@@ -378,14 +378,18 @@ def replica_copies(
     ]  # fmt: skip
 
 
-def replica_hashes(connection: Connection, unit_ids: Collection[str]) -> list[str]:
-    return list(
-        connection.execute(
-            sa.select(replica_table.c.content_hash).where(
-                replica_table.c.unit_id.in_(unit_ids), replica_table.c.content_hash.is_not(None)
-            )
-        ).scalars()
-    )
+def replica_hashes(
+    connection: Connection, unit_ids: Collection[str]
+) -> tuple[list[str], list[str]]:
+    """(payload hashes, whole-file hashes) the copies of these Units carry."""
+    rows = connection.execute(
+        sa.select(replica_table.c.content_hash, replica_table.c.file_hash).where(
+            replica_table.c.unit_id.in_(unit_ids)
+        )
+    ).all()
+    return [r.content_hash for r in rows if r.content_hash], [
+        r.file_hash for r in rows if r.file_hash
+    ]
 
 
 def upstream_claims(connection: Connection, unit_ids: Collection[str]) -> int:

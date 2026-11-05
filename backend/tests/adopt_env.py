@@ -16,6 +16,7 @@ from shelfhold.export.targets.kavita.audit import AccessAuditor
 from tests.export_env import ExportEnv
 from tests.kavita_export_env import LIBRARY_ID, REMOTE_ROOT, Wired, wire
 from tests.library_env import cbz_bytes
+from tests.purge_env import make_purge_env
 
 
 def comicinfo(
@@ -114,6 +115,11 @@ def adoption(env: ExportEnv, **fake_options: object) -> Adoption:
     wired = wire(env, **fake_options)
     auditor = AccessAuditor(env.engine, env.clock, wired.events)
     adopter = Adopter(
-        env.engine, env.lib.fsops, locate=env.lib.locate, clock=env.clock, auditor=auditor
+        env.engine,
+        env.lib.fsops,
+        locate=env.lib.locate,
+        clock=env.clock,
+        auditor=auditor,
+        tombstones=make_purge_env(env.lib).tombstones,
     )
     return Adoption(wired, adopter)

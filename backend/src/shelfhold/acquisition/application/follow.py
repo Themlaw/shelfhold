@@ -163,7 +163,7 @@ class FollowCycle:
         service_cap: int = DEFAULT_SERVICE_CAP,
         key_cap: int = DEFAULT_KEY_CAP,
         inactive_months: int = DEFAULT_INACTIVE_MONTHS,
-        tombstones: TombstoneGate | None = None,
+        tombstones: TombstoneGate,
     ) -> None:
         self._engine = engine
         self._bus = bus
@@ -182,7 +182,7 @@ class FollowCycle:
         self._caps = (service_cap, key_cap)
         self._prefs = TeamPreference(inactive_months=inactive_months)
         self._series_taken: dict[str, int] = {}
-        self._tombstones = tombstones  # EF-BIB-053; None: a bench with nothing purged
+        self._tombstones = tombstones  # EF-BIB-053: required, a cycle never runs without it
         self._told: set[str] = set()  # bindings already announced as tombstoned upstream
 
     # -- the cycle ---------------------------------------------------------------------------
@@ -293,8 +293,6 @@ class FollowCycle:
         """A series purged for good is ignored, whatever Suwayomi still lists: no Work created, no
         chapter asked. It is told once (`series.tombstoned_upstream`), the admin removes it from
         Suwayomi by hand (EF-BIB-053 (2), M1a)."""
-        if self._tombstones is None:
-            return False
         ref = SeriesBindingRef(self._plugin_id, binding.source_key, binding.remote_id)
         if not self._tombstones.check(ref, root_id=None).blocked:
             return False
@@ -311,8 +309,6 @@ class FollowCycle:
     def _release_tombstoned(self, binding: _Binding, info: UnitInfo, key: dict[str, str]) -> bool:
         """A release that matches a tombstone is never ingested: not by its reference (`variant`),
         not at the place of a purged chapter under a new identifier (`place`)."""
-        if self._tombstones is None:
-            return False
         track, segment, part = place_parts(info.number, info.source_order)
         candidates = (
             VariantRef(self._plugin_id, binding.source_key, info.remote_unit_id),
@@ -420,7 +416,7 @@ class FollowCycle:
         # Without a watermark the first look only learns what is there (it becomes the watermark):
         # a series followed from now on is asked for what is new, never for its whole archive.
         look = _Look(binding, mark, self._clock.now(), _contested(units))
-        key = self._edition_key(binding.edition_id) if self._tombstones is not None else {}
+        key = self._edition_key(binding.edition_id)
         for info in units:
             if self._release_tombstoned(binding, info, key):
                 report.tombstoned += 1

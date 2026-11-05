@@ -132,6 +132,12 @@ class PurgeCollateralError(RuntimeError):
         self.other_units = other_units
 
 
+REMOVE_BY_HAND = (
+    "remove the file by hand (in Kavita or on the host: it is a read-only adoption root), "
+    "then run `purge --now` again"
+)
+
+
 @dataclass(frozen=True)
 class Refused:
     """A copy the purge did not erase, and why. `reason` is a code, never a path or a title."""
@@ -139,6 +145,7 @@ class Refused:
     location: str
     reason: str  # read_only_root | path_escape | outside_map | reserved | not_a_file | io_error
     # | mirror_unreadable
+    exit: str = ""  # the way out when only the admin can take it (never a path or a title)
 
 
 @dataclass(frozen=True)
@@ -200,7 +207,9 @@ class PurgeService:
         clock: Clock,
         data_dir: Path,
         bus: EventBus,
+        fresh_auth_s: int,
     ) -> None:
+        self._fresh_auth_s = fresh_auth_s  # from the settings, never from the caller
         self._engine = engine
         self._fsops = fsops
         self._tombstones = tombstones
@@ -220,10 +229,9 @@ class PurgeService:
         typed: str | None,
         now: datetime,
         job_id: str | None = None,
-        fresh_auth_s: int = 900,
     ) -> PurgeReport:
         allowed = require_purge_allowed(
-            unit_id, principal=principal, now=now, typed=typed, fresh_auth_s=fresh_auth_s
+            unit_id, principal=principal, now=now, typed=typed, fresh_auth_s=self._fresh_auth_s
         )
         with self._engine.connect() as connection:
             plan = self._plan_unit(connection, unit_id)
@@ -237,13 +245,12 @@ class PurgeService:
         typed: str | None,
         now: datetime,
         job_id: str | None = None,
-        fresh_auth_s: int = 900,
     ) -> PurgeReport:
         """Every Unit of the Work, and a `series_binding` tombstone per binding, so that the
         follow cycle ignores the series upstream (M1a: the series is told, not removed from
         Suwayomi). The Work's and Editions' own metadata rows stay until M1b (EF-BIB-053 (4))."""
         allowed = require_purge_allowed(
-            work_id, principal=principal, now=now, typed=typed, fresh_auth_s=fresh_auth_s
+            work_id, principal=principal, now=now, typed=typed, fresh_auth_s=self._fresh_auth_s
         )
         with self._engine.connect() as connection:
             plan = self._plan_work(connection, work_id)
@@ -447,6 +454,9 @@ class PurgeService:
         previous run already recorded is not written twice. Returns the roots still owed lines."""
         reason = "purge_work" if plan.kind == "work" else "purge_unit"
         pending: set[str] = set()
+        for root in roots:  # an earlier run may have left lines owed (transient error): write them
+            if root.mounted:
+                self._tombstones.flush_pending(root)
         for values in self._values(plan):
             if self._tombstones.has_values(values):
                 continue
@@ -480,11 +490,24 @@ class PurgeService:
         mounted = {r.root_id for r in roots if r.mounted}
         for copy in plan.copies:
             if copy.root_mode != _RW:
-                progress.refused.append(Refused(copy.location, "read_only_root"))
+                self._read_only_copy(copy, progress)
             elif copy.root_id not in mounted:
                 progress.unreachable.add(copy.root_id)
             else:
                 self._erase_one(copy, progress)
+
+    def _read_only_copy(self, copy: Copy, progress: _Progress) -> None:
+        """Shelfhold never writes in an adoption root. A file already gone counts as erased (the
+        admin removed it); one still there is reported with the way out, and the same command,
+        run again after the removal, finishes. It never blocks for good."""
+        try:
+            gone = self._fsops.observe(self._local(copy)) is None
+        except FsopsError:
+            gone = False  # cannot look: it is reported, not assumed gone
+        if gone:
+            progress.erased += 1
+        else:
+            progress.refused.append(Refused(copy.location, "read_only_root", REMOVE_BY_HAND))
 
     def _local(self, copy: Copy) -> str:
         rel = f"{RECYCLE_DIR}/{copy.rel_path}" if copy.kind == "bin_entry" else copy.rel_path

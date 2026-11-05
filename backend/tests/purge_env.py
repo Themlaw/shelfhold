@@ -107,7 +107,9 @@ def make_purge_env(lib: LibEnv) -> PurgeEnv:
     clock = ManualClock(NOW)
     bus = EventBus(clock)
     tombstones = TombstoneService(lib.engine, store.load(), lib.fsops, bus)
-    purge = PurgeService(lib.engine, lib.fsops, tombstones, clock=clock, data_dir=lib.data, bus=bus)
+    purge = PurgeService(
+        lib.engine, lib.fsops, tombstones, clock=clock, data_dir=lib.data, bus=bus, fresh_auth_s=900
+    )
     env = PurgeEnv(lib, tombstones, purge, bus, clock, store)
     env.replay()  # membership fails closed until a replay ran
     return env

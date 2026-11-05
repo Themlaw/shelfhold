@@ -18,6 +18,10 @@ from shelfhold.infrastructure.archives import SafeArchive
 
 CONTENT_HASH_VERSION: Final = 1
 CONTENT_HASH_BY: Final = f"content-hash@{CONTENT_HASH_VERSION}"
+# The other level, named in a tombstone beside the payload hash: sha256 of a file as a whole
+# (what `content.original_sha256` and `replica.file_hash` hold). An adoption or an import sees
+# only the file, so a purged file is recognised by this one, whatever was rendered around it.
+FILE_HASH_BY: Final = "sha256"
 
 # Basenames (lower case) of what Shelfhold itself injects when it renders a comic archive.
 RENDERED_SIDECARS: Final = frozenset({"comicinfo.xml"})

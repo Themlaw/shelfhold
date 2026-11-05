@@ -22,6 +22,7 @@ from shelfhold.library.adapters.receive import Received, receive_cbz
 from shelfhold.library.adapters.safeguard import Safeguard, SafeguardResult
 from shelfhold.library.adapters.storage import (
     DEFAULT_MAX_RECEIVED_BYTES,
+    ContentTombstones,
     Ingested,
     PassthroughStore,
     RootLocator,
@@ -40,6 +41,7 @@ from shelfhold.library.adapters.units import (
 )
 from shelfhold.library.domain.content_hash import (
     CONTENT_HASH_BY,
+    FILE_HASH_BY,
     content_hash,
     is_rendered_sidecar,
 )
@@ -89,9 +91,11 @@ __all__ = [
     "CONTENT_HASH_BY",
     "DEFAULT_MAX_RECEIVED_BYTES",
     "EDITION_KEY_COLUMNS",
+    "FILE_HASH_BY",
     "UNIT_JSON_VERSION",
     "ConfirmationRequiredError",
     "ContentHash",
+    "ContentTombstones",
     "Copy",
     "DeletionAuthorization",
     "DeletionRefusedError",

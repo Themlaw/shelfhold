@@ -27,7 +27,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.adapters.meta_projection import MetaProjection
-from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, content_hash
+from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY, content_hash
 from shelfhold.library.domain.failures import (
     ReceivedTooLargeError,
     TombstonedContentError,
@@ -83,7 +83,7 @@ class PassthroughStore:
         *,
         max_received_bytes: int = DEFAULT_MAX_RECEIVED_BYTES,
         limits: ArchiveLimits = DEFAULT_LIMITS,
-        tombstones: ContentTombstones | None = None,
+        tombstones: ContentTombstones,
     ) -> None:
         self._engine = engine
         self._fsops = fsops
@@ -110,11 +110,11 @@ class PassthroughStore:
         with safe_open_archive(staged, name=PurePath(dest).name, limits=self._limits) as archive:
             listing = check_cbz_entries(archive)
             payload_hash = content_hash(archive)
-        if self._tombstones is not None and self._tombstones.check_content(
-            [ContentHash(CONTENT_HASH_BY, payload_hash)]
+        original = sha256_file(staged)
+        if self._tombstones.check_content(
+            [ContentHash(CONTENT_HASH_BY, payload_hash), ContentHash(FILE_HASH_BY, original)]
         ):
             raise TombstonedContentError("the content was purged: it is not filed again")
-        original = sha256_file(staged)
         if expected_sha256 is not None and expected_sha256 != original:
             raise ValueError("received_hash_mismatch: the file is not what the download counted")
         with self._engine.connect() as connection:
