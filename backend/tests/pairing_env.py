@@ -73,6 +73,13 @@ class Paired:
     def cycle_once(self) -> FollowReport:
         return asyncio.run(self.cycle.run())
 
+    def settle(self, cycles: int = 4) -> int:
+        """Cycles until the queue of the simulated Suwayomi has delivered (it needs two looks)."""
+        fetched = 0
+        for _ in range(cycles):
+            fetched += self.cycle_once().fetched
+        return fetched
+
     def rows(self, sql: str, **params: object) -> list[dict[str, Any]]:
         with self.env.engine.connect() as connection:
             return [dict(r) for r in connection.execute(sa.text(sql), params).mappings()]

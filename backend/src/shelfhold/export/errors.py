@@ -30,4 +30,9 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("export.transport_unsupported", 409, "admin"),
     ErrorCode("export.destination_occupied", 409, "admin"),
     ErrorCode("export.source_missing", 409, "admin"),
+    # L30: pairing with the Suwayomi follow, switchover (EF-EXP-038, EF-EXP-044, EF-EXP-054)
+    ErrorCode("pairing.switchover_unconfirmed", 409, "admin"),
+    ErrorCode("pairing.not_writable", 409, "admin"),
+    ErrorCode("pairing.already_paired", 409, "admin"),
+    ErrorCode("pairing.batch_stale", 409, "admin"),
 )

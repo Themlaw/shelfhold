@@ -8,7 +8,10 @@ adopted series, and Kavita still has one series.
 import pytest
 
 from shelfhold.export.application.migration_detect import SwitchoverUnconfirmed
-from shelfhold.export.application.pairing import AlreadyPairedError
+from shelfhold.export.application.pairing import (
+    AlreadyPairedError,
+)
+from shelfhold.sdk.refs import SeriesRef
 from tests.adopt_env import tree_state
 from tests.kavita_export_env import LIBRARY_ID, REMOTE_ROOT
 from tests.pairing_env import SERIES, Paired, paired_env
@@ -16,14 +19,14 @@ from tests.pairing_env import SERIES, Paired, paired_env
 CHAPTERS = [f"{SERIES} - Ch.{n}.cbz" for n in range(1, 51)]
 
 
-def _pair(p: Paired) -> str:
-    """What the admin does: look at the proposal, then confirm it. Returns the export series."""
+def _pair(p: Paired) -> tuple[str, SeriesRef]:
+    """What the admin does: look at the proposal, then confirm it. Returns what was paired."""
     (proposal,) = p.pairing.propose(p.destination, p.library())
     assert proposal.state == "ready"
     (best, *others) = proposal.candidates
     assert best.ref.remote_id == "/series-alpha" and best.score == 1.0 and not others
     p.pairing.confirm(p.destination, proposal.export_series_id, best.ref)
-    return proposal.export_series_id
+    return proposal.export_series_id, best.ref
 
 
 @pytest.mark.req("EF-EXP-038", "EF-EXP-053")
@@ -45,7 +48,7 @@ def test_adopted_series_linked_to_suwayomi_no_redownload() -> None:
         assert (follow["follow_from_number"], follow["follow_from_segment"]) == ("50", "")
         (binding,) = p.rows("SELECT linked_from_adoption, active FROM source_binding")[-1:]
         assert binding["linked_from_adoption"] and binding["active"]
-        p.cycle_once()
+        assert p.settle() == 1
         assert len(p.downloads()) == 1 and "/5510/" in p.downloads()[0]  # chapter 51 only
         p.env.pipeline.run(p.destination, job_id="01J00000000000000000000001")
         new = sorted(r["rel_path"] for r in p.rows("SELECT rel_path FROM export_record"))
@@ -71,10 +74,11 @@ def test_pairing_is_proposed_never_silent_and_never_twice() -> None:
             p.rows("SELECT count(*) AS n FROM source_binding WHERE linked_from_adoption")[0]["n"]
             == 0
         )
-        series_id = _pair(p)
+        series_id, ref = _pair(p)
+        (again,) = p.pairing.propose(p.destination, p.library())
+        assert again.state == "already_paired" and again.candidates == ()
         with pytest.raises(AlreadyPairedError):
-            (proposal,) = p.pairing.propose(p.destination, p.library())
-            p.pairing.confirm(p.destination, series_id, proposal.candidates[0].ref)
+            p.pairing.confirm(p.destination, series_id, ref)
 
 
 @pytest.mark.req("EF-EXP-053", "EF-EXP-038")
@@ -105,7 +109,7 @@ def test_adoption_detects_direct_suwayomi_feed_and_refuses_follow() -> None:
             b"<LanguageISO>en</LanguageISO><Translator>Team</Translator>"
             b"<Web>/series-alpha/ch-001</Web></ComicInfo>"
         )
-        p.adopt_files([f"Team_Chapter {n}.cbz" for n in (1, 2, 3)], info=suwayomi_info)
+        p.adopt_files([f"Team_{SERIES} - Ch.{n}.cbz" for n in (1, 2, 3)], info=suwayomi_info)
         p.upstream(5)
         p.a.adopt()
         report = p.detector.scan(p.destination)
@@ -129,7 +133,7 @@ def test_switchover_confirmation_needs_every_step_then_follow_starts() -> None:
             b'<?xml version="1.0" encoding="utf-8"?><ComicInfo><Series>Series Alpha</Series>'
             b"<LanguageISO>en</LanguageISO><Translator>Team</Translator></ComicInfo>"
         )
-        p.adopt_files([f"Team_Chapter {n}.cbz" for n in (1, 2, 3)], info=info)
+        p.adopt_files([f"Team_{SERIES} - Ch.{n}.cbz" for n in (1, 2, 3)], info=info)
         p.upstream(5)
         p.a.adopt()
         with pytest.raises(SwitchoverIncompleteError) as partial:
@@ -141,5 +145,5 @@ def test_switchover_confirmation_needs_every_step_then_follow_starts() -> None:
             p.destination, proposal.export_series_id, proposal.candidates[0].ref
         )
         assert done.paired
-        p.cycle_once()
+        assert p.settle() == 2
         assert len(p.downloads()) == 2  # chapters 4 and 5, none of the three adopted ones

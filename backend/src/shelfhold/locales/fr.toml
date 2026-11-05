@@ -243,6 +243,22 @@ action = "Liez la destination à une bibliothèque du serveur, puis recalculez l
 title = "Deux séries porteraient le même nom dans cette bibliothèque."
 action = "Définissez un nom de série exporté distinct pour l'une des deux Éditions, puis recalculez l'aperçu."
 
+[errors."pairing.switchover_unconfirmed"]
+title = "Cette étagère est alimentée directement par Suwayomi : le suivi attend la procédure de bascule."
+action = "Suivez docs/admin/migration-depuis-scripts.md (adopter, apparier, rapatrier, retirer les montages directs, désactiver les scripts), puis confirmez chaque étape."
+
+[errors."pairing.not_writable"]
+title = "Shelfhold ne peut pas écrire dans le dossier de cette série : l'appariement est refusé."
+action = "Appliquez la commande de correction affichée (ACL, group_add ou umask), puis relancez l'appariement."
+
+[errors."pairing.already_paired"]
+title = "Cette série est déjà appariée à un suivi Suwayomi."
+action = "Un second appariement créerait un doublon : détachez d'abord le premier si vous voulez le remplacer."
+
+[errors."pairing.batch_stale"]
+title = "Le lot d'appariements confirmé n'est plus celui qui a été proposé."
+action = "Relancez « shelfhold adopt --pair-auto », relisez le rapport, puis confirmez avec la nouvelle empreinte."
+
 [errors."export.source_missing"]
 title = "L'archive reçue de ce chapitre est introuvable."
 action = "Recalculez l'aperçu ; si le fichier a disparu, relancez le téléchargement du chapitre."

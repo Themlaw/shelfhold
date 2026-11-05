@@ -88,6 +88,13 @@ class UnverifiedParseError(Exception):
     code = "target.route_missing"
 
 
+class Preflight(Protocol):
+    """The permission preflight (EF-EXP-054): the root before any export, a refused write after."""
+
+    def require_root(self, destination_id: str) -> None: ...
+    def mark_denied(self, destination_id: str, export_series_id: str) -> bool: ...
+
+
 class WriteSessionOpener(Protocol):
     def open(self, *paths: str, guard: Callable[[], None] | None = None) -> Any: ...
 
@@ -152,6 +159,12 @@ class ExportPipeline:
         self._locks = ResourceLocks(engine, clock=clock)
         self.mirror = mirror or ProvenanceMirror(engine, fsops, clock=clock)
         self._detector = detector  # EF-EXP-043: looked at before every export
+        self._preflight: Preflight | None = None
+
+    def use_preflight(self, preflight: Preflight) -> None:
+        """Probe the root of a destination before any export, and park a series whose write is
+        refused (EF-EXP-054): the composition root sets it once."""
+        self._preflight = preflight
 
     def _require_verified(self) -> None:
         if not self._parse_verified:
@@ -234,6 +247,8 @@ class ExportPipeline:
             ensure_active(connection, destination_id)
         if self._detector is not None:
             self._detector(destination_id)
+        if self._preflight is not None:
+            self._preflight.require_root(destination_id)
         ctx, loaded, plan = self._compute(destination_id)
         self._heal_mirror(ctx)
         if not plan.ops:
@@ -319,8 +334,32 @@ class ExportPipeline:
             if planned.kind == "register":
                 self._register(ctx, planned)
                 return None
-            self._write(ctx, planned, plan_id, held.ensure)
+            try:
+                self._write(ctx, planned, plan_id, held.ensure)
+            except PermissionError:
+                if self._preflight is None:
+                    raise
+                # waits for `target recheck`; the rest of the plan goes on, nothing is retried
+                series_id = self._series_of(ctx, planned)
+                if series_id is None:
+                    raise
+                self._preflight.mark_denied(ctx.destination_id, series_id)
+                return None
         return ctx.local(folder)
+
+    def _series_of(self, ctx: DestinationContext, planned: PlannedOp) -> str | None:
+        """The export series of an operation, created by its reservation when it was new."""
+        if planned.series.export_series_id is not None:
+            return planned.series.export_series_id
+        link = export.edition_export_series
+        with self._engine.connect() as connection:
+            found = connection.execute(
+                sa.select(link.c.export_series_id).where(
+                    link.c.edition_id == planned.series.edition_id,
+                    link.c.remote_library_id == ctx.remote_library_id,
+                )
+            ).scalar()
+        return str(found) if found is not None else None
 
     def _source(self, unit_id: str) -> ExportSource:
         with self._engine.connect() as connection:

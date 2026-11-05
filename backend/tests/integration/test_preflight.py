@@ -47,7 +47,7 @@ def _ready(p: Paired) -> str:
     return proposal.export_series_id
 
 
-@pytest.mark.req("EF-EXP-054", "GAP-5-05")
+@pytest.mark.req("EF-EXP-054")
 def test_pairing_refused_when_series_dir_not_writable_with_fix_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -71,7 +71,7 @@ def test_pairing_refused_when_series_dir_not_writable_with_fix_command(
             assert probe.runs_as == (os.geteuid(), os.getegid())
             message = str(refused.value)
             assert str(p.folder) in message and "EACCES" in message
-            assert f"setfacl -m u:{os.geteuid()}:rwx" in message  # the exact command to run
+            assert f"setfacl -R -m u:{os.geteuid()}:rwX" in message  # the exact command to run
             assert "group_add" in message or "user:" in message  # and the compose alternatives
             assert sorted(os.listdir(p.folder)) == before  # no probe file left behind
             assert p.rows("SELECT * FROM source_binding WHERE linked_from_adoption") == []
@@ -80,13 +80,13 @@ def test_pairing_refused_when_series_dir_not_writable_with_fix_command(
             p.folder.chmod(original)
 
 
-@pytest.mark.req("EF-EXP-054", "GAP-5-05")
+@pytest.mark.req("EF-EXP-054")
 def test_write_eacces_sets_permission_denied_and_recheck_exits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with paired_env() as p:
         series_id = _ready(p)
-        p.cycle_once()  # chapter 4 is received
+        assert p.settle() == 1  # chapter 4 is received
         refused = _deny(p, monkeypatch, p.folder)
         p.env.pipeline.run(p.destination, job_id="01J00000000000000000000002")
         (row,) = p.rows("SELECT paused_reason FROM export_series WHERE id = :i", i=series_id)
@@ -113,7 +113,7 @@ def test_preflight_checks_the_destination_root_before_any_export(
 ) -> None:
     with paired_env() as p:
         _ready(p)
-        p.cycle_once()
+        assert p.settle() == 1
         refused = _deny(p, monkeypatch, p.env.root)
         with pytest.raises(DestinationNotWritableError) as caught:
             p.env.pipeline.run(p.destination, job_id="01J00000000000000000000005")
