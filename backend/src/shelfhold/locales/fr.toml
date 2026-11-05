@@ -298,6 +298,10 @@ action = "Appliquez la commande de correction affichée (ACL, group_add ou umask
 title = "Cette série est déjà appariée à un suivi Suwayomi."
 action = "Un second appariement créerait un doublon : détachez d'abord le premier si vous voulez le remplacer."
 
+[errors."purge.collateral"]
+title = "Un fichier de cette Unité porte aussi d'autres Unités : l'effacer les effacerait."
+action = "Effacez toutes les Unités du fichier ensemble, ou gardez-le."
+
 [errors."pairing.batch_stale"]
 title = "Le lot d'appariements confirmé n'est plus celui qui a été proposé."
 action = "Relancez « shelfhold adopt --pair-auto », relisez le rapport, puis confirmez avec la nouvelle empreinte."
@@ -730,6 +734,18 @@ rename_line = "Renommage proposé (jamais appliqué) : {from_path} -> {to_path}"
 duplicate_line = "Doublon de même numéro dans {series} (conservé) : n° {number} : {files}"
 refused = "Bibliothèque exposée à des comptes limités, adoption refusée avant M1b : {accounts}"
 done = "{done} fichier(s) adopté(s), {skipped} déjà connu(s)."
+needs_destination = "Indiquez la destination avec --destination."
+repatriate_help = "Rapatrie les fichiers adoptés d'un volume en lecture seule vers la racine inscriptible, avant de le démonter (aperçu avec --dry-run, puis --confirm)."
+source_help = "Racine en lecture seule d'où copier (par défaut, la seule qui existe)."
+pair_auto_help = "Propose l'appariement en lot des séries adoptées avec celles que Suwayomi suit ; --confirm <empreinte> l'applique en une fois."
+min_score_help = "Score minimal (0 à 1) d'un appariement en lot."
+confirm_migration_help = "Confirme les étapes de la bascule depuis une automatisation existante, pour le rapport qui a été vu (--confirm <empreinte>)."
+pair_help = "Apparie une série adoptée à une série suivie par Suwayomi (sans --series : liste les propositions)."
+pair_series_help = "Identifiant de la série exportée à apparier."
+pair_source_key_help = "Clé de source de la série Suwayomi choisie."
+pair_remote_id_help = "Identifiant distant de la série Suwayomi choisie."
+pair_follow_from_help = "Chapitre à partir duquel suivre (par défaut, après le dernier chapitre adopté)."
+set_follow_from_help = "Donne à la main le chapitre à partir duquel suivre une série dont la couverture est inconnue."
 
 [headless]
 refused = "Refusé ({code}) : {detail}"
@@ -821,3 +837,65 @@ action = "Donnez une étiquette BCP 47 réelle (pas « und »), qu'aucune autre 
 [errors."ops.still_waiting"]
 title = "La cause de l'attente est toujours là."
 action = "Corrigez la cause (droits du compte, serveur injoignable) puis relancez la commande."
+
+[pair]
+where = "{source} {remote} ({score:.2f})"
+line = "[{state}] {id}  {name}  ->  {where}"
+command = "    commande : {command}"
+needs_source = "Donnez la série Suwayomi choisie : --source-key et --remote-id."
+coverage_unknown = "Couverture inconnue : aucun chapitre adopté ne donne le point de départ. Commande : {command}"
+paired = "Série {id} appariée ; suivi à partir du chapitre {follow_from}."
+fingerprint = "Empreinte du lot : {fingerprint}"
+batch_header = "{ready} appariement(s) sans ambiguïté, {held} à décider un par un."
+batch_confirm_hint = "Pour appliquer le lot : shelfhold adopt --pair-auto --confirm <empreinte>."
+refused = "Série {id} : appariement refusé ({reason}) ; aucun appariement du lot n'a été fait."
+
+[migration]
+fingerprint = "Empreinte du rapport : {fingerprint}"
+none_detected = "Aucune série nourrie directement par Suwayomi n'a été détectée."
+series_line = "Série {id} dans {dir} (indices : {signals})"
+steps = "Étapes à avoir faites, dans l'ordre :"
+step = "  - {step}"
+confirm_hint = "Quand c'est fait : shelfhold adopt --confirm-migration --confirm <empreinte>."
+
+[repatriate]
+needs_dry_run = "Le rapatriement demande un aperçu : lancez --repatriate --dry-run, relisez, puis --repatriate --confirm <empreinte>."
+fingerprint = "Empreinte de l'aperçu : {fingerprint}"
+header = "{series} série(s), {chapters} chapitre(s), {files} fichier(s) ; {size} octet(s) à copier, {free} libre(s)."
+problem = "Bloqué : {path} ({status})"
+ready = "Prêt : rien n'est supprimé ni déplacé, les fichiers sont copiés puis vérifiés."
+not_ready = "Pas prêt : corrigez les points bloqués ci-dessus."
+done = "{copied} fichier(s) copié(s), {present} déjà en place."
+check_problem = "Contrôle : {path}"
+safe = "Contrôle réussi : le volume en lecture seule peut être démonté."
+unsafe = "Contrôle échoué : ne démontez pas le volume."
+
+[detach]
+help = "Détache Shelfhold : redonne à Suwayomi ses réglages d'origine, sans toucher aux fichiers."
+restore_help = "Rend à Suwayomi ses catégories et sa stratégie de mise à jour d'avant l'appariement."
+shelf_help = "Ne détache que cette étagère."
+series_help = "Ne détache que cette série (identifiant d'Édition)."
+needs_restore_upstream = "Indiquez ce que le détachement fait : --restore-upstream."
+line = "Liaison {binding} : réglages rendus ({source}) : {ok}"
+ok = "fait"
+managed = "Dossier géré par Shelfhold : {folder} ({count} fichier(s)) ; vos anciens scripts doivent le laisser tranquille."
+files_kept = "Aucun fichier n'a été supprimé ni déplacé."
+
+[purge]
+help = "Efface pour de bon une Unité ou une Œuvre (action réservée)."
+now_help = "Confirme que l'effacement doit avoir lieu maintenant, sans corbeille."
+unit_help = "Identifiant de l'Unité à effacer."
+work_help = "Identifiant de l'Œuvre à effacer (toutes ses Unités)."
+confirm_help = "L'identifiant, retapé à l'identique."
+needs_now = "Indiquez --now : l'effacement est définitif."
+needs_confirmation = "Retapez l'identifiant avec --confirm pour effacer."
+done = "{units} Unité(s) concernée(s), {erased} fichier(s) effacé(s)."
+root_pending = "Racine {root} : la pierre tombale lui sera écrite à son retour ; rien d'autre n'y sera écrit avant."
+alert = "À faire à la main : {alert}"
+out_of_reach = "Hors de portée d'un effacement :"
+out_of_reach_item = "  - {item}"
+
+[probe]
+help = "Vérifie qu'on peut écrire, renommer et créer un dossier dans un dossier partagé."
+ok = "{folder} : écriture, renommage et création de dossier possibles."
+failed = "Échec à l'étape « {step} » : {cause}. Bloc compose à appliquer :"

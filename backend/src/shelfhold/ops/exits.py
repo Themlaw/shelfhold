@@ -66,12 +66,7 @@ M1A_STATES: Final = frozenset(
 # Commands whose CLI module belongs to a lot still in flight (the route and the service exist
 # here). The lot that lands the CLI removes its entry: a test fails while it is listed and the
 # command exists.
-CLI_PENDING: Final = MappingProxyType(
-    {
-        "adopt --confirm-migration": "L31",
-        "adopt set-follow-from": "L31",
-    }
-)
+CLI_PENDING: Final = MappingProxyType[str, str]({})  # L41: every command of the table exists
 
 
 # Declared by the catalogue, served by no code yet: `secrets import` needs the age import of the

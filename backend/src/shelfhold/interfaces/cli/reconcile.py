@@ -22,7 +22,6 @@ from pathlib import Path
 import sqlalchemy as sa
 
 from shelfhold.config import ResolvedSettings
-from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.restore import (
     AdoptionBlockedError,
@@ -52,6 +51,7 @@ from shelfhold.infrastructure.local_socket import Peer
 from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import diagnostics
+from shelfhold.integrations.apprise import operating_bus
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
 from shelfhold.library.tombstones import TombstoneService
 from shelfhold.library.tombstones.screen import TombstoneScreenAdapter
@@ -90,7 +90,7 @@ def open_restore(resolved: ResolvedSettings) -> Iterator[tuple[RestoreAdopter, R
             loaded = load_roots(connection, PathMap.same_path(paths))
         fsops = Fsops.open(loaded.path_map, loaded.expected, frozen=loaded.restore_pending)
         clock = SystemClock()
-        bus = EventBus(clock)
+        bus = operating_bus(clock)
         guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)
         keyring = diagnostics.store_for(settings).load()
         service = TombstoneService(engine, keyring, fsops, bus)

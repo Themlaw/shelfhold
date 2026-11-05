@@ -4,7 +4,7 @@ Apprise is imported only here (import-linter). It makes its own HTTP requests, o
 Fetcher: see `destination` for what is enforced instead and for the documented limit.
 """
 
-from shelfhold.integrations.apprise.channels import ChannelStore
+from shelfhold.integrations.apprise.channels import ChannelNames, ChannelStore, operating_bus
 from shelfhold.integrations.apprise.destination import (
     ChannelUrlRefused,
     ValidatedChannel,
@@ -23,6 +23,7 @@ from shelfhold.integrations.apprise.send import SendResult, send_with_apprise
 __all__ = [
     "ALLOWED_SCHEMES",
     "MAX_ATTEMPTS",
+    "ChannelNames",
     "ChannelStore",
     "ChannelUrlRefused",
     "DispatchReport",
@@ -31,6 +32,7 @@ __all__ = [
     "SendResult",
     "ValidatedChannel",
     "neutralize_markdown",
+    "operating_bus",
     "register_notification_job",
     "render_notification",
     "request_dispatch",

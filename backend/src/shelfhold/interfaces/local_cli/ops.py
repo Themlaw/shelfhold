@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -146,17 +147,93 @@ def _accept_lost_keyring(ops: OpsServices, by: Principal, p: Params) -> object:
 
 def _set_follow_from(ops: OpsServices, _by: Principal, p: Params) -> object:
     ops.adopt_set_follow_from(
-        destination_id=_text(p, "destination_id"), series=_text(p, "series"),
+        destination_id=_dest(p), series=_text(p, "series"),
         chapter=_text(p, "chapter"),
     )  # fmt: skip
     return {"ok": True}
 
 
 def _confirm_migration(ops: OpsServices, _by: Principal, p: Params) -> object:
-    ops.adopt_confirm_migration(
-        destination_id=_text(p, "destination_id"), fingerprint=_text(p, "fingerprint")
-    )
+    ops.adopt_confirm_migration(destination_id=_dest(p), fingerprint=_text(p, "fingerprint"))
     return {"ok": True}
+
+
+def _optional(params: Params, name: str) -> str | None:
+    value = params.get(name)
+    return _text(params, name) if value is not None else None
+
+
+def _number(params: Params, name: str, default: float) -> float:
+    value = params.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise RpcError(INVALID_PARAMS, t("local_cli.param_invalid", name=name, expected="number"))
+    return float(value)
+
+
+def _dest(params: Params) -> str:
+    return _optional(params, "destination_id") or ""
+
+
+def _pair_propose(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return {"proposals": ops.library.pair_propose(_dest(p))}
+
+
+def _pair_confirm(ops: OpsServices, _by: Principal, p: Params) -> object:
+    backfill = p.get("confirm_backfill")
+    return ops.library.pair_confirm(
+        _dest(p), _text(p, "export_series_id"),
+        source_key=_text(p, "source_key"), remote_id=_text(p, "remote_id"),
+        follow_from=_optional(p, "follow_from"),
+        confirm_backfill=backfill if isinstance(backfill, int) else None,
+    )  # fmt: skip
+
+
+def _pair_auto(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.library.pair_auto(
+        _dest(p), min_score=_number(p, "min_score", 0.9),
+        fingerprint=_optional(p, "fingerprint"),
+    )  # fmt: skip
+
+
+def _migration_report(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.library.migration_report(_dest(p))
+
+
+def _repatriate_plan(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.library.repatriate_plan(_dest(p), _optional(p, "source"))
+
+
+def _repatriate_apply(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.library.repatriate_apply(
+        _dest(p), fingerprint=_text(p, "fingerprint"),
+        source=_optional(p, "source"),
+    )  # fmt: skip
+
+
+def _repatriate_check(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.library.repatriate_check(_dest(p))
+
+
+def _give_back(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.library.give_back_upstream(
+        shelf_id=_optional(p, "shelf_id"), edition_id=_optional(p, "edition_id")
+    )
+
+
+def _purge(ops: OpsServices, by: Principal, p: Params) -> object:
+    kind = _text(p, "kind")
+    if kind not in {"unit", "work"}:
+        raise RpcError(
+            INVALID_PARAMS, t("local_cli.param_invalid", name="kind", expected="unit|work")
+        )
+    return ops.library.purge(
+        kind=kind, anchor_id=_text(p, "anchor_id"), typed=_optional(p, "typed"),
+        principal=by, now=datetime.now(UTC),
+    )  # fmt: skip
+
+
+def _probe(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.library.probe(_text(p, "folder"))
 
 
 # method -> (implementation, the reserved action it performs, if any)
@@ -177,6 +254,16 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.tombstone_accept_lost_keyring": (_accept_lost_keyring, "tombstone.accept_lost_keyring"),
     "ops.adopt_set_follow_from": (_set_follow_from, None),
     "ops.adopt_confirm_migration": (_confirm_migration, None),
+    "ops.pair_propose": (_pair_propose, None),
+    "ops.pair_confirm": (_pair_confirm, None),
+    "ops.pair_auto": (_pair_auto, None),
+    "ops.migration_report": (_migration_report, None),
+    "ops.repatriate_plan": (_repatriate_plan, None),
+    "ops.repatriate_apply": (_repatriate_apply, None),
+    "ops.repatriate_check": (_repatriate_check, None),
+    "ops.detach_restore_upstream": (_give_back, None),
+    "ops.purge": (_purge, "purge.now"),
+    "ops.probe": (_probe, None),
 }
 
 

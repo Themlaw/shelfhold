@@ -8,7 +8,6 @@ import json
 import sqlalchemy as sa
 
 from shelfhold.config import ResolvedSettings
-from shelfhold.events.bus import EventBus
 from shelfhold.export.application.restore import RestoreGuard
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
@@ -24,6 +23,7 @@ from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.observability.network_fs import REFUSED_KINDS, filesystem_kind
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.volumes import data_dir_writable_by_others
+from shelfhold.integrations.apprise import operating_bus
 from shelfhold.ops.wiring import open_ops
 
 
@@ -68,7 +68,7 @@ def _restore_status(resolved: ResolvedSettings) -> RestoreStatus | None:
             loaded = load_roots(connection, PathMap.same_path(paths))
         fsops = Fsops.open(loaded.path_map, loaded.expected, frozen=loaded.restore_pending)
         return RestoreGuard(
-            engine, fsops, clock=SystemClock(), bus=EventBus(SystemClock())
+            engine, fsops, clock=SystemClock(), bus=operating_bus(SystemClock())
         ).assess()
     except (sa.exc.SQLAlchemyError, OSError):
         return None

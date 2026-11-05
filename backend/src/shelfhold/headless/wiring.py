@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from urllib.parse import urlsplit
 
 from shelfhold.config import Settings, load_settings
 from shelfhold.headless.adapters import HttpKavitaKeyExchange
@@ -12,11 +11,9 @@ from shelfhold.headless.admin import HeadlessAdmin
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fetcher import (
-    FetchError,
     GuardedFetcher,
-    IntegrationFetcher,
-    InvalidLanTarget,
     LanTargets,
+    Network,
     SystemResolver,
 )
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
@@ -29,16 +26,8 @@ __all__ = ["integration_fetcher", "open_headless"]
 
 
 def integration_fetcher(url: str) -> GuardedFetcher:
-    """The Fetcher for the address an admin typed: that exact host and port is declared a LAN
-    target (explicit `host:port`, name pinned to its addresses); anything else stays guarded."""
-    parts = urlsplit(url)
-    resolver = SystemResolver()
-    port = parts.port or (443 if parts.scheme == "https" else 80)
-    try:
-        lan = asyncio.run(LanTargets.declare([f"{parts.hostname}:{port}"], resolver))
-    except (InvalidLanTarget, FetchError):  # not a LAN address, or blocked: stay guarded
-        return GuardedFetcher(resolver)
-    return IntegrationFetcher(resolver, lan_targets=lan)
+    """The Fetcher for the address an admin typed (see `Network.integration_fetcher`)."""
+    return Network().integration_fetcher(url)
 
 
 class _Channels:

@@ -2,6 +2,7 @@
 
 from shelfhold.ops.errors import (
     CODES,
+    CodedRefusal,
     ExitUnavailableError,
     InvalidChoiceError,
     LanguageRefusedError,
@@ -21,6 +22,7 @@ __all__ = [
     "ENDPOINTS",
     "M1A_STATES",
     "UNSERVED",
+    "CodedRefusal",
     "ExitUnavailableError",
     "InvalidChoiceError",
     "JobRow",

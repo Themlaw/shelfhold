@@ -34,6 +34,7 @@ from shelfhold.ops.errors import (
     NotWaitingError,
     UnknownSubjectError,
 )
+from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.ports import (
     AdoptionExit,
     HeadlessOps,
@@ -100,6 +101,7 @@ class OpsServices:
         restore: RestoreExit | None = None,
         keyring: KeyringExit | None = None,
         adoption: AdoptionExit | None = None,
+        library: LibraryOps | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -110,6 +112,7 @@ class OpsServices:
         self._restore = restore
         self._keyring = keyring
         self._adoption = adoption
+        self._library = library
 
     # -- reading -------------------------------------------------------------------------------
 
@@ -334,14 +337,23 @@ class OpsServices:
             raise ExitUnavailableError("the tombstone service is not connected")
         return self._keyring.accept_lost_keyring(confirmation=confirmation, principal=principal)
 
+    @property
+    def library(self) -> LibraryOps:
+        """Pairing, repatriation, detachment, purge and the write probe (L30, L31, L34, L37)."""
+        if self._library is None:
+            raise ExitUnavailableError("the library operations are not connected")
+        return self._library
+
     def adopt_set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
-        if self._adoption is None:
-            raise ExitUnavailableError("adoption is not connected")
-        self._adoption.set_follow_from(
-            destination_id=destination_id, series=series, chapter=chapter
-        )
+        if self._adoption is not None:
+            self._adoption.set_follow_from(
+                destination_id=destination_id, series=series, chapter=chapter
+            )
+            return
+        self.library.set_follow_from(destination_id=destination_id, series=series, chapter=chapter)
 
     def adopt_confirm_migration(self, *, destination_id: str, fingerprint: str) -> None:
-        if self._adoption is None:
-            raise ExitUnavailableError("adoption is not connected")
-        self._adoption.confirm_migration(destination_id=destination_id, fingerprint=fingerprint)
+        if self._adoption is not None:
+            self._adoption.confirm_migration(destination_id=destination_id, fingerprint=fingerprint)
+            return
+        self.library.confirm_migration(destination_id=destination_id, fingerprint=fingerprint)
