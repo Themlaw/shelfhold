@@ -87,3 +87,11 @@ WAITING_STATE_EVENT: dict[WaitingState, str] = {
 WAITING_WITHOUT_EVENT: frozenset[WaitingState] = frozenset(
     set(WaitingState) - set(WAITING_STATE_EVENT)
 )
+
+# `notify.failed` is the banner of a notification that could not be delivered (EF-INT-006): it is
+# an event and an error code, but Apprise never carries it, or a broken channel would report itself
+# through the same broken channel.
+NOT_NOTIFIED: frozenset[str] = frozenset({"notify.failed"})
+
+# Events that are aggregated into one message while several wait (EF-INT-006).
+AGGREGATED: frozenset[str] = frozenset({"job.dead_lettered", "series.stale"})
