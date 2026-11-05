@@ -131,6 +131,7 @@ def _refusal_text(exc: KeyRetirementRefusedError) -> str:
         "active": t("secrets.retire_refused_active", kid=exc.kid),
         "in_use": t("secrets.retire_refused_in_use", kid=exc.kid),
         "cited_by_tombstone": t("secrets.retire_refused_cited_by_tombstone", kid=exc.kid),
+        "root_unavailable": t("secrets.retire_refused_root_unavailable", kid=exc.kid),
     }
     return texts[exc.reason]
 

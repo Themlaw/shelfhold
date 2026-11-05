@@ -310,7 +310,7 @@ class FollowCycle:
             ).rowcount
             if changed:  # a concurrent cycle that got there first already announced it
                 self._emit(
-                    connection, "series.tombstoned_upstream",
+                    connection, "series.removed_upstream",
                     {"edition_id": binding.edition_id, "work_id": binding.work_id},
                 )  # fmt: skip
             self._ledger.clear_missing(connection, binding.id)

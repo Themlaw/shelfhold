@@ -1282,6 +1282,10 @@
       "code": "series.gap",
       "status": 409
     },
+    "/api/v1/problems/series.removed-upstream": {
+      "code": "series.removed_upstream",
+      "status": 409
+    },
     "/api/v1/problems/series.stale": {
       "code": "series.stale",
       "status": 409

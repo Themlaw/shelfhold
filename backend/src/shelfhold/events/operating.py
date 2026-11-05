@@ -34,6 +34,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "secret.undecryptable",
         "series.gap",
         "series.stale",
+        "series.removed_upstream",
         "series.tombstoned_upstream",
         "source.auth_expired",
         "source.auth_mode_unsupported",

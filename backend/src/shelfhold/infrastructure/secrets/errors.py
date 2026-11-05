@@ -79,7 +79,7 @@ class KeyringMissingError(KeyringError):
 
 
 class KeyRetirementRefusedError(KeyringError):
-    """`reason`: unknown, active, in_use, cited_by_tombstone, not_retired."""
+    """`reason`: unknown, active, in_use, cited_by_tombstone, root_unavailable, not_retired."""
 
     def __init__(self, kid: str, reason: str) -> None:
         super().__init__(f"key {kid!r} cannot be retired: {reason}")

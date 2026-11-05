@@ -29,4 +29,6 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source.fallback", 409, "admin", event=True),
     # EF-EXP-053: a backfill over 100 Units or 5 GiB starts only once the estimate is confirmed
     ErrorCode("backfill.confirmation_required", 409, "user"),
+    # EF-SRC-027: the series left the upstream library (not a purge: EF-BIB-053 is apart).
+    ErrorCode("series.removed_upstream", 409, "admin", event=True),
 )
