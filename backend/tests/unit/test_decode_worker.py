@@ -48,7 +48,7 @@ def listener():
 def test_decode_worker_has_no_network(listener) -> None:
     port, hits = listener
     report = diagnose_worker("network", port=port)
-    assert report["isolation"] in {"netns", "python"}
+    assert report["isolation"] in {"netns", "seccomp", "python"}
     # Python level, always on: no socket can be created through the standard library
     assert report["python_socket"] == "denied"
     # kernel level: when the worker got its own network namespace, not even a raw libc connect
@@ -67,7 +67,8 @@ def test_decode_worker_applies_its_limits_and_cannot_raise_them() -> None:
     limits = WorkerLimits(memory_bytes=3 * 1024**3, cpu_seconds=7, wall_seconds=20)
     report = diagnose_worker("limits", limits=limits)
     assert report["rlimit_as"] == [3 * 1024**3, 3 * 1024**3]  # soft and hard: not revocable
-    assert report["rlimit_cpu"] == [7, 7]
+    assert report["rlimit_cpu"] == [7, 9]  # SIGXCPU at 7 s (caught), SIGKILL two seconds later
+    assert report["rlimit_nproc"] == [1, 1]  # no thread, no process
     assert report["rlimit_core"] == [0, 0]
     assert report["no_new_privs"] is True
 
@@ -94,7 +95,8 @@ def test_decode_worker_wall_clock_timeout_kills_the_process() -> None:
             limits=WorkerLimits(wall_seconds=1),
             argv=[sys.executable, "-c", "import time; time.sleep(60)"],
         )
-    assert caught.value.code == "image.worker_failed"
+    # an image that keeps the worker busy past the deadline is the image's fault (review of #40)
+    assert caught.value.code == "image.decode_failed"
     assert caught.value.reason == "timeout"
     assert time.monotonic() - started < 10
 
@@ -119,7 +121,69 @@ def test_decode_worker_memory_limit_turns_an_oversized_decode_into_an_error(mali
 
 @pytest.mark.req("ENF-SEC-003")
 def test_decode_worker_python_level_fallback_when_no_namespace(listener) -> None:
-    port, _ = listener
+    port, hits = listener
     report = diagnose_worker("network", port=port, limits=WorkerLimits(network_namespace=False))
-    assert report["isolation"] == "python"
+    assert report["isolation"] in {"seccomp", "python"}
     assert report["python_socket"] == "denied"  # the stub is in place with or without a namespace
+    if report["isolation"] == "seccomp":  # the real fallback of a container: no namespace allowed
+        assert report["raw_connect"] == "failed"  # libc socket(AF_INET) answers EPERM
+        time.sleep(0.6)
+        assert hits == []
+
+
+@pytest.mark.req("ENF-SEC-003")
+@pytest.mark.parametrize("namespace", [True, False])
+def test_decode_worker_cannot_start_a_process(namespace: bool) -> None:
+    report = diagnose_worker("fork", limits=WorkerLimits(network_namespace=namespace))
+    assert report["fork"] == "denied"  # seccomp refuses clone without CLONE_THREAD; NPROC too
+
+
+@pytest.mark.req("ENF-SEC-003")
+def test_decode_worker_seccomp_filter_is_built_per_architecture() -> None:
+    from shelfhold.infrastructure.imaging.worker import seccomp_program
+
+    for machine in ("x86_64", "aarch64"):
+        program = seccomp_program(machine)
+        assert program is not None
+        assert len(program) % 8 == 0
+        assert len(program) // 8 < 64
+    assert seccomp_program("riscv64") is None  # unknown architecture: python mode, no filter
+
+
+@pytest.mark.req("ENF-SEC-003")
+def test_decode_worker_avif_still_decodes_without_extra_threads() -> None:
+    import io
+
+    from PIL import Image, features
+
+    from shelfhold.infrastructure.imaging import ImageKind, probe_image
+
+    if not features.check("avif"):
+        pytest.skip("this Pillow has no AVIF")
+    out = io.BytesIO()
+    Image.new("RGB", (64, 48), (10, 20, 30)).save(out, "AVIF")
+    info = probe_image(out.getvalue(), ImageKind.PAGE)
+    assert (info.format, info.width, info.height) == ("AVIF", 64, 48)
+
+
+@pytest.mark.req("ENF-SEC-003")
+def test_decode_worker_cpu_exhaustion_is_a_decode_failure() -> None:
+    code = "import resource\nresource.setrlimit(resource.RLIMIT_CPU, (1, 3))\nwhile 1: pass"
+    with pytest.raises(ImageRejected) as caught:
+        run_worker("probe", {}, b"", argv=[sys.executable, "-c", code])
+    assert (caught.value.code, caught.value.reason) == ("image.decode_failed", "cpu")
+
+
+@pytest.mark.req("ENF-SEC-003")
+def test_decode_worker_logs_the_effective_sandbox_mode_once() -> None:
+    import structlog.testing
+
+    from shelfhold.infrastructure.imaging import client
+
+    client._mode_logged.clear()
+    with structlog.testing.capture_logs() as logs:
+        diagnose_worker("limits")
+        diagnose_worker("limits")
+    events = [e for e in logs if e["event"] == "decode_worker_sandbox"]
+    assert len(events) == 1
+    assert events[0]["mode"] in {"netns", "seccomp", "python"}

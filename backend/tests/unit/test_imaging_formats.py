@@ -9,6 +9,7 @@ from types import ModuleType
 
 import pytest
 from PIL import Image
+
 from shelfhold.infrastructure.imaging import (
     ImageKind,
     ImageRejected,
@@ -123,3 +124,21 @@ def test_thumbnail_output_is_bounded_and_reencoded(malicious: ModuleType) -> Non
         make_thumbnail(malicious.png_solid(10, 10), ImageKind.PAGE, max_edge=0)
     with pytest.raises(ValueError, match="fmt"):
         make_thumbnail(malicious.png_solid(10, 10), ImageKind.PAGE, max_edge=10, fmt="eps")
+
+
+@pytest.mark.req("ENF-SEC-003")
+@pytest.mark.parametrize("fmt", ["png", "webp", "jpeg"])
+def test_thumbnail_carries_no_icc_profile_exif_or_text(fmt: str) -> None:
+    from PIL import ImageCms
+
+    icc = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    source = io.BytesIO()
+    image = Image.new("RGB", (64, 64), (1, 2, 3))
+    exif = Image.Exif()
+    exif[0x010E] = "upstream description"
+    image.save(source, "PNG", icc_profile=icc, exif=exif.tobytes())
+    thumb = make_thumbnail(source.getvalue(), ImageKind.COVER, max_edge=32, fmt=fmt)
+    decoded = Image.open(io.BytesIO(thumb.data))
+    assert "icc_profile" not in decoded.info
+    assert not decoded.getexif()
+    assert b"upstream description" not in thumb.data

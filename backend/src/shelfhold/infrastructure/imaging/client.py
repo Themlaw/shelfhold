@@ -20,8 +20,11 @@ import time
 from dataclasses import dataclass
 from typing import Any, Final
 
+import structlog
+
 from shelfhold.infrastructure.imaging.caps import ImageCaps, ImageKind, caps_for
 from shelfhold.infrastructure.imaging.errors import (
+    DECODE_FAILED,
     WORKER_FAILED,
     ImageRejected,
 )
@@ -74,6 +77,26 @@ def _argv(limits: WorkerLimits) -> list[str]:
     return [sys.executable, "-I", "-m", WORKER_MODULE, spec]
 
 
+_mode_logged = threading.Event()
+
+
+def _log_sandbox_mode(mode: object) -> None:
+    """Once per process: which isolation the worker really got (netns, seccomp or python)."""
+    if mode is None or _mode_logged.is_set():
+        return
+    _mode_logged.set()
+    log = structlog.get_logger()
+    if mode == "python":
+        log.warning("decode_worker_sandbox", mode=mode, network="python-level only")
+    else:
+        log.info("decode_worker_sandbox", mode=mode)
+
+
+def _out_of_budget(reason: str) -> ImageRejected:
+    """The worker used its time or CPU: the image is the cause, not the worker."""
+    return ImageRejected(DECODE_FAILED, reason, "decode")
+
+
 def _failed(reason: str) -> ImageRejected:
     return ImageRejected(WORKER_FAILED, reason, "worker")
 
@@ -97,10 +120,10 @@ def _collect(proc: subprocess.Popen[bytes], request: bytes, deadline: float) -> 
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise _failed("timeout")
+            raise _out_of_budget("timeout")
         ready, _, _ = select.select([fd], [], [], remaining)
         if not ready:
-            raise _failed("timeout")
+            raise _out_of_budget("timeout")
         chunk = os.read(fd, 1 << 20)
         if not chunk:
             return b"".join(chunks)
@@ -137,6 +160,7 @@ def run_worker(
             close_fds=True,
             start_new_session=True,
         )
+        started = time.monotonic()
         try:
             raw = _collect(proc, request, deadline)
         except ImageRejected:
@@ -144,10 +168,17 @@ def run_worker(
             raise
         finally:
             _kill(proc)
+        rc = proc.returncode
+        elapsed = time.monotonic() - started
+    if not raw and (
+        rc == -signal.SIGXCPU or (rc == -signal.SIGKILL and elapsed >= limits.cpu_seconds)
+    ):
+        raise _out_of_budget("cpu")
     try:
         header, payload = decode_frame(raw, MAX_REPLY_BYTES)
     except (ValueError, UnicodeDecodeError) as exc:
         raise _failed("bad reply") from exc
+    _log_sandbox_mode(header.get("sandbox"))
     if header.get("ok") is True and isinstance(header.get("result"), dict):
         return header["result"], payload
     code, reason, stage = header.get("code"), header.get("reason"), header.get("stage")

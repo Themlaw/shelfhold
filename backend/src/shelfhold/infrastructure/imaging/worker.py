@@ -25,11 +25,15 @@ import ctypes
 import io
 import json
 import os
+import platform
 import resource
+import signal
+import struct
 import sys
 import types
 from typing import Any
 
+from shelfhold.infrastructure.imaging.caps import ALLOWED_FORMATS
 from shelfhold.infrastructure.imaging.protocol import encode_frame, read_frame
 
 CLONE_NEWUSER = 0x10000000
@@ -69,6 +73,85 @@ def _enter_network_namespace() -> bool:
     return bool(libc.unshare(CLONE_NEWUSER | CLONE_NEWNET) == 0)
 
 
+# --- seccomp (no network, no new process) --------------------------------------------------------
+# A classic BPF filter, written by hand: no libseccomp. Per architecture: (audit arch, socket,
+# clone, clone3, other fork-like calls). Any other architecture gets no filter (mode `python`).
+_SECCOMP_ARCHES = {
+    "x86_64": (0xC000003E, 41, 56, 435, (57, 58)),  # fork, vfork
+    "aarch64": (0xC00000B7, 198, 220, 435, ()),
+}
+_SECCOMP_SET_MODE_FILTER = 22
+_PR_SET_SECCOMP = 22
+_SECCOMP_MODE_FILTER = 2
+_RET_ALLOW = 0x7FFF0000
+_RET_KILL_PROCESS = 0x80000000
+_RET_EPERM = 0x00050000 | 1
+_RET_ENOSYS = 0x00050000 | 38  # clone3 -> glibc falls back to clone, which the filter checks
+_BLOCKED_FAMILIES = (2, 10, 17)  # AF_INET, AF_INET6, AF_PACKET
+_CLONE_THREAD = 0x00010000
+
+
+def _bpf(code: int, jt: int, jf: int, k: int) -> bytes:
+    return struct.pack("HBBI", code, jt, jf, k)
+
+
+def seccomp_program(machine: str) -> bytes | None:
+    """The filter for this architecture, or None when it is not covered.
+
+    Refused with EPERM: socket(AF_INET | AF_INET6 | AF_PACKET), fork, vfork and clone without
+    CLONE_THREAD (a thread is fine, a process is not). clone3 answers ENOSYS. A call made through
+    another ABI than the native one kills the process.
+    """
+    if machine not in _SECCOMP_ARCHES:
+        return None
+    arch, socket_nr, clone_nr, clone3_nr, forks = _SECCOMP_ARCHES[machine]
+    ld, jeq, jset, ret = 0x20, 0x15, 0x45, 0x06
+    # (opcode, k, true-label, false-label); labels name the instruction to go to, None = next one
+    prog: list[tuple[int, int, str | None, str | None, str | None]] = [
+        (ld, 4, None, None, None),  # arch
+        (jeq, arch, None, "kill", None),
+        (ld, 0, None, None, None),  # syscall number
+        (0x35, 0x40000000, "kill", None, None),  # jge: x32 ABI on x86_64 would dodge the numbers
+        (jeq, socket_nr, "sock", None, None),
+        (jeq, clone_nr, "clone", None, None),
+        (jeq, clone3_nr, "enosys", None, None),
+        *[(jeq, nr, "eperm", None, None) for nr in forks],
+        (ret, _RET_ALLOW, None, None, None),
+        (ld, 16, None, None, "sock"),  # args[0] of socket(): the family
+        *[(jeq, fam, "eperm", None, None) for fam in _BLOCKED_FAMILIES],
+        (ret, _RET_ALLOW, None, None, None),
+        (ld, 16, None, None, "clone"),  # args[0] of clone(): the flags
+        (jset, _CLONE_THREAD, "allow", "eperm", None),
+        (ret, _RET_ALLOW, None, None, "allow"),
+        (ret, _RET_EPERM, None, None, "eperm"),
+        (ret, _RET_ENOSYS, None, None, "enosys"),
+        (ret, _RET_KILL_PROCESS, None, None, "kill"),
+    ]
+    where = {label: i for i, (*_, label) in enumerate(prog) if label}
+    out = []
+    for i, (code, k, jt, jf, _label) in enumerate(prog):
+        if code in (ret, ld):
+            out.append(_bpf(code, 0, 0, k))
+            continue
+        t = where[jt] - i - 1 if jt else 0
+        f = where[jf] - i - 1 if jf else 0
+        out.append(_bpf(code, t, f, k))
+    return b"".join(out)
+
+
+class _SockFprog(ctypes.Structure):
+    _fields_ = (("len", ctypes.c_ushort), ("filter", ctypes.c_void_p))
+
+
+def _install_seccomp(libc: ctypes.CDLL | None) -> bool:
+    program = seccomp_program(platform.machine())
+    if libc is None or program is None:
+        return False
+    buffer = ctypes.create_string_buffer(program)
+    fprog = _SockFprog(len(program) // 8, ctypes.cast(buffer, ctypes.c_void_p))
+    return bool(libc.prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(fprog), 0, 0) == 0)
+
+
 def _deny_python_network() -> None:
     for name in ("socket", "_socket", "ssl", "_ssl"):
         sys.modules[name] = _DeniedModule(name)
@@ -79,17 +162,30 @@ def _lower(which: int, value: int) -> None:
 
 
 def _sandbox(limits: dict[str, Any]) -> dict[str, Any]:
-    isolation = "netns" if limits.get("netns", True) and _enter_network_namespace() else "python"
+    in_netns = bool(limits.get("netns", True)) and _enter_network_namespace()
     _deny_python_network()
     libc = _libc()
-    if libc is not None:
-        libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
+    no_new_privs = libc is not None and libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0
+    seccomp = no_new_privs and _install_seccomp(libc)
     _lower(resource.RLIMIT_CORE, 0)
     _lower(resource.RLIMIT_AS, int(limits["memory_bytes"]))
-    _lower(resource.RLIMIT_CPU, int(limits["cpu_seconds"]))
+    cpu = int(limits["cpu_seconds"])
+    # soft limit: SIGXCPU, caught below; hard limit two seconds later: SIGKILL
+    resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu + 2))
+    signal.signal(signal.SIGXCPU, _on_cpu_limit)
     _lower(resource.RLIMIT_NOFILE, 64)
     _lower(resource.RLIMIT_FSIZE, 0)
-    return {"isolation": isolation}
+    _lower(resource.RLIMIT_NPROC, 1)  # no thread beyond the main one, no process
+    return {"isolation": "netns" if in_netns else "seccomp" if seccomp else "python",
+            "seccomp": seccomp}  # fmt: skip
+
+
+def _on_cpu_limit(signum: int, frame: types.FrameType | None) -> None:
+    reply = encode_frame(
+        {"ok": False, "code": "image.decode_failed", "reason": "cpu", "stage": "decode"}
+    )
+    os.write(1, reply)
+    os._exit(0)
 
 
 # --- diagnostics (read-only facts about the sandbox) ---------------------------------------------
@@ -124,6 +220,7 @@ def _diagnose(op: str, args: dict[str, Any], state: dict[str, Any]) -> dict[str,
     if op == "network":
         return {
             "isolation": state["isolation"],
+            "seccomp": state["seccomp"],
             "python_socket": _python_socket(),
             "raw_connect": _raw_connect(int(args["port"])),
         }
@@ -133,6 +230,7 @@ def _diagnose(op: str, args: dict[str, Any], state: dict[str, Any]) -> dict[str,
             "rlimit_cpu": resource.RLIMIT_CPU,
             "rlimit_core": resource.RLIMIT_CORE,
             "rlimit_nofile": resource.RLIMIT_NOFILE,
+            "rlimit_nproc": resource.RLIMIT_NPROC,
         }
         libc = _libc()
         no_new_privs = bool(
@@ -142,6 +240,15 @@ def _diagnose(op: str, args: dict[str, Any], state: dict[str, Any]) -> dict[str,
             **{key: list(resource.getrlimit(which)) for key, which in names.items()},
             "no_new_privs": no_new_privs,
         }
+    if op == "fork":
+        try:
+            pid = os.fork()
+        except OSError:
+            return {"fork": "denied"}
+        if pid == 0:
+            os._exit(0)
+        os.waitpid(pid, 0)
+        return {"fork": "allowed"}
     if op == "environment":
         return {
             "isolated": sys.flags.isolated == 1,
@@ -164,7 +271,7 @@ def _open(data: bytes, caps: dict[str, Any]) -> Any:
     if len(data) > caps["max_bytes"]:
         raise _Reject("image.too_large", "bytes", "input")
     Image.init()
-    formats = [name for name in caps["formats"] if name in Image.OPEN]
+    formats = [name for name in caps["formats"] if name in ALLOWED_FORMATS and name in Image.OPEN]
     Image.MAX_IMAGE_PIXELS = int(caps["max_pixels"])
     warnings.simplefilter("error", Image.DecompressionBombWarning)
     try:
@@ -183,12 +290,12 @@ def _open(data: bytes, caps: dict[str, Any]) -> Any:
     return image
 
 
-def _guarded(call: Any, *args: Any) -> Any:
+def _guarded(call: Any, *args: Any, **kwargs: Any) -> Any:
     """Run a decoding step; anything the decoder throws is a decode failure, never a crash."""
     from PIL import Image, UnidentifiedImageError
 
     try:
-        return call(*args)
+        return call(*args, **kwargs)
     except Image.DecompressionBombError as exc:
         raise _Reject("image.too_large", "pixels", "decode") from exc
     except MemoryError as exc:
@@ -198,7 +305,17 @@ def _guarded(call: Any, *args: Any) -> Any:
         raise _Reject("image.decode_failed", type(exc).__name__, "decode") from exc
 
 
+def _single_thread_avif() -> None:
+    """The sandbox allows no extra thread: the AVIF decoder must not ask for any."""
+    try:
+        from PIL import AvifImagePlugin
+    except ImportError:  # no AVIF in this build: nothing to limit
+        return
+    AvifImagePlugin.DEFAULT_MAX_THREADS = 1
+
+
 def _probe(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes]:
+    _single_thread_avif()
     image = _open(data, args["caps"])
     info = {"format": image.format, "width": image.width, "height": image.height}
     _guarded(image.load)  # a full decode proves the data; the first frame only for animations
@@ -210,6 +327,7 @@ def _thumbnail(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes
 
     max_edge = int(args["max_edge"])
     fmt = THUMBNAIL_FORMATS[args["fmt"]]
+    _single_thread_avif()
     image = _open(data, args["caps"])
     if image.format == "JPEG":  # decode at reduced size when possible: less memory, less time
         image.draft("RGB", (max_edge * 2, max_edge * 2))
@@ -219,10 +337,13 @@ def _thumbnail(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes
     has_alpha = "A" in image.getbands() or "transparency" in image.info
     if fmt == "JPEG":
         image = image.convert("RGB")
+    elif has_alpha and image.mode not in {"RGBA", "LA"}:
+        image = image.convert("RGBA")
     elif image.mode not in {"RGB", "RGBA", "L", "LA"}:
-        image = image.convert("RGBA" if has_alpha else "RGB")
+        image = image.convert("RGB")
+    image.info.clear()  # EXIF, ICC, text chunks, XMP: nothing from upstream is carried
     out = io.BytesIO()
-    _guarded(image.save, out, fmt)  # no EXIF, no ICC, no text: nothing from upstream is carried
+    _guarded(image.save, out, fmt, icc_profile=None)
     return {"format": fmt, "width": image.width, "height": image.height}, out.getvalue()
 
 
@@ -240,11 +361,14 @@ def main(argv: list[str]) -> int:
     out = sys.stdout.buffer
     stdin = sys.stdin.buffer
     sys.stdout = sys.stderr  # nothing a library prints can corrupt the reply frame
+    state: dict[str, Any] = {}
     try:
         state = _sandbox(json.loads(argv[1]))
         header, data = read_frame(stdin, MAX_REQUEST_BYTES)
         result, payload = _handle(str(header["op"]), dict(header.get("args", {})), data, state)
-        reply = encode_frame({"ok": True, "result": result}, payload)
+        reply = encode_frame(
+            {"ok": True, "result": result, "sandbox": state.get("isolation")}, payload
+        )
     except _Reject as rejected:
         reply = encode_frame(
             {"ok": False, "code": rejected.code, "reason": rejected.reason, "stage": rejected.stage}
