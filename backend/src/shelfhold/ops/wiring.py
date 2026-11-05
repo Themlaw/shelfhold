@@ -56,11 +56,14 @@ class _LazyHeadless:
 
 
 def _fsops(engine: Engine) -> Fsops | None:
-    with engine.connect() as connection:
-        paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
-        if not paths:
-            return None
-        loaded = load_roots(connection, PathMap.same_path(paths))
+    try:
+        with engine.connect() as connection:
+            paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
+            if not paths:
+                return None
+            loaded = load_roots(connection, PathMap.same_path(paths))
+    except sa.exc.OperationalError:  # not migrated yet: nothing is mounted
+        return None
     return Fsops.open(loaded.path_map, loaded.expected)
 
 

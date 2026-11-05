@@ -23,7 +23,7 @@ from shelfhold.events.bus import EventBus
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.application.target_state import load_health
-from shelfhold.identity.public import Credential, Principal
+from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export, platform
@@ -55,8 +55,6 @@ ULID_PATTERN = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
 def user_of(principal: Principal) -> str | None:
     """The user a provenance column may name (a foreign key to `user`): the account behind a
     session or a key; the host CLI is no account (its uid is in the audit log of the socket)."""
-    if principal.credential is Credential.LOCAL_CLI:
-        return None
     return principal.user_id if ULID_PATTERN.fullmatch(principal.user_id) else None
 
 

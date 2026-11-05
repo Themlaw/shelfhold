@@ -37,8 +37,11 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
                         help=t("cli.target_accept_risk_help"))  # fmt: skip
     kavita.set_defaults(handler=run_add_kavita, configure_logging=False)
     # the exits of EF-INT-023
-    for name, handler in (("recheck", run_recheck), ("reconnect", run_reconnect)):
-        leaf = actions.add_parser(name, help=t(f"ops.help_target_{name}"), allow_abbrev=False)
+    for name, handler, help_text in (
+        ("recheck", run_recheck, t("ops.help_target_recheck")),
+        ("reconnect", run_reconnect, t("ops.help_target_reconnect")),
+    ):
+        leaf = actions.add_parser(name, help=help_text, allow_abbrev=False)
         leaf.add_argument("target_id")
         leaf.set_defaults(handler=handler, configure_logging=False)
     rotate = actions.add_parser("rotate-key", help=t("ops.help_target_rotate_key"),

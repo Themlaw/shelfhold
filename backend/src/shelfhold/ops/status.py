@@ -126,9 +126,7 @@ def _jobs(connection: Connection) -> list[WaitingItem]:
         .order_by(job.c.id)
     )
     return [
-        _item(
-            "dead_letter", f"jobs.{row.kind}", row.id, row.error_code or row.last_error or "gave up"
-        )
+        _item("dead_letter", row.kind, row.id, row.error_code or row.last_error or "gave up")
         for row in rows
     ]
 
@@ -207,7 +205,5 @@ def queues_of(connection: Connection, items: list[WaitingItem]) -> list[PausedQu
     for row in connection.execute(
         sa.select(job.c.kind, job.c.error_code).where(job.c.status == "paused").order_by(job.c.kind)
     ):
-        queues.setdefault(
-            f"jobs.{row.kind}", PausedQueue(f"jobs.{row.kind}", row.error_code or "paused")
-        )
+        queues.setdefault(row.kind, PausedQueue(row.kind, row.error_code or "paused"))
     return sorted(queues.values(), key=lambda q: q.queue)

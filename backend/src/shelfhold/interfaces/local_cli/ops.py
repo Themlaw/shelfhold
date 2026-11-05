@@ -17,9 +17,10 @@ from typing import Any, Protocol
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import HeadlessError
 from shelfhold.i18n import t
-from shelfhold.identity.public import Credential, Principal
-from shelfhold.infrastructure.local_socket import RpcError, RpcFailure, call
+from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.local_socket import Peer, RpcError, RpcFailure, call
 from shelfhold.infrastructure.local_socket.server import APPLICATION_ERROR, INVALID_PARAMS
+from shelfhold.interfaces.local_cli.principal import principal_for_peer
 from shelfhold.ops import OpsError, OpsServices, user_of
 
 __all__ = [
@@ -192,10 +193,7 @@ class LocalChannel:
     """The server is stopped: this process calls the services itself, as the host's admin."""
 
     def __init__(self, ops: OpsServices) -> None:
-        uid = os.getuid()
-        self._principal = Principal(
-            user_id=str(uid), username=f"uid:{uid}", role="admin", credential=Credential.LOCAL_CLI
-        )
+        self._principal = principal_for_peer(Peer(os.getpid(), os.getuid(), os.getgid()))
         self._ops = ops
 
     def call(self, method: str, **params: object) -> Any:

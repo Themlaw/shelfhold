@@ -82,7 +82,7 @@ def test_status_lists_paused_queues_with_reason_and_command(
     assert by_state["auth_expired"]["reserved"] is True  # the exit is a reserved action
     queues = {q["queue"]: q for q in body["queues"]}
     assert queues["follow"]["reason"] == "auth_expired"
-    assert queues["jobs.export.run"]["reason"] == "window.preempted"
+    assert queues["export.run"]["reason"] == "window.preempted"
     # the same list on the command line, in text and in JSON
     capsys.readouterr()
     assert run_cli(monkeypatch, api.settings, "status", "--json") == 0
@@ -103,12 +103,12 @@ def test_healthz_exposes_paused_queues(api: AuthEnv) -> None:
     api.login()
     seen = api.client.get("/healthz").json()
     assert seen["state"] == "ok" and seen["version"]
-    assert seen["paused_queues"] == ["follow", "jobs.export.run", "jobs.library.safeguard"]
+    assert seen["paused_queues"] == ["export.run", "follow", "library.safeguard"]
     reasons = {p["queue"]: p["reason"] for p in seen["paused"]}
     assert reasons == {
         "follow": "auth_expired",
-        "jobs.export.run": "window.preempted",
-        "jobs.library.safeguard": "dead_letter",
+        "export.run": "window.preempted",
+        "library.safeguard": "dead_letter",
     }
 
 

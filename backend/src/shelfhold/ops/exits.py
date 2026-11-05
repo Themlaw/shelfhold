@@ -86,5 +86,9 @@ def bare(command: str) -> str:
     return command.split(" [", 1)[0]
 
 
+def command_of(*words: str) -> str:
+    return " ".join(words)
+
+
 def endpoint_of(command: str) -> tuple[str, str]:
     return ENDPOINTS[command]
