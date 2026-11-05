@@ -28,10 +28,15 @@ from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.headless import build_headless_router
+from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.shelves import build_shelves_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
+from shelfhold.interfaces.http_api.status import build_status_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
+from shelfhold.ops import OpsServices
+from shelfhold.ops.health import OpsHealth
+from shelfhold.ops.wiring import open_ops
 from shelfhold.runtime import InstanceRuntime
 
 PACKAGED_FRONTEND = Path(__file__).parent / "static"
@@ -66,11 +71,17 @@ def create_app(
     def headless_admin() -> HeadlessAdmin:
         return wiring.open_headless(resolved)  # opened at first use, after the keyring check
 
+    @cache
+    def ops_services() -> OpsServices:
+        return open_ops(resolved, engine=engine)  # the lazy parts open at first use
+
     export_routers = (
         build_shelves_router(lambda: ShelfService(engine)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
         build_plans_router(pipeline),  # type: ignore[arg-type]
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
+        build_status_router(ops_services),  # EF-INT-023: what waits, with the command
+        build_ops_router(ops_services),  # EF-INT-023: the exits
     )
 
     def on_shutdown() -> None:
@@ -102,7 +113,7 @@ def create_app(
             structlog.get_logger().warning("local_cli.allow_host_enabled")
         server = LocalSocketServer(
             resolved.data_dir / SOCKET_NAME,
-            IdentityDispatcher(auth, headless=headless_admin()),
+            IdentityDispatcher(auth, headless=headless_admin(), ops=ops_services()),
             allow_host=resolved.cli_allow_host,
         )
         try:
@@ -117,7 +128,7 @@ def create_app(
             await server.stop()
 
     return create_http_app(
-        health=HealthProbe(resolved),
+        health=OpsHealth(HealthProbe(resolved), ops_services),
         on_startup=on_startup,
         on_shutdown=on_shutdown,
         background=local_cli_socket,

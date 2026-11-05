@@ -1,6 +1,6 @@
 """EF-INT-023 (L36): the operating surface — `status`, `/healthz`, the CLI commands and the routes
 that leave the waiting states, with the reserved ones refused to every key."""
-# ruff: noqa: S105 (synthetic secrets)
+# ruff: noqa: E501 (synthetic secrets; the scenarios read better long)
 
 import json
 import re
@@ -93,6 +93,7 @@ def test_status_lists_paused_queues_with_reason_and_command(
     assert f"shelfhold jobs retry {dead}" in text and "auth_expired" in text
 
 
+@pytest.mark.req("ENF-OPS-011")
 def test_healthz_exposes_paused_queues(api: AuthEnv) -> None:
     """A7: anonymous callers get the state only; a session or a key also gets the paused queues
     with their reason, and the version."""
@@ -133,7 +134,9 @@ def _exported_missing(env: ExportEnv) -> str:
 
 
 def test_cli_missing_resolve(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, cli_env: ExportEnv,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    cli_env: ExportEnv,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     item = _exported_missing(cli_env)
@@ -153,7 +156,9 @@ def test_cli_missing_resolve(
 
 
 def test_cli_series_resume(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, cli_env: ExportEnv,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    cli_env: ExportEnv,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     series = cli_env.new_series()
@@ -169,10 +174,14 @@ def test_cli_series_resume(
 
 
 def test_cli_jobs_list_retry_dead_letter(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, cli_env: ExportEnv,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    cli_env: ExportEnv,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    dead = add_job(cli_env.engine, kind="library.safeguard", status="dead_letter", code="job.failed")
+    dead = add_job(
+        cli_env.engine, kind="library.safeguard", status="dead_letter", code="job.failed"
+    )
     done = add_job(cli_env.engine, kind="export.run", status="succeeded")
     assert run_cli(monkeypatch, settings, "jobs", "list", "--status", "dead_letter") == 0
     listed = capsys.readouterr().out
@@ -184,7 +193,9 @@ def test_cli_jobs_list_retry_dead_letter(
 
 
 def test_cli_target_reconnect_and_rotate_key(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
     migrate(settings)
@@ -227,7 +238,8 @@ def test_ops_methods_over_the_local_socket(settings: Settings, tmp_path: Path) -
         with serving(sock, IdentityDispatcher(auth, ops=ops)):
             waiting = call(sock, "ops.status", {})
             assert isinstance(waiting, dict) and {i["state"] for i in waiting["waiting"]} >= {
-                "restored_behind", "tombstone_key_unknown"
+                "restored_behind",
+                "tombstone_key_unknown",
             }
             call(sock, "ops.tombstone_accept_lost_keyring", {"confirmation": "the keyring is lost"})
             assert keyring.waived == [("the keyring is lost", "local_cli")]
@@ -283,14 +295,18 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
         }  # fmt: skip
         with auth_env(monkeypatch, settings, routers=[_router(ops)]) as api:
             capsys.readouterr()
-            assert run_cli(monkeypatch, api.settings, "admin", "keys", "create", "--name", "ci") == 0
+            assert (
+                run_cli(monkeypatch, api.settings, "admin", "keys", "create", "--name", "ci") == 0
+            )
             key = KEY.search(capsys.readouterr().out)
             assert key
             bearer = {"Authorization": f"Bearer {key.group(0)}"}
             api.login()
             for route in served:
                 method, path = _url(route.command, **ids)
-                refused = api.client.request(method, path, json=_body(route.command), headers=bearer)
+                refused = api.client.request(
+                    method, path, json=_body(route.command), headers=bearer
+                )
                 assert refused.status_code == 403, route.command
                 assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed"
             assert keyring.waived == [] and restore.calls == []  # nothing ran
@@ -309,11 +325,15 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
                 wants_fresh = route.reserved.needs_fresh_auth(
                     restricted_profile_exists=False, hardened=False
                 )
-                assert stale.status_code == (401 if wants_fresh else stale.status_code), route.command
+                assert stale.status_code == (401 if wants_fresh else stale.status_code), (
+                    route.command
+                )
                 if wants_fresh:
                     assert stale.json()["type"].endswith("reauth-required")
             # a non-reserved exit is open to an admin key
-            job = add_job(env.engine, kind="library.safeguard", status="dead_letter", code="job.failed")
+            job = add_job(
+                env.engine, kind="library.safeguard", status="dead_letter", code="job.failed"
+            )
             _method, path = _url("jobs retry", job_id=job)
             assert api.client.post(path, headers=bearer).status_code in (200, 202)
             assert job_status(env.engine, job) == "queued"

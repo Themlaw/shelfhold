@@ -10,8 +10,8 @@ from typing import Any
 import sqlalchemy as sa
 
 from shelfhold.events.bus import EventBus
-from shelfhold.export.application.target_state import save_health
 from shelfhold.export.application.target_health import TargetHealth
+from shelfhold.export.application.target_state import save_health
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.identity.public import Credential, Principal
@@ -73,7 +73,10 @@ class FakeAdoption:
     calls: list[tuple[str, str]] = field(default_factory=list)
 
     def waiting(self) -> list[WaitingItem]:
-        return [WaitingItem(state, "adoption", subject, state) for subject, state in self.pending.items()]
+        return [
+            WaitingItem(state, "adoption", subject, state)
+            for subject, state in self.pending.items()
+        ]
 
     def set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
         self.calls.append(("set_follow_from", series))
@@ -118,7 +121,7 @@ def add_job(engine: sa.Engine, *, kind: str, status: str, code: str | None = Non
             sa.insert(platform.job_view).values(
                 id=job_id, kind=kind, status=status, dedupe_key=f"{kind}:{job_id}",
                 error_code=code, last_error="boom" if code else None, attempts=5,
-                huey_task_id="task",
+                huey_task_id=new_ulid(),
             )
         )  # fmt: skip
     return job_id

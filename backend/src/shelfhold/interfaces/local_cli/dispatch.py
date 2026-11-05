@@ -30,7 +30,9 @@ from shelfhold.infrastructure.local_socket.server import (
     INVALID_PARAMS,
     METHOD_NOT_FOUND,
 )
+from shelfhold.interfaces.local_cli.ops import OPS_METHODS, run_ops_method
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
+from shelfhold.ops import OpsServices
 
 Params = Mapping[str, Any]
 Method = Callable[[LocalAuth, Principal, Params], object]
@@ -266,9 +268,15 @@ HEADLESS_METHODS: Mapping[str, tuple[HeadlessMethod, str | None]] = {
 class IdentityDispatcher:
     """The `Handler` of the socket server."""
 
-    def __init__(self, auth: LocalAuth, headless: HeadlessAdmin | None = None) -> None:
+    def __init__(
+        self,
+        auth: LocalAuth,
+        headless: HeadlessAdmin | None = None,
+        ops: OpsServices | None = None,
+    ) -> None:
         self._auth = auth
         self._headless = headless
+        self._ops = ops
 
     def _authorize(self, principal: Principal, reserved: str | None) -> None:
         if reserved is None:
@@ -286,6 +294,11 @@ class IdentityDispatcher:
             )
 
     async def __call__(self, peer: Peer, method: str, params: dict[str, Any]) -> object:
+        operating = OPS_METHODS.get(method)
+        if operating is not None and self._ops is not None:  # EF-INT-023
+            principal = principal_for_peer(peer)
+            self._authorize(principal, operating[1])
+            return await asyncio.to_thread(run_ops_method, self._ops, principal, method, params)
         headless = HEADLESS_METHODS.get(method)
         if headless is not None and self._headless is not None:
             principal = principal_for_peer(peer)

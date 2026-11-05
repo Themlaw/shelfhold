@@ -5,11 +5,12 @@ document, a job gone dead), seen by `status` with its reason and its command, th
 command the specification names, through the services of the lot that owns the state. The
 enumeration is partitioned (M1a / later): a new `WaitingState` fails here until it is classed.
 """
-# ruff: noqa: S105 (synthetic secrets)
+# ruff: noqa: S105, S106, E501 (synthetic secrets; scenarios read better long)
 
 import argparse
 import inspect
 from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -19,16 +20,26 @@ from shelfhold.config import Settings
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.target_state import load_health
+from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
 from shelfhold.identity.public import EXIT_ROUTES, EXIT_STATES_LATER
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.interfaces.cli.registry import build_parser
-from shelfhold.ops import CLI_PENDING, ENDPOINTS, M1A_STATES, OpsServices, bare, endpoint_of
+from shelfhold.ops import (
+    CLI_PENDING,
+    ENDPOINTS,
+    M1A_STATES,
+    UNSERVED,
+    OpsServices,
+    bare,
+    endpoint_of,
+)
 from tests.export_env import ExportEnv, export_env
 from tests.headless_env import KAVITA_URL, SUWAYOMI_URL, Headless, headless
 from tests.kavita_export_env import wire
 from tests.ops_env import (
     LOCAL_CLI,
+    NOW,
     FakeAdoption,
     FakeKeyring,
     FakeRestore,
@@ -72,12 +83,10 @@ def _cli_has(command: str) -> bool:
     """Does `shelfhold <command>` exist in the parser? A `--flag` is an option of the group."""
     words = bare(command).split()
     parser = build_parser()
-    for index, word in enumerate(words):
+    for word in words:
         if word.startswith("--"):
             return any(word in action.option_strings for action in parser._actions)
-        sub = next(
-            (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None
-        )
+        sub = next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
         if sub is None or word not in sub.choices:
             return False
         parser = sub.choices[word]
@@ -124,7 +133,9 @@ def paused_foreign_writer() -> None:
     with export_env() as env:
         _exported(env)
         with env.engine.begin() as connection:
-            connection.execute(sa.update(export.export_series).values(paused_reason="foreign_writer"))
+            connection.execute(
+                sa.update(export.export_series).values(paused_reason="foreign_writer")
+            )
         ops = make_ops(env)
         series_id = env.rows(export.export_series)[0].id
         _listed_then_gone(ops, "paused_foreign_writer", lambda: ops.series_resume(series_id))
@@ -166,10 +177,14 @@ def route_missing() -> None:
 
 def not_indexed() -> None:
     with export_env() as env:
-        job = add_job(env.engine, kind="target.verify_indexed", status="dead_letter", code="job.failed")
-        put_health(env, not_indexed=True)
+        _edition, items = _exported(env)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(export.export_record).values(error_code="target.not_indexed")
+            )
         ops = make_ops(env)
-        _listed_then_gone(ops, "not_indexed", lambda: ops.jobs_retry(job))
+        _listed_then_gone(ops, "not_indexed", lambda: ops.jobs_retry(items[0]))
+        assert env.rows(export.export_record)[0].error_code is None  # polled again
 
 
 def child_exposure() -> None:
@@ -188,9 +203,9 @@ def permission_denied() -> None:
     with export_env() as env:
         _exported(env)
         series_id = env.rows(export.export_series)[0].id
-        PermissionPreflight(env.engine, env.lib.fsops, make_ops(env)._bus, clock=env.clock).mark_denied(
-            env.destination_id, series_id
-        )
+        PermissionPreflight(
+            env.engine, env.lib.fsops, make_ops(env)._bus, clock=env.clock
+        ).mark_denied(env.destination_id, series_id)
         ops = make_ops(env)
         _listed_then_gone(ops, "permission_denied", lambda: ops.target_recheck(env.target_id))
 
@@ -259,7 +274,7 @@ def key_expiring(settings: Settings) -> None:
         )  # fmt: skip
         with h.engine.begin() as connection:
             health = load_health(connection, added.id)
-            health.key_notices.sent = frozenset({"J-14"})
+            health.key_notices = KeyNoticeState(NOW + timedelta(days=10), frozenset({"J-14"}))
             health.refresh_waiting()
             from shelfhold.export.application.target_state import save_health
 
@@ -320,9 +335,11 @@ def test_every_waiting_state_has_exit_command(state: WaitingState, settings: Set
         return
     assert state in M1A_STATES and routes, f"{state} has no exit command"
     assert state.value in SCENARIOS, f"{state} has no end-to-end scenario"
-    for route in routes:
+    served = [r for r in routes if r.command not in UNSERVED]  # declared, not written yet
+    assert served, f"{state} has no served exit"
+    for route in served:
         assert route.command in ENDPOINTS, f"{route.command}: no API route declared"
-        method, path = endpoint_of(route.command)
+        _method, path = endpoint_of(route.command)
         assert path.startswith("/api/v1/"), route.command
         pending = CLI_PENDING.get(bare(route.command))
         if pending is None:
@@ -341,12 +358,18 @@ def test_every_exit_route_is_in_the_openapi(command: str) -> None:
     assert _route_documented(command), command
 
 
+def test_exit_tables_agree() -> None:
+    declared = {r.command for r in EXIT_ROUTES if r.waiting_state in {s.value for s in M1A_STATES}}
+    assert declared == set(ENDPOINTS) | set(UNSERVED)
+    assert not set(ENDPOINTS) & set(UNSERVED)
+
+
 def test_the_enumeration_is_partitioned_into_m1a_and_later() -> None:
-    assert M1A_STATES | LATER_STATES == set(WaitingState)
+    assert set(WaitingState) == M1A_STATES | LATER_STATES
     assert not (M1A_STATES & LATER_STATES)
-    assert {r.waiting_state for r in EXIT_ROUTES if r.waiting_state in {s.value for s in M1A_STATES}} == {
-        s.value for s in M1A_STATES
-    }
+    assert {
+        r.waiting_state for r in EXIT_ROUTES if r.waiting_state in {s.value for s in M1A_STATES}
+    } == {s.value for s in M1A_STATES}
 
 
 def test_language_unknown_has_exit_command(tmp_path: Path) -> None:
@@ -362,14 +385,18 @@ def test_language_unknown_has_exit_command(tmp_path: Path) -> None:
         # another Edition of the same Work already has that language: no silent merge
         with env.engine.begin() as connection:
             work = connection.execute(
-                sa.select(catalog.edition.c.work_id).where(catalog.edition.c.id == series.edition_id)
+                sa.select(catalog.edition.c.work_id).where(
+                    catalog.edition.c.id == series.edition_id
+                )
             ).scalar_one()
         twin = new_ulid()
         with env.engine.begin() as connection:
             row = dict(
                 connection.execute(
                     sa.select(catalog.edition).where(catalog.edition.c.id == series.edition_id)
-                ).one()._mapping
+                )
+                .one()
+                ._mapping
             )
             connection.execute(sa.insert(catalog.edition).values({**row, "id": twin, "lang": "ja"}))
         with pytest.raises(Exception, match="language"):

@@ -24,6 +24,7 @@ from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.observability.network_fs import REFUSED_KINDS, filesystem_kind
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.volumes import data_dir_writable_by_others
+from shelfhold.ops.wiring import open_ops
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -136,13 +137,29 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
     )
 
 
+def _waiting(resolved: ResolvedSettings) -> dict[str, object]:
+    """What waits for a human, with the command that leaves each wait (EF-INT-023). Read only,
+    from the database: no lock, no keyring is created."""
+    database = resolved.values.database_path
+    if not database.exists() or current_revision(database) != head_revision():
+        return {"waiting": [], "queues": []}
+    engine = create_db_engine(database)
+    try:
+        return open_ops(resolved.values, engine=engine, mount=False).status().as_dict()
+    finally:
+        engine.dispose()
+
+
 def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     found = warnings(resolved)
+    ops = _waiting(resolved)
     if args.json:
-        print(json.dumps({"warnings": found}, ensure_ascii=False, indent=2))
+        print(json.dumps({"warnings": found, **ops}, ensure_ascii=False, indent=2))
         return 0
-    if not found:
+    if not found and not ops["waiting"]:
         print(t("status.no_warning"))
     for warning in found:
         print(t("status.warning_line", message=warning["message"]))
+    for item in ops["waiting"]:  # type: ignore[attr-defined]
+        print(t("status.waiting_line", **item))
     return 0

@@ -135,6 +135,20 @@
       },
       "HealthzResponse": {
         "properties": {
+          "paused": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PausedQueue"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused"
+          },
           "paused_queues": {
             "anyOf": [
               {
@@ -281,6 +295,24 @@
           "password"
         ],
         "title": "PasswordReauth",
+        "type": "object"
+      },
+      "PausedQueue": {
+        "properties": {
+          "queue": {
+            "title": "Queue",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queue",
+          "reason"
+        ],
+        "title": "PausedQueue",
         "type": "object"
       },
       "PlanIn": {
@@ -1412,6 +1444,30 @@
     "/api/v1/problems/notify.failed": {
       "code": "notify.failed",
       "status": 502
+    },
+    "/api/v1/problems/ops.exit-unavailable": {
+      "code": "ops.exit_unavailable",
+      "status": 503
+    },
+    "/api/v1/problems/ops.invalid-choice": {
+      "code": "ops.invalid_choice",
+      "status": 422
+    },
+    "/api/v1/problems/ops.language-refused": {
+      "code": "ops.language_refused",
+      "status": 422
+    },
+    "/api/v1/problems/ops.not-waiting": {
+      "code": "ops.not_waiting",
+      "status": 409
+    },
+    "/api/v1/problems/ops.still-waiting": {
+      "code": "ops.still_waiting",
+      "status": 409
+    },
+    "/api/v1/problems/ops.unknown-subject": {
+      "code": "ops.unknown_subject",
+      "status": 404
     },
     "/api/v1/problems/pairing.already-paired": {
       "code": "pairing.already_paired",

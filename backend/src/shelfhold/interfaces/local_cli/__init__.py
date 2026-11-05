@@ -9,6 +9,12 @@ from shelfhold.interfaces.local_cli.gateway import (
     SocketHeadless,
     SocketIdentity,
 )
+from shelfhold.interfaces.local_cli.ops import (
+    LocalChannel,
+    OpsChannel,
+    OpsRefusal,
+    SocketChannel,
+)
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
 
 __all__ = [
@@ -17,7 +23,11 @@ __all__ = [
     "IdentityCommands",
     "IdentityDispatcher",
     "KeyView",
+    "LocalChannel",
+    "OpsChannel",
+    "OpsRefusal",
     "RemoteRefusal",
+    "SocketChannel",
     "SocketHeadless",
     "SocketIdentity",
     "principal_for_peer",

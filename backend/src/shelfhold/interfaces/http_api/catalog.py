@@ -13,6 +13,7 @@ from shelfhold.infrastructure.imaging import errors as imaging_errors
 from shelfhold.interfaces.http_api import errors as http_errors
 from shelfhold.jobs import errors as jobs_errors
 from shelfhold.library import errors as library_errors
+from shelfhold.ops import errors as ops_errors
 
 # A new context adds its `errors` module here; a test fails if one is declared but not listed.
 _MODULES: tuple[ModuleType, ...] = (
@@ -25,6 +26,7 @@ _MODULES: tuple[ModuleType, ...] = (
     imaging_errors,
     jobs_errors,
     library_errors,
+    ops_errors,
 )
 
 

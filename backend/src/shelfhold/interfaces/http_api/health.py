@@ -18,6 +18,11 @@ class MigrationProgress(BaseModel):
     total: int
 
 
+class PausedQueue(BaseModel):
+    queue: str
+    reason: str  # the waiting state, or the error code of a job paused by the window
+
+
 class HealthzResponse(BaseModel):
     state: Literal["ok", "migrating"]  # anonymous: no names, no version (O12, A7)
     progress: MigrationProgress | None = None
