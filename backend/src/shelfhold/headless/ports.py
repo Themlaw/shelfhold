@@ -25,6 +25,9 @@ class KavitaKeyExchange(Protocol):
         self, *, url: str, username: str, password: str, key_name: str, expires_days: int
     ) -> ExchangedKey: ...
 
+    def revoke(self, *, url: str, username: str, password: str, key: str, key_name: str) -> bool:
+        """Delete the old key at Kavita (found by value, else by name); False when not found."""
+
 
 class SuwayomiProbe(Protocol):
     def auth_mode(self, *, url: str, username: str | None, password: str | None) -> str: ...

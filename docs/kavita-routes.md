@@ -50,6 +50,8 @@ chez Kavita : le message d'erreur donne son nom et son identifiant, à révoquer
 | --- | --- | --- | --- |
 | POST | `/api/Account/login` | Connexion du compte dédié (`LoginDto`), pour obtenir un jeton | M1a |
 | POST | `/api/Account/create-auth-key` | Créer la clé nommée à expiration (`RotateAuthKeyRequestDto` : `name`, `keyLength` 8 à 32, `expiresUtc`) | M1a |
+| GET | `/api/Account/auth-keys` | Lister les clés du compte (`AuthKeyDto` : `id`, `name`, `key`), à la rotation, pour retrouver l'ancienne | M1a |
+| DELETE | `/api/Account/auth-key` | Révoquer l'ancienne clé après la rotation (`authKeyId` en requête) | M1a |
 
 ## Fixtures `openapi.json`
 

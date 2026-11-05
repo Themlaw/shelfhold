@@ -35,7 +35,7 @@ from shelfhold.ops import (
     endpoint_of,
 )
 from tests.export_env import ExportEnv, export_env
-from tests.headless_env import KAVITA_URL, SUWAYOMI_URL, Headless, headless
+from tests.headless_env import KAVITA_KEY, KAVITA_URL, SUWAYOMI_URL, Headless, headless
 from tests.kavita_export_env import wire
 from tests.ops_env import (
     LOCAL_CLI,
@@ -53,9 +53,23 @@ from tests.ops_env import (
 
 pytestmark = pytest.mark.req("EF-INT-023")
 
-LATER_STATES = {s for s in WaitingState if s.value in EXIT_STATES_LATER} | {
-    s for s in WaitingState if s not in M1A_STATES and s.value not in EXIT_STATES_LATER
-}
+# The M1b states, written out: their exit arrives with the milestone where the state appears. A
+# state that is in neither M1A_STATES nor this set (nor the M3 one) fails the partition test, so a
+# new state cannot slip into "later" without a decision.
+M1B_STATES = frozenset(
+    {
+        WaitingState.RATING_PENDING,
+        WaitingState.FOLLOW_SUSPENDED,
+        WaitingState.SAFEGUARD_BACKLOG,
+        WaitingState.FOREIGN_ROOT,
+        WaitingState.ROOT_LOST,
+        WaitingState.ROOT_BEHIND,
+        WaitingState.STORE_LOST,
+        WaitingState.SOURCE_INSTANCE_CHANGED,
+    }
+)
+M3_STATES = frozenset({s for s in WaitingState if s.value in EXIT_STATES_LATER})
+LATER_STATES = M1B_STATES | M3_STATES
 
 
 def _waiting(ops: OpsServices, state: str) -> list[object]:
@@ -284,6 +298,8 @@ def key_expiring(settings: Settings) -> None:
             ops, "key_expiring", lambda: ops.target_rotate_key(added.id, password="p" * 12)
         )
         assert len(h.kavita.calls) == 2  # a new key was asked of Kavita
+        # and the old one was revoked at Kavita: found by its sealed value, not left to expire
+        assert [r["key"] for r in h.kavita.revoked] == [KAVITA_KEY]
 
 
 def auth_expired(settings: Settings) -> None:
@@ -365,8 +381,11 @@ def test_exit_tables_agree() -> None:
 
 
 def test_the_enumeration_is_partitioned_into_m1a_and_later() -> None:
-    assert set(WaitingState) == M1A_STATES | LATER_STATES
-    assert not (M1A_STATES & LATER_STATES)
+    unplaced = set(WaitingState) - M1A_STATES - M1B_STATES - M3_STATES
+    assert not unplaced, f"{sorted(map(str, unplaced))}: neither M1a, M1b nor M3 (decide)"
+    assert M3_STATES == {WaitingState.LIBRARY_TYPE_CHANGED}
+    assert not (M1A_STATES & M1B_STATES) and not (M1A_STATES & M3_STATES)
+    assert not (M1B_STATES & M3_STATES)
     assert {
         r.waiting_state for r in EXIT_ROUTES if r.waiting_state in {s.value for s in M1A_STATES}
     } == {s.value for s in M1A_STATES}

@@ -152,6 +152,16 @@ class GuardedFetcher:
             "POST", url, dict(headers or {}), None, body, max_bytes, None, None
         )
 
+    async def delete(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, Any] | None = None,
+        max_bytes: int | None = None,
+    ) -> Response:
+        return await self._fetch("DELETE", url, dict(headers or {}), params, {}, max_bytes, None, None)
+
     async def download(
         self,
         url: str,

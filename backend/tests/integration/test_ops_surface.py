@@ -15,7 +15,7 @@ from fastapi import APIRouter
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.target_state import load_health
-from shelfhold.identity.public import EXIT_ROUTES, authorize_reserved
+from shelfhold.identity.public import EXIT_ROUTES, RESERVED_ACTIONS
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.local_socket import call
@@ -110,6 +110,62 @@ def test_healthz_exposes_paused_queues(api: AuthEnv) -> None:
         "export.run": "window.preempted",
         "library.safeguard": "dead_letter",
     }
+
+
+class _Probe:
+    def migration_progress(self) -> None:
+        return None
+
+    def readiness(self) -> dict[str, bool]:
+        return {}
+
+
+def _healthz_as(env: ExportEnv, role: str | None) -> dict[str, Any]:
+    """`/healthz` over the services of `env`, called by a principal of `role` (None: anonymous)."""
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from shelfhold.interfaces.http_api.health import build_health_router
+    from shelfhold.ops.health import OpsHealth
+
+    app = FastAPI()
+    app.include_router(
+        build_health_router(OpsHealth(_Probe(), lambda: make_ops(env)), version="1.0.0")  # type: ignore[arg-type]
+    )
+
+    @app.middleware("http")
+    async def principal(request, call_next):  # type: ignore[no-untyped-def]
+        request.scope.setdefault("state", {})["principal"] = (
+            SimpleNamespace(role=role) if role else None
+        )
+        return await call_next(request)
+
+    body = TestClient(app).get("/healthz").json()
+    assert isinstance(body, dict)
+    return body
+
+
+def test_healthz_reasons_are_for_administrators_and_never_carry_a_title() -> None:
+    with export_env() as env:
+        series = env.new_series("Dr Stone Secret Title")
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        with env.engine.begin() as connection:
+            connection.execute(sa.update(export.export_record).values(state="missing"))
+        add_job(env.engine, kind="export.run", status="paused", code="window.preempted")
+        assert series.edition_id
+
+        admin = _healthz_as(env, "admin")
+        member = _healthz_as(env, "member")
+        anonymous = _healthz_as(env, None)
+
+        assert admin["paused"] == [{"queue": "export.run", "reason": "window.preempted"}]
+        assert member["paused_queues"] == ["export.run"]  # the names, for every signed-in caller
+        assert "paused" not in member  # the reason is for administrators
+        assert anonymous == {"state": "ok"}
+        for body in (admin, member, anonymous):
+            assert "Secret Title" not in json.dumps(body)  # no title, whoever asks
 
 
 # -- the commands -----------------------------------------------------------------------------------
@@ -325,11 +381,11 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
                 wants_fresh = route.reserved.needs_fresh_auth(
                     restricted_profile_exists=False, hardened=False
                 )
-                assert stale.status_code == (401 if wants_fresh else stale.status_code), (
-                    route.command
-                )
                 if wants_fresh:
+                    assert stale.status_code == 401, route.command
                     assert stale.json()["type"].endswith("reauth-required")
+                else:  # no freshness asked: an old session still goes through
+                    assert stale.status_code in (200, 202, 204), route.command
             # a non-reserved exit is open to an admin key
             job = add_job(
                 env.engine, kind="library.safeguard", status="dead_letter", code="job.failed"
@@ -337,9 +393,6 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
             _method, path = _url("jobs retry", job_id=job)
             assert api.client.post(path, headers=bearer).status_code in (200, 202)
             assert job_status(env.engine, job) == "queued"
-        cli = authorize_reserved  # the host CLI is allowed on all of them (see the L06 test)
-        assert cli is not None
-        assert isinstance(EventBus, type)
 
 
 def endpoint_table() -> dict[str, tuple[str, str]]:
@@ -359,4 +412,94 @@ def test_exit_routes_refuse_what_is_not_waiting(
             assert api.post(path).status_code == 409
             _method, path = _url("jobs retry", job_id=new_ulid())
             assert api.post(path).status_code == 404
-            assert platform is not None
+
+
+# -- the two ports of the lots in flight, through the real channels ----------------------------------
+
+
+def test_restored_behind_and_tombstone_key_unknown_leave_through_the_api(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """The state is read on `GET /api/v1/status`, the exit route is called with a fresh session,
+    and the next `status` no longer lists it; the ports saw the call with the right credential."""
+    from shelfhold.interfaces.http_api.status import build_status_router
+
+    with export_env() as env:
+        keyring, restore = FakeKeyring(), FakeRestore()
+        ops = make_ops(env, keyring=keyring, restore=restore)
+
+        def listed(api: AuthEnv) -> set[str]:
+            return {i["state"] for i in api.client.get("/api/v1/status").json()["waiting"]}
+
+        with auth_env(
+            monkeypatch, settings, routers=[_router(ops), build_status_router(lambda: ops)]
+        ) as api:
+            api.login()
+            assert {"restored_behind", "tombstone_key_unknown"} <= listed(api)
+            _method, path = _url("reconcile --adopt-after-restore")
+            assert api.post(path, json={"confirm_deletion": False}).status_code in (200, 202, 204)
+            assert restore.calls == [False]
+            assert "restored_behind" not in listed(api)
+            _method, path = _url("tombstone accept-lost-keyring")
+            done = api.post(path, json={"confirmation": "the keyring is lost"})
+            assert done.status_code in (200, 202, 204)
+            assert [c for c, _who in keyring.waived] == ["the keyring is lost"]
+            assert "tombstone_key_unknown" not in listed(api)
+
+
+def test_restored_behind_leaves_through_the_local_socket(settings: Settings, tmp_path: Path) -> None:
+    from shelfhold.identity.public import local_auth
+
+    with export_env() as env:
+        restore = FakeRestore()
+        ops = make_ops(env, restore=restore, keyring=FakeKeyring())
+        migrate(settings)
+        auth = local_auth(create_db_engine(settings.database_path), settings)
+        sock = tmp_path / "s.sock"
+        with serving(sock, IdentityDispatcher(auth, ops=ops)):
+            before = call(sock, "ops.status", {})
+            assert isinstance(before, dict)
+            assert "restored_behind" in {i["state"] for i in before["waiting"]}
+            call(sock, "ops.restore_adopt", {"confirm_deletion": True})
+            assert restore.calls == [True]
+            after = call(sock, "ops.status", {})
+            assert isinstance(after, dict)
+            assert "restored_behind" not in {i["state"] for i in after["waiting"]}
+
+
+# -- the socket allow-list ---------------------------------------------------------------------------
+
+
+def test_an_unknown_ops_method_is_not_found_on_the_socket(settings: Settings, tmp_path: Path) -> None:
+    from shelfhold.identity.public import local_auth
+    from shelfhold.infrastructure.local_socket import RpcFailure
+
+    with export_env() as env:
+        ops = make_ops(env)
+        migrate(settings)
+        auth = local_auth(create_db_engine(settings.database_path), settings)
+        sock = tmp_path / "s.sock"
+        with serving(sock, IdentityDispatcher(auth, ops=ops)):
+            for name in ("ops.x", "ops.", "ops.__init__", "ops.status ", "ops.engine", "OPS.status"):
+                with pytest.raises(RpcFailure) as refused:
+                    call(sock, name, {})
+                assert refused.value.code == -32601, name  # METHOD_NOT_FOUND
+
+
+def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None:
+    from shelfhold.interfaces.local_cli.ops import OPS_METHODS
+    from shelfhold.ops import UNSERVED
+
+    from shelfhold.ops import M1A_STATES
+
+    m1a = {s.value for s in M1A_STATES}  # the M1b exits (rate, root, store) come with M1b
+    declared = {
+        r.reserved.name
+        for r in EXIT_ROUTES
+        if r.reserved and r.waiting_state in m1a and r.command not in UNSERVED
+    }
+    declared.discard("target.recheck_child_exposure")  # conditional: not a fixed property
+    on_socket = {action for _impl, action in OPS_METHODS.values() if action}
+    assert on_socket == declared
+    for action in on_socket:  # and every name is a real action of the registry
+        assert action in RESERVED_ACTIONS

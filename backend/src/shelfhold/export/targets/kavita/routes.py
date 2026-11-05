@@ -44,7 +44,9 @@ SERIES_METADATA: Final = Route("GET", "/api/Series/metadata", write=False)
 # (`resolve` refuses them); only the headless configuration names them.
 LOGIN: Final = Route("POST", "/api/Account/login", write=True)
 CREATE_AUTH_KEY: Final = Route("POST", "/api/Account/create-auth-key", write=True)
-SETUP_ROUTES: Final = (LOGIN, CREATE_AUTH_KEY)
+LIST_AUTH_KEYS: Final = Route("GET", "/api/Account/auth-keys", write=False)
+DELETE_AUTH_KEY: Final = Route("DELETE", "/api/Account/auth-key", write=True)
+SETUP_ROUTES: Final = (LOGIN, CREATE_AUTH_KEY, LIST_AUTH_KEYS, DELETE_AUTH_KEY)
 
 ALLOWED_ROUTES: Final = (
     SERVER_INFO, KEY_EXPIRES, PARSE, PARSE_BULK, LIBRARIES, LIBRARY_TYPE, LIBRARY_CREATE,

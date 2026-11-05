@@ -14,7 +14,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from shelfhold.export.targets.kavita.routes import CREATE_AUTH_KEY, LOGIN
+from shelfhold.export.targets.kavita.routes import (
+    CREATE_AUTH_KEY,
+    DELETE_AUTH_KEY,
+    LIST_AUTH_KEYS,
+    LOGIN,
+)
 from shelfhold.headless.errors import TargetExchangeFailed
 from shelfhold.headless.ports import ExchangedKey
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
@@ -51,6 +56,42 @@ class HttpKavitaKeyExchange:
             )
         except FetchError:  # unreachable, refused by the SSRF guard or by the DNS blocklist
             raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
+
+    def revoke(self, *, url: str, username: str, password: str, key: str, key_name: str) -> bool:
+        try:
+            fetcher = self._fetchers(url)
+            return asyncio.run(self._revoke(fetcher, url.rstrip("/"), username, password, key, key_name))
+        except FetchError:
+            raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
+
+    async def _revoke(
+        self, fetcher: GuardedFetcher, base: str, username: str, password: str, key: str, name: str
+    ) -> bool:
+        try:
+            login = await fetcher.post(
+                base + LOGIN.path, json={"username": username, "password": password}
+            )
+            token = _json(login.body).get("token") if login.status == 200 else None
+            if not isinstance(token, str) or not token:
+                raise TargetExchangeFailed("Kavita refused these credentials")
+            auth = {"Authorization": f"Bearer {token}"}
+            listed = await fetcher.get(base + LIST_AUTH_KEYS.path, headers=auth)
+            try:
+                items = json.loads(listed.body) if listed.status == 200 else []
+            except ValueError:
+                items = []
+            rows = [i for i in items if isinstance(i, dict) and isinstance(i.get("id"), int)]
+            found = next((i for i in rows if i.get("key") == key), None) or next(
+                (i for i in rows if name and i.get("name") == name), None
+            )
+            if found is None:
+                return False
+            gone = await fetcher.delete(
+                base + DELETE_AUTH_KEY.path, headers=auth, params={"authKeyId": found["id"]}
+            )
+            return 200 <= gone.status < 300
+        finally:
+            await fetcher.aclose()
 
     async def _exchange(
         self,

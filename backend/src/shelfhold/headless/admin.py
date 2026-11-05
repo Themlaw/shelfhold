@@ -28,7 +28,7 @@ from shelfhold.export.application.target_state import load_health, save_health
 from shelfhold.export.domain.bindings import check_shelf_ceiling
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
 from shelfhold.export.domain.path_map import PathEntry, PathMapError, PathMode
-from shelfhold.export.targets.kavita import AdminKey, store_admin_key
+from shelfhold.export.targets.kavita import AdminKey, load_admin_key, store_admin_key
 from shelfhold.headless.desired import (
     DesiredConfig,
     DesiredShelf,
@@ -429,10 +429,14 @@ class HeadlessAdmin:
         username = str(row.config.get("username", ""))
         if not username:
             raise InvalidConfigValue("this target has no recorded account: add it again")
+        with self._engine.connect() as connection:
+            old_key = load_admin_key(self._vault, connection, row.id).reveal()
+        old_name = str(row.config.get("key_name", KEY_NAME))
         stamp = self._clock.now().strftime("%Y%m%d")
+        new_name = f"{KEY_NAME}-{stamp}"
         exchanged = self._kavita.exchange(
             url=str(row.config["url"]), username=username, password=password,
-            key_name=f"{KEY_NAME}-{stamp}", expires_days=KEY_DAYS,
+            key_name=new_name, expires_days=KEY_DAYS,
         )  # fmt: skip
         expires_at = exchanged.expires_at.isoformat() if exchanged.expires_at else None
         with self._engine.begin() as connection:
@@ -441,14 +445,21 @@ class HeadlessAdmin:
             connection.execute(
                 sa.update(export.export_target)
                 .where(export.export_target.c.id == row.id)
-                .values(config={**row.config, "key_expires_at": expires_at})
+                .values(config={**row.config, "key_expires_at": expires_at, "key_name": new_name})
             )
             health = load_health(connection, row.id)
             health.key_notices = KeyNoticeState(exchanged.expires_at, frozenset())
             health.key_expires_at = exchanged.expires_at
             health.refresh_waiting()
             save_health(connection, row.id, health)
-        _log.info("headless.target_key_rotated", name=row.name)
+        try:  # the new key is sealed: a failed revocation leaves the old one to expire
+            revoked = self._kavita.revoke(
+                url=str(row.config["url"]), username=username, password=password,
+                key=old_key, key_name="" if old_name == new_name else old_name,
+            )  # fmt: skip
+        except TargetExchangeFailed:
+            revoked = False
+        _log.info("headless.target_key_rotated", name=row.name, old_key_revoked=revoked)
         return TargetAdded(row.id, row.name, False, exchanged.expires_at)
 
     def _suwayomi_url(self) -> str:
