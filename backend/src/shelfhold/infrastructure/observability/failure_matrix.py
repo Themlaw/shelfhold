@@ -84,6 +84,11 @@ _ROWS: tuple[FailureRow, ...] = (
     _row("foreign_writer", "library", "target.foreign_writer_detected", "pause_shelf", "series resume"),
     _row("job_dead_lettered", "jobs", "job.dead_lettered", "notify_only", "jobs retry"),
     _row("tombstone_key_unknown", "secrets", "tombstone.key_unknown", "block_writes", "secrets import"),
+    _row("tombstone_journal_truncated", "store", "tombstone.journal_truncated", "block_writes", None, "M1b"),
+    _row("tombstone_root_pending", "mount", "tombstone.root_mismatch", "block_writes"),
+    _row("tombstone_sentinel_forged", "store", "tombstone.unverified", "notify_only"),
+    _row("dns_blocked", "network", "source.dns_blocked", "pause_service", "source recheck"),
+    _row("abrupt_stop", "instance", "reconcile.drift", "notify_only"),
 )  # fmt: skip
 
 
@@ -106,6 +111,10 @@ _REAL_TESTS = {
     "kavita_not_indexed": "tests/integration/test_export_pipeline.py",
     "kavita_key_expiring": "tests/unit/test_kavita_client.py",
     "job_dead_lettered": "tests/integration/test_jobs_review.py",
+    "tombstone_root_pending": "tests/integration/test_restore_epoch.py",
+    "tombstone_sentinel_forged": "tests/property/test_tombstone_keyring.py",
+    "abrupt_stop": "tests/integration/test_migrate_open_intents.py",
+    "dns_blocked": "e2e/tests/test_m1a_journey.py (L40: nightly) and tests/unit/test_fetcher_guard.py",
     "notifier_failing": "tests/integration/test_notifications_outbox.py",
 }
 
