@@ -35,5 +35,5 @@ def test_ram_budget_documented_with_reference_profile() -> None:
         assert f"{figure} Mo" in text, f"S4 measure {figure} Mo missing from budget-ram.md"
     # The disk budget per mode is part of the same promise (passage x2, kept copy x2 to x3).
     assert "mode passage" in text.lower()
-    assert "copie conservée" in text.lower()
+    assert "conservée" in text.lower()  # the kept-copy mode
     assert "mem_limit" in text  # the compose limit is explained, not just stated

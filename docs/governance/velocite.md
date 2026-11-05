@@ -16,7 +16,7 @@ Le développement est fait par des agents d'IA orchestrés par le mainteneur. Le
 | Jalon | Période | Effort agent | Exigences fermées | PR fusionnées | Relecture mainteneur | Remarques |
 |---|---|---|---|---|---|---|
 | M0 | | | | | | |
-| M1a | | | | | | |
+| M1a | 2026-11-04 à 2026-11-05 (PR #24 à #63, hors lot de documentation) | à relever par le mainteneur | 122 sur 123 couvertes avant le lot de documentation (`tools/traceability.py --milestone M1a`) ; le budget mémoire (ENF-OPS-005) est couvert par ce lot | 40 | à relever par le mainteneur | Plafond du jalon : 300 h d'effort agent ; règle de coupe à 150 %. Aucun élément coupable n'a été reporté à ce stade. |
 | M1b | | | | | | |
 | M2 | | | | | | |
 | M3 | | | | | | |

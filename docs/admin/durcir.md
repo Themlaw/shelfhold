@@ -50,6 +50,24 @@ requête continue normalement, et `tailscale serve` fonctionne. `shelfhold statu
 en-têtes retirés : retirez-les au niveau du proxy ou du tunnel. Le forward-auth lui-même (CIDR de
 confiance obligatoire, secret partagé recommandé) arrive en M3.
 
+## Ce que voit un visiteur anonyme
+
+- `/healthz` ne donne que l'état (`ok`, `degraded`, `migrating`) : ni version, ni noms de files.
+  Authentifié, il ajoute la version et les files en pause.
+- Le document OpenAPI n'est pas public : `GET /api/v1/openapi.json` exige une session ou une clé.
+- La page de connexion garde le lien « Code source » (obligation de la licence AGPL), qui pointe
+  vers le dépôt **au tag de la version** : ce lien révèle donc cette version. Sur une instance
+  non modifiée, `SHELFHOLD_SOURCE_URL` peut pointer vers le dépôt sans tag ; sur une instance
+  modifiée, il doit mener à votre code.
+
+## Autres friction facultatives
+
+- Exigez un compte Kavita par lecteur, sans compte adulte ouvert sur un appareil partagé : Shelfhold
+  ne voit pas les sessions de Kavita ([exposition-publique.md](exposition-publique.md)).
+- Faites tourner la clé de Kavita avant son expiration (`shelfhold target rotate-key`) et la clé
+  maîtresse (`shelfhold secrets rotate`, [secrets.md](secrets.md)) ; gardez l'export de clé hors de
+  l'hôte ([restauration.md](restauration.md)).
+
 ## Ligne de commande de l'hôte
 
 `shelfhold admin sessions revoke --all` ferme toutes les sessions, `shelfhold admin keys revoke
