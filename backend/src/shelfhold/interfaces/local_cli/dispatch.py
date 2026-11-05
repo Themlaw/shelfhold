@@ -8,8 +8,11 @@ the audit says `local_cli:<uid>`. A method that is a reserved action goes throug
 import asyncio
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
+from shelfhold.export.domain.bindings import BindingError
+from shelfhold.headless import HeadlessAdmin, HeadlessError, Plan
 from shelfhold.i18n import t
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -31,6 +34,7 @@ from shelfhold.interfaces.local_cli.principal import principal_for_peer
 
 Params = Mapping[str, Any]
 Method = Callable[[LocalAuth, Principal, Params], object]
+HeadlessMethod = Callable[[HeadlessAdmin, Params], object]
 _PASSWORD_REASONS = frozenset(
     {"invalid_username", "password_too_short", "password_too_long", "invalid_expiry"}
 )
@@ -146,30 +150,153 @@ METHODS: Mapping[str, tuple[Method, str | None]] = {
 }
 
 
+# -- headless configuration (EF-INT-024): the same facade as the HTTP routes --------------------
+
+
+def _plain(value: object) -> object:
+    return value.isoformat() if isinstance(value, datetime) else value
+
+
+def _config_value(row: Any) -> dict[str, object]:
+    return {"key": row.key, "value": row.value, "source": row.source, "default": row.default,
+            "overridden_by": row.overridden_by}  # fmt: skip
+
+
+def _plan(plan: Plan) -> dict[str, object]:
+    return {
+        "noop": plan.is_noop,
+        "rendered": plan.render(),
+        "changes": [
+            {"kind": c.kind, "subject": c.subject, "action": c.action, "before": c.before,
+             "after": c.after, "secret": c.secret}
+            for c in plan.changes
+        ],
+    }  # fmt: skip
+
+
+def _mapping(params: Params, name: str) -> dict[str, str]:
+    value = params.get(name) or {}
+    if not isinstance(value, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in value.items()
+    ):
+        raise _invalid(name, "table")
+    return value
+
+
+def _config_get(admin: HeadlessAdmin, params: Params) -> object:
+    return _config_value(admin.get(str(_text(params, "key"))))
+
+
+def _config_list(admin: HeadlessAdmin, _params: Params) -> object:
+    return [_config_value(row) for row in admin.list()]
+
+
+def _config_set(admin: HeadlessAdmin, params: Params) -> object:
+    return _config_value(admin.set(str(_text(params, "key")), str(_text(params, "value"))))
+
+
+def _config_apply(admin: HeadlessAdmin, params: Params) -> object:
+    return _plan(
+        admin.apply_text(
+            str(_text(params, "text")),
+            base_dir=Path(str(_text(params, "base_dir"))),
+            dry_run=_flag(params, "dry_run"),
+            secrets=_mapping(params, "secrets"),
+        )
+    )
+
+
+def _target_add(admin: HeadlessAdmin, params: Params) -> object:
+    if params.get("kind", "kavita") != "kavita":
+        raise _invalid("kind", "kavita")
+    path_map = params.get("path_map")
+    added = admin.target_add_kavita(
+        name=str(_text(params, "name")),
+        url=str(_text(params, "url")),
+        username=str(_text(params, "username")),
+        password=str(_text(params, "password")),
+        accept_admin_risk=_flag(params, "accept_admin_risk"),
+        path_map=path_map if isinstance(path_map, list) else None,
+    )
+    return {"id": added.id, "name": added.name, "created": added.created,
+            "key_expires_at": _plain(added.key_expires_at)}  # fmt: skip
+
+
+def _source_add(admin: HeadlessAdmin, params: Params) -> object:
+    if params.get("kind", "suwayomi") != "suwayomi":
+        raise _invalid("kind", "suwayomi")
+    added = admin.source_add_suwayomi(
+        url=str(_text(params, "url")), secret=_text(params, "secret", required=False)
+    )
+    return {"id": added.plugin_id, "auth_mode": added.auth_mode, "created": added.created}
+
+
+def _subpath(params: Params) -> str:
+    value = params.get("subpath", "")
+    if not isinstance(value, str):
+        raise _invalid("subpath", "text")
+    return value  # empty is the root of the destination
+
+
+def _shelf_create(admin: HeadlessAdmin, params: Params) -> object:
+    created = admin.shelf_create(
+        name=str(_text(params, "name")),
+        max_age=str(_text(params, "max_age")),
+        target=str(_text(params, "target")),
+        subpath=_subpath(params),
+        phrase=_text(params, "phrase", required=False),
+    )
+    return {"shelf_id": created.shelf_id, "destination_id": created.destination_id,
+            "created": created.created}  # fmt: skip
+
+
+# method -> (implementation, the reserved action it performs, if any). `local_cli` may do every
+# reserved action; a key may not: it has no way to this socket.
+HEADLESS_METHODS: Mapping[str, tuple[HeadlessMethod, str | None]] = {
+    "config.get": (_config_get, None),
+    "config.list": (_config_list, None),
+    "config.set": (_config_set, None),
+    "config.apply": (_config_apply, None),
+    "target.add": (_target_add, "admin_risk.accept"),
+    "source.add": (_source_add, "source.set_secret"),
+    "shelf.create": (_shelf_create, "shelf.max_age_rating"),
+}
+
+
 class IdentityDispatcher:
     """The `Handler` of the socket server."""
 
-    def __init__(self, auth: LocalAuth) -> None:
+    def __init__(self, auth: LocalAuth, headless: HeadlessAdmin | None = None) -> None:
         self._auth = auth
+        self._headless = headless
+
+    def _authorize(self, principal: Principal, reserved: str | None) -> None:
+        if reserved is None:
+            return
+        verdict = authorize_reserved(
+            principal,
+            RESERVED_ACTIONS[reserved],
+            now=self._auth.now(),
+            fresh_auth_s=self._auth.fresh_auth_s,
+            hardened=self._auth.hardened,
+        )
+        if not isinstance(verdict, Allowed):
+            raise RpcError(
+                APPLICATION_ERROR, t("local_cli.not_allowed"), {"code": type(verdict).__name__}
+            )
 
     async def __call__(self, peer: Peer, method: str, params: dict[str, Any]) -> object:
+        headless = HEADLESS_METHODS.get(method)
+        if headless is not None and self._headless is not None:
+            principal = principal_for_peer(peer)
+            self._authorize(principal, headless[1])
+            return await self._run_headless(headless[0], self._headless, params)
         entry = METHODS.get(method)
         if entry is None:
             raise RpcError(METHOD_NOT_FOUND, t("local_cli.unknown_method", method=method))
         implementation, reserved = entry
         principal = principal_for_peer(peer)
-        if reserved is not None:
-            verdict = authorize_reserved(
-                principal,
-                RESERVED_ACTIONS[reserved],
-                now=self._auth.now(),
-                fresh_auth_s=self._auth.fresh_auth_s,
-                hardened=self._auth.hardened,
-            )
-            if not isinstance(verdict, Allowed):
-                raise RpcError(
-                    APPLICATION_ERROR, t("local_cli.not_allowed"), {"code": type(verdict).__name__}
-                )
+        self._authorize(principal, reserved)
         try:
             return await asyncio.to_thread(implementation, self._auth, principal, params)
         except UnknownUserError:
@@ -192,3 +319,12 @@ class IdentityDispatcher:
                     {"code": "key_rotation_failed"},
                 ) from None
             raise
+
+    @staticmethod
+    async def _run_headless(
+        implementation: HeadlessMethod, admin: HeadlessAdmin, params: Params
+    ) -> object:
+        try:
+            return await asyncio.to_thread(implementation, admin, params)
+        except (HeadlessError, BindingError) as error:
+            raise RpcError(APPLICATION_ERROR, str(error), {"code": error.code}) from None

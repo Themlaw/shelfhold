@@ -78,6 +78,7 @@ def create_http_app(
         title="Shelfhold",
         version=version,
         lifespan=lifespan,
+        redirect_slashes=False,  # ENF-SEC-016: a redirect would build its Location from `Host`
         openapi_url=None,  # A6: no anonymous route; the snapshot is exported offline
         docs_url=None,
         redoc_url=None,

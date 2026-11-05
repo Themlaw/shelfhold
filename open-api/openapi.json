@@ -1082,6 +1082,22 @@
       "code": "bad_request",
       "status": 400
     },
+    "/api/v1/problems/config.file-invalid": {
+      "code": "config.file_invalid",
+      "status": 422
+    },
+    "/api/v1/problems/config.invalid-value": {
+      "code": "config.invalid_value",
+      "status": 422
+    },
+    "/api/v1/problems/config.key-readonly": {
+      "code": "config.key_readonly",
+      "status": 409
+    },
+    "/api/v1/problems/config.unknown-key": {
+      "code": "config.unknown_key",
+      "status": 404
+    },
     "/api/v1/problems/credential-not-allowed": {
       "code": "credential_not_allowed",
       "status": 403
@@ -1294,6 +1310,10 @@
       "code": "series.tombstoned_upstream",
       "status": 409
     },
+    "/api/v1/problems/shelf.conflict": {
+      "code": "shelf.conflict",
+      "status": 409
+    },
     "/api/v1/problems/shelf.destination-exists": {
       "code": "shelf.destination_exists",
       "status": 409
@@ -1321,6 +1341,10 @@
     "/api/v1/problems/source.changed": {
       "code": "source.changed",
       "status": 502
+    },
+    "/api/v1/problems/source.conflict": {
+      "code": "source.conflict",
+      "status": 409
     },
     "/api/v1/problems/source.content-removed": {
       "code": "source.content_removed",
@@ -1358,6 +1382,10 @@
       "code": "source.temporarily_unavailable",
       "status": 503
     },
+    "/api/v1/problems/source.unreachable": {
+      "code": "source.unreachable",
+      "status": 502
+    },
     "/api/v1/problems/source.version-unsupported": {
       "code": "source.version_unsupported",
       "status": 503
@@ -1366,9 +1394,21 @@
       "code": "ssrf.blocked",
       "status": 403
     },
+    "/api/v1/problems/target.admin-risk-not-accepted": {
+      "code": "target.admin_risk_not_accepted",
+      "status": 409
+    },
     "/api/v1/problems/target.child-exposure": {
       "code": "target.child_exposure",
       "status": 409
+    },
+    "/api/v1/problems/target.conflict": {
+      "code": "target.conflict",
+      "status": 409
+    },
+    "/api/v1/problems/target.exchange-failed": {
+      "code": "target.exchange_failed",
+      "status": 502
     },
     "/api/v1/problems/target.forbidden": {
       "code": "target.forbidden",
@@ -1405,6 +1445,10 @@
     "/api/v1/problems/target.tree-overlap": {
       "code": "target.tree_overlap",
       "status": 409
+    },
+    "/api/v1/problems/target.unknown": {
+      "code": "target.unknown",
+      "status": 404
     },
     "/api/v1/problems/target.unreachable": {
       "code": "target.unreachable",

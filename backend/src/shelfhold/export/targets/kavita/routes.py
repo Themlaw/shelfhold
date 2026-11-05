@@ -39,6 +39,13 @@ SERIES_BY_IDS: Final = Route("POST", "/api/Series/series-by-ids", write=False)  
 SERIES_DETAIL: Final = Route("GET", "/api/Series/series-detail", write=False)
 SERIES_METADATA: Final = Route("GET", "/api/Series/metadata", write=False)
 
+# Setup routes (EF-INT-024): used once by `target add kavita` to exchange the dedicated account for
+# a named, expiring key. Not in ALLOWED_ROUTES: a destination can never describe a call to them
+# (`resolve` refuses them); only the headless configuration names them.
+LOGIN: Final = Route("POST", "/api/Account/login", write=True)
+CREATE_AUTH_KEY: Final = Route("POST", "/api/Account/create-auth-key", write=True)
+SETUP_ROUTES: Final = (LOGIN, CREATE_AUTH_KEY)
+
 ALLOWED_ROUTES: Final = (
     SERVER_INFO, KEY_EXPIRES, PARSE, PARSE_BULK, LIBRARIES, LIBRARY_TYPE, LIBRARY_CREATE,
     LIBRARY_UPDATE, SCAN_FOLDER, UPLOAD_SERIES_COVER, USERS, SERIES_OF_LIBRARY, SERIES_BY_IDS,

@@ -7,6 +7,7 @@ from shelfhold.acquisition import errors as acquisition_errors
 from shelfhold.error_catalog import ErrorCode
 from shelfhold.events import errors as events_errors
 from shelfhold.export import errors as export_errors
+from shelfhold.headless import errors as headless_errors
 from shelfhold.identity import errors as identity_errors
 from shelfhold.infrastructure.imaging import errors as imaging_errors
 from shelfhold.interfaces.http_api import errors as http_errors
@@ -18,6 +19,7 @@ _MODULES: tuple[ModuleType, ...] = (
     acquisition_errors,
     events_errors,
     export_errors,
+    headless_errors,
     identity_errors,
     http_errors,
     imaging_errors,

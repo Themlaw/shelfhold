@@ -39,6 +39,7 @@ P3 = {
     "confirms_restore_deletion",
     "touches_tombstones",
     "reinits_storage",
+    "accepts_admin_risk",  # the admin password of Kavita goes through it (L38)
 }
 
 
@@ -75,7 +76,6 @@ NON_P3 = {
     "rates_content",
     "unmasks_request",
     "manages_credentials",
-    "accepts_admin_risk",
 }
 
 

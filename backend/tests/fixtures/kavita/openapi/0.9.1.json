@@ -76,6 +76,89 @@
     ],
     "type": "object"
    },
+   "AppUserOpdsPreferences": {
+    "additionalProperties": false,
+    "properties": {
+     "embedProgressIndicator": {
+      "type": "boolean"
+     },
+     "includeContinueFrom": {
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "AppUserSocialPreferences": {
+    "additionalProperties": false,
+    "properties": {
+     "shareAnnotations": {
+      "type": "boolean"
+     },
+     "shareProfile": {
+      "type": "boolean"
+     },
+     "shareReviews": {
+      "type": "boolean"
+     },
+     "socialIncludeUnknowns": {
+      "type": "boolean"
+     },
+     "socialLibraries": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "socialMaxAgeRating": {
+      "$ref": "#/components/schemas/AgeRating"
+     },
+     "viewOtherAnnotations": {
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "AuthKeyDto": {
+    "additionalProperties": false,
+    "properties": {
+     "createdAtUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "expiresAtUtc": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "key": {
+      "nullable": true,
+      "type": "string"
+     },
+     "lastAccessedAtUtc": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+     },
+     "name": {
+      "nullable": true,
+      "type": "string"
+     },
+     "provider": {
+      "$ref": "#/components/schemas/AuthKeyProvider"
+     }
+    },
+    "required": [
+     "key",
+     "name"
+    ],
+    "type": "object"
+   },
    "AuthKeyExpiresAtDto": {
     "additionalProperties": false,
     "properties": {
@@ -89,6 +172,23 @@
      "expiresAt"
     ],
     "type": "object"
+   },
+   "AuthKeyProvider": {
+    "description": "Members:\n- `0` \u2014 User\n- `1` \u2014 System",
+    "enum": [
+     0,
+     1
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "User",
+     "System"
+    ],
+    "x-enum-varnames": [
+     "User",
+     "System"
+    ]
    },
    "ChapterDto": {
     "additionalProperties": false,
@@ -591,6 +691,23 @@
     ],
     "type": "object"
    },
+   "HighlightSlot": {
+    "additionalProperties": false,
+    "properties": {
+     "color": {
+      "$ref": "#/components/schemas/RgbaColor"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "slotNumber": {
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
    "IdentityProvider": {
     "description": "Members:\n- `0` \u2014 Kavita\n- `1` \u2014 OpenID Connect (OpenIdConnect)",
     "enum": [
@@ -607,6 +724,38 @@
      "Kavita",
      "OpenIdConnect"
     ]
+   },
+   "KeyBind": {
+    "additionalProperties": false,
+    "properties": {
+     "alt": {
+      "type": "boolean"
+     },
+     "control": {
+      "type": "boolean"
+     },
+     "controllerSequence": {
+      "items": {
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "key": {
+      "nullable": true,
+      "type": "string"
+     },
+     "meta": {
+      "type": "boolean"
+     },
+     "shift": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "key"
+    ],
+    "type": "object"
    },
    "LibraryDto": {
     "additionalProperties": false,
@@ -725,6 +874,24 @@
      "LightNovel",
      "ComicVine"
     ]
+   },
+   "LoginDto": {
+    "additionalProperties": false,
+    "properties": {
+     "apiKey": {
+      "nullable": true,
+      "type": "string"
+     },
+     "password": {
+      "nullable": true,
+      "type": "string"
+     },
+     "username": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "type": "object"
    },
    "MangaFileDto": {
     "additionalProperties": false,
@@ -864,6 +1031,23 @@
      "Hardcover",
      "Mangabaka",
      "ComicBookRoundup"
+    ]
+   },
+   "PageLayoutMode": {
+    "description": "Members:\n- `0` \u2014 Cards\n- `1` \u2014 List",
+    "enum": [
+     0,
+     1
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Cards",
+     "List"
+    ],
+    "x-enum-varnames": [
+     "Cards",
+     "List"
     ]
    },
    "ParseBulkRequestDto": {
@@ -1106,6 +1290,52 @@
      "Search",
      "Dashboard"
     ]
+   },
+   "RgbaColor": {
+    "additionalProperties": false,
+    "properties": {
+     "a": {
+      "format": "float",
+      "type": "number"
+     },
+     "b": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "g": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "r": {
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "RotateAuthKeyRequestDto": {
+    "additionalProperties": false,
+    "properties": {
+     "expiresUtc": {
+      "nullable": true,
+      "type": "string"
+     },
+     "keyLength": {
+      "format": "int32",
+      "maximum": 32,
+      "minimum": 8,
+      "type": "integer"
+     },
+     "name": {
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "keyLength",
+     "name"
+    ],
+    "type": "object"
    },
    "ScanFolderDto": {
     "additionalProperties": false,
@@ -1812,6 +2042,63 @@
     ],
     "type": "object"
    },
+   "SiteThemeDto": {
+    "additionalProperties": false,
+    "properties": {
+     "author": {
+      "nullable": true,
+      "type": "string"
+     },
+     "compatibleVersion": {
+      "nullable": true,
+      "type": "string"
+     },
+     "description": {
+      "nullable": true,
+      "type": "string"
+     },
+     "fileName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "isDefault": {
+      "type": "boolean"
+     },
+     "name": {
+      "nullable": true,
+      "type": "string"
+     },
+     "normalizedName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "previewUrls": {
+      "items": {
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "provider": {
+      "$ref": "#/components/schemas/ThemeProvider"
+     },
+     "selector": {
+      "nullable": true,
+      "readOnly": true,
+      "type": "string"
+     }
+    },
+    "required": [
+     "fileName",
+     "name",
+     "normalizedName"
+    ],
+    "type": "object"
+   },
    "TagDto": {
     "additionalProperties": false,
     "properties": {
@@ -1828,6 +2115,23 @@
      "title"
     ],
     "type": "object"
+   },
+   "ThemeProvider": {
+    "description": "Members:\n- `1` \u2014 System\n- `2` \u2014 Custom",
+    "enum": [
+     1,
+     2
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "System",
+     "Custom"
+    ],
+    "x-enum-varnames": [
+     "System",
+     "Custom"
+    ]
    },
    "UpdateLibraryDto": {
     "additionalProperties": false,
@@ -1940,6 +2244,278 @@
     },
     "required": [
      "id"
+    ],
+    "type": "object"
+   },
+   "UserDto": {
+    "additionalProperties": false,
+    "properties": {
+     "ageRestriction": {
+      "$ref": "#/components/schemas/AgeRestrictionDto"
+     },
+     "apiKey": {
+      "nullable": true,
+      "type": "string"
+     },
+     "authKeys": {
+      "items": {
+       "$ref": "#/components/schemas/AuthKeyDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "coverImage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "created": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "createdUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "email": {
+      "nullable": true,
+      "type": "string"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "identityProvider": {
+      "$ref": "#/components/schemas/IdentityProvider"
+     },
+     "kavitaVersion": {
+      "nullable": true,
+      "type": "string"
+     },
+     "oidcId": {
+      "nullable": true,
+      "type": "string"
+     },
+     "preferences": {
+      "$ref": "#/components/schemas/UserPreferencesDto"
+     },
+     "primaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "refreshToken": {
+      "nullable": true,
+      "type": "string"
+     },
+     "roles": {
+      "items": {
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "secondaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "token": {
+      "nullable": true,
+      "type": "string"
+     },
+     "username": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "UserPreferencesDto": {
+    "additionalProperties": false,
+    "properties": {
+     "aniListScrobblingEnabled": {
+      "type": "boolean"
+     },
+     "blurUnreadSummaries": {
+      "type": "boolean"
+     },
+     "bookReaderHighlightSlots": {
+      "items": {
+       "$ref": "#/components/schemas/HighlightSlot"
+      },
+      "type": "array"
+     },
+     "collapseSeriesRelationships": {
+      "type": "boolean"
+     },
+     "colorScapeEnabled": {
+      "type": "boolean"
+     },
+     "customKeyBinds": {
+      "additionalProperties": false,
+      "properties": {
+       "BookmarkPage": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "Escape": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "FirstPage": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "GoTo": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "LastPage": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "NavigateHome": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "NavigateToScrobbling": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "NavigateToSettings": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "NextChapter": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "OffsetDoublePage": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "OpenHelp": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "OpenSearch": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "PageDown": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "PageLeft": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "PageRight": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "PageUp": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "PreviousChapter": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "ToggleFullScreen": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       },
+       "ToggleMenu": {
+        "items": {
+         "$ref": "#/components/schemas/KeyBind"
+        },
+        "type": "array"
+       }
+      },
+      "type": "object"
+     },
+     "dataSaver": {
+      "type": "boolean"
+     },
+     "globalPageLayoutMode": {
+      "$ref": "#/components/schemas/PageLayoutMode"
+     },
+     "locale": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "noTransitions": {
+      "type": "boolean"
+     },
+     "opdsPreferences": {
+      "$ref": "#/components/schemas/AppUserOpdsPreferences"
+     },
+     "promptForDownloadSize": {
+      "type": "boolean"
+     },
+     "promptForRereadsAfter": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "socialPreferences": {
+      "$ref": "#/components/schemas/AppUserSocialPreferences"
+     },
+     "theme": {
+      "$ref": "#/components/schemas/SiteThemeDto"
+     },
+     "wantToReadSync": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "blurUnreadSummaries",
+     "bookReaderHighlightSlots",
+     "collapseSeriesRelationships",
+     "colorScapeEnabled",
+     "customKeyBinds",
+     "dataSaver",
+     "locale",
+     "noTransitions",
+     "opdsPreferences",
+     "promptForDownloadSize",
+     "promptForRereadsAfter",
+     "socialPreferences",
+     "theme"
     ],
     "type": "object"
    },
@@ -2082,6 +2658,106 @@
  },
  "openapi": "3.0.4",
  "paths": {
+  "/api/Account/create-auth-key": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/RotateAuthKeyRequestDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RotateAuthKeyRequestDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RotateAuthKeyRequestDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthKeyDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthKeyDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthKeyDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Creates a new Auth Key for a user.",
+    "tags": [
+     "Account"
+    ]
+   }
+  },
+  "/api/Account/login": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/UserDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Perform a login. Will send JWT Token of the logged in user back.",
+    "tags": [
+     "Account"
+    ]
+   }
+  },
   "/api/Library/create": {
    "post": {
     "requestBody": {

@@ -12,6 +12,8 @@ from shelfhold import __version__
 from shelfhold.config import Settings, load_settings
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline
+from shelfhold.headless import HeadlessAdmin, wiring
+from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.identity.public import local_auth
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
@@ -25,6 +27,7 @@ from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
 from shelfhold.interfaces.http_api.auth import AuthGate
+from shelfhold.interfaces.http_api.headless import build_headless_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.shelves import build_shelves_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
@@ -53,8 +56,13 @@ def create_app(
         # Plans can be previewed; applying one needs the Kavita `plugin/parse` check (L29).
         return open_pipeline(resolved)
 
+    @cache
+    def headless_admin() -> HeadlessAdmin:
+        return wiring.open_headless(resolved)  # opened at first use, after the keyring check
+
     export_routers = (
         build_shelves_router(lambda: ShelfService(engine)),
+        build_headless_router(headless_admin, lambda: resolved.public_url),
         build_plans_router(pipeline),  # type: ignore[arg-type]
     )
 
@@ -69,6 +77,8 @@ def create_app(
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
             boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops the start
             runtime.boot()  # open intents settled, then (and only then) the jobs
+            if runtime.owns_volumes:  # a migration in progress: this process writes nothing
+                record_applied_public_url(engine, resolved.public_url)  # `status` compares
         except BaseException:
             runtime.stop()
             raise
@@ -84,7 +94,7 @@ def create_app(
             structlog.get_logger().warning("local_cli.allow_host_enabled")
         server = LocalSocketServer(
             resolved.data_dir / SOCKET_NAME,
-            IdentityDispatcher(auth),
+            IdentityDispatcher(auth, headless=headless_admin()),
             allow_host=resolved.cli_allow_host,
         )
         try:

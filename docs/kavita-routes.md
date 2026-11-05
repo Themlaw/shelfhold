@@ -35,6 +35,22 @@ transmise à un plugin de destination ; seule `scan-folder` la reçoit aussi dan
 | GET | `/api/Series/series-detail` | Lister les fichiers indexés d'une série (confirmation d'arrivée du chapitre, EF-EXP-034) | M1a |
 | GET | `/api/Series/metadata` | Lire l'âge de la série et son verrou (registre `field_owner`, âge dérivé des tags, EF-EXP-057) | M1a |
 
+## Routes de mise en place (hors du client d'exploitation)
+
+`shelfhold target add kavita` (EF-INT-024) échange **une fois** le compte dédié contre une clé
+nommée à expiration. Ces deux routes ne sont pas dans `ALLOWED_ROUTES` : le client d'exploitation
+les refuse, seule la configuration sans interface les nomme (`SETUP_ROUTES`). Le mot de passe part
+dans un corps JSON, jamais dans une URL, vers l'adresse déclarée seulement ; la clé par défaut du
+compte (`apiKey` de la réponse de connexion) n'est ni lue ni gardée. Le jeton de connexion n'est
+utilisé que pour la seconde requête : l'OpenAPI de Kavita n'a pas de route de déconnexion, il
+expire de lui-même. Si l'enregistrement en base échoue après la création de la clé, celle-ci reste
+chez Kavita : le message d'erreur donne son nom et son identifiant, à révoquer dans Kavita.
+
+| Méthode | Route | Usage | Jalon |
+| --- | --- | --- | --- |
+| POST | `/api/Account/login` | Connexion du compte dédié (`LoginDto`), pour obtenir un jeton | M1a |
+| POST | `/api/Account/create-auth-key` | Créer la clé nommée à expiration (`RotateAuthKeyRequestDto` : `name`, `keyLength` 8 à 32, `expiresUtc`) | M1a |
+
 ## Fixtures `openapi.json`
 
 `backend/tests/fixtures/kavita/openapi/{0.9.1,pinned,latest}.json` : le `openapi.json` publié à la

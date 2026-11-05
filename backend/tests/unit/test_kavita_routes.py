@@ -6,7 +6,12 @@ import json
 
 import pytest
 
-from shelfhold.export.targets.kavita import ALLOWED_ROUTES, LibraryType, RouteNotAllowed
+from shelfhold.export.targets.kavita import (
+    ALLOWED_ROUTES,
+    SETUP_ROUTES,
+    LibraryType,
+    RouteNotAllowed,
+)
 from shelfhold.sdk.export_target import ApiCall
 from tests.fakes.kavita import API_KEY
 from tests.kavita_env import OPENAPI_DIR, documented_routes, harness, run
@@ -24,7 +29,7 @@ def _openapi(name: str) -> dict[str, object]:
 def test_kavita_allowlisted_routes_exist_in_pinned_openapi(fixture: str) -> None:
     documented = documented_routes()
     assert documented, "docs/kavita-routes.md lists no route"
-    assert documented == {(r.method, r.path) for r in ALLOWED_ROUTES}  # doc, code: one list
+    assert documented == {(r.method, r.path) for r in (*ALLOWED_ROUTES, *SETUP_ROUTES)}  # one list
     paths = _openapi(fixture)["paths"]
     assert isinstance(paths, dict)
     for method, route in sorted(documented):
@@ -72,7 +77,8 @@ def test_kavita_adapter_calls_only_allowlisted_routes() -> None:
     run(session())
     seen = {(r.method, r.path) for r in h.fake.requests}
     assert h.fake.violations == []  # the referee's own list agrees
-    assert seen == documented_routes()  # every route is used, none else is
+    setup = {(r.method, r.path) for r in SETUP_ROUTES}  # used once, by `target add`, not here
+    assert seen == documented_routes() - setup  # every route is used, none else is
     assert API_KEY not in "".join(r.raw_url for r in h.fake.requests)  # never in a URL
 
 
@@ -95,3 +101,13 @@ def test_kavita_off_list_call_is_refused_before_any_request(method: str, path: s
     with pytest.raises(RouteNotAllowed):
         run(h.client.execute(ApiCall(method=method, path=path, auth="target_admin")))
     assert h.fake.requests == []
+
+
+@pytest.mark.req("EF-INT-024", "EF-EXP-009")
+def test_setup_routes_are_never_callable_by_a_destination() -> None:
+    from shelfhold.export.targets.kavita import routes
+
+    assert {r.path for r in SETUP_ROUTES} == {"/api/Account/login", "/api/Account/create-auth-key"}
+    for route in SETUP_ROUTES:
+        with pytest.raises(RouteNotAllowed):
+            routes.resolve(route.method, route.path)
