@@ -77,7 +77,9 @@ class RestoreEnv:
             rows = connection.execute(sa.select(platform.physical_root.c.path_entry))
             roots = [row.path_entry for row in rows]
             self.loaded = load_roots(connection, PathMap.same_path(roots))
-        self.fsops = Fsops.open(self.loaded.path_map, self.loaded.expected)
+        self.fsops = Fsops.open(
+            self.loaded.path_map, self.loaded.expected, frozen=self.loaded.restore_pending
+        )
         self.ex.lib.fsops = self.fsops  # one process, one Fsops: the fixtures write through it
         self.sessions = WriteSessions(
             self.fsops,

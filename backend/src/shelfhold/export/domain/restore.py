@@ -49,6 +49,9 @@ class RootFinding:
 class RestoreStatus:
     epoch: int  # `instance.restore_epoch` as it stands
     findings: tuple[RootFinding, ...]
+    # The freeze is persisted (`instance.restore_generation` > 0): it lasts until the adoption,
+    # whatever the sentinels say after a restart.
+    pending: bool = False
 
     @property
     def behind_roots(self) -> tuple[RootFinding, ...]:
@@ -56,7 +59,7 @@ class RestoreStatus:
 
     @property
     def behind(self) -> bool:
-        return bool(self.behind_roots)
+        return self.pending or bool(self.behind_roots)
 
     @property
     def exit_command(self) -> str:

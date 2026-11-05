@@ -27,8 +27,15 @@ from typing import Literal
 
 import structlog
 
+from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.infrastructure.clock import DEFAULT_SKEW, Clock
-from shelfhold.infrastructure.fsops import Fsops, FsopsError, LeaseRaceError, ReadOnlyRootError
+from shelfhold.infrastructure.fsops import (
+    Fsops,
+    FsopsError,
+    LeaseRaceError,
+    ReadOnlyRootError,
+    RootBlockedError,
+)
 from shelfhold.infrastructure.fsops.identity import FileIdentity
 from shelfhold.infrastructure.instance.errors import LeaseConflictError, LeaseLostError
 from shelfhold.infrastructure.instance.generation import GenerationCounter
@@ -85,8 +92,10 @@ class WriteSessions:
         lock_path: Path | None = None,
         boot_id: str | None = None,
         generations: GenerationCounter | None = None,
+        on_behind: Callable[[], None] | None = None,
     ) -> None:
         self._generations = generations
+        self._on_behind = on_behind  # a root remounted ahead of the database (EF-INT-026)
         self._fsops = fsops
         self.instance_id = instance_id
         self.boot_id = boot_id or uuid.uuid4().hex
@@ -212,9 +221,19 @@ class WriteSessions:
         if self._generations is None:
             return
         for root in roots:
-            moved = self._generations.advance(root)
-            if moved is not None:
-                self._fsops.stamp_sentinel(root, generation=moved)
+            self._fsops.require_stampable(root)  # a refusal here must not move the database
+            seen = self._fsops.sentinel_of(root)
+            current = self._generations.current(root)
+            if current is None:
+                continue
+            if seen is not None and current == seen.generation + 1:
+                moved = current  # one ahead already (an earlier stop): re-stamp, do not advance
+            else:
+                advanced = self._generations.advance(root)
+                if advanced is None:
+                    continue
+                moved = advanced
+            self._fsops.stamp_sentinel(root, generation=moved)
 
     @contextmanager
     def open(
@@ -224,7 +243,14 @@ class WriteSessions:
         taken: list[str] = []
         try:
             for root in roots:
-                self.take(root)
+                try:
+                    self.take(root)
+                except RootBlockedError as blocked:
+                    # a root that was away at start comes back ahead of the database: detect it
+                    # now, not at the next start
+                    if blocked.state is RootState.RESTORED_BEHIND and self._on_behind is not None:
+                        self._on_behind()
+                    raise
                 taken.append(root)
             self._advance_generations(taken)
             yield WriteSession(self, tuple(roots), guard)

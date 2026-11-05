@@ -42,6 +42,7 @@ from shelfhold.export.application.snapshot import DestinationContext, load_conte
 from shelfhold.export.domain.export_item import CoverageError, check_coverage
 from shelfhold.export.domain.path_map import PathMap, PathMode, clean_absolute, within
 from shelfhold.export.domain.physical_roots import (
+    MAX_RESTORE_EPOCH,
     RESERVED_DIR,
     SENTINEL_FILE,
     ExpectedRoot,
@@ -76,7 +77,7 @@ from shelfhold.infrastructure.schema import (
     platform,
     storage,
 )
-from shelfhold.library.public import record_destination_copy
+from shelfhold.library.public import EDITION_KEY_COLUMNS, record_destination_copy
 
 __all__ = [
     "AdoptionBlockedError",
@@ -108,6 +109,7 @@ _DELETION = RESERVED_ACTIONS["reconcile.confirm_deletion"]
 KIND_VALUES: Final = frozenset(export.EXPORT_ITEM_KINDS)
 MAX_FIELD: Final = 512
 MAX_DEPTH: Final = 8
+_FIXED_REASONS: Final = frozenset({"destination_unknown", "path_escape"})
 RESERVED_NAMES: Final = frozenset({SENTINEL_FILE, RESERVED_DIR})
 
 ReplayRoot = tuple[str, str, bool, tuple[str, ...]]  # root_id, path, mounted, predecessor root ids
@@ -170,9 +172,15 @@ class TombstoneScreen(Protocol):
         ...
 
     def variant_blocked(
-        self, root_id: str | None, source_key: str, sub_source: str, remote_unit_id: str,
+        self, root_id: str | None, plugin_id: str, source_key: str, remote_unit_id: str,
         content_hashes: Sequence[tuple[str, str]],
     ) -> bool: ...  # fmt: skip
+
+    def content_blocked(
+        self, root_id: str | None, content_hashes: Sequence[tuple[str, str]]
+    ) -> bool:
+        """A file without an upstream reference: its content alone."""
+        ...
 
     def place_blocked(
         self, root_id: str | None, edition_key: Mapping[str, str], track: str, number_segment: str,
@@ -180,7 +188,7 @@ class TombstoneScreen(Protocol):
     ) -> bool: ...  # fmt: skip
 
     def series_blocked(
-        self, root_id: str | None, source_key: str, sub_source: str, series_ref: str
+        self, root_id: str | None, plugin_id: str, source_key: str, series_ref: str
     ) -> bool: ...
 
 
@@ -261,7 +269,11 @@ class RestoreGuard:
         """Read only: every read-write root against its sentinel, as the database stands now."""
         with self._engine.connect() as connection:
             head = connection.execute(
-                sa.select(platform.instance.c.instance_id, platform.instance.c.restore_epoch)
+                sa.select(
+                    platform.instance.c.instance_id,
+                    platform.instance.c.restore_epoch,
+                    platform.instance.c.restore_generation,
+                )
             ).first()
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             if head is None or not paths:
@@ -281,7 +293,9 @@ class RestoreGuard:
                     None if doc is None else doc.restore_epoch,
                 )
             )
-        return RestoreStatus(int(head.restore_epoch), tuple(findings))
+        return RestoreStatus(
+            int(head.restore_epoch), tuple(findings), pending=int(head.restore_generation) > 0
+        )
 
     def enter_restored_behind(self) -> RestoreStatus:
         """Start-up: if the database is behind, move the epoch counter (once per restore), say so
@@ -289,29 +303,39 @@ class RestoreGuard:
         status = self.assess()
         if not status.behind:
             return status
-        seen = max((f.sentinel_epoch or 0 for f in status.findings), default=0)
-        top = max((f.sentinel_generation or 0 for f in status.behind_roots), default=0)
         epoch = status.epoch
-        with self._engine.begin() as connection:
-            if status.epoch <= seen:  # this restore has not been counted yet
-                epoch = max(status.epoch, seen) + 1
+        published: list[Any] = []
+        if not status.pending:  # this restore has not been counted yet
+            seen = max(
+                (
+                    f.sentinel_epoch
+                    for f in status.findings
+                    if f.sentinel_epoch is not None and f.sentinel_epoch <= MAX_RESTORE_EPOCH
+                ),
+                default=0,
+            )
+            top = max((f.sentinel_generation or 0 for f in status.behind_roots), default=0)
+            with self._engine.begin() as connection:
+                if status.epoch <= seen:
+                    epoch = min(max(status.epoch, seen) + 1, MAX_RESTORE_EPOCH)
+                # the freeze is written with the epoch: it survives a restart (until the adoption)
                 connection.execute(
                     sa.update(platform.instance).values(
-                        restore_epoch=epoch, restore_epoch_at=self._clock.now(),
-                        restore_generation=top,
+                        restore_epoch=epoch,
+                        restore_epoch_at=self._clock.now(),
+                        restore_generation=max(top, 1),
                     )
-                )  # fmt: skip
-                published = [
+                )
+                published.append(
                     self._bus.publish(
-                        connection, "instance.restored_behind",
+                        connection,
+                        "instance.restored_behind",
                         {"epoch": epoch, "roots": len(status.behind_roots)},
                     )
-                ]  # fmt: skip
-            else:
-                published = []
+                )
         self._bus.deliver(published)
         self._fsops.freeze()
-        return RestoreStatus(epoch, status.findings)
+        return RestoreStatus(epoch, status.findings, pending=True)
 
     def require_writable(self) -> None:
         if self._fsops.frozen:
@@ -338,6 +362,7 @@ class _Line:
     on_disk: bool = False
     known: bool = False
     hash_matches: bool = False
+    item_id: str | None = None
 
 
 @dataclass
@@ -349,6 +374,8 @@ class _Survey:
     missing: list[str] = field(default_factory=list)
     unknown: list[str] = field(default_factory=list)
     stale: list[str] = field(default_factory=list)
+    # (destination, old path, new path): an intent applied after the backup moved the file
+    relocations: list[tuple[str, str, str]] = field(default_factory=list)
     candidates: dict[tuple[str, str], DeletionCandidate] = field(default_factory=dict)
     blocked_units: dict[str, str] = field(default_factory=dict)  # unit id -> tombstone scope
     units: dict[str, str] = field(default_factory=dict)  # unit id -> edition id (in the database)
@@ -356,6 +383,8 @@ class _Survey:
     items: set[str] = field(default_factory=set)
     item_editions: dict[str, str] = field(default_factory=dict)
     editions: set[str] = field(default_factory=set)
+    plugins: dict[str, set[str]] = field(default_factory=dict)  # source key -> plugin ids
+    places: dict[str, tuple[dict[str, str], str, str, str, str]] = field(default_factory=dict)
 
 
 def _bounded(value: object, limit: int = MAX_FIELD) -> str | None:
@@ -447,6 +476,26 @@ class RestoreAdopter:
         tombstone journal is replayed first (I36): the preview already knows what it blocks."""
         return self._preview_of(self._survey(screen=True))
 
+    def _thaw(self) -> None:
+        """The end of `restored_behind`: the persisted freeze goes, then the instance thaws."""
+        with self._engine.begin() as connection:
+            connection.execute(sa.update(platform.instance).values(restore_generation=0))
+        self._fsops.unfreeze()
+
+    @staticmethod
+    def _relocate(connection: Connection, survey: _Survey) -> None:
+        """The manifest follows a file that an intent moved after the backup."""
+        record, replica = export.export_record, storage.replica
+        for destination_id, old, new in sorted(survey.relocations):
+            connection.execute(
+                sa.update(record)
+                .where(record.c.shelf_destination_id == destination_id, record.c.rel_path == old)
+                .values(rel_path=new)
+            )
+            connection.execute(
+                sa.update(replica).where(replica.c.rel_path == old).values(rel_path=new)
+            )
+
     def _preview_of(self, survey: _Survey) -> AdoptionPreview:
         readopt = self._readopt(survey)
         deletions = tuple(survey.candidates[k] for k in sorted(survey.candidates))
@@ -478,6 +527,9 @@ class RestoreAdopter:
             "unknown": list(report.unknown_files),
             "modified": list(report.modified_files),
             "missing": list(report.missing_files),
+            "relocations": sorted(survey.relocations),
+            "decisions": [list(step) for step in self._plan_decisions(survey)],
+            "blocked_units": sorted(survey.blocked_units.items()),
         }
         return AdoptionPreview(
             fingerprint_of(document), report, readopt, deletions, unresolved, blocked
@@ -516,6 +568,7 @@ class RestoreAdopter:
             for line in sorted(survey.lines, key=lambda ln: (ln.destination_id, ln.rel_path)):
                 if line.outcome is LineOutcome.READOPT:
                     self._insert(connection, line, now, survey)
+            self._relocate(connection, survey)
             self._decisions(connection, survey, now)
             self._block_units(connection, survey, now)
             if deletion is not None and preview.deletions:
@@ -546,12 +599,13 @@ class RestoreAdopter:
                 )  # fmt: skip
             except FsopsError:
                 log.warning("restamp_failed", root=finding.root_id)  # the next start retries
-        self._fsops.unfreeze()
         chosen = preview.deletions
         deleted: tuple[DeletionCandidate, ...] = ()
         if deletion is not None and chosen and self._purger is not None:
             self._purger.purge(chosen)
             deleted = chosen
+        if not chosen or deleted:  # a deletion still waiting keeps the instance read only
+            self._thaw()
         return AdoptionResult(
             self._readopt(survey), () if deleted else chosen, deleted, preview.unresolved
         )
@@ -584,7 +638,7 @@ class RestoreAdopter:
                 self._screen_lines(survey, contexts)
                 self._screen_database(connection, survey, contexts)
         for line in survey.lines:
-            if line.outcome is LineOutcome.UNRESOLVED and line.reason == "destination_unknown":
+            if line.outcome is LineOutcome.UNRESOLVED and line.reason in _FIXED_REASONS:
                 continue
             facts = LineFacts(
                 on_disk=line.on_disk, hash_matches=line.hash_matches,
@@ -636,23 +690,25 @@ class RestoreAdopter:
     @staticmethod
     def _manifest(
         connection: Connection, contexts: Mapping[str, DestinationContext]
-    ) -> dict[str, dict[str, tuple[str, str]]]:
-        """destination -> rel_path -> (export item id, state), whatever the state."""
+    ) -> dict[str, dict[str, tuple[str, str, str | None]]]:
+        """destination -> rel_path -> (export item id, state, file hash), whatever the state."""
         record = export.export_record
-        found: dict[str, dict[str, tuple[str, str]]] = defaultdict(dict)
+        found: dict[str, dict[str, tuple[str, str, str | None]]] = defaultdict(dict)
         for row in connection.execute(
             sa.select(record.c.shelf_destination_id, record.c.rel_path, record.c.export_item_id,
-                      record.c.state).where(record.c.rel_path.is_not(None))
+                      record.c.state, record.c.file_hash).where(record.c.rel_path.is_not(None))
         ):  # fmt: skip
             if row.shelf_destination_id in contexts:
-                found[row.shelf_destination_id][row.rel_path] = (row.export_item_id, row.state)
+                found[row.shelf_destination_id][row.rel_path] = (
+                    row.export_item_id, row.state, row.file_hash,
+                )  # fmt: skip
         return found
 
     def _read_mirrors(
         self,
         root: ExpectedRoot,
         contexts: Mapping[str, DestinationContext],
-        manifest: Mapping[str, Mapping[str, tuple[str, str]]],
+        manifest: Mapping[str, Mapping[str, tuple[str, str, str | None]]],
         survey: _Survey,
     ) -> None:
         try:
@@ -674,7 +730,7 @@ class RestoreAdopter:
                 continue  # a damaged mirror grants nothing; the file is left as it is
             if document is None or document.read_only:
                 continue
-            by_item = {item for item, _ in manifest.get(destination_id, {}).values()}
+            by_item = {item for item, _, _ in manifest.get(destination_id, {}).values()}
             for entry in document.entries:
                 rel = safe_rel_path(entry.get("rel_path"))
                 if rel is None or (destination_id, rel) in seen:
@@ -685,13 +741,18 @@ class RestoreAdopter:
                 item = entry.get("export_item")
                 item_id = item.get("id") if isinstance(item, dict) else None
                 line.known = rel in manifest.get(destination_id, {}) or item_id in by_item
-                found = self._fsops.observe(line.local_path)
-                line.on_disk = found is not None and found[0] == "file"
-                if line.on_disk and not line.known:
-                    disk = self._fsops.sha256_of(line.local_path)
-                    line.hash_matches = entry.get("file_hash") == disk
-                    if line.hash_matches:
-                        line.lineage = grant_lineage(entry, disk_file_hash=disk)
+                line.item_id = item_id if isinstance(item_id, str) else None
+                try:
+                    found = self._fsops.observe(line.local_path)
+                    line.on_disk = found is not None and found[0] == "file"
+                    if line.on_disk and not line.known:
+                        disk = self._fsops.sha256_of(line.local_path)
+                        line.hash_matches = entry.get("file_hash") == disk
+                        if line.hash_matches:
+                            line.lineage = grant_lineage(entry, disk_file_hash=disk)
+                except FsopsError:  # a symbolic link in the way, a path out of the root
+                    line.on_disk = False
+                    line.outcome, line.reason = LineOutcome.UNRESOLVED, "path_escape"
                 survey.lines.append(line)
 
     def _prefetch(self, connection: Connection, survey: _Survey) -> None:
@@ -711,13 +772,37 @@ class RestoreAdopter:
             for ref in (line.entry.get("edition"), line.header.get("edition")):
                 if isinstance(ref, str):
                     editions.add(ref)
+        edition = catalog.edition
         for chunk in _chunks(sorted(units)):
             for row in connection.execute(
-                sa.select(catalog.unit.c.id, catalog.unit.c.edition_id).where(
-                    catalog.unit.c.id.in_(chunk)
+                sa.select(
+                    catalog.unit.c.id, catalog.unit.c.edition_id, catalog.unit.c.track,
+                    catalog.unit.c.number_segment, catalog.unit.c.number_raw, catalog.unit.c.part,
+                    *(edition.c[name] for name in EDITION_KEY_COLUMNS),
                 )
-            ):
+                .select_from(catalog.unit.join(edition, edition.c.id == catalog.unit.c.edition_id))
+                .where(catalog.unit.c.id.in_(chunk))
+            ):  # fmt: skip
                 survey.units[row.id] = row.edition_id
+                survey.places[row.id] = (
+                    {k: str(getattr(row, k)) for k in EDITION_KEY_COLUMNS},
+                    row.track, row.number_segment, row.number_raw, row.part,
+                )  # fmt: skip
+        keys = sorted(
+            {
+                c["source_key"]
+                for ln in survey.lines
+                for c in (ln.entry.get("coverage") or [])
+                if isinstance(c, dict) and isinstance(c.get("source_key"), str)
+            }
+        )
+        for chunk in _chunks(keys):
+            for row in connection.execute(
+                sa.select(acquisition.source_item.c.source_key, acquisition.source_item.c.plugin_id)
+                .where(acquisition.source_item.c.source_key.in_(chunk))
+                .distinct()
+            ):
+                survey.plugins.setdefault(row.source_key, set()).add(row.plugin_id)
         for chunk in _chunks(sorted(variants)):
             for row in connection.execute(
                 sa.select(catalog.unit_variant.c.id, catalog.unit_variant.c.unit_id).where(
@@ -784,7 +869,7 @@ class RestoreAdopter:
     def _missing_and_unknown(
         self,
         contexts: Mapping[str, DestinationContext],
-        manifest: Mapping[str, Mapping[str, tuple[str, str]]],
+        manifest: Mapping[str, Mapping[str, tuple[str, str, str | None]]],
         survey: _Survey,
     ) -> None:
         live = {"written", "scanned", "resolved", "adopted"}
@@ -796,15 +881,76 @@ class RestoreAdopter:
             root = ctx.root_local
             if root is None:
                 continue
-            for rel, (_, state) in records.items():
-                if state in live and self._fsops.observe(f"{root}/{rel}") is None:
-                    survey.missing.append(rel)
+            gone: list[tuple[str, str, str | None]] = []
+            for rel, (item, state, file_hash) in records.items():
+                if state not in live:
+                    continue
+                try:
+                    absent = self._fsops.observe(f"{root}/{rel}") is None
+                except FsopsError:
+                    continue  # a link in the way: neither missing nor known, left as it is
+                if absent:
+                    gone.append((rel, item, file_hash))
             known = set(records) | mirrored[destination_id]
+            unknown: list[str] = []
             folders = sorted({r.split("/", 1)[0] for r in known if "/" in r})
             for folder in folders:
                 for rel in self._files_under(f"{root}/{folder}", folder):
                     if rel not in known:
-                        survey.unknown.append(rel)
+                        unknown.append(rel)
+            moved = self._pair_moved(destination_id, root, gone, unknown, records, survey)
+            survey.missing.extend(rel for rel, _, _ in gone if rel not in moved)
+            survey.unknown.extend(rel for rel in unknown if rel not in moved.values())
+
+    def _pair_moved(
+        self,
+        destination_id: str,
+        root: str,
+        gone: list[tuple[str, str, str | None]],
+        unknown: list[str],
+        records: Mapping[str, tuple[str, str, str | None]],
+        survey: _Survey,
+    ) -> dict[str, str]:
+        """An intent applied after the backup moved a file: the manifest says `old`, the disk has
+        `new`. Paired by export item (the mirror line) or by file hash, and only when the file on
+        disk is exactly the one the manifest recorded. Returns old path -> new path."""
+        if not gone:
+            return {}
+        found: dict[str, str] = {}
+        taken: set[str] = set()
+        mirrored = {
+            ln.item_id: ln
+            for ln in survey.lines
+            if ln.destination_id == destination_id
+            and ln.on_disk
+            and ln.item_id is not None
+            and ln.rel_path not in records
+        }
+        by_hash: dict[str, list[str]] = defaultdict(list)
+        for rel in unknown:
+            try:
+                digest = self._fsops.sha256_of(f"{root}/{rel}")
+            except (FsopsError, OSError):
+                continue
+            by_hash[digest].append(rel)
+        for rel, item, file_hash in gone:
+            if file_hash is None:
+                continue
+            candidates: list[str] = []
+            line = mirrored.get(item)
+            if line is not None:
+                try:
+                    if self._fsops.sha256_of(line.local_path) == file_hash:
+                        candidates.append(line.rel_path)
+                except (FsopsError, OSError):
+                    pass
+            if not candidates:
+                candidates = [r for r in by_hash.get(file_hash, []) if r not in taken]
+            if len(candidates) == 1 and candidates[0] not in taken:
+                found[rel] = candidates[0]
+                taken.add(candidates[0])
+                survey.relocations.append((destination_id, rel, candidates[0]))
+        return found
 
     def _files_under(self, local: str, rel: str, depth: int = 0) -> list[str]:
         found: list[str] = []
@@ -827,36 +973,45 @@ class RestoreAdopter:
         for line in survey.lines:
             if not line.on_disk:
                 continue
-            scope = self._line_scope(line)
+            scope = self._line_scope(line, survey)
             if scope is not None:
                 line.tombstone_scope = scope
 
-    def _line_scope(self, line: _Line) -> str | None:
+    def _line_scope(self, line: _Line, survey: _Survey) -> str | None:
+        """Which tombstone scope covers this file, in the layout the purge records (L34): a
+        Variant is `(plugin id, source key, remote unit id)`, a place is the Edition key and the
+        Unit's place, a series is `(plugin id, source key, remote series id)`."""
         entry = line.entry
+        hashes = self._hashes(entry)
+        binding = line.header.get("binding")
+        bound = binding if isinstance(binding, dict) else {}
         cover = entry.get("coverage")
         for covered in cover if isinstance(cover, list) else []:
             if not isinstance(covered, dict):
                 continue
             source_key = _bounded(covered.get("source_key"))
             remote = _bounded(covered.get("remote_unit_id"))
-            if source_key is None or remote is None:
-                continue
-            hashes = self._hashes(entry)
-            if self._screen.variant_blocked(
-                line.root_id, source_key, _bounded(covered.get("sub_source")) or "", remote, hashes
-            ):
-                return "variant"
-        binding = line.header.get("binding")
-        if isinstance(binding, dict):
-            key, ref = _bounded(binding.get("source_key")), _bounded(binding.get("series_ref"))
-            if (
-                key
-                and ref
-                and self._screen.series_blocked(
-                    line.root_id, key, _bounded(binding.get("sub_source")) or "", ref
-                )
-            ):
-                return "series_binding"
+            if source_key is not None and remote is not None:
+                plugins = set(survey.plugins.get(source_key, ()))
+                if _bounded(bound.get("plugin_id")) and bound.get("source_key") == source_key:
+                    plugins.add(str(bound["plugin_id"]))
+                if any(
+                    self._screen.variant_blocked(line.root_id, p, source_key, remote, hashes)
+                    for p in sorted(plugins)
+                ):
+                    return "variant"
+            place = survey.places.get(str(covered.get("unit")))
+            if place is not None and self._screen.place_blocked(line.root_id, *place):
+                return "place"
+        if hashes and self._screen.content_blocked(line.root_id, hashes):
+            return "variant"
+        plugin, key, ref = (
+            _bounded(bound.get("plugin_id")),
+            _bounded(bound.get("source_key")),
+            _bounded(bound.get("series_ref")),
+        )
+        if plugin and key and ref and self._screen.series_blocked(line.root_id, plugin, key, ref):
+            return "series_binding"
         return None
 
     @staticmethod
@@ -878,7 +1033,7 @@ class RestoreAdopter:
                 unit.c.id, unit.c.track, unit.c.number_segment, unit.c.number_raw, unit.c.part,
                 edition.c.work_id, edition.c.lang, edition.c.translation_type, edition.c.media,
                 edition.c.publisher, edition.c.text_version, edition.c.performance,
-                edition.c.packaging, variant.c.remote_unit_id, item.c.source_key,
+                edition.c.packaging, variant.c.remote_unit_id, item.c.plugin_id, item.c.source_key,
                 item.c.remote_id, stored.c.content_hash, stored.c.content_hash_by,
             )
             .select_from(
@@ -902,7 +1057,7 @@ class RestoreAdopter:
                 row.remote_unit_id
                 and row.source_key
                 and self._screen.variant_blocked(
-                    None, row.source_key, "", row.remote_unit_id, hashes
+                    None, row.plugin_id, row.source_key, row.remote_unit_id, hashes
                 )
             ):
                 scopes[row.id] = "variant"
@@ -920,7 +1075,7 @@ class RestoreAdopter:
             elif (
                 row.source_key
                 and row.remote_id
-                and self._screen.series_blocked(None, row.source_key, "", row.remote_id)
+                and self._screen.series_blocked(None, row.plugin_id, row.source_key, row.remote_id)
             ):
                 scopes[row.id] = "series_binding"
         survey.blocked_units = dict(scopes)
@@ -946,7 +1101,10 @@ class RestoreAdopter:
                 if ctx is None or ctx.root_local is None:
                     continue
                 local = f"{ctx.root_local}/{found.rel_path}"
-                seen = self._fsops.observe(local)
+                try:
+                    seen = self._fsops.observe(local)
+                except FsopsError:
+                    continue  # never proposed for deletion through a link
                 root_id = survey.loaded.root_id_for(local)
                 if seen is None or seen[0] != "file" or root_id is None:
                     continue
@@ -993,9 +1151,12 @@ class RestoreAdopter:
                         end_locator=covered.get("end"), extent="full", origin="manual",
                     )
                 )  # fmt: skip
-        found = self._fsops.observe(line.local_path)
+        try:
+            found = self._fsops.observe(line.local_path)
+        except FsopsError as error:
+            raise PreviewStaleError(f"{line.rel_path}: moved since the preview") from error
         if found is None:
-            raise LookupError(line.rel_path)
+            raise PreviewStaleError(f"{line.rel_path}: gone since the preview")
         identity_ = found[1]
         written = self._moment(entry.get("written_at")) or now
         file_hash = str(entry["file_hash"])
@@ -1031,10 +1192,12 @@ class RestoreAdopter:
             return None
         return moment if moment.tzinfo is not None else None
 
-    def _decisions(self, connection: Connection, survey: _Survey, now: datetime) -> None:
-        """ "Stop following" is restrictive and comes back as it was said; an age is only ever a
-        suggestion (GAP-9-10): no rating, no shelf, no visibility is granted by a file."""
-        unit, suggestion = catalog.unit, catalog.age_suggestion
+    @staticmethod
+    def _plan_decisions(survey: _Survey) -> list[tuple[Any, ...]]:
+        """What the mirror's decisions would apply: "stop following" (restrictive, comes back as it
+        was said), an age (only ever a suggestion, GAP-9-10: no rating, no shelf, no visibility is
+        granted by a file) and the follow-from point. Pure: the fingerprint covers all of it."""
+        plan: set[tuple[Any, ...]] = set()
         for line in survey.lines:
             if line.outcome is LineOutcome.TOMBSTONED:
                 continue
@@ -1044,11 +1207,7 @@ class RestoreAdopter:
                     isinstance(covered, dict) and covered.get("follow_suppressed") is True
                     and covered.get("unit") in survey.units
                 ):  # fmt: skip
-                    connection.execute(
-                        sa.update(unit)
-                        .where(unit.c.id == covered["unit"], sa.not_(unit.c.follow_suppressed))
-                        .values(follow_suppressed=True, follow_suppressed_at=now)
-                    )
+                    plan.add(("follow_suppressed", covered["unit"]))
             age = line.entry.get("age_classified")
             edition = line.entry.get("edition")
             if (
@@ -1056,34 +1215,42 @@ class RestoreAdopter:
                 and isinstance(age.get("min_age"), int) and not isinstance(age.get("min_age"), bool)
                 and 0 <= age["min_age"] <= 99
             ):  # fmt: skip
+                plan.add(("age_suggestion", edition, age["min_age"], age.get("x") is True))
+            follow = line.header.get("follow_from")
+            head = line.header.get("edition")
+            if isinstance(follow, dict) and isinstance(head, str):
+                number, segment = follow.get("number"), follow.get("segment", "")
+                if (
+                    isinstance(number, str) and _NUMBER.match(number)
+                    and isinstance(segment, str) and len(segment) <= 64
+                ):  # fmt: skip
+                    plan.add(("follow_from", head, number, segment))
+        return sorted(plan, key=repr)
+
+    def _decisions(self, connection: Connection, survey: _Survey, now: datetime) -> None:
+        unit, suggestion, follow = catalog.unit, catalog.age_suggestion, acquisition.series_follow
+        for step in self._plan_decisions(survey):
+            if step[0] == "follow_suppressed":
+                connection.execute(
+                    sa.update(unit)
+                    .where(unit.c.id == step[1], sa.not_(unit.c.follow_suppressed))
+                    .values(follow_suppressed=True, follow_suppressed_at=now)
+                )
+            elif step[0] == "age_suggestion":
                 connection.execute(
                     sa.insert(suggestion)
                     .values(
-                        id=new_ulid(), entity_type="edition", entity_id=edition,
-                        value=age["min_age"], x=age.get("x") is True, provenance="import",
-                        seen_at=now, state="open",
+                        id=new_ulid(), entity_type="edition", entity_id=step[1], value=step[2],
+                        x=step[3], provenance="import", seen_at=now, state="open",
                     )
                     .prefix_with("OR IGNORE")
                 )  # fmt: skip
-            self._follow_from(connection, line)
-
-    @staticmethod
-    def _follow_from(connection: Connection, line: _Line) -> None:
-        follow = line.header.get("follow_from")
-        edition = line.header.get("edition")
-        if not isinstance(follow, dict) or not isinstance(edition, str):
-            return
-        number, segment = follow.get("number"), follow.get("segment", "")
-        if not isinstance(number, str) or not _NUMBER.match(number):
-            return
-        if not isinstance(segment, str) or len(segment) > 64:
-            return
-        table = acquisition.series_follow
-        connection.execute(
-            sa.update(table)
-            .where(table.c.edition_id == edition, table.c.follow_from_number.is_(None))
-            .values(follow_from_segment=segment, follow_from_number=number)
-        )
+            else:
+                connection.execute(
+                    sa.update(follow)
+                    .where(follow.c.edition_id == step[1], follow.c.follow_from_number.is_(None))
+                    .values(follow_from_segment=step[3], follow_from_number=step[2])
+                )
 
     @staticmethod
     def _block_units(connection: Connection, survey: _Survey, now: datetime) -> None:

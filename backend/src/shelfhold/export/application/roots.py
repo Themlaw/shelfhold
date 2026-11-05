@@ -33,6 +33,7 @@ class LoadedRoots:
     path_map: PathMap
     expected: list[ExpectedRoot]
     roots: tuple[RootRow, ...]
+    restore_pending: bool = False  # `restored_behind` until the adoption (persisted, EF-INT-026)
 
     def locate(self, local: str) -> tuple[str, str]:
         """`(root id, path relative to that root)` of a local path."""
@@ -58,7 +59,11 @@ def _containing(roots: tuple[RootRow, ...], path: str) -> RootRow | None:
 
 def load_roots(connection: Connection, path_map: PathMap) -> LoadedRoots:
     head = connection.execute(
-        sa.select(platform.instance.c.instance_id, platform.instance.c.restore_epoch)
+        sa.select(
+            platform.instance.c.instance_id,
+            platform.instance.c.restore_epoch,
+            platform.instance.c.restore_generation,
+        )
     ).one()
     instance_id = head.instance_id
     table = platform.physical_root
@@ -82,4 +87,4 @@ def load_roots(connection: Connection, path_map: PathMap) -> LoadedRoots:
         for r in roots
         if r.mode is PathMode.RW
     ]
-    return LoadedRoots(PathMap(tuple(entries)), expected, roots)
+    return LoadedRoots(PathMap(tuple(entries)), expected, roots, head.restore_generation > 0)

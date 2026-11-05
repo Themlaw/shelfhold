@@ -112,16 +112,22 @@ class InstanceRuntime:
                 return ResolveReport()  # no instance row yet: nothing was ever written
             fsops = Fsops.open(
                 loaded.path_map, loaded.expected, write_gate=guard.require_space,
-                stop_gate=self.barrier.require_open,
+                stop_gate=self.barrier.require_open, frozen=loaded.restore_pending,
             )  # fmt: skip
             journal = IntentJournal(engine, fsops, clock=clock)
             # Before anything else: a database older than the disk is read only (EF-INT-026).
             restore_guard = RestoreGuard(engine, fsops, clock=clock, bus=EventBus(clock))
+
+            def freeze() -> None:
+                status = restore_guard.enter_restored_behind()
+                if status.behind:
+                    self.restored_behind = True
+                    if self.pools is not None:
+                        self.pools.scheduler.hold()
+
             status = restore_guard.enter_restored_behind()
             if status.behind:
-                self.restored_behind = True
-                if self.pools is not None:
-                    self.pools.scheduler.hold()
+                freeze()
                 structlog.get_logger().error("instance.restored_behind", epoch=status.epoch)
                 # no session, no lease, no write: the intents of the backup become stale and
                 # nothing is replayed (the thaw is `reconcile --adopt-after-restore`)
@@ -131,7 +137,7 @@ class InstanceRuntime:
             ready = fsops.boot().ok
             sessions = WriteSessions(
                 fsops, instance_id=instance_id, clock=clock, lock_path=self.lock.path,
-                generations=GenerationCounter(engine),
+                generations=GenerationCounter(engine), on_behind=freeze,
             )  # fmt: skip
             sessions.enforce()  # no write path skips the lease from here on
             with sessions.open(*ready):

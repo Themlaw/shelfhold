@@ -17,6 +17,7 @@ import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 
 import sqlalchemy as sa
 
@@ -35,14 +36,16 @@ from shelfhold.export.application.restore import (
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.i18n import t
-from shelfhold.identity.public import Credential, Principal
+from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
+from shelfhold.infrastructure.local_socket import Peer
 from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import diagnostics
+from shelfhold.interfaces.local_cli.principal import principal_for_peer
 from shelfhold.library.tombstones import TombstoneService
 from shelfhold.library.tombstones.screen import TombstoneScreenAdapter
 
@@ -78,7 +81,7 @@ def open_restore(resolved: ResolvedSettings) -> Iterator[tuple[RestoreAdopter, R
         with engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = Fsops.open(loaded.path_map, loaded.expected)
+        fsops = Fsops.open(loaded.path_map, loaded.expected, frozen=loaded.restore_pending)
         clock = SystemClock()
         bus = EventBus(clock)
         guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)
@@ -126,10 +129,13 @@ def _show(preview: AdoptionPreview) -> None:
         print(t("reconcile.blocked_line", root=root_id, reason=reason))
 
 
-def _principal() -> Principal:
-    """The operator at the host's console: the local CLI credential, as an admin (EF-USR-024)."""
+def _principal(data_dir: Path) -> Principal | None:
+    """The operator at the host's console, vetted as the socket vets a peer (EF-USR-024): root or
+    the owner of `/data`. The principal comes from the one place that builds it from a peer."""
     uid = os.getuid()
-    return Principal(str(uid), f"uid:{uid}", "admin", Credential.LOCAL_CLI)
+    if uid != 0 and uid != data_dir.stat().st_uid:
+        return None
+    return principal_for_peer(Peer(os.getpid(), uid, os.getgid()))
 
 
 def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
@@ -153,7 +159,11 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             if not args.confirm:
                 print(t("reconcile.needs_confirmation"), file=sys.stderr)
                 return NEEDS_CONFIRMATION
-            deletion = DeletionConfirmation(_principal()) if args.confirm_deletion else None
+            principal = _principal(resolved.values.data_dir) if args.confirm_deletion else None
+            if args.confirm_deletion and principal is None:
+                print(t("reconcile.deletion_refused"), file=sys.stderr)
+                return REFUSED
+            deletion = DeletionConfirmation(principal) if principal is not None else None
             result = adopter.adopt(confirm=args.confirm, deletion=deletion)
     except InstanceLockHeldError:
         print(t("reconcile.instance_running"), file=sys.stderr)

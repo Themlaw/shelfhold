@@ -9,7 +9,6 @@ database tells an intact root from an emptied mount point or an old copy of the 
 import json
 import posixpath
 import re
-import sys
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -19,6 +18,7 @@ from shelfhold.export.domain.path_map import PathEntry, PathMap, clean_absolute,
 
 __all__ = [
     "LEASE_FILE",
+    "MAX_RESTORE_EPOCH",
     "RECYCLE_DIR",
     "RESERVED_DIR",
     "SENTINEL_EPOCH_FIELD",
@@ -46,6 +46,7 @@ RECYCLE_DIR = f"{RESERVED_DIR}/recycle"
 TOMBSTONE_JOURNAL = f"{RESERVED_DIR}/tombstones"  # append-only journal 2.0 (EF-BIB-053)
 SENTINEL_KIDS_FIELD = "tombstone_kids"  # registry of issued kids, copied per root (GAP-13-01)
 SENTINEL_EPOCH_FIELD = "restore_epoch"  # the restore counter the database had when last stamped
+MAX_RESTORE_EPOCH = 2**31  # above this (or unreadable) a sentinel is not trusted: MISMATCH
 SENTINEL_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
 SUPPORTED_SENTINEL_MAJOR = 1
 _VERSION = re.compile(r"^(\d+)\.(\d+)$")
@@ -101,10 +102,14 @@ class SentinelDocument:
     @property
     def restore_epoch(self) -> int:
         """The restore counter stamped with the generation (0 for a sentinel that never had one;
-        an unreadable value counts as the highest, so that it is never trusted)."""
+        an unreadable or absurd value is `MAX_RESTORE_EPOCH + 1`: the root is then a MISMATCH)."""
         value = self.extra.get(SENTINEL_EPOCH_FIELD, 0)
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            return sys.maxsize
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or not 0 <= value <= MAX_RESTORE_EPOCH
+        ):
+            return MAX_RESTORE_EPOCH + 1
         return value
 
     @classmethod
@@ -174,6 +179,8 @@ def judge_sentinel(doc: SentinelDocument | None, expected: ExpectedRoot) -> Sent
         return SentinelVerdict(RootState.MISMATCH)  # never touched by a build that cannot read it
     if doc.root_id != expected.root_id or doc.instance_id != expected.instance_id:
         return SentinelVerdict(RootState.MISMATCH)
+    if doc.restore_epoch > MAX_RESTORE_EPOCH:
+        return SentinelVerdict(RootState.MISMATCH)  # forged or damaged: never a reason to freeze
     if doc.restore_epoch > expected.restore_epoch:
         return SentinelVerdict(RootState.RESTORED_BEHIND)  # a restore the database never heard of
     if doc.generation == expected.generation:

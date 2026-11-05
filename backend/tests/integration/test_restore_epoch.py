@@ -369,7 +369,8 @@ def test_mirror_restores_follow_decisions_ages_as_suggestions() -> None:
 def purge_after_backup(env: RestoreEnv, number: str) -> VariantRef:
     """A purge recorded in the journals of both roots, under a write session."""
     source_key, remote, content = env.variant_ref(number)
-    values = VariantRef(source_key, "", remote, (ContentHash("content-hash@1", content),))
+    # the layout of `purge._values`: the plugin id, then the source key of the received item
+    values = VariantRef("suwayomi", source_key, remote, (ContentHash("content-hash@1", content),))
     with env.sessions.open(str(env.library), str(env.ex.lib.store)):
         recorded = env.tombstones().record(values, new_roots(env), reason="purge_unit")
     assert len(recorded.written) == 2
@@ -489,7 +490,9 @@ def test_restore_pre_rotation_backup_keeps_post_rotation_tombstones() -> None:
         env.export()
         rotated = old.rotated(env.ex.clock.now())
         source_key, remote, content = env.variant_ref("3")
-        values = VariantRef(source_key, "", remote, (ContentHash("content-hash@1", content),))
+        values = VariantRef(
+            "suwayomi", source_key, remote, (ContentHash("content-hash@1", content),)
+        )
         with env.sessions.open(str(env.library), str(env.ex.lib.store)):
             env.tombstones(rotated).record(values, new_roots(env), reason="purge_unit")
         env.restore(backup)  # the database and the keyring are from before the rotation
@@ -511,8 +514,9 @@ def test_restore_pre_rotation_backup_keeps_post_rotation_tombstones() -> None:
         again = env.adopter(service=service)
         proposal = again.preview()
         assert proposal.blocked_roots == {}
-        assert again.adopt(confirm=proposal.fingerprint).readopted == ()  # the purged one: no
-        assert not env.fsops.frozen
+        done = again.adopt(confirm=proposal.fingerprint)
+        assert done.readopted == ()  # the purged one: no
+        assert done.pending_deletions and env.fsops.frozen  # its deletion still waits
 
 
 @pytest.mark.req("EF-INT-026", "EF-BIB-054")
@@ -525,7 +529,9 @@ def test_replay_tries_known_root_ids_and_reports_root_mismatch() -> None:
         backup = env.backup()
         env.export()
         source_key, remote, content = env.variant_ref("3")
-        values = VariantRef(source_key, "", remote, (ContentHash("content-hash@1", content),))
+        values = VariantRef(
+            "suwayomi", source_key, remote, (ContentHash("content-hash@1", content),)
+        )
         library = next(r for r in env.loaded.roots if r.path == str(env.library))
         with env.engine.begin() as connection:  # the identity the journal was sealed under
             connection.execute(

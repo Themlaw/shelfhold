@@ -151,6 +151,7 @@ class Fsops:
         write_gate: Callable[[], None] | None = None,
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
+        frozen: bool = False,
     ) -> None:
         self._disk_guard = disk_guard
         self._stop_gate = stop_gate  # raises once the shutdown went past its checkpoint delay
@@ -163,7 +164,7 @@ class Fsops:
         self._strategy = strategy
         self._lease_verifier: Callable[[str, bytes | None], None] | None = None
         self._tombstones_owed: Callable[[str], bool] | None = None
-        self._frozen = False
+        self._frozen = frozen
 
     @property
     def frozen(self) -> bool:
@@ -202,11 +203,13 @@ class Fsops:
         write_gate: Callable[[], None] | None = None,
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
+        frozen: bool = False,
     ) -> Self:
-        """No file system access: roots are opened, and their sentinels read, per operation."""
+        """No file system access: roots are opened, and their sentinels read, per operation.
+        `frozen`: the database says `restored_behind` (read from `LoadedRoots.restore_pending`)."""
         return cls(
             path_map, expected, umask=umask, strategy=strategy, disk_guard=disk_guard,
-            write_gate=write_gate, stop_gate=stop_gate, now=now,
+            write_gate=write_gate, stop_gate=stop_gate, now=now, frozen=frozen,
         )  # fmt: skip
 
     # -- locating ---------------------------------------------------------------------------
@@ -357,6 +360,15 @@ class Fsops:
                 # The host folder is a link, a special file or tampered with: not a root to trust.
                 report.blocked[root_path] = RootState.MISMATCH
         return report
+
+    def require_stampable(self, root_path: str) -> None:
+        """Before the database moves a generation: the sentinel could follow (no freeze, no
+        tombstone line owed). Raises what `stamp_sentinel` would, so nothing drifts (I39)."""
+        key = clean_absolute(root_path)
+        if self._frozen:
+            raise RootBlockedError(key, RootState.RESTORED_BEHIND)
+        if self._owes(key):
+            raise TombstonePendingError(key)
 
     def stamp_sentinel(self, root_path: str, *, generation: int) -> None:
         """After the database commit: rewrite the sentinel with the new generation (I39)."""

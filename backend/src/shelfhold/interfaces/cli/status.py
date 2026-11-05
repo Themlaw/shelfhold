@@ -51,7 +51,7 @@ def _restore_status(resolved: ResolvedSettings) -> RestoreStatus | None:
             if not paths:
                 return None
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = Fsops.open(loaded.path_map, loaded.expected)
+        fsops = Fsops.open(loaded.path_map, loaded.expected, frozen=loaded.restore_pending)
         return RestoreGuard(
             engine, fsops, clock=SystemClock(), bus=EventBus(SystemClock())
         ).assess()

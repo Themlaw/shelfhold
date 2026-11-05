@@ -32,3 +32,11 @@ class GenerationCounter:
                 .returning(table.c.generation)
             ).scalar()
         return None if moved is None else int(moved)
+
+    def current(self, root_path: str) -> int | None:
+        table = platform.physical_root
+        with self._engine.connect() as connection:
+            value = connection.execute(
+                sa.select(table.c.generation).where(table.c.path_entry == clean_absolute(root_path))
+            ).scalar()
+        return None if value is None else int(value)

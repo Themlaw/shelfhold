@@ -76,6 +76,10 @@ class Scheduler:
         self._ledger = JobLedger(engine, clock)
         self._held = False
 
+    @property
+    def held(self) -> bool:
+        return self._held
+
     def hold(self) -> None:
         """Dispatch nothing until `release`: the instance is `restored_behind` (EF-INT-026). The
         schedule itself is untouched, so nothing is lost: the next scan catches up."""

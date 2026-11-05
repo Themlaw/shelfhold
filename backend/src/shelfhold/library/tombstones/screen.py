@@ -40,16 +40,27 @@ class TombstoneScreenAdapter:
     def variant_blocked(
         self,
         root_id: str | None,
+        plugin_id: str,
         source_key: str,
-        sub_source: str,
         remote_unit_id: str,
         content_hashes: Sequence[tuple[str, str]],
     ) -> bool:
+        """The layout the purge records (EF-BIB-053): `source_key` holds the plugin id and
+        `sub_source` the source key of the received item."""
         values = VariantRef(
-            source_key, sub_source, remote_unit_id,
+            plugin_id, source_key, remote_unit_id,
             tuple(ContentHash(by, value) for by, value in content_hashes),
         )  # fmt: skip
         return self._service.check(values, root_id=root_id).blocked
+
+    def content_blocked(
+        self, root_id: str | None, content_hashes: Sequence[tuple[str, str]]
+    ) -> bool:
+        if not content_hashes:
+            return False
+        if root_id is not None and not self._service.reconcile_allowed(root_id):
+            return True
+        return self._service.check_content(ContentHash(by, v) for by, v in content_hashes)
 
     def place_blocked(
         self,
@@ -67,8 +78,8 @@ class TombstoneScreenAdapter:
         return self._service.check(place, root_id=root_id).blocked
 
     def series_blocked(
-        self, root_id: str | None, source_key: str, sub_source: str, series_ref: str
+        self, root_id: str | None, plugin_id: str, source_key: str, series_ref: str
     ) -> bool:
         return self._service.check(
-            SeriesBindingRef(source_key, sub_source, series_ref), root_id=root_id
+            SeriesBindingRef(plugin_id, source_key, series_ref), root_id=root_id
         ).blocked
