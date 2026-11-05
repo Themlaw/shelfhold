@@ -29,6 +29,8 @@ from shelfhold.infrastructure.imaging import (
     worker,
 )
 
+pytestmark = pytest.mark.req("ENF-SEC-003")
+
 CAPS: dict[str, Any] = {
     "max_pixels": 1_000_000,
     "max_bytes": 10_000_000,
