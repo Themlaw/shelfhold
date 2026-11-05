@@ -26,6 +26,7 @@ PLATFORM_TABLES = {
     "fs_intent", "resource_lock", "export_plan", "export_op",
     "schedule", "job_view", "domain_slot", "event", "notification_pending",
     "secret_key", "tombstone_kid", "content_tombstone", "tombstone_pending_root",
+    "tombstone_lost_kid",
 }  # fmt: skip
 
 
