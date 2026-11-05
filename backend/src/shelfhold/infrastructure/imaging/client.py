@@ -104,7 +104,7 @@ def _failed(reason: str) -> ImageRejected:
 def _collect(proc: subprocess.Popen[bytes], request: bytes, deadline: float) -> bytes:
     """Feed stdin from a thread, read stdout up to MAX_REPLY_BYTES before the deadline."""
     stdin, stdout = proc.stdin, proc.stdout
-    if stdin is None or stdout is None:
+    if stdin is None or stdout is None:  # pragma: no cover - Popen(PIPE) always has both; for mypy
         raise _failed("no pipes")
 
     def feed() -> None:

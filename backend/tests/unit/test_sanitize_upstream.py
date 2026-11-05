@@ -231,3 +231,10 @@ def test_upstream_text_lone_surrogates_are_removed_and_output_is_utf8_and_xml_sa
     assert XML_CHAR.fullmatch(out), repr(out)  # writable to ComicInfo.xml and the OPF as is
     assert out.startswith("abcd")
     assert "\u200d" in out  # the emoji joiner survives
+
+
+@pytest.mark.req("ENF-SEC-015")
+def test_upstream_text_endlessly_nested_encoding_loses_its_markup_characters() -> None:
+    nested = "&" + "amp;" * 0 + "amp;" * 12 + "lt;script&amp;amp;amp;amp;amp;amp;amp;amp;amp;gt;"
+    out = sanitize_upstream_text("&amp;" * 1 + nested * 3)
+    assert not any(c in out for c in "<>&")

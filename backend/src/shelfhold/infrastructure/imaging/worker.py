@@ -31,7 +31,7 @@ import signal
 import struct
 import sys
 import types
-from typing import Any
+from typing import IO, Any
 
 from shelfhold.infrastructure.imaging.caps import ALLOWED_FORMATS
 from shelfhold.infrastructure.imaging.protocol import encode_frame, read_frame
@@ -64,7 +64,7 @@ def _libc() -> ctypes.CDLL | None:
         return None
 
 
-def _enter_network_namespace() -> bool:
+def _enter_network_namespace() -> bool:  # pragma: no cover - unshare changes the whole process
     libc = _libc()
     if libc is None or not hasattr(libc, "unshare"):
         return False
@@ -143,7 +143,9 @@ class _SockFprog(ctypes.Structure):
     _fields_ = (("len", ctypes.c_ushort), ("filter", ctypes.c_void_p))
 
 
-def _install_seccomp(libc: ctypes.CDLL | None) -> bool:
+def _install_seccomp(
+    libc: ctypes.CDLL | None,
+) -> bool:  # pragma: no cover - a filter cannot be removed
     program = seccomp_program(platform.machine())
     if libc is None or program is None:
         return False
@@ -152,7 +154,7 @@ def _install_seccomp(libc: ctypes.CDLL | None) -> bool:
     return bool(libc.prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(fprog), 0, 0) == 0)
 
 
-def _deny_python_network() -> None:
+def _deny_python_network() -> None:  # pragma: no cover - replaces sys.modules for good
     for name in ("socket", "_socket", "ssl", "_ssl"):
         sys.modules[name] = _DeniedModule(name)
 
@@ -161,7 +163,9 @@ def _lower(which: int, value: int) -> None:
     resource.setrlimit(which, (value, value))
 
 
-def _sandbox(limits: dict[str, Any]) -> dict[str, Any]:
+def _sandbox(
+    limits: dict[str, Any],
+) -> dict[str, Any]:  # pragma: no cover - rlimits are irrevocable
     in_netns = bool(limits.get("netns", True)) and _enter_network_namespace()
     _deny_python_network()
     libc = _libc()
@@ -240,7 +244,7 @@ def _diagnose(op: str, args: dict[str, Any], state: dict[str, Any]) -> dict[str,
             **{key: list(resource.getrlimit(which)) for key, which in names.items()},
             "no_new_privs": no_new_privs,
         }
-    if op == "fork":
+    if op == "fork":  # pragma: no cover - forks the process; tested through the subprocess
         try:
             pid = os.fork()
         except OSError:
@@ -272,16 +276,20 @@ def _open(data: bytes, caps: dict[str, Any]) -> Any:
         raise _Reject("image.too_large", "bytes", "input")
     Image.init()
     formats = [name for name in caps["formats"] if name in ALLOWED_FORMATS and name in Image.OPEN]
+    previous = Image.MAX_IMAGE_PIXELS
     Image.MAX_IMAGE_PIXELS = int(caps["max_pixels"])
-    warnings.simplefilter("error", Image.DecompressionBombWarning)
     try:
-        image = Image.open(io.BytesIO(data), formats=formats)
+        with warnings.catch_warnings():  # the bomb warning is an error, here only
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            image = Image.open(io.BytesIO(data), formats=formats)
     except Image.DecompressionBombError as exc:  # beyond twice the cap: refused by Pillow itself
         raise _Reject("image.too_large", "pixels", "header") from exc
     except Image.DecompressionBombWarning as exc:
         raise _Reject("image.too_large", "pixels", "header") from exc
     except (UnidentifiedImageError, ValueError, SyntaxError, OSError) as exc:
         raise _Reject("image.format_refused", "not an allowlisted image", "header") from exc
+    finally:
+        Image.MAX_IMAGE_PIXELS = previous
     width, height = image.size
     if width * height > caps["max_pixels"]:
         raise _Reject("image.too_large", "pixels", "header")
@@ -357,30 +365,33 @@ def _handle(
     return _diagnose(op, args, state), b""
 
 
-def main(argv: list[str]) -> int:
-    out = sys.stdout.buffer
-    stdin = sys.stdin.buffer
-    sys.stdout = sys.stderr  # nothing a library prints can corrupt the reply frame
-    state: dict[str, Any] = {}
+def reply_for(stdin: IO[bytes], state: dict[str, Any]) -> bytes:
+    """Read one request frame, do it, and return the reply frame (an error is a reply too)."""
     try:
-        state = _sandbox(json.loads(argv[1]))
         header, data = read_frame(stdin, MAX_REQUEST_BYTES)
         result, payload = _handle(str(header["op"]), dict(header.get("args", {})), data, state)
-        reply = encode_frame(
+        return encode_frame(
             {"ok": True, "result": result, "sandbox": state.get("isolation")}, payload
         )
     except _Reject as rejected:
-        reply = encode_frame(
+        return encode_frame(
             {"ok": False, "code": rejected.code, "reason": rejected.reason, "stage": rejected.stage}
         )
     except MemoryError:
-        reply = encode_frame(
+        return encode_frame(
             {"ok": False, "code": "image.decode_failed", "reason": "memory", "stage": "decode"}
         )
-    out.write(reply)
+
+
+def main(argv: list[str]) -> int:  # pragma: no cover - the sandbox; run by the subprocess tests
+    out = sys.stdout.buffer
+    stdin = sys.stdin.buffer
+    sys.stdout = sys.stderr  # nothing a library prints can corrupt the reply frame
+    state = _sandbox(json.loads(argv[1]))
+    out.write(reply_for(stdin, state))
     out.flush()
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - entry point of the subprocess
     raise SystemExit(main(sys.argv))
