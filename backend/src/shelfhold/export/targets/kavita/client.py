@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
+from urllib.parse import urlencode
 
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.target_health import TargetHealth
@@ -44,6 +45,7 @@ from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 from shelfhold.sdk.export_target import ApiCall
 
 BULK_BATCH: Final = 100  # `parse-bulk` takes 100 names at most
+SERIES_PAGE: Final = 100
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,10 @@ class KavitaClient:
         return f"KavitaClient({self._base_url!r}, mode={self.health.mode.value})"
 
     # -- state ---------------------------------------------------------------------------------
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
 
     @property
     def collision_check_available(self) -> bool:
@@ -130,6 +136,8 @@ class KavitaClient:
             raise TargetDegraded(f"{route.label} is a write: the Kavita version is out of range")
         headers = {"x-api-key": self._key.reveal(), "Accept": "application/json"}
         url = self._base_url + route.path
+        if route.method != "GET" and query:  # the fetcher takes the parameters of a POST in the URL
+            url += "?" + urlencode(dict(query))
         try:
             if route.method == "GET":
                 response = await self._fetcher.get(
@@ -182,6 +190,8 @@ class KavitaClient:
         )
         health = self.health
         health.version, health.version_mode = assessment.raw or None, assessment.mode
+        install_id = result.data.get("installId") if isinstance(result.data, dict) else None
+        health.install_id = install_id if isinstance(install_id, str) else None
         health.warnings = tuple(f"{k.advisory} ({k.category})" for k in assessment.known_bad)
         if assessment.mode is TargetMode.DEGRADED_READONLY:
             if health.version_event_for != assessment.raw:
@@ -263,6 +273,57 @@ class KavitaClient:
             return dto.LibraryType(int(data))
         except (TypeError, ValueError):
             raise ProtocolError("library type is not a known value") from None
+
+    async def list_users(self) -> list[dto.Member]:
+        """The accounts, read-only; an administrator is needed (a 403 pauses the destination)."""
+        data = (await self._send(routes.USERS, query={"includePending": "false"})).data
+        if not isinstance(data, list):
+            raise ProtocolError("users did not answer a list")
+        return [dto.Member.from_json(item) for item in data]
+
+    async def series_of_library(self, library_id: int) -> list[dto.SeriesInfo]:
+        found: list[dto.SeriesInfo] = []
+        body = dto.library_filter(int(library_id))
+        for page in range(1, 1000):
+            query = {"PageNumber": page, "PageSize": SERIES_PAGE}
+            data = (await self._send(routes.SERIES_OF_LIBRARY, query=query, body=body)).data
+            if not isinstance(data, list):
+                raise ProtocolError("all-v2 did not answer a list")
+            found.extend(dto.SeriesInfo.from_json(item) for item in data)
+            if len(data) < SERIES_PAGE:
+                break
+        return found
+
+    async def series_by_ids(self, series_ids: Sequence[int]) -> dict[int, dto.SeriesInfo]:
+        """The current state (name included) of series known by their cached id."""
+        if not series_ids:
+            return {}
+        body = {"seriesIds": [int(i) for i in series_ids]}
+        data = (await self._send(routes.SERIES_BY_IDS, body=body)).data
+        if not isinstance(data, list):
+            raise ProtocolError("series-by-ids did not answer a list")
+        series = [dto.SeriesInfo.from_json(item) for item in data]
+        return {item.id: item for item in series}
+
+    async def series_files(self, series_id: int) -> list[str]:
+        """The files Kavita has indexed for a series (volumes, chapters and specials)."""
+        data = (await self._send(routes.SERIES_DETAIL, query={"seriesId": int(series_id)})).data
+        if not isinstance(data, dict):
+            raise ProtocolError("series-detail did not answer an object")
+        chapters = list(data.get("chapters") or []) + list(data.get("specials") or [])
+        for volume in data.get("volumes") or []:
+            chapters.extend(volume.get("chapters") or [] if isinstance(volume, dict) else [])
+        return [
+            str(f["filePath"])
+            for chapter in chapters
+            if isinstance(chapter, dict)
+            for f in chapter.get("files") or []
+            if isinstance(f, dict) and "filePath" in f
+        ]
+
+    async def series_age(self, series_id: int) -> dto.SeriesAge:
+        data = (await self._send(routes.SERIES_METADATA, query={"seriesId": int(series_id)})).data
+        return dto.SeriesAge.from_json(data)
 
     # -- writes --------------------------------------------------------------------------------
 

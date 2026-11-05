@@ -128,3 +128,98 @@ def create_dto(
         "inheritWebLinksFromFirstChapter": False, "fileGroupTypes": file_types,
         "excludePatterns": list(exclude_patterns),
     }  # fmt: skip
+
+
+@dataclass(frozen=True)
+class Member:
+    """An account of Kavita as `GET /api/Users` describes it (read-only audit, EF-EXP-055)."""
+
+    username: str
+    is_admin: bool
+    age_rating: int  # AgeRating of the restriction; NOT_APPLICABLE means none
+    include_unknowns: bool
+    library_ids: frozenset[int]
+
+    @classmethod
+    def from_json(cls, data: object) -> Member:
+        if not isinstance(data, dict):
+            raise ProtocolError("users did not answer objects")
+        restriction = data.get("ageRestriction")
+        restriction = restriction if isinstance(restriction, dict) else {}
+        roles = [str(r) for r in data.get("roles") or []]
+        libraries = [lib for lib in data.get("libraries") or [] if isinstance(lib, dict)]
+        return cls(
+            username=str(data.get("username") or ""),
+            is_admin="Admin" in roles,
+            age_rating=int(restriction.get("ageRating", AGE_NOT_APPLICABLE)),
+            include_unknowns=bool(restriction.get("includeUnknowns", True)),
+            library_ids=frozenset(int(lib["id"]) for lib in libraries if "id" in lib),
+        )
+
+
+AGE_NOT_APPLICABLE: Final = -1  # `AgeRating.NotApplicable`: no restriction
+AGE_UNKNOWN: Final = 0  # `AgeRating.Unknown`
+
+
+@dataclass(frozen=True)
+class SeriesInfo:
+    """A series as Kavita lists it: its current name and where it lives."""
+
+    id: int
+    name: str
+    library_id: int
+    folder_path: str
+    lowest_folder_path: str
+    name_locked: bool
+
+    @classmethod
+    def from_json(cls, data: object) -> SeriesInfo:
+        if not isinstance(data, dict) or "id" not in data:
+            raise ProtocolError("series did not answer an object")
+        return cls(
+            id=int(data["id"]),
+            name=str(data.get("name") or ""),
+            library_id=int(data.get("libraryId") or 0),
+            folder_path=str(data.get("folderPath") or ""),
+            lowest_folder_path=str(data.get("lowestFolderPath") or ""),
+            name_locked=bool(data.get("nameLocked", False)),
+        )
+
+    def lives_in(self, folder: str) -> bool:
+        """Kavita says `folderPath` (the library folder) and `lowestFolderPath` (the series')."""
+        wanted = folder.rstrip("/")
+        return wanted in (self.lowest_folder_path.rstrip("/"), self.folder_path.rstrip("/"))
+
+
+@dataclass(frozen=True)
+class SeriesAge:
+    """The age of a series and whether anybody locked it (Kavita derives it from the tags)."""
+
+    series_id: int
+    age_rating: int
+    locked: bool
+
+    @classmethod
+    def from_json(cls, data: object) -> SeriesAge:
+        if not isinstance(data, dict):
+            raise ProtocolError("series metadata did not answer an object")
+        return cls(
+            series_id=int(data.get("seriesId") or 0),
+            age_rating=int(data.get("ageRating", AGE_UNKNOWN)),
+            locked=bool(data.get("ageRatingLocked", False)),
+        )
+
+
+SERIES_FILTER_LIBRARIES: Final = 18  # `SeriesFilterField.Libraries`
+FILTER_EQUAL: Final = 0  # `FilterComparison.Equal`
+FILTER_AND: Final = 1  # `FilterCombination.And`
+
+
+def library_filter(library_id: int) -> dict[str, Any]:
+    """A `SeriesFilterV2Dto` that lists the series of one library."""
+    return {
+        "id": 0, "name": "", "combination": FILTER_AND, "limitTo": 0,
+        "statements": [
+            {"comparison": FILTER_EQUAL, "field": SERIES_FILTER_LIBRARIES, "value": str(library_id)}
+        ],
+    }  # fmt: skip
