@@ -4,6 +4,7 @@ from shelfhold.infrastructure.instance.errors import (
     CODE,
     InstanceError,
     InstanceLockHeldError,
+    InstanceLockLinkError,
     LeaseConflictError,
     LeaseLostError,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "InstanceError",
     "InstanceLock",
     "InstanceLockHeldError",
+    "InstanceLockLinkError",
     "Lease",
     "LeaseConflictError",
     "LeaseLostError",

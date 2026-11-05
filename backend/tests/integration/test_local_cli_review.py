@@ -11,6 +11,7 @@ import pytest
 import structlog
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.instance import InstanceLock
 from shelfhold.infrastructure.local_socket import ServerUnavailable, UntrustedServer, call
 from shelfhold.infrastructure.volumes import ensure_volumes
 from tests.auth_env import run_cli
@@ -151,3 +152,90 @@ def test_server_logs_allow_host_at_startup(
         pass
     captured = capfd.readouterr()
     assert "local_cli.allow_host_enabled" in captured.out + captured.err
+
+
+# --- the lock-less exception is only for revocations ---------------------------------------
+
+
+def _held(settings: Settings) -> InstanceLock:
+    lock = InstanceLock(settings.data_dir)
+    lock.acquire()  # an instance (or a migration) that has no socket
+    return lock
+
+
+def _prepared(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
+    from shelfhold.infrastructure.migrate import migrate
+    from tests.auth_env import create_admin
+
+    migrate(settings)
+    assert create_admin(monkeypatch, settings) == 0
+
+
+def test_lock_held_without_socket_refuses_everything_but_revocations(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
+) -> None:
+    import re
+
+    from tests.auth_env import db_rows
+
+    _prepared(monkeypatch, settings)
+    assert run_cli(monkeypatch, settings, "admin", "keys", "create") == 0
+    prefix = re.search(r"shk_([0-9a-f]{8})_", capsys.readouterr().out).group(1)  # type: ignore[union-attr]
+    with _held(settings):
+        assert run_cli(monkeypatch, settings, "admin", "keys", "create") == 1
+        assert run_cli(monkeypatch, settings, "admin", "keys", "rotate", prefix) == 1
+        assert run_cli(monkeypatch, settings, "admin", "keys", "list") == 1
+        assert "tient le verrou" in capsys.readouterr().err
+        assert db_rows(settings, "SELECT count(*) FROM api_key") == [(1,)]
+        assert run_cli(monkeypatch, settings, "admin", "sessions", "revoke", "--all") == 0
+        assert run_cli(monkeypatch, settings, "admin", "keys", "revoke", prefix) == 0
+    assert db_rows(settings, "SELECT revoked_at IS NOT NULL FROM api_key") == [(1,)]
+
+
+def test_revocation_refused_while_a_migration_runs(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
+) -> None:
+    import fcntl
+
+    from shelfhold.infrastructure.migrate import LOCK_FILE_NAME
+
+    _prepared(monkeypatch, settings)
+    with _held(settings):
+        descriptor = os.open(settings.data_dir / LOCK_FILE_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            assert run_cli(monkeypatch, settings, "admin", "sessions", "revoke", "--all") == 1
+            assert "migration" in capsys.readouterr().err
+        finally:
+            os.close(descriptor)
+
+
+def test_symlink_on_the_lock_is_a_refusal_never_ignored(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
+) -> None:
+    _prepared(monkeypatch, settings)
+    victim = settings.data_dir / "victim"
+    victim.write_text("x")
+    (settings.data_dir / ".lock").unlink(missing_ok=True)
+    (settings.data_dir / ".lock").symlink_to(victim)
+    for argv in (("sessions", "revoke", "--all"), ("keys", "list"), ("keys", "create")):
+        assert run_cli(monkeypatch, settings, "admin", *argv) == 1
+        assert "lien symbolique" in capsys.readouterr().err
+    assert victim.read_text() == "x"
+
+
+def test_schema_revision_is_read_after_the_lock_attempt(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    from shelfhold.interfaces.cli import admin
+
+    _prepared(monkeypatch, settings)
+    order: list[str] = []
+    acquire = InstanceLock.acquire
+    auth = admin._auth
+    monkeypatch.setattr(
+        InstanceLock, "acquire", lambda self: (order.append("lock"), acquire(self))[1]
+    )
+    monkeypatch.setattr(admin, "_auth", lambda s: (order.append("revision"), auth(s))[1])
+    assert run_cli(monkeypatch, settings, "admin", "keys", "list") == 0
+    assert order == ["lock", "revision"]

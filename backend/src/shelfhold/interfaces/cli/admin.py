@@ -8,16 +8,16 @@ Host CLI (EF-USR-021, EF-USR-003, EF-USR-024, ENF-OPS-015). Two channels:
 * the server is stopped: the command takes the ``flock`` of ``/data/.lock`` itself and writes to
   the database directly (audit without actor, ``uid=<uid>`` in the target).
 
-Nothing listens on the socket while a migration holds the lock, and revoking a stolen session
-must not require stopping the server: with the lock held and no socket, the identity commands
-still act directly (plain SQLite writes, which SQLite serialises) and take no lock.
+Revoking a stolen session or key must not require stopping the server: with the lock held and no
+socket (the server only answers `/healthz`, or lost its socket), `sessions revoke` and `keys
+revoke` alone still act directly, without the lock (a plain SQLite write). Every other command
+refuses, and so does a revocation while a migration runs. A link on `.lock` is always refused.
 The password comes from a file or stdin (``--password-file -``), never from the command line.
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import functools
 import json
 import sys
@@ -34,7 +34,12 @@ from shelfhold.identity.public import (
     local_auth,
 )
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
+from shelfhold.infrastructure.instance import (
+    InstanceLock,
+    InstanceLockHeldError,
+    InstanceLockLinkError,
+    holder_is_alive,
+)
 from shelfhold.infrastructure.local_socket import (
     SOCKET_NAME,
     RpcFailure,
@@ -42,7 +47,14 @@ from shelfhold.infrastructure.local_socket import (
     UntrustedServer,
     call,
 )
-from shelfhold.infrastructure.migrate import current_revision, head_revision
+from shelfhold.infrastructure.migrate import (
+    LOCK_FILE_NAME as MIGRATE_LOCK_NAME,
+)
+from shelfhold.infrastructure.migrate import (
+    MigrationStateFile,
+    current_revision,
+    head_revision,
+)
 from shelfhold.interfaces.local_cli import IdentityCommands, SocketIdentity
 
 STDIN = "-"
@@ -137,45 +149,71 @@ def _server_socket(settings: Settings) -> Path | None:
 
 
 @contextmanager
-def _identity(settings: Settings) -> Iterator[IdentityCommands | None]:
+def _identity(settings: Settings, *, lockless: bool) -> Iterator[IdentityCommands | None]:
     """The channel of this command: the socket of a running server, else the database under the
-    `flock` (ENF-OPS-015). None: no database at the current schema."""
+    `flock` (ENF-OPS-015). None: no database at the current schema.
+
+    `lockless`: a revocation may act without the lock when an instance holds it but has no
+    socket, so that a stolen session or key can be closed without stopping the server. Not while
+    a migration runs, and never for another command. A link on `.lock` is always a refusal."""
     socket_path = _server_socket(settings)
     if socket_path is not None:
         yield SocketIdentity(socket_path)
         return
-    auth = _auth(settings)
-    if auth is None:
-        yield None
-        return
     lock = InstanceLock(settings.data_dir)
-    # held by an instance (or a migration) without a socket: a plain SQLite write, see above
-    with contextlib.suppress(InstanceLockHeldError):
-        lock.acquire()
+    held = False
     try:
+        lock.acquire()
+        held = True
+    except InstanceLockLinkError:
+        raise
+    except InstanceLockHeldError as error:
+        if not lockless:
+            raise ChannelRefusedError(t("admin.instance_without_socket")) from error
+        if MigrationStateFile(settings.data_dir).read() is not None or holder_is_alive(
+            settings.data_dir / MIGRATE_LOCK_NAME
+        ):
+            raise ChannelRefusedError(t("admin.migration_running")) from error
+    try:
+        auth = _auth(settings)  # the revision is read after the lock attempt, never before
         yield auth
     finally:
-        lock.release()
+        if held:
+            lock.release()
 
 
-def _command(
-    handler: Callable[[argparse.Namespace, IdentityCommands], int],
-) -> Callable[[argparse.Namespace, ResolvedSettings], int]:
-    @functools.wraps(handler)
-    def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
-        try:
-            with _identity(resolved.values) as auth:
-                if auth is None:
-                    return _fail(t("admin.database_missing"))
-                return handler(args, auth)
-        except UntrustedServer as untrusted:
-            return _fail(t("admin.socket_untrusted", detail=untrusted))
-        except ChannelRefusedError as refused:
-            return _fail(t("admin.socket_refused", detail=refused))
-        except (ServerUnavailable, RpcFailure, PermissionError) as failure:
-            return _fail(t("admin.socket_failed", detail=failure))
+def _channel(
+    lockless: bool,
+) -> Callable[
+    [Callable[[argparse.Namespace, IdentityCommands], int]],
+    Callable[[argparse.Namespace, ResolvedSettings], int],
+]:
+    def decorate(
+        handler: Callable[[argparse.Namespace, IdentityCommands], int],
+    ) -> Callable[[argparse.Namespace, ResolvedSettings], int]:
+        @functools.wraps(handler)
+        def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+            try:
+                with _identity(resolved.values, lockless=lockless) as auth:
+                    if auth is None:
+                        return _fail(t("admin.database_missing"))
+                    return handler(args, auth)
+            except UntrustedServer as untrusted:
+                return _fail(t("admin.socket_untrusted", detail=untrusted))
+            except InstanceLockLinkError as link:
+                return _fail(t("admin.lock_is_link", detail=link))
+            except ChannelRefusedError as refused:
+                return _fail(t("admin.socket_refused", detail=refused))
+            except (ServerUnavailable, RpcFailure, PermissionError) as failure:
+                return _fail(t("admin.socket_failed", detail=failure))
 
-    return run
+        return run
+
+    return decorate
+
+
+_command = _channel(lockless=False)
+_revocation = _channel(lockless=True)  # sessions revoke, keys revoke: the emergency exits
 
 
 def _read_password(source: str) -> str:
@@ -232,7 +270,7 @@ def run_reset_password(args: argparse.Namespace, auth: IdentityCommands) -> int:
     return 0
 
 
-@_command
+@_revocation
 def run_sessions_revoke(args: argparse.Namespace, auth: IdentityCommands) -> int:
     try:
         closed = auth.revoke_sessions(username=args.user, session_id=args.session_id)
@@ -316,7 +354,7 @@ def run_keys_rotate(args: argparse.Namespace, auth: IdentityCommands) -> int:
     return 0
 
 
-@_command
+@_revocation
 def run_keys_revoke(args: argparse.Namespace, auth: IdentityCommands) -> int:
     if not auth.revoke_api_key(args.prefix):
         return _fail(t("admin.key_unknown", prefix=args.prefix))

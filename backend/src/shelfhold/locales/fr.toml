@@ -142,6 +142,9 @@ key_line = "{prefix}  {name}  {scopes}  {state}"
 database_missing = "Base absente ou pas à jour : lancez d'abord « shelfhold migrate »."
 socket_refused = "Le serveur en marche a refusé cette commande : {detail}."
 socket_untrusted = "Socket locale non fiable, rien n'a été envoyé : {detail}."
+instance_without_socket = "Un serveur tient le verrou de /data mais sa socket locale ne répond pas : seule la révocation (sessions, clés) est possible dans cet état. Arrêtez le serveur pour cette commande."
+migration_running = "Une migration est en cours : réessayez quand elle est finie."
+lock_is_link = "Le verrou /data/.lock est un lien symbolique : refus. {detail}"
 socket_failed = "Échec de la liaison avec le serveur par sa socket locale : {detail}."
 
 [export]
