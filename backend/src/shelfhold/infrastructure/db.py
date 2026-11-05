@@ -19,6 +19,15 @@ def create_db_engine(path: Path) -> Engine:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
+        # SQLAlchemy's recipe for pysqlite: the driver stops guessing when to BEGIN (its legacy
+        # mode emits no BEGIN before a SAVEPOINT, so `begin_nested()` would open the transaction
+        # and its RELEASE would commit it). The "begin" event below emits it, always.
+        dbapi_connection.isolation_level = None
+
+    @event.listens_for(engine, "begin")
+    def _begin(conn: Connection) -> None:
+        # `execution_options(shelfhold_begin="BEGIN IMMEDIATE")` takes the write lock first
+        conn.exec_driver_sql(str(conn.get_execution_options().get("shelfhold_begin", "BEGIN")))
 
     return engine
 
@@ -40,14 +49,18 @@ def foreign_keys_disabled(connection: Connection) -> Iterator[None]:
     children. The caller checks `PRAGMA foreign_key_check` before leaving the context.
     """
     connection.commit()
-    connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
-    if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != 0:
+    # On the driver connection: through SQLAlchemy the statement would open a transaction first
+    raw = connection.connection.dbapi_connection
+    if raw is None:
+        raise RuntimeError("no driver connection")
+    raw.execute("PRAGMA foreign_keys=OFF")
+    if raw.execute("PRAGMA foreign_keys").fetchone()[0] != 0:
         raise RuntimeError("could not disable foreign keys: a transaction is already open")
     try:
         yield
     finally:
         connection.commit()
-        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+        raw.execute("PRAGMA foreign_keys=ON")
 
 
 def check_foreign_keys(connection: Connection) -> None:

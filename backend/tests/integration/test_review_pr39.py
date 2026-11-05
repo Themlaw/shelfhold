@@ -258,11 +258,11 @@ def test_plan_applied_by_two_concurrent_requests_runs_once(tmp_path: Path) -> No
     seen: set[int] = set()
     armed = [False]
 
-    def version() -> int:
+    def version() -> str:
         if armed[0] and threading.get_ident() not in seen:
             seen.add(threading.get_ident())
             gate.wait()  # both requests have read the plan as `planned`
-        return 7
+        return "7"
 
     store = PlanStore(ienv.engine, clock=ienv.clock, current_version=version)
     plan = store.create(kind="export", files=[], ops=[PlanOp("write", dst="/x")])
@@ -292,7 +292,7 @@ def test_plan_applied_by_two_concurrent_requests_runs_once(tmp_path: Path) -> No
 def test_plan_stops_when_the_version_moves_between_operations(tmp_path: Path) -> None:
     ienv = make_intent_env(tmp_path)
     version = [7]
-    store = PlanStore(ienv.engine, clock=ienv.clock, current_version=lambda: version[0])
+    store = PlanStore(ienv.engine, clock=ienv.clock, current_version=lambda: str(version[0]))
     plan = store.create(kind="rename_plan", files=[], ops=[PlanOp("mkdir"), PlanOp("touch_mtime")])
     ran: list[str] = []
 
@@ -301,7 +301,7 @@ def test_plan_stops_when_the_version_moves_between_operations(tmp_path: Path) ->
         version[0] += 1  # a chapter arrives between two operations
 
     with pytest.raises(StalePlanError) as raised:
-        store.apply(plan.plan_id, if_match=7, run=run)
+        store.apply(plan.plan_id, if_match="7", run=run)
     assert raised.value.status == 412
     assert ran == ["mkdir"]
 
@@ -310,7 +310,7 @@ def test_plan_stops_when_the_version_moves_between_operations(tmp_path: Path) ->
 def test_plan_is_applied_under_the_resource_locks(tmp_path: Path) -> None:
     ienv = make_intent_env(tmp_path)
     locks = ResourceLocks(ienv.engine, clock=ienv.clock)
-    store = PlanStore(ienv.engine, clock=ienv.clock, current_version=lambda: 1)
+    store = PlanStore(ienv.engine, clock=ienv.clock, current_version=lambda: "1")
     plan = store.create(kind="rename_plan", files=[], ops=[PlanOp("mkdir")])
     held_during: list[int] = []
 
@@ -324,7 +324,7 @@ def test_plan_is_applied_under_the_resource_locks(tmp_path: Path) -> None:
 
     store.apply(
         plan.plan_id,
-        if_match=1,
+        if_match="1",
         run=run,
         lock=locks.hold(JOB_A, work=WORK, series="dest1/S"),
     )

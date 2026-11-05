@@ -22,6 +22,7 @@ CODES: tuple[ErrorCode, ...] = (
     # L27: planner and bindings (EF-EXP-002, EF-EXP-032, EF-EXP-058, EF-EXP-062)
     ErrorCode("shelf.parental_control_unavailable", 422, "user"),
     ErrorCode("target.tree_overlap", 409, "admin"),
+    ErrorCode("shelf.destination_exists", 409, "admin"),
     ErrorCode("target.pull_needs_readable_copy", 409, "admin"),
     ErrorCode("export.watermarked_external_egress", 409, "user"),
     ErrorCode("export.series_name_collision", 409, "admin"),

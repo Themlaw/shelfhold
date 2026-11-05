@@ -16,7 +16,7 @@ from shelfhold.infrastructure.schema._base import (
 
 INTENT_OPS = (
     "rename", "upgrade", "recycle", "delete", "purge_upstream", "safeguard", "rmdir",
-    "copy_cross_root", "unlink", "tombstone_rekey",
+    "copy_cross_root", "unlink", "tombstone_rekey", "write",
 )  # fmt: skip
 # `stale_from_backup`: an intention that came back with a restored snapshot; never replayed
 # (EF-INT-026).
@@ -84,7 +84,7 @@ export_plan = sa.Table(
     ),
     sa.Column("kind", sa.String(), nullable=False),
     sa.Column("dry_run", sa.Boolean(), nullable=False),
-    sa.Column("base_version", sa.Integer(), nullable=False),  # version counter (02 section 6.4)
+    sa.Column("base_version", sa.String(), nullable=False),  # 128-bit digest, hex (02 section 6.4)
     sa.Column("files_fingerprint", sa.String(), nullable=True),
     sa.Column("batches", sa.JSON(), nullable=False, server_default="[]"),
     sa.Column("status", sa.String(), nullable=False, server_default="planned"),
@@ -93,7 +93,8 @@ export_plan = sa.Table(
     ulid_check("plan_id"),
     ulid_check("shelf_destination_id"),
     sa.CheckConstraint(
-        "typeof(base_version) = 'integer' AND base_version >= 0", name="base_version_min"
+        "length(base_version) BETWEEN 1 AND 64 AND base_version NOT GLOB '*[^0-9a-f]*'",
+        name="base_version_hex",
     ),
     prefixed_hash_check("files_fingerprint"),
     in_check("kind", PLAN_KINDS),

@@ -40,7 +40,7 @@ class PlanOp:
 @dataclass(frozen=True)
 class PlanRecord:
     plan_id: str
-    base_version: int
+    base_version: str
     fingerprint: str
 
 
@@ -57,10 +57,20 @@ def fingerprint_files(paths: Iterable[str]) -> str:
 
 
 class PlanStore:
-    def __init__(self, engine: Engine, *, clock: Clock, current_version: Callable[[], int]) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        clock: Clock,
+        current_version: Callable[[], str],
+        step_version: Callable[[], str] | None = None,
+    ) -> None:
+        """`current_version` is compared at the claim; `step_version` (default: the same) before
+        every operation, and may leave out what the operations themselves change."""
         self._engine = engine
         self._clock = clock
         self._current_version = current_version
+        self._step_version = step_version or current_version
 
     def create(
         self,
@@ -106,7 +116,7 @@ class PlanStore:
         self,
         plan_id: str,
         *,
-        if_match: int,
+        if_match: str,
         run: Callable[[PlanOp], None],
         lock: AbstractContextManager[object] | None = None,
     ) -> None:
@@ -120,7 +130,7 @@ class PlanStore:
         with lock if lock is not None else nullcontext():
             self._apply_claimed(plan_id, if_match, run)
 
-    def _apply_claimed(self, plan_id: str, if_match: int, run: Callable[[PlanOp], None]) -> None:
+    def _apply_claimed(self, plan_id: str, if_match: str, run: Callable[[PlanOp], None]) -> None:
         plan_table, op_table = coherence.export_plan, coherence.export_op
         with self._engine.connect() as conn:
             plan = conn.execute(sa.select(plan_table).where(plan_table.c.plan_id == plan_id)).one()
@@ -150,8 +160,9 @@ class PlanStore:
             ).rowcount
         if claimed != 1:  # another application got there first
             raise StalePlanError("the plan is already being applied or was applied")
+        baseline = self._step_version()
         for row in op_rows:
-            if self._current_version() != plan.base_version:
+            if self._step_version() != baseline:
                 self._set_plan(plan_id, "stale", only_from="applying")
                 raise StalePlanError("the data changed while the plan was being applied")
             op = PlanOp(row.op, row.src_path, row.dst_path, row.payload)

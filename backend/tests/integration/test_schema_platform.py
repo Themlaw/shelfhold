@@ -429,9 +429,9 @@ def test_export_plan_carries_a_version_counter_and_ordered_ops(engine: Engine) -
         rejected(
             connection,
             sa.insert(coherence.export_plan).values(
-                **{**plan, "plan_id": new_ulid(), "base_version": "v1"}
+                **{**plan, "plan_id": new_ulid(), "base_version": "v1-"}
             ),
-            "ck_export_plan_base_version_min",
+            "ck_export_plan_base_version_hex",
         )
         rejected(
             connection,
@@ -763,8 +763,8 @@ def test_export_plan_rejects_a_non_integer_or_negative_version_and_unprefixed_fi
         )
         rejected(
             connection,
-            sa.insert(coherence.export_plan).values(plan_id=new_ulid(), base_version=-1, **plan),
-            "ck_export_plan_base_version_min",
+            sa.insert(coherence.export_plan).values(plan_id=new_ulid(), base_version="-1", **plan),
+            "ck_export_plan_base_version_hex",
         )
         rejected(
             connection,

@@ -5,6 +5,7 @@ import pytest
 from shelfhold.export.domain.bindings import (
     BindingFacts,
     PullNeedsReadableCopyError,
+    ShelfAlreadyBoundError,
     ShelfBelowEighteenError,
     TreeOverlapError,
     check_binding,
@@ -117,7 +118,8 @@ def test_pull_binding_requires_readable_copy() -> None:
     assert raised.value.code == "target.pull_needs_readable_copy"
     check_binding(pull, [], retention_mode="keep")  # a kept copy serves the bytes
     colinked = BindingFacts("d-tree", "shelf-1", "t-kavita", "tree", "foyer", "/library/manga")
-    check_binding(pull, [colinked], retention_mode="passthrough")  # a co-linked tree does
+    with pytest.raises(ShelfAlreadyBoundError):  # a co-linked tree would do; M1a: one per shelf
+        check_binding(pull, [colinked], retention_mode="passthrough")
     other_shelf = BindingFacts("d-x", "shelf-2", "t-kavita", "tree", "foyer", "/library/manga")
     with pytest.raises(PullNeedsReadableCopyError):
         check_binding(pull, [other_shelf], retention_mode="passthrough")

@@ -160,7 +160,7 @@ export type PlanOut = {
     /**
      * Base Version
      */
-    base_version: number;
+    base_version: string;
     /**
      * Blocked
      */

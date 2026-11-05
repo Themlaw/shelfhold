@@ -18,7 +18,7 @@ from tests.auth_env import auth_env
 @dataclass
 class FakePreview:
     plan_id: str = "01JPLAN00000000000000000A1"
-    base_version: ClassVar[int] = 4242
+    base_version: ClassVar[str] = "4242"
     ops: tuple[object, ...] = ()
     blocked: tuple[object, ...] = ()
     warnings: tuple[object, ...] = ()
@@ -33,7 +33,7 @@ class FakePipeline:
     def preview(self, shelf_destination_id: str) -> FakePreview:
         return FakePreview()
 
-    def apply(self, plan_id: str, *, if_match: int, job_id: str) -> None:
+    def apply(self, plan_id: str, *, if_match: str, job_id: str) -> None:
         if self.stale or if_match != FakePreview.base_version:
             raise StalePlanError("the preview changed: recompute it")
         self.applied.append((plan_id, if_match))
@@ -86,7 +86,7 @@ def test_plan_routes_preview_then_apply_with_if_match(
         assert (stale.status_code, stale.json()["code"]) == (412, "plan.stale")
         assert pipeline.applied == []
         assert api.post(url, headers={"If-Match": '"4242"'}).status_code == 200
-        assert pipeline.applied == [(FakePreview.plan_id, 4242)]
+        assert pipeline.applied == [(FakePreview.plan_id, "4242")]
         pipeline.stale = True  # it moved while applying: same answer, same code
         again = api.post(url, headers={"If-Match": '"4242"'})
         assert (again.status_code, again.json()["code"]) == (412, "plan.stale")

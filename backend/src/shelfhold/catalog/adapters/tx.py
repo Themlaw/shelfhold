@@ -25,7 +25,8 @@ def run_immediate[T](engine: sa.Engine, work: Callable[[sa.Connection], T]) -> T
     for attempt in range(1, ATTEMPTS + 1):
         try:
             with engine.connect() as connection:
-                connection.exec_driver_sql("BEGIN IMMEDIATE")
+                connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+                connection.begin()
                 try:
                     result = work(connection)
                     connection.commit()

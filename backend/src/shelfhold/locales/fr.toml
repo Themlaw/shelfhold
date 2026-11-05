@@ -441,8 +441,12 @@ action = "Conservez les copies de l'étagère, ou liez aussi une destination en 
 title = "Kavita n'a pas la fonction attendue."
 action = "Mettez Kavita à jour, puis lancez « shelfhold target recheck »."
 
+[errors."shelf.destination_exists"]
+title = "Cette étagère a déjà une destination."
+action = "Une seule destination par étagère pour l'instant ; plusieurs viendront avec la version suivante."
+
 [errors."target.tree_overlap"]
-title = "Deux destinations en arborescence se recouvrent."
+title = "Deux destinations en écriture se recouvrent."
 action = "Choisissez des dossiers distincts : deux indexeurs ne partagent pas encore le même arbre."
 
 [errors."target.unreachable"]

@@ -18,13 +18,15 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.export.application.export_items import create_export_item, ensure_export_series
-from shelfhold.export.application.intents import open_intent_paths
-from shelfhold.export.application.locks import ResourceLocks
+from shelfhold.export.application.intents import IntentJournal, open_intent_paths
+from shelfhold.export.application.locks import ResourceLocks, library_resource
+from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.plans import PlanOp, PlanStore
 from shelfhold.export.application.rendering import CbzRenderer, RenderedCbz, comicinfo_data
 from shelfhold.export.application.snapshot import (
     DestinationContext,
     LoadedRequest,
+    inputs_version_of,
     load_context,
     load_request,
     version_of,
@@ -46,7 +48,6 @@ from shelfhold.library.public import (
     ExportSource,
     RootLocator,
     export_sources,
-    record_destination_copy,
 )
 
 __all__ = [
@@ -82,7 +83,7 @@ class WriteSessionOpener(Protocol):
 @dataclass(frozen=True)
 class PlanPreview:
     plan_id: str
-    base_version: int
+    base_version: str
     ops: tuple[PlannedOp, ...]
     blocked: tuple[Blocked, ...]
     warnings: tuple[PlanWarning, ...]
@@ -120,8 +121,8 @@ class ExportPipeline:
         parse: Callable[[str], Parsed],
         request_scan: Callable[[str], None] | None = None,
         sessions: WriteSessionOpener | None = None,
+        parse_verified: bool,
         segment_policy_confirmed: bool = False,
-        parse_verified: bool = True,
         renderer: CbzRenderer | None = None,
     ) -> None:
         self._engine = engine
@@ -191,7 +192,7 @@ class ExportPipeline:
 
     # -- applying --------------------------------------------------------------------------------
 
-    def apply(self, plan_id: str, *, if_match: int, job_id: str) -> ApplyReport:
+    def apply(self, plan_id: str, *, if_match: str, job_id: str) -> ApplyReport:
         """Apply a stored plan once. `StalePlanError` (412) when anything moved since."""
         self._require_verified()
         with self._engine.connect() as connection:
@@ -202,9 +203,13 @@ class ExportPipeline:
             ).scalar_one()
             ctx = load_context(connection, destination_id)
 
-        def current() -> int:
+        def current() -> str:
             with self._engine.connect() as connection:
                 return version_of(connection, ctx)
+
+        def inputs() -> str:
+            with self._engine.connect() as connection:
+                return inputs_version_of(connection, ctx)
 
         done: list[PlannedOp] = []
         folders: set[str] = set()
@@ -216,7 +221,9 @@ class ExportPipeline:
             if folder is not None:
                 folders.add(folder)
 
-        store = PlanStore(self._engine, clock=self._clock, current_version=current)
+        store = PlanStore(
+            self._engine, clock=self._clock, current_version=current, step_version=inputs
+        )
         try:
             store.apply(plan_id, if_match=if_match, run=run)
         finally:
@@ -229,9 +236,14 @@ class ExportPipeline:
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, job_id: str
     ) -> str | None:
         folder = planned.rel_path.split("/", 1)[0] if planned.rel_path else ""
+        library = (
+            library_resource(ctx.remote_library_id, planned.series.normalized_name)
+            if ctx.remote_library_id is not None
+            else None
+        )
         with self._locks.hold(
             job_id, work=planned.work_id, series=f"{ctx.destination_id}/{folder}",
-            timeout=LOCK_WAIT_SECONDS,
+            library=library, timeout=LOCK_WAIT_SECONDS,
         ) as held:  # fmt: skip
             if planned.kind == "register":
                 self._register(ctx, planned)
@@ -272,38 +284,49 @@ class ExportPipeline:
         rendered: RenderedCbz,
         guard: Callable[[], None],
     ) -> None:
+        """02 section 5: the series and the manifest line are reserved and the intent committed
+        (`pending`), then the file is placed atomically, then the manifest line is completed and
+        the intent closed in one transaction. A crash in between is settled at boot by
+        `resolve_intents`: the expected file is at the target, the line is completed; nothing is
+        there, the intent is closed; anything else is a drift and nothing is touched."""
         target = ctx.local(str(planned.rel_path))
-        # One atomic step (stage, check, rename): there is no half-written file for the journal to
-        # settle. A crash between the rename and the commit below leaves a file the manifest does
-        # not know; the next plan finds the path occupied and blocks (`export.destination_occupied`)
-        # instead of overwriting it, until the reconciliation of M1b adopts or removes it.
+        with self._engine.begin() as connection:  # reservation: a clash stops here, nothing placed
+            item_id = self._item(connection, ctx, planned, source)
+            self._record(connection, ctx, planned, item_id, self._reserved(planned, rendered))
+        journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
+        intent = journal.record(
+            op="write", dst=target, expected_sha256=rendered.file_hash, plan_id=plan_id
+        )
+        journal.mark_applying(intent)
         opened = (
             self._sessions.open(target, guard=guard) if self._sessions else nullcontext(self._fsops)
         )
-        with opened as writer:
-            identity = writer.write_atomic(
-                target, rendered.file, parents=True, replace=False,
-                verify_digest=lambda: rendered.file_hash.removeprefix("sha256:"),
-            )  # fmt: skip
-        root_id, root_rel = self._locate(target)
-        now = self._clock.now()
+        try:
+            with opened as writer:
+                identity = writer.write_atomic(
+                    target, rendered.file, parents=True, replace=False,
+                    verify_digest=lambda: rendered.file_hash.removeprefix("sha256:"),
+                )  # fmt: skip
+        except BaseException:
+            if self._fsops.observe(target) is None:  # nothing was placed: nothing to settle
+                journal.cancel(intent)
+            raise
         with self._engine.begin() as connection:
-            item_id = self._item(connection, ctx, planned, source)
-            values = {
-                "locator_type": "path", "rel_path": planned.rel_path, "format": "cbz",
-                "template_ref": str(planned.frozen["template_ref"]), "size": identity.size,
-                "mtime_ns": identity.mtime_ns, "content_hash": rendered.content_hash,
-                "sidecar_sha256": rendered.sidecar_sha256, "file_hash": rendered.file_hash,
-                "written_by_shelfhold_at": now, "exported_at": now, "state": "written",
-            }  # fmt: skip
-            self._record(connection, ctx, planned, item_id, values)
-            record_destination_copy(
-                connection, unit_id=planned.unit_id, export_item_id=item_id,
-                content_hash=rendered.content_hash, file_hash=rendered.file_hash,
-                physical_root_id=root_id, rel_path=root_rel, size=identity.size,
-                mtime_ns=identity.mtime_ns, ino=identity.ino,
-                dev=self._fsops.device_of(target), verified_at=now,
+            complete_write(
+                connection, self._fsops, self._locate, self._clock.now(),
+                destination_id=ctx.destination_id, item_id=item_id, target=target,
+                identity=identity,
             )  # fmt: skip
+            journal.mark_done(intent, within=connection)
+
+    @staticmethod
+    def _reserved(planned: PlannedOp, rendered: RenderedCbz) -> dict[str, Any]:
+        return {
+            "locator_type": "path", "rel_path": planned.rel_path, "format": "cbz",
+            "template_ref": str(planned.frozen["template_ref"]),
+            "content_hash": rendered.content_hash, "sidecar_sha256": rendered.sidecar_sha256,
+            "file_hash": rendered.file_hash, "state": "planned",
+        }  # fmt: skip
 
     def _register(self, ctx: DestinationContext, planned: PlannedOp) -> None:
         """A `pull` destination: the manifest line only, no locator, nothing on disk."""

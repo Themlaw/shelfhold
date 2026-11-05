@@ -250,7 +250,7 @@
         "properties": {
           "base_version": {
             "title": "Base Version",
-            "type": "integer"
+            "type": "string"
           },
           "blocked": {
             "items": {
@@ -1284,6 +1284,10 @@
     },
     "/api/v1/problems/series.tombstoned-upstream": {
       "code": "series.tombstoned_upstream",
+      "status": 409
+    },
+    "/api/v1/problems/shelf.destination-exists": {
+      "code": "shelf.destination_exists",
       "status": 409
     },
     "/api/v1/problems/shelf.parental-control-unavailable": {

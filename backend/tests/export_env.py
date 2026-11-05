@@ -179,6 +179,7 @@ def export_env(*, max_age_rating: int | None = 18, transport: str = "tree") -> I
             clock=clock,
             parse=simulate_parse,
             request_scan=scans.append,
+            parse_verified=True,
         )
         yield ExportEnv(
             lib, clock, target_id, shelf_id, destination_id, library_id, pipeline, scans

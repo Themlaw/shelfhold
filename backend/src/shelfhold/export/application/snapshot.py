@@ -1,11 +1,12 @@
 """What the planner reads: a `PlanRequest` loaded from the database, and its version.
 
-The version of a plan (`base_version`, EF-EXP-042) is the digest of the *inputs* the planner
-sees and that nothing but the world changes: the shelf, the binding, the Editions on the shelf,
-their Units and the archives received for them. The manifest and the series are left out on
-purpose: the pipeline itself writes them while it applies a plan, and a plan must not go stale
-because of its own progress (concurrent writers are kept apart by the resource locks and by the
-fingerprint of the files the plan touches).
+The version of a plan (`base_version`, EF-EXP-042) is a 128-bit digest (hex) of everything the
+planner sees: the shelf, the binding, the Editions on the shelf, their Units and the archives
+received for them (the *inputs*), then the manifest of the destination and the series of its
+remote library, whichever shelf created them. It is compared at the claim of the plan. While the
+plan is applied only the inputs are compared again (`inputs_version_of`): the manifest and the
+series are what the plan itself writes, and a plan must not go stale because of its own progress;
+a series another shelf takes meanwhile is caught by the library lock and the reservation.
 """
 
 import hashlib
@@ -32,7 +33,14 @@ from shelfhold.export.domain.planner import (
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import ExportSource, export_sources
 
-__all__ = ["DestinationContext", "LoadedRequest", "load_context", "load_request", "version_of"]
+__all__ = [
+    "DestinationContext",
+    "LoadedRequest",
+    "inputs_version_of",
+    "load_context",
+    "load_request",
+    "version_of",
+]
 
 
 @dataclass(frozen=True)
@@ -69,7 +77,7 @@ class DestinationContext:
 @dataclass(frozen=True)
 class LoadedRequest:
     request: PlanRequest
-    version: int
+    version: str
 
 
 def _path_map(entries: list[dict[str, str]]) -> PathMap:
@@ -145,7 +153,10 @@ def load_request(
         covered=(lambda rel: root is not None and _within_any(f"{root}/{rel}", covered_locals)),
         library_ceilings=ceilings, segment_policy_confirmed=segment_policy_confirmed,
     )  # fmt: skip
-    return LoadedRequest(request, _version(ctx, editions, unit_rows, sources))
+    return LoadedRequest(
+        request,
+        _version(ctx, editions, unit_rows, sources, _world(records, series, edition_series)),
+    )
 
 
 def _inputs(
@@ -174,10 +185,36 @@ def _inputs(
     return editions, unit_rows, export_sources(connection, [u.id for u in unit_rows])
 
 
-def version_of(connection: Connection, ctx: DestinationContext) -> int:
-    """The version of the plan inputs now: cheap, no manifest and no ComicInfo."""
+def version_of(connection: Connection, ctx: DestinationContext) -> str:
+    """The full version now: inputs, manifest of the destination, series of the library."""
     editions, unit_rows, sources = _inputs(connection, ctx)
-    return _version(ctx, editions, unit_rows, sources)
+    records = _records(connection, ctx.destination_id)
+    series, edition_series, _ = _series(connection, ctx, {e.edition_id for e in editions})
+    return _version(ctx, editions, unit_rows, sources, _world(records, series, edition_series))
+
+
+def inputs_version_of(connection: Connection, ctx: DestinationContext) -> str:
+    """The inputs alone: what must not move while a plan is being applied."""
+    editions, unit_rows, sources = _inputs(connection, ctx)
+    return _version(ctx, editions, unit_rows, sources, None)
+
+
+def _world(
+    records: dict[str, RecordFacts],
+    series: tuple[SeriesFacts, ...],
+    edition_series: dict[str, str],
+) -> dict[str, object]:
+    return {
+        "records": sorted(
+            [r.export_item_id, r.unit_id, r.state, r.rel_path, r.content_hash, r.sidecar_sha256]
+            for r in records.values()
+        ),
+        "series": sorted(
+            [s.export_series_id, s.name_raw, s.normalized_name, sorted(s.edition_ids)]
+            for s in series
+        ),
+        "links": sorted(edition_series.items()),
+    }
 
 
 def _records(connection: Connection, destination_id: str) -> dict[str, RecordFacts]:
@@ -252,7 +289,8 @@ def _version(
     editions: tuple[EditionFacts, ...],
     unit_rows: list[sa.Row[Any]],
     sources: dict[str, ExportSource],
-) -> int:
+    world: dict[str, object] | None,
+) -> str:
     def unit_material(u: sa.Row[Any]) -> list[object]:
         source = sources.get(u.id)
         return [
@@ -261,14 +299,16 @@ def _version(
             bool(source and source.watermarked),
         ]  # fmt: skip
 
-    material = {
+    material: dict[str, object] = {
         "destination": asdict(ctx.facts()) | {"template": ctx.template.dumps()},
         "retention": ctx.retention_mode,
         "root": ctx.root_local,
         "editions": [asdict(e) for e in editions],
         "units": [unit_material(u) for u in unit_rows],
     }
+    if world is not None:
+        material["world"] = world
     digest = hashlib.sha256(
         json.dumps(material, sort_keys=True, default=str, separators=(",", ":")).encode()
     ).digest()
-    return int.from_bytes(digest[:6], "big")  # 48 bits: fits an integer column and an ETag
+    return digest[:16].hex()  # 128 bits, hex text: a strong ETag

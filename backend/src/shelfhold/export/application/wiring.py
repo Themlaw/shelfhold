@@ -41,15 +41,8 @@ def open_pipeline(settings: Settings) -> ExportPipeline:
         loaded = load_roots(connection, PathMap.same_path(paths))
     fsops = Fsops.open(loaded.path_map, loaded.expected)
 
-    def locate(local: str) -> tuple[str, str]:
-        root = loaded.root_id_for(local)
-        if root is None:
-            raise ValueError(local)
-        base = next(r.path for r in loaded.roots if r.root_id == root)
-        return root, local.removeprefix(base.rstrip("/") + "/")
-
     return ExportPipeline(
-        engine, fsops, locate=locate, data_dir=Path(settings.data_dir), clock=SystemClock(),
+        engine, fsops, locate=loaded.locate, data_dir=Path(settings.data_dir), clock=SystemClock(),
         parse=_unchecked,
         parse_verified=False,
         segment_policy_confirmed=settings.naming_segment_policy_confirmed,

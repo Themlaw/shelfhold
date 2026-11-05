@@ -37,6 +37,12 @@ class TreeOverlapError(BindingError):
     code = "target.tree_overlap"
 
 
+class ShelfAlreadyBoundError(BindingError):
+    """M1a: one destination per shelf (EF-EXP-002); several come with M1b."""
+
+    code = "shelf.destination_exists"
+
+
 class PullNeedsReadableCopyError(BindingError):
     """A `pull` destination serves bytes the core must still be able to read."""
 
@@ -54,6 +60,9 @@ def resolve_egress(*, plugin_default: Egress, attested: Egress | None) -> Egress
     return attested if attested is not None else plugin_default
 
 
+WRITING_TRANSPORTS = ("tree", "dropbox", "push")  # the ones that put files in a local folder
+
+
 @dataclass(frozen=True)
 class BindingFacts:
     shelf_destination_id: str
@@ -61,23 +70,28 @@ class BindingFacts:
     target_id: str
     transport: str
     egress: str
-    local_root: str | None  # the folder written, for the transports that have one
+    local_root: str | None  # the folder written (real path), for the transports that have one
+    identity: tuple[int, int] | None = None  # (st_dev, st_ino) of that folder when it exists
 
 
 def check_binding(
     new: BindingFacts, existing: Iterable[BindingFacts], *, retention_mode: str
 ) -> None:
-    """Refuse a binding that overlaps a tree binding or has no readable copy behind it.
+    """Refuse a second destination for a shelf, a binding whose folder overlaps another writing
+    one (same real path or same device and inode), or a pull with no readable copy behind it.
 
     `existing` are the other bindings of the instance. `retention_mode` is the shelf's.
     """
     others = [b for b in existing if b.shelf_destination_id != new.shelf_destination_id]
-    if new.transport == "tree" and new.local_root is not None:
+    if any(b.shelf_id == new.shelf_id for b in others):
+        raise ShelfAlreadyBoundError(f"shelf {new.shelf_id} already has a destination")
+    if new.transport in WRITING_TRANSPORTS and new.local_root is not None:
         for other in others:
-            if other.transport != "tree" or other.local_root is None:
+            if other.transport not in WRITING_TRANSPORTS or other.local_root is None:
                 continue
             mine, theirs = clean_absolute(new.local_root), clean_absolute(other.local_root)
-            if within(mine, theirs) is not None or within(theirs, mine) is not None:
+            same_folder = new.identity is not None and new.identity == other.identity
+            if same_folder or within(mine, theirs) is not None or within(theirs, mine) is not None:
                 raise TreeOverlapError(f"{mine} and {theirs} overlap")
     if new.transport == "pull" and retention_mode == "passthrough":
         colinked_tree = any(b.shelf_id == new.shelf_id and b.transport == "tree" for b in others)

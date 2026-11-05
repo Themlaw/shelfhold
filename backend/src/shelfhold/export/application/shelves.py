@@ -4,11 +4,14 @@ The rules are the pure ones of `domain.bindings`; this adds what they need from 
 the other bindings of the instance, and the folder a `tree` binding writes into.
 """
 
+import os
+
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.domain.bindings import (
+    WRITING_TRANSPORTS,
     BindingFacts,
     Egress,
     check_binding,
@@ -76,13 +79,15 @@ class ShelfService:
                 )
             ).writable()
             root = None
-            if transport == "tree" and entries:
+            if transport in WRITING_TRANSPORTS and entries:
                 root = clean_absolute(
                     f"{entries[0].local}/{root_subpath}" if root_subpath else entries[0].local
                 )
+            real, identity = resolve_folder(root)
             new = BindingFacts(
                 destination_id, shelf_id, target_id, transport,
-                resolve_egress(plugin_default=plugin_egress, attested=attested_egress), root,
+                resolve_egress(plugin_default=plugin_egress, attested=attested_egress), real,
+                identity,
             )  # fmt: skip
             check_binding(new, self._existing(connection), retention_mode=shelf.retention_mode)
             connection.execute(
@@ -100,6 +105,8 @@ class ShelfService:
         found = []
         for row in connection.execute(sa.select(export.shelf_destination.c.id)):
             ctx = load_context(connection, row.id)
+            root = ctx.root_local if ctx.transport in WRITING_TRANSPORTS else None
+            real, identity = resolve_folder(root)
             found.append(
                 BindingFacts(
                     ctx.destination_id,
@@ -107,7 +114,21 @@ class ShelfService:
                     ctx.target_id,
                     ctx.transport,
                     ctx.egress,
-                    ctx.root_local if ctx.transport == "tree" else None,
+                    real,
+                    identity,
                 )
             )
         return found
+
+
+def resolve_folder(path: str | None) -> tuple[str | None, tuple[int, int] | None]:
+    """The real path of a folder (links followed, so an alias is the same folder) and its
+    `(st_dev, st_ino)` when it exists (so are a bind mount's or a case-insensitive twin)."""
+    if path is None:
+        return None, None
+    real = os.path.realpath(path)
+    try:
+        observed = os.stat(real)
+    except FileNotFoundError:
+        return real, None
+    return real, (observed.st_dev, observed.st_ino)

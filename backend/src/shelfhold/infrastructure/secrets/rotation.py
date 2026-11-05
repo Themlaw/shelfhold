@@ -42,7 +42,9 @@ class RotationReport:
 
 
 def _begin_immediate(connection: Connection) -> None:
-    connection.exec_driver_sql("BEGIN IMMEDIATE")  # take the write lock before reading the row
+    # take the write lock before reading the row
+    connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+    connection.begin()
 
 
 def _reseal_row(
