@@ -107,6 +107,7 @@ class IdentityStore(Protocol):
     def revoke_api_key(self, prefix: str, *, now: datetime) -> bool: ...
 
     def audit(self, entry: AuditEntry) -> None: ...
+    def audit_targets(self, action: str, *, since: datetime) -> list[str]: ...
 
 
 class PasswordHasherPort(Protocol):
@@ -125,3 +126,11 @@ class ReauthMethod(Protocol):
     name: str
 
     def verify(self, user: UserRecord, payload: Mapping[str, object]) -> bool: ...
+
+
+class DeviceProofPort(Protocol):
+    """Signed proof that a browser already logged in to an account (skips the account counter)."""
+
+    def issue(self, username: str, now: datetime) -> str: ...
+
+    def verify(self, value: str | None, username: str, now: datetime) -> bool: ...

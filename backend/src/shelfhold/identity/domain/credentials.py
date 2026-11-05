@@ -27,16 +27,21 @@ class Principal:
     credential: Credential
     session_id: str | None = None
     auth_time: datetime | None = None  # last password entry; sessions only
-    key_id: str | None = None
+    key_id: str | None = None  # API key or device token
     scopes: tuple[str, ...] = ()
     read_only: bool = False
 
     @property
     def actor_id(self) -> str:
-        """The actor of an idempotency key: a user through any session, or one key."""
-        if self.credential is Credential.API_KEY and self.key_id:
-            return f"api_key:{self.key_id}"
-        return f"user:{self.user_id}"
+        """`<credential>:<id>`: one session, one key or one device token, never a whole user
+        (review PR #41): two sessions of one account never share an idempotency key."""
+        match self.credential:
+            case Credential.SESSION:
+                return f"session:{self.session_id}"
+            case Credential.API_KEY | Credential.DEVICE_TOKEN:
+                return f"{self.credential.value}:{self.key_id}"
+            case _:
+                return f"{self.credential.value}:{self.user_id}"
 
     @property
     def may_write(self) -> bool:

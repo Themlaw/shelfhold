@@ -18,6 +18,7 @@ import structlog
 from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
+    DeviceProofPort,
     IdentityStore,
     NewApiKey,
     NewSession,
@@ -58,6 +59,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 
 ADMIN_ROLE = "admin"
+IDENTITY_HEADER_AUDIT = "auth.identity_header_stripped"  # read back by `shelfhold status`
 API_KEY_TOUCH_INTERVAL = timedelta(minutes=1)
 
 
@@ -98,6 +100,7 @@ class IssuedSession:
     principal: Principal
     remember: bool
     cookie_max_age_s: int | None  # None: a browser session cookie
+    device_proof: str | None = None  # set at login: this browser succeeded on this account
 
 
 @dataclass(frozen=True)
@@ -144,6 +147,7 @@ class LocalAuth:
         fresh_auth_s: int = DEFAULT_FRESH_AUTH_S,
         throttle: LoginThrottle | None = None,
         reauth_methods: Sequence[ReauthMethod] | None = None,
+        device_proof: DeviceProofPort | None = None,
     ) -> None:
         self._store = store
         self._hasher = hasher
@@ -151,6 +155,7 @@ class LocalAuth:
         self.hardened = hardened
         self.fresh_auth_s = fresh_auth_s
         self._throttle = throttle or LoginThrottle()
+        self._device_proof = device_proof
         methods = reauth_methods if reauth_methods is not None else [PasswordReauth(hasher)]
         self._reauth = {method.name: method for method in methods}
 
@@ -244,13 +249,15 @@ class LocalAuth:
             cookie_max_age_s=_seconds(policy.idle) if remember else None,
         )
 
-    def _check_throttle(self, *, ip: str, account: str) -> None:
-        wait = self._throttle.retry_after(ip=ip, account=account, now=self.now())
+    def _reserve_attempt(self, *, ip: str, account: str, skip_account: bool = False) -> datetime:
+        """Count the attempt before the password is checked (atomic); refuse when throttled."""
+        at = self.now()
+        wait = self._throttle.reserve(ip=ip, account=account, now=at, skip_account=skip_account)
         if wait is not None:
             raise ThrottledError(max(1, math.ceil(wait)))
+        return at
 
-    def _fail(self, *, ip: str, account: str) -> InvalidCredentialsError:
-        self._throttle.failure(ip=ip, account=account, now=self.now())
+    def _fail(self, *, ip: str) -> InvalidCredentialsError:
         structlog.get_logger().warning("auth.login_failed", ip=ip)  # never the username tried
         return InvalidCredentialsError()
 
@@ -262,19 +269,26 @@ class LocalAuth:
         ip: str,
         remember: bool = True,
         presented_token: str | None = None,
+        device_proof: str | None = None,
     ) -> IssuedSession:
-        self._check_throttle(ip=ip, account=username)
+        known_device = self._device_proof is not None and self._device_proof.verify(
+            device_proof, username, self.now()
+        )
+        at = self._reserve_attempt(ip=ip, account=username, skip_account=known_device)
         user = self._store.user_by_name(username)
         # Same argon2 cost whether the user exists, has no password, or typed it wrong.
         valid = self._hasher.verify(user.password_hash if user else None, password)
         if user is None or user.password_hash is None or not valid:
-            raise self._fail(ip=ip, account=username)
+            raise self._fail(ip=ip)
+        self._throttle.release(ip=ip, account=username, at=at, skip_account=known_device)
         if self._hasher.needs_rehash(user.password_hash):
             self._store.set_password_hash(user.id, self._hasher.hash(password))
         if presented_token:  # whatever the browser held is closed, never adopted
             self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
         issued = self._issue(user, remember=remember, ip=ip)
         self._audit("auth.login", issued.principal)
+        if self._device_proof is not None:
+            issued = replace(issued, device_proof=self._device_proof.issue(username, self.now()))
         return issued
 
     def authenticate_session(self, token: str) -> SessionAuth | None:
@@ -333,10 +347,11 @@ class LocalAuth:
         verifier = self._reauth.get(method)
         if verifier is None:
             raise UnknownReauthMethodError
-        self._check_throttle(ip=ip, account=principal.username)
+        at = self._reserve_attempt(ip=ip, account=principal.username)
         user = self._store.user_by_id(principal.user_id)
         if user is None or not verifier.verify(user, payload):
-            raise self._fail(ip=ip, account=principal.username)
+            raise self._fail(ip=ip)
+        self._throttle.release(ip=ip, account=principal.username, at=at)
         now = self.now()
         token, csrf = new_token(), new_token()
         self._store.rotate_session(
@@ -449,6 +464,9 @@ class LocalAuth:
         if isinstance(verdict, Allowed):  # EF-USR-022 (3): session and auth_time in the audit
             self._audit(action.name, principal)
         return verdict
+
+    def recent_audit_targets(self, action: str, *, days: int = 30) -> list[str]:
+        return self._store.audit_targets(action, since=self.now() - timedelta(days=days))
 
     def audit_refusal(self, action: str, *, target: str | None = None) -> None:
         self._audit(action, target=target)

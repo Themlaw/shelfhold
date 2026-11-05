@@ -232,6 +232,17 @@ class SqlIdentityStore:
 
     # --- audit -------------------------------------------------------------------------------
 
+    def audit_targets(self, action: str, *, since: datetime) -> list[str]:
+        audit = identity.audit
+        query = (
+            sa.select(audit.c.target)
+            .where(audit.c.action == action, audit.c.at >= since, audit.c.target.is_not(None))
+            .distinct()
+            .order_by(audit.c.target)
+        )
+        with self._engine.connect() as conn:
+            return [str(target) for (target,) in conn.execute(query)]
+
     def audit(self, entry: AuditEntry) -> None:
         with self._engine.begin() as conn:
             conn.execute(

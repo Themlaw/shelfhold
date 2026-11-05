@@ -116,6 +116,8 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
                 Effect.ERASES_RESERVED_DIR,
                 Effect.TOUCHES_SECRETS,
                 Effect.CONFIRMS_RESTORE_DELETION,
+                Effect.TOUCHES_TOMBSTONES,  # review PR #41 (7): tombstone lift and list
+                Effect.REINITS_STORAGE,  # root/store takeover and reinit
             }
         )
         == REAUTH_EFFECTS

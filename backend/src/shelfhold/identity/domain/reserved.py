@@ -29,6 +29,8 @@ class Effect(StrEnum):
     ERASES_RESERVED_DIR = "erases_reserved_dir"  # `.shelfhold/` of a root
     TOUCHES_SECRETS = "touches_secrets"  # reveals, exports or rotates a secret
     CONFIRMS_RESTORE_DELETION = "confirms_restore_deletion"  # EF-BIB-053
+    TOUCHES_TOMBSTONES = "touches_tombstones"  # `tombstone lift` (irreversible), `list` (reveals)
+    REINITS_STORAGE = "reinits_storage"  # `root takeover|reinit`, `store takeover|reinit`
     PARENTAL_CONTROL = "parental_control"  # max_age_rating, allowed_profiles, profile mapping
     RATES_CONTENT = "rates_content"
     UNMASKS_REQUEST = "unmasks_request"
@@ -43,6 +45,8 @@ REAUTH_EFFECTS = frozenset(
         Effect.ERASES_RESERVED_DIR,
         Effect.TOUCHES_SECRETS,
         Effect.CONFIRMS_RESTORE_DELETION,
+        Effect.TOUCHES_TOMBSTONES,
+        Effect.REINITS_STORAGE,
     }
 )
 

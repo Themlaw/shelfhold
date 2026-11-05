@@ -52,5 +52,9 @@ def run(_args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         log_config=None,
         access_log=False,
         server_header=False,
+        # Until M3 trusts one configured proxy, no X-Forwarded-* rewrites the client address
+        # (attempt limiting, sessions) nor the scheme (Secure cookies).
+        proxy_headers=False,
+        forwarded_allow_ips="",
     )
     return 0

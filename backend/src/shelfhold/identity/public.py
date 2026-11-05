@@ -3,6 +3,7 @@
 from shelfhold.identity.adapters.factory import local_auth
 from shelfhold.identity.application.ports import ApiKeyRecord, ReauthMethod, UserRecord
 from shelfhold.identity.application.service import (
+    IDENTITY_HEADER_AUDIT,
     AdminExistsError,
     AuthError,
     CreatedApiKey,
@@ -36,6 +37,7 @@ from shelfhold.identity.domain.throttle import LoginThrottle
 from shelfhold.identity.domain.tokens import same_secret
 
 __all__ = [
+    "IDENTITY_HEADER_AUDIT",
     "MAX_PASSWORD_LENGTH",
     "REAUTH_EFFECTS",
     "SYSTEM_EMITTERS",

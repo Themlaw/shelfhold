@@ -3,6 +3,7 @@
 from sqlalchemy import Engine
 
 from shelfhold.config import Settings
+from shelfhold.identity.adapters.device_cookie import DeviceCookieSigner
 from shelfhold.identity.adapters.passwords import Argon2Hasher
 from shelfhold.identity.adapters.store import SqlIdentityStore
 from shelfhold.identity.application.service import LocalAuth
@@ -16,4 +17,5 @@ def local_auth(engine: Engine, settings: Settings, clock: Clock | None = None) -
         clock or SystemClock(),
         hardened=settings.auth_hardened,
         fresh_auth_s=settings.fresh_auth_s,
+        device_proof=DeviceCookieSigner(settings.data_dir),
     )

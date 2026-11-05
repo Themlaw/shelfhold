@@ -10,5 +10,4 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("invalid_credentials", 401, "user"),
     ErrorCode("too_many_attempts", 429, "user"),
     ErrorCode("csrf_failed", 403, "user"),
-    ErrorCode("identity_header_refused", 401, "admin"),
 )

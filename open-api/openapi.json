@@ -678,9 +678,21 @@
       "code": "idempotency_key_reused",
       "status": 422
     },
-    "/api/v1/problems/identity-header-refused": {
-      "code": "identity_header_refused",
-      "status": 401
+    "/api/v1/problems/image.decode-failed": {
+      "code": "image.decode_failed",
+      "status": 422
+    },
+    "/api/v1/problems/image.format-refused": {
+      "code": "image.format_refused",
+      "status": 422
+    },
+    "/api/v1/problems/image.too-large": {
+      "code": "image.too_large",
+      "status": 422
+    },
+    "/api/v1/problems/image.worker-failed": {
+      "code": "image.worker_failed",
+      "status": 500
     },
     "/api/v1/problems/instance.lease-conflict": {
       "code": "instance.lease_conflict",

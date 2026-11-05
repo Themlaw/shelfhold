@@ -14,6 +14,7 @@ secrets_out_help = "Fichier de sortie ; « - » pour la sortie standard."
 secrets_rotate_help = "Fait tourner la clé des secrets (reprend une rotation interrompue)."
 secrets_retire_help = "Retire une ancienne clé du trousseau (refusé si elle est active, utilisée ou citée par une pierre tombale)."
 secrets_status_help = "Affiche les avertissements sur le trousseau."
+status_help = "Affiche les avertissements de l'instance."
 admin_help = "Administre les comptes locaux, les sessions et les clés d'API."
 admin_create_help = "Crée le compte administrateur local (mot de passe haché en argon2id)."
 admin_reset_help = "Change le mot de passe d'un compte et ferme toutes ses sessions."
@@ -95,6 +96,12 @@ remember = "Se souvenir de moi"
 submit = "Se connecter"
 error = "Connexion impossible."
 source = "Code source"
+
+[status]
+no_warning = "Aucun avertissement."
+warning_line = "Avertissement : {message}"
+database_not_migrated = "base absente ou pas à jour : lancez « shelfhold migrate »."
+identity_header_stripped = "des requêtes portent l'en-tête d'identité « {header} », retiré et jamais cru (forward-auth non configuré ou proxy hors des CIDR de confiance). Retirez-le au niveau du proxy ou du tunnel, ou configurez le forward-auth (M3)."
 
 [admin]
 created = "Compte administrateur « {username} » créé."
@@ -189,10 +196,6 @@ action = "Utilisez une clé de 1 à 255 caractères ASCII imprimables, sans espa
 [errors."idempotency_key_reused"]
 title = "Cette clé d'idempotence a déjà servi pour une autre requête."
 action = "Générez une nouvelle clé pour chaque nouvelle requête."
-
-[errors."identity_header_refused"]
-title = "Un en-tête d'identité transmis par un proxy a été refusé."
-action = "Le forward-auth n'est pas configuré : retirez les en-têtes d'identité (Remote-User, Tailscale-User-…) au niveau du proxy ou du tunnel."
 
 [errors."instance.lease_conflict"]
 title = "Une autre instance de Shelfhold écrit sur ces données."

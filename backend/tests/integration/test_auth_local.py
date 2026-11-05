@@ -326,23 +326,6 @@ def test_cli_revoked_session_redirects_to_login(
         assert revoked == 0
 
 
-@pytest.mark.req("ENF-SEC-008")
-def test_tunnel_identity_header_without_forward_auth_rejected(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings
-) -> None:
-    with auth_env(monkeypatch, settings) as env:
-        for header in ("Tailscale-User-Login", "Remote-User", "X-Forwarded-User"):
-            anonymous = env.client.get("/api/v1/about", headers={header: ADMIN})
-            assert anonymous.status_code == 401
-            assert anonymous.json()["code"] == "identity_header_refused"
-        env.login()
-        with_session = env.client.get("/api/v1/about", headers={"Tailscale-User-Login": "x"})
-        assert with_session.status_code == 401
-        assert db_rows(
-            settings, "SELECT count(*) FROM audit WHERE action = 'auth.identity_header_refused'"
-        ) != [(0,)]
-
-
 # --- Pages, about, OpenAPI ---------------------------------------------------------------------
 
 

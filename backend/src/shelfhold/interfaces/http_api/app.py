@@ -23,6 +23,7 @@ from shelfhold.interfaces.http_api.idempotency import (
     ActorOf,
     IdempotencyMiddleware,
 )
+from shelfhold.interfaces.http_api.identity_headers import IdentityHeaderFilter, parse_networks
 from shelfhold.interfaces.http_api.login import build_login_router
 from shelfhold.interfaces.http_api.middleware import (
     RequestContextMiddleware,
@@ -55,6 +56,7 @@ def create_http_app(
     actor_of: ActorOf | None = None,
     auth: AuthGate | None = None,
     source_url: str | None = None,
+    forward_auth_trusted_cidrs: Sequence[str] = (),
 ) -> FastAPI:
     """Without `auth` (offline schema export, protocol tests) the authentication routes are still
     declared, so that the exported schema documents them, but nobody is ever authenticated."""
@@ -90,7 +92,12 @@ def create_http_app(
     if auth is not None:
         app.add_middleware(AuthMiddleware, gate=auth)  # outside the ledger: the real actor
     app.add_middleware(RequestContextMiddleware)
-    app.add_middleware(SecurityHeadersMiddleware)  # outermost: wraps every response
+    app.add_middleware(SecurityHeadersMiddleware)  # wraps every response
+    app.add_middleware(  # outermost: nothing below ever sees a proxy identity header (P5)
+        IdentityHeaderFilter,
+        trusted=parse_networks(forward_auth_trusted_cidrs),
+        on_first_strip=auth.record_stripped_header if auth is not None else None,
+    )
 
     @app.api_route("/robots.txt", methods=["GET", "HEAD"], include_in_schema=False)
     def robots() -> Response:

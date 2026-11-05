@@ -92,7 +92,8 @@ class SessionInfo(BaseModel):
 
 
 def _client_ip(request: Request) -> str:
-    # The socket peer only: X-Forwarded-For is trusted from a configured proxy in M3 alone.
+    # The socket peer. `serve` runs uvicorn with `proxy_headers=False` and no forwarded IPs, so
+    # `X-Forwarded-For` never rewrites it; trusting it from a configured proxy is M3.
     return request.client.host if request.client else "unknown"
 
 
@@ -126,6 +127,7 @@ def build_login_router(source_url: str) -> APIRouter:
                 ip=_client_ip(request),
                 remember=body.remember,
                 presented_token=request.cookies.get(names.session),
+                device_proof=request.cookies.get(names.device),
             )
         except ThrottledError as error:
             raise _throttled(error) from None

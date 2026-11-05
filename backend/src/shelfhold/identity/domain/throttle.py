@@ -7,14 +7,20 @@
   ends one minute after the burst. A distributed attacker can still delay the web login of that
   account while the burst lasts (residual risk, docs/admin/durcir.md): sessions already open,
   API keys and the host CLI are unaffected.
-- A throttled attempt is not counted (retrying does not extend the wait) and the password is not
-  checked (no oracle while throttled). A success clears nothing: an attacker who owns one account
-  must not be able to reset the counter of their address between guesses at another.
+- An attempt is counted **before** its password is checked, under a lock (`reserve`), so that
+  concurrent requests cannot all slip under the limit; a success withdraws that one attempt
+  (`release`) and nothing else: an attacker who owns one account must not be able to reset the
+  counter of their address between guesses at another. A throttled attempt is not counted
+  (retrying does not extend the wait) and its password is not checked (no oracle).
+- A browser that already logged in to the account (signed device cookie) skips the per-account
+  counter, never the per-address one: a third party cannot keep the owner out (OWASP "device
+  cookies").
 
 State lives in memory: one process per instance (`/data/.lock`); a restart forgets it.
 """
 
 import ipaddress
+import threading
 from collections import OrderedDict, deque
 from datetime import datetime, timedelta
 
@@ -49,6 +55,7 @@ class LoginThrottle:
         self._window = window
         self._max_keys = max_keys
         self._failures: OrderedDict[str, deque[datetime]] = OrderedDict()
+        self._lock = threading.Lock()
 
     def _keys(self, ip: str, account: str) -> tuple[tuple[str, int], tuple[str, int]]:
         return (
@@ -67,22 +74,50 @@ class LoginThrottle:
             return None
         return stamps
 
-    def retry_after(self, *, ip: str, account: str, now: datetime) -> float | None:
-        """Seconds to wait before the next attempt, or None when it may proceed."""
+    def _wait(self, ip: str, account: str, now: datetime, *, skip_account: bool) -> float | None:
         waits: list[float] = []
-        for key, limit in self._keys(ip, account):
+        for key, limit in self._keys(ip, account)[: 1 if skip_account else 2]:
             stamps = self._recent(key, now)
             if stamps is not None and len(stamps) >= limit:
                 waits.append((stamps[-limit] + self._window - now).total_seconds())
         return max(waits) if waits else None
 
-    def failure(self, *, ip: str, account: str, now: datetime) -> None:
-        for key, _limit in self._keys(ip, account):
+    def _record(self, ip: str, account: str, now: datetime, *, skip_account: bool = False) -> None:
+        for key, _limit in self._keys(ip, account)[: 1 if skip_account else 2]:
             stamps = self._failures.setdefault(key, deque(maxlen=max(self._limits.values())))
             stamps.append(now)
             self._failures.move_to_end(key)
         while len(self._failures) > self._max_keys:
             self._failures.popitem(last=False)  # the least recently failed key goes first
+
+    def retry_after(
+        self, *, ip: str, account: str, now: datetime, skip_account: bool = False
+    ) -> float | None:
+        """Seconds to wait before the next attempt, or None when it may proceed."""
+        with self._lock:
+            return self._wait(ip, account, now, skip_account=skip_account)
+
+    def reserve(
+        self, *, ip: str, account: str, now: datetime, skip_account: bool = False
+    ) -> float | None:
+        """Atomically: refuse (seconds to wait) or count this attempt as a failure (None)."""
+        with self._lock:
+            wait = self._wait(ip, account, now, skip_account=skip_account)
+            if wait is None:
+                self._record(ip, account, now, skip_account=skip_account)
+            return wait
+
+    def release(self, *, ip: str, account: str, at: datetime, skip_account: bool = False) -> None:
+        """Withdraw the attempt reserved at `at` (its password was right), from the same keys."""
+        with self._lock:
+            for key, _limit in self._keys(ip, account)[: 1 if skip_account else 2]:
+                stamps = self._failures.get(key)
+                if stamps is not None and at in stamps:
+                    stamps.remove(at)
+
+    def failure(self, *, ip: str, account: str, now: datetime) -> None:
+        with self._lock:
+            self._record(ip, account, now)
 
     def tracked_keys(self) -> int:
         return len(self._failures)

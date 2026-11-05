@@ -61,6 +61,7 @@ def create_app(
         auth=gate,
         idempotency=IdempotencyStore(engine, clock=clock.now),  # actor: the real principal
         source_url=resolved.source_url,
+        forward_auth_trusted_cidrs=resolved.forward_auth_trusted_cidrs,
     )
 
 

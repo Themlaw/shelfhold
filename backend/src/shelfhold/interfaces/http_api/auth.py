@@ -3,8 +3,7 @@
 `AuthMiddleware` sits inside the request context and outside the idempotency ledger, so that a
 key is always scoped to the real actor and a refused request never reaches the ledger. It:
 
-- refuses any proxy identity header (`Remote-User`, `Tailscale-User-*`…) with 401: forward-auth
-  is not configured, and it is off by default (P5);
+- never sees a proxy identity header: `IdentityHeaderFilter` (outermost) removed them (P5);
 - resolves the principal: `Authorization: Bearer shk_…` first, else the session cookie;
 - on a state-changing request carried by a session, requires `X-CSRF-Token` equal to the
   session's CSRF secret (synchronizer token delivered by a readable cookie, constant-time
@@ -19,8 +18,7 @@ cookie is set without it and without the prefix; HTTPS is decided by the request
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
 from http.cookies import SimpleCookie
 from uuid import uuid4
 
@@ -33,6 +31,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from shelfhold.identity.public import (
+    IDENTITY_HEADER_AUDIT,
     Credential,
     CredentialNotAllowed,
     IssuedSession,
@@ -45,48 +44,26 @@ from shelfhold.identity.public import (
 )
 from shelfhold.infrastructure.http_headers import BEARER_CHALLENGE
 from shelfhold.interfaces.http_api.catalog import error_code
+from shelfhold.interfaces.http_api.idempotency import NEVER_STORE
 from shelfhold.interfaces.http_api.problems import ProblemError, build_problem_response
 
 LOGIN_PAGE = "/login"
 LOGIN_PATH = "/api/v1/auth/login"
 CSRF_HEADER = "X-CSRF-Token"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-IDENTITY_HEADERS = frozenset(
-    {
-        "remote-user",
-        "remote-email",
-        "remote-groups",
-        "remote-name",
-        "x-remote-user",
-        "x-forwarded-user",
-        "x-forwarded-email",
-        "x-forwarded-preferred-username",
-        "x-auth-request-user",
-        "x-auth-request-email",
-        "x-webauth-user",
-    }
-)
-IDENTITY_HEADER_PREFIXES = ("tailscale-user-",)
-_AUDIT_EVERY = timedelta(minutes=1)  # an attacker must not turn refusals into a write flood
-
-
-def identity_header_in(headers: Headers) -> str | None:
-    for name in headers.keys():  # noqa: SIM118 (Headers iterates over its keys as Any)
-        lowered = str(name).lower()
-        if lowered in IDENTITY_HEADERS or lowered.startswith(IDENTITY_HEADER_PREFIXES):
-            return lowered
-    return None
 
 
 @dataclass(frozen=True)
 class CookieNames:
     session: str
     csrf: str
+    device: str  # signed proof of a past login on this browser (attempt limiting only)
     secure: bool
 
 
-SECURE_COOKIES = CookieNames("__Host-sid", "__Host-csrf", secure=True)
-PLAIN_COOKIES = CookieNames("sid", "csrf", secure=False)
+SECURE_COOKIES = CookieNames("__Host-sid", "__Host-csrf", "__Host-dev", secure=True)
+PLAIN_COOKIES = CookieNames("sid", "csrf", "dev", secure=False)
+DEVICE_COOKIE_MAX_AGE_S = 365 * 24 * 3600
 
 
 @dataclass
@@ -95,19 +72,14 @@ class AuthGate:
 
     auth: LocalAuth
     public_url: str | None = None
-    _last_header_audit: dict[str, datetime] = field(default_factory=dict)
 
     def cookies_for(self, scope: Scope) -> CookieNames:
         https = scope.get("scheme") == "https" or (self.public_url or "").startswith("https://")
         return SECURE_COOKIES if https else PLAIN_COOKIES
 
-    def audit_identity_header(self, header: str) -> None:
-        now = self.auth.now()
-        last = self._last_header_audit.get(header)
-        if last is not None and now - last < _AUDIT_EVERY:
-            return
-        self._last_header_audit[header] = now
-        self.auth.audit_refusal("auth.identity_header_refused", target=header)
+    def record_stripped_header(self, header: str) -> None:
+        """Audit entry read back by `shelfhold status` (one per header name and process)."""
+        self.auth.audit_refusal(IDENTITY_HEADER_AUDIT, target=header)
 
 
 def _cookie_header(
@@ -141,6 +113,17 @@ def set_session_cookies(response: Response, names: CookieNames, issued: IssuedSe
             "set-cookie",
             _cookie_header(
                 name, value, names=names, http_only=http_only, max_age=issued.cookie_max_age_s
+            ),
+        )
+    if issued.device_proof is not None:
+        response.headers.append(
+            "set-cookie",
+            _cookie_header(
+                names.device,
+                issued.device_proof,
+                names=names,
+                http_only=True,
+                max_age=DEVICE_COOKIE_MAX_AGE_S,
             ),
         )
     response.headers["Cache-Control"] = "no-store"
@@ -187,13 +170,6 @@ class AuthMiddleware:
         headers = Headers(scope=scope)
         names = self.gate.cookies_for(scope)
 
-        header = identity_header_in(headers)
-        if header is not None:
-            await run_in_threadpool(self.gate.audit_identity_header, header)
-            structlog.get_logger().warning("auth.identity_header_refused", header=header)
-            await self._problem(scope, receive, send, "identity_header_refused")
-            return
-
         principal, session = await self._resolve(headers, names)
         state["principal"] = principal
 
@@ -217,19 +193,21 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
             return
         token = _cookie_value(headers, names.session) or ""
-        refreshed = _cookie_header(
-            names.session,
-            token,
-            names=names,
-            http_only=True,
-            max_age=session.cookie_max_age_s,
-        )
+        # Both cookies slide together: a page that lost `csrf` while `sid` lives could not write.
+        refreshed = [
+            _cookie_header(name, value, names=names, http_only=http_only, max_age=max_age)
+            for name, value, http_only, max_age in (
+                (names.session, token, True, session.cookie_max_age_s),
+                (names.csrf, session.csrf_secret, False, session.cookie_max_age_s),
+            )
+        ]
 
         async def send_with_cookie(message: Message) -> None:
             if message["type"] == "http.response.start":
                 out = MutableHeaders(scope=message)
                 if not any(v.startswith(f"{names.session}=") for v in out.getlist("set-cookie")):
-                    out.append("set-cookie", refreshed)
+                    for line in refreshed:
+                        out.append("set-cookie", line)
             await send(message)
 
         await self.app(scope, receive, send_with_cookie)
@@ -305,6 +283,8 @@ def reserved_action(action: ReservedAction) -> Callable[[Request], Principal]:
     """Dependency of a route that performs a reserved action (EF-USR-024, EF-USR-022 (2))."""
 
     def dependency(request: Request) -> Principal:
+        # First, before any refusal: the answer of a reserved action is never kept for replay.
+        request.scope.setdefault("state", {})[NEVER_STORE] = True
         principal = require_principal(request)
         auth = gate_of(request).auth
         verdict = auth.authorize(
