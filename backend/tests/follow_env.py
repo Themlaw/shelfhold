@@ -140,6 +140,7 @@ def follow_bench(
     has_credentials: bool = False,
     service: Any = None,
     max_attempts: int = 8,
+    tombstones: Callable[[LibEnv], Any] | None = None,
 ) -> Iterator[Bench]:
     server = server or FakeSuwayomi(auth_mode="none")
     with lib_env() as lib:
@@ -176,12 +177,15 @@ def follow_bench(
             sleeps.append(seconds)
             clock.advance(seconds=seconds)
 
+        guard = tombstones(lib) if tombstones is not None else None
+
         def new_cycle() -> FollowCycle:
             return FollowCycle(
                 lib.engine, bus, clock, service, fetcher,
                 store=PassthroughStore(lib.engine, lib.fsops, lib.locate, lib.data),
                 receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
                 place=_placement(lib), sleep=sleep, stale_k=stale_k, max_attempts=max_attempts,
+                tombstones=guard,
             )  # fmt: skip
 
         cycle = new_cycle()
