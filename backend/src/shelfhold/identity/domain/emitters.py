@@ -68,6 +68,8 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
     }
 )
 
+_EXPORT_APP = "shelfhold/export/application"
+
 _OTHER: Mapping[str, str] = MappingProxyType(
     {
         # System emitters (closed list): `system_*` calls name theirs as a literal.
@@ -79,7 +81,7 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/infrastructure/volumes.py::erase_data_path": "purge.now",
         "shelfhold/infrastructure/volumes.py::_remove_tree_at": "purge.now",
         # The probe file of the permission preflight (EF-EXP-054): a name the probe drew itself.
-        "shelfhold/export/application/preflight.py::_remove_probe_file": "probe_file_cleanup",
+        f"{_EXPORT_APP}/preflight.py::FolderProbe._remove_probe_file": "probe_file_cleanup",
     }
 )
 

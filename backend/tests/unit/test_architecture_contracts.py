@@ -335,6 +335,7 @@ def _opens_for_writing(node: ast.Call) -> bool:
 # one of these types (a receiver *name* proves nothing: `disk = Path(x)` is a name too).
 FSOPS_CALLERS = (
     "shelfhold/export/application/intents.py",
+    "shelfhold/export/application/preflight.py",
     "shelfhold/infrastructure/instance/lease.py",
 )
 WRITE_NAMES = {*PATH_WRITE_METHODS, *OS_WRITE_FUNCTIONS, *LIBRARY_ONLY}

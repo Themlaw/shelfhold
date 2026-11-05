@@ -17,7 +17,7 @@ import errno
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Final
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
@@ -25,31 +25,24 @@ from sqlalchemy import Connection, Engine
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.emitters import new_probe_name
 from shelfhold.infrastructure.schema import export
 
 __all__ = [
     "DENIED",
     "DestinationNotWritableError",
+    "FolderProbe",
     "Owner",
     "PermissionPreflight",
     "ProbeResult",
     "RecheckReport",
     "fix_commands",
-    "probe_folder",
 ]
 
 DENIED: Final = "permission_denied"  # `export_series.paused_reason`, the waiting state
 EVENT: Final = "target.permission_denied"
 STEPS: Final = ("write", "rename", "remove")
-
-
-class ProbeDisk(Protocol):
-    def write_atomic(
-        self, local: str, data: bytes, *, parents: bool = ..., replace: bool = ...
-    ) -> object: ...
-    def rename(self, src: str, dst: str, *, replace: bool = False) -> None: ...
-    def system_unlink(self, emitter: str, local: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -128,10 +121,6 @@ def fix_commands(folder: str, runs_as: tuple[int, int], owner: Owner | None) -> 
     return "\n".join(lines)
 
 
-def _remove_probe_file(disk: ProbeDisk, path: str) -> None:
-    disk.system_unlink("probe_file_cleanup", path)
-
-
 def _owner_of(path: str) -> Owner | None:
     try:
         seen = os.lstat(path)
@@ -140,50 +129,60 @@ def _owner_of(path: str) -> Owner | None:
     return Owner(seen.st_uid, seen.st_gid, seen.st_mode & 0o7777)
 
 
-def probe_folder(
-    disk: ProbeDisk,
-    folder: str,
-    *,
-    runs_as: tuple[int, int] | None = None,
-    owner_of: Callable[[str], Owner | None] = _owner_of,
-) -> ProbeResult:
-    """Create, rename and remove a probe file in `folder`; leaves nothing behind."""
-    ids = runs_as or (os.geteuid(), os.getegid())
-    base = folder.rstrip("/")
-    first, second = f"{base}/{new_probe_name()}", f"{base}/{new_probe_name()}"
-    done: list[str] = []
-    current: str | None = None
-    step = "write"
-    try:
-        disk.write_atomic(first, b"shelfhold probe\n", parents=False, replace=False)
-        current = first
-        done.append("write")
-        step = "rename"
-        disk.rename(first, second)
-        current = second
-        done.append("rename")
-        step = "remove"
-        _remove_probe_file(disk, second)
-        current = None
-        done.append("remove")
-    except OSError as error:
-        owner = owner_of(base)
-        cause = _errno_name(error)
-        return ProbeResult(
-            False, folder, tuple(done), step, cause, ids, owner, fix_commands(folder, ids, owner)
-        )
-    finally:
-        if current is not None:  # a step failed with the probe file in place: take it away
-            with contextlib.suppress(OSError):  # the cause is reported; a leftover is swept later
-                _remove_probe_file(disk, current)
-    return ProbeResult(True, folder, tuple(done), None, None, ids, None, "")
+class FolderProbe:
+    """Create, rename and remove a probe file in a folder; leaves nothing behind."""
+
+    def __init__(
+        self,
+        fsops: Fsops,
+        *,
+        runs_as: tuple[int, int] | None = None,
+        owner_of: Callable[[str], Owner | None] = _owner_of,
+    ) -> None:
+        self._fsops: Fsops = fsops
+        self._runs_as = runs_as
+        self._owner_of = owner_of
+
+    def _remove_probe_file(self, path: str) -> None:
+        self._fsops.system_unlink("probe_file_cleanup", path)
+
+    def run(self, folder: str) -> ProbeResult:
+        ids = self._runs_as or (os.geteuid(), os.getegid())
+        base = folder.rstrip("/")
+        first, second = f"{base}/{new_probe_name()}", f"{base}/{new_probe_name()}"
+        done: list[str] = []
+        current: str | None = None
+        step = "write"
+        try:
+            self._fsops.write_atomic(first, b"shelfhold probe\n", parents=False, replace=False)
+            current = first
+            done.append("write")
+            step = "rename"
+            self._fsops.rename(first, second)
+            current = second
+            done.append("rename")
+            step = "remove"
+            self._remove_probe_file(second)
+            current = None
+            done.append("remove")
+        except OSError as error:
+            owner = self._owner_of(base)
+            return ProbeResult(
+                False, folder, tuple(done), step, _errno_name(error), ids, owner,
+                fix_commands(folder, ids, owner),
+            )  # fmt: skip
+        finally:
+            if current is not None:  # a step failed with the probe file in place: take it away
+                with contextlib.suppress(OSError):  # the cause is reported; a leftover is swept
+                    self._remove_probe_file(current)
+        return ProbeResult(True, folder, tuple(done), None, None, ids, None, "")
 
 
 class PermissionPreflight:
     def __init__(
         self,
         engine: Engine,
-        fsops: ProbeDisk,
+        fsops: Fsops,
         bus: EventBus,
         *,
         clock: Clock,
@@ -191,14 +190,12 @@ class PermissionPreflight:
         owner_of: Callable[[str], Owner | None] = _owner_of,
     ) -> None:
         self._engine = engine
-        self._disk = fsops
+        self._prober = FolderProbe(fsops, runs_as=runs_as, owner_of=owner_of)
         self._bus = bus
         self._clock = clock
-        self._runs_as = runs_as
-        self._owner_of = owner_of
 
     def probe(self, folder: str) -> ProbeResult:
-        return probe_folder(self._disk, folder, runs_as=self._runs_as, owner_of=self._owner_of)
+        return self._prober.run(folder)
 
     def _context(self, destination_id: str) -> DestinationContext:
         with self._engine.connect() as connection:
