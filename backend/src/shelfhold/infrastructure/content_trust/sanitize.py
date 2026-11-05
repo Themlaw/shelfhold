@@ -46,10 +46,17 @@ _DROP_WITH_CONTENT: Final = frozenset(
 )  # fmt: skip
 _SAFE_HREF: Final = re.compile(r"(?:https?://|mailto:)[^\s\x00-\x1f]*\Z", re.IGNORECASE)
 
-# C0 and C1 controls but \n and \t, bidi embeddings/overrides/isolates, zero-width space and
-# joiners that hide text (ZWJ and ZWNJ stay: emoji and Persian need them), BOM, word joiner and
-# invisible operators, interlinear annotation, and the Unicode tag block.
-_INVISIBLE: Final = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f​‎‏‪-‮⁠-⁤⁦-⁩﻿￹-￻\U000e0000-\U000e007f]")
+# Everything that is invisible, reorders text or cannot be written to XML 1.0:
+# C0 and C1 controls but \n and \t; lone surrogates (they break UTF-8 encoding); U+FFFE and U+FFFF;
+# soft hyphen, Arabic letter mark, Hangul and Khmer/Mongolian fillers; zero-width space and
+# marks, bidi embeddings/overrides/isolates, BOM, word joiner and invisible operators,
+# interlinear annotation; the Unicode tag block. ZWJ and ZWNJ stay: emoji and Persian need them.
+_INVISIBLE: Final = re.compile(
+    "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff\ufffe\uffff"
+    "\u00ad\u061c\u115f\u1160\u17b4\u17b5\u180e\u3164\uffa0"
+    "\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\ufff9-\ufffb"
+    "\U000e0000-\U000e007f]"
+)
 _MARKDOWN_SPECIAL: Final = re.compile(r"([\\`*_\[\]()<>#!|~&{}])")
 _MARKDOWN_LINE_START: Final = re.compile(r"(?m)^(\s*)([-+]|\d+[.)])(?=\s)")
 

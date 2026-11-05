@@ -198,3 +198,36 @@ def test_upstream_text_nh3_allowlist_is_minimal() -> None:
     assert set(ALLOWED_HTML_ATTRIBUTES) <= {"a"}
     for attrs in ALLOWED_HTML_ATTRIBUTES.values():
         assert not any(a.startswith("on") or a in {"style", "src", "srcset"} for a in attrs)
+
+
+# U+FFFE, U+FFFF, U+061C, U+00AD, U+3164 from the review of #40, then the other fillers
+INVISIBLE = ["\ufffe", "\uffff", "\u061c", "\u00ad", "\u3164", "\u115f", "\u1160", "\uffa0",
+             "\u180e", "\u17b4", "\U000e0041"]  # fmt: skip
+XML_CHAR = re.compile("[\t\n\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]*")
+
+
+@pytest.mark.req("ENF-SEC-015")
+@pytest.mark.parametrize("char", INVISIBLE)
+@pytest.mark.parametrize("destination", list(Destination))
+def test_upstream_text_invisible_characters_are_removed(
+    char: str, destination: Destination
+) -> None:
+    out = sanitize_upstream_text(f"Ti{char}tle", destination=destination)
+    assert out == "Title"
+
+
+@pytest.mark.req("ENF-SEC-015")
+@pytest.mark.parametrize("destination", list(Destination))
+def test_upstream_text_lone_surrogates_are_removed_and_output_is_utf8_and_xml_safe(
+    destination: Destination,
+) -> None:
+    hostile = (
+        "a\ud800b\udfffc\udc00\ud800d"
+        + "".join(INVISIBLE)
+        + "\x00\x0b\x1f e\u0301 \U0001f468\u200d\U0001f469"
+    )
+    out = sanitize_upstream_text(hostile, destination=destination)
+    out.encode("utf-8")  # a lone surrogate would raise here
+    assert XML_CHAR.fullmatch(out), repr(out)  # writable to ComicInfo.xml and the OPF as is
+    assert out.startswith("abcd")
+    assert "\u200d" in out  # the emoji joiner survives
