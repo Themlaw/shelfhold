@@ -11,6 +11,10 @@ from shelfhold.export.targets.kavita.errors import ProtocolError
 
 # Hidden folder of every physical root (EF-EXP-059): Kavita must never index it.
 HIDDEN_DIR_PATTERNS: Final = ("**/.shelfhold/**",)
+# Kavita's `MetadataProvider` enum starts at 2 and the server checks the provider against the
+# library type (measured on 0.9.1.4): Mangabaka for manga and image, Hardcover for the others.
+_PROVIDER_MANGABAKA: Final = 3
+_PROVIDER_HARDCOVER: Final = 2
 
 
 class LibraryType(IntEnum):
@@ -110,6 +114,11 @@ def update_dto(current: Mapping[str, Any], *, exclude_patterns: Sequence[str]) -
     return dto
 
 
+def _provider_for(library_type: LibraryType) -> int:
+    manga_like = library_type in (LibraryType.MANGA, LibraryType.IMAGE)
+    return _PROVIDER_MANGABAKA if manga_like else _PROVIDER_HARDCOVER
+
+
 def create_dto(
     name: str,
     library_type: LibraryType,
@@ -127,6 +136,9 @@ def create_dto(
         "allowMetadataMatching": False, "enableMetadata": True, "removePrefixForSortName": False,
         "inheritWebLinksFromFirstChapter": False, "fileGroupTypes": file_types,
         "excludePatterns": list(exclude_patterns),
+        # not required by the schema, but a real Kavita answers 400 on the default 0 and 500 on a
+        # provider the type does not take (found by the nightly); unused while matching is off
+        "metadataProvider": _provider_for(library_type),
     }  # fmt: skip
 
 
@@ -216,7 +228,9 @@ class SeriesAge:
         )
 
 
-SERIES_FILTER_LIBRARIES: Final = 18  # `SeriesFilterField.Libraries`
+SERIES_FILTER_LIBRARIES: Final = (
+    19  # `SeriesFilterField.Libraries` (18 is Genres: found by the nightly)
+)
 FILTER_EQUAL: Final = 0  # `FilterComparison.Equal`
 FILTER_AND: Final = 1  # `FilterCombination.And`
 

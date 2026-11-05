@@ -424,7 +424,7 @@ class FakeKavita:
         wanted = {
             int(st["value"])
             for st in body.get("statements") or []
-            if st.get("field") == 18 and st.get("comparison") == 0
+            if st.get("field") == 19 and st.get("comparison") == 0
         }  # Libraries, Equal
         found = [s for s in self.series if not wanted or s["libraryId"] in wanted]
         start = (int(number) - 1) * int(size)
