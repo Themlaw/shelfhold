@@ -15,6 +15,7 @@ from shelfhold.identity.public import (
     Principal,
     ReauthRequired,
     ReservedAction,
+    RoleNotAllowed,
     authorize_reserved,
     session_policy,
 )
@@ -182,3 +183,26 @@ def test_system_emitters_closed_list() -> None:
         )
         == SYSTEM_EMITTERS
     )
+
+
+@pytest.mark.req("EF-USR-024", "ENF-SEC-010")
+@pytest.mark.parametrize("role", ["member", "child", "stranger"])
+def test_local_cli_is_held_to_the_role_too(role: str) -> None:
+    action = ReservedAction("test.purge", frozenset({Effect.DELETES_PERMANENTLY}))
+    principal = Principal("u", "u", role, Credential.LOCAL_CLI)
+    assert isinstance(authorize_reserved(principal, action, now=T0), RoleNotAllowed)
+    admin = Principal("u", "u", "admin", Credential.LOCAL_CLI)
+    assert isinstance(authorize_reserved(admin, action, now=T0), Allowed)
+
+
+@pytest.mark.req("EF-USR-024")
+def test_a_look_alike_credential_is_not_local_cli() -> None:
+    class Impostor(str):
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        __hash__ = str.__hash__
+
+    action = ReservedAction("test.purge", frozenset({Effect.DELETES_PERMANENTLY}))
+    principal = Principal("u", "u", "admin", Impostor("local_cli"))  # type: ignore[arg-type]
+    assert isinstance(authorize_reserved(principal, action, now=T0), CredentialNotAllowed)

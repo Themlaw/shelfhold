@@ -12,7 +12,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
-from shelfhold.infrastructure.instance.errors import InstanceLockHeldError
+from shelfhold.infrastructure.instance.errors import InstanceLockHeldError, InstanceLockLinkError
 
 LOCK_NAME = ".lock"
 _open_descriptors: set[int] = set()
@@ -43,7 +43,7 @@ class InstanceLock:
             )
         except OSError as error:
             if error.errno == errno.ELOOP:  # a planted symbolic link: never followed
-                raise InstanceLockHeldError(
+                raise InstanceLockLinkError(
                     f"{self.path} is a symbolic link: refusing to start in write mode"
                 ) from error
             raise

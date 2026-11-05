@@ -38,6 +38,8 @@ CHILD = textwrap.dedent(
         def commit(self):
             os.kill(os.getpid(), signal.SIGKILL)
         sa.engine.base.Transaction.commit = lambda self: os.kill(os.getpid(), signal.SIGKILL)
+    import shelfhold.interfaces.cli.admin as admin
+    admin._server_socket = lambda settings: None  # this is the offline channel: the database
     from shelfhold.interfaces.cli.registry import main
     sys.exit(main(["admin", "keys", "rotate", sys.argv[2]]))
     """
@@ -54,6 +56,7 @@ def test_q4_sigkill_between_insert_and_commit_leaves_old_key_alive(
     capsys.readouterr()
     assert run_cli(monkeypatch, settings, "admin", "keys", "create", "--name", "s") == 0
     prefix = KEY.search(capsys.readouterr().out).group(1)
+    ctx.__exit__(None, None, None)  # server stopped: the CLI takes the flock and acts directly
     proc = subprocess.run(  # noqa: S603
         [sys.executable, "-c", CHILD, when, prefix],
         env={

@@ -74,6 +74,10 @@ class Settings(BaseModel):
     # P5: forward-auth is off while this is empty. Proxy identity headers (Remote-User,
     # Tailscale-User-*...) are removed from every request whose peer is outside these networks.
     forward_auth_trusted_cidrs: tuple[str, ...] = ()
+    # EF-USR-024 (GAP-13-07): the local CLI socket refuses a peer outside the PID namespace of the
+    # container (the host, another container that mounts /data) unless this is set. The uid of
+    # Shelfhold on the host is then as powerful as an admin.
+    cli_allow_host: bool = False
 
     @field_validator("forward_auth_trusted_cidrs")
     @classmethod

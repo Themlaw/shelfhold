@@ -98,12 +98,12 @@ def test_an_unclassified_effect_would_require_freshness() -> None:
 def expected(
     axis: str, effects: frozenset[Effect], *, restricted: bool, hardened: bool, role: str = "admin"
 ) -> type[Allowed] | type[CredentialNotAllowed] | type[RoleNotAllowed] | type[ReauthRequired]:
-    if axis == "local_cli":
-        return Allowed
-    if axis != "fresh_session" and axis != "session":
+    if axis not in ("local_cli", "fresh_session", "session"):
         return CredentialNotAllowed  # every key scope (admin included) and every device token
     if role != "admin":
         return RoleNotAllowed  # review PR #43 (M4): reserved means admin unless a route says so
+    if axis == "local_cli":  # PR #49: the CLI is held to the role as well, never to freshness
+        return Allowed
     needs_fresh = (
         hardened
         or bool({e.value for e in effects} & P3)

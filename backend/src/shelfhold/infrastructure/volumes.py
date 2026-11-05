@@ -4,12 +4,26 @@ import os
 import stat
 from pathlib import Path, PurePosixPath
 
+import structlog
+
 from shelfhold.config import CONFIG_FILE_NAME, CONFIG_SCHEMA_VERSION, Settings
 from shelfhold.infrastructure.secrets.atomic import write_private
 
 
+def data_dir_writable_by_others(data_dir: Path) -> bool:
+    """True when the group or the world can write in `/data`: they could then replace the local
+    CLI socket (EF-USR-024). The image creates it 0755; a host folder made under `umask 002`
+    is 0775, so this is a warning, not a refusal (the CLI also checks who it talks to)."""
+    try:
+        return bool(os.stat(data_dir).st_mode & 0o022)
+    except OSError:
+        return False
+
+
 def ensure_volumes(settings: Settings) -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    if data_dir_writable_by_others(settings.data_dir):
+        structlog.get_logger().warning("data_dir_writable_by_others", path=str(settings.data_dir))
     settings.store_dir.mkdir(parents=True, exist_ok=True)
     (settings.data_dir / "tmp").mkdir(exist_ok=True)  # staging of received files (ENF-SEC-002)
     config = settings.data_dir / CONFIG_FILE_NAME

@@ -11,6 +11,10 @@ class InstanceLockHeldError(InstanceError):
     """Another process holds `/data/.lock`: this one must not start."""
 
 
+class InstanceLockLinkError(InstanceLockHeldError):
+    """`/data/.lock` is a symbolic link: never followed, never ignored."""
+
+
 class LeaseConflictError(InstanceError):
     """A root's lease belongs to another instance that may still be writing."""
 

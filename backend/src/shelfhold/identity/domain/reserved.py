@@ -116,15 +116,14 @@ def authorize_reserved(
     hardened: bool = False,
     allowed_roles: frozenset[str] = DEFAULT_RESERVED_ROLES,
 ) -> Verdict:
-    match principal.credential:
-        case Credential.LOCAL_CLI:
-            return Allowed()
-        case Credential.SESSION:
-            pass
-        case _:  # keys and device tokens, whatever their scope
-            return CredentialNotAllowed(principal.credential)
-    if principal.role not in allowed_roles:  # review PR #43 (M4): `admin` unless the route says
-        return RoleNotAllowed(principal.role)
+    credential = principal.credential
+    # `is`, never `==`: a look-alike value must not pass for the enum member
+    if credential is not Credential.LOCAL_CLI and credential is not Credential.SESSION:
+        return CredentialNotAllowed(credential)  # keys and device tokens, whatever their scope
+    if principal.role not in allowed_roles:  # review PR #43 (M4): `admin` unless the route says;
+        return RoleNotAllowed(principal.role)  # the local CLI is held to it too (PR #49)
+    if credential is Credential.LOCAL_CLI:
+        return Allowed()
     if not action.needs_fresh_auth(
         restricted_profile_exists=restricted_profile_exists, hardened=hardened
     ):

@@ -52,6 +52,9 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 f"{_FSOPS}/facade.py::_claim_lease",
                 "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",
                 "shelfhold/infrastructure/secrets/atomic.py::write_private",
+                # the CLI socket this process bound (and its staging directory), in /data
+                "shelfhold/infrastructure/local_socket/server.py::LocalSocketServer._remove_socket",
+                "shelfhold/infrastructure/local_socket/server.py::bind_private",
             }
         ),
         # Rolls the database file (and its sidecars) back to the copy taken before a migration.

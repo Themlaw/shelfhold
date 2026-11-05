@@ -122,10 +122,17 @@ class CreatedApiKey:
     expires_at: datetime | None
 
 
-def _by_host_user(target: str) -> str:
-    """The CLI has no principal until the local socket (L23): the audit keeps at least the uid
-    of the host user who ran it (review PR #43, M6)."""
-    return f"{target} uid={os.getuid()}"
+def _by_host_user(target: str, by: Principal | None = None) -> str:
+    """Offline, the CLI has no principal: the audit keeps at least the uid of the host user who
+    ran it (review PR #43, M6). Through the local socket (L23) the principal carries the uid and
+    the audit actor is `local_cli:<uid>`, so the target stays clean."""
+    return target if by is not None else f"{target} uid={os.getuid()}"
+
+
+def _audit_actor(principal: Principal | None) -> str | None:
+    if principal is None:
+        return None
+    return principal.actor_id if principal.credential is Credential.LOCAL_CLI else principal.user_id
 
 
 def _seconds(delta: timedelta) -> int:
@@ -181,9 +188,10 @@ class LocalAuth:
     def _audit(
         self, action: str, principal: Principal | None = None, *, target: str | None = None
     ) -> None:
-        """Host CLI actions have no principal yet (the local socket arrives with L23)."""
+        """Offline host CLI actions have no principal; through the local socket the principal is
+        `local_cli` and the actor is `local_cli:<uid>` (L23)."""
         entry = AuditEntry(
-            actor_id=principal.user_id if principal else None,
+            actor_id=_audit_actor(principal),
             action=action,
             at=self.now(),
             target=target,
@@ -194,7 +202,7 @@ class LocalAuth:
 
     # --- accounts (CLI) ----------------------------------------------------------------------
 
-    def create_admin(self, username: str, password: str) -> str:
+    def create_admin(self, username: str, password: str, *, by: Principal | None = None) -> str:
         username = username.strip()
         if not username or len(username) > 128:
             raise ValueError("invalid_username")
@@ -209,10 +217,10 @@ class LocalAuth:
             password_hash=self._hasher.hash(password),
             now=self.now(),
         )
-        self._audit("user.created", target=user_id)
+        self._audit("user.created", by, target=user_id)
         return user_id
 
-    def reset_password(self, username: str, password: str) -> int:
+    def reset_password(self, username: str, password: str, *, by: Principal | None = None) -> int:
         """New password, and every session of the account closed. Returns the closed count."""
         check_password_shape(password)
         user = self._store.user_by_name(username)
@@ -220,7 +228,7 @@ class LocalAuth:
             raise UnknownUserError
         self._store.set_password_hash(user.id, self._hasher.hash(password))
         closed = self._store.revoke_sessions(now=self.now(), user_id=user.id)
-        self._audit("user.password_reset", target=user.id)
+        self._audit("user.password_reset", by, target=user.id)
         return closed
 
     # --- sessions ----------------------------------------------------------------------------
@@ -336,7 +344,13 @@ class LocalAuth:
             self._store.revoke_sessions(now=self.now(), session_id=principal.session_id)
             self._audit("auth.logout", principal)
 
-    def revoke_sessions(self, *, username: str | None = None, session_id: str | None = None) -> int:
+    def revoke_sessions(
+        self,
+        *,
+        username: str | None = None,
+        session_id: str | None = None,
+        by: Principal | None = None,
+    ) -> int:
         user_id = None
         if username is not None:
             user = self._store.user_by_name(username)
@@ -344,7 +358,7 @@ class LocalAuth:
                 raise UnknownUserError
             user_id = user.id
         closed = self._store.revoke_sessions(now=self.now(), user_id=user_id, session_id=session_id)
-        self._audit("auth.sessions_revoked", target=session_id or user_id or "*")
+        self._audit("auth.sessions_revoked", by, target=session_id or user_id or "*")
         return closed
 
     def reauthenticate(
@@ -388,6 +402,7 @@ class LocalAuth:
         read_only: bool = False,
         expires_days: int | None = None,
         username: str | None = None,
+        by: Principal | None = None,
     ) -> CreatedApiKey:
         if username is not None:
             owner = self._store.user_by_name(username)
@@ -417,11 +432,11 @@ class LocalAuth:
                 expires_at=expires_at,
             )
         )
-        self._audit("api_key.created", target=_by_host_user(secret.prefix))
+        self._audit("api_key.created", by, target=_by_host_user(secret.prefix, by))
         return CreatedApiKey(value=secret.value, prefix=secret.prefix, expires_at=expires_at)
 
     def rotate_api_key(
-        self, prefix: str, *, expires_days: int | None = None
+        self, prefix: str, *, expires_days: int | None = None, by: Principal | None = None
     ) -> CreatedApiKey | None:
         """Replace a live key by a new one with the same owner, name and scope (EF-USR-003, P4).
 
@@ -458,10 +473,10 @@ class LocalAuth:
                 expires_at=expires_at,
             )
             audit = AuditEntry(
-                actor_id=None,
+                actor_id=_audit_actor(by),
                 action="api_key.rotated",
                 at=now,
-                target=_by_host_user(f"{prefix}>{secret.prefix}"),
+                target=_by_host_user(f"{prefix}>{secret.prefix}", by),
             )
             try:
                 if not self._store.rotate_api_key(prefix, fresh, audit=audit):
@@ -474,10 +489,10 @@ class LocalAuth:
     def api_keys(self) -> Sequence[ApiKeyRecord]:
         return self._store.api_keys()
 
-    def revoke_api_key(self, prefix: str) -> bool:
+    def revoke_api_key(self, prefix: str, *, by: Principal | None = None) -> bool:
         revoked = self._store.revoke_api_key(prefix, now=self.now())
         if revoked:
-            self._audit("api_key.revoked", target=_by_host_user(prefix))
+            self._audit("api_key.revoked", by, target=_by_host_user(prefix, by))
         return revoked
 
     def authenticate_api_key(self, value: str) -> Principal | None:

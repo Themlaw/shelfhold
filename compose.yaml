@@ -5,7 +5,7 @@
 # Hardened by default (ENF-SEC-006). Shelfhold still starts if you run it differently
 # (root, writable filesystem), but this profile is the one that is tested.
 #
-# Host directories must be writable by uid 1000:  mkdir -p data store && chown 1000:1000 data store
+# Host directories must be writable by uid 1000:  mkdir -p data store && chown 1000:1000 data store && chmod 750 data store
 
 x-shelfhold: &shelfhold
   image: ghcr.io/themlaw/shelfhold:edge
