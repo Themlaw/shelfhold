@@ -375,6 +375,7 @@ class _Survey:
     unknown: list[str] = field(default_factory=list)
     stale: list[str] = field(default_factory=list)
     # (destination, old path, new path): an intent applied after the backup moved the file
+    contexts: dict[str, DestinationContext] = field(default_factory=dict)
     relocations: list[tuple[str, str, str]] = field(default_factory=list)
     candidates: dict[tuple[str, str], DeletionCandidate] = field(default_factory=dict)
     blocked_units: dict[str, str] = field(default_factory=dict)  # unit id -> tombstone scope
@@ -482,19 +483,52 @@ class RestoreAdopter:
             connection.execute(sa.update(platform.instance).values(restore_generation=0))
         self._fsops.unfreeze()
 
-    @staticmethod
-    def _relocate(connection: Connection, survey: _Survey) -> None:
-        """The manifest follows a file that an intent moved after the backup."""
-        record, replica = export.export_record, storage.replica
+    def _relocate(self, connection: Connection, survey: _Survey, now: datetime) -> None:
+        """The manifest (and the copy registry) follow a file that an intent moved after the
+        backup."""
+        record, coverage = export.export_record, export.unit_coverage
         for destination_id, old, new in sorted(survey.relocations):
+            row = connection.execute(
+                sa.select(record.c.export_item_id, record.c.content_hash, record.c.file_hash).where(
+                    record.c.shelf_destination_id == destination_id, record.c.rel_path == old
+                )
+            ).first()
+            unit_id = (
+                None
+                if row is None
+                else connection.execute(
+                    sa.select(coverage.c.unit_id)
+                    .where(
+                        coverage.c.carrier_type == "export_item",
+                        coverage.c.carrier_id == row.export_item_id,
+                    )
+                    .order_by(coverage.c.position)
+                    .limit(1)
+                ).scalar()
+            )
+            context = survey.contexts.get(destination_id)
+            if row is None or unit_id is None or context is None or context.root_local is None:
+                continue
+            local = f"{context.root_local}/{new}"
+            root_id = survey.loaded.root_id_for(local)
+            try:
+                found = self._fsops.observe(local)
+                device = self._fsops.device_of(local)
+            except FsopsError as error:
+                raise PreviewStaleError(f"{new}: moved since the preview") from error
+            if found is None or root_id is None:
+                raise PreviewStaleError(f"{new}: gone since the preview")
             connection.execute(
                 sa.update(record)
                 .where(record.c.shelf_destination_id == destination_id, record.c.rel_path == old)
-                .values(rel_path=new)
+                .values(rel_path=new, size=found[1].size, mtime_ns=found[1].mtime_ns)
             )
-            connection.execute(
-                sa.update(replica).where(replica.c.rel_path == old).values(rel_path=new)
-            )
+            record_destination_copy(
+                connection, unit_id=unit_id, export_item_id=row.export_item_id,
+                content_hash=row.content_hash or row.file_hash, file_hash=row.file_hash,
+                physical_root_id=root_id, rel_path=new, size=found[1].size,
+                mtime_ns=found[1].mtime_ns, ino=found[1].ino, dev=device, verified_at=now,
+            )  # fmt: skip
 
     def _preview_of(self, survey: _Survey) -> AdoptionPreview:
         readopt = self._readopt(survey)
@@ -568,7 +602,7 @@ class RestoreAdopter:
             for line in sorted(survey.lines, key=lambda ln: (ln.destination_id, ln.rel_path)):
                 if line.outcome is LineOutcome.READOPT:
                     self._insert(connection, line, now, survey)
-            self._relocate(connection, survey)
+            self._relocate(connection, survey, now)
             self._decisions(connection, survey, now)
             self._block_units(connection, survey, now)
             if deletion is not None and preview.deletions:
@@ -628,6 +662,7 @@ class RestoreAdopter:
         with self._engine.connect() as connection:
             self._stale_intents(connection, survey)
             contexts = self._contexts(connection, loaded)
+            survey.contexts = contexts
             manifest = self._manifest(connection, contexts)
             for root in loaded.expected:
                 if mounted.get(root.root_id):
