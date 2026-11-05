@@ -24,6 +24,7 @@ _DECLARED = (
     # Permanent deletion
     _action("purge.now", Effect.DELETES_PERMANENTLY),
     _action("trash.empty", Effect.DELETES_PERMANENTLY),  # EF-BIB-030
+    _action("unit.delete", Effect.DELETES_PERMANENTLY),  # EF-BIB-031: every managed copy
     _action("detach.full", Effect.DELETES_PERMANENTLY),  # EF-EXP-031
     _action("destination.remove_all", Effect.DELETES_PERMANENTLY),
     _action("reserved_dir.erase", Effect.ERASES_RESERVED_DIR),

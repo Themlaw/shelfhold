@@ -15,6 +15,8 @@ from shelfhold.library.adapters.storage import (
     RootLocator,
 )
 from shelfhold.library.adapters.units import (
+    DeletionAuthorization,
+    DeletionRefusedError,
     Irreplaceability,
     irreplaceability,
     require_deletion_allowed,
@@ -43,6 +45,8 @@ __all__ = [
     "DEFAULT_MAX_RECEIVED_BYTES",
     "UNIT_JSON_VERSION",
     "ConfirmationRequiredError",
+    "DeletionAuthorization",
+    "DeletionRefusedError",
     "Ingested",
     "Irreplaceability",
     "MetaProjection",

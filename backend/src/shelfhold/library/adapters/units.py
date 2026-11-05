@@ -2,10 +2,18 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.identity.public import (
+    RESERVED_ACTIONS,
+    Allowed,
+    Principal,
+    Verdict,
+    authorize_reserved,
+)
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.library.domain.irreplaceable import (
     VariantState,
@@ -37,14 +45,44 @@ def irreplaceability(connection: Connection, unit_id: str) -> Irreplaceability:
     return Irreplaceability(is_irreplaceable(states, unit), independent_copies(connection, unit_id))
 
 
-def require_deletion_allowed(connection: Connection, unit_id: str, *, typed: str | None) -> None:
-    """Every deletion of a Unit passes here first (EF-BIB-031): an irreplaceable one needs its
-    identifier typed, from whoever asks (a retention policy cannot type)."""
-    require_typed_confirmation(
-        unit_id,
-        irreplaceable=irreplaceability(connection, unit_id).irreplaceable,
-        typed=typed,
+class DeletionRefusedError(PermissionError):
+    """The reserved-action rule refused the actor (a key, a stale session, a non-admin)."""
+
+    def __init__(self, verdict: Verdict) -> None:
+        super().__init__(f"unit.delete refused: {type(verdict).__name__}")
+        self.verdict = verdict
+
+
+@dataclass(frozen=True)
+class DeletionAuthorization:
+    unit_id: str
+    actor: str  # `Principal.actor_id`: one session or the host CLI, for the audit entry
+    irreplaceable: bool
+
+
+def require_deletion_allowed(
+    connection: Connection,
+    unit_id: str,
+    *,
+    principal: Principal,
+    now: datetime,
+    typed: str | None,
+    fresh_auth_s: int = 900,
+) -> DeletionAuthorization:
+    """Every deletion of a Unit passes here first (EF-BIB-031).
+
+    Deleting a Unit's copies deletes for good, so it is a reserved action (`unit.delete`): refused
+    to any key or token, to a non-admin session and to a stale one (fresh authentication). On top
+    of that, an irreplaceable Unit needs its identifier typed; a retention policy cannot type.
+    Returns who is authorised, for the audit entry the caller writes."""
+    verdict = authorize_reserved(
+        principal, RESERVED_ACTIONS["unit.delete"], now=now, fresh_auth_s=fresh_auth_s
     )
+    if not isinstance(verdict, Allowed):
+        raise DeletionRefusedError(verdict)
+    irreplaceable = irreplaceability(connection, unit_id).irreplaceable
+    require_typed_confirmation(unit_id, irreplaceable=irreplaceable, typed=typed)
+    return DeletionAuthorization(unit_id, principal.actor_id, irreplaceable)
 
 
 def safe_to_clean(connection: Connection, unit_ids: Sequence[str]) -> tuple[list[str], list[str]]:

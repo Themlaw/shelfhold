@@ -2,15 +2,18 @@
 
 import hashlib
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.archives import UnsafeArchiveError
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.infrastructure.schema import acquisition, catalog, storage
 from shelfhold.library.public import (
     ConfirmationRequiredError,
+    DeletionRefusedError,
     PassthroughStore,
     ReceivedTooLargeError,
     confirmation_phrase,
@@ -21,6 +24,15 @@ from shelfhold.library.public import (
     safe_to_clean,
 )
 from tests.library_env import OLD_COMICINFO, PNG, LibEnv, cbz_bytes, lib_env
+
+NOW = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
+
+
+def admin(credential: Credential = Credential.SESSION, *, age_s: int = 10) -> Principal:
+    return Principal(
+        "01JC0000000000000000000001", "root", "admin", credential,
+        session_id="s1", auth_time=NOW - timedelta(seconds=age_s), key_id="k1",
+    )  # fmt: skip
 
 
 def sha(data: bytes) -> str:
@@ -99,7 +111,7 @@ def test_irreplaceable_never_deleted_without_typed_confirmation() -> None:
         unit = env.chain["unit"]
         with env.engine.connect() as c:
             assert not irreplaceability(c, unit).irreplaceable  # a live source
-            require_deletion_allowed(c, unit, typed=None)
+            require_deletion_allowed(c, unit, principal=admin(), now=NOW, typed=None)
         with env.engine.begin() as c:  # the source goes away
             c.execute(
                 sa.update(acquisition.source_binding).values(active=False, disabled_reason="manual")
@@ -108,8 +120,11 @@ def test_irreplaceable_never_deleted_without_typed_confirmation() -> None:
             assert irreplaceability(c, unit).irreplaceable
             for typed in (None, "", "yes", unit.lower()):
                 with pytest.raises(ConfirmationRequiredError):
-                    require_deletion_allowed(c, unit, typed=typed)
-            require_deletion_allowed(c, unit, typed=confirmation_phrase(unit))
+                    require_deletion_allowed(c, unit, principal=admin(), now=NOW, typed=typed)
+            granted = require_deletion_allowed(
+                c, unit, principal=admin(), now=NOW, typed=confirmation_phrase(unit)
+            )
+            assert (granted.actor, granted.irreplaceable) == ("session:s1", True)
             # a retention policy or a clean-up never gets to it, with or without words
             other, _ = env.new_unit()
             allowed, kept = safe_to_clean(c, [unit, other])
@@ -195,3 +210,20 @@ def test_ingest_refuses_to_overwrite_an_existing_library_file() -> None:
                 staged=env.stage(cbz_bytes((("a.png", PNG),))), dest=str(dest),
             )  # fmt: skip
         assert dest.read_bytes() == before
+
+
+@pytest.mark.req("EF-BIB-031")
+@pytest.mark.parametrize(
+    "principal",
+    [
+        admin(Credential.API_KEY),  # a key, whatever its scope
+        admin(Credential.DEVICE_TOKEN),
+        admin(age_s=3600),  # a session that has not re-entered its password lately
+    ],
+    ids=["api_key", "device_token", "stale_session"],
+)
+def test_unit_deletion_is_a_reserved_action_even_with_the_right_words(principal: Principal) -> None:
+    with lib_env() as env:
+        unit = env.chain["unit"]  # replaceable: no words needed, still refused
+        with env.engine.connect() as c, pytest.raises(DeletionRefusedError):
+            require_deletion_allowed(c, unit, principal=principal, now=NOW, typed=unit)
