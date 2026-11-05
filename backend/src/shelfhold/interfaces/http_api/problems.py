@@ -19,7 +19,7 @@ from starlette.requests import Request
 from shelfhold.error_catalog import ErrorCode
 from shelfhold.i18n import t
 from shelfhold.infrastructure.http_headers import apply_security_headers
-from shelfhold.interfaces.http_api.catalog import error_code
+from shelfhold.interfaces.http_api.catalog import all_error_codes, error_code
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 REQUEST_ID_HEADER = "X-Request-ID"  # kept in step with middleware.REQUEST_ID_HEADER
@@ -172,8 +172,20 @@ def default_problem_responses() -> dict[int | str, dict[str, Any]]:
     return {"default": {"model": Problem, "description": t("api.problem_description")}}
 
 
-def install_problem_openapi(app: FastAPI) -> None:
-    """Document problems as `application/problem+json` and drop FastAPI's own 422 schema."""
+def _problem_ref(description: str) -> dict[str, Any]:
+    return {
+        "description": description,
+        "content": {PROBLEM_MEDIA_TYPE: {"schema": {"$ref": "#/components/schemas/Problem"}}},
+    }
+
+
+def install_problem_openapi(app: FastAPI, *, public_paths: frozenset[str] = frozenset()) -> None:
+    """Document problems as `application/problem+json` and drop FastAPI's own 422 schema.
+
+    Every catalog code is listed under `x-problem-types` (its `type` URI and status), so that
+    clients find `reauth-required` and `credential-not-allowed` in the v1 document (EF-USR-022,
+    EF-USR-024). Every `/api/` operation but the public ones documents 401 and 403.
+    """
     original = app.openapi
 
     def openapi() -> dict[str, Any]:
@@ -189,8 +201,19 @@ def install_problem_openapi(app: FastAPI) -> None:
                     default["content"] = {
                         PROBLEM_MEDIA_TYPE: default["content"]["application/json"]
                     }
+        for path, item in schema.get("paths", {}).items():
+            if not is_api_path(path) or path in public_paths:
+                continue
+            for operation in item.values():
+                responses = operation.setdefault("responses", {})
+                responses.setdefault("401", _problem_ref(t("api.problem_401")))
+                responses.setdefault("403", _problem_ref(t("api.problem_403")))
         for name in ("HTTPValidationError", "ValidationError"):
             schema.get("components", {}).get("schemas", {}).pop(name, None)
+        schema["x-problem-types"] = {
+            spec.type_uri: {"code": spec.code, "status": spec.status}
+            for spec in sorted(all_error_codes(), key=lambda s: s.code)
+        }
         return schema
 
     app.openapi = openapi  # type: ignore[method-assign]

@@ -199,7 +199,8 @@ def test_healthz_hides_version_from_anonymous(tmp_path: Path) -> None:
 def test_openapi_json_not_served_anonymously(tmp_path: Path, path: str, with_spa: bool) -> None:
     with _client(_app(tmp_path, with_spa=with_spa)) as client:
         response = client.get(path)
-    assert response.status_code == 404
+    # No public route (A6); the versioned one exists but needs a credential (L05).
+    assert response.status_code == (401 if path.startswith("/api/") else 404)
     assert "9.9.9" not in response.text
 
 

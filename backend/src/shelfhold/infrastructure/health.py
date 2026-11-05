@@ -50,3 +50,20 @@ class HealthProbe:
             "volumes_writable": _writable_dir(settings.data_dir)
             and _writable_dir(settings.store_dir),
         }
+
+    def paused_queues(self) -> list[str]:
+        """Job kinds with paused work (shown to authenticated callers only, A7)."""
+        database = self._settings.database_path
+        if not database.exists():
+            return []
+        try:
+            connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=1)
+            try:
+                rows = connection.execute(
+                    "SELECT DISTINCT kind FROM job_view WHERE status = 'paused' ORDER BY kind"
+                ).fetchall()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            return []
+        return [str(kind) for (kind,) in rows]

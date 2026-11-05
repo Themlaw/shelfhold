@@ -1,10 +1,14 @@
-"""`/healthz` (liveness, migration progress) and `/readyz` (readiness), ENF-OPS-003."""
+"""`/healthz` (liveness, migration progress) and `/readyz` (readiness), ENF-OPS-003.
+
+Anonymous callers get the state only (O12, A7). A session or an API key also gets the version and
+the paused queues on `/healthz`, and the check names on `/readyz` (L05).
+"""
 
 from collections.abc import Mapping
 from typing import Literal, Protocol
 
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -17,10 +21,13 @@ class MigrationProgress(BaseModel):
 class HealthzResponse(BaseModel):
     state: Literal["ok", "migrating"]  # anonymous: no names, no version (O12, A7)
     progress: MigrationProgress | None = None
+    version: str | None = None  # authenticated callers only
+    paused_queues: list[str] | None = None  # authenticated callers only
 
 
 class ReadyzResponse(BaseModel):
-    state: Literal["ready", "not_ready"]  # check names are for authenticated callers (L05)
+    state: Literal["ready", "not_ready"]
+    checks: dict[str, bool] | None = None  # authenticated callers only
 
 
 class HealthPort(Protocol):
@@ -31,7 +38,16 @@ class HealthPort(Protocol):
     def readiness(self) -> Mapping[str, bool]: ...
 
 
-def build_health_router(health: HealthPort) -> APIRouter:
+def _authenticated(request: Request) -> bool:
+    return request.scope.get("state", {}).get("principal") is not None
+
+
+def _paused_queues(health: HealthPort) -> list[str]:
+    probe = getattr(health, "paused_queues", None)
+    return sorted(probe()) if callable(probe) else []
+
+
+def build_health_router(health: HealthPort, *, version: str | None = None) -> APIRouter:
     router = APIRouter()
 
     @router.head("/healthz", include_in_schema=False)
@@ -40,7 +56,7 @@ def build_health_router(health: HealthPort) -> APIRouter:
         response_model=HealthzResponse,
         response_model_exclude_none=True,
     )
-    def healthz() -> JSONResponse:
+    def healthz(request: Request) -> JSONResponse:
         progress = health.migration_progress()
         if progress is not None:
             body: dict[str, object] = {
@@ -49,6 +65,9 @@ def build_health_router(health: HealthPort) -> APIRouter:
             }
         else:
             body = {"state": "ok"}
+        if _authenticated(request):
+            body["version"] = version
+            body["paused_queues"] = _paused_queues(health) if progress is None else []
         return JSONResponse(body)
 
     @router.head("/readyz", include_in_schema=False)
@@ -57,15 +76,15 @@ def build_health_router(health: HealthPort) -> APIRouter:
         response_model=ReadyzResponse,
         responses={503: {"model": ReadyzResponse}},
     )
-    def readyz() -> JSONResponse:
+    def readyz(request: Request) -> JSONResponse:
         checks = dict(health.readiness())
         failed = sorted(name for name, passed in checks.items() if not passed)
         if failed:
             structlog.get_logger().warning("readiness_failed", checks=failed)
         ready = not failed
-        return JSONResponse(
-            {"state": "ready" if ready else "not_ready"},
-            status_code=200 if ready else 503,
-        )
+        body: dict[str, object] = {"state": "ready" if ready else "not_ready"}
+        if _authenticated(request):
+            body["checks"] = checks
+        return JSONResponse(body, status_code=200 if ready else 503)
 
     return router

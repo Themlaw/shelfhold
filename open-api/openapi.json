@@ -1,8 +1,53 @@
 {
   "components": {
     "schemas": {
+      "About": {
+        "properties": {
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "source_url"
+        ],
+        "title": "About",
+        "type": "object"
+      },
+      "CsrfToken": {
+        "properties": {
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "csrf_token"
+        ],
+        "title": "CsrfToken",
+        "type": "object"
+      },
       "HealthzResponse": {
         "properties": {
+          "paused_queues": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Queues"
+          },
           "progress": {
             "anyOf": [
               {
@@ -20,12 +65,50 @@
             ],
             "title": "State",
             "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
           }
         },
         "required": [
           "state"
         ],
         "title": "HealthzResponse",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "remember": {
+            "default": true,
+            "title": "Remember",
+            "type": "boolean"
+          },
+          "username": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
         "type": "object"
       },
       "MigrationProgress": {
@@ -44,6 +127,27 @@
           "total"
         ],
         "title": "MigrationProgress",
+        "type": "object"
+      },
+      "PasswordReauth": {
+        "properties": {
+          "method": {
+            "const": "password",
+            "title": "Method",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "password"
+        ],
+        "title": "PasswordReauth",
         "type": "object"
       },
       "Problem": {
@@ -105,6 +209,20 @@
       },
       "ReadyzResponse": {
         "properties": {
+          "checks": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checks"
+          },
           "state": {
             "enum": [
               "ready",
@@ -119,6 +237,65 @@
         ],
         "title": "ReadyzResponse",
         "type": "object"
+      },
+      "ReauthResponse": {
+        "properties": {
+          "auth_time": {
+            "format": "date-time",
+            "title": "Auth Time",
+            "type": "string"
+          },
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "csrf_token",
+          "auth_time"
+        ],
+        "title": "ReauthResponse",
+        "type": "object"
+      },
+      "SessionInfo": {
+        "properties": {
+          "auth_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Time"
+          },
+          "credential": {
+            "title": "Credential",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "role",
+          "credential"
+        ],
+        "title": "SessionInfo",
+        "type": "object"
       }
     }
   },
@@ -128,6 +305,239 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/about": {
+      "get": {
+        "operationId": "about",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/About"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "About"
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsrfToken"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Login"
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Logout"
+      }
+    },
+    "/api/v1/auth/reauth": {
+      "post": {
+        "operationId": "reauth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordReauth"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReauthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Reauth"
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "operationId": "session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Session"
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "healthz",
@@ -193,6 +603,344 @@
         },
         "summary": "Readyz"
       }
+    }
+  },
+  "x-problem-types": {
+    "/api/v1/problems/backup.failed": {
+      "code": "backup.failed",
+      "status": 503
+    },
+    "/api/v1/problems/backup.stale": {
+      "code": "backup.stale",
+      "status": 503
+    },
+    "/api/v1/problems/bad-request": {
+      "code": "bad_request",
+      "status": 400
+    },
+    "/api/v1/problems/credential-not-allowed": {
+      "code": "credential_not_allowed",
+      "status": 403
+    },
+    "/api/v1/problems/csrf-failed": {
+      "code": "csrf_failed",
+      "status": 403
+    },
+    "/api/v1/problems/disk.low": {
+      "code": "disk.low",
+      "status": 503
+    },
+    "/api/v1/problems/fetch.dns-failed": {
+      "code": "fetch.dns_failed",
+      "status": 502
+    },
+    "/api/v1/problems/fetch.error": {
+      "code": "fetch.error",
+      "status": 502
+    },
+    "/api/v1/problems/fetch.invalid-url": {
+      "code": "fetch.invalid_url",
+      "status": 422
+    },
+    "/api/v1/problems/fetch.timeout": {
+      "code": "fetch.timeout",
+      "status": 504
+    },
+    "/api/v1/problems/fetch.too-large": {
+      "code": "fetch.too_large",
+      "status": 502
+    },
+    "/api/v1/problems/fetch.too-many-redirects": {
+      "code": "fetch.too_many_redirects",
+      "status": 502
+    },
+    "/api/v1/problems/fetch.unreachable": {
+      "code": "fetch.unreachable",
+      "status": 502
+    },
+    "/api/v1/problems/fetch.unsafe-redirect": {
+      "code": "fetch.unsafe_redirect",
+      "status": 502
+    },
+    "/api/v1/problems/forbidden": {
+      "code": "forbidden",
+      "status": 403
+    },
+    "/api/v1/problems/idempotency-in-progress": {
+      "code": "idempotency_in_progress",
+      "status": 409
+    },
+    "/api/v1/problems/idempotency-key-invalid": {
+      "code": "idempotency_key_invalid",
+      "status": 400
+    },
+    "/api/v1/problems/idempotency-key-reused": {
+      "code": "idempotency_key_reused",
+      "status": 422
+    },
+    "/api/v1/problems/image.decode-failed": {
+      "code": "image.decode_failed",
+      "status": 422
+    },
+    "/api/v1/problems/image.format-refused": {
+      "code": "image.format_refused",
+      "status": 422
+    },
+    "/api/v1/problems/image.too-large": {
+      "code": "image.too_large",
+      "status": 422
+    },
+    "/api/v1/problems/image.worker-failed": {
+      "code": "image.worker_failed",
+      "status": 500
+    },
+    "/api/v1/problems/instance.lease-conflict": {
+      "code": "instance.lease_conflict",
+      "status": 503
+    },
+    "/api/v1/problems/instance.restored-behind": {
+      "code": "instance.restored_behind",
+      "status": 503
+    },
+    "/api/v1/problems/internal-error": {
+      "code": "internal_error",
+      "status": 500
+    },
+    "/api/v1/problems/invalid-credentials": {
+      "code": "invalid_credentials",
+      "status": 401
+    },
+    "/api/v1/problems/invalid-cursor": {
+      "code": "invalid_cursor",
+      "status": 400
+    },
+    "/api/v1/problems/job.dead-lettered": {
+      "code": "job.dead_lettered",
+      "status": 500
+    },
+    "/api/v1/problems/job.failed": {
+      "code": "job.failed",
+      "status": 500
+    },
+    "/api/v1/problems/job.unknown-kind": {
+      "code": "job.unknown_kind",
+      "status": 500
+    },
+    "/api/v1/problems/metadata.provider-down": {
+      "code": "metadata.provider_down",
+      "status": 503
+    },
+    "/api/v1/problems/method-not-allowed": {
+      "code": "method_not_allowed",
+      "status": 405
+    },
+    "/api/v1/problems/mount.sentinel-missing": {
+      "code": "mount.sentinel_missing",
+      "status": 503
+    },
+    "/api/v1/problems/not-found": {
+      "code": "not_found",
+      "status": 404
+    },
+    "/api/v1/problems/notify.failed": {
+      "code": "notify.failed",
+      "status": 502
+    },
+    "/api/v1/problems/plan.stale": {
+      "code": "plan.stale",
+      "status": 412
+    },
+    "/api/v1/problems/precondition-failed": {
+      "code": "precondition_failed",
+      "status": 412
+    },
+    "/api/v1/problems/precondition-required": {
+      "code": "precondition_required",
+      "status": 428
+    },
+    "/api/v1/problems/reauth-required": {
+      "code": "reauth_required",
+      "status": 401
+    },
+    "/api/v1/problems/reconcile.drift": {
+      "code": "reconcile.drift",
+      "status": 409
+    },
+    "/api/v1/problems/request-too-large": {
+      "code": "request_too_large",
+      "status": 413
+    },
+    "/api/v1/problems/resync-required": {
+      "code": "resync_required",
+      "status": 410
+    },
+    "/api/v1/problems/secret.undecryptable": {
+      "code": "secret.undecryptable",
+      "status": 503
+    },
+    "/api/v1/problems/series.gap": {
+      "code": "series.gap",
+      "status": 409
+    },
+    "/api/v1/problems/series.stale": {
+      "code": "series.stale",
+      "status": 409
+    },
+    "/api/v1/problems/series.tombstoned-upstream": {
+      "code": "series.tombstoned_upstream",
+      "status": 409
+    },
+    "/api/v1/problems/source.auth-expired": {
+      "code": "source.auth_expired",
+      "status": 503
+    },
+    "/api/v1/problems/source.auth-mode-unsupported": {
+      "code": "source.auth_mode_unsupported",
+      "status": 503
+    },
+    "/api/v1/problems/source.auth-required": {
+      "code": "source.auth_required",
+      "status": 401
+    },
+    "/api/v1/problems/source.broken": {
+      "code": "source.broken",
+      "status": 502
+    },
+    "/api/v1/problems/source.changed": {
+      "code": "source.changed",
+      "status": 502
+    },
+    "/api/v1/problems/source.content-removed": {
+      "code": "source.content_removed",
+      "status": 410
+    },
+    "/api/v1/problems/source.dns-blocked": {
+      "code": "source.dns_blocked",
+      "status": 502
+    },
+    "/api/v1/problems/source.downloads-dropped": {
+      "code": "source.downloads_dropped",
+      "status": 503
+    },
+    "/api/v1/problems/source.error": {
+      "code": "source.error",
+      "status": 502
+    },
+    "/api/v1/problems/source.fallback": {
+      "code": "source.fallback",
+      "status": 409
+    },
+    "/api/v1/problems/source.instance-changed": {
+      "code": "source.instance_changed",
+      "status": 409
+    },
+    "/api/v1/problems/source.not-loaded": {
+      "code": "source.not_loaded",
+      "status": 503
+    },
+    "/api/v1/problems/source.rate-limited": {
+      "code": "source.rate_limited",
+      "status": 503
+    },
+    "/api/v1/problems/source.temporarily-unavailable": {
+      "code": "source.temporarily_unavailable",
+      "status": 503
+    },
+    "/api/v1/problems/source.version-unsupported": {
+      "code": "source.version_unsupported",
+      "status": 503
+    },
+    "/api/v1/problems/ssrf.blocked": {
+      "code": "ssrf.blocked",
+      "status": 403
+    },
+    "/api/v1/problems/target.child-exposure": {
+      "code": "target.child_exposure",
+      "status": 409
+    },
+    "/api/v1/problems/target.forbidden": {
+      "code": "target.forbidden",
+      "status": 403
+    },
+    "/api/v1/problems/target.foreign-writer-detected": {
+      "code": "target.foreign_writer_detected",
+      "status": 409
+    },
+    "/api/v1/problems/target.instance-changed": {
+      "code": "target.instance_changed",
+      "status": 409
+    },
+    "/api/v1/problems/target.key-expiring": {
+      "code": "target.key_expiring",
+      "status": 409
+    },
+    "/api/v1/problems/target.not-indexed": {
+      "code": "target.not_indexed",
+      "status": 409
+    },
+    "/api/v1/problems/target.permission-denied": {
+      "code": "target.permission_denied",
+      "status": 403
+    },
+    "/api/v1/problems/target.route-missing": {
+      "code": "target.route_missing",
+      "status": 503
+    },
+    "/api/v1/problems/target.unreachable": {
+      "code": "target.unreachable",
+      "status": 503
+    },
+    "/api/v1/problems/target.version-unsupported": {
+      "code": "target.version_unsupported",
+      "status": 503
+    },
+    "/api/v1/problems/tombstone.journal-truncated": {
+      "code": "tombstone.journal_truncated",
+      "status": 409
+    },
+    "/api/v1/problems/tombstone.key-unknown": {
+      "code": "tombstone.key_unknown",
+      "status": 409
+    },
+    "/api/v1/problems/tombstone.migration-hit": {
+      "code": "tombstone.migration_hit",
+      "status": 409
+    },
+    "/api/v1/problems/tombstone.root-mismatch": {
+      "code": "tombstone.root_mismatch",
+      "status": 409
+    },
+    "/api/v1/problems/tombstone.unverified": {
+      "code": "tombstone.unverified",
+      "status": 409
+    },
+    "/api/v1/problems/too-many-attempts": {
+      "code": "too_many_attempts",
+      "status": 429
+    },
+    "/api/v1/problems/unauthenticated": {
+      "code": "unauthenticated",
+      "status": 401
+    },
+    "/api/v1/problems/unit.safeguard-backlog": {
+      "code": "unit.safeguard_backlog",
+      "status": 503
+    },
+    "/api/v1/problems/unit.safeguard-failed": {
+      "code": "unit.safeguard_failed",
+      "status": 500
+    },
+    "/api/v1/problems/validation-failed": {
+      "code": "validation_failed",
+      "status": 422
+    },
+    "/api/v1/problems/wake.deferred": {
+      "code": "wake.deferred",
+      "status": 503
+    },
+    "/api/v1/problems/window.preempted": {
+      "code": "window.preempted",
+      "status": 503
     }
   }
 }

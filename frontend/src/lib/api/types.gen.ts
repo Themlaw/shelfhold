@@ -5,14 +5,64 @@ export type ClientOptions = {
 };
 
 /**
+ * About
+ */
+export type About = {
+    /**
+     * Source Url
+     */
+    source_url: string;
+    /**
+     * Version
+     */
+    version: string;
+};
+
+/**
+ * CsrfToken
+ */
+export type CsrfToken = {
+    /**
+     * Csrf Token
+     */
+    csrf_token: string;
+};
+
+/**
  * HealthzResponse
  */
 export type HealthzResponse = {
+    /**
+     * Paused Queues
+     */
+    paused_queues?: Array<string> | null;
     progress?: MigrationProgress | null;
     /**
      * State
      */
     state: 'ok' | 'migrating';
+    /**
+     * Version
+     */
+    version?: string | null;
+};
+
+/**
+ * LoginRequest
+ */
+export type LoginRequest = {
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Remember
+     */
+    remember?: boolean;
+    /**
+     * Username
+     */
+    username: string;
 };
 
 /**
@@ -27,6 +77,20 @@ export type MigrationProgress = {
      * Total
      */
     total: number;
+};
+
+/**
+ * PasswordReauth
+ */
+export type PasswordReauth = {
+    /**
+     * Method
+     */
+    method: 'password';
+    /**
+     * Password
+     */
+    password: string;
 };
 
 /**
@@ -71,10 +135,213 @@ export type Problem = {
  */
 export type ReadyzResponse = {
     /**
+     * Checks
+     */
+    checks?: {
+        [key: string]: boolean;
+    } | null;
+    /**
      * State
      */
     state: 'ready' | 'not_ready';
 };
+
+/**
+ * ReauthResponse
+ */
+export type ReauthResponse = {
+    /**
+     * Auth Time
+     */
+    auth_time: string;
+    /**
+     * Csrf Token
+     */
+    csrf_token: string;
+};
+
+/**
+ * SessionInfo
+ */
+export type SessionInfo = {
+    /**
+     * Auth Time
+     */
+    auth_time?: string | null;
+    /**
+     * Credential
+     */
+    credential: string;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+export type AboutData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/about';
+};
+
+export type AboutErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AboutError = AboutErrors[keyof AboutErrors];
+
+export type AboutResponses = {
+    /**
+     * Successful Response
+     */
+    200: About;
+};
+
+export type AboutResponse = AboutResponses[keyof AboutResponses];
+
+export type LoginData = {
+    body: LoginRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/login';
+};
+
+export type LoginErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LoginError = LoginErrors[keyof LoginErrors];
+
+export type LoginResponses = {
+    /**
+     * Successful Response
+     */
+    200: CsrfToken;
+};
+
+export type LoginResponse = LoginResponses[keyof LoginResponses];
+
+export type LogoutData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/logout';
+};
+
+export type LogoutErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LogoutError = LogoutErrors[keyof LogoutErrors];
+
+export type LogoutResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
+
+export type ReauthData = {
+    body: PasswordReauth;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/reauth';
+};
+
+export type ReauthErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReauthError = ReauthErrors[keyof ReauthErrors];
+
+export type ReauthResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReauthResponse;
+};
+
+export type ReauthResponse2 = ReauthResponses[keyof ReauthResponses];
+
+export type SessionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/session';
+};
+
+export type SessionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SessionError = SessionErrors[keyof SessionErrors];
+
+export type SessionResponses = {
+    /**
+     * Successful Response
+     */
+    200: SessionInfo;
+};
+
+export type SessionResponse = SessionResponses[keyof SessionResponses];
 
 export type HealthzData = {
     body?: never;

@@ -35,6 +35,9 @@ _DETERMINISTIC_ERRORS = frozenset({400, 404, 409, 422})
 _REPLAYED_HEADERS = ("location", "etag", "content-type")
 
 ActorOf = Callable[[Scope], str]
+# Set in `scope["state"]` by a route whose answer must never be kept nor replayed: a reserved
+# action (review PR #41) — a replay would skip the credential and freshness checks.
+NEVER_STORE = "idempotency_never_store"
 
 
 class IdempotencyMiddleware:
@@ -134,8 +137,11 @@ class IdempotencyMiddleware:
         except BaseException:
             await run_in_threadpool(self.store.release, claim)
             raise
-        if response_headers is not None and self._storable(
-            status, response_headers, overflow, bytes(captured)
+        never = bool(scope.get("state", {}).get(NEVER_STORE))
+        if (
+            not never
+            and response_headers is not None
+            and self._storable(status, response_headers, overflow, bytes(captured))
         ):
             kept = {n: response_headers[n] for n in _REPLAYED_HEADERS if n in response_headers}
             await run_in_threadpool(

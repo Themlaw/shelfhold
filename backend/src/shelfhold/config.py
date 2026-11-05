@@ -4,6 +4,7 @@ Pure module: no database or framework import. The database layer is injected
 as a loader so that this module stays testable with a plain mapping.
 """
 
+import ipaddress
 import stat
 import tomllib
 from collections.abc import Callable, Mapping
@@ -55,8 +56,24 @@ class Settings(BaseModel):
     # ENF-LEG-001: a fresh install has no plugin repository and no active source.
     plugin_repos: tuple[str, ...] = ()
     active_sources: tuple[str, ...] = ()
+    # ENF-LEG-012: where the running code is offered (login page, /api/v1/about); None = the
+    # repository at the tag of this version. Point it at your fork if you modified the code.
+    source_url: str | None = None
+    # P1/P2/P3: the hardened profile (docs/admin/durcir.md) shortens admin sessions and asks for
+    # a fresh password on every reserved action; never required. The invisible protections
+    # (argon2id, CSRF, cookies, CSP, attempt limiting) have no setting at all.
+    auth_hardened: bool = False
+    fresh_auth_s: int = Field(default=900, ge=60, le=86_400)
+    # P5: forward-auth is off while this is empty. Proxy identity headers (Remote-User,
+    # Tailscale-User-*...) are removed from every request whose peer is outside these networks.
+    forward_auth_trusted_cidrs: tuple[str, ...] = ()
 
-    @field_validator("plugin_repos", "active_sources", mode="before")
+    @field_validator("forward_auth_trusted_cidrs")
+    @classmethod
+    def _cidrs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(str(ipaddress.ip_network(cidr, strict=False)) for cidr in value)
+
+    @field_validator("plugin_repos", "active_sources", "forward_auth_trusted_cidrs", mode="before")
     @classmethod
     def _split_list(cls, value: object) -> object:
         if isinstance(value, str):

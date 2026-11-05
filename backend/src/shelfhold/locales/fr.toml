@@ -14,6 +14,25 @@ secrets_out_help = "Fichier de sortie ; « - » pour la sortie standard."
 secrets_rotate_help = "Fait tourner la clé des secrets (reprend une rotation interrompue)."
 secrets_retire_help = "Retire une ancienne clé du trousseau (refusé si elle est active, utilisée ou citée par une pierre tombale)."
 secrets_status_help = "Affiche les avertissements sur le trousseau."
+status_help = "Affiche les avertissements de l'instance."
+admin_help = "Administre les comptes locaux, les sessions et les clés d'API."
+admin_create_help = "Crée le compte administrateur local (mot de passe haché en argon2id)."
+admin_reset_help = "Change le mot de passe d'un compte et ferme toutes ses sessions."
+admin_username_help = "Identifiant du compte."
+admin_password_file_help = "Fichier contenant le mot de passe ; « - » pour l'entrée standard (jamais en argument)."
+admin_sessions_help = "Gère les sessions ouvertes."
+admin_sessions_revoke_help = "Ferme des sessions : toutes (--all), celles d'un compte (--user) ou une seule."
+admin_session_id_help = "Identifiant de la session à fermer."
+admin_all_help = "Toutes les sessions."
+admin_user_help = "Les sessions de ce compte."
+admin_keys_help = "Gère les clés d'API (stockées hachées, affichées une seule fois)."
+admin_keys_create_help = "Crée une clé d'API et l'affiche une seule fois."
+admin_keys_list_help = "Liste les clés (préfixe, nom, échéance, dernier usage), jamais leur secret."
+admin_keys_revoke_help = "Révoque une clé par son préfixe ; refusée dès la requête suivante."
+admin_key_name_help = "Nom de la clé (à quoi elle sert)."
+admin_key_read_only_help = "Clé en lecture seule (toute requête qui modifie est refusée)."
+admin_key_expires_help = "Durée de validité en jours (facultative ; plafonnée à 90 par le profil durci)."
+admin_key_prefix_help = "Préfixe de la clé (8 caractères hexadécimaux)."
 
 [migrate]
 up_to_date = "La base est déjà à jour."
@@ -66,6 +85,43 @@ boot_keyring_missing = "Démarrage refusé : trousseau absent ({detail}). En cr�
 
 [api]
 problem_description = "Détail du problème (RFC 9457)."
+problem_401 = "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+problem_403 = "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+
+[login]
+title = "Connexion"
+username = "Identifiant"
+password = "Mot de passe"
+remember = "Se souvenir de moi"
+submit = "Se connecter"
+error = "Connexion impossible."
+source = "Code source"
+
+[status]
+no_warning = "Aucun avertissement."
+warning_line = "Avertissement : {message}"
+database_not_migrated = "base absente ou pas à jour : lancez « shelfhold migrate »."
+identity_header_stripped = "des requêtes portent l'en-tête d'identité « {header} », retiré et jamais cru (forward-auth non configuré ou proxy hors des CIDR de confiance). Retirez-le au niveau du proxy ou du tunnel, ou configurez le forward-auth (M3)."
+
+[admin]
+created = "Compte administrateur « {username} » créé."
+exists = "Un administrateur existe déjà : un seul compte local en M1a. Pour changer son mot de passe : « shelfhold admin reset-password »."
+unknown_user = "Compte inconnu : {username}."
+password_rejected = "Mot de passe refusé : {reason}."
+password_too_short = "au moins 10 caractères"
+password_too_long = "1024 caractères au plus"
+password_unreadable = "Impossible de lire le mot de passe : {detail}."
+invalid_username = "Identifiant invalide (1 à 128 caractères)."
+password_reset = "Mot de passe changé ; {count} session(s) fermée(s)."
+sessions_revoked = "{count} session(s) fermée(s)."
+key_created = "Clé créée (préfixe {prefix}). Elle ne sera plus jamais affichée :"
+key_expires = "Expire le {date}."
+key_never_expires = "Sans expiration (recommandé : --expires-days 90)."
+key_revoked = "Clé {prefix} révoquée."
+key_unknown = "Aucune clé active avec le préfixe {prefix}."
+no_keys = "Aucune clé d'API."
+key_line = "{prefix}  {name}  {scopes}  {state}"
+database_missing = "Base absente ou pas à jour : lancez d'abord « shelfhold migrate »."
 
 # Catalogue d'erreurs (EF-UX-003) : un titre et une action par code ; le code est la clé.
 
@@ -84,6 +140,10 @@ action = "Corrigez la requête puis recommencez."
 [errors."credential_not_allowed"]
 title = "Cette action est réservée à une session."
 action = "Effectuez l'action depuis l'interface après connexion ; les clés d'API et les jetons d'appareil sont refusés."
+
+[errors."csrf_failed"]
+title = "La requête n'a pas été reconnue comme venant de cette page."
+action = "Rechargez la page puis recommencez ; un script utilise une clé d'API plutôt qu'une session."
 
 [errors."disk.low"]
 title = "Espace disque presque épuisé."
@@ -148,6 +208,10 @@ action = "Lancez « shelfhold reconcile --adopt-after-restore » pour rapprocher
 [errors."internal_error"]
 title = "Erreur interne de Shelfhold."
 action = "Réessayez ; si l'erreur persiste, relevez l'identifiant de requête et consultez les journaux."
+
+[errors."invalid_credentials"]
+title = "Identifiant ou mot de passe incorrect."
+action = "Vérifiez l'identifiant et le mot de passe, puis recommencez."
 
 [errors."invalid_cursor"]
 title = "Le curseur de pagination est invalide."
@@ -332,6 +396,10 @@ action = "Consultez le rapport : les lignes ont été appliquées à la racine c
 [errors."tombstone.unverified"]
 title = "Une pierre tombale n'a pas pu être vérifiée."
 action = "Examinez la ligne signalée au rapport et décidez de la garder ou de l'écarter."
+
+[errors."too_many_attempts"]
+title = "Trop de tentatives de connexion."
+action = "Patientez une minute avant de réessayer ; l'administrateur peut aussi agir depuis la ligne de commande de l'hôte."
 
 [errors."unauthenticated"]
 title = "Connexion requise."
