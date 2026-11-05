@@ -77,7 +77,8 @@ def create_app(
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
             boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops the start
             runtime.boot()  # open intents settled, then (and only then) the jobs
-            record_applied_public_url(engine, resolved.public_url)  # `status` compares with it
+            if runtime.owns_volumes:  # a migration in progress: this process writes nothing
+                record_applied_public_url(engine, resolved.public_url)  # `status` compares
         except BaseException:
             runtime.stop()
             raise
