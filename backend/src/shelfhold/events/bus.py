@@ -36,7 +36,7 @@ SCHEMA_VERSION: Final = 1
 VISIBILITIES: Final = ("private", "household", "ops")
 _ULID: Final = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}\Z")
 _CODE: Final = re.compile(r"[a-z][a-z0-9_]*(?:[.:-][a-z0-9_]+)*\Z")
-_ENUM_KEYS: Final = ("reason", "kind", "state", "code", "error_code", "scope")
+_ENUM_KEYS: Final = ("reason", "kind", "state", "code", "error_code", "scope", "volume")
 _FREE_CODE_KEYS: Final = frozenset({"job_kind"})  # a job kind is named in code, never typed in
 GENERIC_REASONS: Final = frozenset(
     {
@@ -44,6 +44,9 @@ GENERIC_REASONS: Final = frozenset(
         "version_unsupported", "schema_mismatch", "retries_exhausted", "handler_error", "unknown",
     }
 )  # fmt: skip
+VOLUME_VALUES: Final = frozenset(
+    {"data", "store", "library", *(f"library_{n}" for n in range(2, 17))}
+)
 # Per event type, the values each enumerated key may take. A type or a key that is not listed
 # takes the default of that key; a value outside the enumeration is refused, so no title can be
 # smuggled in as a "code" (ENF-SEC-015). `reason` defaults to GENERIC_REASONS; the others to none.
@@ -59,6 +62,9 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     },
     "mount.sentinel_missing": {"reason": frozenset({"sentinel", "missing_ratio"})},
     "reconcile.drift": {"kind": frozenset({"unknown_file", "adopted_missing"})},
+    # ENF-OPS-006: the volume under its free-space mark.
+    "disk.low": {"volume": VOLUME_VALUES},
+    "ops.disk_recovered": {"volume": VOLUME_VALUES},
 }
 CODE_VALUES: Final = frozenset(
     OPERATING_EVENTS | {"job.failed", "job.unknown_kind", "window.preempted"}
@@ -73,6 +79,7 @@ _DEFAULT_ENUMS: Final[dict[str, frozenset[str]]] = {
     "code": CODE_VALUES,
     "error_code": CODE_VALUES,
     "scope": SCOPE_VALUES,
+    "volume": frozenset(),
 }
 _EXTENSION_TYPE: Final = re.compile(r"plugin\.[a-z0-9_]+\.[a-z0-9_.]+\Z")
 _OPS_TYPE: Final = re.compile(r"ops\.[a-z0-9_]+\Z")

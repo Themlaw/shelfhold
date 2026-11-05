@@ -14,16 +14,16 @@ from shelfhold.events.operating import NOT_NOTIFIED, OPERATING_EVENTS, WAITING_S
 from shelfhold.export.targets.kavita import AdminKey, KavitaClient
 from shelfhold.export.targets.kavita.errors import TargetUnreachable
 from shelfhold.i18n import load_catalog
+from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.observability.failure_matrix import (
     FAILURE_MATRIX,
     M1A_BEHAVIOURS,
     rows_for,
 )
-from shelfhold.infrastructure.observability.mount_probe import probe_folder
+from tests.fakes_clock import ManualClock
 from tests.faults.simulator import FaultSimulator
 from tests.fsops_env import make_env
 from tests.kavita_env import NOW, RecordingEvents
-from tests.fakes_clock import ManualClock
 
 
 def all_codes() -> dict[str, ErrorCode]:
@@ -47,7 +47,11 @@ def test_failure_matrix_events_and_codes_consistent() -> None:
     # every state in which Shelfhold waits for a human announces itself with a matrix event
     assert set(WAITING_STATE_EVENT.values()) <= covered
     assert {"disk.low", "mount.sentinel_missing", "instance.lease_conflict"} <= covered
-    assert {r.key for r in rows_for("M1a")} >= {"disk_low", "kavita_unreachable", "suwayomi_unreachable"}
+    assert {r.key for r in rows_for("M1a")} >= {
+        "disk_low",
+        "kavita_unreachable",
+        "suwayomi_unreachable",
+    }
 
 
 @pytest.mark.req("ENF-OPS-011")

@@ -67,3 +67,23 @@ class HealthProbe:
         except sqlite3.Error:
             return []
         return [str(kind) for (kind,) in rows]
+
+    def paused_reasons(self) -> dict[str, str]:
+        """Paused job kind -> the code of the queue-wide pause that parked it (`disk.low`...);
+        a job parked for another reason (a closed window) has no such code and is left out."""
+        database = self._settings.database_path
+        if not database.exists():
+            return {}
+        try:
+            connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=1)
+            try:
+                rows = connection.execute(
+                    "SELECT kind, error_code FROM job_view WHERE status = 'paused' "
+                    "AND error_code IS NOT NULL AND error_code != 'window.preempted' "
+                    "ORDER BY kind"
+                ).fetchall()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            return {}
+        return {str(kind): str(code) for kind, code in rows}

@@ -21,7 +21,7 @@ WORK = "01JBZ3X5QH8M2N4P6R7S9T0W01"
 
 def job_rows(pools: JobPools) -> dict[str, tuple[str, int]]:
     j = platform.job_view
-    with pools._engine.connect() as conn:  # noqa: SLF001
+    with pools._engine.connect() as conn:
         return {r.dedupe_key: (r.status, r.attempts) for r in conn.execute(sa.select(j))}
 
 
@@ -67,7 +67,12 @@ def test_graceful_shutdown_checkpoint_and_flush_locks(tmp_path: Path) -> None:
     assert job_rows(pools)["l1"] == ("queued", 0)
     assert job_rows(pools)["r1"][0] == "running"  # left for `requeue_running` at the next boot
     with ienv.engine.connect() as conn:  # step 3: nothing is left locked
-        assert conn.execute(sa.select(sa.func.count()).select_from(coherence.resource_lock)).scalar_one() == 0
+        assert (
+            conn.execute(
+                sa.select(sa.func.count()).select_from(coherence.resource_lock)
+            ).scalar_one()
+            == 0
+        )
         assert conn.execute(sa.select(sa.func.sum(platform.domain_slot.c.in_use))).scalar_one() == 0
     assert not lock.is_held()
     InstanceLock(data).acquire()  # the next instance can start at once
@@ -103,7 +108,9 @@ def test_a_cooperative_job_stops_at_its_checkpoint_and_resumes_there(tmp_path: P
 
         return run
 
-    pools.register("batch", pool="io", handler=lambda ctx: ctx.run_steps([step(0), step(1), step(2)]))
+    pools.register(
+        "batch", pool="io", handler=lambda ctx: ctx.run_steps([step(0), step(1), step(2)])
+    )
     pools.submit("batch", dedupe_key="b1")
     huey = pools.huey("io")
     worker = threading.Thread(target=lambda: huey.execute(huey.dequeue()), daemon=True)
@@ -118,5 +125,5 @@ def test_a_cooperative_job_stops_at_its_checkpoint_and_resumes_there(tmp_path: P
 
 
 def job_id_of(pools: JobPools) -> str:
-    with pools._engine.connect() as conn:  # noqa: SLF001
+    with pools._engine.connect() as conn:
         return str(conn.execute(sa.select(platform.job_view.c.id)).scalar_one())

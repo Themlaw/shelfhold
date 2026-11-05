@@ -52,7 +52,9 @@ def rows(engine: Engine) -> dict[str, tuple[str, int, str | None]]:
     with engine.connect() as conn:
         return {
             r.dedupe_key: (r.status, r.attempts, r.error_code)
-            for r in conn.execute(sa.select(j.c.dedupe_key, j.c.status, j.c.attempts, j.c.error_code))
+            for r in conn.execute(
+                sa.select(j.c.dedupe_key, j.c.status, j.c.attempts, j.c.error_code)
+            )
         }
 
 
@@ -63,12 +65,16 @@ def test_disk_low_pauses_queue_without_retries(tmp_path: Path, engine: Engine) -
     pools = JobPools(tmp_path / "data", engine=engine, clock=clock, seed="i")
     ran: list[str] = []
     pools.register("download", pool="io", handler=lambda job: ran.append(job.dedupe_key))
-    pools.register("read_meta", pool="io", handler=lambda job: ran.append(job.dedupe_key), writes=False)
+    pools.register(
+        "read_meta", pool="io", handler=lambda job: ran.append(job.dedupe_key), writes=False
+    )
     space = Space()
     delivered: list[str] = []
     bus = EventBus(clock)
     bus.subscribe(lambda event: delivered.append(f"{event.type}:{event.payload['volume']}"))
-    watcher = DiskWatcher(DiskGuard({"store": tmp_path}, usage=space), pools, engine=engine, bus=bus)
+    watcher = DiskWatcher(
+        DiskGuard({"store": tmp_path}, usage=space), pools, engine=engine, bus=bus
+    )
     kept = tmp_path / "kept.cbz"
     kept.write_bytes(b"chapter")
 
@@ -124,6 +130,6 @@ def test_healthz_lists_paused_queues_with_their_reason(tmp_path: Path, engine: E
     pools.register("download", pool="io", handler=lambda job: None)
     pools.submit("download", dedupe_key="c1")
     pools.pause_writes("disk.low")
-    probe = HealthProbe(Settings(data_dir=tmp_path, store_dir=tmp_path / "store"))
+    probe = HealthProbe(Settings(data_dir=tmp_path, store_dir=Path("/srv/store-unused")))
     assert probe.paused_queues() == ["download"]
     assert probe.paused_reasons() == {"download": "disk.low"}

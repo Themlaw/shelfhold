@@ -57,6 +57,8 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 # the CLI socket this process bound (and its staging directory), in /data
                 "shelfhold/infrastructure/local_socket/server.py::LocalSocketServer._remove_socket",
                 "shelfhold/infrastructure/local_socket/server.py::bind_private",
+                # the probe folder the write check made itself (EF-UX-002)
+                f"{_FSOPS}/probe.py::_remove_probe_dir",
             }
         ),
         # Rolls the database file (and its sidecars) back to the copy taken before a migration.
@@ -82,6 +84,7 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/infrastructure/volumes.py::_remove_tree_at": "purge.now",
         # The probe file of the permission preflight (EF-EXP-054): a name the probe drew itself.
         f"{_EXPORT_APP}/preflight.py::FolderProbe._remove_probe_file": "probe_file_cleanup",
+        f"{_FSOPS}/probe.py::_remove_probe_file": ("probe_file_cleanup"),
     }
 )
 

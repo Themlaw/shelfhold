@@ -23,6 +23,7 @@ class HealthzResponse(BaseModel):
     progress: MigrationProgress | None = None
     version: str | None = None  # authenticated callers only
     paused_queues: list[str] | None = None  # authenticated callers only
+    paused_reasons: dict[str, str] | None = None  # why: job kind -> code (ENF-OPS-011, D11)
 
 
 class ReadyzResponse(BaseModel):
@@ -47,6 +48,11 @@ def _paused_queues(health: HealthPort) -> list[str]:
     return sorted(probe()) if callable(probe) else []
 
 
+def _paused_reasons(health: HealthPort) -> dict[str, str]:
+    probe = getattr(health, "paused_reasons", None)
+    return dict(sorted(probe().items())) if callable(probe) else {}
+
+
 def build_health_router(health: HealthPort, *, version: str | None = None) -> APIRouter:
     router = APIRouter()
 
@@ -68,6 +74,7 @@ def build_health_router(health: HealthPort, *, version: str | None = None) -> AP
         if _authenticated(request):
             body["version"] = version
             body["paused_queues"] = _paused_queues(health) if progress is None else []
+            body["paused_reasons"] = _paused_reasons(health) if progress is None else {}
         return JSONResponse(body)
 
     @router.head("/readyz", include_in_schema=False)

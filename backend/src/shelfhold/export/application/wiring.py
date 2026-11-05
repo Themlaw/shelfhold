@@ -6,6 +6,7 @@ registered in `physical_root` (as at boot). `plugin/parse` answers come from Kav
 and the preview says so by refusing to apply (`require_verified_plan` is the caller's).
 """
 
+from collections.abc import Callable
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -34,12 +35,14 @@ def _unchecked(_name: str) -> Parsed:
     return NoRemoteParse()
 
 
-def open_pipeline(settings: Settings) -> ExportPipeline:
+def open_pipeline(
+    settings: Settings, *, write_gate: Callable[[], None] | None = None
+) -> ExportPipeline:
     engine = create_db_engine(settings.database_path)
     with engine.connect() as connection:
         paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
         loaded = load_roots(connection, PathMap.same_path(paths))
-    fsops = Fsops.open(loaded.path_map, loaded.expected)
+    fsops = Fsops.open(loaded.path_map, loaded.expected, write_gate=write_gate)
 
     return ExportPipeline(
         engine, fsops, locate=loaded.locate, data_dir=Path(settings.data_dir), clock=SystemClock(),

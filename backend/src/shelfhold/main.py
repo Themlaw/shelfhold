@@ -55,7 +55,7 @@ def create_app(
     @cache
     def pipeline() -> object:
         # Plans can be previewed; applying one needs the Kavita `plugin/parse` check (L29).
-        return open_pipeline(resolved)
+        return open_pipeline(resolved, write_gate=runtime.require_space)
 
     @cache
     def headless_admin() -> HeadlessAdmin:
@@ -69,6 +69,7 @@ def create_app(
     )
 
     def on_shutdown() -> None:
+        runtime.shutdown()  # SIGTERM: stop claiming, checkpoint, free the locks (ENF-OPS-007)
         runtime.stop()
         engine.dispose()
 

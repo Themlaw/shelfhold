@@ -20,7 +20,7 @@ def test_data_on_nfs_refused_unless_overridden(tmp_path: Path) -> None:
     with pytest.raises(NetworkDataDirError) as raised:
         refuse_network_data_dir(tmp_path, allow=False, statfs=on_nfs)
     assert "nfs" in str(raised.value)
-    assert refused_kinds() == {"nfs", "cifs", "smb2"}
+    assert refused_kinds() == {"nfs", "cifs", "smb2", "smb"}
     for magic in (CIFS_MAGIC, SMB2_MAGIC):
         with pytest.raises(NetworkDataDirError):
             refuse_network_data_dir(tmp_path, allow=False, statfs=lambda _p, m=magic: m)
@@ -32,11 +32,13 @@ def test_data_on_nfs_refused_unless_overridden(tmp_path: Path) -> None:
 @pytest.mark.req("ENF-OPS-010")
 def test_the_real_statfs_answers_for_a_local_folder(tmp_path: Path) -> None:
     kind = filesystem_kind(tmp_path)
-    assert kind not in {"nfs", "cifs", "smb2"}  # CI runs on a local disk or a tmpfs
+    assert kind not in {"nfs", "cifs", "smb2", "smb"}  # CI runs on a local disk or a tmpfs
 
 
 @pytest.mark.req("ENF-OPS-010")
-def test_start_up_refuses_a_network_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_start_up_refuses_a_network_data_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from shelfhold.config import Settings
     from shelfhold.infrastructure import volumes
     from shelfhold.infrastructure.observability import network_fs

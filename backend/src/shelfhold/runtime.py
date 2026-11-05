@@ -15,6 +15,7 @@ import structlog
 from sqlalchemy import Engine
 
 from shelfhold.config import Settings
+from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
@@ -25,6 +26,10 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError, WriteSessions
 from shelfhold.infrastructure.migrate import MigrationStateFile, current_revision, head_revision
+from shelfhold.infrastructure.observability.disk_guard import DiskGuard
+from shelfhold.infrastructure.observability.disk_watch import DiskWatcher
+from shelfhold.infrastructure.observability.shutdown import GracefulShutdown, ShutdownReport
+from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
 
@@ -36,6 +41,8 @@ class InstanceRuntime:
     engine: Engine | None = field(default=None, init=False)
     pools: JobPools | None = field(default=None, init=False)
     owns_volumes: bool = field(default=False, init=False)
+    disk_guard: DiskGuard | None = field(default=None, init=False)
+    shutdown_report: ShutdownReport | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.lock = InstanceLock(self.settings.data_dir)
@@ -76,11 +83,15 @@ class InstanceRuntime:
             instance_id = row.instance_id if row else None
             loaded = load_roots(conn, PathMap.same_path(paths)) if row else None
         report: list[ResolveReport] = []
+        guard = disk_guard_for(
+            self.settings, [root.path for root in loaded.expected] if loaded else ()
+        )
+        self.disk_guard = guard
 
         def resolve() -> ResolveReport:
             if loaded is None or instance_id is None:
                 return ResolveReport()  # no instance row yet: nothing was ever written
-            fsops = Fsops.open(loaded.path_map, loaded.expected)
+            fsops = Fsops.open(loaded.path_map, loaded.expected, write_gate=guard.require_space)
             ready = fsops.boot().ok
             sessions = WriteSessions(
                 fsops, instance_id=instance_id, clock=clock, lock_path=self.lock.path
@@ -100,13 +111,42 @@ class InstanceRuntime:
         self.pools = JobPools(
             self.settings.data_dir, engine=engine, clock=clock, seed=instance_id or "unregistered"
         )
+        watcher = DiskWatcher(guard, self.pools, engine=engine, bus=EventBus(clock))
+        register_ops_jobs(
+            self.pools, self.settings, disk_check=watcher.check, audit=self.access_audit
+        )
         boot_jobs(
             self.pools,
             instance_lock=self.lock,
             resolve_intents=resolve,
             release_resource_locks=ResourceLocks(engine, clock=clock).release_all,
         )
+        watcher.check()  # the first measure at once: a full disk parks the jobs boot just sent
         return report[0] if report else None
+
+    def require_space(self) -> None:
+        """The write gate handed to every `Fsops` opened by this process."""
+        if self.disk_guard is not None:
+            self.disk_guard.require_space()
+
+    def access_audit(self) -> None:
+        """The daily Kavita access audit. No destination is connected by the runtime yet: L29's
+        wiring supplies `daily_access_audit(auditor, clients)` here once it opens clients."""
+
+    def shutdown(self, *, checkpoint_s: float | None = None) -> ShutdownReport | None:
+        """SIGTERM, in three steps (ENF-OPS-007); idempotent. `stop` then closes the database."""
+        if self.pools is None or not self.owns_volumes:
+            return None
+        engine = self.engine
+        locks = ResourceLocks(engine, clock=SystemClock()) if engine is not None else None
+        options = {} if checkpoint_s is None else {"checkpoint_s": checkpoint_s}
+        self.shutdown_report = GracefulShutdown(
+            self.pools,
+            instance_lock=self.lock,
+            release_resource_locks=locks.release_all if locks else None,
+            **options,
+        ).run()
+        return self.shutdown_report
 
     def stop(self) -> None:
         if self.engine is not None:

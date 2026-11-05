@@ -37,4 +37,4 @@ def test_the_kavita_client_gets_its_write_guard_from_the_composition_root(tmp_pa
     engine = prepare_database(tmp_path / "shelfhold.db")
     h = harness()
     client = guarded_kavita_client(h.client, engine, target_id="01JBZ3X5QH8M2N4P6R7S9T0V1A")
-    assert client._write_guard is not None  # noqa: SLF001
+    assert client._write_guard is not None
