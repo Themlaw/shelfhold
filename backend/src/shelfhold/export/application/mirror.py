@@ -19,8 +19,10 @@ from collections.abc import Sequence
 from typing import Any, Protocol
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
+from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.path_map import clean_absolute, within
@@ -33,11 +35,13 @@ from shelfhold.export.domain.provenance_mirror import (
     mirror_name,
 )
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.fsops import Fsops, PathEscapeError
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
 from shelfhold.library.public import export_sources
 
 __all__ = ["MirrorWriter", "ProvenanceMirror"]
+
+log = structlog.get_logger(__name__)
 
 LINE_STATES = ("written", "scanned", "resolved", "adopted")
 
@@ -63,7 +67,13 @@ class ProvenanceMirror:
         """Bring the mirror files of the destination in line with the database; `folder` limits
         the work to the series folder just written. Returns the files actually rewritten."""
         root, pending = self._pending(destination_id, folder)
-        return [self._put(root, name, data, writer or self._fsops) for name, data in pending]
+        written: list[str] = []
+        for name, data in pending:
+            try:
+                written.append(self._put(root, name, data, writer or self._fsops))
+            except PathEscapeError:  # a link where the file or its folder should be
+                self._skip(name, "symlink")
+        return written
 
     def would_write(self, destination_id: str) -> bool:
         """Is any mirror file of the destination missing or out of date? Writes nothing."""
@@ -84,8 +94,15 @@ class ProvenanceMirror:
             pending: list[tuple[str, bytes]] = []
             for series_id, (header, entries) in self._project(connection, ctx, folder).items():
                 name = mirror_name(destination_id, series_id)
-                raw, known = self._existing(connection, root, name)
-                data = self._merged(name, header, entries, raw, known)
+                try:
+                    raw = self._fsops.read_mirror(root, name)
+                    data = self._merged(name, header, entries, raw)
+                except PathEscapeError:
+                    self._skip(name, "symlink")
+                    continue
+                except Exception:  # a forged or damaged mirror never stops an export
+                    self._skip(name, "unreadable")
+                    continue
                 if data is not None and data != raw:
                     pending.append((name, data))
         return root, pending
@@ -112,23 +129,19 @@ class ProvenanceMirror:
                 best = (path, row.mode)
         return best[0] if best is not None and best[1] == "rw" else None
 
-    def _existing(
-        self, connection: Connection, root: str, name: str
-    ) -> tuple[bytes | None, set[str]]:
-        raw = self._fsops.read_mirror(root, name)
-        known: set[str] = set()
-        if raw is not None:
-            try:
-                ids = [e["export_item"]["id"] for e in MirrorDocument.parse(raw).entries]
-            except MirrorFormatError:
-                ids = []
-            if ids:
-                known = set(
-                    connection.execute(
-                        sa.select(export.export_item.c.id).where(export.export_item.c.id.in_(ids))
-                    ).scalars()
+    def _skip(self, name: str, reason: str) -> None:
+        """Left alone and reported (`reconcile.drift`); the export goes on."""
+        self.skipped.append(name)
+        log.warning("mirror_skipped", file=name, reason=reason)
+        try:
+            with self._engine.begin() as connection:
+                EventBus(self._clock).publish(
+                    connection,
+                    "reconcile.drift",
+                    {"mirror_files": 1},  # the reason is in the log
                 )
-        return raw, known
+        except Exception:  # reporting must not fail the run either
+            log.warning("mirror_event_failed", reason=reason)
 
     def _merged(
         self,
@@ -136,19 +149,18 @@ class ProvenanceMirror:
         header: dict[str, Any],
         entries: list[dict[str, Any]],
         raw: bytes | None,
-        known: set[str],
     ) -> bytes | None:
         if raw is None:
             return MirrorDocument(MIRROR_SCHEMA_VERSION, header, entries).dumps()
         try:
             on_disk = MirrorDocument.parse(raw)
         except MirrorFormatError:
-            self.skipped.append(name)  # damaged beyond reading: never overwritten
+            self._skip(name, "format")  # damaged beyond reading: never overwritten
             return None
         if on_disk.read_only:
-            self.skipped.append(name)  # a newer major: read only (ADR-0039)
+            self._skip(name, "newer_major")  # read only (ADR-0039)
             return None
-        return merge_with_database(on_disk, entries, known_items=known, header=header).dumps()
+        return merge_with_database(on_disk, entries, header=header).dumps()
 
     def _put(self, root: str, name: str, data: bytes, writer: MirrorWriter) -> str:
         """The intent (`write`), then the file, then the intent closed (EF-EXP-041)."""

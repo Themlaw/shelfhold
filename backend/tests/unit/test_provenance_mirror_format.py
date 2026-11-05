@@ -90,12 +90,12 @@ def test_unresolved_mirror_line_never_erased() -> None:
     on_disk = MirrorDocument.parse(raw(header(), owned, stranger))
     from_database = [{**owned, "state": "exported", "file_hash": owned["file_hash"]}]
     from_database[0].pop("note")
-    merged = merge_with_database(on_disk, from_database, known_items={owned["export_item"]["id"]})
+    merged = merge_with_database(on_disk, from_database)
     by_path = {e["rel_path"]: e for e in merged.entries}
     assert by_path["S/born-after-backup.cbz"]["state"] == "unresolved"
     assert by_path["S/one.cbz"]["note"] == "from a newer minor"
     # run it twice (a second `meta rebuild`): still there
-    again = merge_with_database(merged, from_database, known_items={owned["export_item"]["id"]})
+    again = merge_with_database(merged, from_database)
     assert "S/born-after-backup.cbz" in {e["rel_path"] for e in again.entries}
 
 
@@ -161,3 +161,48 @@ def test_mirror_is_excluded_from_diagnostic_bundles() -> None:
     assert is_diagnostic_excluded(".shelfhold/manifest/01/02.jsonl")
     assert is_diagnostic_excluded("/library/.shelfhold/manifest")
     assert not is_diagnostic_excluded("logs/shelfhold.log")
+
+
+def test_a_forged_file_is_refused_or_its_line_kept_aside() -> None:
+    from shelfhold.export.domain.provenance_mirror import MAX_LINES
+
+    nested = b'{"kind":"entry","x":' + b"[" * 100_000 + b"]" * 100_000 + b"}\n"
+    document = MirrorDocument.parse(raw(header()) + nested)  # no RecursionError
+    assert document.entries == [] and len(document.rejected) == 1
+    duplicate = b'{"kind":"entry","rel_path":"a","rel_path":"b"}\n'
+    assert len(MirrorDocument.parse(raw(header()) + duplicate).rejected) == 1
+    with pytest.raises(MirrorFormatError):
+        MirrorDocument.parse(raw(header()) + b'{"kind":"entry"}\n' * (MAX_LINES + 1))
+    unhashable = entry(export_item={"id": [1]})
+    assert len(MirrorDocument.parse(raw(header(), unhashable)).rejected) == 1
+
+
+def test_a_newer_major_still_checks_its_lines() -> None:
+    document = MirrorDocument.parse(raw(header("2.0"), {"kind": "entry", "export_item": 1}))
+    assert document.read_only and document.entries == [] and len(document.rejected) == 1
+
+
+def test_migration_1_0_keeps_variant_and_team_without_units() -> None:
+    old = entry_1_0(units=[])
+    (migrated,) = MirrorDocument.parse(raw(header("1.0"), old)).entries
+    assert migrated["variant"] == old["variant"] and migrated["team"] == old["team"]
+    assert migrated["coverage"] == []
+
+
+def test_migration_1_0_carries_unknown_variant_fields() -> None:
+    old = entry_1_0()
+    old["variant"]["quality"] = 0.5
+    old["units"][0]["note"] = "n"
+    (migrated,) = MirrorDocument.parse(raw(header("1.0"), old)).entries
+    covered = migrated["coverage"][0]
+    assert covered["quality"] == 0.5 and covered["note"] == "n"
+
+
+def test_a_line_of_the_disk_is_dropped_only_when_the_database_owns_its_item() -> None:
+    mine = entry("S/mine.cbz")
+    other = entry("S/other.cbz")  # an item the database does not list for this file
+    on_disk = MirrorDocument.parse(raw(header(), mine, other))
+    merged = merge_with_database(on_disk, [{**mine, "rel_path": "S/moved.cbz"}])
+    by_path = {e["rel_path"]: e for e in merged.entries}
+    assert set(by_path) == {"S/moved.cbz", "S/other.cbz"}
+    assert by_path["S/other.cbz"]["state"] == "unresolved"

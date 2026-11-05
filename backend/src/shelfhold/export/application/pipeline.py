@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Engine
 
 from shelfhold.export.application.export_items import create_export_item, ensure_export_series
@@ -61,6 +62,7 @@ __all__ = [
     "encode_op",
 ]
 
+log = structlog.get_logger(__name__)
 PLAN_KIND = "export"
 LOCK_WAIT_SECONDS = 30.0
 
@@ -197,15 +199,18 @@ class ExportPipeline:
     def _heal_mirror(self, ctx: DestinationContext) -> None:
         """A mirror file lost, or never written because a run stopped after its file: the
         database is the authority, so it is projected again (EF-EXP-063)."""
-        if not self.mirror.would_write(ctx.destination_id):
-            return
-        opened = (
-            self._sessions.open(ctx.local("."))
-            if self._sessions and ctx.root_local
-            else nullcontext(self._fsops)
-        )
-        with opened as writer:
-            self.mirror.sync_destination(ctx.destination_id, writer=writer)
+        try:
+            if not self.mirror.would_write(ctx.destination_id):
+                return
+            opened = (
+                self._sessions.open(ctx.local("."))
+                if self._sessions and ctx.root_local
+                else nullcontext(self._fsops)
+            )
+            with opened as writer:
+                self.mirror.sync_destination(ctx.destination_id, writer=writer)
+        except Exception:  # a mirror never stops an export; the next run tries again
+            log.warning("mirror_heal_failed", destination=ctx.destination_id)
 
     # -- applying --------------------------------------------------------------------------------
 
@@ -332,10 +337,13 @@ class ExportPipeline:
                     )  # fmt: skip
                     journal.mark_done(intent, within=connection)
                 # same write session, after the file and its manifest line (EF-EXP-063, I33)
-                self.mirror.sync_destination(
-                    ctx.destination_id, folder=str(planned.rel_path).split("/", 1)[0],
-                    writer=writer,
-                )  # fmt: skip
+                try:
+                    self.mirror.sync_destination(
+                        ctx.destination_id, folder=str(planned.rel_path).split("/", 1)[0],
+                        writer=writer,
+                    )  # fmt: skip
+                except Exception:  # the file is placed and committed: the next run heals it
+                    log.warning("mirror_write_failed", destination=ctx.destination_id)
         except BaseException:
             if self._fsops.observe(target) is None:  # nothing was placed: nothing to settle
                 journal.cancel(intent)

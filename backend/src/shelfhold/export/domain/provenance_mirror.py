@@ -29,6 +29,7 @@ from typing import Any, Final, Self
 from shelfhold.export.domain.physical_roots import RESERVED_DIR
 
 __all__ = [
+    "MAX_LINES",
     "MAX_LINE_BYTES",
     "MAX_MIRROR_BYTES",
     "MIRROR_DIR",
@@ -47,6 +48,7 @@ MIRROR_DIR: Final = f"{RESERVED_DIR}/manifest"
 MIRROR_SCHEMA_VERSION: Final = "1.2"
 SUPPORTED_MAJOR: Final = 1
 MAX_MIRROR_BYTES: Final = 8 * 1024 * 1024
+MAX_LINES: Final = 20_000
 MAX_LINE_BYTES: Final = 256 * 1024
 MAX_DEPTH: Final = 12
 UNRESOLVED: Final = "unresolved"
@@ -94,10 +96,20 @@ def _depth_ok(value: object, depth: int = 0) -> bool:
     return True
 
 
+def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    keys = [k for k, _ in pairs]
+    if len(set(keys)) != len(keys):
+        raise ValueError("duplicate key")
+    return dict(pairs)
+
+
 def _loads(line: bytes) -> dict[str, Any]:
     if len(line) > MAX_LINE_BYTES:
         raise ValueError("line too long")
-    data = json.loads(line, parse_constant=_reject_constant)
+    try:
+        data = json.loads(line, parse_constant=_reject_constant, object_pairs_hook=_no_duplicates)
+    except RecursionError:  # a forged file must never take the export down
+        raise ValueError("nested too deep") from None
     if not isinstance(data, dict) or not _depth_ok(data):
         raise ValueError("not a bounded JSON object")
     return data
@@ -122,28 +134,34 @@ def _version(value: object) -> tuple[int, int]:
 
 
 def _migrate_entry_1_0(old: dict[str, Any]) -> dict[str, Any]:
-    """1.0 -> 1.1: one Variant and one team per file become one per coverage entry."""
-    entry = {k: v for k, v in old.items() if k not in ("units", "variant", "team")}
+    """1.0 -> 1.1: one Variant and one team per file become one per coverage entry. Nothing is
+    dropped: unknown fields of a Variant or a unit are carried over, and a file without `units`
+    keeps its `variant` and `team` as they were."""
     found = old.get("variant")
     variant: dict[str, Any] = found if isinstance(found, dict) else {}
-    coverage = []
-    for unit in old.get("units") or []:
-        if not isinstance(unit, dict):
-            continue
-        coverage.append(
-            {
-                **{k: v for k, v in unit.items() if k not in ("unit", "start", "end")},
-                "unit": unit.get("unit"),
-                "start": unit.get("start"),
-                "end": unit.get("end"),
-                "variant": variant.get("id"),
-                "source_key": variant.get("source_key"),
-                "sub_source": variant.get("sub_source"),
-                "remote_unit_id": variant.get("remote_unit_id"),
-                "team": old.get("team"),
-            }
-        )
-    entry["coverage"] = coverage
+    listed = old.get("units")
+    units = [u for u in (listed if isinstance(listed, list) else []) if isinstance(u, dict)]
+    entry = {k: v for k, v in old.items() if k not in ("units", "variant", "team")}
+    if not units:
+        for key in ("variant", "team"):
+            if key in old:
+                entry[key] = old[key]
+    entry["coverage"] = [
+        {
+            **{
+                k: v
+                for k, v in variant.items()
+                if k not in ("id", "source_key", "sub_source", "remote_unit_id")
+            },
+            **unit,
+            "variant": variant.get("id"),
+            "source_key": variant.get("source_key"),
+            "sub_source": variant.get("sub_source"),
+            "remote_unit_id": variant.get("remote_unit_id"),
+            "team": old.get("team"),
+        }
+        for unit in units
+    ]
     entry.setdefault("kind", "entry")
     entry.setdefault("state", "exported")
     entry.setdefault("content_hash_by", None)
@@ -193,6 +211,8 @@ class MirrorDocument:
         if len(data) > MAX_MIRROR_BYTES:
             raise MirrorFormatError("mirror file too large")
         lines = [ln for ln in data.split(b"\n") if ln.strip()]
+        if len(lines) > MAX_LINES:
+            raise MirrorFormatError("too many lines")
         if not lines:
             raise MirrorFormatError("empty mirror")
         try:
@@ -210,12 +230,11 @@ class MirrorDocument:
         for line in lines[1:]:
             try:
                 entry = _loads(line)
-                if major <= SUPPORTED_MAJOR:
-                    if version == "1.0":
-                        entry = _migrate_entry_1_0(entry)
-                    _check_entry(entry)
+                if version == "1.0":
+                    entry = _migrate_entry_1_0(entry)
+                _check_entry(entry)
                 entries.append(entry)
-            except ValueError as error:
+            except (ValueError, TypeError, AttributeError, KeyError) as error:
                 if strict:
                     raise MirrorFormatError(f"bad line: {error}") from error
                 rejected.append(line.decode("utf-8", errors="replace"))
@@ -293,15 +312,14 @@ def merge_with_database(
     on_disk: MirrorDocument,
     from_database: Iterable[Mapping[str, Any]],
     *,
-    known_items: set[str],
     header: Mapping[str, Any] | None = None,
 ) -> MirrorDocument:
     """The projection of the database, plus what the file holds that the database cannot explain.
 
     A disk line the database now owns (same `export_item`) is replaced by the database's line,
-    unknown fields of an identical `(rel_path, file_hash)` merged in. A disk line whose
-    `export_item` the database does not know is kept, `unresolved`: it may be a series born after
-    the last backup, and only the admin decides (GAP-9-03)."""
+    unknown fields of an identical `(rel_path, file_hash)` merged in. Every other disk line is
+    kept, `unresolved`: it may be a series born after the last backup, and only the admin decides
+    (GAP-9-03)."""
     owned = [dict(e) for e in from_database]
     by_key = {(e["rel_path"], e["file_hash"]): e for e in on_disk.entries}
     merged: list[dict[str, Any]] = []
@@ -311,7 +329,7 @@ def merge_with_database(
     owned_items = {e["export_item"]["id"] for e in owned}
     for old in on_disk.entries:
         item = old["export_item"]["id"]
-        if item in owned_items or item in known_items:
+        if item in owned_items:
             continue  # superseded by the database
         merged.append({**old, "state": UNRESOLVED})
     head = {**on_disk.header, **{k: v for k, v in (header or {}).items() if k != "schema_version"}}
