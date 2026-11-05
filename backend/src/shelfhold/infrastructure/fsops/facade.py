@@ -10,6 +10,7 @@ Nothing here ever reads a path that was checked by a separate call.
 import contextlib
 import hashlib
 import os
+import time
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -34,8 +35,18 @@ from shelfhold.export.domain.physical_roots import (
     judge_sentinel,
 )
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
+from shelfhold.infrastructure.fsops.emitters import (
+    TRASH_RETENTION_S,
+    perimeter_of,
+    require_content_inside,
+    require_inside,
+    require_tree_allowed,
+    trash_entry,
+)
 from shelfhold.infrastructure.fsops.errors import (
     CrossRootError,
+    EmitterConditionError,
+    EmitterPerimeterError,
     LeaseRaceError,
     OutsidePathMapError,
     PathEscapeError,
@@ -119,7 +130,11 @@ class Fsops:
         *,
         umask: int | None = None,
         strategy: Strategy = Strategy.AUTO,
+        disk_guard: Callable[[], bool] | None = None,
+        now: Callable[[], float] = time.time,
     ) -> None:
+        self._disk_guard = disk_guard
+        self._now = now
         self._path_map = path_map
         self._expected = {clean_absolute(root.path): root for root in expected}
         self._read_only = {e.local for e in path_map.entries if e.mode is PathMode.ADOPT_RO}
@@ -141,13 +156,17 @@ class Fsops:
         *,
         umask: int | None = None,
         strategy: Strategy = Strategy.AUTO,
+        disk_guard: Callable[[], bool] | None = None,
+        now: Callable[[], float] = time.time,
     ) -> Self:
         """No file system access: roots are opened, and their sentinels read, per operation."""
-        return cls(path_map, expected, umask=umask, strategy=strategy)
+        return cls(
+            path_map, expected, umask=umask, strategy=strategy, disk_guard=disk_guard, now=now
+        )
 
     # -- locating ---------------------------------------------------------------------------
 
-    def _locate(self, local: str) -> _Located:
+    def _locate(self, local: str, *, host: bool = False) -> _Located:
         try:
             path = clean_absolute(local)
         except PathMapError as error:
@@ -163,9 +182,9 @@ class Fsops:
         if best is None:
             raise OutsidePathMapError(f"{local!r} is under no physical root")
         root_path, rel, read_only = best
-        if is_reserved(rel):
+        if is_reserved(rel) and not host:
             raise ReservedPathError(f"{local!r} is reserved to the host")
-        if not read_only:
+        if not read_only and not (host and is_reserved(rel)):  # host folders sit above the map
             try:
                 entry = self._path_map.entry_for(path)
             except PathMapError as error:
@@ -250,7 +269,9 @@ class Fsops:
                         self._stamp(root, self._expected[root_path].generation)
                         report.restamped.append(root_path)
                     ensure_host_dirs(root)
-                    report.purged_staging += root.empty_dir(STAGING_DIR)
+                    report.purged_staging += self._system_empty(
+                        root, "staging_orphan_cleanup", STAGING_DIR
+                    )
                     report.ok.append(root_path)
             except RootBlockedError as error:
                 report.blocked[root_path] = error.state
@@ -378,6 +399,50 @@ class Fsops:
         located = self._locate(local)
         with self._gated(located) as root:
             root.unlink(located.rel)
+
+    def system_unlink(self, emitter: str, local: str) -> None:
+        """A system emitter deletes one file or link, inside its own perimeter and only while its
+        condition holds (N2). `emitter` is a string literal at every call site (an architecture
+        test checks it) and is the class of the calling function.
+
+        The perimeter is enforced here, on the path relative to its physical root, before
+        anything is opened; the condition is read from the file system (the age of the trash
+        entry) or from the owner of this object (the disk guard), never from the caller."""
+        located = self._locate(local, host=True)
+        require_inside(emitter, located.rel)
+        with self._gated(located) as root:
+            self._require_condition(emitter, root, located.rel, is_tree=False)
+            root.unlink(located.rel)
+
+    def system_remove_tree(self, emitter: str, local: str) -> None:
+        """A system emitter deletes a folder and what it holds, same rules as `system_unlink`;
+        never for the probe emitter, which removes single files only."""
+        located = self._locate(local, host=True)
+        require_inside(emitter, located.rel)
+        require_tree_allowed(emitter)
+        with self._gated(located) as root:
+            self._require_condition(emitter, root, located.rel, is_tree=True)
+            root.remove_tree(located.rel)
+
+    def _require_condition(
+        self, emitter: str, root: ConfinedRoot, rel: str, *, is_tree: bool
+    ) -> None:
+        if perimeter_of(emitter).needs_file and root.lstat_kind(rel) != "file":
+            raise EmitterPerimeterError(f"{emitter} removes a regular file, not {rel!r}")
+        if emitter == "trash_retention_purge":
+            entry = trash_entry(rel)
+            try:
+                age = self._now() - root.stat(entry).st_mtime
+            except FileNotFoundError:
+                return  # nothing to delete: the removal below reports it
+            if age < TRASH_RETENTION_S:
+                raise EmitterConditionError(f"{entry} is {int(age)} s old: kept 30 days")
+        elif emitter == "disk_guard_purge" and not (self._disk_guard and self._disk_guard()):
+            raise EmitterConditionError("the disk guard is not triggered")
+
+    def _system_empty(self, root: ConfinedRoot, emitter: str, rel: str) -> int:
+        require_content_inside(emitter, rel)
+        return root.empty_dir(rel)
 
     def rmdir(self, local: str) -> None:
         located = self._locate(local)

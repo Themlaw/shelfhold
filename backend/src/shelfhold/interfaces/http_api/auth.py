@@ -17,7 +17,7 @@ cookie is set without it and without the prefix; HTTPS is decided by the request
 `https://` public URL (docs/admin/durcir.md).
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from http.cookies import SimpleCookie
 from uuid import uuid4
@@ -31,6 +31,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from shelfhold.identity.public import (
+    DEFAULT_RESERVED_ROLES,
     IDENTITY_HEADER_AUDIT,
     Credential,
     CredentialNotAllowed,
@@ -39,6 +40,7 @@ from shelfhold.identity.public import (
     Principal,
     ReauthRequired,
     ReservedAction,
+    RoleNotAllowed,
     SessionAuth,
     same_secret,
 )
@@ -279,8 +281,14 @@ def require_session(request: Request) -> Principal:
     return principal
 
 
-def reserved_action(action: ReservedAction) -> Callable[[Request], Principal]:
-    """Dependency of a route that performs a reserved action (EF-USR-024, EF-USR-022 (2))."""
+def reserved_action(
+    action: ReservedAction, *, roles: frozenset[str] | Sequence[str] = DEFAULT_RESERVED_ROLES
+) -> Callable[[Request], Principal]:
+    """Dependency of a route that performs a reserved action (EF-USR-024, EF-USR-022 (2)).
+
+    Sessions of any role but `admin` are refused (403 `forbidden`) unless `roles=` says so: a
+    route that lets `member` or `child` do something reserved (e.g. rate) must name it."""
+    allowed = frozenset(roles)
 
     def dependency(request: Request) -> Principal:
         # First, before any refusal: the answer of a reserved action is never kept for replay.
@@ -288,8 +296,13 @@ def reserved_action(action: ReservedAction) -> Callable[[Request], Principal]:
         principal = require_principal(request)
         auth = gate_of(request).auth
         verdict = auth.authorize(
-            principal, action, restricted_profile_exists=auth.restricted_profile_exists()
+            principal,
+            action,
+            restricted_profile_exists=auth.restricted_profile_exists(),
+            allowed_roles=allowed,
         )
+        if isinstance(verdict, RoleNotAllowed):
+            raise ProblemError("forbidden", extensions={"action": action.name})
         if isinstance(verdict, CredentialNotAllowed):
             raise ProblemError("credential_not_allowed", extensions={"action": action.name})
         if isinstance(verdict, ReauthRequired):

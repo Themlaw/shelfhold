@@ -114,6 +114,9 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "os.mkdir".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
 "os.makedirs".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
 "os.truncate".msg = "Write through shelfhold.infrastructure.fsops (EF-EXP-060)."
+"os.open".msg = "Open through shelfhold.infrastructure.fsops (EF-EXP-060); /data files are per-file exceptions."
+"shutil.rmtree".msg = "Delete through shelfhold.infrastructure.fsops (EF-EXP-060, EF-USR-024)."
+"shutil.move".msg = "Move through shelfhold.infrastructure.fsops (EF-EXP-060)."
 # ENF-SEC-001: every outbound connection goes through the Fetcher (SSRF guard). Allowed only in
 # infrastructure/fetcher and, later, in the local CLI over a Unix socket (L23, PLAN section 7).
 "urllib.request".msg = "Outbound HTTP goes through shelfhold.infrastructure.fetcher (ENF-SEC-001)."
@@ -128,6 +131,9 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "src/shelfhold/infrastructure/fsops/**" = ["TID251"]
 "src/shelfhold/infrastructure/migrate.py" = ["TID251"]
 "src/shelfhold/infrastructure/volumes.py" = ["TID251"]
+"src/shelfhold/infrastructure/instance/lock.py" = ["TID251"]  # /data/.lock
+"src/shelfhold/infrastructure/secrets/keyring.py" = ["TID251"]  # /data/keyring
+"src/shelfhold/jobs/huey_app.py" = ["TID251"]  # the queue database under /data
 "src/shelfhold/infrastructure/fetcher/**" = ["TID251"]
 # tests are not production egress (the contract bench talks to a pinned Suwayomi container)
 "tests/**" = ["S101", "TID251"]

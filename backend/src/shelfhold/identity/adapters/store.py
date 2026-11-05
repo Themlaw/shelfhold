@@ -10,6 +10,7 @@ from sqlalchemy import Engine
 from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
+    KeyConflictError,
     NewApiKey,
     NewSession,
     SessionRecord,
@@ -36,6 +37,10 @@ _USER_COLUMNS = (
     _user.c.role.label("u_role"),
     _user.c.password_hash.label("u_password_hash"),
 )
+
+
+class _NoLiveKeyError(Exception):
+    pass
 
 
 class SqlIdentityStore:
@@ -230,6 +235,36 @@ class SqlIdentityStore:
             )
         return result.rowcount > 0
 
+    def rotate_api_key(self, old_prefix: str, new: NewApiKey, *, audit: AuditEntry) -> bool:
+        try:
+            with self._engine.begin() as conn:  # one transaction: both or neither
+                revoked = conn.execute(
+                    sa.update(_key)
+                    .where(_key.c.prefix == old_prefix, _key.c.revoked_at.is_(None))
+                    .values(revoked_at=new.now)
+                )
+                if revoked.rowcount != 1:
+                    raise _NoLiveKeyError
+                conn.execute(
+                    sa.insert(_key).values(
+                        id=new.id,
+                        user_id=new.user_id,
+                        name=new.name,
+                        prefix=new.prefix,
+                        hash=new.hash,
+                        scopes=list(new.scopes),
+                        read_only=new.read_only,
+                        created_at=new.now,
+                        expires_at=new.expires_at,
+                    )
+                )
+                conn.execute(self._audit_insert(audit))
+        except _NoLiveKeyError:  # the block was rolled back: nothing was written
+            return False
+        except sa.exc.IntegrityError as error:
+            raise KeyConflictError from error
+        return True
+
     # --- audit -------------------------------------------------------------------------------
 
     def audit_targets(self, action: str, *, since: datetime) -> list[str]:
@@ -243,16 +278,18 @@ class SqlIdentityStore:
         with self._engine.connect() as conn:
             return [str(target) for (target,) in conn.execute(query)]
 
+    @staticmethod
+    def _audit_insert(entry: AuditEntry) -> sa.Insert:
+        return sa.insert(identity.audit).values(
+            id=new_ulid(),
+            actor_id=entry.actor_id,
+            action=entry.action,
+            target=entry.target,
+            at=entry.at,
+            session_id=entry.session_id,
+            auth_time=entry.auth_time,
+        )
+
     def audit(self, entry: AuditEntry) -> None:
         with self._engine.begin() as conn:
-            conn.execute(
-                sa.insert(identity.audit).values(
-                    id=new_ulid(),
-                    actor_id=entry.actor_id,
-                    action=entry.action,
-                    target=entry.target,
-                    at=entry.at,
-                    session_id=entry.session_id,
-                    auth_time=entry.auth_time,
-                )
-            )
+            conn.execute(self._audit_insert(entry))

@@ -16,6 +16,7 @@ from typing import Protocol
 
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR, STAGING_DIR
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, split_rel
+from shelfhold.infrastructure.fsops.emitters import require_inside
 from shelfhold.infrastructure.fsops.errors import CopyVerificationError
 from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of
 
@@ -118,5 +119,7 @@ def put_file(root: ConfinedRoot, staged: str, rel: str, *, replace: bool) -> Non
 
 
 def _discard(root: ConfinedRoot, staged: str) -> None:
+    """A failed write's staged file: the `staging_orphan_cleanup` emitter, inside its perimeter."""
+    require_inside("staging_orphan_cleanup", staged)
     with contextlib.suppress(FileNotFoundError):
         root.unlink(staged)

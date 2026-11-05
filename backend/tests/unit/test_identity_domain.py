@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from shelfhold.identity.public import (
-    REAUTH_EFFECTS,
+    NO_REAUTH_EFFECTS,
     SYSTEM_EMITTERS,
     Allowed,
     Credential,
@@ -120,13 +120,13 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
                 Effect.REINITS_STORAGE,  # root/store takeover and reinit
             }
         )
-        == REAUTH_EFFECTS
+        == set(Effect) - NO_REAUTH_EFFECTS
     )
     stale = _principal(Credential.SESSION, auth_age=timedelta(minutes=20))
     for effect in ALL_EFFECTS:
         action = ReservedAction(f"test.{effect.value}", frozenset({effect}))
         verdict = authorize_reserved(stale, action, now=T0, fresh_auth_s=900)
-        expected = ReauthRequired if effect in REAUTH_EFFECTS else Allowed
+        expected = ReauthRequired if effect not in NO_REAUTH_EFFECTS else Allowed
         assert isinstance(verdict, expected), effect
 
 
