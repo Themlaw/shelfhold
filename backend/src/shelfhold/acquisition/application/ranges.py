@@ -27,7 +27,7 @@ from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
-from shelfhold.library.public import Received
+from shelfhold.library.public import Received, readable_unit_ids
 from shelfhold.sdk.connected import ConnectedService, Ticket
 from shelfhold.sdk.fetcher import Fetcher
 from shelfhold.sdk.refs import FileAsset, RangedPayload, RangeRef, SeriesRef, UnitInfo
@@ -88,21 +88,61 @@ class RangeTickets:
 
     # -- planning ----------------------------------------------------------------------------
     def plan(self, units: Sequence[RangeUnit]) -> list[list[RangeUnit]]:
-        """The ranges worth asking for: per volume label, whole, when some Unit of it is neither
-        covered by a file nor already in an open ticket. A closed volume that is fully covered is
-        never asked again; the rolling one is, when a chapter joined it."""
+        """The ranges worth asking for, per volume label, whole.
+
+        Left out of a range: the Units already asked, "stop following" ones, those a file of their
+        own already carries, and those a *closed* item covers. Units of the volume still rolling
+        stay in, so that the request covers the whole volume and its item is updated in place:
+        two items never share a Unit. A range with nothing new in it is not asked.
+        """
         ordered = sorted(
             (u for u in units if u.info.volume_label), key=lambda u: u.info.source_order
         )
         with self._engine.connect() as connection:
-            covered = self._covered(connection)
+            closed, rolling = self._covered_by(connection)
             asked = self._asked(connection)
+            readable = readable_unit_ids(connection, self._edition_id)
+            suppressed = set(
+                connection.execute(
+                    sa.select(catalog.unit.c.id).where(
+                        catalog.unit.c.edition_id == self._edition_id,
+                        catalog.unit.c.follow_suppressed,
+                    )
+                ).scalars()
+            )
         plan: list[list[RangeUnit]] = []
         for _label, run in groupby(ordered, key=lambda u: u.info.volume_label):
-            group = list(run)
-            if any(u.unit_id not in covered and u.unit_id not in asked for u in group):
+            group = [
+                u
+                for u in run
+                if u.unit_id not in asked
+                and u.unit_id not in closed
+                and u.unit_id not in suppressed
+                and (u.unit_id in rolling or u.unit_id not in readable)
+            ]
+            if any(u.unit_id not in rolling for u in group):
                 plan.append(group)
         return plan
+
+    def _covered_by(self, connection: Connection) -> tuple[set[str], set[str]]:
+        """(Units covered by a closed item, Units covered by an item still rolling)."""
+        coverage, item = export.unit_coverage, export.export_item
+        closed: set[str] = set()
+        rolling: set[str] = set()
+        for row in connection.execute(
+            sa.select(coverage.c.unit_id, item.c.closed)
+            .select_from(
+                coverage.join(
+                    item,
+                    sa.and_(
+                        coverage.c.carrier_type == "export_item", coverage.c.carrier_id == item.c.id
+                    ),
+                )
+            )
+            .where(item.c.edition_id == self._edition_id)
+        ):
+            (closed if row.closed else rolling).add(row.unit_id)
+        return closed, rolling
 
     def _covered(self, connection: Connection) -> set[str]:
         coverage = export.unit_coverage
@@ -123,11 +163,21 @@ class RangeTickets:
         )
 
     # -- requesting --------------------------------------------------------------------------
+    def _grant(
+        self, units: Sequence[RangeUnit], budget: RequestBudget
+    ) -> tuple[list[RangeUnit], list[RangeUnit]]:
+        """A range is asked whole or not at all this cycle. Only a range larger than any cycle
+        could ever grant is cut at the cap (EF-SRC-034); the rest follows next cycle."""
+        key = self._series.source_key
+        if not units or (len(units) > budget.room(key) and len(units) <= budget.capacity):
+            return [], list(units)
+        granted = budget.take(key, len(units))
+        return list(units[:granted]), list(units[granted:])
+
     def request(self, units: Sequence[RangeUnit], budget: RequestBudget) -> RangeRequest:
-        """One ticket for as many of the Units as the caps allow (counted in Units); the rest is
-        handed back, to be asked in a later cycle."""
-        granted = budget.take(self._series.source_key, len(units)) if units else 0
-        chosen, deferred = list(units[:granted]), list(units[granted:])
+        """One ticket for the range if the caps leave room for all of it (counted in Units);
+        otherwise it waits whole, handed back."""
+        chosen, deferred = self._grant(units, budget)
         result = RangeRequest(deferred=deferred)
         if chosen:
             with self._engine.begin() as connection:
@@ -233,7 +283,12 @@ class RangeTickets:
                 )
             )
         }
-        covered = [(remote, by_remote[remote]) for remote in payload.covers if remote in by_remote]
+        taken = self._covered_by(connection)[0]  # a closed item keeps its Units: never two items
+        covered = [
+            (remote, by_remote[remote])
+            for remote in payload.covers
+            if remote in by_remote and by_remote[remote] not in taken
+        ]
         item_id = self._rolling_item(connection, [unit for _, unit in covered])
         label = units[0].info.volume_label
         if item_id is None:
@@ -328,7 +383,7 @@ class RangeTickets:
             self._update(request_id, state="requested", attempts=current + 1, ticket=None)
             report.retried += 1
 
-    def retry_uncovered(self, request_id: str) -> str | None:
+    def retry_uncovered(self, request_id: str, budget: RequestBudget) -> str | None:
         """A new ticket for the Units of this one that were asked and not covered; nothing else
         is asked again. None when nothing is left to ask, or it is already asked anew."""
         r, ru = acquisition.download_request, acquisition.download_request_unit
@@ -353,7 +408,8 @@ class RangeTickets:
                 for u in range_ref["units"]
                 if u["unit_id"] in missing
             ]
-            return self._open(connection, units) if units else None
+            chosen, _later = self._grant(units, budget)  # the cap counts a retry too
+            return self._open(connection, chosen) if chosen else None
 
     def _update(self, request_id: str, **values: object) -> None:
         table = acquisition.download_request

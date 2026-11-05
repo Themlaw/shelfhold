@@ -1,5 +1,6 @@
 """Reading what a cycle may ask for, from the database (EF-EXP-053, EF-BIB-044)."""
 
+from datetime import datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -26,7 +27,13 @@ def watermark_of(connection: Connection, edition_id: str) -> Watermark | None:
     return Watermark.of(row.follow_from_segment or "", row.follow_from_number)
 
 
-def set_watermark(connection: Connection, edition_id: str, mark: Watermark) -> None:
+NOTHING_YET = Watermark(0, Decimal(-1))  # a series whose first look held only extras
+
+
+def set_watermark(
+    connection: Connection, edition_id: str, mark: Watermark, *, baseline_at: datetime | None = None
+) -> None:
+    """`baseline_at`: the first look set it; extras seen up to then are not "new" (see below)."""
     follow = acquisition.series_follow
     connection.execute(
         sa.update(follow)
@@ -35,6 +42,7 @@ def set_watermark(connection: Connection, edition_id: str, mark: Watermark) -> N
             follow_from_segment=mark.segment,
             follow_from_number=format(mark.number, "f"),
             follow_from_norm_by="number@1",
+            updated_at=baseline_at,
         )
     )
 
@@ -48,7 +56,7 @@ def highest_numbered(connection: Connection, edition_id: str) -> Watermark | Non
         )
     ).all()
     if not rows:
-        return None
+        return NOTHING_YET
     top = max(rows, key=lambda r: (r.number_segment_ordinal, Decimal(r.number_norm)))
     return Watermark(top.number_segment_ordinal, Decimal(top.number_norm), top.number_segment)
 
@@ -58,7 +66,8 @@ def known_units(connection: Connection, edition_id: str) -> list[KnownUnit]:
     live = (
         sa.select(v.c.unit_id)
         .join(b, b.c.id == v.c.source_binding_id)
-        .where(v.c.removed_at.is_(None), b.c.active)
+        .join(u, u.c.id == v.c.unit_id)
+        .where(v.c.removed_at.is_(None), b.c.active, u.c.edition_id == edition_id)
         .distinct()
     )
     live_ids = set(connection.execute(live).scalars())
@@ -67,10 +76,27 @@ def known_units(connection: Connection, edition_id: str) -> list[KnownUnit]:
         connection.execute(
             sa.select(ru.c.unit_id)
             .join(r, r.c.id == ru.c.download_request_id)
-            .where(r.c.state.notin_(_NOT_ASKED), ru.c.state != "missing")
+            .join(u, u.c.id == ru.c.unit_id)
+            .where(
+                r.c.state.notin_(_NOT_ASKED), ru.c.state != "missing", u.c.edition_id == edition_id
+            )
         ).scalars()
     )
     present = readable_unit_ids(connection, edition_id)
+    since = connection.execute(
+        sa.select(acquisition.series_follow.c.updated_at).where(
+            acquisition.series_follow.c.edition_id == edition_id
+        )
+    ).scalar()
+    first_seen = {
+        row.unit_id: row.seen
+        for row in connection.execute(
+            sa.select(v.c.unit_id, sa.func.min(v.c.first_seen_at).label("seen"))
+            .join(u, u.c.id == v.c.unit_id)
+            .where(u.c.edition_id == edition_id)
+            .group_by(v.c.unit_id)
+        )
+    }
     ack = acquisition.gap_ack
     acked = {
         (a.number_segment, a.number_norm)
@@ -94,6 +120,8 @@ def known_units(connection: Connection, edition_id: str) -> list[KnownUnit]:
             acknowledged=(row.number_segment, row.number_norm) in acked,
             ticketed=row.id in ticketed,
             live=row.id in live_ids,
+            new_extra=row.track == "unnumbered"
+            and (since is None or (first_seen.get(row.id) or since) > since),
         )
         for row in rows
     ]

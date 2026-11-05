@@ -224,7 +224,9 @@ def test_backfill_requires_estimate_and_confirmation_over_100_units_or_5gib() ->
         assert raised.value.code == "backfill.confirmation_required"
         assert raised.value.estimate.units == 150
         assert bench.rows("SELECT backfill_mode AS m FROM series_follow")[0]["m"] == "none"
-        started = backfill.start(bench.edition_id, "all", confirmed=True)
+        started = backfill.start(
+            bench.edition_id, "all", confirm_units=150, confirm_bytes=150 * 10**6
+        )
         assert started.units == 150
         assert bench.rows("SELECT backfill_mode AS m FROM series_follow")[0]["m"] == "all"
 

@@ -20,6 +20,11 @@ from typing import NamedTuple
 import sqlalchemy as sa
 import structlog
 
+from shelfhold.acquisition.application.backfill import (
+    confirmed_ceiling,
+    estimate_with,
+    within_ceiling,
+)
 from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
 from shelfhold.acquisition.application.planning import (
     highest_numbered,
@@ -37,6 +42,7 @@ from shelfhold.acquisition.application.tickets import (
     Sleep,
     TicketReport,
 )
+from shelfhold.acquisition.domain.backfill import BackfillMode
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.freshness import DEFAULT_K, is_stale
 from shelfhold.acquisition.domain.requests import (
@@ -53,6 +59,7 @@ from shelfhold.catalog.public import (
     IngestOutcome,
     IngestResult,
     ingest_isolated,
+    place_key,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.infrastructure.clock import Clock
@@ -378,7 +385,7 @@ class FollowCycle:
         report.requested += len(look.opened)
         with self._engine.begin() as connection:
             if mark is None and (top := highest_numbered(connection, binding.edition_id)):
-                set_watermark(connection, binding.edition_id, top)
+                set_watermark(connection, binding.edition_id, top, baseline_at=look.now)
             table = acquisition.source_binding
             connection.execute(
                 sa.update(table).where(table.c.id == binding.id).values(last_checked=look.now)
@@ -406,7 +413,7 @@ class FollowCycle:
         if result.outcome not in (IngestOutcome.NEW_VARIANT, IngestOutcome.SUPERSEDING):
             return
         record_release(connection, result.team_id, info.published_at or look.now)
-        if str(info.number) in look.contested:
+        if _place_of(info) in look.contested:
             look.touched.add(result.unit_id)
             return
         election = self._prefs.elect(connection, result.unit_id, look.now)
@@ -455,9 +462,13 @@ class FollowCycle:
                     )
                 )
             }
-        backfills: tuple[Mode, ...] = ("gaps", "all")
+        backfills: tuple[BackfillMode, ...] = ("gaps", "all")
         for mode in backfills:
-            asked = [b for b in editions if modes.get(b.edition_id) == mode]
+            asked = [
+                b
+                for b in editions
+                if modes.get(b.edition_id) == mode and self._backfill_ok(b, mode)
+            ]
             report.requested += self._round_robin(asked, mode, by_id, budget)
         with self._engine.begin() as connection:
             for edition in editions:
@@ -469,6 +480,23 @@ class FollowCycle:
                         .where(acquisition.series_follow.c.edition_id == edition.edition_id)
                         .values(backfill_mode="none")
                     )
+
+    def _backfill_ok(self, edition: _Binding, mode: BackfillMode) -> bool:
+        """Later arrivals may not take a backfill past what the user confirmed: it stops, and a
+        new estimate must be confirmed."""
+        with self._engine.begin() as connection:
+            estimate = estimate_with(connection, edition.edition_id, mode, free_bytes=0)
+            if within_ceiling(estimate, confirmed_ceiling(connection, edition.edition_id)):
+                return True
+            connection.execute(
+                sa.update(acquisition.series_follow)
+                .where(acquisition.series_follow.c.edition_id == edition.edition_id)
+                .values(backfill_mode="none")
+            )
+        log.warning(
+            "backfill.confirmation_required", edition_id=edition.edition_id, units=estimate.units
+        )
+        return False
 
     def _round_robin(
         self,
@@ -607,12 +635,17 @@ class FollowCycle:
         self._bus.deliver(pending)
 
 
+def _place_of(info: UnitInfo) -> str:
+    """The normalized place of a release ("10" and "10.0" are one), never its raw text."""
+    return place_key(info.number, info.source_order)
+
+
 def _contested(units: list[UnitInfo]) -> set[str]:
     """Raw numbers that more than one release offers in this listing (another team's version)."""
     seen: set[str] = set()
     twice: set[str] = set()
     for info in units:
-        key = str(info.number)
+        key = _place_of(info)
         (twice if key in seen else seen).add(key)
     return twice
 

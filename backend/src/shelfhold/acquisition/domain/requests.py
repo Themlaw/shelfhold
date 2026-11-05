@@ -33,6 +33,11 @@ class RequestBudget:
     def remaining(self) -> int:
         return self._service
 
+    @property
+    def capacity(self) -> int:
+        """The most Units one range can ever be granted in a cycle."""
+        return min(self._service, self._key_cap)
+
     def room(self, limit_key: str, *, series_cap: int | None = None) -> int:
         room = min(self._service, self._key_cap - self._used.get(limit_key, 0))
         return max(0, room if series_cap is None else min(room, series_cap))
@@ -54,10 +59,19 @@ class KnownUnit:
     acknowledged: bool = False  # a gap the admin accepted (EF-BIB-056)
     ticketed: bool = False
     live: bool = True
+    new_extra: bool = False  # an unnumbered extra that appeared after the first look
 
 
 def _key(unit: KnownUnit) -> tuple[int, Decimal]:
     return (unit.ordinal, unit.number if unit.number is not None else Decimal(0))
+
+
+def _order(unit: KnownUnit) -> tuple[int, int, Decimal]:
+    return (unit.number is None, *_key(unit))
+
+
+def _blocked(unit: KnownUnit) -> bool:
+    return unit.present or unit.suppressed or unit.acknowledged or unit.ticketed or not unit.live
 
 
 def requestable(units: Sequence[KnownUnit], mark: Watermark | None, mode: Mode) -> list[KnownUnit]:
@@ -68,6 +82,7 @@ def requestable(units: Sequence[KnownUnit], mark: Watermark | None, mode: Mode) 
     below it (everything, when there is no watermark yet).
     """
     numbered = [u for u in units if u.number is not None]
+    extras = [u for u in units if u.number is None and mode == "follow" and u.new_extra]
     held = [_key(u) for u in numbered if u.present]
     first_held = min(held) if held else None
 
@@ -76,7 +91,7 @@ def requestable(units: Sequence[KnownUnit], mark: Watermark | None, mode: Mode) 
 
     chosen: list[KnownUnit] = []
     for unit in numbered:
-        if unit.present or unit.suppressed or unit.acknowledged or unit.ticketed or not unit.live:
+        if _blocked(unit):
             continue
         if mode == "follow":
             ok = mark is not None and beyond(unit)
@@ -86,4 +101,5 @@ def requestable(units: Sequence[KnownUnit], mark: Watermark | None, mode: Mode) 
             ok = mark is None or not beyond(unit)
         if ok:
             chosen.append(unit)
-    return sorted(chosen, key=_key)
+    chosen += [u for u in extras if not _blocked(u)]
+    return sorted(chosen, key=_order)

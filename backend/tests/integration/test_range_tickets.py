@@ -159,13 +159,15 @@ def test_retry_only_uncovered_units_of_ticket(bench: Bench) -> None:
         "missing"
     ] * 3
 
-    retry = bench.tickets.retry_uncovered(result.ticket_ids[0])
+    retry = bench.tickets.retry_uncovered(result.ticket_ids[0], RequestBudget())
     assert retry is not None and retry != result.ticket_ids[0]
     asked = bench.rows(
         "SELECT unit_id FROM download_request_unit WHERE download_request_id = :r", r=retry
     )
     assert {a["unit_id"] for a in asked} == {bench.units[n].unit_id for n in (6, 7, 8)}
-    assert bench.tickets.retry_uncovered(result.ticket_ids[0]) is None  # already taken over
+    assert (
+        bench.tickets.retry_uncovered(result.ticket_ids[0], RequestBudget()) is None
+    )  # already taken over
 
 
 @pytest.mark.req("EF-SRC-032")
