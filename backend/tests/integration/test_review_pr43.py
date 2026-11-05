@@ -56,6 +56,7 @@ def test_q4_sigkill_between_insert_and_commit_leaves_old_key_alive(
     capsys.readouterr()
     assert run_cli(monkeypatch, settings, "admin", "keys", "create", "--name", "s") == 0
     prefix = KEY.search(capsys.readouterr().out).group(1)
+    ctx.__exit__(None, None, None)  # server stopped: the CLI takes the flock and acts directly
     proc = subprocess.run(  # noqa: S603
         [sys.executable, "-c", CHILD, when, prefix],
         env={
