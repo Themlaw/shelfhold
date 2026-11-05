@@ -8,6 +8,7 @@ import threading
 import time
 
 import pytest
+
 from shelfhold.infrastructure.imaging import (
     ImageRejected,
     WorkerLimits,
@@ -75,7 +76,9 @@ def test_decode_worker_applies_its_limits_and_cannot_raise_them() -> None:
 def test_decode_worker_runs_in_an_isolated_clean_interpreter() -> None:
     report = diagnose_worker("environment")
     assert report["isolated"] is True  # python -I: no PYTHON* variables, no user site
-    assert report["env_keys"] == []  # nothing inherited: no secret, no proxy, no token
+    assert set(report["env_keys"]) <= {
+        "LC_CTYPE"
+    }  # nothing inherited (CPython sets LC_CTYPE itself)
     assert report["cwd_is_empty_dir"] is True
     assert report["pid"] != 0
 
@@ -108,7 +111,15 @@ def test_decode_worker_crash_or_garbage_reply_is_a_stable_error() -> None:
 def test_decode_worker_memory_limit_turns_an_oversized_decode_into_an_error(malicious) -> None:
     from shelfhold.infrastructure.imaging import ImageKind, probe_image
 
-    png = malicious.png_solid(6_000, 6_000)  # 36 Mpx is allowed by the caps ...
-    with pytest.raises(ImageRejected) as caught:  # ... but not by a 160 MiB address space
-        probe_image(png, ImageKind.PAGE, limits=WorkerLimits(memory_bytes=160 * 1024**2))
+    png = malicious.png_solid(8_000, 8_000)  # 64 Mpx is allowed by the caps ...
+    with pytest.raises(ImageRejected) as caught:  # ... but not by a 96 MiB address space
+        probe_image(png, ImageKind.PAGE, limits=WorkerLimits(memory_bytes=96 * 1024**2))
     assert caught.value.code in {"image.worker_failed", "image.decode_failed"}
+
+
+@pytest.mark.req("ENF-SEC-003")
+def test_decode_worker_python_level_fallback_when_no_namespace(listener) -> None:
+    port, _ = listener
+    report = diagnose_worker("network", port=port, limits=WorkerLimits(network_namespace=False))
+    assert report["isolation"] == "python"
+    assert report["python_socket"] == "denied"  # the stub is in place with or without a namespace
