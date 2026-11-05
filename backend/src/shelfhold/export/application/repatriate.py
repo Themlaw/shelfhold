@@ -19,7 +19,7 @@ import hashlib
 import posixpath
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final, Literal
 
 import sqlalchemy as sa
@@ -30,7 +30,7 @@ from shelfhold.export.application.locks import ResourceLocks, path_resource
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.domain.path_map import PathMode, clean_absolute
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.fsops import CopyVerificationError, Fsops, PathEscapeError
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import relocate_destination_copy
 
@@ -153,9 +153,11 @@ class RepatriationCheck:
     missing: tuple[str, ...]
     different: tuple[str, ...]
 
+    matches_plan: bool = True
+
     @property
     def safe_to_unmount(self) -> bool:
-        return not self.missing and not self.different
+        return not self.missing and not self.different and self.matches_plan
 
 
 @dataclass(frozen=True)
@@ -237,7 +239,10 @@ class Repatriator:
                 item.rel_path, src, dst, item.size, item.file_hash, item.export_item_id, status
             )
 
-        at_target = self._fsops.observe(dst)
+        try:
+            at_target = self._fsops.observe(dst)
+        except PathEscapeError:  # a folder of the target is a link: never followed
+            return make("conflict")
         if at_target is not None:
             same = at_target[0] == "file" and self._fsops.sha256_of(dst) == item.file_hash
             return make("present" if same else "conflict")
@@ -323,13 +328,20 @@ class Repatriator:
         )  # fmt: skip
         self._journal.mark_applying(intent_id)
         try:
-            digest = self._fsops.copy_across(action.source, action.target, parents=True)
+            self._fsops.copy_across(
+                action.source, action.target, parents=True,
+                expected_sha256=action.file_hash.removeprefix("sha256:"),
+            )  # fmt: skip
+        except CopyVerificationError:
+            # the source changed since the dry-run: nothing was put in place
+            self._journal.cancel(intent_id)
+            raise RepatriationBlockedError((replace(action, status="changed"),)) from None
+        except PathEscapeError:
+            self._journal.cancel(intent_id)
+            raise RepatriationBlockedError((replace(action, status="conflict"),)) from None
         except BaseException:
             self._journal.cancel(intent_id)  # atomic: nothing landed, the source is untouched
             raise
-        if f"sha256:{digest}" != action.file_hash:
-            self._journal.cancel(intent_id)
-            raise RepatriationBlockedError((action,))
         self._record(action, intent_id=intent_id)
         return intent_id
 
@@ -357,9 +369,12 @@ class Repatriator:
 
     # -- the control before the mount goes --------------------------------------------------
 
-    def check(self, destination_id: str) -> RepatriationCheck:
+    def check(
+        self, destination_id: str, *, plan: RepatriationPlan | None = None
+    ) -> RepatriationCheck:
         """Every adopted file is under the writable root with the hash it had when it was
-        adopted. Run it after the copy and again after the mount is removed."""
+        adopted, and, given the dry-run, the counts of series, chapters and files are its own.
+        Run it after the copy and again after the mount is removed."""
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
             adopted = self._adopted(connection, destination_id)
@@ -378,8 +393,12 @@ class Repatriator:
                 different.append(item.rel_path)
         folders = {posixpath.dirname(i.rel_path).split("/")[0] or i.rel_path for i in adopted}
         chapters = {u for i in adopted for u in i.units}
+        same = plan is None or (
+            (len(folders), len(chapters), len(adopted))
+            == (plan.series, plan.chapters, len(plan.files))
+        )
         return RepatriationCheck(
-            len(folders), len(chapters), len(adopted), tuple(missing), tuple(different)
+            len(folders), len(chapters), len(adopted), tuple(missing), tuple(different), same
         )
 
 
@@ -390,7 +409,8 @@ async def kavita_counts(client: Any, library_ref: str, remote_root: str) -> Kavi
     series = [
         s
         for s in await client.series_of_library(int(library_ref))
-        if (s.lowest_folder_path or s.folder_path).startswith(root)
+        if (s.lowest_folder_path or s.folder_path) == root
+        or (s.lowest_folder_path or s.folder_path).startswith(root + "/")
     ]
     files = 0
     for s in series:

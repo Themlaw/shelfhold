@@ -194,3 +194,99 @@ def test_detach_scope_by_series_leaves_the_other_ones_followed() -> None:
         assert edition["edition_id"] != other.edition_id
         assert p.rows("SELECT active FROM source_binding")[-1]["active"] == 1
         assert sa.select(acquisition.upstream_snapshot) is not None
+
+
+def _restore(p: Paired, snapshots: UpstreamSnapshots) -> object:
+    return asyncio.run(
+        Detacher(p.env.engine, snapshots, connected_service_id="suwayomi").restore_upstream(
+            p.service, p.fetcher
+        )
+    )
+
+
+@pytest.mark.req("EF-EXP-056")
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"categories": [{"id": 1}], "update_strategy": "NOT_AN_ENUM; drop"},
+        {"categories": [{"id": "x"}], "update_strategy": "ALWAYS_UPDATE"},
+        {"categories": "abc", "update_strategy": 5},
+    ],
+)
+def test_an_invalid_snapshot_counts_as_none_and_writes_nothing_wrong(payload: dict) -> None:  # type: ignore[type-arg]
+    import json
+
+    with paired_env() as p:
+        ref = _paired(p)
+        snapshots = _taken(p, ref)
+        with p.env.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE upstream_snapshot SET payload = :p"), {"p": json.dumps(payload)}
+            )
+        report = _restore(p, snapshots)
+        assert [(s.restored_from, s.note) for s in report.series] == [  # type: ignore[attr-defined]
+            ("default", "snapshot_invalid")
+        ]
+        assert p.server.strategy_of(ALPHA) == "ALWAYS_UPDATE" and p.server.violations == []
+
+
+@pytest.mark.req("EF-EXP-056")
+def test_only_the_exclusion_shelfhold_recorded_is_removed() -> None:
+    with paired_env() as p:
+        ref = _paired(p)
+        snapshots = _taken(p, ref)
+        added = asyncio.run(
+            snapshots.record_exclusion(
+                p.service, p.fetcher, connected_service_id="suwayomi", ref=ref
+            )
+        )
+        assert added == [2]
+        mine = p.server.add_category("MyDropped", include_in_update="EXCLUDE")
+        p.server.assign(ALPHA, mine)  # the admin's own exclusion, later
+        report = _restore(p, snapshots)
+        assert report.complete  # type: ignore[attr-defined]
+        assert p.server.categories_of(ALPHA) == [1, mine]
+
+
+@pytest.mark.req("EF-EXP-056")
+def test_restoration_is_not_declared_done_while_the_exclusion_remains(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with paired_env() as p:
+        ref = _paired(p)
+        snapshots = _taken(p, ref)
+        monkeypatch.setattr(p.server, "_q_updateMangaCategories", lambda q, v: {"manga": {}})
+        report = _restore(p, snapshots)
+        assert not report.complete  # type: ignore[attr-defined]
+        assert snapshots.count() == 1 and p.rows("SELECT active FROM source_binding")[-1]["active"]
+
+
+@pytest.mark.req("EF-SRC-033")
+def test_update_patches_hold_only_the_documented_keys() -> None:
+    """Contract: what the adapter sends to `updateManga` and `updateMangaCategories` (the fake
+    refuses anything else, and `includeInUpdate` is never written)."""
+    from shelfhold.plugin_host.adapters.meta.suwayomi import queries
+
+    assert "patch: {updateStrategy: $strategy}" in queries.SET_UPDATE_STRATEGY
+    assert "patch: {inLibrary: $inLibrary}" in queries.SET_LIBRARY
+    assert "includeInUpdate" not in queries.SET_UPDATE_STRATEGY + queries.SET_MANGA_CATEGORIES
+    with paired_env() as p:
+        ref = _paired(p)
+        snapshots = _taken(p, ref)
+        _restore(p, snapshots)
+        assert p.server.violations == []
+        p.server._check_patch("patch: {includeInUpdate: EXCLUDE}", {"updateStrategy"})
+        assert p.server.violations  # and the fake does notice a forbidden key
+
+
+@pytest.mark.req("EF-EXP-056")
+def test_take_missing_goes_on_after_a_failing_series() -> None:
+    with paired_env() as p:
+        ref = _paired(p)
+        p.server.state["mangas"][0]["url"] = "/gone"
+        p.service.begin_cycle()
+        snapshots = UpstreamSnapshots(p.env.engine, clock=p.env.clock)
+        report = asyncio.run(
+            snapshots.take_missing(p.service, p.fetcher, connected_service_id="suwayomi")
+        )
+        assert report.taken == 0 and [r.remote_id for r, _ in report.failed] == [ref.remote_id]

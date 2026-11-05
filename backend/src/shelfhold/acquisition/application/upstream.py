@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.infrastructure.clock import Clock
@@ -35,10 +36,12 @@ __all__ = [
     "Detacher",
     "SeriesDetached",
     "SnapshotRefusedError",
+    "TakeReport",
     "UpstreamSnapshots",
     "series_key",
 ]
 
+log = structlog.get_logger(__name__)
 CAPABILITY: Final = "upstream_restore"
 SCHEMA_VERSION: Final = 1
 MAX_PAYLOAD_BYTES: Final = 16 * 1024
@@ -106,15 +109,51 @@ class UpstreamSnapshots:
             )  # fmt: skip
         return True
 
-    async def take_missing(self, service: Any, f: Fetcher, *, connected_service_id: str) -> int:
+    async def take_missing(
+        self, service: Any, f: Fetcher, *, connected_service_id: str
+    ) -> "TakeReport":
         """Every series Shelfhold follows through an adoption pairing that has no snapshot yet.
-        The composition root calls it right after a pairing is confirmed."""
-        taken = 0
+        The composition root calls it right after a pairing is confirmed. A series that fails
+        does not stop the others; the failures are reported and retried by the next call."""
+        report = TakeReport()
         for _, ref in self.followed(connected_service_id, None):
-            taken += int(
-                await self.take(service, f, connected_service_id=connected_service_id, ref=ref)
+            try:
+                if await self.take(service, f, connected_service_id=connected_service_id, ref=ref):
+                    report.taken += 1
+            except Exception as error:  # one series must not hide the rest
+                report.failed.append((ref, type(error).__name__))
+        return report
+
+    async def record_exclusion(
+        self, service: Any, f: Fetcher, *, connected_service_id: str, ref: SeriesRef
+    ) -> list[int]:
+        """Once the series is held out of the scheduled updates (after the pairing), remember
+        which exclusion categories are new since the snapshot: the only ones a detachment
+        removes. Returns their ids."""
+        key = series_key(ref)
+        snap = self.get(connected_service_id, key)
+        if snap is None:
+            return []
+        known = {int(c["id"]) for c in snap.get("categories", [])}
+        now = await service.snapshot_upstream(f, ref)
+        added = sorted(
+            int(c["id"])
+            for c in now.get("categories", [])
+            if c.get("include_in_update") == "EXCLUDE" and int(c["id"]) not in known
+        )
+        payload = validate_payload({**snap, "shelfhold_excluded": added})
+        table = acquisition.upstream_snapshot
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(table)
+                .where(
+                    table.c.connected_service_id == connected_service_id,
+                    table.c.series_ref == key,
+                    table.c.capability == CAPABILITY,
+                )
+                .values(payload=payload)
             )
-        return taken
+        return added
 
     def get(self, connected_service_id: str, key: str) -> dict[str, Any] | None:
         with self._engine.connect() as connection:
@@ -189,6 +228,12 @@ class UpstreamSnapshots:
         ]
 
 
+@dataclass
+class TakeReport:
+    taken: int = 0
+    failed: list[tuple[SeriesRef, str]] = field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class DetachScope:
     """`--shelf` or `--series` (an Edition); none of them: everything Shelfhold follows."""
@@ -203,6 +248,7 @@ class SeriesDetached:
     ref: SeriesRef
     restored_from: str  # `snapshot` | `default` (no snapshot: only the exclusion goes)
     error: str | None = None
+    note: str | None = None  # `snapshot_invalid`: the snapshot was not trusted
 
     @property
     def ok(self) -> bool:
@@ -247,19 +293,26 @@ class Detacher:
         for binding_id, ref in followed:
             key = series_key(ref)
             snap = self._snapshots.get(self._service_id, key)
+            valid = getattr(service, "snapshot_valid", None)
+            note = None
+            if snap is not None and valid is not None and not valid(snap):
+                snap, note = None, "snapshot_invalid"  # handled as if there were none, and said
+                log.warning("upstream.snapshot_invalid", binding_id=binding_id)
             try:
                 if ConnectedCapability.UPSTREAM_RESTORE in service.connected:
                     await service.restore_upstream(f, ref, snap or {})
             except Exception as error:  # a series that cannot be restored must not stop the rest
                 report.series.append(
                     SeriesDetached(binding_id, ref, "snapshot" if snap else "default",
-                                   error=type(error).__name__)
+                                   error=type(error).__name__, note=note)
                 )  # fmt: skip
                 continue
             self._stop_following(binding_id)
             self._snapshots.forget(self._service_id, key)
             report.series.append(
-                SeriesDetached(binding_id, ref, "snapshot" if snap is not None else "default")
+                SeriesDetached(
+                    binding_id, ref, "snapshot" if snap is not None else "default", note=note
+                )
             )
         report.managed = self.managed_files([b for b, _ in followed])
         return report

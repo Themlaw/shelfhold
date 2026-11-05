@@ -29,7 +29,8 @@ SET_LIBRARY = (
 )
 # `detach --restore-upstream` (EF-EXP-056): the only writes besides downloads and the library flag
 MANGA_SETTINGS = (
-    "query ($id: Int!) { manga(id: $id) { id updateStrategy categories { nodes { id name } } } }"
+    "query ($id: Int!) { manga(id: $id) { id updateStrategy "
+    "categories { nodes { id name includeInUpdate } } } }"
 )
 CATEGORIES = "query { categories { nodes { id name includeInUpdate } } }"
 SET_MANGA_CATEGORIES = (

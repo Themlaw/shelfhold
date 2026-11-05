@@ -297,7 +297,7 @@ class FakeSuwayomi:
         node["updateStrategy"] = found[0].get("updateStrategy", "ALWAYS_UPDATE")
         node["categories"] = {
             "nodes": [
-                {"id": c["id"], "name": c["name"]}
+                {"id": c["id"], "name": c["name"], "includeInUpdate": c["includeInUpdate"]}
                 for c in self.categories
                 if c["id"] in found[0].get("categoryIds", [])
             ]
@@ -307,7 +307,19 @@ class FakeSuwayomi:
     def _q_categories(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         return {"nodes": copy.deepcopy(self.categories)}
 
+    @staticmethod
+    def _patch_keys(query: str) -> set[str]:
+        match = re.search(r"patch\s*:\s*\{([^}]*)\}", query)
+        return set(re.findall(r"(\w+)\s*:", match.group(1))) if match else set()
+
+    def _check_patch(self, query: str, allowed: set[str]) -> None:
+        """What the adapter may change on a manga, and nothing else (EF-EXP-056)."""
+        extra = self._patch_keys(query) - allowed
+        if extra:
+            self.violations.append(f"patch keys not allowed: {sorted(extra)}")
+
     def _q_updateMangaCategories(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        self._check_patch(query, {"addToCategories", "removeFromCategories"})
         wanted = self._wanted_id(query, variables, "id")
         for manga in self.state["mangas"]:
             if manga["id"] == wanted:
@@ -352,6 +364,9 @@ class FakeSuwayomi:
         return {"downloadStatus": {"state": "STOPPED"}}
 
     def _q_updateManga(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        self._check_patch(query, {"inLibrary", "updateStrategy"})
+        if variables.get("strategy", "ALWAYS_UPDATE") not in ("ALWAYS_UPDATE", "ONLY_FETCH_ONCE"):
+            self.violations.append(f"unknown update strategy {variables['strategy']!r}")
         wanted = self._wanted_id(query, variables, "id")
         for manga in self.state["mangas"]:
             if manga["id"] == wanted:

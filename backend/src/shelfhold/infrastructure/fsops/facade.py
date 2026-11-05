@@ -753,11 +753,19 @@ class Fsops:
             return f"{root.path}/{target}"
 
     def copy_across(
-        self, src: str, dst: str, *, parents: bool = False, replace: bool = False
+        self,
+        src: str,
+        dst: str,
+        *,
+        parents: bool = False,
+        replace: bool = False,
+        expected_sha256: str | None = None,
     ) -> str:
         """Copy, verify the staged copy, then put it in place; never a `rename` between roots.
 
-        Returns the SHA-256 of what was copied. The source may be an adoption root.
+        Returns the SHA-256 of what was copied. The source may be an adoption root. With
+        `expected_sha256` (hex), the staged copy must have that digest: otherwise nothing is put
+        in place (`CopyVerificationError`), whatever the source became since it was looked at.
         """
         a, b = self._locate(src), self._locate(dst)
         if b.read_only:
@@ -773,6 +781,8 @@ class Fsops:
                     reader,
                     parents=parents,
                     replace=replace,
-                    verify_digest=reader.digest.hexdigest,
+                    verify_digest=(lambda: expected_sha256)
+                    if expected_sha256
+                    else reader.digest.hexdigest,
                 )
                 return reader.digest.hexdigest()

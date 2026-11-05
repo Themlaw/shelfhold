@@ -32,6 +32,7 @@ from shelfhold.acquisition.application.upstream import (
     DetachReport,
     DetachScope,
     SnapshotRefusedError,
+    TakeReport,
     UpstreamSnapshots,
 )
 from shelfhold.acquisition.domain.backfill import BackfillEstimate
@@ -64,6 +65,7 @@ __all__ = [
     "Receiver",
     "RequestBudget",
     "SnapshotRefusedError",
+    "TakeReport",
     "TeamChoice",
     "TeamPreference",
     "TeamStats",

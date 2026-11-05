@@ -51,12 +51,22 @@ def test_repatriate_then_unmount_keeps_kavita_series_and_progress() -> None:
         assert r.env.files() == []  # nothing is under /library yet
         result = r.apply(plan.fingerprint)  # type: ignore[attr-defined]
         assert (result.copied, result.already_present) == (FILES, 0)  # type: ignore[attr-defined]
-        check = r.repatriator.check(r.destination)
+        check = r.repatriator.check(r.destination, plan=plan)
         assert check.safe_to_unmount and (check.series, check.chapters) == (len(SERIES), FILES)
         r.unmount()
         # the mount is gone; the files are where Kavita sees them, byte for byte
         assert len(r.env.files()) == FILES
-        assert r.repatriator.check(r.destination).safe_to_unmount
+        assert r.repatriator.check(r.destination, plan=plan).safe_to_unmount
+        # Kavita is asked to scan each folder, and indexes what is now under the writable root
+        for name in SERIES:
+            folder = f"{REMOTE_ROOT}/{name}"
+            run(kavita.client.scan_folder(folder))
+            kavita.fake.discover(
+                folder,
+                [f"{folder}/{p.name}" for p in sorted((r.env.root / name).iterdir())],
+                library_id=LIBRARY_ID,
+            )
+        assert len(kavita.fake.scans) >= len(SERIES)
         after = run(kavita_counts(kavita.client, str(LIBRARY_ID), REMOTE_ROOT))
         assert after == before_kavita and after.series == len(SERIES)
         assert {s["name"]: s["id"] for s in kavita.fake.series} == before_ids
@@ -200,3 +210,54 @@ def test_a_copy_between_roots_cut_short_is_settled_at_boot() -> None:
         r.fsops.copy_across(action.source, action.target, parents=True)  # landed, then killed
         report = journal.resolve_open()
         assert report.completed == [done] and not report.still_open
+
+
+@pytest.mark.req("EF-EXP-051")
+def test_source_changing_between_the_plan_and_the_copy_places_nothing() -> None:
+    """The staged copy must have the hash of the adoption: a source rewritten after the dry-run
+    leaves no file at the target (not even an orphan), and the next dry-run says `changed`."""
+    with repatriation_env() as r:
+        plan = r.dry_run()
+        source = r.upstream / SERIES[0] / f"{SERIES[0]} - Ch.1.cbz"
+        real = r.fsops.copy_across
+
+        def racing(src: str, dst: str, **kw: object) -> str:
+            if src.endswith(source.name) and not racing.done:  # type: ignore[attr-defined]
+                racing.done = True  # type: ignore[attr-defined]
+                source.write_bytes(source.read_bytes() + b"CHANGED")
+            return real(src, dst, **kw)  # type: ignore[arg-type]
+
+        racing.done = False  # type: ignore[attr-defined]
+        r.fsops.copy_across = racing  # type: ignore[method-assign]
+        with pytest.raises(RepatriationBlockedError):
+            r.apply(plan.fingerprint)  # type: ignore[attr-defined]
+        assert not (r.env.root / SERIES[0] / source.name).exists()
+        assert [i.state for i in _intents(r)][-1] == "cancelled"
+        r.fsops.copy_across = real  # type: ignore[method-assign]
+        again = r.dry_run()
+        assert [f.status for f in again.problems] == ["changed"]  # type: ignore[attr-defined]
+
+
+@pytest.mark.req("EF-EXP-051")
+def test_a_linked_destination_folder_is_a_conflict_not_a_crash() -> None:
+    with repatriation_env() as r:
+        outside = r.env.lib.tmp / "elsewhere"
+        outside.mkdir()
+        (r.env.root / SERIES[0]).symlink_to(outside)
+        plan = r.dry_run()
+        assert {f.status for f in plan.problems} == {"conflict"}  # type: ignore[attr-defined]
+        with pytest.raises(RepatriationBlockedError):
+            r.apply(plan.fingerprint)  # type: ignore[attr-defined]
+        assert list(outside.iterdir()) == []
+
+
+@pytest.mark.req("EF-EXP-051")
+def test_check_compares_the_counts_with_the_dry_run() -> None:
+    with repatriation_env() as r:
+        plan = r.dry_run()
+        r.apply(plan.fingerprint)  # type: ignore[attr-defined]
+        assert r.repatriator.check(r.destination, plan=plan).matches_plan  # type: ignore[arg-type]
+        with r.env.engine.begin() as connection:
+            connection.execute(sa.text("DELETE FROM export_record WHERE rel_path LIKE '%Ch.3%'"))
+        check = r.repatriator.check(r.destination, plan=plan)  # type: ignore[arg-type]
+        assert not check.matches_plan and not check.safe_to_unmount

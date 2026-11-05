@@ -65,6 +65,7 @@ from shelfhold.sdk.source import (
 KEY = "suwayomi"
 CBZ_MIME = "application/vnd.comicbook+zip"
 SUPPORTED_MODES = frozenset({"none", "basic_auth"})  # every other mode is refused (EF-SRC-031)
+UPDATE_STRATEGIES = frozenset({"ALWAYS_UPDATE", "ONLY_FETCH_ONCE"})
 MANGA_CACHE_SECONDS = 60.0  # one follow cycle; `begin_cycle` drops it earlier
 MAX_FILENAME_BYTES = 120
 _FORBIDDEN_NAME = re.compile(r'[\\/:*?"<>|]')
@@ -339,7 +340,7 @@ class SuwayomiService:
     # -- UPSTREAM_RESTORE (EF-EXP-056) -------------------------------------------------------
     async def snapshot_upstream(self, f: Fetcher, ref: SeriesRef) -> dict[str, object]:
         """What decides whether Suwayomi's own schedule updates the series: its categories and
-        its update strategy. Ids, names and a keyword; nothing secret."""
+        its update strategy. Ids, names and keywords; nothing secret."""
         node = await self._manga(f, ref)
         data = await self._query(f, q.MANGA_SETTINGS, {"id": node["id"]})
         manga = data.get("manga")
@@ -348,16 +349,39 @@ class SuwayomiService:
         categories = (manga.get("categories") or {}).get("nodes") or []
         return {
             "categories": [
-                {"id": int(c["id"]), "name": str(c.get("name", ""))} for c in categories
+                {
+                    "id": int(c["id"]),
+                    "name": str(c.get("name", "")),
+                    "include_in_update": str(c.get("includeInUpdate", "UNSET")).upper(),
+                }
+                for c in categories
             ],
             "update_strategy": str(manga.get("updateStrategy") or "ALWAYS_UPDATE"),
         }
 
+    @staticmethod
+    def snapshot_valid(snap: dict[str, object]) -> bool:
+        """A snapshot that is not what `snapshot_upstream` writes is not trusted: the
+        strategy must be a known keyword and every category an integer id."""
+        strategy = snap.get("update_strategy", "ALWAYS_UPDATE")
+        categories = snap.get("categories", [])
+        excluded = snap.get("shelfhold_excluded", [])
+        return (
+            strategy in UPDATE_STRATEGIES
+            and isinstance(categories, list)
+            and all(isinstance(c, dict) and type(c.get("id")) is int for c in categories)
+            and isinstance(excluded, list)
+            and all(type(i) is int for i in excluded)
+        )
+
     async def restore_upstream(self, f: Fetcher, ref: SeriesRef, snap: dict[str, object]) -> None:
-        """Give the series back to Suwayomi's schedule: leave the categories that exclude it
-        from updates, go back to the categories and update strategy of the snapshot. A category
-        Shelfhold did not put there is left alone. `snap` empty (no snapshot): only the exclusion
-        goes (GAP-9-05)."""
+        """Give the series back to Suwayomi's schedule. The category that excluded it from
+        updates goes: the one Shelfhold recorded (`shelfhold_excluded`), or, with no record, the
+        exclusions the snapshot did not have. The categories and the update strategy of the
+        snapshot come back. Nothing is written for an invalid snapshot (it counts as none), and
+        the restoration is only done if the series is no longer held out by the removed ones."""
+        if not self.snapshot_valid(snap):
+            snap = {}
         node = await self._manga(f, ref)
         manga_id = int(node["id"])
         current = (await self._query(f, q.MANGA_SETTINGS, {"id": manga_id})).get("manga") or {}
@@ -369,9 +393,13 @@ class SuwayomiService:
         wanted_raw = snap.get("categories")
         wanted = {
             int(c["id"]) for c in (wanted_raw if isinstance(wanted_raw, list) else [])
-            if isinstance(c, dict) and int(c["id"]) in known
+            if int(c["id"]) in known
         }  # fmt: skip
-        remove = sorted(i for i in have - wanted if known.get(i) == "EXCLUDE")
+        recorded = snap.get("shelfhold_excluded")
+        if isinstance(recorded, list):
+            remove = sorted(i for i in have - wanted if i in recorded)
+        else:
+            remove = sorted(i for i in have - wanted if known.get(i) == "EXCLUDE")
         add = sorted(wanted - have)
         if add or remove:
             await self._query(
@@ -380,6 +408,10 @@ class SuwayomiService:
         strategy = snap.get("update_strategy")
         if isinstance(strategy, str) and strategy != str(current.get("updateStrategy")):
             await self._query(f, q.SET_UPDATE_STRATEGY, {"id": manga_id, "strategy": strategy})
+        after = (await self._query(f, q.MANGA_SETTINGS, {"id": manga_id})).get("manga") or {}
+        left = {int(c["id"]) for c in (after.get("categories") or {}).get("nodes") or []}
+        if left & set(remove):
+            raise SourceChanged("the series is still held out of the updates")
 
     # -- units -------------------------------------------------------------------------------
     @staticmethod
