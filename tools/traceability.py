@@ -148,7 +148,7 @@ def _req_args(node: ast.expr) -> list[str] | None:
     return None
 
 
-CONDITIONAL_MARKS = {"contract", "skip", "skipif", "xfail"}
+CONDITIONAL_MARKS = {"contract", "nightly", "skip", "skipif", "xfail"}
 
 
 def _mark_name(node: ast.expr) -> str | None:

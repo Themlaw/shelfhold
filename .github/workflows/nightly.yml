@@ -1,0 +1,86 @@
+name: nightly
+
+# Real Kavita (official image, public registry) and real Suwayomi with the synthetic extension
+# (EF-SRC-008, ENF-LEG-013, ENF-COMP-001). NEVER required to merge: it is not in `ci-success`, runs
+# on a schedule and on demand only, and a pull request cannot trigger it. No real content source:
+# every file is built by the tests, the extension reads a fixture server on an internal network.
+# A failure is read in the Actions tab (no issue is opened: the token has no write permission).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 2 * * *"
+
+permissions: {}
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  kavita:
+    name: kavita (${{ matrix.label }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the 0.9.1 line (the minimum of the supported range), as published on the tag
+          - label: line-0.9.1
+            image: docker.io/jvmilazz0/kavita:0.9.1
+          # the pinned version (docs/dependencies.md: v0.9.1.4), by digest
+          - label: pinned
+            image: docker.io/jvmilazz0/kavita@sha256:31181a32f0dda73cae68721867028a7253d57881b58bea5754cd9e578e75421a
+          # the latest release: its drift is the point of the job
+          - label: latest
+            image: docker.io/jvmilazz0/kavita:latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: false
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: Pull the official Kavita image (the only network use; the bench network is internal)
+        env:
+          KAVITA_IMAGE: ${{ matrix.image }}
+        run: docker pull "$KAVITA_IMAGE"
+      - name: Kavita nightly tests
+        working-directory: backend
+        env:
+          KAVITA_IMAGE: ${{ matrix.image }}
+        run: uv run --locked pytest -m nightly tests/nightly/test_kavita_nightly.py -v --no-cov
+
+  suwayomi-extension:
+    name: suwayomi (synthetic extension)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: false
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: "Build the synthetic extension (Gradle dependencies, the only network use of the build)"
+        run: backend/tests/contract/suwayomi-synthetic-extension/build.sh
+      - name: Pull the pinned images (Suwayomi, fixture server)
+        run: docker compose -f backend/tests/contract/suwayomi-synthetic-extension/compose.yaml pull
+        env:
+          SUWAYOMI_DATA: ${{ runner.temp }}
+      - name: Nightly tests (empty extension-store list, no route out, extension installed from the file)
+        working-directory: backend
+        env:
+          SYNTHETIC_EXTENSION_APK: ${{ github.workspace }}/backend/tests/contract/suwayomi-synthetic-extension/build/synthetic.apk
+        run: uv run --locked pytest -m nightly tests/nightly/test_suwayomi_synthetic_extension.py -v --no-cov

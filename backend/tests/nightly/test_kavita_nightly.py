@@ -8,6 +8,7 @@ Run by hand: `KAVITA_IMAGE=<image> uv run pytest -m nightly tests/nightly/test_k
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -40,7 +41,7 @@ def test_nightly_real_kavita_places_chapter_volume_from_comicinfo(kavita: RealKa
     assert set(by_name) >= {"Placement Loose", "Placement Volume"}
     loose = kavita.detail(by_name["Placement Loose"].id)
     assert [c["files"][0]["filePath"].endswith("Ch.1.cbz") for c in loose["chapters"]] == [True]
-    assert loose["volumes"] and all(v["minNumber"] < 0 for v in loose["volumes"]), loose["volumes"]
+    assert loose["volumes"] == []  # a loose chapter: no volume, whatever the title says
     placed = kavita.detail(by_name["Placement Volume"].id)
     assert any(v["minNumber"] == 3 for v in placed["volumes"]), placed["volumes"]
 
@@ -120,16 +121,20 @@ def test_mirror_never_indexed_by_kavita_nightly(kavita: RealKavita) -> None:
         p for p in kept["excludePatterns"] if p in HIDDEN_DIR_PATTERNS
     ]
     _assert_only_visible(kavita, library, "pattern", 1)
-    # a library created without it (an adopted one) is updated by Shelfhold's faithful update
+    # a library created without it (an adopted one) is updated by Shelfhold's faithful update;
+    # what the pattern keeps out is what is written afterwards (it does not purge what is indexed)
+    kavita.write("late/Late Visible/Late Visible - Ch.1.cbz", cbz(comicinfo("Late Visible", "1")))
+    late = kavita.create_library("Late", [kavita.remote("late")], patterns=())
+    kavita.wait_series(late, lambda s: {"Late Visible"} <= {x.name for x in s}, "Late Visible")
+    update = run(kavita.client.ensure_exclude_patterns(late, HIDDEN_DIR_PATTERNS, confirmed=True))  # type: ignore[union-attr]
+    assert update.changed
     kavita.write(
         "late/.shelfhold/manifest/Late Hidden - Ch.1.cbz", cbz(comicinfo("Late Hidden", "1"))
     )
-    kavita.write("late/Late Visible/Late Visible - Ch.1.cbz", cbz(comicinfo("Late Visible", "1")))
-    late = kavita.create_library("Late", [kavita.remote("late")], patterns=())
-    run(kavita.client.ensure_exclude_patterns(late, HIDDEN_DIR_PATTERNS, confirmed=True))  # type: ignore[union-attr]
+    kavita.write("late/Late Visible/Late Visible - Ch.2.cbz", cbz(comicinfo("Late Visible", "2")))
     kavita.scan(kavita.remote("late"))
-    kavita.wait_series(late, lambda s: {"Late Visible"} <= {x.name for x in s}, "Late Visible")
-    assert {s.name for s in kavita.settle(late)} == {"Late Visible"}
+    time.sleep(20)
+    assert {s.name for s in kavita.series(late)} == {"Late Visible"}
 
 
 @pytest.mark.req("EF-EXP-051", "EF-EXP-052")

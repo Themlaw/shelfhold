@@ -128,7 +128,10 @@ def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
     assert state[0] in ("0", "143") and state[1] == "false"
     assert "Application shutdown complete" in j.compose("logs", "--no-color", "shelfhold").stdout
     diff = subprocess.run(  # noqa: S603
-        ["docker", "diff", old], capture_output=True, text=True, check=True  # noqa: S607
+        ["docker", "diff", old],
+        capture_output=True,
+        text=True,
+        check=True,  # noqa: S607
     ).stdout.split("\n")
     runtime = {"/usr", "/usr/sbin", "/usr/sbin/docker-init", "/library", "/data", "/store", "/tmp"}
     written = [line for line in diff if line and line.split(" ", 1)[1] not in runtime]

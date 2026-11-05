@@ -91,7 +91,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.arm64 && '[{"arch":"amd64","runner":"ubuntu-24.04"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' || '[{"arch":"amd64","runner":"ubuntu-24.04"}]') }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:

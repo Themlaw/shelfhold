@@ -1,0 +1,21 @@
+# Suwayomi bench + the fixture server of the synthetic extension (nightly, ENF-LEG-013).
+# The base bench (e2e/suwayomi/compose.yaml) is unchanged: pinned image, internal network, empty
+# extension-store list. The fixture server joins that network under the name the extension reads.
+include:
+  - path: ../../../../e2e/suwayomi/compose.yaml
+
+services:
+  fixtures:
+    image: ${FIXTURES_IMAGE:-docker.io/library/python:3.13-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc}
+    restart: "no"
+    networks:
+      contract:
+        aliases: [fixtures]
+    command: ["python", "/fixtures/serve.py", "8000"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./server:/fixtures:ro
