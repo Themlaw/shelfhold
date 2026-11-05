@@ -6,6 +6,36 @@ migrate_help = "Applique les migrations de la base (sauvegarde préalable, refus
 serve_help = "Démarre le serveur HTTP."
 config_help = "Consulte la configuration."
 config_show_help = "Affiche chaque champ avec son origine (env, toml, db, défaut)."
+config_get_help = "Affiche la valeur d'une clé de configuration."
+config_list_help = "Liste les clés de configuration avec leur valeur et leur origine."
+config_set_help = "Écrit une clé de configuration (couche base de données)."
+config_key_help = "Nom de la clé (public_url, source.check_mode, path_map.<cible>, notify.urls...)."
+config_value_help = "Valeur (jamais pour une clé secrète : utilisez --value-file)."
+config_value_file_help = "Fichier contenant la valeur ; « - » pour l'entrée standard."
+config_apply_help = "Importe un fichier de configuration déclaratif (idempotent)."
+config_file_help = "Fichier shelfhold.toml à appliquer (nom libre, distinct de config.toml)."
+config_dry_run_help = "Affiche les différences sans rien écrire, sonder ni échanger."
+target_help = "Destinations d'exportation (Kavita)."
+target_add_help = "Ajoute une destination."
+target_add_kavita_help = "Ajoute un Kavita : échange le compte contre une clé nommée à expiration."
+target_url_help = "Adresse du serveur Kavita (http(s)://hôte[:port])."
+target_user_help = "Compte Kavita dédié (administrateur)."
+target_password_file_help = "Fichier contenant le mot de passe ; « - » pour l'entrée standard (jamais en argument)."
+target_name_help = "Nom de la destination (défaut : kavita)."
+target_path_map_help = "Table de chemins en JSON : [{{\"local\": \"/library/manga\", \"remote\": \"/manga\"}}]."
+target_accept_risk_help = "Reconnaît que la clé est celle d'un compte administrateur de Kavita."
+source_help = "Sources connectées (Suwayomi)."
+source_add_help = "Ajoute une source."
+source_add_suwayomi_help = "Ajoute Suwayomi : lit son mode d'authentification (none ou basic_auth)."
+source_url_help = "Adresse du serveur Suwayomi (http(s)://hôte[:port])."
+source_secret_file_help = "Fichier contenant « utilisateur:mot_de_passe » ; « - » pour l'entrée standard."
+shelf_help = "Étagères."
+shelf_create_help = "Crée une étagère adulte et la lie à une destination."
+shelf_name_help = "Nom de l'étagère."
+shelf_max_age_help = "Plafond d'âge : 18+ ou X (toute valeur plus basse arrive avec M1b)."
+shelf_target_help = "Nom de la destination."
+shelf_subpath_help = "Sous-dossier de la racine de la destination."
+shelf_phrase_help = "Libellé affiché (défaut : le nom)."
 json_help = "Sortie au format JSON."
 export_help = "Calcule les exportations vers une destination (aperçu, sans écriture)."
 export_dry_run_help = "Affiche le plan sans rien écrire."
@@ -110,6 +140,7 @@ error = "Connexion impossible."
 source = "Code source"
 
 [status]
+public_url_restart = "public_url a changé depuis le démarrage du serveur : redémarrez-le pour qu'il en tienne compte."
 no_warning = "Aucun avertissement."
 warning_line = "Avertissement : {message}"
 database_not_migrated = "base absente ou pas à jour : lancez « shelfhold migrate »."
@@ -581,3 +612,70 @@ rename_line = "Renommage proposé (jamais appliqué) : {from_path} -> {to_path}"
 duplicate_line = "Doublon de même numéro dans {series} (conservé) : n° {number} : {files}"
 refused = "Bibliothèque exposée à des comptes limités, adoption refusée avant M1b : {accounts}"
 done = "{done} fichier(s) adopté(s), {skipped} déjà connu(s)."
+
+[headless]
+refused = "Refusé ({code}) : {detail}"
+admin_risk_warning = "ATTENTION : la clé Kavita est celle d'un compte administrateur ; elle donne tout pouvoir sur Kavita (comptes, bibliothèques, fichiers lus). Relancez avec --accept-admin-risk pour confirmer."
+secret_unreadable = "Impossible de lire le secret : {detail}."
+secret_file_world_readable = "Le fichier {path} est lisible par tous : restreignez-le (chmod 600)."
+secret_key_needs_file = "{name} est un secret : fournissez-le avec --value-file (fichier ou « - »), jamais en argument."
+value_or_file = "Donnez une valeur ou --value-file, pas les deux."
+path_map_invalid = "La table de chemins n'est pas du JSON valide."
+file_unreadable = "Impossible de lire le fichier : {detail}."
+target_added = "Destination « {name} » ajoutée (clé nommée créée, jamais affichée)."
+target_exists = "Destination « {name} » déjà présente : rien à faire."
+key_expires = "La clé expire le {date}."
+source_added = "Source ajoutée (authentification : {mode})."
+source_updated = "Source mise à jour (authentification : {mode})."
+shelf_created = "Étagère « {name} » créée et liée."
+shelf_exists = "Étagère « {name} » déjà présente : rien à faire."
+config_line = "{name} = {value}  ({source})"
+config_set = "{name} écrit."
+config_overridden = "Attention : {name} est aussi défini par la couche {layer}, qui l'emporte."
+nothing_to_apply = "Aucune différence."
+dry_run_done = "Simulation : rien n'a été écrit."
+apply_done = "Configuration appliquée."
+
+[errors."target.admin_risk_not_accepted"]
+title = "La clé Kavita est celle d'un compte administrateur."
+action = "Confirmez avec --accept-admin-risk (ou accept_admin_risk = true) après avoir lu l'avertissement."
+
+[errors."target.exchange_failed"]
+title = "L'échange du compte Kavita contre une clé nommée a échoué."
+action = "Vérifiez l'adresse, le compte (administrateur) et le mot de passe ; rien n'a été enregistré."
+
+[errors."target.conflict"]
+title = "Une destination de ce nom existe avec une autre adresse."
+action = "Choisissez un autre nom ou corrigez l'adresse dans le fichier."
+
+[errors."target.unknown"]
+title = "Cette destination n'existe pas."
+action = "Ajoutez-la d'abord avec « shelfhold target add »."
+
+[errors."config.unknown_key"]
+title = "Clé de configuration inconnue."
+action = "Listez les clés avec « shelfhold config list »."
+
+[errors."config.invalid_value"]
+title = "Valeur de configuration invalide."
+action = "Corrigez la valeur ; rien n'a été écrit."
+
+[errors."config.key_readonly"]
+title = "Cette clé n'est pas modifiable dans cette version."
+action = "Retirez-la du fichier ; la fenêtre de maintenance est fixe en M1a."
+
+[errors."config.file_invalid"]
+title = "Le fichier de configuration est invalide."
+action = "Corrigez le fichier (TOML, clés connues, secrets par fichier) puis relancez."
+
+[errors."source.conflict"]
+title = "Une source existe avec une autre configuration."
+action = "Corrigez l'adresse ou utilisez « shelfhold source set-secret »."
+
+[errors."shelf.conflict"]
+title = "Une étagère de ce nom existe avec d'autres réglages."
+action = "Choisissez un autre nom ou alignez le plafond d'âge et le sous-dossier."
+
+[errors."source.unreachable"]
+title = "Suwayomi ne répond pas à cette adresse."
+action = "Vérifiez l'adresse et que le serveur tourne ; rien n'a été enregistré."

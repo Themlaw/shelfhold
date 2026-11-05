@@ -6,6 +6,7 @@ import argparse
 import json
 
 from shelfhold.config import ResolvedSettings
+from shelfhold.headless.applied import applied_public_url
 from shelfhold.i18n import t
 from shelfhold.identity.public import IDENTITY_HEADER_AUDIT, local_auth
 from shelfhold.infrastructure.db import create_db_engine
@@ -45,15 +46,23 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
     engine = create_db_engine(database)
     try:
         headers = local_auth(engine, settings).recent_audit_targets(IDENTITY_HEADER_AUDIT)
+        applied = applied_public_url(engine)
     finally:
         engine.dispose()
-    return _environment_warnings(resolved) + [
-        {
-            "code": "identity_header_stripped",
-            "message": t("status.identity_header_stripped", header=header),
-        }
-        for header in headers
-    ]
+    pending: list[dict[str, str]] = []
+    if applied is not None and applied != (settings.public_url or ""):
+        pending.append({"code": "public_url_restart", "message": t("status.public_url_restart")})
+    return (
+        _environment_warnings(resolved)
+        + pending
+        + [
+            {
+                "code": "identity_header_stripped",
+                "message": t("status.identity_header_stripped", header=header),
+            }
+            for header in headers
+        ]
+    )
 
 
 def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:

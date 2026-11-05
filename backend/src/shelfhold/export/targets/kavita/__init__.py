@@ -25,11 +25,12 @@ from shelfhold.export.targets.kavita.errors import (
     TargetForbidden,
     TargetUnreachable,
 )
-from shelfhold.export.targets.kavita.routes import ALLOWED_ROUTES, Route
+from shelfhold.export.targets.kavita.routes import ALLOWED_ROUTES, SETUP_ROUTES, Route
 
 __all__ = [
     "ALLOWED_ROUTES",
     "HIDDEN_DIR_PATTERNS",
+    "SETUP_ROUTES",
     "AdminKey",
     "CallResult",
     "ConfirmationRequired",

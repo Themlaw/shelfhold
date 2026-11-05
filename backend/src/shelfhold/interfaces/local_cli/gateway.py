@@ -5,12 +5,22 @@ actor `local_cli:<uid>`); `LocalAuth` itself is the direct channel for a stopped
 (ENF-OPS-015). Errors cross the socket as codes and come back as the same exceptions.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
+from shelfhold.headless import (
+    ConfigValue,
+    HeadlessError,
+    Plan,
+    PlanChange,
+    ShelfCreated,
+    SourceAdded,
+    TargetAdded,
+)
+from shelfhold.headless.admin import ConfigValues, PathMapSpec
 from shelfhold.identity.public import AdminExistsError, CreatedApiKey, UnknownUserError
 from shelfhold.infrastructure.local_socket import RpcFailure, call
 
@@ -143,3 +153,112 @@ class SocketIdentity:
 
     def revoke_api_key(self, prefix: str) -> bool:
         return bool(self._call("identity.keys_revoke", prefix=prefix))
+
+
+# -- headless configuration ---------------------------------------------------------------------
+
+
+class RemoteRefusal(HeadlessError):
+    """A refusal of the running server, with the catalog code it sent (a binding refusal, a
+    headless one...). The message holds no secret: the server wrote it."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class HeadlessCommands(Protocol):
+    """What the `config`, `target`, `source` and `shelf` commands use; `HeadlessAdmin` is the
+    direct channel (server stopped), `SocketHeadless` the one of a running server."""
+
+    def get(self, key: str) -> ConfigValue: ...
+    def set(self, key: str, value: str) -> ConfigValue: ...
+    def list(self) -> ConfigValues: ...
+    def apply_text(
+        self, text: str, *, base_dir: Path, dry_run: bool = False,
+        secrets: Mapping[str, str] | None = None,
+    ) -> Plan: ...  # fmt: skip
+    def target_add_kavita(
+        self, *, name: str, url: str, username: str, password: str, accept_admin_risk: bool,
+        path_map: PathMapSpec | None = None,
+    ) -> TargetAdded: ...  # fmt: skip
+    def source_add_suwayomi(self, *, url: str, secret: str | None) -> SourceAdded: ...
+    def shelf_create(
+        self, *, name: str, max_age: str, target: str, subpath: str = "", phrase: str | None = None
+    ) -> ShelfCreated: ...  # fmt: skip
+
+
+def _config(raw: object) -> ConfigValue:
+    if not isinstance(raw, dict):
+        raise ValueError("malformed_reply")
+    return ConfigValue(raw["key"], raw["value"], raw["source"], raw.get("default"),
+                       raw.get("overridden_by"))  # fmt: skip
+
+
+class SocketHeadless:
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def _call(self, method: str, **params: object) -> object:
+        try:
+            return call(self._path, method, {k: v for k, v in params.items() if v is not None})
+        except RpcFailure as failure:
+            code = (failure.data or {}).get("code")
+            if isinstance(code, str):
+                raise RemoteRefusal(code, failure.message) from None
+            raise
+
+    def get(self, key: str) -> ConfigValue:
+        return _config(self._call("config.get", key=key))
+
+    def set(self, key: str, value: str) -> ConfigValue:
+        return _config(self._call("config.set", key=key, value=value))
+
+    def list(self) -> ConfigValues:
+        rows = self._call("config.list")
+        if not isinstance(rows, list):
+            raise ValueError("malformed_reply")
+        return [_config(row) for row in rows]
+
+    def apply_text(
+        self, text: str, *, base_dir: Path, dry_run: bool = False,
+        secrets: Mapping[str, str] | None = None,
+    ) -> Plan:  # fmt: skip
+        raw = self._call("config.apply", text=text, base_dir=str(base_dir), dry_run=dry_run,
+                         secrets=dict(secrets or {}))  # fmt: skip
+        if not isinstance(raw, dict):
+            raise ValueError("malformed_reply")
+        return Plan(
+            tuple(
+                PlanChange(
+                    c["kind"], c["subject"], c["action"], c["before"], c["after"], c.get("secret")
+                )
+                for c in raw["changes"]
+            )
+        )
+
+    def target_add_kavita(
+        self, *, name: str, url: str, username: str, password: str, accept_admin_risk: bool,
+        path_map: PathMapSpec | None = None,
+    ) -> TargetAdded:  # fmt: skip
+        raw = self._call("target.add", kind="kavita", name=name, url=url, username=username,
+                         password=password, accept_admin_risk=accept_admin_risk,
+                         path_map=path_map)  # fmt: skip
+        if not isinstance(raw, dict):
+            raise ValueError("malformed_reply")
+        return TargetAdded(raw["id"], raw["name"], raw["created"], _when(raw["key_expires_at"]))
+
+    def source_add_suwayomi(self, *, url: str, secret: str | None) -> SourceAdded:
+        raw = self._call("source.add", kind="suwayomi", url=url, secret=secret)
+        if not isinstance(raw, dict):
+            raise ValueError("malformed_reply")
+        return SourceAdded(raw["id"], raw["auth_mode"], raw["created"])
+
+    def shelf_create(
+        self, *, name: str, max_age: str, target: str, subpath: str = "", phrase: str | None = None
+    ) -> ShelfCreated:
+        raw = self._call("shelf.create", name=name, max_age=max_age, target=target,
+                         subpath=subpath, phrase=phrase)  # fmt: skip
+        if not isinstance(raw, dict):
+            raise ValueError("malformed_reply")
+        return ShelfCreated(raw["shelf_id"], raw["destination_id"], raw["created"])

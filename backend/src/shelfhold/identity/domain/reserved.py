@@ -50,8 +50,7 @@ NO_REAUTH_EFFECTS = frozenset(
         Effect.RATES_CONTENT,
         Effect.UNMASKS_REQUEST,
         Effect.MANAGES_CREDENTIALS,
-        Effect.ACCEPTS_ADMIN_RISK,
-    }
+    }  # not ACCEPTS_ADMIN_RISK: it takes a third party's admin password (L38 review)
 )
 
 DEFAULT_RESERVED_ROLES = frozenset({"admin"})
