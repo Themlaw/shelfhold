@@ -19,9 +19,9 @@ from sqlalchemy import Engine
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import (
+    forget_remote_cache,
     invalidate_field_owners,
     load_fingerprint,
-    purge_remote_cache,
     save_fingerprint,
     save_health,
 )
@@ -113,7 +113,7 @@ class InstanceService:
                 report.settings_applied.append(item.remote_library_id)
         with self._engine.begin() as connection:
             report.re_resolved = self._store_refs(connection, target_id, resolved)
-            purge_remote_cache(connection, target_id)
+            forget_remote_cache(connection, target_id)
             report.invalidated_fields = invalidate_field_owners(connection, target_id)
             save_fingerprint(
                 connection, target_id, current, client.health.version, self._clock.now()

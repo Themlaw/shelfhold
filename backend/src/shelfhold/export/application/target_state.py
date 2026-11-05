@@ -22,11 +22,11 @@ __all__ = [
     "DestinationPausedError",
     "FieldRegistry",
     "ensure_active",
+    "forget_remote_cache",
     "invalidate_field_owners",
     "load_fingerprint",
     "load_health",
     "pause_shelf",
-    "purge_remote_cache",
     "resume_shelf",
     "save_fingerprint",
     "save_health",
@@ -126,7 +126,7 @@ def ensure_active(connection: Connection, destination_id: str) -> None:
 # -- remote ids are a cache ----------------------------------------------------------------------
 
 
-def purge_remote_cache(connection: Connection, target_id: str) -> None:
+def forget_remote_cache(connection: Connection, target_id: str) -> None:
     """Forget what the old server said (series ids, remote references): the paths stay.
 
     `export_record.rel_path` is the key; nothing here touches a file or a record's state.
