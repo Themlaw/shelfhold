@@ -16,19 +16,74 @@ ASSIGNERS = {
 }
 
 
-def _modules_naming(attribute: str) -> set[str]:
-    found: set[str] = set()
-    for path in ROOT.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and node.attr == attribute:
-                found.add(str(path.relative_to(ROOT)))
+def _offences(source: str) -> list[str]:
+    """Every way to produce or name the `local_cli` credential: the member, its value, a call of
+    the enum, a lookup by name (`getattr`, subscript)."""
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Attribute) and node.attr == "LOCAL_CLI":
+            found.append("member")
+        elif isinstance(node, ast.Constant) and node.value == "local_cli":
+            found.append("value")
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == "Credential":
+                found.append("call")
+            if (
+                isinstance(func, ast.Name)
+                and func.id in {"getattr", "vars"}
+                and node.args
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id == "Credential"
+            ):
+                found.append("getattr")
+        elif (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "Credential"
+        ):
+            found.append("subscript")
     return found
+
+
+def _modules_naming() -> set[str]:
+    return {
+        str(path.relative_to(ROOT))
+        for path in ROOT.rglob("*.py")
+        if _offences(path.read_text(encoding="utf-8"))
+    }
+
+
+@pytest.mark.req("EF-USR-024", "ENF-SEC-010")
+@pytest.mark.parametrize(
+    "code",
+    [
+        "Credential.LOCAL_CLI",
+        "x = 'local_cli'",
+        "if c == 'local_cli': pass",
+        "Credential('local_cli')",
+        "getattr(Credential, 'LOCAL_' + 'CLI')",
+        "Credential['LOCAL_CLI']",
+        "vars(Credential)",
+    ],
+)
+def test_the_scan_sees_every_way_to_name_the_credential(code: str) -> None:
+    assert _offences(code)
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-010")
 def test_local_cli_credential_is_named_only_by_the_socket_path() -> None:
-    assert _modules_naming("LOCAL_CLI") <= ASSIGNERS
+    assert _modules_naming() <= ASSIGNERS
+
+
+@pytest.mark.req("EF-USR-024", "ENF-SEC-010")
+def test_only_the_peer_module_builds_a_credential_from_outside() -> None:
+    """The enum is called only where a peer becomes a principal (`credentials.py` defines it)."""
+    for path in ROOT.rglob("*.py"):
+        rel = str(path.relative_to(ROOT))
+        if rel in {"interfaces/local_cli/principal.py", "identity/domain/credentials.py"}:
+            continue
+        assert "call" not in _offences(path.read_text(encoding="utf-8")), rel
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-010")
