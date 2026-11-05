@@ -4,6 +4,8 @@
 code adds `Content-Security-Policy`, `Cache-Control` or a sandbox, never the rest.
 """
 
+import base64
+import hashlib
 import re
 from typing import Protocol
 from urllib.parse import quote
@@ -17,6 +19,11 @@ FRAME_OPTIONS = "DENY"
 FRAME_ANCESTORS = "frame-ancestors 'none'"
 CSP_SANDBOX = "sandbox"
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n"
+BEARER_CHALLENGE = 'Bearer realm="api"'
+_INLINE = {
+    "script-src": re.compile(r"<script>(.*?)</script>", re.DOTALL),
+    "style-src": re.compile(r"<style>(.*?)</style>", re.DOTALL),
+}
 
 _FRAME_ANCESTORS_DIRECTIVE = re.compile(r"frame-ancestors[^;]*", re.IGNORECASE)
 
@@ -58,3 +65,19 @@ def attachment_disposition(filename: str) -> str:
         "".join(c for c in filename if c.isascii() and (c.isalnum() or c in "._- ")) or "download"
     )
     return f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(filename, safe='')}"
+
+
+def _source_hash(text: str) -> str:
+    return "'sha256-" + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode() + "'"
+
+
+def hash_csp(html: str) -> str:
+    """CSP of a served page: nothing by default, its inline scripts and styles by hash only
+    (ENF-SEC-004, no `unsafe-inline`); `frame-ancestors` is added by the middleware."""
+    directives = ["default-src 'none'"]
+    for directive, pattern in _INLINE.items():
+        hashes = sorted({_source_hash(body) for body in pattern.findall(html)})
+        if hashes:
+            directives.append(f"{directive} {' '.join(hashes)}")
+    directives += ["connect-src 'self'", "form-action 'self'", "base-uri 'none'"]
+    return "; ".join(directives)

@@ -244,10 +244,15 @@ def test_session_token_stored_hashed(monkeypatch: pytest.MonkeyPatch, settings: 
 def test_session_id_renewed_on_login(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
     with auth_env(monkeypatch, settings) as env:
         # A planted value is never adopted (fixation).
-        env.client.cookies.set(SESSION_COOKIE, "planted-by-someone-else", domain="testserver")
+        planted = env.other_client("198.51.100.41").post(
+            "/api/v1/auth/login",
+            json={"username": ADMIN, "password": PASSWORD},
+            headers={"Cookie": f"{SESSION_COOKIE}=planted-by-someone-else"},
+        )
+        issued = _cookie_line(planted, SESSION_COOKIE).split(";")[0].split("=", 1)[1]
+        assert issued != "planted-by-someone-else"
         env.login()
         first = env.client.cookies[SESSION_COOKIE]
-        assert first != "planted-by-someone-else"
         env.login()
         second = env.client.cookies[SESSION_COOKIE]
         assert second != first

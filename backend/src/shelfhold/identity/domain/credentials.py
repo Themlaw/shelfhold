@@ -1,0 +1,101 @@
+"""Who is calling, and for how long a session lives (EF-USR-022, EF-USR-024, ADR-0049).
+
+Arbitrage P2: one default for every role, 30 days sliding, "remember me" ticked. The short admin
+durations (30 min idle, 12 h absolute) belong to the hardened profile only.
+"""
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import StrEnum
+
+
+class Credential(StrEnum):
+    """The credential axis of the truth table (EF-USR-024). Freshness is a property of a session,
+    not a credential of its own: `auth_time` says how recent the last password entry is."""
+
+    SESSION = "session"
+    API_KEY = "api_key"
+    DEVICE_TOKEN = "device_token"  # noqa: S105 (a credential kind, not a secret). M5; refused like a key wherever an action is reserved
+    LOCAL_CLI = "local_cli"  # only the Unix socket server (L23) or the offline CLI assigns it
+
+
+@dataclass(frozen=True)
+class Principal:
+    user_id: str
+    username: str
+    role: str
+    credential: Credential
+    session_id: str | None = None
+    auth_time: datetime | None = None  # last password entry; sessions only
+    key_id: str | None = None
+    scopes: tuple[str, ...] = ()
+    read_only: bool = False
+
+    @property
+    def actor_id(self) -> str:
+        """The actor of an idempotency key: a user through any session, or one key."""
+        if self.credential is Credential.API_KEY and self.key_id:
+            return f"api_key:{self.key_id}"
+        return f"user:{self.user_id}"
+
+    @property
+    def may_write(self) -> bool:
+        if self.read_only:
+            return False
+        if self.credential is Credential.API_KEY:
+            return bool({"admin", "request"} & set(self.scopes))
+        return True
+
+
+@dataclass(frozen=True)
+class SessionPolicy:
+    idle: timedelta
+    absolute: timedelta | None  # None: the expiry slides with every request
+    remember_default: bool = True
+
+
+DEFAULT_POLICY = SessionPolicy(idle=timedelta(days=30), absolute=None)
+HARDENED_ADMIN_POLICY = SessionPolicy(idle=timedelta(minutes=30), absolute=timedelta(hours=12))
+SESSION_TOUCH_INTERVAL = timedelta(minutes=1)  # `last_seen_at` is written at most this often
+HARDENED_KEY_MAX_AGE = timedelta(days=90)
+MIN_PASSWORD_LENGTH = 10
+MAX_PASSWORD_LENGTH = 1024  # bounds the argon2 input
+
+
+def session_policy(role: str, *, hardened: bool) -> SessionPolicy:
+    if hardened and role == "admin":
+        return HARDENED_ADMIN_POLICY
+    return DEFAULT_POLICY
+
+
+@dataclass(frozen=True)
+class SessionTimes:
+    created_at: datetime
+    last_seen_at: datetime
+    absolute_expiry: datetime
+
+
+def session_expired(times: SessionTimes, policy: SessionPolicy, now: datetime) -> bool:
+    """The stored expiry, the idle limit and, when the policy has one, the absolute cap (which
+    also binds sessions opened before the hardened profile was switched on)."""
+    if now >= times.absolute_expiry or now - times.last_seen_at >= policy.idle:
+        return True
+    return policy.absolute is not None and now >= times.created_at + policy.absolute
+
+
+def initial_expiry(policy: SessionPolicy, now: datetime) -> datetime:
+    return now + (policy.absolute if policy.absolute is not None else policy.idle)
+
+
+def slid_expiry(times: SessionTimes, policy: SessionPolicy, now: datetime) -> datetime:
+    """A sliding session moves its expiry with each touch; an absolute one never does."""
+    if policy.absolute is not None:
+        return min(times.absolute_expiry, times.created_at + policy.absolute)
+    return now + policy.idle
+
+
+def check_password_shape(password: str) -> None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError("password_too_short")
+    if len(password) > MAX_PASSWORD_LENGTH:
+        raise ValueError("password_too_long")

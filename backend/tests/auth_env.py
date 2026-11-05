@@ -11,8 +11,8 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-import httpx
 import pytest
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
@@ -102,7 +102,7 @@ class AuthEnv:
         *,
         client: TestClient | None = None,
         **extra: object,
-    ) -> httpx.Response:
+    ) -> Any:
         body: dict[str, object] = {"username": username, "password": password, **extra}
         return (client or self.client).post("/api/v1/auth/login", json=body)
 
@@ -111,9 +111,7 @@ class AuthEnv:
         assert value, "no CSRF cookie: not logged in"
         return value
 
-    def post(
-        self, path: str, *, client: TestClient | None = None, **kwargs: object
-    ) -> httpx.Response:
+    def post(self, path: str, *, client: TestClient | None = None, **kwargs: object) -> Any:
         c = client or self.client
         headers = dict(kwargs.pop("headers", None) or {})  # type: ignore[call-overload]
         headers.setdefault(CSRF_HEADER, self.csrf(c))

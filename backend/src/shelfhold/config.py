@@ -55,6 +55,14 @@ class Settings(BaseModel):
     # ENF-LEG-001: a fresh install has no plugin repository and no active source.
     plugin_repos: tuple[str, ...] = ()
     active_sources: tuple[str, ...] = ()
+    # ENF-LEG-012: where the running code is offered (login page, /api/v1/about); None = the
+    # repository at the tag of this version. Point it at your fork if you modified the code.
+    source_url: str | None = None
+    # P1/P2/P3: the hardened profile (docs/admin/durcir.md) shortens admin sessions and asks for
+    # a fresh password on every reserved action; never required. The invisible protections
+    # (argon2id, CSRF, cookies, CSP, attempt limiting) have no setting at all.
+    auth_hardened: bool = False
+    fresh_auth_s: int = Field(default=900, ge=60, le=86_400)
 
     @field_validator("plugin_repos", "active_sources", mode="before")
     @classmethod

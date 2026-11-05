@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>$title</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid;
+  place-items: center; background: #f4f4f2; color: #1d1d1b; }
+@media (prefers-color-scheme: dark) { body { background: #1d1d1b; color: #ececea; } }
+main { width: min(22rem, calc(100vw - 2rem)); }
+label { display: block; margin-top: 1rem; }
+input[type=text], input[type=password] { width: 100%; box-sizing: border-box; padding: .5rem;
+  font: inherit; }
+.remember { display: flex; gap: .5rem; align-items: center; }
+button { margin-top: 1.25rem; width: 100%; padding: .6rem; font: inherit; }
+#message { min-height: 1.5rem; margin-top: 1rem; }
+footer { margin-top: 2rem; font-size: .875rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>$title</h1>
+<form id="login" method="post" data-endpoint="$endpoint" data-error="$error">
+<label for="username">$username</label>
+<input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="128" required>
+<label for="password">$password</label>
+<input id="password" name="password" type="password" autocomplete="current-password" maxlength="$max_password" required>
+<label class="remember"><input name="remember" type="checkbox" checked> $remember</label>
+<button type="submit">$submit</button>
+<p id="message" role="alert"></p>
+</form>
+<footer><a href="$source_url" rel="noopener noreferrer">$source</a></footer>
+</main>
+<script>
+const form = document.getElementById("login");
+const message = document.getElementById("message");
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  message.textContent = "";
+  const data = new FormData(form);
+  const body = {
+    username: data.get("username"),
+    password: data.get("password"),
+    remember: data.get("remember") === "on",
+  };
+  let text = form.dataset.error;
+  try {
+    const response = await fetch(form.dataset.endpoint, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (response.ok) {
+      window.location.assign("/");
+      return;
+    }
+    const problem = await response.json();
+    if (problem && problem.title) text = problem.title;
+  } catch (error) {
+    // network failure: the generic message stays
+  }
+  message.textContent = text;
+});
+</script>
+</body>
+</html>
