@@ -35,4 +35,5 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("pairing.not_writable", 409, "admin"),
     ErrorCode("pairing.already_paired", 409, "admin"),
     ErrorCode("pairing.batch_stale", 409, "admin"),
+    ErrorCode("pairing.switchover_stale", 409, "admin"),
 )

@@ -17,6 +17,11 @@ from sqlalchemy import Connection, Engine
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import open_intent_paths
 from shelfhold.export.application.locks import LockBusyError, ResourceLocks
+from shelfhold.export.application.preflight import (
+    DENIED,
+    DestinationNotWritableError,
+    PermissionPreflight,
+)
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.domain.physical_roots import RESERVED_DIR, SENTINEL_FILE, RootState
 from shelfhold.export.domain.reconcile import (
@@ -308,6 +313,23 @@ class Reconciler:
 
     # -- resuming --------------------------------------------------------------------------------
 
+    def _probe_if_denied(self, export_series_id: str) -> None:
+        """A series parked for `permission_denied` is freed only by a probe that passes (the
+        same one as `target recheck`); otherwise it stays, with the cause and the fix."""
+        series = export.export_series
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                sa.select(series.c.shelf_destination_id, series.c.paused_reason).where(
+                    series.c.id == export_series_id
+                )
+            ).one_or_none()
+        if row is None or row.paused_reason != DENIED:
+            return
+        probe = PermissionPreflight(self._engine, self._fsops, self._bus, clock=self._clock)
+        result = probe.check_series(row.shelf_destination_id, export_series_id)
+        if result is not None and not result.ok:
+            raise DestinationNotWritableError(result)
+
     def resume_series(self, export_series_id: str) -> bool:
         """`shelfhold series resume` (EF-INT-023): the admin has done the switch-over. What is
         on disk now is the new baseline of the files the manifest knows; unknown files stay
@@ -316,6 +338,7 @@ class Reconciler:
             export.export_series, export.export_record, export.export_item,
             export.edition_export_series,
         )  # fmt: skip
+        self._probe_if_denied(export_series_id)
         with self._engine.begin() as connection:
             row = connection.execute(
                 sa.select(series.c.shelf_destination_id).where(

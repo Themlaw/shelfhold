@@ -1411,6 +1411,10 @@
       "code": "pairing.not_writable",
       "status": 409
     },
+    "/api/v1/problems/pairing.switchover-stale": {
+      "code": "pairing.switchover_stale",
+      "status": 409
+    },
     "/api/v1/problems/pairing.switchover-unconfirmed": {
       "code": "pairing.switchover_unconfirmed",
       "status": 409

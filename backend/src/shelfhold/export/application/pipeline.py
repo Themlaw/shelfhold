@@ -88,6 +88,16 @@ class UnverifiedParseError(Exception):
     code = "target.route_missing"
 
 
+class DestinationPermissionError(PermissionError):
+    """The destination refused the write of the exported file itself (EACCES, EROFS...): only
+    this waits for `target recheck`. A `PermissionError` anywhere else (the received archive,
+    the staging area) is an ordinary failure and is not blamed on the folder."""
+
+
+class SwitchoverCheck(Protocol):
+    def require_clear(self, destination_id: str) -> None: ...
+
+
 class Preflight(Protocol):
     """The permission preflight (EF-EXP-054): the root before any export, a refused write after."""
 
@@ -160,6 +170,12 @@ class ExportPipeline:
         self.mirror = mirror or ProvenanceMirror(engine, fsops, clock=clock)
         self._detector = detector  # EF-EXP-043: looked at before every export
         self._preflight: Preflight | None = None
+        self._switchover: SwitchoverCheck | None = None
+
+    def use_switchover(self, gate: SwitchoverCheck) -> None:
+        """Refuse to export a shelf fed directly by Suwayomi until the procedure is confirmed
+        (EF-EXP-044)."""
+        self._switchover = gate
 
     def use_preflight(self, preflight: Preflight) -> None:
         """Probe the root of a destination before any export, and park a series whose write is
@@ -247,6 +263,8 @@ class ExportPipeline:
             ensure_active(connection, destination_id)
         if self._detector is not None:
             self._detector(destination_id)
+        if self._switchover is not None:
+            self._switchover.require_clear(destination_id)
         if self._preflight is not None:
             self._preflight.require_root(destination_id)
         ctx, loaded, plan = self._compute(destination_id)
@@ -336,7 +354,7 @@ class ExportPipeline:
                 return None
             try:
                 self._write(ctx, planned, plan_id, held.ensure)
-            except PermissionError:
+            except DestinationPermissionError:
                 if self._preflight is None:
                     raise
                 # waits for `target recheck`; the rest of the plan goes on, nothing is retried
@@ -413,10 +431,13 @@ class ExportPipeline:
         )
         try:
             with opened as writer:
-                identity = writer.write_atomic(
-                    target, rendered.file, parents=True, replace=False,
-                    verify_digest=lambda: rendered.file_hash.removeprefix("sha256:"),
-                )  # fmt: skip
+                try:
+                    identity = writer.write_atomic(
+                        target, rendered.file, parents=True, replace=False,
+                        verify_digest=lambda: rendered.file_hash.removeprefix("sha256:"),
+                    )  # fmt: skip
+                except PermissionError as error:
+                    raise DestinationPermissionError(*error.args) from error
                 with self._engine.begin() as connection:
                     complete_write(
                         connection, self._fsops, self._locate, self._clock.now(),

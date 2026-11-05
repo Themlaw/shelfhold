@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import sqlalchemy as sa
@@ -29,6 +30,7 @@ from tests.export_env import ExportEnv, export_env
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
 from tests.fakes_fetcher import FakeResolver
 from tests.follow_env import LAN_IP, new_chapter
+from tests.null_tombstones import NONE_PURGED
 
 SERIES = "Series Alpha"  # the series of the simulated Suwayomi, and the folder of the adopted one
 
@@ -91,8 +93,22 @@ class Paired:
         return self.rows("SELECT payload FROM event WHERE type = :t", t=event_type)
 
 
+class PurgedPlaces:
+    """A tombstone gate that refuses the places of some chapters (main track, raw number)."""
+
+    def __init__(self, *numbers: str) -> None:
+        self.numbers = set(numbers)
+
+    def check(self, candidate: object, *, root_id: str | None = None, **_: Any) -> Any:
+        blocked = getattr(candidate, "number_raw", None) in self.numbers
+        return SimpleNamespace(blocked=blocked)
+
+    def check_content(self, hashes: object = (), **_: Any) -> bool:
+        return False
+
+
 @contextmanager
-def paired_env() -> Iterator[Paired]:
+def paired_env(*, tombstones: Any = NONE_PURGED) -> Iterator[Paired]:
     with export_env() as env:
         a = adoption(env)
         server = FakeSuwayomi(auth_mode="none")
@@ -112,13 +128,16 @@ def paired_env() -> Iterator[Paired]:
 
         cycle = FollowCycle(
             lib.engine, bus, env.clock, service, fetcher,
-            store=PassthroughStore(lib.engine, lib.fsops, lib.locate, lib.data),
+            store=PassthroughStore(
+                lib.engine, lib.fsops, lib.locate, lib.data, tombstones=tombstones
+            ),
             receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
-            place=place, sleep=no_sleep,
+            place=place, sleep=no_sleep, tombstones=tombstones,
         )  # fmt: skip
         detector = SwitchoverDetector(lib.engine, lib.fsops)
         gate = SwitchoverGate(lib.engine, detector, clock=env.clock)
         preflight = PermissionPreflight(lib.engine, lib.fsops, bus, clock=env.clock)
         env.pipeline.use_preflight(preflight)
-        pairing = Pairing(lib.engine, preflight, gate, clock=env.clock)
+        env.pipeline.use_switchover(gate)
+        pairing = Pairing(lib.engine, preflight, gate, clock=env.clock, tombstones=tombstones)
         yield Paired(a, server, service, fetcher, cycle, bus, detector, gate, preflight, pairing)

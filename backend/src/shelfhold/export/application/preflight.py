@@ -26,7 +26,7 @@ from shelfhold.events.bus import EventBus
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.fsops.emitters import new_probe_name
+from shelfhold.infrastructure.fsops.emitters import PROBE_NAME, new_probe_name
 from shelfhold.infrastructure.schema import export
 
 __all__ = [
@@ -67,6 +67,8 @@ class ProbeResult:
         """The message of a refusal: what failed, where, who owns it, and what to run."""
         if self.ok:
             return f"{self.folder}: writable"
+        if self.cause == "folder_missing":
+            return f"{self.folder}: the folder does not exist\n{self.fix}"
         owner = (
             f"owner {self.owner.uid}:{self.owner.gid}, mode {self.owner.mode:04o}"
             if self.owner
@@ -143,12 +145,37 @@ class FolderProbe:
         self._runs_as = runs_as
         self._owner_of = owner_of
 
+    @property
+    def ids(self) -> tuple[int, int]:
+        return self._runs_as or (os.geteuid(), os.getegid())
+
     def _remove_probe_file(self, path: str) -> None:
         self._fsops.system_unlink("probe_file_cleanup", path)
+
+    def sweep(self, folder: str) -> int:
+        """Remove the probe files an earlier crash left in `folder` (a regular file whose name is
+        exactly what `new_probe_name` draws: 16 hex digits, nothing else is ever touched)."""
+        try:
+            entries = self._fsops.list_dir(folder)
+        except OSError:
+            return 0
+        swept = 0
+        for name, kind in sorted(entries.items()):
+            if kind == "file" and PROBE_NAME.fullmatch(name):
+                with contextlib.suppress(OSError):
+                    self._remove_probe_file(f"{folder.rstrip('/')}/{name}")
+                    swept += 1
+        return swept
 
     def run(self, folder: str) -> ProbeResult:
         ids = self._runs_as or (os.geteuid(), os.getegid())
         base = folder.rstrip("/")
+        seen = self._fsops.observe(base) if base else None
+        if seen is None or seen[0] != "dir":
+            return ProbeResult(
+                False, folder, (), "exists", "folder_missing", ids, None,
+                "Check the volume mount and the path map: there is nothing to fix with rights.",
+            )  # fmt: skip
         first, second = f"{base}/{new_probe_name()}", f"{base}/{new_probe_name()}"
         done: list[str] = []
         current: str | None = None
@@ -173,7 +200,9 @@ class FolderProbe:
             )  # fmt: skip
         finally:
             if current is not None:  # a step failed with the probe file in place: take it away
-                with contextlib.suppress(OSError):  # the cause is reported; a leftover is swept
+                with contextlib.suppress(
+                    OSError
+                ):  # the cause is reported; a leftover is swept at the next export
                     self._remove_probe_file(current)
         return ProbeResult(True, folder, tuple(done), None, None, ids, None, "")
 
@@ -208,6 +237,7 @@ class PermissionPreflight:
 
     def require_root(self, destination_id: str) -> None:
         """Before any export: uid, write and rename on the root, or a clear refusal."""
+        self.sweep(destination_id)
         result = self.check_root(destination_id)
         if result is not None and not result.ok:
             raise DestinationNotWritableError(result)
@@ -225,9 +255,35 @@ class PermissionPreflight:
         return f"{ctx.root_local}/{directory}"
 
     def check_series(self, destination_id: str, export_series_id: str) -> ProbeResult | None:
-        """The folder of a series; None when the series has none yet (the root decides then)."""
+        """The folder of a series; None when the series has none yet (the root decides then).
+        A folder that is known but absent is a failure (`folder_missing`), not a pass."""
         folder = self.series_folder(destination_id, export_series_id)
         return self.probe(folder) if folder else None
+
+    def unknown_folder(self) -> ProbeResult:
+        """What a pairing is told when the folder of the series is not known at all."""
+        ids = self._prober.ids
+        return ProbeResult(
+            False, "", (), "exists", "folder_missing", ids, None,
+            "The series has no folder on record: adopt it again.",
+        )  # fmt: skip
+
+    def sweep(self, destination_id: str) -> int:
+        """Probe files left by a crash, in the root and in every series folder of the
+        destination. Runs before each export (the boot of the export side)."""
+        ctx = self._context(destination_id)
+        if ctx.root_local is None:
+            return 0
+        series = export.export_series
+        with self._engine.connect() as connection:
+            dirs = connection.execute(
+                sa.select(series.c.series_dir).where(
+                    series.c.shelf_destination_id == destination_id,
+                    series.c.series_dir.isnot(None),
+                )
+            ).scalars()
+            folders = [ctx.root_local, *(f"{ctx.root_local}/{d}" for d in dirs)]
+        return sum(self._prober.sweep(folder) for folder in folders)
 
     # -- the waiting state ---------------------------------------------------------------------
 

@@ -13,6 +13,7 @@ ComicInfo written by Suwayomi carries and Shelfhold's own never does.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Sequence
@@ -40,6 +41,7 @@ __all__ = [
     "SwitchoverGate",
     "SwitchoverIncompleteError",
     "SwitchoverReport",
+    "SwitchoverStale",
     "SwitchoverUnconfirmed",
 ]
 
@@ -54,7 +56,13 @@ STEPS: Final = (
     "scripts_disabled",
 )
 SAMPLE: Final = 5  # ComicInfo files read per series
-SUWAYOMI_NAME: Final = re.compile(r"^[^_/]{1,80}_[^_/].*\.cbz$", re.IGNORECASE)
+# `<team>_<chapter>` in full (EF-EXP-044): a team, an underscore, then a chapter name that starts
+# with a chapter marker or a number. A series name with an underscore in it is not this.
+SUWAYOMI_NAME: Final = re.compile(
+    r"^[^_/]{1,80}_(?:chapter|chapitre|ch\.?|ep(?:isode)?\.?|vol(?:ume)?\.?|tome)?\s*"
+    r"\d+(?:\.\d+)?(?:[\s\-].*)?\.cbz$",
+    re.IGNORECASE,
+)
 SUWAYOMI_FIELDS: Final = ("Translator", "Web")
 SUWAYOMI_NOTES: Final = re.compile(r"suwayomi|tachidesk", re.IGNORECASE)
 
@@ -73,6 +81,18 @@ class SwitchoverReport:
     @property
     def detected(self) -> bool:
         return bool(self.series)
+
+    @property
+    def ids(self) -> frozenset[str]:
+        return frozenset(f.export_series_id for f in self.series)
+
+    @property
+    def fingerprint(self) -> str:
+        """What the admin saw: the series and the evidence. A confirmation is tied to it."""
+        digest = hashlib.sha256()
+        for f in sorted(self.series, key=lambda f: f.export_series_id):
+            digest.update(f"{f.export_series_id}|{','.join(sorted(f.signals))}\n".encode())
+        return digest.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -95,6 +115,12 @@ class SwitchoverUnconfirmed(Exception):
         names = ", ".join(sorted(f.series_dir for f in report.series))
         super().__init__(f"fed directly by Suwayomi ({names}): follow {PROCEDURE_DOC} first")
         self.report = report
+
+
+class SwitchoverStale(Exception):
+    """The report changed since the admin saw it: look again before confirming."""
+
+    code = "pairing.switchover_stale"
 
 
 class SwitchoverIncompleteError(Exception):
@@ -128,8 +154,9 @@ class SwitchoverDetector:
         self._engine = engine
         self._fsops = fsops
 
-    def scan(self, destination_id: str) -> SwitchoverReport:
-        """The adopted series of a destination whose folder looks fed by Suwayomi."""
+    def scan(self, destination_id: str, download_dir: str | None = None) -> SwitchoverReport:
+        """The adopted series of a destination whose folder looks fed by Suwayomi. `download_dir`
+        is the folder Suwayomi downloads to, as this process sees it, when the admin gave it."""
         series = export.export_series
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
@@ -144,12 +171,14 @@ class SwitchoverDetector:
             ).all()
         found = []
         for row in rows:
-            signals = self._signals(ctx, row.series_dir)
+            signals = self._signals(ctx, row.series_dir, download_dir)
             if signals:
                 found.append(FeedFinding(row.id, row.series_dir, signals))
         return SwitchoverReport(tuple(found))
 
-    def _signals(self, ctx: DestinationContext, series_dir: str) -> tuple[str, ...]:
+    def _signals(
+        self, ctx: DestinationContext, series_dir: str, download_dir: str | None
+    ) -> tuple[str, ...]:
         if ctx.root_local is None:
             return ()
         local = f"{ctx.root_local}/{series_dir}"
@@ -161,6 +190,8 @@ class SwitchoverDetector:
             n for n, kind in entries.items() if kind == "file" and n.lower().endswith(".cbz")
         )
         signals: list[str] = []
+        if download_dir and within(local, clean_absolute(download_dir)) is not None:
+            signals.append("download_dir")  # Suwayomi writes into the folder of this series
         motif = [n for n in archives if SUWAYOMI_NAME.match(n)]
         if archives and 2 * len(motif) >= len(archives):
             signals.append("name_motif")
@@ -196,7 +227,9 @@ class SwitchoverDetector:
 
 
 class SwitchoverGate:
-    """The attestation of the procedure, one per destination (no migration: `app_setting`)."""
+    """The attestation of the procedure, tied to what the admin saw (no migration:
+    `app_setting`). It holds the steps, the fingerprint of the report and the set of series it
+    covered; a series that turns up later is not covered."""
 
     def __init__(self, engine: Engine, detector: SwitchoverDetector, *, clock: Clock) -> None:
         self._engine = engine
@@ -207,34 +240,59 @@ class SwitchoverGate:
     def _key(destination_id: str) -> str:
         return f"switchover.confirmed.{destination_id}"
 
-    def confirm(self, destination_id: str, steps: Sequence[str]) -> None:
-        """Every step of the procedure, or none: a partial list is refused and kept nowhere."""
-        missing = [s for s in STEPS if s not in steps]
-        if missing:
-            raise SwitchoverIncompleteError(missing)
-        value: dict[str, Any] = {"steps": list(STEPS), "at": self._clock.now().isoformat()}
+    @staticmethod
+    def _dir_key(destination_id: str) -> str:
+        return f"switchover.download_dir.{destination_id}"
+
+    def _put(self, key: str, value: str) -> None:
         with self._engine.begin() as connection:
             connection.execute(
                 sqlite_insert(platform.app_setting)
-                .values(key=self._key(destination_id), value=json.dumps(value))
-                .on_conflict_do_update(index_elements=["key"], set_={"value": json.dumps(value)})
+                .values(key=key, value=value)
+                .on_conflict_do_update(index_elements=["key"], set_={"value": value})
             )
+
+    def _get(self, key: str) -> str | None:
+        with self._engine.connect() as connection:
+            return connection.execute(
+                sa.select(platform.app_setting.c.value).where(platform.app_setting.c.key == key)
+            ).scalar()
+
+    def declare_download_dir(self, destination_id: str, download_dir: str) -> None:
+        """Where Suwayomi downloads (as this process sees it): a signal for the scan."""
+        self._put(self._dir_key(destination_id), clean_absolute(download_dir))
+
+    def report(self, destination_id: str) -> SwitchoverReport:
+        return self._detector.scan(destination_id, self._get(self._dir_key(destination_id)))
+
+    def confirm(self, destination_id: str, steps: Sequence[str], *, fingerprint: str) -> None:
+        """Every step of the procedure, for the report that was seen: a partial list, or a
+        report that changed since (`SwitchoverStale`), is refused and kept nowhere."""
+        missing = [s for s in STEPS if s not in steps]
+        if missing:
+            raise SwitchoverIncompleteError(missing)
+        report = self.report(destination_id)
+        if report.fingerprint != fingerprint:
+            raise SwitchoverStale(destination_id)
+        value: dict[str, Any] = {
+            "steps": list(STEPS),
+            "fingerprint": report.fingerprint,
+            "series": sorted(report.ids),
+            "at": self._clock.now().isoformat(),
+        }
+        self._put(self._key(destination_id), json.dumps(value))
 
     def is_confirmed(self, destination_id: str) -> bool:
-        with self._engine.connect() as connection:
-            return (
-                connection.execute(
-                    sa.select(platform.app_setting.c.value).where(
-                        platform.app_setting.c.key == self._key(destination_id)
-                    )
-                ).scalar()
-                is not None
-            )
+        return self._get(self._key(destination_id)) is not None
 
     def require_clear(self, destination_id: str) -> None:
-        """Refuse the follow of a shelf fed directly by Suwayomi until the steps are confirmed."""
-        if self.is_confirmed(destination_id):
+        """Refuse a shelf fed directly by Suwayomi until the steps are confirmed for the series
+        concerned: one that is not in the confirmed set is refused again."""
+        report = self.report(destination_id)
+        if not report.detected:
             return
-        report = self._detector.scan(destination_id)
-        if report.detected:
-            raise SwitchoverUnconfirmed(report)
+        raw = self._get(self._key(destination_id))
+        covered = frozenset(json.loads(raw)["series"]) if raw else frozenset()
+        outside = tuple(f for f in report.series if f.export_series_id not in covered)
+        if outside:
+            raise SwitchoverUnconfirmed(SwitchoverReport(outside))

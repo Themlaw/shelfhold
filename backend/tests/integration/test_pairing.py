@@ -111,7 +111,7 @@ def test_adoption_detects_direct_suwayomi_feed_and_refuses_follow() -> None:
             b"<LanguageISO>en</LanguageISO><Translator>Team</Translator>"
             b"<Web>/series-alpha/ch-001</Web></ComicInfo>"
         )
-        p.adopt_files([f"Team_{SERIES} - Ch.{n}.cbz" for n in (1, 2, 3)], info=suwayomi_info)
+        p.adopt_files([f"Team_Ch.{n}.cbz" for n in (1, 2, 3)], info=suwayomi_info)
         p.upstream(5)
         p.a.adopt()
         report = p.detector.scan(p.destination)
@@ -135,13 +135,14 @@ def test_switchover_confirmation_needs_every_step_then_follow_starts() -> None:
             b'<?xml version="1.0" encoding="utf-8"?><ComicInfo><Series>Series Alpha</Series>'
             b"<LanguageISO>en</LanguageISO><Translator>Team</Translator></ComicInfo>"
         )
-        p.adopt_files([f"Team_{SERIES} - Ch.{n}.cbz" for n in (1, 2, 3)], info=info)
+        p.adopt_files([f"Team_Ch.{n}.cbz" for n in (1, 2, 3)], info=info)
         p.upstream(5)
         p.a.adopt()
+        seen = p.gate.report(p.destination).fingerprint
         with pytest.raises(SwitchoverIncompleteError) as partial:
-            p.gate.confirm(p.destination, STEPS[:4])
+            p.gate.confirm(p.destination, STEPS[:4], fingerprint=seen)
         assert partial.value.missing == (STEPS[4],)
-        p.gate.confirm(p.destination, STEPS)
+        p.gate.confirm(p.destination, STEPS, fingerprint=seen)
         (proposal,) = p.pairing.propose(p.destination, p.library())
         done = p.pairing.confirm(
             p.destination, proposal.export_series_id, proposal.candidates[0].ref
@@ -166,6 +167,8 @@ def test_pair_auto_min_score_batch_confirmation() -> None:
         assert strict.ready == () and [x.series_name for x in strict.held] == [SERIES]
         with pytest.raises(BatchStaleError):  # a report that is not the one seen
             p.pairing.confirm_batch(p.destination, library, fingerprint=strict.fingerprint)
-        (done,) = p.pairing.confirm_batch(p.destination, library, fingerprint=report.fingerprint)
+        batch = p.pairing.confirm_batch(p.destination, library, fingerprint=report.fingerprint)
+        (done,) = batch.paired
+        assert batch.complete
         assert isinstance(done, PairingResult) and done.paired and done.follow_from == "50"
         assert p.settle() == 1 and len(p.downloads()) == 1  # only the 51st
