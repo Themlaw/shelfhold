@@ -33,7 +33,7 @@ vérifiée par empreinte, avec intention journalisée, puis suppression de l'anc
 Une sentinelle plus récente que la base : [restauration.md](restauration.md) (`restored_behind`).
 Une sentinelle d'une **autre instance** (`foreign_root`), un disque remplacé par un disque vide
 (`root_lost`) ou une racine restaurée par l'hôte, plus vieille que la base (`root_behind`) :
-sorties `shelfhold root takeover`, `root reinit` et `root restored` **[câblage, M1b]**. `takeover`
+sorties `shelfhold root takeover`, `root reinit` et `root restored` **[M1b]**. `takeover`
 ré-estampille la sentinelle en gardant la liste des identifiants prédécesseurs ; `reinit` passe les
 éléments en `missing` sans rien supprimer ; aucune ne touche à `.shelfhold/`. Ce sont des actions
 réservées. En M1a, un tel état se lit dans `shelfhold status` et l'écriture vers la racine reste
