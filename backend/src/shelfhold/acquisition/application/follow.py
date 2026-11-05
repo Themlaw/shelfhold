@@ -29,7 +29,13 @@ from shelfhold.acquisition.application.tickets import (
 )
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.freshness import DEFAULT_K, is_stale
-from shelfhold.catalog.public import BindingRef, IncomingUnit, IngestOutcome, ingest_isolated
+from shelfhold.catalog.public import (
+    BindingRef,
+    IncomingUnit,
+    IngestOutcome,
+    IngestResult,
+    ingest_isolated,
+)
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
@@ -160,7 +166,7 @@ class FollowCycle:
                 and binding.check_override != "paused"
                 and (binding.source_key, binding.remote_id) in present
             ):
-                await self._discover(binding, report)
+                await self._discover_isolated(binding, report)
         report.tickets = await self._tickets.advance()
         report.fetched = report.tickets.fetched
         report.stale = len(self._check_freshness())
@@ -271,6 +277,24 @@ class FollowCycle:
             )
 
     # -- discovery ---------------------------------------------------------------------------
+    async def _discover_isolated(self, binding: _Binding, report: FollowReport) -> None:
+        """One series failing is that series' problem: the others are still followed. An error
+        that says the whole service cannot be driven is the exception: it goes up and pauses."""
+        try:
+            await self._discover(binding, report)
+        except Exception as error:
+            failure_class = classify(error)
+            disposition = disposition_of(failure_class)
+            if disposition is Disposition.PAUSE:
+                raise
+            if disposition is Disposition.COUNT:
+                with self._engine.begin() as connection:
+                    self._ledger.count_content(
+                        connection, binding.id, binding.source_key,
+                        getattr(error, "code", "source.content_removed"), self._clock.now(),
+                    )  # fmt: skip
+            log.warning("follow.series_skipped", binding_id=binding.id, failure_class=failure_class)
+
     async def _discover(self, binding: _Binding, report: FollowReport) -> None:
         ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
         units = await from_service(self._service.list_units(self._fetcher, ref))
@@ -278,7 +302,18 @@ class FollowCycle:
         # backlog is the watermark and backfill policy (L19), never "everything".
         baseline = binding.last_checked is None
         now = self._clock.now()
-        fresh: list[tuple[str, str]] = []
+        opened: set[str] = set()
+
+        def open_ticket(connection: sa.Connection, result: IngestResult) -> None:
+            """In the ingest's own transaction: a Variant never exists without its ticket."""
+            if result.outcome is not IngestOutcome.NEW_VARIANT or baseline:
+                return
+            DownloadTickets.open(
+                connection, binding_id=binding.id, variant_id=result.variant_id,
+                unit_id=result.unit_id,
+            )  # fmt: skip
+            opened.add(result.variant_id)
+
         for info in units:
             result = ingest_isolated(
                 self._engine,
@@ -288,17 +323,11 @@ class FollowCycle:
                     source_order=info.source_order, team_label=info.team, lang=info.lang,
                     title=info.title, published_at=info.published_at, kind=info.kind,
                 ),
+                then=open_ticket,
             )  # fmt: skip
-            if result.outcome is IngestOutcome.NEW_VARIANT:
-                report.discovered += 1
-                fresh.append((result.unit_id, result.variant_id))
+            report.discovered += int(result.outcome is IngestOutcome.NEW_VARIANT)
+        report.requested += len(opened)
         with self._engine.begin() as connection:
-            if not baseline:
-                for unit_id, variant_id in fresh:
-                    opened = DownloadTickets.open(
-                        connection, binding_id=binding.id, variant_id=variant_id, unit_id=unit_id
-                    )
-                    report.requested += int(opened)
             table = acquisition.source_binding
             connection.execute(
                 sa.update(table).where(table.c.id == binding.id).values(last_checked=now)

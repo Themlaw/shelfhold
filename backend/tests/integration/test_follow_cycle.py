@@ -12,6 +12,7 @@ import pytest
 from shelfhold.sdk.connected import ConnectedCapability, ServiceHealth, Ticket, TicketState
 from shelfhold.sdk.fetcher import Response
 from shelfhold.sdk.refs import FileAsset, ImageRequest, RangedPayload, SeriesRef, UnitInfo, UnitRef
+from shelfhold.sdk.source import TemporarilyUnavailable
 from tests.fakes.suwayomi import FakeSuwayomi
 from tests.follow_env import Bench, follow_bench
 
@@ -328,3 +329,43 @@ def test_an_emptied_library_deactivates_nothing_and_alerts_once() -> None:
         for manga in bench.server.state["mangas"]:
             manga["inLibrary"] = True  # the tool is back: following goes on, a later alert may come
         assert bench.run().removed == 0 and bench.binding()["active"]
+
+
+@pytest.mark.req("EF-SRC-009")
+def test_one_failing_series_does_not_stop_the_others(monkeypatch: pytest.MonkeyPatch) -> None:
+    with follow_bench() as bench:
+        beta = bench.add_binding("suwayomi:7002", "/series-beta")
+        original = bench.service.list_units
+
+        async def flaky(f: Any, ref: SeriesRef) -> Any:
+            if ref.remote_id == "/series-alpha":
+                raise TemporarilyUnavailable("asleep")
+            return await original(f, ref)
+
+        monkeypatch.setattr(bench.service, "list_units", flaky)
+        report = bench.run()
+        assert report.paused is None and report.discovered == 1  # Beta's chapter was read
+        assert bench.rows("SELECT count(*) AS n FROM unit_variant WHERE source_binding_id = :b",
+                          b=beta)[0]["n"] == 1  # fmt: skip
+        monkeypatch.setattr(bench.service, "list_units", original)
+        assert bench.run().discovered == 2  # Alpha catches up on the next cycle
+
+
+@pytest.mark.req("EF-SRC-009")
+def test_a_variant_never_exists_without_its_ticket(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shelfhold.acquisition.public import DownloadTickets
+
+    with follow_bench() as bench:
+        bench.run()
+        bench.add_chapter(3)
+        real = DownloadTickets.open
+
+        def crash(*args: Any, **kwargs: Any) -> bool:
+            raise RuntimeError("killed between the ingest and the ticket")
+
+        monkeypatch.setattr(DownloadTickets, "open", staticmethod(crash))
+        bench.run()  # the chapter is neither recorded nor lost
+        assert [u["number_raw"] for u in _units(bench)] == ["1", "2"]
+        monkeypatch.setattr(DownloadTickets, "open", staticmethod(real))
+        assert bench.run().requested == 1
+        assert len(bench.rows("SELECT id FROM download_request")) == 1

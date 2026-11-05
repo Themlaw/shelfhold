@@ -80,6 +80,28 @@ class Bench:
             "SELECT active, disabled_reason FROM source_binding WHERE id = :b", b=self.binding_id
         )[0]
 
+    def add_binding(self, source_key: str, remote_id: str) -> str:
+        """Follow another series of the same service (its own Edition, binding and follow)."""
+        with self.lib.engine.begin() as connection:
+            work_id = add_work(connection)
+            edition_id = add_edition(connection, work_id)
+            item_id, binding_id = new_ulid(), new_ulid()
+            connection.execute(
+                sa.insert(acquisition.source_item).values(
+                    id=item_id, plugin_id="suwayomi", source_key=source_key, remote_id=remote_id
+                )
+            )
+            connection.execute(
+                sa.insert(acquisition.source_binding).values(
+                    id=binding_id, work_id=work_id, edition_id=edition_id,
+                    source_item_id=item_id, priority=1, active=True,
+                )
+            )  # fmt: skip
+            connection.execute(
+                sa.insert(acquisition.series_follow).values(edition_id=edition_id, work_id=work_id)
+            )
+        return binding_id
+
     def events(self, event_type: str) -> list[dict[str, Any]]:
         return [
             {"id": e["id"], **json.loads(e["payload"])}
