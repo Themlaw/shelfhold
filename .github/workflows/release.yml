@@ -49,20 +49,28 @@ jobs:
 
   schema-assets:
     # EF-INT-027: schema.sql and the data dictionary, generated from the migrations, are assets of
-    # every release. `--clobber` makes a re-run (recovery) replace them.
+    # every release. `--clobber` makes a re-run (recovery) replace them. Waits for `image-tags`,
+    # which waits for a green ci-success on the tagged commit. The code is the TAG's (never the
+    # branch of a manual run), and the tag is validated before it reaches a checkout or a command.
+    needs: image-tags
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
+      - name: Validate the tag
+        run: |
+          [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "::error::tag must be vX.Y.Z, got ${TAG}"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.x"
-          enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          enable-cache: false  # this job holds a write token: no cache a PR could have poisoned
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: Generate schema.sql and data-dictionary.md
@@ -70,5 +78,4 @@ jobs:
       - name: Attach schema.sql and data-dictionary.md to the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: gh release upload "$TAG" "$RUNNER_TEMP/assets/schema.sql" "$RUNNER_TEMP/assets/data-dictionary.md" --clobber --repo "${{ github.repository }}"
+        run: gh release upload "$TAG" "$RUNNER_TEMP/assets/schema.sql" "$RUNNER_TEMP/assets/data-dictionary.md" --clobber --repo "$GITHUB_REPOSITORY"
