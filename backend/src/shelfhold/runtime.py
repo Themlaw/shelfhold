@@ -21,8 +21,9 @@ from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
 from shelfhold.export.application.restore import RestoredBehindError, RestoreGuard
+from shelfhold.export.application.root_bootstrap import register_roots, target_roots
 from shelfhold.export.application.roots import load_roots
-from shelfhold.export.domain.path_map import PathMap
+from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
@@ -117,6 +118,9 @@ class InstanceRuntime:
             self.settings, engine, clock=clock, gates=self.gates()
         )  # the server hands over its own: one lease identity per process
         self.composition = composition
+        wanted = target_roots(engine)
+        wanted.append((str(self.settings.store_dir), PathMode.RW))
+        register_roots(engine, wanted)  # the instance row and the roots: first start of an install
         bus = composition.bus  # an operating event queues one notification per channel
         with engine.connect() as conn:
             row = conn.execute(sa.select(platform.instance.c.instance_id)).first()

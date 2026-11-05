@@ -4,7 +4,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-__all__ = ["ChannelValidator", "ExchangedKey", "KavitaKeyExchange", "SuwayomiProbe"]
+__all__ = [
+    "ChannelValidator",
+    "ExchangedKey",
+    "KavitaKeyExchange",
+    "ShelfLinkPort",
+    "SuwayomiProbe",
+]
 
 
 @dataclass(frozen=True)
@@ -37,3 +43,11 @@ class ChannelValidator(Protocol):
     def validate(self, url: str) -> str:
         """The URL when its scheme and destination are allowed; else `ValueError`."""
         ...
+
+
+class ShelfLinkPort(Protocol):
+    """Links a new destination to a Kavita library, audited first (EF-EXP-002, EF-EXP-055).
+
+    Raises when children can read the library (`AdoptionRefused`)."""
+
+    def link(self, target_id: str, destination_id: str, *, library_name: str) -> str: ...

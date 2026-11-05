@@ -23,6 +23,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.config import ResolvedSettings
+from shelfhold.export.application.root_bootstrap import register_roots, target_roots
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.target_state import load_health, save_health
 from shelfhold.export.domain.bindings import check_shelf_ceiling
@@ -50,7 +51,12 @@ from shelfhold.headless.errors import (
     UnknownTarget,
 )
 from shelfhold.headless.keys import KEYS, PATH_MAP_PREFIX
-from shelfhold.headless.ports import ChannelValidator, KavitaKeyExchange, SuwayomiProbe
+from shelfhold.headless.ports import (
+    ChannelValidator,
+    KavitaKeyExchange,
+    ShelfLinkPort,
+    SuwayomiProbe,
+)
 from shelfhold.headless.urls import validate_target_url
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
@@ -207,6 +213,9 @@ def _ceiling(text: str) -> int:
     raise InvalidConfigValue("max age is 18+ or X in M1a")
 
 
+WAKE_KINDS = ("follow.cycle", "export.run")
+
+
 class HeadlessAdmin:
     def __init__(
         self,
@@ -218,6 +227,8 @@ class HeadlessAdmin:
         suwayomi: SuwayomiProbe,
         channels: ChannelValidator | None = None,
         resolve: Callable[[], ResolvedSettings] | None = None,
+        store_dir: Path | None = None,
+        linker: ShelfLinkPort | None = None,
     ) -> None:
         self._engine = engine
         self._vault = vault
@@ -226,8 +237,28 @@ class HeadlessAdmin:
         self._suwayomi = suwayomi
         self._channels = channels
         self._resolve = resolve
+        self._store_dir = store_dir
+        self._linker = linker
         self._shelves = ShelfService(engine)
         self._store = ChannelStore(vault, clock)
+
+    def _wake(self) -> None:
+        """A running server picks the follow and the export up at its next tick instead of at the
+        next quarter hour: what was just configured is worth acting on now. No server: no row."""
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(platform.schedule)
+                .where(platform.schedule.c.job_kind.in_(WAKE_KINDS), platform.schedule.c.enabled)
+                .values(next_due_at=self._clock.now())
+            )
+
+    def _bootstrap(self) -> None:
+        """The instance row and the roots the path maps name (idempotent; see `root_bootstrap`)."""
+        wanted = target_roots(self._engine)
+        if self._store_dir is not None:
+            wanted.append((str(self._store_dir), PathMode.RW))
+        register_roots(self._engine, wanted)
+        self._wake()
 
     # -- config get | set | list --------------------------------------------------------------
 
@@ -275,6 +306,7 @@ class HeadlessAdmin:
         with self._engine.begin() as connection:
             self._write_setting(connection, key, clean)
         _log.info("headless.config_set", key=key)
+        self._bootstrap()
         return self.get(key)
 
     def _setting(self, key: str) -> str | None:
@@ -326,6 +358,7 @@ class HeadlessAdmin:
                 .values(path_map=entries, updated_at=self._clock.now())
             )
         _log.info("headless.config_set", key=key)
+        self._bootstrap()
         return self.get(key)
 
     def _set_channel(self, value: str) -> None:
@@ -370,6 +403,7 @@ class HeadlessAdmin:
                 raise TargetConflict(f"a target named {name!r} exists with another address")
             if path_map is not None and _normalise_path_map(list(existing.path_map)) != entries:
                 self._set_path_map(PATH_MAP_PREFIX + name, json.dumps(entries))
+            self._bootstrap()
             return TargetAdded(existing.id, name, False)
         if not accept_admin_risk:  # before anything leaves: the warning is the whole answer
             raise AdminRiskNotAccepted
@@ -408,6 +442,7 @@ class HeadlessAdmin:
                 " revoke it in Kavita, then run the command again"
             ) from None
         _log.info("headless.target_added", kind="kavita", name=name, url=clean_url)
+        self._bootstrap()
         return TargetAdded(target_id, name, True, exchanged.expires_at)
 
     # -- the exits of EF-INT-023 that renew a credential ---------------------------------------
@@ -546,6 +581,7 @@ class HeadlessAdmin:
                 document = json.dumps({"username": username, "password": password}).encode()
                 self._vault.seal_row(connection, "source_config", "suwayomi", document)
         _log.info("headless.source_added", kind="suwayomi", url=clean_url, auth_mode=mode)
+        self._bootstrap()
         return SourceAdded("suwayomi", mode, created)
 
     # -- shelf create -------------------------------------------------------------------------
@@ -588,8 +624,26 @@ class HeadlessAdmin:
             shelf_id=shelf_id, target_id=target_row.id, transport="tree", plugin_egress="foyer",
             root_subpath=subpath,
         )  # fmt: skip
+        self._bootstrap()  # the folder of the shelf lives under a registered root
+        if self._linker is not None:
+            try:
+                self._linker.link(target_row.id, destination_id, library_name=name)
+            except Exception:
+                self._unbind(shelf_id, destination_id, shelf_was_new=shelf is None)
+                raise
         _log.info("headless.shelf_created", name=name, target=target)
         return ShelfCreated(shelf_id, destination_id, True)
+
+    def _unbind(self, shelf_id: str, destination_id: str, *, shelf_was_new: bool) -> None:
+        """A shelf the audit refused leaves nothing behind (nothing was written in Kavita)."""
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.delete(export.shelf_destination).where(
+                    export.shelf_destination.c.id == destination_id
+                )
+            )
+            if shelf_was_new:
+                connection.execute(sa.delete(export.shelf).where(export.shelf.c.id == shelf_id))
 
     # -- config apply -------------------------------------------------------------------------
 
