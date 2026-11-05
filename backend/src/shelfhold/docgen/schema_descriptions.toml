@@ -1,6 +1,6 @@
 # Descriptions of the data dictionary (EF-INT-027). Hand-written, read by
 # `shelfhold.docgen.release_assets`; every table and every column of the migrated schema needs
-# one (`tests/unit/test_schema_assets.py` fails otherwise, and also on a description that names
+# one (`tests/unit/test_release_assets.py` fails otherwise, and also on a description that names
 # nothing). A column is described in `[tables.<table>.columns]`, else in `[common]`, which holds
 # only the names that mean the same thing wherever they appear.
 

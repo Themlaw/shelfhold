@@ -158,3 +158,31 @@ def test_a_column_without_description_fails_the_generation(tmp_path: Path) -> No
 
     with pytest.raises(MissingDescriptionError, match=r"user\.username"):
         write_assets(tmp_path / "out", descriptions=Descriptions(tables={}, common={}))
+
+
+@pytest.mark.req("EF-INT-027")
+def test_normalize_ddl_leaves_a_statement_without_a_body_alone() -> None:
+    from shelfhold.docgen.release_assets import normalize_ddl
+
+    for sql in (
+        "CREATE TABLE t (a INTEGER)",
+        "CREATE INDEX i ON t (a)",
+        "CREATE VIEW v AS SELECT 1",
+    ):
+        assert normalize_ddl(sql) == sql
+
+
+@pytest.mark.req("EF-INT-027")
+def test_normalize_ddl_sorts_constraints_and_keeps_a_multiline_check_whole() -> None:
+    from shelfhold.docgen.release_assets import normalize_ddl
+
+    check = "CONSTRAINT ck_b CHECK (a IN ('x, y',\n\t'z')\n\tAND b > 0)"
+    plain = "CONSTRAINT ck_a CHECK (a > 0)"
+    head = "CREATE TABLE t (\n\ta INTEGER, \n\tb INTEGER, \n\t"
+    first = f"{head}{check}, \n\t{plain}\n)"
+    second = f"{head}{plain}, \n\t{check}\n)"
+    assert normalize_ddl(first) == normalize_ddl(second)
+    out = normalize_ddl(first)
+    assert check in out  # not split at the comma inside the quotes or at the line break
+    assert out.index("ck_a") < out.index("ck_b")
+    assert out.index("a INTEGER") < out.index("b INTEGER") < out.index("ck_a")

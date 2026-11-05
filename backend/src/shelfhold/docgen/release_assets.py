@@ -152,21 +152,41 @@ def migrated_catalog() -> dict[str, list[str]]:
             connection.close()
 
 
+def _split_top_level(body: str) -> list[str]:
+    """Split on the commas outside parentheses and quotes: a multi-line CHECK stays whole."""
+    items: list[str] = []
+    depth, quote, start = 0, "", 0
+    for index, char in enumerate(body):
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "," and depth == 0:
+            items.append(body[start:index])
+            start = index + 1
+    items.append(body[start:])
+    return [item.strip() for item in items if item.strip()]
+
+
 def normalize_ddl(sql: str) -> str:
     """The same statement with the table constraints in name order.
 
     The migrations rebuild tables in batch mode and the order of the constraints in the rebuilt
     statement varies from one run to the next (a set is iterated); the schema does not. Columns
     keep their order, which is the order of the data."""
-    if not sql.lstrip().upper().startswith("CREATE TABLE"):
+    if not sql.lstrip().upper().startswith("CREATE TABLE") or "(\n" not in sql:
         return sql
     head, _, rest = sql.partition("(\n")
     body, _, tail = rest.rpartition("\n)")
-    items = re.split(r",[ \t]*\n(?=\t\S)", body.strip("\n"))
-    items = [item.rstrip(", \t") for item in items]
-    columns = [i for i in items if not i.lstrip().startswith("CONSTRAINT ")]
-    constraints = sorted(i for i in items if i.lstrip().startswith("CONSTRAINT "))
-    return head + "(\n" + ",\n".join([*columns, *constraints]) + "\n)" + tail
+    items = _split_top_level(body)
+    columns = [i for i in items if not i.startswith("CONSTRAINT ")]
+    constraints = sorted(i for i in items if i.startswith("CONSTRAINT "))
+    return head + "(\n\t" + ",\n\t".join([*columns, *constraints]) + "\n)" + tail
 
 
 def render_schema_sql(connection: sqlite3.Connection, revision: str) -> str:

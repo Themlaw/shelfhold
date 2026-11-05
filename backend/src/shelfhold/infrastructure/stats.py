@@ -6,7 +6,6 @@ database's (ENF-PRIV-001). The window is the last `since_days` days up to `now`.
 """
 
 import re
-import statistics
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 
@@ -61,6 +60,43 @@ def _events(connection: sa.Connection, types: tuple[str, ...], since: datetime) 
     )
 
 
+def _median_delay(connection: sa.Connection, since: datetime) -> int | None:
+    """Detection (first time the Variant was seen) to visibility (the scan found the file), in
+    seconds. The median is taken by the database: one or two rows come back, never the set."""
+    record = export.export_record
+    delay = sa.func.round(
+        (
+            sa.func.julianday(record.c.exported_at)
+            - sa.func.julianday(catalog.unit_variant.c.first_seen_at)
+        )
+        * 86400.0
+    ).label("delay")
+    joined = (
+        sa.select(delay)
+        .select_from(
+            record.join(export.export_item, export.export_item.c.id == record.c.export_item_id)
+            .join(storage.content, storage.content.c.id == export.export_item.c.content_id)
+            .join(catalog.unit_variant, catalog.unit_variant.c.id == storage.content.c.variant_id)
+        )
+        .where(record.c.state == VISIBLE_STATE, record.c.exported_at >= since)
+        .subquery()
+    )
+    count = int(connection.execute(sa.select(sa.func.count()).select_from(joined)).scalar_one())
+    if count == 0:
+        return None
+    middle = (
+        connection.execute(
+            sa.select(joined.c.delay)
+            .order_by(joined.c.delay)
+            .limit(2 - count % 2)
+            .offset((count - 1) // 2)
+        )
+        .scalars()
+        .all()
+    )
+    return round(float(sum(middle) / len(middle)))
+
+
 def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
     since = now - timedelta(days=since_days)
     record = export.export_record
@@ -76,19 +112,7 @@ def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
                 record.c.state.in_(EXPORTED_STATES), record.c.exported_at >= since
             )
         ).scalar_one()
-        # Detection (first time the Variant was seen) to visibility (the scan found the file).
-        pairs = connection.execute(
-            sa.select(record.c.exported_at, catalog.unit_variant.c.first_seen_at)
-            .select_from(
-                record.join(export.export_item, export.export_item.c.id == record.c.export_item_id)
-                .join(storage.content, storage.content.c.id == export.export_item.c.content_id)
-                .join(
-                    catalog.unit_variant, catalog.unit_variant.c.id == storage.content.c.variant_id
-                )
-            )
-            .where(record.c.state == VISIBLE_STATE, record.c.exported_at >= since)
-        ).all()
-        delays = [(seen - first).total_seconds() for seen, first in pairs if seen and first]
+        median = _median_delay(connection, since)
         return Stats(
             since_days=since_days,
             human_interventions={
@@ -96,7 +120,7 @@ def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
                 "needs_review_replays": int(replays),
             },
             units_exported=int(exported),
-            median_detection_to_visible_s=(round(statistics.median(delays)) if delays else None),
+            median_detection_to_visible_s=median,
             guards_triggered={
                 "sentinel": _events(connection, SENTINEL_EVENTS, since),
                 "foreign_writer": _events(connection, FOREIGN_WRITER_EVENTS, since),

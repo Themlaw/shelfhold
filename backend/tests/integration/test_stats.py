@@ -38,7 +38,7 @@ def no_outbound_connection(monkeypatch: pytest.MonkeyPatch) -> list[object]:
     return attempts
 
 
-def _member_key(api: AuthEnv) -> str:
+def _add_member(api: AuthEnv) -> None:
     (admin_hash,) = db_rows(api.settings, "SELECT password_hash FROM user WHERE role = 'admin'")[0]
     connection = sqlite3.connect(api.settings.database_path)
     try:
@@ -50,9 +50,12 @@ def _member_key(api: AuthEnv) -> str:
         connection.commit()
     finally:
         connection.close()
+
+
+def _key_of(api: AuthEnv, username: str) -> str:
     engine = create_db_engine(api.settings.database_path)
     try:
-        created = local_auth(engine, api.settings).create_api_key(name="kid", username="member")
+        created = local_auth(engine, api.settings).create_api_key(name="kid", username=username)
     finally:
         engine.dispose()
     return created.value
@@ -80,8 +83,18 @@ def test_stats_local_only_admin_only(
     assert body["median_detection_to_visible_s"] == 3600
     assert body["guards_triggered"] == {"sentinel": 1, "foreign_writer": 2}
 
+    # an admin key reads the same figures
+    admin_key = _key_of(api, "admin")
+    assert (
+        api.other_client("10.0.0.8")
+        .get("/api/v1/stats", headers={"Authorization": f"Bearer {admin_key}"})
+        .json()
+        == body
+    )
+
     # a member's key and a member's session: 403, and no number leaks
-    key = _member_key(api)
+    _add_member(api)
+    key = _key_of(api, "member")
     denied = api.other_client("10.0.0.9").get(
         "/api/v1/stats", headers={"Authorization": f"Bearer {key}"}
     )
