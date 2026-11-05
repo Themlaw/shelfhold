@@ -250,6 +250,10 @@ class WriteSession:
         self._guard(local)
         return self._fsops.write_atomic(local, data, **options)  # type: ignore[arg-type]
 
+    def write_mirror(self, root_path: str, name: str, data: bytes) -> FileIdentity:
+        self._guard(root_path)
+        return self._fsops.write_mirror(root_path, name, data)
+
     def mkdir(self, local: str, *, parents: bool = True) -> None:
         self._guard(local)
         self._fsops.mkdir(local, parents=parents)

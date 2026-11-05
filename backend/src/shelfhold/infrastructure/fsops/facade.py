@@ -34,6 +34,7 @@ from shelfhold.export.domain.physical_roots import (
     is_reserved,
     judge_sentinel,
 )
+from shelfhold.export.domain.provenance_mirror import is_mirror_rel
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
 from shelfhold.infrastructure.fsops.emitters import (
     TRASH_RETENTION_S,
@@ -56,6 +57,11 @@ from shelfhold.infrastructure.fsops.errors import (
     SentinelFormatError,
 )
 from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of
+from shelfhold.infrastructure.fsops.mirror import (
+    list_mirror_files,
+    read_mirror_file,
+    write_mirror_file,
+)
 from shelfhold.infrastructure.fsops.sentinel import read_sentinel, write_sentinel
 from shelfhold.infrastructure.fsops.writer import (
     HashingReader,
@@ -166,7 +172,7 @@ class Fsops:
 
     # -- locating ---------------------------------------------------------------------------
 
-    def _locate(self, local: str, *, host: bool = False) -> _Located:
+    def _locate(self, local: str, *, host: bool = False, read_mirror: bool = False) -> _Located:
         try:
             path = clean_absolute(local)
         except PathMapError as error:
@@ -182,8 +188,9 @@ class Fsops:
         if best is None:
             raise OutsidePathMapError(f"{local!r} is under no physical root")
         root_path, rel, read_only = best
-        if is_reserved(rel) and not host:
+        if is_reserved(rel) and not host and not (read_mirror and is_mirror_rel(rel)):
             raise ReservedPathError(f"{local!r} is reserved to the host")
+        host = host or (read_mirror and is_mirror_rel(rel))
         if not read_only and not (host and is_reserved(rel)):  # host folders sit above the map
             try:
                 entry = self._path_map.entry_for(path)
@@ -328,7 +335,7 @@ class Fsops:
 
     def observe(self, local: str) -> tuple[Kind, FileIdentity] | None:
         """What is at `local` (a link is described, never followed), or None when nothing is."""
-        located = self._locate(local)
+        located = self._locate(local, read_mirror=True)
         with self._root(located.root_path) as root:
             try:
                 observed = root.stat(located.rel)
@@ -339,7 +346,7 @@ class Fsops:
 
     def sha256_of(self, local: str) -> str:
         """`sha256:<hex>` of a regular file, streamed."""
-        located = self._locate(local)
+        located = self._locate(local, read_mirror=True)
         with self._root(located.root_path) as root:
             fd = root.open_file(located.rel, os.O_RDONLY)
             digest = hashlib.sha256()
@@ -389,6 +396,31 @@ class Fsops:
                     write_atomic(root, LEASE_FILE, outcome, parents=True, replace=False)
                 except FileExistsError:
                     raise LeaseRaceError(f"{root_path}: the lease was taken meanwhile") from None
+
+    # -- the provenance mirror (EF-EXP-063): `<root>/.shelfhold/manifest/`, host-only ---------
+
+    def _mirror_root(self, root_path: str) -> str:
+        key = clean_absolute(root_path)
+        if key in self._expected:
+            return key
+        if key in self._read_only:
+            raise ReadOnlyRootError(f"{root_path} is an adoption root: never written")
+        raise OutsidePathMapError(f"{root_path!r} is not a physical root")
+
+    def write_mirror(self, root_path: str, name: str, data: bytes) -> FileIdentity:
+        """Write one mirror file (`<dest>/<series>.jsonl`) atomically: the root is judged (sentinel,
+        generation, lease) like for any write, and an `adopt_ro` root is refused."""
+        key = self._mirror_root(root_path)
+        with self._gated(_Located(key, ".", False)) as root:
+            return write_mirror_file(root, name, data)
+
+    def read_mirror(self, root_path: str, name: str) -> bytes | None:
+        with self._root(self._mirror_root(root_path)) as root:
+            return read_mirror_file(root, name)
+
+    def list_mirror(self, root_path: str) -> list[str]:
+        with self._root(self._mirror_root(root_path)) as root:
+            return list_mirror_files(root)
 
     # -- writes -----------------------------------------------------------------------------
 

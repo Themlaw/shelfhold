@@ -74,6 +74,7 @@ def write_atomic(
     replace: bool = True,
     mtime_ns: int | None = None,
     verify_digest: Callable[[], str] | None = None,
+    file_mode: int | None = None,
 ) -> FileIdentity:
     parts = split_rel(rel)
     if not parts:
@@ -81,11 +82,12 @@ def write_atomic(
     staging_dir = STAGING_DIR
     root.mkdir(staging_dir, parents=True, exist_ok=True, durable=False)
     staged = f"{staging_dir}/{uuid.uuid4().hex}"
-    fd = root.open_file(staged, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o666)
+    requested = 0o666 if file_mode is None else file_mode
+    fd = root.open_file(staged, os.O_RDWR | os.O_CREAT | os.O_EXCL, requested)
     placed = False
     try:
-        if root.umask is not None:
-            os.fchmod(fd, root.file_mode(0o666))
+        if root.umask is not None or file_mode is not None:
+            os.fchmod(fd, root.file_mode(requested))
         with os.fdopen(os.dup(fd), "wb", closefd=True) as sink:
             if isinstance(data, bytes):
                 sink.write(data)

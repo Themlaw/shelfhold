@@ -233,7 +233,7 @@ def test_the_reservation_stops_a_racing_write_before_any_file_is_placed() -> Non
         with pytest.raises(SeriesCollisionError):  # past the claim: the unique key still holds
             env.pipeline._execute(ctx, planned, pb.plan_id, new_ulid())
         assert env.lib.files_under(env.lib.manga / "Kavita2") == []
-        assert count(env, "fs_intent") == 1  # only the first shelf's, done
+        assert count(env, "fs_intent") == 2  # only the first shelf's: its file and its mirror, done
 
 
 # -- minors ------------------------------------------------------------------------------------
