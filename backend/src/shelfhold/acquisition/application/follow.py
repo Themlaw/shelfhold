@@ -58,6 +58,7 @@ def submit_follow(pools: JobPools, plugin_id: str) -> Created:
     )
 
 
+MISSING_CYCLES = 2  # consecutive cycles of absence before a series is deemed removed
 FINISHED_STATUSES = ("completed", "cancelled")  # work status: nothing more is expected
 NOT_CHECKED = ("completed", "paused")  # series_follow.check_override: the user said so
 
@@ -152,19 +153,61 @@ class FollowCycle:
             (ref.source_key, ref.remote_id)
             for ref in await self._service.followed_series(self._fetcher)
         }
+        present = self._reconcile_library(in_library, report)
         for binding in self._bindings():
-            present = (binding.source_key, binding.remote_id) in in_library
-            if binding.active and not present:
-                self._stop_following(binding)
-                report.removed += 1
-            elif not binding.active and present and self._reactivate(binding):
-                report.reactivated += 1
-        for binding in self._bindings():
-            if binding.active and binding.check_override != "paused":
+            if (
+                binding.active
+                and binding.check_override != "paused"
+                and (binding.source_key, binding.remote_id) in present
+            ):
                 await self._discover(binding, report)
         report.tickets = await self._tickets.advance()
         report.fetched = report.tickets.fetched
         report.stale = len(self._check_freshness())
+
+    def _reconcile_library(
+        self, in_library: set[tuple[str, str]], report: FollowReport
+    ) -> set[tuple[str, str]]:
+        """Stop following what left the library, but never on a single look and never in bulk.
+
+        A series must be absent in two consecutive cycles (a restarting tool, a half-loaded
+        library or a reinstall answers for a moment with less than it has). When the library is
+        empty while series are followed, or when every followed series (two or more) vanishes at
+        once, that is the tool, not the user: nothing is deactivated and the admin is alerted.
+        """
+        bindings = self._bindings()
+        active = [b for b in bindings if b.active]
+        absent = [b for b in active if (b.source_key, b.remote_id) not in in_library]
+        mass = bool(absent) and (
+            not in_library or (len(active) >= 2 and len(absent) == len(active))
+        )
+        with self._engine.begin() as connection:
+            if mass:
+                if self._ledger.raise_mass_alert(connection):
+                    self._emit(
+                        connection, "source.instance_changed",
+                        {"state": "source_instance_changed", "code": "source.instance_changed"},
+                    )  # fmt: skip
+            else:
+                self._ledger.clear_mass_alert(connection)
+        if not mass:
+            for binding in active:
+                if binding in absent:
+                    with self._engine.begin() as connection:
+                        count = self._ledger.bump_missing(connection, binding.id)
+                    if count >= MISSING_CYCLES and self._stop_following(binding):
+                        report.removed += 1
+                else:
+                    with self._engine.begin() as connection:
+                        self._ledger.clear_missing(connection, binding.id)
+        for binding in bindings:
+            if (
+                not binding.active
+                and (binding.source_key, binding.remote_id) in in_library
+                and self._reactivate(binding)
+            ):
+                report.reactivated += 1
+        return in_library
 
     # -- bindings ----------------------------------------------------------------------------
     def _bindings(self) -> list[_Binding]:
@@ -189,7 +232,7 @@ class FollowCycle:
         with self._engine.connect() as connection:
             return [_Binding._make(row) for row in connection.execute(query)]
 
-    def _stop_following(self, binding: _Binding) -> None:
+    def _stop_following(self, binding: _Binding) -> bool:
         """EF-SRC-027: the series left the Suwayomi library. The binding goes inactive, so its
         Units are irreplaceable by calculation; no file and no follow row is touched."""
         table = acquisition.source_binding
@@ -204,6 +247,8 @@ class FollowCycle:
                     connection, "series.tombstoned_upstream",
                     {"edition_id": binding.edition_id, "work_id": binding.work_id},
                 )  # fmt: skip
+            self._ledger.clear_missing(connection, binding.id)
+        return bool(changed)
 
     def _reactivate(self, binding: _Binding) -> bool:
         table = acquisition.source_binding

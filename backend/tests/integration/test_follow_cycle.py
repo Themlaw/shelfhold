@@ -89,6 +89,7 @@ def test_series_removed_from_suwayomi_stops_follow_keeps_files() -> None:
         copies_before = bench.rows("SELECT count(*) AS n FROM replica")[0]["n"]
 
         bench.alpha()["inLibrary"] = False  # the user removes the series from Suwayomi
+        assert bench.run().removed == 0 and bench.binding()["active"]  # one look is not enough
         report = bench.run()
         assert report.removed == 1
         binding = bench.binding()
@@ -297,3 +298,33 @@ def test_pause_is_announced_once_even_if_two_writers_race() -> None:
             ledger.record_download(connection, "suwayomi:7001", ok=True, now=bench.clock.now())
             assert ledger.paused(connection) is not None  # the counters did not erase the pause
             assert ledger.resume(connection) is True and ledger.resume(connection) is False
+
+
+@pytest.mark.req("EF-SRC-027")
+def test_a_series_back_after_one_cycle_of_absence_is_never_deactivated() -> None:
+    with follow_bench() as bench:
+        bench.run()
+        for _ in range(3):
+            bench.alpha()["inLibrary"] = False
+            assert bench.run().removed == 0  # absent once...
+            bench.alpha()["inLibrary"] = True
+            assert bench.run().removed == 0  # ...back: the count starts again
+        assert bench.binding()["active"] and bench.events("series.tombstoned_upstream") == []
+
+
+@pytest.mark.req("EF-SRC-027")
+def test_an_emptied_library_deactivates_nothing_and_alerts_once() -> None:
+    with follow_bench() as bench:
+        bench.run()
+        for manga in bench.server.state["mangas"]:
+            manga["inLibrary"] = False  # reinstalled or not yet loaded: the whole library is gone
+        for _ in range(4):
+            assert bench.run().removed == 0
+        assert bench.binding()["active"]
+        assert bench.events("series.tombstoned_upstream") == []
+        assert len(bench.events("source.instance_changed")) == 1
+        assert any(e.type == "source.instance_changed" for e in bench.delivered)
+
+        for manga in bench.server.state["mangas"]:
+            manga["inLibrary"] = True  # the tool is back: following goes on, a later alert may come
+        assert bench.run().removed == 0 and bench.binding()["active"]

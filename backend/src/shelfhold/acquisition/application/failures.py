@@ -161,6 +161,31 @@ class FailureLedger:
     def resume(self, connection: Connection) -> bool:
         return self._unset(connection, "$.pause")
 
+    # -- absence from the service's library (EF-SRC-027) ---------------------------------------
+    def bump_missing(self, connection: Connection, binding_id: str) -> int:
+        """One more consecutive cycle in which the binding's series is absent; returns the count."""
+        path = f"$.missing.{json.dumps(binding_id)}"
+        self._ensure(connection)
+        connection.execute(_COUNT_FAILED, {"path": path, "plugin": self._plugin_id})
+        return int(
+            connection.execute(
+                sa.text(
+                    "SELECT json_extract(health, :path) FROM source_config WHERE plugin_id = :p"
+                ),
+                {"path": path, "p": self._plugin_id},
+            ).scalar_one()
+        )
+
+    def clear_missing(self, connection: Connection, binding_id: str) -> None:
+        self._unset(connection, f"$.missing.{json.dumps(binding_id)}")
+
+    def raise_mass_alert(self, connection: Connection) -> bool:
+        """True the first time (the alert is sent once per episode)."""
+        return self._set(connection, "$.mass_absence", True, if_unset=True)
+
+    def clear_mass_alert(self, connection: Connection) -> None:
+        self._unset(connection, "$.mass_absence")
+
     def record_download(
         self, connection: Connection, limit_key: str, *, ok: bool, now: datetime
     ) -> None:
