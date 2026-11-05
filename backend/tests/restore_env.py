@@ -7,6 +7,7 @@ older copy while the files on disk (and their sentinels) stay as they are.
 
 import json
 import shutil
+import sqlite3
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -27,6 +28,7 @@ from shelfhold.export.application.roots import LoadedRoots, load_roots
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.instance import WriteSessions
 from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.schema import catalog, platform
@@ -76,6 +78,7 @@ class RestoreEnv:
             roots = [row.path_entry for row in rows]
             self.loaded = load_roots(connection, PathMap.same_path(roots))
         self.fsops = Fsops.open(self.loaded.path_map, self.loaded.expected)
+        self.ex.lib.fsops = self.fsops  # one process, one Fsops: the fixtures write through it
         self.sessions = WriteSessions(
             self.fsops,
             instance_id=str(self.sentinel()["instance_id"]),
@@ -101,11 +104,12 @@ class RestoreEnv:
 
     def add_chapters(self, first: int, last: int, series: Series | None = None) -> None:
         target = series or self.series
-        for number in range(first, last + 1):
-            self.chapters[str(number)] = self.ex.add_chapter(target, str(number))
+        with self.sessions.open(str(self.library)):  # the fixtures write under a lease too
+            for number in range(first, last + 1):
+                self.chapters[str(number)] = self.ex.add_chapter(target, str(number))
 
     def export(self, pipeline: ExportPipeline | None = None) -> None:
-        (pipeline or self.pipeline).run(self.ex.destination_id, job_id="01J0000000000000000JOB000")
+        (pipeline or self.pipeline).run(self.ex.destination_id, job_id=new_ulid())
 
     def files(self) -> dict[str, str]:
         """Every file under the library, reserved ones included, with its content digest."""
@@ -125,8 +129,11 @@ class RestoreEnv:
     def backup(self, name: str = "backup.db") -> Path:
         target = self.ex.lib.tmp / name
         target.unlink(missing_ok=True)
-        with self.engine.connect() as connection:
-            connection.exec_driver_sql(f"VACUUM INTO '{target}'")
+        raw = sqlite3.connect(self.db_path, isolation_level=None)
+        try:
+            raw.execute("VACUUM INTO ?", (str(target),))
+        finally:
+            raw.close()
         return target
 
     def restore(self, backup: Path) -> None:
@@ -230,13 +237,18 @@ def restore_env(*, first_chapters: int = 2) -> Iterator[RestoreEnv]:
         series = ex.main_series()
         with ex.engine.begin() as connection:
             sentinel = json.loads((ex.lib.library / ".shelfhold-mount-id").read_text("utf-8"))
-            connection.execute(sa.update(platform.instance).values(instance_id=sentinel["instance_id"]))
+            connection.execute(
+                sa.update(platform.instance).values(instance_id=sentinel["instance_id"])
+            )
         data = ex.lib.data
         store = KeyringStore(data / "keyring", lock_path=data / "keyring.lock")
         store.create(Keyring.generate(NOW))
         env = RestoreEnv.__new__(RestoreEnv)
         env.ex, env.series, env.store, env.bus = ex, series, store, EventBus(ex.clock)
         env.chapters = {}
+        with ex.engine.begin() as connection:  # the fixture's own chapter 1 has no archive
+            connection.execute(sa.text("DELETE FROM unit_variant"))
+            connection.execute(sa.text("DELETE FROM unit"))
         env.open_instance()
         env.add_chapters(1, first_chapters)
         env.export()

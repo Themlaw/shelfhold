@@ -74,6 +74,15 @@ class Scheduler:
         self._dispatcher = dispatcher
         self._window = window
         self._ledger = JobLedger(engine, clock)
+        self._held = False
+
+    def hold(self) -> None:
+        """Dispatch nothing until `release`: the instance is `restored_behind` (EF-INT-026). The
+        schedule itself is untouched, so nothing is lost: the next scan catches up."""
+        self._held = True
+
+    def release(self) -> None:
+        self._held = False
 
     # -- registration ---------------------------------------------------------------------
 
@@ -158,6 +167,8 @@ class Scheduler:
         return self.scan()
 
     def scan(self) -> ScanReport:
+        if self._held:
+            return ScanReport(())
         now = self._clock.now()
         stranded = self._ledger.undispatched()  # queued by an earlier scan, never sent: first
         claimed = self._claim(now)

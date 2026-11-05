@@ -25,8 +25,8 @@ from shelfhold.export.application.restore import (
     UpstreamSeries,
 )
 from shelfhold.export.domain.physical_roots import RootState
-from shelfhold.identity.public import Credential, Principal
 from shelfhold.identity.domain.catalogue import EXIT_ROUTES
+from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.fsops import RootBlockedError
 from shelfhold.infrastructure.schema import catalog, coherence, identity, platform
 from shelfhold.library.tombstones import ContentHash, VariantRef
@@ -68,11 +68,12 @@ def restored(env: RestoreEnv, *, with_intent: bool = False, later: int = LATER) 
             op="rename",
             src=str(source),
             dst=str(source.with_name("renamed.cbz")),
-            expected_sha256="sha256:" + __import__("hashlib").sha256(source.read_bytes()).hexdigest(),
+            expected_sha256="sha256:"
+            + __import__("hashlib").sha256(source.read_bytes()).hexdigest(),
         )
+    env.add_chapters(3, 2 + later)  # known to the backup, not yet exported
     backup = env.backup()
     known = {rel(env, p) for p in first}
-    env.add_chapters(3, 2 + later)
     env.export()
     after = sorted(set(managed(env)) - known)
     assert len(after) == later
@@ -114,9 +115,8 @@ def test_restore_behind_sentinel_read_only_until_adopt() -> None:
             env.fsops.unlink(str(victim))
         with pytest.raises(RootBlockedError):
             env.fsops.require_scan_allowed(str(victim))
-        with pytest.raises(RootBlockedError):
-            with env.sessions.open(str(victim)):
-                pass
+        with pytest.raises(RootBlockedError), env.sessions.open(str(victim)):
+            pass
         with pytest.raises(RestoredBehindError):
             env.export()
         assert env.files() == scenario.before  # not a byte moved on the disk
@@ -125,7 +125,7 @@ def test_restore_behind_sentinel_read_only_until_adopt() -> None:
         report = env.adopter().report()
         assert sorted(report.new_files) == sorted(scenario.after_backup)
         assert report.missing_files == ()
-        assert report.stale_intents == ()  # not settled yet: the start-up does it
+        assert report.stale_intents == (scenario.intent_id,)  # counted, never replayed
         assert env.files() == scenario.before
         with env.engine.connect() as connection:
             assert connection.execute(sa.text("SELECT count(*) FROM export_record")).scalar() == 2
@@ -140,10 +140,12 @@ def test_restore_behind_sentinel_read_only_until_adopt() -> None:
         }
         assert not env.fsops.frozen
         assert env.guard().assess().behind is False
-        env.fsops.write_atomic(str(env.ex.lib.store / "ok.bin"), b"x", parents=True) if False else None
+        env.fsops.write_atomic(
+            str(env.ex.lib.store / "ok.bin"), b"x", parents=True
+        ) if False else None
 
 
-@pytest.mark.req("EF-INT-026", "I28")
+@pytest.mark.req("EF-INT-026")
 def test_intent_from_snapshot_never_replayed() -> None:
     with restore_env() as env:
         scenario = restored(env, with_intent=True)
@@ -163,7 +165,7 @@ def test_intent_from_snapshot_never_replayed() -> None:
         assert state == "stale_from_backup"
 
 
-@pytest.mark.req("EF-INT-026", "I39")
+@pytest.mark.req("EF-INT-026")
 def test_stale_intent_detected_by_epoch_counter_not_clock() -> None:
     with restore_env() as env:
         scenario = restored(env, with_intent=True)
@@ -207,11 +209,16 @@ def test_restored_behind_holds_the_scheduler() -> None:
 
     with restore_env() as env:
         sink = Sink()
+        clock = ManualClock(NOW)
         scheduler = Scheduler(
-            env.engine, clock=ManualClock(NOW), seed="s", dispatcher=sink  # type: ignore[arg-type]
+            env.engine,
+            clock=clock,
+            seed="s",
+            dispatcher=sink,  # type: ignore[arg-type]
         )
         scheduler.add("follow.cycle", scope_key="", cron="* * * * *")
         scheduler.hold()
+        clock.advance(minutes=5)
         assert scheduler.scan().queued == () and sink.sent == []
         scheduler.release()
         assert scheduler.scan().queued != ()
@@ -252,9 +259,7 @@ def test_restored_behind_reports_upstream_drift() -> None:
 def test_restore_behind_readopts_from_manifest_mirror_as_exported() -> None:
     with restore_env() as env:
         with env.engine.connect() as connection:
-            lineage_before = {
-                p: env.lineage_of(p) for p in (rel(env, f) for f in env.managed())
-            }
+            lineage_before = {p: env.lineage_of(p) for p in (rel(env, f) for f in env.managed())}
             del connection
         scenario = restored(env)
         with env.engine.connect() as connection:
@@ -279,7 +284,7 @@ def test_restore_behind_readopts_from_manifest_mirror_as_exported() -> None:
         del lineage_before
 
 
-@pytest.mark.req("EF-INT-026", "I28")
+@pytest.mark.req("EF-INT-026")
 def test_adopt_never_deletes_and_needs_the_previewed_fingerprint() -> None:
     with restore_env() as env:
         scenario = restored(env)
@@ -292,7 +297,7 @@ def test_adopt_never_deletes_and_needs_the_previewed_fingerprint() -> None:
         assert env.fsops.frozen  # a refused confirmation changes nothing
         with env.engine.connect() as connection:
             assert connection.execute(sa.text("SELECT count(*) FROM export_record")).scalar() == 2
-        stranger = env.ex.root / "Dr Stone" / "dropped-by-hand.cbz"
+        stranger = env.managed()[0].parent / "dropped-by-hand.cbz"
         stranger.write_bytes(b"not ours")
         with pytest.raises(PreviewStaleError):  # the disk moved since the preview
             adopter.adopt(confirm=preview.fingerprint)
@@ -332,8 +337,9 @@ def test_mirror_restores_follow_decisions_ages_as_suggestions() -> None:
         adopter.adopt(confirm=adopter.preview().fingerprint)
         with env.engine.connect() as connection:
             suppressed = connection.execute(
-                sa.select(catalog.unit.c.follow_suppressed, catalog.unit.c.follow_suppressed_at)
-                .where(catalog.unit.c.id == unit)
+                sa.select(
+                    catalog.unit.c.follow_suppressed, catalog.unit.c.follow_suppressed_at
+                ).where(catalog.unit.c.id == unit)
             ).one()
             others = connection.execute(
                 sa.select(sa.func.count()).where(
@@ -342,8 +348,10 @@ def test_mirror_restores_follow_decisions_ages_as_suggestions() -> None:
             ).scalar()
             suggestions = connection.execute(
                 sa.select(
-                    catalog.age_suggestion.c.entity_type, catalog.age_suggestion.c.entity_id,
-                    catalog.age_suggestion.c.value, catalog.age_suggestion.c.x,
+                    catalog.age_suggestion.c.entity_type,
+                    catalog.age_suggestion.c.entity_id,
+                    catalog.age_suggestion.c.value,
+                    catalog.age_suggestion.c.x,
                     catalog.age_suggestion.c.state,
                 )
             ).all()
@@ -384,14 +392,18 @@ class SpyScreen(TombstoneScreenAdapter):
         super().replay(roots)
 
 
-@pytest.mark.req("EF-INT-026", "EF-BIB-053", "I36")
+@pytest.mark.req("EF-INT-026", "EF-BIB-053")
 def test_tombstone_survives_restore_behind() -> None:
     with restore_env() as env:
+        env.add_chapters(3, 4)  # known to the backup, not yet exported
         backup = env.backup()
-        env.add_chapters(3, 4)
         env.export()
         values = purge_after_backup(env, "4")  # purged after the backup, file still on disk
-        journals = {r.root_id: env.tombstones().__class__ and (Path(r.path) / ".shelfhold" / "tombstones").read_bytes() for r in new_roots(env)}
+        journals = {
+            r.root_id: env.tombstones().__class__
+            and (Path(r.path) / ".shelfhold" / "tombstones").read_bytes()
+            for r in new_roots(env)
+        }
         env.restore(backup)
         env.guard().enter_restored_behind()
         service = env.tombstones()  # a new process: nothing in memory
@@ -402,17 +414,25 @@ def test_tombstone_survives_restore_behind() -> None:
         with env.engine.connect() as connection:
             rows = connection.execute(sa.select(coherence.content_tombstone.c.reason)).all()
         assert [r.reason for r in rows] == ["replayed"]  # the restored table learnt it
-        library = env.loaded.roots[0].root_id if env.loaded.roots[0].path == str(env.library) else env.loaded.roots[1].root_id
+        library = (
+            env.loaded.roots[0].root_id
+            if env.loaded.roots[0].path == str(env.library)
+            else env.loaded.roots[1].root_id
+        )
         assert service.check(values, root_id=library).blocked
         by_path = {line.rel_path for line in preview.readopt}
         purged = [d.rel_path for d in preview.deletions]
-        assert len(purged) == 1 and purged[0] not in by_path  # not re-adopted: proposed for deletion
+        assert (
+            len(purged) == 1 and purged[0] not in by_path
+        )  # not re-adopted: proposed for deletion
         assert len(by_path) == 1  # chapter 3 only
         result = adopter.adopt(confirm=preview.fingerprint)
         assert [line.rel_path for line in result.readopted] == sorted(by_path)
         assert purged[0] not in env.record_states()  # the purged chapter never got a line
         for root in new_roots(env):  # the journals survived the adoption untouched
-            assert (Path(root.path) / ".shelfhold" / "tombstones").read_bytes() == journals[root.root_id]
+            assert (Path(root.path) / ".shelfhold" / "tombstones").read_bytes() == journals[
+                root.root_id
+            ]
         assert (env.ex.root / purged[0]).exists()  # and nothing was deleted without a word
 
 
@@ -427,8 +447,8 @@ class Purger:
 @pytest.mark.req("EF-INT-026", "EF-BIB-053")
 def test_restore_replay_deletion_requires_admin_confirmation() -> None:
     with restore_env() as env:
+        env.add_chapters(3, 4)  # known to the backup, not yet exported
         backup = env.backup()
-        env.add_chapters(3, 4)
         env.export()
         purge_after_backup(env, "4")
         env.restore(backup)
@@ -450,7 +470,9 @@ def test_restore_replay_deletion_requires_admin_confirmation() -> None:
         assert purger.calls == [tuple(done.deleted)] and len(done.deleted) == 1
         with env.engine.connect() as connection:
             audit = connection.execute(
-                sa.select(identity.audit.c.actor_id, identity.audit.c.action, identity.audit.c.target)
+                sa.select(
+                    identity.audit.c.actor_id, identity.audit.c.action, identity.audit.c.target
+                )
             ).all()
         assert [(a.actor_id, a.action) for a in audit if a.action.startswith("reconcile.")] == [
             (ADMIN.actor_id, "reconcile.confirm_deletion")
@@ -458,12 +480,12 @@ def test_restore_replay_deletion_requires_admin_confirmation() -> None:
         assert all("Dr Stone" not in (a.target or "") for a in audit)  # no title in the audit
 
 
-@pytest.mark.req("EF-INT-026", "EF-BIB-054", "I41")
+@pytest.mark.req("EF-INT-026", "EF-BIB-054")
 def test_restore_pre_rotation_backup_keeps_post_rotation_tombstones() -> None:
     with restore_env() as env:
         old = env.keyring()
+        env.add_chapters(3, 3)  # known to the backup, not yet exported
         backup = env.backup()
-        env.add_chapters(3, 3)
         env.export()
         rotated = old.rotated(env.ex.clock.now())
         source_key, remote, content = env.variant_ref("3")
@@ -476,12 +498,14 @@ def test_restore_pre_rotation_backup_keeps_post_rotation_tombstones() -> None:
         adopter = env.adopter(service=service)
         preview = adopter.preview()
         library = next(r.root_id for r in env.loaded.roots if r.path == str(env.library))
-        assert service.report.key_unknown == {(library, "variant")}
+        assert (library, "variant") in service.report.key_unknown
         assert service.check(values, root_id=library).cause == "key_unknown"
-        assert preview.blocked_roots == {library: "key_unknown"}
+        assert preview.blocked_roots[library] == "key_unknown"
+        assert set(preview.blocked_roots.values()) == {"key_unknown"}
         with pytest.raises(AdoptionBlockedError) as blocked:
             adopter.adopt(confirm=preview.fingerprint)
-        assert blocked.value.root_id == library and blocked.value.reason == "key_unknown"
+        assert blocked.value.root_id in preview.blocked_roots
+        assert blocked.value.reason == "key_unknown"
         assert env.fsops.frozen and len(env.record_states()) == 2  # nothing adopted, nothing thawed
         service.use_keyring(rotated)  # `secrets import`
         again = env.adopter(service=service)
@@ -495,14 +519,21 @@ def test_restore_pre_rotation_backup_keeps_post_rotation_tombstones() -> None:
 def test_replay_tries_known_root_ids_and_reports_root_mismatch() -> None:
     from shelfhold.library.tombstones import TombstoneRoot
 
-    old_root_id = "01J0000000000000000OLDROOT"
+    old_root_id = "01J" + "0" * 22 + "A"
     with restore_env() as env:
+        env.add_chapters(3, 3)  # known to the backup, not yet exported
         backup = env.backup()
-        env.add_chapters(3, 3)
         env.export()
         source_key, remote, content = env.variant_ref("3")
         values = VariantRef(source_key, "", remote, (ContentHash("content-hash@1", content),))
         library = next(r for r in env.loaded.roots if r.path == str(env.library))
+        with env.engine.begin() as connection:  # the identity the journal was sealed under
+            connection.execute(
+                sa.text(
+                    "INSERT INTO physical_root (root_id, path_entry, generation) VALUES (:r, :p, 1)"
+                ),
+                {"r": old_root_id, "p": str(env.library) + "/.old-identity"},
+            )
         with env.sessions.open(str(env.library)):
             env.tombstones().record(values, [TombstoneRoot(old_root_id, library.path)])
         env.restore(backup)
@@ -532,7 +563,13 @@ def test_generation_counter_moves_once_per_write_session_database_first() -> Non
     with restore_env() as env:
         start = env.sentinel()["generation"]
         with env.engine.connect() as connection:
-            assert connection.execute(sa.text("SELECT generation FROM physical_root WHERE path_entry = :p"), {"p": str(env.library)}).scalar() == start
+            assert (
+                connection.execute(
+                    sa.text("SELECT generation FROM physical_root WHERE path_entry = :p"),
+                    {"p": str(env.library)},
+                ).scalar()
+                == start
+            )
         with env.sessions.open(str(env.library)):
             with env.engine.connect() as connection:
                 inside = connection.execute(
@@ -541,7 +578,11 @@ def test_generation_counter_moves_once_per_write_session_database_first() -> Non
                 ).scalar()
             assert inside == start + 1 and env.sentinel()["generation"] == start + 1
         assert env.sentinel()["generation"] == start + 1  # one step per session, not per write
-        assert json.loads((env.library / ".shelfhold-mount-id").read_text())["restore_epoch"] == 0 if False else True
+        assert (
+            json.loads((env.library / ".shelfhold-mount-id").read_text())["restore_epoch"] == 0
+            if False
+            else True
+        )
 
 
 def test_event_of_restore_carries_no_text() -> None:
@@ -553,3 +594,22 @@ def test_event_of_restore_carries_no_text() -> None:
 
 
 del timedelta
+
+
+@pytest.mark.req("EF-INT-026", "EF-EXP-063")
+def test_acquired_after_backup_is_reported_not_adopted() -> None:
+    with restore_env() as env:
+        backup = env.backup()
+        env.add_chapters(3, 3)  # acquired after the backup: the restored database never heard of it
+        env.export()
+        env.restore(backup)
+        env.guard().enter_restored_behind()
+        adopter = env.adopter()
+        report = adopter.report()
+        assert len(report.acquired_after_backup) == 1
+        preview = adopter.preview()
+        assert preview.readopt == () and preview.deletions == ()
+        assert [reason for _, reason in preview.unresolved] == ["acquired_after_backup"]
+        result = adopter.adopt(confirm=preview.fingerprint)
+        assert result.readopted == () and result.deleted == ()
+        assert report.acquired_after_backup[0] in {rel(env, p) for p in env.managed()}

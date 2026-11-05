@@ -9,6 +9,7 @@ database tells an intact root from an emptied mount point or an old copy of the 
 import json
 import posixpath
 import re
+import sys
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -20,6 +21,7 @@ __all__ = [
     "LEASE_FILE",
     "RECYCLE_DIR",
     "RESERVED_DIR",
+    "SENTINEL_EPOCH_FIELD",
     "SENTINEL_FILE",
     "SENTINEL_KIDS_FIELD",
     "SENTINEL_SCHEMA_VERSION",
@@ -43,6 +45,7 @@ STAGING_DIR = f"{RESERVED_DIR}/staging"
 RECYCLE_DIR = f"{RESERVED_DIR}/recycle"
 TOMBSTONE_JOURNAL = f"{RESERVED_DIR}/tombstones"  # append-only journal 2.0 (EF-BIB-053)
 SENTINEL_KIDS_FIELD = "tombstone_kids"  # registry of issued kids, copied per root (GAP-13-01)
+SENTINEL_EPOCH_FIELD = "restore_epoch"  # the restore counter the database had when last stamped
 SENTINEL_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
 SUPPORTED_SENTINEL_MAJOR = 1
 _VERSION = re.compile(r"^(\d+)\.(\d+)$")
@@ -71,6 +74,9 @@ class ExpectedRoot:
     path: str
     instance_id: str
     generation: int
+    # `instance.restore_epoch`: a sentinel stamped under a higher epoch than the database's means
+    # the database went back in time, whatever the generation says (EF-INT-026).
+    restore_epoch: int = 0
 
 
 @dataclass(frozen=True)
@@ -91,6 +97,15 @@ class SentinelDocument:
     @property
     def read_only(self) -> bool:
         return self.major > SUPPORTED_SENTINEL_MAJOR
+
+    @property
+    def restore_epoch(self) -> int:
+        """The restore counter stamped with the generation (0 for a sentinel that never had one;
+        an unreadable value counts as the highest, so that it is never trusted)."""
+        value = self.extra.get(SENTINEL_EPOCH_FIELD, 0)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return sys.maxsize
+        return value
 
     @classmethod
     def parse(cls, raw: bytes) -> Self:
@@ -115,14 +130,16 @@ class SentinelDocument:
         extra = {k: v for k, v in data.items() if k not in _KNOWN_KEYS}
         return cls(root_id, instance_id, generation, version, extra)
 
-    def restamped(self, generation: int) -> Self:
+    def restamped(self, generation: int, *, restore_epoch: int | None = None) -> Self:
+        """The same sentinel with a new generation (and, after a restore, a new epoch)."""
         if self.read_only:
             raise SentinelFormatError(
                 f"sentinel is format {self.schema_version}, newer than this build: read only"
             )
-        return type(self)(
-            self.root_id, self.instance_id, generation, self.schema_version, self.extra
-        )
+        extra = dict(self.extra)
+        if restore_epoch is not None:
+            extra[SENTINEL_EPOCH_FIELD] = restore_epoch
+        return type(self)(self.root_id, self.instance_id, generation, self.schema_version, extra)
 
     def dumps(self) -> bytes:
         body: dict[str, Any] = {
@@ -157,6 +174,8 @@ def judge_sentinel(doc: SentinelDocument | None, expected: ExpectedRoot) -> Sent
         return SentinelVerdict(RootState.MISMATCH)  # never touched by a build that cannot read it
     if doc.root_id != expected.root_id or doc.instance_id != expected.instance_id:
         return SentinelVerdict(RootState.MISMATCH)
+    if doc.restore_epoch > expected.restore_epoch:
+        return SentinelVerdict(RootState.RESTORED_BEHIND)  # a restore the database never heard of
     if doc.generation == expected.generation:
         return SentinelVerdict(RootState.OK)
     if doc.generation + 1 == expected.generation:

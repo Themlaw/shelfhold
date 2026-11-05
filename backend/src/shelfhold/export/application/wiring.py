@@ -40,6 +40,7 @@ def open_pipeline(
     *,
     write_gate: Callable[[], None] | None = None,
     stop_gate: Callable[[], None] | None = None,
+    gate: Callable[[], None] | None = None,
 ) -> ExportPipeline:
     engine = create_db_engine(settings.database_path)
     with engine.connect() as connection:
@@ -52,4 +53,5 @@ def open_pipeline(
         parse=_unchecked,
         parse_verified=False,
         segment_policy_confirmed=settings.naming_segment_policy_confirmed,
+        gate=gate,
     )  # fmt: skip

@@ -25,6 +25,7 @@ from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.plans import PlanOp, PlanStore
 from shelfhold.export.application.rendering import CbzRenderer, RenderedCbz, comicinfo_data
+from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import (
     DestinationContext,
     LoadedRequest,
@@ -155,6 +156,7 @@ class ExportPipeline:
         renderer: CbzRenderer | None = None,
         mirror: ProvenanceMirror | None = None,
         detector: Callable[[str], object] | None = None,
+        gate: Callable[[], None] | None = None,
     ) -> None:
         self._engine = engine
         self._fsops = fsops
@@ -169,6 +171,7 @@ class ExportPipeline:
         self._locks = ResourceLocks(engine, clock=clock)
         self.mirror = mirror or ProvenanceMirror(engine, fsops, clock=clock)
         self._detector = detector  # EF-EXP-043: looked at before every export
+        self._gate = gate  # raises while the instance is `restored_behind` (EF-INT-026)
         self._preflight: Preflight | None = None
         self._switchover: SwitchoverCheck | None = None
 
@@ -181,6 +184,12 @@ class ExportPipeline:
         """Probe the root of a destination before any export, and park a series whose write is
         refused (EF-EXP-054): the composition root sets it once."""
         self._preflight = preflight
+
+    def _require_writable(self) -> None:
+        if self._gate is not None:
+            self._gate()
+        elif self._fsops.frozen:
+            raise RestoredBehindError("restored_behind: no export until the adoption")
 
     def _require_verified(self) -> None:
         if not self._parse_verified:
@@ -258,6 +267,7 @@ class ExportPipeline:
 
     def run(self, destination_id: str, *, job_id: str) -> ApplyReport:
         """Plan, then apply; a plan with nothing to do is not even stored (idempotence)."""
+        self._require_writable()
         self._require_verified()
         with self._engine.connect() as connection:
             ensure_active(connection, destination_id)
@@ -294,6 +304,7 @@ class ExportPipeline:
 
     def apply(self, plan_id: str, *, if_match: str, job_id: str) -> ApplyReport:
         """Apply a stored plan once. `StalePlanError` (412) when anything moved since."""
+        self._require_writable()
         self._require_verified()
         with self._engine.connect() as connection:
             destination_id = connection.execute(
