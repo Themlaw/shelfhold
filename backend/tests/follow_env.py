@@ -74,6 +74,12 @@ class Bench:
         with self.lib.engine.connect() as connection:
             return [dict(r) for r in connection.execute(sa.text(sql), params).mappings()]
 
+    def binding(self) -> dict[str, Any]:
+        """The followed binding (the bench's library also holds an unrelated one)."""
+        return self.rows(
+            "SELECT active, disabled_reason FROM source_binding WHERE id = :b", b=self.binding_id
+        )[0]
+
     def events(self, event_type: str) -> list[dict[str, Any]]:
         return [
             {"id": e["id"], **json.loads(e["payload"])}
@@ -105,7 +111,11 @@ def _placement(lib: LibEnv) -> Any:
 
 @contextmanager
 def follow_bench(
-    server: FakeSuwayomi | None = None, *, stale_k: int = 3, has_credentials: bool = False
+    server: FakeSuwayomi | None = None,
+    *,
+    stale_k: int = 3,
+    has_credentials: bool = False,
+    service: Any = None,
 ) -> Iterator[Bench]:
     server = server or FakeSuwayomi(auth_mode="none")
     with lib_env() as lib:
@@ -134,7 +144,7 @@ def follow_bench(
         guarded = IntegrationFetcher(dns, lan_targets=lan, transport=server.transport)
         fetcher = FakeSuwayomiFetcher(server)
         fetcher.has_credentials = has_credentials  # type: ignore[attr-defined]
-        service = SuwayomiService(BASE_URL)
+        service = service or SuwayomiService(BASE_URL)
         bus = EventBus(clock)
         sleeps: list[float] = []
 

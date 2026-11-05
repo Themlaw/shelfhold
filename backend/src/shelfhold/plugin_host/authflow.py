@@ -135,6 +135,14 @@ class AuthInjectingFetcher:
         query = "&".join(q for q in (parts.query, urlencode(params)) if q)
         return urlunsplit(parts._replace(query=query))
 
+    def authorize(
+        self, url: str, headers: Mapping[str, str] | None = None
+    ) -> tuple[str, dict[str, str]]:
+        """The URL and headers of a request carrying the credential, for a streamed download that
+        does not go through `download` (the bounded receiver of the library). Same origin rule."""
+        out_url, out_headers, out_params = self._apply(url, headers)
+        return self._with_query(out_url, out_params), out_headers
+
     # -- Fetcher -----------------------------------------------------------------------------
     async def get(
         self,

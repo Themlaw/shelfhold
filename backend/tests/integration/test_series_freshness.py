@@ -29,6 +29,7 @@ def test_series_stale_m1a_default_k3() -> None:
         assert bench.cycle.check_freshness() == []  # announced once per episode
         assert len(bench.events("series.stale")) == 1
 
+        bench.clock.advance(days=1)
         bench.add_chapter(4)  # a chapter arrives: the episode ends...
         bench.run()
         bench.clock.advance(days=22)

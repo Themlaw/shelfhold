@@ -4,8 +4,8 @@ from datetime import timedelta
 
 import pytest
 
-from shelfhold.acquisition.public import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.freshness import cadence, stale_threshold
+from shelfhold.acquisition.public import Disposition, classify, disposition_of
 from shelfhold.plugin_host.errors import AuthExpired, AuthModeUnsupported, ServiceVersionMismatch
 from shelfhold.sdk.source import (
     AuthRequired,
@@ -14,7 +14,6 @@ from shelfhold.sdk.source import (
     SourceChanged,
     TemporarilyUnavailable,
 )
-from tests.library_env import cbz_bytes
 
 pytestmark = pytest.mark.req("EF-SRC-009")
 
@@ -57,4 +56,3 @@ def test_cadence_is_the_median_gap_of_distinct_discovery_instants() -> None:
     assert cadence([t0, t0 + timedelta(days=7)]) is None  # one gap is not a cadence
     assert stale_threshold(None, 3) == timedelta(days=14)
     assert stale_threshold(timedelta(days=7), 3) == timedelta(days=21)
-    _ = cbz_bytes

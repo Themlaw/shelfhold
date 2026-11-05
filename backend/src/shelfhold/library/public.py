@@ -32,7 +32,11 @@ from shelfhold.library.domain.content_hash import (
     content_hash,
     is_rendered_sidecar,
 )
-from shelfhold.library.domain.failures import ReceivedTooLargeError, SafeguardFailedError
+from shelfhold.library.domain.failures import (
+    ReceivedTooLargeError,
+    SafeguardFailedError,
+    VariantAlreadyStoredError,
+)
 from shelfhold.library.domain.irreplaceable import (
     ConfirmationRequiredError,
     confirmation_phrase,
@@ -67,6 +71,7 @@ __all__ = [
     "SafeguardResult",
     "UnitJson",
     "UnitJsonCorruptError",
+    "VariantAlreadyStoredError",
     "confirmation_phrase",
     "content_hash",
     "export_sources",

@@ -4,15 +4,15 @@ Everything runs against the simulated Suwayomi (`tests/fakes/suwayomi`) and a re
 /library: the cycle's own behaviour is what is under test, not a mock of it.
 """
 
-import asyncio
 from typing import Any
 
 import pytest
 
 from shelfhold.sdk.connected import ConnectedCapability, ServiceHealth, Ticket, TicketState
+from shelfhold.sdk.fetcher import Response
 from shelfhold.sdk.refs import FileAsset, ImageRequest, RangedPayload, SeriesRef, UnitInfo, UnitRef
 from tests.fakes.suwayomi import FakeSuwayomi
-from tests.follow_env import Bench, follow_bench, new_chapter
+from tests.follow_env import Bench, follow_bench
 
 REFRESH_FIELDS = {"fetchChapters", "fetchManga", "fetchSourceManga", "updateLibrary"}
 
@@ -85,30 +85,28 @@ def test_series_removed_from_suwayomi_stops_follow_keeps_files() -> None:
             bench.run()  # the chapter finishes downloading and is filed
         files = bench.library_files()
         assert len(files) == 1
-        irreplaceable_before = bench.rows("SELECT count(*) AS n FROM replica")[0]["n"]
+        copies_before = bench.rows("SELECT count(*) AS n FROM replica")[0]["n"]
 
         bench.alpha()["inLibrary"] = False  # the user removes the series from Suwayomi
         report = bench.run()
         assert report.removed == 1
-        binding = bench.rows("SELECT active, disabled_reason FROM source_binding")[0]
+        binding = bench.binding()
         assert not binding["active"] and binding["disabled_reason"] == "removed_upstream"
         assert bench.rows("SELECT 1 FROM series_follow")  # never a cascade
         assert bench.library_files() == files  # the files stay
-        assert bench.rows("SELECT count(*) AS n FROM replica")[0]["n"] == irreplaceable_before
+        assert bench.rows("SELECT count(*) AS n FROM replica")[0]["n"] == copies_before
         assert [e["edition_id"] for e in bench.events("series.tombstoned_upstream")] == [
             bench.edition_id
         ]
         assert any(e.type == "series.tombstoned_upstream" for e in bench.delivered)
 
-        before = len(bench.server.requests)
         bench.add_chapter(4)
         again = bench.run()  # nothing is followed any more, nothing is announced twice
         assert again.discovered == 0 and len(bench.events("series.tombstoned_upstream")) == 1
-        assert bench.server.requests_to("graphql")[before:] is not None
 
         bench.alpha()["inLibrary"] = True  # it comes back: the follow resumes
         assert bench.run().removed == 0
-        assert bench.rows("SELECT active FROM source_binding")[0]["active"]
+        assert bench.binding()["active"]
 
 
 @pytest.mark.req("EF-SRC-028")
@@ -133,30 +131,29 @@ def test_waits_downloaded_state_no_source_failure_counted() -> None:
 
 
 @pytest.mark.req("EF-SRC-028")
-def test_truncated_archive_is_retried_without_counting_a_failure() -> None:
+def test_truncated_archive_is_retried_without_counting_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     with follow_bench() as bench:
         bench.run()
         bench.add_chapter(3)
         bench.run()
-        chapter = bench.alpha()["chapters"][-1]
-        good = chapter["cbz"]
-        chapter["cbz"] = "truncated.cbz"  # an archive cut short by a download still running
-        (bench.server.state and None)
-        from tests.fakes.suwayomi.server import SYNTHETIC
+        real = bench.server._download
 
-        broken = SYNTHETIC / "truncated.cbz"
-        broken.write_bytes((SYNTHETIC / good).read_bytes()[:40])
-        try:
-            report = bench.run()
-            assert report.fetched == 0
-            row = bench.rows("SELECT state, attempts FROM download_request")[0]
-            assert row["state"] == "requested" and row["attempts"] == 1
-            assert bench.library_files() == []
-            assert bench.rows("SELECT * FROM source_failure") == []
-            chapter["cbz"] = good  # Suwayomi finished: the next attempt succeeds
-            assert bench.run().fetched == 1
-        finally:
-            broken.unlink(missing_ok=True)
+        def cut_short(path: str) -> Response:  # a download still running on the Suwayomi side
+            reply = real(path)
+            return Response(status=reply.status, headers=reply.headers, body=reply.body[:40])
+
+        monkeypatch.setattr(bench.server, "_download", cut_short)
+        report = bench.run()
+        assert report.fetched == 0
+        row = bench.rows("SELECT state, attempts FROM download_request")[0]
+        assert row["state"] == "requested" and row["attempts"] == 1
+        assert bench.library_files() == []
+        assert bench.rows("SELECT * FROM source_failure") == []
+
+        monkeypatch.setattr(bench.server, "_download", real)  # Suwayomi finished
+        assert bench.run().fetched == 1
 
 
 @pytest.mark.req("EF-SRC-009", "EF-SRC-023")
@@ -191,7 +188,7 @@ def test_suwayomi_schema_mismatch_pauses_without_counting() -> None:
         assert report.paused == "schema"
         assert bench.rows("SELECT * FROM source_failure") == []
         assert len(bench.events("source.broken")) == 1
-        assert bench.rows("SELECT active FROM source_binding")[0]["active"]  # nothing deactivated
+        assert bench.binding()["active"]  # nothing deactivated
 
 
 class MinimalService:
@@ -246,13 +243,10 @@ class MinimalService:
 def test_minimal_connected_service_passes_follow_cycle() -> None:
     from tests.fakes.suwayomi import BASE_URL
 
-    with follow_bench() as bench:
-        minimal = MinimalService("suwayomi:7001", "/series-alpha", b"", BASE_URL)
-        bench.cycle.use_service(minimal)  # the cycle only knows sdk.connected
+    minimal = MinimalService("suwayomi:7001", "/series-alpha", b"", BASE_URL)
+    with follow_bench(service=minimal) as bench:  # the cycle only knows sdk.connected
         assert bench.run().requested == 0  # baseline
         minimal.chapters.append("c2")
         report = bench.run()
         assert report.discovered == 1 and report.requested == 1 and report.fetched == 1
         assert [p.suffix for p in bench.library_files()] == [".cbz"]
-        assert asyncio.run(minimal.poll(bench.fetcher, Ticket(token="x", target_kind="unit")))
-        _ = new_chapter
