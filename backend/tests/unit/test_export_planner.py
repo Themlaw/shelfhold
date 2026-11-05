@@ -171,3 +171,30 @@ def test_same_work_editions_in_one_library_get_a_language_suffix() -> None:
     )
     paths = sorted(op.rel_path for op in plan.ops if op.rel_path)
     assert paths == ["Monster (en)/Monster (en) - Ch.1.cbz", "Monster (fr)/Monster (fr) - Ch.1.cbz"]
+
+
+@pytest.mark.req("EF-EXP-032")
+def test_series_name_collision_detected_at_plan_time() -> None:
+    """Two different Works called "Monster" would be one Kavita series: the plan blocks both.
+
+    Reduced to the block (coupable): the unit carries the generic suggestion to define an exported
+    series name, not yet a ready-made "Monster (2004)".
+    """
+    plan = plan_destination(
+        request(
+            editions=(edition("ed-1", "w-1", "Monster"), edition("ed-2", "w-2", "monster")),
+            units=(unit("u-1", "ed-1"), unit("u-2", "ed-2")),
+        ),
+        simulate_parse,
+    )
+    assert plan.ops == ()
+    assert {(b.unit_id, b.code) for b in plan.blocked} == {
+        ("u-1", "export.series_name_collision"),
+        ("u-2", "export.series_name_collision"),
+    }
+    assert all(b.suggestion and "series name" in b.suggestion for b in plan.blocked)
+    only_one = plan_destination(
+        request(editions=(edition("ed-1", "w-1", "Monster"),), units=(unit("u-1", "ed-1"),)),
+        simulate_parse,
+    )
+    assert [op.series.name_raw for op in only_one.ops] == ["Monster"]  # no clash, no block
