@@ -1399,6 +1399,26 @@
       "code": "notify.failed",
       "status": 502
     },
+    "/api/v1/problems/pairing.already-paired": {
+      "code": "pairing.already_paired",
+      "status": 409
+    },
+    "/api/v1/problems/pairing.batch-stale": {
+      "code": "pairing.batch_stale",
+      "status": 409
+    },
+    "/api/v1/problems/pairing.not-writable": {
+      "code": "pairing.not_writable",
+      "status": 409
+    },
+    "/api/v1/problems/pairing.switchover-stale": {
+      "code": "pairing.switchover_stale",
+      "status": 409
+    },
+    "/api/v1/problems/pairing.switchover-unconfirmed": {
+      "code": "pairing.switchover_unconfirmed",
+      "status": 409
+    },
     "/api/v1/problems/plan.stale": {
       "code": "plan.stale",
       "status": 412
