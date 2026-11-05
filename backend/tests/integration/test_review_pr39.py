@@ -122,7 +122,7 @@ def test_no_write_path_skips_the_lease_once_enforced(tmp_path: Path) -> None:
 
 @pytest.mark.req("ENF-OPS-015")
 def test_lease_takeover_race_has_one_winner(tmp_path: Path) -> None:
-    """B read the dead lease and is pre-empted while A takes it: B's swap must fail."""
+    """B read the dead lease and is overtaken while A takes it: B's swap must fail."""
     ienv = make_intent_env(tmp_path)
     env, clock = ienv.fs, ienv.clock
     WriteSessions(env.fsops, instance_id=DEAD, clock=clock).take(str(env.library))
