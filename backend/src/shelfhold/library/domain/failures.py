@@ -17,3 +17,7 @@ class SafeguardFailedError(RuntimeError):
     def __init__(self, reason: str, message: str = "") -> None:
         super().__init__(f"{self.code}: {reason}" + (f" ({message})" if message else ""))
         self.reason = reason
+
+
+class VariantAlreadyStoredError(FileExistsError):
+    """The Variant already has its archive: the same release arrived twice (a replay is a no-op)."""

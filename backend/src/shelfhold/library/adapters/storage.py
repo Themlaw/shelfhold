@@ -28,7 +28,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, content_hash
-from shelfhold.library.domain.failures import ReceivedTooLargeError
+from shelfhold.library.domain.failures import ReceivedTooLargeError, VariantAlreadyStoredError
 from shelfhold.library.replica import record_replica
 
 CBZ_MEDIA_TYPE: Final = "application/vnd.comicbook+zip"
@@ -102,7 +102,7 @@ class PassthroughStore:
                 )
             ).first()
         if taken is not None:
-            raise FileExistsError(f"the Variant {variant_id} already has its archive")
+            raise VariantAlreadyStoredError(f"the Variant {variant_id} already has its archive")
 
         root_id, rel = self._locate(dest)
         with staged.open("rb") as stream:

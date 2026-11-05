@@ -1,5 +1,7 @@
 """The catalog facade: the only door other contexts use (import-linter `contexts-independent`)."""
 
+from collections.abc import Callable
+
 import sqlalchemy as sa
 
 from shelfhold.catalog.adapters.repo import (
@@ -48,9 +50,25 @@ class Catalog(CatalogService):
         )
 
 
-def ingest_isolated(engine: sa.Engine, item: IncomingUnit) -> IngestResult:
-    """Ingest one release in its own `BEGIN IMMEDIATE` transaction, replayed once on a clash."""
-    return run_immediate(engine, lambda connection: Catalog(connection).ingest(item))
+def ingest_isolated(
+    engine: sa.Engine,
+    item: IncomingUnit,
+    *,
+    then: Callable[[sa.Connection, IngestResult], None] | None = None,
+) -> IngestResult:
+    """Ingest one release in its own `BEGIN IMMEDIATE` transaction, replayed once on a clash.
+
+    `then` runs in the same transaction, after the ingest: what must not exist without the
+    Variant (a download ticket) commits or rolls back with it. It must be idempotent (a replay).
+    """
+
+    def work(connection: sa.Connection) -> IngestResult:
+        result = Catalog(connection).ingest(item)
+        if then is not None:
+            then(connection, result)
+        return result
+
+    return run_immediate(engine, work)
 
 
 __all__ = [
