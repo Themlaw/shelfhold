@@ -125,3 +125,106 @@ def test_mount_probe_write_and_yaml_hint_on_failure(
     assert f'user: "{owner.st_uid}:{owner.st_gid}"' in bad.yaml_hint  # the exact block to paste
     assert "volumes:" in bad.yaml_hint and f"{folder}:" in bad.yaml_hint
     assert bad.cause  # says why, not only that it failed
+
+
+# -- the replay of every simulable row ---------------------------------------------------------
+
+
+def _kavita_unreachable(tmp: Path) -> str:
+    events = RecordingEvents()
+    client = KavitaClient(
+        FaultSimulator().dead_fetcher(), "http://kavita.test", AdminKey("k" * 16),
+        events=events, clock=ManualClock(NOW),
+    )  # fmt: skip
+    with pytest.raises(TargetUnreachable):
+        asyncio.run(client.probe())
+    return events.codes()[0]
+
+
+def _suwayomi_unreachable(tmp: Path) -> str:
+    from shelfhold.sdk.source import TemporarilyUnavailable
+    from tests.follow_env import follow_bench
+
+    with follow_bench() as bench:
+
+        async def down(fetcher: Any) -> Any:
+            raise TemporarilyUnavailable("connection refused")
+
+        bench.service.followed_series = down  # type: ignore[method-assign]
+        for _ in range(3):
+            bench.run()
+        return str(bench.events("source.broken") and "source.broken")
+
+
+def _disk_low(tmp: Path) -> str:
+    from shelfhold.infrastructure.observability.disk_guard import DiskGuard, DiskLowError
+
+    volume = FaultSimulator().volume(100, 1)
+    guard = DiskGuard({"store": tmp}, usage=volume)
+    guard.evaluate()
+    with pytest.raises(DiskLowError) as raised:
+        guard.require_space()
+    return raised.value.code
+
+
+def _second_instance(tmp: Path) -> str:
+    from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
+
+    first = InstanceLock(tmp)
+    first.acquire()
+    try:
+        with pytest.raises(InstanceLockHeldError) as raised:
+            InstanceLock(tmp).acquire()
+    finally:
+        first.release()
+    return raised.value.code
+
+
+def _series_dir_not_writable(tmp: Path) -> str:
+    made = make_env(tmp)
+
+    def refused(*_a: object, **_k: object) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    made.fsops.write_atomic = refused  # type: ignore[method-assign]
+    return probe_folder(made.fsops, str(made.manga)).event or ""
+
+
+def _mount_missing(tmp: Path) -> str:
+    from shelfhold.export.domain.physical_roots import RootState
+
+    made = make_env(tmp)
+    (made.library / ".shelfhold-mount-id").unlink()  # the volume came back empty
+    ok = made.fsops.status(str(made.manga)).state is RootState.OK
+    return "" if ok else "mount.sentinel_missing"
+
+
+SCENARIOS = {
+    "kavita_unreachable": _kavita_unreachable,
+    "suwayomi_unreachable": _suwayomi_unreachable,
+    "disk_low": _disk_low,
+    "second_instance": _second_instance,
+    "series_dir_not_writable": _series_dir_not_writable,
+    "mount_missing": _mount_missing,
+}
+
+
+@pytest.mark.req("ENF-OPS-011")
+def test_every_simulable_row_replays_and_every_other_row_names_its_proof(tmp_path: Path) -> None:
+    assert {r.key for r in FAILURE_MATRIX if r.simulated} == set(SCENARIOS)
+    for row in FAILURE_MATRIX:
+        assert row.simulated or row.proof, f"{row.key}: neither replayed nor proved elsewhere"
+    for number, (key, scenario) in enumerate(sorted(SCENARIOS.items())):
+        row = next(r for r in FAILURE_MATRIX if r.key == key)
+        folder = tmp_path / f"run{number}"
+        folder.mkdir()
+        assert scenario(folder) == row.event, key
+
+
+@pytest.mark.req("ENF-OPS-011")
+def test_the_matrix_carries_the_rows_the_review_found_missing() -> None:
+    keys = {r.key: r for r in FAILURE_MATRIX}
+    assert {"lncrawl_unreachable", "store_missing_after_restore", "kavita_asleep_sablier"} <= set(
+        keys
+    )
+    assert keys["suwayomi_schema_changed"].event == "source.version_unsupported"

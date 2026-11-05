@@ -187,14 +187,46 @@ class JobLedger:
                 ).rowcount
             )
 
-    def resume_paused(self, code: str) -> list[PendingJob]:
-        """The jobs parked with `code` go back to the queue, to be sent again."""
+    def park_running(self, job_id: str, code: str) -> bool:
+        """A job that hit a pause condition mid-flight (the disk filled): back to `paused`
+        under `code`, the attempt it spent given back, nothing recorded as a failure."""
         with self._engine.begin() as conn:
-            where = (job_view.c.status == "paused", job_view.c.error_code == code)
-            rows = conn.execute(sa.select(job_view).where(*where)).all()
+            return bool(
+                conn.execute(
+                    sa.update(job_view)
+                    .where(job_view.c.id == job_id, job_view.c.status == "running")
+                    .values(
+                        status="paused",
+                        error_code=code,
+                        started_at=None,
+                        attempts=sa.case(
+                            (job_view.c.attempts > 0, job_view.c.attempts - 1), else_=0
+                        ),
+                    )
+                ).rowcount
+            )
+
+    def forget_dispatch(self, job_id: str) -> None:
+        """The Huey task was consumed without running the job (shutdown): `undispatched()` will
+        send it again at the next boot."""
+        with self._engine.begin() as conn:
             conn.execute(
                 sa.update(job_view)
-                .where(*where)
+                .where(job_view.c.id == job_id, job_view.c.status == "queued")
+                .values(huey_task_id=None)
+            )
+
+    def resume_paused(self, code: str, job_id: str | None = None) -> list[PendingJob]:
+        """The jobs parked with `code` go back to the queue, to be sent again."""
+        with self._engine.begin() as conn:
+            where: tuple[object, ...] = (
+                job_view.c.status == "paused", job_view.c.error_code == code,
+                *((job_view.c.id == job_id,) if job_id else ()),
+            )  # fmt: skip
+            rows = conn.execute(sa.select(job_view).where(*where)).all()  # type: ignore[arg-type]
+            conn.execute(
+                sa.update(job_view)
+                .where(*where)  # type: ignore[arg-type]
                 .values(status="queued", error_code=None, huey_task_id=None)
             )
         return [self._pending(r) for r in rows]

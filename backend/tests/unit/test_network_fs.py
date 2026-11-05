@@ -20,7 +20,7 @@ def test_data_on_nfs_refused_unless_overridden(tmp_path: Path) -> None:
     with pytest.raises(NetworkDataDirError) as raised:
         refuse_network_data_dir(tmp_path, allow=False, statfs=on_nfs)
     assert "nfs" in str(raised.value)
-    assert refused_kinds() == {"nfs", "cifs", "smb2", "smb"}
+    assert refused_kinds() == {"nfs", "cifs", "smb2", "smb", "9p", "ceph", "afs", "fuse.sshfs"}
     for magic in (CIFS_MAGIC, SMB2_MAGIC):
         with pytest.raises(NetworkDataDirError):
             refuse_network_data_dir(tmp_path, allow=False, statfs=lambda _p, m=magic: m)
@@ -32,7 +32,16 @@ def test_data_on_nfs_refused_unless_overridden(tmp_path: Path) -> None:
 @pytest.mark.req("ENF-OPS-010")
 def test_the_real_statfs_answers_for_a_local_folder(tmp_path: Path) -> None:
     kind = filesystem_kind(tmp_path)
-    assert kind not in {"nfs", "cifs", "smb2", "smb"}  # CI runs on a local disk or a tmpfs
+    assert kind not in {
+        "nfs",
+        "cifs",
+        "smb2",
+        "smb",
+        "9p",
+        "ceph",
+        "afs",
+        "fuse.sshfs",
+    }  # CI runs on a local disk or a tmpfs
 
 
 @pytest.mark.req("ENF-OPS-010")
@@ -57,3 +66,52 @@ def refused_kinds() -> set[str]:
     from shelfhold.infrastructure.observability.network_fs import REFUSED_KINDS
 
     return set(REFUSED_KINDS)
+
+
+@pytest.mark.req("ENF-OPS-010")
+def test_other_network_file_systems_are_refused_and_fuse_is_read_from_mountinfo(
+    tmp_path: Path,
+) -> None:
+    from shelfhold.infrastructure.observability.network_fs import (
+        AFS_MAGIC,
+        CEPH_MAGIC,
+        FUSE_MAGIC,
+        NINEP_MAGIC,
+    )
+
+    for magic in (NINEP_MAGIC, CEPH_MAGIC, AFS_MAGIC):
+        with pytest.raises(NetworkDataDirError):
+            refuse_network_data_dir(tmp_path, allow=False, statfs=lambda _p, m=magic: m)
+    info = tmp_path / "mountinfo"
+    info.write_text(
+        f"20 1 0:5 / / rw - ext4 /dev/sda1 rw\n"
+        f"41 20 0:40 / {tmp_path} rw - fuse.sshfs me@host:/dir rw\n",
+        encoding="utf-8",
+    )
+    assert filesystem_kind(tmp_path, statfs=lambda _p: FUSE_MAGIC, mountinfo=info) == "fuse.sshfs"
+    other = tmp_path / "other"
+    other.write_text("20 1 0:5 / / rw - fuse.rclone remote rw\n", encoding="utf-8")
+    assert filesystem_kind(tmp_path, statfs=lambda _p: FUSE_MAGIC, mountinfo=other) == "fuse.rclone"
+
+
+@pytest.mark.req("ENF-OPS-010")
+def test_a_failed_statfs_warns_and_never_refuses(tmp_path: Path) -> None:
+    assert refuse_network_data_dir(tmp_path, allow=False, statfs=lambda _p: 0) is None
+
+
+@pytest.mark.req("ENF-OPS-010")
+def test_the_override_is_documented_and_shown_by_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shelfhold.config import ResolvedSettings, Settings
+    from shelfhold.infrastructure.observability import network_fs
+    from shelfhold.interfaces.cli import status
+
+    docs = Path(__file__).resolve().parents[3] / "docs" / "configuration.md"
+    assert "SHELFHOLD_ALLOW_NETWORK_DATA_DIR" in docs.read_text(encoding="utf-8")
+    monkeypatch.setattr(network_fs, "filesystem_magic", lambda _p: NFS_MAGIC)
+    settings = Settings(
+        data_dir=tmp_path / "d", store_dir=tmp_path / "s", allow_network_data_dir=True
+    )
+    found = status._environment_warnings(ResolvedSettings(settings, {}, "1.0"))
+    assert "data_dir_on_network_filesystem" in {w["code"] for w in found}

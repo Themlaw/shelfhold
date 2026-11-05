@@ -18,6 +18,7 @@ class DiskWatcher:
         self._pools = pools
         self._engine = engine
         self._bus = bus
+        self._synced = False  # the first measure also frees what a previous run parked
 
     def check(self) -> None:
         state = self._guard.evaluate()
@@ -34,6 +35,8 @@ class DiskWatcher:
                     )
         if state.paused and self._pools.paused_reason != DISK_LOW:
             self._pools.pause_writes(DISK_LOW)
-        elif not state.paused and self._pools.paused_reason == DISK_LOW:
+        elif not state.paused and (self._pools.paused_reason == DISK_LOW or not self._synced):
+            # not synced yet: jobs parked by a run that ended low are sent again at boot
             self._pools.resume_writes(DISK_LOW)
+        self._synced = True
         self._bus.deliver(published)

@@ -148,9 +148,11 @@ class Fsops:
         strategy: Strategy = Strategy.AUTO,
         disk_guard: Callable[[], bool] | None = None,
         write_gate: Callable[[], None] | None = None,
+        stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
     ) -> None:
         self._disk_guard = disk_guard
+        self._stop_gate = stop_gate  # raises once the shutdown went past its checkpoint delay
         self._write_gate = write_gate  # raises while the disk guard is paused (ENF-OPS-006)
         self._now = now
         self._path_map = path_map
@@ -183,12 +185,13 @@ class Fsops:
         strategy: Strategy = Strategy.AUTO,
         disk_guard: Callable[[], bool] | None = None,
         write_gate: Callable[[], None] | None = None,
+        stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
     ) -> Self:
         """No file system access: roots are opened, and their sentinels read, per operation."""
         return cls(
             path_map, expected, umask=umask, strategy=strategy, disk_guard=disk_guard,
-            write_gate=write_gate, now=now,
+            write_gate=write_gate, stop_gate=stop_gate, now=now,
         )  # fmt: skip
 
     # -- locating ---------------------------------------------------------------------------
@@ -248,7 +251,10 @@ class Fsops:
     ) -> Iterator[ConfinedRoot]:
         """The root opened for a write: refused when read-only, when its sentinel says so, when
         the lease is not ours (once `enforce_lease` is on) or when tombstone lines are owed to it
-        (`tombstone=True`: the write that pays them)."""
+        (`tombstone=True`: the write that pays them). After the shutdown's checkpoint delay every
+        write is refused (`stop_gate`)."""
+        if self._stop_gate is not None:
+            self._stop_gate()
         if located.read_only:
             raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
         owed = self._tombstones_owed
@@ -475,6 +481,7 @@ class Fsops:
         """Write one mirror file (`<dest>/<series>.jsonl`) atomically: the root is judged (sentinel,
         generation, lease) like for any write, and an `adopt_ro` root is refused."""
         key = self._mirror_root(root_path)
+        self._require_space()
         with self._gated(_Located(key, ".", False)) as root:
             return write_mirror_file(root, name, data)
 
@@ -541,11 +548,11 @@ class Fsops:
                 verify_digest=verify_digest,
             )  # fmt: skip
 
-    def mkdir(self, local: str, *, parents: bool = True) -> None:
+    def mkdir(self, local: str, *, parents: bool = True, exist_ok: bool = True) -> None:
         located = self._locate(local)
         self._require_space()
         with self._gated(located) as root:
-            root.mkdir(located.rel, parents=parents, exist_ok=True)
+            root.mkdir(located.rel, parents=parents, exist_ok=exist_ok)
 
     def unlink(self, local: str) -> None:
         located = self._locate(local)

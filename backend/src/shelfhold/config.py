@@ -106,10 +106,10 @@ class Settings(BaseModel):
     @model_validator(mode="after")
     def _resume_above_pause(self) -> Self:
         if (
-            self.disk_resume_percent < self.disk_pause_percent
-            or self.disk_resume_gib < self.disk_pause_gib
+            self.disk_resume_percent <= self.disk_pause_percent
+            or self.disk_resume_gib <= self.disk_pause_gib
         ):
-            raise ValueError("the disk resume marks must not be under the pause marks")
+            raise ValueError("the disk resume marks must be strictly above the pause marks")
         return self
 
     @model_validator(mode="after")

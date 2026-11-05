@@ -147,6 +147,7 @@ no_warning = "Aucun avertissement."
 warning_line = "Avertissement : {message}"
 database_not_migrated = "base absente ou pas à jour : lancez « shelfhold migrate »."
 data_dir_writable_by_others = "{path} est modifiable par le groupe ou les autres : ils pourraient remplacer la socket de la CLI locale. Faites « chmod 750 » sur ce dossier."
+data_dir_on_network_filesystem = "{path} est sur un système de fichiers réseau ({kind}) et SHELFHOLD_ALLOW_NETWORK_DATA_DIR est activé : la base SQLite et le verrou d'instance peuvent être corrompus ou contournés. Déplacez /data sur un disque local."
 cli_allow_host = "SHELFHOLD_CLI_ALLOW_HOST est activé : un processus de l'hôte (hors de l'espace de PID du conteneur) sous l'utilisateur de Shelfhold ou root vaut un administrateur."
 identity_header_stripped = "des requêtes portent l'en-tête d'identité « {header} », retiré et jamais cru (forward-auth non configuré ou proxy hors des CIDR de confiance). Retirez-le au niveau du proxy ou du tunnel, ou configurez le forward-auth (M3)."
 

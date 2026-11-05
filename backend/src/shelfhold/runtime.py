@@ -28,7 +28,11 @@ from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldErro
 from shelfhold.infrastructure.migrate import MigrationStateFile, current_revision, head_revision
 from shelfhold.infrastructure.observability.disk_guard import DiskGuard
 from shelfhold.infrastructure.observability.disk_watch import DiskWatcher
-from shelfhold.infrastructure.observability.shutdown import GracefulShutdown, ShutdownReport
+from shelfhold.infrastructure.observability.shutdown import (
+    GracefulShutdown,
+    ShutdownReport,
+    WriteBarrier,
+)
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
@@ -43,6 +47,7 @@ class InstanceRuntime:
     owns_volumes: bool = field(default=False, init=False)
     disk_guard: DiskGuard | None = field(default=None, init=False)
     shutdown_report: ShutdownReport | None = field(default=None, init=False)
+    barrier: WriteBarrier = field(default_factory=WriteBarrier, init=False)
 
     def __post_init__(self) -> None:
         self.lock = InstanceLock(self.settings.data_dir)
@@ -91,7 +96,10 @@ class InstanceRuntime:
         def resolve() -> ResolveReport:
             if loaded is None or instance_id is None:
                 return ResolveReport()  # no instance row yet: nothing was ever written
-            fsops = Fsops.open(loaded.path_map, loaded.expected, write_gate=guard.require_space)
+            fsops = Fsops.open(
+                loaded.path_map, loaded.expected, write_gate=guard.require_space,
+                stop_gate=self.barrier.require_open,
+            )  # fmt: skip
             ready = fsops.boot().ok
             sessions = WriteSessions(
                 fsops, instance_id=instance_id, clock=clock, lock_path=self.lock.path
@@ -144,11 +152,16 @@ class InstanceRuntime:
             self.pools,
             instance_lock=self.lock,
             release_resource_locks=locks.release_all if locks else None,
+            barrier=self.barrier,
             **options,
         ).run()
         return self.shutdown_report
 
     def stop(self) -> None:
+        if self.pools is not None:
+            for name in self.pools.names:  # Huey's SQLite connections are file descriptors
+                self.pools.huey(name).storage.close()
+            self.pools = None
         if self.engine is not None:
             self.engine.dispose()
             self.engine = None

@@ -7,6 +7,8 @@ emitter of its own, EF-BIB-030).
 """
 
 import os
+import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +34,11 @@ class DiskThresholds:
     pause_gib: float = 10.0
     resume_percent: float = 8.0
     resume_gib: float = 15.0
+
+    def __post_init__(self) -> None:
+        # A resume mark equal to the pause mark would flap on every measure around it.
+        if self.resume_percent <= self.pause_percent or self.resume_gib <= self.pause_gib:
+            raise ValueError("the resume marks must be strictly above the pause marks")
 
     def pause_below(self, total: int) -> int:
         return int(max(total * self.pause_percent / 100, self.pause_gib * GIB))
@@ -79,15 +86,30 @@ class DiskGuard:
         *,
         thresholds: DiskThresholds | None = None,
         usage: Callable[[Path], Usage] = disk_usage,
+        ttl_s: float = 5.0,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._volumes = dict(volumes)
         self._thresholds = thresholds or DiskThresholds()
         self._usage = usage
         self._low: set[str] = set()
+        self._ttl_s = ttl_s
+        self._monotonic = monotonic
+        self._measured_at: float | None = None
+        self._unreported: list[DiskChange] = []  # transitions the watcher has not announced yet
+        self._mutex = threading.Lock()
 
     def evaluate(self) -> DiskState:
-        """Measure every volume once; the hysteresis lives in `_low`."""
-        changes: list[DiskChange] = []
+        """Measure every volume once and hand over the transitions not yet announced."""
+        with self._mutex:
+            self._measure()
+            changes, self._unreported = tuple(self._unreported), []
+            return DiskState(tuple(sorted(self._low)), changes)
+
+    def _measure(self) -> None:
+        """The hysteresis lives in `_low`; transitions pile up in `_unreported`."""
+        self._measured_at = self._monotonic()
+        changes = self._unreported
         for name, path in self._volumes.items():
             try:
                 usage = self._usage(path)
@@ -100,7 +122,6 @@ class DiskGuard:
             elif not was_low and usage.free < self._thresholds.pause_below(usage.total):
                 self._low.add(name)
                 changes.append(DiskChange(name, True, usage.free, usage.total))
-        return DiskState(tuple(sorted(self._low)), tuple(changes))
 
     def low(self) -> tuple[str, ...]:
         return tuple(sorted(self._low))
@@ -110,7 +131,11 @@ class DiskGuard:
         return bool(self._low)
 
     def require_space(self) -> None:
-        """For a write that adds data: refused while any volume is paused."""
+        """For a write that adds data: refused while any volume is paused. The measure is at most
+        `ttl_s` old, taken here and not by a job (no consumer may be running)."""
+        with self._mutex:
+            if self._measured_at is None or self._monotonic() - self._measured_at >= self._ttl_s:
+                self._measure()
         if self._low:
             raise DiskLowError(self.low()[0])
 

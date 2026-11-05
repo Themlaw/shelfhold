@@ -11,6 +11,7 @@ from shelfhold.i18n import t
 from shelfhold.identity.public import IDENTITY_HEADER_AUDIT, local_auth
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.migrate import current_revision, head_revision
+from shelfhold.infrastructure.observability.network_fs import REFUSED_KINDS, filesystem_kind
 from shelfhold.infrastructure.volumes import data_dir_writable_by_others
 
 
@@ -30,6 +31,17 @@ def _environment_warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
                 "message": t("status.data_dir_writable_by_others", path=settings.data_dir),
             }
         )
+    if settings.allow_network_data_dir:
+        kind = filesystem_kind(settings.data_dir)
+        if kind in REFUSED_KINDS:
+            found.append(
+                {
+                    "code": "data_dir_on_network_filesystem",
+                    "message": t(
+                        "status.data_dir_on_network_filesystem", path=settings.data_dir, kind=kind
+                    ),
+                }
+            )
     if settings.cli_allow_host:  # EF-USR-024: the host's Shelfhold uid is an admin
         found.append({"code": "cli_allow_host", "message": t("status.cli_allow_host")})
     return found
