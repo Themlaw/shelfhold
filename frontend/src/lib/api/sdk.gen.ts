@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AboutData, AboutErrors, AboutResponses, ApplyData, ApplyErrors, ApplyResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, HealthzData, HealthzErrors, HealthzResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, PreviewData, PreviewErrors, PreviewResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, SessionData, SessionErrors, SessionResponses } from './types.gen';
+import type { AboutData, AboutErrors, AboutResponses, ApplyData, ApplyErrors, ApplyResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, HealthzData, HealthzErrors, HealthzResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, PreviewData, PreviewErrors, PreviewResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, SessionData, SessionErrors, SessionResponses, StatsData, StatsErrors, StatsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -97,6 +97,11 @@ export const bindDestination = <ThrowOnError extends boolean = false>(options: O
         ...options.headers
     }
 });
+
+/**
+ * Stats
+ */
+export const stats = <ThrowOnError extends boolean = false>(options?: Options<StatsData, ThrowOnError>): RequestResult<StatsResponses, StatsErrors, ThrowOnError> => (options?.client ?? client).get<StatsResponses, StatsErrors, ThrowOnError>({ url: '/api/v1/stats', ...options });
 
 /**
  * Healthz

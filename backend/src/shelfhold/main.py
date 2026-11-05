@@ -30,6 +30,7 @@ from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.headless import build_headless_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.shelves import build_shelves_router
+from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.runtime import InstanceRuntime
 
@@ -64,6 +65,7 @@ def create_app(
         build_shelves_router(lambda: ShelfService(engine)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
         build_plans_router(pipeline),  # type: ignore[arg-type]
+        build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
     )
 
     def on_shutdown() -> None:

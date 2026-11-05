@@ -2,6 +2,7 @@ name: release
 
 # Adds the version tags X.Y.Z and X.Y to the image already published for the tagged commit
 # (retag of sha-<long>: no rebuild, no "latest"), once ci-success is green on that commit.
+# The second job attaches schema.sql and data-dictionary.md (EF-INT-027) to the release.
 # Triggered by `gh release create vX.Y.Z` (see docs/releasing.md). Recovery: run it again by hand
 # with the tag as input. Deliberately no pull_request trigger: this workflow holds a write token.
 on:
@@ -45,3 +46,29 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: .github/scripts/release-retag.sh
+
+  schema-assets:
+    # EF-INT-027: schema.sql and the data dictionary, generated from the migrations, are assets of
+    # every release. `--clobber` makes a re-run (recovery) replace them.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: Generate schema.sql and data-dictionary.md
+        run: .github/scripts/release-assets.sh "$RUNNER_TEMP/assets"
+      - name: Attach schema.sql and data-dictionary.md to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" "$RUNNER_TEMP/assets/schema.sql" "$RUNNER_TEMP/assets/data-dictionary.md" --clobber --repo "${{ github.repository }}"

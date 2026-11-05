@@ -47,9 +47,7 @@ def seed_thirty_days(settings: Settings, *, now: datetime) -> None:
             work = add_work(connection)
             edition = add_edition(connection, work)
             binding = add_binding(connection, work, edition, add_source_item(connection))
-            destination = add_destination(
-                connection, add_shelf(connection), add_target(connection)
-            )
+            destination = add_destination(connection, add_shelf(connection), add_target(connection))
             variants: list[str] = []
             for day in range(1, 31):
                 detected = now - timedelta(days=day)

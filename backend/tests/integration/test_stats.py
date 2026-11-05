@@ -8,11 +8,14 @@ import json
 import socket
 import sqlite3
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 
 from shelfhold.config import Settings
-from tests.auth_env import PASSWORD, T0, AuthEnv, auth_env, db_rows, run_cli
+from shelfhold.identity.public import local_auth
+from shelfhold.infrastructure.db import create_db_engine
+from tests.auth_env import PASSWORD, AuthEnv, auth_env, db_rows, run_cli
 from tests.stats_env import seed_thirty_days
 
 
@@ -35,11 +38,7 @@ def no_outbound_connection(monkeypatch: pytest.MonkeyPatch) -> list[object]:
     return attempts
 
 
-def _member_key(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    api: AuthEnv,
-) -> str:
+def _member_key(api: AuthEnv) -> str:
     (admin_hash,) = db_rows(api.settings, "SELECT password_hash FROM user WHERE role = 'admin'")[0]
     connection = sqlite3.connect(api.settings.database_path)
     try:
@@ -51,16 +50,12 @@ def _member_key(
         connection.commit()
     finally:
         connection.close()
-    capsys.readouterr()
-    assert (
-        run_cli(
-            monkeypatch, api.settings, "admin", "keys", "create", "--name", "kid",
-            "--username", "member",
-        )
-        == 0
-    )  # fmt: skip
-    out = capsys.readouterr().out
-    return next(word for word in out.split() if word.startswith("shk_"))
+    engine = create_db_engine(api.settings.database_path)
+    try:
+        created = local_auth(engine, api.settings).create_api_key(name="kid", username="member")
+    finally:
+        engine.dispose()
+    return created.value
 
 
 @pytest.mark.req("EF-INT-025")
@@ -70,8 +65,9 @@ def test_stats_local_only_admin_only(
     api: AuthEnv,
     no_outbound_connection: list[object],
 ) -> None:
-    seed_thirty_days(api.settings, now=T0)
-    api.clock.current = T0
+    now = datetime.now(UTC)  # the CLI reads the system clock; the windows have an hour of margin
+    seed_thirty_days(api.settings, now=now)
+    api.clock.current = now
 
     # admin session: every indicator is there
     assert api.login().status_code == 200
@@ -85,7 +81,7 @@ def test_stats_local_only_admin_only(
     assert body["guards_triggered"] == {"sentinel": 1, "foreign_writer": 2}
 
     # a member's key and a member's session: 403, and no number leaks
-    key = _member_key(monkeypatch, capsys, api)
+    key = _member_key(api)
     denied = api.other_client("10.0.0.9").get(
         "/api/v1/stats", headers={"Authorization": f"Bearer {key}"}
     )
@@ -109,7 +105,8 @@ def test_stats_local_only_admin_only(
 def test_stats_window_excludes_older_activity(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
 ) -> None:
-    seed_thirty_days(api.settings, now=T0)
+    seed_thirty_days(api.settings, now=datetime.now(UTC))
+    capsys.readouterr()
     assert run_cli(monkeypatch, api.settings, "stats", "--since", "10d", "--json") == 0
     short = json.loads(capsys.readouterr().out)
     assert short["since_days"] == 10

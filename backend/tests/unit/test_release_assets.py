@@ -32,7 +32,7 @@ def _catalog(connection: sqlite3.Connection) -> list[tuple[str, str, str, str]]:
 
 @pytest.fixture
 def generated(tmp_path: Path) -> dict[str, str]:
-    from shelfhold.interfaces.release_assets import write_assets
+    from shelfhold.docgen.release_assets import write_assets
 
     out = tmp_path / "assets"
     write_assets(out)
@@ -71,7 +71,19 @@ def test_schema_sql_recreates_the_migrated_schema_with_sqlite_alone(
     rebuilt = sqlite3.connect(":memory:")
     try:
         rebuilt.executescript(generated["schema.sql"])  # `sqlite3` alone, nothing of Shelfhold
-        assert _catalog(rebuilt) == _catalog(migrated)  # tables, indexes, views, triggers
+        from shelfhold.docgen.release_assets import normalize_ddl
+
+        def same(connection: sqlite3.Connection) -> list[tuple[str, str, str, str]]:
+            return [(t, n, tbl, normalize_ddl(sql)) for t, n, tbl, sql in _catalog(connection)]
+
+        assert same(rebuilt) == same(migrated)  # tables, indexes, views, triggers
+        for table in (name for kind, name, _tbl, _sql in _catalog(migrated) if kind == "table"):
+            # the numbering of constraints follows their order, which is not part of the schema
+            for pragma, skip in (("table_xinfo", 0), ("foreign_key_list", 2), ("index_list", 1)):
+                query = f'PRAGMA {pragma}("{table}")'
+                assert sorted(r[skip:] for r in rebuilt.execute(query)) == sorted(
+                    r[skip:] for r in migrated.execute(query)
+                ), (table, pragma)
         assert rebuilt.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         rebuilt.close()
@@ -80,7 +92,7 @@ def test_schema_sql_recreates_the_migrated_schema_with_sqlite_alone(
 
 @pytest.mark.req("EF-INT-027")
 def test_schema_sql_is_reproducible(tmp_path: Path) -> None:
-    from shelfhold.interfaces.release_assets import write_assets
+    from shelfhold.docgen.release_assets import write_assets
 
     write_assets(tmp_path / "a")
     write_assets(tmp_path / "b")
@@ -90,7 +102,7 @@ def test_schema_sql_is_reproducible(tmp_path: Path) -> None:
 
 @pytest.mark.req("EF-INT-027")
 def test_every_table_and_column_has_a_description() -> None:
-    from shelfhold.interfaces.release_assets import load_descriptions, migrated_catalog
+    from shelfhold.docgen.release_assets import load_descriptions, migrated_catalog
 
     catalog = migrated_catalog()
     descriptions = load_descriptions()
@@ -105,7 +117,7 @@ def test_every_table_and_column_has_a_description() -> None:
 
 @pytest.mark.req("EF-INT-027")
 def test_no_description_names_a_table_or_column_that_does_not_exist() -> None:
-    from shelfhold.interfaces.release_assets import DESCRIPTIONS_FILE, migrated_catalog
+    from shelfhold.docgen.release_assets import DESCRIPTIONS_FILE, migrated_catalog
 
     catalog = migrated_catalog()
     raw = tomllib.loads(DESCRIPTIONS_FILE.read_text(encoding="utf-8"))
@@ -124,7 +136,7 @@ def test_no_description_names_a_table_or_column_that_does_not_exist() -> None:
 def test_dictionary_lists_sentinels_formats_and_their_versions(
     generated: dict[str, str],
 ) -> None:
-    from shelfhold.interfaces.release_assets import format_versions
+    from shelfhold.docgen.release_assets import format_versions
 
     text = generated["data-dictionary.md"]
     assert "## Sentinel values" in text
@@ -133,12 +145,12 @@ def test_dictionary_lists_sentinels_formats_and_their_versions(
         assert f"`{name}`" in text
         assert version in text
     assert "`und`" in text  # the language sentinel
-    assert "'full', 'partial'" in text or "`full`" in text  # allowed values come from the CHECKs
+    assert "'full', 'partial'" in text or "`full`" in text  # allowed values come from the CHECK constraints
 
 
 @pytest.mark.req("EF-INT-027")
 def test_a_column_without_description_fails_the_generation(tmp_path: Path) -> None:
-    from shelfhold.interfaces.release_assets import (
+    from shelfhold.docgen.release_assets import (
         Descriptions,
         MissingDescriptionError,
         write_assets,
