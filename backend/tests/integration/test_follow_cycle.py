@@ -132,14 +132,14 @@ def test_series_removed_from_suwayomi_stops_follow_keeps_files() -> None:
         assert bench.rows("SELECT 1 FROM series_follow")  # never a cascade
         assert bench.library_files() == files  # the files stay
         assert bench.rows("SELECT count(*) AS n FROM replica")[0]["n"] == copies_before
-        assert [e["edition_id"] for e in bench.events("series.tombstoned_upstream")] == [
+        assert [e["edition_id"] for e in bench.events("series.removed_upstream")] == [
             bench.edition_id
         ]
-        assert any(e.type == "series.tombstoned_upstream" for e in bench.delivered)
+        assert any(e.type == "series.removed_upstream" for e in bench.delivered)
 
         bench.add_chapter(4)
         again = bench.run()  # nothing is followed any more, nothing is announced twice
-        assert again.discovered == 0 and len(bench.events("series.tombstoned_upstream")) == 1
+        assert again.discovered == 0 and len(bench.events("series.removed_upstream")) == 1
 
         bench.alpha()["inLibrary"] = True  # it comes back: the follow resumes
         assert bench.run().removed == 0
@@ -344,7 +344,7 @@ def test_a_series_back_after_one_cycle_of_absence_is_never_deactivated() -> None
             assert bench.run().removed == 0  # absent once...
             bench.alpha()["inLibrary"] = True
             assert bench.run().removed == 0  # ...back: the count starts again
-        assert bench.binding()["active"] and bench.events("series.tombstoned_upstream") == []
+        assert bench.binding()["active"] and bench.events("series.removed_upstream") == []
 
 
 @pytest.mark.req("EF-SRC-027")
@@ -356,7 +356,7 @@ def test_an_emptied_library_deactivates_nothing_and_alerts_once() -> None:
         for _ in range(4):
             assert bench.run().removed == 0
         assert bench.binding()["active"]
-        assert bench.events("series.tombstoned_upstream") == []
+        assert bench.events("series.removed_upstream") == []
         assert len(bench.events("source.instance_changed")) == 1
         assert any(e.type == "source.instance_changed" for e in bench.delivered)
 

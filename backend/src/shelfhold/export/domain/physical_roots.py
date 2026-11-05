@@ -21,8 +21,10 @@ __all__ = [
     "RECYCLE_DIR",
     "RESERVED_DIR",
     "SENTINEL_FILE",
+    "SENTINEL_KIDS_FIELD",
     "SENTINEL_SCHEMA_VERSION",
     "STAGING_DIR",
+    "TOMBSTONE_JOURNAL",
     "ExpectedRoot",
     "RootSpec",
     "RootState",
@@ -39,6 +41,8 @@ RESERVED_DIR = ".shelfhold"
 LEASE_FILE = f"{RESERVED_DIR}/lease"  # the per-root write lease (ENF-OPS-015)
 STAGING_DIR = f"{RESERVED_DIR}/staging"
 RECYCLE_DIR = f"{RESERVED_DIR}/recycle"
+TOMBSTONE_JOURNAL = f"{RESERVED_DIR}/tombstones"  # append-only journal 2.0 (EF-BIB-053)
+SENTINEL_KIDS_FIELD = "tombstone_kids"  # registry of issued kids, copied per root (GAP-13-01)
 SENTINEL_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
 SUPPORTED_SENTINEL_MAJOR = 1
 _VERSION = re.compile(r"^(\d+)\.(\d+)$")

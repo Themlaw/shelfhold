@@ -79,6 +79,7 @@ retire_refused_unknown = "La clé {kid} n'existe pas dans le trousseau."
 retire_refused_active = "La clé {kid} est la clé active : elle n'est jamais retirée."
 retire_refused_in_use = "La clé {kid} protège encore des secrets : terminez la rotation d'abord."
 retire_refused_cited_by_tombstone = "La clé {kid} est citée par une pierre tombale : elle n'est jamais retirée."
+retire_refused_root_unavailable = "La clé {kid} n'est pas retirée : une racine de bibliothèque est démontée ou sa sentinelle est illisible, et elle pourrait la citer. Remontez toutes les racines puis réessayez."
 status_ok = "Trousseau : aucun avertissement."
 warning_key_in_data = "La clé maîtresse est dans /data ({detail}) : une copie de /data contient la clé à côté des secrets. Placez-la hors de /data avec SHELFHOLD_SECRET_KEY_FILE."
 warning_rows_on_retired_key = "{detail} secret(s) sont encore scellés sous une clé retirée (processus resté sur l'ancien trousseau, rotation inachevée) : relancez « shelfhold secrets rotate » puis redémarrez Shelfhold."
@@ -87,6 +88,8 @@ warning_keyring_absent = "Aucun trousseau à {detail} : il est créé au premier
 warning_rotation_incomplete = "Une rotation est inachevée : relancez « shelfhold secrets rotate »."
 warning_never_exported = "Le trousseau n'a jamais été exporté : « shelfhold secrets export --passphrase-file … --out … »."
 warning_export_older_than_rotation = "Le dernier export est antérieur à la dernière rotation : exportez de nouveau le trousseau."
+warning_tombstones_not_exported = "Des pierres tombales existent et le trousseau n'a pas été exporté depuis la première : sans lui, elles ne se lisent plus. Exportez-le avec « shelfhold secrets export »."
+warning_tombstone_kid_missing = "{detail} clé(s) citée(s) par des pierres tombales manquent au trousseau : réimportez le dernier export (« shelfhold secrets import »)."
 boot_keyring_unreadable = "Démarrage refusé : le trousseau est illisible pour cet utilisateur ({detail})."
 boot_keyring_corrupt = "Démarrage refusé : trousseau inutilisable ({detail})."
 boot_keyring_permissions = "Démarrage refusé : le trousseau {path} est non conforme (droits trop ouverts, propriétaire inattendu, ou modifiable par d'autres). Corrigez : chmod 600 {path} (et chown au compte qui lance Shelfhold)."
@@ -350,9 +353,13 @@ action = "Restaurez le trousseau de clés depuis son export (« shelfhold secret
 title = "Des séries ne sont plus mises à jour."
 action = "Vérifiez l'état de la source, puis relancez le suivi."
 
-[errors."series.tombstoned_upstream"]
+[errors."series.removed_upstream"]
 title = "La série a été retirée de la source."
 action = "Décidez de la conserver ou de la retirer de la bibliothèque."
+
+[errors."series.tombstoned_upstream"]
+title = "Une série purgée est encore dans la bibliothèque Suwayomi : elle est ignorée."
+action = "Retirez-la manuellement de la bibliothèque Suwayomi."
 
 [errors."shelf.parental_control_unavailable"]
 title = "Le contrôle parental n'est pas encore disponible."

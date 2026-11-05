@@ -6,6 +6,7 @@ that sealed rows can reference their key and so that a restore can be checked ag
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -167,3 +168,35 @@ def rows_not_on_key(database_path: Path, active_kid: str) -> int:
         return total
     finally:
         connection.close()
+
+
+@dataclass(frozen=True)
+class TombstoneKids:
+    first_at: datetime | None  # when the first tombstone was written (its kid registered)
+    kids: frozenset[str]
+    lost: frozenset[str]  # covered by the "lost keyring" waiver
+
+
+def tombstone_kids(database_path: Path) -> TombstoneKids:
+    """The registry of issued kids, read only (`status`, start-up check)."""
+    empty = TombstoneKids(None, frozenset(), frozenset())
+    if not database_path.exists():
+        return empty
+    connection = _read_only(database_path)
+    try:
+        try:
+            rows = connection.execute("SELECT kid, created_at FROM tombstone_kid").fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return empty
+            raise
+        try:
+            lost = {r[0] for r in connection.execute("SELECT kid FROM tombstone_lost_kid")}
+        except sqlite3.OperationalError as exc:
+            if "no such table" not in str(exc):
+                raise
+            lost = set()
+    finally:
+        connection.close()
+    stamps = [datetime.fromisoformat(str(r[1])).replace(tzinfo=UTC) for r in rows]
+    return TombstoneKids(min(stamps, default=None), frozenset(r[0] for r in rows), frozenset(lost))

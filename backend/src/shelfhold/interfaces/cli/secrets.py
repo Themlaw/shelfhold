@@ -131,6 +131,7 @@ def _refusal_text(exc: KeyRetirementRefusedError) -> str:
         "active": t("secrets.retire_refused_active", kid=exc.kid),
         "in_use": t("secrets.retire_refused_in_use", kid=exc.kid),
         "cited_by_tombstone": t("secrets.retire_refused_cited_by_tombstone", kid=exc.kid),
+        "root_unavailable": t("secrets.retire_refused_root_unavailable", kid=exc.kid),
     }
     return texts[exc.reason]
 
@@ -145,6 +146,8 @@ def _warning_text(warning: diagnostics.KeyringWarning) -> str:
         "rotation_incomplete": t("secrets.warning_rotation_incomplete"),
         "never_exported": t("secrets.warning_never_exported"),
         "export_older_than_rotation": t("secrets.warning_export_older_than_rotation"),
+        "tombstones_not_exported": t("secrets.warning_tombstones_not_exported"),
+        "tombstone_kid_missing": t("secrets.warning_tombstone_kid_missing", detail=detail),
     }
     return texts[warning.code]
 
