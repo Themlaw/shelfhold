@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.infrastructure.schema import catalog, storage
-from shelfhold.library.replica import library_copies, record_replica
+from shelfhold.library.replica import forget_destination_copies, library_copies, record_replica
 
 
 @dataclass(frozen=True)
@@ -93,12 +93,7 @@ def record_destination_copy(
     """The rendered file in a destination tree. Never counted as independent: Kavita may rewrite
     it, and it is not the original (`independent_copies` counts the others). A file put back after
     it vanished replaces the stale row of the same item (EF-EXP-018)."""
-    connection.execute(
-        sa.delete(storage.replica).where(
-            storage.replica.c.export_item_id == export_item_id,
-            storage.replica.c.location == "destination",
-        )
-    )
+    forget_destination_copies(connection, export_item_id)
     return record_replica(
         connection,
         unit_id=unit_id,

@@ -138,6 +138,16 @@ def record_replica(
     return replica_id
 
 
+def forget_destination_copies(connection: Connection, export_item_id: str) -> None:
+    """The stale `destination` rows of an item that is written again (EF-EXP-018)."""
+    connection.execute(
+        sa.delete(replica_table).where(
+            replica_table.c.export_item_id == export_item_id,
+            replica_table.c.location == "destination",
+        )
+    )
+
+
 @dataclass(frozen=True)
 class LibraryCopy:
     replica_id: str
