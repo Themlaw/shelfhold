@@ -11,8 +11,8 @@ from shelfhold.export.domain.provenance_mirror import (
     MirrorFormatError,
     grant_lineage,
     is_diagnostic_excluded,
-    mirror_name,
     merge_with_database,
+    mirror_name,
 )
 from shelfhold.infrastructure.ids import new_ulid
 from tests.mirror_env import entry, entry_1_0, h, header, raw

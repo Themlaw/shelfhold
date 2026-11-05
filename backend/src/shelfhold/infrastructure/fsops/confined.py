@@ -267,7 +267,7 @@ class ConfinedRoot:
                     following = self._open_dir_at(current, part)
                     try:
                         if created:
-                            self._set_mode(following)
+                            self._set_mode(following, mode)
                             if durable:
                                 os.fsync(current)
                     except BaseException:
@@ -284,7 +284,7 @@ class ConfinedRoot:
             if created and self.umask is not None:
                 child = self._open_dir_at(parent, name)
                 try:
-                    self._set_mode(child)
+                    self._set_mode(child, mode)
                 finally:
                     os.close(child)
             if created and durable:
@@ -304,9 +304,9 @@ class ConfinedRoot:
             return False
         return True
 
-    def _set_mode(self, dir_fd: int) -> None:
+    def _set_mode(self, dir_fd: int, mode: int) -> None:
         if self.umask is not None:
-            os.fchmod(dir_fd, self.file_mode(0o777))
+            os.fchmod(dir_fd, self.file_mode(mode))
 
     def unlink(self, rel: str) -> None:
         parent, name = self._parent(rel)

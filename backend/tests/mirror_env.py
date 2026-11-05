@@ -1,4 +1,4 @@
-"""Builders for provenance-mirror files (EF-EXP-063): synthetic lines, never read from a real tree."""
+"""Builders for provenance-mirror files (EF-EXP-063): synthetic lines only."""
 
 import hashlib
 import json

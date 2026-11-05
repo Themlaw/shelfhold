@@ -63,6 +63,7 @@ def test_manifest_mirror_written_under_intent_after_file(monkeypatch: pytest.Mon
         monkeypatch.setattr(Fsops, "write_mirror", mirror)
         series = env.new_series()
         env.add_chapter(series, "1")
+        order.clear()  # the archive was received through `write_atomic` too
         env.pipeline.run(env.destination_id, job_id=new_ulid())
         assert order == ["file", "mirror"]
         assert states == ["applying"]
@@ -187,7 +188,7 @@ def test_manifest_mirror_lineage_per_coverage_entry_from_the_database() -> None:
             connection.execute(
                 sa.insert(export.edition_export_series).values(
                     edition_id=series.edition_id, remote_library_id=env.remote_library_id,
-                    export_series_id=series_id, assigned_by="adoption",
+                    export_series_id=series_id, assigned_by="plan",
                     assigned_at=env.clock.now(),
                 )
             )  # fmt: skip
@@ -300,7 +301,5 @@ def test_a_run_heals_a_lost_mirror() -> None:
 
 def test_a_pull_destination_has_no_mirror() -> None:
     with export_env(transport="pull") as env:
-        series = env.new_series()
-        env.add_chapter(series, "1")
-        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        assert mirror_of(env).rebuild(env.destination_id) == []
         assert not (env.lib.library / RESERVED_DIR / "manifest").exists()

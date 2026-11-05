@@ -44,6 +44,7 @@ _LINE_VALUE = re.compile(
 )
 _URL_USERINFO = re.compile(r"(?P<head>//[^/\s:@]*:)[^/\s@]+(?P<tail>@)")
 _OPDS_KEY = re.compile(r"(?P<head>/api/opds/)[^/\s?#]+")
+_SOURCE_URL = re.compile(r"""\b[a-z][a-z0-9+.-]*://[^\s'"<>)\]}]+""", re.IGNORECASE)
 _known_values: set[str] = set()
 
 
@@ -59,6 +60,12 @@ def register_secret_value(value: str) -> None:
 
 def forget_secret_values() -> None:
     _known_values.clear()
+
+
+def redact_source_urls(text: str) -> str:
+    """Mask every URL in a text (a diagnostic bundle must not name where content comes from,
+    EF-EXP-063 / I33); the rest of the text is left as it is."""
+    return _SOURCE_URL.sub(REDACTED, text)
 
 
 def _scrub_text(text: str) -> str:

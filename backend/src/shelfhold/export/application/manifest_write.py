@@ -11,6 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.export.application.intents import ManifestHook, OpenIntent
+from shelfhold.export.domain.provenance_mirror import MIRROR_DIR
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.identity import FileIdentity
@@ -63,8 +64,8 @@ def adopt_written_hook(fsops: Fsops, locate: Locate, clock: Clock) -> ManifestHo
     target gets its reserved manifest line completed; other operations are not ours."""
 
     def adopt(connection: Connection, intent: OpenIntent) -> None:
-        if intent.op != "write" or intent.dst is None:
-            return
+        if intent.op != "write" or intent.dst is None or f"/{MIRROR_DIR}/" in intent.dst:
+            return  # a provenance mirror file has no manifest line to complete
         record = export.export_record
         for row in connection.execute(
             sa.select(

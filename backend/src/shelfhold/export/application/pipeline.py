@@ -21,6 +21,7 @@ from shelfhold.export.application.export_items import create_export_item, ensure
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
 from shelfhold.export.application.locks import ResourceLocks, library_resource
 from shelfhold.export.application.manifest_write import complete_write
+from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.plans import PlanOp, PlanStore
 from shelfhold.export.application.rendering import CbzRenderer, RenderedCbz, comicinfo_data
 from shelfhold.export.application.snapshot import (
@@ -124,6 +125,7 @@ class ExportPipeline:
         parse_verified: bool,
         segment_policy_confirmed: bool = False,
         renderer: CbzRenderer | None = None,
+        mirror: ProvenanceMirror | None = None,
     ) -> None:
         self._engine = engine
         self._fsops = fsops
@@ -136,6 +138,7 @@ class ExportPipeline:
         self._parse_verified = parse_verified
         self._renderer = renderer or CbzRenderer(fsops, staging_dir=data_dir / "tmp")
         self._locks = ResourceLocks(engine, clock=clock)
+        self.mirror = mirror or ProvenanceMirror(engine, fsops, clock=clock)
 
     def _require_verified(self) -> None:
         if not self._parse_verified:
@@ -185,10 +188,24 @@ class ExportPipeline:
         """Plan, then apply; a plan with nothing to do is not even stored (idempotence)."""
         self._require_verified()
         ctx, loaded, plan = self._compute(destination_id)
+        self._heal_mirror(ctx)
         if not plan.ops:
             return ApplyReport(None, ())
         plan_id = self._store(ctx, loaded, plan)
         return self.apply(plan_id, if_match=loaded.version, job_id=job_id)
+
+    def _heal_mirror(self, ctx: DestinationContext) -> None:
+        """A mirror file lost, or never written because a run stopped after its file: the
+        database is the authority, so it is projected again (EF-EXP-063)."""
+        if not self.mirror.would_write(ctx.destination_id):
+            return
+        opened = (
+            self._sessions.open(ctx.local("."))
+            if self._sessions and ctx.root_local
+            else nullcontext(self._fsops)
+        )
+        with opened as writer:
+            self.mirror.sync_destination(ctx.destination_id, writer=writer)
 
     # -- applying --------------------------------------------------------------------------------
 
@@ -307,17 +324,22 @@ class ExportPipeline:
                     target, rendered.file, parents=True, replace=False,
                     verify_digest=lambda: rendered.file_hash.removeprefix("sha256:"),
                 )  # fmt: skip
+                with self._engine.begin() as connection:
+                    complete_write(
+                        connection, self._fsops, self._locate, self._clock.now(),
+                        destination_id=ctx.destination_id, item_id=item_id, target=target,
+                        identity=identity,
+                    )  # fmt: skip
+                    journal.mark_done(intent, within=connection)
+                # same write session, after the file and its manifest line (EF-EXP-063, I33)
+                self.mirror.sync_destination(
+                    ctx.destination_id, folder=str(planned.rel_path).split("/", 1)[0],
+                    writer=writer,
+                )  # fmt: skip
         except BaseException:
             if self._fsops.observe(target) is None:  # nothing was placed: nothing to settle
                 journal.cancel(intent)
             raise
-        with self._engine.begin() as connection:
-            complete_write(
-                connection, self._fsops, self._locate, self._clock.now(),
-                destination_id=ctx.destination_id, item_id=item_id, target=target,
-                identity=identity,
-            )  # fmt: skip
-            journal.mark_done(intent, within=connection)
 
     @staticmethod
     def _reserved(planned: PlannedOp, rendered: RenderedCbz) -> dict[str, Any]:

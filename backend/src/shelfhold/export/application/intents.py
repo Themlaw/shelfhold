@@ -23,6 +23,7 @@ from typing import Protocol
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
+from shelfhold.export.domain.provenance_mirror import MIRROR_DIR
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.fsops import FileIdentity, FsopsError
 from shelfhold.infrastructure.fsops.confined import Kind
@@ -329,12 +330,18 @@ class IntentJournal:
         if intent.dst is None:
             return self._drift(intent, report, "a write needs its target")
         found = self._disk.observe(intent.dst)
+        mirror = f"/{MIRROR_DIR}/" in intent.dst  # a projection of the database (EF-EXP-063)
         if found is None:
             self._close(intent.id, "cancelled")
             report.abandoned.append(intent.id)
         elif found[0] == "file" and self._is_expected(intent, intent.dst, found[1]):
             self._finish(intent, on_done)
             report.completed.append(intent.id)
+        elif mirror and found[0] == "file":
+            # the previous mirror file, the write never landed (it is atomic): nothing to settle,
+            # the next run or `meta rebuild` projects the database again
+            self._close(intent.id, "cancelled")
+            report.abandoned.append(intent.id)
         else:
             self._drift(intent, report, "the target is not the file that was being written")
 

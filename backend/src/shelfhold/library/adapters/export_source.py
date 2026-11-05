@@ -24,6 +24,10 @@ class ExportSource:
     watermarked: bool
     page_count: int | None
     local_path: str | None  # the library copy to read, if any
+    variant_id: str | None = None  # the Variant this archive was received for
+    content_hash_by: str | None = None  # the function of `content_hash` (provenance mirror)
+    derived_hash: str | None = None
+    derived_by: str | None = None
 
 
 def export_sources(connection: Connection, unit_ids: Sequence[str]) -> dict[str, ExportSource]:
@@ -39,6 +43,10 @@ def export_sources(connection: Connection, unit_ids: Sequence[str]) -> dict[str,
             content.c.original_sha256,
             content.c.watermarked,
             content.c.page_count,
+            content.c.variant_id,
+            content.c.content_hash_by,
+            content.c.derived_hash,
+            content.c.derived_by,
         )
         .select_from(content.outerjoin(variant, variant.c.id == content.c.variant_id))
         .where(content.c.unit_id.in_(unit_ids), content.c.format == "cbz")
@@ -59,6 +67,10 @@ def export_sources(connection: Connection, unit_ids: Sequence[str]) -> dict[str,
             bool(row.watermarked),
             row.page_count,
             copies[0].local if copies else None,
+            row.variant_id,
+            row.content_hash_by,
+            row.derived_hash,
+            row.derived_by,
         )
     return found
 
