@@ -55,7 +55,7 @@ def test_full_comicinfo_golden() -> None:
         series_sort="Stone, Dr", localized_series="ドクターストーン", summary="Un <b>résumé</b>.",
         year=2019, month=3, day=8,
         people={"Writer": (who("Inagaki, Riichiro"),), "Penciller": (who("Boichi"),)},
-        team_label="Équipe Exemple", publisher="Éditeur", genres=("Aventure", "Science-fiction"),
+        team_label="Équipe Aurore", publisher="Éditeur", genres=("Aventure", "Science-fiction"),
         language_iso="fr", age=AgeRating(13), right_to_left=True, page_count=18,
     )  # fmt: skip
     xml = render_comicinfo(data).xml

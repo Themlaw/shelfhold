@@ -34,7 +34,7 @@ FULL = ComicInfoData(
     month=3,
     day=8,
     people={"Writer": (person("Riichiro Inagaki"),), "Penciller": (person("Boichi"),)},
-    team_label="Équipe Exemple",
+    team_label="Équipe Aurore",
     publisher="Éditeur",
     genres=("Aventure", "Science-fiction"),
     language_iso="fr",
@@ -109,8 +109,8 @@ def test_comicinfo_translator_is_team_web_empty_by_default() -> None:
     default = render_comicinfo(ComicInfoData(series="S")).xml
     assert text_of(default, "Translator") is None
     assert text_of(default, "Web") is None
-    with_team = render_comicinfo(ComicInfoData(series="S", team_label="Équipe Exemple")).xml
-    assert text_of(with_team, "Translator") == "Équipe Exemple"
+    with_team = render_comicinfo(ComicInfoData(series="S", team_label="Équipe Aurore")).xml
+    assert text_of(with_team, "Translator") == "Équipe Aurore"
     assert text_of(with_team, "Web") is None  # no source reference unless explicitly given
 
 
@@ -137,12 +137,12 @@ def test_commas_replaced_in_translator_publisher_and_genres() -> None:
     rendered = render_comicinfo(
         ComicInfoData(
             series="S",
-            team_label="Équipe, Exemple",
+            team_label="Équipe, Aurore",
             publisher="Éditeur, Ltd.",
             genres=("Aventure, Action", "Drame"),
         )
     )
-    assert text_of(rendered.xml, "Translator") == "Équipe Exemple"
+    assert text_of(rendered.xml, "Translator") == "Équipe Aurore"
     assert text_of(rendered.xml, "Publisher") == "Éditeur Ltd."
     assert text_of(rendered.xml, "Genre") == "Aventure Action, Drame"  # the only commas separate
     assert len(rendered.warnings) == 3
