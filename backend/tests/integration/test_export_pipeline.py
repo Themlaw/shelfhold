@@ -164,3 +164,17 @@ def test_second_shelf_on_the_same_remote_library_is_blocked_by_the_loaded_series
         assert [b.code for b in preview.blocked] == ["export.series_name_collision"]
         assert preview.ops == ()
         assert {w.code for w in preview.warnings} == {"age_tier_mix"}  # 18 and X in one library
+
+
+@pytest.mark.req("EF-EXP-062")
+def test_a_pull_plan_is_stored_and_executed() -> None:
+    """A `pull` destination gets a manifest line only (`register`): the plan can be stored."""
+    with export_env(transport="pull") as env:
+        series = env.new_series()
+        env.add_chapter(series, "1")
+        preview = env.pipeline.preview(env.destination_id)
+        assert [op.kind for op in preview.ops] == ["register"]
+        env.pipeline.apply(preview.plan_id, if_match=preview.base_version, job_id=new_ulid())
+        (record,) = env.rows(export.export_record)
+        assert record.locator_type == "none" and record.state == "written"
+        assert env.files() == []

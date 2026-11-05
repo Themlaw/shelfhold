@@ -23,7 +23,9 @@ INTENT_OPS = (
 INTENT_STATES = ("pending", "applying", "done", "cancelled", "stale_from_backup")
 PLAN_KINDS = ("export", "adopt", "rename_plan", "detach", "remove")
 PLAN_STATUSES = ("planned", "applying", "done", "cancelled", "failed", "stale")
-PLAN_OPS = ("mkdir", "write", "rename", "recycle", "delete", "touch_mtime", "api_call")
+PLAN_OPS = (
+    "mkdir", "write", "rename", "recycle", "delete", "touch_mtime", "api_call", "register",
+)  # fmt: skip
 PLAN_OP_STATUSES = ("pending", "done", "skipped", "failed")
 KEY_STATES = ("active", "retired", "compromised")
 TOMBSTONE_SCOPES = ("variant", "place", "series_binding", "work")
