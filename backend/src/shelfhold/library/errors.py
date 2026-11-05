@@ -10,6 +10,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("tombstone.key_unknown", 409, "admin", event=True),
     ErrorCode("tombstone.root_mismatch", 409, "admin", event=True),
     ErrorCode("unit.safeguard_failed", 500, "admin", event=True),
+    ErrorCode("unit.confirmation_required", 409, "user"),
     ErrorCode("unit.safeguard_backlog", 503, "admin", event=True),
     ErrorCode("series.gap", 409, "user", event=True),
     ErrorCode("tombstone.journal_truncated", 409, "admin", event=True),

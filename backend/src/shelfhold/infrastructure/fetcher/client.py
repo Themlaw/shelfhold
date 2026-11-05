@@ -9,11 +9,12 @@ the same steps; credentials never follow a redirect to another origin. No proxy 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import ipaddress
 import ssl
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 import httpx2
 
@@ -56,6 +57,34 @@ class FetchLimits:
     connect_timeout: float = 10.0
     read_timeout: float = 30.0  # between two chunks
     max_redirects: int = 5
+
+
+class Sink(Protocol):
+    """Where a download goes: a file object opened for writing, never the whole body in memory."""
+
+    def write(self, data: bytes, /) -> object: ...
+
+
+@dataclass(frozen=True)
+class Download:
+    status: int
+    headers: dict[str, str]
+    size: int  # bytes written to the sink (0 for a non-2xx status: nothing is written)
+    sha256: str  # `sha256:<hex>` of those bytes
+
+
+class _Tally:
+    """Counts and hashes what goes to the sink."""
+
+    def __init__(self, sink: Sink) -> None:
+        self.sink = sink
+        self.size = 0
+        self.digest = hashlib.sha256()
+
+    def write(self, chunk: bytes) -> None:
+        self.sink.write(chunk)
+        self.size += len(chunk)
+        self.digest.update(chunk)
 
 
 class GuardedFetcher:
@@ -103,7 +132,7 @@ class GuardedFetcher:
         merged = dict(headers or {})
         if referer:
             merged["Referer"] = referer
-        return await self._fetch("GET", url, merged, params, {}, max_bytes)
+        return await self._fetch("GET", url, merged, params, {}, max_bytes, None, None)
 
     async def post(
         self,
@@ -119,7 +148,36 @@ class GuardedFetcher:
             body["data"] = dict(data)
         if json is not None:
             body["json"] = json
-        return await self._fetch("POST", url, dict(headers or {}), None, body, max_bytes)
+        return await self._fetch(
+            "POST", url, dict(headers or {}), None, body, max_bytes, None, None
+        )
+
+    async def download(
+        self,
+        url: str,
+        sink: Sink,
+        *,
+        max_bytes: int,
+        headers: Mapping[str, str] | None = None,
+        referer: str | None = None,
+        total_timeout: float | None = None,
+    ) -> Download:
+        """GET a large body straight into `sink`, chunk by chunk.
+
+        The bound is the call's own (`max_bytes`, no default: the caller states it), checked on the
+        declared length first and then on the bytes actually received. Everything else is the
+        `get` path: same URL checks, same pinned address, same redirections (the body of a
+        redirection is never written). A non-2xx answer writes nothing and is returned as is.
+        `total_timeout` replaces the whole-call limit for a download that legitimately takes long.
+        """
+        merged = dict(headers or {})
+        if referer:
+            merged["Referer"] = referer
+        tally = _Tally(sink)
+        response = await self._fetch("GET", url, merged, None, {}, max_bytes, tally, total_timeout)
+        return Download(
+            response.status, response.headers, tally.size, "sha256:" + tally.digest.hexdigest()
+        )
 
     # -- internals -----------------------------------------------------------------------------
 
@@ -131,10 +189,14 @@ class GuardedFetcher:
         params: Mapping[str, Any] | None,
         body: dict[str, Any],
         max_bytes: int | None,
+        tally: _Tally | None,
+        total_timeout: float | None,
     ) -> Response:
         try:
-            async with asyncio.timeout(self._limits.total_timeout):
-                return await self._follow(method, url, headers, params, body, max_bytes)
+            async with asyncio.timeout(
+                self._limits.total_timeout if total_timeout is None else total_timeout
+            ):
+                return await self._follow(method, url, headers, params, body, max_bytes, tally)
         except (TimeoutError, httpx2.TimeoutException) as exc:
             raise FetchTimeout("the response took too long") from exc
         except (httpx2.HTTPError, httpx2.StreamError) as exc:
@@ -148,6 +210,7 @@ class GuardedFetcher:
         params: Mapping[str, Any] | None,
         body: dict[str, Any],
         max_bytes: int | None,
+        tally: _Tally | None,
     ) -> Response:
         url = _parse_url(raw_url)
         if params:
@@ -158,7 +221,7 @@ class GuardedFetcher:
             # a LAN target is reachable only as the origin the caller asked for, never by redirect
             on_lan = _origin(url) == first and self._lan.addresses(url.host, _port(url)) is not None
             addresses = await self._pin(url, allow_lan=on_lan)
-            response = await self._send(method, url, addresses, headers, body, cap)
+            response = await self._send(method, url, addresses, headers, body, cap, tally)
             location = response.headers.get("location")
             if response.status not in _REDIRECTS or not location:
                 return response
@@ -211,6 +274,7 @@ class GuardedFetcher:
         headers: dict[str, str],
         body: dict[str, Any],
         cap: int,
+        tally: _Tally | None,
     ) -> Response:
         host = url.host
         # the caller cannot choose the Host: it must name the host that was validated
@@ -240,7 +304,7 @@ class GuardedFetcher:
             except httpx2.HTTPError as exc:
                 raise FetchUnreachable(f"request to {host} failed: {type(exc).__name__}") from exc
             try:
-                return await _read(response, cap)
+                return await _read(response, cap, tally)
             except (httpx2.TimeoutException, FetchError):
                 raise
             except (httpx2.HTTPError, httpx2.StreamError) as exc:
@@ -248,7 +312,7 @@ class GuardedFetcher:
         raise FetchUnreachable(f"cannot connect to {host}") from last
 
 
-async def _read(response: httpx2.Response, cap: int) -> Response:
+async def _read(response: httpx2.Response, cap: int, tally: _Tally | None = None) -> Response:
     try:
         declared = response.headers.get("content-length")
         if (
@@ -258,6 +322,12 @@ async def _read(response: httpx2.Response, cap: int) -> Response:
             and not response.headers.get("content-encoding")
         ):
             raise FetchTooLarge(f"the response declares {declared} bytes, above {cap}")
+        if tally is not None:
+            # Only a 2xx body is a download. The body of a redirection or of an error is dropped
+            # unread; the caller sees the status.
+            if not 200 <= response.status_code < 300:
+                return Response(status=response.status_code, headers=dict(response.headers))
+            return await _stream(response, cap, tally)
         chunks: list[bytes] = []
         total = 0
         async for chunk in response.aiter_bytes():
@@ -270,6 +340,16 @@ async def _read(response: httpx2.Response, cap: int) -> Response:
         )
     finally:
         await response.aclose()
+
+
+async def _stream(response: httpx2.Response, cap: int, tally: _Tally) -> Response:
+    total = 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > cap:
+            raise FetchTooLarge(f"the response is larger than {cap} bytes")
+        tally.write(chunk)
+    return Response(status=response.status_code, headers=dict(response.headers))
 
 
 def _parse_url(raw: str) -> httpx2.URL:

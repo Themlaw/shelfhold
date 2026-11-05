@@ -59,6 +59,9 @@ class Settings(BaseModel):
     # ENF-LEG-012: where the running code is offered (login page, /api/v1/about); None = the
     # repository at the tag of this version. Point it at your fork if you modified the code.
     source_url: str | None = None
+    # ENF-SEC-002: the most a connected service may send as one comic archive (a CBZ). Streamed to
+    # the staging file and checked against this bound while it arrives; 512 MiB by default.
+    received_cbz_max_bytes: int = Field(default=512 * 1024 * 1024, ge=1024 * 1024)
     # P1/P2/P3: the hardened profile (docs/admin/durcir.md) shortens admin sessions and asks for
     # a fresh password on every reserved action; never required. The invisible protections
     # (argon2id, CSRF, cookies, CSP, attempt limiting) have no setting at all.

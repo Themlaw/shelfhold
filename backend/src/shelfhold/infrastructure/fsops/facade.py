@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from typing import Literal, Self
+from typing import BinaryIO, Literal, Self
 
 from shelfhold.export.domain.path_map import (
     PathMap,
@@ -309,6 +309,23 @@ class Fsops:
             finally:
                 os.close(fd)
 
+    @contextmanager
+    def open_read(self, local: str) -> Iterator[BinaryIO]:
+        """A regular file (`open_file` refuses any other) opened for reading, as a seekable stream.
+
+        For callers that must not hold a whole archive in memory (`safe_open_archive` on a CBZ)."""
+        located = self._locate(local)
+        with self._root(located.root_path) as root:
+            fd = root.open_file(located.rel, os.O_RDONLY)
+            with os.fdopen(fd, "rb") as stream:
+                yield stream
+
+    def device_of(self, local: str) -> int:
+        """`st_dev` of a file (a link is not followed): with the inode, what makes a hard link."""
+        located = self._locate(local)
+        with self._root(located.root_path) as root:
+            return root.stat(located.rel).st_dev
+
     def observe(self, local: str) -> tuple[Kind, FileIdentity] | None:
         """What is at `local` (a link is described, never followed), or None when nothing is."""
         located = self._locate(local)
@@ -383,12 +400,16 @@ class Fsops:
         parents: bool = False,
         replace: bool = True,
         mtime_ns: int | None = None,
+        verify_digest: Callable[[], str] | None = None,
     ) -> FileIdentity:
+        """Stage, flush, (optionally) read the staged file back against `verify_digest()` (a
+        hex SHA-256), then put it in place: nothing is placed when the digest does not match."""
         located = self._locate(local)
         with self._gated(located) as root:
             return write_atomic(
-                root, located.rel, data, parents=parents, replace=replace, mtime_ns=mtime_ns
-            )
+                root, located.rel, data, parents=parents, replace=replace, mtime_ns=mtime_ns,
+                verify_digest=verify_digest,
+            )  # fmt: skip
 
     def mkdir(self, local: str, *, parents: bool = True) -> None:
         located = self._locate(local)

@@ -934,6 +934,10 @@
       "code": "unauthenticated",
       "status": 401
     },
+    "/api/v1/problems/unit.confirmation-required": {
+      "code": "unit.confirmation_required",
+      "status": 409
+    },
     "/api/v1/problems/unit.safeguard-backlog": {
       "code": "unit.safeguard_backlog",
       "status": 503
