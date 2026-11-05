@@ -56,7 +56,10 @@ def create_app(
     def pipeline() -> object:
         # Plans can be previewed; applying one needs the Kavita `plugin/parse` check (L29).
         return open_pipeline(
-            resolved, write_gate=runtime.require_space, stop_gate=runtime.barrier.require_open
+            resolved,
+            write_gate=runtime.require_space,
+            stop_gate=runtime.barrier.require_open,
+            gate=runtime.require_writable,
         )
 
     @cache

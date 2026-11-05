@@ -25,6 +25,7 @@ class RootRow:
     path: str
     mode: PathMode
     generation: int
+    predecessors: tuple[str, ...] = ()  # root ids this root had before (`root takeover`)
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class LoadedRoots:
     path_map: PathMap
     expected: list[ExpectedRoot]
     roots: tuple[RootRow, ...]
+    restore_pending: bool = False  # `restored_behind` until the adoption (persisted, EF-INT-026)
 
     def locate(self, local: str) -> tuple[str, str]:
         """`(root id, path relative to that root)` of a local path."""
@@ -56,10 +58,23 @@ def _containing(roots: tuple[RootRow, ...], path: str) -> RootRow | None:
 
 
 def load_roots(connection: Connection, path_map: PathMap) -> LoadedRoots:
-    instance_id = connection.execute(sa.select(platform.instance.c.instance_id)).scalar_one()
+    head = connection.execute(
+        sa.select(
+            platform.instance.c.instance_id,
+            platform.instance.c.restore_epoch,
+            platform.instance.c.restore_generation,
+        )
+    ).one()
+    instance_id = head.instance_id
     table = platform.physical_root
     roots = tuple(
-        RootRow(r.root_id, clean_absolute(r.path_entry), PathMode(r.mode), r.generation)
+        RootRow(
+            r.root_id,
+            clean_absolute(r.path_entry),
+            PathMode(r.mode),
+            r.generation,
+            tuple(p for p in (r.predecessor_instance_ids or []) if isinstance(p, str)),
+        )
         for r in connection.execute(sa.select(table).order_by(table.c.path_entry))
     )
     entries: list[PathEntry] = []
@@ -68,8 +83,8 @@ def load_roots(connection: Connection, path_map: PathMap) -> LoadedRoots:
         mode = PathMode.ADOPT_RO if root and root.mode is PathMode.ADOPT_RO else entry.mode
         entries.append(PathEntry(entry.local, entry.remote, mode))
     expected = [
-        ExpectedRoot(r.root_id, r.path, instance_id, r.generation)
+        ExpectedRoot(r.root_id, r.path, instance_id, r.generation, head.restore_epoch)
         for r in roots
         if r.mode is PathMode.RW
     ]
-    return LoadedRoots(PathMap(tuple(entries)), expected, roots)
+    return LoadedRoots(PathMap(tuple(entries)), expected, roots, head.restore_generation > 0)

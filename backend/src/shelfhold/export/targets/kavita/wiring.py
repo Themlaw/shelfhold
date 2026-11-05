@@ -150,7 +150,7 @@ def open_adoption(settings: Settings, destination_id: str) -> AdoptionSession:
         engine, vault, IntegrationFetcher(resolver, lan_targets=lan), target_id=row.id,
         base_url=url, events=events, clock=clock,
     )  # fmt: skip
-    fsops = Fsops.open(loaded.path_map, loaded.expected)
+    fsops = Fsops.open(loaded.path_map, loaded.expected, frozen=loaded.restore_pending)
     tombstones = TombstoneService(engine, keyring, fsops, EventBus(clock))
     tombstones.replay(
         [

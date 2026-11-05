@@ -284,6 +284,8 @@ class JobPools:
     # -- the task body, run by a worker thread ----------------------------------------------
 
     def _execute(self, job_id: str) -> None:
+        if self.scheduler.held:  # `restored_behind`: nothing runs until the adoption (EF-INT-026)
+            raise RetryTask(delay=RETRY_DELAY_S)
         if self._stopping:
             self.ledger.forget_dispatch(job_id)  # the task is consumed: the next boot re-sends it
             return

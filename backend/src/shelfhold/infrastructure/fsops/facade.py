@@ -30,6 +30,7 @@ from shelfhold.export.domain.physical_roots import (
     STAGING_DIR,
     ExpectedRoot,
     RootState,
+    SentinelDocument,
     SentinelVerdict,
     is_reserved,
     judge_sentinel,
@@ -150,6 +151,7 @@ class Fsops:
         write_gate: Callable[[], None] | None = None,
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
+        frozen: bool = False,
     ) -> None:
         self._disk_guard = disk_guard
         self._stop_gate = stop_gate  # raises once the shutdown went past its checkpoint delay
@@ -162,6 +164,26 @@ class Fsops:
         self._strategy = strategy
         self._lease_verifier: Callable[[str, bytes | None], None] | None = None
         self._tombstones_owed: Callable[[str], bool] | None = None
+        self._frozen = frozen
+        self._behind_hook: Callable[[], None] | None = None
+
+    @property
+    def frozen(self) -> bool:
+        return self._frozen
+
+    def on_restored_behind(self, hook: Callable[[], None] | None) -> None:
+        """Called when a write finds a root whose sentinel is ahead of the database (a root that
+        came back after the start): the composition root persists the freeze (EF-INT-026)."""
+        self._behind_hook = hook
+
+    def freeze(self) -> None:
+        """Read-only for the whole instance, every root, until `unfreeze`: the database is older
+        than the disk (`restored_behind`, EF-INT-026). Reads, observation and hashing still work;
+        no write, deletion, session or scan does."""
+        self._frozen = True
+
+    def unfreeze(self) -> None:
+        self._frozen = False
 
     def enforce_lease(self, verify: Callable[[str, bytes | None], None] | None) -> None:
         """From now on every write passes `verify(root_path, raw_lease)`, which raises when the
@@ -187,11 +209,13 @@ class Fsops:
         write_gate: Callable[[], None] | None = None,
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
+        frozen: bool = False,
     ) -> Self:
-        """No file system access: roots are opened, and their sentinels read, per operation."""
+        """No file system access: roots are opened, and their sentinels read, per operation.
+        `frozen`: the database says `restored_behind` (read from `LoadedRoots.restore_pending`)."""
         return cls(
             path_map, expected, umask=umask, strategy=strategy, disk_guard=disk_guard,
-            write_gate=write_gate, stop_gate=stop_gate, now=now,
+            write_gate=write_gate, stop_gate=stop_gate, now=now, frozen=frozen,
         )  # fmt: skip
 
     # -- locating ---------------------------------------------------------------------------
@@ -257,12 +281,16 @@ class Fsops:
             self._stop_gate()
         if located.read_only:
             raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
+        if self._frozen:
+            raise RootBlockedError(located.root_path, RootState.RESTORED_BEHIND)
         owed = self._tombstones_owed
         if lease and not tombstone and owed is not None and owed(located.root_path):
             raise TombstonePendingError(located.root_path)
         with self._root(located.root_path) as root:
             verdict = self._verdict(root)
             if verdict.blocks_writes:
+                if verdict.state is RootState.RESTORED_BEHIND and self._behind_hook is not None:
+                    self._behind_hook()
                 raise RootBlockedError(located.root_path, verdict.state)
             if lease and self._lease_verifier is not None:
                 self._lease_verifier(located.root_path, _read_lease(root))
@@ -293,6 +321,8 @@ class Fsops:
         located = self._locate(local)
         if located.read_only:
             return
+        if self._frozen:
+            raise RootBlockedError(located.root_path, RootState.RESTORED_BEHIND)
         with self._root(located.root_path) as root:
             verdict = self._verdict(root)
             if verdict.blocks_scans_and_deletions:
@@ -312,6 +342,9 @@ class Fsops:
         """Per root: judge the sentinel, re-stamp a database one ahead, purge orphan staging."""
         report = BootReport()
         for root_path in sorted(self._expected):
+            if self._frozen:
+                report.blocked[root_path] = RootState.RESTORED_BEHIND
+                continue
             try:
                 with self._root(root_path) as root:
                     verdict = self._verdict(root)
@@ -336,8 +369,19 @@ class Fsops:
                 report.blocked[root_path] = RootState.MISMATCH
         return report
 
+    def require_stampable(self, root_path: str) -> None:
+        """Before the database moves a generation: the sentinel could follow (no freeze, no
+        tombstone line owed). Raises what `stamp_sentinel` would, so nothing drifts (I39)."""
+        key = clean_absolute(root_path)
+        if self._frozen:
+            raise RootBlockedError(key, RootState.RESTORED_BEHIND)
+        if self._owes(key):
+            raise TombstonePendingError(key)
+
     def stamp_sentinel(self, root_path: str, *, generation: int) -> None:
         """After the database commit: rewrite the sentinel with the new generation (I39)."""
+        if self._frozen:
+            raise RootBlockedError(clean_absolute(root_path), RootState.RESTORED_BEHIND)
         key = clean_absolute(root_path)
         expected = self._expected[key]
         if self._owes(key):
@@ -346,14 +390,51 @@ class Fsops:
             self._stamp(root, generation)
         self._expected[key] = replace(expected, generation=generation)
 
-    def _stamp(self, root: ConfinedRoot, generation: int) -> None:
+    def _stamp(
+        self, root: ConfinedRoot, generation: int, *, restore_epoch: int | None = None
+    ) -> None:
         current = read_sentinel(root)
         if current is None:
             raise RootBlockedError(root.path, RootState.MISSING)
         expected = self._expected[root.path]
         if (current.root_id, current.instance_id) != (expected.root_id, expected.instance_id):
             raise RootBlockedError(root.path, RootState.MISMATCH)  # never overwrite a foreign one
-        write_sentinel(root, current.restamped(generation))
+        write_sentinel(root, current.restamped(generation, restore_epoch=restore_epoch))
+
+    def sentinel_of(self, root_path: str, *, strict: bool = False) -> SentinelDocument | None:
+        """The sentinel as it is on disk, for the restore check: read only, never gated, never
+        followed through a link. None when absent or unreadable (the caller treats both as
+        "not trusted")."""
+        key = clean_absolute(root_path)
+        if key not in self._expected:
+            raise OutsidePathMapError(f"{root_path!r} is not a writable physical root")
+        try:
+            with self._root(key) as root:
+                return read_sentinel(root)
+        except (OSError, SentinelFormatError):
+            if strict:
+                raise
+            return None
+
+    def restamp_after_restore(self, root_path: str, *, generation: int, restore_epoch: int) -> None:
+        """The one write allowed while the instance is `restored_behind`: the sentinel of a root
+        whose files were just re-adopted takes the database's new generation and epoch
+        (`reconcile --adopt-after-restore`, EF-INT-026). Only a sentinel that is this instance's
+        and this root's, and only forward (never to a lower generation or epoch than it has)."""
+        key = clean_absolute(root_path)
+        if key not in self._expected:
+            raise OutsidePathMapError(f"{root_path!r} is not a writable physical root")
+        with self._root(key) as root:
+            current = read_sentinel(root)
+            if current is None:
+                raise RootBlockedError(key, RootState.MISSING)
+            expected = self._expected[key]
+            if (current.root_id, current.instance_id) != (expected.root_id, expected.instance_id):
+                raise RootBlockedError(key, RootState.MISMATCH)
+            if generation < current.generation or restore_epoch < current.restore_epoch:
+                raise RootBlockedError(key, RootState.RESTORED_BEHIND)
+            write_sentinel(root, current.restamped(generation, restore_epoch=restore_epoch))
+        self._expected[key] = replace(expected, generation=generation, restore_epoch=restore_epoch)
 
     # -- reads ------------------------------------------------------------------------------
 

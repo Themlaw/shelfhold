@@ -8,6 +8,7 @@
 Every write under `/library` from then on is refused by `Fsops` without this instance's lease.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import sqlalchemy as sa
@@ -19,12 +20,18 @@ from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
+from shelfhold.export.application.restore import RestoredBehindError, RestoreGuard
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError, WriteSessions
+from shelfhold.infrastructure.instance import (
+    GenerationCounter,
+    InstanceLock,
+    InstanceLockHeldError,
+    WriteSessions,
+)
 from shelfhold.infrastructure.migrate import MigrationStateFile, current_revision, head_revision
 from shelfhold.infrastructure.observability.disk_guard import DiskGuard
 from shelfhold.infrastructure.observability.disk_watch import DiskWatcher
@@ -48,6 +55,8 @@ class InstanceRuntime:
     disk_guard: DiskGuard | None = field(default=None, init=False)
     shutdown_report: ShutdownReport | None = field(default=None, init=False)
     barrier: WriteBarrier = field(default_factory=WriteBarrier, init=False)
+    restored_behind: bool = field(default=False, init=False)  # EF-INT-026: read only
+    _recheck: Callable[[], None] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.lock = InstanceLock(self.settings.data_dir)
@@ -63,6 +72,15 @@ class InstanceRuntime:
             structlog.get_logger().warning("instance_lock_held_by_migration_no_write_mode")
             return
         self.owns_volumes = True
+
+    def require_writable(self) -> None:
+        """The gate of every write the application starts: refused while `restored_behind`."""
+        if not self.restored_behind and self._recheck is not None:
+            self._recheck()  # a root that came back after the start may be ahead (EF-INT-026)
+        if self.restored_behind:
+            raise RestoredBehindError(
+                "restored_behind: run `shelfhold reconcile --adopt-after-restore`"
+            )
 
     def boot(self) -> ResolveReport | None:
         """Steps 1 and 2; nothing to do before the database exists at the current schema."""
@@ -98,14 +116,36 @@ class InstanceRuntime:
                 return ResolveReport()  # no instance row yet: nothing was ever written
             fsops = Fsops.open(
                 loaded.path_map, loaded.expected, write_gate=guard.require_space,
-                stop_gate=self.barrier.require_open,
+                stop_gate=self.barrier.require_open, frozen=loaded.restore_pending,
             )  # fmt: skip
+            journal = IntentJournal(engine, fsops, clock=clock)
+            # Before anything else: a database older than the disk is read only (EF-INT-026).
+            restore_guard = RestoreGuard(engine, fsops, clock=clock, bus=EventBus(clock))
+
+            def freeze() -> None:
+                status = restore_guard.enter_restored_behind()
+                if status.behind:
+                    self.restored_behind = True
+                    if self.pools is not None:
+                        self.pools.scheduler.hold()
+
+            fsops.on_restored_behind(freeze)
+            self._recheck = freeze
+            status = restore_guard.enter_restored_behind()
+            if status.behind:
+                freeze()
+                structlog.get_logger().error("instance.restored_behind", epoch=status.epoch)
+                # no session, no lease, no write: the intents of the backup become stale and
+                # nothing is replayed (the thaw is `reconcile --adopt-after-restore`)
+                result = journal.resolve_open()
+                report.append(result)
+                return result
             ready = fsops.boot().ok
             sessions = WriteSessions(
-                fsops, instance_id=instance_id, clock=clock, lock_path=self.lock.path
-            )
+                fsops, instance_id=instance_id, clock=clock, lock_path=self.lock.path,
+                generations=GenerationCounter(engine), on_behind=freeze,
+            )  # fmt: skip
             sessions.enforce()  # no write path skips the lease from here on
-            journal = IntentJournal(engine, fsops, clock=clock)
             with sessions.open(*ready):
                 hook = adopt_written_hook(fsops, loaded.locate, clock)
                 result = journal.resolve_open(on_done=hook)

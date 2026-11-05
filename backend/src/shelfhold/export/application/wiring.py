@@ -40,16 +40,21 @@ def open_pipeline(
     *,
     write_gate: Callable[[], None] | None = None,
     stop_gate: Callable[[], None] | None = None,
+    gate: Callable[[], None] | None = None,
 ) -> ExportPipeline:
     engine = create_db_engine(settings.database_path)
     with engine.connect() as connection:
         paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
         loaded = load_roots(connection, PathMap.same_path(paths))
-    fsops = Fsops.open(loaded.path_map, loaded.expected, write_gate=write_gate, stop_gate=stop_gate)
+    fsops = Fsops.open(
+        loaded.path_map, loaded.expected, write_gate=write_gate, stop_gate=stop_gate,
+        frozen=loaded.restore_pending,
+    )  # fmt: skip
 
     return ExportPipeline(
         engine, fsops, locate=loaded.locate, data_dir=Path(settings.data_dir), clock=SystemClock(),
         parse=_unchecked,
         parse_verified=False,
         segment_policy_confirmed=settings.naming_segment_policy_confirmed,
+        gate=gate,
     )  # fmt: skip

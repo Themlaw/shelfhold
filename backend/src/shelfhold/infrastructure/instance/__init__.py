@@ -8,6 +8,7 @@ from shelfhold.infrastructure.instance.errors import (
     LeaseConflictError,
     LeaseLostError,
 )
+from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.instance.lease import (
     HEARTBEAT_INTERVAL,
     LEASE_VALIDITY,
@@ -22,6 +23,7 @@ __all__ = [
     "HEARTBEAT_INTERVAL",
     "LEASE_VALIDITY",
     "LOCK_NAME",
+    "GenerationCounter",
     "InstanceError",
     "InstanceLock",
     "InstanceLockHeldError",
