@@ -47,6 +47,11 @@ path = "e2e/tests/test_image_smoke.py"
 tests = ["test_root_serves_the_spa_index"]
 reason = "fumée du SPA servi par l'image (spike S2), aucune exigence propre"
 
+[[exception]]
+path = "backend/tests/unit/test_nightly_workflow.py"
+tests = ["test_nightly_runs_kavita_on_the_line_the_pinned_version_and_the_latest"]
+reason = "contrôle du texte de la matrice du nightly (trois lignes, image épinglée par digest) : aucune exigence propre, ENF-COMP-001 n'est pas démontrée par un texte"
+
 # Requirements honestly declared PARTIELLE: some tests exist, the full requirement is not
 # yet verifiable. Each entry names the milestone that completes it.
 [[partial]]

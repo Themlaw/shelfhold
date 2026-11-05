@@ -313,12 +313,15 @@ def render(
     partial: dict[str, dict[str, Any]],
 ) -> str:
     covered = [r for r in required if by_req.get(r) or cond_req.get(r)]
+    outside = [r for r in covered if not by_req.get(r)]
     out = [
         f"# Matrice de traçabilité — {ms}",
         "",
         "Générée par `tools/traceability.py` (ne pas éditer à la main). "
         f"Exigences du jalon {ms} : **{len(required)}**, couvertes : **{len(covered)}**, "
-        f"non couvertes : **{len(required) - len(covered)}**.",
+        f"non couvertes : **{len(required) - len(covered)}**. "
+        f"Dont couvertes seulement hors CI requise : **{len(outside)}**"
+        + (f" ({', '.join(outside)})." if outside else "."),
         "",
         "| Exigence | Jalons (01) | Statut | Tests (CI requise) | Hors CI requise / conditionnel |",
         "|---|---|---|---|---|",

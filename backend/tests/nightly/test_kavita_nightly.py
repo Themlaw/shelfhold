@@ -46,6 +46,19 @@ def test_nightly_real_kavita_places_chapter_volume_from_comicinfo(kavita: RealKa
     assert any(v["minNumber"] == 3 for v in placed["volumes"]), placed["volumes"]
 
 
+@pytest.mark.req("EF-EXP-009")
+@pytest.mark.parametrize("kind", list(LibraryType), ids=lambda kind: kind.name)
+def test_library_creation_is_accepted_for_every_library_type(
+    kavita: RealKavita, kind: LibraryType
+) -> None:
+    """The DTO Shelfhold sends is valid for each of Kavita's six library types (the provider
+    rule differs per type: a 500 `invalid-metadata-provider` otherwise)."""
+    folder = f"types/{kind.name.lower()}"
+    kavita.write(f"{folder}/.keep.txt", b"")
+    library = kavita.create_library(f"Type {kind.name}", [kavita.remote(folder)], library_type=kind)
+    assert any(lib["id"] == library for lib in run(kavita.client.list_libraries()))  # type: ignore[union-attr]
+
+
 @pytest.mark.req("ENF-COMP-001", "EF-EXP-045", "EF-BIB-050")
 def test_segment_naming_against_real_kavita_nightly(kavita: RealKavita) -> None:
     """Q50: the names of `golden/kavita_naming/segments.json` read by a real `plugin/parse` and

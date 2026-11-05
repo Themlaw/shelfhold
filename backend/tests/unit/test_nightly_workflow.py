@@ -53,7 +53,6 @@ def test_nightly_actions_are_pinned_by_sha_and_permissions_are_minimal() -> None
                 assert step["with"]["persist-credentials"] is False
 
 
-@pytest.mark.req("ENF-COMP-001")
 def test_nightly_runs_kavita_on_the_line_the_pinned_version_and_the_latest() -> None:
     matrix = _nightly()["jobs"]["kavita"]["strategy"]["matrix"]["include"]
     by_label = {entry["label"]: entry["image"] for entry in matrix}

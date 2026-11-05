@@ -95,12 +95,14 @@ def test_m1a_headless_config_apply_declarative_idempotent(journey: Journey) -> N
 
 
 @pytest.mark.req("EF-INT-024", "EF-SRC-008", "EF-SRC-036")
-@pytest.mark.xfail(strict=True, reason=NOT_WIRED)
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NOT_WIRED)
 def test_m1a_headless_install_to_first_chapter_in_kavita(journey: Journey) -> None:
     j = journey
     install_by_commands(j)
     j.publish_upstream()  # a new chapter upstream, after the follow was set up
-    assert wait_for(lambda: bool(j.kavita()["series"]), 25), "Kavita never indexed a series"
+    assert wait_for(lambda: bool(j.kavita()["series"]), 25), (
+        "aucun job de suivi enregistré : Kavita n'a indexé aucune série"
+    )
     files = j.library_files()
     assert any(f.endswith("Ch.2.cbz") for f in files), files
     kavita = j.kavita()
@@ -153,16 +155,19 @@ def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
 
 
 @pytest.mark.req("EF-EXP-056", "EF-INT-024")
-@pytest.mark.xfail(strict=True, reason=NOT_WIRED)
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NOT_WIRED)
 def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> None:
     """After a first chapter, `detach --restore-upstream` gives the series back to Suwayomi's own
     updater and leaves every exported file where and what it was."""
     j = journey
     install_by_commands(j)
     j.publish_upstream()
-    assert wait_for(lambda: bool(j.library_files()), 25), "no chapter was exported"
+    assert wait_for(lambda: bool(j.library_files()), 25), (
+        "aucun job de suivi enregistré : aucun chapitre exporté"
+    )
     before = j.compose("exec", "-T", "shelfhold", "sh", "-c",
                        "cd /library && find . -type f -exec sha256sum {} +").stdout  # fmt: skip
+    assert j.shelfhold("source", "detach", "--help").code == 0, "commande detach absente"
     detached = j.shelfhold("source", "detach", "--restore-upstream", "--yes")
     assert detached.code == 0, detached.err
     after = j.compose("exec", "-T", "shelfhold", "sh", "-c",

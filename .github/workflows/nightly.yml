@@ -28,7 +28,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # the 0.9.1 line (the minimum of the supported range), as published on the tag
+          # Today these three entries are ONE image (v0.9.1.4): the registry has no 0.9.1.0 tag, so the
+          # minimum of the range (0.9.1.0) is NOT tested on a real image (offline openapi fixtures
+          # only). They are kept apart because they will diverge. Drift fails the job (no issue opened).
+          # the 0.9.1 line, as published on the floating tag
           - label: line-0.9.1
             image: docker.io/jvmilazz0/kavita:0.9.1
           # the pinned version (docs/dependencies.md: v0.9.1.4), by digest
@@ -73,6 +76,10 @@ jobs:
           enable-cache: false
       - name: Install dependencies
         run: uv sync --project backend --locked
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "17"
       - name: "Build the synthetic extension (Gradle dependencies, the only network use of the build)"
         run: backend/tests/contract/suwayomi-synthetic-extension/build.sh
       - name: Pull the pinned images (Suwayomi, fixture server)

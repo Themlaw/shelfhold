@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from shelfhold.export.targets.kavita import dto
+from tests.fakes.kavita.providers import PROVIDERS_FOR_LIBRARY_TYPE
 
 OPENAPI = Path(__file__).resolve().parents[1] / "fixtures" / "kavita" / "openapi"
 
@@ -51,3 +52,24 @@ def test_library_filter_names_the_libraries_field_of_the_published_schema(versio
         ]
         == "Equal"
     )
+
+
+@pytest.mark.req("EF-EXP-009")
+def test_simulated_kavita_applies_the_type_provider_rule() -> None:
+    import httpx2
+
+    from tests.fakes.kavita import API_KEY
+    from tests.kavita_env import harness
+
+    h = harness()
+    for library in h.fake.libraries:  # the starting libraries are valid pairs themselves
+        assert library["metadataProvider"] in PROVIDERS_FOR_LIBRARY_TYPE[library["type"]]
+    for kind in dto.LibraryType:
+        for provider in (2, 3, 4):
+            body = dto.create_dto("T", kind, ["/library/t"]) | {"metadataProvider": provider}
+            request = httpx2.Request(
+                "POST", "http://kavita.lan:5000/api/Library/create", json=body,
+                headers={"x-api-key": API_KEY},
+            )  # fmt: skip
+            status = h.fake.handle(request).status_code
+            assert status == (200 if provider in PROVIDERS_FOR_LIBRARY_TYPE[int(kind)] else 500)

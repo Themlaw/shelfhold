@@ -4,7 +4,7 @@
 server of `contract/suwayomi-synthetic-extension` (generated pages) on the bench's internal network.
 
 The APK is built by the job (`build.sh`) and installed from that file; the extension-store list is
-asserted empty before and after. Skipped when no APK was built (`SYNTHETIC_EXTENSION_APK`).
+asserted empty before and after. Without an APK (`SYNTHETIC_EXTENSION_APK`) the tests fail when `CI` is set, else they are skipped.
 """
 
 from __future__ import annotations
@@ -83,6 +83,8 @@ def bench(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ExtensionBench]:
     if shutil.which("docker") is None:
         pytest.skip("docker is not available")
     if not APK.is_file():
+        if os.environ.get("CI"):  # in the workflow a missing build is a failure, not a skip
+            pytest.fail(f"the synthetic extension was not built at {APK}")
         pytest.skip(f"no synthetic extension built at {APK} (run build.sh)")
     data = tmp_path_factory.mktemp("suwayomi-extension")
     instance = ExtensionBench(

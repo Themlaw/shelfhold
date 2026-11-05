@@ -27,6 +27,7 @@ import httpx2
 
 from shelfhold.infrastructure.fetcher import IntegrationFetcher, LanTargets
 from tests.fakes.kavita.plugin_parse import simulate_parse
+from tests.fakes.kavita.providers import PROVIDERS_FOR_LIBRARY_TYPE
 from tests.fakes_fetcher import FakeResolver
 
 TESTS = Path(__file__).resolve().parents[2]
@@ -72,7 +73,7 @@ def default_libraries() -> list[dict[str, Any]]:
             "allowScrobbling": False, "collapseSeriesRelationships": False,
             "libraryFileTypes": [1, 2], "excludePatterns": ["*.tmp"], "allowMetadataMatching": True,
             "enableMetadata": False, "removePrefixForSortName": True,
-            "inheritWebLinksFromFirstChapter": True, "defaultLanguage": "ja", "metadataProvider": 1,
+            "inheritWebLinksFromFirstChapter": True, "defaultLanguage": "ja", "metadataProvider": 3,
         },
         {
             "id": 8, "name": "Synthetic Comics", "type": 1, "folders": ["/comics"],
@@ -81,7 +82,7 @@ def default_libraries() -> list[dict[str, Any]]:
             "allowScrobbling": True, "collapseSeriesRelationships": False,
             "libraryFileTypes": [1], "excludePatterns": [], "allowMetadataMatching": True,
             "enableMetadata": True, "removePrefixForSortName": False,
-            "inheritWebLinksFromFirstChapter": False, "defaultLanguage": "", "metadataProvider": 0,
+            "inheritWebLinksFromFirstChapter": False, "defaultLanguage": "", "metadataProvider": 2,
         },
     ]  # fmt: skip
 
@@ -367,9 +368,19 @@ class FakeKavita:
         body = self._body(recorded, "UpdateLibraryDto")
         if isinstance(body, httpx2.Response):
             return body
+        if not self._provider_fits(body["type"], body.get("metadataProvider", 0)):
+            return self._invalid_provider()
         created = {**self._stored(body), "id": max([0, *(lib["id"] for lib in self.libraries)]) + 1}
         self.libraries.append(created)
         return self._json(created)
+
+    @staticmethod
+    def _provider_fits(library_type: int, provider: int) -> bool:
+        return provider in PROVIDERS_FOR_LIBRARY_TYPE.get(library_type, frozenset())
+
+    def _invalid_provider(self) -> httpx2.Response:
+        """What Kavita's `ValidateMetadataProvider` answers: a 500 with this message."""
+        return self._json({"status": 500, "message": "invalid-metadata-provider"}, 500)
 
     def _update(self, recorded: RecordedRequest) -> httpx2.Response:
         body = self._body(recorded, "UpdateLibraryDto")
@@ -378,6 +389,8 @@ class FakeKavita:
         found = self._library(body["id"])
         if found is None:
             return self._text(400, "unknown library")
+        if not self._provider_fits(found["type"], body.get("metadataProvider", 0)):
+            return self._invalid_provider()
         # a replacement, as Kavita does: a field the document omits falls back to its default
         # (read-only attributes of LibraryDto, absent from UpdateLibraryDto, are kept)
         writable = set(_schema("UpdateLibraryDto")["properties"]) | {"libraryFileTypes"}

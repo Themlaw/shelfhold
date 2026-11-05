@@ -16,3 +16,12 @@ L'APK est installé **depuis ce fichier** (mutation GraphQL `installExternalExte
 un dépôt d'extensions : la liste des dépôts est vide et vérifiée avant l'installation. Le banc lui-même
 est piloté par `backend/tests/nightly/test_suwayomi_synthetic_extension.py`.
 Les noms de séries sont inventés ; ne rien y mettre qui vienne d'une source réelle.
+
+## Chaîne de construction vérifiée
+
+Gradle vient du wrapper du dépôt (`extension/gradlew`, version 8.10.2, `distributionSha256Sum` posé,
+jar du wrapper pris au tag `v8.10.2` de gradle/gradle, sha256 `2db75c40…8046`). Le JDK est un
+Temurin 17 installé par `actions/setup-java` épinglé par SHA. `extension/gradle/verification-metadata.xml`
+impose les sha256 des dépendances. **Sa liste de composants est à générer** sur une machine avec le
+SDK Android, puis à relire en revue : `cd extension && ./gradlew --write-verification-metadata sha256 assembleRelease`.
+Tant qu'elle est vide, la construction échoue en nommant les artefacts manquants.
