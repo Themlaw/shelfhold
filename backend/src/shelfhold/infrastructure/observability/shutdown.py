@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import structlog
+from sqlalchemy.exc import OperationalError
 
 from shelfhold.jobs.huey_app import JobPools
 
@@ -59,10 +60,15 @@ class GracefulShutdown:
         abandoned = pools.running
         if abandoned:
             log.warning("shutdown.jobs_abandoned", count=abandoned)
-        flushed = pools.flush_huey_locks()  # 3
-        slots = pools.slots.release_all()
-        if self._release_resource_locks is not None:
-            self._release_resource_locks()
-        self._lock.release()
+        flushed = slots = 0
+        try:  # 3 (a read-only or locked database cannot be written: nothing was held in it)
+            flushed = pools.flush_huey_locks()
+            slots = pools.slots.release_all()
+            if self._release_resource_locks is not None:
+                self._release_resource_locks()
+        except OperationalError as error:
+            log.warning("shutdown.locks_not_released", error=type(error).__name__)
+        finally:
+            self._lock.release()
         self._report = ShutdownReport(in_flight - abandoned, abandoned, flushed, slots)
         return self._report
