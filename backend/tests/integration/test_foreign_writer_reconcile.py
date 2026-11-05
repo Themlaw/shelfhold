@@ -1,6 +1,7 @@
 """Foreign writer detection and the reduced reconcile (EF-EXP-043, EF-EXP-018), real files."""
 
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -223,3 +224,104 @@ def test_missing_threshold_scoped_per_shelf_destination_with_floor() -> None:
         assert r.reconcile(second).blocked == "missing_ratio"
         first = r.reconcile(env.destination_id)
         assert first.blocked is None and len(first.reexport) == 3
+
+
+# -- review of PR 53: regressions ---------------------------------------------------------------
+
+
+@pytest.mark.req("EF-EXP-018")
+def test_a_missing_series_folder_does_not_crash_the_reconcile() -> None:
+    with export_env() as env:
+        r, _series, _files = exported(env, 3)
+        other = env.new_series("One Piece")
+        env.add_chapter(other, "1")
+        env.add_chapter(other, "2")
+        r.run()
+        victim = next(p for p in env.files() if p.parent.name == "One Piece").parent
+        shutil.rmtree(victim)
+        report = r.reconcile()  # the folder is empty: its files are `disappeared`, under the cap
+        assert report.blocked is None and len(report.reexport) == 2
+        assert r.paused_series() == []
+        shutil.rmtree(env.root / "Dr Stone")  # and 5 of 5 gone beyond the floor is not blocked
+        assert r.reconcile().blocked is None
+
+
+@pytest.mark.req("EF-EXP-043")
+def test_naming_subfolders_are_not_foreign_files() -> None:
+    with export_env() as env:
+        r, _series, files = exported(env, 2)
+        victim = files[0]
+        special = victim.parent / "Specials"
+        special.mkdir()
+        victim.rename(special / victim.name)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(export.export_record)
+                .where(export.export_record.c.rel_path == f"{victim.parent.name}/{victim.name}")
+                .values(rel_path=f"{victim.parent.name}/Specials/{victim.name}")
+            )
+        report = r.reconcile()
+        assert report.paused == () and r.paused_series() == [] and report.unknown == ()
+        (special / "stray.cbz").write_bytes(b"x")  # a real stranger in the sub-folder still counts
+        r.reconcile()
+        assert len(r.paused_series()) == 1
+
+
+@pytest.mark.req("EF-EXP-043")
+def test_atomic_replacement_with_same_size_and_mtime_is_detected() -> None:
+    with export_env() as env:
+        r, _series, files = exported(env, 2)
+        stat = files[0].stat()
+        replacement = files[0].with_name("x.tmp")
+        replacement.write_bytes(bytes(b ^ 1 for b in files[0].read_bytes()))
+        os.utime(replacement, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        os.replace(replacement, files[0])
+        assert files[0].stat().st_ino != stat.st_ino and files[0].stat().st_size == stat.st_size
+        assert r.reconcile(
+            in_window=False
+        ).suspect  # the inode moved: the hash waits for the window
+        assert r.paused_series() == []
+        r.reconcile(in_window=True)
+        assert len(r.paused_series()) == 1
+
+
+@pytest.mark.req("EF-EXP-043")
+def test_replacement_with_the_same_bytes_only_rebaselines_the_inode() -> None:
+    with export_env() as env:
+        r, _series, files = exported(env, 1)
+        stat = files[0].stat()
+        copy = files[0].with_name("x.tmp")
+        copy.write_bytes(files[0].read_bytes())
+        os.utime(copy, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        os.replace(copy, files[0])
+        assert r.reconcile(in_window=True).suspect == () and r.paused_series() == []
+        assert r.reconcile(in_window=False).suspect == ()  # the new inode is the baseline
+
+
+@pytest.mark.req("EF-EXP-043")
+def test_a_deleter_slower_than_24_hours_still_pauses_the_series() -> None:
+    with export_env() as env:
+        r, _series, _files = exported(env, 1)
+        for _ in range(2):
+            for path in env.files():
+                path.unlink()
+            r.reconcile()
+            env.clock.advance(hours=25)
+            r.run()
+        for path in env.files():
+            path.unlink()
+        env.clock.advance(hours=25)
+        r.reconcile()
+        assert len(r.paused_series()) == 1
+        assert len(r.events("target.foreign_writer_detected")) == 1
+
+
+@pytest.mark.req("EF-EXP-029")
+def test_a_blocked_state_is_announced_once() -> None:
+    with export_env() as env:
+        r, _series, files = exported(env, 12)
+        for path in files:
+            path.unlink()
+        for _ in range(3):
+            assert r.reconcile().blocked == "missing_ratio"
+        assert len(r.events("mount.sentinel_missing")) == 1

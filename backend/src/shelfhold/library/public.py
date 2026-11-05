@@ -48,11 +48,13 @@ from shelfhold.library.domain.unit_json import (
     UnitJsonCorruptError,
 )
 from shelfhold.library.replica import (
+    destination_identities,
     has_readable_copy,
     independent_copies,
     median_unit_bytes,
     readable_unit_ids,
     record_replica,
+    refresh_destination_identity,
 )
 
 __all__ = [
@@ -80,6 +82,7 @@ __all__ = [
     "VariantAlreadyStoredError",
     "confirmation_phrase",
     "content_hash",
+    "destination_identities",
     "export_sources",
     "has_readable_copy",
     "independent_copies",
@@ -92,6 +95,7 @@ __all__ = [
     "receive_cbz",
     "record_destination_copy",
     "record_replica",
+    "refresh_destination_identity",
     "require_deletion_allowed",
     "safe_to_clean",
 ]

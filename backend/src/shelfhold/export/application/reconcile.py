@@ -35,12 +35,17 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
-from shelfhold.library.public import export_sources
+from shelfhold.library.public import (
+    destination_identities,
+    export_sources,
+    refresh_destination_identity,
+)
 
 __all__ = ["ReconcileReport", "Reconciler"]
 
 FOREIGN_WRITER = "foreign_writer"
 RESERVED_NAMES = frozenset({SENTINEL_FILE, RESERVED_DIR})
+MAX_DEPTH = 8
 
 
 @dataclass(frozen=True)
@@ -62,6 +67,7 @@ class Reconciler:
         self._clock = clock
         self._bus = bus
         self._locks = ResourceLocks(engine, clock=clock)
+        self._blocked: dict[str, str] = {}  # destination -> reason already announced
 
     # -- one pass --------------------------------------------------------------------------------
 
@@ -77,7 +83,7 @@ class Reconciler:
         root = ctx.root_local
         sentinel_ok = self._fsops.status(root).state is RootState.OK
         if not sentinel_ok:
-            self._announce(destination_id, "mount.sentinel_missing", reason="sentinel")
+            self._announce_block(destination_id, "sentinel")
             return ReconcileReport(blocked="sentinel")
 
         def local(rel: str) -> str:
@@ -93,24 +99,30 @@ class Reconciler:
         seen = {rel: self._fsops.observe(local(rel)) for rel in live}
         gone = [live[rel] for rel, found in seen.items() if found is None]
         if missing_blocks(total=len(live), missing=len(gone)):
-            self._announce(destination_id, "mount.sentinel_missing", reason="missing_ratio")
+            self._announce_block(destination_id, "missing_ratio")
             return ReconcileReport(blocked="missing_ratio")
 
+        self._blocked.pop(destination_id, None)  # the state changed: a new block is news again
         folders = sorted({f.rel_path.split("/", 1)[0] for f in managed})
         known = {f.rel_path for f in managed}
         foreign: dict[str, str] = {}  # folder -> why
         suspect: list[str] = []
         now = self._clock.now()
-        refresh: list[tuple[str, int, int]] = []
+        refresh: list[tuple[str, int, int, int, int]] = []
         settled: list[str] = []
         for rel, found in seen.items():
             if found is None:
                 continue
             kind, identity = found
             managed_file = live[rel]
+            dev = self._fsops.device_of(local(rel)) if kind == "file" else None
             change = classify_change(
-                managed_file, Seen(identity.size, identity.mtime_ns, regular=kind == "file")
-            )
+                managed_file,
+                Seen(
+                    identity.size, identity.mtime_ns, regular=kind == "file", dev=dev,
+                    ino=identity.ino,
+                ),
+            )  # fmt: skip
             folder = rel.split("/", 1)[0]
             if change is Change.SIZE_OR_KIND:
                 foreign.setdefault(folder, "modified")
@@ -118,7 +130,15 @@ class Reconciler:
                 if not in_window:
                     suspect.append(managed_file.item_id)
                 elif self._fsops.sha256_of(local(rel)) == managed_file.file_hash:
-                    refresh.append((managed_file.item_id, identity.size, identity.mtime_ns))
+                    refresh.append(
+                        (
+                            managed_file.item_id,
+                            identity.size,
+                            identity.mtime_ns,
+                            dev or 0,
+                            identity.ino,
+                        )
+                    )
                 else:
                     foreign.setdefault(folder, "modified")
             elif (
@@ -129,16 +149,15 @@ class Reconciler:
                 settled.append(managed_file.item_id)  # it stayed: the loop suspicion is over
         unknown_files: list[str] = []
         for folder in folders:
-            for name in self._fsops.list_dir(local(folder)):
-                rel = f"{folder}/{name}"
-                if rel in known or skipped(rel) or name in RESERVED_NAMES:
+            for rel in self._files_under(local(folder), folder):
+                if rel in known or skipped(rel):
                     continue
                 unknown_files.append(rel)
                 foreign.setdefault(folder, "unknown_file")
         unknown = tuple(
             sorted(
                 name
-                for name in self._fsops.list_dir(root)
+                for name in self._entries(root)
                 if name not in RESERVED_NAMES and name not in folders and not skipped(name)
             )
         )
@@ -191,7 +210,7 @@ class Reconciler:
         managed: list[ManagedFile],
         foreign: dict[str, str],
         decisions: dict[Disappeared, list[ManagedFile]],
-        refresh: list[tuple[str, int, int]],
+        refresh: list[tuple[str, int, int, int, int]],
         settled: list[str],
     ) -> list[str]:
         record = export.export_record
@@ -233,17 +252,46 @@ class Reconciler:
             )  # fmt: skip
         return bool(changed)
 
-    def _refresh(self, refresh: list[tuple[str, int, int]], settled: list[str]) -> None:
+    def _entries(self, local: str) -> dict[str, str]:
+        """A folder that is gone is an empty one: its files take the `disappeared` road."""
+        try:
+            return dict(self._fsops.list_dir(local))
+        except (FileNotFoundError, NotADirectoryError):
+            return {}
+
+    def _files_under(self, local: str, rel: str, depth: int = 0) -> list[str]:
+        """Everything that is not a folder, below a managed series folder (`Specials/` and the
+        other sub-folders of the naming are managed ones: they are walked, not flagged)."""
+        found: list[str] = []
+        for name, kind in sorted(self._entries(local).items()):
+            if name in RESERVED_NAMES:
+                continue
+            if kind == "dir" and depth < MAX_DEPTH:
+                found += self._files_under(f"{local}/{name}", f"{rel}/{name}", depth + 1)
+            else:
+                found.append(f"{rel}/{name}")
+        return found
+
+    def _announce_block(self, destination_id: str, reason: str) -> None:
+        if self._blocked.get(destination_id) != reason:  # once while the state does not change
+            self._blocked[destination_id] = reason
+            self._announce(destination_id, "mount.sentinel_missing", reason=reason)
+
+    def _refresh(self, refresh: list[tuple[str, int, int, int, int]], settled: list[str]) -> None:
         if not refresh and not settled:
             return
         record = export.export_record
         with self._engine.begin() as connection:
-            for item_id, size, mtime_ns in refresh:
+            for item_id, size, mtime_ns, dev, ino in refresh:
                 connection.execute(
                     sa.update(record)
                     .where(record.c.export_item_id == item_id)
                     .values(size=size, mtime_ns=mtime_ns)
                 )
+                refresh_destination_identity(
+                    connection, item_id, dev=dev, ino=ino, size=size, mtime_ns=mtime_ns,
+                    verified_at=self._clock.now(),
+                )  # fmt: skip
             for item_id in settled:
                 connection.execute(
                     sa.update(record)
@@ -306,6 +354,12 @@ class Reconciler:
                         file_hash=self._fsops.sha256_of(f"{ctx.root_local}/{found.rel_path}"),
                     )
                 )  # fmt: skip
+                refresh_destination_identity(
+                    connection, found.export_item_id,
+                    dev=self._fsops.device_of(f"{ctx.root_local}/{found.rel_path}"),
+                    ino=observed[1].ino, size=observed[1].size, mtime_ns=observed[1].mtime_ns,
+                    verified_at=self._clock.now(),
+                )  # fmt: skip
             connection.execute(
                 sa.update(series).where(series.c.id == export_series_id).values(paused_reason=None)
             )
@@ -333,12 +387,15 @@ class Reconciler:
             )
             .order_by(record.c.rel_path)
         )  # fmt: skip
+        found = list(rows)
+        identities = destination_identities(connection, [r.export_item_id for r in found])
         return [
             ManagedFile(
                 r.export_item_id, r.unit_id, r.rel_path, r.state, r.size, r.mtime_ns, r.file_hash,
                 r.written_by_shelfhold_at, r.error_code == REEXPORT_ATTEMPTED,
+                *identities.get(r.export_item_id, (None, None)),
             )
-            for r in rows
+            for r in found
         ]  # fmt: skip
 
     @staticmethod
@@ -346,13 +403,14 @@ class Reconciler:
         item, link, series = export.export_item, export.edition_export_series, export.export_series
         return list(
             connection.execute(
-                sa.select(sa.distinct(link.c.export_series_id))
+                sa.select(link.c.export_series_id)
                 .select_from(
                     item.join(link, link.c.edition_id == item.c.edition_id).join(
                         series, series.c.id == link.c.export_series_id
                     )
                 )
                 .where(item.c.id.in_(item_ids), series.c.shelf_destination_id == destination_id)
+                .distinct()
             ).scalars()
         )
 

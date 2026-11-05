@@ -148,6 +148,41 @@ def forget_destination_copies(connection: Connection, export_item_id: str) -> No
     )
 
 
+def destination_identities(
+    connection: Connection, export_item_ids: Sequence[str]
+) -> dict[str, tuple[int | None, int | None]]:
+    """`(dev, ino)` recorded for the `destination` copy of each item: an atomic replacement of
+    the file by a third party changes the inode while size and mtime may stay (EF-EXP-043)."""
+    rows = connection.execute(
+        sa.select(replica_table.c.export_item_id, replica_table.c.dev, replica_table.c.ino).where(
+            replica_table.c.export_item_id.in_(export_item_ids),
+            replica_table.c.location == "destination",
+        )
+    )
+    return {r.export_item_id: (r.dev, r.ino) for r in rows}
+
+
+def refresh_destination_identity(
+    connection: Connection,
+    export_item_id: str,
+    *,
+    dev: int,
+    ino: int,
+    size: int,
+    mtime_ns: int,
+    verified_at: datetime,
+) -> None:
+    """The hash confirmed that the file is the same one: its new identity becomes the baseline."""
+    connection.execute(
+        sa.update(replica_table)
+        .where(
+            replica_table.c.export_item_id == export_item_id,
+            replica_table.c.location == "destination",
+        )
+        .values(dev=dev, ino=ino, size=size, mtime_ns=mtime_ns, verified_at=verified_at)
+    )
+
+
 @dataclass(frozen=True)
 class LibraryCopy:
     replica_id: str

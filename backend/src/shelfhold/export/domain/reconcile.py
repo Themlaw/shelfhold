@@ -61,6 +61,8 @@ class ManagedFile:
     file_hash: str | None
     written_at: datetime | None
     reexport_attempted: bool = False
+    dev: int | None = None  # of the replica row: what Shelfhold saw when it wrote the file
+    ino: int | None = None
 
 
 @dataclass(frozen=True)
@@ -68,12 +70,14 @@ class Seen:
     size: int
     mtime_ns: int
     regular: bool = True
+    dev: int | None = None
+    ino: int | None = None
 
 
 class Change(StrEnum):
     UNCHANGED = "unchanged"
     SIZE_OR_KIND = "size_or_kind"  # certain: the hash cannot match
-    MTIME_ONLY = "mtime_only"  # the hash decides
+    MTIME_ONLY = "mtime_only"  # the hash decides (also: same size and mtime, another inode)
     NOT_RECORDED = "not_recorded"  # no identity in the manifest: nothing to compare against
 
 
@@ -85,7 +89,15 @@ def classify_change(managed: ManagedFile, seen: Seen) -> Change:
         return Change.NOT_RECORDED
     if seen.size != managed.size:
         return Change.SIZE_OR_KIND
-    return Change.UNCHANGED if seen.mtime_ns == managed.mtime_ns else Change.MTIME_ONLY
+    if seen.mtime_ns != managed.mtime_ns:
+        return Change.MTIME_ONLY
+    # An atomic replacement (write a temporary file, rename it over) can keep size and mtime:
+    # only the inode (and the device) tell, and the hash then decides.
+    if (managed.ino is not None and seen.ino is not None and managed.ino != seen.ino) or (
+        managed.dev is not None and seen.dev is not None and managed.dev != seen.dev
+    ):
+        return Change.MTIME_ONLY
+    return Change.UNCHANGED
 
 
 class Disappeared(StrEnum):
@@ -101,6 +113,8 @@ def classify_missing(
     if managed.state == "adopted":
         return Disappeared.REPORT_ONLY
     recent = managed.written_at is not None and now - managed.written_at < REEXPORT_WINDOW
+    if managed.reexport_attempted:  # put back once, gone again: whatever the delay, a habit
+        return Disappeared.FOREIGN
     if not (recent and source_available and sentinel_ok):
         return Disappeared.ASK_ADMIN
-    return Disappeared.FOREIGN if managed.reexport_attempted else Disappeared.REEXPORT
+    return Disappeared.REEXPORT
