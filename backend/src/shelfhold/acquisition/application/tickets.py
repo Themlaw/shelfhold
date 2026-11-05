@@ -19,10 +19,11 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from shelfhold.acquisition.application.failures import FailureLedger
+from shelfhold.acquisition.application.failures import FailureLedger, from_service
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fetcher import GuardedFetcher
+from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.jobs.public import DomainSlots
@@ -198,7 +199,7 @@ class DownloadTickets:
             request = replace(request, ticket=token)
             report.submitted += 1
         ticket = Ticket(token=str(request.ticket), target_kind="unit")
-        state = await self._service.poll(self._fetcher, ticket)
+        state = await from_service(self._service.poll(self._fetcher, ticket))
         if state in ("queued", "downloading"):
             report.waiting += 1  # Suwayomi has not finished: wait, no failure
             return
@@ -224,7 +225,7 @@ class DownloadTickets:
                     number=request.number,
                 ),
             )
-            ticket = await self._service.request(self._fetcher, target)
+            ticket = await from_service(self._service.request(self._fetcher, target))
         finally:
             if self._slots is not None:
                 self._slots.release(key)
@@ -241,10 +242,14 @@ class DownloadTickets:
         self._next_at[limit_key] = start + interval
 
     async def _fetch(self, request: OpenRequest, ticket: Ticket, report: TicketReport) -> None:
-        payload = await self._service.fetch(self._fetcher, ticket)
+        payload = await from_service(self._service.fetch(self._fetcher, ticket))
         if not isinstance(payload, FileAsset):
             raise SourceChanged("a connected service must answer a file")
-        async with self._receive(payload) as received:
+        try:
+            receiving = self._receive(payload)
+        except InvalidFetchUrl as error:  # the plugin pointed the credential at another origin
+            raise SourceChanged("the service handed back a URL off its origin") from error
+        async with receiving as received:
             with suppress(VariantAlreadyStoredError):  # a replay after a crash: already there
                 self._store.ingest(
                     unit_id=request.unit_id, variant_id=request.variant_id,

@@ -25,14 +25,13 @@ _DISPOSITIONS = {
     "infra": Disposition.RETRY,
 }
 
-# What an adapter raises when an answer is not shaped as it expects: the upstream schema moved.
-_SHAPE_ERRORS = (KeyError, TypeError, IndexError, AttributeError)
-
 
 def classify(error: BaseException) -> str:
-    """`content`, `auth`, `version`, `schema` or `infra`."""
-    if isinstance(error, _SHAPE_ERRORS):
-        return "schema"
+    """`content`, `auth`, `version`, `schema` or `infra`.
+
+    A `KeyError` or `TypeError` is `infra` here: raised by Shelfhold's own code it is a bug, and
+    a bug must not pause a service. Only what comes out of a service call is read as a schema
+    change, by `from_service`, which wraps it in `SourceChanged`."""
     return failure_class_of(error)
 
 

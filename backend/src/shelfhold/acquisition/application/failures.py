@@ -6,6 +6,7 @@ updated the tool...). Nothing here ever touches `source_config.consecutive_failu
 """
 
 import json
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -15,13 +16,38 @@ from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.events.waiting_state import WaitingState
+from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.schema import acquisition
+from shelfhold.sdk.source import SourceChanged
 
 _PAUSE_EVENTS = {
     "auth": "source.auth_expired",
     "version": "source.version_unsupported",
     "schema": "source.broken",
 }
+
+
+# What an adapter raises when an answer is not shaped as it expects: the upstream schema moved.
+_SHAPE_ERRORS = (KeyError, TypeError, IndexError, AttributeError)
+
+
+def unexpected_shape(error: BaseException) -> SourceChanged:
+    return SourceChanged(f"unexpected answer from the service ({type(error).__name__})")
+
+
+async def from_service[T](call: Awaitable[T]) -> T:
+    """Await a call to the connected service and read its failures as the core must.
+
+    Only here is a malformed answer a schema change (pause): the adapter is the one that reads the
+    wire. A URL the plugin hands back that the Fetcher refuses is the plugin changing too
+    (`SourceChanged`); the same error from Shelfhold's own code is not.
+    """
+    try:
+        return await call
+    except _SHAPE_ERRORS as error:
+        raise unexpected_shape(error) from error
+    except InvalidFetchUrl as error:
+        raise SourceChanged("the service handed back a URL the Fetcher refuses") from error
 
 
 @dataclass(frozen=True)

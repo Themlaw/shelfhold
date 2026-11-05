@@ -1,11 +1,15 @@
 """L18: failure classes and what each one does (EF-SRC-009, EF-SRC-028; 02 section 3.4)."""
 
+import asyncio
+from collections.abc import Awaitable
 from datetime import timedelta
 
 import pytest
 
+from shelfhold.acquisition.application.failures import from_service
 from shelfhold.acquisition.domain.freshness import cadence, stale_threshold
 from shelfhold.acquisition.public import Disposition, classify, disposition_of
+from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.plugin_host.errors import AuthExpired, AuthModeUnsupported, ServiceVersionMismatch
 from shelfhold.sdk.source import (
     AuthRequired,
@@ -27,8 +31,8 @@ pytestmark = pytest.mark.req("EF-SRC-009")
         (AuthModeUnsupported(), "auth", Disposition.PAUSE),
         (ServiceVersionMismatch("csrf"), "version", Disposition.PAUSE),
         (SourceChanged("shape"), "schema", Disposition.PAUSE),
-        (KeyError("sourceId"), "schema", Disposition.PAUSE),
-        (TypeError("not a dict"), "schema", Disposition.PAUSE),
+        (KeyError("sourceId"), "infra", Disposition.RETRY),  # our own bug: never a pause
+        (TypeError("not a dict"), "infra", Disposition.RETRY),
         (TemporarilyUnavailable("asleep"), "infra", Disposition.RETRY),
         (RateLimited("slow down"), "infra", Disposition.RETRY),
         (OSError("reset"), "infra", Disposition.RETRY),
@@ -56,3 +60,31 @@ def test_cadence_is_the_median_gap_of_distinct_discovery_instants() -> None:
     assert cadence([t0, t0 + timedelta(days=7)]) is None  # one gap is not a cadence
     assert stale_threshold(None, 3) == timedelta(days=14)
     assert stale_threshold(timedelta(days=7), 3) == timedelta(days=21)
+
+
+def _boom(error: BaseException) -> Awaitable[None]:
+    async def go() -> None:
+        raise error
+
+    return go()
+
+
+@pytest.mark.parametrize(
+    "error", [KeyError("sourceId"), TypeError("nodes"), IndexError(0), AttributeError("get")]
+)
+def test_a_malformed_answer_from_the_service_is_a_schema_change(error: Exception) -> None:
+    with pytest.raises(SourceChanged) as raised:
+        asyncio.run(from_service(_boom(error)))
+    assert classify(raised.value) == "schema"
+
+
+def test_a_url_the_plugin_hands_back_and_the_fetcher_refuses_is_a_schema_change() -> None:
+    with pytest.raises(SourceChanged) as raised:
+        asyncio.run(from_service(_boom(InvalidFetchUrl("off origin"))))
+    assert classify(raised.value) == "schema"
+    assert classify(InvalidFetchUrl("our own call")) == "infra"  # not wrapped: not the plugin
+
+
+def test_other_errors_pass_through_from_service_untouched() -> None:
+    with pytest.raises(ContentRemoved):
+        asyncio.run(from_service(_boom(ContentRemoved("gone"))))

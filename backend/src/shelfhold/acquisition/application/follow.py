@@ -18,7 +18,7 @@ from typing import NamedTuple
 import sqlalchemy as sa
 import structlog
 
-from shelfhold.acquisition.application.failures import FailureLedger, pause_of
+from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
 from shelfhold.acquisition.application.tickets import (
     MAX_ATTEMPTS,
     DownloadTickets,
@@ -146,12 +146,12 @@ class FollowCycle:
 
     async def _cycle(self, report: FollowReport) -> None:
         if ConnectedCapability.HEALTH_PROBE in self._service.connected:
-            health = await self._service.semantic_health(self._fetcher)
+            health = await from_service(self._service.semantic_health(self._fetcher))
             if not health.ok:
                 raise _probe_error(health.detail)
         in_library = {
             (ref.source_key, ref.remote_id)
-            for ref in await self._service.followed_series(self._fetcher)
+            for ref in await from_service(self._service.followed_series(self._fetcher))
         }
         present = self._reconcile_library(in_library, report)
         for binding in self._bindings():
@@ -273,7 +273,7 @@ class FollowCycle:
     # -- discovery ---------------------------------------------------------------------------
     async def _discover(self, binding: _Binding, report: FollowReport) -> None:
         ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
-        units = await self._service.list_units(self._fetcher, ref)
+        units = await from_service(self._service.list_units(self._fetcher, ref))
         # The first look at a binding only learns what is there: what to request from that
         # backlog is the watermark and backfill policy (L19), never "everything".
         baseline = binding.last_checked is None
