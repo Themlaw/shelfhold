@@ -35,6 +35,7 @@ __all__ = [
     "readable_unit_ids",
     "record_replica",
     "reference_content_hash",
+    "relocate_destination_copy",
     "rendered_file_hashes",
     "replica_copies",
     "replica_hashes",
@@ -411,6 +412,33 @@ def withdraw_upstream_claims(connection: Connection, unit_ids: Collection[str]) 
             replica_table.c.unit_id.in_(unit_ids), replica_table.c.location == "upstream"
         )
     )
+
+
+def relocate_destination_copy(
+    connection: Connection,
+    export_item_id: str,
+    *,
+    physical_root_id: str,
+    rel_path: str,
+    dev: int | None,
+    ino: int,
+    size: int,
+    mtime_ns: int,
+    verified_at: datetime,
+) -> None:
+    """The destination copy of an item is now this file: a verified copy made between two roots
+    (repatriation, EF-EXP-051). The hashes and the item stay; nothing is deleted."""
+    connection.execute(
+        sa.update(replica_table)
+        .where(
+            replica_table.c.export_item_id == export_item_id,
+            replica_table.c.location == "destination",
+        )
+        .values(
+            physical_root_id=physical_root_id, rel_path=rel_path, dev=dev, ino=ino, size=size,
+            mtime_ns=mtime_ns, verified_at=verified_at,
+        )
+    )  # fmt: skip
 
 
 def erase_replicas(

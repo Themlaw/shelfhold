@@ -70,6 +70,7 @@ from shelfhold.library.replica import (
     readable_unit_ids,
     record_replica,
     refresh_destination_identity,
+    relocate_destination_copy,
     upstream_claims,
     withdraw_upstream_claims,
 )
@@ -149,6 +150,7 @@ __all__ = [
     "record_destination_copy",
     "record_replica",
     "refresh_destination_identity",
+    "relocate_destination_copy",
     "require_deletion_allowed",
     "require_purge_allowed",
     "safe_to_clean",

@@ -1453,6 +1453,22 @@
       "code": "reconcile.drift",
       "status": 409
     },
+    "/api/v1/problems/repatriate.blocked": {
+      "code": "repatriate.blocked",
+      "status": 409
+    },
+    "/api/v1/problems/repatriate.dry-run-required": {
+      "code": "repatriate.dry_run_required",
+      "status": 409
+    },
+    "/api/v1/problems/repatriate.no-space": {
+      "code": "repatriate.no_space",
+      "status": 507
+    },
+    "/api/v1/problems/repatriate.stale": {
+      "code": "repatriate.stale",
+      "status": 409
+    },
     "/api/v1/problems/request-too-large": {
       "code": "request_too_large",
       "status": 413

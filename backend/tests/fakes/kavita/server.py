@@ -202,7 +202,8 @@ class FakeKavita:
                 series["lowestFolderPath"],
                 series["folderPath"],
             ):
-                self.files[series["id"]] = [*self.files[series["id"]], *files]
+                known = self.files[series["id"]]  # a path is indexed once
+                self.files[series["id"]] = [*known, *(f for f in files if f not in known)]
                 return
         name = simulate_parse(files[0].rsplit("/", 1)[-1]).series_name
         self.add_series(name, folder, files, library_id=library_id)

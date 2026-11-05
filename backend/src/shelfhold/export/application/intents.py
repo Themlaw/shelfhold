@@ -18,6 +18,7 @@ Paths under an open intent are invisible to reconciliation and planning (I9, `sk
 import contextlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Protocol
 
 import sqlalchemy as sa
@@ -224,6 +225,20 @@ class IntentJournal:
         for step in steps:
             self.apply_rename(step, on_done=on_done)
 
+    # -- retention ------------------------------------------------------------------------------
+
+    def prune(self, *, before: datetime) -> int:
+        """Retention of the journal: closed intents resolved before `before` go. An open one
+        never does, and nothing else is touched: the upstream snapshots live in their own table
+        (`upstream_snapshot`, EF-EXP-056) and the journal keeps references only."""
+        table = coherence.fs_intent
+        with self._engine.begin() as conn:
+            return conn.execute(
+                sa.delete(table).where(
+                    table.c.state.not_in(OPEN_STATES), table.c.resolved_at < before
+                )
+            ).rowcount
+
     # -- boot -----------------------------------------------------------------------------------
 
     def resolve_open(self, *, on_done: ManifestHook | None = None) -> ResolveReport:
@@ -279,6 +294,8 @@ class IntentJournal:
                 self._resolve_rmdir(intent, report, on_done)
             elif intent.op == "write" and intent.dst:
                 self._resolve_write(intent, report, on_done)
+            elif intent.op == "copy_cross_root" and intent.src and intent.dst:
+                self._resolve_copy(intent, report, on_done)
             else:
                 self._drift(intent, report, f"no replay rule for op {intent.op!r}")
         except (FsopsError, OSError, LookupError) as error:
@@ -344,6 +361,27 @@ class IntentJournal:
             report.abandoned.append(intent.id)
         else:
             self._drift(intent, report, "the target is not the file that was being written")
+
+    def _resolve_copy(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """A copy between two roots (repatriation, EF-EXP-051). It is staged, verified and put
+        in place atomically, so after a crash the target is either absent (nothing happened and
+        the source is untouched: the intent is closed) or the file that was expected (the
+        bookkeeping is completed). Nothing else is touched, and the source is never removed."""
+        if intent.src is None or intent.dst is None:
+            return self._drift(intent, report, "a copy needs both paths")
+        found = self._disk.observe(intent.dst)
+        if found is None:
+            self._close(intent.id, "cancelled")
+            report.abandoned.append(intent.id)
+        elif found[0] == "file" and intent.expected_sha256 is not None:
+            if self._disk.sha256_of(intent.dst) != intent.expected_sha256:
+                return self._drift(intent, report, "the target is not the file that was copied")
+            self._finish(intent, on_done)
+            report.completed.append(intent.id)
+        else:
+            self._drift(intent, report, "the target is not the file that was copied")
 
     def _resolve_rmdir(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

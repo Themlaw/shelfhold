@@ -36,4 +36,9 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("pairing.already_paired", 409, "admin"),
     ErrorCode("pairing.batch_stale", 409, "admin"),
     ErrorCode("pairing.switchover_stale", 409, "admin"),
+    # L31: repatriation before unmounting a root (EF-EXP-051, EF-EXP-060)
+    ErrorCode("repatriate.dry_run_required", 409, "admin"),
+    ErrorCode("repatriate.stale", 409, "admin"),
+    ErrorCode("repatriate.blocked", 409, "admin"),
+    ErrorCode("repatriate.no_space", 507, "admin"),
 )
