@@ -221,3 +221,59 @@ def test_the_socket_is_never_a_tcp_listener() -> None:
     source = Path(server.__file__).read_text()
     assert "AF_INET" not in source
     assert "start_server(" not in source.replace("start_unix_server(", "")
+
+
+# --- review of PR #49 ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"[" * 30000 + b"]" * 30000 + b"\n",  # nested deeper than the parser's recursion limit
+        b'{"method":"echo","params":{"n":' + b"9" * 5000 + b"}}\n",  # absurd integer
+    ],
+    ids=["deep", "huge-int"],
+)
+def test_hostile_json_is_a_parse_error_not_a_server_failure(sock_dir: Path, payload: bytes) -> None:
+    path = sock_dir / "shelfhold.sock"
+    with structlog.testing.capture_logs() as logs, serving(path, max_line_bytes=1 << 20):
+        raw = _raw(path)
+        raw.sendall(payload)
+        assert _reply(raw)["error"]["code"] == -32700  # type: ignore[index]
+        assert call(path, "echo", {"after": 1}) == {"after": 1}
+    assert not [log for log in logs if log.get("exc_info")]  # no logged traceback
+
+
+def test_a_connection_counts_until_it_is_closed_not_until_it_is_answered(sock_dir: Path) -> None:
+    path = sock_dir / "shelfhold.sock"
+    with serving(path, max_connections=2, drain_deadline_s=0.6):
+        trickling = []
+        for _ in range(2):
+            raw = _raw(path)
+            raw.sendall(b'{"jsonrpc":"2.0","id":1,"method":"echo","params":{}}\n')
+            assert _reply(raw)["result"] == {}  # answered ... and still connected
+            trickling.append(raw)
+        time.sleep(0.2)
+        refused = _raw(path)
+        assert _reply(refused)["error"]["code"] == -32002  # the places are still taken
+        for raw in trickling:
+            raw.sendall(b" ")  # keeps trickling
+        time.sleep(0.8)  # the drain has a total deadline, whatever the client sends
+        assert raw.recv(10) == b""  # hung up on
+        assert call(path, "echo", {"later": 1}) == {"later": 1}
+
+
+def test_drain_after_an_error_has_a_total_deadline(sock_dir: Path) -> None:
+    path = sock_dir / "shelfhold.sock"
+    with serving(path, drain_deadline_s=0.5, max_line_bytes=1024):
+        raw = _raw(path)
+        raw.sendall(b"x" * 4000)  # too long, no newline
+        assert _reply(raw)["error"]["code"] == -32004  # type: ignore[index]
+        started = time.monotonic()
+        while time.monotonic() - started < 3:
+            try:
+                raw.sendall(b"y")  # one byte at a time, forever
+            except OSError:
+                break
+            time.sleep(0.1)
+        assert time.monotonic() - started < 2.5

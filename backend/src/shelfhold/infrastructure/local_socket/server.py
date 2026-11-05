@@ -132,6 +132,7 @@ class LocalSocketServer:
         read_timeout_s: float = 10.0,
         handler_timeout_s: float = 60.0,
         max_connections: int = 8,
+        drain_deadline_s: float = 1.0,
     ) -> None:
         self.path = path
         self._handler = handler
@@ -142,6 +143,7 @@ class LocalSocketServer:
         self._read_timeout = read_timeout_s
         self._handler_timeout = handler_timeout_s
         self._max_connections = max_connections
+        self._drain_deadline = drain_deadline_s
         self._active = 0
         self._server: asyncio.Server | None = None
         self._identity: os.stat_result | None = None
@@ -204,6 +206,9 @@ class LocalSocketServer:
         return reply
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        # Counted from accept until the connection is closed, answer and drain included: a client
+        # that keeps the connection open after its reply still holds one of the places.
+        self._active += 1
         try:
             await self._serve_one(reader, writer)
         except (ConnectionError, asyncio.CancelledError):
@@ -214,6 +219,7 @@ class LocalSocketServer:
             writer.close()
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
+            self._active -= 1
 
     async def _serve_one(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -228,17 +234,12 @@ class LocalSocketServer:
         if refusal is not None:
             await self._reply_and_close(reader, writer, refusal)
             return
-        if self._active >= self._max_connections:
-            await self._reply_and_close(
-                reader, writer, _failure(None, BUSY, "too many connections")
-            )
+        if self._active > self._max_connections:
+            writer.write(_failure(None, BUSY, "too many connections"))  # no lingering: free now
+            with contextlib.suppress(Exception):
+                await writer.drain()
             return
-        self._active += 1
-        try:
-            reply = await self._exchange(reader, peer)
-        finally:
-            self._active -= 1
-        await self._reply_and_close(reader, writer, reply)
+        await self._reply_and_close(reader, writer, await self._exchange(reader, peer))
 
     async def _exchange(self, reader: asyncio.StreamReader, peer: Peer) -> bytes:
         try:
@@ -249,7 +250,7 @@ class LocalSocketServer:
             return _failure(None, LINE_TOO_LONG, "line too long")
         try:
             request = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):  # not JSON, or nested deeper than the parser allows
             return _failure(None, PARSE_ERROR, "parse error")
         if not isinstance(request, dict) or not isinstance(request.get("method"), str):
             return _failure(None, INVALID_REQUEST, "invalid request")
@@ -279,9 +280,10 @@ class LocalSocketServer:
         with contextlib.suppress(Exception):
             await writer.drain()
             writer.write_eof()
-            drained = 0
-            while drained < _DRAIN_BYTES:
-                chunk = await asyncio.wait_for(reader.read(65536), 0.5)
-                if not chunk:
-                    break
-                drained += len(chunk)
+            async with asyncio.timeout(self._drain_deadline):  # a total bound, not per read
+                drained = 0
+                while drained < _DRAIN_BYTES:
+                    chunk = await reader.read(65536)
+                    if not chunk:
+                        break
+                    drained += len(chunk)
