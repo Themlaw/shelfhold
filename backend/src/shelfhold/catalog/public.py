@@ -73,6 +73,17 @@ def ingest_isolated(
     return run_immediate(engine, work)
 
 
+def place_parts(raw_number: str | None, source_order: int = 0) -> tuple[str, str, str]:
+    """(track, segment, part) of the place a release takes, as the ingest would file it: what a
+    `place` tombstone is compared with (EF-BIB-053)."""
+    try:
+        number = parse_number(raw_number, source_order=source_order)
+    except NumberError:
+        number = parse_number(None, source_order=source_order)
+    place = place_of(number)
+    return place.track, place.segment, place.part
+
+
 def place_key(raw_number: str | None, source_order: int = 0) -> str:
     """A stable text for the place a release takes in its Edition (EF-BIB-034): two releases with
     the same key are offers for the same Unit. An unnumbered release is placed by its order."""
@@ -111,5 +122,6 @@ __all__ = [
     "join_people",
     "person_field_name",
     "place_key",
+    "place_parts",
     "translation_discriminant",
 ]

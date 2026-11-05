@@ -70,3 +70,57 @@ def read_data_file(path: Path, limit: int) -> bytes:
             return stream.read(limit)
     finally:
         os.close(fd)
+
+
+def _plain_parts(rel: str) -> tuple[str, ...]:
+    path = PurePosixPath(rel)
+    if not path.parts or path.is_absolute() or any(p in ("", ".", "..") for p in path.parts):
+        raise ValueError(f"not a plain relative path: {rel!r}")
+    return path.parts
+
+
+def erase_data_path(data_dir: Path, rel: str) -> bool:
+    """Remove a file or a folder under /data that `purge --now` names (EF-BIB-052): the unit.json
+    projection, the thumbnails and the content cache of a Unit. Returns whether something went.
+
+    `/data` is not a confined library root and the path comes from an identifier the caller
+    validated, so: `rel` must be relative with plain names, no folder on the way may be a link,
+    and a link at the end is removed as a link, never followed. Only the purge calls it."""
+    parts = _plain_parts(rel)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fds = [os.open(data_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)]
+    try:
+        for part in parts[:-1]:  # dirfd walk, O_NOFOLLOW: a swap for a link cannot redirect it
+            try:
+                fds.append(os.open(part, flags, dir_fd=fds[-1]))
+            except FileNotFoundError:
+                return False
+            except OSError as error:  # ELOOP / ENOTDIR: a link or a file on the way
+                raise ValueError(f"{part!r} on the way to {rel!r} is not a plain folder") from error
+        parent, name = fds[-1], parts[-1]
+        try:
+            mode = os.stat(name, dir_fd=parent, follow_symlinks=False).st_mode
+        except FileNotFoundError:
+            return False
+        if stat.S_ISDIR(mode):
+            _remove_tree_at(parent, name)
+        else:
+            os.unlink(name, dir_fd=parent)  # a link at the end is removed as a link
+        return True
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
+def _remove_tree_at(parent: int, name: str) -> None:
+    """Depth first by descriptor; a link inside is unlinked and never entered."""
+    fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+    try:
+        for child in os.listdir(fd):
+            if stat.S_ISDIR(os.stat(child, dir_fd=fd, follow_symlinks=False).st_mode):
+                _remove_tree_at(fd, child)
+            else:
+                os.unlink(child, dir_fd=fd)
+    finally:
+        os.close(fd)
+    os.rmdir(name, dir_fd=parent)

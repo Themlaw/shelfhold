@@ -21,6 +21,7 @@ from shelfhold.infrastructure.fsops.errors import (
     ReservedPathError,
     RootBlockedError,
     SentinelFormatError,
+    TombstonePendingError,
 )
 from shelfhold.infrastructure.fsops.facade import BootReport, Fsops, RootStatus
 from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of, same_file
@@ -49,6 +50,7 @@ __all__ = [
     "RootStatus",
     "SentinelFormatError",
     "Strategy",
+    "TombstonePendingError",
     "create_sentinel",
     "identity_of",
     "new_probe_name",

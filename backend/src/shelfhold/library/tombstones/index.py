@@ -180,8 +180,8 @@ class MembershipIndex:
                 group = (scope, fields, assignment)
                 self._groups.setdefault(group, set()).add(self._key(flat, assignment))
 
-    def contains(self, candidate: TombstoneValues, *, hash_with: HashWith | None = None) -> bool:
-        """True when the candidate matches a tombstone of its scope."""
+    def contains_values(self, candidate: TombstoneValues) -> bool:
+        """The candidate's own values match a tombstone of its scope (hashes left out)."""
         flat = flatten(candidate)
         for (scope, fields, assignment), keys in self._groups.items():
             if scope != candidate.scope or not fields <= flat.keys():
@@ -189,7 +189,13 @@ class MembershipIndex:
             projected = {name: flat[name] for name in fields}
             if self._key(projected, assignment) in keys:
                 return True
-        return self.contains_content(_hashes(candidate), hash_with=hash_with)
+        return False
+
+    def contains(self, candidate: TombstoneValues, *, hash_with: HashWith | None = None) -> bool:
+        """True when the candidate matches a tombstone of its scope."""
+        return self.contains_values(candidate) or self.contains_content(
+            _hashes(candidate), hash_with=hash_with
+        )
 
     def contains_content(
         self, hashes: Iterable[ContentHash] = (), *, hash_with: HashWith | None = None

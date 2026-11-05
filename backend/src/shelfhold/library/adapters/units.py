@@ -1,6 +1,6 @@
 """What the database says about a Unit's survival: irreplaceable, and what may be cleaned."""
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -15,8 +15,11 @@ from shelfhold.identity.public import (
     authorize_reserved,
 )
 from shelfhold.infrastructure.schema import acquisition, catalog
+from shelfhold.library.adapters.purge_inventory import erase_content_rows
 from shelfhold.library.domain.irreplaceable import (
+    ConfirmationRequiredError,
     VariantState,
+    confirmation_phrase,
     is_irreplaceable,
     require_typed_confirmation,
 )
@@ -92,3 +95,61 @@ def safe_to_clean(connection: Connection, unit_ids: Sequence[str]) -> tuple[list
     for unit_id in unit_ids:
         (kept if irreplaceability(connection, unit_id).irreplaceable else allowed).append(unit_id)
     return allowed, kept
+
+
+class PurgeRefusedError(PermissionError):
+    """The reserved-action rule refused the actor (a key, a stale session, a non-admin)."""
+
+    def __init__(self, verdict: Verdict) -> None:
+        super().__init__(f"purge.now refused: {type(verdict).__name__}")
+        self.verdict = verdict
+
+
+@dataclass(frozen=True)
+class PurgeAuthorization:
+    """What `erase_units` asks for: who was authorised to purge what (EF-BIB-052). Only
+    `require_purge_allowed` makes one."""
+
+    anchor_id: str  # the Unit, or the Work, whose identifier the admin typed
+    actor: str  # `Principal.actor_id`, for the audit entry
+
+
+def require_purge_allowed(
+    anchor_id: str,
+    *,
+    principal: Principal,
+    now: datetime,
+    typed: str | None,
+    fresh_auth_s: int = 900,
+) -> PurgeAuthorization:
+    """Every purge passes here first, before anything is written (not even a tombstone).
+
+    `purge.now` is a reserved action: a fresh admin session or the host CLI, never a key. On top
+    of that the admin types the identifier, whether the Unit is irreplaceable or not: a purge
+    deletes the last copy, past the bin and past "Mettre à l'abri"."""
+    verdict = authorize_reserved(
+        principal, RESERVED_ACTIONS["purge.now"], now=now, fresh_auth_s=fresh_auth_s
+    )
+    if not isinstance(verdict, Allowed):
+        raise PurgeRefusedError(verdict)
+    if typed != confirmation_phrase(anchor_id):
+        raise ConfirmationRequiredError(anchor_id)
+    return PurgeAuthorization(anchor_id, principal.actor_id)
+
+
+def erase_units(
+    connection: Connection,
+    unit_ids: Collection[str],
+    export_item_ids: Collection[str],
+    *,
+    authorization: PurgeAuthorization,
+) -> None:
+    """The rows of purged Units: contents, copies, bin items, Variants (their revisions go with
+    them), then the Units. The only place a `unit` row is deleted. The files are gone before the
+    caller gets here (EF-BIB-052, step 5)."""
+    del authorization  # the proof that `require_purge_allowed` ran: nothing else makes one
+    erase_content_rows(connection, unit_ids, export_item_ids)
+    connection.execute(
+        sa.delete(catalog.unit_variant).where(catalog.unit_variant.c.unit_id.in_(unit_ids))
+    )
+    connection.execute(sa.delete(catalog.unit).where(catalog.unit.c.id.in_(unit_ids)))

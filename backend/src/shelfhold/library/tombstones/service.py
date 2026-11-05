@@ -93,6 +93,14 @@ _tomb, _kid, _lost = (
 _pending = coherence.tombstone_pending_root
 
 
+class TombstoneGate(Protocol):
+    """What a cycle that could bring content back needs: may this candidate be acquired?"""
+
+    def check(
+        self, candidate: TombstoneValues, *, root_id: str | None, hash_with: HashWith | None = None
+    ) -> "Verdict": ...
+
+
 class JournalDisk(Protocol):
     """The part of `Fsops` the tombstones use (fsops stays the only writer)."""
 
@@ -276,12 +284,12 @@ class TombstoneService:
                 connection.execute(
                     sa.insert(_pending).values(root_id=root_id, seq=seq, line=line.decode("ascii"))
                 )
+        if self._index is not None:  # the row is committed: it blocks now, whatever the disk does
+            self._index.add_all([(values, cited)])
         written: list[str] = []
         for root in roots:
             if root.mounted and self._write_line(root, seq, kid, lines[root.root_id]):
                 written.append(root.root_id)
-        if self._index is not None:
-            self._index.add_all([(values, cited)])
         pending = tuple(r.root_id for r in roots if r.root_id not in written)
         return Recorded(seq, kid, tuple(written), pending)
 
@@ -297,6 +305,24 @@ class TombstoneService:
                 sa.delete(_pending).where(_pending.c.root_id == root.root_id, _pending.c.seq == seq)
             )
         return True
+
+    def has_pending(self, root_id: str) -> bool:
+        """Lines still owed to this root (a purge ran while it was away): fsops refuses every
+        other write to it until a replay has written them (EF-BIB-052, GAP-12-14)."""
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    sa.select(_pending.c.seq).where(_pending.c.root_id == root_id).limit(1)
+                ).first()
+                is not None
+            )
+
+    def flush_pending(self, root: TombstoneRoot) -> bool:
+        """Write the lines a mounted root still owes (a transient error, or a root that was away).
+        True when nothing is owed any more. A root that is not mounted flushes nothing."""
+        if root.mounted:
+            self._flush_pending(root)
+        return not self.has_pending(root.root_id)
 
     def _flush_pending(self, root: TombstoneRoot) -> int:
         with self._engine.connect() as connection:
@@ -496,6 +522,14 @@ class TombstoneService:
         if self._index.contains(candidate, hash_with=hash_with):
             return Verdict(True, "tombstoned")
         return Verdict(False)
+
+    def has_values(self, candidate: TombstoneValues) -> bool:
+        """These very values are already tombstoned (a purge run twice records them once). Unlike
+        `check`, a shared content hash does not count: another Variant of the same file is not
+        covered until its own reference is."""
+        if self._index is None:
+            raise NotReplayedError("replay the tombstones before any reacquisition")
+        return self._index.contains_values(candidate)
 
     def check_content(
         self, hashes: Iterable[ContentHash] = (), *, hash_with: HashWith | None = None

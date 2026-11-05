@@ -17,10 +17,12 @@ import structlog
 from sqlalchemy import Engine
 
 from shelfhold.config import Settings
+from shelfhold.events.bus import EventBus
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.application.target_state import load_health, target_write_guard
-from shelfhold.export.domain.path_map import PathMap
+from shelfhold.export.domain.path_map import PathMap, PathMode
+from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.adopt import Adopter, AdoptionSession
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
@@ -37,6 +39,7 @@ from shelfhold.infrastructure.fetcher import (
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.infrastructure.secrets import SecretVault, diagnostics
+from shelfhold.library.public import TombstoneRoot, TombstoneService
 
 __all__ = [
     "TargetUrlRefused",
@@ -141,14 +144,23 @@ def open_adoption(settings: Settings, destination_id: str) -> AdoptionSession:
     lan = asyncio.run(LanTargets.declare([f"{host}:{port}"], resolver))
     clock = SystemClock()
     events = _LogEvents()
-    vault = SecretVault(diagnostics.boot_check(settings, create=False, announce=False))
+    keyring = diagnostics.boot_check(settings, create=False, announce=False)
+    vault = SecretVault(keyring)
     client = open_client(
         engine, vault, IntegrationFetcher(resolver, lan_targets=lan), target_id=row.id,
         base_url=url, events=events, clock=clock,
     )  # fmt: skip
     fsops = Fsops.open(loaded.path_map, loaded.expected)
+    tombstones = TombstoneService(engine, keyring, fsops, EventBus(clock))
+    tombstones.replay(
+        [
+            TombstoneRoot(r.root_id, r.path, mounted=fsops.root_state(r.path) is RootState.OK)
+            for r in loaded.roots
+            if r.mode is PathMode.RW
+        ]
+    )  # membership fails closed until a replay ran: a purged file is not adopted again
     adopter = Adopter(
         engine, fsops, locate=loaded.locate, clock=clock,
-        auditor=AccessAuditor(engine, clock, events),
+        auditor=AccessAuditor(engine, clock, events), tombstones=tombstones,
     )  # fmt: skip
     return AdoptionSession(adopter, client)

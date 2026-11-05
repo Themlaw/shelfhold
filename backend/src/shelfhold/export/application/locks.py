@@ -104,6 +104,21 @@ class ResourceLocks:
         resources = [work_resource(work), path_resource(series)]  # the fixed order
         if library is not None:
             resources.append(library)  # always last: `work`, `path`, then `library`
+        with self.hold_resources(job_id, resources, timeout=timeout, heartbeat=heartbeat) as held:
+            yield held
+
+    @contextmanager
+    def hold_resources(
+        self,
+        job_id: str,
+        resources: list[str],
+        *,
+        timeout: float = 0.0,
+        heartbeat: float | None = None,
+    ) -> Iterator[HeldLocks]:
+        """All of `resources` or none, in the order given (the caller keeps the fixed order:
+        `work`, then the `path`s, then `library`). The purge holds one `path` per folder it
+        touches (EF-BIB-052)."""
         deadline = time.monotonic() + timeout
         while True:
             try:

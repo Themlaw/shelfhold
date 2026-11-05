@@ -38,6 +38,7 @@ from shelfhold.export.domain.provenance_mirror import is_mirror_rel
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
 from shelfhold.infrastructure.fsops.emitters import (
     TRASH_RETENTION_S,
+    Perimeter,
     perimeter_of,
     require_content_inside,
     require_inside,
@@ -49,12 +50,14 @@ from shelfhold.infrastructure.fsops.errors import (
     EmitterConditionError,
     EmitterPerimeterError,
     LeaseRaceError,
+    NotRegularFileError,
     OutsidePathMapError,
     PathEscapeError,
     ReadOnlyRootError,
     ReservedPathError,
     RootBlockedError,
     SentinelFormatError,
+    TombstonePendingError,
 )
 from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of
 from shelfhold.infrastructure.fsops.mirror import (
@@ -92,6 +95,7 @@ class BootReport:
     blocked: dict[str, RootState] = field(default_factory=dict)
     restamped: list[str] = field(default_factory=list)
     purged_staging: int = 0
+    tombstone_owed: list[str] = field(default_factory=list)  # left alone: lines are due first
 
 
 def _read_lease(root: ConfinedRoot) -> bytes | None:
@@ -153,12 +157,19 @@ class Fsops:
         self._umask = umask
         self._strategy = strategy
         self._lease_verifier: Callable[[str, bytes | None], None] | None = None
+        self._tombstones_owed: Callable[[str], bool] | None = None
 
     def enforce_lease(self, verify: Callable[[str, bytes | None], None] | None) -> None:
         """From now on every write passes `verify(root_path, raw_lease)`, which raises when the
         root's lease is not this instance's valid one (ENF-OPS-015). Set once at start-up, so no
         write path (journal, replay, sessions) can skip the check."""
         self._lease_verifier = verify
+
+    def enforce_tombstone_flush(self, owed: Callable[[str], bool] | None) -> None:
+        """From now on a write to a root for which `owed(root_path)` is true is refused, except
+        the tombstone lines themselves: a root that was away during a purge gets its lines
+        before anything else (EF-BIB-052). Set once at start-up, like the lease."""
+        self._tombstones_owed = owed
 
     @classmethod
     def open(
@@ -228,11 +239,17 @@ class Fsops:
             return SentinelVerdict(RootState.MISMATCH)
 
     @contextmanager
-    def _gated(self, located: _Located, *, lease: bool = True) -> Iterator[ConfinedRoot]:
-        """The root opened for a write: refused when read-only, when its sentinel says so or when
-        the lease is not ours (once `enforce_lease` is on)."""
+    def _gated(
+        self, located: _Located, *, lease: bool = True, tombstone: bool = False
+    ) -> Iterator[ConfinedRoot]:
+        """The root opened for a write: refused when read-only, when its sentinel says so, when
+        the lease is not ours (once `enforce_lease` is on) or when tombstone lines are owed to it
+        (`tombstone=True`: the write that pays them)."""
         if located.read_only:
             raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
+        owed = self._tombstones_owed
+        if lease and not tombstone and owed is not None and owed(located.root_path):
+            raise TombstonePendingError(located.root_path)
         with self._root(located.root_path) as root:
             verdict = self._verdict(root)
             if verdict.blocks_writes:
@@ -253,6 +270,15 @@ class Fsops:
         except RootBlockedError as error:
             return RootStatus(located.root_path, error.state)
 
+    def root_state(self, root_path: str) -> RootState:
+        """The sentinel's verdict on a writable physical root, `MISSING` when it is not mounted."""
+        key = self._host_root(root_path).root_path
+        try:
+            with self._root(key) as root:
+                return self._verdict(root).state
+        except RootBlockedError as error:
+            return error.state
+
     def require_scan_allowed(self, local: str) -> None:
         located = self._locate(local)
         if located.read_only:
@@ -268,6 +294,10 @@ class Fsops:
             raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
         self.require_scan_allowed(local)
 
+    def _owes(self, root_path: str) -> bool:
+        owed = self._tombstones_owed
+        return owed is not None and owed(root_path)
+
     def boot(self) -> BootReport:
         """Per root: judge the sentinel, re-stamp a database one ahead, purge orphan staging."""
         report = BootReport()
@@ -277,6 +307,9 @@ class Fsops:
                     verdict = self._verdict(root)
                     if verdict.blocks_writes:
                         report.blocked[root_path] = verdict.state
+                        continue
+                    if self._owes(root_path):
+                        report.tombstone_owed.append(root_path)  # only the replay may write now
                         continue
                     if verdict.restamp:
                         self._stamp(root, self._expected[root_path].generation)
@@ -297,6 +330,8 @@ class Fsops:
         """After the database commit: rewrite the sentinel with the new generation (I39)."""
         key = clean_absolute(root_path)
         expected = self._expected[key]
+        if self._owes(key):
+            raise TombstonePendingError(key)
         with self._root(key) as root:
             self._stamp(root, generation)
         self._expected[key] = replace(expected, generation=generation)
@@ -339,9 +374,10 @@ class Fsops:
         with self._root(located.root_path) as root:
             return root.stat(located.rel).st_dev
 
-    def observe(self, local: str) -> tuple[Kind, FileIdentity] | None:
-        """What is at `local` (a link is described, never followed), or None when nothing is."""
-        located = self._locate(local, read_mirror=True)
+    def observe(self, local: str, *, host: bool = False) -> tuple[Kind, FileIdentity] | None:
+        """What is at `local` (a link is described, never followed), or None when nothing is.
+        `host` lets the purge look at an entry of a root's bin (a reserved folder)."""
+        located = self._locate(local, read_mirror=True, host=host)
         with self._root(located.root_path) as root:
             try:
                 observed = root.stat(located.rel)
@@ -450,12 +486,12 @@ class Fsops:
 
     def append_tombstone_line(self, root_path: str, line: bytes, *, header: bytes) -> None:
         """Append one line to the root's journal: a write like any other (sentinel, lease)."""
-        with self._gated(self._host_root(root_path)) as root:
+        with self._gated(self._host_root(root_path), tombstone=True) as root:
             append_line(root, line, header=header)
 
     def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None:
         """Add `kid` and its tags to the registry of the root's sentinel, before any line."""
-        with self._gated(self._host_root(root_path)) as root:
+        with self._gated(self._host_root(root_path), tombstone=True) as root:
             add_sentinel_kid(root, kid, tags)
 
     def read_tombstone_journal(self, root_path: str, *, max_bytes: int) -> bytes | None:
@@ -503,6 +539,35 @@ class Fsops:
         located = self._locate(local)
         with self._gated(located) as root:
             root.unlink(located.rel)
+
+    def purge_unlink(self, local: str) -> None:
+        """`purge --now` deletes one regular file: a copy of a Unit in a read-write root, or a
+        file of that root's bin (EF-BIB-052). The caller has passed the reserved-action rule, has
+        recorded the tombstone and has written the intent; this is the primitive, and it adds
+        what only fsops can check: the path is under a writable root, never through a link, never
+        a directory, never the host's own files (sentinel, lease, tombstone journal, mirror)."""
+        located = self._locate(local, host=True)
+        self._require_purgeable(located.rel)
+        with self._gated(located) as root:
+            if root.lstat_kind(located.rel) != "file":
+                raise NotRegularFileError(f"{local!r} is not a regular file")
+            root.unlink(located.rel)
+
+    def purge_remove_tree(self, local: str) -> None:
+        """The same for one entry of a root's bin (`.shelfhold/recycle/<id>`) and what it holds,
+        the only folder a purge removes."""
+        located = self._locate(local, host=True)
+        if not Perimeter(below=RECYCLE_DIR).allows(located.rel):
+            raise ReservedPathError(f"{local!r} is not inside a bin")
+        with self._gated(located) as root:
+            if root.lstat_kind(located.rel) != "dir":
+                raise NotRegularFileError(f"{local!r} is not a bin entry")
+            root.remove_tree(located.rel)
+
+    @staticmethod
+    def _require_purgeable(rel: str) -> None:
+        if is_reserved(rel) and not Perimeter(below=RECYCLE_DIR).allows(rel):
+            raise ReservedPathError(f"{rel!r} belongs to the host: a purge never deletes it")
 
     def system_unlink(self, emitter: str, local: str) -> None:
         """A system emitter deletes one file or link, inside its own perimeter and only while its

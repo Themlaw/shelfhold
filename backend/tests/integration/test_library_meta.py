@@ -10,10 +10,11 @@ from shelfhold.infrastructure.schema import catalog
 from shelfhold.library.public import MetaProjection, PassthroughStore, meta_path
 from tests.integration.test_schema_catalog import add_edition, add_work
 from tests.library_env import LibEnv, cbz_bytes, lib_env
+from tests.null_tombstones import NONE_PURGED
 
 
 def ingest_one(env: LibEnv) -> None:
-    PassthroughStore(env.engine, env.fsops, env.locate, env.data).ingest(
+    PassthroughStore(env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED).ingest(
         unit_id=env.chain["unit"], variant_id=env.chain["variant"],
         staged=env.stage(cbz_bytes()), dest=str(env.manga / "S" / "S - 1.cbz"),
     )  # fmt: skip

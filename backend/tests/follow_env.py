@@ -28,6 +28,7 @@ from tests.fakes_clock import ManualClock
 from tests.fakes_fetcher import FakeResolver
 from tests.integration.test_schema_catalog import add_edition, add_work
 from tests.library_env import LibEnv, lib_env
+from tests.null_tombstones import NONE_PURGED
 
 LAN_IP = "192.168.1.50"
 START = datetime.fromisoformat("2026-11-05T09:00:00+00:00")
@@ -140,6 +141,7 @@ def follow_bench(
     has_credentials: bool = False,
     service: Any = None,
     max_attempts: int = 8,
+    tombstones: Callable[[LibEnv], Any] | None = None,
 ) -> Iterator[Bench]:
     server = server or FakeSuwayomi(auth_mode="none")
     with lib_env() as lib:
@@ -176,12 +178,17 @@ def follow_bench(
             sleeps.append(seconds)
             clock.advance(seconds=seconds)
 
+        guard = tombstones(lib) if tombstones is not None else NONE_PURGED
+
         def new_cycle() -> FollowCycle:
             return FollowCycle(
                 lib.engine, bus, clock, service, fetcher,
-                store=PassthroughStore(lib.engine, lib.fsops, lib.locate, lib.data),
+                store=PassthroughStore(
+                    lib.engine, lib.fsops, lib.locate, lib.data, tombstones=guard
+                ),
                 receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
                 place=_placement(lib), sleep=sleep, stale_k=stale_k, max_attempts=max_attempts,
+                tombstones=guard,
             )  # fmt: skip
 
         cycle = new_cycle()

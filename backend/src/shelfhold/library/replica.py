@@ -12,7 +12,7 @@ established as independent is not counted; a library file altered by a third par
 another `content_hash` once looked at, so it is not counted either.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -22,9 +22,11 @@ from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform, storage
+from shelfhold.library.domain.copies import Copy
 
 __all__ = [
     "LibraryCopy",
+    "erase_replicas",
     "has_readable_copy",
     "independent_copies",
     "library_copies",
@@ -34,7 +36,11 @@ __all__ = [
     "record_replica",
     "reference_content_hash",
     "rendered_file_hashes",
+    "replica_copies",
+    "replica_hashes",
     "update_observation",
+    "upstream_claims",
+    "withdraw_upstream_claims",
 ]
 
 replica_table = storage.replica
@@ -343,3 +349,71 @@ def median_unit_bytes(connection: Connection, edition_id: str) -> int | None:
         ).scalars()
     )
     return sizes[len(sizes) // 2] if sizes else None
+
+
+# -- what a purge reads and erases (EF-BIB-052): the one door to the table stays here ------------
+
+
+def _owned(unit_ids: Collection[str], export_item_ids: Collection[str]) -> sa.ColumnElement[bool]:
+    return sa.or_(
+        replica_table.c.unit_id.in_(unit_ids), replica_table.c.export_item_id.in_(export_item_ids)
+    )
+
+
+def replica_copies(
+    connection: Connection, unit_ids: Collection[str], export_item_ids: Collection[str]
+) -> list[Copy]:
+    """Every file copy of these Units and export items. Upstream claims are not files."""
+    roots = platform.physical_root
+    rows = connection.execute(
+        sa.select(replica_table, roots.c.path_entry, roots.c.mode)
+        .select_from(replica_table.join(roots, roots.c.root_id == replica_table.c.physical_root_id))
+        .where(_owned(unit_ids, export_item_ids), replica_table.c.rel_path.is_not(None))
+        .order_by(replica_table.c.id)
+    )
+    return [
+        Copy("file", r.id, r.location, r.physical_root_id, r.path_entry, r.mode, r.rel_path,
+             r.unit_id, r.export_item_id)
+        for r in rows
+    ]  # fmt: skip
+
+
+def replica_hashes(
+    connection: Connection, unit_ids: Collection[str]
+) -> tuple[list[str], list[str]]:
+    """(payload hashes, whole-file hashes) the copies of these Units carry."""
+    rows = connection.execute(
+        sa.select(replica_table.c.content_hash, replica_table.c.file_hash).where(
+            replica_table.c.unit_id.in_(unit_ids)
+        )
+    ).all()
+    return [r.content_hash for r in rows if r.content_hash], [
+        r.file_hash for r in rows if r.file_hash
+    ]
+
+
+def upstream_claims(connection: Connection, unit_ids: Collection[str]) -> int:
+    """The copies Shelfhold counts as living upstream: the claim a purge withdraws (M1a), without
+    writing to the service (EF-BIB-052, passe 12 M7)."""
+    return int(
+        connection.execute(
+            sa.select(sa.func.count())
+            .select_from(replica_table)
+            .where(replica_table.c.unit_id.in_(unit_ids), replica_table.c.location == "upstream")
+        ).scalar_one()
+    )
+
+
+def withdraw_upstream_claims(connection: Connection, unit_ids: Collection[str]) -> None:
+    """Shelfhold no longer counts the upstream copy as its own (M1a: nothing is written there)."""
+    connection.execute(
+        sa.delete(replica_table).where(
+            replica_table.c.unit_id.in_(unit_ids), replica_table.c.location == "upstream"
+        )
+    )
+
+
+def erase_replicas(
+    connection: Connection, unit_ids: Collection[str], export_item_ids: Collection[str]
+) -> None:
+    connection.execute(sa.delete(replica_table).where(_owned(unit_ids, export_item_ids)))

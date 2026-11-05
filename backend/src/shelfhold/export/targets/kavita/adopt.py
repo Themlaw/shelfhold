@@ -45,7 +45,12 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
 from shelfhold.infrastructure.xml.safe_parse import UnsafeXmlError, safe_parse_xml
-from shelfhold.library.public import record_destination_copy
+from shelfhold.library.public import (
+    FILE_HASH_BY,
+    ContentHash,
+    ContentTombstones,
+    record_destination_copy,
+)
 from shelfhold.sdk.age import from_comicinfo
 
 if TYPE_CHECKING:
@@ -103,6 +108,7 @@ class AdoptedFile:
     size: int
     mtime_ns: int
     ino: int
+    tombstoned: bool = False  # purged for good: never adopted again (EF-BIB-052 (2))
 
 
 @dataclass(frozen=True)
@@ -150,6 +156,11 @@ class AdoptionReport:
     adopted_files: int = 0  # filled once applied
     already_adopted: int = 0
     warnings: tuple[str, ...] = field(default=())
+
+    @property
+    def tombstoned(self) -> tuple[str, ...]:
+        """Files purged for good: the preview says so, the adoption leaves them out."""
+        return tuple(f.rel_path for s in self.series for f in s.files if f.tombstoned)
 
     @property
     def files(self) -> int:
@@ -286,7 +297,9 @@ class Adopter:
         locate: Callable[[str], tuple[str, str]],
         clock: Clock,
         auditor: AccessAuditor,
+        tombstones: ContentTombstones,
     ) -> None:
+        self._tombstones = tombstones
         self._engine = engine
         self._fsops = fsops
         self._locate = locate
@@ -457,10 +470,13 @@ class Adopter:
             answer = parsed(name) if isinstance(parsed, BulkParse) else parsed[name]
             kind, number, origin = number_of(answer, info)
             rel = within(remote, remote_root) or name
+            purged = self._tombstones.check_content(
+                [ContentHash(FILE_HASH_BY, self._fsops.sha256_of(local))]
+            )
             adopted.append(
                 AdoptedFile(
                     name, rel, local, kind, number, origin, seen[1].size, seen[1].mtime_ns,
-                    seen[1].ino,
+                    seen[1].ino, purged,
                 )
             )  # fmt: skip
         parsed_names = [
@@ -589,9 +605,9 @@ class Adopter:
                 )
             ).scalars()
         )
-        fresh = [f for f in item.files if f.rel_path not in taken]
+        fresh = [f for f in item.files if f.rel_path not in taken and not f.tombstoned]
         if not fresh:
-            return 0, len(item.files)
+            return 0, len([f for f in item.files if not f.tombstoned])
         edition_id = item.edition_id or self._create_edition(connection, ctx, item)
         self._freeze_series(connection, ctx, item, edition_id, now)
         self._suggest_age(connection, item, edition_id, now)
@@ -599,7 +615,7 @@ class Adopter:
         for file in fresh:
             unit_id, order = self._unit(connection, edition_id, file, order, now)
             self._record(connection, ctx, item, edition_id, unit_id, file, now)
-        return len(fresh), len(item.files) - len(fresh)
+        return len(fresh), len([f for f in item.files if not f.tombstoned]) - len(fresh)
 
     @staticmethod
     def _create_edition(

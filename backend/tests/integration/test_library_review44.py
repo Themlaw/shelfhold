@@ -23,11 +23,12 @@ from shelfhold.library.public import (
 )
 from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.library_env import JPEG, OLD_COMICINFO, PNG, LibEnv, cbz_bytes, lib_env
+from tests.null_tombstones import NONE_PURGED
 
 
 def ingest(env: LibEnv, data: bytes, upstream_ref: str | None = None) -> Path:
     dest = env.manga / "S" / "S - 1.cbz"
-    PassthroughStore(env.engine, env.fsops, env.locate, env.data).ingest(
+    PassthroughStore(env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED).ingest(
         unit_id=env.chain["unit"], variant_id=env.chain["variant"],
         staged=env.stage(data), dest=str(dest), upstream_ref=upstream_ref,
     )  # fmt: skip
