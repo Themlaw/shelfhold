@@ -35,7 +35,7 @@ from shelfhold.catalog.domain.names import (
     join_people,
     person_field_name,
 )
-from shelfhold.catalog.domain.placement import IngestOutcome
+from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts
 
 
 class Catalog(CatalogService):
@@ -88,6 +88,7 @@ __all__ = [
     "TeamRef",
     "TextVersionRef",
     "UnitView",
+    "VariantFacts",
     "ingest_isolated",
     "join_people",
     "person_field_name",

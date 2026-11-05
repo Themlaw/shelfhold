@@ -10,15 +10,24 @@ the whole service and counts against nothing; the pause ends with `resume`.
 """
 
 import asyncio
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import NamedTuple
 
 import sqlalchemy as sa
 import structlog
 
 from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
+from shelfhold.acquisition.application.planning import (
+    highest_numbered,
+    pending,
+    set_watermark,
+    watermark_of,
+)
+from shelfhold.acquisition.application.preference import TeamPreference, record_release
 from shelfhold.acquisition.application.tickets import (
     MAX_ATTEMPTS,
     STALL_AFTER,
@@ -30,6 +39,14 @@ from shelfhold.acquisition.application.tickets import (
 )
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.freshness import DEFAULT_K, is_stale
+from shelfhold.acquisition.domain.requests import (
+    DEFAULT_KEY_CAP,
+    DEFAULT_SERVICE_CAP,
+    Mode,
+    RequestBudget,
+)
+from shelfhold.acquisition.domain.team_policy import DEFAULT_INACTIVE_MONTHS
+from shelfhold.acquisition.domain.watermark import Watermark
 from shelfhold.catalog.public import (
     BindingRef,
     IncomingUnit,
@@ -42,11 +59,11 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
 from shelfhold.jobs.ledger import Created
 from shelfhold.jobs.public import DomainSlots, JobContext, JobPools
-from shelfhold.library.public import PassthroughStore
+from shelfhold.library.public import PassthroughStore, has_readable_copy
 from shelfhold.plugin_host.errors import AuthModeUnsupported, ServiceVersionMismatch
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.refs import SeriesRef
+from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import SourceError
 
 log = structlog.get_logger(__name__)
@@ -93,6 +110,20 @@ class _Binding(NamedTuple):
     check_override: str | None
     source_key: str
     remote_id: str
+    cap: int | None  # per-cycle cap of this series, in Units (None: only the shared caps)
+
+
+@dataclass
+class _Look:
+    """What one listing of a series needs while its releases are ingested."""
+
+    binding: _Binding
+    mark: Watermark | None
+    now: datetime
+    contested: set[str]  # raw numbers offered more than once: elected once all are known
+    taken: set[str] = field(default_factory=set)  # Variants whose slot was counted (a replay)
+    touched: set[str] = field(default_factory=set)
+    opened: set[str] = field(default_factory=set)
 
 
 class FollowCycle:
@@ -112,6 +143,9 @@ class FollowCycle:
         stale_k: int = DEFAULT_K,
         max_attempts: int = MAX_ATTEMPTS,
         stall_after: timedelta = STALL_AFTER,
+        service_cap: int = DEFAULT_SERVICE_CAP,
+        key_cap: int = DEFAULT_KEY_CAP,
+        inactive_months: int = DEFAULT_INACTIVE_MONTHS,
     ) -> None:
         self._engine = engine
         self._bus = bus
@@ -127,6 +161,9 @@ class FollowCycle:
             stall_after=stall_after,
         )  # fmt: skip
         self._pending: list[PublishedEvent] = []
+        self._caps = (service_cap, key_cap)
+        self._prefs = TeamPreference(inactive_months=inactive_months)
+        self._series_taken: dict[str, int] = {}
 
     # -- the cycle ---------------------------------------------------------------------------
     async def run(self) -> FollowReport:
@@ -164,13 +201,18 @@ class FollowCycle:
             for ref in await from_service(self._service.followed_series(self._fetcher))
         }
         present = self._reconcile_library(in_library, report)
-        for binding in self._bindings():
-            if (
-                binding.active
-                and binding.check_override != "paused"
-                and (binding.source_key, binding.remote_id) in present
-            ):
-                await self._discover_isolated(binding, report)
+        budget = RequestBudget(*self._caps)
+        self._series_taken = {}
+        followed = [
+            binding
+            for binding in self._bindings()
+            if binding.active
+            and binding.check_override != "paused"
+            and (binding.source_key, binding.remote_id) in present
+        ]
+        for binding in followed:
+            await self._discover_isolated(binding, report, budget)
+        self._fill(followed, budget, report)
         report.tickets = await self._tickets.advance()
         report.fetched = report.tickets.fetched
         if report.tickets.fetched:  # the source delivers: what was given up may be tried again
@@ -233,7 +275,7 @@ class FollowCycle:
             sa.select(
                 b.c.id, b.c.edition_id, b.c.work_id, b.c.active, b.c.disabled_reason,
                 b.c.priority, b.c.last_checked, f.c.check_override, si.c.source_key,
-                si.c.remote_id,
+                si.c.remote_id, f.c.cap,
             )
             .select_from(
                 b.join(si, si.c.id == b.c.source_item_id).join(
@@ -288,11 +330,13 @@ class FollowCycle:
             )
 
     # -- discovery ---------------------------------------------------------------------------
-    async def _discover_isolated(self, binding: _Binding, report: FollowReport) -> None:
+    async def _discover_isolated(
+        self, binding: _Binding, report: FollowReport, budget: RequestBudget
+    ) -> None:
         """One series failing is that series' problem: the others are still followed. An error
         that says the whole service cannot be driven is the exception: it goes up and pauses."""
         try:
-            await self._discover(binding, report)
+            await self._discover(binding, report, budget)
         except Exception as error:
             failure_class = classify(error)
             disposition = disposition_of(failure_class)
@@ -306,43 +350,178 @@ class FollowCycle:
                     )  # fmt: skip
             log.warning("follow.series_skipped", binding_id=binding.id, failure_class=failure_class)
 
-    async def _discover(self, binding: _Binding, report: FollowReport) -> None:
+    async def _discover(
+        self, binding: _Binding, report: FollowReport, budget: RequestBudget
+    ) -> None:
         ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
         units = await from_service(self._service.list_units(self._fetcher, ref))
-        # The first look at a binding only learns what is there: what to request from that
-        # backlog is the watermark and backfill policy (L19), never "everything".
-        baseline = binding.last_checked is None
-        now = self._clock.now()
-        opened: set[str] = set()
-
-        def open_ticket(connection: sa.Connection, result: IngestResult) -> None:
-            """In the ingest's own transaction: a Variant never exists without its ticket."""
-            if result.outcome is not IngestOutcome.NEW_VARIANT or baseline:
-                return
-            DownloadTickets.open(
-                connection, binding_id=binding.id, variant_id=result.variant_id,
-                unit_id=result.unit_id, now=now,
-            )  # fmt: skip
-            opened.add(result.variant_id)
-
+        with self._engine.connect() as connection:
+            mark = watermark_of(connection, binding.edition_id)
+        # Without a watermark the first look only learns what is there (it becomes the watermark):
+        # a series followed from now on is asked for what is new, never for its whole archive.
+        look = _Look(binding, mark, self._clock.now(), _contested(units))
         for info in units:
             result = ingest_isolated(
                 self._engine,
                 IncomingUnit(
                     binding=BindingRef(binding.id, binding.edition_id),
-                    remote_unit_id=info.remote_unit_id, raw_number=info.number, seen_at=now,
+                    remote_unit_id=info.remote_unit_id, raw_number=info.number, seen_at=look.now,
                     source_order=info.source_order, team_label=info.team, lang=info.lang,
                     title=info.title, published_at=info.published_at, kind=info.kind,
                 ),
-                then=open_ticket,
+                then=self._hook(info, look, budget),
             )  # fmt: skip
             report.discovered += int(result.outcome is IngestOutcome.NEW_VARIANT)
-        report.requested += len(opened)
+        for unit_id in sorted(look.touched):  # every offer is known now: one election per Unit
+            with self._engine.begin() as connection:
+                self._prefs.elect(connection, unit_id, look.now)
+        report.requested += len(look.opened)
         with self._engine.begin() as connection:
+            if mark is None and (top := highest_numbered(connection, binding.edition_id)):
+                set_watermark(connection, binding.edition_id, top)
             table = acquisition.source_binding
             connection.execute(
-                sa.update(table).where(table.c.id == binding.id).values(last_checked=now)
+                sa.update(table).where(table.c.id == binding.id).values(last_checked=look.now)
             )
+
+    def _hook(
+        self, info: UnitInfo, look: _Look, budget: RequestBudget
+    ) -> Callable[[sa.Connection, IngestResult], None]:
+        def then(connection: sa.Connection, result: IngestResult) -> None:
+            self._on_ingest(connection, result, info, look, budget)
+
+        return then
+
+    def _on_ingest(
+        self,
+        connection: sa.Connection,
+        result: IngestResult,
+        info: UnitInfo,
+        look: _Look,
+        budget: RequestBudget,
+    ) -> None:
+        """In the ingest's own transaction: a Variant never exists without its ticket, unless the
+        caps leave no room (the next cycle asks) or another team offers the same chapter (elected
+        once the whole listing is read)."""
+        if result.outcome not in (IngestOutcome.NEW_VARIANT, IngestOutcome.SUPERSEDING):
+            return
+        record_release(connection, result.team_id, info.published_at or look.now)
+        if str(info.number) in look.contested:
+            look.touched.add(result.unit_id)
+            return
+        election = self._prefs.elect(connection, result.unit_id, look.now)
+        if (
+            result.outcome is not IngestOutcome.NEW_VARIANT  # a human decides a replacement
+            or look.mark is None
+            or election is None
+            or election.variant_id != result.variant_id
+            or not _is_new(connection, result.unit_id, look.mark)
+        ):
+            return
+        if result.variant_id not in look.taken:
+            if not self._take(look.binding, budget):
+                return  # no room this cycle: asked next cycle, in order
+            look.taken.add(result.variant_id)
+        if DownloadTickets.open(
+            connection, binding_id=look.binding.id, variant_id=result.variant_id,
+            unit_id=result.unit_id, now=look.now,
+        ):  # fmt: skip
+            look.opened.add(result.variant_id)
+
+    # -- requests beyond the first look: what the caps held back, then backfill -----------------
+    def _take(self, binding: _Binding, budget: RequestBudget) -> bool:
+        taken = self._series_taken.get(binding.id, 0)
+        room = None if binding.cap is None else binding.cap - taken
+        if room is not None and room <= 0:
+            return False
+        if budget.take(binding.source_key, 1, series_cap=room) == 0:
+            return False
+        self._series_taken[binding.id] = taken + 1
+        return True
+
+    def _fill(self, followed: list[_Binding], budget: RequestBudget, report: FollowReport) -> None:
+        """New chapters first, then backfill; one Unit per series in turn so that no series
+        starves another, all within the caps (EF-EXP-053)."""
+        by_id = {binding.id: binding for binding in followed}
+        editions = list({b.edition_id: b for b in followed}.values())
+        report.requested += self._round_robin(editions, "follow", by_id, budget)
+        with self._engine.connect() as connection:
+            modes = {
+                row.edition_id: row.backfill_mode
+                for row in connection.execute(
+                    sa.select(
+                        acquisition.series_follow.c.edition_id,
+                        acquisition.series_follow.c.backfill_mode,
+                    )
+                )
+            }
+        backfills: tuple[Mode, ...] = ("gaps", "all")
+        for mode in backfills:
+            asked = [b for b in editions if modes.get(b.edition_id) == mode]
+            report.requested += self._round_robin(asked, mode, by_id, budget)
+        with self._engine.begin() as connection:
+            for edition in editions:
+                if modes.get(edition.edition_id) in ("gaps", "all") and not pending(
+                    connection, edition.edition_id, modes[edition.edition_id]
+                ):  # nothing left to bring back: the backfill is done
+                    connection.execute(
+                        sa.update(acquisition.series_follow)
+                        .where(acquisition.series_follow.c.edition_id == edition.edition_id)
+                        .values(backfill_mode="none")
+                    )
+
+    def _round_robin(
+        self,
+        editions: list[_Binding],
+        mode: Mode,
+        by_id: dict[str, _Binding],
+        budget: RequestBudget,
+    ) -> int:
+        queues: dict[str, deque[str]] = {}
+        with self._engine.connect() as connection:
+            for edition in editions:
+                units = pending(connection, edition.edition_id, mode)
+                queues[edition.edition_id] = deque(u.unit_id for u in units)
+        opened = 0
+        while queues and budget.remaining > 0:
+            for edition_id in list(queues):
+                if not queues[edition_id]:
+                    del queues[edition_id]
+                    continue
+                unit_id = queues[edition_id].popleft()
+                outcome = self._open_for_unit(unit_id, by_id, budget)
+                if outcome == "exhausted":
+                    del queues[edition_id]
+                opened += outcome == "opened"
+        return opened
+
+    def _open_for_unit(
+        self, unit_id: str, by_id: dict[str, _Binding], budget: RequestBudget
+    ) -> str:
+        v = catalog.unit_variant
+        now = self._clock.now()
+        with self._engine.begin() as connection:
+            chosen = connection.execute(
+                sa.select(v.c.id, v.c.source_binding_id).where(
+                    v.c.unit_id == unit_id, v.c.preferred, v.c.removed_at.is_(None)
+                )
+            ).first()
+            variant_id, binding_id = (
+                (chosen.id, chosen.source_binding_id) if chosen else (None, None)
+            )
+            if variant_id is None:
+                election = self._prefs.elect(connection, unit_id, now)
+                if election is not None:
+                    variant_id, binding_id = election.variant_id, election.binding_id
+            binding = by_id.get(binding_id) if binding_id else None
+            if variant_id is None or binding is None:
+                return "skipped"  # no live Variant, or it belongs to another service's binding
+            if not self._take(binding, budget):
+                return "exhausted"
+            opened = DownloadTickets.open(
+                connection, binding_id=binding.id, variant_id=variant_id, unit_id=unit_id, now=now
+            )
+        return "opened" if opened else "skipped"
 
     # -- freshness (EF-SRC-026 c) ------------------------------------------------------------
     def check_freshness(self) -> list[str]:
@@ -426,6 +605,35 @@ class FollowCycle:
         """Hand the events to in-process subscribers, after the transactions that wrote them."""
         pending, self._pending = self._pending, []
         self._bus.deliver(pending)
+
+
+def _contested(units: list[UnitInfo]) -> set[str]:
+    """Raw numbers that more than one release offers in this listing (another team's version)."""
+    seen: set[str] = set()
+    twice: set[str] = set()
+    for info in units:
+        key = str(info.number)
+        (twice if key in seen else seen).add(key)
+    return twice
+
+
+def _is_new(connection: sa.Connection, unit_id: str, mark: Watermark) -> bool:
+    """A Unit worth asking for: beyond the watermark (an extra without a number is always new),
+    not suppressed, and not already carried by a file or a volume (EF-BIB-044, EF-EXP-018)."""
+    unit = catalog.unit
+    row = connection.execute(
+        sa.select(
+            unit.c.number_segment_ordinal,
+            unit.c.number_norm,
+            unit.c.track,
+            unit.c.follow_suppressed,
+        ).where(unit.c.id == unit_id)
+    ).one()
+    if row.follow_suppressed or has_readable_copy(connection, unit_id):
+        return False
+    if row.track == "unnumbered":
+        return True
+    return mark.is_beyond(ordinal=row.number_segment_ordinal, number=Decimal(row.number_norm))
 
 
 def _probe_error(detail: str | None) -> SourceError:

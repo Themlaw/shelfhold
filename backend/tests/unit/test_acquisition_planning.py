@@ -1,4 +1,4 @@
-"""EF-EXP-053 / EF-BIB-044: watermark, per-cycle caps, backfill thresholds, what may be requested."""
+"""EF-EXP-053 / EF-BIB-044: watermark, per-cycle caps, backfill thresholds, requestable Units."""
 
 from decimal import Decimal
 
@@ -95,9 +95,7 @@ def test_a_suppressed_acknowledged_or_already_asked_unit_is_never_requested() ->
         _unit("4", live=False),
         _unit("5"),
     ]
-    assert [u.number for u in requestable(units, Watermark.of("", "0"), "follow")] == [
-        Decimal(5)
-    ]
+    assert [u.number for u in requestable(units, Watermark.of("", "0"), "follow")] == [Decimal(5)]
 
 
 @pytest.mark.req("EF-BIB-044")

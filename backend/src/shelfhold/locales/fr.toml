@@ -518,6 +518,10 @@ action = "Vérifiez le réveil automatique du service ou démarrez-le à la main
 title = "Une source de repli a pris le relais."
 action = "Vérifiez la source principale ; Shelfhold y revient dès qu'elle fonctionne."
 
+[errors."backfill.confirmation_required"]
+title = "Le rattrapage dépasse 100 chapitres ou 5 Gio : il demande une confirmation."
+action = "Vérifiez l'estimation (nombre, taille, espace libre), puis confirmez pour lancer le rattrapage."
+
 [errors."series.gap"]
 title = "Il manque des chapitres dans la série."
 action = "Consultez la série et lancez la recherche des chapitres manquants."

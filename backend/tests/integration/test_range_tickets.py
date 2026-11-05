@@ -78,7 +78,9 @@ def _bench(lib: LibEnv, chapters: int = 10) -> Bench:
 
     @asynccontextmanager
     async def receive(asset: Any) -> Any:
-        yield Received(path=Path("/nonexistent") / asset.filename, size=7, sha256="sha256:" + "0" * 64)
+        yield Received(
+            path=Path("/nonexistent") / asset.filename, size=7, sha256="sha256:" + "0" * 64
+        )
 
     def keep(received: Received, payload: RangedPayload, item_id: str) -> None:
         kept.append((item_id, len(payload.covers)))
@@ -129,7 +131,9 @@ def test_range_request_cap_counted_in_units() -> None:
         first = bench.tickets.request(bench.span(1, 60), budget)
         assert len(first.ticket_ids) == 1
         assert len(bench.rows("SELECT unit_id FROM download_request_unit")) == 50
-        assert [u.unit_id for u in first.deferred] == [bench.units[n].unit_id for n in range(51, 61)]
+        assert [u.unit_id for u in first.deferred] == [
+            bench.units[n].unit_id for n in range(51, 61)
+        ]
         second = bench.tickets.request(first.deferred, RequestBudget(service_cap=50, key_cap=50))
         assert len(second.ticket_ids) == 1 and second.deferred == []
         assert len(bench.rows("SELECT id FROM download_request")) == 2
@@ -148,9 +152,12 @@ def test_retry_only_uncovered_units_of_ticket(bench: Bench) -> None:
     result = bench.tickets.request(bench.span(1, 8), RequestBudget())
     bench.advance()
     states = {
-        r["unit_id"]: r["state"] for r in bench.rows("SELECT unit_id, state FROM download_request_unit")
+        r["unit_id"]: r["state"]
+        for r in bench.rows("SELECT unit_id, state FROM download_request_unit")
     }
-    assert [states[bench.units[n].unit_id] for n in range(1, 9)] == ["covered"] * 5 + ["missing"] * 3
+    assert [states[bench.units[n].unit_id] for n in range(1, 9)] == ["covered"] * 5 + [
+        "missing"
+    ] * 3
 
     retry = bench.tickets.retry_uncovered(result.ticket_ids[0])
     assert retry is not None and retry != result.ticket_ids[0]
@@ -194,8 +201,15 @@ def test_n_chapters_one_volume_only_rolling_volume_changes() -> None:
 
         after = {r["id"]: r for r in bench.rows("SELECT id, closed FROM export_item")}
         assert set(after) == set(before)  # no new item: the rolling one was updated in place
-        assert bench.rows(
-            "SELECT unit_id FROM unit_coverage WHERE carrier_id = :i ORDER BY position", i=closed_id
-        ) == closed_coverage  # the closed volume is untouched
+        assert (
+            bench.rows(
+                "SELECT unit_id FROM unit_coverage WHERE carrier_id = :i ORDER BY position",
+                i=closed_id,
+            )
+            == closed_coverage
+        )  # the closed volume is untouched
         rolling = next(i for i, r in after.items() if not r["closed"])
-        assert len(bench.rows("SELECT unit_id FROM unit_coverage WHERE carrier_id = :i", i=rolling)) == 3
+        assert (
+            len(bench.rows("SELECT unit_id FROM unit_coverage WHERE carrier_id = :i", i=rolling))
+            == 3
+        )

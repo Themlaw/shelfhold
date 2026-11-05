@@ -1066,6 +1066,10 @@
     }
   },
   "x-problem-types": {
+    "/api/v1/problems/backfill.confirmation-required": {
+      "code": "backfill.confirmation_required",
+      "status": 409
+    },
     "/api/v1/problems/backup.failed": {
       "code": "backup.failed",
       "status": 503

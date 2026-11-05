@@ -52,6 +52,13 @@ def _watermark(bench: Bench, number: str) -> None:
         )
 
 
+def _settle(bench: Bench) -> None:
+    """Cycles until what was asked is on disk (the simulated server needs a few polls)."""
+    for _ in range(5):
+        bench.run()
+    assert not bench.rows("SELECT id FROM download_request WHERE state <> 'fetched'")
+
+
 def _ticketed(bench: Bench) -> list[str]:
     """The chapter numbers that have a ticket, with the team of the Variant asked for."""
     return [
@@ -71,7 +78,7 @@ def test_first_cycle_new_chapters_only_above_watermark() -> None:
         for number in (3, 4, 5, 6):
             bench.add_chapter(number)
         first = bench.run()
-        assert first.requested == 4 and first.fetched == 4
+        assert first.requested == 4
         assert [t.split(":")[0] for t in _ticketed(bench)] == ["3", "4", "5", "6"]
 
     with follow_bench() as bench:  # no watermark yet: the series as it stands is the baseline
@@ -104,7 +111,8 @@ def test_only_preferred_variant_enqueued() -> None:
         held = [_chapter(n, "A", 30 - n) for n in (1, 2, 3)]
         _watermark(bench, "2")
         _serve(bench, held)
-        bench.run()  # chapter 3 arrives: team A now holds a file on disk
+        bench.run()  # chapter 3 arrives...
+        _settle(bench)  # ...and team A now holds a file on disk
         _serve(bench, [*held, _chapter(4, "A", 5), _chapter(4, "B", 4)])  # two teams offer 4
         assert bench.run().requested == 1
         assert _ticketed(bench) == ["3:team a", "4:team a"]  # the team already on disk, only
@@ -117,7 +125,9 @@ def test_single_variant_exported_per_unit() -> None:
         bench.run()
         per_unit = bench.rows(
             "SELECT u.number_norm AS n, sum(v.preferred) AS preferred, count(*) AS variants "
-            "FROM unit u JOIN unit_variant v ON v.unit_id = u.id GROUP BY u.id ORDER BY u.number_sort"
+            "FROM unit u JOIN unit_variant v ON v.unit_id = u.id WHERE u.edition_id = :e "
+            "GROUP BY u.id ORDER BY u.number_sort",
+            e=bench.edition_id,
         )
         assert [(r["n"], r["preferred"], r["variants"]) for r in per_unit] == [
             ("1", 1, 2),
@@ -130,7 +140,8 @@ def test_team_fallback_is_logged() -> None:
     with follow_bench() as bench:
         _watermark(bench, "0")
         _serve(bench, [_chapter(n, "B", 250 - n) for n in (1, 2, 3)])
-        bench.run()  # team B holds three files on disk
+        bench.run()
+        _settle(bench)  # team B holds three files on disk
         _serve(
             bench,
             [_chapter(n, "B", 250 - n) for n in (1, 2, 3)]
@@ -250,7 +261,9 @@ def test_a_confirmed_backfill_is_served_by_the_cycle_within_the_caps() -> None:
 def test_follow_suppressed_survives_source_restore() -> None:
     with follow_bench() as bench:
         assert bench.run().requested == 0  # baseline: units 1 and 2 are known, watermark 2
-        unit_1 = bench.rows("SELECT id FROM unit WHERE number_norm = '1'")[0]["id"]
+        unit_1 = bench.rows(
+            "SELECT id FROM unit WHERE number_norm = '1' AND edition_id = :e", e=bench.edition_id
+        )[0]["id"]
         with bench.lib.engine.begin() as connection:
             admin = add_user(connection)
         with bench.lib.engine.begin() as connection:
