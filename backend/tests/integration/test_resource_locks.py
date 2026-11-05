@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.export.application.locks import LockBusyError, ResourceLocks
 
+from shelfhold.export.application.locks import LockBusyError, ResourceLocks
 from shelfhold.infrastructure.schema import coherence
 from tests.intents_env import make_intent_env
 
@@ -111,7 +111,8 @@ def test_lock_of_a_dead_job_is_taken_over_once_its_lease_ran_out(tmp_path: Path)
 def test_release_all_at_boot_frees_locks_of_killed_jobs(tmp_path: Path) -> None:
     ienv = make_intent_env(tmp_path)
     locks = ResourceLocks(ienv.engine, clock=ienv.clock)
-    locks.hold(JOB_A, work=WORK, series=SERIES, timeout=0).__enter__()
+    killed = locks.hold(JOB_A, work=WORK, series=SERIES, timeout=0)
+    killed.__enter__()  # kept alive: a garbage-collected context would release by itself
     assert locks.release_all() == 2
     with locks.hold(JOB_B, work=WORK, series=SERIES, timeout=0):
         pass

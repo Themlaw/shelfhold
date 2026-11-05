@@ -8,12 +8,13 @@ Nothing here ever reads a path that was checked by a separate call.
 """
 
 import contextlib
+import hashlib
 import os
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from typing import Self
+from typing import Literal, Self
 
 from shelfhold.export.domain.path_map import (
     PathMap,
@@ -23,6 +24,7 @@ from shelfhold.export.domain.path_map import (
     within,
 )
 from shelfhold.export.domain.physical_roots import (
+    LEASE_FILE,
     RECYCLE_DIR,
     STAGING_DIR,
     ExpectedRoot,
@@ -31,7 +33,7 @@ from shelfhold.export.domain.physical_roots import (
     is_reserved,
     judge_sentinel,
 )
-from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Strategy
+from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
 from shelfhold.infrastructure.fsops.errors import (
     CrossRootError,
     OutsidePathMapError,
@@ -41,7 +43,7 @@ from shelfhold.infrastructure.fsops.errors import (
     RootBlockedError,
     SentinelFormatError,
 )
-from shelfhold.infrastructure.fsops.identity import FileIdentity
+from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of
 from shelfhold.infrastructure.fsops.sentinel import read_sentinel, write_sentinel
 from shelfhold.infrastructure.fsops.writer import (
     HashingReader,
@@ -66,6 +68,17 @@ class BootReport:
     blocked: dict[str, RootState] = field(default_factory=dict)
     restamped: list[str] = field(default_factory=list)
     purged_staging: int = 0
+
+
+def _read_lease(root: ConfinedRoot) -> bytes | None:
+    try:
+        fd = root.open_file(LEASE_FILE, os.O_RDONLY)
+    except FileNotFoundError:
+        return None
+    try:
+        return os.read(fd, 4096)
+    finally:
+        os.close(fd)
 
 
 @dataclass(frozen=True)
@@ -241,6 +254,67 @@ class Fsops:
                     return source.read()
             finally:
                 os.close(fd)
+
+    def observe(self, local: str) -> tuple[Kind, FileIdentity] | None:
+        """What is at `local` (a link is described, never followed), or None when nothing is."""
+        located = self._locate(local)
+        with self._root(located.root_path) as root:
+            try:
+                observed = root.stat(located.rel)
+            except FileNotFoundError:
+                return None
+            kind = root.lstat_kind(located.rel)
+        return (kind, identity_of(observed)) if kind is not None else None
+
+    def sha256_of(self, local: str) -> str:
+        """`sha256:<hex>` of a regular file, streamed."""
+        located = self._locate(local)
+        with self._root(located.root_path) as root:
+            fd = root.open_file(located.rel, os.O_RDONLY)
+            digest = hashlib.sha256()
+            with os.fdopen(fd, "rb") as stream:
+                while chunk := stream.read(1 << 20):
+                    digest.update(chunk)
+        return "sha256:" + digest.hexdigest()
+
+    # -- the per-root lease (ENF-OPS-015) ------------------------------------------------------
+
+    def read_lease(self, root_path: str) -> bytes | None:
+        """The raw lease of a root, or None. A read: it writes nothing and gates nothing."""
+        key = clean_absolute(root_path)
+        if key not in self._expected:
+            raise OutsidePathMapError(f"{root_path!r} is not a writable physical root")
+        try:
+            with self._root(key) as root:
+                return _read_lease(root)
+        except RootBlockedError:
+            return None
+
+    def update_lease(
+        self,
+        root_path: str,
+        decide: Callable[[bytes | None], bytes | Literal["remove"] | None],
+    ) -> None:
+        """Read the lease, decide, and write, all in the one root opened for the write.
+
+        The sentinel and the generation counter are judged on that same open root first, so a
+        lease is never taken, renewed or removed on a root that is missing, foreign or behind
+        (EF-EXP-029). `decide` gets the current bytes and returns the new ones, "remove" or None
+        (leave as is); whatever it raises propagates and nothing is written.
+        """
+        key = clean_absolute(root_path)
+        if key not in self._expected:
+            raise OutsidePathMapError(f"{root_path!r} is not a writable physical root")
+        located = _Located(key, ".", False)
+        with self._gated(located) as root:
+            outcome = decide(_read_lease(root))
+            if outcome is None:
+                return
+            if outcome == "remove":
+                with contextlib.suppress(FileNotFoundError):
+                    root.unlink(LEASE_FILE)
+                return
+            write_atomic(root, LEASE_FILE, outcome, parents=True, replace=True)
 
     # -- writes -----------------------------------------------------------------------------
 

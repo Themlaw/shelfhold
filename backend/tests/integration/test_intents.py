@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+
 from shelfhold.export.application.intents import (
     INTENT_SCHEMA_VERSION,
     IntentJournal,
     open_intent_paths,
     skip_covered,
 )
-
 from shelfhold.infrastructure.schema import coherence
 from tests.intents_env import IntentEnv, make_intent_env, set_restore_epoch, sha
 
@@ -212,3 +212,25 @@ def test_stale_intent_detected_by_epoch_counter_not_clock(ienv: IntentEnv) -> No
     assert live_dst.exists() and not live_src.exists()
     with ienv.engine.connect() as conn:
         assert str(stale_src) not in open_intent_paths(conn)  # not open any more: reconcile owns it
+
+
+@pytest.mark.req("EF-EXP-041")
+@pytest.mark.parametrize("case", ["target_other_content", "source_other_content", "both_present"])
+def test_replay_only_on_an_exactly_known_disk_state(ienv: IntentEnv, case: str) -> None:
+    """Anything but source-only or target-only-with-the-expected-file is drift: untouched, open."""
+    src = ienv.fs.manga / "Series" / "1.cbz"
+    dst = src.with_name("1 renamed.cbz")
+    expected = b"chapter"
+    if case == "target_other_content":
+        ienv.fs.fsops.write_atomic(str(dst), b"someone else", parents=True)
+    elif case == "source_other_content":
+        ienv.fs.fsops.write_atomic(str(src), b"someone else", parents=True)
+    else:
+        ienv.fs.fsops.write_atomic(str(src), expected, parents=True)
+        ienv.fs.fsops.write_atomic(str(dst), expected)
+    before = {p: p.read_bytes() for p in (src, dst) if p.exists()}
+    intent_id = insert_raw_intent(ienv, src=src, dst=dst, data=expected)
+    report = IntentJournal(ienv.engine, ienv.fs.fsops, clock=ienv.clock).resolve_open()
+    assert report.drifted == [intent_id]
+    assert states(ienv)[intent_id] == "applying"
+    assert {p: p.read_bytes() for p in (src, dst) if p.exists()} == before

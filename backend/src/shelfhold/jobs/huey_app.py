@@ -235,15 +235,26 @@ class JobPools:
                 self.slots.release(job.limit_key)
 
 
-def boot_jobs(pools: JobPools, *, instance_lock: InstanceLock) -> BootReport:
+def boot_jobs(
+    pools: JobPools,
+    *,
+    instance_lock: InstanceLock,
+    resolve_intents: Callable[[], object],
+    release_resource_locks: Callable[[], object] | None = None,
+) -> BootReport:
     """Start-up, in this order, and only once the instance lock is ours (ENF-OPS-007, -015).
 
-    1. `flush_locks` on every pool, 2. release the domain leases, 3. put the jobs that were
-    `running` back (a killed worker is not acknowledged), 4. one scan: the catch-up of whatever
-    came due during the downtime, once.
+    0. `resolve_intents`: every open file-operation intent is settled before any job exists
+    (EF-EXP-041); if it raises, nothing below runs. 1. `flush_locks` on every pool, 2. release the
+    domain leases and the resource locks, 3. put the jobs that were `running` back (a killed
+    worker is not acknowledged), 4. one scan: the catch-up of whatever came due during the
+    downtime, once.
     """
     if not instance_lock.is_held():
         raise InstanceLockNotHeldError("flush_locks needs the instance lock")
+    resolve_intents()
+    if release_resource_locks is not None:
+        release_resource_locks()
     flushed = 0
     for name in pools.names:
         huey = pools.huey(name)

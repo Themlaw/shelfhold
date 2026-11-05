@@ -9,6 +9,7 @@ from pathlib import Path
 import structlog
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.instance import LOCK_NAME  # the instance lock is the keyring lock
 from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.errors import KeyringMissingError
@@ -16,7 +17,6 @@ from shelfhold.infrastructure.secrets.keyring import Keyring, KeyringStore
 from shelfhold.infrastructure.volumes import ensure_volumes
 
 KEYRING_NAME = "keyring"
-LOCK_NAME = "keyring.lock"
 
 
 def keyring_path(settings: Settings) -> Path:

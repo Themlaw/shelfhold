@@ -5,6 +5,9 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+
+from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode
+from shelfhold.infrastructure.fsops import Fsops, ReadOnlyRootError
 from shelfhold.infrastructure.instance import (
     HEARTBEAT_INTERVAL,
     LEASE_VALIDITY,
@@ -12,9 +15,6 @@ from shelfhold.infrastructure.instance import (
     LeaseLostError,
     WriteSessions,
 )
-
-from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode
-from shelfhold.infrastructure.fsops import Fsops, ReadOnlyRootError
 from tests.fakes_clock import ManualClock
 from tests.fsops_env import Env, make_env
 from tests.intents_env import NOW
@@ -131,8 +131,8 @@ def test_adopt_ro_mode_from_the_database_is_wired_into_fsops(
     """`physical_root.mode` (L04) decides: a root the database says is `adopt_ro` is never
     written and never leased, whatever the configured path map says."""
     import sqlalchemy as sa
-    from shelfhold.export.application.roots import load_roots
 
+    from shelfhold.export.application.roots import load_roots
     from shelfhold.infrastructure.schema import platform
     from tests.intents_env import prepare_database
 
@@ -171,3 +171,43 @@ def test_adopt_ro_mode_from_the_database_is_wired_into_fsops(
     with pytest.raises(ReadOnlyRootError):
         sessions.open(str(env.upstream / "x.cbz")).__enter__()
     assert not lease_file(env.upstream).exists()
+
+
+@pytest.mark.req("ENF-OPS-015")
+def test_expired_lease_is_not_taken_while_the_holder_still_holds_its_flock(
+    env: Env, clock: ManualClock, tmp_path: Path
+) -> None:
+    from shelfhold.infrastructure.instance import InstanceLock
+
+    other_data = tmp_path / "other-data"
+    other_data.mkdir()
+    holder_lock = InstanceLock(other_data)
+    holder_lock.acquire()  # the other instance is alive, even if its heartbeat stalled
+    theirs = WriteSessions(env.fsops, instance_id=OTHER, clock=clock, lock_path=holder_lock.path)
+    mine = WriteSessions(env.fsops, instance_id=ME, clock=clock)
+    path = str(env.manga / "x.cbz")
+    theirs.take(str(env.library))
+    clock.advance(seconds=LEASE_VALIDITY.total_seconds() + 1)
+    with pytest.raises(LeaseConflictError):
+        mine.open(path).__enter__()
+    holder_lock.release()  # it died: now the expired lease can be taken
+    with mine.open(path):
+        lease = mine.read_lease(str(env.library))
+        assert lease is not None and lease.instance_id == ME
+
+
+@pytest.mark.req("ENF-OPS-015", "EF-EXP-029")
+def test_lease_never_taken_on_a_root_whose_sentinel_is_foreign(
+    env: Env, clock: ManualClock
+) -> None:
+    from shelfhold.infrastructure.fsops import RootBlockedError
+
+    (env.library / ".shelfhold-mount-id").write_text(
+        '{"schema_version": "1.0", "root_id": "01JBZ3X5QH8M2N4P6R7S9T0ZZZ", '
+        '"instance_id": "01JBZ3X5QH8M2N4P6R7S9T0ZZY", "generation": 3}',
+        encoding="utf-8",
+    )
+    sessions = WriteSessions(env.fsops, instance_id=ME, clock=clock)
+    with pytest.raises(RootBlockedError):
+        sessions.open(str(env.manga / "x.cbz")).__enter__()
+    assert not lease_file(env.library).exists()

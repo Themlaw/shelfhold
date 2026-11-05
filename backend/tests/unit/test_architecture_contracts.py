@@ -317,6 +317,16 @@ def _opens_for_writing(node: ast.Call) -> bool:
     )
 
 
+FSOPS_RECEIVERS = {"fsops", "_fsops", "disk", "_disk", "session", "_sessions"}
+
+
+def _goes_through_fsops(func: ast.Attribute) -> bool:
+    """`fsops.rename(...)`, `self._disk.unlink(...)`: the sanctioned writer, not a raw path call."""
+    receiver = func.value
+    name = receiver.id if isinstance(receiver, ast.Name) else getattr(receiver, "attr", "")
+    return name in FSOPS_RECEIVERS
+
+
 def path_write_offences(source: str) -> list[tuple[int, str]]:
     found: list[tuple[int, str]] = []
     for node in ast.walk(ast.parse(source)):
@@ -324,6 +334,8 @@ def path_write_offences(source: str) -> list[tuple[int, str]]:
             continue
         func = node.func
         if isinstance(func, ast.Attribute):
+            if _goes_through_fsops(func):
+                continue
             if func.attr in PATH_WRITE_METHODS:
                 found.append((node.lineno, func.attr))
             elif func.attr == "replace" and len(node.args) == 1 and not node.keywords:

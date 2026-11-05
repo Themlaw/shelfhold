@@ -2,16 +2,17 @@
 Work and per series path; a stale plan is never applied)."""
 
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths, skip_covered
 from shelfhold.export.application.locks import LockBusyError, ResourceLocks
 from shelfhold.export.application.plans import PlanStore, StalePlanError
-
 from shelfhold.infrastructure.schema import coherence
 from tests.intents_env import make_intent_env
 
@@ -69,12 +70,13 @@ def test_i10_never_two_holders_of_one_resource(asks: list[tuple[str, str, str]])
         ienv = make_intent_env(Path(tmp))
         locks = ResourceLocks(ienv.engine, clock=ienv.clock)
         held: list[tuple[str, str, str]] = []
+        stack = ExitStack()  # alive: a collected context would release its locks
         for job, work, series in asks:
             if any(h[0] == job for h in held):
                 continue  # a job holds one pair at a time
             clash = any(h[1] == work or h[2] == series for h in held)
             try:
-                locks.hold(job, work=work, series=series, timeout=0).__enter__()
+                stack.enter_context(locks.hold(job, work=work, series=series, timeout=0))
             except LockBusyError:
                 assert clash  # refused only when it really overlaps
             else:
@@ -83,6 +85,7 @@ def test_i10_never_two_holders_of_one_resource(asks: list[tuple[str, str, str]])
         with ienv.engine.connect() as conn:
             rows = conn.execute(sa.text("SELECT resource, holder_job_id FROM resource_lock")).all()
         assert len({r.resource for r in rows}) == len(rows)  # one holder per resource
+        stack.close()
         ienv.engine.dispose()
 
 

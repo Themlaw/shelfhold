@@ -42,6 +42,17 @@ class MigrationInProgressError(Exception):
     """Another `shelfhold migrate` holds the migration lock."""
 
 
+class OpenIntentsError(Exception):
+    """Intents are still open: the running version has to resolve them first (ENF-OPS-019)."""
+
+    def __init__(self, count: int) -> None:
+        super().__init__(
+            f"{count} intention(s) de fichier encore ouverte(s) : démarrer une fois la version "
+            "actuelle pour les résoudre avant de migrer"
+        )
+        self.count = count
+
+
 class MigrationError(Exception):
     def __init__(self, revision: str, detail: str) -> None:
         super().__init__(f"migration {revision} failed: {detail}")
@@ -141,6 +152,20 @@ def head_revision(script_location: Path | None = None) -> str:
 
 def _read_only_uri(path: Path) -> str:
     return f"{path.resolve().as_uri()}?mode=ro"
+
+
+def open_intent_count(database_path: Path) -> int:
+    """`fs_intent` rows still `pending` or `applying`; 0 when there is no such table yet."""
+    if not database_path.exists():
+        return 0
+    try:
+        with contextlib.closing(sqlite3.connect(_read_only_uri(database_path), uri=True)) as db:
+            row = db.execute(
+                "SELECT count(*) FROM fs_intent WHERE state IN ('pending', 'applying')"
+            ).fetchone()
+    except sqlite3.OperationalError:  # no table, or an empty file
+        return 0
+    return int(row[0])
 
 
 def current_revision(database_path: Path) -> str | None:
@@ -249,6 +274,9 @@ def _migrate_locked(
 ) -> MigrationResult:
     log = structlog.get_logger()
     check_schema_not_newer(settings, script_location)
+    pending = open_intent_count(settings.database_path)
+    if pending:
+        raise OpenIntentsError(pending)
     script = _script(script_location)
     head = head_revision(script_location)
     current = current_revision(settings.database_path)
