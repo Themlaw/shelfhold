@@ -195,6 +195,8 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
             continue
         if record is not None and record.state in DONE_STATES:
             # Replacing a written file is only ever a proposal (EF-EXP-037, M2), never a plan op.
+            if record.state == "adopted":
+                continue  # an adopted file is kept and linked: never compared, never replaced
             if record.content_hash != unit.content_hash:
                 warnings.append(PlanWarning("content_changed", unit.unit_id))
             elif unit.sidecar_sha256 not in (None, record.sidecar_sha256):

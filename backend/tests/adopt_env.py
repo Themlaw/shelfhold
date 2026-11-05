@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from shelfhold.export.application.adopt import Adopter
+from shelfhold.export.targets.kavita.adopt import Adopter
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from tests.export_env import ExportEnv
 from tests.kavita_export_env import LIBRARY_ID, REMOTE_ROOT, Wired, wire
@@ -48,7 +48,12 @@ def tree_state(root: Path) -> dict[str, tuple[str, int, int, int]]:
             path = Path(base) / name
             stat = path.stat()
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            found[str(path.relative_to(root))] = (digest, stat.st_mtime_ns, stat.st_ino, stat.st_size)
+            found[str(path.relative_to(root))] = (
+                digest,
+                stat.st_mtime_ns,
+                stat.st_ino,
+                stat.st_size,
+            )
     return found
 
 
@@ -87,7 +92,12 @@ class Adoption:
         return sid
 
     def state(self) -> dict[str, tuple[str, int, int, int]]:
-        return tree_state(self.env.lib.tmp)
+        """Everything that was there, minus Shelfhold's own reserved folder (`.shelfhold/`)."""
+        return {
+            path: seen
+            for path, seen in tree_state(self.env.lib.tmp).items()
+            if "/.shelfhold/" not in f"/{path}"
+        }
 
 
 def adoption(env: ExportEnv, **fake_options: object) -> Adoption:

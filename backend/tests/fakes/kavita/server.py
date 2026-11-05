@@ -18,7 +18,6 @@ import base64
 import binascii
 import copy
 import json
-import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +26,7 @@ from typing import Any
 import httpx2
 
 from shelfhold.infrastructure.fetcher import IntegrationFetcher, LanTargets
+from tests.fakes.kavita.plugin_parse import simulate_parse
 from tests.fakes_fetcher import FakeResolver
 
 TESTS = Path(__file__).resolve().parents[2]
@@ -54,7 +54,6 @@ ALLOWED: dict[tuple[str, str], bool] = {
     ("GET", "/api/series/metadata"): False,
 }
 LIBRARY_TYPES = {"Manga": 0, "Comic": 1, "Book": 2, "Image": 3, "LightNovel": 4, "ComicVine": 5}
-_NAME = re.compile(r"^(?P<series>.+?) - (?:Vol\.(?P<vol>[\d.]+) )?(?:Ch\.(?P<ch>[\d.]+))?")
 
 
 def _schema(name: str) -> dict[str, Any]:
@@ -307,13 +306,13 @@ class FakeKavita:
 
     @staticmethod
     def _parsed(name: str) -> dict[str, Any]:
-        match = _NAME.match(name)
-        chapter = float(match["ch"]) if match and match["ch"] else 0.0
-        volume = float(match["vol"]) if match and match["vol"] else 0.0
+        """The documented replica of the route (`plugin_parse`): the names a library really has
+        (`Vol.1`, `Ch.3 [Team]`, `ch 3`) are read the way Kavita 0.9.1.4 reads them."""
+        parsed = simulate_parse(name)
         return {
-            "seriesName": match["series"] if match else name, "seriesYear": None,
-            "minChapterNumber": chapter, "maxChapterNumber": chapter,
-            "minVolumeNumber": volume, "maxVolumeNumber": volume,
+            "seriesName": parsed.series_name, "seriesYear": parsed.series_year,
+            "minChapterNumber": parsed.min_chapter, "maxChapterNumber": parsed.max_chapter,
+            "minVolumeNumber": parsed.min_volume, "maxVolumeNumber": parsed.max_volume,
         }  # fmt: skip
 
     def _parse_bulk(self, recorded: RecordedRequest) -> httpx2.Response:

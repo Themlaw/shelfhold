@@ -8,13 +8,13 @@ read is refused before M1b.
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.export.application.adopt import AdoptionRefused
 from shelfhold.export.application.target_state import (
     CHILD_EXPOSURE,
     DestinationPausedError,
     pause_shelf,
 )
 from shelfhold.export.targets.kavita import ConfirmationRequired
+from shelfhold.export.targets.kavita.adopt import AdoptionRefused
 from shelfhold.infrastructure.schema import catalog, export, storage
 from tests.adopt_env import Adoption, adoption, comicinfo
 from tests.export_env import ExportEnv, export_env
@@ -34,7 +34,7 @@ def _library(a: Adoption) -> None:
     """Two series: a chapter series and a series of volumes only."""
     a.add_series(
         "Dr Stone",
-        ["Dr Stone - Ch.1.cbz", "Dr Stone - Ch.2.cbz", "Dr Stone ch 3.cbz"],
+        ["Dr Stone - Ch.1.cbz", "Dr Stone - Ch.2.cbz", "Dr Stone - Ch.3 [Team].cbz"],
         info=comicinfo("Dr Stone", age="Mature 17+"),
     )
     a.add_series("Monster", ["Monster - Vol.1.cbz", "Monster - Vol.2.cbz"])
@@ -56,8 +56,8 @@ def test_adopt_existing_kavita_library_without_rewrite() -> None:
         with env.engine.connect() as connection:
             assert connection.exec_driver_sql("SELECT count(*) FROM fs_intent").scalar_one() == 0
         # Kavita: only the library settings may change (the exclusion of our reserved folder)
-        writes = [(r.method, r.path) for r in a.wired.fake.writes]
-        assert writes == [("PUT", "/api/library/update")]
+        writes = [(r.method, r.path.lower()) for r in a.wired.fake.writes]
+        assert writes == [("POST", "/api/library/update")]
         assert a.wired.fake.scans == []  # no scan: nothing was written to be found
         patterns = a.wired.fake.libraries[0]["excludePatterns"]
         assert patterns[:1] == ["*.tmp"] and PATTERN in patterns  # the admin's own are kept
@@ -75,13 +75,26 @@ def test_adopted_units_registered_in_manifest_as_adopted() -> None:
                 r.id: r.kind for r in connection.execute(sa.select(export.export_item)).mappings()
             }
             coverage = connection.execute(sa.select(export.unit_coverage)).mappings().all()
-            states = connection.execute(sa.select(catalog.unit.c.state)).scalars().all()
+            states = (
+                connection.execute(
+                    sa.select(catalog.unit.c.state)
+                    .select_from(
+                        catalog.unit.join(
+                            export.unit_coverage,
+                            export.unit_coverage.c.unit_id == catalog.unit.c.id,
+                        )
+                    )
+                    .distinct()
+                )
+                .scalars()
+                .all()
+            )
         assert {r["state"] for r in records} == {"adopted"}
         assert {r["locator_type"] for r in records} == {"path"}
         assert {r["rel_path"] for r in records} == {
             "Dr Stone/Dr Stone - Ch.1.cbz",
             "Dr Stone/Dr Stone - Ch.2.cbz",
-            "Dr Stone/Dr Stone ch 3.cbz",
+            "Dr Stone/Dr Stone - Ch.3 [Team].cbz",
             "Monster/Monster - Vol.1.cbz",
             "Monster/Monster - Vol.2.cbz",
         }
@@ -91,7 +104,7 @@ def test_adopted_units_registered_in_manifest_as_adopted() -> None:
         assert len(coverage) >= 5  # every adopted file carries at least one Unit
         assert all(c["extent"] == "full" and c["origin"] == "filename" for c in coverage)
         assert set(states) == {"adopted"}
-        chapter_three = connection_unit_number(env, "Dr Stone/Dr Stone ch 3.cbz")
+        chapter_three = connection_unit_number(env, "Dr Stone/Dr Stone - Ch.3 [Team].cbz")
         assert chapter_three == "3"  # read through plugin/parse, not guessed from the name
 
 
@@ -137,14 +150,16 @@ def test_adoption_proposes_renames_only_as_preview() -> None:
         before = a.state()
         report = run(a.adopter.preview(a.wired.client, env.destination_id))
         proposals = {(p.from_path, p.to_path) for p in report.renames}
-        assert ("Dr Stone/Dr Stone ch 3.cbz", "Dr Stone/Dr Stone - Ch.3.cbz") in proposals
+        assert ("Dr Stone/Dr Stone - Ch.3 [Team].cbz", "Dr Stone/Dr Stone - Ch.3.cbz") in proposals
         assert not any(p.from_path == "Dr Stone/Dr Stone - Ch.1.cbz" for p in report.renames)
         assert a.state() == before and _count(env, export.export_record) == 0  # a preview
         _adopt(a)
         assert a.state() == before  # confirmed, adopted: the odd name is still the odd name
         with env.engine.connect() as connection:
             paths = set(connection.execute(sa.select(export.export_record.c.rel_path)).scalars())
-        assert "Dr Stone/Dr Stone ch 3.cbz" in paths  # the manifest says where it really is
+        assert (
+            "Dr Stone/Dr Stone - Ch.3 [Team].cbz" in paths
+        )  # the manifest says where it really is
         env.pipeline.run(env.destination_id, job_id="01J00000000000000000000000")
         assert a.state() == before  # and a later export does not apply the proposal either
 
@@ -178,11 +193,13 @@ def test_adoption_reverse_age_mapping_stored_as_suggestion() -> None:
         with env.engine.connect() as connection:
             suggestions = connection.execute(sa.select(catalog.age_suggestion)).mappings().all()
             ratings = connection.execute(
-                sa.select(catalog.work.c.age_rating, catalog.edition.c.age_rating)
-                .select_from(catalog.work.join(catalog.edition))
+                sa.select(catalog.work.c.age_rating, catalog.edition.c.age_rating).select_from(
+                    catalog.work.join(catalog.edition)
+                )
             ).all()
-        assert [(s["entity_type"], s["value"], s["x"], s["provenance"], s["state"])
-                for s in suggestions] == [("edition", 16, False, "comicinfo", "open")]
+        assert [
+            (s["entity_type"], s["value"], s["x"], s["provenance"], s["state"]) for s in suggestions
+        ] == [("edition", 16, False, "comicinfo", "open")]
         assert all(w is None and e is None for w, e in ratings)  # suggested, never decided
 
 
@@ -213,11 +230,15 @@ def test_adopted_same_number_kept_and_linked_never_replaced() -> None:
         _adopt(a)
         with env.engine.connect() as connection:
             record = connection.execute(sa.select(export.export_record)).mappings().one()
-            covered = connection.execute(
-                sa.select(export.unit_coverage.c.unit_id).where(
-                    export.unit_coverage.c.carrier_id == record["export_item_id"]
+            covered = (
+                connection.execute(
+                    sa.select(export.unit_coverage.c.unit_id).where(
+                        export.unit_coverage.c.carrier_id == record["export_item_id"]
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             units = connection.execute(sa.select(catalog.unit.c.id)).scalars().all()
         assert covered == [unit]  # the adopted file is the exported Variant of that very Unit
         assert record["state"] == "adopted" and len(units) == 2  # (the fixture chain has one)
@@ -233,13 +254,16 @@ def test_adopted_same_number_kept_and_linked_never_replaced() -> None:
 def test_adoption_report_lists_existing_same_number_duplicates() -> None:
     with export_env() as env:
         a = adoption(env)
-        a.add_series("Dr Stone", ["Dr Stone - Ch.5.cbz", "Dr Stone ch 5 (HD).cbz", "Dr Stone - Ch.6.cbz"])
+        a.add_series(
+            "Dr Stone", ["Dr Stone - Ch.5 (HD).cbz", "Dr Stone - Ch.5.cbz", "Dr Stone - Ch.6.cbz"]
+        )
         before = a.state()
         report = run(a.adopter.preview(a.wired.client, env.destination_id))
         assert [(d.series, d.number, d.files) for d in report.duplicates] == [
             (
-                "Dr Stone", "5",
-                ("Dr Stone - Ch.5.cbz", "Dr Stone ch 5 (HD).cbz"),
+                "Dr Stone",
+                "5",
+                ("Dr Stone - Ch.5 (HD).cbz", "Dr Stone - Ch.5.cbz"),
             )
         ]
         _adopt(a)
@@ -283,7 +307,7 @@ def test_shelf_link_refused_when_library_exposed_to_children() -> None:
 
 @pytest.mark.req("EF-EXP-055")
 def test_kavita_client_is_built_with_the_write_guard() -> None:
-    from shelfhold.export.application.kavita_wiring import guarded_client
+    from shelfhold.export.targets.kavita.wiring import guarded_client
 
     with export_env() as env:
         a = adoption(env)
@@ -318,8 +342,7 @@ def test_adopted_volume_only_series_never_auto_follows() -> None:
                         export.unit_coverage, export.unit_coverage.c.unit_id == catalog.unit.c.id
                     ).join(
                         export.export_record,
-                        export.export_record.c.export_item_id
-                        == export.unit_coverage.c.carrier_id,
+                        export.export_record.c.export_item_id == export.unit_coverage.c.carrier_id,
                     )
                 )
                 .where(export.export_record.c.rel_path.like("Monster/%"))
@@ -330,14 +353,14 @@ def test_adopted_volume_only_series_never_auto_follows() -> None:
 
 @pytest.mark.req("EF-EXP-028", "EF-INT-014")
 def test_parse_bulk_used_for_replay_and_adoption() -> None:
-    from shelfhold.export.application.adopt import BulkParse
+    from shelfhold.export.targets.kavita.adopt import BulkParse
 
     with export_env() as env:
         a = adoption(env)
         _library(a)
         _adopt(a)
         calls = a.wired.fake.parse_calls
-        assert {c["name"] for c in calls} >= {"Dr Stone ch 3.cbz", "Monster - Vol.2.cbz"}
+        assert {c["name"] for c in calls} >= {"Dr Stone - Ch.3 [Team].cbz", "Monster - Vol.2.cbz"}
         assert a.wired.fake.requests_to("/api/plugin/parse-bulk")  # in batches ...
         assert not [r for r in a.wired.fake.requests_to("/api/plugin/parse") if r.query]  # ... only
         # replay: the names a plan asks for are fetched in bulk, then the plan may be applied

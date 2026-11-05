@@ -13,7 +13,7 @@ from tests.export_env import export_env
 from tests.kavita_env import run
 
 GOLDEN = Path(__file__).parent / "adopted_series"
-TYPOGRAPHIC = "L’Atelier"  # the apostrophe Kavita and the files carry
+TYPOGRAPHIC = f"L{chr(0x2019)}Atelier"  # the apostrophe Kavita and the files carry
 
 
 @pytest.mark.req("EF-EXP-052", "ENF-QUAL-004")
@@ -46,6 +46,9 @@ def test_adopted_series_new_chapter_no_second_kavita_series() -> None:
             xml = zf.read("ComicInfo.xml").decode("utf-8")
         assert f"<Series>{TYPOGRAPHIC}</Series>" in xml  # never the source's "L'Atelier"
         assert "L'Atelier" not in xml
+        assert "<SeriesSort>Atelier, L</SeriesSort>" in xml  # the frozen values, not the Work's
+        assert "<LocalizedSeries>Atelier</LocalizedSeries>" in xml
+        assert "<LanguageISO>fr</LanguageISO>" in xml
         assert env.scans == [f"/manga/Kavita/{TYPOGRAPHIC}"]  # the existing series folder
         target = GOLDEN / "ch51_comicinfo.xml"
         if os.environ.get("SHELFHOLD_UPDATE_GOLDEN") == "1":

@@ -24,14 +24,18 @@ def test_cli_adopt_dry_run(
         monkeypatch.setenv(key, value)
     with export_env() as export_environment:
         a = adoption(export_environment)
-        a.add_series("Dr Stone", ["Dr Stone - Ch.1.cbz", "Dr Stone ch 2.cbz"])
+        a.add_series("Dr Stone", ["Dr Stone - Ch.1.cbz", "Dr Stone - Ch.2 [Team].cbz"])
         before = a.state()
         session = adopt_cli.AdoptionSession(a.adopter, a.wired.client)
-        monkeypatch.setattr(adopt_cli, "open_session", lambda resolved: session)
+        monkeypatch.setattr(adopt_cli, "open_session", lambda resolved, destination: session)
         destination = export_environment.destination_id
         assert cli.main(["adopt", "--dry-run", "--destination", destination]) == 0
         out = capsys.readouterr().out
-        assert "Dr Stone" in out and "Dr Stone ch 2.cbz" in out and "Dr Stone - Ch.2.cbz" in out
+        assert (
+            "Dr Stone" in out
+            and "Dr Stone - Ch.2 [Team].cbz" in out
+            and "Dr Stone - Ch.2.cbz" in out
+        )
         assert a.state() == before and a.wired.fake.writes == []
         assert _records(export_environment) == 0
         # without --dry-run and without an explicit confirmation: refused, nothing is entered
