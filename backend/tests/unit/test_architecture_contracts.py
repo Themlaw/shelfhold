@@ -303,6 +303,7 @@ WRITERS_ALLOWED = (
     "shelfhold/infrastructure/migrate.py",
     "shelfhold/infrastructure/volumes.py",
     "shelfhold/infrastructure/secrets/atomic.py",  # keyring and export file, owner-only
+    "shelfhold/infrastructure/local_socket/",  # the CLI socket and its staging directory, /data
 )
 PATH_WRITE_METHODS = {
     "write_text", "write_bytes", "unlink", "rename", "mkdir", "rmdir", "touch",

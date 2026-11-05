@@ -112,6 +112,11 @@ warning_line = "Avertissement : {message}"
 database_not_migrated = "base absente ou pas à jour : lancez « shelfhold migrate »."
 identity_header_stripped = "des requêtes portent l'en-tête d'identité « {header} », retiré et jamais cru (forward-auth non configuré ou proxy hors des CIDR de confiance). Retirez-le au niveau du proxy ou du tunnel, ou configurez le forward-auth (M3)."
 
+[local_cli]
+param_invalid = "Paramètre « {name} » invalide : {expected} attendu."
+unknown_method = "Méthode inconnue : {method}."
+not_allowed = "Action refusée à ce canal."
+
 [admin]
 created = "Compte administrateur « {username} » créé."
 exists = "Un administrateur existe déjà : un seul compte local en M1a. Pour changer son mot de passe : « shelfhold admin reset-password »."
@@ -133,6 +138,8 @@ key_unknown = "Aucune clé active avec le préfixe {prefix}."
 no_keys = "Aucune clé d'API."
 key_line = "{prefix}  {name}  {scopes}  {state}"
 database_missing = "Base absente ou pas à jour : lancez d'abord « shelfhold migrate »."
+socket_refused = "Le serveur en marche a refusé cette commande : {detail}."
+socket_failed = "Échec de la liaison avec le serveur par sa socket locale : {detail}."
 
 [export]
 apply_needs_the_instance = "L'application d'un plan passe par l'instance en marche (API ou socket local) : utilisez --dry-run ici."

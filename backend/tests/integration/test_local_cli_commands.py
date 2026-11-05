@@ -50,6 +50,20 @@ def test_offline_cli_audit_keeps_the_host_uid_in_the_target(
     assert str(target).endswith(f" uid={os.getuid()}")
 
 
+def test_offline_rotate_audit_keeps_the_host_uid(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
+) -> None:
+    _prepared(monkeypatch, settings)
+    assert run_cli(monkeypatch, settings, "admin", "keys", "create") == 0
+    old = KEY.search(capsys.readouterr().out)
+    assert old
+    assert run_cli(monkeypatch, settings, "admin", "keys", "rotate", old.group(1)) == 0
+    new = KEY.search(capsys.readouterr().out)
+    assert new
+    rows = db_rows(settings, "SELECT actor_id, target FROM audit WHERE action = 'api_key.rotated'")
+    assert rows == [(None, f"{old.group(1)}>{new.group(1)} uid={os.getuid()}")]
+
+
 def test_cli_with_server_running_goes_through_the_socket(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
 ) -> None:
@@ -63,7 +77,9 @@ def test_cli_with_server_running_goes_through_the_socket(
         assert taken == []  # the server owns the lock; the CLI never competes for it
         assert run_cli(monkeypatch, env.settings, "admin", "keys", "list") == 0
         assert "x" in capsys.readouterr().out
-        rows = db_rows(env.settings, "SELECT actor_id, target FROM audit WHERE action LIKE 'api_key.%'")
+        rows = db_rows(
+            env.settings, "SELECT actor_id, target FROM audit WHERE action LIKE 'api_key.%'"
+        )
         assert [r[0] for r in rows] == [f"local_cli:{os.getuid()}"]
         assert "uid=" not in str(rows)
 
@@ -80,9 +96,12 @@ def test_admin_keys_rotate_and_revoke_via_socket_from_the_cli(
         assert second
         assert run_cli(monkeypatch, env.settings, "admin", "keys", "revoke", second.group(1)) == 0
         assert run_cli(monkeypatch, env.settings, "admin", "keys", "revoke", "deadbeef") == 1
-        assert {a for (a,) in db_rows(env.settings, "SELECT actor_id FROM audit WHERE action LIKE 'api_key.%'")} == {
-            f"local_cli:{os.getuid()}"
-        }
+        assert {
+            a
+            for (a,) in db_rows(
+                env.settings, "SELECT actor_id FROM audit WHERE action LIKE 'api_key.%'"
+            )
+        } == {f"local_cli:{os.getuid()}"}
 
 
 def test_session_revocation_works_with_the_server_running(

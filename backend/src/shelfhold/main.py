@@ -1,8 +1,12 @@
 """Composition root: wires infrastructure into the HTTP interface."""
 
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import cache
 from pathlib import Path
+
+import structlog
 
 from shelfhold import __version__
 from shelfhold.config import Settings, load_settings
@@ -13,6 +17,7 @@ from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.health import HealthProbe
 from shelfhold.infrastructure.idempotency_store import IdempotencyStore
+from shelfhold.infrastructure.local_socket import SOCKET_NAME, LocalSocketServer
 from shelfhold.infrastructure.logging import configure_logging
 from shelfhold.infrastructure.migrate import check_schema_not_newer
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
@@ -22,6 +27,7 @@ from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_h
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.shelves import build_shelves_router
+from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.runtime import InstanceRuntime
 
 PACKAGED_FRONTEND = Path(__file__).parent / "static"
@@ -39,7 +45,8 @@ def create_app(
     runtime = InstanceRuntime(resolved)
     # Opened lazily: no connection before the first request, after the start-up checks.
     engine = create_db_engine(resolved.database_path)
-    gate = AuthGate(local_auth(engine, resolved, clock), public_url=resolved.public_url)
+    auth = local_auth(engine, resolved, clock)
+    gate = AuthGate(auth, public_url=resolved.public_url)
 
     @cache
     def pipeline() -> object:
@@ -66,10 +73,34 @@ def create_app(
             runtime.stop()
             raise
 
+    @asynccontextmanager
+    async def local_cli_socket() -> AsyncIterator[None]:
+        """EF-USR-024: the host CLI reaches the running server here, and only here. Only the
+        instance that owns the volumes listens (a second one never got this far)."""
+        if not runtime.owns_volumes:
+            yield
+            return
+        server = LocalSocketServer(
+            resolved.data_dir / SOCKET_NAME,
+            IdentityDispatcher(auth),
+            allow_host=resolved.cli_allow_host,
+        )
+        try:
+            await server.start()
+        except OSError as error:  # the HTTP server stays up; the CLI then works on the database
+            structlog.get_logger().error("local_cli.socket_unavailable", error=str(error))
+            yield
+            return
+        try:
+            yield
+        finally:
+            await server.stop()
+
     return create_http_app(
         health=HealthProbe(resolved),
         on_startup=on_startup,
         on_shutdown=on_shutdown,
+        background=local_cli_socket,
         version=__version__,
         frontend_dir=resolved.frontend_dir or PACKAGED_FRONTEND,
         routers=(*routers, *export_routers),

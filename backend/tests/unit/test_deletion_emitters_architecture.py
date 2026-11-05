@@ -164,6 +164,8 @@ EXPECTED_CLOSED = {
         f"{FSOPS}/facade.py::_claim_lease",
         "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",
         "shelfhold/infrastructure/secrets/atomic.py::write_private",
+        "shelfhold/infrastructure/local_socket/server.py::LocalSocketServer._remove_socket",
+        "shelfhold/infrastructure/local_socket/server.py::bind_private",
     },
     "restore": {"shelfhold/infrastructure/migrate.py::_restore_database"},
     "intent_replay": {"shelfhold/export/application/intents.py::IntentJournal._resolve_rmdir"},

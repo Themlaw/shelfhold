@@ -1,16 +1,28 @@
 """``shelfhold admin create|reset-password|sessions revoke|keys create|list|revoke|rotate``.
 
-Host CLI (EF-USR-021, EF-USR-003). It works on the database directly, server running or not:
-SQLite serialises the writes, and a revoked session or key is refused at its next request. The
-password comes from a file or stdin (``--password-file -``), never from the command line.
-Until the local socket (L23) carries a principal, audit entries of these commands have no actor.
+Host CLI (EF-USR-021, EF-USR-003, EF-USR-024, ENF-OPS-015). Two channels:
+
+* the server runs: the command goes through its Unix socket (``/data/shelfhold.sock``), as the
+  ``local_cli`` principal; the audit actor is ``local_cli:<uid>``. A refusal by the socket
+  (foreign uid, peer outside the PID namespace) is reported, never worked around;
+* the server is stopped: the command takes the ``flock`` of ``/data/.lock`` itself and writes to
+  the database directly (audit without actor, ``uid=<uid>`` in the target).
+
+Nothing listens on the socket while a migration holds the lock, and revoking a stolen session
+must not require stopping the server: with the lock held and no socket, the identity commands
+still act directly (plain SQLite writes, which SQLite serialises) and take no lock.
+The password comes from a file or stdin (``--password-file -``), never from the command line.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import functools
 import json
 import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from shelfhold.config import ResolvedSettings, Settings
@@ -22,7 +34,15 @@ from shelfhold.identity.public import (
     local_auth,
 )
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
+from shelfhold.infrastructure.local_socket import (
+    SOCKET_NAME,
+    RpcFailure,
+    ServerUnavailable,
+    call,
+)
 from shelfhold.infrastructure.migrate import current_revision, head_revision
+from shelfhold.interfaces.local_cli import IdentityCommands, SocketIdentity
 
 STDIN = "-"
 
@@ -99,6 +119,62 @@ def _auth(settings: Settings) -> LocalAuth | None:
     return local_auth(create_db_engine(database), settings)
 
 
+class ChannelRefusedError(Exception):
+    """The running server's socket refused this process; the command is not run another way."""
+
+
+def _server_socket(settings: Settings) -> Path | None:
+    """The socket of a running server, or None (absent, or left behind by a dead one)."""
+    path = settings.data_dir / SOCKET_NAME
+    try:
+        call(path, "ping", {}, timeout_s=5.0)
+    except ServerUnavailable:
+        return None
+    except RpcFailure as failure:
+        raise ChannelRefusedError(failure.message) from failure
+    return path
+
+
+@contextmanager
+def _identity(settings: Settings) -> Iterator[IdentityCommands | None]:
+    """The channel of this command: the socket of a running server, else the database under the
+    `flock` (ENF-OPS-015). None: no database at the current schema."""
+    socket_path = _server_socket(settings)
+    if socket_path is not None:
+        yield SocketIdentity(socket_path)
+        return
+    auth = _auth(settings)
+    if auth is None:
+        yield None
+        return
+    lock = InstanceLock(settings.data_dir)
+    # held by an instance (or a migration) without a socket: a plain SQLite write, see above
+    with contextlib.suppress(InstanceLockHeldError):
+        lock.acquire()
+    try:
+        yield auth
+    finally:
+        lock.release()
+
+
+def _command(
+    handler: Callable[[argparse.Namespace, IdentityCommands], int],
+) -> Callable[[argparse.Namespace, ResolvedSettings], int]:
+    @functools.wraps(handler)
+    def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+        try:
+            with _identity(resolved.values) as auth:
+                if auth is None:
+                    return _fail(t("admin.database_missing"))
+                return handler(args, auth)
+        except ChannelRefusedError as refused:
+            return _fail(t("admin.socket_refused", detail=refused))
+        except (ServerUnavailable, RpcFailure, PermissionError) as failure:
+            return _fail(t("admin.socket_failed", detail=failure))
+
+    return run
+
+
 def _read_password(source: str) -> str:
     raw = sys.stdin.readline() if source == STDIN else Path(source).read_text(encoding="utf-8")
     lines = raw.splitlines()
@@ -123,10 +199,8 @@ def _with_password(args: argparse.Namespace) -> tuple[str | None, int]:
         return None, _fail(t("admin.password_unreadable", detail=exc))
 
 
-def run_create(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
-    auth = _auth(resolved.values)
-    if auth is None:
-        return _fail(t("admin.database_missing"))
+@_command
+def run_create(args: argparse.Namespace, auth: IdentityCommands) -> int:
     password, status = _with_password(args)
     if password is None:
         return status
@@ -140,10 +214,8 @@ def run_create(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     return 0
 
 
-def run_reset_password(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
-    auth = _auth(resolved.values)
-    if auth is None:
-        return _fail(t("admin.database_missing"))
+@_command
+def run_reset_password(args: argparse.Namespace, auth: IdentityCommands) -> int:
     password, status = _with_password(args)
     if password is None:
         return status
@@ -157,10 +229,8 @@ def run_reset_password(args: argparse.Namespace, resolved: ResolvedSettings) -> 
     return 0
 
 
-def run_sessions_revoke(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
-    auth = _auth(resolved.values)
-    if auth is None:
-        return _fail(t("admin.database_missing"))
+@_command
+def run_sessions_revoke(args: argparse.Namespace, auth: IdentityCommands) -> int:
     try:
         closed = auth.revoke_sessions(username=args.user, session_id=args.session_id)
     except UnknownUserError:
@@ -169,10 +239,8 @@ def run_sessions_revoke(args: argparse.Namespace, resolved: ResolvedSettings) ->
     return 0
 
 
-def run_keys_create(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
-    auth = _auth(resolved.values)
-    if auth is None:
-        return _fail(t("admin.database_missing"))
+@_command
+def run_keys_create(args: argparse.Namespace, auth: IdentityCommands) -> int:
     try:
         created = auth.create_api_key(
             name=args.name, read_only=args.read_only, expires_days=args.expires_days
@@ -190,10 +258,9 @@ def run_keys_create(args: argparse.Namespace, resolved: ResolvedSettings) -> int
     return 0
 
 
-def run_keys_list(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
-    auth = _auth(resolved.values)
-    if auth is None:
-        return _fail(t("admin.database_missing"))
+@_command
+def run_keys_list(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    keys = auth.api_keys()  # once: through the socket, each call is a round trip
     rows: list[dict[str, object]] = [
         {
             "prefix": key.prefix,
@@ -205,14 +272,14 @@ def run_keys_list(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
             "revoked": key.revoked_at is not None,
         }
-        for key in auth.api_keys()
+        for key in keys
     ]
     if args.json:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if not rows:
         print(t("admin.no_keys"))
-    for key in auth.api_keys():
+    for key in keys:
         expiry = key.expires_at.isoformat() if key.expires_at else "-"
         state = "revoked" if key.revoked_at is not None else expiry
         print(
@@ -227,10 +294,8 @@ def run_keys_list(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     return 0
 
 
-def run_keys_rotate(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
-    auth = _auth(resolved.values)
-    if auth is None:
-        return _fail(t("admin.database_missing"))
+@_command
+def run_keys_rotate(args: argparse.Namespace, auth: IdentityCommands) -> int:
     try:
         created = auth.rotate_api_key(args.prefix, expires_days=args.expires_days)
     except ValueError:
@@ -248,10 +313,8 @@ def run_keys_rotate(args: argparse.Namespace, resolved: ResolvedSettings) -> int
     return 0
 
 
-def run_keys_revoke(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
-    auth = _auth(resolved.values)
-    if auth is None:
-        return _fail(t("admin.database_missing"))
+@_command
+def run_keys_revoke(args: argparse.Namespace, auth: IdentityCommands) -> int:
     if not auth.revoke_api_key(args.prefix):
         return _fail(t("admin.key_unknown", prefix=args.prefix))
     print(t("admin.key_revoked", prefix=args.prefix))

@@ -1,7 +1,7 @@
 """HTTP application factory (FastAPI lives only in `interfaces/`)."""
 
 from collections.abc import AsyncIterator, Callable, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
@@ -49,6 +49,7 @@ def create_http_app(
     health: HealthPort,
     on_startup: Callable[[], None],
     on_shutdown: Callable[[], None] | None = None,
+    background: Callable[[], AbstractAsyncContextManager[None]] | None = None,
     version: str,
     frontend_dir: Path | None = None,
     routers: Sequence[APIRouter] = (),
@@ -65,7 +66,10 @@ def create_http_app(
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         on_startup()
         try:
-            yield
+            # Services that live as long as the application (the local CLI socket), started
+            # once the instance owns the volumes and stopped before it lets them go.
+            async with background() if background is not None else nullcontext():
+                yield
         finally:
             if on_shutdown is not None:
                 on_shutdown()

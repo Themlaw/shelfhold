@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from shelfhold.infrastructure.local_socket import Handler, LocalSocketServer, Peer
+from shelfhold.infrastructure.local_socket import Handler, LocalSocketServer, Peer, RpcError
 
 
 async def echo(peer: Peer, method: str, params: dict[str, Any]) -> object:
@@ -18,7 +18,7 @@ async def echo(peer: Peer, method: str, params: dict[str, Any]) -> object:
         return "late"
     if method == "echo":
         return params
-    raise LookupError(method)
+    raise RpcError(-32601, f"unknown method {method}")
 
 
 @contextmanager

@@ -77,7 +77,9 @@ def test_keys_create_via_socket_audited_as_local_cli_uid(api: AuthEnv) -> None:
     assert isinstance(created, dict)
     assert KEY.fullmatch(created["value"])
     rows = [row for row in _audit(api) if row[1] == "api_key.created"]
-    assert rows == [(ACTOR, "api_key.created", created["prefix"])]  # no host uid suffix: a principal
+    assert rows == [
+        (ACTOR, "api_key.created", created["prefix"])
+    ]  # no host uid suffix: a principal
     assert "uid=" not in str(rows)
 
 
@@ -103,7 +105,8 @@ def test_revoking_a_stolen_session_via_socket_needs_no_server_stop(api: AuthEnv)
     closed = call(_socket(api), "identity.sessions_revoke", {"username": ADMIN})
     assert closed == 1
     assert api.client.get("/api/v1/auth/session").status_code == 401
-    assert (ACTOR, "auth.sessions_revoked", _audit(api)[-1][2]) == _audit(api)[-1]
+    revoked = [row for row in _audit(api) if row[1] == "auth.sessions_revoked"]
+    assert [row[0] for row in revoked] == [ACTOR]
 
 
 @pytest.mark.req("EF-USR-024")
@@ -125,9 +128,7 @@ def test_domain_errors_cross_the_socket_as_codes_not_tracebacks(api: AuthEnv) ->
         call(_socket(api), "identity.sessions_revoke", {"username": "nobody"})
     assert unknown.value.data == {"code": "unknown_user"}
     with pytest.raises(RpcFailure) as short:
-        call(
-            _socket(api), "identity.reset_password", {"username": ADMIN, "password": "short"}
-        )
+        call(_socket(api), "identity.reset_password", {"username": ADMIN, "password": "short"})
     assert short.value.data == {"code": "password_too_short"}
     with pytest.raises(RpcFailure) as bad:
         call(_socket(api), "identity.keys_create", {"expires_days": "soon"})
@@ -158,9 +159,7 @@ def test_reserved_action_allowed_via_local_cli(api: AuthEnv) -> None:
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-010")
-def test_loopback_http_never_counts_as_local_cli(
-    api: AuthEnv, effects: list[str]
-) -> None:
+def test_loopback_http_never_counts_as_local_cli(api: AuthEnv, effects: list[str]) -> None:
     created = call(_socket(api), "identity.keys_create", {})
     headers = {
         "Authorization": f"Bearer {created['value']}",  # type: ignore[index]

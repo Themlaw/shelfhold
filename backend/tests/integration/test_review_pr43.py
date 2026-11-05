@@ -38,6 +38,8 @@ CHILD = textwrap.dedent(
         def commit(self):
             os.kill(os.getpid(), signal.SIGKILL)
         sa.engine.base.Transaction.commit = lambda self: os.kill(os.getpid(), signal.SIGKILL)
+    import shelfhold.interfaces.cli.admin as admin
+    admin._server_socket = lambda settings: None  # this is the offline channel: the database
     from shelfhold.interfaces.cli.registry import main
     sys.exit(main(["admin", "keys", "rotate", sys.argv[2]]))
     """

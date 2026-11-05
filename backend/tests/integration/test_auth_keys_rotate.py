@@ -171,12 +171,14 @@ def test_rotate_writes_one_audit_entry_and_never_the_key(
     old = _create(monkeypatch, capsys, api.settings)
     _, out, _ = _run(monkeypatch, capsys, api.settings, "rotate", _prefix(old))
     new = out.strip()
+    # The server runs, so the CLI went through its socket: the actor is `local_cli:<uid>` and the
+    # target needs no host uid (the offline form is covered in test_local_cli_commands).
     rows = db_rows(
-        api.settings, "SELECT action, target FROM audit WHERE action = 'api_key.rotated'"
+        api.settings, "SELECT actor_id, action, target FROM audit WHERE action = 'api_key.rotated'"
     )
     assert rows == [
-        ("api_key.rotated", f"{_prefix(old)}>{_prefix(new)} uid={os.getuid()}"),
+        (f"local_cli:{os.getuid()}", "api_key.rotated", f"{_prefix(old)}>{_prefix(new)}")
     ]
-    targets = db_rows(api.settings, "SELECT target FROM audit WHERE action LIKE 'api_key.%'")
-    assert all(f"uid={os.getuid()}" in str(t) for (t,) in targets)  # created, rotated: the host uid
+    actors = db_rows(api.settings, "SELECT actor_id FROM audit WHERE action LIKE 'api_key.%'")
+    assert all(a == f"local_cli:{os.getuid()}" for (a,) in actors)  # created, rotated
     assert new not in db_dump(api.settings)
