@@ -60,7 +60,9 @@ class HttpKavitaKeyExchange:
     def revoke(self, *, url: str, username: str, password: str, key: str, key_name: str) -> bool:
         try:
             fetcher = self._fetchers(url)
-            return asyncio.run(self._revoke(fetcher, url.rstrip("/"), username, password, key, key_name))
+            return asyncio.run(
+                self._revoke(fetcher, url.rstrip("/"), username, password, key, key_name)
+            )
         except FetchError:
             raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
 

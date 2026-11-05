@@ -383,7 +383,7 @@ def test_exit_tables_agree() -> None:
 def test_the_enumeration_is_partitioned_into_m1a_and_later() -> None:
     unplaced = set(WaitingState) - M1A_STATES - M1B_STATES - M3_STATES
     assert not unplaced, f"{sorted(map(str, unplaced))}: neither M1a, M1b nor M3 (decide)"
-    assert M3_STATES == {WaitingState.LIBRARY_TYPE_CHANGED}
+    assert {WaitingState.LIBRARY_TYPE_CHANGED} == M3_STATES
     assert not (M1A_STATES & M1B_STATES) and not (M1A_STATES & M3_STATES)
     assert not (M1B_STATES & M3_STATES)
     assert {

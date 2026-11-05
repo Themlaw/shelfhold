@@ -160,7 +160,9 @@ class GuardedFetcher:
         params: Mapping[str, Any] | None = None,
         max_bytes: int | None = None,
     ) -> Response:
-        return await self._fetch("DELETE", url, dict(headers or {}), params, {}, max_bytes, None, None)
+        return await self._fetch(
+            "DELETE", url, dict(headers or {}), params, {}, max_bytes, None, None
+        )
 
     async def download(
         self,

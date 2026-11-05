@@ -30,6 +30,7 @@ from shelfhold.infrastructure.secrets import SecretVault, diagnostics
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
+from shelfhold.ops.restore import RestoreGuardExit
 from shelfhold.ops.services import OpsServices
 
 __all__ = ["open_ops"]
@@ -99,7 +100,9 @@ def open_ops(
         instance=InstanceService(engine, clock, events),
         auditor=AccessAuditor(engine, clock, events),
     )  # fmt: skip
+    fsops = _fsops(engine) if mount else None
     return OpsServices(
-        engine, clock=clock, bus=bus, fsops=_fsops(engine) if mount else None, targets=targets,
+        engine, clock=clock, bus=bus, fsops=fsops, targets=targets,
         headless=_LazyHeadless(settings), keyring=TombstoneKeyringExit(settings, engine, clock),
+        restore=RestoreGuardExit(engine, fsops, clock, bus) if fsops is not None else None,
     )  # fmt: skip

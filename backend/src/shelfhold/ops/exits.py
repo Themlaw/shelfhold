@@ -68,7 +68,6 @@ M1A_STATES: Final = frozenset(
 # command exists.
 CLI_PENDING: Final = MappingProxyType(
     {
-        "reconcile --adopt-after-restore": "L35",
         "adopt --confirm-migration": "L31",
         "adopt set-follow-from": "L31",
     }

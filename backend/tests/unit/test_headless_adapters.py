@@ -83,7 +83,9 @@ def test_kavita_revoke_finds_the_old_key_by_value_then_deletes_it_by_id() -> Non
             return httpx2.Response(200)
         return httpx2.Response(404)
 
-    exchange = HttpKavitaKeyExchange(lambda _u: _fetcher(httpx2.MockTransport(handler), "kavita.internal", 5000))
+    exchange = HttpKavitaKeyExchange(
+        lambda _u: _fetcher(httpx2.MockTransport(handler), "kavita.internal", 5000)
+    )
     assert exchange.revoke(url="http://kavita.internal:5000", username="shelfhold",
                            password="pw-0038", key=KAVITA_KEY, key_name="nope")  # fmt: skip
     deleted = [r for r in seen if r.method == "DELETE"]
@@ -100,7 +102,9 @@ def test_kavita_revoke_falls_back_to_the_name_and_reports_a_missing_key() -> Non
         return httpx2.Response(200)
 
     def make() -> HttpKavitaKeyExchange:
-        return HttpKavitaKeyExchange(lambda _u: _fetcher(httpx2.MockTransport(handler), "kavita.internal", 5000))
+        return HttpKavitaKeyExchange(
+            lambda _u: _fetcher(httpx2.MockTransport(handler), "kavita.internal", 5000)
+        )
 
     args = {"url": "http://kavita.internal:5000", "username": "u", "password": "pw-0038"}
     assert make().revoke(**args, key="gone", key_name="shelfhold-20260101")

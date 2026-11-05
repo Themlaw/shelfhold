@@ -13,14 +13,13 @@ import sqlalchemy as sa
 from fastapi import APIRouter
 
 from shelfhold.config import Settings
-from shelfhold.events.bus import EventBus
 from shelfhold.export.application.target_state import load_health
 from shelfhold.identity.public import EXIT_ROUTES, RESERVED_ACTIONS
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.local_socket import call
 from shelfhold.infrastructure.migrate import migrate
-from shelfhold.infrastructure.schema import acquisition, export, platform
+from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.interfaces.cli import _ops as cli_ops
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
@@ -447,7 +446,9 @@ def test_restored_behind_and_tombstone_key_unknown_leave_through_the_api(
             assert "tombstone_key_unknown" not in listed(api)
 
 
-def test_restored_behind_leaves_through_the_local_socket(settings: Settings, tmp_path: Path) -> None:
+def test_restored_behind_leaves_through_the_local_socket(
+    settings: Settings, tmp_path: Path
+) -> None:
     from shelfhold.identity.public import local_auth
 
     with export_env() as env:
@@ -470,7 +471,9 @@ def test_restored_behind_leaves_through_the_local_socket(settings: Settings, tmp
 # -- the socket allow-list ---------------------------------------------------------------------------
 
 
-def test_an_unknown_ops_method_is_not_found_on_the_socket(settings: Settings, tmp_path: Path) -> None:
+def test_an_unknown_ops_method_is_not_found_on_the_socket(
+    settings: Settings, tmp_path: Path
+) -> None:
     from shelfhold.identity.public import local_auth
     from shelfhold.infrastructure.local_socket import RpcFailure
 
@@ -480,7 +483,14 @@ def test_an_unknown_ops_method_is_not_found_on_the_socket(settings: Settings, tm
         auth = local_auth(create_db_engine(settings.database_path), settings)
         sock = tmp_path / "s.sock"
         with serving(sock, IdentityDispatcher(auth, ops=ops)):
-            for name in ("ops.x", "ops.", "ops.__init__", "ops.status ", "ops.engine", "OPS.status"):
+            for name in (
+                "ops.x",
+                "ops.",
+                "ops.__init__",
+                "ops.status ",
+                "ops.engine",
+                "OPS.status",
+            ):
                 with pytest.raises(RpcFailure) as refused:
                     call(sock, name, {})
                 assert refused.value.code == -32601, name  # METHOD_NOT_FOUND
@@ -488,9 +498,7 @@ def test_an_unknown_ops_method_is_not_found_on_the_socket(settings: Settings, tm
 
 def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None:
     from shelfhold.interfaces.local_cli.ops import OPS_METHODS
-    from shelfhold.ops import UNSERVED
-
-    from shelfhold.ops import M1A_STATES
+    from shelfhold.ops import M1A_STATES, UNSERVED
 
     m1a = {s.value for s in M1A_STATES}  # the M1b exits (rate, root, store) come with M1b
     declared = {
