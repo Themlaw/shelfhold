@@ -36,3 +36,11 @@ que Shelfhold a prévu.
 `shelfhold target reconnect` retrouve chaque bibliothèque par son dossier (aucune n'est recréée
 en double), réapplique les réglages, oublie les identifiants de l'ancienne instance et **invalide
 le registre `field_owner`** : les âges classés sont repoussés (à partir de M1b).
+
+## Limites de la détection d'une réinstallation
+
+Shelfhold reconnaît une autre instance à l'URL, à l'identifiant d'installation et à la date de
+création du plus ancien compte. Une sauvegarde restaurée, ou une réinstallation qui garde le
+fichier `appsettings` et le premier compte, passe pour la même instance. L'audit d'accès, lui,
+suit les dossiers des étagères et non les identifiants de bibliothèque : un enfant ayant accès à
+une bibliothèque recréée sur le même dossier est vu à l'audit suivant.

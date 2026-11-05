@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from shelfhold.config import Settings
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.shelves import ShelfService
+from shelfhold.export.application.target_state import DestinationPausedError
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.shelves import build_shelves_router
@@ -28,12 +29,15 @@ class FakePreview:
 @dataclass
 class FakePipeline:
     stale: bool = False
+    paused: str | None = None
     applied: list[tuple[str, int]] = field(default_factory=list)
 
     def preview(self, shelf_destination_id: str) -> FakePreview:
         return FakePreview()
 
     def apply(self, plan_id: str, *, if_match: str, job_id: str) -> None:
+        if self.paused:
+            raise DestinationPausedError(self.paused)
         if self.stale or if_match != FakePreview.base_version:
             raise StalePlanError("the preview changed: recompute it")
         self.applied.append((plan_id, if_match))
@@ -90,3 +94,16 @@ def test_plan_routes_preview_then_apply_with_if_match(
         pipeline.stale = True  # it moved while applying: same answer, same code
         again = api.post(url, headers={"If-Match": '"4242"'})
         assert (again.status_code, again.json()["code"]) == (412, "plan.stale")
+
+
+@pytest.mark.req("EF-EXP-055", "EF-EXP-039")
+@pytest.mark.parametrize("code", ["target.child_exposure", "target.instance_changed"])
+def test_apply_on_a_paused_destination_answers_a_target_code_not_a_500(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, code: str
+) -> None:
+    pipeline = FakePipeline(paused=code)
+    with auth_env(monkeypatch, settings, routers=[build_plans_router(lambda: pipeline)]) as api:
+        assert api.login().status_code == 200
+        url = f"/api/v1/plans/{FakePreview.plan_id}/apply"
+        paused = api.post(url, headers={"If-Match": '"4242"'})
+        assert (paused.status_code, paused.json()["code"]) == (409, code)

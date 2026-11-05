@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+ADULT = 18
 NOT_APPLICABLE = -1  # AgeRating.NotApplicable: Kavita's value for "no restriction"
 
 
@@ -77,8 +78,11 @@ def tier(account: Account) -> int:
 def check_link(shelf_ceiling: int | None, exposed: tuple[Account, ...]) -> tuple[str, ...]:
     """The accounts that refuse a shelf: names, empty when the shelf may be linked.
 
-    A shelf (no ceiling = X) may be linked when its ceiling does not exceed the tier of any
-    exposed account. In M1a every shelf is 18+ or X, so an exposed library always refuses.
+    M1a shelves are all 18+ or X (no ceiling): as soon as any restricted account is exposed to
+    the library, the shelf is refused, whatever the tier of that account (13, 18 or 99). A
+    shelf under 18 (M1b) is refused only by the accounts whose tier is below its ceiling.
     """
     ceiling = 100 if shelf_ceiling is None else shelf_ceiling
+    if ceiling >= ADULT:
+        return tuple(a.username for a in exposed)
     return tuple(a.username for a in exposed if ceiling > tier(a))

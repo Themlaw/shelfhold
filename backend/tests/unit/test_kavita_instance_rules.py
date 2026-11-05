@@ -36,7 +36,9 @@ def test_fingerprint_changes_with_the_install_not_with_the_spelling_of_the_url()
     assert a != instance_fingerprint("http://kavita.lan:5000", "install-2")
     assert a != instance_fingerprint("http://kavita.lan:5001", "install-1")
     assert instance_fingerprint("http://kavita.lan:5000", None) is None
-    assert not instance_changed(None, a) and not instance_changed(a, None)  # nothing to compare
+    assert not instance_changed(None, a) and not instance_changed(None, None)  # first sight
+    assert instance_changed(a, None)  # an id that cannot be read any more, once one was known
+    assert a != instance_fingerprint("http://kavita.lan:5000", "install-1", "2026-02-01")
     assert instance_changed(a, instance_fingerprint("http://kavita.lan:5000", "install-2"))
 
 
@@ -57,15 +59,27 @@ def test_library_is_found_by_its_folder_exact_first_then_the_deepest_ancestor() 
 def test_field_is_rewritten_only_if_the_registry_owns_it() -> None:
     mine = OwnedField("Dr Stone", pushed=True)
     assert (
-        decide(locked_in_kavita=True, kavita_value="Titre Kavita+", owned=None) is FieldAction.LEAVE
+        decide(field="title", locked_in_kavita=True, kavita_value="Titre Kavita+", owned=None)
+        is FieldAction.LEAVE
     )
-    assert decide(locked_in_kavita=False, kavita_value="x", owned=None) is FieldAction.WRITE
-    assert decide(locked_in_kavita=True, kavita_value="Dr Stone", owned=mine) is FieldAction.NOTHING
-    drift = decide(locked_in_kavita=True, kavita_value="Other", owned=mine)
+    assert (
+        decide(field="title", locked_in_kavita=False, kavita_value="x", owned=None)
+        is FieldAction.WRITE
+    )
+    assert (
+        decide(field="title", locked_in_kavita=True, kavita_value="Dr Stone", owned=mine)
+        is FieldAction.NOTHING
+    )
+    drift = decide(field="title", locked_in_kavita=True, kavita_value="Other", owned=mine)
     assert drift is FieldAction.REPUSH and is_drift(drift)
     invalidated = OwnedField("Dr Stone", pushed=False)  # after a reinstall
-    again = decide(locked_in_kavita=False, kavita_value=None, owned=invalidated)
+    again = decide(field="age_rating", locked_in_kavita=False, kavita_value=None, owned=invalidated)
     assert again is FieldAction.PUSH_AGAIN and not is_drift(again)
+    # a lock found on the new instance is a third party's, whatever the registry remembers
+    taken = decide(field="age_rating", locked_in_kavita=True, kavita_value=9, owned=invalidated)
+    assert taken is FieldAction.LEAVE
+    other = decide(field="title", locked_in_kavita=True, kavita_value="x", owned=invalidated)
+    assert other is FieldAction.LEAVE  # PUSH_AGAIN is for the age only
 
 
 @pytest.mark.req("EF-EXP-057")
@@ -107,7 +121,9 @@ def test_exposure_rule_and_link_refusal_name_the_accounts() -> None:
     assert [a.username for a in exposed] == ["blind", "kid"]
     assert check_link(18, exposed) == ("blind", "kid")
     assert check_link(None, exposed) == ("blind", "kid")  # an X shelf too
-    assert check_link(18, exposed_accounts([_account("teen", age_rating=X18)], 7)) == ()
+    # in M1a any restricted account refuses an adult shelf, tier 18 or 99 included
+    assert check_link(18, exposed_accounts([_account("teen", age_rating=X18)], 7)) == ("teen",)
+    assert check_link(13, exposed_accounts([_account("teen", age_rating=X18)], 7)) == ()
     assert restricted_accounts(accounts, frozenset({7, 8})) == (
         "blind",
         "elsewhere",

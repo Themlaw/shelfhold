@@ -87,8 +87,8 @@ def default_libraries() -> list[dict[str, Any]]:
     ]  # fmt: skip
 
 
-def default_users() -> list[dict[str, Any]]:
-    return [member("admin", admin=True)]
+def default_users(created: str = "2026-01-01T00:00:00Z") -> list[dict[str, Any]]:
+    return [{**member("admin", admin=True), "createdUtc": created}]
 
 
 def member(
@@ -153,6 +153,7 @@ class FakeKavita:
     pending: list[PendingIndex] = field(default_factory=list)
     never_indexed: set[str] = field(default_factory=set)  # folders Kavita ignores (excluded)
     next_series_id: int = 100
+    reinstalls: int = 0
 
     # -- scenario helpers -------------------------------------------------------------------
     def demote(self) -> None:
@@ -197,9 +198,9 @@ class FakeKavita:
         """Kavita reinstalled from scratch: a new installation, nothing of the old database."""
         self.install_id = install_id
         self.libraries = libraries if libraries is not None else []
-        self.users, self.series, self.files, self.ages, self.pending = (
-            default_users(), [], {}, {}, []
-        )  # fmt: skip
+        self.reinstalls += 1  # a new database: its first account is new, even if installId is not
+        self.users = default_users(f"2026-0{self.reinstalls + 1}-01T00:00:00Z")
+        self.series, self.files, self.ages, self.pending = [], {}, {}, []
 
     def not_found_resource(self, method: str, path: str) -> None:
         """The route exists but answers 404 with a ProblemDetails body (a resource is missing)."""
@@ -210,6 +211,11 @@ class FakeKavita:
 
     def requests_to(self, fragment: str) -> list[RecordedRequest]:
         return [r for r in self.requests if fragment.lower() in r.path.lower()]
+
+    @property
+    def post_reads(self) -> list[RecordedRequest]:
+        """POSTs that only read (`all-v2`, `series-by-ids`), kept apart from the writes."""
+        return [r for r in self.requests if r.method != "GET" and r not in self.writes]
 
     @property
     def writes(self) -> list[RecordedRequest]:

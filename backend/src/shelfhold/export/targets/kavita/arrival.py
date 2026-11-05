@@ -17,7 +17,7 @@ from sqlalchemy import Engine
 
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.snapshot import DestinationContext, load_context
-from shelfhold.export.application.target_state import save_health
+from shelfhold.export.application.target_state import ensure_active, save_health
 from shelfhold.export.domain.kavita_arrival import DEFAULT_DELAY, Step, next_step, probable_causes
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.reinstall import library_type_of
@@ -55,6 +55,7 @@ class ArrivalPoller:
     async def poll(self, client: KavitaClient, destination_id: str) -> ArrivalReport:
         report = ArrivalReport()
         with self._engine.connect() as connection:
+            ensure_active(connection, destination_id)  # no scan for a paused destination
             ctx = load_context(connection, destination_id)
             records = self._pending(connection, destination_id)
             ref = connection.execute(
@@ -110,6 +111,8 @@ class ArrivalPoller:
                 t.c.shelf_destination_id == destination_id,
                 t.c.locator_type == "path",
                 t.c.state.in_(("written", "scanned")),
+                # declared `not_indexed`: left alone until `jobs retry` clears the error
+                sa.or_(t.c.error_code.is_(None), t.c.error_code != NOT_INDEXED),
             )
             .order_by(t.c.rel_path)
         )

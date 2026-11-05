@@ -32,16 +32,24 @@ class OwnedField:
     pushed: bool
 
 
+AGE_RATING = "age_rating"  # the one field a reinstall makes Shelfhold push again (N3)
+
+
 def decide(
     *,
+    field: str,
     locked_in_kavita: bool,
     kavita_value: Any,
     owned: OwnedField | None,
 ) -> FieldAction:
+    """A lock Shelfhold does not hold is looked at first: it is a third party's."""
+    if owned is not None and not owned.pushed:
+        if field != AGE_RATING:
+            owned = None  # an invalidated entry of another field is no claim at all
+        else:
+            return FieldAction.LEAVE if locked_in_kavita else FieldAction.PUSH_AGAIN
     if owned is None:
         return FieldAction.LEAVE if locked_in_kavita else FieldAction.WRITE
-    if not owned.pushed:
-        return FieldAction.PUSH_AGAIN
     if locked_in_kavita and kavita_value == owned.last_value:
         return FieldAction.NOTHING
     return FieldAction.REPUSH

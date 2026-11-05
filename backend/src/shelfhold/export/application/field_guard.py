@@ -31,6 +31,7 @@ class FieldGuard:
         kavita_value: Any,
     ) -> FieldAction:
         action = decide(
+            field=field,
             locked_in_kavita=locked_in_kavita,
             kavita_value=kavita_value,
             owned=self._registry.get(destination_id, series_id, field),

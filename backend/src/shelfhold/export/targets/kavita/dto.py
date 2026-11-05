@@ -139,21 +139,27 @@ class Member:
     age_rating: int  # AgeRating of the restriction; NOT_APPLICABLE means none
     include_unknowns: bool
     library_ids: frozenset[int]
+    created: str | None = None
 
     @classmethod
     def from_json(cls, data: object) -> Member:
         if not isinstance(data, dict):
             raise ProtocolError("users did not answer objects")
         restriction = data.get("ageRestriction")
-        restriction = restriction if isinstance(restriction, dict) else {}
-        roles = [str(r) for r in data.get("roles") or []]
-        libraries = [lib for lib in data.get("libraries") or [] if isinstance(lib, dict)]
+        if not isinstance(restriction, dict) or "ageRating" not in restriction:
+            # unreadable: counted as the most restricted account, so that the audit fails closed
+            restriction = {"ageRating": AGE_UNKNOWN, "includeUnknowns": False}
+        roles, libraries = data.get("roles") or [], data.get("libraries") or []
+        if not isinstance(roles, list) or not all(isinstance(lib, dict) for lib in libraries):
+            raise ProtocolError("users did not answer well-formed accounts")
+        roles = [str(r) for r in roles]
         return cls(
             username=str(data.get("username") or ""),
             is_admin="Admin" in roles,
             age_rating=int(restriction.get("ageRating", AGE_NOT_APPLICABLE)),
             include_unknowns=bool(restriction.get("includeUnknowns", True)),
             library_ids=frozenset(int(lib["id"]) for lib in libraries if "id" in lib),
+            created=str(data["createdUtc"]) if data.get("createdUtc") else None,
         )
 
 

@@ -7,12 +7,13 @@ Plain SQL on the tables of `infrastructure.schema.export`; no network, no Kavita
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy import Connection
+from sqlalchemy import Connection, Engine
 
 from shelfhold.export.application.target_health import TargetHealth
 from shelfhold.export.domain.field_owner import OwnedField
@@ -30,6 +31,7 @@ __all__ = [
     "resume_shelf",
     "save_fingerprint",
     "save_health",
+    "target_write_guard",
 ]
 
 CHILD_EXPOSURE = "child_exposure"
@@ -121,6 +123,35 @@ def ensure_active(connection: Connection, destination_id: str) -> None:
         raise DestinationPausedError("target.instance_changed")
     if health.paused:
         raise DestinationPausedError("target.forbidden")
+
+
+def target_write_guard(engine: Engine, target_id: str) -> Callable[[], None]:
+    """For `KavitaClient.set_write_guard`: no write route while a shelf of the target is paused
+    or the target waits for a human."""
+
+    def guard() -> None:
+        with engine.connect() as connection:
+            paused = connection.execute(
+                sa.select(export.shelf.c.paused_reason)
+                .select_from(
+                    export.shelf_destination.join(
+                        export.shelf, export.shelf.c.id == export.shelf_destination.c.shelf_id
+                    )
+                )
+                .where(
+                    export.shelf_destination.c.target_id == target_id,
+                    export.shelf.c.paused_reason.is_not(None),
+                )
+            ).scalar()
+            if paused:
+                raise DestinationPausedError(f"target.{paused}")
+            health = load_health(connection, target_id)
+        if health.instance_changed:
+            raise DestinationPausedError("target.instance_changed")
+        if health.paused:
+            raise DestinationPausedError("target.forbidden")
+
+    return guard
 
 
 # -- remote ids are a cache ----------------------------------------------------------------------

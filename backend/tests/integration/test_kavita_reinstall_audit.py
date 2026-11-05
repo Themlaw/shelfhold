@@ -14,7 +14,9 @@ from shelfhold.export.application.field_guard import FieldGuard
 from shelfhold.export.application.target_state import (
     DestinationPausedError,
     FieldRegistry,
+    ensure_active,
     load_health,
+    target_write_guard,
 )
 from shelfhold.export.domain.field_owner import FieldAction, effective_age
 from shelfhold.export.targets.kavita.arrival import ArrivalPoller
@@ -117,7 +119,7 @@ def test_kavita_reinstall_reresolves_by_path_without_duplicate_library() -> None
         w.fake.reinstall("another-install", libraries=[_reinstalled_library()])
         w.rebuild_client()
         assert run(service.check(w.client, env.target_id)) is False
-        report = run(service.reconnect(w.client, env.target_id))
+        report = run(service.reconnect(w.client, env.target_id, auditor=_audit(w)))
 
         assert report.re_resolved == {env.remote_library_id: (str(LIBRARY_ID), str(NEW_LIBRARY))}
         assert report.created == [] and w.fake.requests_to("library/create") == []
@@ -147,7 +149,7 @@ def test_kavita_reinstall_creates_only_the_library_that_is_missing() -> None:
         run(service.check(w.client, env.target_id))
         w.fake.reinstall("blank-install")  # nothing recreated by the admin yet
         w.rebuild_client()
-        run(service.reconnect(w.client, env.target_id))
+        run(service.reconnect(w.client, env.target_id, auditor=_audit(w)))
         assert len(w.fake.requests_to("library/create")) == 1
         (library,) = w.fake.libraries
         assert library["folders"] == [REMOTE_ROOT] and library["type"] == 0
@@ -250,6 +252,11 @@ def test_written_but_not_indexed_with_the_second_scan_cut() -> None:
         assert run(poller.poll(w.client, env.destination_id)).not_indexed == [rel]
         assert w.fake.scans == [folder]  # one scan only
         # once the admin fixes the cause, the next poll confirms and leaves the waiting state
+        w.fake.requests.clear()
+        assert run(poller.poll(w.client, env.destination_id)).not_indexed == []
+        assert w.fake.requests == []  # a declared record is not asked about before `jobs retry`
+        with env.engine.begin() as connection:  # `jobs retry`
+            connection.execute(sa.update(export.export_record).values(error_code=None))
         w.fake.never_indexed.clear()
         w.fake.index_after_scans("Dr Stone", folder, [w.remote(rel)])
         run(w.client.scan_folder(folder))
@@ -428,3 +435,153 @@ def test_access_control_bad_version_pauses_adult_shelf_when_restricted_account_e
         w.fake.version = "0.9.1.4"  # Kavita updated: `target recheck` is the way out
         recheck = run(auditor.audit(w.client, env.target_id, resume=True))
         assert recheck.resumed_shelves == [env.shelf_id] and _paused(env) is None
+
+
+# -- review of PR #48 (L26): regressions ---------------------------------------------------------
+
+
+def _paused_ok(env: ExportEnv) -> None:
+    with env.engine.connect() as connection, pytest.raises(DestinationPausedError):
+        ensure_active(connection, env.destination_id)
+
+
+@pytest.mark.req("EF-EXP-055")
+def test_audit_follows_the_folders_not_the_cached_library_id() -> None:
+    with export_env() as env:
+        w = wire(env)  # the link caches id 7
+        recreated = {**w.fake.libraries[0], "id": 9, "name": "Manga (kids)"}
+        w.fake.libraries = [recreated, w.fake.libraries[1]]
+        w.fake.users.append(member("kid", libraries=(9,), age_rating=8))
+        report = run(_audit(w).audit(w.client, env.target_id))
+        assert report.paused_shelves == [env.shelf_id] and report.mismatched == ["7"]
+        assert report.exposed == {"7": ("kid",)}
+        _paused_ok(env)
+
+
+@pytest.mark.req("EF-EXP-055")
+def test_audit_covers_a_library_over_a_parent_folder_and_one_inside_the_root() -> None:
+    for folder in ("/", "/manga/Kavita/Sub"):
+        with export_env() as env:
+            w = wire(env)
+            w.fake.libraries.append({**w.fake.libraries[0], "id": 20, "folders": [folder]})
+            w.fake.users.append(member("kid", libraries=(20,), age_rating=8))
+            report = run(_audit(w).audit(w.client, env.target_id))
+            assert report.paused_shelves == [env.shelf_id], folder
+            assert report.exposed == {"7": ("kid",)}
+
+
+@pytest.mark.req("EF-EXP-055")
+@pytest.mark.parametrize("mode", ["missing", "problem", "garbage"])
+def test_audit_error_pauses_the_shelves_audit_failed(mode: str) -> None:
+    with export_env() as env:
+        w = wire(env)
+        if mode == "missing":
+            w.fake.remove_route("GET", "/api/Users")
+        elif mode == "problem":
+            w.fake.not_found_resource("GET", "/api/Users")
+        else:
+            w.fake.users.append({"username": 5, "libraries": "x"})  # not a MemberDto
+        report = run(_audit(w).audit(w.client, env.target_id))
+        assert report.failed and report.paused_shelves == [env.shelf_id]
+        (detail,) = w.events.details("target.child_exposure")
+        assert detail["cause"] == "audit_failed"
+        _paused_ok(env)
+        w.fake.missing.clear()
+        w.fake.problem_404.clear()
+        w.fake.users[:] = w.fake.users[:1]
+        run(w.client.recheck())
+        again = run(_audit(w).audit(w.client, env.target_id))  # not a recheck: stays paused
+        assert not again.failed and _paused(env) == "child_exposure"
+        assert run(_audit(w).audit(w.client, env.target_id, resume=True)).resumed_shelves
+
+
+@pytest.mark.req("EF-EXP-055")
+def test_audit_only_sends_gets() -> None:
+    with export_env() as env:
+        w = wire(env)
+        w.fake.users.append(member("kid", libraries=(LIBRARY_ID,), age_rating=8))
+        auditor = _audit(w)
+        run(auditor.audit(w.client, env.target_id))
+        run(auditor.refused_names(w.client, shelf_ceiling=18, remote_library_ref="7"))
+        run(auditor.audit(w.client, env.target_id, resume=True))
+        assert {r.method for r in w.fake.requests} == {"GET"} and w.fake.violations == []
+        assert w.fake.post_reads == []
+        users = w.fake.requests_to("/api/Users")[0]
+        assert users.query == {"includePending": "true"}
+
+
+@pytest.mark.req("EF-EXP-055")
+def test_account_without_readable_age_restriction_counts_as_restricted() -> None:
+    with export_env() as env:
+        w = wire(env)
+        unreadable = member("odd", libraries=(LIBRARY_ID,))
+        del unreadable["ageRestriction"]
+        w.fake.users.append(unreadable)
+        assert run(_audit(w).audit(w.client, env.target_id)).exposed == {"7": ("odd",)}
+
+
+@pytest.mark.req("EF-EXP-039")
+def test_reinstall_with_the_same_install_id_is_still_detected() -> None:
+    with export_env() as env:  # database wiped, appsettings kept: the CRC gives the same id
+        w = wire(env)
+        service = InstanceService(env.engine, env.clock, w.events)
+        assert run(service.check(w.client, env.target_id))
+        w.fake.reinstall(w.fake.install_id, libraries=[{**w.fake.libraries[0], "id": 1}])
+        w.rebuild_client()
+        assert run(service.check(w.client, env.target_id)) is False
+        assert w.events.codes() == ["target.instance_changed"]
+
+
+@pytest.mark.req("EF-EXP-039")
+def test_unreadable_install_id_after_one_was_known_is_instance_changed() -> None:
+    with export_env() as env:
+        w = wire(env)
+        service = InstanceService(env.engine, env.clock, w.events)
+        assert run(service.check(w.client, env.target_id))
+        w.fake.reinstall("", libraries=[])
+        w.rebuild_client()
+        assert run(service.check(w.client, env.target_id)) is False
+
+
+@pytest.mark.req("EF-EXP-039")
+def test_reconnect_audits_before_resuming_and_keeps_the_pause_when_it_fails() -> None:
+    with export_env() as env:
+        w = wire(env)
+        service = InstanceService(env.engine, env.clock, w.events)
+        run(service.check(w.client, env.target_id))
+        lib = {**w.fake.libraries[0], "id": 1, "folders": [REMOTE_ROOT]}
+        w.fake.reinstall("other", libraries=[lib])
+        w.fake.users.append(member("kid", libraries=(1,), age_rating=8))
+        w.rebuild_client()
+        assert run(service.check(w.client, env.target_id)) is False
+        report = run(service.reconnect(w.client, env.target_id, auditor=_audit(w)))
+        assert w.fake.requests_to("/api/Users") != []  # the kid was audited
+        assert report.paused_shelves == [env.shelf_id] and _paused(env) == "child_exposure"
+        _paused_ok(env)  # not resumed
+        # the audit itself breaks: the pause stays as well
+        w.fake.users.pop()
+        run(_audit(w).audit(w.client, env.target_id, resume=True))
+        assert _paused(env) is None
+        w.fake.reinstall("third", libraries=[{**lib, "id": 2}])
+        w.rebuild_client()
+        run(service.check(w.client, env.target_id))
+        w.fake.remove_route("GET", "/api/Users")
+        failed = run(service.reconnect(w.client, env.target_id, auditor=_audit(w)))
+        assert failed.audit_failed and _paused(env) == "child_exposure"
+
+
+@pytest.mark.req("EF-EXP-055")
+def test_a_paused_destination_is_not_scanned_and_writes_are_guarded() -> None:
+    with export_env() as env:
+        w = wire(env)
+        (rel,) = w.written()
+        with env.engine.begin() as connection:
+            connection.execute(sa.update(export.shelf).values(paused_reason="child_exposure"))
+        env.clock.advance(minutes=16)
+        with pytest.raises(DestinationPausedError):
+            run(_poller(w).poll(w.client, env.destination_id))
+        assert w.fake.scans == []
+        w.client.set_write_guard(target_write_guard(env.engine, env.target_id))
+        with pytest.raises(DestinationPausedError):
+            run(w.client.scan_folder(REMOTE_ROOT))
+        assert w.fake.scans == [] and rel

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
@@ -46,6 +47,7 @@ from shelfhold.sdk.export_target import ApiCall
 
 BULK_BATCH: Final = 100  # `parse-bulk` takes 100 names at most
 SERIES_PAGE: Final = 100
+MAX_SERIES_PAGES: Final = 50
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,20 @@ class KavitaClient:
         self._scans = ScanDebouncer(clock, scan_quiet)
         self._destination = KavitaDestination()
         self._unreachable_announced = False
+        self._write_guard: Callable[[], None] | None = None
+
+    def set_write_guard(self, guard: Callable[[], None] | None) -> None:
+        """Called before every write route: raises while the destination is paused."""
+        self._write_guard = guard
+
+    @contextmanager
+    def unguarded(self) -> Iterator[None]:
+        """`target reconnect` writes (library settings) while the exports are paused."""
+        guard, self._write_guard = self._write_guard, None
+        try:
+            yield
+        finally:
+            self._write_guard = guard
 
     def __repr__(self) -> str:
         return f"KavitaClient({self._base_url!r}, mode={self.health.mode.value})"
@@ -132,6 +148,8 @@ class KavitaClient:
             raise RouteMissing(route.label)
         if route is not routes.SERVER_INFO and health.version is None:
             await self.probe()  # a version is read before the first call that needs a verdict
+        if route.write and self._write_guard is not None:
+            self._write_guard()
         if route.write and health.version_mode is TargetMode.DEGRADED_READONLY:
             raise TargetDegraded(f"{route.label} is a write: the Kavita version is out of range")
         headers = {"x-api-key": self._key.reveal(), "Accept": "application/json"}
@@ -276,15 +294,18 @@ class KavitaClient:
 
     async def list_users(self) -> list[dto.Member]:
         """The accounts, read-only; an administrator is needed (a 403 pauses the destination)."""
-        data = (await self._send(routes.USERS, query={"includePending": "false"})).data
+        data = (await self._send(routes.USERS, query={"includePending": "true"})).data
         if not isinstance(data, list):
             raise ProtocolError("users did not answer a list")
         return [dto.Member.from_json(item) for item in data]
 
-    async def series_of_library(self, library_id: int) -> list[dto.SeriesInfo]:
+    async def series_of_library(
+        self, library_id: int, *, max_pages: int = MAX_SERIES_PAGES
+    ) -> list[dto.SeriesInfo]:
+        """The series of a library, capped (`max_pages` of 100): never an unbounded read."""
         found: list[dto.SeriesInfo] = []
         body = dto.library_filter(int(library_id))
-        for page in range(1, 1000):
+        for page in range(1, max_pages + 1):
             query = {"PageNumber": page, "PageSize": SERIES_PAGE}
             data = (await self._send(routes.SERIES_OF_LIBRARY, query=query, body=body)).data
             if not isinstance(data, list):

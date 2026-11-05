@@ -31,6 +31,7 @@ from shelfhold.export.domain.kavita_instance import (
     match_library,
 )
 from shelfhold.export.targets.kavita import dto
+from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import ProtocolError
 from shelfhold.infrastructure.clock import Clock
@@ -57,6 +58,8 @@ class ReconnectReport:
     settings_applied: list[str] = field(default_factory=list)
     skipped_adopted: list[str] = field(default_factory=list)  # never touched unconfirmed
     invalidated_fields: int = 0
+    audit_failed: bool = False
+    paused_shelves: list[str] = field(default_factory=list)  # held by the audit that follows
 
 
 class InstanceService:
@@ -69,13 +72,14 @@ class InstanceService:
         """At every connection: False (and exports paused) when it is not the same Kavita."""
         await client.probe()
         health = client.health
-        current = instance_fingerprint(client.base_url, health.install_id)
-        if current is None:
-            return not health.instance_changed
+        current = await self._fingerprint(client)
         with self._engine.begin() as connection:
             stored = load_fingerprint(connection, target_id)
             if stored is None:
-                save_fingerprint(connection, target_id, current, health.version, self._clock.now())
+                if current is not None:
+                    save_fingerprint(
+                        connection, target_id, current, health.version, self._clock.now()
+                    )
             elif instance_changed(stored, current) and not health.instance_changed:
                 health.instance_changed = True
                 health.refresh_waiting()
@@ -83,10 +87,33 @@ class InstanceService:
             save_health(connection, target_id, health)
         return not health.instance_changed
 
-    async def reconnect(self, client: KavitaClient, target_id: str) -> ReconnectReport:
-        """`target reconnect`: the same folders, a new server. Nothing is rewritten."""
+    @staticmethod
+    async def _fingerprint(client: KavitaClient) -> str | None:
+        """URL + installation id + creation date of the oldest account (see the domain rule)."""
+        created: str | None = None
+        try:
+            dates = [m.created for m in await client.list_users() if m.created]
+            created = min(dates) if dates else None
+        except Exception:  # unreadable accounts: the fingerprint cannot match a stored one
+            created = "unreadable"
+        return instance_fingerprint(client.base_url, client.health.install_id, created)
+
+    async def reconnect(
+        self, client: KavitaClient, target_id: str, *, auditor: AccessAuditor
+    ) -> ReconnectReport:
+        """`target reconnect`: the same folders, a new server. Nothing is rewritten.
+
+        The access audit runs before the pause of the changed instance is lifted: if it fails,
+        or finds an exposed library, the shelves stay paused.
+        """
+        with client.unguarded():  # the library settings are written while the exports wait
+            return await self._reconnect(client, target_id, auditor)
+
+    async def _reconnect(
+        self, client: KavitaClient, target_id: str, auditor: AccessAuditor
+    ) -> ReconnectReport:
         assessment = await client.probe()
-        current = instance_fingerprint(client.base_url, client.health.install_id)
+        current = await self._fingerprint(client)
         if current is None:
             raise ProtocolError("the server gives no installation id")
         libraries = await client.list_libraries()
@@ -118,6 +145,10 @@ class InstanceService:
             save_fingerprint(
                 connection, target_id, current, client.health.version, self._clock.now()
             )
+        audit = await auditor.audit(client, target_id)  # fails closed: the pause then stays
+        report.audit_failed = audit.failed
+        report.paused_shelves = list(audit.paused_shelves)
+        with self._engine.begin() as connection:
             client.health.instance_changed = False
             client.health.refresh_waiting()
             save_health(connection, target_id, client.health)
