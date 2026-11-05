@@ -19,7 +19,7 @@ from shelfhold.export.domain.naming import (
     series_cover_source,
     volume_deduced,
 )
-from tests.fakes.kavita.plugin_parse import LOOSE_LEAF, SPECIAL_VOLUME, simulate_parse
+from tests.fakes.kavita.plugin_parse import LOOSE_LEAF, simulate_parse
 
 UPSTREAM_TITLES = [
     "Chapter 311 - {S1 END}",
@@ -36,7 +36,7 @@ def chapter(number: str, series: str = "Dr Stone", **kw: object) -> FrozenAttrs:
 
 @pytest.mark.req("EF-EXP-045")
 def test_simulated_parser_reads_season_markers_as_volumes() -> None:
-    """The replica must reproduce the trap the rule exists for."""
+    """The replica must reproduce the trap the rule exists for (`S<n>` is a volume in 0.9.1.4)."""
     assert volume_deduced(simulate_parse("Dr Stone - Ch.311 - {S1 END}.cbz"))
     assert volume_deduced(simulate_parse("Dr Stone - Vol.3 Ch.9.cbz"))
     assert not volume_deduced(simulate_parse("Dr Stone - Ch.311.cbz"))
@@ -98,8 +98,8 @@ def test_chapter_zero_special_cover_from_chapter_one() -> None:
     assert is_chapter_zero(zero) and not is_chapter_zero(one)
     path = export_path(zero)
     assert path.directory[-1] == "Specials"
-    parsed = simulate_parse(path.filename)
-    assert parsed.min_volume == SPECIAL_VOLUME
+    # plugin/parse knows no special: the folder shelves it, and no volume may be deduced
+    assert not volume_deduced(simulate_parse(path.filename))
     # the series cover is chosen from chapter 1, never from the special 0
     assert series_cover_source([zero, two, one]) == one
     assert series_cover_source([zero]) is None

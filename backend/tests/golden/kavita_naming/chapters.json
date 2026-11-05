@@ -83,7 +83,7 @@
     "rel_path": "Dr Stone/Specials/Dr Stone - Special 0.cbz",
     "series": "Dr Stone",
     "chapter": -100000.0,
-    "volume": 100000.0,
+    "volume": -100000.0,
     "volume_deduced": false
   }
 ]

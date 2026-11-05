@@ -14,7 +14,7 @@ What the rules protect against, all about what Kavita's `plugin/parse` reads in 
   taken from chapter 1 by the API, never from a special.
 - Two files written by Shelfhold never share a parsed number in a series folder. A non-empty
   numbering segment (a webtoon season restarting at 1) is carried by the exported SERIES name
-  (`Tower of God Arc 2`), one Kavita series per segment (Q50, option 1, decided by the
+  (`Tower of God Saga 2`), one Kavita series per segment (Q50, option 1, decided by the
   `plugin/parse` golden): the segment is never a `S2` / `Season 2` / `Vol.2` marker.
 """
 
@@ -102,7 +102,7 @@ class NamingTemplate:
     volume: str = "{series} - Vol.{number}"
     special: str = "{series} - Special {label}"
     special_dir: str = "Specials"
-    segment: str = "{series} Arc {n}"
+    segment: str = "{series} Saga {n}"
 
     @property
     def ref(self) -> str:
@@ -204,14 +204,25 @@ def is_special(frozen: FrozenAttrs) -> bool:
     return frozen.kind == "unit" and (frozen.track != "main" or is_chapter_zero(frozen))
 
 
+_ORDINAL: Final = re.compile(r"S([1-9]\d*)")
+
+
+def segment_label(segment: str) -> str:
+    """The text a segment adds to the series name. Lossless: `S2` (the normalised form of the
+    second segment) gives `2`; any other value keeps its own text behind `No`, so `2` and `S2`
+    never share a name."""
+    if match := _ORDINAL.fullmatch(segment):
+        return match.group(1)
+    return f"No {segment}"
+
+
 def exported_series_name(
     series: str, segment: str, template: NamingTemplate = DEFAULT_TEMPLATE
 ) -> str:
     """The Kavita series of a place: the series itself, or one series per numbering segment."""
     if not segment:
         return series
-    digits = re.search(r"\d+", segment)
-    return template.segment.format(series=series, n=digits.group(0) if digits else segment)
+    return template.segment.format(series=series, n=segment_label(segment))
 
 
 def _render(fmt: str, series: str, extension: str, **fields: str) -> str:
@@ -324,8 +335,7 @@ def plan_renames(
 
 # -- collisions through plugin/parse (EF-EXP-045) -----------------------------------------------
 
-LOOSE_LEAF: Final = -100000.0  # Kavita's "no value" for a volume or a chapter
-SPECIAL_VOLUME: Final = 100000.0
+LOOSE_LEAF: Final = -100000.0  # Kavita's "no value" for a volume or a chapter (ParserConstants)
 
 
 class Parsed(Protocol):
@@ -336,13 +346,14 @@ class Parsed(Protocol):
 
 
 def volume_deduced(parsed: Parsed) -> bool:
-    """True if Kavita reads a real volume in the name (a special is not a volume)."""
-    return parsed.min_volume not in (0.0, LOOSE_LEAF, SPECIAL_VOLUME)
+    """True if `plugin/parse` reads a volume in the name. The route knows no "special": a special
+    is shelved by its folder (`Specials/`), so the criterion is the absence of any volume."""
+    return parsed.min_volume not in (0.0, LOOSE_LEAF)
 
 
-def _key(name: str, parsed: Parsed) -> tuple[str, float | str]:
-    if parsed.min_volume == SPECIAL_VOLUME:
-        return ("special", name.casefold())
+def _key(name: str, parsed: Parsed, *, by_name: bool) -> tuple[str, float | str]:
+    if by_name:
+        return ("name", name.casefold())
     if parsed.min_chapter not in (0.0, LOOSE_LEAF):
         return ("chapter", parsed.min_chapter)
     return ("volume", parsed.min_volume)
@@ -354,11 +365,14 @@ class Collision:
     names: tuple[str, ...]
 
 
-def find_number_collisions(names: Sequence[str], parse: Callable[[str], Parsed]) -> list[Collision]:
-    """Names of one series folder that Kavita reads as the same number."""
+def find_number_collisions(
+    names: Sequence[str], parse: Callable[[str], Parsed], *, by_name: bool = False
+) -> list[Collision]:
+    """Names of one folder that Kavita reads as the same number (`by_name` for `Specials/`, where
+    the number does not place the file)."""
     groups: dict[tuple[str, float | str], list[str]] = defaultdict(list)
     for name in names:
-        groups[_key(name, parse(name))].append(name)
+        groups[_key(name, parse(name), by_name=by_name)].append(name)
     return [Collision(k, tuple(sorted(v))) for k, v in groups.items() if len(v) > 1]
 
 
@@ -376,10 +390,14 @@ class CollisionDecision:
 
 
 def check_incoming(
-    incoming: str, existing: Iterable[str], parse: Callable[[str], Parsed]
+    incoming: str,
+    existing: Iterable[str],
+    parse: Callable[[str], Parsed],
+    *,
+    by_name: bool = False,
 ) -> CollisionDecision | None:
-    wanted = _key(incoming, parse(incoming))
+    wanted = _key(incoming, parse(incoming), by_name=by_name)
     for name in existing:
-        if _key(name, parse(name)) == wanted:
+        if _key(name, parse(name), by_name=by_name) == wanted:
             return CollisionDecision("attach_adopted", name, incoming)
     return None

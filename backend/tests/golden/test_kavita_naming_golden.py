@@ -69,9 +69,7 @@ CHAPTERS: list[dict[str, object]] = [
 def test_chapter_name_has_no_volume_golden_plugin_parse() -> None:
     """Name only: the route reads neither ComicInfo nor the folder."""
     actual = _check("chapters.json", CHAPTERS)
-    for case in actual:
-        if not str(case["rel_path"]).endswith("Special 0.cbz"):
-            assert case["volume_deduced"] is False, case
+    assert all(case["volume_deduced"] is False for case in actual)
 
 
 SEGMENTS: list[dict[str, object]] = [
