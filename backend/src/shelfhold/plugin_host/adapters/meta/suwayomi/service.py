@@ -112,6 +112,7 @@ class SuwayomiService:
         self.connected = (
             ConnectedCapability.CATEGORIES
             | ConnectedCapability.SERVER_QUEUE
+            | ConnectedCapability.UPSTREAM_RESTORE
             | ConnectedCapability.HEALTH_PROBE
             | ConnectedCapability.AUTH_MODE
         )
@@ -334,6 +335,51 @@ class SuwayomiService:
     async def set_follow(self, f: Fetcher, ref: SeriesRef, on: bool) -> None:
         node = await self._manga(f, ref)
         await self._query(f, q.SET_LIBRARY, {"id": node["id"], "inLibrary": on})
+
+    # -- UPSTREAM_RESTORE (EF-EXP-056) -------------------------------------------------------
+    async def snapshot_upstream(self, f: Fetcher, ref: SeriesRef) -> dict[str, object]:
+        """What decides whether Suwayomi's own schedule updates the series: its categories and
+        its update strategy. Ids, names and a keyword; nothing secret."""
+        node = await self._manga(f, ref)
+        data = await self._query(f, q.MANGA_SETTINGS, {"id": node["id"]})
+        manga = data.get("manga")
+        if not isinstance(manga, dict):
+            raise ContentRemoved(f"{ref.remote_id} is no longer known to the server")
+        categories = (manga.get("categories") or {}).get("nodes") or []
+        return {
+            "categories": [
+                {"id": int(c["id"]), "name": str(c.get("name", ""))} for c in categories
+            ],
+            "update_strategy": str(manga.get("updateStrategy") or "ALWAYS_UPDATE"),
+        }
+
+    async def restore_upstream(self, f: Fetcher, ref: SeriesRef, snap: dict[str, object]) -> None:
+        """Give the series back to Suwayomi's schedule: leave the categories that exclude it
+        from updates, go back to the categories and update strategy of the snapshot. A category
+        Shelfhold did not put there is left alone. `snap` empty (no snapshot): only the exclusion
+        goes (GAP-9-05)."""
+        node = await self._manga(f, ref)
+        manga_id = int(node["id"])
+        current = (await self._query(f, q.MANGA_SETTINGS, {"id": manga_id})).get("manga") or {}
+        have = {int(c["id"]) for c in (current.get("categories") or {}).get("nodes") or []}
+        known = {
+            int(c["id"]): str(c.get("includeInUpdate", "")).upper()
+            for c in (await self._query(f, q.CATEGORIES))["categories"]["nodes"]
+        }
+        wanted_raw = snap.get("categories")
+        wanted = {
+            int(c["id"]) for c in (wanted_raw if isinstance(wanted_raw, list) else [])
+            if isinstance(c, dict) and int(c["id"]) in known
+        }  # fmt: skip
+        remove = sorted(i for i in have - wanted if known.get(i) == "EXCLUDE")
+        add = sorted(wanted - have)
+        if add or remove:
+            await self._query(
+                f, q.SET_MANGA_CATEGORIES, {"id": manga_id, "add": add, "remove": remove}
+            )
+        strategy = snap.get("update_strategy")
+        if isinstance(strategy, str) and strategy != str(current.get("updateStrategy")):
+            await self._query(f, q.SET_UPDATE_STRATEGY, {"id": manga_id, "strategy": strategy})
 
     # -- units -------------------------------------------------------------------------------
     @staticmethod

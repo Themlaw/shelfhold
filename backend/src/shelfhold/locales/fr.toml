@@ -266,6 +266,22 @@ action = "Un second appariement créerait un doublon : détachez d'abord le prem
 title = "Le lot d'appariements confirmé n'est plus celui qui a été proposé."
 action = "Relancez « shelfhold adopt --pair-auto », relisez le rapport, puis confirmez avec la nouvelle empreinte."
 
+[errors."repatriate.dry_run_required"]
+title = "Le rapatriement demande un dry-run préalable."
+action = "Lancez « shelfhold adopt --repatriate --dry-run », relisez le rapport, puis confirmez avec son empreinte."
+
+[errors."repatriate.stale"]
+title = "Les fichiers ont changé depuis le dry-run du rapatriement."
+action = "Relancez le dry-run, relisez le rapport, puis confirmez avec la nouvelle empreinte. Rien n'a été copié."
+
+[errors."repatriate.blocked"]
+title = "Un fichier adopté ne peut pas être rapatrié tel quel : il manque à la source, a changé depuis l'adoption, ou un autre fichier occupe déjà sa place."
+action = "Le rapport liste chaque fichier concerné. Aucun fichier n'a été copié, déplacé ni écrasé ; corrigez, puis relancez le dry-run."
+
+[errors."repatriate.no_space"]
+title = "Il n'y a pas assez de place libre pour rapatrier les fichiers."
+action = "Libérez de la place sous /library (le dry-run donne l'espace requis), puis relancez le dry-run."
+
 [errors."export.source_missing"]
 title = "L'archive reçue de ce chapitre est introuvable."
 action = "Recalculez l'aperçu ; si le fichier a disparu, relancez le téléchargement du chapitre."

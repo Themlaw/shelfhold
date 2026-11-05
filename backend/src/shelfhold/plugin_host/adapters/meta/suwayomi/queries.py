@@ -27,6 +27,20 @@ SET_LIBRARY = (
     "mutation ($id: Int!, $inLibrary: Boolean!) { updateManga(input: "
     "{id: $id, patch: {inLibrary: $inLibrary}}) { manga { id inLibrary } } }"
 )
+# `detach --restore-upstream` (EF-EXP-056): the only writes besides downloads and the library flag
+MANGA_SETTINGS = (
+    "query ($id: Int!) { manga(id: $id) { id updateStrategy categories { nodes { id name } } } }"
+)
+CATEGORIES = "query { categories { nodes { id name includeInUpdate } } }"
+SET_MANGA_CATEGORIES = (
+    "mutation ($id: Int!, $add: [Int!]!, $remove: [Int!]!) { updateMangaCategories(input: "
+    "{id: $id, patch: {addToCategories: $add, removeFromCategories: $remove}}) "
+    "{ manga { id } } }"
+)
+SET_UPDATE_STRATEGY = (
+    "mutation ($id: Int!, $strategy: UpdateStrategy!) { updateManga(input: "
+    "{id: $id, patch: {updateStrategy: $strategy}}) { manga { id } } }"
+)
 
 GRAPHQL_PATH = "/api/graphql"
 DOWNLOAD_PATH = "/api/v1/chapter/{id}/download"

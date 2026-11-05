@@ -459,6 +459,13 @@ class Fsops:
             with os.fdopen(fd, "rb") as stream:
                 yield stream
 
+    def free_bytes(self, local: str) -> int:
+        """Free space, in bytes, on the file system of the physical root that holds `local`
+        (what the dry-run of a copy between roots compares with its size, ENF-OPS-006)."""
+        located = self._locate(local)
+        stat = os.statvfs(located.root_path)
+        return int(stat.f_bavail * stat.f_frsize)
+
     def device_of(self, local: str) -> int:
         """`st_dev` of a file (a link is not followed): with the inode, what makes a hard link."""
         located = self._locate(local)

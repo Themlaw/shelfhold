@@ -27,6 +27,13 @@ from shelfhold.acquisition.application.tickets import (
     bounded_receiver,
 )
 from shelfhold.acquisition.application.unit_follow import suppress_follow
+from shelfhold.acquisition.application.upstream import (
+    Detacher,
+    DetachReport,
+    DetachScope,
+    SnapshotRefusedError,
+    UpstreamSnapshots,
+)
 from shelfhold.acquisition.domain.backfill import BackfillEstimate
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.freshness import DEFAULT_K, cadence, is_stale, stale_threshold
@@ -40,6 +47,9 @@ __all__ = [
     "Backfill",
     "BackfillConfirmationRequired",
     "BackfillEstimate",
+    "DetachReport",
+    "DetachScope",
+    "Detacher",
     "Disposition",
     "DownloadTickets",
     "FailureLedger",
@@ -53,10 +63,12 @@ __all__ = [
     "RangeUnit",
     "Receiver",
     "RequestBudget",
+    "SnapshotRefusedError",
     "TeamChoice",
     "TeamPreference",
     "TeamStats",
     "TicketReport",
+    "UpstreamSnapshots",
     "Watermark",
     "bounded_receiver",
     "cadence",
