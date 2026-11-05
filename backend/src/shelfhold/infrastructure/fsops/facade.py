@@ -350,6 +350,18 @@ class Fsops:
             kind = root.lstat_kind(located.rel)
         return (kind, identity_of(observed)) if kind is not None else None
 
+    def list_dir(self, local: str) -> dict[str, Kind]:
+        """The entries of a folder with what each is (a link is described, never followed).
+        An entry that vanishes while it is read is left out."""
+        located = self._locate(local)
+        with self._root(located.root_path) as root:
+            found: dict[str, Kind] = {}
+            for name in root.listdir(located.rel):
+                kind = root.lstat_kind(f"{located.rel}/{name}" if located.rel != "." else name)
+                if kind is not None:
+                    found[name] = kind
+            return found
+
     def sha256_of(self, local: str) -> str:
         """`sha256:<hex>` of a regular file, streamed."""
         located = self._locate(local, read_mirror=True)

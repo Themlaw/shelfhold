@@ -57,6 +57,8 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
             {"authentication_failed", "kid_unregistered", "lost_keyring", "malformed"}
         )
     },
+    "mount.sentinel_missing": {"reason": frozenset({"sentinel", "missing_ratio"})},
+    "reconcile.drift": {"kind": frozenset({"unknown_file", "adopted_missing"})},
 }
 CODE_VALUES: Final = frozenset(
     OPERATING_EVENTS | {"job.failed", "job.unknown_kind", "window.preempted"}

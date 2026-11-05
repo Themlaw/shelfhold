@@ -379,6 +379,7 @@ export_series = sa.Table(
     sa.Column("has_volume", sa.Boolean(), nullable=True),
     sa.Column("series_dir", sa.String(), nullable=True),
     sa.Column("frozen_at", UtcDateTime(), nullable=True),
+    sa.Column("paused_reason", sa.String(), nullable=True),  # `foreign_writer` (EF-EXP-043)
     now_column(),
     sa.ForeignKeyConstraint(
         ["shelf_destination_id", "remote_library_id"],
