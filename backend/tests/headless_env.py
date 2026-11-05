@@ -34,6 +34,7 @@ class FakeKavitaExchange:
     """The `KavitaKeyExchange` port: records what it was asked, hands out one synthetic key."""
 
     calls: list[dict[str, object]] = field(default_factory=list)
+    revoked: list[dict[str, object]] = field(default_factory=list)
 
     def exchange(
         self, *, url: str, username: str, password: str, key_name: str, expires_days: int
@@ -43,6 +44,10 @@ class FakeKavitaExchange:
              "expires_days": expires_days}
         )  # fmt: skip
         return ExchangedKey(KAVITA_KEY, NOW + timedelta(days=expires_days), "0.9.1.4")
+
+    def revoke(self, *, url: str, username: str, password: str, key: str, key_name: str) -> bool:
+        self.revoked.append({"url": url, "key": key, "key_name": key_name, "password": password})
+        return True
 
 
 @dataclass

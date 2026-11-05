@@ -21,11 +21,14 @@ import structlog
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.config import ResolvedSettings
 from shelfhold.export.application.shelves import ShelfService
+from shelfhold.export.application.target_state import load_health, save_health
 from shelfhold.export.domain.bindings import check_shelf_ceiling
+from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
 from shelfhold.export.domain.path_map import PathEntry, PathMapError, PathMode
-from shelfhold.export.targets.kavita import AdminKey, store_admin_key
+from shelfhold.export.targets.kavita import AdminKey, load_admin_key, store_admin_key
 from shelfhold.headless.desired import (
     DesiredConfig,
     DesiredShelf,
@@ -406,6 +409,99 @@ class HeadlessAdmin:
             ) from None
         _log.info("headless.target_added", kind="kavita", name=name, url=clean_url)
         return TargetAdded(target_id, name, True, exchanged.expires_at)
+
+    # -- the exits of EF-INT-023 that renew a credential ---------------------------------------
+
+    def target_rotate_key(self, *, target: str, password: str) -> TargetAdded:
+        """`target rotate-key`: a new named key from the dedicated admin account, sealed in place
+        of the old one, which Kavita lets expire; the J-14 / J-1 notices start over."""
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                sa.select(export.export_target).where(
+                    sa.or_(
+                        export.export_target.c.id == target, export.export_target.c.name == target
+                    ),
+                    export.export_target.c.kind == "kavita",
+                )
+            ).first()
+        if row is None:
+            raise UnknownTarget(f"no Kavita target {target!r}")
+        username = str(row.config.get("username", ""))
+        if not username:
+            raise InvalidConfigValue("this target has no recorded account: add it again")
+        with self._engine.connect() as connection:
+            old_key = load_admin_key(self._vault, connection, row.id).reveal()
+        old_name = str(row.config.get("key_name", KEY_NAME))
+        stamp = self._clock.now().strftime("%Y%m%d")
+        new_name = f"{KEY_NAME}-{stamp}"
+        exchanged = self._kavita.exchange(
+            url=str(row.config["url"]), username=username, password=password,
+            key_name=new_name, expires_days=KEY_DAYS,
+        )  # fmt: skip
+        expires_at = exchanged.expires_at.isoformat() if exchanged.expires_at else None
+        with self._engine.begin() as connection:
+            registry.register_active_key(connection, self._vault.keyring)
+            store_admin_key(self._vault, connection, row.id, AdminKey(exchanged.value))
+            connection.execute(
+                sa.update(export.export_target)
+                .where(export.export_target.c.id == row.id)
+                .values(config={**row.config, "key_expires_at": expires_at, "key_name": new_name})
+            )
+            health = load_health(connection, row.id)
+            health.key_notices = KeyNoticeState(exchanged.expires_at, frozenset())
+            health.key_expires_at = exchanged.expires_at
+            health.refresh_waiting()
+            save_health(connection, row.id, health)
+        try:  # the new key is sealed: a failed revocation leaves the old one to expire
+            revoked = self._kavita.revoke(
+                url=str(row.config["url"]), username=username, password=password,
+                key=old_key, key_name="" if old_name == new_name else old_name,
+            )  # fmt: skip
+        except TargetExchangeFailed:
+            revoked = False
+        _log.info("headless.target_key_rotated", name=row.name, old_key_revoked=revoked)
+        return TargetAdded(row.id, row.name, False, exchanged.expires_at)
+
+    def _suwayomi_url(self) -> str:
+        with self._engine.connect() as connection:
+            settings = connection.execute(
+                sa.select(acquisition.source_config.c.settings).where(
+                    acquisition.source_config.c.plugin_id == "suwayomi"
+                )
+            ).scalar()
+        if not isinstance(settings, dict) or not settings.get("base_url"):
+            raise InvalidConfigValue("no Suwayomi source yet: add one with `shelfhold source add`")
+        return str(settings["base_url"])
+
+    def _resume_follow(self) -> None:
+        with self._engine.begin() as connection:
+            FailureLedger("suwayomi").resume(connection)
+
+    def source_set_secret(self, secret: str) -> SourceAdded:
+        """`source set-secret`: the new `user:password` is probed (mode, then sealed) and the
+        follow cycle, paused on the expired secret, may start again."""
+        added = self.source_add_suwayomi(url=self._suwayomi_url(), secret=secret)
+        self._resume_follow()
+        return added
+
+    def source_recheck(self) -> SourceAdded:
+        """`source recheck`: probe the server again with the stored secret (the mode may have
+        been put back to one this release can use); the follow cycle resumes when it passes."""
+        url = self._suwayomi_url()
+        with self._engine.connect() as connection:
+            try:
+                raw = self._vault.open_row(connection, "source_config", "suwayomi")
+            except Exception:  # no secret sealed: a source without authentication
+                raw = b""
+        document = json.loads(raw) if raw else {}
+        secret = (
+            f"{document['username']}:{document['password']}"
+            if document.get("username") and document.get("password")
+            else None
+        )
+        added = self.source_add_suwayomi(url=url, secret=secret)
+        self._resume_follow()
+        return added
 
     # -- source add suwayomi ------------------------------------------------------------------
 

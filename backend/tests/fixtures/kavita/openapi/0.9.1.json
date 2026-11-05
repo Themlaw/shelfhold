@@ -2658,6 +2658,69 @@
  },
  "openapi": "3.0.4",
  "paths": {
+  "/api/Account/auth-key": {
+   "delete": {
+    "parameters": [
+     {
+      "description": "",
+      "in": "query",
+      "name": "authKeyId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Delete the Auth Key",
+    "tags": [
+     "Account"
+    ]
+   }
+  },
+  "/api/Account/auth-keys": {
+   "get": {
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AuthKeyDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AuthKeyDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AuthKeyDto"
+         },
+         "type": "array"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns all Auth Keys with the account",
+    "tags": [
+     "Account"
+    ]
+   }
+  },
   "/api/Account/create-auth-key": {
    "post": {
     "requestBody": {

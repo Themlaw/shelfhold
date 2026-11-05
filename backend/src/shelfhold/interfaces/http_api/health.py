@@ -18,11 +18,17 @@ class MigrationProgress(BaseModel):
     total: int
 
 
+class PausedQueue(BaseModel):
+    queue: str
+    reason: str  # the waiting state, or the error code of a job paused by the window
+
+
 class HealthzResponse(BaseModel):
     state: Literal["ok", "migrating"]  # anonymous: no names, no version (O12, A7)
     progress: MigrationProgress | None = None
     version: str | None = None  # authenticated callers only
     paused_queues: list[str] | None = None  # authenticated callers only
+    paused: list[PausedQueue] | None = None  # administrators only: the queues with their reason
     paused_reasons: dict[str, str] | None = None  # why: job kind -> code (ENF-OPS-011, D11)
 
 
@@ -53,6 +59,16 @@ def _paused_reasons(health: HealthPort) -> dict[str, str]:
     return dict(sorted(probe().items())) if callable(probe) else {}
 
 
+def _paused(health: HealthPort) -> list[dict[str, str]]:
+    probe = getattr(health, "paused", None)
+    return list(probe()) if callable(probe) else []
+
+
+def _is_admin(request: Request) -> bool:
+    principal = request.scope.get("state", {}).get("principal")
+    return getattr(principal, "role", None) == "admin"
+
+
 def build_health_router(health: HealthPort, *, version: str | None = None) -> APIRouter:
     router = APIRouter()
 
@@ -75,6 +91,8 @@ def build_health_router(health: HealthPort, *, version: str | None = None) -> AP
             body["version"] = version
             body["paused_queues"] = _paused_queues(health) if progress is None else []
             body["paused_reasons"] = _paused_reasons(health) if progress is None else {}
+            if _is_admin(request):  # the reason of each queue is for administrators (D11)
+                body["paused"] = _paused(health) if progress is None else []
         return JSONResponse(body)
 
     @router.head("/readyz", include_in_schema=False)

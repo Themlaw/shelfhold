@@ -1,0 +1,347 @@
+"""The services behind the exit commands of EF-INT-023, over the services that already exist.
+
+Nothing here writes SQL to leave a state when a service for it exists: a pause of a series is lifted
+by the `Reconciler`, a permission pause by the `PermissionPreflight`, a target by the Kavita
+client, a secret by the headless facade, the lost keyring by the tombstone service. What is left
+(`missing resolve`, `jobs retry`, `edition set-lang`) is a single, guarded update of the row
+that holds the wait. The HTTP routes, the socket and the CLI all call this class; the reserved
+classification is theirs (the route or the socket decides before calling).
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import datetime
+
+import sqlalchemy as sa
+from sqlalchemy import Engine
+
+from shelfhold.acquisition.application.unit_follow import suppress_follow
+from shelfhold.catalog.lang import LanguageError, edition_key_lang
+from shelfhold.events.bus import EventBus
+from shelfhold.export.application.preflight import PermissionPreflight
+from shelfhold.export.application.reconcile import Reconciler
+from shelfhold.export.application.target_state import load_health
+from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.schema import catalog, export, platform
+from shelfhold.ops.errors import (
+    ExitUnavailableError,
+    InvalidChoiceError,
+    LanguageRefusedError,
+    NotWaitingError,
+    UnknownSubjectError,
+)
+from shelfhold.ops.ports import (
+    AdoptionExit,
+    HeadlessOps,
+    KeyringExit,
+    PausedQueue,
+    RestoreExit,
+    TargetOps,
+    WaitingItem,
+)
+from shelfhold.ops.status import UNKNOWN_LANGUAGE, collect, dress, queues_of
+
+__all__ = ["JobRow", "OpsServices", "RecheckOutcome", "StatusReport", "user_of"]
+
+DEAD = ("dead_letter", "failed")
+NOT_INDEXED = "target.not_indexed"
+ULID_PATTERN = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
+
+
+def user_of(principal: Principal) -> str | None:
+    """The user a provenance column may name (a foreign key to `user`): the account behind a
+    session or a key; the host CLI is no account (its uid is in the audit log of the socket)."""
+    return principal.user_id if ULID_PATTERN.fullmatch(principal.user_id) else None
+
+
+@dataclass(frozen=True)
+class StatusReport:
+    waiting: list[WaitingItem]
+    queues: list[PausedQueue]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "waiting": [vars(i) | {} for i in self.waiting],
+            "queues": [vars(q) | {} for q in self.queues],
+        }
+
+
+@dataclass(frozen=True)
+class JobRow:
+    id: str
+    kind: str
+    status: str
+    error_code: str | None
+    last_error: str | None
+    attempts: int
+    created_at: datetime | None
+
+
+@dataclass(frozen=True)
+class RecheckOutcome:
+    cleared: tuple[str, ...]  # export series that can be written again
+    denied: tuple[str, ...]  # export series still waiting for the rights
+
+
+class OpsServices:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        clock: Clock,
+        bus: EventBus,
+        fsops: Fsops | None = None,
+        targets: TargetOps | None = None,
+        headless: HeadlessOps | None = None,
+        restore: RestoreExit | None = None,
+        keyring: KeyringExit | None = None,
+        adoption: AdoptionExit | None = None,
+    ) -> None:
+        self._engine = engine
+        self._clock = clock
+        self._bus = bus
+        self._fsops = fsops
+        self._targets = targets
+        self._headless = headless
+        self._restore = restore
+        self._keyring = keyring
+        self._adoption = adoption
+
+    # -- reading -------------------------------------------------------------------------------
+
+    def status(self) -> StatusReport:
+        with self._engine.connect() as connection:
+            items = collect(connection)
+            for port in (self._restore, self._keyring, self._adoption):
+                if port is not None:
+                    items += [dress(item) for item in port.waiting()]
+            return StatusReport(items, queues_of(connection, items))
+
+    def paused_queues(self) -> list[PausedQueue]:
+        return self.status().queues
+
+    def missing_list(self) -> list[WaitingItem]:
+        return [i for i in self.status().waiting if i.state == "missing"]
+
+    def jobs_list(self, *, status: str | None = None) -> list[JobRow]:
+        job = platform.job_view
+        query = sa.select(job).order_by(job.c.created_at.desc(), job.c.id).limit(200)
+        if status is not None:
+            query = query.where(job.c.status == status)
+        with self._engine.connect() as connection:
+            return [
+                JobRow(r.id, r.kind, r.status, r.error_code, r.last_error, r.attempts, r.created_at)
+                for r in connection.execute(query)
+            ]
+
+    # -- missing / series / jobs / edition ------------------------------------------------------
+
+    def missing_resolve(
+        self, destination_id: str, export_item_id: str, action: str, *, actor_id: str | None
+    ) -> None:
+        """`reexport`: the next export puts the file back. `unfollow`: "stop following this
+        chapter" (EF-EXP-018), with who and when, never lifted by itself."""
+        if action not in {"reexport", "unfollow"}:
+            raise InvalidChoiceError("choose `reexport` or `unfollow`")
+        record, coverage = export.export_record, export.unit_coverage
+        with self._engine.begin() as connection:
+            row = connection.execute(
+                sa.select(record.c.state).where(
+                    record.c.shelf_destination_id == destination_id,
+                    record.c.export_item_id == export_item_id,
+                )
+            ).one_or_none()
+            if row is None:
+                raise UnknownSubjectError("no such record")
+            if row.state != "missing":
+                raise NotWaitingError("this file is not missing")
+            where = (
+                record.c.shelf_destination_id == destination_id,
+                record.c.export_item_id == export_item_id,
+            )
+            if action == "reexport":
+                connection.execute(
+                    sa.update(record).where(*where).values(state="planned", error_code=None)
+                )
+                return
+            units = connection.execute(
+                sa.select(coverage.c.unit_id).where(
+                    coverage.c.carrier_type == "export_item",
+                    coverage.c.carrier_id == export_item_id,
+                )
+            ).scalars()
+            for unit_id in units:
+                suppress_follow(connection, unit_id, actor_id=actor_id, now=self._clock.now())
+            connection.execute(sa.update(record).where(*where).values(state="recycled"))
+
+    def series_resume(self, export_series_id: str) -> bool:
+        """After the switch-over (or the rights back): what is on disk is the new baseline. A series
+        paused for `permission_denied` is probed first (the same probe as `target recheck`)."""
+        if self._fsops is None:
+            raise ExitUnavailableError("no library is mounted here")
+        reconciler = Reconciler(self._engine, self._fsops, clock=self._clock, bus=self._bus)
+        if not reconciler.resume_series(export_series_id):
+            raise NotWaitingError("this series is not paused")
+        return True
+
+    def jobs_retry(self, subject: str) -> JobRow | None:
+        """A job that gave up goes back to the queue (the scheduler dispatches it); a file the
+        server never indexed is looked at again by the arrival poll."""
+        job, record = platform.job_view, export.export_record
+        with self._engine.begin() as connection:
+            row = connection.execute(sa.select(job.c.status).where(job.c.id == subject)).first()
+            if row is not None:
+                if row.status not in DEAD:
+                    raise NotWaitingError("this job did not give up")
+                connection.execute(
+                    sa.update(job)
+                    .where(job.c.id == subject)
+                    .values(
+                        status="queued", huey_task_id=None, attempts=0, last_error=None,
+                        error_code=None, started_at=None, finished_at=None,
+                    )
+                )  # fmt: skip
+            else:
+                cleared = connection.execute(
+                    sa.update(record)
+                    .where(record.c.export_item_id == subject, record.c.error_code == NOT_INDEXED)
+                    .values(error_code=None)
+                ).rowcount
+                if not cleared:
+                    raise UnknownSubjectError("no such job, and no file waiting for the index")
+        found = [j for j in self.jobs_list() if j.id == subject]
+        return found[0] if found else None
+
+    def edition_set_lang(self, edition_id: str, lang: str) -> str:
+        """Leave `language_unknown` (ENF-I18N-005): the tag is normalised, a placeholder or a
+        collision with another Edition of the Work is refused, nothing is merged silently."""
+        try:
+            tag = str(edition_key_lang(lang))
+        except LanguageError as error:
+            raise LanguageRefusedError(f"language refused ({error.code})") from None
+        table = catalog.edition
+        with self._engine.begin() as connection:
+            current = connection.execute(
+                sa.select(table.c.lang).where(table.c.id == edition_id)
+            ).first()
+            if current is None:
+                raise UnknownSubjectError("no such Edition")
+            if current.lang != UNKNOWN_LANGUAGE:
+                raise NotWaitingError("the language of this Edition is known")
+            try:
+                with connection.begin_nested():
+                    connection.execute(
+                        sa.update(table)
+                        .where(table.c.id == edition_id)
+                        .values(lang=tag, lang_raw=lang)
+                    )
+            except sa.exc.IntegrityError:
+                raise LanguageRefusedError(
+                    "language already used by another Edition of this Work"
+                ) from None
+        return tag
+
+    # -- targets -------------------------------------------------------------------------------
+
+    def _destinations(self, target_id: str) -> list[str]:
+        table = export.shelf_destination
+        with self._engine.connect() as connection:
+            return list(
+                connection.execute(
+                    sa.select(table.c.id).where(table.c.target_id == target_id).order_by(table.c.id)
+                ).scalars()
+            )
+
+    def _require_target(self, target_id: str) -> None:
+        with self._engine.connect() as connection:
+            known = connection.execute(
+                sa.select(export.export_target.c.id).where(export.export_target.c.id == target_id)
+            ).first()
+        if known is None:
+            raise UnknownSubjectError("no such target")
+
+    def target_recheck_is_reserved(self, target_id: str) -> bool:
+        """Letting a shelf out of `child_exposure` is parental control: the route asks for a fresh
+        session (EF-USR-024). Every other recheck is an ordinary admin action."""
+        self._require_target(target_id)
+        with self._engine.connect() as connection:
+            health = load_health(connection, target_id)
+            exposed = connection.execute(
+                sa.select(sa.func.count())
+                .select_from(export.shelf)
+                .where(export.shelf.c.paused_reason == "child_exposure")
+            ).scalar_one()
+        return health.child_exposure or bool(exposed)
+
+    def target_recheck(self, target_id: str) -> RecheckOutcome:
+        """`target recheck`: the rights of the folders, the routes of the server, the exposure of
+        the libraries are looked at again; what passes is freed, the rest keeps its cause."""
+        self._require_target(target_id)
+        cleared: list[str] = []
+        denied: list[str] = []
+        if self._fsops is not None:
+            preflight = PermissionPreflight(self._engine, self._fsops, self._bus, clock=self._clock)
+            for destination in self._destinations(target_id):
+                report = preflight.recheck(destination)
+                cleared += report.cleared
+                denied += report.denied
+        with self._engine.connect() as connection:
+            waiting = load_health(connection, target_id).waiting_state
+        if self._targets is not None:
+            self._targets.recheck(target_id)
+        elif waiting is not None:
+            raise ExitUnavailableError("this instance has no Kavita connection")
+        return RecheckOutcome(tuple(cleared), tuple(denied))
+
+    def target_reconnect(self, target_id: str) -> None:
+        self._require_target(target_id)
+        if self._targets is None:
+            raise ExitUnavailableError("this instance has no Kavita connection")
+        self._targets.reconnect(target_id)
+
+    def target_rotate_key(self, target: str, *, password: str) -> None:
+        if self._headless is None:
+            raise ExitUnavailableError("the configuration facade is not connected")
+        self._headless.target_rotate_key(target=target, password=password)
+
+    # -- sources -------------------------------------------------------------------------------
+
+    def source_set_secret(self, secret: str) -> None:
+        if self._headless is None:
+            raise ExitUnavailableError("the configuration facade is not connected")
+        self._headless.source_set_secret(secret)
+
+    def source_recheck(self) -> None:
+        if self._headless is None:
+            raise ExitUnavailableError("the configuration facade is not connected")
+        self._headless.source_recheck()
+
+    # -- the ports of the other lots ------------------------------------------------------------
+
+    def restore_adopt(self, *, confirm_deletion: bool, principal: Principal) -> None:
+        if self._restore is None:
+            raise ExitUnavailableError("the restore guard is not connected")
+        self._restore.adopt_after_restore(confirm_deletion=confirm_deletion, principal=principal)
+
+    def tombstone_accept_lost_keyring(
+        self, *, confirmation: str, principal: Principal
+    ) -> list[str]:
+        if self._keyring is None:
+            raise ExitUnavailableError("the tombstone service is not connected")
+        return self._keyring.accept_lost_keyring(confirmation=confirmation, principal=principal)
+
+    def adopt_set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
+        if self._adoption is None:
+            raise ExitUnavailableError("adoption is not connected")
+        self._adoption.set_follow_from(
+            destination_id=destination_id, series=series, chapter=chapter
+        )
+
+    def adopt_confirm_migration(self, *, destination_id: str, fingerprint: str) -> None:
+        if self._adoption is None:
+            raise ExitUnavailableError("adoption is not connected")
+        self._adoption.confirm_migration(destination_id=destination_id, fingerprint=fingerprint)

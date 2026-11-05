@@ -65,6 +65,52 @@ def test_kavita_exchange_logs_in_then_creates_a_named_expiring_key() -> None:
         assert "default-key" not in request.content.decode() + str(request.headers)
 
 
+def test_kavita_revoke_finds_the_old_key_by_value_then_deletes_it_by_id() -> None:
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        if request.url.path == "/api/Account/login":
+            return httpx2.Response(200, json={"token": "jwt-0038"})
+        if request.url.path == "/api/Account/auth-keys":
+            assert request.headers["authorization"] == "Bearer jwt-0038"
+            return httpx2.Response(
+                200,
+                json=[{"id": 3, "key": "other-key", "name": "shelfhold-20260101"},
+                      {"id": 9, "key": KAVITA_KEY, "name": "renamed"}],
+            )  # fmt: skip
+        if request.url.path == "/api/Account/auth-key":
+            return httpx2.Response(200)
+        return httpx2.Response(404)
+
+    exchange = HttpKavitaKeyExchange(
+        lambda _u: _fetcher(httpx2.MockTransport(handler), "kavita.internal", 5000)
+    )
+    assert exchange.revoke(url="http://kavita.internal:5000", username="shelfhold",
+                           password="pw-0038", key=KAVITA_KEY, key_name="nope")  # fmt: skip
+    deleted = [r for r in seen if r.method == "DELETE"]
+    assert [r.url.params["authKeyId"] for r in deleted] == ["9"]
+    assert KAVITA_KEY not in "".join(str(r.url) for r in seen)
+
+
+def test_kavita_revoke_falls_back_to_the_name_and_reports_a_missing_key() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/api/Account/login":
+            return httpx2.Response(200, json={"token": "t"})
+        if request.url.path == "/api/Account/auth-keys":
+            return httpx2.Response(200, json=[{"id": 4, "key": "x", "name": "shelfhold-20260101"}])
+        return httpx2.Response(200)
+
+    def make() -> HttpKavitaKeyExchange:
+        return HttpKavitaKeyExchange(
+            lambda _u: _fetcher(httpx2.MockTransport(handler), "kavita.internal", 5000)
+        )
+
+    args = {"url": "http://kavita.internal:5000", "username": "u", "password": "pw-0038"}
+    assert make().revoke(**args, key="gone", key_name="shelfhold-20260101")
+    assert not make().revoke(**args, key="gone", key_name="unknown")
+
+
 def test_kavita_exchange_refuses_wrong_credentials_without_echoing_them() -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(401, json={"title": "Invalid credentials"})

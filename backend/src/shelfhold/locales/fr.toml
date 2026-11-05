@@ -143,6 +143,7 @@ source = "Code source"
 
 [status]
 public_url_restart = "public_url a changé depuis le démarrage du serveur : redémarrez-le pour qu'il en tienne compte."
+waiting_line = "En attente ({state}) : {reason}. Commande : {command}"
 no_warning = "Aucun avertissement."
 warning_line = "Avertissement : {message}"
 database_not_migrated = "base absente ou pas à jour : lancez « shelfhold migrate »."
@@ -152,6 +153,41 @@ cli_allow_host = "SHELFHOLD_CLI_ALLOW_HOST est activé : un processus de l'hôte
 root_sentinel_mismatch = "la sentinelle de {path} est illisible, étrangère ou hors bornes (époque ou génération au-delà de 2^31) : la racine est laissée telle quelle, sans gel. Corrigez le fichier .shelfhold-mount-id (copiez-le d'abord, puis remettez les valeurs que la base connaît) ; les commandes « root takeover » et « reinit » arrivent avec le lot L36."
 restored_behind = "la base est plus ancienne que les fichiers (restauration ou retour arrière) : lecture seule. Lancez « {command} »."
 identity_header_stripped = "des requêtes portent l'en-tête d'identité « {header} », retiré et jamais cru (forward-auth non configuré ou proxy hors des CIDR de confiance). Retirez-le au niveau du proxy ou du tunnel, ou configurez le forward-auth (M3)."
+
+[ops]
+refused = "Refusé ({code}) : {detail}"
+done = "Fait."
+nothing_missing = "Aucun fichier manquant."
+missing_line = "Manquant : {item} ({reason})"
+choose_one = "Choisissez une seule option : --reexport ou --unfollow."
+job_line = "{id}  {kind}  {status}  {code}  essais : {attempts}"
+language_set = "Langue enregistrée : {lang}."
+series_cleared = "Série {series} : de nouveau inscriptible."
+series_denied = "Série {series} : droits d'écriture toujours refusés (voir la commande de correction)."
+key_rotated = "Nouvelle clé créée et enregistrée ; l'ancienne expire d'elle-même."
+keyring_waived = "Trousseau perdu accepté : {count} identifiant(s) de clé abandonné(s)."
+help_missing = "Fichiers disparus de la destination."
+help_missing_list = "Liste les fichiers manquants."
+help_missing_resolve = "Décide du sort d'un fichier manquant."
+help_reexport = "Réexporter le fichier."
+help_unfollow = "Ne plus suivre ce chapitre."
+help_series = "Séries en pause."
+help_series_resume = "Reprend une série mise en pause (autre écrivain, droits d'écriture)."
+help_jobs = "Tâches en échec."
+help_jobs_list = "Liste les tâches."
+help_jobs_status = "Ne liste que ce statut (par ex. dead_letter)."
+help_jobs_retry = "Remet une tâche abandonnée en file, ou relance l'indexation d'un fichier."
+help_edition = "Éditions."
+help_edition_set_lang = "Donne une langue à une édition de langue inconnue."
+help_lang = "Étiquette BCP 47 (par ex. fr, ja, pt-BR)."
+help_tombstone = "Pierres tombales."
+help_accept_lost_keyring = "Accepte la perte du trousseau (action réservée)."
+help_confirm_phrase = "La phrase de confirmation, à l'identique."
+help_target_recheck = "Revérifie une destination : droits d'écriture, routes, exposition."
+help_target_reconnect = "Lève la pause d'une destination (droits rétablis, Kavita réinstallé)."
+help_target_rotate_key = "Crée une nouvelle clé nommée (action réservée)."
+help_source_set_secret = "Enregistre un nouveau secret de la source (action réservée)."
+help_source_recheck = "Revérifie la source et reprend le suivi."
 
 [local_cli]
 param_invalid = "Paramètre « {name} » invalide : {expected} attendu."
@@ -761,3 +797,27 @@ action = "Choisissez un autre nom ou alignez le plafond d'âge et le sous-dossie
 [errors."source.unreachable"]
 title = "Suwayomi ne répond pas à cette adresse."
 action = "Vérifiez l'adresse et que le serveur tourne ; rien n'a été enregistré."
+
+[errors."ops.not_waiting"]
+title = "Rien n'attend ici : l'élément n'est pas dans l'état que cette commande fait quitter."
+action = "Vérifiez avec « shelfhold status » ; rien n'a été modifié."
+
+[errors."ops.unknown_subject"]
+title = "Cet élément n'existe pas."
+action = "Reprenez l'identifiant affiché par « shelfhold status »."
+
+[errors."ops.exit_unavailable"]
+title = "Cette sortie n'est pas branchée dans cette instance."
+action = "Le composant concerné n'est pas connecté (voir la documentation d'administration)."
+
+[errors."ops.invalid_choice"]
+title = "Choix invalide."
+action = "Choisissez l'une des options proposées."
+
+[errors."ops.language_refused"]
+title = "Langue refusée."
+action = "Donnez une étiquette BCP 47 réelle (pas « und »), qu'aucune autre édition de l'œuvre n'utilise."
+
+[errors."ops.still_waiting"]
+title = "La cause de l'attente est toujours là."
+action = "Corrigez la cause (droits du compte, serveur injoignable) puis relancez la commande."

@@ -18,7 +18,8 @@ from shelfhold.interfaces.cli._headless import (
     headless_command,
     read_secret,
 )
-from shelfhold.interfaces.local_cli import HeadlessCommands
+from shelfhold.interfaces.cli._ops import ops_command
+from shelfhold.interfaces.local_cli import HeadlessCommands, OpsChannel
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -35,6 +36,19 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     kavita.add_argument("--accept-admin-risk", action="store_true",
                         help=t("cli.target_accept_risk_help"))  # fmt: skip
     kavita.set_defaults(handler=run_add_kavita, configure_logging=False)
+    # the exits of EF-INT-023
+    for name, handler, help_text in (
+        ("recheck", run_recheck, t("ops.help_target_recheck")),
+        ("reconnect", run_reconnect, t("ops.help_target_reconnect")),
+    ):
+        leaf = actions.add_parser(name, help=help_text, allow_abbrev=False)
+        leaf.add_argument("target_id")
+        leaf.set_defaults(handler=handler, configure_logging=False)
+    rotate = actions.add_parser("rotate-key", help=t("ops.help_target_rotate_key"),
+                                allow_abbrev=False)  # fmt: skip
+    rotate.add_argument("target_id")
+    rotate.add_argument("--password-file", required=True, help=t("cli.target_password_file_help"))
+    rotate.set_defaults(handler=run_rotate_key, configure_logging=False)
 
 
 def run_add_kavita(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
@@ -67,4 +81,32 @@ def _add(args: argparse.Namespace, commands: HeadlessCommands) -> int:
         print(t("headless.target_exists", name=added.name))
     if added.key_expires_at is not None:
         print(t("headless.key_expires", date=added.key_expires_at.date().isoformat()))
+    return 0
+
+
+@ops_command
+def run_recheck(args: argparse.Namespace, channel: OpsChannel) -> int:
+    answer = channel.call("ops.target_recheck", target_id=args.target_id)
+    for series in answer["cleared"]:
+        print(t("ops.series_cleared", series=series))
+    for series in answer["denied"]:
+        print(t("ops.series_denied", series=series), file=sys.stderr)
+    return 1 if answer["denied"] else 0
+
+
+@ops_command
+def run_reconnect(args: argparse.Namespace, channel: OpsChannel) -> int:
+    channel.call("ops.target_reconnect", target_id=args.target_id)
+    print(t("ops.done"))
+    return 0
+
+
+@ops_command
+def run_rotate_key(args: argparse.Namespace, channel: OpsChannel) -> int:
+    try:
+        password = read_secret(args.password_file)
+    except (OSError, UnicodeDecodeError) as error:
+        return fail(t("headless.secret_unreadable", detail=error))
+    channel.call("ops.target_rotate_key", target_id=args.target_id, password=password)
+    print(t("ops.key_rotated"))
     return 0

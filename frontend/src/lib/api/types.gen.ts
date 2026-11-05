@@ -97,6 +97,10 @@ export type GuardsTriggered = {
  */
 export type HealthzResponse = {
     /**
+     * Paused
+     */
+    paused?: Array<PausedQueue> | null;
+    /**
      * Paused Queues
      */
     paused_queues?: Array<string> | null;
@@ -175,6 +179,20 @@ export type PasswordReauth = {
      * Password
      */
     password: string;
+};
+
+/**
+ * PausedQueue
+ */
+export type PausedQueue = {
+    /**
+     * Queue
+     */
+    queue: string;
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**

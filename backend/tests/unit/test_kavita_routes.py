@@ -107,7 +107,12 @@ def test_kavita_off_list_call_is_refused_before_any_request(method: str, path: s
 def test_setup_routes_are_never_callable_by_a_destination() -> None:
     from shelfhold.export.targets.kavita import routes
 
-    assert {r.path for r in SETUP_ROUTES} == {"/api/Account/login", "/api/Account/create-auth-key"}
+    assert {r.path for r in SETUP_ROUTES} == {
+        "/api/Account/login",
+        "/api/Account/create-auth-key",
+        "/api/Account/auth-keys",
+        "/api/Account/auth-key",
+    }
     for route in SETUP_ROUTES:
         with pytest.raises(RouteNotAllowed):
             routes.resolve(route.method, route.path)
