@@ -9,7 +9,7 @@ import hashlib
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePath
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
@@ -18,7 +18,7 @@ from shelfhold.infrastructure.archives import safe_open_archive
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.packaging.cbz import repackage_cbz
 from shelfhold.infrastructure.packaging.comicinfo import ComicInfoData, render_comicinfo
-from shelfhold.infrastructure.schema import catalog
+from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import content_hash
 from shelfhold.sdk.age import AgeRating
 
@@ -38,6 +38,24 @@ class RenderMismatchError(Exception):
     """The pages of the rendered archive are not those of the original."""
 
 
+def _adopted_series(connection: Connection, unit_id: str) -> Any:
+    """The values frozen when the series was adopted: a new file inherits exactly these
+    (`Series` aside, which the caller gives), never the titles of the source (EF-EXP-052)."""
+    unit, link, series = catalog.unit, export.edition_export_series, export.export_series
+    return connection.execute(
+        sa.select(
+            series.c.frozen_series_sort, series.c.frozen_localized_series, series.c.frozen_language
+        )
+        .select_from(
+            unit.join(link, link.c.edition_id == unit.c.edition_id).join(
+                series, series.c.id == link.c.export_series_id
+            )
+        )
+        .where(unit.c.id == unit_id, series.c.frozen_at.is_not(None))
+        .limit(1)
+    ).first()
+
+
 def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicInfoData:
     unit, edition, work, team = catalog.unit, catalog.edition, catalog.work, catalog.team
     variant = catalog.unit_variant
@@ -55,6 +73,7 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
         )
         .where(unit.c.id == unit_id)
     ).one()  # fmt: skip
+    adopted = _adopted_series(connection, unit_id)
     age = AgeRating(18, True) if row.age_x else None
     if age is None and row.age_rating is not None:
         age = AgeRating(int(row.age_rating))
@@ -62,8 +81,9 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
         series=series,
         title=row.title or "",
         number=row.number_norm if row.track == "main" else "",
-        series_sort=row.sort_title or "",
-        language_iso=row.lang,
+        series_sort=(adopted.frozen_series_sort if adopted else None) or row.sort_title or "",
+        localized_series=(adopted.frozen_localized_series if adopted else None) or "",
+        language_iso=(adopted.frozen_language if adopted else None) or row.lang,
         publisher=row.publisher or "",
         team_label=row.label or "",
         right_to_left=True if row.reading_direction == "rtl" else None,

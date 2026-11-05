@@ -18,7 +18,6 @@ import base64
 import binascii
 import copy
 import json
-import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +26,7 @@ from typing import Any
 import httpx2
 
 from shelfhold.infrastructure.fetcher import IntegrationFetcher, LanTargets
+from tests.fakes.kavita.plugin_parse import simulate_parse
 from tests.fakes_fetcher import FakeResolver
 
 TESTS = Path(__file__).resolve().parents[2]
@@ -54,7 +54,6 @@ ALLOWED: dict[tuple[str, str], bool] = {
     ("GET", "/api/series/metadata"): False,
 }
 LIBRARY_TYPES = {"Manga": 0, "Comic": 1, "Book": 2, "Image": 3, "LightNovel": 4, "ComicVine": 5}
-_NAME = re.compile(r"^(?P<series>.+?) - (?:Vol\.(?P<vol>[\d.]+) )?(?:Ch\.(?P<ch>[\d.]+))?")
 
 
 def _schema(name: str) -> dict[str, Any]:
@@ -154,6 +153,7 @@ class FakeKavita:
     never_indexed: set[str] = field(default_factory=set)  # folders Kavita ignores (excluded)
     next_series_id: int = 100
     reinstalls: int = 0
+    manga_parse_only: bool = True  # the replica of plugin/parse is the Manga one: refuse others
 
     # -- scenario helpers -------------------------------------------------------------------
     def demote(self) -> None:
@@ -193,6 +193,19 @@ class FakeKavita:
             "lowestFolderPath": folder, "nameLocked": False,
         }  # fmt: skip
         self.pending.append(PendingIndex(series, list(files), scans_needed=scans))
+
+    def discover(self, folder: str, files: list[str], *, library_id: int = 7) -> None:
+        """A scan of `folder` found `files`: they join the series that lives there, and only a
+        folder no series lives in makes a new one (named as the files read)."""
+        for series in self.series:
+            if series["libraryId"] == library_id and folder in (
+                series["lowestFolderPath"],
+                series["folderPath"],
+            ):
+                self.files[series["id"]] = [*self.files[series["id"]], *files]
+                return
+        name = simulate_parse(files[0].rsplit("/", 1)[-1]).series_name
+        self.add_series(name, folder, files, library_id=library_id)
 
     def reinstall(self, install_id: str, *, libraries: list[dict[str, Any]] | None = None) -> None:
         """Kavita reinstalled from scratch: a new installation, nothing of the old database."""
@@ -301,19 +314,21 @@ class FakeKavita:
         library_type = recorded.query.get("libraryType", "")
         if not library_type.isdigit() or int(library_type) not in LIBRARY_TYPES.values():
             return self._violation("plugin/parse without a numeric libraryType")
+        if self.manga_parse_only and int(library_type) != LIBRARY_TYPES["Manga"]:
+            return self._violation("the replica of plugin/parse is the Manga one only")
         name = recorded.query.get("name", "")
         self.parse_calls.append({"name": name, "libraryType": int(library_type)})
         return self._json(self._parsed(name))
 
     @staticmethod
     def _parsed(name: str) -> dict[str, Any]:
-        match = _NAME.match(name)
-        chapter = float(match["ch"]) if match and match["ch"] else 0.0
-        volume = float(match["vol"]) if match and match["vol"] else 0.0
+        """The documented replica of the route (`plugin_parse`): the names a library really has
+        (`Vol.1`, `Ch.3 [Team]`, `ch 3`) are read the way Kavita 0.9.1.4 reads them."""
+        parsed = simulate_parse(name)
         return {
-            "seriesName": match["series"] if match else name, "seriesYear": None,
-            "minChapterNumber": chapter, "maxChapterNumber": chapter,
-            "minVolumeNumber": volume, "maxVolumeNumber": volume,
+            "seriesName": parsed.series_name, "seriesYear": parsed.series_year,
+            "minChapterNumber": parsed.min_chapter, "maxChapterNumber": parsed.max_chapter,
+            "minVolumeNumber": parsed.min_volume, "maxVolumeNumber": parsed.max_volume,
         }  # fmt: skip
 
     def _parse_bulk(self, recorded: RecordedRequest) -> httpx2.Response:
@@ -325,6 +340,8 @@ class FakeKavita:
             return self._violation("parse-bulk with more than 100 names")
         if body.get("libraryType") not in LIBRARY_TYPES.values():
             return self._violation("parse-bulk without a numeric libraryType")
+        if self.manga_parse_only and body["libraryType"] != LIBRARY_TYPES["Manga"]:
+            return self._violation("the replica of plugin/parse is the Manga one only")
         self.parse_calls.extend({"name": n, "libraryType": body["libraryType"]} for n in names)
         return self._json({"results": {n: self._parsed(n) for n in names}, "errors": {}})
 

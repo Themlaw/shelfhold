@@ -224,7 +224,14 @@ def _world(
             for r in records.values()
         ),
         "series": sorted(
-            [s.export_series_id, s.name_raw, s.normalized_name, sorted(s.edition_ids)]
+            [
+                s.export_series_id,
+                s.name_raw,
+                s.normalized_name,
+                sorted(s.edition_ids),
+                s.frozen_series,
+                s.series_dir,
+            ]
             for s in series
         ),
         "links": sorted(edition_series.items()),
@@ -278,6 +285,8 @@ def _series(
         SeriesFacts(
             r.id, r.remote_library_id, r.name_raw, r.normalized_name,
             frozenset(works[r.id]), frozenset(editions[r.id]),
+            r.frozen_series if r.frozen_at is not None else None,
+            r.series_dir if r.frozen_at is not None else None,
         )
         for r in connection.execute(
             sa.select(s).where(s.c.remote_library_id == library).order_by(s.c.id)

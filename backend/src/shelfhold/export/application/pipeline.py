@@ -75,6 +75,13 @@ class SourceMissingError(Exception):
     code = "export.source_missing"
 
 
+class _Unread:
+    """A placeholder answer while the names are only being collected."""
+
+    min_chapter = 0.0
+    min_volume = 0.0
+
+
 class UnverifiedParseError(Exception):
     """No `plugin/parse` answers behind this pipeline: it can plan, never write (EF-EXP-045)."""
 
@@ -151,6 +158,36 @@ class ExportPipeline:
             raise UnverifiedParseError("names are not checked by plugin/parse: preview only")
 
     # -- planning --------------------------------------------------------------------------------
+
+    def bind_parse(self, parse: Callable[[str], Parsed], *, verified: bool) -> None:
+        """Put the `plugin/parse` answers (read in bulk beforehand) behind the planner."""
+        self._parse = parse
+        self._parse_verified = verified
+
+    def wanted_names(self, destination_id: str) -> tuple[list[str], str | None]:
+        """The names a plan of this destination asks `plugin/parse` about, and the Kavita library
+        type to ask with: fetched in bulk, then `bind_parse` makes the plan applicable."""
+        asked: list[str] = []
+
+        def record(name: str) -> Parsed:
+            asked.append(name)
+            return _Unread()
+
+        with self._engine.connect() as connection:
+            ctx = load_context(connection, destination_id)
+            loaded = load_request(
+                connection, ctx,
+                exists=lambda path: self._fsops.observe(path) is not None,
+                covered_locals=open_intent_paths(connection),
+                segment_policy_confirmed=self._segment_policy_confirmed,
+            )  # fmt: skip
+            kind = connection.execute(
+                sa.select(export.shelf_destination.c.kavita_library_type).where(
+                    export.shelf_destination.c.id == destination_id
+                )
+            ).scalar()
+        plan_destination(loaded.request, record)
+        return sorted(set(asked)), kind
 
     def _compute(self, destination_id: str) -> tuple[DestinationContext, LoadedRequest, Plan]:
         """The one way to a plan: the dry run and the application both come through here."""

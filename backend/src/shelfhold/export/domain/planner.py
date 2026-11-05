@@ -98,6 +98,8 @@ class SeriesFacts:
     normalized_name: str
     work_ids: frozenset[str] = frozenset()
     edition_ids: frozenset[str] = frozenset()
+    frozen_series: str | None = None  # an adopted series: the `Series` its files carry
+    series_dir: str | None = None  # ... and the folder they are in (EF-EXP-052)
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,8 @@ class SeriesRef:
     normalized_name: str
     export_series_id: str | None = None
     proposal_key: Mapping[str, object] | None = None
+    frozen_series: str | None = None
+    series_dir: str | None = None
 
 
 @dataclass(frozen=True)
@@ -195,6 +199,8 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
             continue
         if record is not None and record.state in DONE_STATES:
             # Replacing a written file is only ever a proposal (EF-EXP-037, M2), never a plan op.
+            if record.state == "adopted":
+                continue  # an adopted file is kept and linked: never compared, never replaced
             if record.content_hash != unit.content_hash:
                 warnings.append(PlanWarning("content_changed", unit.unit_id))
             elif unit.sidecar_sha256 not in (None, record.sidecar_sha256):
@@ -214,7 +220,12 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
         if resolution.export_series_id in request.paused_series:
             blocked.append(Blocked(unit.unit_id, "target.foreign_writer_detected"))
             continue
-        frozen = record.frozen if record is not None else _frozen(unit, resolution.name_raw, dest)
+        # an adopted series is written under the name and in the folder it already has
+        frozen = (
+            record.frozen
+            if record is not None
+            else _frozen(unit, resolution.frozen_series or resolution.name_raw, dest)
+        )
         if dest.transport == "pull":
             ops.append(_op("register", unit, editions, None, resolution, frozen, record))
             continue
@@ -232,6 +243,8 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
             blocked.append(Blocked(unit.unit_id, "export.name_misread_number", str(error)))
             continue
         rel = path.rel_path
+        if resolution.series_dir:
+            rel = "/".join((resolution.series_dir, *path.directory[1:], path.filename))
         if request.covered(rel):
             continue  # under an open intent: invisible to planning (I9)
         if rel in seen or request.occupied(rel):
@@ -300,7 +313,12 @@ def _series_resolution(
         if linked is not None and linked in known:
             series = known[linked]
             resolved[edition_id] = SeriesRef(
-                edition_id, series.name_raw, series.normalized_name, series.export_series_id
+                edition_id,
+                series.name_raw,
+                series.normalized_name,
+                series.export_series_id,
+                frozen_series=series.frozen_series,
+                series_dir=series.series_dir,
             )
             continue
         proposal = propose_series_name(edition, siblings)
