@@ -1,4 +1,4 @@
-"""``shelfhold admin create|reset-password|sessions revoke|keys create|list|revoke``.
+"""``shelfhold admin create|reset-password|sessions revoke|keys create|list|revoke|rotate``.
 
 Host CLI (EF-USR-021, EF-USR-003). It works on the database directly, server running or not:
 SQLite serialises the writes, and a revoked session or key is refused at its next request. The
@@ -77,6 +77,14 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     revoke_key = key_actions.add_parser("revoke", help=t("cli.admin_keys_revoke_help"))
     revoke_key.add_argument("prefix", help=t("cli.admin_key_prefix_help"))
     revoke_key.set_defaults(handler=run_keys_revoke)
+    rotate = key_actions.add_parser(
+        "rotate", help=t("cli.admin_keys_rotate_help"), allow_abbrev=False
+    )
+    rotate.add_argument("prefix", help=t("cli.admin_key_prefix_help"))
+    rotate.add_argument(
+        "--expires-days", type=int, metavar="DAYS", help=t("cli.admin_key_rotate_expires_help")
+    )
+    rotate.set_defaults(handler=run_keys_rotate, configure_logging=False)
 
 
 def _fail(message: str) -> int:
@@ -216,6 +224,27 @@ def run_keys_list(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
                 state=state,
             )
         )
+    return 0
+
+
+def run_keys_rotate(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    auth = _auth(resolved.values)
+    if auth is None:
+        return _fail(t("admin.database_missing"))
+    try:
+        created = auth.rotate_api_key(args.prefix, expires_days=args.expires_days)
+    except ValueError:
+        return _fail(t("cli.admin_key_expires_help"))
+    except RuntimeError:
+        return _fail(t("admin.key_rotation_failed"))
+    if created is None:
+        return _fail(t("admin.key_unknown", prefix=args.prefix))
+    print(t("admin.key_rotated", old=args.prefix, prefix=created.prefix), file=sys.stderr)
+    print(created.value)  # stdout carries the secret alone, once
+    if created.expires_at is not None:
+        print(t("admin.key_expires", date=created.expires_at.isoformat()), file=sys.stderr)
+    else:
+        print(t("admin.key_never_expires"), file=sys.stderr)
     return 0
 
 

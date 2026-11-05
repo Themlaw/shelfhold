@@ -20,6 +20,7 @@ from shelfhold.identity.application.ports import (
     AuditEntry,
     DeviceProofPort,
     IdentityStore,
+    KeyConflictError,
     NewApiKey,
     NewSession,
     PasswordHasherPort,
@@ -410,6 +411,54 @@ class LocalAuth:
         )
         self._audit("api_key.created", target=secret.prefix)
         return CreatedApiKey(value=secret.value, prefix=secret.prefix, expires_at=expires_at)
+
+    def rotate_api_key(
+        self, prefix: str, *, expires_days: int | None = None
+    ) -> CreatedApiKey | None:
+        """Replace a live key by a new one with the same owner, name and scope (EF-USR-003, P4).
+
+        The old key dies in the transaction that stores the new one, so a failure leaves it
+        working and shows nothing. An expired key may be rotated (that is what the warning before
+        its expiry asks for); a revoked or unknown one may not (None). Without `expires_days`
+        the new key lives as long as the old one did, or never expires if it never did."""
+        if expires_days is not None and expires_days < 1:
+            raise ValueError("invalid_expiry")
+        old = self._store.api_key_by_prefix(prefix)
+        if old is None or old.revoked_at is not None:
+            return None
+        now = self.now()
+        if expires_days is not None:
+            expires_at: datetime | None = now + timedelta(days=expires_days)
+        elif old.expires_at is not None:
+            expires_at = now + (old.expires_at - old.created_at)
+        else:
+            expires_at = None
+        if self.hardened:
+            cap = now + HARDENED_KEY_MAX_AGE
+            expires_at = min(expires_at, cap) if expires_at is not None else cap
+        for _attempt in range(3):  # a taken prefix (1 in 4 billion) is drawn again
+            secret = new_api_key()
+            fresh = NewApiKey(
+                id=new_ulid(),
+                user_id=old.user.id,
+                name=old.name,
+                prefix=secret.prefix,
+                hash=secret.digest,
+                scopes=old.scopes,
+                read_only=old.read_only,
+                now=now,
+                expires_at=expires_at,
+            )
+            audit = AuditEntry(
+                actor_id=None, action="api_key.rotated", at=now, target=f"{prefix}>{secret.prefix}"
+            )
+            try:
+                if not self._store.rotate_api_key(prefix, fresh, audit=audit):
+                    return None
+            except KeyConflictError:
+                continue
+            return CreatedApiKey(value=secret.value, prefix=secret.prefix, expires_at=expires_at)
+        raise RuntimeError("api_key_prefix_exhausted")
 
     def api_keys(self) -> Sequence[ApiKeyRecord]:
         return self._store.api_keys()

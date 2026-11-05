@@ -52,6 +52,38 @@ class Principal:
         return True
 
 
+# The `credential` axis of the truth table (EF-USR-024, ADR-0049): what the registry of reserved
+# actions is checked against, cell by cell. Keys are told apart by scope.
+CREDENTIAL_AXIS = (
+    "fresh_session",
+    "session",
+    "api_key:read",
+    "api_key:request",
+    "api_key:admin",
+    "device_token",
+    "local_cli",
+)
+
+
+def credential_axis(principal: Principal, *, now: datetime, fresh_auth_s: int) -> str:
+    """The label of a principal on the axis. A key holds one scope in practice; the widest wins."""
+    match principal.credential:
+        case Credential.SESSION:
+            fresh = principal.auth_time is not None and (
+                0 <= (now - principal.auth_time).total_seconds() <= fresh_auth_s
+            )
+            return "fresh_session" if fresh else "session"
+        case Credential.API_KEY:
+            for scope in ("admin", "request", "read"):
+                if scope in principal.scopes:
+                    return f"api_key:{scope}"
+            return "api_key:read"  # no scope known: the narrowest label
+        case Credential.DEVICE_TOKEN:
+            return "device_token"
+        case Credential.LOCAL_CLI:
+            return "local_cli"
+
+
 @dataclass(frozen=True)
 class SessionPolicy:
     idle: timedelta

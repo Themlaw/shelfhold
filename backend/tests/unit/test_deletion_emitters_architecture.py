@@ -7,6 +7,7 @@ named purge / empty trash / detach) must be listed in `DELETION_SITES` with one 
 - a reserved action declared in `RESERVED_ACTIONS` (triggered by a credential),
 - a name of the closed list `SYSTEM_EMITTERS`,
 - `PRIMITIVE`: the fsops layer, whose callers are the classed emitters,
+- `REPLAY`: the crash-recovery replay of the intent journal (empty folders already journaled),
 - `OWN_SCRATCH`: a file the process made for its own mechanism (temporary, progress, lease).
 
 A new emitter without a class, or a class without an emitter any more, fails this test.
@@ -21,6 +22,7 @@ from shelfhold.identity.public import (
     DELETION_SITES,
     OWN_SCRATCH,
     PRIMITIVE,
+    REPLAY,
     RESERVED_ACTIONS,
     SYSTEM_EMITTERS,
 )
@@ -64,7 +66,7 @@ class _Scanner(ast.NodeVisitor):
         self.generic_visit(node)
         self.stack.pop()
 
-    visit_FunctionDef = visit_AsyncFunctionDef = visit_ClassDef = _enter  # noqa: N815
+    visit_FunctionDef = visit_AsyncFunctionDef = visit_ClassDef = _enter
 
     def _site(self) -> str:
         return f"{self.module}::{'.'.join(self.stack) or '<module>'}"
@@ -89,26 +91,30 @@ def scan() -> set[str]:
 def test_every_deletion_emitter_is_classified() -> None:
     found = scan()
     unclassified = sorted(found - set(DELETION_SITES))
-    assert not unclassified, f"deleting code without a class (reserved action or system emitter): {unclassified}"
+    assert not unclassified, (
+        f"deleting code without a class (reserved action or system emitter): {unclassified}"
+    )
     stale = sorted(set(DELETION_SITES) - found)
     assert not stale, f"classified emitters that no longer exist: {stale}"
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-010")
 def test_each_class_is_a_declared_action_a_system_emitter_or_one_of_two_closed_kinds() -> None:
-    allowed = set(RESERVED_ACTIONS) | SYSTEM_EMITTERS | {PRIMITIVE, OWN_SCRATCH}
+    allowed = set(RESERVED_ACTIONS) | SYSTEM_EMITTERS | {PRIMITIVE, OWN_SCRATCH, REPLAY}
     for site, kind in DELETION_SITES.items():
         assert kind in allowed, f"{site}: {kind!r} is none of the allowed classes"
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-010")
-def test_primitive_and_scratch_classes_stay_where_they_belong() -> None:
+def test_primitive_scratch_and_replay_classes_stay_where_they_belong() -> None:
     for site, kind in DELETION_SITES.items():
         module = site.split("::")[0]
         if kind == PRIMITIVE:
             assert module.startswith("shelfhold/infrastructure/fsops/") or module.endswith(
                 "infrastructure/instance/lease.py"
             ), site
+        if kind == REPLAY:
+            assert module == "shelfhold/export/application/intents.py", site
         if kind == OWN_SCRATCH:
             assert module in SCRATCH_MODULES, site
 

@@ -6,9 +6,11 @@ below it. No other module opens a path for writing there (EF-EXP-060, ENF-SEC-01
 
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Strategy
+from shelfhold.infrastructure.fsops.emitters import EMITTER_PERIMETERS
 from shelfhold.infrastructure.fsops.errors import (
     CopyVerificationError,
     CrossRootError,
+    EmitterPerimeterError,
     FsopsError,
     LeaseRaceError,
     NotRegularFileError,
@@ -25,10 +27,12 @@ from shelfhold.infrastructure.fsops.openat2 import openat2_supported
 from shelfhold.infrastructure.fsops.sentinel import create_sentinel, read_sentinel
 
 __all__ = [
+    "EMITTER_PERIMETERS",
     "BootReport",
     "ConfinedRoot",
     "CopyVerificationError",
     "CrossRootError",
+    "EmitterPerimeterError",
     "FileIdentity",
     "Fsops",
     "FsopsError",

@@ -45,11 +45,17 @@ def principal_for(axis: str, role: str = "admin") -> Principal:
     match axis.split(":"):
         case ["fresh_session"]:
             return Principal(
-                **base, credential=Credential.SESSION, session_id="s1", auth_time=T0 - timedelta(seconds=30)
+                **base,
+                credential=Credential.SESSION,
+                session_id="s1",
+                auth_time=T0 - timedelta(seconds=30),
             )
         case ["session"]:
             return Principal(
-                **base, credential=Credential.SESSION, session_id="s1", auth_time=T0 - timedelta(hours=3)
+                **base,
+                credential=Credential.SESSION,
+                session_id="s1",
+                auth_time=T0 - timedelta(hours=3),
             )
         case ["api_key", scope]:
             return Principal(**base, credential=Credential.API_KEY, key_id="k1", scopes=(scope,))
@@ -99,7 +105,9 @@ def test_axis_is_the_one_of_the_architecture() -> None:
 def test_registry_is_not_empty_and_every_effect_is_carried_by_a_declared_action() -> None:
     assert RESERVED_ACTIONS
     carried = set().union(*(a.effects for a in RESERVED_ACTIONS.values()))
-    assert carried == set(Effect), "an Effect no declared action uses: declare the action or drop it"
+    assert carried == set(Effect), (
+        "an Effect no declared action uses: declare the action or drop it"
+    )
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-010")
@@ -119,7 +127,9 @@ def test_truth_table_cell(
         restricted_profile_exists=restricted,
         hardened=hardened,
     )
-    assert isinstance(verdict, expected(axis, action.effects, restricted=restricted, hardened=hardened))
+    assert isinstance(
+        verdict, expected(axis, action.effects, restricted=restricted, hardened=hardened)
+    )
     # The role does not weaken or strengthen the verdict at this layer: route policy owns roles.
     other = authorize_reserved(
         principal_for(axis, "admin"),

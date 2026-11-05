@@ -7,6 +7,7 @@ from shelfhold.export.domain.physical_roots import RootState, SentinelFormatErro
 __all__ = [
     "CopyVerificationError",
     "CrossRootError",
+    "EmitterPerimeterError",
     "FsopsError",
     "NotRegularFileError",
     "OutsidePathMapError",
@@ -71,3 +72,7 @@ class RootBlockedError(FsopsError):
 
 class LeaseRaceError(FsopsError):
     """The lease file changed between its reading and its replacement: someone else won."""
+
+
+class EmitterPerimeterError(FsopsError):
+    """A system emitter tried to delete outside its perimeter, or is not a system emitter (N2)."""

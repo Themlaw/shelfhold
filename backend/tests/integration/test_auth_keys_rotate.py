@@ -10,6 +10,9 @@ import pytest
 from shelfhold.config import Settings
 from tests.auth_env import AuthEnv, auth_env, db_dump, db_rows, run_cli
 
+LIFETIME_DAYS = (
+    "SELECT julianday(expires_at) - julianday(created_at) FROM api_key WHERE revoked_at IS NULL"
+)
 KEY = re.compile(r"shk_([0-9a-f]{8})_[A-Za-z0-9_-]{43}")
 
 
@@ -82,9 +85,12 @@ def test_rotate_keeps_owner_name_and_scope(
     _, out, _ = _run(monkeypatch, capsys, api.settings, "rotate", _prefix(old))
     new = out.strip()
     rows = db_rows(
-        api.settings, "SELECT prefix, user_id, name, scopes, read_only FROM api_key ORDER BY created_at"
+        api.settings,
+        "SELECT prefix, user_id, name, scopes, read_only FROM api_key ORDER BY created_at",
     )
-    (old_prefix, old_user, old_name, old_scopes, old_ro), (new_prefix, user, name, scopes, ro) = rows
+    (old_prefix, old_user, old_name, old_scopes, old_ro), (new_prefix, user, name, scopes, ro) = (
+        rows
+    )
     assert (old_prefix, new_prefix) == (_prefix(old), _prefix(new))
     assert (user, name, scopes, ro) == (old_user, old_name, old_scopes, old_ro)
     assert api.client.get("/api/v1/about", headers=_bearer(new)).status_code == 200
@@ -103,7 +109,7 @@ def test_rotate_expiry_is_optional(
     _run(monkeypatch, capsys, api.settings, "rotate", _prefix(out.strip()), "--expires-days", "30")
     [(days,)] = db_rows(
         api.settings,
-        "SELECT julianday(expires_at) - julianday(created_at) FROM api_key WHERE revoked_at IS NULL",
+        LIFETIME_DAYS,
     )
     assert 29.9 < float(days) <= 30.01  # type: ignore[arg-type]
     # Without the option, a key that had a lifetime keeps the same lifetime.
@@ -111,7 +117,7 @@ def test_rotate_expiry_is_optional(
     _run(monkeypatch, capsys, api.settings, "rotate", str(live))
     [(days,)] = db_rows(
         api.settings,
-        "SELECT julianday(expires_at) - julianday(created_at) FROM api_key WHERE revoked_at IS NULL",
+        LIFETIME_DAYS,
     )
     assert 29.9 < float(days) <= 30.01  # type: ignore[arg-type]
 
@@ -128,7 +134,7 @@ def test_rotate_an_expired_key_is_allowed_a_revoked_or_unknown_one_is_not(
     assert code == 0  # the whole point of a rotation after `target.key_expiring`
     revoked = _prefix(expiring)
     before = db_rows(api.settings, "SELECT count(*) FROM api_key")
-    code, out, err = _run(monkeypatch, capsys, api.settings, "rotate", revoked)
+    code, out, _ = _run(monkeypatch, capsys, api.settings, "rotate", revoked)
     assert code != 0
     assert not KEY.search(out)
     code, out, _ = _run(monkeypatch, capsys, api.settings, "rotate", "deadbeef")
@@ -145,15 +151,16 @@ def test_rotate_is_atomic_when_the_new_key_cannot_be_stored(
     from shelfhold.identity.domain import tokens
 
     real = tokens.new_api_key()
-    clash = tokens.ApiKeySecret(
-        prefix=_prefix(old), value=real.value, digest=real.digest
-    )  # same prefix: the unique index refuses the insert
+    # Same prefix as the old key: the unique index refuses the insert, every time it is drawn.
+    clash = tokens.ApiKeySecret(prefix=_prefix(old), value=real.value)
     monkeypatch.setattr("shelfhold.identity.application.service.new_api_key", lambda: clash)
     code, out, _ = _run(monkeypatch, capsys, api.settings, "rotate", _prefix(old))
     assert code != 0
     assert not KEY.search(out)  # nothing is shown when nothing was stored
     assert api.client.get("/api/v1/about", headers=_bearer(old)).status_code == 200  # still alive
-    assert db_rows(api.settings, "SELECT count(*) FROM api_key WHERE revoked_at IS NOT NULL") == [(0,)]
+    assert db_rows(api.settings, "SELECT count(*) FROM api_key WHERE revoked_at IS NOT NULL") == [
+        (0,)
+    ]
 
 
 @pytest.mark.req("EF-USR-003")
@@ -163,6 +170,8 @@ def test_rotate_writes_one_audit_entry_and_never_the_key(
     old = _create(monkeypatch, capsys, api.settings)
     _, out, _ = _run(monkeypatch, capsys, api.settings, "rotate", _prefix(old))
     new = out.strip()
-    rows = db_rows(api.settings, "SELECT action, target FROM audit WHERE action = 'api_key.rotated'")
+    rows = db_rows(
+        api.settings, "SELECT action, target FROM audit WHERE action = 'api_key.rotated'"
+    )
     assert rows == [("api_key.rotated", f"{_prefix(old)}>{_prefix(new)}")]
     assert new not in db_dump(api.settings)

@@ -51,9 +51,7 @@ def calls() -> list[str]:
 
 
 @pytest.fixture
-def api(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, calls: list[str]
-) -> Iterator[AuthEnv]:
+def api(monkeypatch: pytest.MonkeyPatch, settings: Settings, calls: list[str]) -> Iterator[AuthEnv]:
     with auth_env(monkeypatch, settings, routers=[_router(calls)]) as env:
         yield env
 

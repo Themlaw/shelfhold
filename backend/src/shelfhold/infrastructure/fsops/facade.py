@@ -34,6 +34,7 @@ from shelfhold.export.domain.physical_roots import (
     judge_sentinel,
 )
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
+from shelfhold.infrastructure.fsops.emitters import require_content_inside, require_inside
 from shelfhold.infrastructure.fsops.errors import (
     CrossRootError,
     LeaseRaceError,
@@ -147,7 +148,7 @@ class Fsops:
 
     # -- locating ---------------------------------------------------------------------------
 
-    def _locate(self, local: str) -> _Located:
+    def _locate(self, local: str, *, host: bool = False) -> _Located:
         try:
             path = clean_absolute(local)
         except PathMapError as error:
@@ -163,9 +164,9 @@ class Fsops:
         if best is None:
             raise OutsidePathMapError(f"{local!r} is under no physical root")
         root_path, rel, read_only = best
-        if is_reserved(rel):
+        if is_reserved(rel) and not host:
             raise ReservedPathError(f"{local!r} is reserved to the host")
-        if not read_only:
+        if not read_only and not (host and is_reserved(rel)):  # host folders sit above the map
             try:
                 entry = self._path_map.entry_for(path)
             except PathMapError as error:
@@ -250,7 +251,9 @@ class Fsops:
                         self._stamp(root, self._expected[root_path].generation)
                         report.restamped.append(root_path)
                     ensure_host_dirs(root)
-                    report.purged_staging += root.empty_dir(STAGING_DIR)
+                    report.purged_staging += self._system_empty(
+                        root, "staging_orphan_cleanup", STAGING_DIR
+                    )
                     report.ok.append(root_path)
             except RootBlockedError as error:
                 report.blocked[root_path] = error.state
@@ -378,6 +381,27 @@ class Fsops:
         located = self._locate(local)
         with self._gated(located) as root:
             root.unlink(located.rel)
+
+    def system_unlink(self, emitter: str, local: str) -> None:
+        """A system emitter deletes one file or link, only inside its own perimeter (N2).
+
+        The caller is a member of the closed list `SYSTEM_EMITTERS`; the perimeter is enforced
+        here, on the path relative to its physical root, before anything is opened."""
+        located = self._locate(local, host=True)
+        require_inside(emitter, located.rel)
+        with self._gated(located) as root:
+            root.unlink(located.rel)
+
+    def system_remove_tree(self, emitter: str, local: str) -> None:
+        """A system emitter deletes a folder and what it holds, inside its perimeter."""
+        located = self._locate(local, host=True)
+        require_inside(emitter, located.rel)
+        with self._gated(located) as root:
+            root.remove_tree(located.rel)
+
+    def _system_empty(self, root: ConfinedRoot, emitter: str, rel: str) -> int:
+        require_content_inside(emitter, rel)
+        return root.empty_dir(rel)
 
     def rmdir(self, local: str) -> None:
         located = self._locate(local)
