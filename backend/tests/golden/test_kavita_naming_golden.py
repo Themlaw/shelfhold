@@ -17,10 +17,11 @@ GOLDEN = Path(__file__).parent / "kavita_naming"
 
 
 def _case(spec: dict[str, object]) -> dict[str, object]:
-    frozen = FrozenAttrs(**{k: v for k, v in spec.items() if k != "upstream_title"})  # type: ignore[arg-type]
+    fields = {k: v for k, v in spec.items() if k != "upstream_title"}
+    frozen = FrozenAttrs(**fields)  # type: ignore[arg-type]
     path = export_path(frozen)
     parsed = simulate_parse(path.filename)
-    return {
+    case: dict[str, object] = {
         "input": spec,
         "rel_path": path.rel_path,
         "series": parsed.series_name,
@@ -28,6 +29,12 @@ def _case(spec: dict[str, object]) -> dict[str, object]:
         "volume": parsed.min_volume,
         "volume_deduced": volume_deduced(parsed),
     }
+    if title := spec.get("upstream_title"):
+        # the title is no input of the path; were it in the name, Kavita would read a volume
+        assert str(title) not in path.filename
+        naive = simulate_parse(f"{frozen.series} - {title}.cbz")
+        case["title_in_name_would_yield_volume"] = volume_deduced(naive)
+    return case
 
 
 def _check(name: str, specs: list[dict[str, object]]) -> list[dict[str, object]]:

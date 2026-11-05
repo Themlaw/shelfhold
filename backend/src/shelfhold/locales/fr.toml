@@ -233,6 +233,14 @@ action = "Utilisez l'une des méthodes indiquées dans l'en-tête Allow."
 title = "Un disque monté est absent ou différent de celui attendu."
 action = "Montez le bon disque, puis lancez « shelfhold target recheck »."
 
+[errors."export.name_misread_number"]
+title = "Kavita lirait un autre numéro de chapitre dans ce nom de fichier."
+action = "Définissez un nom de série exporté qui ne ressemble pas à un marqueur de chapitre, puis relancez l'aperçu."
+
+[errors."export.series_name_yields_volume"]
+title = "Kavita déduirait un tome du nom de cette série."
+action = "Définissez un nom de série exporté sans marqueur de tome ou de saison (S2, T1, v3, Vol.3, 第2巻, 시즌2), puis relancez l'aperçu."
+
 [errors."not_found"]
 title = "Ressource introuvable."
 action = "Vérifiez l'adresse ou l'identifiant demandé."

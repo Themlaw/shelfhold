@@ -1,0 +1,49 @@
+{
+  "Re Zero S2": {
+    "refused": "export.series_name_yields_volume",
+    "component": "Re Zero S2"
+  },
+  "Tower of God T1": {
+    "refused": "export.series_name_yields_volume",
+    "component": "Tower of God T1"
+  },
+  "Hunter x Hunter v3": {
+    "refused": "export.series_name_yields_volume",
+    "component": "Hunter x Hunter v3"
+  },
+  "Series Vol.3": {
+    "refused": "export.series_name_yields_volume",
+    "component": "Series Vol.3"
+  },
+  "Naruto 第2巻": {
+    "refused": "export.series_name_yields_volume",
+    "component": "Naruto 第2巻"
+  },
+  "Kaguya 시즌2": {
+    "refused": "export.series_name_yields_volume",
+    "component": "Kaguya 시즌2"
+  },
+  "Dr Stone {S1 END}": {
+    "refused": "export.series_name_yields_volume",
+    "component": "Dr Stone {S1 END}"
+  },
+  "Dr Stone": {
+    "rel_path": "Dr Stone/Dr Stone - Ch.12.cbz"
+  },
+  "Re Zero": {
+    "rel_path": "Re Zero/Re Zero - Ch.12.cbz"
+  },
+  "Hunter x Hunter": {
+    "rel_path": "Hunter x Hunter/Hunter x Hunter - Ch.12.cbz"
+  },
+  "Dr Stone Arc": {
+    "rel_path": "Dr Stone Arc/Dr Stone Arc - Ch.12.cbz"
+  },
+  "Tower of God | S2": {
+    "rel_path": "Tower of God Saga 2/Tower of God Saga 2 - Ch.12.cbz"
+  },
+  "Re Zero S2 | S3": {
+    "refused": "export.series_name_yields_volume",
+    "component": "Re Zero S2 Saga 3"
+  }
+}

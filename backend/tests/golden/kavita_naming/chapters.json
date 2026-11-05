@@ -10,7 +10,8 @@
     "series": "Dr Stone",
     "chapter": 311.0,
     "volume": -100000.0,
-    "volume_deduced": false
+    "volume_deduced": false,
+    "title_in_name_would_yield_volume": true
   },
   {
     "input": {
@@ -23,7 +24,8 @@
     "series": "Dr Stone",
     "chapter": 12.0,
     "volume": -100000.0,
-    "volume_deduced": false
+    "volume_deduced": false,
+    "title_in_name_would_yield_volume": true
   },
   {
     "input": {
@@ -36,7 +38,8 @@
     "series": "Dr Stone",
     "chapter": 40.0,
     "volume": -100000.0,
-    "volume_deduced": false
+    "volume_deduced": false,
+    "title_in_name_would_yield_volume": true
   },
   {
     "input": {

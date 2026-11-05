@@ -270,6 +270,60 @@ def export_path(
     return ExportPath((folder,), name)
 
 
+class NamingGuardError(ValueError):
+    """A name that `plugin/parse` would misread. `code` is the stable catalog code."""
+
+    code = "export.naming"
+    suggestion = "define an exported series name"
+
+    def __init__(self, message: str, *, component: str) -> None:
+        super().__init__(f"{self.code}: {message} ({component!r}); {self.suggestion}")
+        self.component = component
+
+
+class SeriesNameYieldsVolume(NamingGuardError):
+    """A series name, a folder or a file name from which Kavita deduces a volume (`S2`, `T1`,
+    `v3`, `Vol.3`, `第2巻`, `시즌2`, `{S1 END}`...). The name is the user's; Shelfhold refuses to
+    write it and asks for an exported series name instead."""
+
+    code = "export.series_name_yields_volume"
+
+
+class NameMisreadNumber(NamingGuardError):
+    """The chapter number Kavita reads in the file name is not the unit's."""
+
+    code = "export.name_misread_number"
+
+
+def checked_export_path(
+    frozen: FrozenAttrs,
+    parse: Callable[[str], "Parsed"],
+    template: NamingTemplate = DEFAULT_TEMPLATE,
+    extension: str = ".cbz",
+) -> ExportPath:
+    """`export_path`, with the file name AND every folder component read by `plugin/parse`.
+
+    `parse` is the route (the planner fills it from `parse-bulk`). A volume deduced anywhere, in
+    a chapter's path, refuses the export; so does a chapter number that is not the unit's. A
+    closed volume (`kind = volume`) is meant to carry one: only its folders are checked.
+    """
+    path = export_path(frozen, template, extension)
+    components = list(path.directory)
+    if frozen.kind != "volume":
+        components += [path.filename, path.filename.removesuffix(extension)]
+    for component in components:
+        if volume_deduced(parse(component)):
+            raise SeriesNameYieldsVolume("a volume is deduced from the name", component=component)
+    if frozen.kind == "unit" and frozen.track == "main" and not is_chapter_zero(frozen):
+        read = parse(path.filename).min_chapter
+        wanted = _decimal(frozen.number_norm)
+        if wanted is None or Decimal(str(read)) != wanted:
+            raise NameMisreadNumber(
+                f"read {read}, expected {frozen.number_norm}", component=path.filename
+            )
+    return path
+
+
 def series_cover_source(items: Iterable[FrozenAttrs]) -> FrozenAttrs | None:
     """The unit whose cover the API posts as the series cover: the lowest chapter from 1 on.
 
