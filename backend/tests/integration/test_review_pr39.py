@@ -489,9 +489,17 @@ FORKER = textwrap.dedent(
     from shelfhold.infrastructure.instance import InstanceLock
 
     InstanceLock(Path(sys.argv[1])).acquire()
+    ready_r, ready_w = os.pipe()
     if os.fork() == 0:
+        # Fork hooks have run once fork() returns here: say so before the parent leaves,
+        # otherwise the test could look at the lock while the child still holds its copy.
+        os.close(ready_r)
+        os.write(ready_w, b"1")
+        os.close(ready_w)
         time.sleep(5)
         os._exit(0)
+    os.close(ready_w)
+    assert os.read(ready_r, 1) == b"1"
     os._exit(0)
     """
 )

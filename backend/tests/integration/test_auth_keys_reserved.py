@@ -12,10 +12,10 @@ from datetime import timedelta
 
 import pytest
 from fastapi import APIRouter, Depends
-from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import Effect, Principal, ReservedAction
+from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
 from tests.auth_env import (
     PASSWORD,
     SESSION_COOKIE,
