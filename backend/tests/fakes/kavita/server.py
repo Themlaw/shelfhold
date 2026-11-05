@@ -47,6 +47,11 @@ ALLOWED: dict[tuple[str, str], bool] = {
     ("POST", "/api/library/update"): True,
     ("POST", "/api/library/scan-folder"): True,
     ("POST", "/api/upload/series"): True,
+    ("GET", "/api/users"): True,
+    ("POST", "/api/series/all-v2"): False,
+    ("POST", "/api/series/series-by-ids"): False,
+    ("GET", "/api/series/series-detail"): False,
+    ("GET", "/api/series/metadata"): False,
 }
 LIBRARY_TYPES = {"Manga": 0, "Comic": 1, "Book": 2, "Image": 3, "LightNovel": 4, "ComicVine": 5}
 _NAME = re.compile(r"^(?P<series>.+?) - (?:Vol\.(?P<vol>[\d.]+) )?(?:Ch\.(?P<ch>[\d.]+))?")
@@ -82,6 +87,37 @@ def default_libraries() -> list[dict[str, Any]]:
     ]  # fmt: skip
 
 
+def default_users(created: str = "2026-01-01T00:00:00Z") -> list[dict[str, Any]]:
+    return [{**member("admin", admin=True), "createdUtc": created}]
+
+
+def member(
+    username: str,
+    *,
+    admin: bool = False,
+    libraries: tuple[int, ...] = (),
+    age_rating: int = -1,
+    include_unknowns: bool = True,
+) -> dict[str, Any]:
+    """A `MemberDto`: -1 is `AgeRating.NotApplicable`, Kavita's "no restriction"."""
+    return {
+        "id": abs(hash(username)) % 10_000, "username": username, "email": "", "isPending": False,
+        "ageRestriction": {"ageRating": age_rating, "includeUnknowns": include_unknowns},
+        "libraries": [{"id": i, "name": f"lib {i}"} for i in libraries],
+        "roles": ["Admin"] if admin else ["Login"],
+    }  # fmt: skip
+
+
+@dataclass
+class PendingIndex:
+    """A series that appears once Kavita has scanned its folder `scans_needed` times."""
+
+    series: dict[str, Any]
+    files: list[str]
+    scans_needed: int = 1
+    scans: int = 0
+
+
 @dataclass
 class RecordedRequest:
     method: str
@@ -110,11 +146,61 @@ class FakeKavita:
     ignored_scans: list[str] = field(default_factory=list)
     covers: dict[int, bytes] = field(default_factory=dict)
     parse_calls: list[dict[str, Any]] = field(default_factory=list)
+    users: list[dict[str, Any]] = field(default_factory=default_users)
+    series: list[dict[str, Any]] = field(default_factory=list)
+    files: dict[int, list[str]] = field(default_factory=dict)  # series id -> indexed file paths
+    ages: dict[int, dict[str, Any]] = field(default_factory=dict)  # series id -> metadata
+    pending: list[PendingIndex] = field(default_factory=list)
+    never_indexed: set[str] = field(default_factory=set)  # folders Kavita ignores (excluded)
+    next_series_id: int = 100
+    reinstalls: int = 0
 
     # -- scenario helpers -------------------------------------------------------------------
     def demote(self) -> None:
         """The dedicated account loses its administrator role (EF-EXP-009, 403)."""
         self.is_admin = False
+
+    def add_series(
+        self,
+        name: str,
+        folder: str,
+        files: list[str],
+        *,
+        library_id: int = 7,
+        name_locked: bool = False,
+        age_rating: int = 0,
+        age_locked: bool = False,
+    ) -> int:
+        """A series Kavita has already indexed."""
+        self.next_series_id += 1
+        sid = self.next_series_id
+        self.series.append(
+            {
+                "id": sid, "name": name, "libraryId": library_id, "folderPath": folder,
+                "lowestFolderPath": folder, "nameLocked": name_locked,
+            }
+        )  # fmt: skip
+        self.files[sid] = list(files)
+        self.ages[sid] = {"seriesId": sid, "ageRating": age_rating, "ageRatingLocked": age_locked}
+        return sid
+
+    def index_after_scans(
+        self, name: str, folder: str, files: list[str], *, library_id: int = 7, scans: int = 1
+    ) -> None:
+        """What is on disk: Kavita sees it once `folder` has been scanned `scans` times."""
+        series = {
+            "name": name, "libraryId": library_id, "folderPath": folder,
+            "lowestFolderPath": folder, "nameLocked": False,
+        }  # fmt: skip
+        self.pending.append(PendingIndex(series, list(files), scans_needed=scans))
+
+    def reinstall(self, install_id: str, *, libraries: list[dict[str, Any]] | None = None) -> None:
+        """Kavita reinstalled from scratch: a new installation, nothing of the old database."""
+        self.install_id = install_id
+        self.libraries = libraries if libraries is not None else []
+        self.reinstalls += 1  # a new database: its first account is new, even if installId is not
+        self.users = default_users(f"2026-0{self.reinstalls + 1}-01T00:00:00Z")
+        self.series, self.files, self.ages, self.pending = [], {}, {}, []
 
     def not_found_resource(self, method: str, path: str) -> None:
         """The route exists but answers 404 with a ProblemDetails body (a resource is missing)."""
@@ -127,8 +213,18 @@ class FakeKavita:
         return [r for r in self.requests if fragment.lower() in r.path.lower()]
 
     @property
+    def post_reads(self) -> list[RecordedRequest]:
+        """POSTs that only read (`all-v2`, `series-by-ids`), kept apart from the writes."""
+        return [r for r in self.requests if r.method != "GET" and r not in self.writes]
+
+    @property
     def writes(self) -> list[RecordedRequest]:
-        return [r for r in self.requests if r.method != "GET" and "parse" not in r.path.lower()]
+        reads = ("parse", "/series/all-v2", "/series/series-by-ids")  # POSTs that only read
+        return [
+            r
+            for r in self.requests
+            if r.method != "GET" and not any(part in r.path.lower() for part in reads)
+        ]
 
     @property
     def transport(self) -> httpx2.MockTransport:
@@ -277,10 +373,67 @@ class FakeKavita:
         if isinstance(body, httpx2.Response):
             return body
         # Kavita ignores the request (still 200) when the key of the body is not a valid one
-        (self.scans if body.get("apiKey") == API_KEY else self.ignored_scans).append(
-            body.get("folderPath") or ""
-        )
+        folder = body.get("folderPath") or ""
+        valid = body.get("apiKey") == API_KEY
+        (self.scans if valid else self.ignored_scans).append(folder)
+        if valid and folder not in self.never_indexed:
+            self._reveal(folder)
         return self._text(200, "")
+
+    def _reveal(self, folder: str) -> None:
+        for pending in list(self.pending):
+            where = pending.series["folderPath"]
+            if where == folder or where.startswith(folder.rstrip("/") + "/"):
+                pending.scans += 1
+                if pending.scans >= pending.scans_needed:
+                    self.pending.remove(pending)
+                    self.add_series(
+                        pending.series["name"], where, pending.files,
+                        library_id=pending.series["libraryId"],
+                    )  # fmt: skip
+                    self.series[-1]["nameLocked"] = pending.series["nameLocked"]
+
+    def _users(self, recorded: RecordedRequest) -> httpx2.Response:
+        return self._json(copy.deepcopy(self.users))
+
+    def _all_v2(self, recorded: RecordedRequest) -> httpx2.Response:
+        body = self._body(recorded, "SeriesFilterV2Dto")
+        if isinstance(body, httpx2.Response):
+            return body
+        number, size = recorded.query.get("PageNumber", ""), recorded.query.get("PageSize", "")
+        if not (number.isdigit() and size.isdigit()):
+            return self._violation("all-v2 without PageNumber and PageSize in the URL")
+        wanted = {
+            int(st["value"])
+            for st in body.get("statements") or []
+            if st.get("field") == 18 and st.get("comparison") == 0
+        }  # Libraries, Equal
+        found = [s for s in self.series if not wanted or s["libraryId"] in wanted]
+        start = (int(number) - 1) * int(size)
+        return self._json(copy.deepcopy(found[start : start + int(size)]))
+
+    def _series_by_ids(self, recorded: RecordedRequest) -> httpx2.Response:
+        body = self._body(recorded, "SeriesByIdsDto")
+        if isinstance(body, httpx2.Response):
+            return body
+        ids = set(body.get("seriesIds") or [])
+        return self._json(copy.deepcopy([s for s in self.series if s["id"] in ids]))
+
+    def _series_detail(self, recorded: RecordedRequest) -> httpx2.Response:
+        sid = recorded.query.get("seriesId", "")
+        if not sid.isdigit() or int(sid) not in self.files:
+            return self._json({"title": "Not Found", "status": 404}, 404)
+        chapters = [
+            {"id": i, "files": [{"id": i, "filePath": p}]}
+            for i, p in enumerate(self.files[int(sid)])
+        ]
+        return self._json({"specials": [], "chapters": [], "volumes": [{"chapters": chapters}]})
+
+    def _metadata(self, recorded: RecordedRequest) -> httpx2.Response:
+        sid = recorded.query.get("seriesId", "")
+        if not sid.isdigit() or int(sid) not in self.ages:
+            return self._json({"title": "Not Found", "status": 404}, 404)
+        return self._json(copy.deepcopy(self.ages[int(sid)]))
 
     def _series(self, recorded: RecordedRequest) -> httpx2.Response:
         body = self._body(recorded, "UploadCoverFileDto")

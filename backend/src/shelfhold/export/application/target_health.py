@@ -26,6 +26,10 @@ class TargetHealth:
     key_expires_at: datetime | None = None
     key_notices: KeyNoticeState = field(default_factory=KeyNoticeState)
     warnings: tuple[str, ...] = ()  # known_bad_versions advisories (warning, never a block)
+    install_id: str | None = None  # `installId` of the server, part of the instance fingerprint
+    instance_changed: bool = False  # Kavita was reinstalled: exports wait for `target reconnect`
+    not_indexed: bool = False  # a written file was never indexed (EF-EXP-034)
+    child_exposure: bool = False  # a shelf of this target is paused by the access audit
 
     @property
     def mode(self) -> TargetMode:
@@ -34,11 +38,18 @@ class TargetHealth:
         return TargetMode.DEGRADED_FEATURE if self.missing_routes else TargetMode.FULL
 
     def refresh_waiting(self) -> None:
-        """The state a human must leave, by priority: forbidden, route missing, key expiring."""
+        """The state a human must leave, by priority: forbidden, a changed instance, child
+        exposure, route missing, not indexed, key expiring."""
         if self.paused:
             self.waiting_state = WaitingState.TARGET_FORBIDDEN
+        elif self.instance_changed:
+            self.waiting_state = WaitingState.INSTANCE_CHANGED
+        elif self.child_exposure:
+            self.waiting_state = WaitingState.CHILD_EXPOSURE
         elif self.missing_routes:
             self.waiting_state = WaitingState.ROUTE_MISSING
+        elif self.not_indexed:
+            self.waiting_state = WaitingState.NOT_INDEXED
         elif self.key_notices.sent:
             self.waiting_state = WaitingState.KEY_EXPIRING
         else:
@@ -61,6 +72,10 @@ class TargetHealth:
                 "sent": sorted(self.key_notices.sent),
             },
             "warnings": list(self.warnings),
+            "install_id": self.install_id,
+            "instance_changed": self.instance_changed,
+            "not_indexed": self.not_indexed,
+            "child_exposure": self.child_exposure,
         }
 
     @classmethod
@@ -83,4 +98,8 @@ class TargetHealth:
                 moment(notices.get("expires_at")), frozenset(notices.get("sent", ()))
             ),
             warnings=tuple(data.get("warnings", ())),
+            install_id=data.get("install_id"),
+            instance_changed=bool(data.get("instance_changed", False)),
+            not_indexed=bool(data.get("not_indexed", False)),
+            child_exposure=bool(data.get("child_exposure", False)),
         )

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from shelfhold.export.application.export_items import SeriesCollisionError
 from shelfhold.export.application.pipeline import SourceMissingError, UnverifiedParseError
 from shelfhold.export.application.plans import StalePlanError
+from shelfhold.export.application.target_state import DestinationPausedError
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.interfaces.http_api.auth import require_principal
@@ -102,7 +103,12 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
             report = get_pipeline().apply(plan_id, if_match=if_match, job_id=new_ulid())
         except StalePlanError:
             raise ProblemError("plan.stale") from None
-        except (SeriesCollisionError, SourceMissingError, UnverifiedParseError) as error:
+        except (
+            SeriesCollisionError,
+            SourceMissingError,
+            UnverifiedParseError,
+            DestinationPausedError,
+        ) as error:
             raise ProblemError(error.code) from None
         return AppliedOut(plan_id=plan_id, applied=len(getattr(report, "ops", ()) or ()))
 

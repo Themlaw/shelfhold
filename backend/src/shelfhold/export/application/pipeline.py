@@ -34,6 +34,7 @@ from shelfhold.export.application.snapshot import (
     paused_series,
     version_of,
 )
+from shelfhold.export.application.target_state import ensure_active
 from shelfhold.export.domain.naming import Parsed
 from shelfhold.export.domain.planner import (
     Blocked,
@@ -192,6 +193,8 @@ class ExportPipeline:
     def run(self, destination_id: str, *, job_id: str) -> ApplyReport:
         """Plan, then apply; a plan with nothing to do is not even stored (idempotence)."""
         self._require_verified()
+        with self._engine.connect() as connection:
+            ensure_active(connection, destination_id)
         if self._detector is not None:
             self._detector(destination_id)
         ctx, loaded, plan = self._compute(destination_id)
@@ -228,6 +231,7 @@ class ExportPipeline:
                     coherence.export_plan.c.plan_id == plan_id
                 )
             ).scalar_one()
+            ensure_active(connection, destination_id)  # a reinstalled Kavita, child exposure...
             ctx = load_context(connection, destination_id)
 
         def current() -> str:

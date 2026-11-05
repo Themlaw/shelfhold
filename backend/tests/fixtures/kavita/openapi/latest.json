@@ -1,6 +1,81 @@
 {
  "components": {
   "schemas": {
+   "AgeRating": {
+    "description": "Members:\n- `0` \u2014 Unknown\n- `1` \u2014 Rating Pending (RatingPending)\n- `2` \u2014 Early Childhood (EarlyChildhood)\n- `3` \u2014 Everyone\n- `4` \u2014 G\n- `5` \u2014 Everyone 10+ (Everyone10Plus)\n- `6` \u2014 PG\n- `7` \u2014 Kids to Adults (KidsToAdults)\n- `8` \u2014 Teen\n- `9` \u2014 MA15+ (Mature15Plus)\n- `10` \u2014 Mature 17+ (Mature17Plus)\n- `11` \u2014 M (Mature)\n- `12` \u2014 R18+ (R18Plus)\n- `13` \u2014 Adults Only 18+ (AdultsOnly)\n- `14` \u2014 X18+ (X18Plus)\n- `-1` \u2014 Not Applicable (NotApplicable)",
+    "enum": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     -1
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Unknown",
+     "Rating Pending",
+     "Early Childhood",
+     "Everyone",
+     "G",
+     "Everyone 10+",
+     "PG",
+     "Kids to Adults",
+     "Teen",
+     "MA15+",
+     "Mature 17+",
+     "M",
+     "R18+",
+     "Adults Only 18+",
+     "X18+",
+     "Not Applicable"
+    ],
+    "x-enum-varnames": [
+     "Unknown",
+     "RatingPending",
+     "EarlyChildhood",
+     "Everyone",
+     "G",
+     "Everyone10Plus",
+     "PG",
+     "KidsToAdults",
+     "Teen",
+     "Mature15Plus",
+     "Mature17Plus",
+     "Mature",
+     "R18Plus",
+     "AdultsOnly",
+     "X18Plus",
+     "NotApplicable"
+    ]
+   },
+   "AgeRestrictionDto": {
+    "additionalProperties": false,
+    "properties": {
+     "ageRating": {
+      "$ref": "#/components/schemas/AgeRating"
+     },
+     "includeUnknowns": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "ageRating",
+     "includeUnknowns"
+    ],
+    "type": "object"
+   },
    "AuthKeyExpiresAtDto": {
     "additionalProperties": false,
     "properties": {
@@ -13,6 +88,362 @@
     "required": [
      "expiresAt"
     ],
+    "type": "object"
+   },
+   "ChapterDto": {
+    "additionalProperties": false,
+    "properties": {
+     "ageRating": {
+      "$ref": "#/components/schemas/AgeRating"
+     },
+     "ageRatingLocked": {
+      "type": "boolean"
+     },
+     "aniListId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "avgHoursToRead": {
+      "format": "float",
+      "type": "number"
+     },
+     "cbrId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "characterLocked": {
+      "type": "boolean"
+     },
+     "characters": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "coloristLocked": {
+      "type": "boolean"
+     },
+     "colorists": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "comicVineId": {
+      "nullable": true,
+      "type": "string"
+     },
+     "count": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "coverArtistLocked": {
+      "type": "boolean"
+     },
+     "coverArtists": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "coverImage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "coverImageLocked": {
+      "type": "boolean"
+     },
+     "created": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "createdUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "editorLocked": {
+      "type": "boolean"
+     },
+     "editors": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "files": {
+      "items": {
+       "$ref": "#/components/schemas/MangaFileDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "format": {
+      "$ref": "#/components/schemas/MangaFormat"
+     },
+     "genres": {
+      "items": {
+       "$ref": "#/components/schemas/GenreTagDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "genresLocked": {
+      "type": "boolean"
+     },
+     "hardcoverId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "imprintLocked": {
+      "type": "boolean"
+     },
+     "imprints": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "inkerLocked": {
+      "type": "boolean"
+     },
+     "inkers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "isSpecial": {
+      "type": "boolean"
+     },
+     "isbn": {
+      "nullable": true,
+      "type": "string"
+     },
+     "language": {
+      "nullable": true,
+      "type": "string"
+     },
+     "languageLocked": {
+      "type": "boolean"
+     },
+     "lastModifiedUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "lastReadingProgress": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "lastReadingProgressUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "lettererLocked": {
+      "type": "boolean"
+     },
+     "letterers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "locationLocked": {
+      "type": "boolean"
+     },
+     "locations": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "malId": {
+      "format": "int64",
+      "type": "integer"
+     },
+     "mangaBakaId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "maxHoursToRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "maxNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "metronId": {
+      "format": "int64",
+      "type": "integer"
+     },
+     "minHoursToRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "minNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "number": {
+      "deprecated": true,
+      "nullable": true,
+      "type": "string"
+     },
+     "pages": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "pagesRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "pencillerLocked": {
+      "type": "boolean"
+     },
+     "pencillers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "primaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "publicationStatus": {
+      "$ref": "#/components/schemas/PublicationStatus"
+     },
+     "publicationStatusLocked": {
+      "type": "boolean"
+     },
+     "publisherLocked": {
+      "type": "boolean"
+     },
+     "publishers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "range": {
+      "nullable": true,
+      "type": "string"
+     },
+     "releaseDate": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "releaseDateLocked": {
+      "type": "boolean"
+     },
+     "secondaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "sortOrder": {
+      "format": "float",
+      "type": "number"
+     },
+     "sortOrderLocked": {
+      "type": "boolean"
+     },
+     "summary": {
+      "nullable": true,
+      "type": "string"
+     },
+     "summaryLocked": {
+      "type": "boolean"
+     },
+     "tags": {
+      "items": {
+       "$ref": "#/components/schemas/TagDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "tagsLocked": {
+      "type": "boolean"
+     },
+     "teamLocked": {
+      "type": "boolean"
+     },
+     "teams": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "title": {
+      "nullable": true,
+      "type": "string"
+     },
+     "titleName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "titleNameLocked": {
+      "type": "boolean"
+     },
+     "totalCount": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "totalReads": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "translatorLocked": {
+      "type": "boolean"
+     },
+     "translators": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "volumeId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "volumeTitle": {
+      "nullable": true,
+      "type": "string"
+     },
+     "webLinks": {
+      "nullable": true,
+      "type": "string"
+     },
+     "wordCount": {
+      "format": "int64",
+      "type": "integer"
+     },
+     "writerLocked": {
+      "type": "boolean"
+     },
+     "writers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
     "type": "object"
    },
    "FileTypeGroup": {
@@ -36,6 +467,145 @@
      "Epub",
      "Pdf",
      "Images"
+    ]
+   },
+   "FilterCombination": {
+    "description": "Members:\n- `0` \u2014 Or\n- `1` \u2014 And",
+    "enum": [
+     0,
+     1
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Or",
+     "And"
+    ],
+    "x-enum-varnames": [
+     "Or",
+     "And"
+    ]
+   },
+   "FilterComparison": {
+    "description": "Members:\n- `0` \u2014 Equal\n- `1` \u2014 GreaterThan\n- `2` \u2014 GreaterThanEqual\n- `3` \u2014 LessThan\n- `4` \u2014 LessThanEqual\n- `5` \u2014 Contains\n- `6` \u2014 MustContains\n- `7` \u2014 Matches\n- `8` \u2014 NotContains\n- `9` \u2014 NotEqual\n- `10` \u2014 BeginsWith\n- `11` \u2014 EndsWith\n- `12` \u2014 IsBefore\n- `13` \u2014 IsAfter\n- `14` \u2014 IsInLast\n- `15` \u2014 IsNotInLast\n- `16` \u2014 IsEmpty\n- `17` \u2014 IsNotEmpty",
+    "enum": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Equal",
+     "GreaterThan",
+     "GreaterThanEqual",
+     "LessThan",
+     "LessThanEqual",
+     "Contains",
+     "MustContains",
+     "Matches",
+     "NotContains",
+     "NotEqual",
+     "BeginsWith",
+     "EndsWith",
+     "IsBefore",
+     "IsAfter",
+     "IsInLast",
+     "IsNotInLast",
+     "IsEmpty",
+     "IsNotEmpty"
+    ],
+    "x-enum-varnames": [
+     "Equal",
+     "GreaterThan",
+     "GreaterThanEqual",
+     "LessThan",
+     "LessThanEqual",
+     "Contains",
+     "MustContains",
+     "Matches",
+     "NotContains",
+     "NotEqual",
+     "BeginsWith",
+     "EndsWith",
+     "IsBefore",
+     "IsAfter",
+     "IsInLast",
+     "IsNotInLast",
+     "IsEmpty",
+     "IsNotEmpty"
+    ]
+   },
+   "FilterEntityType": {
+    "description": "Members:\n- `0` \u2014 Series\n- `1` \u2014 Reading List (ReadingList)\n- `2` \u2014 Person\n- `3` \u2014 Annotation",
+    "enum": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Series",
+     "Reading List",
+     "Person",
+     "Annotation"
+    ],
+    "x-enum-varnames": [
+     "Series",
+     "ReadingList",
+     "Person",
+     "Annotation"
+    ]
+   },
+   "GenreTagDto": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "title": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "type": "object"
+   },
+   "IdentityProvider": {
+    "description": "Members:\n- `0` \u2014 Kavita\n- `1` \u2014 OpenID Connect (OpenIdConnect)",
+    "enum": [
+     0,
+     1
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Kavita",
+     "OpenID Connect"
+    ],
+    "x-enum-varnames": [
+     "Kavita",
+     "OpenIdConnect"
     ]
    },
    "LibraryDto": {
@@ -156,6 +726,126 @@
      "ComicVine"
     ]
    },
+   "MangaFileDto": {
+    "additionalProperties": false,
+    "properties": {
+     "bytes": {
+      "format": "int64",
+      "type": "integer"
+     },
+     "created": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "extension": {
+      "nullable": true,
+      "type": "string"
+     },
+     "filePath": {
+      "nullable": true,
+      "type": "string"
+     },
+     "format": {
+      "$ref": "#/components/schemas/MangaFormat"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "koreaderHash": {
+      "nullable": true,
+      "type": "string"
+     },
+     "pages": {
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "MangaFormat": {
+    "description": "Members:\n- `0` \u2014 Image\n- `1` \u2014 Archive\n- `2` \u2014 Unknown\n- `3` \u2014 EPUB (Epub)\n- `4` \u2014 PDF (Pdf)",
+    "enum": [
+     0,
+     1,
+     2,
+     3,
+     4
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Image",
+     "Archive",
+     "Unknown",
+     "EPUB",
+     "PDF"
+    ],
+    "x-enum-varnames": [
+     "Image",
+     "Archive",
+     "Unknown",
+     "Epub",
+     "Pdf"
+    ]
+   },
+   "MemberDto": {
+    "additionalProperties": false,
+    "properties": {
+     "ageRestriction": {
+      "$ref": "#/components/schemas/AgeRestrictionDto"
+     },
+     "created": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "createdUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "email": {
+      "nullable": true,
+      "type": "string"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "identityProvider": {
+      "$ref": "#/components/schemas/IdentityProvider"
+     },
+     "isPending": {
+      "type": "boolean"
+     },
+     "lastActive": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "lastActiveUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "libraries": {
+      "items": {
+       "$ref": "#/components/schemas/LibraryDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "roles": {
+      "items": {
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "username": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
    "MetadataProvider": {
     "description": "Members:\n- `2` \u2014 Hardcover\n- `3` \u2014 Mangabaka\n- `4` \u2014 ComicBookRoundup",
     "enum": [
@@ -248,6 +938,175 @@
     },
     "type": "object"
    },
+   "PersonDto": {
+    "additionalProperties": false,
+    "properties": {
+     "aliases": {
+      "items": {
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "aniListId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "asin": {
+      "nullable": true,
+      "type": "string"
+     },
+     "coverImage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "coverImageLocked": {
+      "type": "boolean"
+     },
+     "description": {
+      "nullable": true,
+      "type": "string"
+     },
+     "hardcoverId": {
+      "nullable": true,
+      "type": "string"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "malId": {
+      "format": "int64",
+      "type": "integer"
+     },
+     "name": {
+      "nullable": true,
+      "type": "string"
+     },
+     "primaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "roles": {
+      "items": {
+       "$ref": "#/components/schemas/PersonRole"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "secondaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "webLinks": {
+      "items": {
+       "type": "string"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "type": "object"
+   },
+   "PersonRole": {
+    "description": "Members:\n- `3` \u2014 Writer\n- `4` \u2014 Penciller\n- `5` \u2014 Inker\n- `6` \u2014 Colorist\n- `7` \u2014 Letterer\n- `8` \u2014 CoverArtist\n- `9` \u2014 Editor\n- `10` \u2014 Publisher\n- `11` \u2014 Character\n- `12` \u2014 Translator\n- `13` \u2014 Imprint\n- `14` \u2014 Team\n- `15` \u2014 Location",
+    "enum": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Writer",
+     "Penciller",
+     "Inker",
+     "Colorist",
+     "Letterer",
+     "CoverArtist",
+     "Editor",
+     "Publisher",
+     "Character",
+     "Translator",
+     "Imprint",
+     "Team",
+     "Location"
+    ],
+    "x-enum-varnames": [
+     "Writer",
+     "Penciller",
+     "Inker",
+     "Colorist",
+     "Letterer",
+     "CoverArtist",
+     "Editor",
+     "Publisher",
+     "Character",
+     "Translator",
+     "Imprint",
+     "Team",
+     "Location"
+    ]
+   },
+   "PublicationStatus": {
+    "description": "Members:\n- `0` \u2014 Ongoing (OnGoing)\n- `1` \u2014 Hiatus\n- `2` \u2014 Completed\n- `3` \u2014 Cancelled\n- `4` \u2014 Ended",
+    "enum": [
+     0,
+     1,
+     2,
+     3,
+     4
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Ongoing",
+     "Hiatus",
+     "Completed",
+     "Cancelled",
+     "Ended"
+    ],
+    "x-enum-varnames": [
+     "OnGoing",
+     "Hiatus",
+     "Completed",
+     "Cancelled",
+     "Ended"
+    ]
+   },
+   "QueryContext": {
+    "description": "Members:\n- `1` \u2014 None\n- `2` \u2014 Search\n- `4` \u2014 Dashboard",
+    "enum": [
+     1,
+     2,
+     4
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "None",
+     "Search",
+     "Dashboard"
+    ],
+    "x-enum-varnames": [
+     "None",
+     "Search",
+     "Dashboard"
+    ]
+   },
    "ScanFolderDto": {
     "additionalProperties": false,
     "properties": {
@@ -261,6 +1120,664 @@
      "folderPath": {
       "nullable": true,
       "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "SeriesByIdsDto": {
+    "additionalProperties": false,
+    "properties": {
+     "seriesIds": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "SeriesDetailDto": {
+    "additionalProperties": false,
+    "properties": {
+     "chapters": {
+      "items": {
+       "$ref": "#/components/schemas/ChapterDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "libraryType": {
+      "$ref": "#/components/schemas/LibraryType"
+     },
+     "specials": {
+      "items": {
+       "$ref": "#/components/schemas/ChapterDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "storylineChapters": {
+      "items": {
+       "$ref": "#/components/schemas/ChapterDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "totalCount": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "unreadCount": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "volumes": {
+      "items": {
+       "$ref": "#/components/schemas/VolumeDto"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "SeriesDto": {
+    "additionalProperties": false,
+    "properties": {
+     "aniListId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "avgHoursToRead": {
+      "format": "float",
+      "type": "number"
+     },
+     "cbrId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "comicVineId": {
+      "nullable": true,
+      "type": "string"
+     },
+     "coverImage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "coverImageLocked": {
+      "type": "boolean"
+     },
+     "created": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "dontMatch": {
+      "type": "boolean"
+     },
+     "folderPath": {
+      "nullable": true,
+      "type": "string"
+     },
+     "format": {
+      "$ref": "#/components/schemas/MangaFormat"
+     },
+     "hardcoverId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "hasUserRated": {
+      "type": "boolean"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "isBlacklisted": {
+      "type": "boolean"
+     },
+     "isStandAlone": {
+      "type": "boolean"
+     },
+     "lastChapterAdded": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "lastChapterAddedUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "lastFolderScanned": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "latestReadDate": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "libraryId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "libraryName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "localizedName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "localizedNameLocked": {
+      "type": "boolean"
+     },
+     "lowestFolderPath": {
+      "nullable": true,
+      "type": "string"
+     },
+     "malId": {
+      "format": "int64",
+      "type": "integer"
+     },
+     "mangaBakaEditionId": {
+      "nullable": true,
+      "type": "string"
+     },
+     "mangaBakaId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "maxHoursToRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "metadataProviderOverride": {
+      "$ref": "#/components/schemas/MetadataProvider"
+     },
+     "metronId": {
+      "format": "int64",
+      "type": "integer"
+     },
+     "minHoursToRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "name": {
+      "nullable": true,
+      "type": "string"
+     },
+     "nameLocked": {
+      "type": "boolean"
+     },
+     "originalName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "pages": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "pagesRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "primaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "secondaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "sortName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "sortNameLocked": {
+      "type": "boolean"
+     },
+     "totalReads": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "userRating": {
+      "format": "float",
+      "type": "number"
+     },
+     "wordCount": {
+      "format": "int64",
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "SeriesFilterField": {
+    "description": "Members:\n- `0` \u2014 Summary\n- `1` \u2014 SeriesName\n- `2` \u2014 PublicationStatus\n- `3` \u2014 Languages\n- `4` \u2014 AgeRating\n- `5` \u2014 UserRating\n- `6` \u2014 Tags\n- `7` \u2014 CollectionTags\n- `8` \u2014 Translators\n- `9` \u2014 Characters\n- `10` \u2014 Publisher\n- `11` \u2014 Editor\n- `12` \u2014 CoverArtist\n- `13` \u2014 Letterer\n- `14` \u2014 Colorist\n- `15` \u2014 Inker\n- `16` \u2014 Penciller\n- `17` \u2014 Writers\n- `18` \u2014 Genres\n- `19` \u2014 Libraries\n- `20` \u2014 ReadProgress\n- `21` \u2014 Formats\n- `22` \u2014 ReleaseYear\n- `23` \u2014 ReadTime\n- `24` \u2014 Path\n- `25` \u2014 FilePath\n- `26` \u2014 WantToRead\n- `27` \u2014 ReadingDate\n- `28` \u2014 AverageRating\n- `29` \u2014 Imprint\n- `30` \u2014 Team\n- `31` \u2014 Location\n- `32` \u2014 ReadLast\n- `33` \u2014 FileSize\n- `34` \u2014 CollapseSeriesRelationships",
+    "enum": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     31,
+     32,
+     33,
+     34
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Summary",
+     "SeriesName",
+     "PublicationStatus",
+     "Languages",
+     "AgeRating",
+     "UserRating",
+     "Tags",
+     "CollectionTags",
+     "Translators",
+     "Characters",
+     "Publisher",
+     "Editor",
+     "CoverArtist",
+     "Letterer",
+     "Colorist",
+     "Inker",
+     "Penciller",
+     "Writers",
+     "Genres",
+     "Libraries",
+     "ReadProgress",
+     "Formats",
+     "ReleaseYear",
+     "ReadTime",
+     "Path",
+     "FilePath",
+     "WantToRead",
+     "ReadingDate",
+     "AverageRating",
+     "Imprint",
+     "Team",
+     "Location",
+     "ReadLast",
+     "FileSize",
+     "CollapseSeriesRelationships"
+    ],
+    "x-enum-varnames": [
+     "Summary",
+     "SeriesName",
+     "PublicationStatus",
+     "Languages",
+     "AgeRating",
+     "UserRating",
+     "Tags",
+     "CollectionTags",
+     "Translators",
+     "Characters",
+     "Publisher",
+     "Editor",
+     "CoverArtist",
+     "Letterer",
+     "Colorist",
+     "Inker",
+     "Penciller",
+     "Writers",
+     "Genres",
+     "Libraries",
+     "ReadProgress",
+     "Formats",
+     "ReleaseYear",
+     "ReadTime",
+     "Path",
+     "FilePath",
+     "WantToRead",
+     "ReadingDate",
+     "AverageRating",
+     "Imprint",
+     "Team",
+     "Location",
+     "ReadLast",
+     "FileSize",
+     "CollapseSeriesRelationships"
+    ]
+   },
+   "SeriesFilterStatementDto": {
+    "additionalProperties": false,
+    "properties": {
+     "comparison": {
+      "$ref": "#/components/schemas/FilterComparison"
+     },
+     "field": {
+      "$ref": "#/components/schemas/SeriesFilterField"
+     },
+     "value": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "SeriesFilterV2Dto": {
+    "additionalProperties": false,
+    "properties": {
+     "combination": {
+      "$ref": "#/components/schemas/FilterCombination"
+     },
+     "entityType": {
+      "$ref": "#/components/schemas/FilterEntityType"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "limitTo": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "name": {
+      "nullable": true,
+      "type": "string"
+     },
+     "sortOptions": {
+      "$ref": "#/components/schemas/SeriesSortOptionDto"
+     },
+     "statements": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesFilterStatementDto"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "SeriesMetadataDto": {
+    "additionalProperties": false,
+    "properties": {
+     "ageRating": {
+      "$ref": "#/components/schemas/AgeRating"
+     },
+     "ageRatingLocked": {
+      "type": "boolean"
+     },
+     "characterLocked": {
+      "type": "boolean"
+     },
+     "characters": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "coloristLocked": {
+      "type": "boolean"
+     },
+     "colorists": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "coverArtistLocked": {
+      "type": "boolean"
+     },
+     "coverArtists": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "editorLocked": {
+      "type": "boolean"
+     },
+     "editors": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "genres": {
+      "items": {
+       "$ref": "#/components/schemas/GenreTagDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "genresLocked": {
+      "type": "boolean"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "imprintLocked": {
+      "type": "boolean"
+     },
+     "imprints": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "inkerLocked": {
+      "type": "boolean"
+     },
+     "inkers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "language": {
+      "nullable": true,
+      "type": "string"
+     },
+     "languageLocked": {
+      "type": "boolean"
+     },
+     "lettererLocked": {
+      "type": "boolean"
+     },
+     "letterers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "locationLocked": {
+      "type": "boolean"
+     },
+     "locations": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "maxCount": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "pencillerLocked": {
+      "type": "boolean"
+     },
+     "pencillers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "publicationStatus": {
+      "$ref": "#/components/schemas/PublicationStatus"
+     },
+     "publicationStatusLocked": {
+      "type": "boolean"
+     },
+     "publisherLocked": {
+      "type": "boolean"
+     },
+     "publishers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "releaseYear": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "releaseYearLocked": {
+      "type": "boolean"
+     },
+     "seriesId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "summary": {
+      "nullable": true,
+      "type": "string"
+     },
+     "summaryLocked": {
+      "type": "boolean"
+     },
+     "tags": {
+      "items": {
+       "$ref": "#/components/schemas/TagDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "tagsLocked": {
+      "type": "boolean"
+     },
+     "teamLocked": {
+      "type": "boolean"
+     },
+     "teams": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "totalCount": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "translatorLocked": {
+      "type": "boolean"
+     },
+     "translators": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "webLinks": {
+      "nullable": true,
+      "type": "string"
+     },
+     "writerLocked": {
+      "type": "boolean"
+     },
+     "writers": {
+      "items": {
+       "$ref": "#/components/schemas/PersonDto"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "SeriesSortField": {
+    "description": "Members:\n- `1` \u2014 SortName\n- `2` \u2014 CreatedDate\n- `3` \u2014 LastModifiedDate\n- `4` \u2014 LastChapterAdded\n- `5` \u2014 TimeToRead\n- `6` \u2014 ReleaseYear\n- `7` \u2014 ReadProgress\n- `8` \u2014 AverageRating\n- `9` \u2014 Random\n- `10` \u2014 UserRating\n- `11` \u2014 UnreadChapterCount",
+    "enum": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "SortName",
+     "CreatedDate",
+     "LastModifiedDate",
+     "LastChapterAdded",
+     "TimeToRead",
+     "ReleaseYear",
+     "ReadProgress",
+     "AverageRating",
+     "Random",
+     "UserRating",
+     "UnreadChapterCount"
+    ],
+    "x-enum-varnames": [
+     "SortName",
+     "CreatedDate",
+     "LastModifiedDate",
+     "LastChapterAdded",
+     "TimeToRead",
+     "ReleaseYear",
+     "ReadProgress",
+     "AverageRating",
+     "Random",
+     "UserRating",
+     "UnreadChapterCount"
+    ]
+   },
+   "SeriesSortOptionDto": {
+    "additionalProperties": false,
+    "properties": {
+     "isAscending": {
+      "type": "boolean"
+     },
+     "sortField": {
+      "$ref": "#/components/schemas/SeriesSortField"
      }
     },
     "type": "object"
@@ -292,6 +1809,23 @@
     "required": [
      "installId",
      "kavitaVersion"
+    ],
+    "type": "object"
+   },
+   "TagDto": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "title": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "required": [
+     "title"
     ],
     "type": "object"
    },
@@ -407,6 +1941,124 @@
     "required": [
      "id"
     ],
+    "type": "object"
+   },
+   "VolumeDto": {
+    "additionalProperties": false,
+    "properties": {
+     "aniListId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "avgHoursToRead": {
+      "format": "float",
+      "type": "number"
+     },
+     "cbrId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "chapters": {
+      "items": {
+       "$ref": "#/components/schemas/ChapterDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "comicVineId": {
+      "nullable": true,
+      "type": "string"
+     },
+     "coverImage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "created": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "createdUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "hardcoverId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "lastModified": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "lastModifiedUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "malId": {
+      "format": "int64",
+      "type": "integer"
+     },
+     "mangaBakaId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "maxHoursToRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "maxNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "metronId": {
+      "format": "int64",
+      "type": "integer"
+     },
+     "minHoursToRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "minNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "name": {
+      "nullable": true,
+      "type": "string"
+     },
+     "number": {
+      "deprecated": true,
+      "format": "int32",
+      "type": "integer"
+     },
+     "pages": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "pagesRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "primaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "secondaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "seriesId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "wordCount": {
+      "format": "int64",
+      "type": "integer"
+     }
+    },
     "type": "object"
    }
   },
@@ -756,6 +2408,241 @@
     ]
    }
   },
+  "/api/Series/all-v2": {
+   "post": {
+    "parameters": [
+     {
+      "in": "query",
+      "name": "PageNumber",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "PageSize",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     },
+     {
+      "description": "Optional user id to request the OnDeck for someone else. They must have profile sharing enabled when doing so",
+      "in": "query",
+      "name": "userId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     },
+     {
+      "description": "",
+      "in": "query",
+      "name": "context",
+      "schema": {
+       "$ref": "#/components/schemas/QueryContext"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/SeriesFilterV2Dto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SeriesFilterV2Dto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SeriesFilterV2Dto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SeriesDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SeriesDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SeriesDto"
+         },
+         "type": "array"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns all series for the library",
+    "tags": [
+     "Series"
+    ]
+   }
+  },
+  "/api/Series/metadata": {
+   "get": {
+    "parameters": [
+     {
+      "description": "",
+      "in": "query",
+      "name": "seriesId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SeriesMetadataDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SeriesMetadataDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/SeriesMetadataDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns metadata for a given series",
+    "tags": [
+     "Series"
+    ]
+   }
+  },
+  "/api/Series/series-by-ids": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/SeriesByIdsDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SeriesByIdsDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SeriesByIdsDto"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SeriesDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SeriesDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SeriesDto"
+         },
+         "type": "array"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Fetches Series for a set of Ids. This will check User for permission access and filter out any Ids that don't exist or\nthe user does not have access to.",
+    "tags": [
+     "Series"
+    ]
+   }
+  },
+  "/api/Series/series-detail": {
+   "get": {
+    "description": "Do not rely on this API externally. May change without hesitation.",
+    "parameters": [
+     {
+      "description": "",
+      "in": "query",
+      "name": "seriesId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SeriesDetailDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SeriesDetailDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/SeriesDetailDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Get a special DTO for Series Detail page.",
+    "tags": [
+     "Series"
+    ]
+   }
+  },
   "/api/Server/server-info-slim": {
    "get": {
     "description": "This is just for the UI and is extremely lightweight",
@@ -817,6 +2704,56 @@
     "summary": "Replaces series cover image and locks it with a base64 encoded image",
     "tags": [
      "Upload"
+    ]
+   }
+  },
+  "/api/Users": {
+   "get": {
+    "parameters": [
+     {
+      "description": "This will include pending members",
+      "in": "query",
+      "name": "includePending",
+      "schema": {
+       "default": false,
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/MemberDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/MemberDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/MemberDto"
+         },
+         "type": "array"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns all users of this server",
+    "tags": [
+     "Users"
     ]
    }
   }
