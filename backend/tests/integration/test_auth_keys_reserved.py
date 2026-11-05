@@ -1,0 +1,286 @@
+"""API keys, reserved actions and the minimal `fresh_auth_s` (EF-USR-003, EF-USR-022, EF-USR-024).
+
+The reserved actions under test are throwaway routes registered by the test: no real reserved
+action (purge, tombstone, secrets over HTTP) exists in M1a yet; they declare themselves the same
+way when they arrive.
+"""
+
+import hashlib
+import re
+from collections.abc import Iterator
+from datetime import timedelta
+
+import pytest
+from fastapi import APIRouter, Depends
+from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
+
+from shelfhold.config import Settings
+from shelfhold.identity.public import Effect, Principal, ReservedAction
+from tests.auth_env import (
+    PASSWORD,
+    SESSION_COOKIE,
+    AuthEnv,
+    auth_env,
+    db_dump,
+    db_rows,
+    run_cli,
+)
+
+PURGE_NOW = ReservedAction("test.purge_now", frozenset({Effect.DELETES_PERMANENTLY}))
+CREATE_KEY = ReservedAction("test.create_key", frozenset({Effect.MANAGES_CREDENTIALS}))
+KEY = re.compile(r"shk_([0-9a-f]{8})_[A-Za-z0-9_-]{43}")
+
+
+def _router(effects: list[str]) -> APIRouter:
+    router = APIRouter(prefix="/api/v1/test")
+
+    @router.post("/purge")
+    def purge(principal: Principal = Depends(reserved_action(PURGE_NOW))) -> dict[str, str]:  # noqa: B008
+        effects.append(f"purged-by-{principal.credential}")
+        return {"ok": "purged"}
+
+    @router.post("/keys")
+    def keys(principal: Principal = Depends(reserved_action(CREATE_KEY))) -> dict[str, str]:  # noqa: B008
+        effects.append("key")
+        return {"ok": "key"}
+
+    @router.post("/things")
+    def things(principal: Principal = Depends(require_principal)) -> dict[str, str]:  # noqa: B008
+        effects.append(f"thing-{len(effects)}")
+        return {"actor": principal.actor_id}
+
+    return router
+
+
+@pytest.fixture
+def effects() -> list[str]:
+    return []
+
+
+@pytest.fixture
+def api(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, effects: list[str]
+) -> Iterator[AuthEnv]:
+    with auth_env(monkeypatch, settings, routers=[_router(effects)]) as env:
+        yield env
+
+
+def _create_key(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    *extra: str,
+) -> str:
+    capsys.readouterr()
+    assert (
+        run_cli(monkeypatch, settings, "admin", "keys", "create", "--name", "scripts", *extra) == 0
+    )
+    out = capsys.readouterr().out
+    match = KEY.search(out)
+    assert match, out
+    return match.group(0)
+
+
+def _bearer(key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {key}"}
+
+
+@pytest.mark.req("EF-USR-003")
+def test_cli_admin_create_key(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    key = _create_key(monkeypatch, capsys, api.settings)
+    assert api.client.get("/api/v1/about", headers=_bearer(key)).status_code == 200
+    assert run_cli(monkeypatch, api.settings, "admin", "keys", "list") == 0
+    listing = capsys.readouterr().out
+    prefix = KEY.fullmatch(key).group(1)  # type: ignore[union-attr]
+    assert prefix in listing
+    assert key not in listing
+
+
+@pytest.mark.req("EF-USR-003")
+def test_api_key_stored_hashed_prefix_shown_once(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    key = _create_key(monkeypatch, capsys, api.settings)
+    secret = key.split("_", 2)[2]
+    dump = db_dump(api.settings)
+    assert key not in dump
+    assert secret not in dump
+    [(prefix, digest, scopes)] = db_rows(api.settings, "SELECT prefix, hash, scopes FROM api_key")
+    assert key.startswith(f"shk_{prefix}_")
+    assert digest == "sha256:" + hashlib.sha256(key.encode()).hexdigest()
+    assert scopes == '["admin"]'
+
+
+@pytest.mark.req("EF-USR-003")
+def test_revoked_key_gets_401_next_request(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    key = _create_key(monkeypatch, capsys, api.settings)
+    assert api.client.get("/api/v1/about", headers=_bearer(key)).status_code == 200
+    prefix = KEY.fullmatch(key).group(1)  # type: ignore[union-attr]
+    assert run_cli(monkeypatch, api.settings, "admin", "keys", "revoke", prefix) == 0
+    assert api.client.get("/api/v1/about", headers=_bearer(key)).status_code == 401
+    # A forged key with a valid prefix but another secret is refused too.
+    forged = f"shk_{prefix}_" + "A" * 43
+    assert api.client.get("/api/v1/about", headers=_bearer(forged)).status_code == 401
+
+
+@pytest.mark.req("EF-USR-003")
+def test_expired_key_rejected(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    key = _create_key(monkeypatch, capsys, api.settings, "--expires-days", "1")
+    # The CLI takes the system clock; move the app's clock past it.
+    [(expires_at,)] = db_rows(api.settings, "SELECT expires_at FROM api_key")
+    assert expires_at is not None
+    from datetime import UTC, datetime
+
+    api.clock.current = datetime.now(UTC) + timedelta(days=2)
+    assert api.client.get("/api/v1/about", headers=_bearer(key)).status_code == 401
+
+
+@pytest.mark.req("EF-USR-003")
+def test_key_last_used_and_audit_entries(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    key = _create_key(monkeypatch, capsys, api.settings)
+    assert db_rows(api.settings, "SELECT last_used_at FROM api_key") == [(None,)]
+    api.client.get("/api/v1/about", headers=_bearer(key))
+    [(last_used,)] = db_rows(api.settings, "SELECT last_used_at FROM api_key")
+    assert last_used is not None
+    prefix = KEY.fullmatch(key).group(1)  # type: ignore[union-attr]
+    run_cli(monkeypatch, api.settings, "admin", "keys", "revoke", prefix)
+    actions = [a for (a,) in db_rows(api.settings, "SELECT action FROM audit ORDER BY at")]
+    assert "api_key.created" in actions
+    assert "api_key.revoked" in actions
+
+
+@pytest.mark.req("EF-USR-003", "EF-USR-024")
+def test_admin_api_key_expiry_optional_unless_hardened(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
+) -> None:
+    with auth_env(monkeypatch, settings) as env:
+        _create_key(monkeypatch, capsys, env.settings)
+        assert db_rows(env.settings, "SELECT expires_at FROM api_key") == [(None,)]
+    hardened = settings.model_copy(update={"auth_hardened": True})
+    _create_key(monkeypatch, capsys, hardened)
+    _create_key(monkeypatch, capsys, hardened, "--expires-days", "365")
+    rows = db_rows(
+        hardened,
+        "SELECT julianday(expires_at) - julianday(created_at) FROM api_key "
+        "WHERE expires_at IS NOT NULL",
+    )
+    assert len(rows) == 2
+    assert all(89.9 < float(days) <= 90.01 for (days,) in rows)  # type: ignore[arg-type]
+
+
+@pytest.mark.req("EF-USR-003")
+def test_read_only_key_post_403_and_keys_need_no_csrf(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    api: AuthEnv,
+    effects: list[str],
+) -> None:
+    read_only = _create_key(monkeypatch, capsys, api.settings, "--read-only")
+    refused = api.client.post("/api/v1/test/things", headers=_bearer(read_only))
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "forbidden"
+    assert api.client.get("/api/v1/about", headers=_bearer(read_only)).status_code == 200
+    writer = _create_key(monkeypatch, capsys, api.settings)
+    assert api.client.post("/api/v1/test/things", headers=_bearer(writer)).status_code == 200
+    assert effects == ["thing-0"]
+
+
+@pytest.mark.req("EF-USR-024", "ENF-SEC-010")
+def test_api_key_admin_cannot_purge_now(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    api: AuthEnv,
+    effects: list[str],
+) -> None:
+    key = _create_key(monkeypatch, capsys, api.settings)
+    for path in ("/api/v1/test/purge", "/api/v1/test/keys"):
+        refused = api.client.post(path, headers=_bearer(key))
+        assert refused.status_code == 403
+        assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed"
+    assert effects == []
+
+
+@pytest.mark.req("EF-USR-022", "EF-USR-024")
+def test_reserved_action_requires_fresh_auth_from_m1a(api: AuthEnv, effects: list[str]) -> None:
+    api.login()
+    assert api.post("/api/v1/test/purge").status_code == 200  # just logged in: fresh
+    api.clock.advance(timedelta(minutes=20))
+    stale = api.post("/api/v1/test/purge")
+    assert stale.status_code == 401
+    body = stale.json()
+    assert body["type"] == "/api/v1/problems/reauth-required"
+    assert body["auth_age_s"] == 1200
+    assert body["max_age_s"] == 900
+    assert body["reauth_method"] == "password"
+    # A reserved action without freshness by default (P3) goes through on a plain session.
+    assert api.post("/api/v1/test/keys").status_code == 200
+    old_token = api.client.cookies[SESSION_COOKIE]
+    wrong = api.post("/api/v1/auth/reauth", json={"method": "password", "password": "nope-nope"})
+    assert wrong.status_code == 401
+    again = api.post("/api/v1/auth/reauth", json={"method": "password", "password": PASSWORD})
+    assert again.status_code == 200
+    assert api.client.cookies[SESSION_COOKIE] != old_token  # renewed at re-authentication
+    assert api.post("/api/v1/test/purge").status_code == 200
+    assert effects == ["purged-by-session", "key", "purged-by-session"]
+    rows = db_rows(
+        api.settings,
+        "SELECT session_id, auth_time FROM audit WHERE action = 'test.purge_now'",
+    )
+    assert len(rows) == 2
+    assert all(session_id and auth_time for session_id, auth_time in rows)
+
+
+@pytest.mark.req("EF-USR-022")
+def test_reauth_unknown_method_refused(api: AuthEnv) -> None:
+    api.login()
+    response = api.post("/api/v1/auth/reauth", json={"method": "passkey", "assertion": "x"})
+    assert response.status_code == 422
+
+
+@pytest.mark.req("EF-USR-022", "EF-USR-024")
+def test_reauth_problem_type_in_openapi(api: AuthEnv) -> None:
+    schema = api.app.openapi()  # type: ignore[attr-defined]
+    types = schema["x-problem-types"]
+    assert types["/api/v1/problems/reauth-required"]["status"] == 401
+    assert types["/api/v1/problems/credential-not-allowed"]["status"] == 403
+    purge = schema["paths"]["/api/v1/test/purge"]["post"]
+    assert {"401", "403"} <= set(purge["responses"])
+
+
+@pytest.mark.req("EF-INT-001")
+def test_idempotency_keys_are_scoped_to_the_authenticated_actor(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    api: AuthEnv,
+    effects: list[str],
+) -> None:
+    key = _create_key(monkeypatch, capsys, api.settings)
+    api.login()
+    same = {"Idempotency-Key": "same-key-123"}
+    first = api.post("/api/v1/test/things", headers=same)
+    replay = api.post("/api/v1/test/things", headers=same)
+    assert replay.headers.get("idempotent-replayed") == "true"
+    assert replay.json() == first.json()
+    by_key = api.client.post("/api/v1/test/things", headers={**same, **_bearer(key)})
+    assert "idempotent-replayed" not in by_key.headers
+    assert by_key.json()["actor"] != first.json()["actor"]
+    assert len(effects) == 2
+    # A login is never stored nor replayed: it carries a fresh secret every time.
+    logins = [
+        api.client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": PASSWORD},
+            headers={"Idempotency-Key": "login-1"},
+        )
+        for _ in range(2)
+    ]
+    assert all("idempotent-replayed" not in r.headers for r in logins)
+    assert logins[0].json()["csrf_token"] != logins[1].json()["csrf_token"]
