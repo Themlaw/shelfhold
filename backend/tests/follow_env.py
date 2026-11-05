@@ -6,7 +6,7 @@ against the real `PassthroughStore` and the real bounded receiver, over the fake
 
 import asyncio
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -55,6 +55,7 @@ class Bench:
     clock: ManualClock
     bus: EventBus
     cycle: FollowCycle
+    new_cycle: Callable[[], FollowCycle]
     work_id: str
     edition_id: str
     binding_id: str
@@ -174,14 +175,27 @@ def follow_bench(
             sleeps.append(seconds)
             clock.advance(seconds=seconds)
 
-        cycle = FollowCycle(
-            lib.engine, bus, clock, service, fetcher,
-            store=PassthroughStore(lib.engine, lib.fsops, lib.locate, lib.data),
-            receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
-            place=_placement(lib), sleep=sleep, stale_k=stale_k,
-        )  # fmt: skip
+        def new_cycle() -> FollowCycle:
+            return FollowCycle(
+                lib.engine, bus, clock, service, fetcher,
+                store=PassthroughStore(lib.engine, lib.fsops, lib.locate, lib.data),
+                receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
+                place=_placement(lib), sleep=sleep, stale_k=stale_k,
+            )  # fmt: skip
+
+        cycle = new_cycle()
         bench = Bench(
-            lib, server, fetcher, service, clock, bus, cycle, work_id, edition_id, binding_id
+            lib,
+            server,
+            fetcher,
+            service,
+            clock,
+            bus,
+            cycle,
+            new_cycle,
+            work_id,
+            edition_id,
+            binding_id,
         )
         bench.sleeps = sleeps
         bus.subscribe(bench.delivered.append)

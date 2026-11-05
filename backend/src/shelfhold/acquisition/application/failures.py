@@ -212,6 +212,14 @@ class FailureLedger:
     def clear_mass_alert(self, connection: Connection) -> None:
         self._unset(connection, "$.mass_absence")
 
+    # -- pace (per upstream source, survives a cycle) -------------------------------------------
+    def next_at(self, connection: Connection) -> dict[str, float]:
+        raw = self._read(connection).get("next_at")
+        return {str(k): float(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+
+    def set_next_at(self, connection: Connection, limit_key: str, epoch: float) -> None:
+        self._set(connection, f"$.next_at.{json.dumps(limit_key)}", epoch)
+
     def record_download(
         self, connection: Connection, limit_key: str, *, ok: bool, now: datetime
     ) -> None:

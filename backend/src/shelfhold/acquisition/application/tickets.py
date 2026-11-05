@@ -9,6 +9,8 @@ service itself cannot be driven (authentication, version, schema) is not handled
 to the cycle, which pauses the whole service.
 """
 
+import hashlib
+from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, suppress
 from dataclasses import dataclass, replace
@@ -39,7 +41,16 @@ from shelfhold.sdk.refs import FileAsset, SeriesRef, UnitInfo, UnitRef
 from shelfhold.sdk.source import RateLimited, SourceChanged, TemporarilyUnavailable
 
 MAX_ATTEMPTS = 8
+MAX_WAIT_S = 120.0  # the most one cycle sleeps for the pace of the sources
+CLOCK_GRAIN_S = 1e-3  # a wait shorter than this is over (clocks tick in microseconds)
+JITTER = 0.5  # each gap is `interval x (1 + up to JITTER)`, so instances never march in step
 OPEN_STATES = ("requested", "downloaded")
+
+
+def jitter_fraction(request_id: str) -> float:
+    """A stable value in [0, JITTER) for a request (EF-SRC-009): no random source in tests."""
+    digest = hashlib.sha256(request_id.encode()).digest()
+    return JITTER * int.from_bytes(digest[:4], "big") / 2**32
 
 
 class Receiver(Protocol):
@@ -117,6 +128,7 @@ class DownloadTickets:
         sleep: Sleep,
         slots: DomainSlots | None = None,
         max_attempts: int = MAX_ATTEMPTS,
+        max_wait_s: float = MAX_WAIT_S,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -130,7 +142,7 @@ class DownloadTickets:
         self._sleep = sleep
         self._slots = slots
         self._max_attempts = max_attempts
-        self._next_at: dict[str, float] = {}  # limit_key -> earliest next request (monotonic s)
+        self._max_wait_s = max_wait_s
 
     # -- opening -----------------------------------------------------------------------------
     @staticmethod
@@ -180,23 +192,76 @@ class DownloadTickets:
 
     # -- advancing ---------------------------------------------------------------------------
     async def advance(self) -> TicketReport:
+        """Poll and fetch what was already asked; ask for the rest at the pace of each source.
+
+        Sources are independent: a source that has to wait never holds back another, and the
+        cycle only sleeps when every source with something to ask is waiting (and for no more than
+        `max_wait_s` in all: what is left is asked next cycle).
+        """
         report = TicketReport()
+        queues: dict[str, deque[OpenRequest]] = {}
         for request in self._open_requests():
-            try:
-                await self._advance_one(request, report)
-            except Exception as error:
-                if disposition_of(classify(error)) is Disposition.PAUSE:
-                    raise  # the service cannot be driven: the cycle pauses it, nothing is counted
-                self._failed(request, error, report)
+            if request.ticket is None:
+                queues.setdefault(request.source_key, deque()).append(request)
+            else:
+                await self._guarded(request, report)
+        await self._drain(queues, report)
         return report
+
+    async def _guarded(self, request: OpenRequest, report: TicketReport) -> None:
+        try:
+            await self._advance_one(request, report)
+        except Exception as error:
+            if disposition_of(classify(error)) is Disposition.PAUSE:
+                raise  # the service cannot be driven: the cycle pauses it, nothing is counted
+            self._failed(request, error, report)
+
+    async def _drain(self, queues: dict[str, deque[OpenRequest]], report: TicketReport) -> None:
+        with self._engine.connect() as connection:
+            next_at = self._ledger.next_at(connection)
+        waited = 0.0
+        while queues:
+            now = self._clock.now().timestamp()
+            ready = [key for key in queues if next_at.get(key, 0.0) <= now + CLOCK_GRAIN_S]
+            if not ready:
+                wait = min(next_at[key] for key in queues) - now
+                if waited + wait > self._max_wait_s:
+                    report.deferred += sum(len(queue) for queue in queues.values())
+                    return
+                await self._sleep(wait)
+                waited += wait
+                continue
+            for key in ready:
+                request = queues[key].popleft()
+                if not self._take_slot(key):
+                    report.deferred += 1 + len(queues.pop(key))
+                    continue
+                try:
+                    await self._guarded(request, report)
+                finally:
+                    self._release_slot(key)
+                interval = 1.0 / self._service.manifest.rate_limit.requests_per_second
+                next_at[key] = self._clock.now().timestamp() + interval * (
+                    1.0 + jitter_fraction(request.id)
+                )
+                with self._engine.begin() as connection:
+                    self._ledger.set_next_at(connection, key, next_at[key])
+                if not queues[key]:
+                    del queues[key]
+
+    def _take_slot(self, key: str) -> bool:
+        if self._slots is None:
+            return True
+        self._slots.declare(key, self._service.manifest.rate_limit.concurrency)
+        return self._slots.try_acquire(key)
+
+    def _release_slot(self, key: str) -> None:
+        if self._slots is not None:
+            self._slots.release(key)
 
     async def _advance_one(self, request: OpenRequest, report: TicketReport) -> None:
         if request.ticket is None:
-            token = await self._submit(request)
-            if token is None:
-                report.deferred += 1
-                return
-            request = replace(request, ticket=token)
+            request = replace(request, ticket=await self._submit(request))
             report.submitted += 1
         ticket = Ticket(token=str(request.ticket), target_kind="unit")
         state = await from_service(self._service.poll(self._fetcher, ticket))
@@ -209,37 +274,18 @@ class DownloadTickets:
         self._update(request.id, state="downloaded")
         await self._fetch(request, ticket, report)
 
-    async def _submit(self, request: OpenRequest) -> str | None:
-        key = request.source_key
-        if self._slots is not None:
-            self._slots.declare(key, self._service.manifest.rate_limit.concurrency)
-            if not self._slots.try_acquire(key):
-                return None
-        try:
-            await self._pace(key)
-            target = UnitRef(
-                series=SeriesRef(source_key=key, remote_id=request.remote_id, title=""),
-                unit=UnitInfo(
-                    remote_unit_id=request.remote_unit_id,
-                    source_order=request.source_order,
-                    number=request.number,
-                ),
-            )
-            ticket = await from_service(self._service.request(self._fetcher, target))
-        finally:
-            if self._slots is not None:
-                self._slots.release(key)
+    async def _submit(self, request: OpenRequest) -> str:
+        target = UnitRef(
+            series=SeriesRef(source_key=request.source_key, remote_id=request.remote_id, title=""),
+            unit=UnitInfo(
+                remote_unit_id=request.remote_unit_id,
+                source_order=request.source_order,
+                number=request.number,
+            ),
+        )
+        ticket = await from_service(self._service.request(self._fetcher, target))
         self._update(request.id, ticket=ticket.token)
         return ticket.token
-
-    async def _pace(self, limit_key: str) -> None:
-        """At most `requests_per_second` requests per upstream source; another source is free."""
-        interval = 1.0 / self._service.manifest.rate_limit.requests_per_second
-        now = self._clock.now().timestamp()
-        start = max(now, self._next_at.get(limit_key, now))
-        if start > now:
-            await self._sleep(start - now)
-        self._next_at[limit_key] = start + interval
 
     async def _fetch(self, request: OpenRequest, ticket: Ticket, report: TicketReport) -> None:
         payload = await from_service(self._service.fetch(self._fetcher, ticket))

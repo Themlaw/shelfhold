@@ -4,6 +4,7 @@ Everything runs against the simulated Suwayomi (`tests/fakes/suwayomi`) and a re
 /library: the cycle's own behaviour is what is under test, not a mock of it.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ from shelfhold.sdk.fetcher import Response
 from shelfhold.sdk.refs import FileAsset, ImageRequest, RangedPayload, SeriesRef, UnitInfo, UnitRef
 from shelfhold.sdk.source import TemporarilyUnavailable
 from tests.fakes.suwayomi import FakeSuwayomi
-from tests.follow_env import Bench, follow_bench
+from tests.follow_env import Bench, follow_bench, new_chapter
 
 REFRESH_FIELDS = {"fetchChapters", "fetchManga", "fetchSourceManga", "updateLibrary"}
 
@@ -64,17 +65,50 @@ def test_always_on_mode_sends_no_refresh_mutation() -> None:
 
 @pytest.mark.req("EF-SRC-009")
 def test_download_requests_rate_limited_not_upstream_refresh() -> None:
-    """Requests to one upstream source are spaced; another source is not held back."""
+    """Requests to one upstream source are spaced, with a jitter; no refresh is ever sent."""
     with follow_bench() as bench:
         bench.run()
         for number in (3, 4, 5):
             bench.add_chapter(number)
         bench.run()
         interval = 1 / bench.service.manifest.rate_limit.requests_per_second
-        assert len(bench.sleeps) == 2 and all(abs(s - interval) < 1e-6 for s in bench.sleeps)
+        assert len(bench.sleeps) == 2
+        assert all(interval <= s <= interval * 1.5 for s in bench.sleeps)
+        assert len({round(s, 6) for s in bench.sleeps}) == 2  # a jitter, not a fixed step
         enqueues = [r for r in bench.server.requests if "enqueueChapterDownload" in r.fields]
         assert len(enqueues) == 3
         assert not any(REFRESH_FIELDS & r.fields for r in bench.server.requests)
+
+
+@pytest.mark.req("EF-SRC-009")
+def test_the_pace_survives_a_cycle_and_a_waiting_source_holds_back_no_other() -> None:
+    with follow_bench() as bench:
+        bench.add_binding("suwayomi:7002", "/series-beta")
+        bench.run()
+        for number in (3, 4, 5):
+            bench.add_chapter(number)
+        bench.server.state["mangas"][1]["chapters"].append(
+            new_chapter(6001, 2, "/series-beta/ch-002")
+        )
+        start = bench.clock.now()
+        bench.run()
+        by_source = {
+            row["source_key"]: row["updated_at"]
+            for row in bench.rows(
+                "SELECT si.source_key, max(r.updated_at) AS updated_at FROM download_request r "
+                "JOIN source_binding b ON b.id = r.source_binding_id "
+                "JOIN source_item si ON si.id = b.source_item_id GROUP BY si.source_key"
+            )
+        }
+        assert len(bench.sleeps) == 2  # only Alpha's own source waited, for its own chapters
+        assert str(by_source["suwayomi:7002"]).startswith("2026-11-05 09:00:00")  # Beta did not
+        assert bench.clock.now() > start
+
+        bench.add_chapter(6)  # a new process: the pace was kept in the database
+        before = len(bench.sleeps)
+        bench.new_cycle()
+        assert asyncio.run(bench.new_cycle().run()).requested == 1
+        assert len(bench.sleeps) == before + 1
 
 
 @pytest.mark.req("EF-SRC-027")
