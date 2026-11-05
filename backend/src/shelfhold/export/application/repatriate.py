@@ -27,11 +27,17 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks, path_resource
+from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.domain.path_map import PathMode, clean_absolute
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.fsops import CopyVerificationError, Fsops, PathEscapeError
-from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.fsops import (
+    CopyVerificationError,
+    Fsops,
+    PathEscapeError,
+    RootBlockedError,
+)
+from shelfhold.infrastructure.schema import export, platform
 from shelfhold.library.public import relocate_destination_copy
 
 __all__ = [
@@ -114,6 +120,7 @@ class RepatriationPlan:
     bytes_to_copy: int
     free_bytes: int
     fingerprint: str
+    frozen: bool = False  # `restored_behind` (L35): the instance writes nothing
 
     @property
     def to_copy(self) -> tuple[FileAction, ...]:
@@ -129,7 +136,7 @@ class RepatriationPlan:
 
     @property
     def ready(self) -> bool:
-        return not self.problems and self.free_bytes >= self.required_bytes
+        return not self.frozen and not self.problems and self.free_bytes >= self.required_bytes
 
 
 @dataclass(frozen=True)
@@ -213,8 +220,17 @@ class Repatriator:
             digest.update(f"{a.rel_path}|{a.file_hash}|{a.size}|{a.status}\n".encode())
         return RepatriationPlan(
             destination_id, source_root, target_root, actions, len(folders), len(chapters),
-            copy, self._free(target_root), digest.hexdigest(),
+            copy, self._free(target_root), digest.hexdigest(), self.frozen(),
         )  # fmt: skip
+
+    def frozen(self) -> bool:
+        """`restored_behind`: the freeze of this process, or the one the database persists
+        (`restore_generation`, until `reconcile --adopt-after-restore`)."""
+        with self._engine.connect() as connection:
+            persisted = connection.execute(
+                sa.select(platform.instance.c.restore_generation)
+            ).scalar()
+        return self._fsops.frozen or bool(persisted and persisted > 0)
 
     @staticmethod
     def _source_root(entries: Any, root_subpath: str, source: str | None) -> str:
@@ -292,6 +308,10 @@ class Repatriator:
     ) -> RepatriationResult:
         """Copy, verify, record. Without the fingerprint of a dry-run: refused. A file already
         there with the right hash is only recorded, so a run cut short is finished by the next."""
+        if self.frozen():  # a repatriation is a write
+            raise RestoredBehindError(
+                "restored_behind: run `shelfhold reconcile --adopt-after-restore`"
+            )
         if not fingerprint:
             raise DryRunRequiredError()
         plan = self.plan(destination_id, source=source)
@@ -339,6 +359,11 @@ class Repatriator:
         except PathEscapeError:
             self._journal.cancel(intent_id)
             raise RepatriationBlockedError((replace(action, status="conflict"),)) from None
+        except RootBlockedError as blocked:
+            self._journal.cancel(intent_id)
+            if blocked.state.value == "restored_behind":
+                raise RestoredBehindError(str(blocked)) from blocked
+            raise RepatriationBlockedError((replace(action, status="conflict"),)) from blocked
         except BaseException:
             self._journal.cancel(intent_id)  # atomic: nothing landed, the source is untouched
             raise

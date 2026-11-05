@@ -17,7 +17,8 @@ from shelfhold.export.application.repatriate import (
     Repatriator,
     kavita_counts,
 )
-from shelfhold.infrastructure.fsops import ReadOnlyRootError, RootBlockedError
+from shelfhold.export.application.restore import RestoredBehindError
+from shelfhold.infrastructure.fsops import ReadOnlyRootError
 from shelfhold.infrastructure.schema import coherence, export, reading
 from tests.adopt_env import tree_state
 from tests.kavita_env import run
@@ -179,12 +180,27 @@ def test_repatriate_checks_free_space_and_missing_sources() -> None:
 
 
 @pytest.mark.req("EF-EXP-051", "EF-INT-026")
-def test_repatriate_is_a_write_frozen_when_the_root_is_restored_behind() -> None:
-    with repatriation_env(library_generation=0) as r:  # the database is behind the sentinel
+def test_repatriate_is_a_write_frozen_by_the_persistent_restored_behind() -> None:
+    """The freeze of L35 lives in the database (`restore_generation`): it holds across a
+    restart, `plan.ready` says so, and nothing is written until the exit command."""
+    with repatriation_env() as r:
+        with r.env.engine.begin() as connection:
+            connection.execute(sa.text("UPDATE instance SET restore_generation = 1"))
         plan = r.dry_run()
-        with pytest.raises(RootBlockedError):
+        assert plan.frozen and not plan.ready  # type: ignore[attr-defined]
+        with pytest.raises(RestoredBehindError) as raised:
             r.apply(plan.fingerprint)  # type: ignore[attr-defined]
-        assert r.env.files() == [] and tree_state(r.upstream)  # nothing written, source intact
+        assert raised.value.code == "instance.restored_behind"
+        assert r.env.files() == [] and tree_state(r.upstream) and _intents(r) == []
+
+
+@pytest.mark.req("EF-EXP-051", "EF-INT-026")
+def test_repatriate_root_restored_behind_is_the_catalogued_error() -> None:
+    with repatriation_env(library_generation=0) as r:  # the sentinel is ahead of the database
+        plan = r.dry_run()
+        with pytest.raises(RestoredBehindError):
+            r.apply(plan.fingerprint)  # type: ignore[attr-defined]
+        assert r.env.files() == []
         assert [i.state for i in _intents(r)] == ["cancelled"]
 
 
