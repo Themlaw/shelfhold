@@ -6,6 +6,16 @@ from tests.fakes.kavita.server import (
     FakeKavita,
     RecordedRequest,
     build_fetcher,
+    default_libraries,
+    member,
 )
 
-__all__ = ["API_KEY", "BASE_URL", "FakeKavita", "RecordedRequest", "build_fetcher"]
+__all__ = [
+    "API_KEY",
+    "BASE_URL",
+    "FakeKavita",
+    "RecordedRequest",
+    "build_fetcher",
+    "default_libraries",
+    "member",
+]

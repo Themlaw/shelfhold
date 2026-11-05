@@ -48,6 +48,9 @@ def test_kavita_library_type_matches_the_openapi_enum() -> None:
 def test_kavita_adapter_calls_only_allowlisted_routes() -> None:
     h = harness()
     client = h.client
+    series = h.fake.add_series(
+        "Series A", "/manga/Series A", ["/manga/Series A/Series A - Ch.001.cbz"]
+    )
 
     async def session() -> None:
         await client.probe()
@@ -60,6 +63,11 @@ def test_kavita_adapter_calls_only_allowlisted_routes() -> None:
         await client.ensure_exclude_patterns(8, ["**/.shelfhold/**"])
         await client.scan_folder("/manga/Series A")
         await client.upload_series_cover(42, b"\x89PNG synthetic")
+        await client.list_users()
+        await client.series_of_library(7)
+        await client.series_by_ids([series])
+        await client.series_files(series)
+        await client.series_age(series)
 
     run(session())
     seen = {(r.method, r.path) for r in h.fake.requests}

@@ -29,6 +29,11 @@ transmise à un plugin de destination ; seule `scan-folder` la reçoit aussi dan
 | POST | `/api/Library/update` | Mise à jour fidèle : lecture, puis envoi du même document avec le seul changement voulu | M1a |
 | POST | `/api/Library/scan-folder` | Scan ciblé d'un dossier (chemin traduit, débouncé) ; exige un compte administrateur | M1a |
 | POST | `/api/Upload/series` | Remplacer et verrouiller la couverture d'une série (image en base64, sans préfixe `data:`) | M1a |
+| GET | `/api/Users` | Audit d'accès en lecture seule : comptes, rôles, restriction d'âge, « inclure les inconnus », bibliothèques accessibles (EF-EXP-055) ; exige un compte administrateur | M1a |
+| POST | `/api/Series/all-v2` | Lire les séries d'une bibliothèque (filtre `Libraries`, pages de 100) : confirmation d'arrivée, retrouver une série par son dossier ; une lecture malgré le `POST` | M1a |
+| POST | `/api/Series/series-by-ids` | Relire le nom courant des séries mises en cache avant de conclure à une collision (EF-EXP-057) ; une lecture malgré le `POST` | M1a |
+| GET | `/api/Series/series-detail` | Lister les fichiers indexés d'une série (confirmation d'arrivée du chapitre, EF-EXP-034) | M1a |
+| GET | `/api/Series/metadata` | Lire l'âge de la série et son verrou (registre `field_owner`, âge dérivé des tags, EF-EXP-057) | M1a |
 
 ## Fixtures `openapi.json`
 
