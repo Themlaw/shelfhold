@@ -7,9 +7,9 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
 from shelfhold.infrastructure.secrets.diagnostics import store_for
 from shelfhold.infrastructure.secrets.errors import RotationInProgressError
 

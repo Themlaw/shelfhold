@@ -193,17 +193,18 @@ class IntentJournal:
         if observed is None or observed[0] != "file":
             raise FileNotFoundError(step.src)
         file_id = observed[1]
+        sha256 = step.sha256 or self._disk.sha256_of(step.src)  # replay needs the hash (02 6.7)
         intent_id = self.record(
             op="rename",
             src=step.src,
             dst=step.dst,
-            expected_sha256=step.sha256,
+            expected_sha256=sha256,
             expected_file_id=file_id,
         )
         self.mark_applying(intent_id)
         self._disk.rename(step.src, step.dst)
         intent = OpenIntent(
-            intent_id, "rename", step.src, step.dst, step.sha256, file_id, "applying",
+            intent_id, "rename", step.src, step.dst, sha256, file_id, "applying",
             0, INTENT_SCHEMA_VERSION,
         )  # fmt: skip
         with self._engine.begin() as conn:
@@ -273,12 +274,14 @@ class IntentJournal:
                 on_done(conn, intent)
 
     def _is_expected(self, intent: OpenIntent, path: str, identity: FileIdentity) -> bool:
-        """The file at `path` is the one the intent was written for (inode/size/mtime, hash)."""
+        """The file at `path` is the one the intent was written for: the sha256 must match (an
+        identity of inode, size and mtime can be forged by a rewrite in place), and the identity
+        too when it was recorded. An intent without a hash is never replayed."""
+        if intent.expected_sha256 is None:
+            return False
         if intent.expected_file_id is not None and intent.expected_file_id != identity:
             return False
-        return (
-            intent.expected_sha256 is None or self._disk.sha256_of(path) == intent.expected_sha256
-        )
+        return self._disk.sha256_of(path) == intent.expected_sha256
 
     def _resolve_rename(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
@@ -294,8 +297,7 @@ class IntentJournal:
             self._finish(intent, on_done)
             report.replayed.append(intent.id)
         elif at_dst is not None and at_dst[0] == "file" and at_src is None:
-            known = intent.expected_file_id is not None or intent.expected_sha256 is not None
-            if not known or not self._is_expected(intent, intent.dst, at_dst[1]):
+            if not self._is_expected(intent, intent.dst, at_dst[1]):
                 return self._drift(intent, report, "target is not provably the expected file")
             self._finish(intent, on_done)
             report.completed.append(intent.id)

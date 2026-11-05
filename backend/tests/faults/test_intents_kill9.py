@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.export.application.intents import IntentJournal, OpenIntent, open_intent_paths
 from sqlalchemy import Connection
 
+from shelfhold.export.application.intents import IntentJournal, OpenIntent, open_intent_paths
 from shelfhold.infrastructure.fsops import Fsops
 from tests.intents_env import make_intent_env
 

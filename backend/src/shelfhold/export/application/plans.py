@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from collections.abc import Callable, Iterable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 
 import sqlalchemy as sa
@@ -101,7 +102,25 @@ class PlanStore:
                 conn.execute(sa.insert(coherence.export_op), rows)
         return record
 
-    def apply(self, plan_id: str, *, if_match: int, run: Callable[[PlanOp], None]) -> None:
+    def apply(
+        self,
+        plan_id: str,
+        *,
+        if_match: int,
+        run: Callable[[PlanOp], None],
+        lock: AbstractContextManager[object] | None = None,
+    ) -> None:
+        """Apply a fresh preview once. `lock` is the job's `ResourceLocks.hold(...)`.
+
+        The plan is *claimed* by one conditional UPDATE (`planned` and the client's `base_version`
+        become `applying`, one row or nothing), so a second concurrent application is refused;
+        the version is read again before every operation, and a counter that moved stops the plan
+        (412) with what already ran left to the intent journal.
+        """
+        with lock if lock is not None else nullcontext():
+            self._apply_claimed(plan_id, if_match, run)
+
+    def _apply_claimed(self, plan_id: str, if_match: int, run: Callable[[PlanOp], None]) -> None:
         plan_table, op_table = coherence.export_plan, coherence.export_op
         with self._engine.connect() as conn:
             plan = conn.execute(sa.select(plan_table).where(plan_table.c.plan_id == plan_id)).one()
@@ -111,33 +130,46 @@ class PlanStore:
                 .order_by(op_table.c.batch, op_table.c.position)
             ).all()
         files = [f for batch in plan.batches for f in batch.get("files", [])]
-        stale = (
+        if (
             plan.status != "planned"
             or if_match != plan.base_version
             or self._current_version() != plan.base_version
             or fingerprint_files(files) != plan.files_fingerprint
-        )
-        if stale:
-            if plan.status == "planned":
-                self._set_plan(plan_id, "stale")
+        ):
+            self._set_plan(plan_id, "stale", only_from="planned")
             raise StalePlanError("the preview changed: recompute it")
-        self._set_plan(plan_id, "applying")
+        with self._engine.begin() as conn:  # the claim
+            claimed = conn.execute(
+                sa.update(plan_table)
+                .where(
+                    plan_table.c.plan_id == plan_id,
+                    plan_table.c.status == "planned",
+                    plan_table.c.base_version == if_match,
+                )
+                .values(status="applying", updated_at=self._clock.now())
+            ).rowcount
+        if claimed != 1:  # another application got there first
+            raise StalePlanError("the plan is already being applied or was applied")
         for row in op_rows:
+            if self._current_version() != plan.base_version:
+                self._set_plan(plan_id, "stale", only_from="applying")
+                raise StalePlanError("the data changed while the plan was being applied")
             op = PlanOp(row.op, row.src_path, row.dst_path, row.payload)
             try:
                 run(op)
             except BaseException:
                 self._set_op(row.id, "failed")
-                self._set_plan(plan_id, "failed")
+                self._set_plan(plan_id, "failed", only_from="applying")
                 raise
             self._set_op(row.id, "done")
-        self._set_plan(plan_id, "done")
+        self._set_plan(plan_id, "done", only_from="applying")
 
-    def _set_plan(self, plan_id: str, status: str) -> None:
+    def _set_plan(self, plan_id: str, status: str, *, only_from: str) -> None:
+        table = coherence.export_plan
         with self._engine.begin() as conn:
             conn.execute(
-                sa.update(coherence.export_plan)
-                .where(coherence.export_plan.c.plan_id == plan_id)
+                sa.update(table)
+                .where(table.c.plan_id == plan_id, table.c.status == only_from)
                 .values(status=status, updated_at=self._clock.now())
             )
 

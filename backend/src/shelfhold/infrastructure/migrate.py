@@ -23,6 +23,7 @@ from shelfhold.infrastructure.db import (
     create_db_engine,
     foreign_keys_disabled,
 )
+from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
 from shelfhold.infrastructure.volumes import ensure_volumes
 
 STATE_FILE_NAME = "migration-state.json"
@@ -163,8 +164,10 @@ def open_intent_count(database_path: Path) -> int:
             row = db.execute(
                 "SELECT count(*) FROM fs_intent WHERE state IN ('pending', 'applying')"
             ).fetchone()
-    except sqlite3.OperationalError:  # no table, or an empty file
-        return 0
+    except sqlite3.OperationalError as error:
+        if "no such table" in str(error):  # a database older than 0002
+            return 0
+        raise  # locked, unreadable...: never "no intent" by default (fail closed)
     return int(row[0])
 
 
@@ -261,12 +264,22 @@ def _steps_after(script: ScriptDirectory, current: str | None) -> list[str]:
 def migrate(settings: Settings, *, script_location: Path | None = None) -> MigrationResult:
     ensure_volumes(settings)
     state = MigrationStateFile(settings.data_dir)
-    with state.exclusive():
-        try:
-            return _migrate_locked(settings, script_location, state)
-        finally:
-            with contextlib.suppress(OSError):
-                state.clear()
+    instance = InstanceLock(settings.data_dir)  # first `.lock`, then `migrate.lock`, always
+    try:
+        instance.acquire()  # no migration under a live instance (ENF-OPS-015)
+    except InstanceLockHeldError:
+        if state.read() is not None:
+            raise MigrationInProgressError from None
+        raise
+    try:
+        with state.exclusive():
+            try:
+                return _migrate_locked(settings, script_location, state)
+            finally:
+                with contextlib.suppress(OSError):
+                    state.clear()
+    finally:
+        instance.release()
 
 
 def _migrate_locked(

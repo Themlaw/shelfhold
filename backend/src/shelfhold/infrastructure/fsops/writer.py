@@ -112,7 +112,7 @@ def write_atomic(
 def put_file(root: ConfinedRoot, staged: str, rel: str, *, replace: bool) -> None:
     """Rename into place (replacing), or link without clobbering (`FileExistsError`)."""
     if replace:
-        root.rename(staged, rel, replace=True)
+        root.rename(staged, rel, replace=True, durable=False)  # the caller flushes the folder
     else:
         root.link(staged, rel)
 

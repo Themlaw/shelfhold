@@ -317,24 +317,71 @@ def _opens_for_writing(node: ast.Call) -> bool:
     )
 
 
-FSOPS_RECEIVERS = {"fsops", "_fsops", "disk", "_disk", "session", "_sessions"}
+# Modules that may call the sanctioned writer, and only through a `self._x` attribute declared with
+# one of these types (a receiver *name* proves nothing: `disk = Path(x)` is a name too).
+FSOPS_CALLERS = (
+    "shelfhold/export/application/intents.py",
+    "shelfhold/infrastructure/instance/lease.py",
+)
+FSOPS_TYPES = {"Fsops", "DiskPort", "WriteSession"}
 
 
-def _goes_through_fsops(func: ast.Attribute) -> bool:
-    """`fsops.rename(...)`, `self._disk.unlink(...)`: the sanctioned writer, not a raw path call."""
+def _annotation_name(node: ast.expr | None) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def _typed_attributes(tree: ast.AST) -> set[str]:
+    """`self._x` attributes of a class whose declared type is a sanctioned writer: annotated
+    (`self._x: Fsops = ...`) or assigned from an `__init__` parameter annotated so."""
+    found: set[str] = set()
+    for cls in ast.walk(tree):
+        if not isinstance(cls, ast.ClassDef):
+            continue
+        for init in (
+            n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"
+        ):
+            params = {a.arg: _annotation_name(a.annotation) for a in init.args.args}
+            for node in ast.walk(init):
+                target: ast.expr | None = None
+                kind = ""
+                if isinstance(node, ast.AnnAssign):
+                    target, kind = node.target, _annotation_name(node.annotation)
+                elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Name):
+                    target, kind = node.targets[0], params.get(node.value.id, "")
+                if (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "self"
+                    and kind in FSOPS_TYPES
+                ):
+                    found.add(target.attr)
+    return found
+
+
+def _goes_through_fsops(func: ast.Attribute, typed: set[str]) -> bool:
     receiver = func.value
-    name = receiver.id if isinstance(receiver, ast.Name) else getattr(receiver, "attr", "")
-    return name in FSOPS_RECEIVERS
+    return (
+        isinstance(receiver, ast.Attribute)
+        and isinstance(receiver.value, ast.Name)
+        and receiver.value.id == "self"
+        and receiver.attr in typed
+    )
 
 
-def path_write_offences(source: str) -> list[tuple[int, str]]:
+def path_write_offences(source: str, module: str = "") -> list[tuple[int, str]]:
     found: list[tuple[int, str]] = []
-    for node in ast.walk(ast.parse(source)):
+    tree = ast.parse(source)
+    typed = _typed_attributes(tree) if module in FSOPS_CALLERS else set()
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
         if isinstance(func, ast.Attribute):
-            if _goes_through_fsops(func):
+            if _goes_through_fsops(func, typed):
                 continue
             if func.attr in PATH_WRITE_METHODS:
                 found.append((node.lineno, func.attr))
@@ -356,7 +403,7 @@ def test_only_fsops_and_the_data_writers_write_files() -> None:
             continue
         offences += [
             f"{rel}:{line}:{what}"
-            for line, what in path_write_offences(path.read_text(encoding="utf-8"))
+            for line, what in path_write_offences(path.read_text(encoding="utf-8"), rel)
         ]
     assert offences == []
 

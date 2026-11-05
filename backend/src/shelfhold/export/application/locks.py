@@ -6,6 +6,7 @@ idempotence. A lock carries a lease: a killed job's rows run out, and `release_a
 boot once the instance lock is ours.
 """
 
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -21,13 +22,28 @@ from shelfhold.infrastructure.schema import coherence
 DEFAULT_LEASE = timedelta(minutes=10)
 POLL_SECONDS = 0.02
 
-__all__ = ["DEFAULT_LEASE", "LockBusyError", "ResourceLocks", "path_resource", "work_resource"]
+__all__ = [
+    "DEFAULT_LEASE",
+    "HeldLocks",
+    "LockBusyError",
+    "LockLostError",
+    "ResourceLocks",
+    "path_resource",
+    "work_resource",
+]
 
 
 class LockBusyError(Exception):
     def __init__(self, resource: str) -> None:
         super().__init__(f"{resource} is held by another job")
         self.resource = resource
+
+
+class LockLostError(Exception):
+    """The job's lock could not be renewed (it ran out and may belong to another job): the job
+    stops before its next write."""
+
+    code = "lock.lost"
 
 
 def work_resource(work_id: str) -> str:
@@ -38,6 +54,28 @@ def path_resource(series: str) -> str:
     return f"path:{series}"
 
 
+class HeldLocks:
+    """The locks of one job: renewed by a heartbeat, `ensure()` before each write."""
+
+    def __init__(self, owner: "ResourceLocks", job_id: str, resources: list[str]) -> None:
+        self._owner = owner
+        self.job_id = job_id
+        self.resources = resources
+        self._lost = threading.Event()
+
+    def renew(self) -> None:
+        """Extend `lease_until`, only for rows still held by this job; fewer rows = lost."""
+        if self._owner._renew(self.job_id, self.resources) != len(self.resources):
+            self._lost.set()
+            raise LockLostError(f"{self.resources}: no longer held by job {self.job_id}")
+
+    def ensure(self) -> None:
+        """Raise `LockLostError` if the locks were lost (checked against the table, not memory)."""
+        if self._lost.is_set() or not self._owner._still_held(self.job_id, self.resources):
+            self._lost.set()
+            raise LockLostError(f"{self.resources}: no longer held by job {self.job_id}")
+
+
 class ResourceLocks:
     def __init__(self, engine: Engine, *, clock: Clock, lease: timedelta = DEFAULT_LEASE) -> None:
         self._engine = engine
@@ -45,7 +83,17 @@ class ResourceLocks:
         self._lease = lease
 
     @contextmanager
-    def hold(self, job_id: str, *, work: str, series: str, timeout: float = 0.0) -> Iterator[None]:
+    def hold(
+        self,
+        job_id: str,
+        *,
+        work: str,
+        series: str,
+        timeout: float = 0.0,
+        heartbeat: float | None = None,
+    ) -> Iterator[HeldLocks]:
+        """Both locks or none. A heartbeat thread renews them every `heartbeat` seconds (a third
+        of the lease by default); a job that cannot renew finds out at `ensure()`."""
         resources = [work_resource(work), path_resource(series)]  # the fixed order
         deadline = time.monotonic() + timeout
         while True:
@@ -56,9 +104,24 @@ class ResourceLocks:
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(POLL_SECONDS)
+        held = HeldLocks(self, job_id, resources)
+        stop = threading.Event()
+        interval = heartbeat if heartbeat is not None else self._lease.total_seconds() / 3
+
+        def beat() -> None:
+            while not stop.wait(interval):
+                try:
+                    held.renew()
+                except LockLostError:
+                    return
+
+        thread = threading.Thread(target=beat, name=f"lock-heartbeat-{job_id}", daemon=True)
+        thread.start()
         try:
-            yield
+            yield held
         finally:
+            stop.set()
+            thread.join()
             self._release(job_id, resources)
 
     def _try_acquire(self, job_id: str, resources: list[str]) -> None:
@@ -83,6 +146,26 @@ class ResourceLocks:
                 )
         except IntegrityError:
             raise LockBusyError(resources[0]) from None
+
+    def _renew(self, job_id: str, resources: list[str]) -> int:
+        table = coherence.resource_lock
+        with self._engine.begin() as conn:
+            return conn.execute(
+                sa.update(table)
+                .where(table.c.resource.in_(resources), table.c.holder_job_id == job_id)
+                .values(lease_until=self._clock.now() + self._lease)
+            ).rowcount
+
+    def _still_held(self, job_id: str, resources: list[str]) -> bool:
+        table = coherence.resource_lock
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(table.c.resource, table.c.lease_until).where(
+                    table.c.resource.in_(resources), table.c.holder_job_id == job_id
+                )
+            ).all()
+        now = self._clock.now()
+        return len(rows) == len(resources) and all(r.lease_until > now for r in rows)
 
     def _release(self, job_id: str, resources: list[str]) -> None:
         table = coherence.resource_lock

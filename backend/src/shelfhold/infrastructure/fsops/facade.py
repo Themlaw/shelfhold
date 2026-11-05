@@ -36,6 +36,7 @@ from shelfhold.export.domain.physical_roots import (
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
 from shelfhold.infrastructure.fsops.errors import (
     CrossRootError,
+    LeaseRaceError,
     OutsidePathMapError,
     PathEscapeError,
     ReadOnlyRootError,
@@ -81,6 +82,28 @@ def _read_lease(root: ConfinedRoot) -> bytes | None:
         os.close(fd)
 
 
+def _claim_lease(root: ConfinedRoot, seen: bytes) -> None:
+    """Move the lease aside (atomic: one claimer wins) and check it is the one that was read."""
+    aside = f"{LEASE_FILE}.{uuid.uuid4().hex}"
+    try:
+        root.rename(LEASE_FILE, aside, replace=False, durable=False)
+    except FileNotFoundError:
+        raise LeaseRaceError("the lease vanished meanwhile") from None
+    try:
+        fd = root.open_file(aside, os.O_RDONLY)
+        try:
+            moved = os.read(fd, 4096)
+        finally:
+            os.close(fd)
+        if moved != seen:  # we moved a lease that is not the one we judged: put it back
+            with contextlib.suppress(FileExistsError):
+                root.link(aside, LEASE_FILE)
+            raise LeaseRaceError("the lease changed meanwhile")
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            root.unlink(aside)
+
+
 @dataclass(frozen=True)
 class _Located:
     root_path: str
@@ -102,6 +125,13 @@ class Fsops:
         self._read_only = {e.local for e in path_map.entries if e.mode is PathMode.ADOPT_RO}
         self._umask = umask
         self._strategy = strategy
+        self._lease_verifier: Callable[[str, bytes | None], None] | None = None
+
+    def enforce_lease(self, verify: Callable[[str, bytes | None], None] | None) -> None:
+        """From now on every write passes `verify(root_path, raw_lease)`, which raises when the
+        root's lease is not this instance's valid one (ENF-OPS-015). Set once at start-up, so no
+        write path (journal, replay, sessions) can skip the check."""
+        self._lease_verifier = verify
 
     @classmethod
     def open(
@@ -166,14 +196,17 @@ class Fsops:
             return SentinelVerdict(RootState.MISMATCH)
 
     @contextmanager
-    def _gated(self, located: _Located) -> Iterator[ConfinedRoot]:
-        """The root opened for a write: refused when read-only or when its sentinel says so."""
+    def _gated(self, located: _Located, *, lease: bool = True) -> Iterator[ConfinedRoot]:
+        """The root opened for a write: refused when read-only, when its sentinel says so or when
+        the lease is not ours (once `enforce_lease` is on)."""
         if located.read_only:
             raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
         with self._root(located.root_path) as root:
             verdict = self._verdict(root)
             if verdict.blocks_writes:
                 raise RootBlockedError(located.root_path, verdict.state)
+            if lease and self._lease_verifier is not None:
+                self._lease_verifier(located.root_path, _read_lease(root))
             yield root
 
     # -- state ------------------------------------------------------------------------------
@@ -306,15 +339,18 @@ class Fsops:
         if key not in self._expected:
             raise OutsidePathMapError(f"{root_path!r} is not a writable physical root")
         located = _Located(key, ".", False)
-        with self._gated(located) as root:
-            outcome = decide(_read_lease(root))
+        with self._gated(located, lease=False) as root:
+            current = _read_lease(root)
+            outcome = decide(current)
             if outcome is None:
                 return
-            if outcome == "remove":
-                with contextlib.suppress(FileNotFoundError):
-                    root.unlink(LEASE_FILE)
-                return
-            write_atomic(root, LEASE_FILE, outcome, parents=True, replace=True)
+            if current is not None:
+                _claim_lease(root, current)  # compare-and-swap: only if nobody changed it since
+            if outcome != "remove":
+                try:  # exclusive creation: a racing taker makes this fail, not overwrite
+                    write_atomic(root, LEASE_FILE, outcome, parents=True, replace=False)
+                except FileExistsError:
+                    raise LeaseRaceError(f"{root_path}: the lease was taken meanwhile") from None
 
     # -- writes -----------------------------------------------------------------------------
 

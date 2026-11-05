@@ -234,3 +234,34 @@ def test_replay_only_on_an_exactly_known_disk_state(ienv: IntentEnv, case: str) 
     assert report.drifted == [intent_id]
     assert states(ienv)[intent_id] == "applying"
     assert {p: p.read_bytes() for p in (src, dst) if p.exists()} == before
+
+
+@pytest.mark.req("EF-EXP-041")
+def test_in_place_rewrite_with_the_same_identity_is_not_replayed(ienv: IntentEnv) -> None:
+    """Identity (inode, size, mtime) alone is forgeable: the sha256 has to match (02 6.7)."""
+    import os
+
+    src = make_file(ienv, "1.cbz", b"ORIGINAL" * 10)
+    dst = src.with_name("2.cbz")
+    journal = IntentJournal(ienv.engine, ienv.fs.fsops, clock=ienv.clock)
+    observed = ienv.fs.fsops.observe(str(src))
+    assert observed is not None
+    intent_id = journal.record(
+        op="rename", src=str(src), dst=str(dst), expected_file_id=observed[1],
+        expected_sha256=sha(b"ORIGINAL" * 10),
+    )  # fmt: skip
+    journal.mark_applying(intent_id)
+    stat = src.stat()
+    with src.open("r+b") as handle:  # another writer, in place
+        handle.write(b"FOREIGN!" * 10)
+    os.utime(src, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    report = journal.resolve_open()
+    assert report.drifted == [intent_id] and report.replayed == []
+    assert src.read_bytes().startswith(b"FOREIGN!") and not dst.exists()
+
+    # An intent recorded without any hash is never replayed either.
+    other = make_file(ienv, "3.cbz", b"x")
+    bare = journal.record(op="rename", src=str(other), dst=str(other.with_name("4.cbz")))
+    journal.mark_applying(bare)
+    assert bare in journal.resolve_open().drifted
+    assert other.exists()
