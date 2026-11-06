@@ -205,7 +205,7 @@ def _discovery(connection: Connection) -> list[WaitingItem]:
     items: list[WaitingItem] = []
     seen: set[tuple[str, str]] = set()
     for row in rows:
-        if (row.kind, row.subject) in seen:  # one adopted series, several look-alikes: one line
+        if (row.kind, row.subject) in seen:  # one adopted series, several near matches: one line
             continue
         seen.add((row.kind, row.subject))
         if row.kind == "pending_pairing":
