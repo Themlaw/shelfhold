@@ -82,7 +82,11 @@ def requestable(units: Sequence[KnownUnit], mark: Watermark | None, mode: Mode) 
     below it (everything, when there is no watermark yet).
     """
     numbered = [u for u in units if u.number is not None]
-    extras = [u for u in units if u.number is None and mode == "follow" and u.new_extra]
+    extras = [
+        u
+        for u in units
+        if u.number is None and mode == "follow" and u.new_extra and mark is not None
+    ]
     held = [_key(u) for u in numbered if u.present]
     first_held = min(held) if held else None
 

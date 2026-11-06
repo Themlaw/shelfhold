@@ -192,6 +192,10 @@ def _pair_confirm(ops: OpsServices, _by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _pair_decline(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.library.pair_decline(_text(p, "export_series_id"))
+
+
 def _pair_auto(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.library.pair_auto(
         _dest(p), min_score=_number(p, "min_score", 0.9),
@@ -262,6 +266,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.pair_propose": (_pair_propose, None),
     "ops.pair_confirm": (_pair_confirm, None),
     "ops.pair_auto": (_pair_auto, None),
+    "ops.pair_decline": (_pair_decline, None),
     "ops.migration_report": (_migration_report, None),
     "ops.repatriate_plan": (_repatriate_plan, None),
     "ops.repatriate_apply": (_repatriate_apply, None),

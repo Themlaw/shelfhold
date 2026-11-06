@@ -45,6 +45,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     pair.add_argument("--remote-id", default=None, help=t("adopt.pair_remote_id_help"))
     pair.add_argument("--follow-from", default=None, help=t("adopt.pair_follow_from_help"))
     pair.add_argument("--confirm-backfill", type=int, default=None)
+    pair.add_argument("--decline", action="store_true", help=t("adopt.pair_decline_help"))
     pair.set_defaults(handler=adopt_ops.run_pair, configure_logging=False)
     follow = steps.add_parser("set-follow-from", help=t("adopt.set_follow_from_help"),
                               allow_abbrev=False)  # fmt: skip

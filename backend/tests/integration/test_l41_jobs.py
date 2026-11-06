@@ -205,3 +205,31 @@ def test_exceptions_of_the_services_become_catalogued_refusals() -> None:
         assert refusal is not None and refusal.code == code
     assert refusal_of(PurgeCollateralError.__new__(PurgeCollateralError)) is not None
     assert refusal_of(ValueError("a real failure")) is None
+
+
+@pytest.mark.req("EF-SRC-009", "ENF-SEC-002")
+def test_the_archive_download_carries_the_service_credential(
+    settings: Settings, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The route that streams the archive is authenticated like the others (L42 E2E): without the
+    credential, Suwayomi answers 401 and no chapter is ever received."""
+    import shelfhold.runtime_jobs as jobs
+
+    seen: dict[str, object] = {}
+    real = jobs.bounded_receiver
+
+    def spy(*args: object, **kwargs: object) -> object:
+        seen.update(kwargs)
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(jobs, "bounded_receiver", spy)
+
+    class Pools:
+        slots = None
+
+        def submit(self, kind: str, **_: object) -> None: ...
+
+    with instance(settings, tmp_path) as inst:
+        inst.configure(suwayomi=True)
+        follow_handler(inst.comp, Pools())(context("follow.cycle"))  # type: ignore[arg-type]
+    assert callable(seen.get("authorize"))

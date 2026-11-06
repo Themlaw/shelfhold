@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Protocol
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -42,6 +43,8 @@ from shelfhold.sdk.refs import FileAsset, SeriesRef, UnitInfo, UnitRef
 from shelfhold.sdk.source import RateLimited, SourceChanged, TemporarilyUnavailable
 
 MAX_ATTEMPTS = 8
+log = structlog.get_logger(__name__)
+
 STALL_AFTER = timedelta(hours=6)  # EF-SRC-026 b: a chapter still not downloaded after N hours
 MAX_REQUEUE = 20  # per cycle: the cap of source.downloads_dropped
 MAX_WAIT_S = 120.0  # the most one cycle sleeps for the pace of the sources
@@ -343,6 +346,12 @@ class DownloadTickets:
 
     # -- failures ----------------------------------------------------------------------------
     def _failed(self, request: OpenRequest, error: Exception, report: TicketReport) -> None:
+        log.warning(
+            "follow.ticket_failed",
+            request_id=request.id,
+            failure_class=classify(error),
+            error=type(error).__name__,
+        )
         if disposition_of(classify(error)) is Disposition.COUNT:
             now = self._clock.now()
             with self._engine.begin() as connection:

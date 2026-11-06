@@ -91,6 +91,33 @@ class Journey:
     def publish_upstream(self) -> None:
         self.fake("suwayomi", SUWAYOMI_URL + "/_fake/publish", post=True)
 
+    def units_known(self) -> int:
+        """Chapters the follow has listed so far (read-only look at the database, for waiting)."""
+        done = self.compose(
+            "exec", "-T", "shelfhold", "python", "-c",
+            "import sqlite3; print(sqlite3.connect('file:/data/shelfhold.db?mode=ro', uri=True)"
+            ".execute('select count(*) from unit').fetchone()[0])",
+            check=False,
+        )  # fmt: skip
+        return int(done.stdout.strip() or 0) if done.returncode == 0 else 0
+
+    def discover_series(self) -> None:
+        """The first follow cycle: the series of the Suwayomi library get their Work and Edition
+        and the chapters visible now become the baseline (nothing is asked). Returns once the
+        chapters are listed, so what is published afterwards is new."""
+        assert self.shelfhold("jobs", "run", "follow.cycle").code == 0
+        assert wait_for(lambda: self.units_known() > 0, 120), "la découverte n'a rien listé"
+
+    def follow_until(self, predicate: Callable[[], bool], seconds: float = 240.0) -> bool:
+        """Ask for follow cycles until `predicate` holds. A download takes two looks of the
+        service (asked in one cycle, collected in the next), as with Suwayomi's own queue."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            assert self.shelfhold("jobs", "run", "follow.cycle").code == 0
+            if wait_for(predicate, 30):
+                return True
+        return False
+
     def library_files(self) -> list[str]:
         done = self.compose(
             "exec", "-T", "shelfhold", "find", "/library", "-type", "f", check=False

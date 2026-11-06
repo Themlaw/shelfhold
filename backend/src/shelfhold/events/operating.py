@@ -32,6 +32,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "notify.failed",
         "reconcile.drift",
         "secret.undecryptable",
+        "series.awaiting_shelf",
         "series.gap",
         "series.stale",
         "series.removed_upstream",

@@ -25,8 +25,10 @@ from shelfhold.acquisition.application.backfill import (
     estimate_with,
     within_ceiling,
 )
+from shelfhold.acquisition.application.discovery import SeriesDiscovery
 from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
 from shelfhold.acquisition.application.planning import (
+    NOTHING_YET,
     highest_numbered,
     pending,
     set_watermark,
@@ -112,6 +114,10 @@ class FollowReport:
     removed: int = 0
     tombstoned: int = 0  # releases and series left alone because they were purged (EF-BIB-053)
     reactivated: int = 0
+    created: int = 0  # series of the library given their Work, Edition and binding (EF-SRC-009)
+    skipped_pending_pairing: int = 0  # left to `adopt pair`: an adopted twin waits for it
+    unknown_language: int = 0  # filed as `x-unknown`: `edition set-lang` gives the language
+    awaiting_shelf: int = 0  # no adult shelf to file them on
     stale: int = 0
     paused: str | None = None  # the waiting state (or failure class) the service is paused in
     unavailable: bool = False  # the service has not answered for OUTAGE_CYCLES cycles in a row
@@ -186,6 +192,8 @@ class FollowCycle:
         self._series_taken: dict[str, int] = {}
         self._tombstones = tombstones  # EF-BIB-053: required, a cycle never runs without it
         self._told: set[str] = set()  # bindings already announced as tombstoned upstream
+        self._discovery = SeriesDiscovery(engine, clock, self._plugin_id, tombstones, self._emit)
+        self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
 
     # -- the cycle ---------------------------------------------------------------------------
     async def run(self) -> FollowReport:
@@ -236,10 +244,9 @@ class FollowCycle:
             health = await from_service(self._service.semantic_health(self._fetcher))
             if not health.ok:
                 raise _probe_error(health.detail)
-        in_library = {
-            (ref.source_key, ref.remote_id)
-            for ref in await from_service(self._service.followed_series(self._fetcher))
-        }
+        library = await from_service(self._service.followed_series(self._fetcher))
+        await self._discover_series(library, report)
+        in_library = {(ref.source_key, ref.remote_id) for ref in library}
         present = self._reconcile_library(in_library, report)
         budget = RequestBudget(*self._caps)
         self._series_taken = {}
@@ -264,6 +271,21 @@ class FollowCycle:
                     connection, "source.downloads_dropped", {"count": report.tickets.dropped}
                 )
         report.stale = len(self._check_freshness())
+
+    async def _discover_series(self, library: list[SeriesRef], report: FollowReport) -> None:
+        """EF-SRC-009: a series of the library without a binding gets its Work, Edition and
+        binding before anything else is read; its watermark is its highest visible chapter."""
+        found = await self._discovery.run(
+            library,
+            lambda ref: from_service(self._service.list_units(self._fetcher, ref)),
+            lambda: from_service(self._service.sub_sources(self._fetcher)),
+        )
+        self._listed = found.units
+        report.created += found.created
+        report.tombstoned += found.tombstoned
+        report.skipped_pending_pairing += found.skipped_pending_pairing
+        report.unknown_language += found.created_unknown_language
+        report.awaiting_shelf += found.awaiting_shelf
 
     def _reconcile_library(
         self, in_library: set[tuple[str, str]], report: FollowReport
@@ -430,9 +452,14 @@ class FollowCycle:
         self, binding: _Binding, report: FollowReport, budget: RequestBudget
     ) -> None:
         ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
-        units = await from_service(self._service.list_units(self._fetcher, ref))
+        units = self._listed.pop(binding.id, None)  # a series just discovered: read once
+        fresh = units is not None
+        if units is None:
+            units = await from_service(self._service.list_units(self._fetcher, ref))
         with self._engine.connect() as connection:
             mark = watermark_of(connection, binding.edition_id)
+        if fresh:
+            mark = None  # just discovered: this look is its baseline, nothing is asked (extras too)
         # Without a watermark the first look only learns what is there (it becomes the watermark):
         # a series followed from now on is asked for what is new, never for its whole archive.
         look = _Look(binding, mark, self._clock.now(), _contested(units))
@@ -457,7 +484,10 @@ class FollowCycle:
                 self._prefs.elect(connection, unit_id, look.now)
         report.requested += len(look.opened)
         with self._engine.begin() as connection:
-            if mark is None and (top := highest_numbered(connection, binding.edition_id)):
+            top = highest_numbered(connection, binding.edition_id) if mark is None else None
+            if top == NOTHING_YET and fresh:
+                top = None  # a discovered series with nothing numbered: the next look takes it
+            if top is not None:
                 set_watermark(connection, binding.edition_id, top, baseline_at=look.now)
             table = acquisition.source_binding
             connection.execute(

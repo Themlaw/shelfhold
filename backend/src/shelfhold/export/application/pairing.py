@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -48,6 +48,7 @@ __all__ = [
     "Proposal",
     "UpstreamAlreadyFollowedError",
     "WatermarkConfirmationRequired",
+    "pending_pairing",
 ]
 
 State = Literal["ready", "ambiguous", "no_match", "coverage_unknown", "already_paired"]
@@ -526,6 +527,58 @@ class Pairing:
         if refused:
             return BatchResult((), tuple(refused))
         return BatchResult(tuple(self._bind_all(plans)), ())
+
+
+def pending_pairing(
+    connection: Connection,
+    library: Sequence[SeriesRef],
+    *,
+    declined: Collection[str] = (),
+    min_score: float = PROPOSE_FROM,
+) -> dict[tuple[str, str], str]:
+    """The series of the library that an adopted, still unpaired series would be proposed as its
+    twin (a candidate scoring `min_score` or more, the threshold of `adopt pair` proposals): the
+    follow cycle leaves them to the pairing, which binds them to the Edition that exists instead
+    of a second one (EF-EXP-038). `ref -> export series id`; `declined` lists the adopted series
+    whose admin said they have no twin."""
+    if not library:
+        return {}
+    paired = Pairing._paired_editions(connection)
+    destinations = connection.execute(sa.select(export.shelf_destination.c.id)).scalars()
+    items = [
+        item
+        for destination_id in destinations
+        for item in Pairing._adopted(connection, destination_id)
+        if item.edition_id not in paired and item.series_id not in declined
+    ]
+    by_name: dict[str, str] = {}
+    for item in items:
+        for name in item.names:
+            by_name.setdefault(name, item.series_id)
+    waiting: dict[tuple[str, str], str] = {}
+    matcher = SequenceMatcher()
+    for ref in library:
+        other = normalize_series_name(ref.title)
+        if not other:
+            continue
+        if other in by_name:  # the same normalized title: no fuzzy comparison needed
+            waiting[(ref.source_key, ref.remote_id)] = by_name[other]
+            continue
+        matcher.set_seq2(other)  # the cached side: one library title against every adopted name
+        for item in items:
+            for name in item.names:
+                matcher.set_seq1(name)
+                if (
+                    matcher.real_quick_ratio() >= min_score
+                    and matcher.quick_ratio() >= min_score
+                    and round(matcher.ratio(), 4) >= min_score
+                ):
+                    waiting[(ref.source_key, ref.remote_id)] = item.series_id
+                    break
+            else:
+                continue
+            break
+    return waiting
 
 
 def _is_number(raw: str) -> bool:

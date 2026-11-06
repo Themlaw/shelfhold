@@ -479,6 +479,10 @@ action = "Restaurez le trousseau de clés depuis son export (« shelfhold secret
 title = "Des séries ne sont plus mises à jour."
 action = "Vérifiez l'état de la source, puis relancez le suivi."
 
+[errors."series.awaiting_shelf"]
+title = "Des séries de la bibliothèque Suwayomi attendent une étagère adulte pour être rangées."
+action = "Créez l'étagère : shelfhold shelf create <nom> --max-age 18+ --target <cible> --subpath <dossier>."
+
 [errors."series.removed_upstream"]
 title = "La série a été retirée de la source."
 action = "Décidez de la conserver ou de la retirer de la bibliothèque."
@@ -749,6 +753,7 @@ pair_help = "Apparie une série adoptée à une série suivie par Suwayomi (sans
 pair_series_help = "Identifiant de la série exportée à apparier."
 pair_source_key_help = "Clé de source de la série Suwayomi choisie."
 pair_remote_id_help = "Identifiant distant de la série Suwayomi choisie."
+pair_decline_help = "Dit que cette série adoptée n'a pas de jumelle dans Suwayomi : la série qui lui ressemble sera rangée à part au prochain cycle."
 pair_follow_from_help = "Chapitre à partir duquel suivre (par défaut, après le dernier chapitre adopté)."
 set_follow_from_help = "Donne à la main le chapitre à partir duquel suivre une série dont la couverture est inconnue."
 
@@ -849,6 +854,7 @@ line = "[{state}] {id}  {name}  ->  {where}"
 command = "    commande : {command}"
 needs_source = "Donnez la série Suwayomi choisie : --source-key et --remote-id."
 coverage_unknown = "Couverture inconnue : aucun chapitre adopté ne donne le point de départ. Commande : {command}"
+declined = "Série {id} sans jumelle : la découverte rangera la série Suwayomi qui lui ressemble au prochain cycle."
 paired = "Série {id} appariée ; suivi à partir du chapitre {follow_from}."
 fingerprint = "Empreinte du lot : {fingerprint}"
 batch_header = "{ready} appariement(s) sans ambiguïté, {held} à décider un par un."
