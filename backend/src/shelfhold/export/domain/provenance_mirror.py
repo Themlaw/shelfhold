@@ -53,6 +53,10 @@ MAX_LINES: Final = 20_000
 MAX_LINE_BYTES: Final = 256 * 1024
 MAX_DEPTH: Final = 12
 UNRESOLVED: Final = "unresolved"
+KNOWN_HEADER_FIELDS: Final = frozenset({
+    "kind", "schema_version", "shelf_destination", "export_series", "edition", "binding",
+    "follow_from",
+})  # fmt: skip
 # Every field of a line this build writes or reads. A line the database owns takes these from the
 # database alone: a disk line (untrusted) never adds an age, a hash or a lineage to it.
 KNOWN_ENTRY_FIELDS: Final = frozenset({
@@ -344,7 +348,14 @@ def merge_with_database(
         if item in owned_items:
             continue  # superseded by the database
         merged.append({**old, "state": UNRESOLVED})
-    head = {**on_disk.header, **{k: v for k, v in (header or {}).items() if k != "schema_version"}}
+    if header is None:
+        head = dict(on_disk.header)
+    else:  # the database alone says what the header holds; the disk adds only unknown fields
+        extras = {k: v for k, v in on_disk.header.items() if k not in KNOWN_HEADER_FIELDS}
+        head = dict(header)
+        if "schema_version" in on_disk.header:  # the version the file was written under
+            head["schema_version"] = on_disk.header["schema_version"]
+        head.update(extras)
     return MirrorDocument(on_disk.schema_version, head, merged, list(on_disk.rejected))
 
 

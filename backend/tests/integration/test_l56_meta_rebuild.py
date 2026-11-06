@@ -126,8 +126,12 @@ def test_meta_rebuild_takes_no_age_or_lineage_from_a_line_of_the_disk(
             "derived_by": "x@1",
             "note": "kept: unknown fields travel",
         }
-        path.write_bytes(raw(good[0], forged))
+        head = {**good[0], "follow_from": {"segment": "main", "number": "99"}, "x_future": {"a": 1}}
+        path.write_bytes(raw(head, forged))
         assert b.cli("meta", "rebuild") == 0
+        header = _lines(path)[0]
+        assert "follow_from" not in header  # the database alone says what the header holds
+        assert header["x_future"] == {"a": 1}  # an unknown field of a later minor travels
         line = _lines(path)[1]
         assert "age_classified" not in line and "derived_hash" not in line
         assert "derived_by" not in line
