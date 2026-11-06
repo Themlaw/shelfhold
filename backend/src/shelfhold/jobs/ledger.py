@@ -286,16 +286,6 @@ class JobLedger:
             )
         return [self._pending(r) for r in rows]
 
-    def active_dedupe_keys(self) -> list[str]:
-        with self._engine.connect() as conn:
-            return list(
-                conn.execute(
-                    sa.select(job_view.c.dedupe_key).where(
-                        job_view.c.status.in_(ACTIVE), job_view.c.dedupe_key.is_not(None)
-                    )
-                ).scalars()
-            )
-
     def get(self, job_id: str) -> PendingJob:
         with self._engine.connect() as conn:
             row = conn.execute(sa.select(job_view).where(job_view.c.id == job_id)).one()

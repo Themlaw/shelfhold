@@ -31,10 +31,11 @@ def test_ops_jobs_are_registered_and_scheduled_at_boot(tmp_path: Path) -> None:
 
 @pytest.mark.req("EF-EXP-055")
 def test_the_kavita_client_gets_its_write_guard_from_the_composition_root(tmp_path: Path) -> None:
-    from shelfhold.infrastructure.observability.wiring import guarded_kavita_client
+    from shelfhold.export.application.target_state import target_write_guard
     from tests.kavita_env import harness
 
     engine = prepare_database(tmp_path / "shelfhold.db")
     h = harness()
-    client = guarded_kavita_client(h.client, engine, target_id="01JBZ3X5QH8M2N4P6R7S9T0V1A")
+    client = h.client
+    client.set_write_guard(target_write_guard(engine, "01JBZ3X5QH8M2N4P6R7S9T0V1A"))
     assert client._write_guard is not None

@@ -28,20 +28,6 @@ class SettingsStore:
         finally:
             engine.dispose()
 
-    def set(self, key: str, value: str) -> None:
-        engine = create_db_engine(self._path)
-        try:
-            with engine.begin() as connection:
-                connection.execute(
-                    text(
-                        "INSERT INTO app_setting (key, value) VALUES (:key, :value) "
-                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-                    ),
-                    {"key": key, "value": value},
-                )
-        finally:
-            engine.dispose()
-
 
 def load_db_settings(data_dir: Path) -> Mapping[str, str]:
     return SettingsStore(data_dir / "shelfhold.db").all()

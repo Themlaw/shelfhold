@@ -21,6 +21,7 @@ from shelfhold.interfaces import cli
 from shelfhold.interfaces.cli import migrate as migrate_command
 from shelfhold.interfaces.cli import serve as serve_command
 from shelfhold.main import app_from_env
+from tests.settings_env import put_setting
 
 
 @pytest.fixture
@@ -105,8 +106,8 @@ def test_db_settings_are_empty_before_the_first_migration(settings: Settings) ->
 def test_settings_store_updates_an_existing_key(settings: Settings) -> None:
     migrate(settings)
     store = SettingsStore(settings.database_path)
-    store.set("log_level", "DEBUG")
-    store.set("log_level", "ERROR")
+    put_setting(settings.database_path, "log_level", "DEBUG")
+    put_setting(settings.database_path, "log_level", "ERROR")
     assert store.all() == {"log_level": "ERROR"}
 
 
