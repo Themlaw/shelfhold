@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AboutData, AboutErrors, AboutResponses, ApplyData, ApplyErrors, ApplyResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, HealthzData, HealthzErrors, HealthzResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, PreviewData, PreviewErrors, PreviewResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, SessionData, SessionErrors, SessionResponses, StatsData, StatsErrors, StatsResponses } from './types.gen';
+import type { AboutData, AboutErrors, AboutResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobStatusData, JobStatusErrors, JobStatusResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, PreviewData, PreviewErrors, PreviewResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, SessionData, SessionErrors, SessionResponses, StatsData, StatsErrors, StatsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -56,6 +56,45 @@ export const reauth = <ThrowOnError extends boolean = false>(options: Options<Re
  * Session
  */
 export const session = <ThrowOnError extends boolean = false>(options?: Options<SessionData, ThrowOnError>): RequestResult<SessionResponses, SessionErrors, ThrowOnError> => (options?.client ?? client).get<SessionResponses, SessionErrors, ThrowOnError>({ url: '/api/v1/auth/session', ...options });
+
+/**
+ * Backfill Estimate
+ */
+export const backfillEstimate = <ThrowOnError extends boolean = false>(options: Options<BackfillEstimateData, ThrowOnError>): RequestResult<BackfillEstimateResponses, BackfillEstimateErrors, ThrowOnError> => (options.client ?? client).get<BackfillEstimateResponses, BackfillEstimateErrors, ThrowOnError>({ url: '/api/v1/editions/{edition_id}/backfill', ...options });
+
+/**
+ * Backfill Start
+ */
+export const backfillStart = <ThrowOnError extends boolean = false>(options: Options<BackfillStartData, ThrowOnError>): RequestResult<BackfillStartResponses, BackfillStartErrors, ThrowOnError> => (options.client ?? client).post<BackfillStartResponses, BackfillStartErrors, ThrowOnError>({
+    url: '/api/v1/editions/{edition_id}/backfill',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Intents List
+ */
+export const intentsList = <ThrowOnError extends boolean = false>(options?: Options<IntentsListData, ThrowOnError>): RequestResult<IntentsListResponses, IntentsListErrors, ThrowOnError> => (options?.client ?? client).get<IntentsListResponses, IntentsListErrors, ThrowOnError>({ url: '/api/v1/intents', ...options });
+
+/**
+ * Intents Resolve
+ */
+export const intentsResolve = <ThrowOnError extends boolean = false>(options: Options<IntentsResolveData, ThrowOnError>): RequestResult<IntentsResolveResponses, IntentsResolveErrors, ThrowOnError> => (options.client ?? client).post<IntentsResolveResponses, IntentsResolveErrors, ThrowOnError>({
+    url: '/api/v1/intents/{intent_id}/resolve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Job Status
+ */
+export const jobStatus = <ThrowOnError extends boolean = false>(options: Options<JobStatusData, ThrowOnError>): RequestResult<JobStatusResponses, JobStatusErrors, ThrowOnError> => (options.client ?? client).get<JobStatusResponses, JobStatusErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}', ...options });
 
 /**
  * Preview

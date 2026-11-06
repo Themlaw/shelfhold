@@ -165,6 +165,16 @@ class Reconciler:
                     continue
                 unknown_files.append(rel)
                 foreign.setdefault(folder, "unknown_file")
+        for item in managed:
+            # a reserved line (`planned`) whose intent is closed holds nothing of ours: a file
+            # there was put by someone else (an abandoned intent, a write that never was)
+            if (
+                item.state == "planned"
+                and not skipped(item.rel_path)
+                and self._fsops.observe(local(item.rel_path)) is not None
+            ):
+                unknown_files.append(item.rel_path)
+                foreign.setdefault(item.rel_path.split("/", 1)[0], "unknown_file")
         unknown = tuple(
             sorted(
                 name

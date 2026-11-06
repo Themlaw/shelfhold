@@ -23,7 +23,9 @@ from shelfhold.headless import wiring as headless_wiring
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
+from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.events import BusTargetEvents
+from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
 from shelfhold.ops.library import LibraryOps
@@ -90,5 +92,6 @@ def open_ops(
         engine, clock=clock, bus=bus, fsops=fsops, targets=targets,
         headless=_LazyHeadless(settings), keyring=TombstoneKeyringExit(settings, engine, clock),
         restore=RestoreGuardExit(engine, fsops, clock, bus) if fsops is not None else None,
-        library=LibraryOps(composition),
+        library=LibraryOps(composition), intents=IntentOps(composition),
+        backfill=BackfillOps(composition),
     )  # fmt: skip

@@ -508,6 +508,7 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     }
     declared.discard("target.recheck_child_exposure")  # conditional: not a fixed property
     declared.add("purge.now")  # L41: reserved, but not the exit of a waiting state
+    declared.add("intents.resolve")  # L51: reserved; the drift it settles is no waiting state
     on_socket = {action for _impl, action in OPS_METHODS.values() if action}
     assert on_socket == declared
     for action in on_socket:  # and every name is a real action of the registry

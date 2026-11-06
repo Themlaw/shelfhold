@@ -45,6 +45,8 @@ _DECLARED = (
     _action("store.takeover", Effect.REINITS_STORAGE),
     _action("store.reinit", Effect.REINITS_STORAGE),
     _action("config.path_map", Effect.REINITS_STORAGE),  # which folders are written (`path_map.*`)
+    # File-system journal
+    _action("intents.resolve", Effect.SETTLES_FS_INTENT),  # EF-INT-014
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),

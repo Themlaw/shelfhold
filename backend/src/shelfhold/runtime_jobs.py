@@ -6,6 +6,9 @@
   something to write goes on to the foreign-writer detector, the lease, the writing and the
   targeted scans; then the arrival poll and the series covers (EF-EXP-034, EF-EXP-045). An empty
   plan touches no disk (ENF-OPS-014);
+- `export.apply` (L51): the application of a stored plan asked for by `POST /plans/{id}/apply`,
+  which answers 202 and the URL of this job; the names are read from Kavita again and must be
+  the ones of the preview before anything is written (EF-INT-001, EF-EXP-045);
 - `reconcile.cycle` and `reconcile.hash` (L32, L50): the verification of the tree, both window
   jobs (ENF-OPS-014): by day nothing looks at the disks, the second one may hash files;
 - `target.access_audit` (L26, L37) and `ops.disk_check` (L37): see `infrastructure.observability`;
@@ -20,6 +23,7 @@ install runs every job and none of them touches anything.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -33,29 +37,47 @@ from shelfhold.acquisition.public import FOLLOW_JOB_KIND, FollowCycle, bounded_r
 from shelfhold.composition import Composition, KeyringUnavailableError, NoLibraryError
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
-from shelfhold.export.application.pipeline import ExportPipeline, wanted_names
+from shelfhold.export.application.pipeline import (
+    ExportPipeline,
+    PlanPreview,
+    SourceMissingError,
+    UnverifiedParseError,
+    ensure_applicable,
+    wanted_names,
+)
+from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
+from shelfhold.export.application.restore import RestoredBehindError
+from shelfhold.export.application.wiring import NoRemoteParse
 from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
 from shelfhold.export.targets.kavita.arrival import ArrivalPoller
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.cover import SeriesCovers
-from shelfhold.export.targets.kavita.errors import TargetError
+from shelfhold.export.targets.kavita.errors import (
+    RouteMissing,
+    TargetError,
+    TargetForbidden,
+    TargetUnreachable,
+)
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
-from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
-from shelfhold.jobs.huey_app import JobContext, JobPools
+from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.library.public import PassthroughStore
+from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
 
 __all__ = [
+    "APPLY_JOB_KIND",
     "EXPORT_JOB_KIND",
     "INTENT_PRUNE_KIND",
     "KEY_EXPIRY_KIND",
     "RECONCILE_HASH_KIND",
     "RECONCILE_KIND",
+    "PlanService",
     "register_runtime_jobs",
     "settle_arrival",
 ]
@@ -63,6 +85,7 @@ __all__ = [
 log = structlog.get_logger(__name__)
 
 EXPORT_JOB_KIND = "export.run"
+APPLY_JOB_KIND = "export.apply"
 RECONCILE_KIND = "reconcile.cycle"
 RECONCILE_HASH_KIND = "reconcile.hash"
 FOLLOW_CRON = "*/15 * * * *"
@@ -178,6 +201,11 @@ def _unchecked(_name: str) -> Any:
     raise KeyError("names are not checked by plugin/parse")
 
 
+def _no_remote_parse(_name: str) -> Any:
+    """The planner can read a plan whose names Kavita did not read; applying it is refused."""
+    return NoRemoteParse()
+
+
 class _Disks:
     """The pipeline and the file system, built when a destination first needs them: a run that
     finds nothing to write never opens a root (ENF-OPS-014)."""
@@ -228,7 +256,9 @@ async def _export_one(
     destination: Destination,
     scans: ScanRelay,
     context: JobContext,
+    apply: tuple[str, str] | None = None,
 ) -> None:
+    """`apply`: a stored plan and the validator of its preview, instead of a plan made now."""
     from shelfhold.export.application.target_state import DestinationPausedError
 
     try:
@@ -237,12 +267,19 @@ async def _export_one(
             comp.engine, destination.id,
             segment_policy_confirmed=comp.settings.naming_segment_policy_confirmed,
         )  # fmt: skip
-        if names:
+        if names or apply is not None:
             pipeline, _fsops = disks.get()
             bulk = await BulkParse.fetch(client, names, library_type_named(kind))
             pipeline.bind_parse(bulk, verified=True)
-            pipeline.run(destination.id, job_id=context.job_id)
+            if apply is None:
+                pipeline.run(destination.id, job_id=context.job_id)
+            else:
+                plan_id, version = apply
+                pipeline.require_names_checked(plan_id)
+                pipeline.apply(plan_id, if_match=version, job_id=context.job_id)
     except (DestinationPausedError, TargetError) as error:
+        if apply is not None:  # asked for by a person: the job says why it did not go through
+            raise JobFailedError(_code_of(error)) from None
         log.info(
             "export.destination_waits", destination_id=destination.id, reason=type(error).__name__
         )
@@ -258,6 +295,21 @@ async def _export_one(
                 log.info("export.scan_failed", destination_id=destination.id,
                          reason=type(error).__name__)  # fmt: skip
     await settle_arrival(comp, client, destination.id, fsops=disks.fsops)
+
+
+def _code_of(error: Exception) -> str:
+    """The catalog code of a refusal; a failure of the Kavita client says which one it is."""
+    code = getattr(error, "code", None)
+    if isinstance(code, str):
+        return code
+    for kind, named in (
+        (TargetUnreachable, "target.unreachable"),
+        (TargetForbidden, "target.forbidden"),
+        (RouteMissing, "target.route_missing"),
+    ):
+        if isinstance(error, kind):
+            return named
+    return "job.failed"
 
 
 async def settle_arrival(
@@ -286,6 +338,112 @@ async def settle_arrival(
         await covers.publish(client, destination_id)
     except (NoLibraryError, KeyringUnavailableError) as error:
         log.info("export.cover_skipped", reason=type(error).__name__)
+
+
+# -- export.apply ---------------------------------------------------------------
+
+
+def apply_key(plan_id: str, if_match: str) -> str:
+    """The dedupe key of the job: the plan and the validator of its preview. Two requests for the
+    same plan share one job while it is active; a plan applied once is `done` and refused."""
+    return f"{APPLY_JOB_KIND}:{plan_id}:{if_match}"
+
+
+def _plan_of(dedupe_key: str) -> tuple[str, str]:
+    _kind, plan_id, version = dedupe_key.split(":", 2)
+    return plan_id, version
+
+
+def _destination_of(comp: Composition, destination_id: str) -> Destination:
+    table = export.shelf_destination
+    with comp.engine.connect() as connection:
+        target_id = connection.execute(
+            sa.select(table.c.target_id).where(table.c.id == destination_id)
+        ).scalar_one()
+    return Destination(destination_id, target_id)
+
+
+def apply_handler(comp: Composition) -> Callable[[JobContext], None]:
+    def run(context: JobContext) -> None:
+        plan_id, version = _plan_of(context.dedupe_key)
+        plan = export_plan_destination(comp, plan_id)
+        destination = _destination_of(comp, plan)
+        scans = ScanRelay()
+        disks = _Disks(comp, scans)
+        try:
+            client = comp.kavita_client(destination.target_id)
+        except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound):
+            raise JobFailedError("target.route_missing") from None  # no sealed key: nothing to ask
+        scans.client = client
+        try:
+            asyncio.run(
+                _export_one(comp, disks, client, destination, scans, context, (plan_id, version))
+            )
+        except (
+            StalePlanError,
+            SourceMissingError,
+            UnverifiedParseError,
+            RestoredBehindError,
+        ) as error:
+            raise JobFailedError(_code_of(error)) from None
+        except (NoLibraryError, KeyringUnavailableError):
+            raise JobFailedError("job.failed") from None
+
+    return run
+
+
+def export_plan_destination(comp: Composition, plan_id: str) -> str:
+    table = coherence.export_plan
+    with comp.engine.connect() as connection:
+        return str(
+            connection.execute(
+                sa.select(table.c.shelf_destination_id).where(table.c.plan_id == plan_id)
+            ).scalar_one()
+        )
+
+
+class PlanService:
+    """What the routes of the plans need (EF-EXP-008, EF-INT-001): a preview whose names Kavita
+    has read, and the application of a plan queued as a job (the route answers 202 and the job)."""
+
+    def __init__(
+        self,
+        comp: Composition,
+        pipeline: Callable[[], ExportPipeline],
+        pools: Callable[[], JobPools | None],
+    ) -> None:
+        self._comp = comp
+        self._pipeline = pipeline
+        self._pools = pools
+        self._lock = threading.Lock()  # one preview at a time: the answers are bound to it
+
+    def preview(self, destination_id: str) -> PlanPreview:
+        """A Kavita that cannot be asked leaves the names unchecked: the plan can be read but the
+        job will refuse to apply it (EF-EXP-045)."""
+        pipeline = self._pipeline()
+        with self._lock:
+            try:
+                destination = _destination_of(self._comp, destination_id)
+                client = self._comp.kavita_client(destination.target_id)
+                names, kind = pipeline.wanted_names(destination_id)
+                bulk = asyncio.run(BulkParse.fetch(client, names, library_type_named(kind)))
+                pipeline.bind_parse(bulk, verified=True)
+            except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound, TargetError):
+                pipeline.bind_parse(_no_remote_parse, verified=False)
+            return pipeline.preview(destination_id)
+
+    def queue_apply(self, plan_id: str, *, if_match: str) -> str:
+        """The 412 and the pauses are answered now; what needs the disks and Kavita is the job's."""
+        if self._comp.gates.writable is not None:
+            self._comp.gates.writable()  # restored_behind: no application until the adoption
+        ensure_applicable(self._comp.engine, plan_id, if_match=if_match)
+        pools = self._pools()
+        if pools is None:
+            raise ExitUnavailableError("the job queue is not running")
+        created = pools.submit(
+            APPLY_JOB_KIND, dedupe_key=apply_key(plan_id, if_match), priority_class="request"
+        )
+        return created.job_id
 
 
 # -- reconcile -----------------------------------------------------------------
@@ -389,6 +547,7 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.register(FOLLOW_JOB_KIND, pool="io", handler=follow_handler(comp, pools))
     pools.scheduler.add(FOLLOW_JOB_KIND, FOLLOW_CRON, jitter_s=120)
     pools.register(EXPORT_JOB_KIND, pool="io", handler=export_handler(comp))
+    pools.register(APPLY_JOB_KIND, pool="io", handler=apply_handler(comp))
     pools.scheduler.add(EXPORT_JOB_KIND, EXPORT_CRON, jitter_s=60)
     pools.register(
         RECONCILE_KIND, pool="maint", handler=reconcile_handler(comp, in_window=False),

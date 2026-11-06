@@ -30,17 +30,18 @@ class FakePreview:
 class FakePipeline:
     stale: bool = False
     paused: str | None = None
-    applied: list[tuple[str, int]] = field(default_factory=list)
+    applied: list[tuple[str, str]] = field(default_factory=list)
 
     def preview(self, shelf_destination_id: str) -> FakePreview:
         return FakePreview()
 
-    def apply(self, plan_id: str, *, if_match: str, job_id: str) -> None:
+    def queue_apply(self, plan_id: str, *, if_match: str) -> str:
         if self.paused:
             raise DestinationPausedError(self.paused)
         if self.stale or if_match != FakePreview.base_version:
             raise StalePlanError("the preview changed: recompute it")
         self.applied.append((plan_id, if_match))
+        return "01JJOB0000000000000000000A"
 
 
 @pytest.mark.req("EF-EXP-002", "EF-INT-024")
@@ -89,7 +90,9 @@ def test_plan_routes_preview_then_apply_with_if_match(
         stale = api.post(url, headers={"If-Match": '"4241"'})
         assert (stale.status_code, stale.json()["code"]) == (412, "plan.stale")
         assert pipeline.applied == []
-        assert api.post(url, headers={"If-Match": '"4242"'}).status_code == 200
+        accepted = api.post(url, headers={"If-Match": '"4242"'})
+        assert accepted.status_code == 202  # queued: the job does the work (EF-INT-001)
+        assert accepted.headers["location"] == "/api/v1/jobs/01JJOB0000000000000000000A"
         assert pipeline.applied == [(FakePreview.plan_id, "4242")]
         pipeline.stale = True  # it moved while applying: same answer, same code
         again = api.post(url, headers={"If-Match": '"4242"'})

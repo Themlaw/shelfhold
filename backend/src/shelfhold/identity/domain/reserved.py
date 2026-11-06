@@ -37,6 +37,9 @@ class Effect(StrEnum):
     UNMASKS_REQUEST = "unmasks_request"
     MANAGES_CREDENTIALS = "manages_credentials"  # create, rotate or revoke a key or a token
     ACCEPTS_ADMIN_RISK = "accepts_admin_risk"  # `--accept-admin-risk`
+    # `intents resolve`: completes, replays or gives up an interrupted file operation, which lifts
+    # the protection its paths had from the planner and the reconciliation (EF-EXP-041)
+    SETTLES_FS_INTENT = "settles_fs_intent"
 
 
 # P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody

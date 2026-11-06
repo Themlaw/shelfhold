@@ -27,6 +27,7 @@ from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export, platform
+from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.errors import (
     ExitUnavailableError,
     InvalidChoiceError,
@@ -34,6 +35,7 @@ from shelfhold.ops.errors import (
     NotWaitingError,
     UnknownSubjectError,
 )
+from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.ports import (
     AdoptionExit,
@@ -80,12 +82,22 @@ class JobRow:
     last_error: str | None
     attempts: int
     created_at: datetime | None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    progress: float | None = None
 
 
 @dataclass(frozen=True)
 class RecheckOutcome:
     cleared: tuple[str, ...]  # export series that can be written again
     denied: tuple[str, ...]  # export series still waiting for the rights
+
+
+def _job_row(r: sa.Row[tuple[object, ...]]) -> JobRow:
+    return JobRow(
+        r.id, r.kind, r.status, r.error_code, r.last_error, r.attempts, r.created_at,
+        r.started_at, r.finished_at, r.progress,
+    )  # fmt: skip
 
 
 class OpsServices:
@@ -102,6 +114,8 @@ class OpsServices:
         keyring: KeyringExit | None = None,
         adoption: AdoptionExit | None = None,
         library: LibraryOps | None = None,
+        intents: IntentOps | None = None,
+        backfill: BackfillOps | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -113,6 +127,8 @@ class OpsServices:
         self._keyring = keyring
         self._adoption = adoption
         self._library = library
+        self._intents = intents
+        self._backfill = backfill
 
     # -- reading -------------------------------------------------------------------------------
 
@@ -136,10 +152,16 @@ class OpsServices:
         if status is not None:
             query = query.where(job.c.status == status)
         with self._engine.connect() as connection:
-            return [
-                JobRow(r.id, r.kind, r.status, r.error_code, r.last_error, r.attempts, r.created_at)
-                for r in connection.execute(query)
-            ]
+            return [_job_row(r) for r in connection.execute(query)]
+
+    def job_get(self, job_id: str) -> JobRow:
+        """One job, for a client that was given its URL by a `202` (EF-INT-001)."""
+        job = platform.job_view
+        with self._engine.connect() as connection:
+            row = connection.execute(sa.select(job).where(job.c.id == job_id)).first()
+        if row is None:
+            raise UnknownSubjectError("no such job")
+        return _job_row(row)
 
     # -- missing / series / jobs / edition ------------------------------------------------------
 
@@ -368,6 +390,20 @@ class OpsServices:
         if self._library is None:
             raise ExitUnavailableError("the library operations are not connected")
         return self._library
+
+    @property
+    def intents(self) -> IntentOps:
+        """`intents list|resolve` (EF-INT-014)."""
+        if self._intents is None:
+            raise ExitUnavailableError("the intent journal is not connected")
+        return self._intents
+
+    @property
+    def backfill(self) -> BackfillOps:
+        """`backfill --gaps|--all` (EF-EXP-053)."""
+        if self._backfill is None:
+            raise ExitUnavailableError("backfill is not connected")
+        return self._backfill
 
     def adopt_set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
         if self._adoption is not None:

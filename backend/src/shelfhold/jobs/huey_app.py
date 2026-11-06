@@ -25,6 +25,7 @@ from huey.exceptions import RetryTask
 from sqlalchemy import Engine
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.jobs.errors import JobFailedError
 from shelfhold.jobs.ledger import Created, JobLedger, PendingJob
 from shelfhold.jobs.scheduler import ScanReport, Scheduler
 from shelfhold.jobs.slots import RETRY_DELAY_S, DomainSlots
@@ -352,6 +353,8 @@ class JobPools:
                 job.cursor_index, self.clock, self.ledger, stop=lambda: self._stopping,
             )  # fmt: skip
             route[1](context)
+        except JobFailedError as exc:
+            self.ledger.mark_finished(job_id, error=exc.code, error_code=exc.code)
         except OSError as exc:
             if getattr(exc, "code", None) != "disk.low":  # DiskLowError: the disk filled mid-job
                 self.ledger.mark_finished(job_id, error=type(exc).__name__, error_code="job.failed")

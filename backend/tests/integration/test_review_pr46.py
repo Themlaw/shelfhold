@@ -309,7 +309,7 @@ def test_if_match_must_be_one_strong_quoted_validator(
             answer = api.post(url, headers={"If-Match": refused})
             assert (answer.status_code, answer.json()["code"]) == (412, "precondition_failed")
         assert pipeline.applied == []
-        assert api.post(url, headers={"If-Match": '"4242"'}).status_code == 200
+        assert api.post(url, headers={"If-Match": '"4242"'}).status_code == 202
 
 
 @pytest.mark.req("EF-EXP-008")

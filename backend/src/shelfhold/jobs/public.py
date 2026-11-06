@@ -1,6 +1,7 @@
 """What other contexts may use of the job system."""
 
 from shelfhold.infrastructure.clock import Clock, SystemClock
+from shelfhold.jobs.errors import JobFailedError
 from shelfhold.jobs.huey_app import BootReport, JobContext, JobPools, boot_jobs
 from shelfhold.jobs.slots import DomainSlots, SlotBusyError
 from shelfhold.jobs.window import (
@@ -17,6 +18,7 @@ __all__ = [
     "Clock",
     "DomainSlots",
     "JobContext",
+    "JobFailedError",
     "JobPools",
     "OutsideMaintenanceWindowError",
     "SlotBusyError",

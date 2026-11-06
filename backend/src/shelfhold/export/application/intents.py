@@ -131,10 +131,19 @@ def skip_covered(connection: Connection, candidates: Iterable[str]) -> list[str]
 
 
 class IntentJournal:
-    def __init__(self, engine: Engine, disk: DiskPort, *, clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        disk: DiskPort,
+        *,
+        clock: Clock | None = None,
+        settled: Callable[[Connection, str], None] | None = None,
+    ) -> None:
         self._engine = engine
         self._disk = disk
         self._clock = clock or SystemClock()
+        # runs in the transaction that closes an intent (the audit of an admin's resolution)
+        self._settled = settled
 
     # -- the protocol ---------------------------------------------------------------------------
 
@@ -244,24 +253,72 @@ class IntentJournal:
     def resolve_open(self, *, on_done: ManifestHook | None = None) -> ResolveReport:
         """Before any job: settle every `pending`/`applying` intent, in the order they were made."""
         report = ResolveReport()
+        for intent in self.open_intents():
+            self._settle(intent, report, on_done)
+        return report
+
+    # -- the admin's door (`intents list|resolve`, EF-INT-014) ----------------------------------
+
+    def open_intents(self) -> list[OpenIntent]:
+        """The intents that are still open, in the order they were made."""
         table = coherence.fs_intent
         with self._engine.connect() as conn:
-            current_epoch = conn.execute(sa.select(platform.instance.c.restore_epoch)).scalar_one()
             rows = conn.execute(
                 sa.select(table)
                 .where(table.c.state.in_(OPEN_STATES))
                 .order_by(table.c.created_at, table.c.id)
             ).all()
-        for row in rows:
-            intent = _intent_from(row)
-            if intent.epoch < current_epoch:  # the counter, not the wall clock (I39)
-                self._close(intent.id, "stale_from_backup")
-                report.stale_from_backup.append(intent.id)
-            elif intent.schema_version not in KNOWN_SCHEMA_VERSIONS:
-                report.refused.append(intent.id)
-            else:
-                self._resolve_one(intent, report, on_done)
+        return [_intent_from(row) for row in rows]
+
+    def resolve_one(
+        self, intent_id: str, *, on_done: ManifestHook | None = None
+    ) -> ResolveReport | None:
+        """The rule of the boot, for one intent an admin asks about: the disk is looked at and the
+        intent is completed or replayed only if it matches exactly one known step; anything else
+        stays open and is reported as drift, nothing touched. None: no such open intent."""
+        found = [i for i in self.open_intents() if i.id == intent_id]
+        if not found:
+            return None
+        report = ResolveReport()
+        self._settle(found[0], report, on_done)
         return report
+
+    def abandon(self, intent_id: str, *, release: ManifestHook | None = None) -> bool:
+        """Give up an intent without touching the disk: it is closed `cancelled`, so its paths are
+        no longer protected from the planner and the reconciliation. `release` runs in the same
+        transaction and puts the bookkeeping the intent reserved back in a state the planner and
+        the reconciliation understand. The caller has the authority for that (a reserved action,
+        typed confirmation). False: it was not open."""
+        found = [i for i in self.open_intents() if i.id == intent_id]
+        if not found:
+            return False
+        table = coherence.fs_intent
+        with self._engine.begin() as conn:
+            closed = conn.execute(
+                sa.update(table)
+                .where(table.c.id == intent_id, table.c.state.in_(OPEN_STATES))
+                .values(state="cancelled", resolved_at=self._clock.now())
+            ).rowcount
+            if not closed:
+                return False
+            if release is not None:
+                release(conn, found[0])
+            if self._settled is not None:
+                self._settled(conn, intent_id)
+        return True
+
+    def _settle(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        with self._engine.connect() as conn:
+            current_epoch = conn.execute(sa.select(platform.instance.c.restore_epoch)).scalar_one()
+        if intent.epoch < current_epoch:  # the counter, not the wall clock (I39)
+            self._close(intent.id, "stale_from_backup")
+            report.stale_from_backup.append(intent.id)
+        elif intent.schema_version not in KNOWN_SCHEMA_VERSIONS:
+            report.refused.append(intent.id)
+        else:
+            self._resolve_one(intent, report, on_done)
 
     def _close_open(self, intent_id: str, state: str) -> None:
         with self._engine.begin() as conn:
@@ -279,6 +336,8 @@ class IntentJournal:
                 .where(coherence.fs_intent.c.id == intent_id)
                 .values(state=state, resolved_at=self._clock.now())
             )
+            if self._settled is not None:
+                self._settled(conn, intent_id)
 
     def _drift(self, intent: OpenIntent, report: ResolveReport, reason: str) -> None:
         report.drifted.append(intent.id)
@@ -306,6 +365,8 @@ class IntentJournal:
             self.mark_done(intent.id, within=conn)
             if on_done is not None:
                 on_done(conn, intent)
+            if self._settled is not None:
+                self._settled(conn, intent.id)
 
     def _is_expected(self, intent: OpenIntent, path: str, identity: FileIdentity) -> bool:
         """The file at `path` is the one the intent was written for: the sha256 must match (an

@@ -11,6 +11,9 @@ from typing import Any
 
 from shelfhold import __version__
 from shelfhold.interfaces.http_api.app import create_http_app
+from shelfhold.interfaces.http_api.backfill import build_backfill_router
+from shelfhold.interfaces.http_api.intents import build_intents_router
+from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.shelves import build_shelves_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
@@ -36,6 +39,9 @@ def main(argv: list[str]) -> None:
         routers=(
             build_shelves_router(_unwired),
             build_plans_router(_unwired),
+            build_jobs_router(_unwired),
+            build_intents_router(_unwired),
+            build_backfill_router(_unwired),
             build_stats_router(_unwired, _unwired),
         ),
     )
