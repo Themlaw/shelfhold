@@ -170,6 +170,9 @@ class FakeRangedConnectedService:
     ) -> Page[SeriesRef]:
         return Page[SeriesRef](items=[self._series()], next=None)
 
+    async def followed_series(self, f: Any) -> list[SeriesRef]:
+        return [self._series()]
+
     async def resolve_url(self, f: Any, url: str) -> SeriesRef | UnitInfo | None:
         return None
 
