@@ -7,6 +7,8 @@
 - `reconcile.cycle` and `reconcile.hash` (L32): the reduced reconcile of a tree destination, the
   second one in the maintenance window where files may be hashed (ENF-OPS-014);
 - `target.access_audit` (L26, L37) and `ops.disk_check` (L37): see `infrastructure.observability`;
+- `target.key_expiry` (daily): the J-14/J-1 notices of a Kavita key, read again from the target;
+- `intents.prune` (daily): the closed intents older than the retention leave the journal;
 - `notify.dispatch` (EF-INT-006): the sender of the notification queue.
 
 A job that finds nothing to do (no Suwayomi, no shelf, no keyring yet) returns quietly: a fresh
@@ -19,6 +21,7 @@ import asyncio
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 import sqlalchemy as sa
@@ -26,6 +29,7 @@ import structlog
 
 from shelfhold.acquisition.public import FOLLOW_JOB_KIND, FollowCycle, bounded_receiver
 from shelfhold.composition import Composition, KeyringUnavailableError, NoLibraryError
+from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.application.preflight import PermissionPreflight
@@ -43,6 +47,8 @@ from shelfhold.ops.events import BusTargetEvents
 
 __all__ = [
     "EXPORT_JOB_KIND",
+    "INTENT_PRUNE_KIND",
+    "KEY_EXPIRY_KIND",
     "RECONCILE_HASH_KIND",
     "RECONCILE_KIND",
     "register_runtime_jobs",
@@ -56,6 +62,11 @@ RECONCILE_HASH_KIND = "reconcile.hash"
 FOLLOW_CRON = "*/15 * * * *"
 EXPORT_CRON = "*/5 * * * *"
 RECONCILE_CRON = "*/10 * * * *"
+INTENT_PRUNE_KIND = "intents.prune"
+KEY_EXPIRY_KIND = "target.key_expiry"
+INTENT_PRUNE_CRON = "41 3 * * *"
+KEY_EXPIRY_CRON = "23 6 * * *"
+INTENT_RETENTION = timedelta(days=30)  # a closed intent is kept a month for the audit trail
 RECONCILE_HASH_CRON = "30 3 * * *"  # inside the maintenance window, where files may be hashed
 SCAN_QUIET_S = 31  # the debounce of the scans (30 s of calm per destination)
 
@@ -261,6 +272,35 @@ def access_audit(comp: Composition) -> Callable[[], None]:
     return daily_access_audit(auditor, connected_clients(comp))
 
 
+def key_expiry(comp: Composition) -> Callable[[], None]:
+    """Read the key date of every connected target again and send the notices that are due."""
+    clients = connected_clients(comp)
+
+    def run() -> None:
+        for target_id, client in clients():
+            try:
+                asyncio.run(client.check_key_expiry())
+            except Exception as error:  # one unreachable target must not stop the others
+                log.warning(
+                    "target.key_expiry_failed", target_id=target_id, error=type(error).__name__
+                )
+
+    return run
+
+
+def intents_prune(comp: Composition) -> Callable[[], int]:
+    """Retention of the intent journal: closed intents resolved before the retention go."""
+
+    def run() -> int:
+        loaded = comp.load_roots()
+        if loaded is None:  # a fresh install has no journal yet
+            return 0
+        journal = IntentJournal(comp.engine, comp.open_fsops(loaded), clock=comp.clock)
+        return journal.prune(before=comp.clock.now() - INTENT_RETENTION)
+
+    return run
+
+
 # -- notifications -----------------------------------------------------------------
 
 
@@ -297,4 +337,13 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
         windowed=True, writes=False,
     )  # fmt: skip
     pools.scheduler.add(RECONCILE_HASH_KIND, RECONCILE_HASH_CRON, windowed=True)
+    key_check, prune = key_expiry(comp), intents_prune(comp)
+    pools.register(KEY_EXPIRY_KIND, pool="io", handler=lambda _context: key_check(), writes=False)
+    pools.scheduler.add(KEY_EXPIRY_KIND, KEY_EXPIRY_CRON, jitter_s=300)
+
+    def run_prune(_context: JobContext) -> None:
+        prune()
+
+    pools.register(INTENT_PRUNE_KIND, pool="maint", handler=run_prune, writes=False)
+    pools.scheduler.add(INTENT_PRUNE_KIND, INTENT_PRUNE_CRON, jitter_s=300)
     register_notification_job(pools, LazyDispatcher(comp))  # type: ignore[arg-type]
