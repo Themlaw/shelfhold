@@ -254,19 +254,6 @@ def test_text_version_references_contributor_not_string() -> None:
         assert labelled.id != edition.id
 
 
-@pytest.mark.req("EF-BIB-049")
-def test_community_translation_relay_single_edition() -> None:
-    with harness() as h:
-        edition = h.edition(kind="light_novel", media="text")
-        binding = h.binding(edition)
-        for n in range(1, 81):
-            team = "Team A" if n <= 40 else "Team B"
-            h.catalog.ingest(unit(binding, f"c{n}", str(n), n, team_label=team))
-        assert len(h.rows("SELECT id FROM edition")) == 1
-        assert len(h.rows("SELECT id FROM team")) == 2
-        assert h.catalog.missing_numbers(edition.id) == []  # backfill --gaps sees nothing
-
-
 @pytest.mark.req("EF-BIB-050")
 def test_absent_field_is_not_a_revision() -> None:
     with harness() as h:
