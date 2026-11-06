@@ -303,7 +303,7 @@ def test_adopt_ro_root_never_written(env: Env) -> None:
     assert chapter.read_bytes() == b"upstream"
 
 
-@pytest.mark.req("EF-EXP-060", "ENF-SEC-012")
+@pytest.mark.req("EF-EXP-060", "ENF-SEC-012", "EF-EXP-001")
 @pytest.mark.parametrize(
     "rel",
     [

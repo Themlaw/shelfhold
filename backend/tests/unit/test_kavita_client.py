@@ -28,7 +28,6 @@ from shelfhold.export.targets.kavita import (
     RouteMissing,
     TargetDegraded,
     TargetForbidden,
-    public_config,
 )
 from shelfhold.sdk.export_target import ApiCall
 from tests.fakes.kavita import API_KEY, BASE_URL, build_fetcher
@@ -273,8 +272,7 @@ class _ThirdPartyPlugin:
 @pytest.mark.req("ENF-SEC-013", "EF-EXP-001")
 def test_admin_key_never_passed_to_target_plugin() -> None:
     h = harness()
-    stored = {"url": BASE_URL, "library_type": "Manga", "api_key": API_KEY, "token": API_KEY}
-    cfg = public_config(stored)
+    cfg = {"url": BASE_URL, "library_type": "Manga"}  # the key is sealed apart, never in config
     plugin = _ThirdPartyPlugin()
     calls = plugin.calls(cfg, [CBZ])
     run(h.client.probe())
@@ -438,18 +436,6 @@ def test_scan_folder_always_carries_the_key_and_refuses_a_non_object_body() -> N
     with pytest.raises(ProtocolError):
         run(h.client.execute(bad))
     assert len(h.fake.requests) == before
-
-
-@pytest.mark.req("ENF-SEC-013")
-def test_public_config_filters_recursively_by_whole_word() -> None:
-    cfg = public_config({
-        "author": "A", "library_type": "Manga", "apiKey": "x", "X-Api-Key": "x",
-        "nested": {"token": "x", "author_name": "B", "deep": [{"password": "x", "ok": 1}]},
-    })  # fmt: skip
-    assert cfg == {
-        "author": "A", "library_type": "Manga",
-        "nested": {"author_name": "B", "deep": [{"ok": 1}]},
-    }  # fmt: skip
 
 
 @pytest.mark.req("EF-EXP-009")
