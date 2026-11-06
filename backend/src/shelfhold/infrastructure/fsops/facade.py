@@ -147,13 +147,11 @@ class Fsops:
         *,
         umask: int | None = None,
         strategy: Strategy = Strategy.AUTO,
-        disk_guard: Callable[[], bool] | None = None,
         write_gate: Callable[[], None] | None = None,
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
         frozen: bool = False,
     ) -> None:
-        self._disk_guard = disk_guard
         self._stop_gate = stop_gate  # raises once the shutdown went past its checkpoint delay
         self._write_gate = write_gate  # raises while the disk guard is paused (ENF-OPS-006)
         self._now = now
@@ -205,7 +203,6 @@ class Fsops:
         *,
         umask: int | None = None,
         strategy: Strategy = Strategy.AUTO,
-        disk_guard: Callable[[], bool] | None = None,
         write_gate: Callable[[], None] | None = None,
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
@@ -214,7 +211,7 @@ class Fsops:
         """No file system access: roots are opened, and their sentinels read, per operation.
         `frozen`: the database says `restored_behind` (read from `LoadedRoots.restore_pending`)."""
         return cls(
-            path_map, expected, umask=umask, strategy=strategy, disk_guard=disk_guard,
+            path_map, expected, umask=umask, strategy=strategy,
             write_gate=write_gate, stop_gate=stop_gate, now=now, frozen=frozen,
         )  # fmt: skip
 
@@ -713,8 +710,6 @@ class Fsops:
                 return  # nothing to delete: the removal below reports it
             if age < TRASH_RETENTION_S:
                 raise EmitterConditionError(f"{entry} is {int(age)} s old: kept 30 days")
-        elif emitter == "disk_guard_purge" and not (self._disk_guard and self._disk_guard()):
-            raise EmitterConditionError("the disk guard is not triggered")
 
     def _system_empty(self, root: ConfinedRoot, emitter: str, rel: str) -> int:
         require_content_inside(emitter, rel)
