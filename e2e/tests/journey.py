@@ -108,6 +108,16 @@ class Journey:
         assert self.shelfhold("jobs", "run", "follow.cycle").code == 0
         assert wait_for(lambda: self.units_known() > 0, 120), "la découverte n'a rien listé"
 
+    def follow_until(self, predicate: Callable[[], bool], seconds: float = 240.0) -> bool:
+        """Ask for follow cycles until `predicate` holds. A download takes two looks of the
+        service (asked in one cycle, collected in the next), as with Suwayomi's own queue."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            assert self.shelfhold("jobs", "run", "follow.cycle").code == 0
+            if wait_for(predicate, 30):
+                return True
+        return False
+
     def library_files(self) -> list[str]:
         done = self.compose(
             "exec", "-T", "shelfhold", "find", "/library", "-type", "f", check=False

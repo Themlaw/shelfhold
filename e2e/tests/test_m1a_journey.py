@@ -96,8 +96,7 @@ def test_m1a_headless_install_to_first_chapter_in_kavita(journey: Journey) -> No
     j.publish_upstream()  # a new chapter upstream, after the follow was set up
     # the follow runs at the next tick (at most a minute), then the export waits 30 s of calm
     # before the scan (EF-EXP-034): ask for the cycle now instead of waiting a quarter hour
-    assert j.shelfhold("jobs", "run", "follow.cycle").code == 0
-    assert wait_for(lambda: bool(j.kavita()["series"]), 180), (
+    assert j.follow_until(lambda: bool(j.kavita()["series"]), 300), (
         "aucun job de suivi enregistré : Kavita n'a indexé aucune série"
     )
     files = j.library_files()
@@ -159,8 +158,7 @@ def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> 
     install_by_commands(j)
     j.discover_series()
     j.publish_upstream()
-    assert j.shelfhold("jobs", "run", "follow.cycle").code == 0
-    assert wait_for(lambda: any(f.endswith(".cbz") for f in j.library_files()), 120), (
+    assert j.follow_until(lambda: any(f.endswith(".cbz") for f in j.library_files()), 300), (
         "aucun job de suivi enregistré : aucun chapitre exporté"
     )
     before = j.compose("exec", "-T", "shelfhold", "sh", "-c",

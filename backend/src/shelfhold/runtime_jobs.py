@@ -101,7 +101,8 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                     receive=bounded_receiver(
                         link.guarded, staging_dir=comp.settings.data_dir / "tmp",
                         max_bytes=comp.settings.received_cbz_max_bytes,
-                    ),
+                        authorize=getattr(link.fetcher, "authorize", None),  # the archive route
+                    ),  # asks for the same credential as the other routes of the service
                     place=place, slots=pools.slots, tombstones=w.tombstones,
                 )  # fmt: skip
 
