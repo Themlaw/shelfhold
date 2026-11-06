@@ -652,3 +652,67 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
 - **Mise de côté du journal.** Les lignes authentiques du fichier mis de côté sont fusionnées dans
   la table avant la réécriture ; si une ligne porte une clé enregistrée mais absente du trousseau, la
   commande est refusée avec la marche à suivre.
+## Clôture
+
+Ce lot (`chore(m1a): close the milestone`) ne tranche aucun report d'exigence. Les points qui demandent une décision du porteur sont marqués **décision requise** ; ils portent une destination proposée, pas arbitrée.
+
+### Traçabilité (critère a)
+
+- `python3 tools/traceability.py --milestone M1a` : **123 sur 123** exigences couvertes (les 122 de la feuille de route plus EF-SRC-037), 0 erreur, 0 exigence sans test, 0 test orphelin ; « couvertes seulement hors CI requise » : 0.
+- Les deux avertissements de l'outil restent acceptés (A2 du plan) : EF-SRC-037 vient du volet de schéma d'EF-EXP-053 (01 dit « M2 (schéma : volet M1a) »), EF-SRC-008 est « M1a / M0 » dans 01.
+- Volet de nuit : le test de l'extension synthétique (`test_contract_synthetic_extension_plays_download_queue`) ne tourne qu'en nightly, comme 01 le prescrit pour ENF-LEG-013 (« nightly, passe 12 ») ; l'exigence compte pour M0 et ses tests de CI requise (`test_contract_bench.py`) la couvrent. Même cas pour les deux nightly Kavita (minimum et épinglée sur la ligne 0.9.1, ENF-COMP-001, EF-INT-024) : leurs exigences ont des tests de CI requise.
+- ENF-COMP-001, limite écrite dans `nightly.yml` : le « minimum » 0.9.1 est la ligne 0.9.1 de l'image officielle, aujourd'hui v0.9.1.4, faute d'étiquette 0.9.1.0 publiée en amont. L'entrée s'ajoutera à la matrice quand l'amont la publie.
+- ENF-GOV-006 reste déclarée partielle : seuls les entretiens utilisateurs manquent, reportés par la décision M0 9 (dépend du porteur).
+- ENF-OPS-002 : le volet « pas de migration dans une release patch » était reporté « avant la clôture de M1a ». Il est fait : `tools/check_patch_migrations.py` (testé par `test_patch_release_migrations.py`) tourne en première étape de `release.yml` ; l'entrée `[[deferred]]` est retirée.
+
+### OpenAPI
+
+`open-api/export_schema.py` ne montait que trois routeurs (étagères, plans, statistiques). Aucun `include_in_schema=False` n'était en cause. Il monte maintenant les sept de la racine de composition (configuration, état, exploitation, bibliothèque en plus), l'instantané et le client du front sont régénérés par `generate.sh` (code de sortie 0), et `test_openapi_snapshot_lists_every_route_of_the_application` échoue si une route de l'application manque à l'instantané.
+
+### Extension synthétique du nightly
+
+`gradle/verification-metadata.xml` est généré (254 composants) dans l'image `ghcr.io/cirruslabs/android-sdk` épinglée par condensat (JDK 21 ; ssp n'a pas de moteur de conteneurs, la génération a eu lieu en local), puis la construction est rejouée avec la vérification active. Trois défauts de l'extension, jamais construite jusque-là, sont corrigés : le commentaire du fichier contenait `--` (XML invalide), `extensions-lib` 1.4.2 n'a jamais été construit par JitPack (1.4.1, le niveau d'API de `versionName`), et `okhttp` manquait au classpath de compilation. L'APK n'a pas été installé dans un Suwayomi : le premier nightly le fera.
+
+### Inventaire des dettes du §7 du plan
+
+| Note | État | Preuve ou destination |
+|---|---|---|
+| ENF-COMP-001, nightly sans 0.9.1.0 | Reportée (dépendance amont) | Voir ci-dessus ; ajout à la matrice à la publication de l'étiquette. |
+| Contrats import-linter à `error` | Traitée, ce lot | xml, archives, sanitize, lang, fsops, indépendance des contextes, huey, apprise ; `comicbox` garde `none` (non dépendance, l'ignore ne peut rien trouver). |
+| `exclude-newer-package` huey, apprise | Datée | À retirer le 2026-11-15 (huey 3.5.4 publié le 2026-11-01), puis `uv lock` ; apprise 2.1.0 le permet dès le 2026-11-07. |
+| L02 migrations sans clés étrangères, parité du DDL | Traitée | `test_migrated_ddl_equals_create_all`. |
+| L04 `edition.shelf_id`, tickets de purge | Traitée | #31, #58. |
+| L22 `keyring.lock` | Traitée | `test_keyring_lock_is_the_instance_lock` (#39). |
+| L22 NFS/CIFS (ENF-OPS-010) | Traitée | #59. |
+| L21 `physical_root.mode` branché | Traitée | `export/application/roots.py` lit la colonne. |
+| L10 exception TID251 pour la socket | Traitée | #49 (`pyproject.toml`, `importlinter.ini`). |
+| L12 `window.preempted` | Traitée en M1a | M3 garde le discriminant (consigne du plan). |
+| L11 idempotence dans `main.py` | Traitée | #66, `test_api_conventions.py`. |
+| L19/L20 borne du CBZ Suwayomi | Traitée | `received_cbz_max_bytes` et `bounded_receiver` (#66). |
+| L09 `test_notifications_escape_upstream_text` | Traitée | #45, `test_notification_render.py`. |
+| L23 CLI locale, `SO_PEERCRED` | Traitée | #49. |
+| L18 `follow.cycle` et levée de pause | Traitée | #66 ; parcours E2E « installation neuve » par #67. |
+| L29/L37 audit d'accès, garde d'écriture | Traitée | #66. |
+| L28 (a) paquet de diagnostic | Reportée à M2 | Le paquet n'existe pas ; 03 place `test_watermarked_never_in_diagnostic_bundle` et ENF-LEG-009 en M2. Les deux garde-fous de M1a (`is_diagnostic_excluded`, `redact_source_urls`) et leurs tests existent. |
+| L28 (b) nightly du miroir | Traitée | #65, `test_mirror_never_indexed_by_kavita_nightly`. |
+| L28 (c) lecture du miroir à la réadoption | Traitée | #61, `test_restore_behind_readopts_from_manifest_mirror_as_exported`, `test_mirror_restores_follow_decisions_ages_as_suggestions`. |
+| L28 (d) retrait des lignes du miroir à la purge | Traitée | #58 (`_clean_mirror`). |
+| L28 (d) `meta rebuild` reconstruit le miroir | **Décision requise**, proposition M1b | `ProvenanceMirror.rebuild` existe et le miroir est resynchronisé à chaque export (`pipeline.py`), mais la commande ne reconstruit que `unit.json` : écrire dans une racine demande le bail et le verrou d'instance, donc la commande doit passer par le serveur. Aucune doc d'administration ne promet cette reconstruction. |
+| Tests instables `test_library_review44`, `test_library_safeguard`, `test_migration_lock` | Surveillance | Non reproduits : 12 passages sous xdist sur ssp et la suite complète (6 417 tests) verts ; #66 a corrigé les deux derniers. Une récidive en CI ouvre une issue. |
+| L32 `detector=`, `missing resolve`, `series resume` | Traitée | #66 (`runtime_jobs.py`, `ops/exits.py`). |
+| L33 journal des pierres tombales non chaîné | Reportée à M1b | Décision L33 point 17 ci-dessus ; 03, section M1b, passe 13 (EF-BIB-054). |
+| L29 `checked_target_url` contre `validate_target_url` | Traitée par décision | Ce ne sont pas des doublons : `validate_target_url` juge la forme de l'adresse à la configuration, sans réseau ; `checked_target_url` résout le nom à l'usage et refuse un nom qui désigne une adresse publique (`http://` vers un nom privé y est permis). Les fusionner changerait un comportement. La TODO du plan est close. |
+| L30 `FolderProbe` réduit à un adaptateur de `probe_folder` | **Décision requise**, proposition M1b | Refactor sans changement de comportement (un seul site de suppression, `preflight.py` sorti de `FSOPS_CALLERS`) ; les deux sondes coexistent et sont testées. |
+| L40/L41 lignes de `FAILURE_MATRIX`, `source.version_unsupported` | Traitée | #59, #66. |
+| L35 `root takeover`, `reinit`, `restored` | Reportée à M1b | 03, section M1b, passe 10 (EF-EXP-064) ; `shelfhold status` donne la correction manuelle. |
+| L31 (a) nightly de progression Kavita | Traitée | #65, `test_repatriate_keeps_kavita_progress_nightly`. |
+| L31 (b) gel et `plan.ready`, code de `RootBlockedError` | Traitée | `root.blocked` (409) au catalogue (#62, #63). |
+| L40 `verification-metadata.xml` | Traitée, ce lot | Voir ci-dessus. |
+| Clôture : routes absentes d'OpenAPI | Traitée, ce lot | Voir ci-dessus. |
+| L42 découverte des séries, étape 7, section « Connu » | Traitée | #67 et ce lot. |
+
+Ne restent donc ouvertes que les deux **décisions requises** (reconstruction du miroir par `meta rebuild`, réduction de `FolderProbe`), toutes deux sans effet sur une exigence de M1a, et trois suites datées ou conditionnelles (15 novembre, étiquette amont de Kavita, récidive d'un test instable).
+
+### Reste à faire pour clore le jalon
+
+Critère (b), le contradicteur Opus et `docs/decisions/M1a-revue.md` ; critère (d), l'étiquette `v0.2.0` et l'image `0.2` multi-architecture ; critère (f), le rapport au porteur. Aucun n'est dans ce lot.
