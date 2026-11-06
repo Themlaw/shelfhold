@@ -17,7 +17,11 @@ from shelfhold.catalog.application.dto import (
 )
 from shelfhold.catalog.application.ports import StoredVariant
 from shelfhold.catalog.domain.identity import sort_title
-from shelfhold.catalog.domain.normalizers import REMOTE_UNIT_ID_NORMALIZER_ID, Normalized
+from shelfhold.catalog.domain.normalizers import (
+    REMOTE_UNIT_ID_NORMALIZER_ID,
+    Normalized,
+    normalize_remote_unit_id,
+)
 from shelfhold.catalog.domain.numbering import NUMBER_NORMALIZER_ID, UnitNumber
 from shelfhold.catalog.domain.placement import NUMBERING_CONFLICT, Place, VariantFacts
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, variant_lang
@@ -339,7 +343,7 @@ class SqlUnitStore:
                 id=variant_id,
                 unit_id=unit_id,
                 source_binding_id=item.binding.id,
-                remote_unit_id=item.remote_unit_id,
+                remote_unit_id=normalize_remote_unit_id(item.remote_unit_id),
                 remote_unit_id_norm_by=REMOTE_UNIT_ID_NORMALIZER_ID,
                 team_id=team_id,
                 lang=lang or "und",

@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.acquisition.application.unit_follow import suppress_follow
-from shelfhold.catalog.lang import LanguageError, edition_key_lang
+from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
@@ -252,7 +252,7 @@ class OpsServices:
                     connection.execute(
                         sa.update(table)
                         .where(table.c.id == edition_id)
-                        .values(lang=tag, lang_raw=lang)
+                        .values(lang=tag, lang_raw=lang, lang_norm_by=LANG_NORMALIZER_ID)
                     )
             except sa.exc.IntegrityError:
                 raise LanguageRefusedError(

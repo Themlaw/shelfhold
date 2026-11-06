@@ -2,9 +2,10 @@
 
 `edition.lang_norm_by` and `unit_variant.remote_unit_id_norm_by` say which normalizer version
 produced the stored value (ENF-OPS-021); `export_record.resolved_at` is when the arrival polling
-saw the file in the destination's index (EF-INT-025). Existing rows are filled in: every language
-stored so far was produced by `lang@1`, every identifier is kept as received (`remote_unit_id@1`),
-and a record already `resolved` takes its export time as arrival time.
+saw the file in the destination's index (EF-INT-025). Existing rows are filled in: a language
+stored with its raw form was produced by `lang@1` (not the `x-unknown` placeholder), and every
+identifier is kept as received (`remote_unit_id@1`). A record already `resolved` keeps no arrival
+time: it is left out of the median.
 """
 
 from collections.abc import Iterator
@@ -82,12 +83,13 @@ def upgrade() -> None:
             _versioned("remote_unit_id_norm_by"),
         )
     op.add_column("export_record", sa.Column("resolved_at", sa.DateTime(), nullable=True))
-    op.execute("UPDATE edition SET lang_norm_by = 'lang@1'")
-    op.execute("UPDATE unit_variant SET remote_unit_id_norm_by = 'remote_unit_id@1'")
+    # `lang@1` only where it produced the value: the `x-unknown` placeholder and a language an
+    # adoption stored without its raw form (`lang_raw` NULL) have no normalizer behind them.
     op.execute(
-        "UPDATE export_record SET resolved_at = COALESCE(exported_at, updated_at, created_at) "
-        "WHERE state = 'resolved'"
+        "UPDATE edition SET lang_norm_by = 'lang@1' "
+        "WHERE lang_raw IS NOT NULL AND lang <> 'x-unknown'"
     )
+    op.execute("UPDATE unit_variant SET remote_unit_id_norm_by = 'remote_unit_id@1'")
 
 
 def downgrade() -> None:

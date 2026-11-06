@@ -23,6 +23,7 @@ _SINCE = re.compile(r"^([1-9][0-9]{0,3})d$")
 # Rows that count as an exported Unit, and the one that means "visible in Kavita": a scan found it.
 EXPORTED_STATES = ("written", "scanned", "resolved")
 VISIBLE_STATE = "resolved"
+AWAITED_STATES = ("written", "scanned")  # waiting for the arrival polling to see them
 SENTINEL_EVENTS = ("mount.sentinel_missing",)
 FOREIGN_WRITER_EVENTS = ("target.foreign_writer_detected",)
 _WAITING_EVENTS = tuple(sorted(set(WAITING_STATE_EVENT.values())))
@@ -46,6 +47,7 @@ class Stats:
     human_interventions: dict[str, int]
     units_exported: int
     median_detection_to_visible_s: int | None
+    arrivals_pending: int  # written, not yet seen in the destination's index
     guards_triggered: dict[str, int]
 
     def as_dict(self) -> dict[str, object]:
@@ -115,6 +117,9 @@ def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
             )
         ).scalar_one()
         median = _median_delay(connection, since)
+        pending = connection.execute(
+            sa.select(sa.func.count()).where(record.c.state.in_(AWAITED_STATES))
+        ).scalar_one()
         return Stats(
             since_days=since_days,
             human_interventions={
@@ -123,6 +128,7 @@ def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
             },
             units_exported=int(exported),
             median_detection_to_visible_s=median,
+            arrivals_pending=int(pending),
             guards_triggered={
                 "sentinel": _events(connection, SENTINEL_EVENTS, since),
                 "foreign_writer": _events(connection, FOREIGN_WRITER_EVENTS, since),

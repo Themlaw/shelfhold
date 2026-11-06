@@ -83,6 +83,7 @@ def test_stats_local_only_admin_only(
     assert body["human_interventions"] == {"waiting_states": 6, "needs_review_replays": 2}
     assert body["units_exported"] == 0  # nothing was exported on this instance
     assert body["median_detection_to_visible_s"] is None
+    assert body["arrivals_pending"] == 0
     assert body["guards_triggered"] == {"sentinel": 1, "foreign_writer": 2}
 
     # an admin key reads the same figures
@@ -154,6 +155,7 @@ def test_stats_median_delay_detection_to_kavita_resolved(
         stats = _stats(monkeypatch, capsys, settings, delivery, "30d")
         assert stats["median_detection_to_visible_s"] == 1800
         assert stats["units_exported"] == len(rel_paths)
+        assert stats["arrivals_pending"] == 0  # all of them were seen
         assert bench.clock.now() - detected == timedelta(seconds=1800)
 
 
@@ -172,6 +174,7 @@ def test_stats_no_visibility_before_the_polling_found_the_file(
         stats = _stats(monkeypatch, capsys, settings, delivery, "30d")
         assert stats["median_detection_to_visible_s"] is None
         assert stats["units_exported"] > 0
+        assert stats["arrivals_pending"] == stats["units_exported"]  # written, still waiting
 
 
 @pytest.mark.req("EF-INT-025")

@@ -38,7 +38,7 @@ from shelfhold.catalog.domain.names import (
 from shelfhold.catalog.domain.normalizers import NormalizerId, NormalizerRegistry, default_registry
 from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, place_of
-from shelfhold.catalog.lang import LanguageError, edition_key_lang
+from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 
 
 class Catalog(CatalogService):
@@ -110,6 +110,7 @@ def place_key(raw_number: str | None, source_order: int = 0) -> str:
 
 
 __all__ = [
+    "LANG_NORMALIZER_ID",
     "TEXT_VERSION_LABELS",
     "BindingRef",
     "Catalog",

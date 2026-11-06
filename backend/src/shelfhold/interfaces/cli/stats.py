@@ -54,6 +54,7 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     print(t("stats.replays", count=result.human_interventions["needs_review_replays"]))
     print(t("stats.units_exported", count=result.units_exported))
     print(t("stats.median_delay", value="-" if delay is None else delay))
+    print(t("stats.arrivals_pending", count=result.arrivals_pending))
     print(
         t(
             "stats.guards",
