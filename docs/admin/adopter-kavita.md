@@ -51,7 +51,10 @@ Si quoi que ce soit a changé depuis l'aperçu, la confirmation est refusée
    normalisé (score de 0 à 1) ; vous confirmez avec `adopt pair --series <id> --source-key <clé>
    --remote-id <id>` (la destination se devine s'il n'y en a qu'une). Les cas ambigus ne sont jamais tranchés seuls.
    `shelfhold adopt --pair-auto` (puis `--confirm <empreinte>`) confirme en lot les propositions sans ambiguïté, d'après un rapport et son
-   empreinte.
+   empreinte ; `--min-score <0 à 1>` fixe le score minimal d'une proposition en lot (0,9 par défaut).
+   `adopt pair --follow-from <chapitre>` choisit le premier chapitre à suivre (par défaut, le suivant
+   du dernier chapitre adopté) ; si le rattrapage dépasse 100 chapitres, la commande demande de
+   redonner le nombre vu avec `--confirm-backfill <nombre>` (`backfill.confirmation_required`).
 2. Le suivi part du **plus haut chapitre adopté** : si vous avez les chapitres 1 à 50, la première
    demande est le 51. Pour une série en volumes seuls, aucun filigrane ne se devine :
    `shelfhold adopt set-follow-from <série> <chapitre>` fixe le premier chapitre voulu (état `coverage_unknown`,

@@ -33,11 +33,12 @@ la destination.
 5. **Désactiver les scripts** de renommage, de dédoublonnage et de couvertures pour les séries que
    Shelfhold gère. Gardez, si vous en avez un, le script de mise à jour des extensions de Suwayomi
    tant que la sonde fonctionnelle des sources n'existe pas.
-6. **Confirmer la bascule** : `shelfhold adopt --confirm-migration` affiche le rapport et son
-   empreinte, puis `shelfhold adopt --confirm-migration --confirm <empreinte>` avec les cinq
-   attestations (`adopted`, `pairing_reviewed`, `repatriated`, `direct_mounts_removed`,
-   `scripts_disabled`). Une liste partielle est refusée et rien n'est gardé. Si le rapport de
-   détection change ensuite (une série nouvelle), la confirmation est à refaire pour elle.
+6. **Confirmer la bascule** : `shelfhold adopt --confirm-migration --destination <id>` affiche le
+   rapport, l'empreinte et les cinq étapes que vous attestez (`adopted`, `pairing_reviewed`,
+   `repatriated`, `direct_mounts_removed`, `scripts_disabled`), puis
+   `shelfhold adopt --confirm-migration --destination <id> --confirm <empreinte>` les atteste d'un
+   coup, pour le rapport que vous avez lu : il n'y a pas de confirmation partielle. Si le rapport de
+   détection change ensuite (une série nouvelle), la confirmation est refusée et à refaire.
 7. **Choisir le mode de vérification** des sources : `always_on` (défaut) ou `piloted`
    ([headless.md](headless.md), clé `source.check_mode`).
 8. **Planifier hors de l'hôte** : les redéploiements passent par votre outil d'orchestration

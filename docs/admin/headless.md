@@ -23,6 +23,10 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
   est celle d'un compte **administrateur** de Kavita et donne tout pouvoir sur lui : la commande
   s'arrête sur cet avertissement tant que `--accept-admin-risk` n'est pas donné. Le mot de passe du
   compte n'est pas conservé.
+- Options de `target add kavita` : `--name` (défaut `kavita`) et `--path-map` (le même JSON que la clé
+  `path_map.<cible>`, donné d'emblée plutôt que par `config set` ensuite). Options de `shelf create` :
+  `--subpath` et `--phrase` (libellé affiché, défaut : le nom). Fichiers de secrets : voir
+  [installation-headless.md](installation-headless.md) (conteneur en lecture seule, entrée standard `-`).
 - La clé est créée par `/api/Account/create-auth-key` ; si Shelfhold ne peut pas l'enregistrer, l'erreur donne son nom et son identifiant : révoquez-la dans Kavita.
 - L'adresse d'une destination : `http://` seulement sur le réseau local (adresse privée, nom sans point, `.local`, `.lan`, `.internal`), sinon `https://` ; une IP publique est refusée.
 - `source add suwayomi` lit le mode d'authentification du serveur (`none` ou `basic_auth`) ; tout
@@ -37,7 +41,8 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
 | `public_url` | (aucun) | Adresse publique ; toute URL absolue en est tirée, jamais de l'en-tête `Host` (ENF-SEC-016). |
 | `source.check_mode` | `always_on` | `always_on` ou `piloted` (EF-SRC-025). |
 | `maintenance.window` | `03:00-07:00 Europe/Paris` | Fixe en M1a, lecture seule (ENF-OPS-014). |
-| `notify.urls` | (aucun) | `nom=url`, scellée ; fournie par `--value-file`, jamais en argument. |
+| `instance.jurisdiction` | déduite de la langue du système | Code pays à deux lettres (par ex. `FR`) dont le droit d'auteur conduit les mentions de domaine public (EF-SRC-024). |
+| `notify.urls` | (aucun) | `nom=url`, scellée ; fournie par `--value-file`, jamais en argument ([notifications.md](notifications.md)). |
 | `path_map.<cible>` | `[]` | Correspondance des chemins de la destination (JSON). |
 
 `public_url` n'est lu qu'au démarrage : `shelfhold status` signale qu'un redémarrage est nécessaire. L'environnement et `config.toml` l'emportent sur la base (ENF-OPS-004) : `config set` le signale.
@@ -73,6 +78,9 @@ name = "Manga"
 max_age = "18+"
 target = "kavita"
 subpath = "manga"
+
+[notify.urls]                        # facultatif ; l'URL porte un jeton : fichier en chmod 600
+alertes = "discord://identifiant/jeton"
 ```
 
 `apply` n'est pas atomique : le plan est validé en entier d'abord, puis exécuté étape par étape ; en cas d'échec, relancez (reprise idempotente). Un secret ou un compte qui change apparaît comme `[secret: changed]`, sans la valeur. Une clé inconnue est une erreur. Les chemins relatifs sont relatifs au dossier du fichier. Les
@@ -83,5 +91,5 @@ secrets sont lus par la commande et envoyés au serveur par la socket (0600), ja
 `GET|PATCH /api/v1/config`, `POST /api/v1/targets`, `POST /api/v1/sources`,
 `POST /api/v1/shelves`. Créer une destination Kavita est l'action réservée `admin_risk.accept` :
 session administrateur **fraîche (15 min), quel que soit le profil**, jamais une clé d'API.
-`PATCH /api/v1/config` sur `public_url` ou `path_map.*` exige aussi une session. Chaque `Location` est construit depuis
+`PATCH /api/v1/config` sur `public_url` ou `path_map.*` exige aussi une session. Le fichier `open-api/openapi.json` ne décrit pas encore `/config`, `/targets` ni `/sources`, ni les routes d'exploitation de [etats-attente-et-sorties.md](etats-attente-et-sorties.md) : la ligne de commande et ce texte font foi. Chaque `Location` est construit depuis
 `public_url` ; sans elle, l'en-tête est absent.
