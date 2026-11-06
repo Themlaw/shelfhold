@@ -22,6 +22,8 @@ from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import content_hash
 from shelfhold.sdk.age import AgeRating
 
+_ADULT_FROM = 18  # M1a has adult shelves only (a ceiling of 18 or more, or none)
+
 __all__ = ["CbzRenderer", "RenderedCbz", "comicinfo_data", "comicinfo_sha256"]
 
 
@@ -56,6 +58,62 @@ def _adopted_series(connection: Connection, unit_id: str) -> Any:
     ).first()
 
 
+def _unrated_age(connection: Connection, row: Any) -> AgeRating | None:
+    """The `AgeRating` of a Work nobody has rated (a series found in the library, EF-EXP-011).
+
+    A file never leaves without one: on an adult shelf (every shelf of M1a, and the safe side when
+    no shelf is known) it is `Adults Only 18+`, or `X18+` when the source flagged the sub-source
+    as adult-only (`isNsfw`, kept as a `sub_source` age suggestion). The Work stays unrated in the
+    database (invisible to a child profile, EF-USR-015); this is only what the file says. An
+    explicit shelf below 18+ keeps the value empty: nothing unrated is exported there.
+    """
+    ceilings = _shelf_ceilings(connection, row.edition_id, row.shelf_id)
+    if any(c is not None and c < _ADULT_FROM for c in ceilings):
+        return None
+    suggestion = catalog.age_suggestion
+    flagged = connection.execute(
+        sa.select(suggestion.c.id)
+        .where(
+            sa.or_(
+                sa.and_(
+                    suggestion.c.entity_type == "edition", suggestion.c.entity_id == row.edition_id
+                ),
+                sa.and_(suggestion.c.entity_type == "work", suggestion.c.entity_id == row.work_id),
+            ),
+            suggestion.c.provenance == "sub_source",
+            suggestion.c.x,
+            suggestion.c.state != "rejected",
+        )
+        .limit(1)
+    ).first()
+    return AgeRating(_ADULT_FROM, x=flagged is not None)
+
+
+def _shelf_ceilings(
+    connection: Connection, edition_id: str, shelf_id: str | None
+) -> list[int | None]:
+    """`max_age_rating` of every shelf this Edition is filed on or exported to."""
+    shelf, destination = export.shelf, export.shelf_destination
+    link, series = export.edition_export_series, export.export_series
+    rows = connection.execute(
+        sa.select(shelf.c.max_age_rating)
+        .select_from(
+            link.join(series, series.c.id == link.c.export_series_id)
+            .join(destination, destination.c.id == series.c.shelf_destination_id)
+            .join(shelf, shelf.c.id == destination.c.shelf_id)
+        )
+        .where(link.c.edition_id == edition_id)
+    ).scalars()
+    found: list[int | None] = list(rows)
+    if shelf_id is not None:
+        found.append(
+            connection.execute(
+                sa.select(shelf.c.max_age_rating).where(shelf.c.id == shelf_id)
+            ).scalar()
+        )
+    return found
+
+
 def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicInfoData:
     unit, edition, work, team = catalog.unit, catalog.edition, catalog.work, catalog.team
     variant = catalog.unit_variant
@@ -63,7 +121,8 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
         sa.select(
             unit.c.title, unit.c.number_norm, unit.c.track, edition.c.lang, edition.c.publisher,
             work.c.sort_title, work.c.reading_direction, work.c.age_rating, work.c.age_x,
-            team.c.label,
+            team.c.label, edition.c.id.label("edition_id"), edition.c.work_id,
+            edition.c.shelf_id,
         )
         .select_from(
             unit.join(edition, edition.c.id == unit.c.edition_id)
@@ -77,6 +136,8 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
     age = AgeRating(18, True) if row.age_x else None
     if age is None and row.age_rating is not None:
         age = AgeRating(int(row.age_rating))
+    if age is None:
+        age = _unrated_age(connection, row)
     return ComicInfoData(
         series=series,
         title=row.title or "",
