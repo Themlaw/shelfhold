@@ -174,9 +174,11 @@ class SeriesDiscovery:
         buried: dict[str, str] = {}
         for ref in fresh:
             if self._tombstoned(ref):
+                log.debug("discovery.series_tombstoned", remote_id=ref.remote_id)
                 found.tombstoned += 1
                 buried[self._digest(ref)] = ref.title
             elif self._key(ref) in twins:
+                log.debug("discovery.pairing_pending", remote_id=ref.remote_id)
                 found.skipped_pending_pairing += 1
             else:
                 todo.append(ref)
@@ -184,6 +186,14 @@ class SeriesDiscovery:
             self._digest(ref): twins[self._key(ref)] for ref in fresh if self._key(ref) in twins
         }
         self._sync(buried, waiting, awaiting=bool(todo) and shelf_id is None)
+        log.debug(
+            "discovery.listed",
+            library=len(library),
+            new=len(fresh),
+            to_create=len(todo),
+            known=len(known),
+            has_shelf=shelf_id is not None,
+        )
         if shelf_id is None:
             found.awaiting_shelf = len(todo)
         if not todo or shelf_id is None:
@@ -204,6 +214,13 @@ class SeriesDiscovery:
                 continue  # that series' problem: found again at the next cycle
             binding_id = self._create(
                 ref, lang, shelf_id, _watermark(units), adult_only=ref.source_key in adult_only
+            )
+            log.debug(
+                "discovery.series_created",
+                binding_id=binding_id,
+                remote_id=ref.remote_id,
+                units=len(units),
+                language=lang,
             )
             if binding_id is not None:
                 found.created += 1

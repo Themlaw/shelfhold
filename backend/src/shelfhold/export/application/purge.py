@@ -28,6 +28,7 @@ the event hold ULIDs, the tombstone reason is an enumeration.
 """
 
 import hashlib
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -37,6 +38,7 @@ from typing import Any, Final
 import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
+from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.export.application.intents import IntentJournal
@@ -63,6 +65,7 @@ from shelfhold.infrastructure.fsops import (
     TombstonePendingError,
 )
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.schema import (
     acquisition,
     catalog,
@@ -413,9 +416,29 @@ class PurgeService:
             return self._plan_unit(connection, plan.anchor)
 
     def _execute(self, plan: _Plan, allowed: PurgeAuthorization) -> PurgeReport:
+        started = time.perf_counter()
+        with bound_contextvars(series_id=plan.work_id):
+            report = self._execute_bound(plan, allowed)
+        # counts only: no title, no path and never a tombstone value (they are stored sealed)
+        log.info(
+            "purge.finished",
+            kind=plan.kind,
+            anchor_id=plan.anchor,
+            units=len(plan.unit_ids),
+            erased=report.erased,
+            complete=report.complete,
+            refused=len(report.refused),
+            unreachable_roots=len(report.unreachable_roots),
+            pending_roots=len(report.pending_roots),
+            duration_ms=elapsed_ms(started),
+        )
+        return report
+
+    def _execute_bound(self, plan: _Plan, allowed: PurgeAuthorization) -> PurgeReport:
         self._audit(plan, allowed)
         roots = self._roots()
         recorded = self._tombstone(plan, roots)  # steps 1 and 2
+        log.debug("purge.tombstoned", pending_roots=len(recorded), roots=len(roots))
         # a root that still owes its line gets no deletion: the line is first, on every root
         roots = [r if not self._tombstones.has_pending(r.root_id) else _away(r) for r in roots]
         progress = _Progress()
@@ -492,10 +515,14 @@ class PurgeService:
         mounted = {r.root_id for r in roots if r.mounted}
         for copy in plan.copies:
             if copy.root_mode != _RW:
+                log.debug("purge.copy_decision", decision="read_only", root_id=copy.root_id)
                 self._read_only_copy(copy, progress)
             elif copy.root_id not in mounted:
+                log.debug("purge.copy_decision", decision="root_away", root_id=copy.root_id)
                 progress.unreachable.add(copy.root_id)
             else:
+                log.debug("purge.copy_decision", decision="erase", root_id=copy.root_id,
+                          kind=copy.kind)  # fmt: skip
                 self._erase_one(copy, progress)
 
     def _read_only_copy(self, copy: Copy, progress: _Progress) -> None:

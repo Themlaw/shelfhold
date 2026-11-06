@@ -34,6 +34,7 @@ from datetime import datetime
 from typing import Final, Protocol
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.events.bus import EventBus, PublishedEvent
@@ -76,6 +77,8 @@ from shelfhold.library.tombstones.values import (
     decode_plaintext,
     encode_plaintext,
 )
+
+log = structlog.get_logger(__name__)
 
 TABLE_FORMAT: Final = 2  # `content_tombstone.v`: format 2.0, the same associated data as a line
 LOST_KEYRING_PHRASE: Final = "the keyring is lost"
@@ -304,6 +307,9 @@ class TombstoneService:
             if root.mounted and self._write_line(root, seq, kid, lines[root.root_id]):
                 written.append(root.root_id)
         pending = tuple(r.root_id for r in roots if r.root_id not in written)
+        # the scope and the counts: the values are sealed in the table and must never be logged
+        log.debug("tombstone.recorded", scope=values.scope, seq=seq, written=len(written),
+                  pending=len(pending))  # fmt: skip
         return Recorded(seq, kid, tuple(written), pending)
 
     def _write_line(self, root: TombstoneRoot, seq: int, kid: str, line: bytes) -> bool:
@@ -311,7 +317,8 @@ class TombstoneService:
         try:
             self._disk.record_tombstone_kid(root.path, kid, self._kid_tags(root.root_id, kid))
             self._disk.append_tombstone_line(root.path, line, header=header_bytes())
-        except (OSError, ValueError, RuntimeError):
+        except (OSError, ValueError, RuntimeError) as error:
+            log.warning("tombstone.line_pending", root_id=root.root_id, reason=type(error).__name__)
             return False  # stays pending: written at the next replay of this root
         with self._engine.begin() as connection:
             connection.execute(

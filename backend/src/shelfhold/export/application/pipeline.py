@@ -8,6 +8,8 @@ ComicInfo last) into the tree of the destination; a `pull` destination only gets
 nothing is written.
 """
 
+import logging
+import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass
@@ -17,6 +19,7 @@ from typing import Any, Protocol
 import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
+from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import blocked_memo
@@ -49,6 +52,7 @@ from shelfhold.export.domain.planner import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.library.public import (
     ExportSource,
@@ -328,8 +332,10 @@ class ExportPipeline:
             ensure_active(connection, destination_id)
         _ctx, wanted, first = self._compute(destination_id, disk=False)
         if not first.ops:
+            log.debug("export.nothing_to_write", destination_id=destination_id)
             return ApplyReport(None, ())
         if blocked_memo.known(self._engine, destination_id, wanted.version):
+            log.debug("export.blocked_memo", destination_id=destination_id)
             return ApplyReport(None, ())  # the disk said "taken" for these inputs: ask no more
         if self._detector is not None:
             self._detector(destination_id)
@@ -345,9 +351,11 @@ class ExportPipeline:
             # can change its mind with no change of ours
             if plan.blocked and all(b.code == "export.destination_occupied" for b in plan.blocked):
                 blocked_memo.remember(self._engine, destination_id, loaded.version)
+            log.debug("export.plan_empty", blocked=[b.code for b in plan.blocked])
             return ApplyReport(None, ())
         blocked_memo.forget(self._engine, destination_id)
         plan_id = self._store(ctx, loaded, plan)
+        self._log_plan(plan_id, plan)
         return self.apply(plan_id, if_match=loaded.version, job_id=job_id)
 
     def _root_session(self, destination_id: str) -> AbstractContextManager[object]:
@@ -383,8 +391,36 @@ class ExportPipeline:
 
     # -- applying --------------------------------------------------------------------------------
 
+    @staticmethod
+    def _log_plan(plan_id: str, plan: Plan) -> None:
+        """INFO: the count per kind. DEBUG: every operation (the path is a title: DEBUG only)."""
+        by_kind: dict[str, int] = {}
+        for op in plan.ops:
+            by_kind[op.kind] = by_kind.get(op.kind, 0) + 1
+        log.info(
+            "export.plan_computed",
+            plan_id=plan_id,
+            ops=len(plan.ops),
+            blocked=len(plan.blocked),
+            warnings=len(plan.warnings),
+            **{f"ops_{kind}": n for kind, n in by_kind.items()},
+        )
+        if log.isEnabledFor(logging.DEBUG):
+            for op in plan.ops:
+                log.debug(
+                    "export.plan_op",
+                    plan_id=plan_id,
+                    kind=op.kind,
+                    unit_id=op.unit_id,
+                    series_id=op.work_id,
+                    rel_path=repr(op.rel_path),
+                )
+            for blocked in plan.blocked:
+                log.debug("export.plan_blocked", code=blocked.code, unit_id=blocked.unit_id)
+
     def apply(self, plan_id: str, *, if_match: str, job_id: str) -> ApplyReport:
         """Apply a stored plan once. `StalePlanError` (412) when anything moved since."""
+        started = time.perf_counter()
         self._require_writable()
         self._require_verified()
         with self._engine.connect() as connection:
@@ -423,6 +459,13 @@ class ExportPipeline:
             if self._request_scan is not None:
                 for folder in sorted(folders):  # one targeted scan per series folder
                     self._request_scan(ctx.remote_folder(folder))
+        log.info(
+            "export.applied",
+            plan_id=plan_id,
+            ops_done=len(done),
+            folders=len(folders),
+            duration_ms=elapsed_ms(started),
+        )
         return ApplyReport(plan_id, tuple(done))
 
     def require_names_checked(self, plan_id: str) -> None:
@@ -457,9 +500,30 @@ class ExportPipeline:
     def _execute(
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, job_id: str
     ) -> str | None:
+        with bound_contextvars(
+            unit_id=planned.unit_id,
+            series_id=planned.work_id,
+            edition_id=planned.series.edition_id,
+            target_id=ctx.target_id,
+        ):
+            started = time.perf_counter()
+            folder = self._execute_bound(ctx, planned, plan_id, job_id)
+            log.debug(
+                "export.op_done",
+                kind=planned.kind,
+                rel_path=repr(planned.rel_path),
+                duration_ms=elapsed_ms(started),
+                wrote=folder is not None,
+            )
+            return folder
+
+    def _execute_bound(
+        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, job_id: str
+    ) -> str | None:
         folder = planned.rel_path.split("/", 1)[0] if planned.rel_path else ""
         with self._engine.connect() as connection:
             if planned.series.export_series_id in paused_series(connection, ctx.destination_id):
+                log.debug("export.series_paused", export_series_id=planned.series.export_series_id)
                 return None  # paused since the plan was stored: nothing is written into it
         library = (
             library_resource(ctx.remote_library_id, planned.series.normalized_name)
@@ -483,6 +547,7 @@ class ExportPipeline:
                 if series_id is None:
                     raise
                 self._preflight.mark_denied(ctx.destination_id, series_id)
+                log.warning("export.write_denied", export_series_id=series_id)
                 return None
         return ctx.local(folder)
 

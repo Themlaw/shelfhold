@@ -8,10 +8,12 @@ open intent are skipped. Too many missing files at once (an absent mount, an unp
 the whole pass before anything is decided.
 """
 
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.events.bus import EventBus
@@ -41,6 +43,7 @@ from shelfhold.export.domain.reconcile import (
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.library.public import (
     destination_identities,
@@ -54,6 +57,8 @@ FOREIGN_WRITER = "foreign_writer"
 RESERVED_NAMES = frozenset({SENTINEL_FILE, RESERVED_DIR})
 MAX_DEPTH = 8
 
+log = structlog.get_logger(__name__)
+
 
 @dataclass(frozen=True)
 class ReconcileReport:
@@ -65,6 +70,10 @@ class ReconcileReport:
     paused: tuple[str, ...] = ()  # export series ids paused by this pass
     suspect: tuple[str, ...] = ()  # mtime changed outside the window: the hash waits for it
     busy: tuple[str, ...] = ()  # folders skipped because an export holds them
+
+
+def _found_something(report: ReconcileReport) -> bool:
+    return any(bool(value) for value in vars(report).values())
 
 
 class Reconciler:
@@ -81,6 +90,19 @@ class Reconciler:
     def reconcile(self, destination_id: str, *, in_window: bool = False) -> ReconcileReport:
         """`in_window`: the hash may be read (maintenance window, ENF-OPS-014); outside it only
         the size and the mtime are compared."""
+        started = time.perf_counter()
+        report = self._reconcile(destination_id, in_window=in_window)
+        counts = {
+            name: len(value) if isinstance(value, tuple) else value
+            for name, value in vars(report).items()
+        }  # names of folders and files are never logged: the counts only
+        (log.info if _found_something(report) else log.debug)(
+            "reconcile.finished", destination_id=destination_id, in_window=in_window,
+            duration_ms=elapsed_ms(started), **counts,
+        )  # fmt: skip
+        return report
+
+    def _reconcile(self, destination_id: str, *, in_window: bool) -> ReconcileReport:
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
             if ctx.transport != "tree" or ctx.root_local is None:
@@ -194,6 +216,16 @@ class Reconciler:
         for item in decisions[Disappeared.FOREIGN]:
             foreign.setdefault(item.rel_path.split("/", 1)[0], "deleted")
 
+        log.debug(
+            "reconcile.decided",
+            managed=len(managed),
+            live=len(live),
+            gone=len(gone),
+            foreign_folders=len(foreign),
+            suspect=len(suspect),
+            to_refresh=len(refresh),
+            **{f"missing_{kind.name.lower()}": len(items) for kind, items in decisions.items()},
+        )
         busy: list[str] = []
         paused: list[str] = []
         job_id = new_ulid()

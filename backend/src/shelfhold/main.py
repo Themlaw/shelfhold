@@ -76,6 +76,14 @@ def announce_keyring_failure(engine: Engine, bus: EventBus, error: KeyringError)
         structlog.get_logger().error("secret.undecryptable", reason=reason)
 
 
+def log_effective_config(settings: Settings) -> None:
+    """The effective configuration at start-up (INFO). A secret is masked by the model itself
+    (`SecretStr`), then by the log filter, which also scrubs by key name."""
+    structlog.get_logger().info(
+        "startup.config", version=__version__, config=settings.model_dump(mode="json")
+    )
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -137,6 +145,7 @@ def create_app(
         engine.dispose()
 
     def on_startup() -> None:
+        log_effective_config(resolved)
         ensure_volumes(resolved)
         runtime.acquire()  # ENF-OPS-015: first, before anything else; a second instance refuses
         try:

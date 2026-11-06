@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 from urllib.parse import urlencode
+
+import structlog
 
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.target_health import TargetHealth
@@ -44,11 +47,15 @@ from shelfhold.export.targets.kavita.errors import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
+from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.sdk.export_target import ApiCall
 
 BULK_BATCH: Final = 100  # `parse-bulk` takes 100 names at most
 SERIES_PAGE: Final = 100
 MAX_SERIES_PAGES: Final = 50
+
+
+log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -149,6 +156,7 @@ class KavitaClient:
         url = self._base_url + route.path
         if route.method != "GET" and query:  # the fetcher takes the parameters of a POST in the URL
             url += "?" + urlencode(dict(query))
+        started = time.perf_counter()
         try:
             if route.method == "GET":
                 response = await self._fetcher.get(
@@ -159,11 +167,16 @@ class KavitaClient:
                     url, json=body if body is not None else {}, headers=headers
                 )
         except FetchError as exc:
+            log.warning("kavita.unreachable", route=route.label, method=route.method,
+                        reason=type(exc).__name__, duration_ms=elapsed_ms(started))  # fmt: skip
             if not self._unreachable_announced:
                 self._unreachable_announced = True
                 self._events.emit("target.unreachable", route=route.label)
             raise TargetUnreachable(f"{route.label}: {type(exc).__name__}") from None
         self._unreachable_announced = False
+        # the route label only: some Kavita routes carry the key in their query string
+        log.debug("kavita.call", route=route.label, method=route.method, status=response.status,
+                  duration_ms=elapsed_ms(started))  # fmt: skip
         if response.status == 404:
             if _is_json(
                 response.body
@@ -180,6 +193,7 @@ class KavitaClient:
 
     def _route_missing(self, route: routes.Route) -> None:
         health = self.health
+        log.warning("kavita.route_missing", route=route.label)
         health.missing_routes = (*health.missing_routes, route.label)
         health.refresh_waiting()
         self._events.emit("target.route_missing", route=route.label)
@@ -190,6 +204,7 @@ class KavitaClient:
         at once, with the same exit as a lost right (`target reconnect`), but announced as the
         server no longer answering for us: `target.unreachable`."""
         health = self.health
+        log.error("kavita.key_revoked", route=route.label)
         health.paused, health.paused_route = True, route.label
         self._key_revoked = True
         health.refresh_waiting()
@@ -198,6 +213,7 @@ class KavitaClient:
 
     def _forbidden(self, route: routes.Route) -> None:
         health = self.health
+        log.error("kavita.forbidden", route=route.label)
         health.paused, health.paused_route = True, route.label
         health.refresh_waiting()
         self._events.emit("target.forbidden", route=route.label)
@@ -213,6 +229,7 @@ class KavitaClient:
             raw if isinstance(raw, str) else None, known_bad=self._known_bad
         )
         health = self.health
+        log.debug("kavita.probed", version=assessment.raw, mode=assessment.mode.value)
         health.version, health.version_mode = assessment.raw or None, assessment.mode
         install_id = result.data.get("installId") if isinstance(result.data, dict) else None
         health.install_id = install_id if isinstance(install_id, str) else None

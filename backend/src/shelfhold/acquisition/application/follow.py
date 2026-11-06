@@ -10,6 +10,7 @@ the whole service and counts against nothing; the pause ends with `resume`.
 """
 
 import asyncio
+import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from typing import NamedTuple
 
 import sqlalchemy as sa
 import structlog
+from structlog.contextvars import bound_contextvars
 
 from shelfhold.acquisition.application.backfill import (
     confirmed_ceiling,
@@ -81,6 +83,7 @@ from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.export.public import attach_to_volume
 from shelfhold.infrastructure.clock import Clock, FutureDateError, reject_future
 from shelfhold.infrastructure.content_trust import sanitize_upstream_text
+from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
 from shelfhold.jobs.ledger import Created
 from shelfhold.jobs.public import DomainSlots, JobContext, JobPools
@@ -142,6 +145,23 @@ class FollowReport:
     paused: str | None = None  # the waiting state (or failure class) the service is paused in
     unavailable: bool = False  # the service has not answered for OUTAGE_CYCLES cycles in a row
     tickets: TicketReport = field(default_factory=TicketReport)
+
+    def counters(self) -> dict[str, object]:
+        """What the job line says of the cycle (numbers and a waiting state, never a title)."""
+        return {
+            "discovered": self.discovered, "requested": self.requested,
+            "fetched": self.fetched, "removed": self.removed, "tombstoned": self.tombstoned,
+            "reactivated": self.reactivated, "created": self.created,
+            "awaiting_shelf": self.awaiting_shelf, "stale": self.stale,
+            "paused": self.paused, "unavailable": self.unavailable,
+        }  # fmt: skip
+
+    def has_news(self) -> bool:
+        """Something changed or moved: the summary of the cycle is then worth an INFO line."""
+        quiet = {"paused", "unavailable", "stale"}
+        return any(
+            bool(value) for name, value in self.counters().items() if name not in quiet
+        ) or bool(self.paused or self.unavailable)
 
 
 class _Binding(NamedTuple):
@@ -227,14 +247,20 @@ class FollowCycle:
     # -- the cycle ---------------------------------------------------------------------------
     async def run(self) -> FollowReport:
         report = FollowReport()
+        started = time.perf_counter()
         with self._engine.connect() as connection:
             paused = self._ledger.paused(connection)
         if paused is not None:
             report.paused = paused.label  # waiting for a human: no request, no second alert
+            log.debug("follow.cycle_paused", state=paused.label, service=self._plugin_id)
             return report
         try:
             await self._cycle(report)
             self._end_outage()
+            # INFO only when the cycle changed something: a quiet cycle is one DEBUG line
+            (log.info if report.has_news() else log.debug)(
+                "follow.cycle_summary", duration_ms=elapsed_ms(started), **report.counters()
+            )
         except CycleAbandoned as error:
             log.warning("follow.cycle_abandoned", reason=str(error))
             return report  # no failure, no outage, no retry: the next cycle starts again
@@ -275,7 +301,7 @@ class FollowCycle:
         """A step the service has no capability for is skipped, and said so (EF-SRC-033)."""
         for capability, step in _OPTIONAL_STEPS:
             if capability not in self._service.connected:
-                log.info(
+                log.debug(
                     "follow.capability_skipped",
                     capability=capability.name.lower() if capability.name else "?",
                     step=step,
@@ -289,6 +315,7 @@ class FollowCycle:
             if not health.ok:
                 raise _probe_error(health.detail)
         library = await from_service(self._service.followed_series(self._fetcher))
+        log.debug("follow.library_listed", series=len(library), service=self._plugin_id)
         await self._discover_series(library, report)
         in_library = {(ref.source_key, ref.remote_id) for ref in library}
         present = self._reconcile_library(in_library, report)
@@ -305,6 +332,7 @@ class FollowCycle:
             and not self._series_tombstoned(binding, report)
         ]
         self._remember_buried()
+        log.debug("follow.followed", followed=len(followed), in_library=len(present))
         for binding in followed:
             await self._discover_isolated(binding, report, budget)
         self._fill(followed, budget, report)
@@ -448,6 +476,7 @@ class FollowCycle:
         ref = SeriesBindingRef(self._plugin_id, binding.source_key, binding.remote_id)
         if not self._tombstones.check(ref, root_id=None).blocked:
             return False
+        log.debug("follow.series_tombstoned", binding_id=binding.id, edition_id=binding.edition_id)
         report.tombstoned += 1
         key = BOUND_PREFIX + digest(binding.id)
         self._buried[key] = self._title_of(binding.work_id)
@@ -482,7 +511,10 @@ class FollowCycle:
                 key, track=track, number_segment=segment, number_raw=info.number or "", part=part
             ),
         )  # fmt: skip
-        return any(self._tombstones.check(c, root_id=None).blocked for c in candidates)
+        blocked = any(self._tombstones.check(c, root_id=None).blocked for c in candidates)
+        if blocked:
+            log.debug("follow.release_tombstoned", remote_unit_id=info.remote_unit_id)
+        return blocked
 
     def _edition_key(self, edition_id: str) -> dict[str, str]:
         e = catalog.edition
@@ -558,7 +590,10 @@ class FollowCycle:
         """One series failing is that series' problem: the others are still followed. An error
         that says the whole service cannot be driven is the exception: it goes up and pauses."""
         try:
-            await self._discover(binding, report, budget)
+            with bound_contextvars(
+                series_id=binding.work_id, edition_id=binding.edition_id, binding_id=binding.id
+            ):
+                await self._discover(binding, report, budget)
         except Exception as error:
             failure_class = classify(error)
             disposition = disposition_of(failure_class)
@@ -608,10 +643,23 @@ class FollowCycle:
                 then=self._hook(info, look, budget),
             )  # fmt: skip
             report.discovered += int(result.outcome is IngestOutcome.NEW_VARIANT)
+            log.debug(
+                "follow.unit_seen",
+                unit_id=result.unit_id,
+                variant_id=result.variant_id,
+                outcome=result.outcome.name.lower(),
+            )
         for unit_id in sorted(look.touched):  # every offer is known now: one election per Unit
             with self._engine.begin() as connection:
                 self._prefs.elect(connection, unit_id, look.now)
         report.requested += len(look.opened)
+        log.debug(
+            "follow.series_looked",
+            units=len(units),
+            requested=len(look.opened),
+            baseline=mark is None,
+            fresh=fresh,
+        )
         with self._engine.begin() as connection:
             top = highest_numbered(connection, binding.edition_id) if mark is None else None
             if top == NOTHING_YET and fresh:
@@ -706,6 +754,7 @@ class FollowCycle:
         if room is not None and room <= 0:
             return False
         if budget.take(binding.source_key, 1, series_cap=room) == 0:
+            log.debug("follow.budget_exhausted", binding_id=binding.id)
             return False
         self._series_taken[binding.id] = taken + 1
         return True
@@ -962,6 +1011,6 @@ def follow_job(make_cycle: Callable[[], FollowCycle]) -> Callable[[JobContext], 
     """The Huey handler of the periodic `follow.cycle` (registered by the composition root)."""
 
     def handler(context: JobContext) -> None:
-        asyncio.run(make_cycle().run())
+        context.record(**asyncio.run(make_cycle().run()).counters())
 
     return handler

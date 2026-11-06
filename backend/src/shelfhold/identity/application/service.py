@@ -46,6 +46,7 @@ from shelfhold.identity.domain.reserved import (
     DEFAULT_FRESH_AUTH_S,
     DEFAULT_RESERVED_ROLES,
     Allowed,
+    ReauthRequired,
     ReservedAction,
     Verdict,
     authorize_reserved,
@@ -207,6 +208,13 @@ class LocalAuth:
             auth_time=principal.auth_time if principal else None,
         )
         self._store.audit(entry)
+        # INFO for the actions that change who can do what; never the target (a key prefix...)
+        structlog.get_logger().info(
+            "auth.audit",
+            action=action,
+            actor_id=entry.actor_id,
+            role=getattr(principal, "role", None),
+        )
 
     # --- accounts (CLI) ----------------------------------------------------------------------
 
@@ -555,6 +563,15 @@ class LocalAuth:
         )
         if isinstance(verdict, Allowed):  # EF-USR-022 (3): session and auth_time in the audit
             self._audit(action.name, principal)
+        else:
+            # a reauthentication asked for is the normal way in: INFO; a refusal is a WARNING
+            level = "info" if isinstance(verdict, ReauthRequired) else "warning"
+            getattr(structlog.get_logger(), level)(
+                "auth.reserved_refused",
+                action=action.name,
+                reason=type(verdict).__name__,
+                actor_id=audit_actor(principal),
+            )
         return verdict
 
     def recent_audit_targets(self, action: str, *, days: int = 30) -> list[str]:
