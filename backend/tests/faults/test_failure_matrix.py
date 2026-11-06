@@ -3,6 +3,7 @@
 Each row has its event (EF-INT-006), the error code of the same identifier (EF-UX-003) and, when a
 human has to act, an exit command (EF-INT-023)."""
 
+import ast
 import asyncio
 from pathlib import Path
 from typing import Any
@@ -228,3 +229,34 @@ def test_the_matrix_carries_the_rows_the_review_found_missing() -> None:
         keys
     )
     assert keys["suwayomi_schema_changed"].event == "source.version_unsupported"
+
+
+BACKEND = Path(__file__).resolve().parents[2]
+
+
+def _test_source(nodeid: str) -> str | None:
+    """The source of the test function a pytest node id names, or None if there is none."""
+    path, _, name = nodeid.partition("::")
+    file = BACKEND / path
+    if not file.is_file() or not name:
+        return None
+    text = file.read_text("utf-8")
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == name:
+            return ast.get_source_segment(text, node)
+    return None
+
+
+@pytest.mark.req("ENF-OPS-011")
+def test_failure_matrix_proof_nodeids_exist_and_event_matches() -> None:
+    """A row that is not replayed here names the pytest test that proves it: that test exists, and
+    it compares with the event of the row (it names it), not with a code it made up."""
+    for row in FAILURE_MATRIX:
+        if row.simulated:
+            continue
+        if row.milestone != "M1a":
+            assert row.proof.startswith("lot "), f"{row.key}: names the lot that ships it"
+            continue
+        source = _test_source(row.proof)
+        assert source is not None, f"{row.key}: {row.proof!r} is not a test that exists"
+        assert f'"{row.event}"' in source, f"{row.key}: {row.proof} never names {row.event}"

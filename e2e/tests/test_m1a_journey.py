@@ -155,6 +155,52 @@ def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
     assert '"ready"' in ready.stdout
 
 
+def open_intents(j: Journey) -> int:
+    """Intents still open in the volume (a read-only look at the database)."""
+    done = j.compose(
+        "exec", "-T", "shelfhold", "python", "-c",
+        "import sqlite3; print(sqlite3.connect('file:/data/shelfhold.db?mode=ro', uri=True)"
+        ".execute(\"select count(*) from fs_intent where state in ('pending','applying')\")"
+        ".fetchone()[0])",
+    )  # fmt: skip
+    return int(done.stdout.strip())
+
+
+@pytest.mark.req("ENF-OPS-017")
+def test_redeploy_during_running_export_finishes_without_open_intent(journey: Journey) -> None:
+    """The container is recreated while a chapter is being received and exported: SIGTERM is
+    handled inside `stop_grace_period`, no intent stays open after the restart, and the chapter
+    arrives (the work that was cut is taken up again, not lost, not written twice)."""
+    j = journey
+    install_by_commands(j)
+    j.discover_series()
+    j.publish_upstream()
+    old = j.container_id()
+    assert j.shelfhold("jobs", "run", "follow.cycle").code == 0  # the download is asked for
+    time.sleep(2)  # the second look of the service collects it: the work is under way
+    assert j.shelfhold("jobs", "run", "follow.cycle").code == 0
+    started = time.monotonic()
+    j.compose("stop", "shelfhold")  # Komodo's "Redeploy", step one: SIGTERM, then wait
+    assert time.monotonic() - started < 60  # inside stop_grace_period, never SIGKILL
+    exit_code = subprocess.run(  # noqa: S603
+        ["docker", "inspect", "-f", "{{.State.ExitCode}}", old],  # noqa: S607
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()  # fmt: skip
+    assert exit_code in ("0", "143")
+
+    j.compose("up", "-d", "--wait", "--force-recreate", timeout=600)
+
+    assert wait_for(lambda: open_intents(j) == 0, 60), "an intent stayed open after the redeploy"
+    assert j.follow_until(lambda: any(f.endswith("Ch.2.cbz") for f in j.library_files()), 300), (
+        "le chapitre n'est pas arrivé après le redéploiement"
+    )
+    files = j.library_files()
+    assert len([f for f in files if f.endswith("Ch.2.cbz")]) == 1  # written once
+    assert not any("/." in f.removeprefix("/library") and ".shelfhold" not in f for f in files)
+    assert open_intents(j) == 0
+    assert j.kavita()["violations"] == [] and j.suwayomi()["violations"] == []
+
+
 @pytest.mark.req("EF-EXP-056", "EF-INT-024")
 def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> None:
     """After a first chapter, `detach --restore-upstream` gives the series back to Suwayomi's own
