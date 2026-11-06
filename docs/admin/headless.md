@@ -45,11 +45,11 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
 | `source.check_mode` | `always_on` | `always_on` ou `piloted` (EF-SRC-025). `piloted` est enregistré mais **inactif avant M1b** : la commande le dit, et le suivi se comporte comme `always_on`. |
 | `export.missing_floor` | `10` | Sentinelle (EF-EXP-029) : nombre minimal de fichiers manquants dans une destination d'étagère pour que la part compte. |
 | `export.missing_ratio` | `0.05` | Sentinelle : part de fichiers manquants (avec le plancher) à partir de laquelle vérification, suppressions et scans sont bloqués. |
-| `export.missing_ceiling` | `50` | Sentinelle : au-delà de ce nombre de fichiers manquants, blocage quelle que soit la part. Lus à chaque passe, sans redémarrage. |
+| `export.missing_ceiling` | `50` | Sentinelle : au-delà de ce nombre de fichiers manquants, blocage quelle que soit la part. Bornes : part dans ]0 ; 0,5], plafond au plus 1000, plancher entre 1 et le plafond (sinon le garde-fou ne pourrait plus se déclencher) ; une ligne modifiée à la main hors bornes est ignorée avec un WARNING. Lus à chaque passe, sans redémarrage. |
 | `maintenance.window` | `03:00-07:00 Europe/Paris` | Fixe en M1a, lecture seule (ENF-OPS-014). |
 | `instance.jurisdiction` | déduite de la langue du système | Code pays à deux lettres (par ex. `FR`) dont le droit d'auteur conduit les mentions de domaine public (EF-SRC-024). |
 | `notify.urls` | (aucun) | `nom=url`, scellée ; fournie par `--value-file`, jamais en argument ([notifications.md](notifications.md)). |
-| `path_map.<cible>` | `/library/manga↔/manga`, `/library/books↔/books`, `/library/comics↔/comics` | Correspondance des chemins de la destination (JSON). Sans `--path-map`, `target add kavita` pose cette table par défaut (EF-EXP-003) : on monte le parent des médias de Kavita ; seuls les dossiers présents deviennent des racines. |
+| `path_map.<cible>` | `/library/manga↔/manga`, `/library/books↔/books`, `/library/comics↔/comics` | Correspondance des chemins de la destination (JSON). Sans `--path-map`, `target add kavita` pose cette table par défaut (EF-EXP-003) : on monte le parent des médias de Kavita ; seuls les dossiers présents deviennent des racines, et un dossier déjà nommé par une autre destination ou déjà enregistré est sauté. `--path-map '[]'` pose une table vide. Déclarer `adopt_ro` un dossier déjà racine en écriture est refusé. |
 
 `public_url` n'est lu qu'au démarrage : `shelfhold status` signale qu'un redémarrage est nécessaire. L'environnement et `config.toml` l'emportent sur la base (ENF-OPS-004) : `config set` le signale.
 

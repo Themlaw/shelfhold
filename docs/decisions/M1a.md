@@ -689,3 +689,14 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
   `config set` et `config get`. L21 (M1b) retirera l'avertissement.
 - **EF-EXP-029.** Les seuils sont les réglages `export.missing_floor|ratio|ceiling` de
   `app_setting` (aucune migration), relus à chaque passe de rapprochement.
+
+### L47 : correctifs de la revue Opus
+
+- Seuils de sentinelle bornés (`part` dans ]0 ; 0,5], `plafond` au plus 1000, `1 <= plancher <= plafond`),
+  contrôlés au `config set` (les trois valeurs ensemble) et relus avec repli sur les défauts et un
+  WARNING dans `thresholds_from`.
+- Table par défaut : saute les dossiers déjà nommés par une autre cible ou déjà enregistrés ; `adopt_ro` sur une racine
+  déjà `rw` est refusé ; `--path-map '[]'` reste vide.
+- Audit : `user_id`, `session_id` et `auth_time` comme les autres lignes ; `config apply` par le
+  socket porte l'acteur et exige `admin_risk.accept` quand le plan crée une cible.
+- Sonde de liaison : `EROFS` détecté (conseil : retirer `:ro`) ; aucun bloc compose ne nomme root.

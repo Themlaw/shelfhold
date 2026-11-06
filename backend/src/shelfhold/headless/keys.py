@@ -9,7 +9,13 @@ from dataclasses import dataclass
 from typing import Final
 
 from shelfhold.export.application.root_bootstrap import default_jurisdiction
-from shelfhold.export.domain.reconcile import CEILING_MISSING, FLOOR_MISSING, RATIO_MISSING
+from shelfhold.export.domain.reconcile import (
+    CEILING_MISSING,
+    FLOOR_MISSING,
+    MAX_CEILING,
+    MAX_RATIO,
+    RATIO_MISSING,
+)
 from shelfhold.headless.errors import InvalidConfigValue
 from shelfhold.headless.urls import validate_public_url
 from shelfhold.i18n import t
@@ -53,8 +59,8 @@ def _check_mode(value: str) -> str:
 
 def _whole(name: str) -> Callable[[str], str]:
     def check(value: str) -> str:
-        if not value.strip().isdigit() or int(value) < 1:
-            raise InvalidConfigValue(f"{name} is a whole number, 1 or more")
+        if not value.strip().isdigit() or not 1 <= int(value) <= MAX_CEILING:
+            raise InvalidConfigValue(f"{name} is a whole number from 1 to {MAX_CEILING}")
         return str(int(value))
 
     return check
@@ -65,8 +71,8 @@ def _share(value: str) -> str:
         share = float(value)
     except ValueError:
         raise InvalidConfigValue("export.missing_ratio is a share, e.g. 0.05") from None
-    if not 0 < share <= 1:
-        raise InvalidConfigValue("export.missing_ratio is above 0 and at most 1")
+    if not 0 < share <= MAX_RATIO:
+        raise InvalidConfigValue(f"export.missing_ratio is above 0 and at most {MAX_RATIO}")
     return str(share)
 
 

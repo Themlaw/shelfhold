@@ -3,10 +3,12 @@ URL of the headless configuration (L38)."""
 # ruff: noqa: S105, E501 (synthetic secrets; the tables of arguments read better long)
 
 import ast
+import os
 import re
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 from fastapi import APIRouter
 
 from shelfhold.config import Settings
@@ -19,7 +21,7 @@ from shelfhold.interfaces.cli.registry import build_parser
 from shelfhold.interfaces.http_api.headless import build_headless_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.interfaces.local_cli.dispatch import HEADLESS_METHODS
-from tests.auth_env import auth_env, run_cli
+from tests.auth_env import auth_env, db_rows, run_cli
 from tests.headless_env import (
     KAVITA_PASSWORD,
     KAVITA_URL,
@@ -221,3 +223,60 @@ def test_absolute_urls_built_from_configured_public_url(
                 if bad_attr or forwarded:
                     offenders.append(f"{path.relative_to(SRC)}:{node.lineno}")
     assert offenders == []
+
+
+def _audit_rows(env: Headless) -> list[tuple[str | None, str | None, str | None, object]]:
+    with env.engine.connect() as connection:
+        return [
+            tuple(row)
+            for row in connection.execute(
+                sa.text(
+                    "SELECT actor_id, target, session_id, auth_time FROM audit "
+                    "WHERE action = 'target.admin_risk_accepted'"
+                )
+            )
+        ]  # type: ignore[misc]
+
+
+@pytest.mark.req("ENF-SEC-013")
+def test_admin_risk_audit_row_follows_the_convention_of_the_other_rows(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    with (
+        headless(settings) as env,
+        auth_env(monkeypatch, settings, routers=[_router(env, None)]) as api,
+    ):
+        assert api.login().status_code == 200
+        made = api.post(
+            "/api/v1/targets",
+            json={"kind": "kavita", "name": "kavita", "url": KAVITA_URL, "username": "u",
+                  "password": KAVITA_PASSWORD, "accept_admin_risk": True},
+        )  # fmt: skip
+        assert made.status_code == 201, made.text
+        [(actor, target, session_id, auth_time)] = _audit_rows(env)
+        [(user_id,)] = db_rows(settings, "SELECT id FROM user")
+        assert actor == user_id and not str(actor).startswith("session:")
+        assert target == "kavita" and session_id and auth_time
+
+
+@pytest.mark.req("ENF-SEC-013")
+def test_config_apply_through_the_socket_audits_the_actor_and_needs_the_reserved_action(
+    settings: Settings, tmp_path: Path
+) -> None:
+    password = write_secret(tmp_path, "pw", KAVITA_PASSWORD + "\n")
+    text = (
+        '[[targets]]\nkind = "kavita"\nname = "kavita"\n'
+        f'url = "{KAVITA_URL}"\nuser = "u"\npassword_file = "{password}"\n'
+        "accept_admin_risk = true\n"
+    )
+    with headless(settings) as env:
+        sock = tmp_path / "s.sock"
+        with serving(sock, IdentityDispatcher(_auth(env), headless=env.admin)):
+            call(sock, "config.apply", {"text": text, "base_dir": str(tmp_path), "dry_run": True,
+                                        "secrets": {str(password): KAVITA_PASSWORD}})  # fmt: skip
+            assert _audit_rows(env) == []  # a dry run writes nothing
+            call(sock, "config.apply", {"text": text, "base_dir": str(tmp_path),
+                                        "secrets": {str(password): KAVITA_PASSWORD},
+                                        "_actor": "forged"})  # fmt: skip
+        [(actor, target, _session, _time)] = _audit_rows(env)
+        assert actor == f"local_cli:{os.getuid()}" and target == "kavita"

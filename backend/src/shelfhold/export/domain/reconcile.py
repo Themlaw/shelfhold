@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Final
 
+import structlog
+
 __all__ = [
     "FLOOR_MISSING",
     "REEXPORT_WINDOW",
@@ -37,6 +39,10 @@ REEXPORT_ATTEMPTED: Final = "reconcile.reexport_attempted"
 LIVE_STATES: Final = frozenset({"written", "scanned", "resolved", "adopted"})
 
 
+MAX_RATIO: Final = 0.5  # beyond half the files, the guard could never see an absent mount
+MAX_CEILING: Final = 1000
+
+
 @dataclass(frozen=True)
 class Thresholds:
     """The three settable numbers of the rule (`export.missing_floor|ratio|ceiling`)."""
@@ -45,23 +51,37 @@ class Thresholds:
     ratio: float = RATIO_MISSING
     ceiling: int = CEILING_MISSING
 
+    def problem(self) -> str | None:
+        """Why these numbers would switch the guard off (EF-EXP-029), or None: a share in
+        ]0; 0.5], a ceiling of at most 1000 and a floor between 1 and the ceiling."""
+        if not 0 < self.ratio <= MAX_RATIO:
+            return f"the share is above 0 and at most {MAX_RATIO}"
+        if not 1 <= self.ceiling <= MAX_CEILING:
+            return f"the ceiling is between 1 and {MAX_CEILING}"
+        if not 1 <= self.floor <= self.ceiling:
+            return "the floor is between 1 and the ceiling"
+        return None
+
 
 def thresholds_from(settings: Mapping[str, str]) -> Thresholds:
-    """The stored settings over the defaults; a value that does not parse is ignored (the keys
-    are validated when set, a hand-edited row must not stop the reconcile)."""
+    """The stored settings over the defaults. A row edited by hand that does not parse, or that
+    would let the guard never fire, is ignored: the defaults apply and a WARNING says so."""
 
     def number(key: str, default: float, kind: type[int] | type[float]) -> float:
         try:
-            value = kind(settings[key])
+            return kind(settings[key])
         except (KeyError, ValueError):
             return default
-        return value if value > 0 else default
 
-    return Thresholds(
+    found = Thresholds(
         floor=int(number("export.missing_floor", FLOOR_MISSING, int)),
         ratio=number("export.missing_ratio", RATIO_MISSING, float),
         ceiling=int(number("export.missing_ceiling", CEILING_MISSING, int)),
     )
+    if (why := found.problem()) is not None:
+        structlog.get_logger().warning("reconcile.thresholds_ignored", reason=why)
+        return Thresholds()
+    return found
 
 
 def missing_blocks(

@@ -13,6 +13,7 @@ from typing import Any
 
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import HeadlessAdmin, HeadlessError, Plan
+from shelfhold.headless.actor import Actor, actor_of
 from shelfhold.i18n import t
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -37,7 +38,7 @@ from shelfhold.ops import OpsServices
 Params = Mapping[str, Any]
 Method = Callable[[LocalAuth, Principal, Params], object]
 HeadlessMethod = Callable[[HeadlessAdmin, Params], object]
-ACTOR = "_actor"  # the audit actor of the peer, written by the dispatcher over any given value
+ACTOR = "_actor"  # the audit `Actor` of the peer, written by the dispatcher over any given value
 _PASSWORD_REASONS = frozenset(
     {"invalid_username", "password_too_short", "password_too_long", "invalid_expiry"}
 )
@@ -198,6 +199,23 @@ def _config_set(admin: HeadlessAdmin, params: Params) -> object:
     return _config_value(admin.set(str(_text(params, "key")), str(_text(params, "value"))))
 
 
+def _actor(params: Params) -> Actor | None:
+    """The audit actor written by the dispatcher (never read from what the peer sent)."""
+    raw = params.get(ACTOR)
+    return raw if isinstance(raw, Actor) else None
+
+
+def _config_apply_plan(admin: HeadlessAdmin, params: Params) -> object:
+    """True when a dry run of the file would create a target."""
+    plan = admin.apply_text(
+        str(_text(params, "text")),
+        base_dir=Path(str(_text(params, "base_dir"))),
+        dry_run=True,
+        secrets=_mapping(params, "secrets"),
+    )
+    return any(c.kind == "target" and c.action == "create" for c in plan.changes)
+
+
 def _config_apply(admin: HeadlessAdmin, params: Params) -> object:
     return _plan(
         admin.apply_text(
@@ -205,6 +223,7 @@ def _config_apply(admin: HeadlessAdmin, params: Params) -> object:
             base_dir=Path(str(_text(params, "base_dir"))),
             dry_run=_flag(params, "dry_run"),
             secrets=_mapping(params, "secrets"),
+            actor=_actor(params),
         )
     )
 
@@ -220,7 +239,7 @@ def _target_add(admin: HeadlessAdmin, params: Params) -> object:
         password=str(_text(params, "password")),
         accept_admin_risk=_flag(params, "accept_admin_risk"),
         path_map=path_map if isinstance(path_map, list) else None,
-        actor=_text(params, ACTOR, required=False),  # set by the dispatcher, never by the peer
+        actor=_actor(params),
     )
     return {"id": added.id, "name": added.name, "created": added.created,
             "key_expires_at": _plain(added.key_expires_at)}  # fmt: skip
@@ -295,6 +314,16 @@ class IdentityDispatcher:
                 APPLICATION_ERROR, t("local_cli.not_allowed"), {"code": type(verdict).__name__}
             )
 
+    async def _authorize_new_targets(
+        self, admin: HeadlessAdmin, principal: Principal, params: Params
+    ) -> None:
+        """A file that adds a Kavita target takes an administrator key like `target add` does:
+        the same reserved action, not a way around it (ENF-SEC-013)."""
+        dry = {**params, "dry_run": True}
+        plan = await self._run_headless(_config_apply_plan, admin, dry)
+        if plan:
+            self._authorize(principal, "admin_risk.accept")
+
     async def __call__(self, peer: Peer, method: str, params: dict[str, Any]) -> object:
         operating = OPS_METHODS.get(method)
         if operating is not None and self._ops is not None:  # EF-INT-023
@@ -305,7 +334,9 @@ class IdentityDispatcher:
         if headless is not None and self._headless is not None:
             principal = principal_for_peer(peer)
             self._authorize(principal, headless[1])
-            audited = {**params, ACTOR: principal.actor_id}  # whatever the peer sent is replaced
+            audited = {**params, ACTOR: actor_of(principal)}  # whatever the peer sent is replaced
+            if method == "config.apply" and not _flag(params, "dry_run"):
+                await self._authorize_new_targets(self._headless, principal, audited)
             return await self._run_headless(headless[0], self._headless, audited)
         entry = METHODS.get(method)
         if entry is None:
