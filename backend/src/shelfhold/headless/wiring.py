@@ -100,5 +100,5 @@ def open_headless(settings: Settings) -> HeadlessAdmin:
         channels=_Channels(),
         resolve=lambda: load_settings(os.environ, db_loader=load_db_settings),
         roots=RootPolicy(settings.library_dir, settings.data_dir, settings.store_dir),
-        linker=_ShelfLinker(settings, engine),
+        linker=shelf_linker(settings, engine),
     )

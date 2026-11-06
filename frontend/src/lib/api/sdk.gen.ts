@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AboutData, AboutErrors, AboutResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobStatusData, JobStatusErrors, JobStatusResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, PreviewData, PreviewErrors, PreviewResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, SessionData, SessionErrors, SessionResponses, StatsData, StatsErrors, StatsResponses } from './types.gen';
+import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, JobStatusData, JobStatusErrors, JobStatusResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -22,6 +22,76 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  * About
  */
 export const about = <ThrowOnError extends boolean = false>(options?: Options<AboutData, ThrowOnError>): RequestResult<AboutResponses, AboutErrors, ThrowOnError> => (options?.client ?? client).get<AboutResponses, AboutErrors, ThrowOnError>({ url: '/api/v1/about', ...options });
+
+/**
+ * Adopt Confirm Migration
+ */
+export const adoptConfirmMigration = <ThrowOnError extends boolean = false>(options: Options<AdoptConfirmMigrationData, ThrowOnError>): RequestResult<AdoptConfirmMigrationResponses, AdoptConfirmMigrationErrors, ThrowOnError> => (options.client ?? client).post<AdoptConfirmMigrationResponses, AdoptConfirmMigrationErrors, ThrowOnError>({
+    url: '/api/v1/adoption/{destination_id}/confirm-migration',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Adopt Set Follow From
+ */
+export const adoptSetFollowFrom = <ThrowOnError extends boolean = false>(options: Options<AdoptSetFollowFromData, ThrowOnError>): RequestResult<AdoptSetFollowFromResponses, AdoptSetFollowFromErrors, ThrowOnError> => (options.client ?? client).post<AdoptSetFollowFromResponses, AdoptSetFollowFromErrors, ThrowOnError>({
+    url: '/api/v1/adoption/{destination_id}/follow-from',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Migration
+ */
+export const migration = <ThrowOnError extends boolean = false>(options: Options<MigrationData, ThrowOnError>): RequestResult<MigrationResponses, MigrationErrors, ThrowOnError> => (options.client ?? client).get<MigrationResponses, MigrationErrors, ThrowOnError>({ url: '/api/v1/adoption/{destination_id}/migration', ...options });
+
+/**
+ * Pair
+ */
+export const pair = <ThrowOnError extends boolean = false>(options: Options<PairData, ThrowOnError>): RequestResult<PairResponses, PairErrors, ThrowOnError> => (options.client ?? client).post<PairResponses, PairErrors, ThrowOnError>({
+    url: '/api/v1/adoption/{destination_id}/pair',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Pair Auto
+ */
+export const pairAuto = <ThrowOnError extends boolean = false>(options: Options<PairAutoData, ThrowOnError>): RequestResult<PairAutoResponses, PairAutoErrors, ThrowOnError> => (options.client ?? client).post<PairAutoResponses, PairAutoErrors, ThrowOnError>({
+    url: '/api/v1/adoption/{destination_id}/pair-auto',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Pair Propose
+ */
+export const pairPropose = <ThrowOnError extends boolean = false>(options: Options<PairProposeData, ThrowOnError>): RequestResult<PairProposeResponses, PairProposeErrors, ThrowOnError> => (options.client ?? client).get<PairProposeResponses, PairProposeErrors, ThrowOnError>({ url: '/api/v1/adoption/{destination_id}/pairing', ...options });
+
+/**
+ * Repatriate
+ */
+export const repatriate = <ThrowOnError extends boolean = false>(options: Options<RepatriateData, ThrowOnError>): RequestResult<RepatriateResponses, RepatriateErrors, ThrowOnError> => (options.client ?? client).post<RepatriateResponses, RepatriateErrors, ThrowOnError>({
+    url: '/api/v1/adoption/{destination_id}/repatriate',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Login
@@ -58,6 +128,35 @@ export const reauth = <ThrowOnError extends boolean = false>(options: Options<Re
 export const session = <ThrowOnError extends boolean = false>(options?: Options<SessionData, ThrowOnError>): RequestResult<SessionResponses, SessionErrors, ThrowOnError> => (options?.client ?? client).get<SessionResponses, SessionErrors, ThrowOnError>({ url: '/api/v1/auth/session', ...options });
 
 /**
+ * Read Config
+ */
+export const readConfig = <ThrowOnError extends boolean = false>(options?: Options<ReadConfigData, ThrowOnError>): RequestResult<ReadConfigResponses, ReadConfigErrors, ThrowOnError> => (options?.client ?? client).get<ReadConfigResponses, ReadConfigErrors, ThrowOnError>({ url: '/api/v1/config', ...options });
+
+/**
+ * Patch Config
+ */
+export const patchConfig = <ThrowOnError extends boolean = false>(options: Options<PatchConfigData, ThrowOnError>): RequestResult<PatchConfigResponses, PatchConfigErrors, ThrowOnError> => (options.client ?? client).patch<PatchConfigResponses, PatchConfigErrors, ThrowOnError>({
+    url: '/api/v1/config',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Restore Upstream
+ */
+export const restoreUpstream = <ThrowOnError extends boolean = false>(options: Options<RestoreUpstreamData, ThrowOnError>): RequestResult<RestoreUpstreamResponses, RestoreUpstreamErrors, ThrowOnError> => (options.client ?? client).post<RestoreUpstreamResponses, RestoreUpstreamErrors, ThrowOnError>({
+    url: '/api/v1/detach',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Backfill Estimate
  */
 export const backfillEstimate = <ThrowOnError extends boolean = false>(options: Options<BackfillEstimateData, ThrowOnError>): RequestResult<BackfillEstimateResponses, BackfillEstimateErrors, ThrowOnError> => (options.client ?? client).get<BackfillEstimateResponses, BackfillEstimateErrors, ThrowOnError>({ url: '/api/v1/editions/{edition_id}/backfill', ...options });
@@ -67,6 +166,18 @@ export const backfillEstimate = <ThrowOnError extends boolean = false>(options: 
  */
 export const backfillStart = <ThrowOnError extends boolean = false>(options: Options<BackfillStartData, ThrowOnError>): RequestResult<BackfillStartResponses, BackfillStartErrors, ThrowOnError> => (options.client ?? client).post<BackfillStartResponses, BackfillStartErrors, ThrowOnError>({
     url: '/api/v1/editions/{edition_id}/backfill',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Edition Set Lang
+ */
+export const editionSetLang = <ThrowOnError extends boolean = false>(options: Options<EditionSetLangData, ThrowOnError>): RequestResult<EditionSetLangResponses, EditionSetLangErrors, ThrowOnError> => (options.client ?? client).post<EditionSetLangResponses, EditionSetLangErrors, ThrowOnError>({
+    url: '/api/v1/editions/{edition_id}/language',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -92,9 +203,31 @@ export const intentsResolve = <ThrowOnError extends boolean = false>(options: Op
 });
 
 /**
+ * Jobs List
+ */
+export const jobsList = <ThrowOnError extends boolean = false>(options?: Options<JobsListData, ThrowOnError>): RequestResult<JobsListResponses, JobsListErrors, ThrowOnError> => (options?.client ?? client).get<JobsListResponses, JobsListErrors, ThrowOnError>({ url: '/api/v1/jobs', ...options });
+
+/**
  * Job Status
  */
 export const jobStatus = <ThrowOnError extends boolean = false>(options: Options<JobStatusData, ThrowOnError>): RequestResult<JobStatusResponses, JobStatusErrors, ThrowOnError> => (options.client ?? client).get<JobStatusResponses, JobStatusErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}', ...options });
+
+/**
+ * Jobs Retry
+ */
+export const jobsRetry = <ThrowOnError extends boolean = false>(options: Options<JobsRetryData, ThrowOnError>): RequestResult<JobsRetryResponses, JobsRetryErrors, ThrowOnError> => (options.client ?? client).post<JobsRetryResponses, JobsRetryErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}/retry', ...options });
+
+/**
+ * Missing Resolve
+ */
+export const missingResolve = <ThrowOnError extends boolean = false>(options: Options<MissingResolveData, ThrowOnError>): RequestResult<MissingResolveResponses, MissingResolveErrors, ThrowOnError> => (options.client ?? client).post<MissingResolveResponses, MissingResolveErrors, ThrowOnError>({
+    url: '/api/v1/missing/{destination_id}/{export_item_id}/resolve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Preview
@@ -112,6 +245,35 @@ export const preview = <ThrowOnError extends boolean = false>(options: Options<P
  * Apply
  */
 export const apply = <ThrowOnError extends boolean = false>(options: Options<ApplyData, ThrowOnError>): RequestResult<ApplyResponses, ApplyErrors, ThrowOnError> => (options.client ?? client).post<ApplyResponses, ApplyErrors, ThrowOnError>({ url: '/api/v1/plans/{plan_id}/apply', ...options });
+
+/**
+ * Probe
+ */
+export const probe = <ThrowOnError extends boolean = false>(options: Options<ProbeData, ThrowOnError>): RequestResult<ProbeResponses, ProbeErrors, ThrowOnError> => (options.client ?? client).post<ProbeResponses, ProbeErrors, ThrowOnError>({
+    url: '/api/v1/probe',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Restore Adopt
+ */
+export const restoreAdopt = <ThrowOnError extends boolean = false>(options: Options<RestoreAdoptData, ThrowOnError>): RequestResult<RestoreAdoptResponses, RestoreAdoptErrors, ThrowOnError> => (options.client ?? client).post<RestoreAdoptResponses, RestoreAdoptErrors, ThrowOnError>({
+    url: '/api/v1/reconcile/adopt-after-restore',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Series Resume
+ */
+export const seriesResume = <ThrowOnError extends boolean = false>(options: Options<SeriesResumeData, ThrowOnError>): RequestResult<SeriesResumeResponses, SeriesResumeErrors, ThrowOnError> => (options.client ?? client).post<SeriesResumeResponses, SeriesResumeErrors, ThrowOnError>({ url: '/api/v1/series/{export_series_id}/resume', ...options });
 
 /**
  * Create Shelf
@@ -138,9 +300,130 @@ export const bindDestination = <ThrowOnError extends boolean = false>(options: O
 });
 
 /**
+ * Add Source
+ */
+export const addSource = <ThrowOnError extends boolean = false>(options: Options<AddSourceData, ThrowOnError>): RequestResult<AddSourceResponses, AddSourceErrors, ThrowOnError> => (options.client ?? client).post<AddSourceResponses, AddSourceErrors, ThrowOnError>({
+    url: '/api/v1/sources',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Source Recheck
+ */
+export const sourceRecheck = <ThrowOnError extends boolean = false>(options?: Options<SourceRecheckData, ThrowOnError>): RequestResult<SourceRecheckResponses, SourceRecheckErrors, ThrowOnError> => (options?.client ?? client).post<SourceRecheckResponses, SourceRecheckErrors, ThrowOnError>({ url: '/api/v1/sources/suwayomi/recheck', ...options });
+
+/**
+ * Source Set Secret
+ */
+export const sourceSetSecret = <ThrowOnError extends boolean = false>(options: Options<SourceSetSecretData, ThrowOnError>): RequestResult<SourceSetSecretResponses, SourceSetSecretErrors, ThrowOnError> => (options.client ?? client).post<SourceSetSecretResponses, SourceSetSecretErrors, ThrowOnError>({
+    url: '/api/v1/sources/suwayomi/secret',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Stats
  */
 export const stats = <ThrowOnError extends boolean = false>(options?: Options<StatsData, ThrowOnError>): RequestResult<StatsResponses, StatsErrors, ThrowOnError> => (options?.client ?? client).get<StatsResponses, StatsErrors, ThrowOnError>({ url: '/api/v1/stats', ...options });
+
+/**
+ * Status
+ */
+export const status = <ThrowOnError extends boolean = false>(options?: Options<StatusData, ThrowOnError>): RequestResult<StatusResponses, StatusErrors, ThrowOnError> => (options?.client ?? client).get<StatusResponses, StatusErrors, ThrowOnError>({ url: '/api/v1/status', ...options });
+
+/**
+ * Add Target
+ */
+export const addTarget = <ThrowOnError extends boolean = false>(options: Options<AddTargetData, ThrowOnError>): RequestResult<AddTargetResponses, AddTargetErrors, ThrowOnError> => (options.client ?? client).post<AddTargetResponses, AddTargetErrors, ThrowOnError>({
+    url: '/api/v1/targets',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Target Recheck
+ */
+export const targetRecheck = <ThrowOnError extends boolean = false>(options: Options<TargetRecheckData, ThrowOnError>): RequestResult<TargetRecheckResponses, TargetRecheckErrors, ThrowOnError> => (options.client ?? client).post<TargetRecheckResponses, TargetRecheckErrors, ThrowOnError>({ url: '/api/v1/targets/{target_id}/recheck', ...options });
+
+/**
+ * Target Reconnect
+ */
+export const targetReconnect = <ThrowOnError extends boolean = false>(options: Options<TargetReconnectData, ThrowOnError>): RequestResult<TargetReconnectResponses, TargetReconnectErrors, ThrowOnError> => (options.client ?? client).post<TargetReconnectResponses, TargetReconnectErrors, ThrowOnError>({ url: '/api/v1/targets/{target_id}/reconnect', ...options });
+
+/**
+ * Target Rotate Key
+ */
+export const targetRotateKey = <ThrowOnError extends boolean = false>(options: Options<TargetRotateKeyData, ThrowOnError>): RequestResult<TargetRotateKeyResponses, TargetRotateKeyErrors, ThrowOnError> => (options.client ?? client).post<TargetRotateKeyResponses, TargetRotateKeyErrors, ThrowOnError>({
+    url: '/api/v1/targets/{target_id}/rotate-key',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Accept Lost Keyring
+ */
+export const acceptLostKeyring = <ThrowOnError extends boolean = false>(options: Options<AcceptLostKeyringData, ThrowOnError>): RequestResult<AcceptLostKeyringResponses, AcceptLostKeyringErrors, ThrowOnError> => (options.client ?? client).post<AcceptLostKeyringResponses, AcceptLostKeyringErrors, ThrowOnError>({
+    url: '/api/v1/tombstones/accept-lost-keyring',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Tombstone Flush
+ */
+export const tombstoneFlush = <ThrowOnError extends boolean = false>(options?: Options<TombstoneFlushData, ThrowOnError>): RequestResult<TombstoneFlushResponses, TombstoneFlushErrors, ThrowOnError> => (options?.client ?? client).post<TombstoneFlushResponses, TombstoneFlushErrors, ThrowOnError>({ url: '/api/v1/tombstones/flush', ...options });
+
+/**
+ * Set Aside Journal
+ */
+export const setAsideJournal = <ThrowOnError extends boolean = false>(options: Options<SetAsideJournalData, ThrowOnError>): RequestResult<SetAsideJournalResponses, SetAsideJournalErrors, ThrowOnError> => (options.client ?? client).post<SetAsideJournalResponses, SetAsideJournalErrors, ThrowOnError>({
+    url: '/api/v1/tombstones/set-aside-journal',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Purge Unit
+ */
+export const purgeUnit = <ThrowOnError extends boolean = false>(options: Options<PurgeUnitData, ThrowOnError>): RequestResult<PurgeUnitResponses, PurgeUnitErrors, ThrowOnError> => (options.client ?? client).post<PurgeUnitResponses, PurgeUnitErrors, ThrowOnError>({
+    url: '/api/v1/units/{unit_id}/purge',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Purge Work
+ */
+export const purgeWork = <ThrowOnError extends boolean = false>(options: Options<PurgeWorkData, ThrowOnError>): RequestResult<PurgeWorkResponses, PurgeWorkErrors, ThrowOnError> => (options.client ?? client).post<PurgeWorkResponses, PurgeWorkErrors, ThrowOnError>({
+    url: '/api/v1/works/{work_id}/purge',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Healthz

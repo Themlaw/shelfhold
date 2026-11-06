@@ -28,7 +28,6 @@ from shelfhold.export.application.restore import (
     AdoptionBlockedError,
     AdoptionPreview,
     DeletionConfirmation,
-    DeletionRefusedError,
     DeletionUnavailableError,
     PreviewStaleError,
     ReplayConfirmationRequiredError,
@@ -216,7 +215,7 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             print(t("reconcile.irreplaceable_missing", unit=unit_id), file=sys.stderr)
         print(t("reconcile.irreplaceable_needs_typing"), file=sys.stderr)
         return NEEDS_CONFIRMATION
-    except (DeletionRefusedError, DeletionUnavailableError):
+    except DeletionUnavailableError:  # the host CLI is always allowed to confirm a deletion
         print(t("reconcile.deletion_refused"), file=sys.stderr)
         return REFUSED
     for candidate in result.pending_deletions:

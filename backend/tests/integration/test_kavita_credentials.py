@@ -30,7 +30,7 @@ def engine(settings: Settings) -> Iterator[Engine]:
     engine.dispose()
 
 
-@pytest.mark.req("ENF-SEC-013", "ENF-SEC-005")
+@pytest.mark.req("ENF-SEC-013", "ENF-SEC-005", "EF-EXP-001")
 def test_admin_key_is_sealed_in_the_target_row_and_opened_by_the_vault(engine: Engine) -> None:
     vault = SecretVault(Keyring.generate(NOW))
     target_id = new_ulid()

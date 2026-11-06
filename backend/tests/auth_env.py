@@ -129,6 +129,9 @@ def _at_head(settings: Settings) -> bool:
     )
 
 
+_UNSET: Any = object()
+
+
 @contextmanager
 def auth_env(
     monkeypatch: pytest.MonkeyPatch,
@@ -139,9 +142,24 @@ def auth_env(
     with_admin: bool = True,
     hardened: bool = False,
     network: Network | None = None,
+    plan_service: Any = None,
+    headless_admin: Any = None,
+    ops_services: Any = None,
+    public_url: Any = _UNSET,
 ) -> Iterator[AuthEnv]:
+    """`create_app()` as composed. The services below replace what the composition root opens for
+    a route (the plans, the headless admin, the operating services): the routes are the real ones,
+    at their real place, with a service the test controls."""
     if hardened:
         settings = settings.model_copy(update={"auth_hardened": True})
+    if public_url is not _UNSET:
+        settings = settings.model_copy(update={"public_url": public_url})
+    if plan_service is not None:
+        monkeypatch.setattr("shelfhold.main.PlanService", lambda *_a, **_k: plan_service)
+    if headless_admin is not None:
+        monkeypatch.setattr("shelfhold.headless.wiring.open_headless", lambda _s: headless_admin)
+    if ops_services is not None:
+        monkeypatch.setattr("shelfhold.main.open_ops", lambda *_a, **_k: ops_services)
     if not _at_head(settings):  # a database left with open intents is not migrated again
         migrate(settings)
     if with_admin:

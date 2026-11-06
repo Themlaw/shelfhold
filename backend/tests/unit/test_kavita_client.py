@@ -16,7 +16,6 @@ from shelfhold.export.domain.kavita_compat import (
     KavitaVersion,
     TargetMode,
     assess_version,
-    minimum_version_for,
 )
 from shelfhold.export.targets.kavita import (
     HIDDEN_DIR_PATTERNS,
@@ -25,12 +24,10 @@ from shelfhold.export.targets.kavita import (
     KavitaClient,
     KavitaDestination,
     LibraryType,
-    PlanNotVerified,
     ProtocolError,
     RouteMissing,
     TargetDegraded,
     TargetForbidden,
-    public_config,
 )
 from shelfhold.sdk.export_target import ApiCall
 from tests.fakes.kavita import API_KEY, BASE_URL, build_fetcher
@@ -44,9 +41,8 @@ CBZ = "Series A - Ch.012.cbz"
 
 
 @pytest.mark.req("ENF-COMP-001", "EF-EXP-009")
-@pytest.mark.parametrize("ceiling", [None, 7, 13, 16, 18, 99])
-def test_kavita_minimum_is_0_9_1_for_all_shelves(ceiling: int | None) -> None:
-    assert minimum_version_for(ceiling) == MINIMUM_VERSION == KavitaVersion.parse("0.9.1")
+def test_kavita_minimum_is_0_9_1_for_all_shelves() -> None:
+    assert KavitaVersion.parse("0.9.1") == MINIMUM_VERSION  # one minimum, no ceiling to ask
     below = ["0.9.0.2", "0.9.0", "0.8.9.1", "0.8.9", "0.7.14.10"]
     inside = ["0.9.1", "0.9.1.0", "v0.9.1.4", "0.9.2", "0.9.9.9"]
     outside_above = ["0.10.0", "1.0.0"]
@@ -107,8 +103,6 @@ def test_kavita_route_404_sets_degraded_mode_never_plans_without_collision_check
     assert h.events.details("target.route_missing") == [{"route": f"{method} {path}"}]
     # no plan is applied, the preview is marked "not verified"
     assert not h.client.collision_check_available and not h.client.preview_verified
-    with pytest.raises(PlanNotVerified):
-        h.client.require_verified_plan()
     # the route is not asked again, and the event is not repeated
     count = len(h.fake.requests)
     with pytest.raises(RouteMissing):
@@ -118,7 +112,7 @@ def test_kavita_route_404_sets_degraded_mode_never_plans_without_collision_check
     h.fake.missing.clear()
     run(h.client.recheck())
     assert h.client.health.mode is TargetMode.FULL and h.client.health.waiting_state is None
-    h.client.require_verified_plan()
+    assert h.client.preview_verified
 
 
 @pytest.mark.req("EF-EXP-009")
@@ -128,7 +122,7 @@ def test_kavita_route_404_elsewhere_cuts_only_that_feature() -> None:
     with pytest.raises(RouteMissing):
         run(h.client.upload_series_cover(1, b"x"))
     assert h.client.health.mode is TargetMode.DEGRADED_FEATURE
-    h.client.require_verified_plan()  # the name check still works: plans may be applied
+    assert h.client.preview_verified  # the name check still works: plans may be applied
     assert run(h.client.parse_name(CBZ, LibraryType.MANGA)).series_name == "Series A"
 
 
@@ -278,8 +272,7 @@ class _ThirdPartyPlugin:
 @pytest.mark.req("ENF-SEC-013", "EF-EXP-001")
 def test_admin_key_never_passed_to_target_plugin() -> None:
     h = harness()
-    stored = {"url": BASE_URL, "library_type": "Manga", "api_key": API_KEY, "token": API_KEY}
-    cfg = public_config(stored)
+    cfg = {"url": BASE_URL, "library_type": "Manga"}  # the key is sealed apart, never in config
     plugin = _ThirdPartyPlugin()
     calls = plugin.calls(cfg, [CBZ])
     run(h.client.probe())
@@ -410,8 +403,6 @@ def test_unreadable_version_is_degraded_readonly_and_blocks_plans() -> None:
     with pytest.raises(RouteMissing):
         run(h.client.probe())
     assert h.client.health.version is None
-    with pytest.raises(TargetDegraded):
-        h.client.require_verified_plan()
     with pytest.raises(RouteMissing):  # and no write goes out meanwhile
         run(h.client.scan_folder("/manga/Series A"))
     assert h.fake.writes == []
@@ -445,18 +436,6 @@ def test_scan_folder_always_carries_the_key_and_refuses_a_non_object_body() -> N
     with pytest.raises(ProtocolError):
         run(h.client.execute(bad))
     assert len(h.fake.requests) == before
-
-
-@pytest.mark.req("ENF-SEC-013")
-def test_public_config_filters_recursively_by_whole_word() -> None:
-    cfg = public_config({
-        "author": "A", "library_type": "Manga", "apiKey": "x", "X-Api-Key": "x",
-        "nested": {"token": "x", "author_name": "B", "deep": [{"password": "x", "ok": 1}]},
-    })  # fmt: skip
-    assert cfg == {
-        "author": "A", "library_type": "Manga",
-        "nested": {"author_name": "B", "deep": [{"ok": 1}]},
-    }  # fmt: skip
 
 
 @pytest.mark.req("EF-EXP-009")

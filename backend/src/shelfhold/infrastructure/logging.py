@@ -58,10 +58,6 @@ def register_secret_value(value: str) -> None:
     )
 
 
-def forget_secret_values() -> None:
-    _known_values.clear()
-
-
 def redact_source_urls(text: str) -> str:
     """Mask every URL in a text (a diagnostic bundle must not name where content comes from,
     EF-EXP-063 / I33); the rest of the text is left as it is."""

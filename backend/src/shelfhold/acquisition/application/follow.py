@@ -40,6 +40,7 @@ from shelfhold.acquisition.application.planning import (
     watermark_of,
 )
 from shelfhold.acquisition.application.preference import TeamPreference, record_release
+from shelfhold.acquisition.application.ranges import Keeper, RangeTickets, RangeUnit
 from shelfhold.acquisition.application.staleness import stale_series
 from shelfhold.acquisition.application.tickets import (
     MAX_ATTEMPTS,
@@ -96,7 +97,7 @@ from shelfhold.plugin_host.errors import AuthModeUnsupported, ServiceVersionMism
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
-from shelfhold.sdk.source import SourceError, SubSource
+from shelfhold.sdk.source import Capability, SourceError, SubSource
 
 log = structlog.get_logger(__name__)
 
@@ -191,6 +192,7 @@ class FollowCycle:
         key_cap: int = DEFAULT_KEY_CAP,
         inactive_months: int = DEFAULT_INACTIVE_MONTHS,
         tombstones: TombstoneGate,
+        keep_range: Keeper | None = None,
     ) -> None:
         self._engine = engine
         self._bus = bus
@@ -214,6 +216,9 @@ class FollowCycle:
             engine, clock, self._plugin_id, tombstones, self._emit,
             translation_nature=getattr(service.manifest, "translation_nature", "unknown"),
         )  # fmt: skip
+        self._receive_files = receive
+        self._keep_range = keep_range  # the host store of a ranged file (EF-SRC-032)
+        self._ranged: dict[str, list[UnitInfo]] = {}  # listing of the ranged series, this cycle
         self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
         self._notices = Notices(clock)
         self._buried: dict[str, str] = {}  # tombstoned series of this cycle, by notice key
@@ -303,8 +308,9 @@ class FollowCycle:
         for binding in followed:
             await self._discover_isolated(binding, report, budget)
         self._fill(followed, budget, report)
+        await self._ranges(followed, budget, report)
         report.tickets = await self._tickets.advance()
-        report.fetched = report.tickets.fetched
+        report.fetched += report.tickets.fetched
         if report.tickets.fetched:  # the source delivers: what was given up may be tried again
             self._tickets.reopen_abandoned()
         if report.tickets.dropped:
@@ -312,7 +318,63 @@ class FollowCycle:
                 self._emit(
                     connection, "source.downloads_dropped", {"count": report.tickets.dropped}
                 )
-        report.stale = len(self._check_freshness())
+        report.stale = len(self.check_freshness())
+
+    def _is_ranged(self) -> bool:
+        return (
+            self._keep_range is not None
+            and Capability.RANGED_CONTENT in self._service.manifest.capabilities
+            and ConnectedCapability.SERVER_QUEUE in self._service.connected
+        )
+
+    async def _ranges(
+        self, followed: list[_Binding], budget: RequestBudget, report: FollowReport
+    ) -> None:
+        """A `ranged_content` service delivers one file per volume: plan, ask, advance."""
+        if self._keep_range is None:
+            return
+        v = catalog.unit_variant
+        for binding in followed:
+            infos = self._ranged.pop(binding.id, None)
+            if infos is None:
+                continue
+            with self._engine.connect() as connection:
+                by_remote = {
+                    r.remote_unit_id: r.unit_id
+                    for r in connection.execute(
+                        sa.select(v.c.remote_unit_id, v.c.unit_id).where(
+                            v.c.source_binding_id == binding.id
+                        )
+                    )
+                }
+            units = [
+                RangeUnit(by_remote[i.remote_unit_id], i)
+                for i in infos
+                if i.remote_unit_id in by_remote
+            ]
+            ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
+            tickets = RangeTickets(
+                self._engine, self._clock, self._service, self._fetcher, self._receive_files,
+                self._keep_range, edition_id=binding.edition_id, binding_id=binding.id, series=ref,
+            )  # fmt: skip
+            for group in tickets.plan(units):
+                tickets.request(group, budget)
+            ru, rq = acquisition.download_request_unit, acquisition.download_request
+            with self._engine.connect() as connection:  # EF-SRC-026 b: only what was not covered
+                partial = (
+                    connection.execute(
+                        sa.select(ru.c.download_request_id)
+                        .join(rq, rq.c.id == ru.c.download_request_id)
+                        .where(rq.c.source_binding_id == binding.id, ru.c.state == "missing")
+                        .distinct()
+                    )
+                    .scalars()
+                    .all()
+                )
+            for request_id in partial:
+                tickets.retry_uncovered(request_id, budget)
+            done = await tickets.advance()
+            report.fetched += done.fetched
 
     async def _discover_series(self, library: list[SeriesRef], report: FollowReport) -> None:
         """EF-SRC-009: a series of the library without a binding gets its Work, Edition and
@@ -518,6 +580,8 @@ class FollowCycle:
         fresh = units is not None
         if units is None:
             units = await from_service(self._service.list_units(self._fetcher, ref))
+        if self._is_ranged():
+            self._ranged[binding.id] = units
         await self._credit_authors(binding, ref)
         with self._engine.connect() as connection:
             mark = watermark_of(connection, binding.edition_id)

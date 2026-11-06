@@ -44,7 +44,6 @@ from shelfhold.library.public import relocate_destination_copy
 __all__ = [
     "DryRunRequiredError",
     "FileAction",
-    "KavitaCounts",
     "NotEnoughSpaceError",
     "RepatriationBlockedError",
     "RepatriationCheck",
@@ -52,7 +51,6 @@ __all__ = [
     "RepatriationResult",
     "RepatriationStaleError",
     "Repatriator",
-    "kavita_counts",
 ]
 
 Status = Literal["copy", "present", "missing", "changed", "conflict"]
@@ -173,12 +171,6 @@ class RepatriationCheck:
     @property
     def safe_to_unmount(self) -> bool:
         return self.files_intact and self.kavita is not None and self.kavita.ok
-
-
-@dataclass(frozen=True)
-class KavitaCounts:
-    series: int
-    files: int
 
 
 @dataclass(frozen=True)
@@ -447,19 +439,3 @@ class Repatriator:
             len(folders), len(chapters), len(adopted), tuple(missing), tuple(different), same,
             kavita,
         )  # fmt: skip
-
-
-async def kavita_counts(client: Any, library_ref: str, remote_root: str) -> KavitaCounts:
-    """Series and files Kavita has indexed under `remote_root`: the same before the copy and after
-    the mount is removed (read-only calls)."""
-    root = clean_absolute(remote_root)
-    series = [
-        s
-        for s in await client.series_of_library(int(library_ref))
-        if (s.lowest_folder_path or s.folder_path) == root
-        or (s.lowest_folder_path or s.folder_path).startswith(root + "/")
-    ]
-    files = 0
-    for s in series:
-        files += len(await client.series_files(s.id))
-    return KavitaCounts(len(series), files)

@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from fastapi import APIRouter
 
 from shelfhold.config import Settings
 from shelfhold.headless import PublicUrlMissing, absolute_url, wiring
@@ -18,7 +17,6 @@ from shelfhold.identity.public import RESERVED_ACTIONS, local_auth
 from shelfhold.infrastructure.local_socket import RpcFailure, call
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.interfaces.cli.registry import build_parser
-from shelfhold.interfaces.http_api.headless import build_headless_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.interfaces.local_cli.dispatch import HEADLESS_METHODS
 from tests.auth_env import auth_env, db_rows, run_cli
@@ -155,10 +153,6 @@ def test_cli_config_apply_dry_run_prints_the_diff_and_writes_nothing(
         assert "--value-file" in capsys.readouterr().err  # a secret key is never taken from argv
 
 
-def _router(env: Headless, public_url: str | None) -> APIRouter:
-    return build_headless_router(lambda: env.admin, lambda: public_url)
-
-
 @pytest.mark.req("ENF-SEC-016", "EF-INT-024")
 def test_absolute_urls_built_from_configured_public_url(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
@@ -172,31 +166,34 @@ def test_absolute_urls_built_from_configured_public_url(
     with pytest.raises(PublicUrlMissing):
         absolute_url(None, "/api/v1/x")
 
-    with headless(settings) as env:
-        router = _router(env, "https://shelf.example.org")
-        with auth_env(monkeypatch, settings, routers=[router]) as api:
-            assert api.login().status_code == 200
-            created = api.post(
-                "/api/v1/targets",
-                json={"kind": "kavita", "name": "kavita", "url": KAVITA_URL, "username": "u",
-                      "password": KAVITA_PASSWORD, "accept_admin_risk": True},
-                headers={"Host": "evil.example", "X-Forwarded-Host": "evil.example",
-                         "X-Forwarded-Proto": "http"},
-            )  # fmt: skip
-            assert created.status_code == 201, created.text
-            location = created.headers["Location"]
-            assert location == f"https://shelf.example.org/api/v1/targets/{created.json()['id']}"
-            assert "evil" not in created.text and KAVITA_PASSWORD not in created.text
-            denied = api.post(
-                "/api/v1/targets",
-                json={"kind": "kavita", "name": "k2", "url": KAVITA_URL, "username": "u",
-                      "password": KAVITA_PASSWORD},
-            )  # fmt: skip
-            assert denied.status_code == 409
-            assert denied.json()["code"] == "target.admin_risk_not_accepted"
-            current = api.client.get("/api/v1/config")
-            assert current.status_code == 200
-            assert {row["key"] for row in current.json()["items"]} >= {"public_url"}
+    with (
+        headless(settings) as env,
+        auth_env(
+            monkeypatch, settings, headless_admin=env.admin, public_url="https://shelf.example.org"
+        ) as api,
+    ):
+        assert api.login().status_code == 200
+        created = api.post(
+            "/api/v1/targets",
+            json={"kind": "kavita", "name": "kavita", "url": KAVITA_URL, "username": "u",
+                  "password": KAVITA_PASSWORD, "accept_admin_risk": True},
+            headers={"Host": "evil.example", "X-Forwarded-Host": "evil.example",
+                     "X-Forwarded-Proto": "http"},
+        )  # fmt: skip
+        assert created.status_code == 201, created.text
+        location = created.headers["Location"]
+        assert location == f"https://shelf.example.org/api/v1/targets/{created.json()['id']}"
+        assert "evil" not in created.text and KAVITA_PASSWORD not in created.text
+        denied = api.post(
+            "/api/v1/targets",
+            json={"kind": "kavita", "name": "k2", "url": KAVITA_URL, "username": "u",
+                  "password": KAVITA_PASSWORD},
+        )  # fmt: skip
+        assert denied.status_code == 409
+        assert denied.json()["code"] == "target.admin_risk_not_accepted"
+        current = api.client.get("/api/v1/config")
+        assert current.status_code == 200
+        assert {row["key"] for row in current.json()["items"]} >= {"public_url"}
 
     # no URL is ever built from the request: not in the interfaces, not in the facade
     offenders: list[str] = []
@@ -244,7 +241,7 @@ def test_admin_risk_audit_row_follows_the_convention_of_the_other_rows(
 ) -> None:
     with (
         headless(settings) as env,
-        auth_env(monkeypatch, settings, routers=[_router(env, None)]) as api,
+        auth_env(monkeypatch, settings, headless_admin=env.admin) as api,
     ):
         assert api.login().status_code == 200
         made = api.post(

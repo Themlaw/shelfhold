@@ -86,3 +86,11 @@ reason = "deux parcours (premier chapitre dans Kavita, détachement) attendent l
 requirement = "ENF-OPS-002"
 aspect = "« pas de migration dans une release patch » (contrôle CI)"
 reason = "n'a de sens qu'à partir de la première release patch (0.1.x) ; contrôle à ajouter avec la sortie de v0.1.0 (release publiée à la main), avant la clôture de M1a"
+
+[[exception]]
+path = "backend/tests/unit/test_production_reachability.py"
+reason = "garde de joignabilité des tests `req` (L58) : contrôle les tests, pas une exigence du produit"
+
+[[exception]]
+path = "backend/tests/unit/test_openapi_diff.py"
+reason = "règles de rupture de tools/openapi_diff.py (L58) : test de l'outil lui-même"

@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from fastapi import APIRouter, Depends
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import (
@@ -19,30 +18,33 @@ from shelfhold.identity.public import (
     Allowed,
     Credential,
     CredentialNotAllowed,
-    Effect,
     Principal,
-    ReservedAction,
     authorize_reserved,
 )
 from shelfhold.infrastructure.local_socket import Peer, RpcFailure, call
-from shelfhold.interfaces.http_api.auth import reserved_action
 from shelfhold.interfaces.local_cli import principal_for_peer
 from tests.auth_env import ADMIN, PASSWORD, AuthEnv, auth_env, db_rows
 
 KEY = re.compile(r"shk_([0-9a-f]{8})_[A-Za-z0-9_-]{43}")
-PURGE = ReservedAction("test.purge_now", frozenset({Effect.DELETES_PERMANENTLY}))
 ACTOR = f"local_cli:{os.getuid()}"
 
 
-def _router(effects: list[str]) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/test")
+PURGE = "/api/v1/units/u1/purge"
+BODY = {"typed": "x"}
 
-    @router.post("/purge")
-    def purge(principal: Principal = Depends(reserved_action(PURGE))) -> dict[str, str]:  # noqa: B008
-        effects.append(principal.actor_id)
+
+class _Library:
+    def __init__(self, effects: list[str]) -> None:
+        self._effects = effects
+
+    def purge(self, *, principal: Principal, **_: object) -> dict[str, str]:
+        self._effects.append(principal.actor_id)
         return {"ok": "purged"}
 
-    return router
+
+class _Services:
+    def __init__(self, effects: list[str]) -> None:
+        self.library = _Library(effects)
 
 
 @pytest.fixture
@@ -54,7 +56,7 @@ def effects() -> list[str]:
 def api(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, effects: list[str]
 ) -> Iterator[AuthEnv]:
-    with auth_env(monkeypatch, settings, routers=[_router(effects)]) as env:
+    with auth_env(monkeypatch, settings, ops_services=_Services(effects)) as env:
         yield env
 
 
@@ -169,10 +171,10 @@ def test_loopback_http_never_counts_as_local_cli(api: AuthEnv, effects: list[str
         "Remote-User": ADMIN,
     }
     for client in (api.client, api.other_client("127.0.0.1"), api.other_client("::1")):
-        anonymous = client.post("/api/v1/test/purge", headers={"X-Forwarded-For": "127.0.0.1"})
+        anonymous = client.post(PURGE, json=BODY, headers={"X-Forwarded-For": "127.0.0.1"})
         assert anonymous.status_code == 401
-        keyed = client.post("/api/v1/test/purge", headers=headers)
+        keyed = client.post(PURGE, json=BODY, headers=headers)
         assert keyed.status_code == 403
         assert keyed.json()["type"] == "/api/v1/problems/credential-not-allowed"
     assert effects == []
-    assert not any(row[0] == ACTOR and row[1] == "test.purge_now" for row in _audit(api))
+    assert not any(row[0] == ACTOR and row[1] == "purge.now" for row in _audit(api))

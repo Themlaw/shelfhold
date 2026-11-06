@@ -386,37 +386,39 @@ def test_facade_refusals_and_apply_variants(settings: Settings, tmp_path: Path) 
 def test_http_routes_cover_config_and_sources(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    from shelfhold.interfaces.http_api.headless import build_headless_router
     from tests.auth_env import auth_env
 
-    with headless(settings) as env:
-        router = build_headless_router(lambda: env.admin, lambda: "https://shelf.example.org")
-        with auth_env(monkeypatch, settings, routers=[router]) as api:
-            assert api.login().status_code == 200
+    with (
+        headless(settings) as env,
+        auth_env(
+            monkeypatch, settings, headless_admin=env.admin, public_url="https://shelf.example.org"
+        ) as api,
+    ):
+        assert api.login().status_code == 200
 
-            def patch(values: dict[str, str]) -> Any:
-                return api.client.patch(
-                    "/api/v1/config", json={"values": values},
-                    headers={"X-CSRF-Token": api.csrf()},
-                )  # fmt: skip
+        def patch(values: dict[str, str]) -> Any:
+            return api.client.patch(
+                "/api/v1/config", json={"values": values},
+                headers={"X-CSRF-Token": api.csrf()},
+            )  # fmt: skip
 
-            assert patch({"source.check_mode": "piloted"}).status_code == 200
-            bad = patch({"source.check_mode": "never"})
-            assert bad.status_code == 422 and bad.json()["code"] == "config.invalid_value"
-            assert patch({"notify.urls": "a=ntfy://x/y"}).status_code == 403  # a secret: not here
-            assert patch({"public_url": "https://shelf.example.org"}).status_code == 200
-            source = {"kind": "suwayomi", "url": SUWAYOMI_URL, "secret": f"a:{SUWAYOMI_PASSWORD}"}
-            made = api.post("/api/v1/sources", json=source)
-            assert made.status_code == 201 and made.headers["Location"].startswith("https://shelf")
-            env.suwayomi.mode = "ui_login"
-            refused = api.post("/api/v1/sources", json={**source, "url": "http://s2.internal:1"})
-            assert refused.json()["code"] == "source.auth_mode_unsupported"
-            other = api.post("/api/v1/sources", json={**source, "kind": "komga"})
-            assert other.status_code == 422
-            kind = api.post("/api/v1/targets", json={"kind": "komga", "name": "x", "url": "http://a",
-                                                     "username": "u", "password": "p"})  # fmt: skip
-            assert kind.status_code == 422
-            unsafe = api.post("/api/v1/targets", json={"kind": "kavita", "name": "x",
-                              "url": "https://8.8.8.8", "username": "u", "password": "p",
-                              "accept_admin_risk": True})  # fmt: skip
-            assert unsafe.status_code == 422
+        assert patch({"source.check_mode": "piloted"}).status_code == 200
+        bad = patch({"source.check_mode": "never"})
+        assert bad.status_code == 422 and bad.json()["code"] == "config.invalid_value"
+        assert patch({"notify.urls": "a=ntfy://x/y"}).status_code == 403  # a secret: not here
+        assert patch({"public_url": "https://shelf.example.org"}).status_code == 200
+        source = {"kind": "suwayomi", "url": SUWAYOMI_URL, "secret": f"a:{SUWAYOMI_PASSWORD}"}
+        made = api.post("/api/v1/sources", json=source)
+        assert made.status_code == 201 and made.headers["Location"].startswith("https://shelf")
+        env.suwayomi.mode = "ui_login"
+        refused = api.post("/api/v1/sources", json={**source, "url": "http://s2.internal:1"})
+        assert refused.json()["code"] == "source.auth_mode_unsupported"
+        other = api.post("/api/v1/sources", json={**source, "kind": "komga"})
+        assert other.status_code == 422
+        kind = api.post("/api/v1/targets", json={"kind": "komga", "name": "x", "url": "http://a",
+                                                 "username": "u", "password": "p"})  # fmt: skip
+        assert kind.status_code == 422
+        unsafe = api.post("/api/v1/targets", json={"kind": "kavita", "name": "x",
+                          "url": "https://8.8.8.8", "username": "u", "password": "p",
+                          "accept_admin_risk": True})  # fmt: skip
+        assert unsafe.status_code == 422

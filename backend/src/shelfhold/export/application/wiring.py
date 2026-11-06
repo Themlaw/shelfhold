@@ -3,7 +3,7 @@
 For planning (`shelfhold export --dry-run`) and for the API. Fsops covers the physical roots as
 registered in `physical_root` (as at boot). `plugin/parse` answers come from Kavita through
 `parse-bulk`; until the destination is connected here (L29), the names are not checked remotely
-and the preview says so by refusing to apply (`require_verified_plan` is the caller's).
+and the preview says so and the apply refuses (`UnverifiedParseError`, `bind_parse(verified=...)`).
 """
 
 from collections.abc import Callable

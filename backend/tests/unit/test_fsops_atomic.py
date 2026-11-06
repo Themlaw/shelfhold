@@ -19,7 +19,6 @@ from shelfhold.infrastructure.fsops import (
     ReservedPathError,
     Strategy,
     identity_of,
-    same_file,
 )
 from tests.fsops_env import STRATEGIES, Env, make_env
 
@@ -90,7 +89,7 @@ def test_write_accepts_a_stream_and_returns_the_identity_of_what_was_written(env
     target = env.manga / "s.cbz"
     identity = env.fsops.write_atomic(str(target), io.BytesIO(b"abc" * 1000))
     assert identity.size == 3000
-    assert same_file(identity, identity_of(target.stat()))
+    assert identity == identity_of(target.stat())
 
 
 @pytest.mark.req("EF-EXP-006")
@@ -266,11 +265,11 @@ def test_file_identity_survives_dev_change(env: Env) -> None:
         st_size=observed.st_size,
         st_mtime_ns=observed.st_mtime_ns,
     )
-    assert same_file(identity, identity_of(moved))
-    assert not same_file(identity, identity_of(SimpleNamespace(**{**vars(moved), "st_ino": 1})))
+    assert identity == identity_of(moved)
+    assert identity != identity_of(SimpleNamespace(**{**vars(moved), "st_ino": 1}))
 
     target.write_bytes(b"identity!")
-    assert not same_file(identity, identity_of(target.stat()))
+    assert identity != identity_of(target.stat())
 
 
 @pytest.mark.req("EF-EXP-060")
@@ -304,7 +303,7 @@ def test_adopt_ro_root_never_written(env: Env) -> None:
     assert chapter.read_bytes() == b"upstream"
 
 
-@pytest.mark.req("EF-EXP-060", "ENF-SEC-012")
+@pytest.mark.req("EF-EXP-060", "ENF-SEC-012", "EF-EXP-001")
 @pytest.mark.parametrize(
     "rel",
     [

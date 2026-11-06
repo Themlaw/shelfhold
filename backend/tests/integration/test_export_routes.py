@@ -8,11 +8,8 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.export.application.plans import StalePlanError
-from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.target_state import DestinationPausedError
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.interfaces.http_api.plans import build_plans_router
-from shelfhold.interfaces.http_api.shelves import build_shelves_router
 from tests.auth_env import auth_env
 
 
@@ -48,8 +45,7 @@ class FakePipeline:
 def test_shelf_route_refuses_below_18_and_creates_an_adult_shelf(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    router = build_shelves_router(lambda: ShelfService(create_db_engine(settings.database_path)))
-    with auth_env(monkeypatch, settings, routers=[router]) as api:
+    with auth_env(monkeypatch, settings) as api:
         anonymous = api.client.post("/api/v1/shelves", json={"name": "Manga", "phrase": "Mangas"})
         assert anonymous.status_code == 401
         assert api.login().status_code == 200
@@ -77,7 +73,7 @@ def test_plan_routes_preview_then_apply_with_if_match(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     pipeline = FakePipeline()
-    with auth_env(monkeypatch, settings, routers=[build_plans_router(lambda: pipeline)]) as api:
+    with auth_env(monkeypatch, settings, plan_service=pipeline) as api:
         assert api.login().status_code == 200
         preview = api.post(
             "/api/v1/plans", json={"shelf_destination_id": "01JDEST0000000000000000A1"}
@@ -105,7 +101,7 @@ def test_apply_on_a_paused_destination_answers_a_target_code_not_a_500(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, code: str
 ) -> None:
     pipeline = FakePipeline(paused=code)
-    with auth_env(monkeypatch, settings, routers=[build_plans_router(lambda: pipeline)]) as api:
+    with auth_env(monkeypatch, settings, plan_service=pipeline) as api:
         assert api.login().status_code == 200
         url = f"/api/v1/plans/{FakePreview.plan_id}/apply"
         paused = api.post(url, headers={"If-Match": '"4242"'})

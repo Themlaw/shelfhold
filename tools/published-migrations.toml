@@ -1,0 +1,61 @@
+# Fingerprints of published migrations (tools/check_patch_migrations.py).
+
+[[migration]]
+file = "0001_initial.py"
+sha256 = "f0630dd5a5c56d4823365640e660846d461885861f7e27fd9fb7ab8dd047748c"
+since = "0.1"
+
+[[migration]]
+file = "0002_platform_identity_coherence.py"
+sha256 = "39b6c605410a32891e6d08bdad194f19134986e3c4491050b026c8bf543ab5b6"
+since = "0.2"
+
+[[migration]]
+file = "0003_catalog_acquisition.py"
+sha256 = "bfe375c6fcd0e746f07bf7a583bcf49e8f4ac6a2c76f0b41ebc789e47540c5f8"
+since = "0.2"
+
+[[migration]]
+file = "0004_storage_export_reading.py"
+sha256 = "a4827a88409420fad27474f794b123479a3224f591ed457d147c00aed4aecf43"
+since = "0.2"
+
+[[migration]]
+file = "0005_job_view_window_cursor.py"
+sha256 = "86f7a167a772189739e02b1a483e360d71be30076066817ca4355fc4579f72c4"
+since = "0.2"
+
+[[migration]]
+file = "0006_write_intent_plan_digest.py"
+sha256 = "5507b3db3e24e3a7d490189911e1c2267285f2a5f5cdff80e2b972a3167dd1a8"
+since = "0.2"
+
+[[migration]]
+file = "0007_download_request_open_variant.py"
+sha256 = "381c6be3c6e4d831e6dd5a7ee2f39120fde60d5de375678af2cce2d446743da3"
+since = "0.2"
+
+[[migration]]
+file = "0008_export_op_register.py"
+sha256 = "27659cc4b40a8f13cfa14c8d8d62f6ad3ad7c98d61236156fc12aeb2f7a323f9"
+since = "0.2"
+
+[[migration]]
+file = "0009_tombstone_lost_kid.py"
+sha256 = "5b70def6bc3d1e71855f9d16b09edbbe40ac810d9d49714050c7996bd85fdf3f"
+since = "0.2"
+
+[[migration]]
+file = "0010_export_series_paused_reason.py"
+sha256 = "46fb7e43cee72e35c8718c5af62c0b47d677086a6002b03ee2415a41b2f812bb"
+since = "0.2"
+
+[[migration]]
+file = "0011_follow_notice.py"
+sha256 = "21018694b95d2fe091d4c90a86a2f7a2b1d561e593e0017f848fdcbf6bbf9692"
+since = "0.2"
+
+[[migration]]
+file = "0012_m1a_norm_arrival.py"
+sha256 = "ca8dcddcd7d6df3774f5149188399f00d680dd720cc189ce965c7e030b4189bc"
+since = "0.2"

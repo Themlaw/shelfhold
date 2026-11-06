@@ -4,7 +4,6 @@ from shelfhold.export.targets.kavita.client import CallResult, KavitaClient
 from shelfhold.export.targets.kavita.credentials import (
     AdminKey,
     load_admin_key,
-    public_config,
     store_admin_key,
 )
 from shelfhold.export.targets.kavita.destination import KavitaDestination
@@ -16,7 +15,6 @@ from shelfhold.export.targets.kavita.dto import (
 )
 from shelfhold.export.targets.kavita.errors import (
     ConfirmationRequired,
-    PlanNotVerified,
     ProtocolError,
     RouteMissing,
     RouteNotAllowed,
@@ -39,7 +37,6 @@ __all__ = [
     "LibraryType",
     "LibraryUpdate",
     "ParseResult",
-    "PlanNotVerified",
     "ProtocolError",
     "Route",
     "RouteMissing",
@@ -49,6 +46,5 @@ __all__ = [
     "TargetForbidden",
     "TargetUnreachable",
     "load_admin_key",
-    "public_config",
     "store_admin_key",
 ]

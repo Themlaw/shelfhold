@@ -25,7 +25,7 @@ from shelfhold.infrastructure.fsops.errors import (
     TombstonePendingError,
 )
 from shelfhold.infrastructure.fsops.facade import BootReport, Fsops, RootStatus
-from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of, same_file
+from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of
 from shelfhold.infrastructure.fsops.openat2 import openat2_supported
 from shelfhold.infrastructure.fsops.sentinel import create_sentinel, read_sentinel
 
@@ -59,5 +59,4 @@ __all__ = [
     "new_probe_name",
     "openat2_supported",
     "read_sentinel",
-    "same_file",
 ]

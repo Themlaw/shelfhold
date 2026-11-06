@@ -34,7 +34,7 @@ from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
-from shelfhold.interfaces.http_api.plans import build_plans_router, require_admin
+from shelfhold.interfaces.http_api.plans import require_admin
 from shelfhold.interfaces.http_api.problems import ProblemError
 from tests.auth_env import auth_env
 from tests.export_env import ExportEnv, add_second_shelf, export_env
@@ -302,7 +302,7 @@ def test_if_match_must_be_one_strong_quoted_validator(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     pipeline = FakePipeline()
-    with auth_env(monkeypatch, settings, routers=[build_plans_router(lambda: pipeline)]) as api:
+    with auth_env(monkeypatch, settings, plan_service=pipeline) as api:
         assert api.login().status_code == 200
         url = f"/api/v1/plans/{FakePreview.plan_id}/apply"
         for refused in ('W/"4242"', "4242", "*", '"4242", "4243"', '""'):

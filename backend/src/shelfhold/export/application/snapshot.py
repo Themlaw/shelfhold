@@ -19,6 +19,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.export.application.intents import within_any
 from shelfhold.export.application.rendering import comicinfo_sha256
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute
@@ -114,10 +115,6 @@ def load_context(connection: Connection, destination_id: str) -> DestinationCont
     )  # fmt: skip
 
 
-def _within_any(path: str, bases: frozenset[str]) -> bool:
-    return any(path == b or path.startswith(b.rstrip("/") + "/") for b in bases)
-
-
 def load_request(
     connection: Connection,
     ctx: DestinationContext,
@@ -151,7 +148,7 @@ def load_request(
         destination=ctx.facts(), editions=editions, units=tuple(units),
         records=tuple(records.values()), series=series, edition_series=edition_series,
         occupied=(lambda rel: root is not None and exists(f"{root}/{rel}")),
-        covered=(lambda rel: root is not None and _within_any(f"{root}/{rel}", covered_locals)),
+        covered=(lambda rel: root is not None and within_any(f"{root}/{rel}", covered_locals)),
         library_ceilings=ceilings, segment_policy_confirmed=segment_policy_confirmed,
         paused_series=paused_series(connection, ctx.destination_id),
     )  # fmt: skip

@@ -37,6 +37,68 @@ export type BackfillIn = {
 };
 
 /**
+ * ConfigOut
+ */
+export type ConfigOut = {
+    /**
+     * Items
+     */
+    items: Array<ConfigRow>;
+};
+
+/**
+ * ConfigPatch
+ */
+export type ConfigPatch = {
+    /**
+     * Values
+     */
+    values: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * ConfigRow
+ */
+export type ConfigRow = {
+    /**
+     * Default
+     */
+    default?: unknown;
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Overridden By
+     */
+    overridden_by?: string | null;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Value
+     */
+    value: unknown;
+    /**
+     * Warning
+     */
+    warning?: string | null;
+};
+
+/**
+ * Created
+ */
+export type Created = {
+    /**
+     * Id
+     */
+    id: string;
+};
+
+/**
  * CsrfToken
  */
 export type CsrfToken = {
@@ -83,6 +145,34 @@ export type DestinationOut = {
 };
 
 /**
+ * DetachIn
+ */
+export type DetachIn = {
+    /**
+     * Edition Id
+     */
+    edition_id?: string | null;
+    /**
+     * Restore Upstream
+     */
+    restore_upstream: true;
+    /**
+     * Shelf Id
+     */
+    shelf_id?: string | null;
+};
+
+/**
+ * Done
+ */
+export type Done = {
+    /**
+     * Ok
+     */
+    ok?: boolean;
+};
+
+/**
  * EstimateOut
  */
 export type EstimateOut = {
@@ -106,6 +196,30 @@ export type EstimateOut = {
      * Units
      */
     units: number;
+};
+
+/**
+ * FlushOut
+ */
+export type FlushOut = {
+    /**
+     * Still Owed
+     */
+    still_owed: Array<string>;
+};
+
+/**
+ * FollowFromIn
+ */
+export type FollowFromIn = {
+    /**
+     * Chapter
+     */
+    chapter: string;
+    /**
+     * Series
+     */
+    series: string;
 };
 
 /**
@@ -234,6 +348,36 @@ export type JobAccepted = {
 };
 
 /**
+ * JobOut
+ */
+export type JobOut = {
+    /**
+     * Attempts
+     */
+    attempts: number;
+    /**
+     * Error Code
+     */
+    error_code: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Last Error
+     */
+    last_error: string | null;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
  * JobStatusOut
  */
 export type JobStatusOut = {
@@ -276,6 +420,60 @@ export type JobStatusOut = {
 };
 
 /**
+ * JobsOut
+ */
+export type JobsOut = {
+    /**
+     * Items
+     */
+    items: Array<JobOut>;
+    /**
+     * Next Cursor
+     */
+    next_cursor?: string | null;
+};
+
+/**
+ * KeyringIn
+ */
+export type KeyringIn = {
+    /**
+     * Confirmation
+     */
+    confirmation: string;
+};
+
+/**
+ * KeyringOut
+ */
+export type KeyringOut = {
+    /**
+     * Waived
+     */
+    waived: Array<string>;
+};
+
+/**
+ * LanguageIn
+ */
+export type LanguageIn = {
+    /**
+     * Lang
+     */
+    lang: string;
+};
+
+/**
+ * LanguageOut
+ */
+export type LanguageOut = {
+    /**
+     * Lang
+     */
+    lang: string;
+};
+
+/**
  * LoginRequest
  */
 export type LoginRequest = {
@@ -298,6 +496,16 @@ export type LoginRequest = {
 };
 
 /**
+ * MigrationIn
+ */
+export type MigrationIn = {
+    /**
+     * Fingerprint
+     */
+    fingerprint: string;
+};
+
+/**
  * MigrationProgress
  */
 export type MigrationProgress = {
@@ -309,6 +517,46 @@ export type MigrationProgress = {
      * Total
      */
     total: number;
+};
+
+/**
+ * PairAutoIn
+ */
+export type PairAutoIn = {
+    /**
+     * Fingerprint
+     */
+    fingerprint?: string | null;
+    /**
+     * Min Score
+     */
+    min_score?: number;
+};
+
+/**
+ * PairIn
+ */
+export type PairIn = {
+    /**
+     * Confirm Backfill
+     */
+    confirm_backfill?: number | null;
+    /**
+     * Export Series Id
+     */
+    export_series_id: string;
+    /**
+     * Follow From
+     */
+    follow_from?: string | null;
+    /**
+     * Remote Id
+     */
+    remote_id: string;
+    /**
+     * Source Key
+     */
+    source_key: string;
 };
 
 /**
@@ -386,6 +634,16 @@ export type PlanOut = {
 };
 
 /**
+ * ProbeIn
+ */
+export type ProbeIn = {
+    /**
+     * Folder
+     */
+    folder: string;
+};
+
+/**
  * Problem
  *
  * RFC 9457 body, as documented in the OpenAPI schema.
@@ -423,6 +681,34 @@ export type Problem = {
 };
 
 /**
+ * PurgeIn
+ */
+export type PurgeIn = {
+    /**
+     * Typed
+     */
+    typed: string;
+};
+
+/**
+ * QueueOut
+ */
+export type QueueOut = {
+    /**
+     * Command
+     */
+    command: string;
+    /**
+     * Queue
+     */
+    queue: string;
+    /**
+     * Reason
+     */
+    reason: string;
+};
+
+/**
  * ReadyzResponse
  */
 export type ReadyzResponse = {
@@ -453,17 +739,31 @@ export type ReauthResponse = {
 };
 
 /**
- * ResolveIn
+ * RecheckOut
  */
-export type ResolveIn = {
+export type RecheckOut = {
     /**
-     * Action
+     * Cleared
      */
-    action?: 'replay' | 'abandon';
+    cleared: Array<string>;
     /**
-     * Confirm
+     * Denied
      */
-    confirm?: string | null;
+    denied: Array<string>;
+};
+
+/**
+ * RepatriateIn
+ */
+export type RepatriateIn = {
+    /**
+     * Fingerprint
+     */
+    fingerprint?: string | null;
+    /**
+     * Source
+     */
+    source?: string | null;
 };
 
 /**
@@ -478,6 +778,36 @@ export type ResolvedOut = {
      * Outcome
      */
     outcome: string;
+};
+
+/**
+ * RestoreIn
+ */
+export type RestoreIn = {
+    /**
+     * Confirm Deletion
+     */
+    confirm_deletion?: boolean;
+};
+
+/**
+ * RotateIn
+ */
+export type RotateIn = {
+    /**
+     * Password
+     */
+    password: string;
+};
+
+/**
+ * SecretIn
+ */
+export type SecretIn = {
+    /**
+     * Secret
+     */
+    secret: string;
 };
 
 /**
@@ -504,6 +834,28 @@ export type SessionInfo = {
      * Username
      */
     username: string;
+};
+
+/**
+ * SetAsideIn
+ */
+export type SetAsideIn = {
+    /**
+     * Root Id
+     */
+    root_id?: string | null;
+};
+
+/**
+ * SetAsideOut
+ */
+export type SetAsideOut = {
+    /**
+     * Aside
+     */
+    aside: {
+        [key: string]: string;
+    };
 };
 
 /**
@@ -539,6 +891,24 @@ export type ShelfOut = {
 };
 
 /**
+ * SourceIn
+ */
+export type SourceIn = {
+    /**
+     * Kind
+     */
+    kind?: string;
+    /**
+     * Secret
+     */
+    secret?: string | null;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
  * StatsOut
  */
 export type StatsOut = {
@@ -560,6 +930,110 @@ export type StatsOut = {
      * Units Exported
      */
     units_exported: number;
+};
+
+/**
+ * StatusOut
+ */
+export type StatusOut = {
+    /**
+     * Queues
+     */
+    queues: Array<QueueOut>;
+    /**
+     * Waiting
+     */
+    waiting: Array<WaitingOut>;
+};
+
+/**
+ * TargetIn
+ */
+export type TargetIn = {
+    /**
+     * Accept Admin Risk
+     */
+    accept_admin_risk?: boolean;
+    /**
+     * Kind
+     */
+    kind?: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Path Map
+     */
+    path_map?: Array<{
+        [key: string]: string;
+    }> | null;
+    /**
+     * Url
+     */
+    url: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
+ * WaitingOut
+ */
+export type WaitingOut = {
+    /**
+     * Command
+     */
+    command: string;
+    /**
+     * Queue
+     */
+    queue: string;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Reserved
+     */
+    reserved: boolean;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Subject
+     */
+    subject: string;
+};
+
+/**
+ * ResolveIn
+ */
+export type ShelfholdInterfacesHttpApiIntentsResolveIn = {
+    /**
+     * Action
+     */
+    action?: 'replay' | 'abandon';
+    /**
+     * Confirm
+     */
+    confirm?: string | null;
+};
+
+/**
+ * ResolveIn
+ */
+export type ShelfholdInterfacesHttpApiOpsResolveIn = {
+    /**
+     * Action
+     */
+    action: string;
 };
 
 export type AboutData = {
@@ -594,6 +1068,292 @@ export type AboutResponses = {
 };
 
 export type AboutResponse = AboutResponses[keyof AboutResponses];
+
+export type AdoptConfirmMigrationData = {
+    body: MigrationIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/adoption/{destination_id}/confirm-migration';
+};
+
+export type AdoptConfirmMigrationErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AdoptConfirmMigrationError = AdoptConfirmMigrationErrors[keyof AdoptConfirmMigrationErrors];
+
+export type AdoptConfirmMigrationResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type AdoptConfirmMigrationResponse = AdoptConfirmMigrationResponses[keyof AdoptConfirmMigrationResponses];
+
+export type AdoptSetFollowFromData = {
+    body: FollowFromIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/adoption/{destination_id}/follow-from';
+};
+
+export type AdoptSetFollowFromErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AdoptSetFollowFromError = AdoptSetFollowFromErrors[keyof AdoptSetFollowFromErrors];
+
+export type AdoptSetFollowFromResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type AdoptSetFollowFromResponse = AdoptSetFollowFromResponses[keyof AdoptSetFollowFromResponses];
+
+export type MigrationData = {
+    body?: never;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/adoption/{destination_id}/migration';
+};
+
+export type MigrationErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MigrationError = MigrationErrors[keyof MigrationErrors];
+
+export type MigrationResponses = {
+    /**
+     * Response Migration
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type MigrationResponse = MigrationResponses[keyof MigrationResponses];
+
+export type PairData = {
+    body: PairIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/adoption/{destination_id}/pair';
+};
+
+export type PairErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PairError = PairErrors[keyof PairErrors];
+
+export type PairResponses = {
+    /**
+     * Response Pair
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type PairResponse = PairResponses[keyof PairResponses];
+
+export type PairAutoData = {
+    body: PairAutoIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/adoption/{destination_id}/pair-auto';
+};
+
+export type PairAutoErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PairAutoError = PairAutoErrors[keyof PairAutoErrors];
+
+export type PairAutoResponses = {
+    /**
+     * Response Pair Auto
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type PairAutoResponse = PairAutoResponses[keyof PairAutoResponses];
+
+export type PairProposeData = {
+    body?: never;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/adoption/{destination_id}/pairing';
+};
+
+export type PairProposeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PairProposeError = PairProposeErrors[keyof PairProposeErrors];
+
+export type PairProposeResponses = {
+    /**
+     * Response Pair Propose
+     *
+     * Successful Response
+     */
+    200: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+export type PairProposeResponse = PairProposeResponses[keyof PairProposeResponses];
+
+export type RepatriateData = {
+    body: RepatriateIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/adoption/{destination_id}/repatriate';
+};
+
+export type RepatriateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RepatriateError = RepatriateErrors[keyof RepatriateErrors];
+
+export type RepatriateResponses = {
+    /**
+     * Response Repatriate
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RepatriateResponse = RepatriateResponses[keyof RepatriateResponses];
 
 export type LoginData = {
     body: LoginRequest;
@@ -719,6 +1479,109 @@ export type SessionResponses = {
 
 export type SessionResponse = SessionResponses[keyof SessionResponses];
 
+export type ReadConfigData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/config';
+};
+
+export type ReadConfigErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadConfigError = ReadConfigErrors[keyof ReadConfigErrors];
+
+export type ReadConfigResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConfigOut;
+};
+
+export type ReadConfigResponse = ReadConfigResponses[keyof ReadConfigResponses];
+
+export type PatchConfigData = {
+    body: ConfigPatch;
+    path?: never;
+    query?: never;
+    url: '/api/v1/config';
+};
+
+export type PatchConfigErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PatchConfigError = PatchConfigErrors[keyof PatchConfigErrors];
+
+export type PatchConfigResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConfigOut;
+};
+
+export type PatchConfigResponse = PatchConfigResponses[keyof PatchConfigResponses];
+
+export type RestoreUpstreamData = {
+    body: DetachIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/detach';
+};
+
+export type RestoreUpstreamErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RestoreUpstreamError = RestoreUpstreamErrors[keyof RestoreUpstreamErrors];
+
+export type RestoreUpstreamResponses = {
+    /**
+     * Response Restore Upstream
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RestoreUpstreamResponse = RestoreUpstreamResponses[keyof RestoreUpstreamResponses];
+
 export type BackfillEstimateData = {
     body?: never;
     path: {
@@ -800,6 +1663,44 @@ export type BackfillStartResponses = {
 
 export type BackfillStartResponse = BackfillStartResponses[keyof BackfillStartResponses];
 
+export type EditionSetLangData = {
+    body: LanguageIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/language';
+};
+
+export type EditionSetLangErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EditionSetLangError = EditionSetLangErrors[keyof EditionSetLangErrors];
+
+export type EditionSetLangResponses = {
+    /**
+     * Successful Response
+     */
+    200: LanguageOut;
+};
+
+export type EditionSetLangResponse = EditionSetLangResponses[keyof EditionSetLangResponses];
+
 export type IntentsListData = {
     body?: never;
     path?: never;
@@ -834,7 +1735,7 @@ export type IntentsListResponses = {
 export type IntentsListResponse = IntentsListResponses[keyof IntentsListResponses];
 
 export type IntentsResolveData = {
-    body: ResolveIn;
+    body: ShelfholdInterfacesHttpApiIntentsResolveIn;
     path: {
         /**
          * Intent Id
@@ -870,6 +1771,52 @@ export type IntentsResolveResponses = {
 };
 
 export type IntentsResolveResponse = IntentsResolveResponses[keyof IntentsResolveResponses];
+
+export type JobsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Status
+         */
+        status?: string | null;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Cursor
+         */
+        cursor?: string | null;
+    };
+    url: '/api/v1/jobs';
+};
+
+export type JobsListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type JobsListError = JobsListErrors[keyof JobsListErrors];
+
+export type JobsListResponses = {
+    /**
+     * Successful Response
+     */
+    200: JobsOut;
+};
+
+export type JobsListResponse = JobsListResponses[keyof JobsListResponses];
 
 export type JobStatusData = {
     body?: never;
@@ -908,6 +1855,86 @@ export type JobStatusResponses = {
 };
 
 export type JobStatusResponse = JobStatusResponses[keyof JobStatusResponses];
+
+export type JobsRetryData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/jobs/{job_id}/retry';
+};
+
+export type JobsRetryErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type JobsRetryError = JobsRetryErrors[keyof JobsRetryErrors];
+
+export type JobsRetryResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type JobsRetryResponse = JobsRetryResponses[keyof JobsRetryResponses];
+
+export type MissingResolveData = {
+    body: ShelfholdInterfacesHttpApiOpsResolveIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+        /**
+         * Export Item Id
+         */
+        export_item_id: string;
+    };
+    query?: never;
+    url: '/api/v1/missing/{destination_id}/{export_item_id}/resolve';
+};
+
+export type MissingResolveErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MissingResolveError = MissingResolveErrors[keyof MissingResolveErrors];
+
+export type MissingResolveResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type MissingResolveResponse = MissingResolveResponses[keyof MissingResolveResponses];
 
 export type PreviewData = {
     body: PlanIn;
@@ -980,6 +2007,114 @@ export type ApplyResponses = {
 
 export type ApplyResponse = ApplyResponses[keyof ApplyResponses];
 
+export type ProbeData = {
+    body: ProbeIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/probe';
+};
+
+export type ProbeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ProbeError = ProbeErrors[keyof ProbeErrors];
+
+export type ProbeResponses = {
+    /**
+     * Response Probe
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ProbeResponse = ProbeResponses[keyof ProbeResponses];
+
+export type RestoreAdoptData = {
+    body: RestoreIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/reconcile/adopt-after-restore';
+};
+
+export type RestoreAdoptErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RestoreAdoptError = RestoreAdoptErrors[keyof RestoreAdoptErrors];
+
+export type RestoreAdoptResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type RestoreAdoptResponse = RestoreAdoptResponses[keyof RestoreAdoptResponses];
+
+export type SeriesResumeData = {
+    body?: never;
+    path: {
+        /**
+         * Export Series Id
+         */
+        export_series_id: string;
+    };
+    query?: never;
+    url: '/api/v1/series/{export_series_id}/resume';
+};
+
+export type SeriesResumeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SeriesResumeError = SeriesResumeErrors[keyof SeriesResumeErrors];
+
+export type SeriesResumeResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type SeriesResumeResponse = SeriesResumeResponses[keyof SeriesResumeResponses];
+
 export type CreateShelfData = {
     body: ShelfIn;
     path?: never;
@@ -1051,6 +2186,105 @@ export type BindDestinationResponses = {
 
 export type BindDestinationResponse = BindDestinationResponses[keyof BindDestinationResponses];
 
+export type AddSourceData = {
+    body: SourceIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/sources';
+};
+
+export type AddSourceErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddSourceError = AddSourceErrors[keyof AddSourceErrors];
+
+export type AddSourceResponses = {
+    /**
+     * Successful Response
+     */
+    201: Created;
+};
+
+export type AddSourceResponse = AddSourceResponses[keyof AddSourceResponses];
+
+export type SourceRecheckData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/sources/suwayomi/recheck';
+};
+
+export type SourceRecheckErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SourceRecheckError = SourceRecheckErrors[keyof SourceRecheckErrors];
+
+export type SourceRecheckResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type SourceRecheckResponse = SourceRecheckResponses[keyof SourceRecheckResponses];
+
+export type SourceSetSecretData = {
+    body: SecretIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/sources/suwayomi/secret';
+};
+
+export type SourceSetSecretErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SourceSetSecretError = SourceSetSecretErrors[keyof SourceSetSecretErrors];
+
+export type SourceSetSecretResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type SourceSetSecretResponse = SourceSetSecretResponses[keyof SourceSetSecretResponses];
+
 export type StatsData = {
     body?: never;
     path?: never;
@@ -1088,6 +2322,369 @@ export type StatsResponses = {
 };
 
 export type StatsResponse = StatsResponses[keyof StatsResponses];
+
+export type StatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/status';
+};
+
+export type StatusErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type StatusError = StatusErrors[keyof StatusErrors];
+
+export type StatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: StatusOut;
+};
+
+export type StatusResponse = StatusResponses[keyof StatusResponses];
+
+export type AddTargetData = {
+    body: TargetIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/targets';
+};
+
+export type AddTargetErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddTargetError = AddTargetErrors[keyof AddTargetErrors];
+
+export type AddTargetResponses = {
+    /**
+     * Successful Response
+     */
+    201: Created;
+};
+
+export type AddTargetResponse = AddTargetResponses[keyof AddTargetResponses];
+
+export type TargetRecheckData = {
+    body?: never;
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: never;
+    url: '/api/v1/targets/{target_id}/recheck';
+};
+
+export type TargetRecheckErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type TargetRecheckError = TargetRecheckErrors[keyof TargetRecheckErrors];
+
+export type TargetRecheckResponses = {
+    /**
+     * Successful Response
+     */
+    200: RecheckOut;
+};
+
+export type TargetRecheckResponse = TargetRecheckResponses[keyof TargetRecheckResponses];
+
+export type TargetReconnectData = {
+    body?: never;
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: never;
+    url: '/api/v1/targets/{target_id}/reconnect';
+};
+
+export type TargetReconnectErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type TargetReconnectError = TargetReconnectErrors[keyof TargetReconnectErrors];
+
+export type TargetReconnectResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type TargetReconnectResponse = TargetReconnectResponses[keyof TargetReconnectResponses];
+
+export type TargetRotateKeyData = {
+    body: RotateIn;
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: never;
+    url: '/api/v1/targets/{target_id}/rotate-key';
+};
+
+export type TargetRotateKeyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type TargetRotateKeyError = TargetRotateKeyErrors[keyof TargetRotateKeyErrors];
+
+export type TargetRotateKeyResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type TargetRotateKeyResponse = TargetRotateKeyResponses[keyof TargetRotateKeyResponses];
+
+export type AcceptLostKeyringData = {
+    body: KeyringIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/tombstones/accept-lost-keyring';
+};
+
+export type AcceptLostKeyringErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AcceptLostKeyringError = AcceptLostKeyringErrors[keyof AcceptLostKeyringErrors];
+
+export type AcceptLostKeyringResponses = {
+    /**
+     * Successful Response
+     */
+    200: KeyringOut;
+};
+
+export type AcceptLostKeyringResponse = AcceptLostKeyringResponses[keyof AcceptLostKeyringResponses];
+
+export type TombstoneFlushData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/tombstones/flush';
+};
+
+export type TombstoneFlushErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type TombstoneFlushError = TombstoneFlushErrors[keyof TombstoneFlushErrors];
+
+export type TombstoneFlushResponses = {
+    /**
+     * Successful Response
+     */
+    200: FlushOut;
+};
+
+export type TombstoneFlushResponse = TombstoneFlushResponses[keyof TombstoneFlushResponses];
+
+export type SetAsideJournalData = {
+    body: SetAsideIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/tombstones/set-aside-journal';
+};
+
+export type SetAsideJournalErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetAsideJournalError = SetAsideJournalErrors[keyof SetAsideJournalErrors];
+
+export type SetAsideJournalResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetAsideOut;
+};
+
+export type SetAsideJournalResponse = SetAsideJournalResponses[keyof SetAsideJournalResponses];
+
+export type PurgeUnitData = {
+    body: PurgeIn;
+    path: {
+        /**
+         * Unit Id
+         */
+        unit_id: string;
+    };
+    query?: never;
+    url: '/api/v1/units/{unit_id}/purge';
+};
+
+export type PurgeUnitErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PurgeUnitError = PurgeUnitErrors[keyof PurgeUnitErrors];
+
+export type PurgeUnitResponses = {
+    /**
+     * Response Purge Unit
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type PurgeUnitResponse = PurgeUnitResponses[keyof PurgeUnitResponses];
+
+export type PurgeWorkData = {
+    body: PurgeIn;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/api/v1/works/{work_id}/purge';
+};
+
+export type PurgeWorkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PurgeWorkError = PurgeWorkErrors[keyof PurgeWorkErrors];
+
+export type PurgeWorkResponses = {
+    /**
+     * Response Purge Work
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type PurgeWorkResponse = PurgeWorkResponses[keyof PurgeWorkResponses];
 
 export type HealthzData = {
     body?: never;

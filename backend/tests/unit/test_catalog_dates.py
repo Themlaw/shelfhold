@@ -8,10 +8,16 @@ from shelfhold.catalog.domain.dates import (
     DatePrecision,
     PartialDate,
     comicinfo_date_fields,
-    from_upload_timestamp,
     opf_date,
     parse_partial_date,
 )
+from shelfhold.plugin_host.adapters.meta.suwayomi.service import _upload_date
+
+_NOW = datetime(2030, 1, 1, tzinfo=UTC)
+
+
+def upload_date(value: object) -> datetime | None:
+    return _upload_date(value, _NOW)
 
 
 @pytest.mark.req("EF-BIB-047")
@@ -38,15 +44,15 @@ def test_partial_dates_never_gain_precision() -> None:
 @pytest.mark.parametrize("zero", [None, 0, "0", "", "0000", "0000-00-00", 0.0])
 def test_zero_or_null_upload_date_becomes_null(zero: object) -> None:
     assert parse_partial_date(zero) is None  # type: ignore[arg-type]
-    assert from_upload_timestamp(zero) is None  # type: ignore[arg-type]
+    assert upload_date(zero) is None  # type: ignore[arg-type]
 
 
 @pytest.mark.req("EF-BIB-047")
 def test_upload_timestamp_seconds_or_milliseconds() -> None:
     expected = datetime(2023, 5, 14, 12, 0, tzinfo=UTC)
-    assert from_upload_timestamp(int(expected.timestamp())) == expected
-    assert from_upload_timestamp(int(expected.timestamp()) * 1000) == expected
-    assert from_upload_timestamp(-5) is None
+    assert upload_date(int(expected.timestamp())) == expected
+    assert upload_date(int(expected.timestamp()) * 1000) == expected
+    assert upload_date(-5) is None
 
 
 @pytest.mark.req("EF-BIB-047")
@@ -72,13 +78,13 @@ def test_partial_date_invariants() -> None:
     [float("nan"), float("inf"), -float("inf"), 1e300, 10**30, "abc", "1970-01-01", [], {}, True],
 )
 def test_unusable_upload_timestamps_become_null(junk: object) -> None:
-    assert from_upload_timestamp(junk) is None
+    assert upload_date(junk) is None
 
 
 @pytest.mark.req("EF-BIB-047")
 def test_epoch_date_text_is_a_real_date_but_timestamp_zero_is_not() -> None:
     assert parse_partial_date("1970-01-01") == PartialDate(1970, 1, 1)
-    assert from_upload_timestamp(0) is None
+    assert upload_date(0) is None
 
 
 @pytest.mark.req("EF-BIB-047")

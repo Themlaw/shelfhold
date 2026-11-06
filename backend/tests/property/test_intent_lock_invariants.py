@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from shelfhold.export.application.intents import IntentJournal, open_intent_paths, skip_covered
+from shelfhold.export.application.intents import IntentJournal, open_intent_paths, within_any
 from shelfhold.export.application.locks import LockBusyError, ResourceLocks
 from shelfhold.export.application.plans import PlanStore, StalePlanError
 from shelfhold.infrastructure.schema import coherence
@@ -45,7 +45,7 @@ def test_i9_no_candidate_under_an_open_intent_survives(
                     )
         with ienv.engine.connect() as conn:
             covered = open_intent_paths(conn)
-            kept = skip_covered(conn, candidates)
+            kept = [p for p in candidates if not within_any(p, covered)]
         expected_open = {
             p for s, d, st_ in intents if st_ in ("pending", "applying") for p in (s, d)
         }

@@ -5,47 +5,27 @@ Usage: uv run --project backend python open-api/export_schema.py [output.json]
 
 import json
 import sys
-from collections.abc import Mapping
+import tempfile
 from pathlib import Path
 from typing import Any
 
-from shelfhold import __version__
-from shelfhold.interfaces.http_api.app import create_http_app
-from shelfhold.interfaces.http_api.backfill import build_backfill_router
-from shelfhold.interfaces.http_api.intents import build_intents_router
-from shelfhold.interfaces.http_api.jobs import build_jobs_router
-from shelfhold.interfaces.http_api.plans import build_plans_router
-from shelfhold.interfaces.http_api.shelves import build_shelves_router
-from shelfhold.interfaces.http_api.stats import build_stats_router
+from shelfhold.config import load_settings
+from shelfhold.main import create_app
 
 
-class _NoHealth:
-    def migration_progress(self) -> tuple[int, int] | None:
-        return None
-
-    def readiness(self) -> Mapping[str, bool]:
-        return {}
-
-
-def _unwired() -> Any:
-    raise RuntimeError("the schema is exported offline: nothing is wired")
+def build_schema() -> dict[str, Any]:
+    """The schema of the application as `shelfhold serve` builds it (every router of the
+    composition root), without starting a server: the database is opened at the first request."""
+    with tempfile.TemporaryDirectory() as scratch:
+        env = {
+            "SHELFHOLD_DATA_DIR": f"{scratch}/data",
+            "SHELFHOLD_STORE_DIR": f"{scratch}/store",
+        }
+        return create_app(load_settings(env).values).openapi()
 
 
 def main(argv: list[str]) -> None:
-    app = create_http_app(
-        health=_NoHealth(),
-        on_startup=lambda: None,
-        version=__version__,
-        routers=(
-            build_shelves_router(_unwired),
-            build_plans_router(_unwired),
-            build_jobs_router(_unwired),
-            build_intents_router(_unwired),
-            build_backfill_router(_unwired),
-            build_stats_router(_unwired, _unwired),
-        ),
-    )
-    text = json.dumps(app.openapi(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    text = json.dumps(build_schema(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     if len(argv) > 1:
         Path(argv[1]).write_text(text, encoding="utf-8")
     else:

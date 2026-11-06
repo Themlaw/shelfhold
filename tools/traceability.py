@@ -360,6 +360,22 @@ def render(
     return "\n".join(out) + "\n"
 
 
+def unreachable_symbols(root: Path) -> list[Any]:
+    """Symbols cited by `req` tests that production never reaches (L58); a warning, because the
+    block of the CI is the test `test_req_cited_symbols_have_production_caller`."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import reachability  # noqa: PLC0415
+    finally:
+        sys.path.pop(0)
+    if not (root / reachability.SRC).is_dir():
+        return []
+    first: dict[str, Any] = {}
+    for orphan in reachability.unlisted_orphans(root):
+        first.setdefault(orphan.symbol, orphan)  # one line per symbol
+    return list(first.values())
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--milestone", required=True, help="e.g. M0")
@@ -418,7 +434,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
+    unreachable = unreachable_symbols(root)
+    if unreachable:
+        matrix += "\n## Couverture non joignable (symbol)\n\n" + "".join(
+            f"- `{o.symbol}` (cité par `{o.test}`)\n" for o in unreachable
+        )
     out.write_text(matrix, encoding="utf-8")
+    for o in unreachable:
+        print(
+            f"warning: couverture non joignable (symbol) : {o.symbol} (cité par {o.test}), "
+            "aucun point d'entrée de production ne l'atteint (tools/reachability.py)",
+            file=sys.stderr,
+        )
     for i in issues:
         print(f"warning: {i}", file=sys.stderr)
     for e in errors:

@@ -1,0 +1,263 @@
+# Symbols cited by a `req` test that no production entry point reaches, and why that is fine.
+# One entry per category (a reason, an `until`): an M1b lot (L00..L32 of PLAN-M1b), a milestone,
+# or `permanent` for the two categories that are never wired by design. `symbols` may end with a
+# `*` (a module prefix); a class entry covers its members. The list can only shrink: a test
+# refuses an entry that is wired or no longer cited.
+
+[[allow]]
+category = "public-sdk"
+reason = "shelfhold.sdk.testing is the conformance kit for plugin authors (shelfhold-sdk, MIT): its fakes and checks are consumed by third parties and by tests, never by the host's composition root. The rest of shelfhold.sdk (the models and ports) is used by the host and is not excused."
+until = "permanent"
+symbols = [
+  "shelfhold.sdk.testing.*",
+]
+
+[[allow]]
+category = "governance-catalogue"
+reason = "Closed catalogues (events, exits, reserved actions, deletion sites, failure matrix, citable normalizers, routes) that the production code applies by other means and that governance tests read to prove the catalogue and the code agree."
+until = "permanent"
+symbols = [
+  "shelfhold.events.operating:M1B",
+  "shelfhold.events.operating:WAITING_WITHOUT_EVENT",
+  "shelfhold.export.targets.kavita.routes:SETUP_ROUTES",
+  "shelfhold.identity.domain.catalogue:EXIT_STATES_LATER",
+  "shelfhold.identity.domain.credentials:CREDENTIAL_AXIS",
+  "shelfhold.identity.domain.credentials:credential_axis",
+  "shelfhold.identity.domain.emitters:DELETION_SITES",
+  "shelfhold.identity.domain.reserved:SYSTEM_EMITTERS",
+  "shelfhold.infrastructure.observability.failure_matrix:FAILURE_MATRIX",
+  "shelfhold.infrastructure.observability.failure_matrix:M1A_BEHAVIOURS",
+  "shelfhold.infrastructure.observability.failure_matrix:rows_for",
+  "shelfhold.interfaces.http_api.catalog:error_code_modules",
+  "shelfhold.library.tombstones.cited:CITABLE_NORMALIZERS",
+  "shelfhold.library.tombstones.cited:missing_citable",
+  "shelfhold.ops.exits:CLI_PENDING",
+  "shelfhold.ops.exits:M1A_STATES",
+  "shelfhold.ops.exits:UNSERVED",
+  "shelfhold.ops.exits:bare",
+  "shelfhold.ops.exits:endpoint_of",
+]
+
+[[allow]]
+category = "unwired-m1b-l06"
+reason = "`secrets import` is not implemented (it is listed in ops.exits.UNSERVED): only the encrypted export exists, so the decrypt of an export and the wire form of an envelope have no production caller until the age keyring import of L06."
+until = "M1b L06"
+symbols = [
+  "shelfhold.infrastructure.secrets.envelope:Envelope",
+  "shelfhold.infrastructure.secrets.export:decrypt_export",
+]
+
+[[allow]]
+category = "unwired-m1b-l07"
+reason = "Third-party plugin guard (ENF-SEC-009, EF-SRC-019): the registry that discovers entry points and classifies first-party and third-party plugins, and the stored plugin state, are the guard of L07. M1a loads no plugin by entry point: a test proves no production module reads a shelfhold group and that the registry is unreachable from every entry point."
+until = "M1b L07"
+symbols = [
+  "shelfhold.plugin_host.public:load_plugin_state",
+  "shelfhold.plugin_host.registry:*",
+]
+
+[[allow]]
+category = "unwired-m1b-l08"
+reason = "Age model of the catalog and its columns (effective age, explicit Edition age, suggested ages): PLAN-M1b L08 gives the helpers of the age rating their first production callers."
+until = "M1b L08"
+symbols = [
+  "shelfhold.sdk.age:AGE_TIERS",
+  "shelfhold.sdk.age:AgeRating.allowed_under",
+  "shelfhold.sdk.age:label_key",
+  "shelfhold.sdk.age:to_columns",
+]
+
+[[allow]]
+category = "unwired-m1b-l13"
+reason = "effective_age decides which age Kavita receives and who owns the locked field: the Kavita age push of L13 is its first production caller."
+until = "M1b L13"
+symbols = [
+  "shelfhold.export.domain.field_owner:effective_age",
+]
+
+[[allow]]
+category = "unwired-m1b-l15"
+reason = "Deletion of the copies of a Unit needs the irreplaceable candidates and their typed confirmation (EF-BIB-031, EF-BIB-042): M1a has no path that deletes the copies of a Unit (the deletions that exist go through the purge gate and the typed replay confirmation, proved on their real routes)."
+until = "M1b L15"
+symbols = [
+  "shelfhold.library.adapters.units:DeletionRefusedError",
+  "shelfhold.library.adapters.units:require_deletion_allowed",
+  "shelfhold.library.domain.irreplaceable:require_typed_confirmation",
+]
+
+[[allow]]
+category = "unwired-m1b-l16"
+reason = "\"Mettre à l'abri\" (EF-BIB-038, EF-BIB-045, EF-BIB-048): the mechanism that puts the original in /store is L16's job; M1a has no /store and queues no such job."
+until = "M1b L16"
+symbols = [
+  "shelfhold.library.adapters.safeguard:Safeguard",
+  "shelfhold.library.domain.failures:SafeguardFailedError",
+]
+
+[[allow]]
+category = "unwired-m1b-l18"
+reason = "Suwayomi write capabilities (follow/unfollow, refresh): M1a only reads the library of the service."
+until = "M1b L18"
+symbols = [
+  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.request_refresh",
+  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.set_follow",
+]
+
+[[allow]]
+category = "unwired-m1b-l20"
+reason = "Suwayomi account secret opened by the SuwayomiJwt AuthFlow and the service account (L20)."
+until = "M1b L20"
+symbols = [
+  "shelfhold.plugin_host.authflow:load_account_secret",
+]
+
+[[allow]]
+category = "unwired-m1b-l24"
+reason = "Window, priority classes, technical retention and SQLite maintenance (ENF-OPS-014, ENF-OPS-009): M1a has no /store and its window jobs are ordered by the scheduler; the recycle bin (30 days), the monthly VACUUM and the stepwise runner with its schedule matcher are L24's (PLAN-M1b: run_steps and tick_matches get a production caller there or leave for L31)."
+until = "M1b L24"
+symbols = [
+  "shelfhold.infrastructure.fsops.facade:Fsops.recycle",
+  "shelfhold.infrastructure.fsops.facade:Fsops.system_remove_tree",
+  "shelfhold.infrastructure.observability.disk_guard:DiskGuard.has_room_for_vacuum",
+  "shelfhold.jobs.huey_app:JobContext.run_steps",
+  "shelfhold.jobs.huey_app:JobPools.periodic_tasks",
+  "shelfhold.jobs.huey_app:JobPools.tick_matches",
+  "shelfhold.jobs.window:MaintenanceWindow.span_containing",
+  "shelfhold.jobs.window:OutsideMaintenanceWindowError",
+  "shelfhold.jobs.window:StoreOrigin",
+  "shelfhold.jobs.window:ensure_store_access",
+  "shelfhold.jobs.window:order_window_jobs",
+  "shelfhold.jobs.window:run_until",
+  "shelfhold.library.adapters.units:safe_to_clean",
+]
+
+[[allow]]
+category = "unwired-m1b-l25"
+reason = "One physical root per device (EF-EXP-059) and the sentinel states at root takeover/reinit; M1a registers roots in root_bootstrap and every write already goes through the gated fsops primitives (the pre-checks of scan and delete are their L25 callers)."
+until = "M1b L25"
+symbols = [
+  "shelfhold.export.domain.physical_roots:SentinelVerdict",
+  "shelfhold.infrastructure.fsops.facade:Fsops.require_delete_allowed",
+  "shelfhold.infrastructure.fsops.facade:Fsops.require_scan_allowed",
+]
+
+[[allow]]
+category = "unwired-m1b-l31"
+reason = "Production code that only tests call: domain helpers whose production counterpart does the same thing inline, accessors and predicates added for a test, and the first draft of features that M1b wires. PLAN-M1b L31 takes the inventory (PLAN-M1b D10): each is wired, deleted or moved to tests/support. Named one by one, never by module."
+until = "M1b L31"
+symbols = [
+  "shelfhold.acquisition.application.presence:present_for_acquisition",
+  "shelfhold.acquisition.application.presence:present_in",
+  "shelfhold.acquisition.application.upstream:UpstreamSnapshots.record_exclusion",
+  "shelfhold.catalog.adapters.repo:SqlUnitStore.mark_removed",
+  "shelfhold.catalog.adapters.repo:SqlUnitStore.units_in_order",
+  "shelfhold.catalog.adapters.repo:SqlWorkStore.series_of",
+  "shelfhold.catalog.application.service:CatalogService.create_contributor",
+  "shelfhold.catalog.application.service:CatalogService.create_series",
+  "shelfhold.catalog.application.service:CatalogService.edition_for_translation",
+  "shelfhold.catalog.application.service:CatalogService.elect_preferred",
+  "shelfhold.catalog.application.service:CatalogService.irreplaceable_candidates",
+  "shelfhold.catalog.application.service:CatalogService.place_owner",
+  "shelfhold.catalog.application.service:CatalogService.resolve_team",
+  "shelfhold.catalog.application.service:CatalogService.set_team_priority",
+  "shelfhold.catalog.application.service:CatalogService.units_beyond",
+  "shelfhold.catalog.domain.dates:PartialDate.coarsened_to",
+  "shelfhold.catalog.domain.dates:comicinfo_date_fields",
+  "shelfhold.catalog.domain.identity:Discriminant",
+  "shelfhold.catalog.domain.identity:TextVersionRef",
+  "shelfhold.catalog.domain.identity:translation_discriminant",
+  "shelfhold.catalog.domain.normalizers:NormalizerRegistry.plan_migration",
+  "shelfhold.catalog.domain.normalizers:resolve_key",
+  "shelfhold.catalog.domain.numbering:follow_from",
+  "shelfhold.catalog.domain.numbering:is_beyond",
+  "shelfhold.catalog.domain.numbering:unit_sort_key",
+  "shelfhold.events.bus:EventBus.subscribe",
+  "shelfhold.export.application.intents:IntentJournal.apply_rename",
+  "shelfhold.export.application.intents:RenameStep",
+  "shelfhold.export.application.intents:ResolveReport.still_open",
+  "shelfhold.export.application.migration_detect:SwitchoverDetector.classify_download_dir",
+  "shelfhold.export.application.migration_detect:SwitchoverGate.declare_download_dir",
+  "shelfhold.export.domain.naming:check_incoming",
+  "shelfhold.export.domain.naming:find_number_collisions",
+  "shelfhold.export.domain.naming:manifest_entry",
+  "shelfhold.export.domain.path_map:PathMap.dump",
+  "shelfhold.export.domain.physical_roots:discover_physical_roots",
+  "shelfhold.export.targets.kavita.adopt:Adopter.link_library",
+  "shelfhold.export.targets.kavita.adopt:BulkParse.for_plan",
+  "shelfhold.export.targets.kavita.client:KavitaClient.collision_check_available",
+  "shelfhold.export.targets.kavita.client:KavitaClient.parse_name",
+  "shelfhold.export.targets.kavita.client:KavitaClient.preview_verified",
+  "shelfhold.export.targets.kavita.client:KavitaClient.series_age",
+  "shelfhold.export.targets.kavita.destination:KavitaDestination.parse_name_call",
+  "shelfhold.export.targets.kavita.series:Resolution.found",
+  "shelfhold.export.targets.kavita.series:Resolution.renamed",
+  "shelfhold.export.targets.kavita.series:SeriesResolver",
+  "shelfhold.identity.domain.throttle:LoginThrottle.failure",
+  "shelfhold.identity.domain.throttle:LoginThrottle.tracked_keys",
+  "shelfhold.infrastructure.clock:Stamped",
+  "shelfhold.infrastructure.clock:merge_last_write_wins",
+  "shelfhold.integrations.apprise.jobs:request_dispatch",
+  "shelfhold.jobs.huey_app:JobPools.stopping",
+  "shelfhold.jobs.slots:DomainSlots.slot",
+  "shelfhold.jobs.slots:SlotBusyError",
+  "shelfhold.library.tombstones.service:TombstoneService.use_keyring",
+  "shelfhold.sdk.export_target:ExportTarget",
+]
+
+[[allow]]
+category = "unwired-m2"
+reason = "Consumers arrive with the content and plugin features of M2: image decode worker and caps (B1), CBZ writer from pages, EPUB/OPF dates, and the per-unit download, filters and per-key limits of the Source contract (Suwayomi downloads through tickets)."
+until = "M2"
+symbols = [
+  "shelfhold.catalog.domain.dates:opf_date",
+  "shelfhold.infrastructure.imaging.caps:*",
+  "shelfhold.infrastructure.imaging.client:*",
+  "shelfhold.infrastructure.imaging.errors:ImageRejected",
+  "shelfhold.infrastructure.packaging.cbz.packager:write_cbz",
+  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.fetch_unit",
+  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.filters",
+  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.limit_key_for",
+  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.limit_slots",
+]
+
+[[allow]]
+category = "unwired-m3"
+reason = "Diagnostic bundle, content serving and the `?since=` tokens (backed by the event sequence, with the removals of a list) come with the reader and the admin UI of M3 (B1 for content_response); no list is backed by the event table in M1a. The cursor and the ETag of a list are wired on the job list."
+until = "M3"
+symbols = [
+  "shelfhold.export.domain.provenance_mirror:is_diagnostic_excluded",
+  "shelfhold.infrastructure.http_headers:attachment_disposition",
+  "shelfhold.infrastructure.logging:redact_source_urls",
+  "shelfhold.interfaces.http_api.content:content_response",
+  "shelfhold.interfaces.http_api.lists:Since",
+  "shelfhold.interfaces.http_api.lists:decode_since",
+  "shelfhold.interfaces.http_api.lists:encode_since",
+]
+
+[[route_test]]
+category = "generic-mechanics"
+reason = "Proves a generic mechanic of the HTTP stack (identity headers, idempotency replay, reserved-action gate, unhandled-exception log line) on the real middleware of create_app() with a toy route: no product route carries the case (a reserved action that touches secrets, a request header dump, a failing handler)."
+until = "permanent"
+tests = [
+  "backend/tests/integration/test_review_pr41.py::test_tunnel_identity_header_without_forward_auth_rejected",
+  "backend/tests/integration/test_review_pr41.py::test_identity_headers_kept_only_from_the_forward_auth_networks",
+  "backend/tests/integration/test_review_pr41.py::test_idempotent_replay_never_skips_fresh_auth",
+  "backend/tests/integration/test_review_pr41.py::test_idempotency_actor_is_one_credential",
+  "backend/tests/unit/test_logging.py::test_unhandled_http_exception_and_library_logs_are_json_with_request_id",
+]
+
+[[route_test]]
+category = "unwired-m3"
+reason = "content_response (B1) has no route before the reader of M3: the sandbox/attachment headers are proved on a route declared by the test."
+until = "M3"
+tests = [
+  "backend/tests/integration/test_http_headers.py::test_svg_served_as_attachment_with_csp_sandbox",
+]
+
+[[route_test]]
+category = "unwired-m3"
+reason = "Mounts the real /healthz router alone and sets the caller's role by middleware: the member and anonymous roles of the three-way response need accounts that M1a cannot create (one administrator only), so no create_app() session can be a member before M3."
+until = "M3"
+tests = [
+  "backend/tests/integration/test_ops_surface.py::test_healthz_reasons_are_for_administrators_and_never_carry_a_title",
+]

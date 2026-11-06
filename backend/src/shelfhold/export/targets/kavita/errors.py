@@ -45,10 +45,6 @@ class TargetDegraded(TargetError):
     """The version is out of range (`degraded_readonly`): preview only, nothing is written."""
 
 
-class PlanNotVerified(TargetError):
-    """No plan may be applied without the name check (`plugin/parse` or `parse-bulk` missing)."""
-
-
 class ConfirmationRequired(TargetError):
     """An adopted library is never modified without the admin's confirmation."""
 

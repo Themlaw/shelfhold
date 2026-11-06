@@ -72,6 +72,8 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: false  # this job holds a write token: no cache a PR could have poisoned
+      - name: Published migrations are unchanged, a patch release carries no new one (ENF-OPS-002)
+        run: python3 tools/check_patch_migrations.py --tag "$TAG"
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: Generate schema.sql and data-dictionary.md

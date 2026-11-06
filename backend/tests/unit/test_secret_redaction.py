@@ -10,10 +10,10 @@ import structlog
 from shelfhold.infrastructure.logging import (
     REDACTED,
     configure_logging,
-    forget_secret_values,
     redact_value,
     register_secret_value,
 )
+from tests.redaction_support import forget_secret_values
 
 # Fake secrets are built at run time so that no literal in the repository looks like one.
 API_KEY = "kv" + "-" + secrets.token_hex(10)

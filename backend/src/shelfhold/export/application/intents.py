@@ -42,7 +42,7 @@ __all__ = [
     "RenameStep",
     "ResolveReport",
     "open_intent_paths",
-    "skip_covered",
+    "within_any",
 ]
 
 
@@ -119,15 +119,10 @@ def open_intent_paths(connection: Connection) -> frozenset[str]:
     return frozenset(p for row in rows for p in (row.src_path, row.dst_path) if p)
 
 
-def skip_covered(connection: Connection, candidates: Iterable[str]) -> list[str]:
-    """The candidates not covered by an open intent: a path is covered when it is, or lies under,
-    a path of one (a folder under `rmdir` covers what it holds)."""
-    covered = open_intent_paths(connection)
-
-    def is_covered(path: str) -> bool:
-        return any(path == c or path.startswith(c.rstrip("/") + "/") for c in covered)
-
-    return [path for path in candidates if not is_covered(path)]
+def within_any(path: str, bases: Iterable[str]) -> bool:
+    """A path is covered by an open intent when it is, or lies under, a path of one (a folder
+    under `rmdir` covers what it holds). The planner asks this for every candidate (I9)."""
+    return any(path == b or path.startswith(b.rstrip("/") + "/") for b in bases)
 
 
 class IntentJournal:

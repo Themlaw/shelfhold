@@ -7,6 +7,7 @@ import pytest
 
 from shelfhold.catalog.public import default_registry
 from shelfhold.library.tombstones import CITABLE_NORMALIZERS, missing_citable
+from tests.tools_loader import REPO, load_tool
 
 pytestmark = pytest.mark.req("ENF-OPS-021")
 
@@ -22,16 +23,86 @@ def test_production_registry_declares_no_number_version_beyond_the_stored_one() 
     assert missing_citable(registry) == []
 
 
-def test_no_production_module_loads_normalizers_from_entry_points() -> None:
-    """A distribution on `sys.path` must never run code at startup (ENF-SEC-009)."""
-    offenders = []
-    for path in SOURCE.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and node.value == "shelfhold.normalizers":
-                offenders.append(str(path.relative_to(SOURCE)))
-            if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "entry_points":
-                groups = [k.value for k in node.keywords if k.arg == "group"]
-                if any("normalizer" in ast.unparse(g) for g in groups):
-                    offenders.append(str(path.relative_to(SOURCE)))
+_EXEMPT = {"plugin_host/registry.py", "interfaces/cli/registry.py"}  # CLI: own package
+_GROUPS = {"shelfhold.normalizers", "shelfhold.plugins"}
+_DYNAMIC = {
+    "entry_points",
+    "import_module",
+    "__import__",
+    "iter_modules",
+    "spec_from_file_location",
+}
+
+
+def _dynamic_loads(path: Path) -> list[str]:
+    found = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Constant) and node.value in _GROUPS:
+            found.append(f"{path.name}: group {node.value!r}")
+        if isinstance(node, ast.Call):
+            name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+            if name in _DYNAMIC:
+                found.append(f"{path.name}: {name}")
+    return found
+
+
+@pytest.mark.req("ENF-SEC-009")
+def test_no_production_module_loads_code_from_entry_points_or_by_name() -> None:
+    """A distribution on `sys.path` must never run code at startup (ENF-SEC-009): no
+    `shelfhold.*` entry-point group is read, and nothing is imported from a computed name."""
+    offenders = [
+        hit
+        for path in sorted(SOURCE.rglob("*.py"))
+        if "sdk/testing" not in path.as_posix()
+        and path.relative_to(SOURCE).as_posix() not in _EXEMPT
+        for hit in _dynamic_loads(path)
+    ]
     assert offenders == []
+
+
+@pytest.mark.req("ENF-SEC-009")
+def test_the_one_exempt_discovery_module_is_never_reached_from_production() -> None:
+    """`plugin_host/registry.py` reads the `shelfhold.plugins` group and loads first-party
+    plugins only; its guard for third parties is M1b's. M1a runs none of it: no entry point of
+    the application reaches it, so the exemption cannot become a loader at startup."""
+    tool = load_tool("reachability")
+    graph = tool.build_graph(REPO / "backend" / "src")
+    live = tool.reachable(graph)
+    assert not [s for s in live if s.startswith("shelfhold.plugin_host.registry")]
+
+
+@pytest.mark.req("ENF-SEC-009")
+def test_the_loader_check_flags_an_entry_point_group(tmp_path: Path) -> None:
+    bad = tmp_path / "loader.py"
+    bad.write_text(
+        "from importlib.metadata import entry_points\n"
+        "for ep in entry_points(group='shelfhold.plugins'):\n    ep.load()\n"
+    )
+    assert sorted(_dynamic_loads(bad)) == [
+        "loader.py: entry_points",
+        "loader.py: group 'shelfhold.plugins'",
+    ]
+
+
+@pytest.mark.req("ENF-SEC-009")
+def test_composition_builds_only_native_services() -> None:
+    """The one connected service the composition root builds is the first-party Suwayomi
+    adapter, imported by name from `shelfhold`; no third-party module is imported there."""
+    tree = ast.parse((SOURCE / "composition.py").read_text(encoding="utf-8"))
+    services = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id.endswith("Service")
+    }
+    imported = {
+        alias.name: node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+    for name in services:
+        assert (imported.get(name) or "").startswith("shelfhold."), name
+    assert "SuwayomiService" in services
+    assert _dynamic_loads(SOURCE / "composition.py") == []

@@ -10,7 +10,6 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from fastapi import APIRouter
 
 from shelfhold.config import Settings
 from shelfhold.export.application.target_state import load_health
@@ -21,9 +20,8 @@ from shelfhold.infrastructure.local_socket import call
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.interfaces.cli import _ops as cli_ops
-from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
-from shelfhold.ops import OpsServices, endpoint_of
+from shelfhold.ops import endpoint_of
 from tests.auth_env import AuthEnv, auth_env, run_cli
 from tests.export_env import ExportEnv, export_env
 from tests.kavita_export_env import wire
@@ -333,10 +331,6 @@ def test_ops_methods_over_the_local_socket(settings: Settings, tmp_path: Path) -
 # -- the routes -------------------------------------------------------------------------------------
 
 
-def _router(ops: OpsServices) -> APIRouter:
-    return build_ops_router(lambda: ops)
-
-
 def _url(command: str, **ids: str) -> tuple[str, str]:
     method, path = endpoint_of(command)
     return method, path.format(**ids)
@@ -378,7 +372,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
             "target recheck [child_exposure]",
             "reconcile --adopt-after-restore [confirm-deletion]",
         }  # fmt: skip
-        with auth_env(monkeypatch, settings, routers=[_router(ops)]) as api:
+        with auth_env(monkeypatch, settings, ops_services=ops) as api:
             capsys.readouterr()
             assert (
                 run_cli(monkeypatch, api.settings, "admin", "keys", "create", "--name", "ci") == 0
@@ -435,7 +429,7 @@ def test_exit_routes_refuse_what_is_not_waiting(
 ) -> None:
     with export_env() as env:
         ops = make_ops(env)
-        with auth_env(monkeypatch, settings, routers=[_router(ops)]) as api:
+        with auth_env(monkeypatch, settings, ops_services=ops) as api:
             api.login()
             _method, path = _url("series resume", export_series_id=new_ulid())
             assert api.post(path).status_code == 409
@@ -451,8 +445,6 @@ def test_restored_behind_and_tombstone_key_unknown_leave_through_the_api(
 ) -> None:
     """The state is read on `GET /api/v1/status`, the exit route is called with a fresh session,
     and the next `status` no longer lists it; the ports saw the call with the right credential."""
-    from shelfhold.interfaces.http_api.status import build_status_router
-
     with export_env() as env:
         keyring, restore = FakeKeyring(), FakeRestore()
         ops = make_ops(env, keyring=keyring, restore=restore)
@@ -460,9 +452,7 @@ def test_restored_behind_and_tombstone_key_unknown_leave_through_the_api(
         def listed(api: AuthEnv) -> set[str]:
             return {i["state"] for i in api.client.get("/api/v1/status").json()["waiting"]}
 
-        with auth_env(
-            monkeypatch, settings, routers=[_router(ops), build_status_router(lambda: ops)]
-        ) as api:
+        with auth_env(monkeypatch, settings, ops_services=ops) as api:
             api.login()
             assert {"restored_behind", "tombstone_key_unknown"} <= listed(api)
             _method, path = _url("reconcile --adopt-after-restore")

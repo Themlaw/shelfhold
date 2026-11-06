@@ -1,22 +1,21 @@
 """API keys, reserved actions and the minimal `fresh_auth_s` (EF-USR-003, EF-USR-022, EF-USR-024).
 
-The reserved actions under test are throwaway routes registered by the test: no real reserved
-action (purge, tombstone, secrets over HTTP) exists in M1a yet; they declare themselves the same
-way when they arrive.
+The routes are the real ones of `create_app()`: `purge --now` (a reserved action that wants a
+fresh session), the recheck of a target (reserved only for a child exposure, no freshness) and the
+plan preview (open to a key with the `admin` scope). The services behind them are recorded.
 """
 
 import hashlib
 import re
 from collections.abc import Iterator
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
-from fastapi import APIRouter, Depends
 from fastapi.routing import APIRoute
 
 from shelfhold.config import Settings
-from shelfhold.identity.public import Effect, Principal, ReservedAction
-from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
+from shelfhold.identity.public import Principal
 from tests.auth_env import (
     PASSWORD,
     SESSION_COOKIE,
@@ -28,30 +27,42 @@ from tests.auth_env import (
     run_cli,
 )
 
-PURGE_NOW = ReservedAction("test.purge_now", frozenset({Effect.DELETES_PERMANENTLY}))
-CREATE_KEY = ReservedAction("test.create_key", frozenset({Effect.MANAGES_CREDENTIALS}))
 KEY = re.compile(r"shk_([0-9a-f]{8})_[A-Za-z0-9_-]{43}")
+PURGE = "/api/v1/units/u1/purge"
+RECHECK = "/api/v1/targets/t1/recheck"
+PLANS = "/api/v1/plans"
+PLAN_BODY = {"shelf_destination_id": "d1"}
 
 
-def _router(effects: list[str]) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/test")
+class _Library:
+    def __init__(self, effects: list[str]) -> None:
+        self._effects = effects
 
-    @router.post("/purge")
-    def purge(principal: Principal = Depends(reserved_action(PURGE_NOW))) -> dict[str, str]:  # noqa: B008
-        effects.append(f"purged-by-{principal.credential}")
+    def purge(self, *, principal: Principal, **_: object) -> dict[str, str]:
+        self._effects.append(f"purged-by-{principal.credential}")
         return {"ok": "purged"}
 
-    @router.post("/keys")
-    def keys(principal: Principal = Depends(reserved_action(CREATE_KEY))) -> dict[str, str]:  # noqa: B008
-        effects.append("key")
-        return {"ok": "key"}
 
-    @router.post("/things")
-    def things(principal: Principal = Depends(require_principal)) -> dict[str, str]:  # noqa: B008
-        effects.append(f"thing-{len(effects)}")
-        return {"actor": principal.actor_id}
+class _Services:
+    """The operating and plan services behind the routes, recording what reached them."""
 
-    return router
+    def __init__(self, effects: list[str]) -> None:
+        self.effects = effects
+        self.library = _Library(effects)
+
+    def target_recheck_is_reserved(self, _target: str) -> bool:
+        return True  # a child exposure: the reserved case, with no freshness requirement
+
+    def target_recheck(self, _target: str) -> SimpleNamespace:
+        self.effects.append("key")
+        return SimpleNamespace(cleared=(), denied=())
+
+    def preview(self, _destination: str) -> SimpleNamespace:
+        self.effects.append(f"thing-{len(self.effects)}")
+        return SimpleNamespace(
+            plan_id=f"plan-{len(self.effects)}", base_version="v1", ops=[], blocked=[],
+            warnings=[], checks=(),
+        )  # fmt: skip
 
 
 @pytest.fixture
@@ -63,7 +74,8 @@ def effects() -> list[str]:
 def api(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, effects: list[str]
 ) -> Iterator[AuthEnv]:
-    with auth_env(monkeypatch, settings, routers=[_router(effects)]) as env:
+    services = _Services(effects)
+    with auth_env(monkeypatch, settings, ops_services=services, plan_service=services) as env:
         yield env
 
 
@@ -186,12 +198,12 @@ def test_read_only_key_post_403_and_keys_need_no_csrf(
     effects: list[str],
 ) -> None:
     read_only = _create_key(monkeypatch, capsys, api.settings, "--read-only")
-    refused = api.client.post("/api/v1/test/things", headers=_bearer(read_only))
+    refused = api.client.post(PLANS, json=PLAN_BODY, headers=_bearer(read_only))
     assert refused.status_code == 403
     assert refused.json()["code"] == "forbidden"
     assert api.client.get("/api/v1/about", headers=_bearer(read_only)).status_code == 200
     writer = _create_key(monkeypatch, capsys, api.settings)
-    assert api.client.post("/api/v1/test/things", headers=_bearer(writer)).status_code == 200
+    assert api.client.post(PLANS, json=PLAN_BODY, headers=_bearer(writer)).status_code == 201
     assert effects == ["thing-0"]
 
 
@@ -203,8 +215,8 @@ def test_api_key_admin_cannot_purge_now(
     effects: list[str],
 ) -> None:
     key = _create_key(monkeypatch, capsys, api.settings)
-    for path in ("/api/v1/test/purge", "/api/v1/test/keys"):
-        refused = api.client.post(path, headers=_bearer(key))
+    for path in (PURGE, RECHECK):
+        refused = api.client.post(path, json={"typed": "x"}, headers=_bearer(key))
         assert refused.status_code == 403
         assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed"
     assert effects == []
@@ -213,9 +225,9 @@ def test_api_key_admin_cannot_purge_now(
 @pytest.mark.req("EF-USR-022", "EF-USR-024")
 def test_reserved_action_requires_fresh_auth_from_m1a(api: AuthEnv, effects: list[str]) -> None:
     api.login()
-    assert api.post("/api/v1/test/purge").status_code == 200  # just logged in: fresh
+    assert api.post(PURGE, json={"typed": "x"}).status_code == 200  # just logged in: fresh
     api.clock.advance(timedelta(minutes=20))
-    stale = api.post("/api/v1/test/purge")
+    stale = api.post(PURGE, json={"typed": "x"})
     assert stale.status_code == 401
     body = stale.json()
     assert body["type"] == "/api/v1/problems/reauth-required"
@@ -223,18 +235,18 @@ def test_reserved_action_requires_fresh_auth_from_m1a(api: AuthEnv, effects: lis
     assert body["max_age_s"] == 900
     assert body["reauth_method"] == "password"
     # A reserved action without freshness by default (P3) goes through on a plain session.
-    assert api.post("/api/v1/test/keys").status_code == 200
+    assert api.post(RECHECK).status_code == 200
     old_token = api.client.cookies[SESSION_COOKIE]
     wrong = api.post("/api/v1/auth/reauth", json={"method": "password", "password": "nope-nope"})
     assert wrong.status_code == 401
     again = api.post("/api/v1/auth/reauth", json={"method": "password", "password": PASSWORD})
     assert again.status_code == 200
     assert api.client.cookies[SESSION_COOKIE] != old_token  # renewed at re-authentication
-    assert api.post("/api/v1/test/purge").status_code == 200
+    assert api.post(PURGE, json={"typed": "x"}).status_code == 200
     assert effects == ["purged-by-session", "key", "purged-by-session"]
     rows = db_rows(
         api.settings,
-        "SELECT session_id, auth_time FROM audit WHERE action = 'test.purge_now'",
+        "SELECT session_id, auth_time FROM audit WHERE action = 'purge.now'",
     )
     assert len(rows) == 2
     assert all(session_id and auth_time for session_id, auth_time in rows)
@@ -253,7 +265,7 @@ def test_reauth_problem_type_in_openapi(api: AuthEnv) -> None:
     types = schema["x-problem-types"]
     assert types["/api/v1/problems/reauth-required"]["status"] == 401
     assert types["/api/v1/problems/credential-not-allowed"]["status"] == 403
-    purge = schema["paths"]["/api/v1/test/purge"]["post"]
+    purge = schema["paths"]["/api/v1/units/{unit_id}/purge"]["post"]
     assert {"401", "403"} <= set(purge["responses"])
 
 
@@ -267,13 +279,13 @@ def test_idempotency_keys_are_scoped_to_the_authenticated_actor(
     key = _create_key(monkeypatch, capsys, api.settings)
     api.login()
     same = {"Idempotency-Key": "same-key-123"}
-    first = api.post("/api/v1/test/things", headers=same)
-    replay = api.post("/api/v1/test/things", headers=same)
+    first = api.post(PLANS, json=PLAN_BODY, headers=same)
+    replay = api.post(PLANS, json=PLAN_BODY, headers=same)
     assert replay.headers.get("idempotent-replayed") == "true"
     assert replay.json() == first.json()
-    by_key = api.client.post("/api/v1/test/things", headers={**same, **_bearer(key)})
+    by_key = api.client.post(PLANS, json=PLAN_BODY, headers={**same, **_bearer(key)})
     assert "idempotent-replayed" not in by_key.headers
-    assert by_key.json()["actor"] != first.json()["actor"]
+    assert by_key.json()["plan_id"] != first.json()["plan_id"]
     assert len(effects) == 2
     # A login is never stored nor replayed: it carries a fresh secret every time.
     logins = [
