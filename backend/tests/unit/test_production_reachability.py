@@ -43,6 +43,12 @@ def test_reachability_allowlist_is_justified_and_live() -> None:
         if not any(reach._covered(o, {sym}) for o in orphans)
     ]
     assert not stale, f"allowlist entries that are wired or no longer cited: {stale}"
+    routes = reach.load_route_tests(REPO)
+    assert reach.check_allowlist(routes) == []
+    declaring = set(reach.route_declarations(REPO, listed=True))
+    declaring_ids = {line.split(" ")[0] for line in declaring}
+    gone = [t for e in routes for t in e["tests"] if t not in declaring_ids]
+    assert not gone, f"route tests that declare no route any more: {gone}"
 
 
 # -- the analysis on a synthetic package ---------------------------------------------------------

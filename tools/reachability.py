@@ -362,7 +362,7 @@ class Orphan:
     symbol: str
 
 
-PERMANENT_CATEGORIES = ("public-sdk", "governance-catalogue")
+PERMANENT_CATEGORIES = ("public-sdk", "governance-catalogue", "generic-mechanics")
 
 
 def load_allowlist(root: Path) -> list[dict[str, Any]]:
@@ -379,9 +379,9 @@ def check_allowlist(entries: list[dict[str, Any]]) -> list[str]:
     seen: set[str] = set()
     for e in entries:
         label = e.get("category", "?")
-        symbols = e.get("symbols", [])
+        symbols = e.get("symbols", e.get("tests", []))
         if not symbols:
-            problems.append(f"{label}: no symbols")
+            problems.append(f"{label}: no symbols or tests")
         for sym in symbols:
             if sym in seen:
                 problems.append(f"{sym}: listed twice")
@@ -453,9 +453,20 @@ _DECLARES = {"add_api_route", "include_router", "add_route", "mount", "add_webso
 _DECORATORS = {"get", "post", "put", "delete", "patch", "head", "options", "middleware"}
 
 
-def route_declarations(root: Path) -> list[str]:
+def load_route_tests(root: Path) -> list[dict[str, Any]]:
+    """`[[route_test]]` entries: tests that may declare a route, each with a category, a reason
+    and an `until`."""
+    path = root / ALLOWLIST
+    if not path.exists():
+        return []
+    return list(tomllib.loads(path.read_text(encoding="utf-8")).get("route_test", []))
+
+
+def route_declarations(root: Path, *, listed: bool = False) -> list[str]:
     """`req` tests that declare a route, a middleware, or hand `routers=` (a fake service) to the
-    application: the route then exists only in the test, never in `create_app()`."""
+    application: the route then exists only in the test, never in `create_app()`. With
+    `listed`, the ones the allowlist excuses are reported too."""
+    excused = {t for e in load_route_tests(root) for t in e.get("tests", [])}
     found: list[str] = []
     for path in sorted((root / TESTS).rglob("test_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -476,8 +487,8 @@ def route_declarations(root: Path) -> list[str]:
                             and deco.func.attr in _DECORATORS
                         ):
                             what.add(f"@{deco.func.attr}")
-            if what:
-                rel = path.relative_to(root).as_posix()
+            rel = path.relative_to(root).as_posix()
+            if what and (listed or f"{rel}::{test.name}" not in excused):
                 found.append(f"{rel}::{test.name} ({', '.join(sorted(what))})")
     return found
 

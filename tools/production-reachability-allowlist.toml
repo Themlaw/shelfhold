@@ -152,3 +152,23 @@ symbols = [
   "shelfhold.infrastructure.clock:merge_last_write_wins",
   "shelfhold.infrastructure.clock:Stamped",
 ]
+
+[[route_test]]
+category = "generic-mechanics"
+reason = "Proves a generic mechanic of the HTTP stack (identity headers, idempotency replay, reserved-action gate, unhandled-exception log line) on the real middleware of create_app() with a toy route: no product route carries the case (a reserved action that touches secrets, a request header dump, a failing handler)."
+until = "permanent"
+tests = [
+  "backend/tests/integration/test_review_pr41.py::test_tunnel_identity_header_without_forward_auth_rejected",
+  "backend/tests/integration/test_review_pr41.py::test_identity_headers_kept_only_from_the_forward_auth_networks",
+  "backend/tests/integration/test_review_pr41.py::test_idempotent_replay_never_skips_fresh_auth",
+  "backend/tests/integration/test_review_pr41.py::test_idempotency_actor_is_one_credential",
+  "backend/tests/unit/test_logging.py::test_unhandled_http_exception_and_library_logs_are_json_with_request_id",
+]
+
+[[route_test]]
+category = "unwired-m3"
+reason = "content_response (B1) has no route before the reader of M3: the sandbox/attachment headers are proved on a route declared by the test."
+until = "M3"
+tests = [
+  "backend/tests/integration/test_http_headers.py::test_svg_served_as_attachment_with_csp_sandbox",
+]
