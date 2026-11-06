@@ -127,3 +127,22 @@ def test_a_cooperative_job_stops_at_its_checkpoint_and_resumes_there(tmp_path: P
 def job_id_of(pools: JobPools) -> str:
     with pools._engine.connect() as conn:
         return str(conn.execute(sa.select(platform.job_view.c.id)).scalar_one())
+
+
+@pytest.mark.req("ENF-OPS-007")
+def test_a_busy_database_does_not_leave_the_slots_held() -> None:
+    import sqlite3
+
+    from shelfhold.infrastructure.observability.shutdown import _retried
+
+    calls: list[int] = []
+
+    def release() -> int:
+        calls.append(1)
+        if len(calls) < 3:
+            raise sqlite3.OperationalError("database is locked")
+        return 1
+
+    assert _retried(release, pause_s=0) == 1 and len(calls) == 3
+    with pytest.raises(sqlite3.OperationalError):
+        _retried(lambda: (_ for _ in ()).throw(sqlite3.OperationalError("locked")), 2, 0)

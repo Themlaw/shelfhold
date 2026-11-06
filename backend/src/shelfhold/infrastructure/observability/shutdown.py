@@ -11,6 +11,7 @@ instance never starts while this one can still write.
 """
 
 import sqlite3
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -21,6 +22,19 @@ from sqlalchemy.exc import OperationalError
 from shelfhold.jobs.huey_app import JobPools
 
 DEFAULT_CHECKPOINT_S = 25.0  # under the 30 s a container runtime grants after SIGTERM
+
+
+def _retried[T](release: Callable[[], T], attempts: int = 5, pause_s: float = 0.2) -> T:
+    """A release that meets a busy database (a worker's heartbeat writes at that moment) is tried
+    again: a lock left behind by a transient `database is locked` is a slot that never frees."""
+    for attempt in range(attempts):
+        try:
+            return release()
+        except (OperationalError, sqlite3.OperationalError):
+            if attempt == attempts - 1:
+                raise
+            time.sleep(pause_s)
+    raise AssertionError("unreachable")
 
 
 class ShuttingDownError(OSError):
@@ -96,16 +110,16 @@ class GracefulShutdown:
         flushed = slots = 0
         try:  # 3: each release on its own; a read-only or locked database holds nothing of ours
             try:
-                flushed = pools.flush_huey_locks()
+                flushed = _retried(pools.flush_huey_locks)
             except (OperationalError, sqlite3.OperationalError) as error:
                 log.warning("shutdown.huey_locks_not_flushed", error=type(error).__name__)
             try:
-                slots = pools.slots.release_all()
+                slots = _retried(pools.slots.release_all)
             except (OperationalError, sqlite3.OperationalError) as error:
                 log.warning("shutdown.slots_not_released", error=type(error).__name__)
             try:
                 if self._release_resource_locks is not None:
-                    self._release_resource_locks()
+                    _retried(self._release_resource_locks)
             except (OperationalError, sqlite3.OperationalError) as error:
                 log.warning("shutdown.locks_not_released", error=type(error).__name__)
         finally:
