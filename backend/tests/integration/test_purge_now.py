@@ -209,7 +209,7 @@ def test_purge_requires_a_fresh_admin_reserved_action(who: str) -> None:
         assert purge.count(catalog.unit, catalog.unit.c.id == unit) == 1
 
 
-@pytest.mark.req("EF-BIB-052")
+@pytest.mark.req("EF-BIB-052", "EF-BIB-031")
 @pytest.mark.parametrize("typed", [None, "", "yes", "purge"])
 def test_purge_needs_the_typed_confirmation_always(typed: str | None) -> None:
     with export_env() as env:

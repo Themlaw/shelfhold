@@ -169,6 +169,7 @@ def test_file_no_known_unit_covers_requires_its_path(
         assert sc.purged_files() == []
 
 
+@pytest.mark.req("EF-BIB-031")
 def test_replay_deletion_of_irreplaceable_requires_typed_confirmation(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
