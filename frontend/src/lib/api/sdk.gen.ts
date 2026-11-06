@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, HealthzData, HealthzErrors, HealthzResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses } from './types.gen';
+import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, HealthzData, HealthzErrors, HealthzResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -338,6 +338,23 @@ export const targetRotateKey = <ThrowOnError extends boolean = false>(options: O
  */
 export const acceptLostKeyring = <ThrowOnError extends boolean = false>(options: Options<AcceptLostKeyringData, ThrowOnError>): RequestResult<AcceptLostKeyringResponses, AcceptLostKeyringErrors, ThrowOnError> => (options.client ?? client).post<AcceptLostKeyringResponses, AcceptLostKeyringErrors, ThrowOnError>({
     url: '/api/v1/tombstones/accept-lost-keyring',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Tombstone Flush
+ */
+export const tombstoneFlush = <ThrowOnError extends boolean = false>(options?: Options<TombstoneFlushData, ThrowOnError>): RequestResult<TombstoneFlushResponses, TombstoneFlushErrors, ThrowOnError> => (options?.client ?? client).post<TombstoneFlushResponses, TombstoneFlushErrors, ThrowOnError>({ url: '/api/v1/tombstones/flush', ...options });
+
+/**
+ * Set Aside Journal
+ */
+export const setAsideJournal = <ThrowOnError extends boolean = false>(options: Options<SetAsideJournalData, ThrowOnError>): RequestResult<SetAsideJournalResponses, SetAsideJournalErrors, ThrowOnError> => (options.client ?? client).post<SetAsideJournalResponses, SetAsideJournalErrors, ThrowOnError>({
+    url: '/api/v1/tombstones/set-aside-journal',
     ...options,
     headers: {
         'Content-Type': 'application/json',

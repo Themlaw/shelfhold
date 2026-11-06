@@ -165,6 +165,16 @@ export type Done = {
 };
 
 /**
+ * FlushOut
+ */
+export type FlushOut = {
+    /**
+     * Still Owed
+     */
+    still_owed: Array<string>;
+};
+
+/**
  * FollowFromIn
  */
 export type FollowFromIn = {
@@ -668,6 +678,28 @@ export type SessionInfo = {
      * Username
      */
     username: string;
+};
+
+/**
+ * SetAsideIn
+ */
+export type SetAsideIn = {
+    /**
+     * Root Id
+     */
+    root_id?: string | null;
+};
+
+/**
+ * SetAsideOut
+ */
+export type SetAsideOut = {
+    /**
+     * Aside
+     */
+    aside: {
+        [key: string]: string;
+    };
 };
 
 /**
@@ -2121,6 +2153,72 @@ export type AcceptLostKeyringResponses = {
 };
 
 export type AcceptLostKeyringResponse = AcceptLostKeyringResponses[keyof AcceptLostKeyringResponses];
+
+export type TombstoneFlushData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/tombstones/flush';
+};
+
+export type TombstoneFlushErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type TombstoneFlushError = TombstoneFlushErrors[keyof TombstoneFlushErrors];
+
+export type TombstoneFlushResponses = {
+    /**
+     * Successful Response
+     */
+    200: FlushOut;
+};
+
+export type TombstoneFlushResponse = TombstoneFlushResponses[keyof TombstoneFlushResponses];
+
+export type SetAsideJournalData = {
+    body: SetAsideIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/tombstones/set-aside-journal';
+};
+
+export type SetAsideJournalErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetAsideJournalError = SetAsideJournalErrors[keyof SetAsideJournalErrors];
+
+export type SetAsideJournalResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetAsideOut;
+};
+
+export type SetAsideJournalResponse = SetAsideJournalResponses[keyof SetAsideJournalResponses];
 
 export type PurgeUnitData = {
     body: PurgeIn;

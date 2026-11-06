@@ -244,6 +244,22 @@
         "title": "Done",
         "type": "object"
       },
+      "FlushOut": {
+        "properties": {
+          "still_owed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Still Owed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "still_owed"
+        ],
+        "title": "FlushOut",
+        "type": "object"
+      },
       "FollowFromIn": {
         "properties": {
           "chapter": {
@@ -1043,6 +1059,39 @@
           "credential"
         ],
         "title": "SessionInfo",
+        "type": "object"
+      },
+      "SetAsideIn": {
+        "properties": {
+          "root_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Id"
+          }
+        },
+        "title": "SetAsideIn",
+        "type": "object"
+      },
+      "SetAsideOut": {
+        "properties": {
+          "aside": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Aside",
+            "type": "object"
+          }
+        },
+        "required": [
+          "aside"
+        ],
+        "title": "SetAsideOut",
         "type": "object"
       },
       "ShelfIn": {
@@ -3526,6 +3575,118 @@
           }
         },
         "summary": "Accept Lost Keyring",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/tombstones/flush": {
+      "post": {
+        "operationId": "tombstone_flush",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlushOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Tombstone Flush",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/tombstones/set-aside-journal": {
+      "post": {
+        "operationId": "set_aside_journal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAsideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetAsideOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Set Aside Journal",
         "tags": [
           "operations"
         ]
