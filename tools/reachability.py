@@ -65,6 +65,9 @@ class Graph:
         self.by_simple: dict[str, set[str]] = defaultdict(set)  # simple name -> keys
         self.members: dict[str, set[str]] = defaultdict(set)  # simple name -> member keys
         self.fields: set[str] = set()  # members that are data (dataclass fields, constants)
+        self.implicit: set[str] = set()  # members reached with their class (fields, dunders, hooks)
+        self.owner: dict[str, str] = {}  # member key -> class key
+        self.attrs: dict[str, set[str]] = defaultdict(set)  # def key -> attribute names it uses
         self.edges: dict[str, set[str]] = defaultdict(set)
         self.children: dict[str, set[str]] = defaultdict(set)  # class -> dunders, attributes
         self.modules: set[str] = set()
@@ -126,6 +129,26 @@ def build_graph(src: Path) -> Graph:
     return graph
 
 
+_PLAIN_DECORATORS = {
+    "staticmethod", "classmethod", "property", "abstractmethod", "override", "contextmanager",
+    "asynccontextmanager", "cache", "cached_property", "lru_cache", "overload", "final", "setter",
+}  # fmt: skip
+
+
+def _is_hook(stmt: ast.stmt) -> bool:
+    """A method reached with its class: a dunder, or one a framework calls (any other decorator:
+    validators, computed fields, route or signal registration)."""
+    assert isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+    if stmt.name.startswith("__") and stmt.name.endswith("__"):
+        return True
+    for deco in stmt.decorator_list:
+        target = deco.func if isinstance(deco, ast.Call) else deco
+        name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
+        if name not in _PLAIN_DECORATORS:
+            return True
+    return False
+
+
 def _collect_defs(graph: Graph, module: str, tree: ast.Module) -> None:
     def visit(body: list[ast.stmt], prefix: str, owner: str | None) -> None:
         for stmt in body:
@@ -140,8 +163,12 @@ def _collect_defs(graph: Graph, module: str, tree: ast.Module) -> None:
                 key = graph.add_def(Symbol(module, f"{prefix}{n}"), member=owner is not None)
                 if owner is not None:
                     graph.children[owner].add(key)
-                    if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    graph.owner[key] = owner
+                    is_func = isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    if not is_func:
                         graph.fields.add(key)
+                    if not is_func or _is_hook(stmt):
+                        graph.implicit.add(key)
                 if isinstance(stmt, ast.ClassDef):
                     visit(stmt.body, f"{prefix}{n}.", key)
 
@@ -202,8 +229,8 @@ def _collect_edges(graph: Graph, module: str, tree: ast.Module) -> None:
                 edges.add(follow(graph, target))
             if f"{module}:{n}" in graph.defs:
                 edges.add(f"{module}:{n}")
+        graph.attrs[owner].update(attrs)  # duck typing: by name, once the class is reached
         for a in attrs:
-            edges.update(graph.members.get(a, ()))  # duck typing: by name
             for n in bare:  # `alias.func` where alias is an imported module
                 target = imports.get(n)
                 if target in graph.modules and f"{target}:{a}" in graph.defs:
@@ -260,7 +287,11 @@ def _collect_roots(graph: Graph, trees: dict[str, tuple[ast.Module, bool]]) -> N
 
 
 def reachable(graph: Graph) -> set[str]:
+    """Walk from the roots. A method is reached when its class is reached (built or named) AND
+    some reached code uses an attribute of that name; fields, dunders and framework hooks come
+    with their class."""
     seen: set[str] = set()
+    live_attrs: set[str] = set()
     todo = list(graph.roots)
     while todo:
         key = todo.pop()
@@ -268,7 +299,15 @@ def reachable(graph: Graph) -> set[str]:
             continue
         seen.add(key)
         todo.extend(graph.edges.get(key, ()))
-        todo.extend(graph.children.get(key, ()))  # members of a reached class
+        for name in graph.attrs.get(key, set()) - live_attrs:
+            live_attrs.add(name)
+            todo.extend(m for m in graph.members.get(name, ()) if graph.owner.get(m) in seen)
+        for child in graph.children.get(key, ()):  # members of a class just reached
+            if child in graph.implicit or graph.defs[child].simple in live_attrs:
+                todo.append(child)
+        owner = graph.owner.get(key)
+        if owner is not None:
+            todo.append(owner)  # a reached method names its class
         sym = graph.defs.get(key)
         if sym is not None and sym.qualname:
             todo.append(sym.module)  # a reached name means its module ran
@@ -336,6 +375,33 @@ def _local_imports(tree: ast.Module, module: str | None = None) -> dict[str, str
     return out
 
 
+def _helper_imports(root: Path, tree: ast.Module, seen: set[str]) -> list[tuple[str, ast.Module]]:
+    """The test-support modules (`tests/*_env.py`, fixtures, fakes) a test file imports,
+    transitively: what they build is what the test exercises."""
+    out: list[tuple[str, ast.Module]] = []
+    for stmt in ast.walk(tree):
+        names: list[str] = []
+        if isinstance(stmt, ast.ImportFrom) and stmt.level == 0 and stmt.module:
+            names = [stmt.module, *(f"{stmt.module}.{a.name}" for a in stmt.names)]
+        elif isinstance(stmt, ast.Import):
+            names = [a.name for a in stmt.names]
+        for name in names:
+            parts = name.split(".")
+            if parts[0] != "tests":
+                continue
+            candidate = root / TESTS.rsplit("/", 1)[0] / Path(*parts).with_suffix(".py")
+            if not candidate.is_file() or candidate.name.startswith("test_"):
+                continue
+            key = candidate.as_posix()
+            if key in seen:
+                continue
+            seen.add(key)
+            sub = ast.parse(candidate.read_text(encoding="utf-8"))
+            out.append((candidate.relative_to(root).as_posix(), sub))
+            out.extend(_helper_imports(root, sub, seen))
+    return out
+
+
 def collect_citations(root: Path, graph: Graph) -> list[Citation]:
     tests_dir = root / TESTS
     out: list[Citation] = []
@@ -353,6 +419,11 @@ def collect_citations(root: Path, graph: Graph) -> list[Citation]:
                 out.append(Citation(label, follow(graph, imports[n]), "name"))
             for a in sorted(attrs):
                 out.append(Citation(label, a, "attr"))
+        for helper, sub in _helper_imports(root, tree, set()):  # what the test builds through them
+            used, _ = _names(sub)
+            for n, target in sorted(_local_imports(sub).items()):
+                if n in used:
+                    out.append(Citation(f"{rel} (via {helper})", follow(graph, target), "name"))
     return out
 
 
@@ -399,16 +470,25 @@ def find_orphans(root: Path) -> list[Orphan]:
     """Cited symbols that no entry point reaches, before the allowlist."""
     graph = build_graph(root / SRC)
     live = reachable(graph)
+    citations = collect_citations(root, graph)
+    classes: dict[str, set[str]] = defaultdict(set)  # test -> classes it names
+    for c in citations:
+        if c.kind == "name" and c.symbol in graph.children:
+            classes[c.test.split(" ")[0].split("::")[0]].add(c.symbol)
     orphans: list[Orphan] = []
-    for c in collect_citations(root, graph):
+    for c in citations:
         if c.kind == "name":
             sym = graph.defs.get(c.symbol)
             if sym is not None and sym.qualname and c.symbol not in live:
                 orphans.append(Orphan(c.test, c.symbol))
-        else:  # `x.attr`: orphan when src defines it only as members that none reaches
-            members = graph.members.get(c.symbol, set()) - graph.fields  # a field follows its class
-            if members and not (members & live):
-                orphans.append(Orphan(c.test, f"{sorted(members)[0]}"))
+            continue
+        members = graph.members.get(c.symbol, set()) - graph.fields  # a field follows its class
+        named = classes[c.test.split(" ")[0].split("::")[0]]
+        mine = {m for m in members if graph.owner.get(m) in named}
+        if mine:  # the test names the class: a same-named method elsewhere proves nothing
+            orphans.extend(Orphan(c.test, m) for m in sorted(mine - live))
+        elif members and not (members & live):
+            orphans.append(Orphan(c.test, sorted(members)[0]))
     return sorted(set(orphans), key=lambda o: (o.symbol, o.test))
 
 

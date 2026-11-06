@@ -118,6 +118,68 @@ def test_orphan_is_reported_and_wired_symbol_through_injection_is_not(tmp_path: 
     assert symbols == {"shelfhold.pure:orphan_helper", "shelfhold.pure:calls_orphan"}
 
 
+def test_method_of_an_unreached_class_is_not_saved_by_a_homonym(tmp_path: Path) -> None:
+    files = {
+        "backend/src/shelfhold/__init__.py": "",
+        "backend/src/shelfhold/main.py": """
+            from shelfhold.live import Live
+
+            def create_app():
+                return Live().plan()
+        """,
+        "backend/src/shelfhold/live.py": """
+            class Live:
+                def plan(self):
+                    return 1
+                def unused(self):
+                    return 2
+        """,
+        "backend/src/shelfhold/dead.py": """
+            class Dead:
+                def plan(self):
+                    return 3
+        """,
+        "backend/tests/test_cites.py": """
+            import pytest
+            from shelfhold.dead import Dead
+            from shelfhold.live import Live
+
+            @pytest.mark.req("EF-X-001")
+            def test_dead():
+                assert Dead().plan() == 3
+
+            @pytest.mark.req("EF-X-001")
+            def test_live():
+                assert Live().unused() == 2
+        """,
+    }
+    symbols = {o.symbol for o in reach.find_orphans(_tree(tmp_path, files))}
+    # `.plan` is called in production, but on Live: Dead is never built, so neither it nor its
+    # `plan` is wired; Live.unused is a method of a reached class that nothing calls
+    assert symbols == {"shelfhold.dead:Dead", "shelfhold.dead:Dead.plan"} | {
+        "shelfhold.live:Live.unused"
+    }
+
+
+def test_symbols_built_by_a_test_helper_count_as_cited(tmp_path: Path) -> None:
+    files = {
+        "backend/src/shelfhold/__init__.py": "",
+        "backend/src/shelfhold/main.py": "def create_app():\n    return 1\n",
+        "backend/src/shelfhold/dead.py": "class Dead:\n    pass\n",
+        "backend/tests/__init__.py": "",
+        "backend/tests/dead_env.py": "from shelfhold.dead import Dead\n\ndef make():\n    return Dead()\n",
+        "backend/tests/test_cites.py": """
+            import pytest
+            from tests.dead_env import make
+
+            @pytest.mark.req("EF-X-001")
+            def test_it():
+                assert make()
+        """,
+    }
+    assert {o.symbol for o in reach.find_orphans(_tree(tmp_path, files))} == {"shelfhold.dead:Dead"}
+
+
 def test_reference_from_an_entry_point_clears_the_orphan(tmp_path: Path) -> None:
     files = dict(_PACKAGE)
     files["backend/src/shelfhold/main.py"] = (
