@@ -13,7 +13,7 @@ from typing import Any
 
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import HeadlessAdmin, HeadlessError, Plan
-from shelfhold.headless.actor import Actor, actor_of
+from shelfhold.headless.actor import Actor
 from shelfhold.i18n import t
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -23,6 +23,7 @@ from shelfhold.identity.public import (
     LocalAuth,
     Principal,
     UnknownUserError,
+    audit_actor,
     authorize_reserved,
 )
 from shelfhold.infrastructure.local_socket import Peer, RpcError
@@ -334,7 +335,7 @@ class IdentityDispatcher:
         if headless is not None and self._headless is not None:
             principal = principal_for_peer(peer)
             self._authorize(principal, headless[1])
-            audited = {**params, ACTOR: actor_of(principal)}  # whatever the peer sent is replaced
+            audited = {**params, ACTOR: _actor_of(principal)}  # whatever the peer sent is replaced
             if method == "config.apply" and not _flag(params, "dry_run"):
                 await self._authorize_new_targets(self._headless, principal, audited)
             return await self._run_headless(headless[0], self._headless, audited)
@@ -375,3 +376,7 @@ class IdentityDispatcher:
             return await asyncio.to_thread(implementation, admin, params)
         except (HeadlessError, BindingError) as error:
             raise RpcError(APPLICATION_ERROR, str(error), {"code": error.code}) from None
+
+
+def _actor_of(principal: Principal) -> Actor:
+    return Actor(audit_actor(principal), principal.session_id, principal.auth_time)

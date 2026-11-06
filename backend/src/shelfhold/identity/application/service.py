@@ -137,7 +137,7 @@ def _by_host_user(target: str, by: Principal | None = None) -> str:
     return target if by is not None else f"{target} uid={os.getuid()}"
 
 
-def _audit_actor(principal: Principal | None) -> str | None:
+def audit_actor(principal: Principal | None) -> str | None:
     if principal is None:
         return None
     return principal.actor_id if principal.credential is Credential.LOCAL_CLI else principal.user_id
@@ -199,7 +199,7 @@ class LocalAuth:
         """Offline host CLI actions have no principal; through the local socket the principal is
         `local_cli` and the actor is `local_cli:<uid>` (L23)."""
         entry = AuditEntry(
-            actor_id=_audit_actor(principal),
+            actor_id=audit_actor(principal),
             action=action,
             at=self.now(),
             target=target,
@@ -484,7 +484,7 @@ class LocalAuth:
                 expires_at=expires_at,
             )
             audit = AuditEntry(
-                actor_id=_audit_actor(by),
+                actor_id=audit_actor(by),
                 action="api_key.rotated",
                 at=now,
                 target=_by_host_user(f"{prefix}>{secret.prefix}", by),

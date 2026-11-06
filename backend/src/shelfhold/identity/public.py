@@ -15,6 +15,7 @@ from shelfhold.identity.application.service import (
     ThrottledError,
     UnknownReauthMethodError,
     UnknownUserError,
+    audit_actor,
 )
 from shelfhold.identity.domain.catalogue import (
     EXIT_ROUTES,
@@ -97,6 +98,7 @@ __all__ = [
     "UnknownUserError",
     "UserRecord",
     "Verdict",
+    "audit_actor",
     "authorize_reserved",
     "credential_axis",
     "local_auth",

@@ -20,9 +20,9 @@ from shelfhold.headless import (
     PublicUrlMissing,
     absolute_url,
 )
-from shelfhold.headless.actor import actor_of
+from shelfhold.headless.actor import Actor
 from shelfhold.headless.keys import PATH_MAP_PREFIX, SECRET_KEYS
-from shelfhold.identity.public import RESERVED_ACTIONS, Credential, Principal
+from shelfhold.identity.public import RESERVED_ACTIONS, Credential, Principal, audit_actor
 from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
 
@@ -134,7 +134,7 @@ def build_headless_router(
             added = get_admin().target_add_kavita(
                 name=body.name, url=body.url, username=body.username, password=body.password,
                 accept_admin_risk=body.accept_admin_risk, path_map=body.path_map,
-                actor=actor_of(principal),
+                actor=_actor_of(principal),
             )  # fmt: skip
         except AdminRiskNotAccepted:
             raise ProblemError("target.admin_risk_not_accepted") from None
@@ -159,3 +159,7 @@ def build_headless_router(
         return Created(id=added.plugin_id)
 
     return router
+
+
+def _actor_of(principal: Principal) -> Actor:
+    return Actor(audit_actor(principal), principal.session_id, principal.auth_time)
