@@ -33,6 +33,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0  # the tags: the previous release is the baseline of the migration check
+      - name: No migration in a patch release (ENF-OPS-002)
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: python3 tools/check_patch_migrations.py "$TAG"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
