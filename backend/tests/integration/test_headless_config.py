@@ -25,18 +25,18 @@ from shelfhold.headless import (
 )
 from shelfhold.headless.errors import DestinationNotWritable
 from shelfhold.infrastructure.logging import configure_logging
+from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.plugin_host.adapters.meta.suwayomi.probe import HttpSuwayomiProbe
 from tests.auth_env import run_cli
 from tests.export_env import export_env
 from tests.fakes.suwayomi.server import FakeSuwayomi, FakeSuwayomiFetcher
-from tests.integration.test_foreign_writer_reconcile import exported
 from tests.headless_env import (
-    NOW,
     KAVITA_KEY,
     KAVITA_PASSWORD,
     KAVITA_URL,
+    NOW,
     SUWAYOMI_PASSWORD,
     SUWAYOMI_URL,
     FakeKavitaExchange,
@@ -45,6 +45,7 @@ from tests.headless_env import (
     headless,
     write_secret,
 )
+from tests.integration.test_foreign_writer_reconcile import exported
 
 pytestmark = pytest.mark.req("EF-INT-024")
 
@@ -216,6 +217,7 @@ def test_config_path_map_and_notify_urls_are_settable(settings: Settings, tmp_pa
             env.admin.set("notify.urls", "bad=http://example.org/hook")
 
 
+@pytest.mark.req("EF-INT-024", "EF-SRC-031")
 def test_source_add_suwayomi_reads_auth_mode_and_refuses_ui_login(settings: Settings) -> None:
     with headless(settings) as env:
         env.suwayomi.mode = "ui_login"
@@ -379,6 +381,7 @@ def test_shelf_create_on_0500_folder_reports_cause_and_compose_block(
 ) -> None:
     library = _library(tmp_path)
     roots = RootPolicy(library, settings.data_dir, settings.store_dir)
+    boot_check(settings, announce=False)  # the first start creates the keyring, as in production
     with headless(settings, roots=roots, real_linker=True) as env:
         env.admin.target_add_kavita(
             name="kavita", url=KAVITA_URL, username="shelfhold", password=KAVITA_PASSWORD,
@@ -416,7 +419,9 @@ def test_ui_login_mode_detected_and_refused_m1a(
         assert "ui_login" in str(refused.value)
         assert env.count("source_config") == 0
         monkeypatch.setattr(wiring, "open_headless", lambda _settings: env.admin)
-        assert run_cli(monkeypatch, settings, "source", "add", "suwayomi", "--url", SUWAYOMI_URL) == 1
+        assert (
+            run_cli(monkeypatch, settings, "source", "add", "suwayomi", "--url", SUWAYOMI_URL) == 1
+        )
         err = capsys.readouterr().err
         assert "multi-comptes" in err and "source.auth_mode_unsupported" in err
 
@@ -429,7 +434,9 @@ def test_config_set_piloted_warns_inactive_until_m1b(
 ) -> None:
     with headless(settings) as env:
         monkeypatch.setattr(wiring, "open_headless", lambda _settings: env.admin)
-        assert run_cli(monkeypatch, settings, "config", "set", "source.check_mode", "always_on") == 0
+        assert (
+            run_cli(monkeypatch, settings, "config", "set", "source.check_mode", "always_on") == 0
+        )
         assert "M1b" not in capsys.readouterr().err  # the supported mode needs no warning
         assert run_cli(monkeypatch, settings, "config", "set", "source.check_mode", "piloted") == 0
         err = capsys.readouterr().err
@@ -440,7 +447,18 @@ def test_config_set_piloted_warns_inactive_until_m1b(
 
 
 @pytest.mark.req("EF-EXP-029")
-def test_missing_thresholds_read_from_app_setting(settings: Settings) -> None:
+@pytest.mark.parametrize(
+    ("settings_set", "blocked"),
+    [
+        ({}, None),  # 4 of 12 under the default floor of 10
+        ({"export.missing_floor": "3"}, "missing_ratio"),  # 4 >= 3 and 33 % > 5 %
+        ({"export.missing_floor": "3", "export.missing_ratio": "0.5"}, None),  # 33 % < 50 %
+        ({"export.missing_ceiling": "3", "export.missing_ratio": "0.5"}, "missing_ratio"),  # > 3
+    ],
+)
+def test_missing_thresholds_read_from_app_setting(
+    settings_set: dict[str, str], blocked: str | None
+) -> None:
     with export_env() as env:
         reconcile, _series, files = exported(env, 12)
         admin = HeadlessAdmin(
@@ -450,16 +468,25 @@ def test_missing_thresholds_read_from_app_setting(settings: Settings) -> None:
             kavita=FakeKavitaExchange(),
             suwayomi=FakeSuwayomiProbe(),
         )
+        for key, value in settings_set.items():
+            admin.set(key, value)  # `config set`, then one real pass
         for path in files[:4]:
-            path.unlink()  # 4 of 12 gone: under the default floor of 10
-        assert reconcile.reconcile().blocked is None
-        admin.set("export.missing_floor", "3")  # `config set`, then a real pass
-        assert reconcile.reconcile().blocked == "missing_ratio"
-        admin.set("export.missing_ratio", "0.5")  # 4 of 12 is 33 %: under the share again
-        assert reconcile.reconcile().blocked is None
-        admin.set("export.missing_ceiling", "3")  # more than 3 files, whatever the share
-        assert reconcile.reconcile().blocked == "missing_ratio"
-        assert admin.get("export.missing_ceiling").value == 3
+            path.unlink()
+        assert reconcile.reconcile().blocked == blocked
+
+
+@pytest.mark.req("EF-EXP-029")
+def test_missing_thresholds_are_validated() -> None:
+    with export_env() as env:
+        admin = HeadlessAdmin(
+            env.engine,
+            SecretVault(Keyring.generate(NOW)),
+            clock=env.clock,
+            kavita=FakeKavitaExchange(),
+            suwayomi=FakeSuwayomiProbe(),
+        )
+        assert admin.get("export.missing_floor").value == 10  # the documented defaults
+        assert admin.get("export.missing_ceiling").value == 50
         for key, bad in (("export.missing_floor", "0"), ("export.missing_ratio", "1.5"),
                          ("export.missing_ceiling", "many")):  # fmt: skip
             with pytest.raises(InvalidConfigValue):

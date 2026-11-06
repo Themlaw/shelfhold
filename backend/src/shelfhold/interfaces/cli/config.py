@@ -85,6 +85,8 @@ def _shown(value: object) -> str:
 def run_get(args: argparse.Namespace, commands: HeadlessCommands) -> int:
     row = commands.get(args.key)
     print("" if row.value is None else _shown(row.value))
+    if row.warning:
+        print(row.warning, file=sys.stderr)
     return 0
 
 
@@ -99,6 +101,8 @@ def run_list(args: argparse.Namespace, commands: HeadlessCommands) -> int:
         return 0
     for row in rows:
         print(t("headless.config_line", name=row.key, value=_shown(row.value), source=row.source))
+        if row.warning:
+            print(row.warning, file=sys.stderr)
     return 0
 
 
@@ -114,6 +118,8 @@ def run_set(args: argparse.Namespace, commands: HeadlessCommands) -> int:
         return fail(t("headless.secret_unreadable", detail=error))
     row = commands.set(args.key, value)
     print(t("headless.config_set", name=row.key))
+    if row.warning:
+        print(row.warning, file=sys.stderr)
     if row.overridden_by is not None:
         print(t("headless.config_overridden", name=row.key, layer=row.overridden_by),
               file=sys.stderr)  # fmt: skip

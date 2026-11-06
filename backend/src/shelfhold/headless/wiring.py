@@ -9,7 +9,11 @@ from sqlalchemy import Engine
 
 from shelfhold.composition import Composition
 from shelfhold.config import Settings, load_settings
-from shelfhold.export.application.preflight import FolderProbe
+from shelfhold.export.application.preflight import (
+    DestinationNotWritableError,
+    FolderProbe,
+    check_access,
+)
 from shelfhold.export.application.root_bootstrap import RootPolicy
 from shelfhold.export.targets.kavita.adopt import AdoptionRefused
 from shelfhold.export.targets.kavita.audit import AccessAuditor
@@ -17,6 +21,7 @@ from shelfhold.export.targets.kavita.linking import ShelfLinker
 from shelfhold.headless.adapters import HttpKavitaKeyExchange
 from shelfhold.headless.admin import HeadlessAdmin
 from shelfhold.headless.errors import ShelfExposedToChildren
+from shelfhold.headless.ports import ShelfLinkPort
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fetcher import (
@@ -32,7 +37,7 @@ from shelfhold.integrations.apprise.destination import ChannelUrlRefused, valida
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.plugin_host.adapters.meta.suwayomi.probe import HttpSuwayomiProbe
 
-__all__ = ["integration_fetcher", "open_headless"]
+__all__ = ["integration_fetcher", "open_headless", "shelf_linker"]
 
 
 def integration_fetcher(url: str) -> GuardedFetcher:
@@ -69,8 +74,18 @@ class _ShelfLinker:
             raise ShelfExposedToChildren(refusal.accounts) from None
 
     def make_folder(self, local: str) -> None:
+        """Made by the sole writer. The rights are looked at first, on the nearest existing
+        folder: the write side cannot even open on a root that refuses its sentinel, and the admin
+        is owed the cause and the exact fix (EF-UX-002)."""
+        refused = check_access(local)
+        if refused is not None:
+            raise DestinationNotWritableError(refused)
         with self._comp.write_context() as w:
             FolderProbe(w.fsops).make_folder(local)
+
+
+def shelf_linker(settings: Settings, engine: Engine) -> ShelfLinkPort:
+    return _ShelfLinker(settings, engine)
 
 
 def open_headless(settings: Settings) -> HeadlessAdmin:

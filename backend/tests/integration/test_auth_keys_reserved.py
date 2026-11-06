@@ -20,6 +20,7 @@ from shelfhold.interfaces.http_api.auth import require_principal, reserved_actio
 from tests.auth_env import (
     PASSWORD,
     SESSION_COOKIE,
+    WRONG,
     AuthEnv,
     auth_env,
     db_dump,
@@ -302,11 +303,16 @@ def _reserved_routes(app: object) -> list[tuple[str, str, str]]:
         return out
 
     for route in app.routes:  # type: ignore[attr-defined]
-        if not isinstance(route, APIRoute):
-            continue
-        for name in names(route.dependant):
-            for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
-                found.append((method, route.path, name))
+        # an included router is lazy in this FastAPI: its contexts carry the final path
+        contexts = getattr(route, "effective_route_contexts", None)
+        if callable(contexts):
+            contexts = contexts()
+        for ctx in contexts if contexts is not None else [route]:
+            if not isinstance(getattr(ctx, "original_route", ctx), APIRoute):
+                continue
+            for name in names(ctx.dependant):
+                for method in sorted(ctx.methods - {"HEAD", "OPTIONS"}):
+                    found.append((method, ctx.path, name))
     return found
 
 
@@ -350,7 +356,7 @@ def test_hardened_profile_refuses_remember_without_confirmation(
             (1,),
             (0,),
         ]
-        wrong = env.login(password="wrong-password-0", confirm_remember=True)
+        wrong = env.login(password=WRONG, confirm_remember=True)
         assert wrong.status_code == 401  # a wrong password is never told apart by the profile
 
 

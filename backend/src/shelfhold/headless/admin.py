@@ -9,6 +9,7 @@ asks for SQL, and no secret is written anywhere but sealed: not in a log, a plan
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -23,6 +24,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.config import ResolvedSettings
+from shelfhold.export.application.preflight import DestinationNotWritableError
 from shelfhold.export.application.root_bootstrap import (
     RootPolicy,
     RootRefusedError,
@@ -34,7 +36,7 @@ from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import load_health, save_health
 from shelfhold.export.domain.bindings import check_shelf_ceiling
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
-from shelfhold.export.domain.path_map import PathEntry, PathMapError, PathMode
+from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMapError, PathMode
 from shelfhold.export.targets.kavita import AdminKey, load_admin_key, store_admin_key
 from shelfhold.headless.desired import (
     DesiredConfig,
@@ -46,6 +48,7 @@ from shelfhold.headless.desired import (
 from shelfhold.headless.errors import (
     AdminRiskNotAccepted,
     ConfigFileError,
+    DestinationNotWritable,
     InvalidConfigValue,
     ReadOnlyConfigKey,
     ShelfConflict,
@@ -56,7 +59,7 @@ from shelfhold.headless.errors import (
     UnknownConfigKey,
     UnknownTarget,
 )
-from shelfhold.headless.keys import KEYS, PATH_MAP_PREFIX
+from shelfhold.headless.keys import KEYS, PATH_MAP_PREFIX, warning_of
 from shelfhold.headless.ports import (
     ChannelValidator,
     KavitaKeyExchange,
@@ -64,9 +67,10 @@ from shelfhold.headless.ports import (
     SuwayomiProbe,
 )
 from shelfhold.headless.urls import validate_target_url
+from shelfhold.i18n import t
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, export, platform
+from shelfhold.infrastructure.schema import acquisition, export, identity, platform
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.integrations.apprise.channels import ChannelStore
@@ -76,6 +80,7 @@ __all__ = ["ConfigValue", "HeadlessAdmin", "Plan", "PlanChange"]
 
 KEY_NAME = "shelfhold"
 KEY_DAYS = 90  # the Kavita key expires; `target.key_expiring` warns at 14 and 1 days
+ADMIN_RISK_ACTION = "target.admin_risk_accepted"  # ENF-SEC-013
 SUPPORTED_AUTH_MODES = frozenset({"none", "basic_auth"})
 X_CEILING = 99
 Action = Literal["create", "update", "unchanged"]
@@ -89,6 +94,7 @@ class ConfigValue:
     source: str  # default | db | env | toml | fixed
     default: object = None
     overridden_by: str | None = None
+    warning: str | None = None  # a value that is accepted but does not act yet (EF-SRC-025)
 
 
 ConfigValues = list[ConfigValue]
@@ -270,6 +276,16 @@ class HeadlessAdmin:
             raise InvalidConfigValue(str(refusal)) from None
         self._wake()
 
+    def _default_path_map(self) -> list[dict[str, str]]:
+        """EF-EXP-003: without a map, the shared folder is the parent of Kavita's media
+        (`/library/manga <-> /manga`, books, comics); a folder that does not exist is skipped at
+        registration, so only the ones the admin mounted become roots."""
+        library = str(self._roots.library_dir) if self._roots is not None else "/library"
+        return _normalise_path_map(
+            [{"local": e.local, "remote": e.remote, "mode": e.mode.value}
+             for e in PathMap.default(library).entries]
+        )  # fmt: skip
+
     def _check_roots(self, entries: list[dict[str, str]]) -> None:
         """Before a path map is stored: every folder it names must be allowed to be a root."""
         if self._roots is None:
@@ -295,7 +311,7 @@ class HeadlessAdmin:
         stored = self._setting(key)
         if stored is not None:
             overridden = self._overridden_by(key)
-            return ConfigValue(key, stored, "db", spec.default, overridden)
+            return ConfigValue(key, stored, "db", spec.default, overridden, warning_of(key, stored))
         return ConfigValue(key, spec.default, "default", spec.default, self._overridden_by(key))
 
     def list(self) -> ConfigValues:
@@ -423,9 +439,12 @@ class HeadlessAdmin:
         password: str,
         accept_admin_risk: bool,
         path_map: PathMapSpec | None = None,
+        actor: str | None = None,
     ) -> TargetAdded:
+        """`actor` is the audit actor behind a server call; offline, the host user's uid goes in
+        the target of the audit row (ENF-SEC-013: the accepted risk is journaled)."""
         clean_url = _target_url(url)
-        entries = _normalise_path_map(path_map) if path_map else []
+        entries = _normalise_path_map(path_map) if path_map else self._default_path_map()
         self._check_roots(entries)  # before a key is exchanged or anything stored
         with self._engine.connect() as connection:
             existing = connection.execute(
@@ -468,6 +487,7 @@ class HeadlessAdmin:
                 )
                 registry.register_active_key(connection, self._vault.keyring)
                 store_admin_key(self._vault, connection, target_id, AdminKey(exchanged.value))
+                self._audit_admin_risk(connection, name, actor)
         except sa.exc.SQLAlchemyError:
             ident = f" (id {exchanged.key_id})" if exchanged.key_id is not None else ""
             raise TargetExchangeFailed(
@@ -477,6 +497,18 @@ class HeadlessAdmin:
         _log.info("headless.target_added", kind="kavita", name=name, url=clean_url)
         self._bootstrap()
         return TargetAdded(target_id, name, True, exchanged.expires_at)
+
+    def _audit_admin_risk(self, connection: Connection, name: str, actor: str | None) -> None:
+        """One row in the same transaction as the target: no accepted risk without its trace."""
+        connection.execute(
+            sa.insert(identity.audit).values(
+                id=new_ulid(),
+                actor_id=actor,
+                action=ADMIN_RISK_ACTION,
+                target=name if actor is not None else f"{name} uid={os.getuid()}",
+                at=self._clock.now(),
+            )
+        )
 
     # -- the exits of EF-INT-023 that renew a credential ---------------------------------------
 
@@ -586,7 +618,7 @@ class HeadlessAdmin:
         except ConnectionError:
             raise SourceUnreachable("Suwayomi cannot be reached at this address") from None
         if mode not in SUPPORTED_AUTH_MODES:
-            raise SourceAuthModeUnsupported(f"the server uses {mode!r}: only none and basic_auth")
+            raise SourceAuthModeUnsupported(t("headless.auth_mode_unsupported", mode=mode))
         if mode == "basic_auth" and not (username and password):
             raise InvalidConfigValue("this server needs a user:password secret")
         keep = mode == "basic_auth"
@@ -657,14 +689,14 @@ class HeadlessAdmin:
             shelf_id=shelf_id, target_id=target_row.id, transport="tree", plugin_egress="foyer",
             root_subpath=subpath,
         )  # fmt: skip
-        self._bootstrap()  # the folder of the shelf lives under a registered root
-        self._make_folder(destination_id)
-        if self._linker is not None:
-            try:
+        try:
+            self._bootstrap()  # the folder of the shelf lives under a registered root
+            self._make_folder(destination_id)
+            if self._linker is not None:
                 self._linker.link(target_row.id, destination_id, library_name=name)
-            except Exception:
-                self._unbind(shelf_id, destination_id, shelf_was_new=shelf is None)
-                raise
+        except Exception:
+            self._unbind(shelf_id, destination_id, shelf_was_new=shelf is None)
+            raise
         _log.info("headless.shelf_created", name=name, target=target)
         return ShelfCreated(shelf_id, destination_id, True)
 
@@ -680,7 +712,10 @@ class HeadlessAdmin:
             self._roots.check(local, PathMode.RW)
         except RootRefusedError as refusal:
             raise InvalidConfigValue(str(refusal)) from None
-        self._linker.make_folder(local)
+        try:
+            self._linker.make_folder(local)
+        except DestinationNotWritableError as refusal:  # EF-UX-002: the cause and the fix
+            raise DestinationNotWritable(str(refusal)) from None
 
     def _unbind(self, shelf_id: str, destination_id: str, *, shelf_was_new: bool) -> None:
         """A shelf the audit refused leaves nothing behind (nothing was written in Kavita)."""

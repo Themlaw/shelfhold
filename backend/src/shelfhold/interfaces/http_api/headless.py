@@ -38,6 +38,7 @@ class ConfigRow(BaseModel):
     source: str
     default: Any = None
     overridden_by: str | None = None
+    warning: str | None = None  # accepted but not acting yet (EF-SRC-025)
 
 
 class ConfigOut(BaseModel):
@@ -86,7 +87,7 @@ def build_headless_router(
         return ConfigOut(
             items=[
                 ConfigRow(key=v.key, value=v.value, source=v.source, default=v.default,
-                          overridden_by=v.overridden_by)
+                          overridden_by=v.overridden_by, warning=v.warning)
                 for v in values
             ]
         )  # fmt: skip
@@ -124,7 +125,7 @@ def build_headless_router(
     def add_target(
         body: TargetIn,
         response: Response,
-        _principal: Principal = Depends(reserved_action(_RISK)),  # noqa: B008
+        principal: Principal = Depends(reserved_action(_RISK)),  # noqa: B008
     ) -> Created:
         if body.kind != "kavita":
             raise ProblemError("config.invalid_value")
@@ -132,6 +133,7 @@ def build_headless_router(
             added = get_admin().target_add_kavita(
                 name=body.name, url=body.url, username=body.username, password=body.password,
                 accept_admin_risk=body.accept_admin_risk, path_map=body.path_map,
+                actor=principal.actor_id,
             )  # fmt: skip
         except AdminRiskNotAccepted:
             raise ProblemError("target.admin_risk_not_accepted") from None

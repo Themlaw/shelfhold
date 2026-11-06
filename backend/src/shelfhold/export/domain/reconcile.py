@@ -5,6 +5,7 @@ say what the observation means. Shelfhold never deletes nor overwrites what a th
 it reports it, and pauses the series it cannot trust.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -17,9 +18,11 @@ __all__ = [
     "Disappeared",
     "ManagedFile",
     "Seen",
+    "Thresholds",
     "classify_change",
     "classify_missing",
     "missing_blocks",
+    "thresholds_from",
 ]
 
 # EF-EXP-029 (GAP-5-14): per shelf destination, at least 10 missing files AND more than 5 %, or
@@ -32,6 +35,33 @@ REEXPORT_WINDOW: Final = timedelta(hours=24)  # EF-EXP-018
 # somebody else's habit (a nightly script), not an accident.
 REEXPORT_ATTEMPTED: Final = "reconcile.reexport_attempted"
 LIVE_STATES: Final = frozenset({"written", "scanned", "resolved", "adopted"})
+
+
+@dataclass(frozen=True)
+class Thresholds:
+    """The three settable numbers of the rule (`export.missing_floor|ratio|ceiling`)."""
+
+    floor: int = FLOOR_MISSING
+    ratio: float = RATIO_MISSING
+    ceiling: int = CEILING_MISSING
+
+
+def thresholds_from(settings: Mapping[str, str]) -> Thresholds:
+    """The stored settings over the defaults; a value that does not parse is ignored (the keys
+    are validated when set, a hand-edited row must not stop the reconcile)."""
+
+    def number(key: str, default: float, kind: type[int] | type[float]) -> float:
+        try:
+            value = kind(settings[key])
+        except (KeyError, ValueError):
+            return default
+        return value if value > 0 else default
+
+    return Thresholds(
+        floor=int(number("export.missing_floor", FLOOR_MISSING, int)),
+        ratio=number("export.missing_ratio", RATIO_MISSING, float),
+        ceiling=int(number("export.missing_ceiling", CEILING_MISSING, int)),
+    )
 
 
 def missing_blocks(

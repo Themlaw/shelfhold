@@ -92,7 +92,9 @@ class SessionPolicy:
 
 
 DEFAULT_POLICY = SessionPolicy(idle=timedelta(days=30), absolute=None)
-HARDENED_ADMIN_POLICY = SessionPolicy(idle=timedelta(minutes=30), absolute=timedelta(hours=12))
+HARDENED_ADMIN_POLICY = SessionPolicy(
+    idle=timedelta(minutes=30), absolute=timedelta(hours=12), remember_default=False
+)  # EF-USR-022: "remember me" is refused until the admin confirms it
 SESSION_TOUCH_INTERVAL = timedelta(minutes=1)  # `last_seen_at` is written at most this often
 HARDENED_KEY_MAX_AGE = timedelta(days=90)
 MIN_PASSWORD_LENGTH = 10

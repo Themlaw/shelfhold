@@ -21,6 +21,7 @@ from shelfhold.identity.public import (
     MAX_PASSWORD_LENGTH,
     InvalidCredentialsError,
     Principal,
+    RememberNeedsConfirmationError,
     ThrottledError,
     UnknownReauthMethodError,
 )
@@ -63,6 +64,9 @@ class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=128)
     password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
     remember: bool = True  # P2: ticked by default
+    confirm_remember: bool = (
+        False  # the hardened profile refuses `remember` without it (EF-USR-022)
+    )
 
 
 class CsrfToken(BaseModel):
@@ -126,6 +130,7 @@ def build_login_router(source_url: str) -> APIRouter:
                 body.password,
                 ip=_client_ip(request),
                 remember=body.remember,
+                confirm_remember=body.confirm_remember,
                 presented_token=request.cookies.get(names.session),
                 device_proof=request.cookies.get(names.device),
             )
@@ -133,6 +138,8 @@ def build_login_router(source_url: str) -> APIRouter:
             raise _throttled(error) from None
         except InvalidCredentialsError:
             raise ProblemError("invalid_credentials") from None
+        except RememberNeedsConfirmationError:
+            raise ProblemError("remember_needs_confirmation") from None
         response = JSONResponse({"csrf_token": issued.csrf_secret})
         set_session_cookies(response, names, issued)
         return response

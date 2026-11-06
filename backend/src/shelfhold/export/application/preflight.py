@@ -37,6 +37,7 @@ __all__ = [
     "PermissionPreflight",
     "ProbeResult",
     "RecheckReport",
+    "check_access",
     "fix_commands",
 ]
 
@@ -110,17 +111,24 @@ def fix_commands(folder: str, runs_as: tuple[int, int], owner: Owner | None) -> 
         "To fix, on the host (replace the path by the host path of this folder):",
         f"  setfacl -R -m u:{uid}:rwX -d -m u:{uid}:rwX '{folder}'",
     ]
+    if owner is not None and owner.uid == uid and not owner.mode & 0o200:
+        lines.append(f"  or, the folder is yours but read-only: chmod u+w '{folder}'")
     if owner is not None and owner.gid != gid:
-        lines.append(
-            f"  or add the group of the folder to the container (compose: group_add: "
-            f"[\"{owner.gid}\"]) and run: chmod -R g+rwX '{folder}'"
-        )
-    if owner is not None:
-        lines.append(
-            f'  or run the container as the owner (compose: user: "{owner.uid}:{owner.gid}")'
-        )
+        lines.append(f"  or give the group of the folder write access: chmod -R g+rwX '{folder}'")
     lines.append("  and give new files group write access (umask 002 for the writer).")
+    lines.append("Or change the compose file of Shelfhold, one of these two blocks:")
+    lines += _yaml("group_add:", f'- "{owner.gid if owner else gid}"')
+    lines += _yaml(
+        "user:", f'"{owner.uid}:{owner.gid}"' if owner else f'"{uid}:{gid}"', inline=True
+    )
     return "\n".join(lines)
+
+
+def _yaml(key: str, value: str, *, inline: bool = False) -> list[str]:
+    """A compose block, indented under the service, ready to paste."""
+    head = ["  services:", "    shelfhold:"]
+    body = [f"      {key} {value}"] if inline else [f"      {key}", f"        {value}"]
+    return [*head, *body]
 
 
 def _owner_of(path: str) -> Owner | None:
@@ -129,6 +137,22 @@ def _owner_of(path: str) -> Owner | None:
     except OSError:
         return None
     return Owner(seen.st_uid, seen.st_gid, seen.st_mode & 0o7777)
+
+
+def check_access(folder: str, *, runs_as: tuple[int, int] | None = None) -> ProbeResult | None:
+    """Can this process create entries in `folder`, or in its nearest existing parent when the
+    folder is yet to be made? None when it can. A read of the permission bits (`access`), no
+    write: it runs where the write side cannot even be opened (a root refusing its sentinel)."""
+    ids = runs_as or (os.geteuid(), os.getegid())
+    existing = folder.rstrip("/") or "/"
+    while not os.path.isdir(existing) and existing != "/":
+        existing = os.path.dirname(existing) or "/"
+    if os.access(existing, os.W_OK | os.X_OK):
+        return None
+    owner = _owner_of(existing)
+    return ProbeResult(
+        False, existing, (), "write", "EACCES", ids, owner, fix_commands(existing, ids, owner)
+    )
 
 
 class FolderProbe:

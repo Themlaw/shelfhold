@@ -85,6 +85,13 @@ class SourceUnreachable(HeadlessError):
     code = "source.unreachable"
 
 
+class DestinationNotWritable(HeadlessError):
+    """The folder of the new shelf refuses the probe: the message holds the cause (errno, owner,
+    mode, uid) and the exact fix, host commands and compose block (EF-UX-002)."""
+
+    code = "target.permission_denied"
+
+
 class ShelfExposedToChildren(HeadlessError):
     """The audit before the link names accounts that must not read the library (EF-EXP-055)."""
 

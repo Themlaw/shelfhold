@@ -9,10 +9,19 @@ from dataclasses import dataclass
 from typing import Final
 
 from shelfhold.export.application.root_bootstrap import default_jurisdiction
+from shelfhold.export.domain.reconcile import CEILING_MISSING, FLOOR_MISSING, RATIO_MISSING
 from shelfhold.headless.errors import InvalidConfigValue
 from shelfhold.headless.urls import validate_public_url
+from shelfhold.i18n import t
 
-__all__ = ["KEYS", "MAINTENANCE_WINDOW", "PATH_MAP_PREFIX", "SECRET_KEYS", "ConfigKey"]
+__all__ = [
+    "KEYS",
+    "MAINTENANCE_WINDOW",
+    "PATH_MAP_PREFIX",
+    "SECRET_KEYS",
+    "ConfigKey",
+    "warning_of",
+]
 
 PATH_MAP_PREFIX: Final = "path_map."
 MAINTENANCE_WINDOW: Final = "03:00-07:00 Europe/Paris"  # fixed in M1a (ENF-OPS-014)
@@ -42,6 +51,25 @@ def _check_mode(value: str) -> str:
     return value
 
 
+def _whole(name: str) -> Callable[[str], str]:
+    def check(value: str) -> str:
+        if not value.strip().isdigit() or int(value) < 1:
+            raise InvalidConfigValue(f"{name} is a whole number, 1 or more")
+        return str(int(value))
+
+    return check
+
+
+def _share(value: str) -> str:
+    try:
+        share = float(value)
+    except ValueError:
+        raise InvalidConfigValue("export.missing_ratio is a share, e.g. 0.05") from None
+    if not 0 < share <= 1:
+        raise InvalidConfigValue("export.missing_ratio is above 0 and at most 1")
+    return str(share)
+
+
 def _jurisdiction(value: str) -> str:
     clean = value.strip().upper()
     if len(clean) != 2 or not clean.isalpha():
@@ -57,6 +85,15 @@ KEYS: Final = {
         ConfigKey("source.check_mode", "always_on",
                   "How new chapters are looked for: always_on or piloted (EF-SRC-025).",
                   _check_mode),
+        ConfigKey("export.missing_floor", FLOOR_MISSING,
+                  "Sentinel: files missing in a shelf destination before the share counts "
+                  "(EF-EXP-029).", _whole("export.missing_floor")),
+        ConfigKey("export.missing_ratio", RATIO_MISSING,
+                  "Sentinel: share of missing files, above which (with the floor) exports, "
+                  "removals and scans are blocked (EF-EXP-029).", _share),
+        ConfigKey("export.missing_ceiling", CEILING_MISSING,
+                  "Sentinel: more missing files than this block whatever the share "
+                  "(EF-EXP-029).", _whole("export.missing_ceiling")),
         ConfigKey("instance.jurisdiction", default_jurisdiction(),
                   "Country whose copyright law drives the public-domain notices; the default "
                   "is deduced from the locale (EF-SRC-024).", _jurisdiction),
@@ -67,3 +104,11 @@ KEYS: Final = {
     )
 }  # fmt: skip
 SECRET_KEYS: Final = frozenset(name for name, key in KEYS.items() if key.secret)
+
+
+def warning_of(key: str, value: object) -> str | None:
+    """A value that is accepted but does not act yet: said at `config set` and `config get`
+    (EF-SRC-025: the piloted check is M1b, the follow cycle behaves as `always_on` until then)."""
+    if key == "source.check_mode" and value == "piloted":
+        return t("headless.piloted_inactive")
+    return None

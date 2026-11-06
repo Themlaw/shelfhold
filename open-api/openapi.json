@@ -233,6 +233,11 @@
       },
       "LoginRequest": {
         "properties": {
+          "confirm_remember": {
+            "default": false,
+            "title": "Confirm Remember",
+            "type": "boolean"
+          },
           "password": {
             "maxLength": 1024,
             "minLength": 1,
@@ -1517,6 +1522,10 @@
     "/api/v1/problems/reconcile.drift": {
       "code": "reconcile.drift",
       "status": 409
+    },
+    "/api/v1/problems/remember-needs-confirmation": {
+      "code": "remember_needs_confirmation",
+      "status": 422
     },
     "/api/v1/problems/repatriate.blocked": {
       "code": "repatriate.blocked",

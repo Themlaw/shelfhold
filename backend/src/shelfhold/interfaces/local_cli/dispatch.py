@@ -37,6 +37,7 @@ from shelfhold.ops import OpsServices
 Params = Mapping[str, Any]
 Method = Callable[[LocalAuth, Principal, Params], object]
 HeadlessMethod = Callable[[HeadlessAdmin, Params], object]
+ACTOR = "_actor"  # the audit actor of the peer, written by the dispatcher over any given value
 _PASSWORD_REASONS = frozenset(
     {"invalid_username", "password_too_short", "password_too_long", "invalid_expiry"}
 )
@@ -161,7 +162,7 @@ def _plain(value: object) -> object:
 
 def _config_value(row: Any) -> dict[str, object]:
     return {"key": row.key, "value": row.value, "source": row.source, "default": row.default,
-            "overridden_by": row.overridden_by}  # fmt: skip
+            "overridden_by": row.overridden_by, "warning": row.warning}  # fmt: skip
 
 
 def _plan(plan: Plan) -> dict[str, object]:
@@ -219,6 +220,7 @@ def _target_add(admin: HeadlessAdmin, params: Params) -> object:
         password=str(_text(params, "password")),
         accept_admin_risk=_flag(params, "accept_admin_risk"),
         path_map=path_map if isinstance(path_map, list) else None,
+        actor=_text(params, ACTOR, required=False),  # set by the dispatcher, never by the peer
     )
     return {"id": added.id, "name": added.name, "created": added.created,
             "key_expires_at": _plain(added.key_expires_at)}  # fmt: skip
@@ -303,7 +305,8 @@ class IdentityDispatcher:
         if headless is not None and self._headless is not None:
             principal = principal_for_peer(peer)
             self._authorize(principal, headless[1])
-            return await self._run_headless(headless[0], self._headless, params)
+            audited = {**params, ACTOR: principal.actor_id}  # whatever the peer sent is replaced
+            return await self._run_headless(headless[0], self._headless, audited)
         entry = METHODS.get(method)
         if entry is None:
             raise RpcError(METHOD_NOT_FOUND, t("local_cli.unknown_method", method=method))

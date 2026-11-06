@@ -665,3 +665,27 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
   polling d'arrivée au moment où le fichier est vu dans l'index, et non plus jusqu'à l'heure d'écriture.
   Les tests passent par le cycle de suivi, le pipeline d'export, le polling contre le faux Kavita, puis
   `shelfhold stats` ; plus aucune ligne d'export n'est écrite à la main.
+## L47 : sécurité et configuration (remédiation de la couverture réelle)
+
+- **ENF-SEC-013.** `target add kavita --accept-admin-risk` écrit une ligne `audit`
+  (`target.admin_risk_accepted`) dans la transaction qui crée la destination : pas de risque accepté
+  sans trace. Hors ligne, la cible porte l'uid de l'utilisateur de l'hôte ; par le socket ou HTTP,
+  l'acteur est la session ou le client local (jamais une valeur donnée par le pair). La ligne
+  `admin_risk.accept` que l'autorisation HTTP écrivait déjà reste : deux lignes par appel HTTP.
+- **EF-USR-022.** Le profil durci refuse « se souvenir de moi » pour l'admin sans `confirm_remember`
+  (422, `remember-needs-confirmation`), après la vérification du mot de passe : un mauvais mot de
+  passe reste un 401. La page de connexion n'est pas modifiée : l'admin décoche la case.
+- **EF-USR-024.** Le test énumère les routes `reserved_*` de `create_app()` (10 routes) au lieu de
+  routes jetables.
+- **EF-EXP-003.** Sans `--path-map`, la table par défaut `<bibliothèque>/{manga,books,comics}`
+  ↔ `/{manga,books,comics}` est posée ; un dossier absent n'est pas une racine.
+- **EF-UX-002 (liaison).** `shelf create` regarde les droits du dossier (ou de son plus proche
+  parent existant) avant d'ouvrir le côté écriture, qui échouerait sur un dossier refusant la
+  sentinelle. La cause et le bloc `compose` exact reviennent ; rien n'est laissé en base. Le
+  volet « démarrage » est celui de L52.
+- **EF-SRC-031.** Le refus de `ui_login` à `source add` porte le message dédié (« mode
+  multi-comptes indisponible dans cette version »).
+- **EF-SRC-025.** `source.check_mode piloted` est accepté et signalé « inactif avant M1b » à
+  `config set` et `config get`. L21 (M1b) retirera l'avertissement.
+- **EF-EXP-029.** Les seuils sont les réglages `export.missing_floor|ratio|ceiling` de
+  `app_setting` (aucune migration), relus à chaque passe de rapprochement.
