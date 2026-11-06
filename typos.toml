@@ -9,6 +9,7 @@ cours = "cours"
 sur = "sur"
 opf = "opf"
 
-# Exact identifier: a pydantic setting.
+# Exact identifiers: a pydantic setting and the in-toto provenance file name.
 [default.extend-identifiers]
 ser_json_bytes = "ser_json_bytes"
+intoto = "intoto"
