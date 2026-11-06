@@ -83,7 +83,7 @@ from shelfhold.plugin_host.errors import AuthModeUnsupported, ServiceVersionMism
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
-from shelfhold.sdk.source import SourceError
+from shelfhold.sdk.source import SourceError, SubSource
 
 log = structlog.get_logger(__name__)
 
@@ -195,7 +195,7 @@ class FollowCycle:
         self._told: set[str] = set()  # bindings already announced as tombstoned upstream
         self._discovery = SeriesDiscovery(
             engine, clock, self._plugin_id, tombstones, self._emit,
-            translation_nature=service.manifest.translation_nature,
+            translation_nature=getattr(service.manifest, "translation_nature", "unknown"),
         )  # fmt: skip
         self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
 
@@ -282,7 +282,7 @@ class FollowCycle:
         found = await self._discovery.run(
             library,
             lambda ref: from_service(self._service.list_units(self._fetcher, ref)),
-            lambda: from_service(self._service.sub_sources(self._fetcher)),
+            self._sub_sources,
         )
         self._listed = found.units
         report.created += found.created
@@ -290,6 +290,12 @@ class FollowCycle:
         report.skipped_pending_pairing += found.skipped_pending_pairing
         report.unknown_language += found.created_unknown_language
         report.awaiting_shelf += found.awaiting_shelf
+
+    async def _sub_sources(self) -> list[SubSource]:
+        """The sub-sources of the service; none for a service that has no such capability (the
+        method exists only when the manifest declares it)."""
+        listing = getattr(self._service, "sub_sources", None)
+        return [] if listing is None else await from_service(listing(self._fetcher))
 
     def _reconcile_library(
         self, in_library: set[tuple[str, str]], report: FollowReport
