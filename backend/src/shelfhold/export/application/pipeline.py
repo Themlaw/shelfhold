@@ -23,7 +23,7 @@ from shelfhold.export.application.intents import IntentJournal, open_intent_path
 from shelfhold.export.application.locks import ResourceLocks, library_resource
 from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
-from shelfhold.export.application.plans import PlanOp, PlanStore
+from shelfhold.export.application.plans import PlanOp, PlanStore, StalePlanError
 from shelfhold.export.application.rendering import CbzRenderer, RenderedCbz, comicinfo_xml
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import (
@@ -59,9 +59,11 @@ __all__ = [
     "ExportPipeline",
     "PlanPreview",
     "SourceMissingError",
+    "UnknownPlanError",
     "UnverifiedParseError",
     "decode_op",
     "encode_op",
+    "ensure_applicable",
     "wanted_names",
 ]
 
@@ -93,6 +95,32 @@ class DestinationPermissionError(PermissionError):
     """The destination refused the write of the exported file itself (EACCES, EROFS...): only
     this waits for `target recheck`. A `PermissionError` anywhere else (the received archive,
     the staging area) is an ordinary failure and is not blamed on the folder."""
+
+
+class UnknownPlanError(LookupError):
+    """No stored plan has this identifier."""
+
+
+def ensure_applicable(engine: Engine, plan_id: str, *, if_match: str) -> str:
+    """The checks of the 412 that need no disk and no Kavita, made when the application of a plan
+    is asked for (before a job exists): the plan is known, still `planned`, the validator is the
+    one of its preview and nothing moved since. Returns the destination of the plan. The claim and
+    the fingerprint of the files stay with `PlanStore.apply`, which runs again in the job."""
+    with engine.connect() as connection:
+        plan = connection.execute(
+            sa.select(coherence.export_plan).where(coherence.export_plan.c.plan_id == plan_id)
+        ).one_or_none()
+        if plan is None or plan.shelf_destination_id is None:
+            raise UnknownPlanError(plan_id)
+        ensure_active(connection, plan.shelf_destination_id)  # reinstalled Kavita, child exposure
+        ctx = load_context(connection, plan.shelf_destination_id)
+        if (
+            plan.status != "planned"
+            or if_match != plan.base_version
+            or version_of(connection, ctx) != plan.base_version
+        ):
+            raise StalePlanError("the preview changed: recompute it")
+    return str(plan.shelf_destination_id)
 
 
 class SwitchoverCheck(Protocol):
@@ -381,6 +409,35 @@ class ExportPipeline:
                 for folder in sorted(folders):  # one targeted scan per series folder
                     self._request_scan(ctx.remote_folder(folder))
         return ApplyReport(plan_id, tuple(done))
+
+    def require_names_checked(self, plan_id: str) -> None:
+        """A stored plan is applied only if the names `plugin/parse` answers now are the ones it
+        was made with: the same plan, computed again with the answers bound here, gives the same
+        operations. A preview made without the answers of Kavita never passes (EF-EXP-045)."""
+        self._require_verified()
+        with self._engine.connect() as connection:
+            plan = connection.execute(
+                sa.select(coherence.export_plan).where(coherence.export_plan.c.plan_id == plan_id)
+            ).one()
+            stored = connection.execute(
+                sa.select(coherence.export_op.c.payload)
+                .where(coherence.export_op.c.plan_id == plan_id)
+                .order_by(coherence.export_op.c.batch, coherence.export_op.c.position)
+            ).scalars()
+            wanted = [(p["kind"], p["unit_id"], p["rel_path"]) for p in stored if p]
+        _ctx, _loaded, fresh = self._compute(str(plan.shelf_destination_id))
+        if wanted != [(op.kind, op.unit_id, op.rel_path) for op in fresh.ops]:
+            self._mark_stale(plan_id)
+            raise StalePlanError("the names changed under plugin/parse: recompute the preview")
+
+    def _mark_stale(self, plan_id: str) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(coherence.export_plan)
+                .where(coherence.export_plan.c.plan_id == plan_id)
+                .where(coherence.export_plan.c.status == "planned")
+                .values(status="stale", updated_at=self._clock.now())
+            )
 
     def _execute(
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, job_id: str

@@ -2,6 +2,9 @@
 
 A plan is applied with the `If-Match` of the preview it comes from; when anything moved since,
 the answer is 412 `plan.stale` and the client asks for a new preview. Nothing is applied blind.
+The application is a long operation: the route answers `202 Accepted` with the `Location` of the
+job (`GET /api/v1/jobs/{id}`), the refusals that need no disk being answered before the job exists
+(EF-INT-001).
 """
 
 import re
@@ -13,22 +16,29 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 
 from shelfhold.export.application.export_items import SeriesCollisionError
-from shelfhold.export.application.pipeline import SourceMissingError, UnverifiedParseError
+from shelfhold.export.application.pipeline import (
+    SourceMissingError,
+    UnknownPlanError,
+    UnverifiedParseError,
+)
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.target_state import DestinationPausedError
 from shelfhold.identity.public import Credential, Principal
-from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.interfaces.http_api.accepted import JobAccepted, accepted_job
 from shelfhold.interfaces.http_api.auth import require_principal
 from shelfhold.interfaces.http_api.preconditions import etag_for_version
 from shelfhold.interfaces.http_api.problems import ProblemError
+from shelfhold.ops import OpsError
 
 __all__ = ["build_plans_router"]
 
 
 class PlanPipeline(Protocol):
     def preview(self, shelf_destination_id: str) -> Any: ...
-    def apply(self, plan_id: str, *, if_match: str, job_id: str) -> Any: ...
+    def queue_apply(self, plan_id: str, *, if_match: str) -> str:
+        """Queue the application of a stored plan; returns the identifier of the job."""
+        ...
 
 
 class PlanIn(BaseModel):
@@ -42,11 +52,6 @@ class PlanOut(BaseModel):
     blocked: list[dict[str, Any]]
     warnings: list[dict[str, Any]]
     checks: list[str]
-
-
-class AppliedOut(BaseModel):
-    plan_id: str
-    applied: int
 
 
 _STRONG_ETAG = re.compile(r'"[0-9a-f]{1,64}"')
@@ -93,25 +98,28 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
             checks=list(result.checks),
         )
 
-    @router.post("/{plan_id}/apply")
+    @router.post("/{plan_id}/apply", status_code=202, response_model=JobAccepted)
     def apply(
         plan_id: str,
         request: Request,
         _principal: Principal = Depends(require_admin),  # noqa: B008
-    ) -> AppliedOut:
+    ) -> Response:
         if_match = _if_match_version(request.headers.get("if-match"))
         try:
-            report = get_pipeline().apply(plan_id, if_match=if_match, job_id=new_ulid())
+            job_id = get_pipeline().queue_apply(plan_id, if_match=if_match)
         except StalePlanError:
             raise ProblemError("plan.stale") from None
+        except UnknownPlanError:
+            raise ProblemError("not_found") from None
         except (
             SeriesCollisionError,
             SourceMissingError,
             UnverifiedParseError,
             DestinationPausedError,
             RestoredBehindError,
+            OpsError,
         ) as error:
             raise ProblemError(error.code) from None
-        return AppliedOut(plan_id=plan_id, applied=len(getattr(report, "ops", ()) or ()))
+        return accepted_job(job_id)
 
     return router

@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from shelfhold.composition import Network
 from shelfhold.config import Settings
-from shelfhold.infrastructure.migrate import migrate
+from shelfhold.infrastructure.migrate import current_revision, head_revision, migrate
 from shelfhold.interfaces.cli.registry import main as cli_main
 from shelfhold.main import create_app
 
@@ -122,6 +122,13 @@ class AuthEnv:
         return TestClient(self.app, base_url=base_url, client=(ip, 40000))  # type: ignore[arg-type]
 
 
+def _at_head(settings: Settings) -> bool:
+    return (
+        settings.database_path.exists()
+        and current_revision(settings.database_path) == head_revision()
+    )
+
+
 @contextmanager
 def auth_env(
     monkeypatch: pytest.MonkeyPatch,
@@ -135,7 +142,8 @@ def auth_env(
 ) -> Iterator[AuthEnv]:
     if hardened:
         settings = settings.model_copy(update={"auth_hardened": True})
-    migrate(settings)
+    if not _at_head(settings):  # a database left with open intents is not migrated again
+        migrate(settings)
     if with_admin:
         assert create_admin(monkeypatch, settings) == 0
     clock = ManualClock()

@@ -11,6 +11,7 @@ import structlog
 from shelfhold import __version__
 from shelfhold.composition import Composition, Network
 from shelfhold.config import Settings, load_settings
+from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline
 from shelfhold.headless import HeadlessAdmin, wiring
@@ -28,7 +29,10 @@ from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
 from shelfhold.interfaces.http_api.auth import AuthGate
+from shelfhold.interfaces.http_api.backfill import build_backfill_router
 from shelfhold.interfaces.http_api.headless import build_headless_router
+from shelfhold.interfaces.http_api.intents import build_intents_router
+from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
@@ -40,6 +44,7 @@ from shelfhold.ops import OpsServices
 from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.wiring import open_ops
 from shelfhold.runtime import InstanceRuntime
+from shelfhold.runtime_jobs import PlanService
 
 PACKAGED_FRONTEND = Path(__file__).parent / "static"
 
@@ -65,8 +70,8 @@ def create_app(
     gate = AuthGate(auth, public_url=resolved.public_url)
 
     @cache
-    def pipeline() -> object:
-        # Plans can be previewed; applying one needs the Kavita `plugin/parse` check (L29).
+    def pipeline() -> ExportPipeline:
+        # Plans are previewed here; the job `export.apply` reads the names from Kavita again.
         return open_pipeline(
             resolved,
             write_gate=runtime.require_space,
@@ -82,10 +87,17 @@ def create_app(
     def ops_services() -> OpsServices:
         return open_ops(resolved, engine=engine, composition=composition)  # lazy parts
 
+    @cache
+    def plans() -> PlanService:
+        return PlanService(composition, pipeline, lambda: runtime.pools)
+
     export_routers = (
         build_shelves_router(lambda: ShelfService(engine)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
-        build_plans_router(pipeline),  # type: ignore[arg-type]
+        build_plans_router(plans),
+        build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202
+        build_intents_router(ops_services),  # EF-INT-014: the open intents and their settlement
+        build_backfill_router(ops_services),  # EF-EXP-053: estimate, confirmation, start
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command
         build_ops_router(ops_services),  # EF-INT-023: the exits

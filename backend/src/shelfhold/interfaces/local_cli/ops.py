@@ -249,6 +249,37 @@ def _purge(ops: OpsServices, by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _intents_list(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return {"items": ops.intents.list_open()}
+
+
+def _intents_resolve(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.intents.resolve(
+        _text(p, "intent_id"), action=_text(p, "action"), confirm=_optional(p, "confirm"),
+        principal=by,
+    )  # fmt: skip
+
+
+def _count(params: Params, name: str) -> int | None:
+    value = params.get(name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RpcError(INVALID_PARAMS, t("local_cli.param_invalid", name=name, expected="integer"))
+    return value
+
+
+def _backfill_estimate(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.backfill.estimate(_text(p, "edition_id"), _text(p, "mode"))
+
+
+def _backfill_start(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.backfill.start(
+        _text(p, "edition_id"), _text(p, "mode"),
+        confirm_units=_count(p, "confirm_units"), confirm_bytes=_count(p, "confirm_bytes"),
+    )  # fmt: skip
+
+
 def _probe(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.library.probe(_text(p, "folder"))
 
@@ -285,6 +316,10 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.detach_restore_upstream": (_give_back, None),
     "ops.purge": (_purge, "purge.now"),
     "ops.probe": (_probe, None),
+    "ops.intents_list": (_intents_list, None),
+    "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
+    "ops.backfill_estimate": (_backfill_estimate, None),
+    "ops.backfill_start": (_backfill_start, None),
 }
 
 

@@ -189,14 +189,14 @@ def test_intents_resolve_is_a_reserved_action_with_a_fresh_session_never_a_key(
         assert done.status_code == 200, done.text
         assert done.json()["outcome"] == "cancelled"
         assert intents(api.env)[intent.id] == "cancelled"
-        audit = [r for r in api.env.rows(identity.audit) if r.action == "intents.resolve"]
-        assert [r.target for r in audit] == [f"intent:{intent.id}"]
+        audit = [r for r in api.env.rows(identity.audit) if r.target == f"intent:{intent.id}"]
+        assert [r.action for r in audit] == ["intents.resolve"]
         assert audit[0].session_id and audit[0].auth_time  # the session and its last password
         again = api.api.post(url, json=body)
         assert again.status_code == 409  # not open any more
 
 
-def test_replaying_an_open_intent_through_the_api_completes_it(
+def test_the_boot_settles_what_it_can_so_the_listing_is_empty(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
     """With the server running, the boot has already settled what could be (a killed write whose

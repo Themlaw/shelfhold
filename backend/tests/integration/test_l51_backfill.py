@@ -67,7 +67,7 @@ def test_backfill_requires_estimate_and_confirmation_over_100_units_or_5gib(
         # ... nothing leaves without the figures that were seen ...
         refused = api.api.post(url, json={"mode": "all"})
         assert refused.status_code == 409
-        assert refused.json()["type"] == "/api/v1/problems/backfill-confirmation-required"
+        assert refused.json()["type"] == "/api/v1/problems/backfill.confirmation-required"
         assert refused.json()["estimate"]["units"] == UNITS  # the fresh estimate is shown again
         short = api.api.post(url, json={"mode": "all", "confirm_units": 100, "confirm_bytes": 1})
         assert short.status_code == 409
@@ -90,12 +90,12 @@ def test_backfill_requires_estimate_and_confirmation_over_100_units_or_5gib(
         with api.env.inst.engine.begin() as connection:
             connection.execute(sa.update(acquisition.series_follow).values(backfill_mode="none"))
         capsys.readouterr()
-        assert run_cli(monkeypatch, settings, "backfill", "--gaps", edition, "--dry-run") == 0
+        assert run_cli(monkeypatch, settings, "backfill", "--all", edition, "--dry-run") == 0
         shown = capsys.readouterr().out
-        assert str(UNITS) in shown and "gaps" in shown
+        assert str(UNITS) in shown and "all" in shown
         assert mode_of(api.env, api.series) == "none"
 
-        assert run_cli(monkeypatch, settings, "backfill", "--gaps", edition) == 3
+        assert run_cli(monkeypatch, settings, "backfill", "--all", edition) == 3
         out = capsys.readouterr()
         assert str(UNITS) in out.out  # the estimate is shown before anything is asked
         assert f"--confirm-units {UNITS}" in out.err  # and the way to confirm it
@@ -105,12 +105,12 @@ def test_backfill_requires_estimate_and_confirmation_over_100_units_or_5gib(
         assert size
         assert (
             run_cli(
-                monkeypatch, settings, "backfill", "--gaps", edition,
+                monkeypatch, settings, "backfill", "--all", edition,
                 "--confirm-units", str(UNITS), "--confirm-bytes", size.group(1),
             )
             == 0
         )  # fmt: skip
-        assert mode_of(api.env, api.series) == "gaps"
+        assert mode_of(api.env, api.series) == "all"
         assert run_cli(monkeypatch, settings, "backfill", edition) == 2  # --gaps or --all
 
 

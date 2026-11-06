@@ -19,17 +19,21 @@ export type About = {
 };
 
 /**
- * AppliedOut
+ * BackfillIn
  */
-export type AppliedOut = {
+export type BackfillIn = {
     /**
-     * Applied
+     * Confirm Bytes
      */
-    applied: number;
+    confirm_bytes?: number | null;
     /**
-     * Plan Id
+     * Confirm Units
      */
-    plan_id: string;
+    confirm_units?: number | null;
+    /**
+     * Mode
+     */
+    mode: 'gaps' | 'all';
 };
 
 /**
@@ -76,6 +80,32 @@ export type DestinationOut = {
      * Id
      */
     id: string;
+};
+
+/**
+ * EstimateOut
+ */
+export type EstimateOut = {
+    /**
+     * Free Bytes
+     */
+    free_bytes: number;
+    /**
+     * Mode
+     */
+    mode: 'gaps' | 'all';
+    /**
+     * Needs Confirmation
+     */
+    needs_confirmation: boolean;
+    /**
+     * Size Bytes
+     */
+    size_bytes: number;
+    /**
+     * Units
+     */
+    units: number;
 };
 
 /**
@@ -133,6 +163,116 @@ export type HumanInterventions = {
      * Waiting States
      */
     waiting_states: number;
+};
+
+/**
+ * IntentOut
+ */
+export type IntentOut = {
+    /**
+     * Created At
+     */
+    created_at: string | null;
+    /**
+     * Dst
+     */
+    dst: string | null;
+    /**
+     * Epoch
+     */
+    epoch: number;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Op
+     */
+    op: string;
+    /**
+     * Plan Id
+     */
+    plan_id: string | null;
+    /**
+     * Src
+     */
+    src: string | null;
+    /**
+     * Stale From Backup
+     */
+    stale_from_backup: boolean;
+    /**
+     * State
+     */
+    state: string;
+};
+
+/**
+ * IntentsOut
+ */
+export type IntentsOut = {
+    /**
+     * Items
+     */
+    items: Array<IntentOut>;
+};
+
+/**
+ * JobAccepted
+ *
+ * Body of a 202: the job to poll (the same URL is in the `Location` header).
+ */
+export type JobAccepted = {
+    /**
+     * Job Id
+     */
+    job_id: string;
+    /**
+     * Status Url
+     */
+    status_url: string;
+};
+
+/**
+ * JobStatusOut
+ */
+export type JobStatusOut = {
+    /**
+     * Attempts
+     */
+    attempts: number;
+    /**
+     * Created At
+     */
+    created_at: string | null;
+    /**
+     * Error Code
+     */
+    error_code: string | null;
+    /**
+     * Finished At
+     */
+    finished_at: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Progress
+     */
+    progress: number | null;
+    /**
+     * Started At
+     */
+    started_at: string | null;
+    /**
+     * Status
+     */
+    status: string;
 };
 
 /**
@@ -310,6 +450,34 @@ export type ReauthResponse = {
      * Csrf Token
      */
     csrf_token: string;
+};
+
+/**
+ * ResolveIn
+ */
+export type ResolveIn = {
+    /**
+     * Action
+     */
+    action?: 'replay' | 'abandon';
+    /**
+     * Confirm
+     */
+    confirm?: string | null;
+};
+
+/**
+ * ResolvedOut
+ */
+export type ResolvedOut = {
+    /**
+     * Intent Id
+     */
+    intent_id: string;
+    /**
+     * Outcome
+     */
+    outcome: string;
 };
 
 /**
@@ -551,6 +719,196 @@ export type SessionResponses = {
 
 export type SessionResponse = SessionResponses[keyof SessionResponses];
 
+export type BackfillEstimateData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: {
+        /**
+         * Mode
+         */
+        mode?: 'gaps' | 'all';
+    };
+    url: '/api/v1/editions/{edition_id}/backfill';
+};
+
+export type BackfillEstimateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type BackfillEstimateError = BackfillEstimateErrors[keyof BackfillEstimateErrors];
+
+export type BackfillEstimateResponses = {
+    /**
+     * Successful Response
+     */
+    200: EstimateOut;
+};
+
+export type BackfillEstimateResponse = BackfillEstimateResponses[keyof BackfillEstimateResponses];
+
+export type BackfillStartData = {
+    body: BackfillIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/backfill';
+};
+
+export type BackfillStartErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type BackfillStartError = BackfillStartErrors[keyof BackfillStartErrors];
+
+export type BackfillStartResponses = {
+    /**
+     * Successful Response
+     */
+    200: EstimateOut;
+};
+
+export type BackfillStartResponse = BackfillStartResponses[keyof BackfillStartResponses];
+
+export type IntentsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/intents';
+};
+
+export type IntentsListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type IntentsListError = IntentsListErrors[keyof IntentsListErrors];
+
+export type IntentsListResponses = {
+    /**
+     * Successful Response
+     */
+    200: IntentsOut;
+};
+
+export type IntentsListResponse = IntentsListResponses[keyof IntentsListResponses];
+
+export type IntentsResolveData = {
+    body: ResolveIn;
+    path: {
+        /**
+         * Intent Id
+         */
+        intent_id: string;
+    };
+    query?: never;
+    url: '/api/v1/intents/{intent_id}/resolve';
+};
+
+export type IntentsResolveErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type IntentsResolveError = IntentsResolveErrors[keyof IntentsResolveErrors];
+
+export type IntentsResolveResponses = {
+    /**
+     * Successful Response
+     */
+    200: ResolvedOut;
+};
+
+export type IntentsResolveResponse = IntentsResolveResponses[keyof IntentsResolveResponses];
+
+export type JobStatusData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/jobs/{job_id}';
+};
+
+export type JobStatusErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type JobStatusError = JobStatusErrors[keyof JobStatusErrors];
+
+export type JobStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: JobStatusOut;
+};
+
+export type JobStatusResponse = JobStatusResponses[keyof JobStatusResponses];
+
 export type PreviewData = {
     body: PlanIn;
     path?: never;
@@ -617,7 +975,7 @@ export type ApplyResponses = {
     /**
      * Successful Response
      */
-    200: AppliedOut;
+    202: JobAccepted;
 };
 
 export type ApplyResponse = ApplyResponses[keyof ApplyResponses];

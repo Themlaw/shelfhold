@@ -94,9 +94,11 @@ def killed_after_write(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """The adapter of the file system places the file, then the process 'dies'."""
     original = Fsops.write_atomic
 
-    def write_then_die(self: Fsops, *args: Any, **kwargs: Any) -> Any:
-        original(self, *args, **kwargs)
-        raise SimulatedKill
+    def write_then_die(self: Fsops, local: str, *args: Any, **kwargs: Any) -> Any:
+        placed = original(self, local, *args, **kwargs)
+        if local.endswith(".cbz"):  # the exported file, not the lease or the mirror
+            raise SimulatedKill
+        return placed
 
     monkeypatch.setattr(Fsops, "write_atomic", write_then_die)
     try:

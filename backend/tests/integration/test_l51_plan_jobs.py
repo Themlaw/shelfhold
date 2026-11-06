@@ -13,11 +13,12 @@ from starlette.datastructures import Headers
 from shelfhold.config import Settings
 from shelfhold.infrastructure.schema import coherence, platform
 from shelfhold.interfaces.http_api.idempotency import IdempotencyMiddleware
-from tests.auth_env import PASSWORD, run_cli
+from tests.auth_env import run_cli
 from tests.l51_env import Live, live
 
 pytestmark = pytest.mark.req("EF-INT-001")
 ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
+KEY = re.compile(r"shk_[0-9a-f]{8}_[A-Za-z0-9_-]{43}")
 
 
 def jobs_of(env: Live, kind: str = "export.apply") -> list[sa.Row[tuple[object, ...]]]:
@@ -64,19 +65,28 @@ def test_get_job_is_for_admins_and_unknown_jobs_are_404(
 
 
 def test_idempotency_key_on_post_retained_24h(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path,
 ) -> None:
+    """A key is scoped to its credential: one that has to span a day is an API key, a session
+    (bounded in time) being a credential of its own."""
     with live(monkeypatch, settings, tmp_path) as api:
+        capsys.readouterr()
+        assert run_cli(monkeypatch, settings, "admin", "keys", "create", "--name", "ci") == 0
+        found = KEY.search(capsys.readouterr().out)
+        assert found
+        bearer = {"Authorization": f"Bearer {found.group(0)}", "Idempotency-Key": "apply-0001"}
         plan_id, etag = preview(api)
-        key = {"Idempotency-Key": "apply-0001"}
-        first = api.apply(plan_id, etag, **key)
-        assert first.status_code == 202
+        url = f"/api/v1/plans/{plan_id}/apply"
+        first = api.client.post(url, headers={**bearer, "If-Match": etag})
+        assert first.status_code == 202, first.text
         assert "idempotent-replayed" not in first.headers
         api.wait_job(first.json()["job_id"])
 
         api.api.clock.advance(timedelta(hours=23, minutes=59))
-        assert api.api.login().status_code == 200  # the session did not live that long
-        replay = api.apply(plan_id, etag, **key)
+        replay = api.client.post(url, headers={**bearer, "If-Match": etag})
         assert replay.status_code == 202
         assert replay.json() == first.json()
         assert replay.headers["location"] == first.headers["location"]
@@ -84,13 +94,14 @@ def test_idempotency_key_on_post_retained_24h(
         assert len(jobs_of(api)) == 1  # no double effect
 
         # Same key, other request: refused, never silently replayed.
-        other = api.apply("01JOTHERPLAN00000000000AA", etag, **key)
+        other = api.client.post(
+            "/api/v1/plans/01JOTHERPLAN00000000000AA/apply", headers={**bearer, "If-Match": etag}
+        )
         assert other.status_code == 422
         assert other.json()["type"] == "/api/v1/problems/idempotency-key-reused"
 
         api.api.clock.advance(timedelta(minutes=2))  # past 24 h from the first call
-        assert api.api.login().status_code == 200
-        again = api.apply(plan_id, etag, **key)
+        again = api.client.post(url, headers={**bearer, "If-Match": etag})
         assert "idempotent-replayed" not in again.headers  # the key is forgotten: it ran again
         assert (again.status_code, again.json()["code"]) == (412, "plan.stale")  # already applied
         assert len(jobs_of(api)) == 1
@@ -105,7 +116,7 @@ def test_if_match_stale_returns_412(
         stale = api.apply(plan_id, etag)
         assert stale.status_code == 412
         assert stale.headers["content-type"].startswith("application/problem+json")
-        assert stale.json()["type"] == "/api/v1/problems/plan-stale"
+        assert stale.json()["type"] == "/api/v1/problems/plan.stale"
         assert jobs_of(api) == []  # refused before any job exists
         assert api.env.exported_files() == []  # and nothing was written
 
@@ -170,9 +181,14 @@ def test_idempotency_does_not_retain_server_errors(
 
     with live(monkeypatch, settings, tmp_path) as api:
         monkeypatch.setattr(rj.PlanService, "preview", boom)
+        quiet = TestClient(
+            api.api.app, base_url="https://testserver", raise_server_exceptions=False
+        )  # type: ignore[arg-type]
+        assert api.api.login(client=quiet).status_code == 200
+        body = {"shelf_destination_id": api.env.destination_id}
         headers = {"Idempotency-Key": "boom-1"}
         for _ in range(2):
-            failed = api.preview(**headers)
+            failed = api.api.post("/api/v1/plans", json=body, headers=headers, client=quiet)
             assert failed.status_code == 500
             assert "secret" not in failed.text and "sqlite3" not in failed.text
         assert calls == [1, 1]  # the second call ran again, it was not replayed
@@ -193,31 +209,33 @@ def test_idempotency_key_is_scoped_and_validated(
 
 
 def test_idempotency_key_is_scoped_to_the_actor(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path,
 ) -> None:
     with live(monkeypatch, settings, tmp_path) as api:
-        secret = settings.data_dir.parent / "bob.password"
-        secret.write_text(PASSWORD + "\n", encoding="utf-8")
-        secret.chmod(0o600)
-        assert run_cli(
-            monkeypatch, settings, "admin", "create", "--username", "bob",
-            "--password-file", str(secret),
-        ) == 0  # fmt: skip
-        bob = api.api.other_client("10.0.0.7")
-        assert api.api.login("bob", client=bob).status_code == 200
+        capsys.readouterr()
+        assert run_cli(monkeypatch, settings, "admin", "keys", "create", "--name", "ci") == 0
+        found = KEY.search(capsys.readouterr().out)
+        assert found
         key = {"Idempotency-Key": "shared-key"}
         body = {"shelf_destination_id": api.env.destination_id}
-        alice_plan = api.api.post("/api/v1/plans", json=body, headers=key)
-        bob_plan = api.api.post("/api/v1/plans", json=body, headers=key, client=bob)
-        assert "idempotent-replayed" not in bob_plan.headers
-        assert alice_plan.json()["plan_id"] != bob_plan.json()["plan_id"]
+        alice = api.api.post("/api/v1/plans", json=body, headers=key)  # the session
+        bob = api.client.post(  # the API key: another actor
+            "/api/v1/plans", json=body, headers={**key, "Authorization": f"Bearer {found.group(0)}"}
+        )
+        assert bob.status_code == 201, bob.text
+        assert "idempotent-replayed" not in bob.headers
+        assert alice.json()["plan_id"] != bob.json()["plan_id"]
         again = api.api.post("/api/v1/plans", json=body, headers=key)
-        assert again.json() == alice_plan.json()
+        assert again.json() == alice.json()
+        assert again.headers["idempotent-replayed"] == "true"
 
 
-@pytest.mark.parametrize("status", [401, 403, 408, 429, 500, 502, 503])
+@pytest.mark.parametrize("status", [401, 403, 408, 412, 429, 500, 502, 503])
 def test_idempotency_stores_only_deterministic_answers(status: int) -> None:
     storable = IdempotencyMiddleware._storable
     assert not storable(status, Headers({}), False, b"{}")
-    for kept in (200, 201, 202, 404, 409, 412, 422):
+    for kept in (200, 201, 202, 404, 409, 422):
         assert storable(kept, Headers({"content-type": "application/json"}), False, b"{}")

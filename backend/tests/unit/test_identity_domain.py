@@ -120,6 +120,7 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
                 Effect.TOUCHES_TOMBSTONES,  # review PR #41 (7): tombstone lift and list
                 Effect.REINITS_STORAGE,  # root/store takeover and reinit
                 Effect.ACCEPTS_ADMIN_RISK,  # L38: a third party's admin password
+                Effect.SETTLES_FS_INTENT,  # L51: `intents resolve`
             }
         )
         == set(Effect) - NO_REAUTH_EFFECTS
