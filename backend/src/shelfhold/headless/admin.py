@@ -305,6 +305,8 @@ class HeadlessAdmin:
         clean = validate(value)
         with self._engine.begin() as connection:
             self._write_setting(connection, key, clean)
+            if key == "instance.jurisdiction":
+                connection.execute(sa.update(platform.instance).values(jurisdiction=clean))
         _log.info("headless.config_set", key=key)
         self._bootstrap()
         return self.get(key)

@@ -302,7 +302,7 @@ class Composition:
                     acquisition.source_config.c.plugin_id == "suwayomi"
                 )
             ).scalar_one_or_none()
-            url = (settings or {}).get("url")
+            url = (settings or {}).get("base_url")
             if not url:
                 return None
             secret = self._suwayomi_secret(connection)

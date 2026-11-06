@@ -115,3 +115,51 @@ def test_a_library_a_restricted_account_reads_is_refused_before_any_link() -> No
                 == 0
             )
         assert not fake.writes  # nothing written in Kavita
+
+
+def test_a_relative_store_dir_does_not_stop_the_start(
+    settings: Settings, tmp_path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """The front E2E starts the server with relative data and store folders and no target."""
+    from fastapi.testclient import TestClient
+
+    from shelfhold.infrastructure.migrate import migrate
+    from shelfhold.main import create_app
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "store").mkdir()
+    relative = settings.model_copy(update={"store_dir": __import__("pathlib").Path("store")})
+    migrate(relative)
+    with TestClient(create_app(relative)) as client:
+        assert client.get("/healthz").status_code == 200
+    from shelfhold.infrastructure.db import create_db_engine
+
+    engine = create_db_engine(relative.database_path)
+    try:
+        with engine.connect() as c:
+            assert c.execute(sa.select(platform.physical_root.c.path_entry)).scalars().all() == [
+                str(tmp_path / "store")
+            ]
+    finally:
+        engine.dispose()
+
+
+def test_the_jurisdiction_follows_the_locale_until_the_admin_sets_it(
+    settings: Settings, tmp_path
+) -> None:
+    """EF-SRC-024: `instance.jurisdiction`, default deduced from the locale, set by `config set`."""
+    from shelfhold.export.application.root_bootstrap import default_jurisdiction
+
+    assert default_jurisdiction({"LANG": "en_GB.UTF-8"}) == "GB"
+    assert default_jurisdiction({"LC_ALL": "fr_CA.UTF-8", "LANG": "en_US"}) == "CA"
+    assert default_jurisdiction({"LANG": "C.UTF-8"}) == "FR"  # the locale names no country
+    with headless(settings) as env:
+        assert env.admin.get("instance.jurisdiction").value == default_jurisdiction()
+        env.admin.target_add_kavita(
+            name="k", url="http://kavita.internal:5000", username="u", password=PASSWORD,
+            accept_admin_risk=True,
+        )  # fmt: skip
+        env.admin.set("instance.jurisdiction", "be")
+        assert env.admin.get("instance.jurisdiction").value == "BE"
+        with pytest.raises(Exception, match="two-letter"):
+            env.admin.set("instance.jurisdiction", "belgium")

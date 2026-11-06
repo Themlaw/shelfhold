@@ -120,7 +120,10 @@ class InstanceRuntime:
         self.composition = composition
         wanted = target_roots(engine)
         wanted.append((str(self.settings.store_dir), PathMode.RW))
-        register_roots(engine, wanted)  # the instance row and the roots: first start of an install
+        try:
+            register_roots(engine, wanted)  # the instance row and the roots of a first start
+        except (OSError, ValueError, sa.exc.SQLAlchemyError) as error:  # never blocks the start
+            structlog.get_logger().warning("root_bootstrap_skipped", error=str(error))
         bus = composition.bus  # an operating event queues one notification per channel
         with engine.connect() as conn:
             row = conn.execute(sa.select(platform.instance.c.instance_id)).first()

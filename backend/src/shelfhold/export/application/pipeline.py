@@ -9,7 +9,7 @@ nothing is written.
 """
 
 from collections.abc import Callable
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -276,13 +276,21 @@ class ExportPipeline:
         if self._switchover is not None:
             self._switchover.require_clear(destination_id)
         if self._preflight is not None:
-            self._preflight.require_root(destination_id)
+            with self._root_session(destination_id):  # the probe writes: under the lease too
+                self._preflight.require_root(destination_id)
         ctx, loaded, plan = self._compute(destination_id)
         self._heal_mirror(ctx)
         if not plan.ops:
             return ApplyReport(None, ())
         plan_id = self._store(ctx, loaded, plan)
         return self.apply(plan_id, if_match=loaded.version, job_id=job_id)
+
+    def _root_session(self, destination_id: str) -> AbstractContextManager[object]:
+        if self._sessions is None:
+            return nullcontext()
+        with self._engine.connect() as connection:
+            root = load_context(connection, destination_id).root_local
+        return self._sessions.open(root) if root else nullcontext()
 
     def _heal_mirror(self, ctx: DestinationContext) -> None:
         """A mirror file lost, or never written because a run stopped after its file: the

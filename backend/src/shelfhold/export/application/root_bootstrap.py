@@ -11,7 +11,9 @@ already inside a registered one is not registered twice.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import os
+import re
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -26,22 +28,53 @@ from shelfhold.infrastructure.fsops.sentinel import read_sentinel
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, platform
 
-__all__ = ["DEFAULT_JURISDICTION", "ensure_instance", "register_roots", "target_roots"]
+__all__ = [
+    "FALLBACK_JURISDICTION",
+    "default_jurisdiction",
+    "ensure_instance",
+    "register_roots",
+    "target_roots",
+]
 
-DEFAULT_JURISDICTION = "FR"
+FALLBACK_JURISDICTION = "FR"  # when the locale names no country (the project's default language)
+
+
+def default_jurisdiction(env: Mapping[str, str] | None = None) -> str:
+    """The country of the instance, deduced from the locale (EF-SRC-024: `instance.jurisdiction`,
+    default deduced from the locale, confirmed by `shelfhold config set instance.jurisdiction`)."""
+    env = os.environ if env is None else env
+    for name in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        match = re.match(r"^[a-z]{2,3}_([A-Z]{2})\b", env.get(name, ""))
+        if match:
+            return match.group(1)
+    return FALLBACK_JURISDICTION
+
+
 log = structlog.get_logger(__name__)
 
 
-def ensure_instance(engine: Engine, *, jurisdiction: str = DEFAULT_JURISDICTION) -> str:
+def ensure_instance(engine: Engine, *, jurisdiction: str | None = None) -> str:
     with engine.begin() as connection:
         found = connection.execute(sa.select(platform.instance.c.instance_id)).scalar_one_or_none()
         if found is not None:
             return str(found)
         instance_id = new_ulid()
         connection.execute(
-            sa.insert(platform.instance).values(instance_id=instance_id, jurisdiction=jurisdiction)
+            sa.insert(platform.instance).values(
+                instance_id=instance_id, jurisdiction=jurisdiction or _chosen(connection)
+            )
         )
         return instance_id
+
+
+def _chosen(connection: sa.Connection) -> str:
+    """The country the admin set, else the one the locale suggests."""
+    stored = connection.execute(
+        sa.select(platform.app_setting.c.value).where(
+            platform.app_setting.c.key == "instance.jurisdiction"
+        )
+    ).scalar_one_or_none()
+    return stored or default_jurisdiction()
 
 
 def target_roots(engine: Engine) -> list[tuple[str, PathMode]]:
@@ -61,12 +94,13 @@ def register_roots(
     engine: Engine,
     wanted: Iterable[tuple[str, PathMode]],
     *,
-    jurisdiction: str = DEFAULT_JURISDICTION,
+    jurisdiction: str | None = None,
 ) -> list[str]:
     """Register the roots not known yet; returns the new `root_id`s."""
     instance_id = ensure_instance(engine, jurisdiction=jurisdiction)
     created: list[str] = []
-    for path, mode in wanted:
+    for raw, mode in wanted:
+        path = clean_absolute(os.path.abspath(raw))  # a relative data/store dir is a valid setting
         if not Path(path).is_dir():
             log.info("root_bootstrap.folder_missing", path=path)
             continue
