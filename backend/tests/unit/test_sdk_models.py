@@ -250,4 +250,7 @@ def test_typos_exceptions_are_exact_identifiers_not_global_words() -> None:
     config = tomllib.loads((Path(__file__).parents[3] / "typos.toml").read_text(encoding="utf-8"))
     words = config["default"]["extend-words"]
     assert set(words) == {"cours", "sur", "opf"}  # French words and the OPF package document
-    assert config["default"]["extend-identifiers"] == {"ser_json_bytes": "ser_json_bytes", "intoto": "intoto"}
+    assert config["default"]["extend-identifiers"] == {
+        "ser_json_bytes": "ser_json_bytes",
+        "intoto": "intoto",
+    }
