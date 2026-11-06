@@ -161,6 +161,36 @@ def test_method_of_an_unreached_class_is_not_saved_by_a_homonym(tmp_path: Path) 
     }
 
 
+def test_a_method_fetched_by_name_with_getattr_is_used(tmp_path: Path) -> None:
+    files = {
+        "backend/src/shelfhold/__init__.py": "",
+        "backend/src/shelfhold/main.py": """
+            from shelfhold.live import Live
+
+            def create_app():
+                return getattr(Live(), "optional", None)
+        """,
+        "backend/src/shelfhold/live.py": """
+            class Live:
+                def optional(self):
+                    return 1
+                def forgotten(self):
+                    return 2
+        """,
+        "backend/tests/test_cites.py": """
+            import pytest
+            from shelfhold.live import Live
+
+            @pytest.mark.req("EF-X-001")
+            def test_it():
+                assert Live().optional() + Live().forgotten() == 3
+        """,
+    }
+    assert {o.symbol for o in reach.find_orphans(_tree(tmp_path, files))} == {
+        "shelfhold.live:Live.forgotten"
+    }
+
+
 def test_symbols_built_by_a_test_helper_count_as_cited(tmp_path: Path) -> None:
     files = {
         "backend/src/shelfhold/__init__.py": "",

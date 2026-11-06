@@ -229,6 +229,16 @@ def _collect_edges(graph: Graph, module: str, tree: ast.Module) -> None:
                 edges.add(follow(graph, target))
             if f"{module}:{n}" in graph.defs:
                 edges.add(f"{module}:{n}")
+        for sub in ast.walk(node):  # `getattr(service, "sub_sources", None)`: a use by name
+            if (
+                isinstance(sub, ast.Call)
+                and isinstance(sub.func, ast.Name)
+                and sub.func.id in {"getattr", "hasattr"}
+                and len(sub.args) >= 2
+                and isinstance(sub.args[1], ast.Constant)
+                and isinstance(sub.args[1].value, str)
+            ):
+                attrs = {*attrs, sub.args[1].value}
         graph.attrs[owner].update(attrs)  # duck typing: by name, once the class is reached
         for a in attrs:
             for n in bare:  # `alias.func` where alias is an imported module
