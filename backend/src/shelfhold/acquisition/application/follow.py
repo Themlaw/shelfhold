@@ -318,7 +318,7 @@ class FollowCycle:
                 self._emit(
                     connection, "source.downloads_dropped", {"count": report.tickets.dropped}
                 )
-        report.stale = len(self._check_freshness())
+        report.stale = len(self.check_freshness())
 
     def _is_ranged(self) -> bool:
         caps = self._service.manifest.capabilities
@@ -360,6 +360,20 @@ class FollowCycle:
             )  # fmt: skip
             for group in tickets.plan(units):
                 tickets.request(group, budget)
+            ru, rq = acquisition.download_request_unit, acquisition.download_request
+            with self._engine.connect() as connection:  # EF-SRC-026 b: only what was not covered
+                partial = (
+                    connection.execute(
+                        sa.select(ru.c.download_request_id)
+                        .join(rq, rq.c.id == ru.c.download_request_id)
+                        .where(rq.c.source_binding_id == binding.id, ru.c.state == "missing")
+                        .distinct()
+                    )
+                    .scalars()
+                    .all()
+                )
+            for request_id in partial:
+                tickets.retry_uncovered(request_id, budget)
             done = await tickets.advance()
             report.fetched += done.fetched
 
