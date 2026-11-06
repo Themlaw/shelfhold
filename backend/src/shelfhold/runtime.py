@@ -237,16 +237,18 @@ class InstanceRuntime:
         )
         watcher.check()  # the first measure at once: a full disk parks the jobs boot just sent
         self.pools.start_workers()  # the queues are consumed from here on
-        self._start_projection_repair(engine)  # after readiness matters: never on its path
         return report[0] if report else None
 
-    def _start_projection_repair(self, engine: Engine) -> None:
+    def start_projection_repair(self) -> None:
         """`unit.json` and `work.json` are projections of the database, written after the
         transaction: a crash in between left one missing or torn. They are written again at
-        start (ENF-OPS-020), under `/data` only, on a thread of their own: a big catalog must not
-        delay `/readyz` (ENF-PERF-003)."""
+        start (ENF-OPS-020), under `/data` only, on a thread of their own once the server is
+        listening: a big catalog must not delay `/readyz` (ENF-PERF-003), and the descriptors of
+        the socket being bound are not to be shared with a thread that opens files meanwhile."""
+        if self.engine is None or not self.owns_volumes:
+            return
         threading.Thread(
-            target=self._repair_projections, args=(engine,), name="meta-repair", daemon=True
+            target=self._repair_projections, args=(self.engine,), name="meta-repair", daemon=True
         ).start()
 
     def _repair_projections(self, engine: Engine) -> None:

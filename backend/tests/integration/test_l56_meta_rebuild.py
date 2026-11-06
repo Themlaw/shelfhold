@@ -6,6 +6,7 @@ explain as `unresolved`, and never creates an identity, a Unit or a row from wha
 """
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,8 @@ import sqlalchemy as sa
 from shelfhold.config import Settings
 from shelfhold.infrastructure.instance import InstanceLock
 from shelfhold.infrastructure.schema import catalog, export, identity
+from tests.l50_env import Seeded, Series
+from tests.l51_env import live
 from tests.l54_env import Bench54, bench54
 from tests.mirror_env import entry, raw
 
@@ -150,3 +153,25 @@ def test_meta_rebuild_goes_through_the_instance_lock(
             server.release()
         assert not path.exists()  # nothing was written behind the instance's back
         assert b.cli("meta", "rebuild") == 0 and path.exists()
+
+
+def test_projections_lost_in_a_crash_are_written_again_when_the_server_starts(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    lost: list[Path] = []
+
+    def crash(env: Seeded, _series: Series) -> None:
+        # the store committed and died before its files: nothing of meta/ is left
+        for path in (settings.data_dir / "meta").rglob("*.json"):
+            lost.append(path)
+            path.unlink()
+
+    with live(monkeypatch, settings, tmp_path, chapters=("1",), seed=crash):
+        assert len(lost) == 2  # one unit.json, one work.json
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not all(p.exists() for p in lost):
+            time.sleep(0.1)
+        assert all(p.exists() for p in lost)
+        assert json.loads(lost[0].read_bytes())["schema_version"] in {"1.0", "1.1"}
