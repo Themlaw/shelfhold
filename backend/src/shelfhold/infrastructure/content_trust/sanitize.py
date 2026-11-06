@@ -101,7 +101,8 @@ def _html(text: str) -> str:
     return nh3.clean(
         text,
         tags=set(ALLOWED_HTML_TAGS),
-        attributes={"a": {"href"}},
+        # `rel` is written by nh3 from `link_rel`: it cannot also be an allowed input attribute
+        attributes={tag: set(names) - {"rel"} for tag, names in ALLOWED_HTML_ATTRIBUTES.items()},
         url_schemes=set(_URL_SCHEMES),
         link_rel=_LINK_REL,
         attribute_filter=_href_filter,

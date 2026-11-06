@@ -17,7 +17,9 @@ from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.infrastructure.observability.disk_guard import DiskGuard, DiskThresholds
 from shelfhold.jobs.huey_app import JobContext, JobPools
 
-OPS_JOBS = ("ops.disk_check", "target.access_audit")
+DISK_CHECK_JOB = "ops.disk_check"
+AUDIT_JOB = "target.access_audit"
+OPS_JOBS = (DISK_CHECK_JOB, AUDIT_JOB)  # what `register_ops_jobs` registers and schedules
 DISK_CRON = "* * * * *"
 AUDIT_CRON = "17 4 * * *"  # daily, off the hour and after the maintenance window opens
 
@@ -54,10 +56,11 @@ def register_ops_jobs(
     def run_audit(_context: JobContext) -> None:
         audit()
 
-    pools.register("ops.disk_check", pool="io", handler=run_disk_check, writes=False)
-    pools.register("target.access_audit", pool="io", handler=run_audit, writes=False)
-    pools.scheduler.add("ops.disk_check", DISK_CRON)
-    pools.scheduler.add("target.access_audit", AUDIT_CRON, jitter_s=600)
+    disk_job, audit_job = OPS_JOBS
+    pools.register(disk_job, pool="io", handler=run_disk_check, writes=False)
+    pools.register(audit_job, pool="io", handler=run_audit, writes=False)
+    pools.scheduler.add(disk_job, DISK_CRON)
+    pools.scheduler.add(audit_job, AUDIT_CRON, jitter_s=600)
 
 
 def daily_access_audit(
