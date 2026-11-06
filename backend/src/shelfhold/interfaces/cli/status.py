@@ -114,11 +114,9 @@ def _keyring_warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         found = collect_warnings(resolved.values)
     except (KeyringError, OSError):
         return [{"code": "keyring_unreadable", "message": t("status.keyring_unreadable")}]
-    return [
-        {"code": f"keyring.{w.code}", "message": warning_text(w)}
-        for w in found
-        if w.code != "keyring_absent"
-    ]
+    if any(w.code == "keyring_absent" for w in found):
+        return []  # nothing to warn about yet: the first start creates it
+    return [{"code": f"keyring.{w.code}", "message": warning_text(w)} for w in found]
 
 
 def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
@@ -192,7 +190,9 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
 
 
 def _yes_no(value: object) -> str:
-    return t("status.unknown") if value is None else t("status.yes" if value else "status.no")
+    if value is None:
+        return t("status.unknown")
+    return t("status.yes") if value else t("status.no")
 
 
 def report_lines(ops: dict[str, object]) -> list[str]:
@@ -204,7 +204,11 @@ def report_lines(ops: dict[str, object]) -> list[str]:
     for s in ops.get("tombstoned_upstream", []):  # type: ignore[attr-defined]
         lines.append(t("status.tombstoned_upstream_line", **s))
     for c in ops.get("capabilities", []):  # type: ignore[attr-defined]
-        link = t(f"status.link_{c['hardlink_store']}", reason=c["store_reason"])
+        link = {
+            "yes": t("status.link_yes"),
+            "no": t("status.link_no"),
+            "not_applicable": t("status.link_not_applicable", reason=c["store_reason"]),
+        }[c["hardlink_store"]]
         lines.append(
             t(
                 "status.capabilities_line", root=c["root"], filesystem=c["filesystem"] or "?",
@@ -214,21 +218,21 @@ def report_lines(ops: dict[str, object]) -> list[str]:
         )  # fmt: skip
     known: dict[str, Any] = ops.get("known_bad") or {}  # type: ignore[assignment]
     if known:
-        key = "status.known_bad_outdated" if known["outdated"] else "status.known_bad_line"
-        lines.append(
-            t(
-                key,
-                listed_on=known["listed_on"],
-                age=known["age_days"],
-                minimum=known["minimum_version"],
-            )
-        )
+        values = {
+            "listed_on": known["listed_on"],
+            "age": known["age_days"],
+            "minimum": known["minimum_version"],
+        }
+        if known["outdated"]:
+            lines.append(t("status.known_bad_outdated", **values))
+        else:
+            lines.append(t("status.known_bad_line", **values))
         lines.extend(
             t(
                 "status.known_bad_target",
                 name=target["name"],
                 version=target["version"] or "?",
-                advisories=", ".join(target["advisories"]),
+                advisories=t("status.list_separator").join(target["advisories"]),
             )
             for target in known["targets"]
             if target["advisories"]

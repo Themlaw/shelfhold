@@ -60,6 +60,8 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 "shelfhold/infrastructure/local_socket/server.py::bind_private",
                 # the probe folder the write check made itself (EF-UX-002)
                 f"{_FSOPS}/probe.py::_remove_probe_dir",
+                # the files the capability probe made itself, by names it drew (EF-EXP-059)
+                f"{_FSOPS}/capabilities.py::_remove",
             }
         ),
         # Rolls the database file (and its sidecars) back to the copy taken before a migration.

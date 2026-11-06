@@ -153,6 +153,7 @@ cli_allow_host = "SHELFHOLD_CLI_ALLOW_HOST est activé : un processus de l'hôte
 root_sentinel_mismatch = "la sentinelle de {path} est illisible, étrangère ou hors bornes (époque ou génération au-delà de 2^31) : la racine est laissée telle quelle, sans gel. Corrigez le fichier .shelfhold-mount-id (copiez-le d'abord, puis remettez les valeurs que la base connaît) ; les commandes « root takeover » et « reinit » arrivent avec le lot L36."
 keyring_unreadable = "le trousseau est illisible ou corrompu : « shelfhold secrets status » dit pourquoi."
 unknown = "inconnu"
+list_separator = ", "
 yes = "oui"
 no = "non"
 stale_series_line = "Série silencieuse : « {title} » n'a reçu aucun chapitre depuis {silent_days} jours (seuil : {threshold_days} jours). Vérifiez la source ou mettez le suivi en pause."

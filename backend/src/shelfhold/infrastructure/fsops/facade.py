@@ -673,7 +673,7 @@ class Fsops:
         if store_path is not None and Path(store_path).is_dir():
             try:
                 store = self._host_root(store_path)
-            except OutsidePathMapError:
+            except (OutsidePathMapError, PathMapError):
                 reason = "/store is not a physical root of this instance"
         if store is not None and store.root_path == located.root_path:
             store, reason = None, "this root is /store"
