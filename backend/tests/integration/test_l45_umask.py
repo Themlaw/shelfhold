@@ -72,11 +72,19 @@ def test_library_files_follow_shelfhold_umask(
 @pytest.mark.parametrize("umask", [0o000, 0o077])
 def test_secrets_stay_0600_whatever_the_umask(umask: int, tmp_path: Path) -> None:
     settings = load_settings(
-        {"SHELFHOLD_DATA_DIR": str(tmp_path), "SHELFHOLD_UMASK": "0000"}
+        {
+            "SHELFHOLD_DATA_DIR": str(tmp_path / "data"),
+            "SHELFHOLD_STORE_DIR": str(tmp_path / "store"),
+            "SHELFHOLD_UMASK": "0000",
+        }
     ).values
     with process_umask(umask):
         diagnostics.boot_check(settings, create=True, announce=False)
-    keyrings = [p for p in tmp_path.rglob("*") if p.is_file() and "key" in p.name]
+    keyrings = [
+        p
+        for p in tmp_path.rglob("*")
+        if p.is_file() and "key" in p.name and p.parent.name == "data"
+    ]
     assert keyrings, "boot_check must have created the keyring"
     assert {_mode(p) for p in keyrings} == {0o600}
 

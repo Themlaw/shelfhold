@@ -73,6 +73,7 @@ class LibEnv:
     library_root: str
     store_root: str
     chain: dict[str, str]
+    instance_id: str = ""  # the one in both sentinels (and so in `platform.instance`)
 
     def locate(self, local: str) -> tuple[str, str]:
         """(root_id, path relative to the root) of a local path; the composition root's job."""
@@ -149,7 +150,7 @@ def lib_env() -> Iterator[LibEnv]:
         try:
             yield LibEnv(
                 tmp, engine, library, manga, store, data,
-                Fsops.open(path_map, expected), library_root, store_root, chain,
+                Fsops.open(path_map, expected), library_root, store_root, chain, instance_id,
             )  # fmt: skip
         finally:
             engine.dispose()

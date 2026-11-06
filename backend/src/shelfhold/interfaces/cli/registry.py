@@ -53,7 +53,9 @@ def resolve_settings() -> ResolvedSettings:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    os.umask(0o077)  # before any file is created: database, state and logs are owner-only
+    # Before any file is created: database, state and logs are owner-only. The library does not
+    # inherit this: its files follow SHELFHOLD_UMASK, applied per file by Fsops (EF-EXP-006).
+    os.umask(0o077)
     args = build_parser().parse_args(argv)
     try:
         resolved = resolve_settings()

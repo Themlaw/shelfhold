@@ -141,7 +141,9 @@ def export_env_on(
     path_map = [{"local": str(lib.manga), "remote": "/manga", "mode": "rw"}]
     with lib.engine.begin() as connection:
         connection.execute(
-            sa.insert(platform.instance).values(instance_id=new_ulid(), jurisdiction="FR")
+            sa.insert(platform.instance).values(
+                instance_id=lib.instance_id or new_ulid(), jurisdiction="FR"
+            )
         )
         connection.execute(
             sa.insert(export.export_target).values(

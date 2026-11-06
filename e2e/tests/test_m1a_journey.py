@@ -100,7 +100,11 @@ def test_m1a_headless_install_to_first_chapter_in_kavita(journey: Journey) -> No
         "aucun job de suivi enregistré : Kavita n'a indexé aucune série"
     )
     files = j.library_files()
-    assert any(f.endswith("Ch.2.cbz") for f in files), files
+    exported = next(f for f in files if f.endswith("Ch.2.cbz"))
+    # EF-EXP-006: the process runs under umask 077, the library does not: 0644 (SHELFHOLD_UMASK
+    # defaults to 022), so a Kavita under another uid can read the file.
+    mode = j.compose("exec", "-T", "shelfhold", "stat", "-c", "%a", exported).stdout.strip()
+    assert mode == "644", (exported, mode)
     kavita = j.kavita()
     assert kavita["violations"] == [] and j.suwayomi()["violations"] == []
     assert not any(f.split("/")[-1].split(" - ")[-1][:1].isdigit() and "5002" in f for f in files)

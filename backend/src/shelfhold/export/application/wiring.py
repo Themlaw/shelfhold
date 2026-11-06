@@ -45,7 +45,7 @@ def open_pipeline(
     with engine.connect() as connection:
         paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
         loaded = load_roots(connection, PathMap.same_path(paths))
-    fsops = open_fsops(loaded, write_gate=write_gate, stop_gate=stop_gate)
+    fsops = open_fsops(loaded, umask=settings.umask, write_gate=write_gate, stop_gate=stop_gate)
 
     return ExportPipeline(
         engine, fsops, locate=loaded.locate, data_dir=Path(settings.data_dir), clock=SystemClock(),

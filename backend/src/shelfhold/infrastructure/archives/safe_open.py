@@ -53,9 +53,9 @@ class UnsafeArchiveError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ArchiveLimits:
-    max_entries: int = 10_000
+    max_entries: int = 2_000  # ENF-SEC-003 (passe 5, GAP-5-19)
     max_entry_bytes: int = 128 * 1024 * 1024
-    max_total_bytes: int = 4 * 1024 * 1024 * 1024
+    max_total_bytes: int = 2 * 1024 * 1024 * 1024  # 2 Gio, ENF-SEC-003
     max_ratio: int = 100  # decompressed / compressed, per entry and for the whole archive
     ratio_floor_bytes: int = 1024 * 1024  # below this size the ratio is not a signal
     max_buffered_bytes: int = 32 * 1024 * 1024  # default cap of read(); streaming has its own

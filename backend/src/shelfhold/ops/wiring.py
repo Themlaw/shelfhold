@@ -53,7 +53,7 @@ class _LazyHeadless:
         return self._admin().source_recheck()
 
 
-def _fsops(engine: Engine) -> Fsops | None:
+def _fsops(engine: Engine, umask: int) -> Fsops | None:
     try:
         with engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
@@ -62,7 +62,7 @@ def _fsops(engine: Engine) -> Fsops | None:
             loaded = load_roots(connection, PathMap.same_path(paths))
     except sa.exc.OperationalError:  # not migrated yet: nothing is mounted
         return None
-    return open_fsops(loaded)
+    return open_fsops(loaded, umask=umask)
 
 
 def open_ops(
@@ -85,7 +85,7 @@ def open_ops(
         instance=InstanceService(engine, clock, events),
         auditor=AccessAuditor(engine, clock, events),
     )  # fmt: skip
-    fsops = _fsops(engine) if mount else None
+    fsops = _fsops(engine, settings.umask) if mount else None
     return OpsServices(
         engine, clock=clock, bus=bus, fsops=fsops, targets=targets,
         headless=_LazyHeadless(settings), keyring=TombstoneKeyringExit(settings, engine, clock),

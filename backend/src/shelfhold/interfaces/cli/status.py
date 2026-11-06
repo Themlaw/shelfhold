@@ -66,7 +66,7 @@ def _restore_status(resolved: ResolvedSettings) -> RestoreStatus | None:
             if not paths:
                 return None
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = open_fsops(loaded)
+        fsops = open_fsops(loaded, umask=settings.umask)
         return RestoreGuard(
             engine, fsops, clock=SystemClock(), bus=operating_bus(SystemClock())
         ).assess()

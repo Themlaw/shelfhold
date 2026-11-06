@@ -101,10 +101,14 @@ def test_future_upload_date_does_not_keep_a_team_active() -> None:
         _serve(bench, held)
         bench.run()
         _settle(bench)  # team B holds three files on disk, "released" in 2099 by its own claim
-        last = bench.rows("SELECT last_release_at AS at FROM team WHERE label = 'Team B'")[0]["at"]
+        last = bench.rows("SELECT last_release_at AS at FROM team WHERE lower(label) = 'team b'")[
+            0
+        ]["at"]
         assert str(last).startswith("2026-11"), last  # the server's receipt, not the claim
         bench.clock.advance(days=240)  # B has been silent for 240 days, A just released
-        _serve(bench, [*held, _chapter(4, "B", 240), _chapter(4, "A", 1)])
+        _serve(
+            bench, [*held, _chapter(4, "B", 240), _chapter(4, "A", -239)]
+        )  # A released yesterday, B 8 months ago
         with structlog.testing.capture_logs() as logs:
             bench.run()
         assert [e["reason"] for e in logs if e["event"] == "team.fallback"] == ["majority_inactive"]

@@ -11,11 +11,13 @@ import json
 import re
 import time
 import unicodedata
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 from shelfhold.catalog.lang import LanguageError, normalize_lang
+from shelfhold.infrastructure.clock import DEFAULT_SKEW
 from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
 from shelfhold.plugin_host.adapters.meta.suwayomi.versions import is_supported
 from shelfhold.plugin_host.errors import (
@@ -105,9 +107,14 @@ class SuwayomiService:
     wake_target: str | None = None
 
     def __init__(
-        self, base_url: str, *, refresh_mode: Literal["always_on", "driven"] = "always_on"
+        self,
+        base_url: str,
+        *,
+        refresh_mode: Literal["always_on", "driven"] = "always_on",
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.base_url = base_url.rstrip("/")
+        self._now = now  # the bound of an upload date (ENF-TIME-001)
         self.refresh_mode = refresh_mode
         self.manifest = build_manifest()
         self.connected = (
@@ -447,7 +454,7 @@ class SuwayomiService:
             number_sort=number_sort,
             title=chapter.get("name") or None,
             team=chapter.get("scanlator") or None,
-            published_at=_upload_date(chapter.get("uploadDate")),
+            published_at=_upload_date(chapter.get("uploadDate"), self._now()),
             memo={"fetch_handle": chapter["id"], "chapter_url": chapter["url"]},
         )
 
@@ -598,9 +605,14 @@ def _lang(raw: str) -> LanguageTag | Literal["mul"]:
         return "mul"
 
 
-def _upload_date(raw: Any) -> datetime | None:
+def _upload_date(raw: Any, now: datetime) -> datetime | None:
+    """The upload date, or None when it is zero, unreadable or later than `now` plus the clock
+    skew (ENF-TIME-001): a source cannot claim a release in 2099."""
     try:
         millis = int(raw)
-    except (TypeError, ValueError):
+        value = datetime.fromtimestamp(millis / 1000, UTC) if millis > 0 else None
+    except (TypeError, ValueError, OverflowError, OSError):
         return None
-    return datetime.fromtimestamp(millis / 1000, UTC) if millis > 0 else None
+    if value is not None and value > now + DEFAULT_SKEW:
+        return None
+    return value
