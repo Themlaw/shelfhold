@@ -12,6 +12,7 @@ from datetime import timedelta
 
 import pytest
 from fastapi import APIRouter, Depends
+from fastapi.routing import APIRoute
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import Effect, Principal, ReservedAction
@@ -284,3 +285,79 @@ def test_idempotency_keys_are_scoped_to_the_authenticated_actor(
     ]
     assert all("idempotent-replayed" not in r.headers for r in logins)
     assert logins[0].json()["csrf_token"] != logins[1].json()["csrf_token"]
+
+
+def _reserved_routes(app: object) -> list[tuple[str, str, str]]:
+    """(method, path, dependency name) of every route of the real app guarded by a `reserved_*`
+    dependency, found in the route table and not listed by hand."""
+    found: list[tuple[str, str, str]] = []
+
+    def names(dependant: object) -> list[str]:
+        out: list[str] = []
+        for sub in dependant.dependencies:  # type: ignore[attr-defined]
+            call = getattr(sub.call, "__name__", "")
+            if call.startswith("reserved_"):
+                out.append(call)
+            out.extend(names(sub))
+        return out
+
+    for route in app.routes:  # type: ignore[attr-defined]
+        if not isinstance(route, APIRoute):
+            continue
+        for name in names(route.dependant):
+            for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
+                found.append((method, route.path, name))
+    return found
+
+
+@pytest.mark.req("EF-USR-024", "ENF-SEC-010")
+def test_reserved_routes_of_create_app_refuse_api_keys(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
+) -> None:
+    with auth_env(monkeypatch, settings) as env:
+        routes = _reserved_routes(env.app)
+        guards = {name for _method, _path, name in routes}
+        # the routes of production, not throwaway ones: purge, key rotation, secrets, ceilings...
+        assert {"reserved_purge_now", "reserved_admin_risk_accept"} <= guards
+        assert len(routes) >= 6
+        key = _create_key(monkeypatch, capsys, settings)
+        for method, path, name in routes:
+            url = re.sub(r"\{[^}]+\}", "x", path)
+            refused = env.client.request(method, url, headers=_bearer(key), json={})
+            assert refused.status_code == 403, (method, path, name, refused.text)
+            assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed", path
+            anonymous = env.client.request(method, url, json={})
+            assert anonymous.status_code in {401, 403}, (method, path)
+
+
+@pytest.mark.req("EF-USR-022")
+def test_hardened_profile_refuses_remember_without_confirmation(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    with auth_env(monkeypatch, settings, hardened=True) as env:
+        refused = env.login()  # "remember me" is ticked by default: the admin must confirm it
+        assert refused.status_code == 422
+        assert refused.json()["type"] == "/api/v1/problems/remember-needs-confirmation"
+        assert SESSION_COOKIE not in env.client.cookies
+        assert db_rows(env.settings, "SELECT count(*) FROM session") == [(0,)]
+        confirmed = env.login(confirm_remember=True)
+        assert confirmed.status_code == 200
+        assert "max-age" in confirmed.headers["set-cookie"].lower()
+        assert db_rows(env.settings, "SELECT remember FROM session") == [(1,)]
+        plain = env.login(remember=False)  # a browser session needs no confirmation
+        assert plain.status_code == 200
+        assert db_rows(env.settings, "SELECT remember FROM session ORDER BY created_at") == [
+            (1,),
+            (0,),
+        ]
+        wrong = env.login(password="wrong-password-0", confirm_remember=True)
+        assert wrong.status_code == 401  # a wrong password is never told apart by the profile
+
+
+@pytest.mark.req("EF-USR-022")
+def test_default_profile_keeps_remember_me_without_confirmation(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    with auth_env(monkeypatch, settings) as env:
+        assert env.login().status_code == 200  # P2: the default stays ticked, no extra step
+        assert db_rows(env.settings, "SELECT remember FROM session") == [(1,)]

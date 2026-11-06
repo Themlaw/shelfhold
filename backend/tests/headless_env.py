@@ -15,6 +15,7 @@ from sqlalchemy import Engine
 
 from shelfhold.config import Settings
 from shelfhold.headless import ExchangedKey, HeadlessAdmin
+from shelfhold.headless.wiring import shelf_linker
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.secrets.keyring import Keyring
@@ -100,18 +101,24 @@ class Headless:
 
 
 @contextmanager
-def headless(settings: Settings, **options: object) -> Iterator[Headless]:
+def headless(
+    settings: Settings, *, real_linker: bool = False, **options: object
+) -> Iterator[Headless]:
+    """`suwayomi=` replaces the probe; `real_linker` plugs the production one (the disk part)."""
     migrate(settings)
     engine = create_db_engine(settings.database_path)
     vault = SecretVault(Keyring.generate(NOW))
     kavita, suwayomi, channels = FakeKavitaExchange(), FakeSuwayomiProbe(), FakeChannels()
     clock = ManualClock(NOW)
+    probe = options.pop("suwayomi", suwayomi)
+    if real_linker:
+        options["linker"] = shelf_linker(settings, engine)
     admin = HeadlessAdmin(
         engine,
         vault,
         clock=clock,
         kavita=kavita,
-        suwayomi=suwayomi,
+        suwayomi=probe,  # type: ignore[arg-type]
         channels=channels,
         **options,  # type: ignore[arg-type]
     )

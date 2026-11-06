@@ -407,6 +407,9 @@ class FakeSuwayomiFetcher:
     def unscripted(self) -> list[str]:
         return list(self.server.violations)
 
+    async def aclose(self) -> None:
+        """The host's `GuardedFetcher` is closed after a probe; nothing to release here."""
+
     def _target(self, url: str) -> str:
         if not url.startswith(self.base_url + "/"):
             self.server.violations.append(f"request outside the declared target: {url}")
