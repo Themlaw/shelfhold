@@ -193,7 +193,10 @@ class FollowCycle:
         self._series_taken: dict[str, int] = {}
         self._tombstones = tombstones  # EF-BIB-053: required, a cycle never runs without it
         self._told: set[str] = set()  # bindings already announced as tombstoned upstream
-        self._discovery = SeriesDiscovery(engine, clock, self._plugin_id, tombstones, self._emit)
+        self._discovery = SeriesDiscovery(
+            engine, clock, self._plugin_id, tombstones, self._emit,
+            translation_nature=service.manifest.translation_nature,
+        )  # fmt: skip
         self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
 
     # -- the cycle ---------------------------------------------------------------------------

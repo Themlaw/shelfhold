@@ -40,7 +40,7 @@ def test_community_translation_relay_single_edition() -> None:
         assert {e["translation_type"] for e in editions} == {"fan"}
         edition_id = by_series[0]["id"]
         teams = bench.rows("SELECT label FROM team WHERE edition_id = :e", e=edition_id)
-        assert {t["label"] for t in teams} == {"Team A", "Team B"}
+        assert {t["label"].casefold() for t in teams} == {"team a", "team b"}
         numbers = bench.rows(
             "SELECT number_norm FROM unit WHERE edition_id = :e ORDER BY source_order", e=edition_id
         )

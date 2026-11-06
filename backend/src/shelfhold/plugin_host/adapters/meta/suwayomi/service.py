@@ -99,6 +99,7 @@ def build_manifest() -> SourceManifest:
         capabilities=Capability.FOLLOW | Capability.SEARCH | Capability.SUB_SOURCES,
         rate_limit=RateLimit(requests_per_second=5.0, concurrency=2),
         auth=[AuthBasic()],
+        translation_nature="community",  # scanlation relayed by fan teams (EF-BIB-049)
         content_trust="untrusted",
     )
 

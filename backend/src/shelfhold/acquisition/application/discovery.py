@@ -21,6 +21,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.acquisition.application.sub_sources import upsert_sub_sources
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.watermark import Watermark
 from shelfhold.catalog.public import (
@@ -29,6 +30,7 @@ from shelfhold.catalog.public import (
     LanguageError,
     edition_key_lang,
     numbered_mark,
+    translation_type_for,
 )
 from shelfhold.export.public import pending_pairing
 from shelfhold.infrastructure.clock import Clock
@@ -123,9 +125,16 @@ class Discovery:
 
 class SeriesDiscovery:
     def __init__(
-        self, engine: sa.Engine, clock: Clock, plugin_id: str, tombstones: TombstoneGate, emit: Emit
+        self,
+        engine: sa.Engine,
+        clock: Clock,
+        plugin_id: str,
+        tombstones: TombstoneGate,
+        emit: Emit,
+        translation_nature: str = "unknown",
     ) -> None:
         self._engine = engine
+        self._nature = translation_nature
         self._clock = clock
         self._plugin_id = plugin_id
         self._tombstones = tombstones
@@ -136,6 +145,9 @@ class SeriesDiscovery:
         self, library: Sequence[SeriesRef], list_units: ListUnits, sub_sources: SubSources
     ) -> Discovery:
         found = Discovery()
+        subs = await sub_sources()
+        with self._engine.begin() as connection:  # kept every cycle, whatever is left to create
+            upsert_sub_sources(connection, self._plugin_id, subs)
         with self._engine.connect() as connection:
             known = self._known(connection)
             fresh = [r for r in library if self._key(r) not in known]
@@ -160,9 +172,10 @@ class SeriesDiscovery:
             found.awaiting_shelf = len(todo)
         if not todo or shelf_id is None:
             return found
-        subs = await sub_sources()
         langs = {s.source_key: s.lang for s in subs}
         adult_only = {s.source_key for s in subs if s.content_warning == "nsfw"}
+        if self._nature == "unknown":  # the kind then decides the discriminant (EF-BIB-049)
+            log.info("discovery.translation_nature_unknown", plugin_id=self._plugin_id)
         for ref in todo:
             lang = self._language(langs.get(ref.source_key))
             try:
@@ -263,6 +276,7 @@ class SeriesDiscovery:
         """Work, Edition, `source_item`, binding and follow, all or none. Read again under the
         write lock: two cycles racing leave one of each. `None`: another cycle got there first."""
         now = self._clock.now()
+        translation_type = translation_type_for(self._nature)
         with self._engine.connect() as connection:
             connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
             with connection.begin():
@@ -275,12 +289,14 @@ class SeriesDiscovery:
                     connection.execute(
                         sa.insert(catalog.edition).values(
                             id=edition_id, work_id=work_id, lang=UNKNOWN_LANGUAGE,
-                            translation_type="official", media="images",
+                            translation_type=translation_type, media="images",
                         )
                     )  # fmt: skip
                 else:
                     edition_id = books.ensure_edition(
-                        EditionSpec(work_id, lang, translation_type="official", media="images")
+                        EditionSpec(
+                            work_id, lang, translation_type=translation_type, media="images"
+                        )
                     ).id
                 connection.execute(
                     sa.update(catalog.edition)
