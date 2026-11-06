@@ -81,6 +81,7 @@ def test_pipeline_refuses_to_export_a_shelf_fed_directly_until_confirmed() -> No
             "Series Beta", {f"Team_Ch.{n}.cbz": None for n in (1, 2)}, info=SUWAYOMI_INFO
         )
         p.a.adopt()
+        p.env.add_chapter(p.env.new_series("Series Gamma"), "1")  # something to write
         with pytest.raises(SwitchoverUnconfirmed):
             p.env.pipeline.run(p.destination, job_id="01J00000000000000000000010")
         p.gate.confirm(p.destination, STEPS, fingerprint=p.gate.report(p.destination).fingerprint)

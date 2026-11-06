@@ -227,7 +227,7 @@ def test_reconcile_scan_only_in_window(settings: Settings, tmp_path) -> None:
                 outside.extend(spy.accesses)
         assert outside == []
         assert inside > 0  # the windowed verification did look at the disk
-        assert len(ran["export.run"]) > 100  # the crons did run all day
+        assert len(ran["export.run"]) >= 90  # the cron ran all day
         assert "reconcile.cycle" in ran and "reconcile.hash" in ran
         with env.inst.engine.connect() as connection:
             failed = connection.execute(

@@ -92,13 +92,18 @@ def test_late_volume_attribution_never_renames(numbers: list[int], volumes: list
         env.pipeline.run(env.destination_id, job_id=new_ulid())
         files = {p.name: p.stat().st_ino for p in env.files()}
         with env.engine.begin() as connection:
+            made: dict[int, str] = {}
             for n, unit in enumerate(units):
-                volume = new_ulid()
-                connection.execute(
-                    sa.insert(catalog.volume).values(
-                        id=volume, edition_id=series.edition_id, number=str(volumes[n])
+                if volumes[n] not in made:
+                    made[volumes[n]] = new_ulid()
+                    connection.execute(
+                        sa.insert(catalog.volume).values(
+                            id=made[volumes[n]],
+                            edition_id=series.edition_id,
+                            number=str(volumes[n]),
+                        )
                     )
-                )
+                volume = made[volumes[n]]
                 connection.execute(
                     sa.update(catalog.unit)
                     .where(catalog.unit.c.id == unit)

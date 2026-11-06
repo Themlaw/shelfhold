@@ -22,7 +22,7 @@ import json
 import re
 import unicodedata
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Final, Protocol
@@ -357,7 +357,7 @@ def series_cover_source(items: Iterable[FrozenAttrs]) -> FrozenAttrs | None:
     return best[2] if best else None
 
 
-# -- manifest and renames (EF-EXP-004, EF-EXP-061) ----------------------------------------------
+# -- manifest (EF-EXP-004) ----------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -368,40 +368,6 @@ class ManifestEntry:
 
 def manifest_entry(frozen: FrozenAttrs, path: ExportPath) -> ManifestEntry:
     return ManifestEntry(rel_path=path.rel_path, template_ref=frozen.template_ref)
-
-
-@dataclass(frozen=True)
-class PlannedItem:
-    """An export item as the planner sees it: frozen attributes plus mutable metadata that never
-    reaches a path."""
-
-    item_id: str
-    frozen: FrozenAttrs
-    current_volume: int | None = None
-    current_title: str | None = None
-
-
-@dataclass(frozen=True)
-class RenameProposal:
-    item_id: str
-    from_path: str
-    to_path: str
-
-
-def plan_renames(
-    recorded: Mapping[str, str],
-    items: Iterable[PlannedItem],
-    templates: Mapping[str, NamingTemplate] | None = None,
-) -> list[RenameProposal]:
-    """Renames implied by the frozen attributes: none while they do not change (I22)."""
-    known = templates or {DEFAULT_TEMPLATE.ref: DEFAULT_TEMPLATE}
-    proposals: list[RenameProposal] = []
-    for item in items:
-        template = known[item.frozen.template_ref]
-        wanted = export_path(item.frozen, template).rel_path
-        if recorded[item.item_id] != wanted:
-            proposals.append(RenameProposal(item.item_id, recorded[item.item_id], wanted))
-    return proposals
 
 
 # -- collisions through plugin/parse (EF-EXP-045) -----------------------------------------------

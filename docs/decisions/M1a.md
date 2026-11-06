@@ -713,3 +713,29 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
 - **ENF-SEC-003.** Plafonds d'archive par défaut : 2 000 entrées et 2 Gio (spec, GAP-5-19).
 - **ENF-TIME-001.** Une date d'envoi au-delà de `now + 5 min` est ignorée par le service Suwayomi et
   par le cycle (`reject_future`) : la date de réception tient lieu de date de sortie.
+
+## L50 : couverture de série, gabarit copié, silence des disques, preuves de verrou et de chemin figé
+
+- **Couverture de série (EF-EXP-045).** Après la confirmation d'arrivée, le job d'export envoie la
+  première page du plus petit chapitre à partir de 1 (jamais le 0 ni un special) par
+  `upload_series_cover`, en base64 sans préfixe. Ce qui a été envoyé est gardé dans `field_owner`
+  (champ `cover`) : un second passage n'envoie rien, et la couverture change si un chapitre plus
+  bas arrive. Qu'une couverture soit due se lit en base seule ; l'archive n'est lue qu'alors.
+- **Gabarit (EF-EXP-004).** `bind_destination` passe par `copy_template_into_binding` ; le paramètre
+  `default` représente le défaut d'une version ultérieure : une liaison existante garde sa copie.
+  `plan_renames` (et `PlannedItem`, `RenameProposal`) sont retirés : aucune production ne
+  les appelait, la preuve passe par le pipeline réel.
+- **Aucun accès disque avant un plan non vide (ENF-OPS-014, EF-EXP-029).** `ExportPipeline.run`
+  calcule d'abord le plan depuis la base seule ; vide, il rend la main sans sentinelle, bail,
+  détecteur, sonde ni guérison du miroir. Le job `export.run` ne construit le pipeline et ne lit les
+  noms à `plugin/parse` que pour une destination qui a quelque chose à écrire. La guérison d'un
+  miroir perdu (EF-EXP-063), qui lit le disque, passe dans le job de fenêtre `reconcile.hash`
+  (`heal_mirror`) ; un passage qui écrit la fait toujours en chemin. Écart signalé : un
+  candidat bloqué par « destination occupée » n'est vu qu'au second calcul, donc il réveille les
+  disques à chaque passage tant qu'il reste bloqué.
+- **Fenêtre.** `reconcile.cycle` devient un job de fenêtre (toutes les 10 minutes de 03 h à 07 h,
+  Paris) comme `reconcile.hash` : le rapprochement ne regarde plus les disques de jour. L'export
+  reste toutes les 5 minutes (écart au cahier : il est déclenché par événement quand le suivi a
+  reçu quelque chose, le cron n'est qu'un filet, sans coût disque si rien n'est à écrire).
+  `follow.cycle` (toutes les 15 minutes) prend encore le bail à chaque passage : hors périmètre du
+  lot, à traiter avec le suivi.

@@ -18,7 +18,11 @@ from shelfhold.export.domain.bindings import (
     check_shelf_ceiling,
     resolve_egress,
 )
-from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
+from shelfhold.export.domain.naming import (
+    DEFAULT_TEMPLATE,
+    NamingTemplate,
+    copy_template_into_binding,
+)
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
@@ -60,10 +64,14 @@ class ShelfService:
         attested_egress: Egress | None = None,
         root_subpath: str = "",
         library_type: str = "manga",
+        default: NamingTemplate = DEFAULT_TEMPLATE,
     ) -> str:
         """Link a shelf to a destination; the egress is what the instance attests, else the
-        plugin's default. Refused: overlapping `tree` roots, a `pull` without a readable copy."""
+        plugin's default. Refused: overlapping `tree` roots, a `pull` without a readable copy.
+        The naming template of the default is copied into the binding (EF-EXP-004): a later
+        default is only proposed, the binding keeps its own copy."""
         destination_id = new_ulid()
+        template = copy_template_into_binding(default)
         with self._engine.begin() as connection:
             shelf = connection.execute(
                 sa.select(export.shelf.c.retention_mode).where(export.shelf.c.id == shelf_id)
@@ -94,8 +102,7 @@ class ShelfService:
                 sa.insert(export.shelf_destination).values(
                     id=destination_id, shelf_id=shelf_id, target_id=target_id,
                     transport=transport, egress=new.egress, root_subpath=root_subpath,
-                    template=DEFAULT_TEMPLATE.dumps(),
-                    template_origin=f"default@{DEFAULT_TEMPLATE.version}",
+                    template=template.text, template_origin=template.origin,
                     kavita_library_type=library_type,
                 )
             )  # fmt: skip
