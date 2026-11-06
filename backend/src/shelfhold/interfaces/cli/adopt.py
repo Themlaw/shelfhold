@@ -53,6 +53,14 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     follow.add_argument("chapter")
     follow.add_argument("--destination", dest="sub_destination", default=None)
     follow.set_defaults(handler=adopt_ops.run_set_follow_from, configure_logging=False)
+    coverage = steps.add_parser("set-coverage", help=t("adopt.set_coverage_help"),
+                                allow_abbrev=False)  # fmt: skip
+    coverage.add_argument("series")
+    coverage.add_argument("volume", help=t("adopt.coverage_volume_help"))
+    coverage.add_argument("first", help=t("adopt.coverage_first_help"))
+    coverage.add_argument("last", help=t("adopt.coverage_last_help"))
+    coverage.add_argument("--destination", dest="sub_destination", default=None)
+    coverage.set_defaults(handler=adopt_ops.run_set_coverage, configure_logging=False)
 
 
 def open_session(resolved: ResolvedSettings, destination_id: str) -> AdoptionSession:

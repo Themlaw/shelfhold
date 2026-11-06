@@ -24,6 +24,11 @@ from shelfhold.acquisition.application.upstream import (
 )
 from shelfhold.acquisition.public import decline_pairing
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
+from shelfhold.export.application.coverage import (
+    CoverageError,
+    flag_unknown_coverage,
+    set_volume_coverage,
+)
 from shelfhold.export.application.migration_detect import (
     STEPS,
     SwitchoverDetector,
@@ -51,6 +56,8 @@ from shelfhold.export.application.repatriate import (
 )
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.export.targets.kavita.errors import TargetError
+from shelfhold.export.targets.kavita.series import refresh_names
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder
@@ -170,6 +177,7 @@ def _refused[F: Callable[..., Any]](method: F) -> F:
 class LibraryOps:
     def __init__(self, comp: Composition) -> None:
         self._comp = comp
+        self._nature = "unknown"  # what the connected service declares, once it has been read
 
     def _destination(self, destination_id: str | None) -> str:
         """The destination named, or the only tree destination there is."""
@@ -197,6 +205,7 @@ class LibraryOps:
     def _library(self) -> tuple[Any, list[SeriesRef]]:
         """The series Suwayomi follows now (the library the pairing proposes from)."""
         link = self._suwayomi()
+        self._nature = str(getattr(link.service.manifest, "translation_nature", "unknown"))
 
         async def read() -> list[SeriesRef]:
             try:
@@ -206,6 +215,20 @@ class LibraryOps:
 
         return link, asyncio.run(read())
 
+    def _refresh_names(self, destination_id: str) -> None:
+        """Kavita may have renamed a series: the names the pairing compares are the current ones
+        (EF-EXP-057). A Kavita that cannot be asked leaves the cache as it is."""
+        table = export.shelf_destination
+        try:
+            with self._comp.engine.connect() as connection:
+                target_id = connection.execute(
+                    sa.select(table.c.target_id).where(table.c.id == destination_id)
+                ).scalar_one()
+            client = self._comp.kavita_client(str(target_id))
+            asyncio.run(refresh_names(self._comp.engine, client, destination_id))
+        except (KeyringUnavailableError, TargetError, KeyError, sa.exc.NoResultFound):
+            return
+
     def _pairing(self, w: WriteContext) -> Pairing:
         detector = SwitchoverDetector(self._comp.engine, w.fsops)
         return Pairing(
@@ -214,6 +237,7 @@ class LibraryOps:
             SwitchoverGate(self._comp.engine, detector, clock=self._comp.clock),
             clock=self._comp.clock,
             tombstones=w.tombstones,
+            translation_nature=self._nature,
         )
 
     # -- pairing (L30) -------------------------------------------------------------------------
@@ -221,6 +245,7 @@ class LibraryOps:
     @_refused
     def pair_propose(self, destination_id: str | None) -> list[dict[str, Any]]:
         destination_id = self._destination(destination_id)
+        self._refresh_names(destination_id)
         _link, library = self._library()
         with self._comp.write_context() as w:
             return [_proposal(p) for p in self._pairing(w).propose(destination_id, library)]
@@ -237,6 +262,7 @@ class LibraryOps:
         confirm_backfill: int | None = None,
     ) -> dict[str, Any]:
         destination_id = self._destination(destination_id)
+        self._refresh_names(destination_id)
         link, library = self._library()
         ref = next(
             (r for r in library if (r.source_key, r.remote_id) == (source_key, remote_id)), None
@@ -303,6 +329,7 @@ class LibraryOps:
         """Leave `coverage_unknown`: the watermark is given by hand. `series` is the id of the
         exported series (`status` prints it) or its name."""
         destination_id = self._destination(destination_id)
+        self._refresh_names(destination_id)
         link, library = self._library()
         with self._comp.write_context() as w:
             pairing = self._pairing(w)
@@ -321,6 +348,50 @@ class LibraryOps:
                 follow_from=chapter, confirm_backfill=None,
             )  # fmt: skip
         self._snapshot(link)
+
+    @_refused
+    def set_coverage(
+        self, *, destination_id: str | None, series: str, volume: str, first: str, last: str
+    ) -> int:
+        """The chapters `first` to `last` are what the adopted volume `volume` of `series` holds
+        (EF-BIB-044): they count as present, `backfill --gaps` asks for none of them. `series` is
+        the id of the exported series (`status` prints it) or its name. Returns the chapters
+        added."""
+        destination_id = self._destination(destination_id)
+        self._refresh_names(destination_id)
+        s, link = export.export_series, export.edition_export_series
+        with self._comp.engine.begin() as connection:
+            rows = connection.execute(
+                sa.select(s.c.id, link.c.edition_id)
+                .select_from(
+                    s.join(
+                        link,
+                        sa.and_(
+                            link.c.export_series_id == s.c.id,
+                            link.c.remote_library_id == s.c.remote_library_id,
+                        ),
+                    )
+                )
+                .where(
+                    s.c.shelf_destination_id == destination_id,
+                    s.c.frozen_at.isnot(None),
+                    sa.or_(s.c.id == series, s.c.name_raw == series, s.c.frozen_series == series),
+                )
+                .order_by(s.c.id)
+            ).all()
+            if not rows:
+                raise UnknownSubjectError("no adopted series of this name in the destination")
+            if len(rows) > 1:
+                raise UnknownSubjectError("several series bear that name: give the id of one")
+            row = rows[0]
+            try:
+                added = set_volume_coverage(connection, row.edition_id, volume, first, last)
+            except LookupError as error:
+                raise UnknownSubjectError(str(error)) from None
+            except CoverageError as error:
+                raise CodedRefusal("ops.invalid_choice", str(error)) from None
+            flag_unknown_coverage(connection, row.id, row.edition_id)
+        return added
 
     def _snapshot(self, link: Any) -> None:
         """The upstream settings, taken before anything is changed there (EF-EXP-056)."""

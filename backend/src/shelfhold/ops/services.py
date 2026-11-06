@@ -413,6 +413,14 @@ class OpsServices:
             return
         self.library.set_follow_from(destination_id=destination_id, series=series, chapter=chapter)
 
+    def adopt_set_coverage(
+        self, *, destination_id: str, series: str, volume: str, first: str, last: str
+    ) -> int:
+        """`adopt set-coverage`: the chapters an adopted volume holds (EF-BIB-044)."""
+        return self.library.set_coverage(
+            destination_id=destination_id, series=series, volume=volume, first=first, last=last
+        )
+
     def adopt_confirm_migration(self, *, destination_id: str, fingerprint: str) -> None:
         if self._adoption is not None:
             self._adoption.confirm_migration(destination_id=destination_id, fingerprint=fingerprint)

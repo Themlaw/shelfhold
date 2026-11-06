@@ -24,6 +24,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.export.application import waiting_marks
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.path_map import PathMode, clean_absolute, within
 from shelfhold.infrastructure.archives.safe_open import UnsafeArchiveError, safe_open_archive
@@ -281,18 +282,29 @@ class SwitchoverGate:
             "at": self._clock.now().isoformat(),
         }
         self._put(self._key(destination_id), json.dumps(value))
+        with self._engine.begin() as connection:
+            waiting_marks.clear(connection, "adoption_refused", [destination_id])
 
     def is_confirmed(self, destination_id: str) -> bool:
         return self._get(self._key(destination_id)) is not None
 
     def require_clear(self, destination_id: str) -> None:
         """Refuse a shelf fed directly by Suwayomi until the steps are confirmed for the series
-        concerned: one that is not in the confirmed set is refused again."""
+        concerned: one that is not in the confirmed set is refused again. The refusal is written
+        down as `adoption_refused` (read by `status`), and erased once nothing is outside."""
         report = self.report(destination_id)
-        if not report.detected:
-            return
-        raw = self._get(self._key(destination_id))
-        covered = frozenset(json.loads(raw)["series"]) if raw else frozenset()
-        outside = tuple(f for f in report.series if f.export_series_id not in covered)
+        outside: tuple[FeedFinding, ...] = ()
+        if report.detected:
+            raw = self._get(self._key(destination_id))
+            covered = frozenset(json.loads(raw)["series"]) if raw else frozenset()
+            outside = tuple(f for f in report.series if f.export_series_id not in covered)
+        with self._engine.begin() as connection:
+            if outside:
+                waiting_marks.put(
+                    connection, "adoption_refused", destination_id,
+                    f"{len(outside)} series look fed by Suwayomi",
+                )  # fmt: skip
+            else:
+                waiting_marks.clear(connection, "adoption_refused", [destination_id])
         if outside:
             raise SwitchoverUnconfirmed(SwitchoverReport(outside))

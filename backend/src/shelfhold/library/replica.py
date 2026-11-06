@@ -317,10 +317,17 @@ def manifest_file_hashes(connection: Connection, unit_id: str) -> list[dict[str,
 
 
 def _readable_rows() -> sa.Select[tuple[str]]:
-    """Units with a readable copy of their own, or covered by an item that has one."""
-    coverage = export.unit_coverage
+    """Units with a readable copy of their own, or covered by an item that has one. A file the
+    admin already had in Kavita and Shelfhold adopted is a carrier that is there (I20): it is
+    referenced where it is, as a copy of the destination, and counts as long as it is not gone."""
+    coverage, item = export.unit_coverage, export.export_item
     own = sa.select(replica_table.c.unit_id.label("unit_id")).where(
         replica_table.c.location.in_(_READABLE_PLACES), replica_table.c.unit_id.is_not(None)
+    )
+    adopted_item = (
+        sa.select(item.c.id)
+        .where(item.c.id == replica_table.c.export_item_id, item.c.kind == "adopted")
+        .exists()
     )
     via_item = (
         sa.select(coverage.c.unit_id.label("unit_id"))
@@ -333,7 +340,12 @@ def _readable_rows() -> sa.Select[tuple[str]]:
                 ),
             )
         )
-        .where(replica_table.c.location.in_(_READABLE_PLACES))
+        .where(
+            sa.or_(
+                replica_table.c.location.in_(_READABLE_PLACES),
+                sa.and_(replica_table.c.location == "destination", adopted_item),
+            )
+        )
     )
     both = own.union(via_item).subquery()
     return sa.select(both.c.unit_id).where(both.c.unit_id.is_not(None))

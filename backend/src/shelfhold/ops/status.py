@@ -11,6 +11,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.export.application import waiting_marks
 from shelfhold.export.application.target_health import TargetHealth
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
@@ -85,6 +86,7 @@ def collect(connection: Connection) -> list[WaitingItem]:
     found += _follow(connection)
     found += _languages(connection)
     found += _discovery(connection)
+    found += _adoption(connection)
     return found
 
 
@@ -215,6 +217,14 @@ def _discovery(connection: Connection) -> list[WaitingItem]:
         else:
             items.append(_item("awaiting_shelf", "catalog", "-", "no adult shelf to file them on"))
     return items
+
+
+def _adoption(connection: Connection) -> list[WaitingItem]:
+    """What adoption and pairing left waiting, as they wrote it down (`waiting_marks`)."""
+    return [
+        _item(mark.state, "export", mark.subject, mark.reason)
+        for mark in waiting_marks.read_all(connection)
+    ]
 
 
 def _languages(connection: Connection) -> list[WaitingItem]:

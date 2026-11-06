@@ -70,6 +70,7 @@ from shelfhold.catalog.public import (
     stored_date,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
+from shelfhold.export.public import attach_to_volume
 from shelfhold.infrastructure.clock import Clock, FutureDateError, reject_future
 from shelfhold.infrastructure.content_trust import sanitize_upstream_text
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
@@ -576,7 +577,12 @@ class FollowCycle:
     ) -> None:
         """In the ingest's own transaction: a Variant never exists without its ticket, unless the
         caps leave no room (the next cycle asks) or another team offers the same chapter (elected
-        once the whole listing is read)."""
+        once the whole listing is read). A chapter named `Vol.N` that an adopted volume N holds is
+        under that volume (EF-BIB-044): nothing is asked for it."""
+        if info.volume_label and attach_to_volume(
+            connection, look.binding.edition_id, result.unit_id, info.volume_label
+        ):
+            return
         if result.outcome not in (IngestOutcome.NEW_VARIANT, IngestOutcome.SUPERSEDING):
             return
         record_release(connection, result.team_id, info.published_at or look.now)
