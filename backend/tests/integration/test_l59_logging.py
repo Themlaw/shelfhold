@@ -341,10 +341,16 @@ def test_effective_config_at_start_hides_the_secrets(
     from shelfhold.main import log_effective_config
 
     logs.start("DEBUG")
-    with_secret = settings.model_copy(update={"api_token": SecretStr("tok-synthetic-0123456789")})
+    with_secret = settings.model_copy(
+        update={
+            "api_token": SecretStr("tok-synthetic-0123456789"),
+            "plugin_repos": ("https://repo.example/index.json?token=QUERY-SECRET-ABCDEF",),
+        }
+    )
     log_effective_config(with_secret)
     text = logs.everything()
-    assert "startup.config" in text and "tok-synthetic-0123456789" not in text
+    assert "startup.config" in text and "repo.example/index.json" in text
+    assert "tok-synthetic-0123456789" not in text and "QUERY-SECRET-ABCDEF" not in text
 
 
 # -- names from an untrusted archive ------------

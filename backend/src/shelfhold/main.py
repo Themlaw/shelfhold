@@ -25,7 +25,7 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.health import HealthProbe
 from shelfhold.infrastructure.idempotency_store import IdempotencyStore
 from shelfhold.infrastructure.local_socket import SOCKET_NAME, LocalSocketServer
-from shelfhold.infrastructure.logging import configure_logging
+from shelfhold.infrastructure.logging import configure_logging, strip_url_queries
 from shelfhold.infrastructure.migrate import check_schema_not_newer
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.errors import (
@@ -80,7 +80,9 @@ def log_effective_config(settings: Settings) -> None:
     """The effective configuration at start-up (INFO). A secret is masked by the model itself
     (`SecretStr`), then by the log filter, which also scrubs by key name."""
     structlog.get_logger().info(
-        "startup.config", version=__version__, config=settings.model_dump(mode="json")
+        "startup.config",
+        version=__version__,
+        config=strip_url_queries(settings.model_dump(mode="json")),
     )
 
 

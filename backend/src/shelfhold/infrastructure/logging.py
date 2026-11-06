@@ -57,6 +57,23 @@ _SOURCE_URL = re.compile(r"""\b[a-z][a-z0-9+.-]*://[^\s'"<>)\]}]+""", re.IGNOREC
 _known_values: set[str] = set()
 
 
+_QUERY_OF_URL = re.compile(
+    r"(?P<url>\b[a-z][a-z0-9+.-]*://[^\s?#'\"]*)[?#][^\s'\"]*", re.IGNORECASE
+)
+
+
+def strip_url_queries(value: object) -> object:
+    """The value with the query string and fragment cut off every URL it holds (strings, lists,
+    mappings): a key can travel there."""
+    if isinstance(value, str):
+        return _QUERY_OF_URL.sub(lambda m: m.group("url"), value)
+    if isinstance(value, list | tuple):
+        return [strip_url_queries(item) for item in value]
+    if isinstance(value, Mapping):
+        return {key: strip_url_queries(item) for key, item in value.items()}
+    return value
+
+
 def debug_enabled() -> bool:
     """True when a DEBUG line would be written: guards any work only a DEBUG line needs."""
     return logging.getLogger().isEnabledFor(logging.DEBUG)
