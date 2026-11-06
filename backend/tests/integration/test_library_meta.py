@@ -180,3 +180,42 @@ def test_work_json_newer_format_left_alone_and_older_minor_keeps_unknown_fields(
         report = projection.repair()
         assert report.works_read_only == [env.chain["work"]] and report.works_written == []
         assert path.read_bytes() == frozen  # never rewritten, never "repaired"
+
+
+@pytest.mark.req("ENF-OPS-020")
+def test_a_repair_cannot_replace_a_newer_work_json_with_an_older_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+    import time
+
+    import shelfhold.library.adapters.meta_projection as module
+
+    with lib_env() as env:
+        ingest_one(env)
+        projection = MetaProjection(env.engine, env.data)
+        (path,) = work_files(env)
+        read_old, release = threading.Event(), threading.Event()
+        real = module.work_fields
+
+        def slow(connection: sa.Connection, work_id: str) -> object:
+            found = real(connection, work_id)
+            if not read_old.is_set():
+                read_old.set()  # the repair has read the old title...
+                assert release.wait(10)  # ...and is held before it writes
+            return found
+
+        monkeypatch.setattr(module, "work_fields", slow)
+        path.unlink()
+        repair = threading.Thread(target=projection.project_work, args=(env.chain["work"],))
+        repair.start()
+        assert read_old.wait(10)
+        with env.engine.begin() as connection:  # the store commits a newer title meanwhile
+            connection.execute(sa.update(catalog.work).values(title="Newer title"))
+        store = threading.Thread(target=projection.project_work, args=(env.chain["work"],))
+        store.start()
+        time.sleep(0.3)
+        release.set()
+        repair.join(10)
+        store.join(10)
+        assert json.loads(path.read_bytes())["title"] == "Newer title"

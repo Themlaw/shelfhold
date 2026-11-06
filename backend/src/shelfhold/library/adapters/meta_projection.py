@@ -11,6 +11,8 @@ nothing but catalog identifiers and titles: no key, no token, no path. Writing g
 `infrastructure.volumes.write_data_file` (atomic, owner-only).
 """
 
+import threading
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
@@ -44,6 +46,16 @@ _CONTENT_FIELDS: Final = (
 _UNIT_EDITION = catalog.unit.join(
     catalog.edition, catalog.edition.c.id == catalog.unit.c.edition_id
 )
+
+
+_STRIPES = tuple(threading.Lock() for _ in range(64))
+
+
+def _guard(identifier: str) -> threading.Lock:
+    """One lock per identifier (striped), shared by every projection of this process: the store
+    that writes after a commit and the repair at start cannot interleave their read of the
+    database and their write of the file, so an older answer never replaces a newer one."""
+    return _STRIPES[zlib.crc32(identifier.encode()) % len(_STRIPES)]
 
 
 def meta_rel(unit_id: str) -> str:
@@ -138,6 +150,13 @@ class MetaProjection:
         self._engine.dispose()
 
     def project(self, unit_id: str, *, dry_run: bool = False) -> Outcome:
+        with _guard(unit_id):  # the database is read under the lock, just before the write
+            outcome = self._project_unit(unit_id, dry_run=dry_run)
+        if outcome == "written" and not dry_run:
+            self._project_work_of(unit_id)  # the Work of the Unit, after it (its own lock)
+        return outcome
+
+    def _project_unit(self, unit_id: str, *, dry_run: bool) -> Outcome:
         with self._engine.connect() as connection:
             known = unit_fields(connection, unit_id)
         if known is None:
@@ -160,7 +179,6 @@ class MetaProjection:
                     return "unchanged"
         if not dry_run:
             write_data_file(self._data_dir, meta_rel(unit_id), wanted.dumps())
-            self._project_work_of(unit_id)  # the Work of the Unit, after it
         return "written"
 
     def _project_work_of(self, unit_id: str) -> None:
@@ -180,6 +198,10 @@ class MetaProjection:
     def project_work(self, work_id: str, *, dry_run: bool = False) -> Outcome:
         """`work.json` of one Work: written when missing, torn or drifted; a newer format is left
         alone."""
+        with _guard(work_id):
+            return self._project_work(work_id, dry_run=dry_run)
+
+    def _project_work(self, work_id: str, *, dry_run: bool) -> Outcome:
         with self._engine.connect() as connection:
             known = work_fields(connection, work_id)
         if known is None:
