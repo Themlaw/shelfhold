@@ -27,6 +27,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks, path_resource
+from shelfhold.export.application.repatriate_kavita import KavitaVerdict
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.domain.path_map import PathMode, clean_absolute
@@ -151,8 +152,10 @@ class RepatriationResult:
 
 @dataclass(frozen=True)
 class RepatriationCheck:
-    """The control before the mount goes: every adopted file is under the writable root with the
-    hash recorded at adoption, and the counts are the ones the dry-run gave."""
+    """The control before the mount goes. The files: every adopted file is under the writable
+    root with the hash recorded at adoption, and the counts are the ones the dry-run gave. Kavita
+    (`repatriate_kavita`): the same series, the same files, no reading progress lost. Only the two
+    together say the mount may go: with no verdict of Kavita, nothing is safe."""
 
     series: int
     chapters: int
@@ -161,10 +164,15 @@ class RepatriationCheck:
     different: tuple[str, ...]
 
     matches_plan: bool = True
+    kavita: KavitaVerdict | None = None
+
+    @property
+    def files_intact(self) -> bool:
+        return not self.missing and not self.different and self.matches_plan
 
     @property
     def safe_to_unmount(self) -> bool:
-        return not self.missing and not self.different and self.matches_plan
+        return self.files_intact and self.kavita is not None and self.kavita.ok
 
 
 @dataclass(frozen=True)
@@ -222,6 +230,14 @@ class Repatriator:
             destination_id, source_root, target_root, actions, len(folders), len(chapters),
             copy, self._free(target_root), digest.hexdigest(), self.frozen(),
         )  # fmt: skip
+
+    def adopted_paths(self, destination_id: str) -> tuple[int, list[str]]:
+        """The series folders and the relative paths of the adopted files: what a "before" of
+        Kavita must cover. Read-only, from the database alone."""
+        with self._engine.connect() as connection:
+            adopted = self._adopted(connection, destination_id)
+        folders = {posixpath.dirname(i.rel_path).split("/")[0] or i.rel_path for i in adopted}
+        return len(folders), [i.rel_path for i in adopted]
 
     def frozen(self) -> bool:
         """`restored_behind`: the freeze of this process, or the one the database persists
@@ -395,11 +411,16 @@ class Repatriator:
     # -- the control before the mount goes --------------------------------------------------
 
     def check(
-        self, destination_id: str, *, plan: RepatriationPlan | None = None
+        self,
+        destination_id: str,
+        *,
+        plan: RepatriationPlan | None = None,
+        kavita: KavitaVerdict | None = None,
     ) -> RepatriationCheck:
         """Every adopted file is under the writable root with the hash it had when it was
-        adopted, and, given the dry-run, the counts of series, chapters and files are its own.
-        Run it after the copy and again after the mount is removed."""
+        adopted, and, given the dry-run, the counts of series, chapters and files are its own;
+        `kavita` is what Kavita's API said (`repatriate_kavita.verify`). Run it after the copy and
+        again after the mount is removed."""
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
             adopted = self._adopted(connection, destination_id)
@@ -423,8 +444,9 @@ class Repatriator:
             == (plan.series, plan.chapters, len(plan.files))
         )
         return RepatriationCheck(
-            len(folders), len(chapters), len(adopted), tuple(missing), tuple(different), same
-        )
+            len(folders), len(chapters), len(adopted), tuple(missing), tuple(different), same,
+            kavita,
+        )  # fmt: skip
 
 
 async def kavita_counts(client: Any, library_ref: str, remote_root: str) -> KavitaCounts:

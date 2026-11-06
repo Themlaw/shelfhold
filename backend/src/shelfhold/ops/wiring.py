@@ -30,6 +30,7 @@ from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
 from shelfhold.ops.library import LibraryOps
+from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.restore import RestoreGuardExit
 from shelfhold.ops.services import OpsServices
@@ -102,5 +103,5 @@ def open_ops(
         restore=RestoreGuardExit(engine, guard_fsops, clock, bus) if guard_fsops else None,
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), backfill=BackfillOps(composition),
-        normalize=NormalizeOps(composition),
+        normalize=NormalizeOps(composition), meta=MetaOps(composition),
     )  # fmt: skip

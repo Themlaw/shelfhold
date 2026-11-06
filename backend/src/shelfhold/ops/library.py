@@ -50,11 +50,20 @@ from shelfhold.export.application.purge import (
     PurgeUnknownError,
 )
 from shelfhold.export.application.repatriate import (
+    RepatriationBlockedError,
     RepatriationCheck,
     RepatriationPlan,
     Repatriator,
 )
+from shelfhold.export.application.repatriate_kavita import (
+    BaselineStore,
+    KavitaVerdict,
+    covers,
+    read_snapshot,
+    verify,
+)
 from shelfhold.export.application.restore import RestoredBehindError
+from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.series import refresh_names
@@ -72,6 +81,10 @@ if TYPE_CHECKING:
 
 __all__ = ["LibraryOps"]
 
+# Kavita cannot be asked: the control refuses instead of guessing
+_KAVITA_UNAVAILABLE: tuple[type[Exception], ...] = (
+    TargetError, KeyringUnavailableError, sa.exc.NoResultFound, KeyError,
+)  # fmt: skip
 SERVICE_ID = "suwayomi"  # the one connected service of M1a
 AUTO_MIN_SCORE = 0.9
 
@@ -117,6 +130,18 @@ def _plan(plan: RepatriationPlan) -> dict[str, Any]:
     }
 
 
+def _kavita(verdict: KavitaVerdict | None) -> dict[str, Any]:
+    if verdict is None:
+        return {"verified": False, "reason": "not_asked", "problems": []}
+    return {
+        "verified": verdict.verified,
+        "reason": verdict.reason,
+        "series": [verdict.series_before, verdict.series_after],
+        "files": [verdict.files_before, verdict.files_after],
+        "problems": [{"kind": kind, "what": what} for kind, what in verdict.problems],
+    }
+
+
 def _check(check: RepatriationCheck) -> dict[str, Any]:
     return {
         "series": check.series,
@@ -124,6 +149,8 @@ def _check(check: RepatriationCheck) -> dict[str, Any]:
         "files": check.files,
         "missing": list(check.missing),
         "different": list(check.different),
+        "files_intact": check.files_intact,
+        "kavita": _kavita(check.kavita),
         "safe_to_unmount": check.safe_to_unmount,
     }
 
@@ -463,6 +490,69 @@ class LibraryOps:
         fsops, loaded, _tombstones = self._comp.read_context()
         return _plan(self._repatriator(fsops, loaded).plan(destination_id, source=source))
 
+    def _kavita_target(self, destination_id: str) -> tuple[Any, str | None, str]:
+        """The client of the destination's target, its library and the folder Kavita sees."""
+        with self._comp.engine.connect() as connection:
+            ctx = load_context(connection, destination_id)
+            library = (
+                None
+                if ctx.remote_library_id is None
+                else connection.execute(
+                    sa.select(export.remote_library.c.remote_ref).where(
+                        export.remote_library.c.id == ctx.remote_library_id
+                    )
+                ).scalar()
+            )  # Kavita's own number of the library, not our identifier of the link
+        if ctx.root_local is None:
+            raise RepatriationBlockedError(())
+        return (
+            self._comp.kavita_client(ctx.target_id),
+            None if library is None else str(library),
+            ctx.remote_folder(ctx.root_local),
+        )
+
+    def _kavita_baseline(
+        self, destination_id: str, repatriator: Repatriator, plan: RepatriationPlan
+    ) -> None:
+        """What Kavita says now, written down once, **before the first copy**. Refused (nothing
+        copied) when it cannot be taken, when it does not cover the adopted files (an account that
+        sees nothing, a scan still running), or when files are already home and there is no
+        "before": a baseline taken after the damage would prove the damage is the reference. Once
+        written it is never replaced."""
+        store = BaselineStore(self._comp.engine)
+        if store.load(destination_id) is not None:
+            return
+        if any(action.status == "present" for action in plan.files):
+            raise RepatriationBlockedError(())  # copy begun without a "before"
+        try:
+            client, library_ref, remote_root = self._kavita_target(destination_id)
+            if library_ref is None:
+                raise RepatriationBlockedError(())
+            snapshot = asyncio.run(read_snapshot(client, library_ref, remote_root))
+        except _KAVITA_UNAVAILABLE:
+            raise RepatriationBlockedError(()) from None
+        series, rels = repatriator.adopted_paths(destination_id)
+        if not covers(snapshot, remote_root, rels, series):
+            raise RepatriationBlockedError(())
+        store.save_if_absent(destination_id, snapshot)
+        if store.load(destination_id) is None:  # a damaged value is in the way
+            raise RepatriationBlockedError(())
+
+    def _kavita_verdict(self, destination_id: str, repatriator: Repatriator) -> KavitaVerdict:
+        """Scan the folder, read Kavita again, compare it with the baseline."""
+        baseline = BaselineStore(self._comp.engine).load(destination_id)
+        try:
+            client, library_ref, remote_root = self._kavita_target(destination_id)
+            if baseline is not None:
+                series, rels = repatriator.adopted_paths(destination_id)
+                if not covers(baseline, remote_root, rels, series):
+                    return KavitaVerdict(reason="baseline_incomplete")
+            return asyncio.run(
+                verify(client, baseline, library_ref, remote_root, unreachable=_KAVITA_UNAVAILABLE)
+            )
+        except _KAVITA_UNAVAILABLE:
+            return KavitaVerdict(reason="unreachable")
+
     @_refused
     def repatriate_apply(
         self, destination_id: str | None, *, fingerprint: str, source: str | None = None
@@ -471,10 +561,14 @@ class LibraryOps:
         with self._comp.write_context() as w:
             repatriator = self._repatriator(w.fsops, w.loaded)
             plan = repatriator.plan(destination_id, source=source)
+            if fingerprint == plan.fingerprint and not plan.frozen:
+                self._kavita_baseline(destination_id, repatriator, plan)  # before any copy
             result = repatriator.apply(
                 destination_id, fingerprint=fingerprint, job_id=new_ulid(), source=source
             )
-            check = repatriator.check(destination_id, plan=plan)
+            check = repatriator.check(
+                destination_id, plan=plan, kavita=self._kavita_verdict(destination_id, repatriator)
+            )
         return {
             "copied": result.copied,
             "already_present": result.already_present,
@@ -484,9 +578,15 @@ class LibraryOps:
 
     @_refused
     def repatriate_check(self, destination_id: str | None) -> dict[str, Any]:
+        """Run it again after the old mount is removed: Kavita is scanned and read, and compared
+        with what it said before the copy."""
         destination_id = self._destination(destination_id)
         fsops, loaded, _tombstones = self._comp.read_context()
-        return _check(self._repatriator(fsops, loaded).check(destination_id))
+        repatriator = self._repatriator(fsops, loaded)
+        check = repatriator.check(
+            destination_id, kavita=self._kavita_verdict(destination_id, repatriator)
+        )
+        return _check(check)
 
     @_refused
     def give_back_upstream(

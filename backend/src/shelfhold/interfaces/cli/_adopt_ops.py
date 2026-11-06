@@ -129,6 +129,9 @@ def run_confirm_migration(args: argparse.Namespace, channel: OpsChannel) -> int:
 
 @ops_command
 def run_repatriate(args: argparse.Namespace, channel: OpsChannel) -> int:
+    if args.check:
+        check = channel.call("ops.repatriate_check", destination_id=args.destination)
+        return _report_check(check)
     if not args.dry_run and not args.confirm:
         print(t("repatriate.needs_dry_run"), file=sys.stderr)
         return NEEDS_CONFIRMATION
@@ -151,10 +154,31 @@ def run_repatriate(args: argparse.Namespace, channel: OpsChannel) -> int:
         "ops.repatriate_apply", destination_id=args.destination, fingerprint=args.confirm,
         source=args.source,
     )  # fmt: skip
-    check = done["check"]
     print(t("repatriate.done", copied=done["copied"], present=done["already_present"]))
+    return _report_check(done["check"])
+
+
+def _report_check(check: dict[str, Any]) -> int:
+    """The files, then what Kavita says; the volume may go only if both agree."""
     for path in check["missing"] + check["different"]:
         print(t("repatriate.check_problem", path=path), file=sys.stderr)
+    kavita = check["kavita"]
+    if not kavita["verified"]:
+        reasons = {
+            "no_baseline": t("repatriate.kavita_no_baseline"),
+            "unreachable": t("repatriate.kavita_unreachable"),
+            "no_library": t("repatriate.kavita_no_library"),
+            "baseline_incomplete": t("repatriate.kavita_baseline_incomplete"),
+            "incomplete": t("repatriate.kavita_incomplete"),
+        }
+        print(reasons.get(kavita["reason"], t("repatriate.kavita_not_asked")), file=sys.stderr)
+    else:
+        print(t("repatriate.kavita_counts", before_series=kavita["series"][0],
+                after_series=kavita["series"][1], before_files=kavita["files"][0],
+                after_files=kavita["files"][1]))  # fmt: skip
+        for problem in kavita["problems"]:
+            print(t("repatriate.kavita_problem", kind=problem["kind"], what=problem["what"]),
+                  file=sys.stderr)  # fmt: skip
     print(t("repatriate.safe") if check["safe_to_unmount"] else t("repatriate.unsafe"))
     return 0 if check["safe_to_unmount"] else REFUSED
 

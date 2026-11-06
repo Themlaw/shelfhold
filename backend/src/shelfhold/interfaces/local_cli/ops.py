@@ -272,6 +272,14 @@ def _normalize_migrate(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.normalize.migrate(_text(p, "name"), confirm=_optional(p, "confirm"), principal=by)
 
 
+def _meta_rebuild(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.meta.rebuild(unit=_optional(p, "unit"))
+
+
+def _meta_check(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.meta.check()
+
+
 def _count(params: Params, name: str) -> int | None:
     value = params.get(name)
     if value is None:
@@ -332,6 +340,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
     "ops.normalize_migrate": (_normalize_migrate, "normalize.migrate"),
+    "ops.meta_rebuild": (_meta_rebuild, None),
+    "ops.meta_check": (_meta_check, None),
     "ops.backfill_estimate": (_backfill_estimate, None),
     "ops.backfill_start": (_backfill_start, None),
 }
@@ -344,7 +354,7 @@ READS_AND_RESTORE_EXITS = frozenset(
     {
         "ops.status", "ops.missing_list", "ops.jobs_list", "ops.pair_propose",
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
-        "ops.intents_list", "ops.backfill_estimate",
+        "ops.intents_list", "ops.backfill_estimate", "ops.meta_check",
         "ops.restore_adopt", "ops.tombstone_set_aside_journal",
     }
 )  # fmt: skip

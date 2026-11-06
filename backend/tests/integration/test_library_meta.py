@@ -21,7 +21,11 @@ def ingest_one(env: LibEnv) -> None:
 
 
 def meta_files(env: LibEnv) -> list[Path]:
-    return sorted(p for p in (env.data / "meta").rglob("*") if p.is_file())
+    return sorted(p for p in (env.data / "meta" / "units").rglob("*") if p.is_file())
+
+
+def work_files(env: LibEnv) -> list[Path]:
+    return sorted(p for p in (env.data / "meta" / "works").rglob("*") if p.is_file())
 
 
 @pytest.mark.req("ENF-OPS-020")
@@ -55,6 +59,25 @@ def test_db_is_authority_json_rebuilt_after_crash() -> None:
         assert projection.repair().written == [env.chain["unit"]] and path.read_bytes() == good
 
         assert projection.repair().written == []  # nothing to do: nothing is rewritten
+
+        # the same for work.json (ENF-OPS-013 lists it with unit.json): flat, by ULID
+        (work_path,) = work_files(env)
+        assert work_path == env.data / "meta" / "works" / env.chain["work"][:2] / (
+            env.chain["work"] + ".json"
+        )
+        good_work = work_path.read_bytes()
+        work_path.unlink()  # crash after the commit, before the file
+        assert projection.repair().works_written == [env.chain["work"]]
+        assert work_path.read_bytes() == good_work
+        work_path.write_bytes(b'{"schema_version": "1.0", "work_id"')  # torn write
+        assert projection.repair().works_written == [env.chain["work"]]
+        assert work_path.read_bytes() == good_work
+        drifted = json.loads(good_work)
+        drifted["title"] = "Somebody else's title"
+        work_path.write_text(json.dumps(drifted), encoding="utf-8")
+        assert projection.repair().works_written == [env.chain["work"]]
+        assert work_path.read_bytes() == good_work
+        assert projection.repair().works_written == []
 
 
 @pytest.mark.req("ENF-OPS-020")
@@ -121,3 +144,78 @@ def test_older_minor_on_disk_is_migrated_when_next_written_and_unknown_fields_su
             and new["x_keep"] == {"a": 1}
             and len(new["file_hashes"]) == 1
         )
+
+
+@pytest.mark.req("ENF-OPS-020", "ENF-OPS-013")
+def test_work_json_is_a_read_projection_without_secret_or_path() -> None:
+    with lib_env() as env:
+        ingest_one(env)  # the production store projects the Unit, then its Work
+        (path,) = work_files(env)
+        document = json.loads(path.read_bytes())
+        assert document["schema_version"] == "1.0" and document["work_id"] == env.chain["work"]
+        assert document["edition_ids"] == [env.chain["edition"]]
+        assert document["unit_ids"] == [env.chain["unit"]]
+        assert set(document) <= {
+            "schema_version", "work_id", "kind", "title", "sort_title", "status",
+            "first_published", "date_precision", "edition_ids", "unit_ids", "titles",
+        }  # fmt: skip
+        text = path.read_text(encoding="utf-8")
+        for forbidden in (str(env.data), str(env.manga), str(env.store), "key", "token", "secret"):
+            assert forbidden not in text.lower().replace("sort_title", "")
+
+
+@pytest.mark.req("ENF-OPS-013")
+def test_work_json_newer_format_left_alone_and_older_minor_keeps_unknown_fields() -> None:
+    with lib_env() as env:
+        ingest_one(env)
+        (path,) = work_files(env)
+        projection = MetaProjection(env.engine, env.data)
+        kept = json.loads(path.read_bytes()) | {"x_keep": {"a": 1}}
+        path.write_text(json.dumps(kept), encoding="utf-8")
+        assert projection.repair().works_written == [env.chain["work"]]  # the file is whole again
+        assert json.loads(path.read_bytes())["x_keep"] == {"a": 1}
+        newer = json.loads(path.read_bytes()) | {"schema_version": "1.9", "x_new": 1}
+        path.write_text(json.dumps(newer), encoding="utf-8")
+        frozen = path.read_bytes()
+        report = projection.repair()
+        assert report.works_read_only == [env.chain["work"]] and report.works_written == []
+        assert path.read_bytes() == frozen  # never rewritten, never "repaired"
+
+
+@pytest.mark.req("ENF-OPS-020")
+def test_a_repair_cannot_replace_a_newer_work_json_with_an_older_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+    import time
+
+    import shelfhold.library.adapters.meta_projection as module
+
+    with lib_env() as env:
+        ingest_one(env)
+        projection = MetaProjection(env.engine, env.data)
+        (path,) = work_files(env)
+        read_old, release = threading.Event(), threading.Event()
+        real = module.work_fields
+
+        def slow(connection: sa.Connection, work_id: str) -> object:
+            found = real(connection, work_id)
+            if not read_old.is_set():
+                read_old.set()  # the repair has read the old title...
+                assert release.wait(10)  # ...and is held before it writes
+            return found
+
+        monkeypatch.setattr(module, "work_fields", slow)
+        path.unlink()
+        repair = threading.Thread(target=projection.project_work, args=(env.chain["work"],))
+        repair.start()
+        assert read_old.wait(10)
+        with env.engine.begin() as connection:  # the store commits a newer title meanwhile
+            connection.execute(sa.update(catalog.work).values(title="Newer title"))
+        store = threading.Thread(target=projection.project_work, args=(env.chain["work"],))
+        store.start()
+        time.sleep(0.3)
+        release.set()
+        repair.join(10)
+        store.join(10)
+        assert json.loads(path.read_bytes())["title"] == "Newer title"

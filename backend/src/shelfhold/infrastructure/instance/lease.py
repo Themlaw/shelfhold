@@ -17,13 +17,14 @@ further in the future than the allowed clock drift counts as run out and is logg
 """
 
 import json
+import re
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Any, Final, Literal
 
 import structlog
 
@@ -44,6 +45,16 @@ from shelfhold.infrastructure.instance.lock import holder_is_alive
 LEASE_VALIDITY = timedelta(minutes=3)
 HEARTBEAT_INTERVAL = timedelta(seconds=30)
 
+# A versioned on-disk format (ENF-OPS-013, ADR-0039): `major.minor`. A later minor is additive and
+# is rewritten with every field it carries; a later major is another build's format, whose holder
+# is never taken over and whose file is never written.
+LEASE_SCHEMA_VERSION: Final = "1.0"
+SUPPORTED_LEASE_MAJOR: Final = 1
+_VERSION = re.compile(r"^(\d+)\.(\d+)$")
+_KNOWN_KEYS: Final = (
+    "schema_version", "instance_id", "boot_id", "renewed_at", "token", "lock_path",
+)  # fmt: skip
+
 
 @dataclass(frozen=True)
 class Lease:
@@ -54,10 +65,25 @@ class Lease:
     lock_path: str | None = (
         None  # the holder's instance lock, to tell a live holder from a dead one
     )
+    schema_version: str = LEASE_SCHEMA_VERSION
+    # Fields a later minor wrote (ENF-OPS-013): kept as they are on every rewrite.
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def major(self) -> int:
+        match = _VERSION.match(self.schema_version)
+        return int(match.group(1)) if match else 0
+
+    @property
+    def incompatible(self) -> bool:
+        """Written by a build whose format is newer than any this one reads: not ours to touch."""
+        return self.major > SUPPORTED_LEASE_MAJOR
 
     def dumps(self) -> bytes:
         return json.dumps(
             {
+                **self.extra,  # first: the fields this build owns always win
+                "schema_version": self.schema_version,
                 "instance_id": self.instance_id,
                 "boot_id": self.boot_id,
                 "renewed_at": self.renewed_at.isoformat(),
@@ -70,6 +96,9 @@ class Lease:
     def parse(cls, raw: bytes) -> "Lease":
         try:
             doc = json.loads(raw)
+            version = doc.get("schema_version", LEASE_SCHEMA_VERSION)  # absent: the first format
+            if not isinstance(version, str) or not _VERSION.match(version):
+                raise ValueError("bad schema_version")
             lock_path = doc.get("lock_path")
             return cls(
                 str(doc["instance_id"]),
@@ -77,9 +106,16 @@ class Lease:
                 datetime.fromisoformat(doc["renewed_at"]),
                 str(doc["token"]),
                 str(lock_path) if lock_path else None,
+                version,
+                {k: v for k, v in doc.items() if k not in _KNOWN_KEYS},
             )
         except (ValueError, KeyError, TypeError, AttributeError) as error:
             raise LeaseConflictError("unreadable lease file: not taking it over") from error
+
+    def renewed(self, *, instance_id: str, boot_id: str, now: datetime, token: str,
+                lock_path: str | None) -> "Lease":  # fmt: skip
+        """Our lease over this one: the fields of a later minor ride along, version included."""
+        return Lease(instance_id, boot_id, now, token, lock_path, self.schema_version, self.extra)
 
 
 class WriteSessions:
@@ -113,7 +149,7 @@ class WriteSessions:
         if raw is None:
             raise LeaseLostError(f"{root_path}: no write session is open on this root")
         current = Lease.parse(raw)
-        if not self._is_mine(current) or self.expired(current):
+        if current.incompatible or not self._is_mine(current) or self.expired(current):
             raise LeaseLostError(f"{root_path}: the write lease is lost")
 
     def _is_mine(self, lease: Lease) -> bool:
@@ -123,14 +159,20 @@ class WriteSessions:
         raw = self._fsops.read_lease(root_path)
         return None if raw is None else Lease.parse(raw)
 
-    def _own(self) -> Lease:
-        return Lease(
-            self.instance_id,
-            self.boot_id,
-            self._clock.now(),
-            uuid.uuid4().hex,
-            str(self._lock_path) if self._lock_path else None,
-        )
+    def _own(self, previous: Lease | None = None) -> Lease:
+        """A fresh lease; over one of this instance, the fields of a later minor are carried."""
+        lock_path = str(self._lock_path) if self._lock_path else None
+        token = uuid.uuid4().hex
+        if (
+            previous is not None
+            and not previous.incompatible
+            and previous.instance_id == self.instance_id
+        ):
+            return previous.renewed(
+                instance_id=self.instance_id, boot_id=self.boot_id, now=self._clock.now(),
+                token=token, lock_path=lock_path,
+            )  # fmt: skip
+        return Lease(self.instance_id, self.boot_id, self._clock.now(), token, lock_path)
 
     def expired(self, lease: Lease) -> bool:
         """Run out, or dated beyond the allowed drift in the future (a holder whose clock is ahead
@@ -151,8 +193,13 @@ class WriteSessions:
 
     def take(self, root_path: str) -> None:
         def decide(raw: bytes | None) -> bytes | Literal["remove"] | None:
-            if raw is not None:
-                current = Lease.parse(raw)
+            current = None if raw is None else Lease.parse(raw)
+            if current is not None:
+                if current.incompatible:  # another build's format: refused, and left as it is
+                    raise LeaseConflictError(
+                        f"{root_path}: the lease is of format {current.schema_version}, newer "
+                        "than this build reads: not taking it over"
+                    )
                 if not self._is_mine(current) and not self._previous_run_of_ours(current):
                     if not self.expired(current):
                         raise LeaseConflictError(
@@ -163,7 +210,7 @@ class WriteSessions:
                             f"{root_path}: the lease ran out but instance {current.instance_id} "
                             "still holds its lock"
                         )
-            return self._own().dumps()
+            return self._own(current).dumps()
 
         try:
             self._fsops.update_lease(root_path, decide)
@@ -187,11 +234,11 @@ class WriteSessions:
     def renew(self, root_path: str) -> None:
         def decide(raw: bytes | None) -> bytes | Literal["remove"] | None:
             current = None if raw is None else Lease.parse(raw)
-            if current is None or not self._is_mine(current):
+            if current is None or current.incompatible or not self._is_mine(current):
                 raise LeaseLostError(f"{root_path}: the lease is no longer ours")
             if self.expired(current):
                 raise LeaseLostError(f"{root_path}: the lease ran out")
-            return self._own().dumps()
+            return self._own(current).dumps()
 
         try:
             self._fsops.update_lease(root_path, decide)
@@ -201,7 +248,12 @@ class WriteSessions:
     def check(self, root_path: str) -> None:
         """Before each write: still ours and valid; renewed when the heartbeat is due."""
         current = self.read_lease(root_path)
-        if current is None or not self._is_mine(current) or self.expired(current):
+        if (
+            current is None
+            or current.incompatible
+            or not self._is_mine(current)
+            or self.expired(current)
+        ):
             raise LeaseLostError(f"{root_path}: the write lease is lost")
         if self._clock.now() - current.renewed_at >= HEARTBEAT_INTERVAL:
             self.renew(root_path)
@@ -211,10 +263,10 @@ class WriteSessions:
             if raw is None:
                 return None
             try:
-                mine = self._is_mine(Lease.parse(raw))
+                current = Lease.parse(raw)
             except LeaseConflictError:
                 return None
-            return "remove" if mine else None
+            return "remove" if self._is_mine(current) and not current.incompatible else None
 
         with suppress(FsopsError, OSError):  # a root that went away: the lease simply runs out
             self._fsops.update_lease(root_path, decide)

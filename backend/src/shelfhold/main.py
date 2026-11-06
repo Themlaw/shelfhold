@@ -171,8 +171,10 @@ def create_app(
             await server.start()
         except OSError as error:  # the HTTP server stays up; the CLI then works on the database
             structlog.get_logger().error("local_cli.socket_unavailable", error=str(error))
+            runtime.start_projection_repair()
             yield
             return
+        runtime.start_projection_repair()  # the socket is bound: now the projections (ENF-OPS-020)
         try:
             yield
         finally:

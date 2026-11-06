@@ -150,6 +150,8 @@ class FakeKavita:
     series: list[dict[str, Any]] = field(default_factory=list)
     files: dict[int, list[str]] = field(default_factory=dict)  # series id -> indexed file paths
     ages: dict[int, dict[str, Any]] = field(default_factory=dict)  # series id -> metadata
+    # file path -> pages the account of the key has read (`ChapterDto.pagesRead`, EF-EXP-051)
+    progress: dict[str, int] = field(default_factory=dict)
     pending: list[PendingIndex] = field(default_factory=list)
     never_indexed: set[str] = field(default_factory=set)  # folders Kavita ignores (excluded)
     next_series_id: int = 100
@@ -463,7 +465,12 @@ class FakeKavita:
         if not sid.isdigit() or int(sid) not in self.files:
             return self._json({"title": "Not Found", "status": 404}, 404)
         chapters = [
-            {"id": i, "files": [{"id": i, "filePath": p}]}
+            {
+                "id": i,
+                "pages": 20,
+                "pagesRead": self.progress.get(p, 0),
+                "files": [{"id": i, "filePath": p}],
+            }
             for i, p in enumerate(self.files[int(sid)])
         ]
         return self._json({"specials": [], "chapters": [], "volumes": [{"chapters": chapters}]})

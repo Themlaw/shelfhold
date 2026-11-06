@@ -55,3 +55,9 @@ class ConfirmationRequired(TargetError):
 
 class ProtocolError(TargetError):
     """Kavita answered something the contract does not describe."""
+
+
+class ListingIncomplete(ProtocolError):
+    """A listing hit its cap: what was read is not all there is, so nothing may be concluded."""
+
+    incomplete = True

@@ -8,6 +8,7 @@
 Every write under `/library` from then on is refused by `Fsops` without this instance's lease.
 """
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -53,7 +54,7 @@ from shelfhold.infrastructure.observability.shutdown import (
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
-from shelfhold.library.public import migrate_received_dirs
+from shelfhold.library.public import MetaProjection, migrate_received_dirs
 from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 
@@ -237,6 +238,29 @@ class InstanceRuntime:
         watcher.check()  # the first measure at once: a full disk parks the jobs boot just sent
         self.pools.start_workers()  # the queues are consumed from here on
         return report[0] if report else None
+
+    def start_projection_repair(self) -> None:
+        """`unit.json` and `work.json` are projections of the database, written after the
+        transaction: a crash in between left one missing or torn. They are written again at
+        start (ENF-OPS-020), under `/data` only, on a thread of their own once the server is
+        listening: a big catalog must not delay `/readyz` (ENF-PERF-003), and the descriptors of
+        the socket being bound are not to be shared with a thread that opens files meanwhile."""
+        if self.engine is None or not self.owns_volumes:
+            return
+        threading.Thread(
+            target=self._repair_projections, args=(self.engine,), name="meta-repair", daemon=True
+        ).start()
+
+    def _repair_projections(self, engine: Engine) -> None:
+        log = structlog.get_logger()
+        try:
+            report = MetaProjection(engine, self.settings.data_dir).repair()
+        except (OSError, ValueError, sa.exc.SQLAlchemyError) as error:
+            log.warning("meta_repair_skipped", error=type(error).__name__)  # the next start tries
+            return
+        for kind, found in (("unit", report.read_only), ("work", report.works_read_only)):
+            if found:  # a newer format is never rewritten (ENF-OPS-013)
+                log.warning("reconcile.drift", kind=f"{kind}_json_newer_format", count=len(found))
 
     def _probed(
         self,

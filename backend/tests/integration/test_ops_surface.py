@@ -280,6 +280,26 @@ def test_cli_target_reconnect_and_rotate_key(
         assert run_cli(monkeypatch, settings, "target", "recheck", env.target_id) == 0
 
 
+@pytest.mark.req("ENF-OPS-020")
+def test_meta_check_is_a_read_and_is_not_refused_while_restored_behind(
+    settings: Settings, tmp_path: Path
+) -> None:
+    from shelfhold.identity.public import local_auth
+    from shelfhold.infrastructure.local_socket import RpcFailure
+
+    with export_env() as env:
+        ops = make_ops(env, keyring=FakeKeyring(), restore=FakeRestore())  # restored behind
+        migrate(settings)
+        auth = local_auth(create_db_engine(settings.database_path), settings)
+        sock = tmp_path / "s.sock"
+        with serving(sock, IdentityDispatcher(auth, ops=ops)):
+            with pytest.raises(RpcFailure, match="restored_behind"):
+                call(sock, "ops.meta_rebuild", {})  # a write: refused
+            with pytest.raises(RpcFailure) as failure:
+                call(sock, "ops.meta_check", {})  # a read: it reaches the service
+            assert "restored_behind" not in str(failure.value)
+
+
 def test_ops_methods_over_the_local_socket(settings: Settings, tmp_path: Path) -> None:
     """The running server's channel: `local_cli` may call a reserved exit, the audit says who."""
     with export_env() as env:

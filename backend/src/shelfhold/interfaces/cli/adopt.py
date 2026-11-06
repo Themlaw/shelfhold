@@ -30,6 +30,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     adopt.add_argument("--destination", default=None, help=t("adopt.destination_help"))
     adopt.add_argument("--library", default=None, help=t("adopt.library_help"))
     adopt.add_argument("--repatriate", action="store_true", help=t("adopt.repatriate_help"))
+    adopt.add_argument("--check", action="store_true", help=t("adopt.check_help"))
     adopt.add_argument("--source", default=None, help=t("adopt.source_help"))
     adopt.add_argument("--pair-auto", action="store_true", help=t("adopt.pair_auto_help"))
     adopt.add_argument("--min-score", type=float, default=0.9, help=t("adopt.min_score_help"))

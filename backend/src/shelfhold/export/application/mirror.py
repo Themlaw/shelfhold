@@ -83,7 +83,12 @@ class ProvenanceMirror:
 
     def would_write(self, destination_id: str) -> bool:
         """Is any mirror file of the destination missing or out of date? Writes nothing."""
-        return bool(self._pending(destination_id, None)[1])
+        return bool(self.drifted(destination_id))
+
+    def drifted(self, destination_id: str) -> list[str]:
+        """The mirror files of the destination missing or out of date (`meta check`). Writes
+        nothing."""
+        return [name for name, _data in self._pending(destination_id, None)[1]]
 
     def rebuild(self, destination_id: str) -> list[str]:
         """`meta rebuild` for one destination: the whole projection, unresolved lines kept."""
