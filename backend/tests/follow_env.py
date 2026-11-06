@@ -21,7 +21,7 @@ from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
 from shelfhold.infrastructure.fetcher.client import IntegrationFetcher
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, export
+from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import PassthroughStore
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
@@ -128,6 +128,19 @@ class Bench:
                 )
 
 
+def empty_catalog(lib: LibEnv) -> None:
+    """A database with no Work at all: the unrelated chain `lib_env` seeds is removed."""
+    chain = lib.chain
+    with lib.engine.begin() as connection:
+        for table, key in (
+            (catalog.unit_variant, "variant"), (catalog.unit, "unit"),
+            (acquisition.source_binding, "binding"), (catalog.edition, "edition"),
+            (catalog.work, "work"),
+        ):  # fmt: skip
+            connection.execute(sa.delete(table).where(table.c.id == chain[key]))
+        connection.execute(sa.text("DELETE FROM source_item"))
+
+
 def add_adult_shelf(lib: LibEnv, *, max_age_rating: int | None = None) -> str:
     """A target, a shelf without ceiling (adult) and its destination: where a discovered series is
     filed. Returns the shelf id."""
@@ -183,6 +196,8 @@ def follow_bench(
     with lib_env() as lib:
         work_id = edition_id = binding_id = ""
         shelf_id = add_adult_shelf(lib) if adult_shelf else ""
+        if not seeded:
+            empty_catalog(lib)
         with lib.engine.begin() as connection:
             if seeded:
                 work_id = add_work(connection)

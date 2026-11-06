@@ -38,6 +38,7 @@ from shelfhold.catalog.domain.names import (
 from shelfhold.catalog.domain.normalizers import NormalizerId, NormalizerRegistry, default_registry
 from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, place_of
+from shelfhold.catalog.lang import LanguageError, edition_key_lang
 
 
 class Catalog(CatalogService):
@@ -84,6 +85,17 @@ def place_parts(raw_number: str | None, source_order: int = 0) -> tuple[str, str
     return place.track, place.segment, place.part
 
 
+def numbered_mark(raw_number: str | None, source_order: int = 0) -> tuple[str, str] | None:
+    """`(segment, number_norm)` of a numbered release as the ingest would file it, `None` when it
+    is unnumbered: what a follow watermark is made of (EF-EXP-053)."""
+    try:
+        number = parse_number(raw_number, source_order=source_order)
+    except NumberError:
+        return None
+    place = place_of(number)
+    return None if place.unnumbered else (place.segment, place.number_norm)
+
+
 def place_key(raw_number: str | None, source_order: int = 0) -> str:
     """A stable text for the place a release takes in its Edition (EF-BIB-034): two releases with
     the same key are offers for the same Unit. An unnumbered release is placed by its order."""
@@ -108,6 +120,7 @@ __all__ = [
     "IncomingUnit",
     "IngestOutcome",
     "IngestResult",
+    "LanguageError",
     "NameKind",
     "NoPersonFieldName",
     "NormalizerId",
@@ -118,8 +131,10 @@ __all__ = [
     "UnitView",
     "VariantFacts",
     "default_registry",
+    "edition_key_lang",
     "ingest_isolated",
     "join_people",
+    "numbered_mark",
     "person_field_name",
     "place_key",
     "place_parts",

@@ -479,6 +479,10 @@ action = "Restaurez le trousseau de clés depuis son export (« shelfhold secret
 title = "Des séries ne sont plus mises à jour."
 action = "Vérifiez l'état de la source, puis relancez le suivi."
 
+[errors."series.awaiting_shelf"]
+title = "Des séries de la bibliothèque Suwayomi attendent une étagère adulte pour être rangées."
+action = "Créez l'étagère : shelfhold shelf create <nom> --max-age 18+ --target <cible> --subpath <dossier>."
+
 [errors."series.removed_upstream"]
 title = "La série a été retirée de la source."
 action = "Décidez de la conserver ou de la retirer de la bibliothèque."

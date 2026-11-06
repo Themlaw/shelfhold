@@ -27,6 +27,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("fetch.timeout", 504, "admin"),
     ErrorCode("fetch.unreachable", 502, "admin"),
     ErrorCode("source.fallback", 409, "admin", event=True),
+    # EF-SRC-009: series of the Suwayomi library wait for an adult shelf to be filed on
+    ErrorCode("series.awaiting_shelf", 409, "admin", event=True),
     # EF-EXP-053: a backfill over 100 Units or 5 GiB starts only once the estimate is confirmed
     ErrorCode("backfill.confirmation_required", 409, "user"),
     # EF-SRC-027: the series left the upstream library (not a purge: EF-BIB-053 is apart).

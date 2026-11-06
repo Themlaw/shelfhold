@@ -1545,6 +1545,10 @@
       "code": "secret.undecryptable",
       "status": 503
     },
+    "/api/v1/problems/series.awaiting-shelf": {
+      "code": "series.awaiting_shelf",
+      "status": 409
+    },
     "/api/v1/problems/series.gap": {
       "code": "series.gap",
       "status": 409

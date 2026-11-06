@@ -48,6 +48,7 @@ __all__ = [
     "Proposal",
     "UpstreamAlreadyFollowedError",
     "WatermarkConfirmationRequired",
+    "pending_pairing",
 ]
 
 State = Literal["ready", "ambiguous", "no_match", "coverage_unknown", "already_paired"]
@@ -526,6 +527,27 @@ class Pairing:
         if refused:
             return BatchResult((), tuple(refused))
         return BatchResult(tuple(self._bind_all(plans)), ())
+
+
+def pending_pairing(
+    connection: Connection, library: Sequence[SeriesRef], *, min_score: float = AUTO_MIN_SCORE
+) -> set[tuple[str, str]]:
+    """The series of the library that an adopted, still unpaired series would be paired with
+    (a candidate scoring `min_score` or more): the follow cycle leaves them to the pairing, which
+    binds them to the Edition that exists instead of a second one (EF-EXP-038)."""
+    paired = Pairing._paired_editions(connection)
+    destinations = connection.execute(sa.select(export.shelf_destination.c.id)).scalars()
+    waiting: set[tuple[str, str]] = set()
+    for destination_id in destinations:
+        for item in Pairing._adopted(connection, destination_id):
+            if item.edition_id in paired:
+                continue
+            waiting.update(
+                (ref.source_key, ref.remote_id)
+                for ref in library
+                if score_of(item.names, ref.title) >= min_score
+            )
+    return waiting
 
 
 def _is_number(raw: str) -> bool:
