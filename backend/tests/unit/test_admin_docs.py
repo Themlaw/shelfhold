@@ -37,3 +37,35 @@ def test_ram_budget_documented_with_reference_profile() -> None:
     assert "mode passage" in text.lower()
     assert "conservée" in text.lower()  # the kept-copy mode
     assert "mem_limit" in text  # the compose limit is explained, not just stated
+
+
+ADMIN = ROOT / "docs" / "admin"
+PUBLISHED_DOCS = [*ADMIN.glob("*.md"), ROOT / "docs" / "configuration.md"]
+
+
+@pytest.mark.req("ENF-PRIV-002")
+def test_exposure_doc_covers_discretion_and_the_recourse_procedure() -> None:
+    text = (ADMIN / "exposition-publique.md").read_text(encoding="utf-8")
+    for part in ("X-Robots-Tag: noindex, nofollow", "Disallow: /", "Open Graph"):
+        assert part in text, part  # what the instance does
+    assert "Search Console" in text  # declare the domain
+    assert "démo" in text.lower() and "domaine de l'instance" in text  # no demo on that domain
+    assert "Safe Browsing" in text and "réexamen" in text  # the recourse procedure
+
+
+@pytest.mark.req("EF-INT-027")
+def test_restore_doc_puts_the_schema_assets_in_the_backup_set() -> None:
+    text = (ADMIN / "restauration.md").read_text(encoding="utf-8")
+    assert "schema.sql" in text and "data-dictionary.md" in text
+    assert "jeu de sauvegarde" in text and "sqlite3" in text
+    assert "M1b" in text  # the integrated backup will carry them itself
+
+
+@pytest.mark.req("ENF-LEG-001", "ENF-PRIV-002")
+@pytest.mark.parametrize("page", PUBLISHED_DOCS, ids=lambda p: p.name)
+def test_published_docs_name_no_personal_path_or_host(page: Path) -> None:
+    text = page.read_text(encoding="utf-8")
+    assert not re.search(r"/home/|/Users/|\.ts\.net", text), page.name
+    addresses = re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", text)
+    # loopback, the "any address" form and Kavita version numbers are the only dotted quads
+    assert [a for a in addresses if not a.startswith(("127.", "0."))] == [], page.name

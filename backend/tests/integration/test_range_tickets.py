@@ -1,6 +1,7 @@
 """EF-SRC-032 / EF-SRC-034: one ticket and one export_item for a range of Units."""
 
 import asyncio
+import json
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -98,7 +99,7 @@ def bench() -> Iterator[Bench]:
         yield _bench(lib)
 
 
-@pytest.mark.req("EF-SRC-034")
+@pytest.mark.req("EF-SRC-034", "EF-LEC-014")
 def test_range_request_one_ticket_one_export_item(bench: Bench) -> None:
     result = bench.tickets.request(bench.span(1, 8), RequestBudget())
     assert len(result.ticket_ids) == 1 and result.deferred == []
@@ -215,3 +216,23 @@ def test_n_chapters_one_volume_only_rolling_volume_changes() -> None:
             len(bench.rows("SELECT unit_id FROM unit_coverage WHERE carrier_id = :i", i=rolling))
             == 3
         )
+
+
+@pytest.mark.req("EF-LEC-014", "EF-BIB-044")
+def test_range_ingest_fills_coverage_locators(bench: Bench) -> None:
+    """The bounds a source announces for each Unit are what the database gives back."""
+    bench.tickets.request(bench.span(1, 8), RequestBudget())
+    bench.advance()
+    item = bench.rows("SELECT id FROM export_item")[0]["id"]
+    rows = bench.rows(
+        "SELECT unit_id, start_locator, end_locator FROM unit_coverage "
+        "WHERE carrier_type = 'export_item' AND carrier_id = :i ORDER BY position",
+        i=item,
+    )
+    assert len(rows) == 8
+    for number, row in zip(range(1, 9), rows, strict=True):
+        remote = bench.units[number].info.remote_unit_id
+        assert row["unit_id"] == bench.units[number].unit_id
+        assert json.loads(row["start_locator"]) == f"{remote}#start"  # read back, not just set
+        assert json.loads(row["end_locator"]) == f"{remote}#end"
+    assert len({row["start_locator"] for row in rows}) == 8  # one bound per Unit, none shared

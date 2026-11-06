@@ -5,20 +5,34 @@ oldest Variant keeps the place), I5 and I27 (a Team belongs to one Edition), I15
 column), I23 (canonical languages), I29 (normalizer version and raw value kept), I32 (a
 `remote_unit_id` is never rewritten, revisions are append-only), I34 (watermark and place share
 the segment).
+
+The second half exercises the host-side invariants on real files and the real export pipeline:
+I24 (an `adopt_ro` root is never written, no `rename` between two physical roots) and I37 (no
+plan touches a reserved path) on `Fsops`; I28 (nothing replayed, written or scanned while the
+database is behind the disk), I33 (no identity in an exported file) and I39 (one generation step
+per write session, database first) on a restored library. I42 (an upstream identity survives a
+reinstallation of the connected tool) is a property of the Suwayomi identity mapping.
 """
 
+import hashlib
 import random
+import tempfile
+import zipfile
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+import sqlalchemy as sa
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from hypothesis.stateful import (
     RuleBasedStateMachine,
     initialize,
     invariant,
+    precondition,
     rule,
     run_state_machine_as_test,
 )
@@ -34,7 +48,20 @@ from shelfhold.catalog.domain.numbering import (
 from shelfhold.catalog.domain.placement import place_of
 from shelfhold.catalog.lang import LanguageError, normalize_lang
 from shelfhold.catalog.public import BindingRef, EditionRef, IncomingUnit, IngestOutcome
+from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.restore import RestoredBehindError
+from shelfhold.infrastructure.fsops import (
+    CrossRootError,
+    PathEscapeError,
+    ReadOnlyRootError,
+    ReservedPathError,
+    RootBlockedError,
+)
+from shelfhold.infrastructure.instance import WriteSessions
+from shelfhold.sdk.refs import UnitInfo
 from tests.catalog_env import Harness, at, harness
+from tests.fsops_env import Env, make_env
+from tests.restore_env import RestoreEnv, restore_env
 
 EDITION_KEY = (
     "work_id",
@@ -571,3 +598,339 @@ def test_season_reset_creates_distinct_units(seasons: list[int], pick: tuple[int
         }
         assert got == wanted
         check_i34(h)
+
+
+# --- I24 and I37: the fsops operations a destination plan can ask for -----------------------
+
+RESERVED_NAMES = (
+    ".shelfhold-mount-id",
+    ".shelfhold/lease",
+    ".shelfhold/manifest/x.jsonl",
+    ".shelfhold/staging/part",
+    ".shelfhold/recycle/old.cbz",
+    ".shelfhold/tombstones/journal",
+    "series/../.shelfhold/lease",
+)
+PLAIN_NAMES = st.from_regex(r"[a-z]{1,6}(/[a-z]{1,6})?\.cbz", fullmatch=True)
+
+
+def tree_digest(base: Path, *, reserved_only: bool) -> dict[str, str]:
+    found: dict[str, str] = {}
+    for path in sorted(base.rglob("*")):
+        rel = path.relative_to(base).as_posix()
+        reserved = rel == ".shelfhold-mount-id" or rel.split("/")[0] == ".shelfhold"
+        if path.is_file() and reserved == reserved_only:
+            found[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return found
+
+
+class FsopsInvariants(RuleBasedStateMachine):
+    """I24 and I37 on real directories: three roots under /library (`books` is its own physical
+    root), one read-only adoption volume."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env: Env = make_env(Path(self.tmp.name))
+        self.roots = {
+            "manga": self.env.manga,
+            "comics": self.env.comics,
+            "books": self.env.books,
+            "upstream": self.env.upstream,
+        }
+        self.physical = {"manga": "library", "comics": "library", "books": "books"}
+        self.files: dict[str, bytes] = {}  # absolute path -> content, writable roots only
+        self.sentinels = tree_digest(self.env.library, reserved_only=True)
+        self.books_reserved = tree_digest(self.env.books, reserved_only=True)
+
+    def teardown(self) -> None:
+        self.tmp.cleanup()
+
+    @rule(root=st.sampled_from(["manga", "comics", "books", "upstream"]), name=PLAIN_NAMES,
+          data=st.binary(max_size=16))  # fmt: skip
+    def write_ordinary(self, root: str, name: str, data: bytes) -> None:
+        target = self.roots[root] / name
+        if root == "upstream":
+            with pytest.raises(ReadOnlyRootError):
+                self.env.fsops.write_atomic(str(target), data, parents=True)
+            return
+        self.env.fsops.write_atomic(str(target), data, parents=True)
+        self.files[str(target)] = data
+
+    @rule(
+        root=st.sampled_from(["library", "books", "upstream"]),
+        name=st.sampled_from(RESERVED_NAMES),
+        op=st.sampled_from(["write", "unlink", "mkdir"]),
+    )
+    def touch_reserved(self, root: str, name: str, op: str) -> None:
+        """Reserved names live at the top of a physical root, not in a sub-folder of it."""
+        base = {"library": self.env.library, "books": self.env.books}.get(root, self.env.upstream)
+        target = str(base / name)
+        refused = (ReservedPathError, ReadOnlyRootError, PathEscapeError)
+        with pytest.raises(refused):
+            if op == "write":
+                self.env.fsops.write_atomic(target, b"forged", parents=True)
+            elif op == "unlink":
+                self.env.fsops.unlink(target)
+            else:
+                self.env.fsops.mkdir(target)
+
+    @rule(src=st.sampled_from(["manga", "comics", "books", "upstream"]),
+          dst=st.sampled_from(["manga", "comics", "books", "upstream"]),
+          name=PLAIN_NAMES, reserved=st.sampled_from([None, *RESERVED_NAMES]))  # fmt: skip
+    def rename(self, src: str, dst: str, name: str, reserved: str | None) -> None:
+        source = self.roots[src] / name
+        top = {"manga": self.env.library, "comics": self.env.library, "books": self.env.books}
+        target = (
+            top.get(dst, self.env.upstream) / reserved
+            if reserved
+            else self.roots[dst] / ("moved-" + name.replace("/", "-"))
+        )
+        if src != "upstream" and str(source) not in self.files:
+            self.env.fsops.write_atomic(str(source), b"x", parents=True)
+            self.files[str(source)] = b"x"
+        if source.exists() or src == "upstream":
+            before = tree_digest(self.env.tmp, reserved_only=False)
+            cross = (
+                src == "upstream"
+                or dst == "upstream"
+                or (self.physical.get(src) != self.physical.get(dst))
+            )
+            if reserved is not None or cross:
+                with pytest.raises(
+                    (ReservedPathError, ReadOnlyRootError, CrossRootError, PathEscapeError)
+                ):
+                    self.env.fsops.rename(str(source), str(target))
+                assert tree_digest(self.env.tmp, reserved_only=False) == before
+                return
+            self.env.fsops.rename(str(source), str(target), replace=True)
+            self.files[str(target)] = self.files.pop(str(source))
+
+    @invariant()
+    def adopt_ro_root_stays_untouched(self) -> None:  # I24
+        assert list(self.env.upstream.rglob("*")) == []
+
+    @invariant()
+    def reserved_paths_belong_to_the_host(self) -> None:  # I37
+        assert tree_digest(self.env.library, reserved_only=True) == self.sentinels
+        assert tree_digest(self.env.books, reserved_only=True) == self.books_reserved
+
+    @invariant()
+    def a_file_never_changes_physical_root(self) -> None:  # I24
+        on_disk = {
+            str(p): p.read_bytes()
+            for name in ("manga", "comics", "books")
+            for p in self.roots[name].rglob("*.cbz")
+            if p.is_file()
+        }
+        assert on_disk == self.files
+
+
+@pytest.mark.req("ENF-QUAL-006", "EF-EXP-060", "EF-EXP-001")
+def test_i24_i37_fsops_never_writes_adopt_ro_or_reserved_paths() -> None:
+    run_state_machine_as_test(
+        FsopsInvariants,
+        settings=settings(max_examples=30, stateful_step_count=15, deadline=None, derandomize=True),
+    )
+
+
+# --- I28, I33, I39: a real library, exported, backed up, restored behind, re-adopted --------
+
+
+class RestoreInvariants(RuleBasedStateMachine):
+    """Random histories of exports, backups and restores over the real pipeline."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack = ExitStack()
+        self.env: RestoreEnv = self.stack.enter_context(restore_env(first_chapters=1))
+        self.next_chapter = 2
+        self.backup: Path | None = None
+        self.exported_since_backup = 0
+        self.behind = False
+        self.frozen_disk: dict[str, str] = {}
+        self.intent: tuple[str, Path] | None = None  # (intent id, source it would rename)
+
+    def teardown(self) -> None:
+        self.stack.close()
+
+    def generations(self) -> tuple[int, int]:
+        with self.env.engine.connect() as connection:
+            database = connection.execute(
+                sa.text("SELECT generation FROM physical_root WHERE path_entry = :p"),
+                {"p": str(self.env.library)},
+            ).scalar_one()
+        return int(database), int(self.env.sentinel()["generation"])  # type: ignore[call-overload]
+
+    @precondition(lambda self: not self.behind)
+    @rule()
+    def export_a_chapter(self) -> None:
+        env = self.env
+        env.add_chapters(self.next_chapter, self.next_chapter)
+        self.next_chapter += 1
+        before = len(env.managed())
+        database, sentinel = self.generations()
+        assert database == sentinel  # I39: nothing is ever left half-stamped between sessions
+        real_open = WriteSessions.open
+        with patch.object(WriteSessions, "open", autospec=True, side_effect=real_open) as spy:
+            env.export()
+        assert len(env.managed()) == before + 1
+        self.exported_since_backup += 1
+        moved_to, stamped = self.generations()
+        assert moved_to == stamped  # I39: the sentinel follows the database
+        assert spy.call_count >= 1
+        assert (
+            moved_to - database == spy.call_count
+        )  # I39: one session, one step, whatever it wrote
+
+    @precondition(lambda self: not self.behind)
+    @rule()
+    def take_backup(self) -> None:
+        self.backup = self.env.backup()
+        self.exported_since_backup = 0
+
+    @precondition(lambda self: not self.behind and self.intent is None)
+    @rule()
+    def leave_an_intent(self) -> None:
+        source = sorted(self.env.managed())[0]
+        intent = IntentJournal(self.env.engine, self.env.fsops, clock=self.env.ex.clock).record(
+            op="rename", src=str(source), dst=str(source.with_name("renamed.cbz")),
+            expected_sha256="sha256:" + hashlib.sha256(source.read_bytes()).hexdigest(),
+        )  # fmt: skip
+        self.intent = (intent, source)
+
+    @precondition(lambda self: not self.behind and self.backup is not None
+                  and self.exported_since_backup > 0)  # fmt: skip
+    @rule()
+    def restore_the_database(self) -> None:
+        assert self.backup is not None
+        self.env.restore(self.backup)
+        assert self.env.guard().enter_restored_behind().behind
+        self.behind = True
+        self.frozen_disk = self.env.files()
+
+    @precondition(lambda self: not self.behind)
+    @rule()
+    def back_up_export_then_restore(self) -> None:
+        """The shortest history that puts the disk ahead of the database."""
+        self.take_backup()
+        self.export_a_chapter()
+        self.restore_the_database()
+
+    @precondition(lambda self: self.behind)
+    @rule()
+    def try_to_act_while_behind(self) -> None:  # I28
+        env = self.env
+        victim = env.managed()[0]
+        with pytest.raises(RootBlockedError):
+            env.fsops.write_atomic(str(victim.with_name("new.cbz")), b"x", parents=True)
+        with pytest.raises(RootBlockedError):
+            env.fsops.unlink(str(victim))
+        with pytest.raises(RootBlockedError):
+            env.fsops.require_scan_allowed(str(victim))
+        with pytest.raises(RestoredBehindError):
+            env.export()
+        if self.intent is not None:
+            report = IntentJournal(env.engine, env.fsops, clock=env.ex.clock).resolve_open()
+            assert self.intent[0] in report.stale_from_backup  # never replayed
+            assert self.intent[1].exists()
+            assert not self.intent[1].with_name("renamed.cbz").exists()
+            self.intent = None
+
+    @precondition(lambda self: self.behind)
+    @rule()
+    def adopt_after_restore(self) -> None:
+        adopter = self.env.adopter()
+        adopter.adopt(confirm=adopter.preview().fingerprint)
+        self.behind = False
+        self.backup = None
+        self.exported_since_backup = 0
+        self.next_chapter = 1 + max(int(n) for n in self.env.chapters) if self.env.chapters else 2
+        self.next_chapter += 100  # numbers of chapters that exist on disk only: never reused
+
+    @invariant()
+    def disk_is_untouched_while_behind(self) -> None:  # I28
+        if self.behind:
+            assert self.env.files() == self.frozen_disk
+
+    @invariant()
+    def no_identity_in_an_exported_file(self) -> None:  # I33
+        with self.env.engine.connect() as connection:
+            instance_id = connection.execute(sa.text("SELECT instance_id FROM instance")).scalar()
+            ids = {
+                str(row[0]).lower()
+                for table in ("unit", "unit_variant", "edition", "work", "export_item")
+                for row in connection.execute(sa.text(f"SELECT id FROM {table}"))  # noqa: S608
+            }
+        needles = {str(instance_id).lower(), "shelfhold", "rayonnage", *ids}
+        for path in self.env.managed():
+            raw = path.read_bytes().lower()
+            for needle in needles:
+                assert needle.encode() not in raw, (path.name, needle)
+            with zipfile.ZipFile(path) as archive:
+                assert archive.comment == b""
+                assert all(info.comment == b"" and info.extra == b"" for info in archive.infolist())
+
+    @invariant()
+    def database_is_never_more_than_one_step_ahead(self) -> None:  # I39
+        if not self.behind:
+            database, sentinel = self.generations()
+            assert database == sentinel
+
+
+@pytest.mark.req("ENF-QUAL-006", "EF-INT-026", "EF-EXP-063", "EF-EXP-029")
+def test_i28_i33_i39_restore_history_keeps_the_disk_and_the_identity() -> None:
+    run_state_machine_as_test(
+        RestoreInvariants,
+        settings=settings(max_examples=10, stateful_step_count=10, deadline=None, derandomize=True),
+    )
+
+
+# --- I42: an upstream identity outlives the connected tool -----------------------------------
+
+
+@pytest.mark.req("ENF-QUAL-006", "EF-SRC-036", "EF-BIB-050")
+@settings(max_examples=12, deadline=None)
+@given(reinstalls=st.integers(1, 3), rotate_secret=st.booleans())
+def test_i42_remote_unit_id_is_stable_across_reinstalls(
+    reinstalls: int, rotate_secret: bool
+) -> None:
+    """The tool is recreated (every local integer changes) up to three times: the same upstream
+    identities come back, the catalog sees no new Variant, and the integers are only handles."""
+    from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
+    from tests.fakes.suwayomi import BASE_URL
+    from tests.unit.test_suwayomi_adapter import alpha, make
+
+    service, fetcher, server = make()
+    ref, units = alpha(service, fetcher)
+    with harness() as h:
+        edition = h.edition()
+        binding = h.binding(edition)
+
+        def feed(found: list[UnitInfo], step: int) -> list[IngestOutcome]:
+            return [
+                h.catalog.ingest(
+                    IncomingUnit(
+                        binding=binding,
+                        remote_unit_id=u.remote_unit_id,
+                        raw_number=u.number,
+                        seen_at=at(step),
+                        source_order=u.source_order,
+                    )
+                ).outcome
+                for u in found
+            ]
+
+        assert all(o is IngestOutcome.NEW_VARIANT for o in feed(units, 0))
+        stored = h.scalar("SELECT count(*) FROM unit_variant")
+        handles = {u.remote_unit_id: u.memo["fetch_handle"] for u in units}
+        for step in range(1, reinstalls + 1):
+            server.reinstall()
+            fresh = SuwayomiService(BASE_URL)  # a new client object: nothing carried over
+            ref_after, found = alpha(fresh, fetcher)
+            assert (ref_after.source_key, ref_after.remote_id) == (ref.source_key, ref.remote_id)
+            assert {u.remote_unit_id for u in found} == set(handles)
+            assert all(o is IngestOutcome.UNCHANGED for o in feed(found, step))
+            assert h.scalar("SELECT count(*) FROM unit_variant") == stored
+            for u in found:  # the local integer is a cache, never part of the identity
+                assert str(u.memo["fetch_handle"]) not in u.remote_unit_id.split(":", 2)[-1]
