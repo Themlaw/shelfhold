@@ -38,6 +38,7 @@ from shelfhold.acquisition.application.preference import TeamPreference, record_
 from shelfhold.acquisition.application.tickets import (
     MAX_ATTEMPTS,
     STALL_AFTER,
+    CycleAbandoned,
     DownloadTickets,
     Placement,
     Receiver,
@@ -223,6 +224,9 @@ class FollowCycle:
         try:
             await self._cycle(report)
             self._end_outage()
+        except CycleAbandoned as error:
+            log.warning("follow.cycle_abandoned", reason=str(error))
+            return report  # no failure, no outage, no retry: the next cycle starts again
         except Exception as error:
             failure_class = classify(error)
             if disposition_of(failure_class) is not Disposition.PAUSE:

@@ -34,7 +34,12 @@ from typing import Any, cast
 import sqlalchemy as sa
 import structlog
 
-from shelfhold.acquisition.public import FOLLOW_JOB_KIND, FollowCycle, bounded_receiver
+from shelfhold.acquisition.public import (
+    FOLLOW_JOB_KIND,
+    FollowCycle,
+    LeasedReceiver,
+    bounded_receiver,
+)
 from shelfhold.composition import (
     Composition,
     KeyringUnavailableError,
@@ -189,11 +194,14 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                 cycle = FollowCycle(
                     comp.engine, comp.bus, comp.clock, link.service, link.fetcher,
                     store=cast("PassthroughStore", _LazyStore(comp, lazy)),
-                    receive=bounded_receiver(
-                        link.guarded, staging_dir=comp.settings.data_dir / "tmp",
-                        max_bytes=comp.settings.received_cbz_max_bytes,
-                        authorize=getattr(link.fetcher, "authorize", None),  # the archive route
-                    ),  # asks for the same credential as the other routes of the service
+                    receive=LeasedReceiver(
+                        bounded_receiver(
+                            link.guarded, staging_dir=comp.settings.data_dir / "tmp",
+                            max_bytes=comp.settings.received_cbz_max_bytes,
+                            authorize=getattr(link.fetcher, "authorize", None),  # the archive
+                        ),  # asks for the same credential as the other routes of the service
+                        lazy.get,  # the lease first: nothing is downloaded that cannot be filed
+                    ),
                     place=place, slots=pools.slots,
                     tombstones=cast("Any", _LazyTombstones(comp)),
                 )  # fmt: skip

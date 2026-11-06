@@ -21,7 +21,9 @@ from shelfhold.acquisition.application.ranges import (
     RangeUnit,
 )
 from shelfhold.acquisition.application.tickets import (
+    CycleAbandoned,
     DownloadTickets,
+    LeasedReceiver,
     Placement,
     Receiver,
     TicketReport,
@@ -49,6 +51,7 @@ __all__ = [
     "Backfill",
     "BackfillConfirmationRequired",
     "BackfillEstimate",
+    "CycleAbandoned",
     "DetachReport",
     "DetachScope",
     "Detacher",
@@ -57,6 +60,7 @@ __all__ = [
     "FailureLedger",
     "FollowCycle",
     "FollowReport",
+    "LeasedReceiver",
     "Pause",
     "Placement",
     "RangeReport",
