@@ -129,65 +129,70 @@ class ExportEnv:
 @contextmanager
 def export_env(*, max_age_rating: int | None = 18, transport: str = "tree") -> Iterator[ExportEnv]:
     with lib_env() as lib:
-        target_id, shelf_id = new_ulid(), new_ulid()
-        destination_id, library_id = new_ulid(), new_ulid()
-        path_map = [{"local": str(lib.manga), "remote": "/manga", "mode": "rw"}]
-        with lib.engine.begin() as connection:
-            connection.execute(
-                sa.insert(platform.instance).values(instance_id=new_ulid(), jurisdiction="FR")
-            )
-            connection.execute(
-                sa.insert(export.export_target).values(
-                    id=target_id, kind="kavita", name="Kavita", path_map=path_map
-                )
-            )
-            connection.execute(
-                sa.insert(export.shelf).values(
-                    id=shelf_id, name="Adultes", phrase="Mes mangas", max_age_rating=max_age_rating
-                )
-            )
-            connection.execute(
-                sa.insert(export.shelf_destination).values(
-                    id=destination_id,
-                    shelf_id=shelf_id,
-                    target_id=target_id,
-                    transport=transport,
-                    egress="foyer",
-                    root_subpath=ROOT_SUBPATH,
-                    template=DEFAULT_TEMPLATE.dumps(),
-                    template_origin=f"default@{DEFAULT_TEMPLATE.version}",
-                    kavita_library_type="manga",
-                )
-            )
-            connection.execute(
-                sa.insert(export.remote_library).values(
-                    id=library_id, export_target_id=target_id, remote_ref="1"
-                )
-            )
-            connection.execute(
-                sa.insert(export.shelf_destination_remote_library).values(
-                    shelf_destination_id=destination_id,
-                    remote_library_id=library_id,
-                    export_target_id=target_id,
-                )
-            )
-        (lib.manga / ROOT_SUBPATH).mkdir()
-        (lib.data / "tmp").mkdir(exist_ok=True)  # the staging folder `ensure_volumes` creates
-        clock = ManualClock(NOW)
-        scans: list[str] = []
-        pipeline = ExportPipeline(
-            lib.engine,
-            lib.fsops,
-            locate=lib.locate,
-            data_dir=lib.data,
-            clock=clock,
-            parse=simulate_parse,
-            request_scan=scans.append,
-            parse_verified=True,
+        yield export_env_on(lib, max_age_rating=max_age_rating, transport=transport)
+
+
+def export_env_on(
+    lib: LibEnv, *, max_age_rating: int | None = 18, transport: str = "tree"
+) -> ExportEnv:
+    """The shelf, the destination and the pipeline over an existing synthetic library."""
+    target_id, shelf_id = new_ulid(), new_ulid()
+    destination_id, library_id = new_ulid(), new_ulid()
+    path_map = [{"local": str(lib.manga), "remote": "/manga", "mode": "rw"}]
+    with lib.engine.begin() as connection:
+        connection.execute(
+            sa.insert(platform.instance).values(instance_id=new_ulid(), jurisdiction="FR")
         )
-        yield ExportEnv(
-            lib, clock, target_id, shelf_id, destination_id, library_id, pipeline, scans
+        connection.execute(
+            sa.insert(export.export_target).values(
+                id=target_id, kind="kavita", name="Kavita", path_map=path_map
+            )
         )
+        connection.execute(
+            sa.insert(export.shelf).values(
+                id=shelf_id, name="Adultes", phrase="Mes mangas", max_age_rating=max_age_rating
+            )
+        )
+        connection.execute(
+            sa.insert(export.shelf_destination).values(
+                id=destination_id,
+                shelf_id=shelf_id,
+                target_id=target_id,
+                transport=transport,
+                egress="foyer",
+                root_subpath=ROOT_SUBPATH,
+                template=DEFAULT_TEMPLATE.dumps(),
+                template_origin=f"default@{DEFAULT_TEMPLATE.version}",
+                kavita_library_type="manga",
+            )
+        )
+        connection.execute(
+            sa.insert(export.remote_library).values(
+                id=library_id, export_target_id=target_id, remote_ref="1"
+            )
+        )
+        connection.execute(
+            sa.insert(export.shelf_destination_remote_library).values(
+                shelf_destination_id=destination_id,
+                remote_library_id=library_id,
+                export_target_id=target_id,
+            )
+        )
+    (lib.manga / ROOT_SUBPATH).mkdir()
+    (lib.data / "tmp").mkdir(exist_ok=True)  # the staging folder `ensure_volumes` creates
+    clock = ManualClock(NOW)
+    scans: list[str] = []
+    pipeline = ExportPipeline(
+        lib.engine,
+        lib.fsops,
+        locate=lib.locate,
+        data_dir=lib.data,
+        clock=clock,
+        parse=simulate_parse,
+        request_scan=scans.append,
+        parse_verified=True,
+    )
+    return ExportEnv(lib, clock, target_id, shelf_id, destination_id, library_id, pipeline, scans)
 
 
 def add_second_shelf(env: ExportEnv, *, max_age_rating: int | None = 99) -> tuple[str, str]:
@@ -251,6 +256,7 @@ __all__ = [
     "Series",
     "add_second_shelf",
     "export_env",
+    "export_env_on",
     "sha",
     "state_of",
 ]
