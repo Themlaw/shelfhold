@@ -97,3 +97,29 @@ def test_a_new_chapter_is_looked_at_even_when_another_one_is_blocked(
         assert [op.kind for op in report.ops] == ["write"]
         assert len(env.exported_files()) == 2  # the foreign file, left alone, and the new chapter
         assert taken.read_bytes() == b"a file somebody else put there"
+
+
+@pytest.mark.req("ENF-OPS-014")
+def test_a_blocked_name_that_depends_on_kavita_is_not_remembered(
+    settings: Settings, tmp_path: Path
+) -> None:
+    """Only "the destination is taken" is learned from the disk: a name Kavita misreads can
+    change with Kavita alone, so the next pass asks again."""
+    from dataclasses import replace
+
+    from shelfhold.export.application import blocked_memo
+    from tests.fakes.kavita.plugin_parse import simulate_parse
+
+    def misread(name: str) -> object:
+        parsed = simulate_parse(name)
+        return replace(parsed, min_chapter=99.0, max_chapter=99.0)
+
+    with seeded(settings, tmp_path) as env:
+        series = env.new_series()
+        env.add_chapter(series, "2")
+        pipeline, _reconciler, _fsops = rj.build_pipeline(env.inst.comp, env.scans)
+        pipeline.bind_parse(misread, verified=True)  # type: ignore[arg-type]
+        assert pipeline.run(env.destination_id, job_id="job").ops == ()
+        preview = pipeline.preview(env.destination_id)
+        assert [b.code for b in preview.blocked] == ["export.name_misread_number"]
+        assert not blocked_memo.known(env.inst.engine, env.destination_id, preview.base_version)

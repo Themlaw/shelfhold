@@ -341,7 +341,10 @@ class ExportPipeline:
         ctx, loaded, plan = self._compute(destination_id)
         self._heal_mirror(ctx)
         if not plan.ops:
-            blocked_memo.remember(self._engine, destination_id, loaded.version)
+            # only what the disk alone decides: a name Kavita misreads depends on Kavita, which
+            # can change its mind with no change of ours
+            if plan.blocked and all(b.code == "export.destination_occupied" for b in plan.blocked):
+                blocked_memo.remember(self._engine, destination_id, loaded.version)
             return ApplyReport(None, ())
         blocked_memo.forget(self._engine, destination_id)
         plan_id = self._store(ctx, loaded, plan)
