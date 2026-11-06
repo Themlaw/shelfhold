@@ -42,13 +42,21 @@ class TombstoneKeyringExit:
         with self._engine.connect() as connection:
             known = set(connection.execute(sa.select(kid.c.kid)).scalars())
             waived = set(connection.execute(sa.select(lost.c.kid)).scalars())
+        owed = coherence.tombstone_pending_root
+        with self._engine.connect() as connection:
+            owing = sorted(set(connection.execute(sa.select(owed.c.root_id)).scalars()))
         return [
             WaitingItem("tombstone_key_unknown", "tombstones", k, "kid not in the keyring")
             for k in sorted(known - waived)
             if keyring.find(k) is None
+        ] + [
+            WaitingItem("tombstone_lines_owed", "tombstones", root_id, "lines owed to a root")
+            for root_id in owing
         ]
 
-    def accept_lost_keyring(self, *, confirmation: str, principal: Principal) -> list[str]:
+    def _service(self) -> tuple[TombstoneService, list[TombstoneRoot]]:
+        """The service over the mounted roots. A root counts as mounted when its sentinel can
+        be judged, `restored_behind` included (the exits below are how that state is left)."""
         keyring = diagnostics.boot_check(self._settings, create=False, announce=False)
         with self._engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
@@ -56,10 +64,32 @@ class TombstoneKeyringExit:
         fsops = open_fsops(loaded)
         service = TombstoneService(self._engine, keyring, fsops, operating_bus(self._clock))
         roots = [
-            TombstoneRoot(r.root_id, r.path, mounted=fsops.root_state(r.path) is RootState.OK)
+            TombstoneRoot(
+                r.root_id, r.path,
+                mounted=fsops.root_state(r.path) in (RootState.OK, RootState.RESTORED_BEHIND),
+                predecessor_root_ids=r.predecessors,
+            )
             for r in loaded.roots
             if r.mode is PathMode.RW
-        ]
+        ]  # fmt: skip
+        return service, roots
+
+    def set_aside_journal(
+        self, *, principal: Principal, root_id: str | None = None
+    ) -> dict[str, str]:
+        service, roots = self._service()
+        return service.set_aside_journal(
+            roots, principal=principal, now=self._clock.now(), root_id=root_id
+        )
+
+    def flush_owed(self) -> list[str]:
+        service, roots = self._service()
+        for root in roots:
+            service.flush_pending(root)
+        return service.owed_roots()
+
+    def accept_lost_keyring(self, *, confirmation: str, principal: Principal) -> list[str]:
+        service, roots = self._service()
         return service.accept_lost_keyring(
             roots, confirmation=confirmation, principal=principal, now=self._clock.now()
         )

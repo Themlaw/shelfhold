@@ -349,6 +349,19 @@ class OpsServices:
             raise ExitUnavailableError("the tombstone service is not connected")
         return self._keyring.accept_lost_keyring(confirmation=confirmation, principal=principal)
 
+    def tombstone_set_aside_journal(
+        self, *, principal: Principal, root_id: str | None = None
+    ) -> dict[str, str]:
+        if self._keyring is None:
+            raise ExitUnavailableError("the tombstone service is not connected")
+        return self._keyring.set_aside_journal(principal=principal, root_id=root_id)
+
+    def tombstone_flush(self) -> list[str]:
+        """Write the lines the mounted roots owe; the roots that still owe some."""
+        if self._keyring is None:
+            raise ExitUnavailableError("the tombstone service is not connected")
+        return self._keyring.flush_owed()
+
     @property
     def library(self) -> LibraryOps:
         """Pairing, repatriation, detachment, purge and the write probe (L30, L31, L34, L37)."""

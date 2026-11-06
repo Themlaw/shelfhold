@@ -149,6 +149,15 @@ def _accept_lost_keyring(ops: OpsServices, by: Principal, p: Params) -> object:
     return {"waived": waived}
 
 
+def _set_aside_journal(ops: OpsServices, by: Principal, p: Params) -> object:
+    root = _text(p, "root_id", required=False) or None
+    return {"aside": ops.tombstone_set_aside_journal(principal=by, root_id=root)}
+
+
+def _tombstone_flush(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return {"still_owed": ops.tombstone_flush()}
+
+
 def _set_follow_from(ops: OpsServices, _by: Principal, p: Params) -> object:
     ops.adopt_set_follow_from(
         destination_id=_dest(p), series=_text(p, "series"),
@@ -261,6 +270,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.edition_set_lang": (_edition_set_lang, None),
     "ops.restore_adopt": (_restore_adopt, "reconcile.confirm_deletion"),
     "ops.tombstone_accept_lost_keyring": (_accept_lost_keyring, "tombstone.accept_lost_keyring"),
+    "ops.tombstone_set_aside_journal": (_set_aside_journal, "tombstone.set_aside_journal"),
+    "ops.tombstone_flush": (_tombstone_flush, None),
     "ops.adopt_set_follow_from": (_set_follow_from, None),
     "ops.adopt_confirm_migration": (_confirm_migration, None),
     "ops.pair_propose": (_pair_propose, None),

@@ -198,8 +198,13 @@ class InstanceRuntime:
             self.settings.data_dir, engine=engine, clock=clock, seed=instance_id or "unregistered"
         )
         watcher = DiskWatcher(guard, self.pools, engine=engine, bus=bus)
+
+        def disk_check() -> None:
+            watcher.check()
+            composition.flush_owed_tombstones()  # a root that came back pays what it owes
+
         register_ops_jobs(
-            self.pools, self.settings, disk_check=watcher.check, audit=access_audit(composition)
+            self.pools, self.settings, disk_check=disk_check, audit=access_audit(composition)
         )
         register_runtime_jobs(self.pools, composition)
         boot_jobs(

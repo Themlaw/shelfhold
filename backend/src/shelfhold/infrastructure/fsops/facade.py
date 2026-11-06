@@ -73,6 +73,7 @@ from shelfhold.infrastructure.fsops.tombstone_journal import (
     append_line,
     read_journal,
     sentinel_kids,
+    set_aside,
 )
 from shelfhold.infrastructure.fsops.writer import (
     HashingReader,
@@ -608,6 +609,22 @@ class Fsops:
         behind or foreign (I36); what a line means is decided by its authentication."""
         with self._root(self._host_root(root_path).root_path) as root:
             return read_journal(root, max_bytes)
+
+    def set_aside_tombstone_journal(self, root_path: str, stamp: str) -> str | None:
+        """Rename an unreadable journal to `tombstones.aside-<stamp>` (nothing is deleted). Allowed
+        while the instance is `restored_behind` (it is how a restore leaves that state when a
+        journal is damaged), but only for this instance's own root. The new name, or None."""
+        if self._stop_gate is not None:
+            self._stop_gate()
+        key = self._host_root(root_path).root_path
+        with self._root(key) as root:
+            current = read_sentinel(root)
+            expected = self._expected[key]
+            if current is None:
+                raise RootBlockedError(key, RootState.MISSING)
+            if (current.root_id, current.instance_id) != (expected.root_id, expected.instance_id):
+                raise RootBlockedError(key, RootState.MISMATCH)
+            return set_aside(root, stamp)
 
     def tombstone_kids(self, root_path: str) -> dict[str, dict[str, str]]:
         """The registry entries of the root's sentinel, kid -> tags (unverified: the caller

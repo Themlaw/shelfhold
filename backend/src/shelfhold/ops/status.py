@@ -38,6 +38,7 @@ _TEMPLATES = {
     "language_unknown": "shelfhold edition set-lang {subject} <lang>",
     "restored_behind": "shelfhold reconcile --adopt-after-restore",
     "tombstone_key_unknown": "shelfhold tombstone accept-lost-keyring",
+    "tombstone_lines_owed": "shelfhold tombstone flush",
     "adoption_refused": "shelfhold adopt --confirm-migration",
     "coverage_unknown": "shelfhold adopt set-follow-from {subject} <chapter>",
     # L42: series of the Suwayomi library the follow cycle did not file (not states of the

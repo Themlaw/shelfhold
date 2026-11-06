@@ -84,6 +84,7 @@ INERT_REASONS: Final = frozenset(
 # `content_tombstone.reason`: a closed list, never free text (it could carry a title, I36).
 REASONS: Final = frozenset({"purge_unit", "purge_work", "replayed"})
 _LOST_KEYRING_ACTION = RESERVED_ACTIONS["tombstone.accept_lost_keyring"]
+_SET_ASIDE_ACTION = RESERVED_ACTIONS["tombstone.set_aside_journal"]
 
 _tomb, _kid, _lost = (
     coherence.content_tombstone,
@@ -109,6 +110,8 @@ class JournalDisk(Protocol):
     def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None: ...
 
     def read_tombstone_journal(self, root_path: str, *, max_bytes: int) -> bytes | None: ...
+
+    def set_aside_tombstone_journal(self, root_path: str, stamp: str) -> str | None: ...
 
     def tombstone_kids(self, root_path: str) -> dict[str, dict[str, str]]: ...
 
@@ -201,6 +204,10 @@ class TombstoneService:
     def use_keyring(self, keyring: Keyring) -> None:
         """After `secrets import` or a rotation; the caller replays next."""
         self._keyring = keyring
+
+    def use_disk(self, disk: JournalDisk) -> None:
+        """The `Fsops` of the moment (it carries the restore freeze and the gates of this call)."""
+        self._disk = disk
 
     @property
     def report(self) -> ReplayReport:
@@ -429,7 +436,9 @@ class TombstoneService:
         heal.update((kid, 1) for kid in sentinel - db_kids if self._keyring.find(kid) is not None)
         try:
             raw = self._disk.read_tombstone_journal(root.path, max_bytes=MAX_JOURNAL_BYTES)
-            journal = None if raw is None else parse_journal(raw)
+            # an empty file is a journal that was created and never got its header (a crash in
+            # between): as good as none, not a damaged one
+            journal = None if not raw else parse_journal(raw)
         except (OSError, JournalFormatError):
             report.unreadable_roots.add(root.root_id)  # fail closed on this root
             return
@@ -571,6 +580,76 @@ class TombstoneService:
         return blocked
 
     # -- the "lost keyring" waiver (R62) ----------------------------------------------------
+
+    def owed_roots(self) -> list[str]:
+        """The roots that still owe tombstone lines (a purge ran while they were away)."""
+        with self._engine.connect() as connection:
+            return sorted(set(connection.execute(sa.select(_pending.c.root_id)).scalars()))
+
+    def set_aside_journal(
+        self,
+        roots: Sequence[TombstoneRoot],
+        *,
+        principal: Principal,
+        now: datetime,
+        root_id: str | None = None,
+    ) -> dict[str, str]:
+        """Reserved action: a journal that cannot be read (a truncated header, a damaged file)
+        is put aside under a time-stamped name, never deleted, and the root's journal is written
+        again from the database (every row sealed for that root) and the sentinels. This is the
+        way out of a root that `journal_unreadable` blocks. Returns `root id -> aside name`."""
+        verdict = authorize_reserved(principal, _SET_ASIDE_ACTION, now=now)
+        if not isinstance(verdict, Allowed):
+            raise LostKeyringRefusedError(verdict)
+        self.replay(roots)
+        stamp = now.strftime("%Y%m%dT%H%M%SZ")
+        done: dict[str, str] = {}
+        for root in roots:
+            if not root.mounted or root.root_id not in self._report.unreadable_roots:
+                continue
+            if root_id is not None and root.root_id != root_id:
+                continue
+            aside = self._disk.set_aside_tombstone_journal(root.path, stamp)
+            if aside is None:
+                continue
+            self._owe_every_line(root.root_id)
+            done[root.root_id] = aside
+            with self._engine.begin() as connection:
+                connection.execute(
+                    sa.insert(identity.audit).values(
+                        id=new_ulid(),
+                        actor_id=principal.actor_id,
+                        action="tombstone.set_aside_journal",
+                        target=f"root:{root.root_id}",
+                        session_id=principal.session_id,
+                        auth_time=principal.auth_time,
+                    )
+                )
+        self.replay(roots)  # the lines owed are written when the root accepts writes
+        return done
+
+    def _owe_every_line(self, root_id: str) -> None:
+        """Seal every row of the table for this root and keep it as a line owed to it. A row
+        whose key is not in the keyring cannot be sealed again: it stays in the set-aside file."""
+        with self._engine.begin() as connection:
+            rows = connection.execute(
+                sa.select(
+                    _tomb.c.scope, _tomb.c.seq, _tomb.c.kid, _tomb.c.nonce, _tomb.c.ct
+                ).order_by(_tomb.c.seq)
+            ).all()
+            for scope, seq, kid, nonce, ct in rows:
+                if self._keyring.find(kid) is None:
+                    continue
+                try:
+                    values, cited = self._open(scope, kid, bytes(nonce), bytes(ct), DB_ROOT, seq)
+                except (EnvelopeError, TombstoneValueError):
+                    continue
+                line = self._line(encode_plaintext(values, cited), scope, root_id, seq)
+                connection.execute(
+                    sa.insert(_pending)
+                    .values(root_id=root_id, seq=seq, line=line.decode("ascii"))
+                    .prefix_with("OR IGNORE")
+                )
 
     def accept_lost_keyring(
         self,

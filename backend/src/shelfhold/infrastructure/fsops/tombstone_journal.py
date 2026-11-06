@@ -65,6 +65,17 @@ def read_journal(root: ConfinedRoot, max_bytes: int) -> bytes | None:
         os.close(fd)
 
 
+def set_aside(root: ConfinedRoot, stamp: str) -> str | None:
+    """Put the journal aside under a time-stamped name, never deleting it (its lines stay for a
+    human or a later version). The new name is returned; None when there is no journal. A name
+    already taken is an error (`FileExistsError`): nothing is replaced."""
+    if root.lstat_kind(TOMBSTONE_JOURNAL) is None:
+        return None
+    aside = f"{TOMBSTONE_JOURNAL}.aside-{stamp}"
+    root.rename(TOMBSTONE_JOURNAL, aside, replace=False)
+    return aside
+
+
 def sentinel_kids(doc: SentinelDocument | None) -> dict[str, dict[str, str]]:
     """The entries of the sentinel's registry: kid -> {signer kid: tag}. Whether a tag verifies
     is the caller's business (it holds the keys); a malformed entry or field is skipped, and an

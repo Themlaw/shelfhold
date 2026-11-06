@@ -178,12 +178,31 @@ class Composition:
                 self._tombstones = (signature, service)
                 self._replay(service, fsops, loaded)
             service = self._tombstones[1]
+        service.use_disk(fsops)
+        self._flush_owed(service, fsops, loaded)
         fsops.enforce_tombstone_flush(
             lambda path: any(
                 r.path == path and service.has_pending(r.root_id) for r in loaded.roots
             )
         )
         return service
+
+    @staticmethod
+    def _flush_owed(service: TombstoneService, fsops: Fsops, loaded: LoadedRoots) -> None:
+        """A root that was away during a purge owes lines to its journal; once it is back they
+        are written at the next look, not at the next restart (fsops refuses every other write
+        to it until then)."""
+        for r in loaded.roots:
+            if r.mode is PathMode.RW and service.has_pending(r.root_id):
+                mounted = fsops.root_state(r.path) is RootState.OK
+                service.flush_pending(TombstoneRoot(r.root_id, r.path, mounted, r.predecessors))
+
+    def flush_owed_tombstones(self) -> None:
+        """The periodic look (`ops.disk_check`): pay the lines owed to the roots that came back."""
+        try:
+            self.read_context()
+        except (NoLibraryError, KeyringUnavailableError):
+            return  # nothing registered yet, or no keyring: no line can be owed
 
     @staticmethod
     def _replay(service: TombstoneService, fsops: Fsops, loaded: LoadedRoots) -> None:
