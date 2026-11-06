@@ -321,10 +321,9 @@ class FollowCycle:
         report.stale = len(self.check_freshness())
 
     def _is_ranged(self) -> bool:
-        caps = self._service.manifest.capabilities
         return (
             self._keep_range is not None
-            and Capability.RANGED_CONTENT in caps
+            and Capability.RANGED_CONTENT in self._service.manifest.capabilities
             and ConnectedCapability.SERVER_QUEUE in self._service.connected
         )
 

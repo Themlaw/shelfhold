@@ -104,15 +104,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l19"
-reason = "Follow from Shelfhold (CLI, API): M1a follows through the cycle job only."
-until = "M1b L19"
-symbols = [
-  "shelfhold.acquisition.application.follow:follow_dedupe_key",
-  "shelfhold.acquisition.application.follow:submit_follow",
-]
-
-[[allow]]
 category = "unwired-m1b-l20"
 reason = "Suwayomi account secret opened by the SuwayomiJwt AuthFlow and the service account (L20)."
 until = "M1b L20"
@@ -172,7 +163,6 @@ symbols = [
   "shelfhold.catalog.application.service:CatalogService.units_beyond",
   "shelfhold.catalog.domain.dates:PartialDate.coarsened_to",
   "shelfhold.catalog.domain.dates:comicinfo_date_fields",
-  "shelfhold.catalog.domain.dates:from_upload_timestamp",
   "shelfhold.catalog.domain.identity:Discriminant",
   "shelfhold.catalog.domain.identity:TextVersionRef",
   "shelfhold.catalog.domain.identity:translation_discriminant",

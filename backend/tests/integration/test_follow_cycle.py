@@ -5,7 +5,6 @@ Everything runs against the simulated Suwayomi (`tests/fakes/suwayomi`) and a re
 """
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -306,22 +305,12 @@ def test_minimal_connected_service_passes_follow_cycle() -> None:
 
 
 @pytest.mark.req("EF-SRC-009")
-def test_one_follow_job_per_service_and_one_open_ticket_per_variant(tmp_path: Path) -> None:
+def test_one_open_ticket_per_variant() -> None:
     from shelfhold.acquisition.public import (
-        FOLLOW_JOB_KIND,
         DownloadTickets,
-        follow_dedupe_key,
-        submit_follow,
     )
-    from shelfhold.jobs.public import JobPools
 
-    assert follow_dedupe_key("suwayomi") == "follow.cycle:suwayomi"
     with follow_bench() as bench:
-        pools = JobPools(tmp_path, engine=bench.lib.engine, clock=bench.clock, seed="s")
-        pools.register(FOLLOW_JOB_KIND, pool="io", handler=lambda context: None)
-        first, second = submit_follow(pools, "suwayomi"), submit_follow(pools, "suwayomi")
-        assert first.created and not second.created and first.job_id == second.job_id
-
         bench.run()
         bench.add_chapter(3)
         bench.run()
