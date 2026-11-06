@@ -3,14 +3,19 @@ open: the pipeline is cut short in the file-system adapter right after the file 
 a SIGKILL would leave the journal. The commands are the real ones; so are the routes."""
 
 import re
+import threading
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
 
+import shelfhold.runtime_jobs as rj
 from shelfhold.config import Settings
+from shelfhold.export.application.reconcile import FOREIGN_WRITER
 from shelfhold.identity.public import RESERVED_ACTIONS, Effect
+from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import coherence, export, identity
 from tests.auth_env import run_cli
 from tests.l50_env import Seeded, Series, seeded
@@ -210,3 +215,110 @@ def test_the_boot_settles_what_it_can_so_the_listing_is_empty(
     with live(monkeypatch, settings, tmp_path, seed=cut_short) as live_app:
         assert intents(live_app.env)[state["intent"].id] == "done"  # settled by the boot
         assert live_app.client.get("/api/v1/intents").json() == {"items": []}
+
+
+def test_resolve_is_refused_while_a_job_is_writing_there(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """(review) The intent of a write in progress is not an orphan: the job holds the Work and the
+    series folder, so `resolve` (replay or abandon) is refused with nothing changed, and the job
+    ends well instead of failing under the feet of an admin."""
+    placed, go = threading.Event(), threading.Event()
+    original = Fsops.write_atomic
+
+    def slow(self: Fsops, local: str, *args: Any, **kwargs: Any) -> Any:
+        done = original(self, local, *args, **kwargs)
+        if local.endswith(".cbz") and not placed.is_set():
+            placed.set()  # the file is there, its bookkeeping is not: the locks are held
+            assert go.wait(30)
+        return done
+
+    with live(monkeypatch, settings, tmp_path) as api:
+        monkeypatch.setattr(Fsops, "write_atomic", slow)
+        plan = api.preview()
+        job_id = api.apply(plan.json()["plan_id"], plan.headers["etag"]).json()["job_id"]
+        try:
+            assert placed.wait(30)
+            intent = the_open_intent(api.env)
+            before = (intents(api.env), [r.state for r in api.rows(export.export_record)])
+            audit = len(api.rows(identity.audit))
+            capsys.readouterr()
+
+            assert run_cli(monkeypatch, settings, "intents", "resolve", intent.id) == 3
+            assert "ops.still_waiting" in capsys.readouterr().err
+            assert (
+                run_cli(
+                    monkeypatch, settings, "intents", "resolve", intent.id, "--abandon",
+                    "--confirm", intent.id,
+                )
+                == 3
+            )  # fmt: skip
+            assert (intents(api.env), [r.state for r in api.rows(export.export_record)]) == before
+            resolved = [r for r in api.rows(identity.audit) if r.action == "intents.resolve"]
+            assert all(r.target != f"intent:{intent.id}" for r in resolved)  # nothing was settled
+            assert len(api.rows(identity.audit)) >= audit  # (only attempts may have been logged)
+        finally:
+            go.set()
+        job = api.wait_job(job_id)
+        assert job["status"] == "succeeded", job
+        assert {r.state for r in api.rows(coherence.fs_intent)} == {"done"}
+        assert {r.state for r in api.rows(export.export_record)} == {"written"}
+        assert len(api.env.exported_files()) == 2
+
+
+def reconciled(env: Seeded) -> None:
+    _pipeline, reconciler, _fsops = rj.build_pipeline(env.inst.comp, env.scans)
+    reconciler.reconcile(env.destination_id)
+
+
+def test_abandon_with_the_right_file_recognises_it_and_the_unit_is_not_orphaned(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """(review) Giving up an intent must not leave its reserved line `planned` forever."""
+    with seeded(settings, tmp_path) as env:
+        series = env.new_series()
+        for number in ("1", "2"):
+            env.add_chapter(series, number)
+        intent = kill_the_pipeline(env, monkeypatch)
+        capsys.readouterr()
+        args = ("intents", "resolve", intent.id, "--abandon", "--confirm", intent.id)
+        assert run_cli(monkeypatch, settings, *args) == 0
+
+        states = [r.state for r in env.rows(export.export_record)]
+        assert states == ["written"]  # the file at the target was ours: recognised
+        env.export()
+        assert sorted(r.state for r in env.rows(export.export_record)) == ["written", "written"]
+        assert len(env.exported_files()) == 2
+        reconciled(env)
+        assert all(r.paused_reason is None for r in env.rows(export.export_series))
+
+
+def test_abandon_with_a_foreign_file_is_reported_as_a_foreign_writer(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """(review) The file at the target is not ours: the line is not silently kept `planned`, the
+    reconciliation sees it and pauses the series, and nothing is ever written over it."""
+    with seeded(settings, tmp_path) as env:
+        series = env.new_series()
+        for number in ("1", "2"):
+            env.add_chapter(series, number)
+        intent = kill_the_pipeline(env, monkeypatch)
+        foreign = a_foreign_writer_replaced_it(intent)
+        capsys.readouterr()
+        args = ("intents", "resolve", intent.id, "--abandon", "--confirm", intent.id)
+        assert run_cli(monkeypatch, settings, *args) == 0
+
+        reconciled(env)
+        assert [r.paused_reason for r in env.rows(export.export_series)] == [FOREIGN_WRITER]
+        env.export()  # a paused series receives nothing more
+        assert Path(str(intent.dst_path)).read_bytes() == foreign
+        assert len(env.exported_files()) == 1
