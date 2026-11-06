@@ -1,7 +1,8 @@
 # Documentation d'administration
 
 Pages pour qui installe et fait vivre une instance Shelfhold. Les clés de configuration sont dans
-[`docs/configuration.md`](../configuration.md), les décisions d'exécution dans
+[`docs/configuration.md`](../configuration.md) (explications) et dans
+[`docs/reference/config.md`](../reference/config.md) (référence générée du code), les décisions d'exécution dans
 [`docs/decisions/M1a.md`](../decisions/M1a.md).
 
 Une commande marquée **[M1b]** n'existe pas encore en 0.2 : la page dit ce qu'on fait d'ici là.

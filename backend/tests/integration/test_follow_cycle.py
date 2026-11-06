@@ -527,3 +527,37 @@ def test_root_away_means_no_download_and_no_ticket_abandoned() -> None:
         assert bench.rows("SELECT * FROM source_failure") == []
         assert bench.events("source.downloads_dropped") == []
         assert bench.events("source.broken") == []
+
+
+@pytest.mark.req("EF-SRC-027", "EF-BIB-031")
+def test_irreplaceable_reread_after_series_removed() -> None:
+    """The flag is computed from the database each time it is read: false while the source lists
+    the Unit, true once the series left the library, false again when it is back."""
+    from shelfhold.library.public import irreplaceability
+
+    with follow_bench() as bench:
+        bench.run()
+        bench.add_chapter(3)
+        for _ in range(4):
+            bench.run()  # the chapter is filed
+        unit_ids = [
+            r["unit_id"]
+            for r in bench.rows(
+                "SELECT DISTINCT unit_id FROM unit_variant WHERE source_binding_id = :b",
+                b=bench.binding_id,
+            )
+        ]
+        assert unit_ids
+
+        def flags() -> set[bool]:
+            with bench.lib.engine.connect() as connection:
+                return {irreplaceability(connection, u).irreplaceable for u in unit_ids}
+
+        assert flags() == {False}
+        bench.alpha()["inLibrary"] = False
+        bench.run()
+        assert bench.run().removed == 1
+        assert flags() == {True}  # reread from the rows, nothing was stored
+        bench.alpha()["inLibrary"] = True
+        bench.run()
+        assert flags() == {False}

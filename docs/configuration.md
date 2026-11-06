@@ -1,5 +1,7 @@
 # Configuration
 
+La liste complète, avec types et bornes, est générée du code : [`docs/reference/config.md`](reference/config.md).
+
 Précédence (ENF-OPS-004) : variable d'environnement, puis `config.toml` (dans `/data`), puis
 base de données, puis valeur par défaut. Un champ défini par l'environnement est en lecture seule
 (`shelfhold config show`). Chaque variable accepte un suffixe `_FILE` qui en lit la valeur dans un

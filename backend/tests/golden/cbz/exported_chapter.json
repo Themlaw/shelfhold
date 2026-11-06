@@ -1,0 +1,43 @@
+{
+  "archive_comment": "",
+  "comicinfo": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<ComicInfo>\n  <Series>Dr Stone</Series>\n  <SeriesSort>dr stone</SeriesSort>\n  <Number>2</Number>\n  <LanguageISO>fr</LanguageISO>\n  <AgeRating>Adults Only 18+</AgeRating>\n</ComicInfo>\n",
+  "entries": [
+    {
+      "comment": "",
+      "compress_type": 0,
+      "crc": "bd247c3a",
+      "create_system": 3,
+      "date_time": [
+        1980,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      "external_attr": 27525120,
+      "extra": "",
+      "file_size": 25,
+      "name": "2-001.png"
+    },
+    {
+      "comment": "",
+      "compress_type": 8,
+      "crc": "cd996c02",
+      "create_system": 3,
+      "date_time": [
+        1980,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      "external_attr": 27525120,
+      "extra": "",
+      "file_size": 222,
+      "name": "ComicInfo.xml"
+    }
+  ],
+  "sha256": "sha256:29954529229eb18adb5687948d8596aee5d77eaa9ffcc0f14d31e2ef8f0c36a4"
+}
