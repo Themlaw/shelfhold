@@ -165,9 +165,17 @@ def test_the_probe_emitter_never_deletes_a_folder(env: Env) -> None:
 
 @pytest.mark.req("EF-USR-024")
 def test_the_probe_emitter_stays_out_of_the_reserved_area(env: Env) -> None:
-    inside_reserved = _touch(env.library, f".shelfhold/staging/{PROBE}")
-    with pytest.raises(EmitterPerimeterError):
-        env.fsops.system_unlink("probe_file_cleanup", str(inside_reserved))
+    """Only the staging folder of a root, directly, is open to it (the capability probe works
+    there, EF-EXP-059); the rest of `.shelfhold/` is not."""
+    for rel in (f".shelfhold/recycle/{PROBE}", f".shelfhold/manifest/{PROBE}",
+                f".shelfhold/staging/deeper/{PROBE}"):  # fmt: skip
+        inside_reserved = _touch(env.library, rel)
+        with pytest.raises(EmitterPerimeterError):
+            env.fsops.system_unlink("probe_file_cleanup", str(inside_reserved))
+        assert inside_reserved.exists()
+    in_staging = _touch(env.library, f".shelfhold/staging/{PROBE}")
+    env.fsops.system_unlink("probe_file_cleanup", str(in_staging))
+    assert not in_staging.exists()
 
 
 # --- conditions (review blocker 1) -------------------------------------------------------------

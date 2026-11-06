@@ -251,6 +251,7 @@ normalize_applied = "{applied} ligne(s) migrée(s) vers {target}. Les autres son
 normalize_preview_stale = "Ce n'est plus l'aperçu que vous avez vu : relancez sans --confirm, relisez, puis confirmez avec la nouvelle empreinte. Rien n'a été modifié."
 
 [local_cli]
+restored_behind = "restored_behind : lancez « shelfhold reconcile --adopt-after-restore » ; rien d'autre n'écrit tant que la base est plus ancienne que les fichiers."
 param_invalid = "Paramètre « {name} » invalide : {expected} attendu."
 unknown_method = "Méthode inconnue : {method}."
 not_allowed = "Action refusée à ce canal."

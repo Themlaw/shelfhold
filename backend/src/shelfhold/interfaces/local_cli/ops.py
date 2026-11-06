@@ -357,7 +357,7 @@ def run_ops_method(ops: OpsServices, principal: Principal, method: str, params: 
         if method not in READS_AND_RESTORE_EXITS and ops.restored_behind():
             raise CodedRefusal(
                 "instance.restored_behind",
-                "restored_behind: run `shelfhold reconcile --adopt-after-restore`",
+                t("local_cli.restored_behind"),
             )
         return implementation(ops, principal, params)
     except (OpsError, HeadlessError, BindingError) as error:
