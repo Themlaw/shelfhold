@@ -96,36 +96,48 @@ SIMULATED = frozenset(
     {"kavita_unreachable", "suwayomi_unreachable", "disk_low", "second_instance",
      "series_dir_not_writable", "mount_missing"}
 )  # fmt: skip
+K = "tests/unit/test_kavita_client.py"
+AUDIT = "tests/integration/test_kavita_reinstall_audit.py"
+FOREIGN = "tests/integration/test_foreign_writer_reconcile.py"
+SUWAYOMI = "tests/unit/test_suwayomi_adapter.py"
+FOLLOW = "tests/integration/test_follow_cycle.py"
+OPS_EVENTS = "tests/integration/test_l52_ops_events.py"
+KEYRING = "tests/property/test_tombstone_keyring.py"
+# The M1a rows that `tests/faults` does not replay: the pytest node id of the test that does,
+# which names the event of the row (a test checks that the node exists and names it).
 _REAL_TESTS = {
-    "suwayomi_auth_refused": "tests/integration/test_follow_cycle.py::test_suwayomi_401_pauses_service_auth_expired_no_failure_counted",
-    "suwayomi_schema_changed": "tests/integration/test_follow_cycle.py::test_suwayomi_schema_mismatch_pauses_without_counting",
-    "kavita_reinstalled": "tests/integration/test_kavita_reinstall_audit.py::test_kavita_reinstall_emits_instance_changed_and_pauses",
-    "foreign_writer": "tests/integration/test_foreign_writer_reconcile.py",
-    "root_missing": "tests/unit/test_fsops_roots.py",
-    "restored_behind": "tests/integration/test_migrate_open_intents.py",
-    "kavita_child_exposure": "tests/integration/test_kavita_reinstall_audit.py",
-    "kavita_key_revoked": "tests/unit/test_kavita_client.py",
-    "kavita_demoted": "tests/unit/test_kavita_client.py",
-    "kavita_route_missing": "tests/unit/test_kavita_client.py",
-    "kavita_version_unsupported": "tests/unit/test_kavita_client.py",
-    "kavita_not_indexed": "tests/integration/test_export_pipeline.py",
-    "kavita_key_expiring": "tests/unit/test_kavita_client.py",
-    "job_dead_lettered": "tests/integration/test_jobs_review.py",
-    "tombstone_root_pending": "tests/integration/test_restore_epoch.py",
-    "tombstone_sentinel_forged": "tests/property/test_tombstone_keyring.py",
-    "abrupt_stop": "tests/integration/test_migrate_open_intents.py",
-    "dns_blocked": "e2e/tests/test_m1a_journey.py (L40: nightly) and tests/unit/test_fetcher_guard.py",
-    "notifier_failing": "tests/integration/test_notifications_outbox.py",
+    "kavita_key_revoked": f"{K}::test_kavita_401_revoked_key_pauses_destination_with_target_unreachable",
+    "kavita_version_unsupported": f"{K}::test_unsupported_kavita_version_degrades_to_plan_only",
+    "kavita_route_missing": f"{K}::test_kavita_route_404_sets_degraded_mode_never_plans_without_collision_check",
+    "kavita_reinstalled": f"{AUDIT}::test_kavita_reinstall_emits_instance_changed_and_pauses",
+    "kavita_demoted": f"{K}::test_kavita_403_pauses_destination_target_forbidden",
+    "kavita_not_indexed": f"{AUDIT}::test_written_but_not_indexed_emits_target_not_indexed",
+    "kavita_key_expiring": f"{K}::test_key_expiring_event_j14_j1",
+    "kavita_child_exposure": f"{AUDIT}::test_daily_audit_pauses_shelf_on_child_exposure",
+    "suwayomi_auth_refused": f"{FOLLOW}::test_suwayomi_401_pauses_service_auth_expired_no_failure_counted",
+    "suwayomi_schema_changed": f"{FOLLOW}::test_suwayomi_schema_mismatch_pauses_without_counting",
+    "suwayomi_version_unsupported": f"{SUWAYOMI}::test_suwayomi_version_out_of_range_reported",
+    "suwayomi_multi_account": f"{SUWAYOMI}::test_ui_login_mode_detected_and_refused_m1a",
+    "notifier_failing": "tests/integration/test_notifications_outbox.py::test_failed_send_is_retried_then_reported_as_notify_failed",
+    "root_missing": f"{FOREIGN}::test_a_blocked_state_is_announced_once",
+    "master_key_unreadable": f"{OPS_EVENTS}::test_unreadable_keyring_stops_the_start_and_publishes_secret_undecryptable",
+    "restored_behind": f"{OPS_EVENTS}::test_reconcile_drift_and_restored_behind_create_notifications",
+    "foreign_writer": f"{FOREIGN}::test_foreign_file_in_managed_dir_pauses_series",
+    "job_dead_lettered": f"{OPS_EVENTS}::test_retries_exhausted_sets_dead_letter_and_emits_job_dead_lettered",
+    "tombstone_key_unknown": f"{KEYRING}::test_lost_keyring_tombstone_journal_inert",
+    "tombstone_root_pending": "tests/integration/test_restore_epoch.py::test_replay_tries_known_root_ids_and_reports_root_mismatch",
+    "tombstone_sentinel_forged": "tests/property/test_tombstone_scopes.py::test_forged_tombstone_line_never_deletes",
+    "dns_blocked": "tests/unit/test_fetcher.py::test_dns_sinkhole_reported_as_dns_blocked",
+    "abrupt_stop": f"{OPS_EVENTS}::test_reconcile_drift_and_restored_behind_create_notifications",
 }
 
 
 def _proved(row: FailureRow) -> FailureRow:
     if row.key in SIMULATED:
         return replace(row, simulated=True)
-    proof = _REAL_TESTS.get(row.key) or (
-        f"lot {row.milestone}: the emitter ships with it" if row.milestone != "M1a" else "L36/L29"
-    )
-    return replace(row, proof=proof)
+    if row.milestone != "M1a":
+        return replace(row, proof=f"lot {row.milestone}: the emitter ships with it")
+    return replace(row, proof=_REAL_TESTS[row.key])  # a missing key is a row without proof
 
 
 FAILURE_MATRIX: tuple[FailureRow, ...] = tuple(_proved(row) for row in _ROWS)

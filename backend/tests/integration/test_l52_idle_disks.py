@@ -71,6 +71,9 @@ def test_candidate_blocked_by_an_occupied_destination_does_not_wake_the_disks_ag
             with FsSpy(watch).watching() as spy:
                 assert env.export().ops == ()
             assert spy.accesses == []
+        with FsSpy(watch).watching() as cron:  # the real cron: Kavita is not asked either
+            rj.export_handler(env.inst.comp)(context("export.run"))
+        assert cron.accesses == []
         assert not (env.inst.library / ".shelfhold" / "lease").exists()
         # the window verification looks at the disks anyway: it forgets what was learned, so a
         # file removed by hand is exported at the next pass
@@ -87,8 +90,10 @@ def test_a_new_chapter_is_looked_at_even_when_another_one_is_blocked(
     with seeded(settings, tmp_path) as env:
         series = env.new_series()
         env.add_chapter(series, "2")
-        occupy(env)
+        taken = occupy(env)
         assert env.export().ops == ()
         env.add_chapter(series, "3")  # the inputs changed: the destination is looked at again
         report = env.export()
-        assert [op.kind for op in report.ops] and len(env.exported_files()) == 1
+        assert [op.kind for op in report.ops] == ["write"]
+        assert len(env.exported_files()) == 2  # the foreign file, left alone, and the new chapter
+        assert taken.read_bytes() == b"a file somebody else put there"

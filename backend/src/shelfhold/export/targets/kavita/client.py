@@ -177,7 +177,9 @@ class KavitaClient:
             ):  # a ProblemDetails or JSON body: the resource, not the route
                 raise ProtocolError(f"{route.label}: resource not found")
             self._route_missing(route)
-        if response.status in (401, 403):
+        if response.status == 401:
+            self._revoked(route)
+        if response.status == 403:
             self._forbidden(route)
         if response.status not in expect:
             raise ProtocolError(f"{route.label} answered {response.status}")
@@ -189,6 +191,16 @@ class KavitaClient:
         health.refresh_waiting()
         self._events.emit("target.route_missing", route=route.label)
         raise RouteMissing(route.label)
+
+    def _revoked(self, route: routes.Route) -> None:
+        """401: the key was revoked (matrix row `kavita_key_revoked`). The destination is disabled
+        at once, with the same exit as a lost right (`target reconnect`), but announced as the
+        server no longer answering for us: `target.unreachable`."""
+        health = self.health
+        health.paused, health.paused_route = True, route.label
+        health.refresh_waiting()
+        self._events.emit("target.unreachable", route=route.label)
+        raise TargetForbidden(route.label)
 
     def _forbidden(self, route: routes.Route) -> None:
         health = self.health

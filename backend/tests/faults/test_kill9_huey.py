@@ -57,7 +57,7 @@ WORKER = textwrap.dedent(
             pools.submit("work", dedupe_key="w%04d" % i)
     pools.start_workers()
     print("consuming", flush=True)
-    deadline = time.monotonic() + 240
+    deadline = time.monotonic() + 100
     while time.monotonic() < deadline:
         with engine.connect() as conn:
             left = conn.execute(
@@ -118,10 +118,14 @@ def test_1000_tasks_sigkill_worker_no_database_locked_resumes(
 
     second = spawn(settings, "resume", tmp_path)  # the restart
     try:
-        out, err_second = second.communicate(timeout=240)
-    finally:
-        if second.poll() is None:
-            second.kill()
+        out, err_second = second.communicate(timeout=120)
+    except subprocess.TimeoutExpired:
+        second.kill()
+        with sqlite3.connect(database) as connection:
+            states = connection.execute(
+                "SELECT status, huey_task_id IS NULL, count(*) FROM job_view GROUP BY 1, 2"
+            ).fetchall()
+        pytest.fail(f"the restarted worker did not finish the tasks: {states}")
     assert second.returncode == 0, err_second
     assert "finished" in out
     for stderr in (err_first, err_second):

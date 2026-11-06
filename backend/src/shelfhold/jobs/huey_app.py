@@ -18,18 +18,28 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
+import structlog
 from huey import SqliteHuey, crontab
 from huey.api import Huey
 from huey.consumer import Consumer
 from huey.exceptions import RetryTask
 from sqlalchemy import Engine
 
+from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.jobs.errors import JobFailedError
-from shelfhold.jobs.ledger import Created, JobLedger, PendingJob
+from shelfhold.jobs.ledger import (
+    MAX_ATTEMPTS,
+    RETRY_BACKOFF_S,
+    Created,
+    JobLedger,
+    PendingJob,
+)
 from shelfhold.jobs.scheduler import ScanReport, Scheduler
 from shelfhold.jobs.slots import RETRY_DELAY_S, DomainSlots
 from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow, WindowRun, run_until
+
+log = structlog.get_logger(__name__)
 
 POOLS = ("io", "cpu", "maint")
 # Worker threads each pool's consumer is started with (`huey_consumer -w N -k thread`).
@@ -109,8 +119,10 @@ class JobPools:
         clock: Clock,
         seed: str,
         window: MaintenanceWindow = DEFAULT_WINDOW,
+        bus: EventBus | None = None,
     ) -> None:
         self.clock = clock
+        self._bus = bus  # the operating bus: a dead letter is an event that notifies
         self.window = window
         self.ledger = JobLedger(engine, clock)
         self.slots = DomainSlots(engine, clock)
@@ -249,6 +261,16 @@ class JobPools:
             flushed += len(huey.flush_locks(*names))
         return flushed
 
+    def forget_lost_dispatches(self) -> int:
+        """At boot: a task Huey handed to a worker that was then killed is in no queue and no
+        schedule, and its row says `queued`. It is sent again by the scan (`claim_running`
+        makes a task that reaches Huey twice harmless)."""
+        present: set[str] = set()
+        for huey in self._hueys.values():
+            present.update(str(t.id) for t in huey.pending())
+            present.update(str(t.id) for t in huey.scheduled())
+        return self.ledger.forget_dispatches_not_in(present)
+
     # -- shutdown (ENF-OPS-007) ---------------------------------------------------------------
 
     @property
@@ -347,6 +369,7 @@ class JobPools:
             raise RetryTask(delay=RETRY_DELAY_S)  # asked again later, no thread kept waiting
         with self._idle:
             self._running += 1
+        retry_in: int | None = None
         try:
             context = JobContext(
                 job_id, job.kind, job.dedupe_key, job.scope_key, job.limit_key, window_end,
@@ -357,13 +380,12 @@ class JobPools:
             self.ledger.mark_finished(job_id, error=exc.code, error_code=exc.code)
         except OSError as exc:
             if getattr(exc, "code", None) != "disk.low":  # DiskLowError: the disk filled mid-job
-                self.ledger.mark_finished(job_id, error=type(exc).__name__, error_code="job.failed")
+                retry_in = self._failed(job_id, job.kind, exc)
             else:
                 self.ledger.park_running(job_id, "disk.low")
                 self.pause_writes("disk.low")
         except Exception as exc:
-            # the class name only: an upstream message may carry a title (EF-BIB-053)
-            self.ledger.mark_finished(job_id, error=type(exc).__name__, error_code="job.failed")
+            retry_in = self._failed(job_id, job.kind, exc)
         else:
             if context.preempted:
                 self.ledger.mark_preempted(job_id)
@@ -375,6 +397,29 @@ class JobPools:
             with self._idle:
                 self._running -= 1
                 self._idle.notify_all()
+        if retry_in is not None:
+            raise RetryTask(delay=retry_in)  # Huey keeps the task and runs it again later
+
+    def _failed(self, job_id: str, kind: str, exc: Exception) -> int | None:
+        """A job raised. Attempts left: the wait before the next one. None: it gave up, and is a
+        dead letter, announced on the operating bus in the same transaction (EF-INT-023)."""
+        # the class name only: an upstream message may carry a title (EF-BIB-053)
+        error = type(exc).__name__
+        attempts = self.ledger.attempts_of(job_id)
+        if attempts < MAX_ATTEMPTS:
+            self.ledger.mark_retry(job_id, error)
+            return RETRY_BACKOFF_S[min(attempts, len(RETRY_BACKOFF_S)) - 1]
+        with self._engine.begin() as conn:
+            self.ledger.mark_dead_letter(conn, job_id, error)
+            if self._bus is not None:
+                try:
+                    self._bus.publish(
+                        conn, "job.dead_lettered",
+                        {"job_id": job_id, "job_kind": kind, "reason": "retries_exhausted"},
+                    )  # fmt: skip
+                except ValueError:  # a kind the bus cannot carry: the dead letter stays visible
+                    log.warning("job.dead_letter_unannounced", job_id=job_id)
+        return None
 
 
 def boot_jobs(
@@ -400,5 +445,6 @@ def boot_jobs(
     flushed = pools.flush_huey_locks()
     released = pools.slots.release_all()
     requeued = pools.ledger.requeue_running()
+    pools.forget_lost_dispatches()  # taken from the queue by a worker that was killed
     report = pools.scheduler.startup_scan()  # also sends the requeued rows
     return BootReport(flushed, released, len(requeued), len(report.queued))

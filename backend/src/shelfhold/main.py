@@ -6,12 +6,15 @@ from contextlib import asynccontextmanager
 from functools import cache
 from pathlib import Path
 
+import sqlalchemy as sa
 import structlog
+from sqlalchemy import Engine
 
 from shelfhold import __version__
 from shelfhold.composition import Composition, Network
 from shelfhold.config import Settings, load_settings
 from shelfhold.export.application.pipeline import ExportPipeline
+from shelfhold.events.bus import EventBus
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline
 from shelfhold.headless import HeadlessAdmin, wiring
@@ -25,6 +28,12 @@ from shelfhold.infrastructure.local_socket import SOCKET_NAME, LocalSocketServer
 from shelfhold.infrastructure.logging import configure_logging
 from shelfhold.infrastructure.migrate import check_schema_not_newer
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
+from shelfhold.infrastructure.secrets.errors import (
+    KeyringCorruptError,
+    KeyringError,
+    KeyringMissingError,
+    KeyringPermissionsError,
+)
 from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
@@ -47,6 +56,24 @@ from shelfhold.runtime import InstanceRuntime
 from shelfhold.runtime_jobs import PlanService
 
 PACKAGED_FRONTEND = Path(__file__).parent / "static"
+_KEYRING_REASONS: tuple[tuple[type[KeyringError], str], ...] = (
+    (KeyringCorruptError, "keyring_corrupt"),
+    (KeyringPermissionsError, "keyring_permissions"),
+    (KeyringMissingError, "keyring_missing"),
+)  # anything else of the keyring is "unreadable"
+
+
+def announce_keyring_failure(engine: Engine, bus: EventBus, error: KeyringError) -> None:
+    """The start stops on a keyring that cannot be read (ENF-SEC-005); the event goes on the
+    operating bus first, if the database can take it (`secret.undecryptable`, ENF-OPS-011)."""
+    reason = next((why for kind, why in _KEYRING_REASONS if isinstance(error, kind)), None)
+    try:
+        with engine.begin() as connection:
+            bus.publish(
+                connection, "secret.undecryptable", {"reason": reason or "keyring_unreadable"}
+            )
+    except sa.exc.SQLAlchemyError:  # no database yet (first start): the log is all there is
+        structlog.get_logger().error("secret.undecryptable", reason=reason)
 
 
 def create_app(
@@ -114,7 +141,11 @@ def create_app(
         runtime.acquire()  # ENF-OPS-015: first, before anything else; a second instance refuses
         try:
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
-            boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops the start
+            try:
+                boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops it
+            except KeyringError as error:
+                announce_keyring_failure(engine, composition.bus, error)  # `secret.undecryptable`
+                raise
             runtime.boot()  # open intents settled, then (and only then) the jobs
             if runtime.owns_volumes:  # a migration in progress: this process writes nothing
                 record_applied_public_url(engine, resolved.public_url)  # `status` compares

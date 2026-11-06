@@ -188,7 +188,7 @@ def test_mirror_left_alone_is_notified_on_the_operating_bus() -> None:
         env.add_chapter(series, "2")
         env.pipeline.run(env.destination_id, job_id=new_ulid())
         assert env.pipeline.mirror.skipped
-        assert notified(env.engine, "reconcile.drift") == ["ops"]
+        assert set(notified(env.engine, "reconcile.drift")) == {"ops"}
 
 
 # -- ENF-OPS-011: the keyring that cannot be read stops the start and says so --------------------

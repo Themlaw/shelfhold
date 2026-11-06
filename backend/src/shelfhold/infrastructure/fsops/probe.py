@@ -57,6 +57,15 @@ def _yaml_hint(folder: str) -> str:
     )  # fmt: skip
 
 
+def probe_failure(folder: str, error: OSError, *, step: str) -> ProbeReport:
+    """The report of a probe that could not even start (the lease of the folder's root)."""
+    cause, event = _cause_of(error)
+    return ProbeReport(
+        False, folder, (), step, cause, event,
+        _yaml_hint(folder) if event == "target.permission_denied" else "",
+    )  # fmt: skip
+
+
 def _remove_probe_file(disk: ProbeDisk, path: str) -> None:
     disk.system_unlink("probe_file_cleanup", path)
 
