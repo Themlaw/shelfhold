@@ -187,7 +187,7 @@ follow_notice = sa.Table(
     metadata,
     sa.Column("kind", sa.String(), nullable=False),
     sa.Column("key_hash", sa.String(), nullable=False),
-    sa.Column("subject", sa.String(), nullable=False, server_default=""),
+    sa.Column("subject", sa.String(), nullable=False, server_default=sa.text("''")),
     sa.Column("told_at", UtcDateTime(), nullable=False),
     sa.PrimaryKeyConstraint("kind", "key_hash"),
     in_check("kind", ("tombstoned", "awaiting_shelf", "pending_pairing", "pairing_declined")),

@@ -485,7 +485,9 @@ class FollowCycle:
         report.requested += len(look.opened)
         with self._engine.begin() as connection:
             top = highest_numbered(connection, binding.edition_id) if mark is None else None
-            if top is not None and top != NOTHING_YET:  # none numbered yet: the next look takes it
+            if top == NOTHING_YET and fresh:
+                top = None  # a discovered series with nothing numbered: the next look takes it
+            if top is not None:
                 set_watermark(connection, binding.edition_id, top, baseline_at=look.now)
             table = acquisition.source_binding
             connection.execute(

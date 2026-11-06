@@ -20,8 +20,8 @@ def upgrade() -> None:
         "follow_notice",
         sa.Column("kind", sa.String(), nullable=False),
         sa.Column("key_hash", sa.String(), nullable=False),
-        sa.Column("subject", sa.String(), nullable=False, server_default=""),
-        sa.Column("told_at", sa.String(), nullable=False),
+        sa.Column("subject", sa.String(), nullable=False, server_default=sa.text("''")),
+        sa.Column("told_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("kind", "key_hash", name=op.f("pk_follow_notice")),
         sa.CheckConstraint(
             "\"kind\" IN ('tombstoned', 'awaiting_shelf', 'pending_pairing', 'pairing_declined')",

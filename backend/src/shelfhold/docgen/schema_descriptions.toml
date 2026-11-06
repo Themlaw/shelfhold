@@ -583,6 +583,14 @@ exposed_to_children = "Whether a child account reaches the library."
 kavita_version = "Server version at the time of the audit."
 audited_at = "When the audit ran (UTC)."
 
+[tables.follow_notice]
+description = "What the follow cycle has told the admin and what still waits for them; a row leaves when its condition ceases."
+[tables.follow_notice.columns]
+kind = "`tombstoned`, `awaiting_shelf`, `pending_pairing` or `pairing_declined`."
+key_hash = "Digest of the upstream series key (no title, no path)."
+subject = "Identifier the exit command takes (an adopted series), empty when there is none."
+told_at = "When the condition was first seen (UTC)."
+
 [tables.series_follow]
 description = "One follow per Edition, whatever its bindings."
 [tables.series_follow.columns]

@@ -24,6 +24,7 @@ CATALOG_TABLES = {
     "merge_suggestion", "age_suggestion", "normalizer", "work_relation", "work_relation_kind",
 }  # fmt: skip
 ACQUISITION_TABLES = {
+    "follow_notice",
     "source_item", "sub_source", "source_alias", "source_binding", "series_follow", "gap_ack",
     "download_request", "download_request_unit", "source_failure", "source_config",
     "source_account", "upstream_snapshot", "plugin_install", "plugin_state", "revision_pending",
