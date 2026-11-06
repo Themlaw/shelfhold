@@ -427,6 +427,10 @@ export type JobsOut = {
      * Items
      */
     items: Array<JobOut>;
+    /**
+     * Next Cursor
+     */
+    next_cursor?: string | null;
 };
 
 /**
@@ -1776,6 +1780,14 @@ export type JobsListData = {
          * Status
          */
         status?: string | null;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Cursor
+         */
+        cursor?: string | null;
     };
     url: '/api/v1/jobs';
 };

@@ -10,13 +10,15 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import HeadlessError
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.interfaces.http_api.auth import reserved_action
+from shelfhold.interfaces.http_api.lists import conditional_json
+from shelfhold.interfaces.http_api.pagination import PageParams, encode_cursor, page_params_for
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.ops import ENDPOINTS, OpsError, OpsServices, user_of
@@ -50,6 +52,7 @@ class JobOut(BaseModel):
 
 class JobsOut(BaseModel):
     items: list[JobOut]
+    next_cursor: str | None = None  # absent on the last page (EF-INT-001)
 
 
 class RecheckOut(BaseModel):
@@ -144,12 +147,22 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         return Done()
 
     @router.get(_path("jobs", "list"), response_model=JobsOut)
-    def jobs_list(_admin: Admin, status: str | None = None) -> JobsOut:
+    def jobs_list(
+        request: Request,
+        _admin: Admin,
+        params: Annotated[PageParams, Depends(page_params_for(str))],
+        status: str | None = None,
+    ) -> Response:
+        after = str(params.after[0]) if params.after else None
         with refusals():
-            rows = get_ops().jobs_list(status=status)
-        return JobsOut(
-            items=[JobOut(**{k: getattr(r, k) for k in JobOut.model_fields}) for r in rows]
+            rows = get_ops().jobs_list(status=status, limit=params.limit + 1, after=after)
+        served = rows[: params.limit]
+        last = served[-1] if len(rows) > params.limit else None
+        page = JobsOut(
+            items=[JobOut(**{k: getattr(r, k) for k in JobOut.model_fields}) for r in served],
+            next_cursor=encode_cursor([last.id]) if last else None,
         )
+        return conditional_json(request, page.model_dump(mode="json"))
 
     @router.post(_path("jobs", "retry"))
     def jobs_retry(job_id: str, _admin: Admin) -> Done:

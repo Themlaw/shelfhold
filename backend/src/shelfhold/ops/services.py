@@ -183,11 +183,20 @@ class OpsServices:
     def missing_list(self) -> list[WaitingItem]:
         return [i for i in self.status(full=False).waiting if i.state == "missing"]
 
-    def jobs_list(self, *, status: str | None = None) -> list[JobRow]:
+    def jobs_list(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 200,
+        after: str | None = None,
+    ) -> list[JobRow]:
+        """Newest first (a ULID sorts by time); `after` is the id of the last row already served."""
         job = platform.job_view
-        query = sa.select(job).order_by(job.c.created_at.desc(), job.c.id).limit(200)
+        query = sa.select(job).order_by(job.c.id.desc()).limit(limit)
         if status is not None:
             query = query.where(job.c.status == status)
+        if after is not None:
+            query = query.where(job.c.id < after)
         with self._engine.connect() as connection:
             return [_job_row(r) for r in connection.execute(query)]
 
