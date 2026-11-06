@@ -198,12 +198,14 @@ class Composition:
 
     def flush_owed_tombstones(self) -> None:
         """The periodic look (`ops.disk_check`): pay the lines owed to the roots that came back,
-        before the lease, which cannot be taken while lines are owed."""
+        under the lease taken for the purpose (the session pays them before the generation
+        moves)."""
         try:
             fsops, loaded, service = self.read_context()
             if loaded.restore_pending or not service.owed_roots():
                 return  # frozen: nothing is written; nothing owed: nothing to take a lease for
-            self._flush_owed(service, fsops, loaded)
+            with self._hold(fsops, loaded):  # the lease pays them (`_pay_owed`)
+                pass
         except (NoLibraryError, KeyringUnavailableError):
             return  # nothing registered yet, or no keyring, or no root mounted: nothing to pay
 
@@ -237,8 +239,15 @@ class Composition:
         return WriteSessions(
             fsops, instance_id=instance_id, clock=self.clock, boot_id=self._boot_id,
             lock_path=self.gates.lock_path, generations=GenerationCounter(self.engine),
-            on_behind=self.gates.on_behind,
+            on_behind=self.gates.on_behind, pay_owed=lambda: self._pay_owed(fsops),
         )  # fmt: skip
+
+    def _pay_owed(self, fsops: Fsops) -> None:
+        """Called by the session with the lease held, before the generation moves."""
+        loaded = self.load_roots()
+        if loaded is None or loaded.restore_pending:
+            return
+        self._flush_owed(self.tombstones(fsops, loaded), fsops, loaded)
 
     @contextmanager
     def _hold(
@@ -277,8 +286,6 @@ class Composition:
     def write_context(self) -> Iterator[WriteContext]:
         """The lease for the time of the block; `Fsops` refuses a write without it (ENF-OPS-015)."""
         fsops, loaded, tombstones = self.read_context()
-        if not loaded.restore_pending:  # the lines owed to a root that came back, before the lease
-            self._flush_owed(tombstones, fsops, loaded)
         with self._hold(fsops, loaded) as (sessions, mounted):
             self.sessions_for(fsops).enforce()
             yield WriteContext(fsops, loaded, WriteSession(sessions, mounted), tombstones, self.bus)

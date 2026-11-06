@@ -121,6 +121,11 @@ def test_a_sub_folder_of_the_legacy_inbox_is_left_with_its_rows(tmp_path: Path) 
     assert _paths(engine) == [f"{LEGACY_RECEIVED_DIR}/sub/x.cbz"]
 
 
+def _sized_row(engine: sa.Engine, size: int) -> None:
+    with engine.begin() as connection:
+        connection.execute(sa.text("UPDATE replica SET size = :s"), {"s": size})
+
+
 def test_a_row_left_stale_by_an_interrupted_run_is_healed(tmp_path: Path) -> None:
     env = make_env(tmp_path)
     fsops = Fsops.open(env.path_map, env.expected)
@@ -129,8 +134,40 @@ def test_a_row_left_stale_by_an_interrupted_run_is_healed(tmp_path: Path) -> Non
     new.mkdir(parents=True)
     (new / "one.cbz").write_bytes(b"1")  # moved, but the row was not written
     engine = _rows(tmp_path, root.root_id, ["one"])
+    _sized_row(engine, 1)
     _migrate(engine, fsops, root)
     assert _paths(engine) == [f"{RECEIVED_DIR}/one.cbz"]
+
+
+def test_a_row_is_never_pointed_at_another_file_of_the_same_name(tmp_path: Path) -> None:
+    env = make_env(tmp_path)
+    fsops = Fsops.open(env.path_map, env.expected)
+    root = env.expected[1]
+    new = Path(root.path) / RECEIVED_DIR
+    new.mkdir(parents=True)
+    (new / "one.cbz").write_bytes(b"some other file")  # same name, not the one the row is about
+    engine = _rows(tmp_path, root.root_id, ["one"])
+    _sized_row(engine, 1)
+    _migrate(engine, fsops, root)
+    assert _paths(engine) == [f"{LEGACY_RECEIVED_DIR}/one.cbz"]
+
+
+def test_a_root_that_owes_tombstone_lines_is_not_migrated(tmp_path: Path) -> None:
+    env = make_env(tmp_path)
+    fsops = Fsops.open(env.path_map, env.expected)
+    root = env.expected[1]
+    old = Path(root.path) / LEGACY_RECEIVED_DIR
+    old.mkdir()
+    (old / "one.cbz").write_bytes(b"1")
+    engine = _rows(tmp_path, root.root_id, ["one"])
+    with sqlite3.connect(tmp_path / "shelfhold.db") as raw:  # no parent rows needed for this
+        raw.execute("PRAGMA foreign_keys=OFF")
+        raw.execute(
+            "INSERT INTO tombstone_pending_root (root_id, seq, line) VALUES (?, 1, 'x')",
+            (root.root_id,),
+        )
+    assert _migrate(engine, fsops, root) == 0
+    assert (old / "one.cbz").exists()
 
 
 def test_a_root_that_is_away_does_not_stop_the_others(tmp_path: Path) -> None:

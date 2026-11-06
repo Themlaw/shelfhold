@@ -147,15 +147,17 @@ def record_replica(
     return replica_id
 
 
-def paths_under(connection: Connection, root_id: str, folder: str) -> list[str]:
-    """The `rel_path` of the copies of a root that sit directly under `folder`."""
+def paths_under(
+    connection: Connection, root_id: str, folder: str
+) -> list[tuple[str, int | None, str | None]]:
+    """`(rel_path, size, file_hash)` of the copies of a root that sit directly under `folder`."""
     rows = connection.execute(
-        sa.select(replica_table.c.rel_path).where(
+        sa.select(replica_table.c.rel_path, replica_table.c.size, replica_table.c.file_hash).where(
             replica_table.c.physical_root_id == root_id,
             replica_table.c.rel_path.like(f"{folder}/%"),
         )
-    ).scalars()
-    return [p for p in rows if p and "/" not in p[len(folder) + 1 :]]
+    ).all()
+    return [(p, size, h) for p, size, h in rows if p and "/" not in p[len(folder) + 1 :]]
 
 
 def relocate_root_paths(

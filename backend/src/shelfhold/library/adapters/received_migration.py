@@ -11,10 +11,12 @@ reported and its row is left alone: it still names the file where it is.
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.schema import coherence
 from shelfhold.library.replica import paths_under, relocate_root_paths
 
 __all__ = ["migrate_received_dirs"]
@@ -34,7 +36,13 @@ def migrate_received_dirs(
     number of files moved. A root that refuses (away, blocked, not writable) is reported and the
     others go on: the next start tries it again."""
     total = 0
+    with engine.connect() as connection:  # EF-BIB-052: a root owing tombstone lines is not written
+        owing = set(
+            connection.execute(sa.select(coherence.tombstone_pending_root.c.root_id)).scalars()
+        )
     for root_id, path in roots:
+        if root_id in owing:
+            continue
         try:
             moved, left = fsops.relocate_inbox(path, old_dir, new_dir)
         except OSError as error:
@@ -63,13 +71,22 @@ def _moved_before_a_crash(
         stale = paths_under(connection, root_id, old_dir)
     base = path.rstrip("/")
     healed: set[str] = set()
-    for rel in stale:
+    for rel, size, file_hash in stale:
         name = rel[len(old_dir) + 1 :]
+        if size is None and file_hash is None:
+            continue  # nothing to check the file against: a row is never pointed at a guess
+        new = f"{base}/{new_dir}/{name}"
         try:
             gone = fsops.observe(f"{base}/{rel}") is None
-            there = fsops.observe(f"{base}/{new_dir}/{name}") is not None
+            seen = fsops.observe(new)
+            same = (
+                seen is not None
+                and seen[0] == "file"
+                and (size is None or seen[1].size == size)
+                and (file_hash is None or fsops.sha256_of(new) == file_hash)
+            )
         except OSError:  # a link, a root that refuses: nothing to heal there
             continue
-        if gone and there:
+        if gone and same:
             healed.add(name)
     return healed

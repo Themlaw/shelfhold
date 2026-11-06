@@ -279,9 +279,8 @@ class Fsops:
         self, located: _Located, *, lease: bool = True, tombstone: bool = False
     ) -> Iterator[ConfinedRoot]:
         """The root opened for a write: refused when read-only, when its sentinel says so, when
-        the lease is not ours (once `enforce_lease` is on) or when tombstone lines are owed to it.
-        `tombstone=True` is the write that pays them: it precedes the lease, which cannot be taken
-        while lines are owed, so it is checked by the sentinel and the freeze only.
+        the lease is not ours (once `enforce_lease` is on) or when tombstone lines are owed to it
+        (`tombstone=True`: the write that pays them, still under the lease).
         After the shutdown's checkpoint delay every write is refused (`stop_gate`)."""
         if self._stop_gate is not None:
             self._stop_gate()
@@ -298,8 +297,7 @@ class Fsops:
                 if verdict.state is RootState.RESTORED_BEHIND and self._behind_hook is not None:
                     self._behind_hook()
                 raise RootBlockedError(located.root_path, verdict.state)
-            if lease and not tombstone and self._lease_verifier is not None:
-                # the lines owed come before the lease (it cannot be taken while they are owed)
+            if lease and self._lease_verifier is not None:
                 self._lease_verifier(located.root_path, _read_lease(root))
             yield root
 

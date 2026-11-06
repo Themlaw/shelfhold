@@ -212,3 +212,31 @@ def test_lease_never_taken_on_a_root_whose_sentinel_is_foreign(
     with pytest.raises(RootBlockedError):
         sessions.open(str(env.manga / "x.cbz")).__enter__()
     assert not lease_file(env.library).exists()
+
+
+@pytest.mark.req("ENF-OPS-015")
+def test_a_stale_process_cannot_write_tombstone_lines_or_move_the_sentinel_back(
+    env: Env, clock: ManualClock
+) -> None:
+    """Review of PR #69: two processes of the same instance. The one whose lease ran out must be
+    refused for the tombstone writes as for any other (they rewrite the sentinel's kid registry
+    from a read that the other process has since moved on)."""
+    from shelfhold.infrastructure.fsops import RootBlockedError  # noqa: F401
+    from shelfhold.library.tombstones.journal import header_bytes
+
+    other_fsops = Fsops.open(env.path_map, env.expected)
+    stale = WriteSessions(env.fsops, instance_id=ME, clock=clock, boot_id="boot-b")
+    fresh = WriteSessions(other_fsops, instance_id=ME, clock=clock, boot_id="boot-a")
+    stale.enforce()
+    fresh.enforce()
+    root = str(env.library)
+    sentinel = env.library / ".shelfhold" / "root"
+    with stale.open(str(env.manga / "x.cbz")):
+        clock.advance(seconds=LEASE_VALIDITY.total_seconds() + 1)
+        with fresh.open(str(env.manga / "y.cbz")):
+            before = sentinel.read_bytes() if sentinel.exists() else None
+            with pytest.raises(LeaseLostError):
+                env.fsops.append_tombstone_line(root, b"x\n", header=header_bytes())
+            with pytest.raises(LeaseLostError):
+                env.fsops.record_tombstone_kid(root, "kid-1", {"k": "v"})
+            assert (sentinel.read_bytes() if sentinel.exists() else None) == before

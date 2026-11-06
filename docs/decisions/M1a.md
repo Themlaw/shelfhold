@@ -639,10 +639,14 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
   ComicInfo adopté, de `edition.age_x` ou d'un sous-source `isNsfw` donne `X18+` ; la valeur de
   l'Edition (EF-BIB-037) compte avec celle de l'oeuvre, la plus restrictive gagne. L'oeuvre reste non
   classée en base (invisible d'un profil enfant). Correction de spec proposée, à valider.
-- **Écriture des lignes dues.** Elle ne se fait plus dans `read_context` : `write_context` et le
-  contrôle périodique les paient. Elles précèdent le bail (il ne peut pas être pris tant qu'elles
-  sont dues), donc l'écriture de ces lignes est vérifiée par le sentinel et le gel, pas par le bail.
-  Pendant `restored_behind`, ni écriture ni suggestion de `tombstone flush`.
+- **Écriture des lignes dues.** Elle ne se fait plus dans `read_context`. Toute écriture de pierre
+  tombale reste soumise à la vérification du bail (sinon un processus au bail périmé réécrirait le
+  sentinel d'après une lecture dépassée et le ferait reculer, EF-INT-026). L'ordre de
+  `WriteSessions.open` devient : prendre le bail, payer les lignes dues, puis avancer la génération
+  (c'est `stamp_sentinel` qui refuse tant que des lignes sont dues, pas le bail). Pendant
+  `restored_behind`, ni écriture ni suggestion de `tombstone flush`. La migration de l'inbox au
+  démarrage saute les racines qui doivent des lignes (EF-BIB-052) et ne répare une ligne `replica`
+  que si la taille et l'empreinte du fichier correspondent.
 - **Cible Kavita.** `inventory_calls`, `ensure_library_call` et `supported_versions` sont rétablis :
   le protocole `ExportTarget` du SDK est publié, on ne le réduit pas sans version majeure.
 - **Mise de côté du journal.** Les lignes authentiques du fichier mis de côté sont fusionnées dans
