@@ -170,6 +170,10 @@ class OpsServices:
                 known_bad_report(connection, now.date()),
             )  # fmt: skip
 
+    def restored_behind(self) -> bool:
+        """The database is older than the disks: only the exits of the restore may act (I28)."""
+        return self._restore is not None and bool(self._restore.waiting())
+
     def paused_queues(self) -> list[PausedQueue]:
         return self.status(full=False).queues
 

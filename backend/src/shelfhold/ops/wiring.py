@@ -93,6 +93,8 @@ def open_ops(
     # the restore guard only reads the sentinels against the database: `status` lists
     # `restored_behind` without mounting the library for writing
     guard_fsops = fsops if fsops is not None else _fsops(engine, settings.umask)
+    if mount and fsops is not None and RestoreGuardExit(engine, fsops, clock, bus).waiting():
+        fsops.freeze()  # restored behind: this process writes nothing under /library either
     library = LibraryOps(composition)
     return OpsServices(
         engine, clock=clock, bus=bus, fsops=fsops, targets=targets,

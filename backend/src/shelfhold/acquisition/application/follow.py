@@ -210,7 +210,6 @@ class FollowCycle:
         self._prefs = TeamPreference(inactive_months=inactive_months)
         self._series_taken: dict[str, int] = {}
         self._tombstones = tombstones  # EF-BIB-053: required, a cycle never runs without it
-        self._told: set[str] = set()  # bindings already announced as tombstoned upstream
         self._discovery = SeriesDiscovery(
             engine, clock, self._plugin_id, tombstones, self._emit,
             translation_nature=getattr(service.manifest, "translation_nature", "unknown"),
@@ -218,6 +217,7 @@ class FollowCycle:
         self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
         self._notices = Notices(clock)
         self._buried: dict[str, str] = {}  # tombstoned series of this cycle, by notice key
+        self._buried_ids: dict[str, dict[str, object]] = {}
 
     # -- the cycle ---------------------------------------------------------------------------
     async def run(self) -> FollowReport:
@@ -290,6 +290,7 @@ class FollowCycle:
         budget = RequestBudget(*self._caps)
         self._series_taken = {}
         self._buried = {}
+        self._buried_ids = {}
         followed = [
             binding
             for binding in self._bindings()
@@ -386,14 +387,9 @@ class FollowCycle:
         if not self._tombstones.check(ref, root_id=None).blocked:
             return False
         report.tombstoned += 1
-        self._buried[BOUND_PREFIX + digest(binding.id)] = self._title_of(binding.work_id)
-        if binding.id not in self._told:
-            self._told.add(binding.id)
-            with self._engine.begin() as connection:
-                self._emit(
-                    connection, "series.tombstoned_upstream",
-                    {"edition_id": binding.edition_id, "work_id": binding.work_id},
-                )  # fmt: skip
+        key = BOUND_PREFIX + digest(binding.id)
+        self._buried[key] = self._title_of(binding.work_id)
+        self._buried_ids[key] = {"edition_id": binding.edition_id, "work_id": binding.work_id}
         return True
 
     def _title_of(self, work_id: str) -> str:
@@ -407,10 +403,12 @@ class FollowCycle:
         """What `shelfhold status` lists as "tombstoned upstream" until the admin removes the
         series from Suwayomi (the rows of the series that already have a binding)."""
         with self._engine.begin() as connection:
-            self._notices.sync(
+            fresh = self._notices.sync(
                 connection, "tombstoned", self._buried,
                 own=lambda key: key.startswith(BOUND_PREFIX),
             )  # fmt: skip
+            for key in fresh:  # the notice is the memory: told once, whatever the processes
+                self._emit(connection, "series.tombstoned_upstream", self._buried_ids[key])
 
     def _release_tombstoned(self, binding: _Binding, info: UnitInfo, key: dict[str, str]) -> bool:
         """A release that matches a tombstone is never ingested: not by its reference (`variant`),

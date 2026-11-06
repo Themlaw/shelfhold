@@ -204,6 +204,9 @@ def report_lines(ops: dict[str, object]) -> list[str]:
     for s in ops.get("tombstoned_upstream", []):  # type: ignore[attr-defined]
         lines.append(t("status.tombstoned_upstream_line", **s))
     for c in ops.get("capabilities", []):  # type: ignore[attr-defined]
+        if c.get("unprobed"):
+            lines.append(t("status.capabilities_unprobed", root=c["root"], why=c["unprobed"]))
+            continue
         link = {
             "yes": t("status.link_yes"),
             "no": t("status.link_no"),

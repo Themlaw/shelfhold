@@ -36,7 +36,7 @@ from tests.l50_env import seeded
 from tests.l53_env import age_discoveries, status_json, status_text
 from tests.l54_env import Bench54, Pools, bench54
 
-# -- ENF-SEC-005: the master key inside /data -------------------------------------------------
+# -- ENF-SEC-005: the master key inside /data ---
 
 
 @pytest.mark.req("ENF-SEC-005")
@@ -72,7 +72,7 @@ def test_status_warns_master_key_inside_data(
     assert "keyring.key_in_data" not in codes
 
 
-# -- EF-SRC-026 (c): the series that went silent ----------------------------------------------
+# -- EF-SRC-026 (c): the series that went silent ---
 
 
 def _paired(b, capsys) -> str:  # type: ignore[no-untyped-def]
@@ -129,7 +129,7 @@ def test_series_stale_m1a_default_k3(
         assert status_json(monkeypatch, settings, capsys)["stale_series"] == []
 
 
-# -- EF-BIB-053 (2): the series a purge buried, still in Suwayomi -----------------------------
+# -- EF-BIB-053 (2): the series a purge buried, still in Suwayomi ---
 
 
 @pytest.mark.req("EF-BIB-053")
@@ -159,12 +159,15 @@ def test_status_lists_tombstoned_upstream_series(
         assert len(listed) == 1 and listed[0]["title"]
         text = status_text(monkeypatch, settings, capsys)
         assert listed[0]["title"] in text and "Suwayomi" in text
-        assert events_of(b.engine, "series.tombstoned_upstream")
-        cycle()  # listed as long as the series is there, once whatever the number of cycles
+        for _ in range(3):  # each cycle is a new job with a new FollowCycle
+            cycle = _restart(b)
+            cycle()
         assert len(status_json(monkeypatch, settings, capsys)["tombstoned_upstream"]) == 1
+        # told once, whatever the number of cycles and processes (review of PR #82)
+        assert len(events_of(b.engine, "series.tombstoned_upstream")) == 1
 
 
-# -- EF-EXP-059: what each root can do --------------------------------------------------------
+# -- EF-EXP-059: what each root can do ---
 
 
 @pytest.mark.req("EF-EXP-059")
@@ -231,23 +234,31 @@ def test_hardlink_to_a_store_on_another_file_system_is_refused(tmp_path: Path) -
     if other.stat().st_dev == tmp_path.stat().st_dev:
         pytest.skip("the temporary folder is on /dev/shm")
     root_dir = tmp_path / "root"
-    root_dir.mkdir()
     store_dir = Path(os.path.join(other, f"shelfhold-l53-{new_probe_name()[-8:]}"))
-    store_dir.mkdir()
+    for folder in (root_dir, store_dir):
+        (folder / ".shelfhold" / "staging").mkdir(parents=True)
+    dirs = {"root": root_dir, "store": store_dir}
+
+    def remove(which: str, rel: str) -> None:
+        (dirs[which] / rel).unlink()
+
     try:
         with ConfinedRoot.open(root_dir) as root, ConfinedRoot.open(store_dir) as store:
-            found = probe_root(root, store=store, filesystem="test", now="t")
+            found = probe_root(root, store=store, filesystem="test", now="t", remove=remove)
             assert found.hardlink_store is Link.NO and found.copy_fallback in (True, False)
             assert found.inodes_stable is True
-            assert not list(root_dir.iterdir()) and not list(store_dir.iterdir())
-            alone = probe_root(root, store=None, filesystem="test", now="t", store_reason="none")
+            staged = [f / ".shelfhold" / "staging" for f in (root_dir, store_dir)]
+            assert not any(list(d.iterdir()) for d in staged)
+            alone = probe_root(
+                root, store=None, filesystem="test", now="t", remove=remove, store_reason="none"
+            )
             assert alone.hardlink_store is Link.NOT_APPLICABLE and alone.store_reason == "none"
-            assert not list(root_dir.iterdir())
+            assert not list((root_dir / ".shelfhold" / "staging").iterdir())
     finally:
         shutil.rmtree(store_dir, ignore_errors=True)
 
 
-# -- ENF-COMP-001: the age of the known_bad_versions list -------------------------------------
+# -- ENF-COMP-001: the age of the known_bad_versions list ---
 
 
 @pytest.mark.req("ENF-COMP-001")
@@ -297,3 +308,140 @@ def test_known_bad_target_version_is_listed_with_its_advisories(
         known = status_json(monkeypatch, settings, capsys)["known_bad"]
         assert known["targets"][0]["advisories"] == [KNOWN_BAD_VERSIONS[0].advisory]
         assert "0.8.9" in status_text(monkeypatch, settings, capsys)
+
+
+# -- the capability probe: what it creates, where, and what it never touches (review of PR #82 ---
+
+
+@pytest.mark.req("EF-EXP-059")
+def test_probe_collision_never_removes_a_file_it_did_not_create(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import shelfhold.infrastructure.fsops.capabilities as capabilities
+    from tests.fsops_env import make_env
+
+    made = make_env(tmp_path)
+    made.fsops.boot()
+    fixed = ".shelfhold-probe-0123456789abcdef"
+    theirs = made.library / ".shelfhold" / "staging" / fixed
+    theirs.write_bytes(b"theirs")
+    monkeypatch.setattr(capabilities, "new_probe_name", lambda: fixed)  # every draw collides
+    found = made.fsops.probe_capabilities(str(made.library))
+    assert theirs.read_bytes() == b"theirs"  # not ours: never removed
+    assert found.reflink is None and found.inodes_stable is None
+
+
+@pytest.mark.req("EF-EXP-059")
+def test_probe_files_live_in_staging_and_go_through_the_closed_emitter(tmp_path: Path) -> None:
+    from shelfhold.infrastructure.fsops import EmitterPerimeterError
+    from tests.fsops_env import make_env
+
+    made = make_env(tmp_path)
+    made.fsops.boot()
+    removed: list[str] = []
+    real = made.fsops.system_unlink
+
+    def spy(emitter: str, local: str) -> None:
+        removed.append(f"{emitter} {local}")
+        real(emitter, local)
+
+    made.fsops.system_unlink = spy  # type: ignore[method-assign]
+    top = sorted(p.name for p in made.library.iterdir())
+    found = made.fsops.probe_capabilities(str(made.library), store_path=str(made.books))
+    assert found.hardlink_store is Link.YES  # the two roots share the disk of the test
+    assert removed and all(
+        r.startswith("probe_file_cleanup ") and "/.shelfhold/staging/.shelfhold-probe-" in r
+        for r in removed
+    )
+    assert sorted(p.name for p in made.library.iterdir()) == top
+    for root in (made.library, made.books):
+        assert not list((root / ".shelfhold" / "staging").iterdir())
+    staging = f"{made.library}/.shelfhold/staging"
+    for refused in (f"{staging}/notes.txt", f"{staging}/sub/.shelfhold-probe-0123456789abcdef"):
+        with pytest.raises(EmitterPerimeterError):
+            real("probe_file_cleanup", refused)
+
+
+@pytest.mark.req("EF-EXP-059", "ENF-OPS-006")
+def test_probe_goes_through_the_disk_gate(tmp_path: Path) -> None:
+    from shelfhold.infrastructure.fsops import Fsops
+    from shelfhold.infrastructure.observability.disk_guard import DiskGuard, DiskLowError, Usage
+    from tests.fsops_env import make_env
+
+    made = make_env(tmp_path)
+    low = DiskGuard(
+        {"library": made.library}, usage=lambda _p: Usage(total=100 * 2**30, free=2**30)
+    )
+    low.evaluate()
+    fs = Fsops.open(made.path_map, made.expected, write_gate=low.require_space)
+    fs.boot()
+    with pytest.raises(DiskLowError):
+        fs.probe_capabilities(str(made.library))
+    assert not list((made.library / ".shelfhold" / "staging").iterdir())
+
+
+@pytest.mark.req("EF-EXP-059")
+def test_orphan_probe_file_of_a_killed_start_is_swept_at_the_next_start(
+    settings: Settings, tmp_path: Path
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        end(boot_runtime(inst))
+        orphan = inst.library / ".shelfhold" / "staging" / ".shelfhold-probe-0123456789abcdef"
+        orphan.write_bytes(b"left by a kill -9")
+        end(boot_runtime(inst))
+        assert not orphan.exists()
+
+
+@pytest.mark.req("EF-EXP-059")
+def test_a_root_not_ready_at_start_is_shown_as_not_probed(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from tests.integration.test_restore_review import edit_sentinel
+
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        edit_sentinel(inst.library, instance_id="01J00000000000000000FOREIGN")
+        end(boot_runtime(inst))
+        (caps,) = [
+            c
+            for c in status_json(monkeypatch, settings, capsys)["capabilities"]
+            if c["root"] == str(inst.library)
+        ]
+        assert caps["unprobed"]
+        assert "non sondées" in status_text(monkeypatch, settings, capsys)
+
+
+# -- restored_behind freezes the operating commands before the first start (review of PR #82) ---
+
+
+@pytest.mark.req("EF-INT-026", "EF-INT-023")
+def test_operating_commands_are_refused_while_restored_behind(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from tests.auth_env import db_rows
+    from tests.integration.test_restore_epoch import restored
+    from tests.integration.test_restore_review2 import production
+    from tests.restore_env import restore_env
+
+    with restore_env() as env:
+        restored(env)  # the backup is back; no server has started since: nothing is frozen yet
+        edition = env.series.edition_id
+        unit = next(iter(env.chapters.values()))
+        with production(env) as own:
+            assert db_rows(own, "SELECT restore_generation FROM instance")[0][0] == 0
+            before = db_rows(own, "SELECT count(*) FROM content_tombstone")
+            for argv in (
+                ("purge", "--now", "--unit", unit, "--confirm", unit),
+                ("edition", "set-lang", edition, "ja"),
+                ("adopt", "pair", "--series", "01J000000000000000000SERIES", "--decline"),
+            ):
+                capsys.readouterr()
+                assert run_cli(monkeypatch, own, *argv) != 0, argv
+                assert "restored_behind" in capsys.readouterr().err, argv
+            assert db_rows(own, "SELECT count(*) FROM content_tombstone") == before
+            # the exits meant for this state stay open: the preview of the adoption answers
+            assert run_cli(monkeypatch, own, "reconcile", "--adopt-after-restore", "--dry-run") == 0

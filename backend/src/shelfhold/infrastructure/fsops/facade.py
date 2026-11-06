@@ -679,15 +679,26 @@ class Fsops:
             store, reason = None, "this root is /store"
         stamp = datetime.fromtimestamp(self._now(), UTC).isoformat()
         kind = filesystem_kind(Path(located.root_path))
-        with self._gated(located) as root:
+        self._require_space()  # the disk guard stops the probe like any other write
+
+        def remove(which: str, rel: str) -> None:
+            owner = store.root_path if which == "store" and store is not None else located.root_path
+            self.system_unlink("probe_file_cleanup", f"{owner}/{rel}")
+
+        with self._gated(located) as root:  # the lease, and the lines owed to the root
             if store is None:
-                return probe_root(root, store=None, filesystem=kind, now=stamp, store_reason=reason)
+                return probe_root(
+                    root, store=None, filesystem=kind, now=stamp, remove=remove,
+                    store_reason=reason,
+                )  # fmt: skip
             try:
                 with self._gated(store) as other:
-                    return probe_root(root, store=other, filesystem=kind, now=stamp)
-            except (RootBlockedError, ReadOnlyRootError, LeaseRaceError):
+                    return probe_root(
+                        root, store=other, filesystem=kind, now=stamp, remove=remove
+                    )  # fmt: skip
+            except (RootBlockedError, ReadOnlyRootError, LeaseRaceError, TombstonePendingError):
                 return probe_root(
-                    root, store=None, filesystem=kind, now=stamp,
+                    root, store=None, filesystem=kind, now=stamp, remove=remove,
                     store_reason="/store is not writable now",
                 )  # fmt: skip
 
