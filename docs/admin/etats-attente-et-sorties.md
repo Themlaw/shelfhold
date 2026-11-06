@@ -53,6 +53,45 @@ Notes :
   (`root takeover|reinit`, `store reinit`) sont décrites dans
   [topologie-racines-physiques.md](topologie-racines-physiques.md).
 
+## Intentions de fichiers restées ouvertes
+
+Une opération de fichier en plusieurs étapes est inscrite dans le journal d'intentions avant de
+toucher au disque. Au démarrage, avant toute tâche, chaque intention ouverte est réglée : achevée
+ou rejouée seulement si le disque correspond exactement à une étape connue. Une intention dont le
+disque ne correspond à rien reste ouverte (`reconcile.drift`), sans que rien soit touché.
+
+- `shelfhold intents list` : les intentions ouvertes (opération, état, chemins).
+- `shelfhold intents resolve <intention>` : applique la règle du démarrage à cette seule intention.
+  Si le disque ne correspond toujours pas, la commande sort avec le code 3 et l'intention reste
+  ouverte.
+- `shelfhold intents resolve <intention> --abandon --confirm <intention>` : renonce à l'intention
+  **sans toucher au disque**. Ses chemins cessent d'être protégés contre le planificateur et le
+  rapprochement : à ne faire qu'après avoir regardé les fichiers à la main.
+
+`intents resolve` est une action réservée : session récente ou CLI de l'hôte, jamais une clé d'API,
+et chaque appel est inscrit à l'audit (qui, quelle session, quand). La route est
+`POST /api/v1/intents/{id}/resolve`, la liste `GET /api/v1/intents`.
+
+## Rattraper l'historique d'une série suivie
+
+`shelfhold backfill --gaps <édition>` comble les numéros manquants sous le filigrane de suivi ;
+`--all` ramène tout l'historique. La commande affiche toujours l'estimation (nombre de chapitres,
+taille, espace libre). Au-delà de 100 chapitres ou de 5 Gio, elle ne lance rien tant qu'on ne lui
+redonne pas les chiffres vus : `--confirm-units N --confirm-bytes OCTETS` (code de sortie 3 sinon,
+avec la commande exacte). `--dry-run` n'affiche que l'estimation. Lancer ne télécharge rien d'un
+coup : le suivi demande ces chapitres dans ses plafonds par cycle. Route :
+`GET|POST /api/v1/editions/{édition}/backfill`.
+
+## Opérations longues de l'API
+
+Appliquer un plan (`POST /api/v1/plans/{id}/apply`, avec le `If-Match` de l'aperçu) répond
+`202 Accepted` et `Location: /api/v1/jobs/{tâche}` ; `GET /api/v1/jobs/{tâche}` donne l'état
+(`queued`, `running`, `succeeded`, `failed`) et, en cas d'échec, le code du catalogue (`plan.stale`,
+`target.route_missing`...). Les refus qui n'ont pas besoin du disque (412, 428, destination en
+pause) sont donnés avant qu'une tâche existe. Une clé d'idempotence est gardée 24 h pour le même
+identifiant (une clé d'API garde la sienne tout ce temps ; une session, qui est un identifiant à
+part et dure moins, ne la retrouve pas après une nouvelle connexion).
+
 ## Si rien n'aide
 
 Le journal structuré contient le code d'erreur de l'événement (par ex. `target.forbidden`), dont
