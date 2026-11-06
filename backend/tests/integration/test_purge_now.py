@@ -16,6 +16,7 @@ from shelfhold.export.application.purge import (
     PurgeRefusedError,
     PurgeReport,
 )
+from shelfhold.export.domain.physical_roots import RECEIVED_DIR
 from shelfhold.infrastructure.fsops import Fsops, TombstonePendingError
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.ids import new_ulid
@@ -81,7 +82,7 @@ def test_purge_now_removes_all_replicas_and_thumbnails() -> None:
 
         assert report.complete and report.unreachable_roots == () and report.refused == ()
         remaining = [p for p in files_everywhere(env) if "manifest" not in p.parts]
-        assert remaining == [env.lib.manga / ".received" / f"{other}.cbz"]  # only the neighbour
+        assert remaining == [env.lib.manga / RECEIVED_DIR / f"{other}.cbz"]  # only the neighbour
         assert not placed["binned"].exists()  # type: ignore[union-attr]
         for folder in placed["caches"]:  # type: ignore[union-attr]
             assert not folder.exists()  # thumbnails and content cache

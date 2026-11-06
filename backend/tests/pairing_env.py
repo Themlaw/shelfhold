@@ -20,6 +20,7 @@ from shelfhold.events.bus import EventBus
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
 from shelfhold.export.application.pairing import Pairing
 from shelfhold.export.application.preflight import PermissionPreflight
+from shelfhold.export.domain.physical_roots import RECEIVED_DIR
 from shelfhold.infrastructure.fetcher.client import IntegrationFetcher
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.library.public import PassthroughStore
@@ -121,7 +122,7 @@ def paired_env(*, tombstones: Any = NONE_PURGED) -> Iterator[Paired]:
         bus = EventBus(env.clock)
 
         def place(unit_id: str, variant_id: str, filename: str) -> str:
-            return str(lib.manga / ".received" / f"{variant_id}.cbz")
+            return str(lib.manga / RECEIVED_DIR / f"{variant_id}.cbz")
 
         async def no_sleep(seconds: float) -> None:
             env.clock.advance(seconds=seconds)

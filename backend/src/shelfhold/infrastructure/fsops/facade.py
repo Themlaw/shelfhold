@@ -32,6 +32,7 @@ from shelfhold.export.domain.physical_roots import (
     RootState,
     SentinelDocument,
     SentinelVerdict,
+    is_received_rel,
     is_reserved,
     judge_sentinel,
 )
@@ -233,9 +234,15 @@ class Fsops:
         if best is None:
             raise OutsidePathMapError(f"{local!r} is under no physical root")
         root_path, rel, read_only = best
-        if is_reserved(rel) and not host and not (read_mirror and is_mirror_rel(rel)):
+        received = is_received_rel(rel)  # the archives of the follow cycle, host area, ordinary ops
+        if (
+            is_reserved(rel)
+            and not host
+            and not received
+            and not (read_mirror and is_mirror_rel(rel))
+        ):
             raise ReservedPathError(f"{local!r} is reserved to the host")
-        host = host or (read_mirror and is_mirror_rel(rel))
+        host = host or received or (read_mirror and is_mirror_rel(rel))
         if not read_only and not (host and is_reserved(rel)):  # host folders sit above the map
             try:
                 entry = self._path_map.entry_for(path)
@@ -670,7 +677,11 @@ class Fsops:
 
     @staticmethod
     def _require_purgeable(rel: str) -> None:
-        if is_reserved(rel) and not Perimeter(below=RECYCLE_DIR).allows(rel):
+        if (
+            is_reserved(rel)
+            and not Perimeter(below=RECYCLE_DIR).allows(rel)
+            and not is_received_rel(rel)  # a received archive is purged like any copy
+        ):
             raise ReservedPathError(f"{rel!r} belongs to the host: a purge never deletes it")
 
     def system_unlink(self, emitter: str, local: str) -> None:

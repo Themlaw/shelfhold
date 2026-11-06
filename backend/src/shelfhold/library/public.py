@@ -19,6 +19,7 @@ from shelfhold.library.adapters.purge_inventory import (
     unresolved_bin_items,
 )
 from shelfhold.library.adapters.receive import Received, receive_cbz
+from shelfhold.library.adapters.received_migration import migrate_received_dirs
 from shelfhold.library.adapters.safeguard import Safeguard, SafeguardResult
 from shelfhold.library.adapters.storage import (
     DEFAULT_MAX_RECEIVED_BYTES,
@@ -145,6 +146,7 @@ __all__ = [
     "median_unit_bytes",
     "meta_path",
     "meta_rel",
+    "migrate_received_dirs",
     "readable_unit_ids",
     "receive_cbz",
     "record_destination_copy",

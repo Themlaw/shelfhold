@@ -28,6 +28,7 @@ from shelfhold.export.application.root_bootstrap import (
 )
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap, PathMode
+from shelfhold.export.domain.physical_roots import LEGACY_RECEIVED_DIR, RECEIVED_DIR
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.instance import (
@@ -47,6 +48,7 @@ from shelfhold.infrastructure.observability.shutdown import (
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
+from shelfhold.library.public import migrate_received_dirs
 from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 
@@ -178,6 +180,11 @@ class InstanceRuntime:
             )  # fmt: skip
             sessions.enforce()  # no write path skips the lease from here on
             with sessions.open(*ready):
+                migrate_received_dirs(
+                    engine, fsops,
+                    [(r.root_id, r.path) for r in loaded.roots if r.mode is PathMode.RW],
+                    old_dir=LEGACY_RECEIVED_DIR, new_dir=RECEIVED_DIR,
+                )  # fmt: skip
                 hook = adopt_written_hook(fsops, loaded.locate, clock)
                 result = journal.resolve_open(on_done=hook)
             for intent_id in result.drifted:

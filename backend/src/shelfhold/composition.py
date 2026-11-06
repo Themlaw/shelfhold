@@ -31,7 +31,7 @@ from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.roots import LoadedRoots, load_roots, open_fsops
 from shelfhold.export.domain.path_map import PathMap, PathMode
-from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.export.domain.physical_roots import RECEIVED_DIR, RootState
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.wiring import open_client
 from shelfhold.infrastructure.clock import Clock, SystemClock
@@ -67,8 +67,6 @@ __all__ = [
 ]
 
 log = structlog.get_logger(__name__)
-
-RECEIVED_DIR = ".received"  # under a writable root: what the follow cycle receives, before export
 
 
 @dataclass(frozen=True)

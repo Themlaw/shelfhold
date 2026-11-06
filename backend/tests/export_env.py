@@ -16,6 +16,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
+from shelfhold.export.domain.physical_roots import RECEIVED_DIR
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, platform
 from shelfhold.library.public import PassthroughStore
@@ -108,7 +109,7 @@ class ExportEnv:
         pages = (
             (f"{number}-001.png", b"\x89PNG\r\n\x1a\n" + tag + number.encode() + b"\x00" * 16),
         )
-        received = self.lib.manga / ".received" / f"{unit}.cbz"
+        received = self.lib.manga / RECEIVED_DIR / f"{unit}.cbz"
         PassthroughStore(
             self.engine, self.lib.fsops, self.lib.locate, self.lib.data, tombstones=NONE_PURGED
         ).ingest(
