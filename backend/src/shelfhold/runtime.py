@@ -8,6 +8,7 @@
 Every write under `/library` from then on is refused by `Fsops` without this instance's lease.
 """
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -211,7 +212,6 @@ class InstanceRuntime:
             report.append(result)
             return result
 
-        self._repair_projections(engine)
         self.pools = JobPools(
             self.settings.data_dir,
             engine=engine,
@@ -237,20 +237,28 @@ class InstanceRuntime:
         )
         watcher.check()  # the first measure at once: a full disk parks the jobs boot just sent
         self.pools.start_workers()  # the queues are consumed from here on
+        self._start_projection_repair(engine)  # after readiness matters: never on its path
         return report[0] if report else None
 
-    def _repair_projections(self, engine: Engine) -> None:
+    def _start_projection_repair(self, engine: Engine) -> None:
         """`unit.json` and `work.json` are projections of the database, written after the
-        transaction: a crash in between left one missing or torn. They are written again now
-        (ENF-OPS-020), under `/data` only; one that cannot be never stops the start."""
+        transaction: a crash in between left one missing or torn. They are written again at
+        start (ENF-OPS-020), under `/data` only, on a thread of their own: a big catalog must not
+        delay `/readyz` (ENF-PERF-003)."""
+        threading.Thread(
+            target=self._repair_projections, args=(engine,), name="meta-repair", daemon=True
+        ).start()
+
+    def _repair_projections(self, engine: Engine) -> None:
+        log = structlog.get_logger()
         try:
             report = MetaProjection(engine, self.settings.data_dir).repair()
         except (OSError, ValueError, sa.exc.SQLAlchemyError) as error:
-            structlog.get_logger().warning("meta_repair_skipped", error=type(error).__name__)
+            log.warning("meta_repair_skipped", error=type(error).__name__)  # the next start tries
             return
         for kind, found in (("unit", report.read_only), ("work", report.works_read_only)):
             if found:  # a newer format is never rewritten (ENF-OPS-013)
-                structlog.get_logger().warning("reconcile.drift", kind=f"{kind}_json_newer_format")
+                log.warning("reconcile.drift", kind=f"{kind}_json_newer_format", count=len(found))
 
     def _probed(
         self,

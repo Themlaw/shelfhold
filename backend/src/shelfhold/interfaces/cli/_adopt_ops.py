@@ -164,7 +164,12 @@ def _report_check(check: dict[str, Any]) -> int:
         print(t("repatriate.check_problem", path=path), file=sys.stderr)
     kavita = check["kavita"]
     if not kavita["verified"]:
-        print(t(f"repatriate.kavita_{kavita['reason']}"), file=sys.stderr)
+        reasons = {
+            "no_baseline": t("repatriate.kavita_no_baseline"),
+            "unreachable": t("repatriate.kavita_unreachable"),
+            "no_library": t("repatriate.kavita_no_library"),
+        }
+        print(reasons.get(kavita["reason"], t("repatriate.kavita_not_asked")), file=sys.stderr)
     else:
         print(t("repatriate.kavita_counts", before_series=kavita["series"][0],
                 after_series=kavita["series"][1], before_files=kavita["files"][0],

@@ -302,7 +302,6 @@ median_delay = "Délai médian entre détection et visibilité dans Kavita (seco
 guards = "Gardes déclenchées : sentinelle {sentinel}, autre écrivain {writer}"
 
 [meta]
-unknown_unit = "Chapitre inconnu : {unit}"
 rebuilt = "{written} fichier(s) unit.json, {works} work.json et {mirror} fichier(s) du miroir de provenance réécrit(s) à partir de la base."
 drift = "unit.json diverge de la base : {unit}"
 work_drift = "work.json diverge de la base : {work}"

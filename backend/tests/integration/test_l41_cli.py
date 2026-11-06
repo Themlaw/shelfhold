@@ -90,8 +90,10 @@ def test_repatriation_needs_the_preview_first(capsys: pytest.CaptureFixture[str]
     plan = {"fingerprint": "f", "series": 1, "chapters": 2, "files": 3, "bytes_to_copy": 4,
             "free_bytes": 5, "problems": [{"path": "p", "status": "missing"}],
             "ready": False}  # fmt: skip
+    kavita = {"verified": False, "reason": "no_baseline", "problems": []}
     applied = {"copied": 3, "already_present": 0,
-               "check": {"missing": [], "different": ["d"], "safe_to_unmount": False}}  # fmt: skip
+               "check": {"missing": [], "different": ["d"], "safe_to_unmount": False,
+                         "kavita": kavita}}  # fmt: skip
     channel = Channel({"ops.repatriate_plan": plan, "ops.repatriate_apply": applied})
     assert _run(adopt_ops.run_repatriate, ["adopt", "--repatriate"], channel) == 2
     argv = ["adopt", "--repatriate", "--dry-run"]
