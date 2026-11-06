@@ -538,7 +538,7 @@ Solde la dette S1 pour ce qui est de la logique ; la mesure sur 24 h reste due (
 
 ## L41 : documentation d'administration, clôture du jalon
 
-Ce lot ne change pas le comportement : il documente, et clôt la liste des ambiguïtés du plan.
+Ce lot ne change pas le comportement du code : il documente (sur le code de `main` après le volet A), change l'étiquette du compose d'exemple, et clôt la liste des ambiguïtés du plan.
 
 1. **Pages.** `docs/admin/` gagne un index (`README.md`) et les pages d'installation sans
    interface, d'adoption, de migration depuis des scripts, de rapatriement, de retour arrière,
@@ -546,7 +546,7 @@ Ce lot ne change pas le comportement : il documente, et clôt la liste des ambig
    restauration), de purge, de garde disque, de redéploiement, de racines physiques, de montage
    `adopt_ro`, d'exposition publique et de budget mémoire et disque. `durcir.md` gagne la visibilité
    anonyme (A5, A6, A7) ; `velocite.md` reçoit le relevé de M1a.
-2. **Câblage (volet A de L41).** Branchés : `follow.cycle`, `export.run` (détecteur d'écrivain
+2. **Câblage (volet A de L41, fusionné avant cette documentation).** Branchés : `follow.cycle`, `export.run` (détecteur d'écrivain
    étranger, plan vérifié par `plugin/parse`, garde de bascule, préflight), `reconcile.cycle` et
    `reconcile.hash`, l'audit d'accès quotidien avec les clients connectés, `notify.dispatch` et les
    canaux Apprise sur le bus de tous les éditeurs, les pierres tombales dans le suivi et le
@@ -559,9 +559,11 @@ Ce lot ne change pas le comportement : il documente, et clôt la liste des ambig
 3. **Étiquette d'image.** Le compose d'exemple épingle `0.2` (la règle `X.Y` de ENF-OPS-008), qui
    n'existe qu'à la publication de 0.2.0 : tant qu'elle n'est pas faite, utilisez `edge`. Ce lot ne
    crée aucun tag.
-4. **Test.** `test_ram_budget_documented_with_reference_profile` lit `docs/admin/budget-ram.md` et
+4. **Test et mesure.** `test_ram_budget_documented_with_reference_profile` lit `docs/admin/budget-ram.md` et
    exige le profil de référence, les trois services, les chiffres mesurés du spike S4 et les modes
-   de budget disque. Un chiffre de S4 qui change impose de mettre la page à jour.
+   de budget disque. Un chiffre de S4 qui change impose de mettre la page à jour. Les chiffres de
+   S4 sont ceux du squelette de M0 : la page donne aussi la mesure de l'image de la 0.2
+   (102,8 Mo au repos, 133,9 Mo après 8 000 requêtes), faite à la relecture, avec sa méthode.
 5. **`docs/reference/config.md` (généré)** : non produit dans ce lot ; la référence reste
    `docs/configuration.md`, écrite à la main. À reprendre avec M1b.
 6. **Procédures sans commande** (`secrets import`, lister ou lever une pierre tombale, `root` et
