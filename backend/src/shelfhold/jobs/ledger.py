@@ -291,12 +291,18 @@ class JobLedger:
         )
 
     def mark_deferred(self, job_id: str) -> None:
-        """Back to `queued` (a busy domain slot): the task will be retried later."""
+        """Back to `queued` (a busy domain slot): the task will be retried later. The handler
+        never ran, so the attempt `claim_running` spent is given back, as `park_running` does:
+        waiting for a slot must not bring a job closer to its dead letter."""
         with self._engine.begin() as conn:
             conn.execute(
                 sa.update(job_view)
                 .where(job_view.c.id == job_id)
-                .values(status="queued", started_at=None)
+                .values(
+                    status="queued",
+                    started_at=None,
+                    attempts=sa.case((job_view.c.attempts > 0, job_view.c.attempts - 1), else_=0),
+                )
             )
 
     def undispatched(self) -> list[PendingJob]:
