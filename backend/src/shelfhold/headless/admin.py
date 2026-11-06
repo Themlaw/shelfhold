@@ -30,6 +30,7 @@ from shelfhold.export.application.root_bootstrap import (
     target_roots,
 )
 from shelfhold.export.application.shelves import ShelfService
+from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import load_health, save_health
 from shelfhold.export.domain.bindings import check_shelf_ceiling
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
@@ -657,6 +658,7 @@ class HeadlessAdmin:
             root_subpath=subpath,
         )  # fmt: skip
         self._bootstrap()  # the folder of the shelf lives under a registered root
+        self._make_folder(destination_id)
         if self._linker is not None:
             try:
                 self._linker.link(target_row.id, destination_id, library_name=name)
@@ -665,6 +667,20 @@ class HeadlessAdmin:
                 raise
         _log.info("headless.shelf_created", name=name, target=target)
         return ShelfCreated(shelf_id, destination_id, True)
+
+    def _make_folder(self, destination_id: str) -> None:
+        """The folder of the destination exists before the first export and the library link: the
+        permission probe and Kavita both look at it. It is made under a registered writable root,
+        by the process that will write in it."""
+        with self._engine.connect() as connection:
+            local = load_context(connection, destination_id).root_local
+        if local is None or self._roots is None or self._linker is None:
+            return
+        try:
+            self._roots.check(local, PathMode.RW)
+        except RootRefusedError as refusal:
+            raise InvalidConfigValue(str(refusal)) from None
+        self._linker.make_folder(local)
 
     def _unbind(self, shelf_id: str, destination_id: str, *, shelf_was_new: bool) -> None:
         """A shelf the audit refused leaves nothing behind (nothing was written in Kavita)."""

@@ -51,3 +51,6 @@ class ShelfLinkPort(Protocol):
     Raises when children can read the library (`AdoptionRefused`)."""
 
     def link(self, target_id: str, destination_id: str, *, library_name: str) -> str: ...
+
+    def make_folder(self, local: str) -> None:
+        """Creates the folder of a destination, through the sole writer of the disk."""

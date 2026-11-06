@@ -9,6 +9,7 @@ from sqlalchemy import Engine
 
 from shelfhold.composition import Composition
 from shelfhold.config import Settings, load_settings
+from shelfhold.export.application.preflight import FolderProbe
 from shelfhold.export.application.root_bootstrap import RootPolicy
 from shelfhold.export.targets.kavita.adopt import AdoptionRefused
 from shelfhold.export.targets.kavita.audit import AccessAuditor
@@ -66,6 +67,10 @@ class _ShelfLinker:
             return asyncio.run(linker.link(client, destination_id, library_name=library_name))
         except AdoptionRefused as refusal:
             raise ShelfExposedToChildren(refusal.accounts) from None
+
+    def make_folder(self, local: str) -> None:
+        with self._comp.write_context() as w:
+            FolderProbe(w.fsops).make_folder(local)
 
 
 def open_headless(settings: Settings) -> HeadlessAdmin:

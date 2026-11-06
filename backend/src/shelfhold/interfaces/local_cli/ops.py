@@ -100,6 +100,11 @@ def _jobs_list(ops: OpsServices, _by: Principal, p: Params) -> object:
     }  # fmt: skip
 
 
+def _jobs_run(ops: OpsServices, _by: Principal, p: Params) -> object:
+    ops.jobs_run_now(_text(p, "kind"))
+    return {"ok": True}
+
+
 def _jobs_retry(ops: OpsServices, _by: Principal, p: Params) -> object:
     ops.jobs_retry(_text(p, "job_id"))
     return {"ok": True}
@@ -243,6 +248,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.series_resume": (_series_resume, None),
     "ops.jobs_list": (_jobs_list, None),
     "ops.jobs_retry": (_jobs_retry, None),
+    "ops.jobs_run": (_jobs_run, None),
     "ops.target_recheck": (_target_recheck, None),
     "ops.target_reconnect": (_target_reconnect, None),
     "ops.target_rotate_key": (_target_rotate_key, "target.rotate_key"),

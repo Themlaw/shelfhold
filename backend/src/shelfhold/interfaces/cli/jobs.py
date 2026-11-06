@@ -1,4 +1,5 @@
-"""``shelfhold jobs list|retry``: the jobs that gave up, and a file the server never indexed."""
+"""``shelfhold jobs list|retry|run``: the jobs that gave up, a file the server never indexed, a
+periodic job to run now."""
 
 from __future__ import annotations
 
@@ -15,6 +16,9 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     listing = actions.add_parser("list", help=t("ops.help_jobs_list"), allow_abbrev=False)
     listing.add_argument("--status", help=t("ops.help_jobs_status"))
     listing.set_defaults(handler=run_list, configure_logging=False)
+    now = actions.add_parser("run", help=t("ops.help_jobs_run"), allow_abbrev=False)
+    now.add_argument("kind")
+    now.set_defaults(handler=run_now, configure_logging=False)
     retry = actions.add_parser("retry", help=t("ops.help_jobs_retry"), allow_abbrev=False)
     retry.add_argument("job_id")
     retry.set_defaults(handler=run_retry, configure_logging=False)
@@ -33,5 +37,12 @@ def run_list(args: argparse.Namespace, channel: OpsChannel) -> int:
 @ops_command
 def run_retry(args: argparse.Namespace, channel: OpsChannel) -> int:
     channel.call("ops.jobs_retry", job_id=args.job_id)
+    print(t("ops.done"))
+    return 0
+
+
+@ops_command
+def run_now(args: argparse.Namespace, channel: OpsChannel) -> int:
+    channel.call("ops.jobs_run", kind=args.kind)
     print(t("ops.done"))
     return 0

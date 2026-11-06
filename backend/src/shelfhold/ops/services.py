@@ -191,6 +191,18 @@ class OpsServices:
             raise NotWaitingError("this series is not paused")
         return True
 
+    def jobs_run_now(self, kind: str) -> None:
+        """A periodic job is due now: the server's next tick (at most a minute) starts it."""
+        table = platform.schedule
+        with self._engine.begin() as connection:
+            done = connection.execute(
+                sa.update(table)
+                .where(table.c.job_kind == kind, table.c.enabled)
+                .values(next_due_at=self._clock.now())
+            ).rowcount
+        if not done:
+            raise UnknownSubjectError("no periodic job of this kind is scheduled")
+
     def jobs_retry(self, subject: str) -> JobRow | None:
         """A job that gave up goes back to the queue (the scheduler dispatches it); a file the
         server never indexed is looked at again by the arrival poll."""

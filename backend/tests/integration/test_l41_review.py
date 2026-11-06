@@ -187,3 +187,47 @@ def test_m6_the_purge_takes_its_time_from_the_clock_of_the_composition() -> None
     from shelfhold.ops.library import LibraryOps
 
     assert "now" not in inspect.signature(LibraryOps.purge).parameters
+
+
+def test_a_periodic_job_can_be_asked_to_run_now(settings: Settings, tmp_path) -> None:
+    from shelfhold.ops.errors import UnknownSubjectError
+    from tests.l41_env import instance
+
+    with instance(settings, tmp_path) as inst:
+        from shelfhold.ops.wiring import open_ops
+
+        ops = open_ops(settings, engine=inst.engine, composition=inst.comp)
+        with pytest.raises(UnknownSubjectError):
+            ops.jobs_run_now("follow.cycle")  # nothing scheduled yet on this fresh database
+        with inst.engine.begin() as c:
+            c.execute(
+                sa.insert(platform.schedule).values(
+                    id="01M6Q2VYM102EK250JTAPVGMV7",
+                    job_kind="follow.cycle",
+                    scope_key="",
+                    cron="*/15 * * * *",
+                    jitter_s=0,
+                    enabled=True,
+                )
+            )
+        ops.jobs_run_now("follow.cycle")
+        with inst.engine.connect() as c:
+            due = c.execute(sa.select(platform.schedule.c.next_due_at)).scalar_one()
+        assert due is not None
+
+
+def test_shelf_create_makes_the_folder_of_the_destination(settings: Settings, tmp_path) -> None:
+    """The permission probe of the export and the Kavita library both need the folder to exist."""
+    from shelfhold.headless.wiring import _ShelfLinker
+    from tests.l41_env import instance
+
+    class NoKavita(_ShelfLinker):
+        def link(self, target_id: str, destination_id: str, *, library_name: str) -> str:
+            return "1"
+
+    with instance(settings, tmp_path) as probe:
+        linker = NoKavita(settings, probe.engine)
+    with instance(settings, tmp_path / "again", linker=linker) as inst:
+        (inst.library / "Kavita").rmdir()
+        inst.configure()
+        assert (inst.library / "Kavita").is_dir()
