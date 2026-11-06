@@ -67,6 +67,7 @@ class Instance:
     kavita: FakeKavita
     suwayomi: FakeSuwayomi
     library: Path
+    network: Network
 
     def configure(self, *, suwayomi: bool = False) -> None:
         self.admin.target_add_kavita(
@@ -104,6 +105,6 @@ def instance(settings: Settings, tmp: Path, *, linker: object = None) -> Iterato
     )  # fmt: skip
     comp = Composition(settings, engine, clock=SystemClock(), network=network)
     try:
-        yield Instance(settings, engine, admin, comp, kavita, suwayomi, library)
+        yield Instance(settings, engine, admin, comp, kavita, suwayomi, library, network)
     finally:
         engine.dispose()

@@ -17,6 +17,7 @@ import pytest
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
+from shelfhold.composition import Network
 from shelfhold.config import Settings
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.interfaces.cli.registry import main as cli_main
@@ -130,6 +131,7 @@ def auth_env(
     base_url: str = HTTPS,
     with_admin: bool = True,
     hardened: bool = False,
+    network: Network | None = None,
 ) -> Iterator[AuthEnv]:
     if hardened:
         settings = settings.model_copy(update={"auth_hardened": True})
@@ -137,6 +139,6 @@ def auth_env(
     if with_admin:
         assert create_admin(monkeypatch, settings) == 0
     clock = ManualClock()
-    app = create_app(settings, clock=clock, routers=routers)
+    app = create_app(settings, clock=clock, routers=routers, network=network)
     with TestClient(app, base_url=base_url) as client:
         yield AuthEnv(settings=settings, clock=clock, client=client, app=app)

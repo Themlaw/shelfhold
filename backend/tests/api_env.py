@@ -1,7 +1,8 @@
 """A small API with the L11 conventions wired on, over a real SQLite database (no mocks).
 
-The routes are throwaway: they exist to exercise problems, pagination, idempotency, `If-Match`
-and 202 through the real application factory.
+The routes are throwaway: they exist to exercise problems and pagination through the real
+application factory. Idempotency, `If-Match` and 202 are proved on the real routes of `create_app()`
+(`tests/integration/test_l51_plan_jobs.py`).
 """
 
 from collections.abc import Mapping
@@ -9,17 +10,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.idempotency_store import IdempotencyStore
 from shelfhold.infrastructure.schema import metadata
-from shelfhold.interfaces.http_api.accepted import JobAccepted, accepted_job
 from shelfhold.interfaces.http_api.app import create_http_app
 from shelfhold.interfaces.http_api.pagination import Page, PageParams, make_page, page_params_for
-from shelfhold.interfaces.http_api.preconditions import check_if_match, etag_for_version
 
 T0 = datetime(2026, 11, 4, 8, 0, tzinfo=UTC)
 
@@ -47,9 +46,6 @@ class ApiEnv:
     client: TestClient
     clock: list[datetime]
     created: list[Thing] = field(default_factory=list)
-    exports_started: list[str] = field(default_factory=list)
-    boom_calls: list[int] = field(default_factory=list)
-    status_calls: list[int] = field(default_factory=list)
 
 
 def build_env(
@@ -77,40 +73,9 @@ def build_env(
         rows = [t for t in sorted(things.values(), key=lambda t: t.id) if t.id > int(after)]
         return make_page(rows[: params.limit + 1], params.limit, lambda t: (t.id,))
 
-    @router.get("/things/{thing_id}")
-    def get_thing(thing_id: int, response: Response) -> Thing:
-        thing = things[thing_id]
-        response.headers["ETag"] = etag_for_version(thing.version)
-        return thing
-
-    @router.put("/things/{thing_id}")
-    def rename_thing(
-        thing_id: int, body: NewThing, if_match: str | None = Header(default=None)
-    ) -> Thing:
-        thing = things[thing_id]
-        check_if_match(if_match, etag_for_version(thing.version))
-        things[thing_id] = thing = Thing(id=thing_id, name=body.name, version=thing.version + 1)
-        return thing
-
-    @router.post("/exports", status_code=202, response_model=JobAccepted)
-    def start_export() -> Response:
-        job_id = f"01JEXPORT{len(env_state['env'].exports_started):017d}"
-        env_state["env"].exports_started.append(job_id)
-        return accepted_job(job_id)
-
     @router.get("/boom")
     def boom() -> None:
         raise RuntimeError("/data/secret/path leaked sqlite3.OperationalError")
-
-    @router.post("/status/{code}")
-    def status(code: int) -> Response:
-        env_state["env"].status_calls.append(code)
-        return Response(b"{}", status_code=code, media_type="application/json")
-
-    @router.post("/boom-post")
-    def boom_post() -> None:
-        env_state["env"].boom_calls.append(1)
-        raise RuntimeError("sqlite3.OperationalError at /data/x")
 
     app = create_http_app(
         health=_Health(),
