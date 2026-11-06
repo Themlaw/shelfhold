@@ -65,7 +65,8 @@ from shelfhold.catalog.public import (
     place_parts,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
-from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.clock import Clock, FutureDateError, reject_future
+from shelfhold.infrastructure.content_trust import sanitize_upstream_text
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
 from shelfhold.jobs.ledger import Created
 from shelfhold.jobs.public import DomainSlots, JobContext, JobPools
@@ -468,6 +469,7 @@ class FollowCycle:
             if self._release_tombstoned(binding, info, key):
                 report.tombstoned += 1
                 continue
+            info = _trusted(info, look.now)  # text and date: nothing raw goes further (ENF-SEC-015)
             result = ingest_isolated(
                 self._engine,
                 IncomingUnit(
@@ -740,6 +742,34 @@ class FollowCycle:
 
 def select_key(edition: sa.Table, edition_id: str) -> sa.Select[tuple[object, ...]]:
     return sa.select(*(edition.c[k] for k in EDITION_KEY_COLUMNS)).where(edition.c.id == edition_id)
+
+
+def _plain(text: str | None) -> str | None:
+    return (sanitize_upstream_text(text) or None) if text else None
+
+
+def _trusted(info: UnitInfo, now: datetime) -> UnitInfo:
+    """What a source claims, made safe before it is stored or shown to Kavita.
+
+    The title and the team name are plain text (ENF-SEC-015: no markup, no control or bidi
+    character); an upload date later than the server's own clock allows is not believed
+    (ENF-TIME-001): without it the receipt time stands, and a team dated 2099 still goes inactive.
+    """
+    published = info.published_at
+    if published is not None:
+        try:
+            reject_future(published, now=now)
+        except (FutureDateError, ValueError):  # ValueError: a date without a time zone
+            log.warning("follow.future_date_ignored", remote_unit_id=info.remote_unit_id)
+            published = None
+    return info.model_copy(
+        update={
+            "number": _plain(info.number),
+            "title": _plain(info.title),
+            "team": _plain(info.team),
+            "published_at": published,
+        }
+    )
 
 
 def _place_of(info: UnitInfo) -> str:

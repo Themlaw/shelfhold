@@ -700,3 +700,16 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
 - Audit : `user_id`, `session_id` et `auth_time` comme les autres lignes ; `config apply` par le
   socket porte l'acteur et exige `admin_risk.accept` quand le plan crée une cible.
 - Sonde de liaison : `EROFS` détecté (conseil : retirer `:ro`) ; aucun bloc compose ne nomme root.
+
+## L45 : remédiation de l'audit (umask, texte amont, plafonds, dates futures)
+
+- **EF-EXP-006.** `SHELFHOLD_UMASK` est lu (`Settings.umask`, texte octal, **défaut `0022`** : la spec
+  ne fixe pas de défaut, son compose d'exemple donne `0002` pour un Kavita du même groupe via
+  `group_add`). `open_fsops` exige `umask` (sans défaut : aucun assemblage ne peut l'oublier) et
+  `Fsops` l'applique fichier par fichier. Le processus garde `umask 077` pour `/data` (base, état,
+  journaux) ; les secrets sont en 0600 par un mode explicite à l'`open` et `fchmod`, jamais par l'umask.
+- **ENF-SEC-015.** Le titre de chapitre et le nom d'équipe passent par `sanitize_upstream_text` dans le
+  cycle de suivi, avant le stockage, et de nouveau dans l'écriture du ComicInfo (`Title`, `Translator`).
+- **ENF-SEC-003.** Plafonds d'archive par défaut : 2 000 entrées et 2 Gio (spec, GAP-5-19).
+- **ENF-TIME-001.** Une date d'envoi au-delà de `now + 5 min` est ignorée par le service Suwayomi et
+  par le cycle (`reject_future`) : la date de réception tient lieu de date de sortie.

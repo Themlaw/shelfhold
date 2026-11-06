@@ -88,7 +88,7 @@ def open_restore(resolved: ResolvedSettings) -> Iterator[tuple[RestoreAdopter, R
         with engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = open_fsops(loaded)
+        fsops = open_fsops(loaded, umask=settings.umask)
         clock = SystemClock()
         bus = operating_bus(clock)
         guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)

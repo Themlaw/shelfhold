@@ -68,7 +68,7 @@ class TombstoneKeyringExit:
         with self._engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = open_fsops(loaded)
+        fsops = open_fsops(loaded, umask=self._settings.umask)
         service = TombstoneService(self._engine, keyring, fsops, operating_bus(self._clock))
         roots = [
             TombstoneRoot(

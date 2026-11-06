@@ -5,6 +5,7 @@ as a loader so that this module stays testable with a plain mapping.
 """
 
 import ipaddress
+import re
 import stat
 import tomllib
 from collections.abc import Callable, Mapping
@@ -49,6 +50,11 @@ class Settings(BaseModel):
     port: int = Field(default=8080, ge=1, le=65535)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["json", "console"] = "json"
+    # EF-EXP-006: the umask of the files and folders Shelfhold creates under /library (octal text,
+    # "0002" to let a Kavita in the same group write, "0022" by default: readable by any uid, so
+    # a Kavita under another uid can read them). The process itself stays at 077 for /data, and
+    # the secrets are 0600 by an explicit mode, whatever this says.
+    umask: int = Field(default=0o022, ge=0, le=0o777)
     public_url: str | None = None
     api_token: SecretStr | None = None
     # Where the keyring lives when it must not be in /data (ENF-SEC-005); a path, not a secret.
@@ -87,6 +93,25 @@ class Settings(BaseModel):
     disk_pause_gib: float = Field(default=10.0, ge=0)
     disk_resume_percent: float = Field(default=8.0, ge=0, le=60)
     disk_resume_gib: float = Field(default=15.0, ge=0)
+
+    @field_validator("umask", mode="before")
+    @classmethod
+    def _octal_umask(cls, value: object) -> object:
+        """`SHELFHOLD_UMASK=0027` is octal text; an integer (a TOML `0o027`) is taken as is."""
+        if isinstance(value, str):
+            if not re.fullmatch(r"0?[0-7]{1,3}", value.strip()):
+                raise ValueError("umask must be octal text such as 0022")
+            value = int(value.strip(), 8)
+        return value
+
+    @field_validator("umask")
+    @classmethod
+    def _safe_umask(cls, value: int) -> int:
+        if value & 0o700:
+            raise ValueError("umask must not mask the owner's bits: files would be unusable")
+        if not value & 0o002:
+            raise ValueError("umask must mask 'others write' (0o002 set), e.g. 0022 or 0002")
+        return value
 
     @field_validator("forward_auth_trusted_cidrs")
     @classmethod

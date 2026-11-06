@@ -164,7 +164,10 @@ class Composition:
             return None
 
     def open_fsops(self, loaded: LoadedRoots) -> Fsops:
-        return open_fsops(loaded, write_gate=self.gates.write_gate, stop_gate=self.gates.stop_gate)
+        return open_fsops(
+            loaded, umask=self.settings.umask,
+            write_gate=self.gates.write_gate, stop_gate=self.gates.stop_gate,
+        )  # fmt: skip
 
     def tombstones(self, fsops: Fsops, loaded: LoadedRoots) -> TombstoneService:
         """The tombstone service, replayed (a purged file is never acquired again). One per

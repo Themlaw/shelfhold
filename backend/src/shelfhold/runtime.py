@@ -149,8 +149,9 @@ class InstanceRuntime:
             if loaded is None or instance_id is None:
                 return ResolveReport()  # no instance row yet: nothing was ever written
             fsops = open_fsops(
-                loaded, write_gate=guard.require_space, stop_gate=self.barrier.require_open
-            )
+                loaded, umask=self.settings.umask,
+                write_gate=guard.require_space, stop_gate=self.barrier.require_open,
+            )  # fmt: skip
             journal = IntentJournal(engine, fsops, clock=clock)
             # Before anything else: a database older than the disk is read only (EF-INT-026).
             restore_guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)

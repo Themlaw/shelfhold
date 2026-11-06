@@ -125,7 +125,7 @@ def render_comicinfo(data: ComicInfoData, *, lang: str | None = None) -> Rendere
         return "" if value is None else str(value)
 
     values: dict[str, str] = {
-        "Title": data.title,
+        "Title": sanitize_upstream_text(data.title),
         "Series": data.series,
         "LocalizedSeries": data.localized_series,
         "SeriesSort": data.series_sort,
@@ -136,7 +136,7 @@ def render_comicinfo(data: ComicInfoData, *, lang: str | None = None) -> Rendere
         "Year": number(data.year),
         "Month": number(data.month),
         "Day": number(data.day),
-        "Translator": _no_comma(data.team_label, "Translator", warnings),
+        "Translator": _no_comma(sanitize_upstream_text(data.team_label), "Translator", warnings),
         "Publisher": _no_comma(data.publisher, "Publisher", warnings),
         "Genre": ", ".join(_no_comma(g, "Genre", warnings) for g in data.genres),
         "Web": data.web,

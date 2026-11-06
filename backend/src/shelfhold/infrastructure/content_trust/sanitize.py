@@ -81,14 +81,20 @@ def _href_filter(tag: str, attribute: str, value: str) -> str | None:
 def _strip_markup(text: str) -> str:
     """Tags out, entities decoded, repeated until stable: the result parses as text only."""
     for _ in range(_MAX_PASSES):
-        cleaned = html.unescape(
-            nh3.clean(text, tags=set(), attributes={}, clean_content_tags=set(_DROP_WITH_CONTENT))
+        # An entity can spell an invisible character (`&#x202E;`): drop them after every decoding.
+        cleaned = _INVISIBLE.sub(
+            "",
+            html.unescape(
+                nh3.clean(
+                    text, tags=set(), attributes={}, clean_content_tags=set(_DROP_WITH_CONTENT)
+                )
+            ),
         )
         if cleaned == text:
             return text
         text = cleaned
     # Still moving after eight layers of encoding: nothing legitimate looks like that.
-    return text.replace("<", "").replace(">", "").replace("&", "")
+    return _INVISIBLE.sub("", text.replace("<", "").replace(">", "").replace("&", ""))
 
 
 def _html(text: str) -> str:
@@ -129,7 +135,7 @@ def sanitize_upstream_text(
     destination = Destination(destination)
     text = _clean_characters(text[:MAX_INPUT_CHARS])
     if destination is Destination.HTML:
-        cleaned = _html(text)
+        cleaned = _INVISIBLE.sub("", _html(text))  # nh3 decodes `&#x202E;` to the character
         if max_length is None or len(html.unescape(nh3.clean(cleaned, tags=set()))) <= max_length:
             return cleaned
         return html.escape(_cut(_strip_markup(text), max_length), quote=True)

@@ -224,11 +224,13 @@ class FakeSuwayomi:
         chapter = self._chapter(int(path.split("/")[4]))
         if chapter is None:
             return self._text(400, "Invalid folder to create CBZ")  # as measured in S5
+        # An HTTP header is latin-1: what is not (a bidi mark in a hostile title) is replaced.
+        shown = str(chapter["name"]).encode("latin-1", "replace").decode("latin-1")
         return Response(
             status=200,
             headers={
                 "content-type": "application/vnd.comicbook+zip",
-                "content-disposition": f'attachment; filename="Series - {chapter["name"]}.cbz"',
+                "content-disposition": f'attachment; filename="Series - {shown}.cbz"',
             },
             body=(SYNTHETIC / chapter["cbz"]).read_bytes(),
         )

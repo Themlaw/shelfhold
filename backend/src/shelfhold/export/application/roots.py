@@ -95,12 +95,14 @@ def load_roots(connection: Connection, path_map: PathMap) -> LoadedRoots:
 def open_fsops(
     loaded: LoadedRoots,
     *,
+    umask: int,
     write_gate: Callable[[], None] | None = None,
     stop_gate: Callable[[], None] | None = None,
 ) -> Fsops:
     """The one way to open the library's `Fsops`: the gates a caller has (disk, stop barrier) and
-    the restore freeze (`restore_pending`), which no assembly may forget."""
+    the restore freeze (`restore_pending`) and the library umask (`SHELFHOLD_UMASK`, EF-EXP-006),
+    which no assembly may forget: `umask` has no default."""
     return Fsops.open(
-        loaded.path_map, loaded.expected, write_gate=write_gate, stop_gate=stop_gate,
+        loaded.path_map, loaded.expected, umask=umask, write_gate=write_gate, stop_gate=stop_gate,
         frozen=loaded.restore_pending,
     )  # fmt: skip

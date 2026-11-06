@@ -226,7 +226,7 @@ def follow_bench(
         guarded = IntegrationFetcher(dns, lan_targets=lan, transport=server.transport)
         fetcher = FakeSuwayomiFetcher(server)
         fetcher.has_credentials = has_credentials  # type: ignore[attr-defined]
-        service = service or SuwayomiService(BASE_URL)
+        service = service or SuwayomiService(BASE_URL, now=clock.now)
         bus = EventBus(clock)
         sleeps: list[float] = []
 

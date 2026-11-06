@@ -143,7 +143,7 @@ def open_adoption(
         engine, vault, network.integration_fetcher(url), target_id=row.id,
         base_url=url, events=events, clock=clock,
     )  # fmt: skip
-    fsops = open_fsops(loaded)
+    fsops = open_fsops(loaded, umask=settings.umask)
     tombstones = TombstoneService(engine, keyring, fsops, bus)
     tombstones.replay(
         [

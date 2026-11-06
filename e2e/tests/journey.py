@@ -122,7 +122,7 @@ class Journey:
         done = self.compose(
             "exec", "-T", "shelfhold", "find", "/library", "-type", "f", check=False
         )
-        return sorted(done.stdout.split())
+        return sorted(line for line in done.stdout.splitlines() if line)  # names hold spaces
 
     def container_id(self, service: str = "shelfhold") -> str:
         return self.compose("ps", "-a", "-q", service).stdout.strip()

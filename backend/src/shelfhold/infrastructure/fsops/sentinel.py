@@ -31,7 +31,7 @@ def read_sentinel(root: ConfinedRoot) -> SentinelDocument | None:
 
 
 def write_sentinel(root: ConfinedRoot, doc: SentinelDocument) -> None:
-    write_atomic(root, SENTINEL_FILE, doc.dumps())
+    write_atomic(root, SENTINEL_FILE, doc.dumps(), file_mode=0o600)
 
 
 def create_sentinel(
