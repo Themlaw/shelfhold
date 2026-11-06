@@ -293,13 +293,13 @@ def test_hardened_profile_admin_session_idle(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     with auth_env(monkeypatch, settings, hardened=True) as env:
-        env.login()
+        env.login(remember=False)
         env.clock.advance(timedelta(minutes=29))
         assert env.client.get("/api/v1/auth/session").status_code == 200
         env.clock.advance(timedelta(minutes=31))
         assert env.client.get("/api/v1/auth/session").status_code == 401
         # 12 hours absolute, however active the session is.
-        env.login()
+        env.login(remember=False)
         for _ in range(12 * 3):
             env.clock.advance(timedelta(minutes=20))
             last = env.client.get("/api/v1/auth/session")
