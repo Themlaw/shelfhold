@@ -58,6 +58,7 @@ from shelfhold.export.application.repatriate import (
 from shelfhold.export.application.repatriate_kavita import (
     BaselineStore,
     KavitaVerdict,
+    covers,
     read_snapshot,
     verify,
 )
@@ -510,26 +511,42 @@ class LibraryOps:
             ctx.remote_folder(ctx.root_local),
         )
 
-    def _kavita_baseline(self, destination_id: str) -> None:
-        """What Kavita says now, written down once before the first copy (a Kavita that cannot be
-        read leaves no baseline, and the control then refuses: nothing is declared safe)."""
+    def _kavita_baseline(
+        self, destination_id: str, repatriator: Repatriator, plan: RepatriationPlan
+    ) -> None:
+        """What Kavita says now, written down once, **before the first copy**. Refused (nothing
+        copied) when it cannot be taken, when it does not cover the adopted files (an account that
+        sees nothing, a scan still running), or when files are already home and there is no
+        "before": a baseline taken after the damage would prove the damage is the reference. Once
+        written it is never replaced."""
         store = BaselineStore(self._comp.engine)
         if store.load(destination_id) is not None:
             return
+        if any(action.status == "present" for action in plan.files):
+            raise RepatriationBlockedError(())  # copy begun without a "before"
         try:
             client, library_ref, remote_root = self._kavita_target(destination_id)
             if library_ref is None:
-                return
+                raise RepatriationBlockedError(())
             snapshot = asyncio.run(read_snapshot(client, library_ref, remote_root))
         except _KAVITA_UNAVAILABLE:
-            return
+            raise RepatriationBlockedError(()) from None
+        series, rels = repatriator.adopted_paths(destination_id)
+        if not covers(snapshot, remote_root, rels, series):
+            raise RepatriationBlockedError(())
         store.save_if_absent(destination_id, snapshot)
+        if store.load(destination_id) is None:  # a damaged value is in the way
+            raise RepatriationBlockedError(())
 
-    def _kavita_verdict(self, destination_id: str) -> KavitaVerdict:
+    def _kavita_verdict(self, destination_id: str, repatriator: Repatriator) -> KavitaVerdict:
         """Scan the folder, read Kavita again, compare it with the baseline."""
         baseline = BaselineStore(self._comp.engine).load(destination_id)
         try:
             client, library_ref, remote_root = self._kavita_target(destination_id)
+            if baseline is not None:
+                series, rels = repatriator.adopted_paths(destination_id)
+                if not covers(baseline, remote_root, rels, series):
+                    return KavitaVerdict(reason="baseline_incomplete")
             return asyncio.run(
                 verify(client, baseline, library_ref, remote_root, unreachable=_KAVITA_UNAVAILABLE)
             )
@@ -544,12 +561,13 @@ class LibraryOps:
         with self._comp.write_context() as w:
             repatriator = self._repatriator(w.fsops, w.loaded)
             plan = repatriator.plan(destination_id, source=source)
-            self._kavita_baseline(destination_id)  # before the first byte is copied
+            if fingerprint == plan.fingerprint and not plan.frozen:
+                self._kavita_baseline(destination_id, repatriator, plan)  # before any copy
             result = repatriator.apply(
                 destination_id, fingerprint=fingerprint, job_id=new_ulid(), source=source
             )
             check = repatriator.check(
-                destination_id, plan=plan, kavita=self._kavita_verdict(destination_id)
+                destination_id, plan=plan, kavita=self._kavita_verdict(destination_id, repatriator)
             )
         return {
             "copied": result.copied,
@@ -564,8 +582,9 @@ class LibraryOps:
         with what it said before the copy."""
         destination_id = self._destination(destination_id)
         fsops, loaded, _tombstones = self._comp.read_context()
-        check = self._repatriator(fsops, loaded).check(
-            destination_id, kavita=self._kavita_verdict(destination_id)
+        repatriator = self._repatriator(fsops, loaded)
+        check = repatriator.check(
+            destination_id, kavita=self._kavita_verdict(destination_id, repatriator)
         )
         return _check(check)
 

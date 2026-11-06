@@ -231,6 +231,14 @@ class Repatriator:
             copy, self._free(target_root), digest.hexdigest(), self.frozen(),
         )  # fmt: skip
 
+    def adopted_paths(self, destination_id: str) -> tuple[int, list[str]]:
+        """The series folders and the relative paths of the adopted files: what a "before" of
+        Kavita must cover. Read-only, from the database alone."""
+        with self._engine.connect() as connection:
+            adopted = self._adopted(connection, destination_id)
+        folders = {posixpath.dirname(i.rel_path).split("/")[0] or i.rel_path for i in adopted}
+        return len(folders), [i.rel_path for i in adopted]
+
     def frozen(self) -> bool:
         """`restored_behind`: the freeze of this process, or the one the database persists
         (`restore_generation`, until `reconcile --adopt-after-restore`)."""

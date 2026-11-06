@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
@@ -36,6 +36,7 @@ __all__ = [
     "KavitaSnapshot",
     "KavitaVerdict",
     "compare",
+    "covers",
     "read_snapshot",
     "verify",
 ]
@@ -88,7 +89,8 @@ class KavitaVerdict:
     """The comparison. `reason` says why nothing could be verified; otherwise the lists say what
     differs (empty: the same series, the same files, no progress lost)."""
 
-    reason: str | None = None  # no_baseline | unreachable | no_library
+    # no_baseline | baseline_incomplete | unreachable | incomplete | no_library
+    reason: str | None = None
     series_before: int = 0
     series_after: int = 0
     files_before: int = 0
@@ -138,6 +140,18 @@ def compare(before: KavitaSnapshot, after: KavitaSnapshot) -> KavitaVerdict:
             if path in after.files and after.files[path] < read
         )),
     )  # fmt: skip
+
+
+def covers(
+    snapshot: KavitaSnapshot, remote_root: str, rel_paths: Sequence[str], series: int
+) -> bool:
+    """Does the "before" hold what the adopted files are? At least `series` series and every file
+    of the plan under `remote_root`. An empty answer (the account sees nothing, or Kavita is
+    still scanning) covers nothing, and a comparison with it would prove nothing."""
+    if not snapshot.series or len(snapshot.series) < series or not rel_paths:
+        return False
+    root = clean_absolute(remote_root)
+    return all(f"{root}/{rel}" in snapshot.files for rel in rel_paths)
 
 
 async def read_snapshot(client: KavitaPort, library_ref: str, remote_root: str) -> KavitaSnapshot:
@@ -208,6 +222,8 @@ async def verify(
                 return verdict
             if attempt + 1 < SETTLE_ATTEMPTS:
                 await sleep(SETTLE_INTERVAL_S)
-    except unreachable:
-        return KavitaVerdict(reason="unreachable")
+    except unreachable as error:  # a listing cut at its cap is not "all of Kavita"
+        return KavitaVerdict(
+            reason="incomplete" if getattr(error, "incomplete", False) else "unreachable"
+        )
     return verdict

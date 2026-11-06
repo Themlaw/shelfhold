@@ -168,6 +168,8 @@ def _report_check(check: dict[str, Any]) -> int:
             "no_baseline": t("repatriate.kavita_no_baseline"),
             "unreachable": t("repatriate.kavita_unreachable"),
             "no_library": t("repatriate.kavita_no_library"),
+            "baseline_incomplete": t("repatriate.kavita_baseline_incomplete"),
+            "incomplete": t("repatriate.kavita_incomplete"),
         }
         print(reasons.get(kavita["reason"], t("repatriate.kavita_not_asked")), file=sys.stderr)
     else:

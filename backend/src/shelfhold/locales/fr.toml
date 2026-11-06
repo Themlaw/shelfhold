@@ -975,6 +975,8 @@ kavita_problem = "Kavita : {kind} : {what}"
 kavita_no_baseline = "Kavita : aucun état d'avant la copie n'est enregistré, rien n'est vérifié. Lancez --repatriate --dry-run puis --confirm tant que l'ancien volume est monté."
 kavita_unreachable = "Kavita ne répond pas ou refuse la lecture : rien n'est vérifié."
 kavita_no_library = "Kavita : la destination n'est liée à aucune bibliothèque, rien n'est vérifié."
+kavita_baseline_incomplete = "Kavita : l'état d'avant la copie ne couvre pas les fichiers adoptés (le compte de la clé ne voit pas tout, ou un scan était en cours) : rien n'est vérifié."
+kavita_incomplete = "Kavita : la liste des séries est trop longue pour être lue en entier, rien n'est vérifié."
 kavita_not_asked = "Kavita n'a pas été interrogée, rien n'est vérifié."
 
 [detach]

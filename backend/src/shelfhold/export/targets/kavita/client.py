@@ -34,6 +34,7 @@ from shelfhold.export.targets.kavita.credentials import AdminKey
 from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.export.targets.kavita.errors import (
     ConfirmationRequired,
+    ListingIncomplete,
     PlanNotVerified,
     ProtocolError,
     RouteMissing,
@@ -316,9 +317,11 @@ class KavitaClient:
         return [dto.Member.from_json(item) for item in data]
 
     async def series_of_library(
-        self, library_id: int, *, max_pages: int = MAX_SERIES_PAGES
+        self, library_id: int, *, max_pages: int | None = None
     ) -> list[dto.SeriesInfo]:
-        """The series of a library, capped (`max_pages` of 100): never an unbounded read."""
+        """The series of a library, capped (`max_pages` of 100): never an unbounded read, and never
+        a silently cut one (`ListingIncomplete` at the cap)."""
+        max_pages = MAX_SERIES_PAGES if max_pages is None else max_pages
         found: list[dto.SeriesInfo] = []
         body = dto.library_filter(int(library_id))
         for page in range(1, max_pages + 1):
@@ -328,8 +331,8 @@ class KavitaClient:
                 raise ProtocolError("all-v2 did not answer a list")
             found.extend(dto.SeriesInfo.from_json(item) for item in data)
             if len(data) < SERIES_PAGE:
-                break
-        return found
+                return found
+        raise ListingIncomplete(f"the library has at least {max_pages * SERIES_PAGE} series")
 
     async def series_by_ids(self, series_ids: Sequence[int]) -> dict[int, dto.SeriesInfo]:
         """The current state (name included) of series known by their cached id."""
