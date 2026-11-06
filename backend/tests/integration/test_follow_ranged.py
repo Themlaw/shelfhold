@@ -13,7 +13,7 @@ from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.library.public import Received
-from shelfhold.sdk.refs import RangedPayload
+from shelfhold.sdk.refs import RangedPayload, SeriesRef
 from shelfhold.sdk.testing import FakeRangedConnectedService, fake_ranged_fetcher
 from shelfhold.sdk.testing.fakes import FAKE_KEY
 from tests.fakes_clock import ManualClock
@@ -21,6 +21,13 @@ from tests.follow_env import START, empty_catalog
 from tests.integration.test_schema_catalog import add_edition, add_work
 from tests.library_env import lib_env
 from tests.null_tombstones import NONE_PURGED
+
+
+class _Library(FakeRangedConnectedService):
+    """The fake plugin with the one series it offers in the library of the service."""
+
+    async def followed_series(self, f: Any) -> list[SeriesRef]:
+        return [self._series()]
 
 
 @pytest.mark.req("EF-SRC-032", "EF-SRC-034")
@@ -61,7 +68,7 @@ def test_follow_cycle_requests_and_files_the_volumes_of_a_ranged_service() -> No
             )
         clock = ManualClock(START)
         cycle = FollowCycle(
-            lib.engine, EventBus(clock), clock, FakeRangedConnectedService(), fake_ranged_fetcher(),
+            lib.engine, EventBus(clock), clock, _Library(), fake_ranged_fetcher(),
             store=None,  # type: ignore[arg-type]
             receive=receive, place=lambda *_: "unused", tombstones=NONE_PURGED, keep_range=keep,
         )  # fmt: skip
