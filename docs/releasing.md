@@ -21,6 +21,10 @@ Une release est une action manuelle du mainteneur, en quatre étapes. Aucun jeto
    `data-dictionary.md` avec `.github/scripts/release-assets.sh` et les attache à la release (`gh release upload --clobber`).
    `schema.sql` vient des migrations Alembic appliquées à une base vide ; le dictionnaire ajoute une description par table et par colonne
    (`backend/src/shelfhold/docgen/schema_descriptions.toml`) : un test échoue si l'une manque. Ni l'un ni l'autre ne s'écrit à la main.
+6. **Preuves de release** (ENF-SEC-007, ENF-QUAL-007) : `release.yml` exécute la suite unitaire du tag (`test-report`, sans jeton d'écriture),
+   puis `release-proofs` (`contents: write`) vérifie les attestations des digests publiés et attache `sbom.spdx.json` (amd64),
+   `sbom-arm64.spdx.json`, `provenance.intoto.jsonl`, `test-report.xml` et `bench-reference.json` (la référence versionnée dans
+   `.github/bench-reference.json`, car les artefacts expirent). Vérification à la main : `gh attestation verify oci://ghcr.io/themlaw/shelfhold@<digest> --repo Themlaw/shelfhold`.
 
 **Reprise** : si le job a échoué (CI encore rouge, image absente, erreur du registre), relancer le workflow `release` depuis l'onglet
 Actions (`workflow_dispatch`, entrée `tag` = `vX.Y.Z`). Le script est idempotent.

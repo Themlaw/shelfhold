@@ -47,7 +47,9 @@ def test_release_assets_include_sbom_and_attestations() -> None:
     for asset in ("sbom.spdx.json", "provenance.intoto.jsonl", "test-report", "bench-reference"):
         assert asset in text, asset
     assert "gh release upload" in text and "--clobber" in text
-    assert "gh attestation" in text
+    script = (ROOT / ".github" / "scripts" / "release-proofs.sh").read_text(encoding="utf-8")
+    assert "release-proofs.sh" in text
+    assert "gh attestation verify" in script and "gh attestation download" in script
     # the benchmark reference is versioned in the repository (artifacts expire)
     assert (ROOT / ".github" / "bench-reference.json").is_file()
     # the proofs wait for the image of the release
@@ -82,6 +84,8 @@ def test_attestation_permissions_scoped_to_publish_job() -> None:
         assert "id-token" not in top and "attestations" not in top, path.name
         for name, job in workflow["jobs"].items():
             perms = job.get("permissions")
+            if "uses" in job:  # a caller grants the scopes the reusable workflow may use
+                continue
             if isinstance(perms, dict) and ("id-token" in perms or "attestations" in perms):
                 holders.append((path.name, name, dict(perms)))
     assert holders == [
@@ -127,7 +131,8 @@ def test_grype_scan_job_uploads_sarif_without_blocking_on_findings() -> None:
     text = "\n".join(str(s) for s in scan["steps"])
     assert "sarif" in text and "fail-build" in text
     # a vulnerability published tomorrow must not break an unrelated PR: reported, not required
-    assert "scan" not in ci["ci-success"]["needs"]
+    gate = "\n".join(str(s.get("run", "")) for s in ci["ci-success"]["steps"])
+    assert "SCAN" in gate and 'check_filtered "$SCAN"' not in gate
 
 
 @pytest.mark.req("ENF-SEC-007")

@@ -5,7 +5,14 @@
 | `ci.yml` / `image-pr` | `pull_request`, seulement si `backend/`, `frontend/`, `docker/`, `e2e/`, `compose*` ou `.github/workflows/image*` changent | `contents: read`, `packages: read` | `image.yml` : build natif **amd64 seul**, taille <= 300 Mo, e2e |
 | `ci.yml` / `image-main` | `push` sur `main` | `packages: write` | idem sur amd64 **et arm64**, plus rafraîchissement du cache de couches dans GHCR |
 | `ci.yml` / `image-publish` | `push` sur `main`, après `image-main`, `frontend` et `openapi` (ou filtrés) | `packages: write` | `image-publish.yml` : publie les archives OCI **déjà testées**, puis le manifeste multi-arch (`edge`, `sha-<long>`) |
+| `ci.yml` / `scan` | tout run où l'image est construite | `security-events: write` | Grype sur l'archive amd64 testée, SARIF vers l'onglet Sécurité ; **informatif** (hors `ci-success`, `fail-build` désactivé : une CVE publiée demain ne doit pas casser une PR sans rapport) |
+| `codeql.yml` | `pull_request`, `push` sur `main`, hebdomadaire | `security-events: write` | CodeQL Python et TypeScript (dépôt public : code scanning gratuit) |
+| `cleanup.yml` | hebdomadaire, ou à la main (`dry-run` par défaut) | `packages: write` | supprime les versions GHCR dont **tous** les tags sont `pr-*` et plus vieilles que 14 jours ; jamais une version sans tag (manifestes par plateforme, signatures, attestations) |
 
+- **Attestations (ENF-SEC-007, palier M1b).** Le job `merge` de `image-publish.yml` est le seul à détenir `id-token: write` et
+  `attestations: write` (l'appelant `ci.yml` les accorde à ce seul appel). Il attache une provenance SLSA au manifeste multi-arch et
+  à chaque image de plateforme, et un SBOM SPDX à chaque image de plateforme (`gh attestation verify` réussit pour les deux
+  architectures). Pas de cosign avant M3.
 - **`packages: write` n'atteint jamais une exécution `pull_request`**, y compris pour une branche du dépôt
   (`test_no_job_reachable_on_pull_request_has_packages_write`). C'est pourquoi la publication est dans un second
   workflow réutilisable : un workflow appelé ne peut pas déclarer plus de droits que son appelant, même pour un job sauté.

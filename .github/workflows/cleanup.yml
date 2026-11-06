@@ -1,0 +1,50 @@
+name: cleanup
+
+# GHCR cleanup (ENF-QUAL-007): deletes only package versions whose tags ALL start with `pr-` and
+# that are older than the retention. Anything else is kept: edge, sha-*, X.Y.Z, X.Y, the cache
+# package, and every version without a tag (platform manifests, signatures, attestations: they
+# are referenced by digest by the multi-arch manifests, deleting them breaks the images).
+on:
+  schedule:
+    - cron: "41 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "List what would be deleted, delete nothing"
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: cleanup
+  cancel-in-progress: false
+
+jobs:
+  pr-tags:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      OWNER: ${{ github.repository_owner }}
+      PACKAGE: shelfhold
+      KEEP_DAYS: "14"
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || 'false' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Delete the pr-* versions older than the retention
+        run: |
+          cutoff="$(date -u -d "${KEEP_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)"
+          gh api --paginate "users/${OWNER}/packages/container/${PACKAGE}/versions?per_page=100" \
+            | jq -r --arg cutoff "$cutoff" '.[]
+                | select((.metadata.container.tags | length) > 0)
+                | select(all(.metadata.container.tags[]; startswith("pr-")))
+                | select(.updated_at < $cutoff)
+                | "\(.id) \(.metadata.container.tags | join(","))"' > "$RUNNER_TEMP/doomed"
+          while read -r id tags; do
+            [ -n "$id" ] || continue
+            echo "pr version ${id} (${tags})"
+            [ "$DRY_RUN" = true ] || gh api -X DELETE "users/${OWNER}/packages/container/${PACKAGE}/versions/${id}"
+          done < "$RUNNER_TEMP/doomed"

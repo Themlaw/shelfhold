@@ -63,12 +63,16 @@ jobs:
           retention-days: 1
 
   merge:
+    # The only job of the repository that holds id-token and attestations (ENF-SEC-007): the OIDC
+    # token signs the attestations of the digests that were just pushed, nothing else.
     needs: publish
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -85,6 +89,7 @@ jobs:
         env:
           TAGS: ${{ inputs.tags }}
           SHA: ${{ github.sha }}
+        id: manifest
         run: |
           tags="${TAGS:-$(printf 'edge\nsha-%s' "$SHA")}"
           args=()
@@ -94,3 +99,59 @@ jobs:
           [ "${#sources[@]}" -eq 2 ] || { echo "::error::expected 2 platform digests"; exit 1; }
           docker buildx imagetools create "${args[@]}" "${sources[@]}"
           docker buildx imagetools inspect "${IMAGE}:$(head -n1 <<< "$tags")"
+          # Digests to attest: the manifest list and each platform manifest (the order of the
+          # platforms does not matter, both are attested the same way).
+          index="$(docker buildx imagetools inspect "${IMAGE}:$(head -n1 <<< "$tags")" --format '{{.Manifest.Digest}}')"
+          {
+            echo "index=${index}"
+            echo "platform1=sha256:${sources[0]##*@sha256:}"
+            echo "platform2=sha256:${sources[1]##*@sha256:}"
+          } >> "$GITHUB_OUTPUT"
+      - name: SBOM (SPDX) of the first platform image
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.manifest.outputs.platform1 }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/sbom-1.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: SBOM (SPDX) of the second platform image
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.manifest.outputs.platform2 }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/sbom-2.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Provenance of the manifest list
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.index }}
+          push-to-registry: true
+      - name: Provenance of the first platform image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.platform1 }}
+          push-to-registry: true
+      - name: Provenance of the second platform image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.platform2 }}
+          push-to-registry: true
+      - name: SBOM attestation of the first platform image
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.platform1 }}
+          sbom-path: ${{ runner.temp }}/sbom-1.spdx.json
+          push-to-registry: true
+      - name: SBOM attestation of the second platform image
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.platform2 }}
+          sbom-path: ${{ runner.temp }}/sbom-2.spdx.json
+          push-to-registry: true
