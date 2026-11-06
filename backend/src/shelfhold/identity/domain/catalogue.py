@@ -47,6 +47,8 @@ _DECLARED = (
     _action("config.path_map", Effect.REINITS_STORAGE),  # which folders are written (`path_map.*`)
     # File-system journal
     _action("intents.resolve", Effect.SETTLES_FS_INTENT),  # EF-INT-014
+    # Identity keys
+    _action("normalize.migrate", Effect.MIGRATES_IDENTITY),  # EF-BIB-054, ENF-OPS-021
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),

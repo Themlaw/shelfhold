@@ -63,7 +63,7 @@ def test_replay_deletion_of_irreplaceable_requires_typed_confirmation(
                            "--confirm", unit) == 0  # fmt: skip
 
         def purged_files() -> list[Path]:
-            return sorted((env.library / "Kavita").rglob("*Ch.[34].cbz"))
+            return sorted((env.library / "manga" / "Kavita").rglob("*Ch.[34].cbz"))
 
         assert purged_files() == []  # erased by the purge
         bring_back(env, settings, backup, aside)

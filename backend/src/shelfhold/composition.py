@@ -48,7 +48,7 @@ from shelfhold.infrastructure.secrets import SecretVault, diagnostics
 from shelfhold.infrastructure.secrets.errors import SecretsError
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.integrations.apprise import operating_bus
-from shelfhold.library.public import TombstoneRoot, TombstoneService
+from shelfhold.library.public import Normalizers, TombstoneRoot, TombstoneService
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
 from shelfhold.sdk.models import AuthBasic
@@ -187,6 +187,18 @@ class Composition:
                 r.path == path and service.has_pending(r.root_id) for r in loaded.roots
             )
         )
+        return service
+
+    def fresh_tombstones(
+        self, fsops: Fsops, loaded: LoadedRoots, normalizers: Normalizers
+    ) -> TombstoneService:
+        """A tombstone service of its own, over the normalizer versions given, replayed: its index
+        is built under exactly those versions (`normalize migrate` screens the rows it would move
+        with the registry it plans with, whatever the long-lived service was built with)."""
+        service = TombstoneService(
+            self.engine, self.keyring(), fsops, self.bus, normalizers=normalizers
+        )
+        self._replay(service, fsops, loaded)
         return service
 
     @staticmethod

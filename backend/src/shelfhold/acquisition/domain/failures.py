@@ -3,7 +3,9 @@
 An error of a connected service belongs to one class, and the class alone decides the outcome:
 only `content` is counted (it can make a Unit irreplaceable, EF-BIB-042); `auth`, `version` and
 `schema` mean the service itself cannot be driven, so the whole service pauses and nothing is
-counted against any series; `infra` (asleep, rate-limited, truncated, reset) is retried later.
+counted against any series; `infra` (asleep, rate-limited, truncated, reset) is retried later;
+`untrusted` (a file with an entry off the allowlist, EF-BIB-051 (6)) is neither: the same bytes
+would be refused again, and the source did nothing a failure count should answer for.
 """
 
 from enum import StrEnum
@@ -13,12 +15,14 @@ from shelfhold.plugin_host.errors import failure_class_of
 
 class Disposition(StrEnum):
     COUNT = "count"  # one more consecutive content error for this source
+    REFUSE = "refuse"  # the file is refused for good: closed, announced, never retried, not counted
     PAUSE = "pause"  # the service waits for a human; nothing is counted
     RETRY = "retry"  # try again next cycle; nothing is counted
 
 
 _DISPOSITIONS = {
     "content": Disposition.COUNT,
+    "untrusted": Disposition.REFUSE,
     "auth": Disposition.PAUSE,
     "version": Disposition.PAUSE,
     "schema": Disposition.PAUSE,

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import (
@@ -20,9 +21,9 @@ from shelfhold.identity.public import (
     ReauthRequired,
     authorize_reserved,
 )
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, identity, platform
 from tests.auth_env import run_cli
-from tests.integration.test_schema_catalog import add_unit
 from tests.l50_env import Seeded, Series, seeded
 from tests.normalizer_env import install_normalizer_dist
 
@@ -31,11 +32,15 @@ STALE_PREVIEW = 4
 
 
 def live_unit(env: Seeded, series: Series, raw: str, norm: str) -> str:
+    unit_id = new_ulid()
     with env.inst.engine.begin() as connection:
-        return add_unit(
-            connection, series.edition_id, raw, number_norm=norm, number_norm_by="number@1",
-            number_sort=float(norm),
+        connection.execute(
+            sa.insert(catalog.unit).values(
+                id=unit_id, edition_id=series.edition_id, number_raw=raw, number_norm=norm,
+                number_norm_by="number@1", number_sort=float(norm), track="main", kind="chapter",
+            )
         )  # fmt: skip
+    return unit_id
 
 
 def stored(env: Seeded) -> dict[str, tuple[str, str | None]]:
@@ -78,8 +83,13 @@ def test_normalize_migrate_preview_intent_blocks_tombstone_hit(
         assert run_cli(monkeypatch, settings, "normalize", "migrate", "number") == 0
         out = capsys.readouterr().out
         assert "number@2" in out
-        assert world.hit in out  # blocked by a tombstone, named by identifier (never by title)
-        assert f"{world.merged}" in out and f"{world.occupant}" in out  # the merge to decide
+        assert f"blocked : {world.hit}" in out  # by a tombstone, named by identifier, no title
+        assert f"merge : {world.merged}" in out  # taken by `occupant`: a decision for a person
+        assert (
+            world.merged in out.split("Même place")[1]
+            and world.occupant in out.split("Même place")[1]
+        )
+        assert f"migrate : {world.clean}" in out and f"migrate : {world.same}" in out
         assert stored(env) == world.before
         fingerprint = fingerprint_of(out)
         hits = [e for e in env.rows(platform.event) if e.type == "tombstone.migration_hit"]
@@ -96,15 +106,22 @@ def test_normalize_migrate_preview_intent_blocks_tombstone_hit(
         after = stored(env)
         assert after[world.clean] == ("425", "number@2")
         assert after[world.same] == ("7", "number@2")
-        for held in (world.hit, world.merged, world.occupant):  # blocked, merge: left as they are
+        assert after[world.occupant] == (
+            "2000",
+            "number@2",
+        )  # its value is unchanged: only the version moves
+        for held in (world.hit, world.merged):  # blocked by a tombstone, a merge to decide
             assert after[held] == world.before[held]
+        assert "3 ligne(s) migrée(s)" in capsys.readouterr().out
         audit = [r for r in env.rows(identity.audit) if r.action == "normalize.migrate"]
         assert [(a.target) for a in audit] == ["number@2"]
         assert str(audit[0].actor_id).startswith("local_cli:")
 
         # run again: what was held is still held, nothing else is left to do
         assert run_cli(monkeypatch, settings, "normalize", "migrate", "number") == 0
-        assert world.hit in capsys.readouterr().out
+        again = capsys.readouterr().out
+        assert f"blocked : {world.hit}" in again and f"merge : {world.merged}" in again
+        assert f"migrate : {world.clean}" not in again
 
 
 def test_migrating_to_a_version_that_does_not_exist_is_refused(
@@ -141,10 +158,9 @@ def test_a_distribution_that_is_not_first_party_is_never_imported(
 def test_normalize_migrate_is_a_reserved_action_never_for_a_key_or_a_stale_session(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
-    from shelfhold.ops.normalize import NormalizeOps
-
     from shelfhold.interfaces.local_cli.ops import OPS_METHODS
     from shelfhold.ops.errors import CodedRefusal
+    from shelfhold.ops.normalize import NormalizeOps
 
     action = RESERVED_ACTIONS["normalize.migrate"]
     assert OPS_METHODS["ops.normalize_migrate"][1] == "normalize.migrate"

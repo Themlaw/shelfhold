@@ -362,8 +362,8 @@ class RangeTickets:
     def _failed(
         self, request_id: str, attempts: int, error: Exception, report: RangeReport
     ) -> None:
-        if disposition_of(classify(error)) is Disposition.COUNT:
-            self._update(request_id, state="abandoned")
+        if disposition_of(classify(error)) in (Disposition.COUNT, Disposition.REFUSE):
+            self._update(request_id, state="abandoned")  # a refused archive is never asked again
             report.abandoned += 1
         else:
             self._retry(request_id, attempts, report)

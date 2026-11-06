@@ -3,6 +3,7 @@
 from shelfhold.error_catalog import ErrorCode
 
 CODES: tuple[ErrorCode, ...] = (
+    ErrorCode("content.untrusted_entry", 422, "admin", event=True),  # EF-BIB-051 (6)
     ErrorCode("series.stale", 409, "admin", event=True),
     ErrorCode("series.tombstoned_upstream", 409, "admin", event=True),
     ErrorCode("tombstone.unverified", 409, "admin", event=True),

@@ -37,6 +37,7 @@ from shelfhold.ops.errors import (
 )
 from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.library import LibraryOps
+from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.ports import (
     AdoptionExit,
     HeadlessOps,
@@ -116,6 +117,7 @@ class OpsServices:
         library: LibraryOps | None = None,
         intents: IntentOps | None = None,
         backfill: BackfillOps | None = None,
+        normalize: NormalizeOps | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -129,6 +131,7 @@ class OpsServices:
         self._library = library
         self._intents = intents
         self._backfill = backfill
+        self._normalize = normalize
 
     # -- reading -------------------------------------------------------------------------------
 
@@ -404,6 +407,13 @@ class OpsServices:
         if self._backfill is None:
             raise ExitUnavailableError("backfill is not connected")
         return self._backfill
+
+    @property
+    def normalize(self) -> NormalizeOps:
+        """`normalize migrate` (ENF-OPS-021, EF-BIB-054)."""
+        if self._normalize is None:
+            raise ExitUnavailableError("normalizer migration is not connected")
+        return self._normalize
 
     def adopt_set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
         if self._adoption is not None:

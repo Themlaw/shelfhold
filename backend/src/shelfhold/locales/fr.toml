@@ -221,6 +221,19 @@ backfill_needs_confirmation = "Cette estimation dépasse 100 chapitres ou 5 Gio.
 backfill_choose_mode = "Choisissez --gaps ou --all."
 backfill_confirm_pair = "--confirm-units et --confirm-bytes vont ensemble."
 
+help_normalize = "Normaliseurs versionnés : migration explicite des clés d'identité (ENF-OPS-021)."
+help_normalize_migrate = "Aperçoit la migration d'un normaliseur vers sa version courante (fusions, lignes bloquées par une pierre tombale), ou l'applique avec --confirm (action réservée)."
+help_normalizer = "Nom du normaliseur à migrer."
+help_normalize_confirm = "Empreinte de l'aperçu : applique exactement ce qui a été montré, et rien d'autre."
+normalize_header = "Normaliseur {target} : {migrate} ligne(s) à migrer, {merge} à fusionner (décision humaine), {blocked} bloquée(s) par une pierre tombale, {unresolved} refusée(s)."
+normalize_up_to_date = "Normaliseur {target} : toutes les lignes sont déjà à cette version, rien à migrer."
+normalize_row = "  {outcome} : {id} ({old} -> {new}) {reason}"
+normalize_collision = "  Même place visée par : {ids}"
+normalize_fingerprint = "Empreinte de l'aperçu : {fingerprint}"
+normalize_blocked_hint = "Une ligne bloquée par une pierre tombale reste telle quelle ; « shelfhold tombstone lift » ou une purge en décide."
+normalize_applied = "{applied} ligne(s) migrée(s) vers {target}. Les autres sont inchangées."
+normalize_preview_stale = "Ce n'est plus l'aperçu que vous avez vu : relancez sans --confirm, relisez, puis confirmez avec la nouvelle empreinte. Rien n'a été modifié."
+
 [local_cli]
 param_invalid = "Paramètre « {name} » invalide : {expected} attendu."
 unknown_method = "Méthode inconnue : {method}."
@@ -290,6 +303,10 @@ action = "Vérifiez la destination de sauvegarde et la planification, puis lance
 [errors."bad_request"]
 title = "Requête incorrecte."
 action = "Corrigez la requête puis recommencez."
+
+[errors."content.untrusted_entry"]
+title = "Un fichier reçu contient une entrée non autorisée : il n'a pas été rangé."
+action = "Le chapitre est écarté et ne sera pas redemandé ; seules les images (JPEG, PNG, WebP, GIF, AVIF, JPEG XL) et ComicInfo.xml sont admises. Retirez-le de la source ou attendez la prise en charge des images vectorielles."
 
 [errors."credential_not_allowed"]
 title = "Cette action est réservée à une session."
@@ -647,6 +664,10 @@ action = "Mettez Kavita à jour vers une version prise en charge (voir les notes
 title = "Une clé citée par une pierre tombale est inconnue."
 action = "Importez le trousseau (« shelfhold secrets import ») ou acceptez la perte avec « shelfhold tombstone accept-lost-keyring »."
 
+[errors."ops.preview_stale"]
+title = "L'aperçu confirmé n'est plus celui de l'instance."
+action = "Relancez la commande sans confirmation, relisez l'aperçu, puis confirmez avec la nouvelle empreinte."
+
 [errors."tombstone.migration_hit"]
 title = "Une migration a rencontré un contenu effacé."
 action = "Examinez le contenu concerné ; rien n'a été réacquis."
@@ -737,6 +758,10 @@ adopt_after_restore_help = "Sort de l'état « restored_behind » : réadopte le
 dry_run_help = "Affiche l'aperçu et l'empreinte sans rien écrire."
 confirm_help = "Empreinte de l'aperçu : confirme exactement ce qui a été montré."
 confirm_deletion_help = "Confirme aussi la suppression des fichiers que le journal de pierres tombales recouvre (action réservée ; sans cette option, rien n'est supprimé)."
+confirm_unit_help = "Identifiant d'un chapitre irremplaçable que la suppression effacerait (à retaper pour chacun, avec --confirm-deletion ; répétable)."
+irreplaceable_line = "Chapitre irremplaçable que la suppression effacerait : {unit}"
+irreplaceable_missing = "Identifiant à retaper : {unit}"
+irreplaceable_needs_typing = "La suppression efface des chapitres irremplaçables (aucune source ne peut les rendre) : retapez l'identifiant de chacun avec --confirm-unit <identifiant>, en plus de --confirm-deletion. Rien n'a été modifié."
 needs_flag = "Aucune action demandée : utilisez --adopt-after-restore."
 not_behind = "La base n'est pas en retard sur les fichiers : rien à rapprocher."
 needs_confirmation = "Le rapprochement n'est pas confirmé : relisez l'aperçu, puis relancez avec --confirm <empreinte>."

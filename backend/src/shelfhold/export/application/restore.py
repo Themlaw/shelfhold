@@ -25,6 +25,7 @@ Adopting never deletes. A deletion that the replay asks for happens only after a
 it (reserved action `reconcile.confirm_deletion`), through the purge's executor.
 """
 
+import hmac
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -79,7 +80,13 @@ from shelfhold.infrastructure.schema import (
     platform,
     storage,
 )
-from shelfhold.library.public import EDITION_KEY_COLUMNS, record_destination_copy
+from shelfhold.library.public import (
+    CONFIRMATION_CODE,
+    EDITION_KEY_COLUMNS,
+    confirmation_phrase,
+    irreplaceability,
+    record_destination_copy,
+)
 
 __all__ = [
     "AdoptionBlockedError",
@@ -92,6 +99,7 @@ __all__ = [
     "DeletionUnavailableError",
     "PreviewStaleError",
     "ReadoptLine",
+    "ReplayConfirmationRequiredError",
     "ReplayRoot",
     "RestoreAdopter",
     "RestoreGuard",
@@ -105,6 +113,7 @@ __all__ = [
 log = structlog.get_logger(__name__)
 
 _SHA: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
+_ULID: Final = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 _NUMBER: Final = re.compile(r"^\d{1,9}(\.\d{1,6})?$")
 _CHUNK: Final = 400
 _DELETION = RESERVED_ACTIONS["reconcile.confirm_deletion"]
@@ -142,6 +151,18 @@ class DeletionRefusedError(PermissionError):
     def __init__(self, verdict: object) -> None:
         super().__init__(f"reconcile.confirm_deletion refused: {type(verdict).__name__}")
         self.verdict = verdict
+
+
+class ReplayConfirmationRequiredError(RuntimeError):
+    """A replayed deletion would erase irreplaceable Units and their identifiers were not typed.
+
+    Nothing was changed. `unit_ids` are the ones still to type (EF-BIB-053 (3))."""
+
+    code = CONFIRMATION_CODE
+
+    def __init__(self, unit_ids: Sequence[str]) -> None:
+        self.unit_ids = tuple(sorted(unit_ids))
+        super().__init__(f"{self.code}: type the identifier of {len(self.unit_ids)} Unit(s)")
 
 
 class DeletionUnavailableError(RuntimeError):
@@ -203,6 +224,7 @@ class DeletionCandidate:
     rel_path: str
     local_path: str
     scope: str
+    unit_ids: tuple[str, ...] = ()  # the Units the file covers, by the database's word when known
 
 
 class DeletionExecutor(Protocol):
@@ -214,6 +236,9 @@ class DeletionExecutor(Protocol):
 @dataclass(frozen=True)
 class DeletionConfirmation:
     principal: Principal
+    # The identifiers the admin typed (EF-BIB-053 (3)): one per irreplaceable Unit the deletion
+    # would erase. The reserved action says who may confirm; this says they looked.
+    typed_units: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -249,6 +274,9 @@ class AdoptionPreview:
     deletions: tuple[DeletionCandidate, ...]
     unresolved: tuple[tuple[str, str], ...]  # (rel path, reason)
     blocked_roots: dict[str, str] = field(default_factory=dict)
+    # Units a deletion would erase for good, which nothing upstream can give back (or that the
+    # restored database does not know, which cannot be shown otherwise): to type to confirm
+    irreplaceable: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -413,6 +441,22 @@ def _bounded(value: object, limit: int = MAX_FIELD) -> str | None:
     return value if isinstance(value, str) and 0 < len(value) <= limit else None
 
 
+def _units_of(line: _Line, survey: _Survey) -> tuple[str, ...]:
+    """The Units a mirror line covers. The mirror is an untrusted input: a Variant the database
+    knows gives its Unit (the database's word wins over the line's), anything else is the line's
+    claim, kept only if it is shaped like an identifier."""
+    found: set[str] = set()
+    for covered in line.entry.get("coverage") or []:
+        if not isinstance(covered, dict):
+            continue
+        variant, unit = covered.get("variant"), covered.get("unit")
+        if isinstance(variant, str) and variant in survey.variants:
+            found.add(survey.variants[variant])
+        elif isinstance(unit, str) and _ULID.fullmatch(unit):
+            found.add(unit)
+    return tuple(sorted(found))
+
+
 def _chunks(items: Sequence[str]) -> list[Sequence[str]]:
     return [items[i : i + _CHUNK] for i in range(0, len(items), _CHUNK)]
 
@@ -568,6 +612,7 @@ class RestoreAdopter:
             if (reason := self._screen.root_blocked(f.root_id)) is not None
         }
         report = replace(self._report(survey), unverified_tombstone_lines=self._screen.unverified())
+        irreplaceable = self._irreplaceable(deletions)
         document = {
             "epoch": survey.status.epoch,
             "roots": sorted(
@@ -586,9 +631,38 @@ class RestoreAdopter:
             "relocations": sorted(survey.relocations),
             "decisions": [list(step) for step in self._plan_decisions(survey)],
             "blocked_units": sorted(survey.blocked_units.items()),
+            "irreplaceable": list(irreplaceable),
         }
         return AdoptionPreview(
-            fingerprint_of(document), report, readopt, deletions, unresolved, blocked
+            fingerprint_of(document), report, readopt, deletions, unresolved, blocked,
+            irreplaceable,
+        )  # fmt: skip
+
+    def _irreplaceable(self, deletions: tuple[DeletionCandidate, ...]) -> tuple[str, ...]:
+        """The Units to type. A Unit the database does not know cannot be shown replaceable, so it
+        counts: the safe side is the one that asks."""
+        wanted = sorted({u for d in deletions for u in d.unit_ids})
+        if not wanted:
+            return ()
+        found: set[str] = set()
+        kept: list[str] = []
+        with self._engine.connect() as connection:
+            for chunk in _chunks(wanted):
+                found.update(
+                    connection.execute(
+                        sa.select(catalog.unit.c.id).where(catalog.unit.c.id.in_(chunk))
+                    ).scalars()
+                )
+            for unit_id in wanted:
+                if unit_id not in found or irreplaceability(connection, unit_id).irreplaceable:
+                    kept.append(unit_id)
+        return tuple(kept)
+
+    @staticmethod
+    def _typed(deletion: DeletionConfirmation, unit_id: str) -> bool:
+        phrase = confirmation_phrase(unit_id).encode()
+        return any(
+            hmac.compare_digest(typed.strip().encode(), phrase) for typed in deletion.typed_units
         )
 
     @staticmethod
@@ -616,6 +690,10 @@ class RestoreAdopter:
             raise AdoptionBlockedError(root_id, reason)
         if preview.fingerprint != confirm:
             raise PreviewStaleError("the instance changed since the preview: look again")
+        if deletion is not None and preview.deletions:
+            untyped = [u for u in preview.irreplaceable if not self._typed(deletion, u)]
+            if untyped:  # before anything is written: the reserved action is not enough
+                raise ReplayConfirmationRequiredError(untyped)
         if deletion is not None and preview.deletions and self._purger is None:
             raise DeletionUnavailableError("no purge executor: nothing is deleted")
         now = self._clock.now()
@@ -632,7 +710,9 @@ class RestoreAdopter:
                     sa.insert(identity.audit).values(
                         id=new_ulid(), actor_id=deletion.principal.actor_id,
                         action="reconcile.confirm_deletion",
-                        target=f"candidates:{len(preview.deletions)}",
+                        target=f"candidates:{len(preview.deletions)}"
+                        + (f";irreplaceable:{len(preview.irreplaceable)}"
+                           if preview.irreplaceable else ""),
                         session_id=deletion.principal.session_id,
                         auth_time=deletion.principal.auth_time,
                     )
@@ -721,7 +801,7 @@ class RestoreAdopter:
                     (line.destination_id, line.rel_path),
                     DeletionCandidate(
                         line.destination_id, line.root_id, line.rel_path, line.local_path,
-                        line.tombstone_scope or "variant",
+                        line.tombstone_scope or "variant", _units_of(line, survey),
                     ),
                 )  # fmt: skip
             if (

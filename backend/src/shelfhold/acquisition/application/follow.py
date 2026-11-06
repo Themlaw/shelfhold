@@ -199,7 +199,7 @@ class FollowCycle:
         self._tickets = DownloadTickets(
             engine, clock, service, fetcher, self._ledger, store, receive, place,
             plugin_id=self._plugin_id, sleep=sleep, slots=slots, max_attempts=max_attempts,
-            stall_after=stall_after,
+            stall_after=stall_after, announce=self._emit,
         )  # fmt: skip
         self._pending: list[PublishedEvent] = []
         self._caps = (service_cap, key_cap)

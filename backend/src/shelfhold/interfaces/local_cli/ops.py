@@ -268,6 +268,10 @@ def _intents_resolve(ops: OpsServices, by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _normalize_migrate(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.normalize.migrate(_text(p, "name"), confirm=_optional(p, "confirm"), principal=by)
+
+
 def _count(params: Params, name: str) -> int | None:
     value = params.get(name)
     if value is None:
@@ -327,6 +331,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.probe": (_probe, None),
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
+    "ops.normalize_migrate": (_normalize_migrate, "normalize.migrate"),
     "ops.backfill_estimate": (_backfill_estimate, None),
     "ops.backfill_start": (_backfill_start, None),
 }

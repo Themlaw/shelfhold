@@ -75,6 +75,15 @@ def resolve_key(stored: Normalized) -> str:
 
 
 @dataclass(frozen=True)
+class NormalizerDeclaration:
+    """A new version of an existing normalizer, as a release ships it (ENF-OPS-021)."""
+
+    name: str
+    version: int
+    fn: NormalizerFn
+
+
+@dataclass(frozen=True)
 class Merge:
     """Preview: raw values that would become a single key after migration."""
 
@@ -117,6 +126,25 @@ class NormalizerRegistry:
         self._functions[nid] = fn
         self._current[name] = version
         return nid
+
+    def extend(
+        self, declarations: Iterable[NormalizerDeclaration]
+    ) -> list[tuple[NormalizerDeclaration, str]]:
+        """Add the declared versions, in version order, and return those refused with the reason.
+
+        Only a new version of a normalizer that exists is accepted, and only the next one: a
+        declaration cannot introduce a name, replace a version or skip one. A refused declaration
+        changes nothing (the others still apply)."""
+        refused: list[tuple[NormalizerDeclaration, str]] = []
+        for declaration in sorted(declarations, key=lambda d: (d.name, d.version)):
+            if declaration.name not in self._current:
+                refused.append((declaration, "unknown_normalizer"))
+                continue
+            try:
+                self.register(declaration.name, declaration.version, declaration.fn)
+            except ValueError as error:
+                refused.append((declaration, str(error)))
+        return refused
 
     def names(self) -> list[str]:
         return sorted(self._current)

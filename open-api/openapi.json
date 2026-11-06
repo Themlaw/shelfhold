@@ -1933,6 +1933,10 @@
       "code": "config.unknown_key",
       "status": 404
     },
+    "/api/v1/problems/content.untrusted-entry": {
+      "code": "content.untrusted_entry",
+      "status": 422
+    },
     "/api/v1/problems/credential-not-allowed": {
       "code": "credential_not_allowed",
       "status": 403
@@ -2111,6 +2115,10 @@
     },
     "/api/v1/problems/ops.not-waiting": {
       "code": "ops.not_waiting",
+      "status": 409
+    },
+    "/api/v1/problems/ops.preview-stale": {
+      "code": "ops.preview_stale",
       "status": 409
     },
     "/api/v1/problems/ops.still-waiting": {

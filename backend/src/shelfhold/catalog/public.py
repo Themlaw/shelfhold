@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import sqlalchemy as sa
 
+from shelfhold.catalog.adapters.normalizer_plugins import load_registry
 from shelfhold.catalog.adapters.repo import (
     SqlContributorStore,
     SqlEditionStore,
@@ -40,7 +41,12 @@ from shelfhold.catalog.domain.names import (
     join_people,
     person_field_name,
 )
-from shelfhold.catalog.domain.normalizers import NormalizerId, NormalizerRegistry, default_registry
+from shelfhold.catalog.domain.normalizers import (
+    NormalizerDeclaration,
+    NormalizerId,
+    NormalizerRegistry,
+    default_registry,
+)
 from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, place_of
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
@@ -132,6 +138,7 @@ __all__ = [
     "LanguageError",
     "NameKind",
     "NoPersonFieldName",
+    "NormalizerDeclaration",
     "NormalizerId",
     "NormalizerRegistry",
     "PersonField",
@@ -143,7 +150,9 @@ __all__ = [
     "edition_key_lang",
     "ingest_isolated",
     "join_people",
+    "load_registry",
     "numbered_mark",
+    "parse_number",
     "parse_partial_date",
     "period_start",
     "person_field_name",

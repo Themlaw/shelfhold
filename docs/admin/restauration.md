@@ -68,7 +68,11 @@ un trousseau absent ou aux droits trop ouverts ; il ne sait pas si vous l'avez e
 6. Si la restauration doit faire disparaître des fichiers recouverts par une pierre tombale (ce que
    vous aviez purgé après la sauvegarde), ils sont **proposés** à la suppression, pas supprimés.
    Ajoutez `--confirm-deletion` pour les supprimer ; c'est une action réservée
-   ([purge.md](purge.md)) qui passe par la même procédure de purge, avec audit.
+   ([purge.md](purge.md)) qui passe par la même procédure de purge, avec audit. Si l'un de ces
+   fichiers couvre un chapitre **irremplaçable** (aucune source ne peut le rendre, ou la base
+   restaurée ne le connaît pas), l'aperçu le dit et la suppression exige en plus de **retaper
+   l'identifiant de chaque chapitre** : `--confirm-unit <identifiant>` (répétable). Sans cela rien
+   n'est modifié (code de sortie 2).
 7. Démarrez : `docker compose start shelfhold`.
 
 ## Retour à une image antérieure

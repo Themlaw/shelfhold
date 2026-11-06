@@ -69,6 +69,19 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
         )
     },
     "target.permission_denied": {"reason": GENERIC_REASONS},
+    # EF-BIB-051 (6): why an archive was refused, never the name of an entry.
+    "content.untrusted_entry": {
+        "reason": frozenset(
+            {
+                "duplicate_comicinfo",
+                "magic_mismatch",
+                "no_pages",
+                "not_allowlisted",
+                "unsafe_archive",
+                "unsafe_xml",
+            }
+        )
+    },
     # ENF-OPS-006: the volume under its free-space mark.
     "disk.low": {"volume": VOLUME_VALUES},
     "ops.disk_recovered": {"volume": VOLUME_VALUES},

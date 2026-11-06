@@ -54,6 +54,7 @@ from shelfhold.library.domain.failures import (
     VariantAlreadyStoredError,
 )
 from shelfhold.library.domain.irreplaceable import (
+    CONFIRMATION_CODE,
     ConfirmationRequiredError,
     confirmation_phrase,
 )
@@ -78,6 +79,7 @@ from shelfhold.library.replica import (
 from shelfhold.library.tombstones import (
     EDITION_KEY_COLUMNS,
     ContentHash,
+    Normalizers,
     PlaceRef,
     ReplayReport,
     SeriesBindingRef,
@@ -88,9 +90,11 @@ from shelfhold.library.tombstones import (
     VariantRef,
     Verdict,
     WorkRef,
+    normalizers_of,
 )
 
 __all__ = [
+    "CONFIRMATION_CODE",
     "CONTENT_HASH_BY",
     "DEFAULT_MAX_RECEIVED_BYTES",
     "EDITION_KEY_COLUMNS",
@@ -108,6 +112,7 @@ __all__ = [
     "Irreplaceability",
     "MetaProjection",
     "NewerFormatError",
+    "Normalizers",
     "PassthroughStore",
     "PlaceRef",
     "PurgeAuthorization",
@@ -149,6 +154,7 @@ __all__ = [
     "meta_path",
     "meta_rel",
     "migrate_received_dirs",
+    "normalizers_of",
     "readable_unit_ids",
     "receive_cbz",
     "record_destination_copy",

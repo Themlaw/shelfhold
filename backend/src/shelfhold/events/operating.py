@@ -23,6 +23,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
     {
         "backup.failed",
         "backup.stale",
+        "content.untrusted_entry",
         "disk.low",
         "instance.lease_conflict",
         "instance.restored_behind",

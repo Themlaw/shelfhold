@@ -8,6 +8,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("ops.exit_unavailable", 503, "admin"),
     ErrorCode("ops.invalid_choice", 422, "admin"),
     ErrorCode("ops.language_refused", 422, "admin"),
+    ErrorCode("ops.preview_stale", 409, "admin"),
     ErrorCode("ops.still_waiting", 409, "admin"),
     ErrorCode("purge.collateral", 409, "admin"),
     ErrorCode("root.blocked", 409, "admin"),
@@ -46,6 +47,13 @@ class InvalidChoiceError(OpsError):
 
 class LanguageRefusedError(OpsError):
     code = "ops.language_refused"
+
+
+class StalePreviewError(OpsError):
+    """The confirmation is not the fingerprint of what the command would do now: nothing was
+    changed, look at the preview again."""
+
+    code = "ops.preview_stale"
 
 
 class StillWaitingError(OpsError):
