@@ -167,11 +167,11 @@ def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> 
         "aucun job de suivi enregistré : aucun chapitre exporté"
     )
     before = j.compose("exec", "-T", "shelfhold", "sh", "-c",
-                       "cd /library && find . -type f -exec sha256sum {} +").stdout  # fmt: skip
+                       "cd /library && find . -path ./.shelfhold -prune -o -type f -exec sha256sum {} +").stdout  # fmt: skip
     detached = j.shelfhold("detach", "--restore-upstream")
     assert detached.code == 0, detached.err
     after = j.compose("exec", "-T", "shelfhold", "sh", "-c",
-                      "cd /library && find . -type f -exec sha256sum {} +").stdout  # fmt: skip
-    assert after == before
+                      "cd /library && find . -path ./.shelfhold -prune -o -type f -exec sha256sum {} +").stdout  # fmt: skip
+    assert after == before  # .shelfhold/ is excluded: the lease is rewritten by its heartbeat
     state = j.suwayomi()
     assert "violations" in state and state["violations"] == []
