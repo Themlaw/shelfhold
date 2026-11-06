@@ -21,7 +21,7 @@ from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.local_socket import Peer, RpcError, RpcFailure, call
 from shelfhold.infrastructure.local_socket.server import APPLICATION_ERROR, INVALID_PARAMS
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
-from shelfhold.ops import OpsError, OpsServices, user_of
+from shelfhold.ops import CodedRefusal, OpsError, OpsServices, user_of
 
 __all__ = [
     "OPS_METHODS",
@@ -337,10 +337,28 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
 }
 
 
+# While the instance is `restored_behind` (the database older than the disks, EF-INT-026) nothing
+# of the operating surface writes, even before the first start that follows the restore has frozen
+# the roots; what stays: reading, and the two exits meant for that state.
+READS_AND_RESTORE_EXITS = frozenset(
+    {
+        "ops.status", "ops.missing_list", "ops.jobs_list", "ops.pair_propose",
+        "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
+        "ops.intents_list", "ops.backfill_estimate",
+        "ops.restore_adopt", "ops.tombstone_set_aside_journal",
+    }
+)  # fmt: skip
+
+
 def run_ops_method(ops: OpsServices, principal: Principal, method: str, params: Params) -> object:
     """One call, refusals as `RpcError` (the socket) with the catalog code in `data`."""
     implementation, _reserved = OPS_METHODS[method]
     try:
+        if method not in READS_AND_RESTORE_EXITS and ops.restored_behind():
+            raise CodedRefusal(
+                "instance.restored_behind",
+                t("local_cli.restored_behind"),
+            )
         return implementation(ops, principal, params)
     except (OpsError, HeadlessError, BindingError) as error:
         raise RpcError(APPLICATION_ERROR, str(error), {"code": error.code}) from None

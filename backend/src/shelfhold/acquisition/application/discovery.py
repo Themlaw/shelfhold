@@ -55,6 +55,9 @@ ListUnits = Callable[[SeriesRef], Awaitable[list[UnitInfo]]]
 SubSources = Callable[[], Awaitable[list[SubSource]]]
 
 
+BOUND_PREFIX = "b:"  # keys of the `tombstoned` notices of series that already have a binding
+
+
 def digest(*parts: str) -> str:
     return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()
 
@@ -66,12 +69,24 @@ class Notices:
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
 
-    def sync(self, connection: sa.Connection, kind: str, current: Mapping[str, str]) -> list[str]:
-        """Make the rows of `kind` equal `current` (`key_hash -> subject`); the keys new now."""
+    def sync(
+        self,
+        connection: sa.Connection,
+        kind: str,
+        current: Mapping[str, str],
+        *,
+        own: Callable[[str], bool] = lambda _key: True,
+    ) -> list[str]:
+        """Make the rows of `kind` equal `current` (`key_hash -> subject`); the keys new now.
+        Only the rows whose key satisfies `own` are looked at: two producers may share a kind."""
         table = acquisition.follow_notice
-        held = set(
-            connection.execute(sa.select(table.c.key_hash).where(table.c.kind == kind)).scalars()
-        )
+        held = {
+            key
+            for key in connection.execute(
+                sa.select(table.c.key_hash).where(table.c.kind == kind)
+            ).scalars()
+            if own(key)
+        }
         gone = held - current.keys()
         if gone:
             connection.execute(
@@ -160,7 +175,7 @@ class SeriesDiscovery:
         for ref in fresh:
             if self._tombstoned(ref):
                 found.tombstoned += 1
-                buried[self._digest(ref)] = ""
+                buried[self._digest(ref)] = ref.title
             elif self._key(ref) in twins:
                 found.skipped_pending_pairing += 1
             else:
@@ -200,7 +215,9 @@ class SeriesDiscovery:
     def _sync(self, buried: dict[str, str], waiting: dict[str, str], *, awaiting: bool) -> None:
         """Persist the conditions (so no process tells them twice) and announce the new ones."""
         with self._engine.begin() as connection:
-            for _ in self._notices.sync(connection, "tombstoned", buried):
+            for _ in self._notices.sync(
+                connection, "tombstoned", buried, own=lambda key: not key.startswith(BOUND_PREFIX)
+            ):
                 self._emit(connection, "series.tombstoned_upstream", {"count": 1})
             for _ in self._notices.sync(
                 connection, "awaiting_shelf", {digest("shelf"): ""} if awaiting else {}

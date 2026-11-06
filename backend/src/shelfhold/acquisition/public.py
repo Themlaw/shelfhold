@@ -20,6 +20,7 @@ from shelfhold.acquisition.application.ranges import (
     RangeTickets,
     RangeUnit,
 )
+from shelfhold.acquisition.application.staleness import StaleSeries, stale_series
 from shelfhold.acquisition.application.tickets import (
     CycleAbandoned,
     DownloadTickets,
@@ -70,6 +71,7 @@ __all__ = [
     "Receiver",
     "RequestBudget",
     "SnapshotRefusedError",
+    "StaleSeries",
     "TakeReport",
     "TeamChoice",
     "TeamPreference",
@@ -89,6 +91,7 @@ __all__ = [
     "pending",
     "present_for_acquisition",
     "present_in",
+    "stale_series",
     "stale_threshold",
     "submit_follow",
     "suppress_follow",

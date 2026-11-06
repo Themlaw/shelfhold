@@ -18,6 +18,7 @@ from sqlalchemy import Engine
 from shelfhold.composition import Composition, Gates, open_fsops
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
+from shelfhold.export.application import root_capabilities
 from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
@@ -32,7 +33,8 @@ from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import LEGACY_RECEIVED_DIR, RECEIVED_DIR
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.fsops import BootReport, Fsops
+from shelfhold.infrastructure.fsops.capabilities import unprobed
 from shelfhold.infrastructure.fsops.probe import ProbeReport, probe_failure, probe_folder
 from shelfhold.infrastructure.instance import (
     GenerationCounter,
@@ -249,7 +251,8 @@ class InstanceRuntime:
         container's uid cannot write is reported with its cause and the compose block that fixes
         it, announced (`target.permission_denied`), and left out of the write session, so one
         wrong uid on a mount does not stop the others, nor the start."""
-        ready = list(fsops.boot().ok)
+        booted = fsops.boot()
+        ready = list(booted.ok)
         sessions = WriteSessions(
             fsops, instance_id=instance_id or "", clock=clock, lock_path=self.lock.path
         )  # no generation counter: the probe moves nothing of the restore epoch
@@ -268,7 +271,44 @@ class InstanceRuntime:
             if report.event is not None:
                 with engine.begin() as conn:
                     bus.publish(conn, report.event, {"reason": "forbidden"})
+        self._probe_capabilities(fsops, sessions, loaded, engine, ready, booted)
         return ready
+
+    def _probe_capabilities(
+        self,
+        fsops: Fsops,
+        sessions: WriteSessions,
+        loaded: LoadedRoots,
+        engine: Engine,
+        ready: list[str],
+        booted: BootReport,
+    ) -> None:
+        """Reflink, link to `/store` and inode stability of each writable root (EF-EXP-059),
+        probed once at start, removed at once, and written down for `shelfhold status`. A root
+        that cannot be probed is simply not listed: the start goes on."""
+        store = str(self.settings.store_dir)
+        for root in loaded.roots:
+            if root.mode is not PathMode.RW:
+                continue
+            if root.path not in ready:  # said, not hidden: `status` shows why it was not probed
+                why = (
+                    "tombstone_lines_owed" if root.path in booted.tombstone_owed
+                    else booted.blocked[root.path].value if root.path in booted.blocked
+                    else "write_probe_failed"
+                )  # fmt: skip
+                with engine.begin() as conn:
+                    root_capabilities.save(conn, root.root_id, unprobed(root.path, why))
+                continue
+            leased = [root.path, *([store] if store in ready and store != root.path else [])]
+            try:
+                with sessions.open(*leased):
+                    found = fsops.probe_capabilities(root.path, store_path=store)
+                with engine.begin() as conn:
+                    root_capabilities.save(conn, root.root_id, found)
+            except (OSError, sa.exc.SQLAlchemyError) as error:
+                structlog.get_logger().warning(
+                    "startup.capabilities_skipped", folder=root.path, error=str(error)
+                )
 
     @staticmethod
     def _probe_root(fsops: Fsops, sessions: WriteSessions, path: str) -> ProbeReport:

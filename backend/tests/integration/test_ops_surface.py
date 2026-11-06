@@ -296,6 +296,16 @@ def test_ops_methods_over_the_local_socket(settings: Settings, tmp_path: Path) -
                 "restored_behind",
                 "tombstone_key_unknown",
             }
+            from shelfhold.infrastructure.local_socket import RpcFailure
+
+            # restored behind: nothing but the exits of the restore writes (review of PR #82)
+            with pytest.raises(RpcFailure, match="restored_behind"):
+                call(
+                    sock, "ops.tombstone_accept_lost_keyring",
+                    {"confirmation": "the keyring is lost"},
+                )  # fmt: skip
+            assert keyring.waived == []
+            call(sock, "ops.restore_adopt", {"confirm_deletion": False})
             call(sock, "ops.tombstone_accept_lost_keyring", {"confirmation": "the keyring is lost"})
             assert keyring.waived == [("the keyring is lost", "local_cli")]
 

@@ -18,6 +18,33 @@ de la destination ([headless.md](headless.md), clé `path_map.<cible>`).
 Ces dossiers sont réservés à Shelfhold. Excluez `**/.shelfhold/**` de Kavita (fait à l'adoption,
 voir [adopter-kavita.md](adopter-kavita.md)) et de vos outils de dédoublonnage.
 
+## Ce que chaque disque sait faire
+
+Au démarrage, Shelfhold essaie sur chaque racine en écriture trois choses, avec des fichiers
+d'essai qu'il supprime aussitôt : cloner un fichier (**reflink**, btrfs ou XFS récent), faire un
+**lien dur vers `/store`** (possible seulement si la racine et `/store` sont sur le même système de
+fichiers) et garder des **inodes stables** (un système de fichiers qui les renumérote fausse
+l'identité des fichiers). `shelfhold status` affiche le résultat de chaque racine, avec le repli
+« copie » quand ni l'un ni l'autre n'est possible (EF-EXP-015). `/store` ne peut pas partager le
+système de fichiers de toutes les racines : avec un sous-disque par bibliothèque, au plus une
+racine aura le lien dur. En M1a (mode passage), il n'y a pas de `/store` : le lien dur est
+affiché « non applicable ». Rien d'autre n'est écrit sur la racine ; un redémarrage refait les
+essais.
+
+## Partages et sauvegardes de l'hôte
+
+Chaque racine porte son **miroir de provenance** (`.shelfhold/manifest/`, EF-EXP-063) : la lignée
+de chaque fichier exporté, qui sert à réadopter après une restauration ou une perte de `/data`.
+Shelfhold le crée en `0700`/`0600` quand l'uid le permet. Quand l'uid est partagé avec Kavita, ces
+droits sont impossibles et le miroir reste lisible par qui monte le dossier. Conséquences :
+
+- un **partage réseau** (SMB, NFS) de `/library` expose aussi `.shelfhold/` (titres, équipes,
+  identifiants distants, jamais d'âge ni de visibilité) : excluez ce dossier du partage, ou
+  limitez-le aux comptes qui lisent déjà la bibliothèque ;
+- la **sauvegarde de l'hôte** qui copie `/library` embarque le miroir et le journal de pierres
+  tombales. Ils sont voulus : ils permettent de reconstruire la base. Conservez ces sauvegardes
+  aussi sobrement que la bibliothèque, et sachez que la purge (`purge --now`) ne les atteint pas.
+
 ## Disque non monté : jamais pris pour une bibliothèque vide
 
 Une racine dont la sentinelle manque ou diffère (`mount.sentinel_missing`) **bloque les écritures,

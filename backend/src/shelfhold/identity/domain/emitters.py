@@ -98,6 +98,9 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # The probe file of the permission preflight (EF-EXP-054): a name the probe drew itself.
         f"{_EXPORT_APP}/preflight.py::FolderProbe._remove_probe_file": "probe_file_cleanup",
         f"{_FSOPS}/probe.py::_remove_probe_file": ("probe_file_cleanup"),
+        # The files of the capability probe of a root (EF-EXP-059): names it drew, in the staging
+        # folder of the root and of /store.
+        f"{_FSOPS}/facade.py::Fsops.probe_capabilities.remove": "probe_file_cleanup",
     }
 )
 

@@ -25,7 +25,12 @@ from shelfhold.acquisition.application.backfill import (
     estimate_with,
     within_ceiling,
 )
-from shelfhold.acquisition.application.discovery import SeriesDiscovery
+from shelfhold.acquisition.application.discovery import (
+    BOUND_PREFIX,
+    Notices,
+    SeriesDiscovery,
+    digest,
+)
 from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
 from shelfhold.acquisition.application.planning import (
     NOTHING_YET,
@@ -35,6 +40,7 @@ from shelfhold.acquisition.application.planning import (
     watermark_of,
 )
 from shelfhold.acquisition.application.preference import TeamPreference, record_release
+from shelfhold.acquisition.application.staleness import stale_series
 from shelfhold.acquisition.application.tickets import (
     MAX_ATTEMPTS,
     STALL_AFTER,
@@ -47,7 +53,7 @@ from shelfhold.acquisition.application.tickets import (
 )
 from shelfhold.acquisition.domain.backfill import BackfillMode
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
-from shelfhold.acquisition.domain.freshness import DEFAULT_K, is_stale
+from shelfhold.acquisition.domain.freshness import DEFAULT_K
 from shelfhold.acquisition.domain.requests import (
     DEFAULT_KEY_CAP,
     DEFAULT_SERVICE_CAP,
@@ -116,9 +122,7 @@ def submit_follow(pools: JobPools, plugin_id: str) -> Created:
 
 
 MISSING_CYCLES = 2  # consecutive cycles of absence before a series is deemed removed
-FINISHED_STATUSES = ("completed", "cancelled")  # work status: nothing more is expected
 OUTAGE_CYCLES = 3  # cycles in a row without an answer before the service is "unavailable"
-NOT_CHECKED = ("completed", "paused")  # series_follow.check_override: the user said so
 
 
 @dataclass
@@ -206,12 +210,14 @@ class FollowCycle:
         self._prefs = TeamPreference(inactive_months=inactive_months)
         self._series_taken: dict[str, int] = {}
         self._tombstones = tombstones  # EF-BIB-053: required, a cycle never runs without it
-        self._told: set[str] = set()  # bindings already announced as tombstoned upstream
         self._discovery = SeriesDiscovery(
             engine, clock, self._plugin_id, tombstones, self._emit,
             translation_nature=getattr(service.manifest, "translation_nature", "unknown"),
         )  # fmt: skip
         self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
+        self._notices = Notices(clock)
+        self._buried: dict[str, str] = {}  # tombstoned series of this cycle, by notice key
+        self._buried_ids: dict[str, dict[str, object]] = {}
 
     # -- the cycle ---------------------------------------------------------------------------
     async def run(self) -> FollowReport:
@@ -283,6 +289,8 @@ class FollowCycle:
         present = self._reconcile_library(in_library, report)
         budget = RequestBudget(*self._caps)
         self._series_taken = {}
+        self._buried = {}
+        self._buried_ids = {}
         followed = [
             binding
             for binding in self._bindings()
@@ -291,6 +299,7 @@ class FollowCycle:
             and (binding.source_key, binding.remote_id) in present
             and not self._series_tombstoned(binding, report)
         ]
+        self._remember_buried()
         for binding in followed:
             await self._discover_isolated(binding, report, budget)
         self._fill(followed, budget, report)
@@ -378,14 +387,28 @@ class FollowCycle:
         if not self._tombstones.check(ref, root_id=None).blocked:
             return False
         report.tombstoned += 1
-        if binding.id not in self._told:
-            self._told.add(binding.id)
-            with self._engine.begin() as connection:
-                self._emit(
-                    connection, "series.tombstoned_upstream",
-                    {"edition_id": binding.edition_id, "work_id": binding.work_id},
-                )  # fmt: skip
+        key = BOUND_PREFIX + digest(binding.id)
+        self._buried[key] = self._title_of(binding.work_id)
+        self._buried_ids[key] = {"edition_id": binding.edition_id, "work_id": binding.work_id}
         return True
+
+    def _title_of(self, work_id: str) -> str:
+        with self._engine.connect() as connection:
+            title = connection.execute(
+                sa.select(catalog.work.c.title).where(catalog.work.c.id == work_id)
+            ).scalar()
+        return str(title or "")
+
+    def _remember_buried(self) -> None:
+        """What `shelfhold status` lists as "tombstoned upstream" until the admin removes the
+        series from Suwayomi (the rows of the series that already have a binding)."""
+        with self._engine.begin() as connection:
+            fresh = self._notices.sync(
+                connection, "tombstoned", self._buried,
+                own=lambda key: key.startswith(BOUND_PREFIX),
+            )  # fmt: skip
+            for key in fresh:  # the notice is the memory: told once, whatever the processes
+                self._emit(connection, "series.tombstoned_upstream", self._buried_ids[key])
 
     def _release_tombstoned(self, binding: _Binding, info: UnitInfo, key: dict[str, str]) -> bool:
         """A release that matches a tombstone is never ingested: not by its reference (`variant`),
@@ -737,46 +760,15 @@ class FollowCycle:
             self._flush()
 
     def _check_freshness(self) -> list[str]:
-        b, si = acquisition.source_binding, acquisition.source_item
-        f, w = acquisition.series_follow, catalog.work
-        query = (
-            sa.select(b.c.edition_id)
-            .select_from(
-                b.join(si, si.c.id == b.c.source_item_id)
-                .join(f, f.c.edition_id == b.c.edition_id)
-                .join(w, w.c.id == b.c.work_id)
-            )
-            .where(
-                si.c.plugin_id == self._plugin_id,
-                b.c.active,
-                sa.or_(f.c.check_override.is_(None), f.c.check_override.notin_(NOT_CHECKED)),
-                w.c.status.notin_(FINISHED_STATUSES),
-            )
-            .distinct()
-        )  # fmt: skip
         now = self._clock.now()
         announced: list[str] = []
         with self._engine.begin() as connection:
-            for (edition_id,) in connection.execute(query).all():
-                seen = self._discoveries(connection, edition_id)
-                if not is_stale(seen, now, self._k) or self._already_announced(
-                    connection, edition_id, max(seen)
-                ):
+            for silent in stale_series(connection, now, k=self._k, plugin_id=self._plugin_id):
+                if self._already_announced(connection, silent.edition_id, silent.last_discovery):
                     continue
-                self._emit(connection, "series.stale", {"edition_id": edition_id})
-                announced.append(str(edition_id))
+                self._emit(connection, "series.stale", {"edition_id": silent.edition_id})
+                announced.append(str(silent.edition_id))
         return announced
-
-    @staticmethod
-    def _discoveries(connection: sa.Connection, edition_id: str) -> list[datetime]:
-        v, u = catalog.unit_variant, catalog.unit
-        return list(
-            connection.execute(
-                sa.select(v.c.first_seen_at)
-                .select_from(v.join(u, u.c.id == v.c.unit_id))
-                .where(u.c.edition_id == edition_id, v.c.removed_at.is_(None))
-            ).scalars()
-        )
 
     @staticmethod
     def _already_announced(connection: sa.Connection, edition_id: str, since: datetime) -> bool:

@@ -41,6 +41,8 @@ Migrations :
 - Conventions d'API : problèmes RFC 9457 avec catalogue d'erreurs stable, pagination par curseur, idempotence, `If-Match`, réponses 202.
 
 - Exploitation (L52) : une tâche qui échoue est réessayée (3 essais) puis devient `dead_letter` avec l'événement `job.dead_lettered` (sortie `shelfhold jobs list|retry`) ; `reconcile.drift` d'une intention non résolue au démarrage, `secret.undecryptable` d'un trousseau illisible et les événements du miroir passent par le bus d'exploitation et créent leurs notifications ; sonde d'écriture de chaque racine au démarrage (`target.permission_denied` avec la cause et le bloc compose à coller, sans arrêter le démarrage) ; le montage `adopt_ro` figure dans le compose d'exemple ; preuves du kill -9 de 1 000 tâches et du redéploiement en plein export.
+- `shelfhold status` complété (L53) : avertissements du trousseau, dont la clé maîtresse dans `/data` (ENF-SEC-005) ; séries silencieuses (`series.stale`, k = 3, plancher de 14 jours, EF-SRC-026 c) ; séries purgées encore présentes dans Suwayomi (`series.tombstoned_upstream`, EF-BIB-053) ; par racine, reflink, lien dur vers `/store` (« non applicable » sans `/store`) et stabilité des inodes, sondés au démarrage sans rien laisser sur la racine (EF-EXP-059) ; âge de la liste `known_bad_versions` (ENF-COMP-001) ; `adoption_refused`, `coverage_unknown` et `restored_behind` listés comme attentes (EF-INT-023, port `AdoptionExit`). Sortie JSON : clés `stale_series`, `tombstoned_upstream`, `capabilities`, `known_bad`. Sans migration.
+- Version minimale de Kavita prise en charge : **0.9.1** (ENF-COMP-001). Chaque note de version la rappelle.
 
 ### Connu
 

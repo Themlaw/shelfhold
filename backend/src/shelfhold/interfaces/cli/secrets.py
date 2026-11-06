@@ -136,7 +136,7 @@ def _refusal_text(exc: KeyRetirementRefusedError) -> str:
     return texts[exc.reason]
 
 
-def _warning_text(warning: diagnostics.KeyringWarning) -> str:
+def warning_text(warning: diagnostics.KeyringWarning) -> str:
     detail = warning.detail
     texts = {
         "key_in_data": t("secrets.warning_key_in_data", detail=detail),
@@ -164,5 +164,5 @@ def run_status(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     if not warnings:
         print(t("secrets.status_ok"))
     for warning in warnings:
-        print(_warning_text(warning))
+        print(warning_text(warning))
     return 0

@@ -31,6 +31,7 @@ class Perimeter:
     name: re.Pattern[str] | None = None  # or a file name, outside the reserved area
     tree: bool = True  # may a whole folder go? never for a name-only perimeter (probe files)
     needs_file: bool = False  # the target must be a regular file, not a folder or a link
+    also_in: str | None = None  # a reserved folder where a name-only perimeter also applies
 
     def allows(self, rel: str) -> bool:
         parts = [p for p in rel.split("/") if p not in ("", ".")]
@@ -39,11 +40,11 @@ class Perimeter:
         if self.below is not None:
             prefix = self.below.split("/")
             return len(parts) > len(prefix) and parts[: len(prefix)] == prefix
-        return (
-            self.name is not None
-            and not is_reserved(rel)
-            and self.name.fullmatch(parts[-1]) is not None
-        )
+        if self.name is None or self.name.fullmatch(parts[-1]) is None:
+            return False
+        if self.also_in is not None and parts[:-1] == self.also_in.split("/"):
+            return True  # directly in that folder, not deeper
+        return not is_reserved(rel)
 
     def allows_content_of(self, rel: str) -> bool:
         """Emptying the folder `rel`: it is the perimeter folder itself or lies under it."""
@@ -57,7 +58,9 @@ class Perimeter:
 EMITTER_PERIMETERS: Mapping[str, Perimeter] = MappingProxyType(
     {
         "staging_orphan_cleanup": Perimeter(below=STAGING_DIR),
-        "probe_file_cleanup": Perimeter(name=PROBE_NAME, tree=False, needs_file=True),
+        "probe_file_cleanup": Perimeter(
+            name=PROBE_NAME, tree=False, needs_file=True, also_in=STAGING_DIR
+        ),
         "trash_retention_purge": Perimeter(below=RECYCLE_DIR),
     }
 )

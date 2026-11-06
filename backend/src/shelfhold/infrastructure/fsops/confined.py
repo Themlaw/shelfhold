@@ -383,6 +383,22 @@ class ConfinedRoot:
         finally:
             os.close(src_parent)
 
+    def link_to(self, other: Self, src: str, dst: str) -> None:
+        """A hard link from a file of this root to a new name in another root (`EXDEV` when they
+        are on different file systems). Never clobbers; used by the capability probe."""
+        src_parent, src_name = self._parent(src)
+        try:
+            dst_parent, dst_name = other._parent(dst)
+            try:
+                os.link(
+                    src_name, dst_name, src_dir_fd=src_parent, dst_dir_fd=dst_parent,
+                    follow_symlinks=False,
+                )  # fmt: skip
+            finally:
+                os.close(dst_parent)
+        finally:
+            os.close(src_parent)
+
     def utime(self, rel: str, ns: tuple[int, int]) -> None:
         parent, name = self._parent(rel)
         try:
