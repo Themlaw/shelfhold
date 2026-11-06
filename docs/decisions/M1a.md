@@ -689,7 +689,7 @@ Ce lot (`chore(m1a): close the milestone`) ne tranche aucun report d'exigence. L
 | L12 `window.preempted` | Traitée en M1a | M3 garde le discriminant (consigne du plan). |
 | L11 idempotence dans `main.py` | Traitée | #66, `test_api_conventions.py`. |
 | L19/L20 borne du CBZ Suwayomi | Traitée | `received_cbz_max_bytes` et `bounded_receiver` (#66). |
-| L09 `test_notifications_escape_upstream_text` | Traitée | #45, `test_notification_render.py`. |
+| L09 `test_notifications_escape_upstream_text` | Traitée | `tests/unit/test_notification_render.py`. |
 | L23 CLI locale, `SO_PEERCRED` | Traitée | #49. |
 | L18 `follow.cycle` et levée de pause | Traitée | #66 ; parcours E2E « installation neuve » par #67. |
 | L29/L37 audit d'accès, garde d'écriture | Traitée | #66. |
@@ -703,10 +703,10 @@ Ce lot (`chore(m1a): close the milestone`) ne tranche aucun report d'exigence. L
 | L33 journal des pierres tombales non chaîné | Reportée à M1b | Décision L33 point 17 ci-dessus ; 03, section M1b, passe 13 (EF-BIB-054). |
 | L29 `checked_target_url` contre `validate_target_url` | Traitée par décision | Ce ne sont pas des doublons : `validate_target_url` juge la forme de l'adresse à la configuration, sans réseau ; `checked_target_url` résout le nom à l'usage et refuse un nom qui désigne une adresse publique (`http://` vers un nom privé y est permis). Les fusionner changerait un comportement. La TODO du plan est close. |
 | L30 `FolderProbe` réduit à un adaptateur de `probe_folder` | **Décision requise**, proposition M1b | Refactor sans changement de comportement (un seul site de suppression, `preflight.py` sorti de `FSOPS_CALLERS`) ; les deux sondes coexistent et sont testées. |
-| L40/L41 lignes de `FAILURE_MATRIX`, `source.version_unsupported` | Traitée | #59, #66. |
+| L40/L41 lignes de `FAILURE_MATRIX`, `source.version_unsupported` | Traitée | `failure_matrix.py` ; `test_suwayomi_schema_mismatch_pauses_without_counting`. |
 | L35 `root takeover`, `reinit`, `restored` | Reportée à M1b | 03, section M1b, passe 10 (EF-EXP-064) ; `shelfhold status` donne la correction manuelle. |
 | L31 (a) nightly de progression Kavita | Traitée | #65, `test_repatriate_keeps_kavita_progress_nightly`. |
-| L31 (b) gel et `plan.ready`, code de `RootBlockedError` | Traitée | `root.blocked` (409) au catalogue (#62, #63). |
+| L31 (b) gel et `plan.ready`, code de `RootBlockedError` | Traitée | `root.blocked` (409) au catalogue (`ops/errors.py`). |
 | L40 `verification-metadata.xml` | Traitée, ce lot | Voir ci-dessus. |
 | Clôture : routes absentes d'OpenAPI | Traitée, ce lot | Voir ci-dessus. |
 | L42 découverte des séries, étape 7, section « Connu » | Traitée | #67 et ce lot. |
