@@ -29,7 +29,9 @@ NOW = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
 
 @dataclass
 class FakeRestore:
-    """The `RestoreExit` port of L35: waits when told to, records the call."""
+    """A spy on the `RestoreExit` port, for the tests of the channels (which credential reaches
+    it). It is not how a state is produced: the scenarios of `test_ops_exits` use the restore
+    guard, the sentinels and `reconcile --adopt-after-restore`."""
 
     behind: bool = True
     calls: list[bool] = field(default_factory=list)
@@ -46,7 +48,9 @@ class FakeRestore:
 
 @dataclass
 class FakeKeyring:
-    """The `KeyringExit` port: kids the keyring lacks, until the waiver."""
+    """A spy on the `KeyringExit` port, for the tests of the channels. `tombstone_key_unknown` is
+    produced by a real purge and a keyring that lost its key in `test_ops_exits`; the lines owed
+    to a root that was away are the one state still listed by this spy."""
 
     kids: list[str] = field(default_factory=lambda: ["kid-lost"])
     waived: list[tuple[str, str]] = field(default_factory=list)
@@ -76,31 +80,6 @@ class FakeKeyring:
         self.waived.append((confirmation, principal.credential.value))
         gone, self.kids = self.kids, []
         return gone
-
-
-@dataclass
-class FakeAdoption:
-    """The `AdoptionExit` port: two adopted series waiting for a human."""
-
-    pending: dict[str, str] = field(
-        default_factory=lambda: {"series-a": "adoption_refused", "series-b": "coverage_unknown"}
-    )
-    calls: list[tuple[str, str]] = field(default_factory=list)
-
-    def waiting(self) -> list[WaitingItem]:
-        return [
-            WaitingItem(state, "adoption", subject, state)
-            for subject, state in self.pending.items()
-        ]
-
-    def set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
-        self.calls.append(("set_follow_from", series))
-        self.pending.pop(series, None)
-
-    def confirm_migration(self, *, destination_id: str, fingerprint: str) -> None:
-        self.calls.append(("confirm_migration", fingerprint))
-        for subject in [s for s, st in self.pending.items() if st == "adoption_refused"]:
-            self.pending.pop(subject)
 
 
 def make_ops(env: ExportEnv, wired: Wired | None = None, **ports: Any) -> OpsServices:

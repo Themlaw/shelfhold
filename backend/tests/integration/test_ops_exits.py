@@ -10,8 +10,10 @@ enumeration is partitioned (M1a / later): a new `WaitingState` fails here until 
 import argparse
 import inspect
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -24,7 +26,10 @@ from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
 from shelfhold.identity.public import EXIT_ROUTES, EXIT_STATES_LATER
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
+from shelfhold.infrastructure.secrets.diagnostics import store_for
+from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.interfaces.cli.registry import build_parser
+from shelfhold.library.tombstones import LOST_KEYRING_PHRASE
 from shelfhold.ops import (
     CLI_PENDING,
     ENDPOINTS,
@@ -34,15 +39,18 @@ from shelfhold.ops import (
     bare,
     endpoint_of,
 )
+from tests.auth_env import run_cli
 from tests.export_env import ExportEnv, export_env
 from tests.headless_env import KAVITA_KEY, KAVITA_URL, SUWAYOMI_URL, Headless, headless
+from tests.integration.test_restore_epoch import restored
+from tests.integration.test_restore_review2 import production
 from tests.kavita_export_env import wire
+from tests.l50_env import seeded
+from tests.l53_env import status_json, waiting_states
+from tests.l54_env import SERIES, bench54, comic
 from tests.ops_env import (
-    LOCAL_CLI,
     NOW,
-    FakeAdoption,
     FakeKeyring,
-    FakeRestore,
     add_job,
     edition_lang,
     job_status,
@@ -50,6 +58,7 @@ from tests.ops_env import (
     pause_follow,
     put_health,
 )
+from tests.restore_env import restore_env
 
 pytestmark = pytest.mark.req("EF-INT-023")
 
@@ -234,30 +243,6 @@ def language_unknown() -> None:
         assert edition_lang(env.engine, series.edition_id) == "ja"
 
 
-def restored_behind() -> None:
-    with export_env() as env:
-        restore = FakeRestore()
-        ops = make_ops(env, restore=restore)
-        _listed_then_gone(
-            ops, "restored_behind",
-            lambda: ops.restore_adopt(confirm_deletion=False, principal=LOCAL_CLI),
-        )  # fmt: skip
-        assert restore.calls == [False]
-
-
-def tombstone_key_unknown() -> None:
-    with export_env() as env:
-        keyring = FakeKeyring()
-        ops = make_ops(env, keyring=keyring)
-        _listed_then_gone(
-            ops, "tombstone_key_unknown",
-            lambda: ops.tombstone_accept_lost_keyring(
-                confirmation="the keyring is lost", principal=LOCAL_CLI
-            ),
-        )  # fmt: skip
-        assert keyring.waived == [("the keyring is lost", "local_cli")]
-
-
 def tombstone_lines_owed() -> None:
     with export_env() as env:
         keyring = FakeKeyring(kids=[], owed=["01JROOT0000000000000000000"])
@@ -266,26 +251,117 @@ def tombstone_lines_owed() -> None:
         assert keyring.owed == []
 
 
-def adoption_refused() -> None:
-    with export_env() as env:
-        adoption = FakeAdoption()
-        ops = make_ops(env, adoption=adoption)
-        _listed_then_gone(
-            ops, "adoption_refused",
-            lambda: ops.adopt_confirm_migration(destination_id=env.destination_id, fingerprint="f"),
-        )  # fmt: skip
+# The four states below are produced and left by the production code only (L53): the adoption and
+# the pairing write `adoption_refused` / `coverage_unknown`, the restore guard and the sentinels
+# make `restored_behind`, a real purge and a keyring that lost its key make `tombstone_key_unknown`.
+# `shelfhold status` is what reads them, the command of the catalogue is what leaves them.
 
 
-def coverage_unknown() -> None:
-    with export_env() as env:
-        adoption = FakeAdoption()
-        ops = make_ops(env, adoption=adoption)
-        _listed_then_gone(
-            ops, "coverage_unknown",
-            lambda: ops.adopt_set_follow_from(
-                destination_id=env.destination_id, series="series-b", chapter="12"
+@dataclass
+class L53Context:
+    monkeypatch: pytest.MonkeyPatch
+    capsys: pytest.CaptureFixture[str]
+    settings: Settings
+
+    def cli(self, *argv: str) -> int:
+        return run_cli(self.monkeypatch, self.settings, *argv)
+
+    def listed(self, state: str) -> list[dict[str, Any]]:
+        report = status_json(self.monkeypatch, self.settings, self.capsys)
+        return waiting_states(report).get(state, [])
+
+    def listed_then_gone(self, state: str, leave: Callable[[], object]) -> None:
+        """`status` lists the state with a reason and its command; `leave` plays the command;
+        `status` no longer lists it."""
+        before = self.listed(state)
+        assert before, f"{state} is not listed by `shelfhold status`"
+        assert all(i["reason"] and i["command"].startswith("shelfhold ") for i in before)
+        leave()
+        assert self.listed(state) == [], f"{state} is still listed after its exit command"
+
+
+def adoption_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        ctx = L53Context(monkeypatch, capsys, settings)
+        # the `<team>_<chapter>` names of Suwayomi's own download folder (EF-EXP-044)
+        b.kavita_series("Fed Series", ["Team_Chapter 1.cbz"], info=comic("Fed Series", number="1"))
+        assert b.adopt(capsys) == 0
+
+        def leave() -> None:
+            capsys.readouterr()
+            base = ("adopt", "--confirm-migration", "--destination", b.env.destination_id)
+            assert b.cli(*base) == 2  # the report and its fingerprint first
+            fingerprint = capsys.readouterr().out.split("rapport :")[1].split()[0]
+            assert b.cli(*base, "--confirm", fingerprint) == 0
+
+        ctx.listed_then_gone("adoption_refused", leave)
+
+
+def coverage_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        ctx = L53Context(monkeypatch, capsys, settings)
+        b.kavita_series(SERIES, [f"{SERIES} - Vol.1.cbz"])  # a volume: which chapters it holds
+        assert b.adopt(capsys) == 0
+        series_id = b.series_id(SERIES)
+        (item,) = ctx.listed("coverage_unknown")
+        assert item["subject"] == series_id
+        assert item["command"] == f"shelfhold adopt set-follow-from {series_id} <chapter>"
+        b.upstream({n: f"Chapter {n}" for n in range(1, 6)})
+        ctx.listed_then_gone(
+            "coverage_unknown",
+            lambda: (
+                b.cli("adopt", "set-follow-from", series_id, "3") == 0 or pytest.fail("refused")
             ),
-        )  # fmt: skip
+        )
+
+
+def restored_behind(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    with restore_env() as env:
+        restored(env)  # six chapters exported after the backup, then the backup put back
+        assert env.guard().enter_restored_behind().behind
+        with production(env) as own:
+            ctx = L53Context(monkeypatch, capsys, own)
+
+            def leave() -> None:
+                capsys.readouterr()
+                assert ctx.cli("reconcile", "--adopt-after-restore") == 2  # the preview
+                out = capsys.readouterr().out
+                fingerprint = next(
+                    line.split(": ")[1].strip() for line in out.splitlines() if "Empreinte" in line
+                )
+                assert ctx.cli("reconcile", "--adopt-after-restore", "--confirm", fingerprint) == 0
+
+            ctx.listed_then_gone("restored_behind", leave)
+
+
+def tombstone_key_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with seeded(settings, tmp_path) as env:
+        ctx = L53Context(monkeypatch, capsys, settings)
+        series = env.new_series("Purged")
+        unit = env.add_chapter(series, "1")
+        # a real purge writes a real tombstone, sealed under the key of the keyring
+        assert ctx.cli("purge", "--now", "--unit", unit, "--confirm", unit) == 0
+        assert ctx.listed("tombstone_key_unknown") == []  # the keyring has its key
+        store_for(settings).write(Keyring.generate())  # /data restored, the keyring was not
+        ctx.listed_then_gone(
+            "tombstone_key_unknown",
+            lambda: ctx.cli("tombstone", "accept-lost-keyring", "--confirm", LOST_KEYRING_PHRASE),
+        )
 
 
 def key_expiring(settings: Settings) -> None:
@@ -349,7 +425,13 @@ SCENARIOS: dict[str, Callable[..., None]] = {
 
 
 @pytest.mark.parametrize("state", sorted(WaitingState, key=str), ids=str)
-def test_every_waiting_state_has_exit_command(state: WaitingState, settings: Settings) -> None:
+def test_every_waiting_state_has_exit_command(
+    state: WaitingState,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
     routes = [r for r in EXIT_ROUTES if r.waiting_state == state.value]
     if state in LATER_STATES:
         # the exit arrives with the milestone where the state appears (EF-INT-023): until then it
@@ -371,10 +453,10 @@ def test_every_waiting_state_has_exit_command(state: WaitingState, settings: Set
         else:  # the CLI module belongs to a lot still in flight: the day it lands, remove the entry
             assert not _cli_has(route.command), f"{route.command} exists: drop it from CLI_PENDING"
     scenario = SCENARIOS[state.value]
-    if "settings" in inspect.signature(scenario).parameters:
-        scenario(settings)
-    else:
-        scenario()
+    given = {
+        "settings": settings, "monkeypatch": monkeypatch, "capsys": capsys, "tmp_path": tmp_path,
+    }  # fmt: skip
+    scenario(**{n: given[n] for n in inspect.signature(scenario).parameters})
 
 
 @pytest.mark.parametrize("command", sorted(ENDPOINTS))
