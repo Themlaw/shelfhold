@@ -33,7 +33,7 @@ def test_dry_run_and_apply_share_planner(monkeypatch: pytest.MonkeyPatch) -> Non
         assert env.files() == []  # a dry run writes nothing
         assert env.rows(export.export_record) == []
         applied = env.pipeline.run(env.destination_id, job_id=new_ulid())
-        assert len(calls) == 2  # the one planner, once for each
+        assert len(calls) == 3  # the one planner: the preview, then the run's first look and plan
         assert applied.ops == preview.ops  # the operations are identical
         assert sorted(p.name for p in env.files()) == [
             "Dr Stone - Ch.2.cbz",

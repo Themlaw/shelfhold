@@ -133,7 +133,7 @@ def test_a_failing_mirror_write_does_not_fail_the_apply(monkeypatch: pytest.Monk
         env.pipeline.run(env.destination_id, job_id=new_ulid())  # the file is placed and kept
         assert len(env.files()) == 1
         monkeypatch.undo()
-        env.pipeline.run(env.destination_id, job_id=new_ulid())  # the next run heals it
+        env.pipeline.heal_mirror(env.destination_id)  # the next window heals it
         assert mirror_file(env).exists()
 
 

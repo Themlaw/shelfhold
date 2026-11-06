@@ -2,10 +2,12 @@
 
 - `follow.cycle` (L18): the always-on cycle of the connected service, its archives received into
   the inbox of the first writable root, under the lease, with the tombstone gate;
-- `export.run` (L27): per destination, the foreign-writer detector, the plan checked by
-  `plugin/parse`, the writing, the targeted scans and the arrival poll (EF-EXP-034);
-- `reconcile.cycle` and `reconcile.hash` (L32): the reduced reconcile of a tree destination, the
-  second one in the maintenance window where files may be hashed (ENF-OPS-014);
+- `export.run` (L27, L50): per destination, the plan from the database alone; only a plan with
+  something to write goes on to the foreign-writer detector, the lease, the writing and the
+  targeted scans; then the arrival poll and the series covers (EF-EXP-034, EF-EXP-045). An empty
+  plan touches no disk (ENF-OPS-014);
+- `reconcile.cycle` and `reconcile.hash` (L32, L50): the verification of the tree, both window
+  jobs (ENF-OPS-014): by day nothing looks at the disks, the second one may hash files;
 - `target.access_audit` (L26, L37) and `ops.disk_check` (L37): see `infrastructure.observability`;
 - `target.key_expiry` (daily): the J-14/J-1 notices of a Kavita key, read again from the target;
 - `intents.prune` (daily): the closed intents older than the retention leave the journal;
@@ -31,13 +33,16 @@ from shelfhold.acquisition.public import FOLLOW_JOB_KIND, FollowCycle, bounded_r
 from shelfhold.composition import Composition, KeyringUnavailableError, NoLibraryError
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
-from shelfhold.export.application.pipeline import ExportPipeline
+from shelfhold.export.application.pipeline import ExportPipeline, wanted_names
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
-from shelfhold.export.targets.kavita.adopt import BulkParse
+from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
 from shelfhold.export.targets.kavita.arrival import ArrivalPoller
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
+from shelfhold.export.targets.kavita.cover import SeriesCovers
+from shelfhold.export.targets.kavita.errors import TargetError
+from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.schema import export
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
@@ -52,6 +57,7 @@ __all__ = [
     "RECONCILE_HASH_KIND",
     "RECONCILE_KIND",
     "register_runtime_jobs",
+    "settle_arrival",
 ]
 
 log = structlog.get_logger(__name__)
@@ -61,7 +67,7 @@ RECONCILE_KIND = "reconcile.cycle"
 RECONCILE_HASH_KIND = "reconcile.hash"
 FOLLOW_CRON = "*/15 * * * *"
 EXPORT_CRON = "*/5 * * * *"
-RECONCILE_CRON = "*/10 * * * *"
+RECONCILE_CRON = "*/10 * * * *"  # window job: runs every 10 minutes of the window only
 INTENT_PRUNE_KIND = "intents.prune"
 KEY_EXPIRY_KIND = "target.key_expiry"
 INTENT_PRUNE_CRON = "41 3 * * *"
@@ -172,17 +178,32 @@ def _unchecked(_name: str) -> Any:
     raise KeyError("names are not checked by plugin/parse")
 
 
+class _Disks:
+    """The pipeline and the file system, built when a destination first needs them: a run that
+    finds nothing to write never opens a root (ENF-OPS-014)."""
+
+    def __init__(self, comp: Composition, scans: ScanRelay) -> None:
+        self._comp = comp
+        self._scans = scans
+        self._built: tuple[ExportPipeline, Fsops] | None = None
+
+    def get(self) -> tuple[ExportPipeline, Fsops]:
+        if self._built is None:
+            pipeline, _reconciler, fsops = build_pipeline(self._comp, self._scans)
+            self._built = (pipeline, fsops)
+        return self._built
+
+    def fsops(self) -> Fsops:
+        return self.get()[1]
+
+
 def export_handler(comp: Composition) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
         destinations = tree_destinations(comp)
         if not destinations:
             return
         scans = ScanRelay()
-        try:
-            pipeline, _reconciler, _fsops = build_pipeline(comp, scans)
-        except (NoLibraryError, KeyringUnavailableError) as error:
-            log.info("export.run_skipped", reason=type(error).__name__)
-            return
+        disks = _Disks(comp, scans)
         for destination in destinations:
             if context.stop_requested:
                 return
@@ -191,26 +212,36 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
             except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound):
                 continue  # the target has no sealed key yet
             scans.client, scans.asked = client, []
-            asyncio.run(_export_one(comp, pipeline, client, destination, scans, context))
+            try:
+                asyncio.run(_export_one(comp, disks, client, destination, scans, context))
+            except (NoLibraryError, KeyringUnavailableError) as error:
+                log.info("export.run_skipped", reason=type(error).__name__)
+                return
 
     return run
 
 
 async def _export_one(
     comp: Composition,
-    pipeline: ExportPipeline,
+    disks: _Disks,
     client: KavitaClient,
     destination: Destination,
     scans: ScanRelay,
     context: JobContext,
 ) -> None:
     from shelfhold.export.application.target_state import DestinationPausedError
-    from shelfhold.export.targets.kavita.errors import TargetError
 
     try:
-        bulk = await BulkParse.for_plan(client, pipeline, destination.id)
-        pipeline.bind_parse(bulk, verified=True)
-        pipeline.run(destination.id, job_id=context.job_id)
+        # the plan is read from the database: with nothing to write no disk is looked at
+        names, kind = wanted_names(
+            comp.engine, destination.id,
+            segment_policy_confirmed=comp.settings.naming_segment_policy_confirmed,
+        )  # fmt: skip
+        if names:
+            pipeline, _fsops = disks.get()
+            bulk = await BulkParse.fetch(client, names, library_type_named(kind))
+            pipeline.bind_parse(bulk, verified=True)
+            pipeline.run(destination.id, job_id=context.job_id)
     except (DestinationPausedError, TargetError) as error:
         log.info(
             "export.destination_waits", destination_id=destination.id, reason=type(error).__name__
@@ -226,27 +257,58 @@ async def _export_one(
             except TargetError as error:  # Kavita lost after the writing: the next run scans again
                 log.info("export.scan_failed", destination_id=destination.id,
                          reason=type(error).__name__)  # fmt: skip
-    poller = ArrivalPoller(comp.engine, comp.clock, BusTargetEvents(comp.engine, comp.bus))
+    await settle_arrival(comp, client, destination.id, fsops=disks.fsops)
+
+
+async def settle_arrival(
+    comp: Composition,
+    client: KavitaClient,
+    destination_id: str,
+    *,
+    fsops: Callable[[], Fsops] | None = None,
+) -> None:
+    """After an export: confirm what Kavita indexed (EF-EXP-034), then post the covers of the
+    series it now knows (EF-EXP-045). Both are read from the database first, so with nothing
+    pending neither the network nor a disk is touched beyond that."""
+    events = BusTargetEvents(comp.engine, comp.bus)
+    poller = ArrivalPoller(comp.engine, comp.clock, events)
     try:
-        await poller.poll(client, destination.id)
+        await poller.poll(client, destination_id)
     except TargetError as error:  # one destination failing never stops the others
-        log.info("export.poll_failed", destination_id=destination.id, reason=type(error).__name__)
+        log.info("export.poll_failed", destination_id=destination_id, reason=type(error).__name__)
+        return
+
+    def disks() -> Fsops:
+        return fsops() if fsops is not None else comp.read_context()[0]
+
+    covers = SeriesCovers(comp.engine, comp.clock, disks, events)
+    try:
+        await covers.publish(client, destination_id)
+    except (NoLibraryError, KeyringUnavailableError) as error:
+        log.info("export.cover_skipped", reason=type(error).__name__)
 
 
 # -- reconcile -----------------------------------------------------------------
 
 
 def reconcile_handler(comp: Composition, *, in_window: bool) -> Callable[[JobContext], None]:
+    """The verification of the tree, then the mirrors projected again if one is lost: both read
+    the disks, so both are window jobs (ENF-OPS-014)."""
+
     def run(context: JobContext) -> None:
+        destinations = tree_destinations(comp)
+        if not destinations:
+            return
         try:
-            fsops, _loaded, _tombstones = comp.read_context()
+            pipeline, reconciler, _fsops = build_pipeline(comp)
         except (NoLibraryError, KeyringUnavailableError):
             return
-        reconciler = Reconciler(comp.engine, fsops, clock=comp.clock, bus=comp.bus)
-        for destination in tree_destinations(comp):
+        for destination in destinations:
             if context.stop_requested:
                 return
             reconciler.reconcile(destination.id, in_window=in_window)
+            if in_window:
+                pipeline.heal_mirror(destination.id)
 
     return run
 
@@ -329,9 +391,10 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.register(EXPORT_JOB_KIND, pool="io", handler=export_handler(comp))
     pools.scheduler.add(EXPORT_JOB_KIND, EXPORT_CRON, jitter_s=60)
     pools.register(
-        RECONCILE_KIND, pool="io", handler=reconcile_handler(comp, in_window=False), writes=False
-    )
-    pools.scheduler.add(RECONCILE_KIND, RECONCILE_CRON, jitter_s=60)
+        RECONCILE_KIND, pool="maint", handler=reconcile_handler(comp, in_window=False),
+        windowed=True, writes=False,
+    )  # fmt: skip
+    pools.scheduler.add(RECONCILE_KIND, RECONCILE_CRON, jitter_s=60, windowed=True)
     pools.register(
         RECONCILE_HASH_KIND, pool="maint", handler=reconcile_handler(comp, in_window=True),
         windowed=True, writes=False,

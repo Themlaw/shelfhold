@@ -3,17 +3,19 @@
 import unicodedata
 
 import pytest
+import sqlalchemy as sa
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from shelfhold.export.domain.naming import (
     FrozenAttrs,
-    PlannedItem,
     export_path,
     find_number_collisions,
-    plan_renames,
     sanitize_name,
 )
+from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.schema import catalog
+from tests.export_env import export_env
 from tests.fakes.kavita.plugin_parse import simulate_parse
 
 FORBIDDEN = set('/\\:*?"<>|')
@@ -76,22 +78,45 @@ def frozen_items(draw: st.DrawFn) -> FrozenAttrs:
 
 
 @pytest.mark.req("EF-EXP-061")
-@settings(max_examples=60)
+@settings(max_examples=12, deadline=None)
 @given(
-    st.lists(frozen_items(), min_size=1, max_size=40),
-    st.lists(st.one_of(st.none(), st.integers(1, 80)), min_size=40, max_size=40),
+    st.lists(st.integers(1, 200), min_size=1, max_size=8, unique=True),
+    st.lists(st.integers(1, 30), min_size=8, max_size=8),
 )
-def test_late_volume_attribution_never_renames(
-    items: list[FrozenAttrs], volumes: list[int | None]
-) -> None:
-    """A tome attributed late (or a corrected title) changes the metadata, never the path."""
-    before = [PlannedItem(f"i{n}", f) for n, f in enumerate(items)]
-    recorded = {p.item_id: export_path(p.frozen).rel_path for p in before}
-    after = [
-        PlannedItem(p.item_id, p.frozen, current_volume=volumes[n], current_title=f"Titre {n}")
-        for n, p in enumerate(before)
-    ]
-    assert plan_renames(recorded, after) == []
+def test_late_volume_attribution_never_renames(numbers: list[int], volumes: list[int]) -> None:
+    """Chapters exported, then the source attributes tomes and corrects titles: the real
+    pipeline plans no operation, so no `rename`; the sidecar change is only announced."""
+    with export_env() as env:
+        series = env.new_series()
+        units = [env.add_chapter(series, str(n)) for n in numbers]
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        files = {p.name: p.stat().st_ino for p in env.files()}
+        with env.engine.begin() as connection:
+            made: dict[int, str] = {}
+            for n, unit in enumerate(units):
+                if volumes[n] not in made:
+                    made[volumes[n]] = new_ulid()
+                    connection.execute(
+                        sa.insert(catalog.volume).values(
+                            id=made[volumes[n]],
+                            edition_id=series.edition_id,
+                            number=str(volumes[n]),
+                        )
+                    )
+                volume = made[volumes[n]]
+                connection.execute(
+                    sa.update(catalog.unit)
+                    .where(catalog.unit.c.id == unit)
+                    .values(volume_id=volume, title=f"Titre {n}")
+                )
+        preview = env.pipeline.preview(env.destination_id)
+        assert preview.ops == ()
+        assert {w.code for w in preview.warnings} == {"sidecar_changed"}
+        assert env.pipeline.run(env.destination_id, job_id=new_ulid()).ops == ()
+        assert {p.name: p.stat().st_ino for p in env.files()} == files
+        with env.engine.connect() as connection:
+            ops = set(connection.execute(sa.text("SELECT op FROM fs_intent")).scalars())
+        assert "rename" not in ops
 
 
 @pytest.mark.req("EF-EXP-045")

@@ -128,11 +128,19 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
         def bind_parse(self, *_: object, **__: object) -> None: ...
         def run(self, *_: object, **__: object) -> None: ...
 
-    async def for_plan(*_: object, **__: object) -> object:
+    class Disks:
+        def get(self) -> tuple[object, object]:
+            return Pipeline(), object()
+
+        def fsops(self) -> object:
+            return object()
+
+    async def fetch(*_: object, **__: object) -> object:
         return object()
 
     monkeypatch.setattr(rj, "SCAN_QUIET_S", 0)
-    monkeypatch.setattr(rj.BulkParse, "for_plan", staticmethod(for_plan))
+    monkeypatch.setattr(rj.BulkParse, "fetch", staticmethod(fetch))
+    monkeypatch.setattr(rj, "wanted_names", lambda *_, **__: (["x"], None))
     scans = rj.ScanRelay()
     scans.asked = ["/manga/x"]
     context = SimpleNamespace(stop_requested=False, job_id="j")
@@ -144,9 +152,14 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
 
     monkeypatch.setattr(rj, "ArrivalPoller", Poller)
     monkeypatch.setattr(rj, "BusTargetEvents", lambda *_: None)
-    comp = SimpleNamespace(engine=None, clock=None, bus=None)
+    comp = SimpleNamespace(
+        engine=None,
+        clock=None,
+        bus=None,
+        settings=SimpleNamespace(naming_segment_policy_confirmed=False),
+    )
     asyncio.run(
-        rj._export_one(comp, Pipeline(), Client(), rj.Destination("d", "t"), scans, context)  # type: ignore[arg-type]
+        rj._export_one(comp, Disks(), Client(), rj.Destination("d", "t"), scans, context)  # type: ignore[arg-type]
     )  # returns: the loop over the destinations goes on
 
 

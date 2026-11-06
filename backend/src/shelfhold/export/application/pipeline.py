@@ -63,6 +63,7 @@ __all__ = [
     "UnverifiedParseError",
     "decode_op",
     "encode_op",
+    "wanted_names",
 ]
 
 log = structlog.get_logger(__name__)
@@ -139,6 +140,35 @@ def decode_op(payload: dict[str, Any]) -> PlannedOp:
     )  # fmt: skip
 
 
+def wanted_names(
+    engine: Engine, destination_id: str, *, segment_policy_confirmed: bool = False
+) -> tuple[list[str], str | None]:
+    """The names a plan of this destination asks `plugin/parse` about, and the Kavita library
+    type to ask with. Read from the database alone: no disk is looked at, so an empty answer
+    (nothing to write) costs the disks nothing (ENF-OPS-014)."""
+    asked: list[str] = []
+
+    def record(name: str) -> Parsed:
+        asked.append(name)
+        return _Unread()
+
+    with engine.connect() as connection:
+        ctx = load_context(connection, destination_id)
+        loaded = load_request(
+            connection, ctx,
+            exists=lambda _path: False,  # whether a name is taken is a question for the disk
+            covered_locals=open_intent_paths(connection),
+            segment_policy_confirmed=segment_policy_confirmed,
+        )  # fmt: skip
+        kind = connection.execute(
+            sa.select(export.shelf_destination.c.kavita_library_type).where(
+                export.shelf_destination.c.id == destination_id
+            )
+        ).scalar()
+    plan_destination(loaded.request, record)
+    return sorted(set(asked)), kind
+
+
 class ExportPipeline:
     def __init__(
         self,
@@ -203,38 +233,24 @@ class ExportPipeline:
         self._parse_verified = verified
 
     def wanted_names(self, destination_id: str) -> tuple[list[str], str | None]:
-        """The names a plan of this destination asks `plugin/parse` about, and the Kavita library
-        type to ask with: fetched in bulk, then `bind_parse` makes the plan applicable."""
-        asked: list[str] = []
+        """See the module function: fetched in bulk, then `bind_parse` makes the plan applicable."""
+        return wanted_names(
+            self._engine, destination_id, segment_policy_confirmed=self._segment_policy_confirmed
+        )
 
-        def record(name: str) -> Parsed:
-            asked.append(name)
-            return _Unread()
-
-        with self._engine.connect() as connection:
-            ctx = load_context(connection, destination_id)
-            loaded = load_request(
-                connection, ctx,
-                exists=lambda path: self._fsops.observe(path) is not None,
-                covered_locals=open_intent_paths(connection),
-                segment_policy_confirmed=self._segment_policy_confirmed,
-            )  # fmt: skip
-            kind = connection.execute(
-                sa.select(export.shelf_destination.c.kavita_library_type).where(
-                    export.shelf_destination.c.id == destination_id
-                )
-            ).scalar()
-        plan_destination(loaded.request, record)
-        return sorted(set(asked)), kind
-
-    def _compute(self, destination_id: str) -> tuple[DestinationContext, LoadedRequest, Plan]:
-        """The one way to a plan: the dry run and the application both come through here."""
+    def _compute(
+        self, destination_id: str, *, disk: bool = True
+    ) -> tuple[DestinationContext, LoadedRequest, Plan]:
+        """The one way to a plan: the dry run and the application both come through here.
+        `disk=False` plans from the database alone: no name is checked against a disk."""
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
             covered = open_intent_paths(connection)
             loaded = load_request(
                 connection, ctx,
-                exists=lambda path: self._fsops.observe(path) is not None,
+                exists=(lambda path: self._fsops.observe(path) is not None)
+                if disk
+                else (lambda _path: False),
                 covered_locals=covered,
                 segment_policy_confirmed=self._segment_policy_confirmed,
             )  # fmt: skip
@@ -266,11 +282,18 @@ class ExportPipeline:
         )
 
     def run(self, destination_id: str, *, job_id: str) -> ApplyReport:
-        """Plan, then apply; a plan with nothing to do is not even stored (idempotence)."""
+        """Plan, then apply; a plan with nothing to do is not even stored (idempotence).
+
+        The first plan is made from the database alone: while it is empty no disk is read or
+        written, no lease is taken and no sentinel is looked at (ENF-OPS-014, EF-EXP-029). Only a
+        plan with something to write goes on to the checks that need the disks, and is then made
+        again with what they show."""
         self._require_writable()
         self._require_verified()
         with self._engine.connect() as connection:
             ensure_active(connection, destination_id)
+        if not self._compute(destination_id, disk=False)[2].ops:
+            return ApplyReport(None, ())
         if self._detector is not None:
             self._detector(destination_id)
         if self._switchover is not None:
@@ -291,6 +314,14 @@ class ExportPipeline:
         with self._engine.connect() as connection:
             root = load_context(connection, destination_id).root_local
         return self._sessions.open(root) if root else nullcontext()
+
+    def heal_mirror(self, destination_id: str) -> None:
+        """The mirror of a destination projected again if a file is lost or out of date. A job of
+        the maintenance window, since looking for a lost file reads the disk (ENF-OPS-014): a run
+        with nothing to write does not, a run with something to write heals it on its way."""
+        with self._engine.connect() as connection:
+            ctx = load_context(connection, destination_id)
+        self._heal_mirror(ctx)
 
     def _heal_mirror(self, ctx: DestinationContext) -> None:
         """A mirror file lost, or never written because a run stopped after its file: the

@@ -325,7 +325,8 @@ def test_mirror_restores_follow_decisions_ages_as_suggestions() -> None:
                 .where(catalog.edition.c.id == env.series.edition_id)
                 .values(age_rating=16, age_x=False)
             )
-        env.export()  # the decisions travel in the mirror
+        env.export()
+        env.pipeline.heal_mirror(env.ex.destination_id)  # the decisions travel in the mirror
         env.restore(backup)
         with env.engine.connect() as connection:
             row = connection.execute(

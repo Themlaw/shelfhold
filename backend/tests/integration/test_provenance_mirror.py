@@ -289,13 +289,15 @@ def test_the_second_run_rewrites_nothing() -> None:
             )
 
 
-def test_a_run_heals_a_lost_mirror() -> None:
+def test_the_window_heals_a_lost_mirror() -> None:
     with export_env() as env:
         series = env.new_series()
         env.add_chapter(series, "1")
         env.pipeline.run(env.destination_id, job_id=new_ulid())
         shutil.rmtree(env.lib.library / RESERVED_DIR / "manifest")
-        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        env.pipeline.run(env.destination_id, job_id=new_ulid())  # nothing to write: no disk read
+        assert mirror_files(env) == []
+        env.pipeline.heal_mirror(env.destination_id)  # the window job
         assert len(mirror_files(env)) == 1
 
 
