@@ -93,10 +93,16 @@ class _Broken:
 def test_problem_detail_carries_no_internal_detail_or_trace(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    with auth_env(monkeypatch, settings, ops_services=_Broken()) as api:
-        with TestClient(api.app, base_url=HTTPS, raise_server_exceptions=False) as client:  # type: ignore[arg-type]
-            assert api.login(client=client).status_code == 200
-            response = client.get(JOBS, headers={"X-Request-ID": "req-9"})
+    with (
+        auth_env(monkeypatch, settings, ops_services=_Broken()) as api,
+        TestClient(
+            api.app,  # type: ignore[arg-type]
+            base_url=HTTPS,
+            raise_server_exceptions=False,
+        ) as client,
+    ):
+        assert api.login(client=client).status_code == 200
+        response = client.get(JOBS, headers={"X-Request-ID": "req-9"})
     assert response.status_code == 500
     assert response.headers["content-type"].startswith(PROBLEM_JSON)
     body = response.json()
