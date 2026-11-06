@@ -34,7 +34,3 @@ class FileIdentity:
 
 def identity_of(observed: StatLike) -> FileIdentity:
     return FileIdentity(observed.st_ino, observed.st_size, observed.st_mtime_ns)
-
-
-def same_file(expected: FileIdentity, actual: FileIdentity) -> bool:
-    return expected == actual
