@@ -31,3 +31,124 @@ symbols = [
   "shelfhold.interfaces.http_api.catalog:error_code_modules",
   "shelfhold.export.targets.kavita.routes:SETUP_ROUTES",
 ]
+
+[[allow]]
+category = "unwired-m1b-l31"
+reason = "Domain helpers whose production counterpart does the same thing inline (the planner, the repatriation control, the sort by the database); L31 deletes them or moves them to tests/support, with the ~690-line inventory (PLAN-M1b D10)."
+until = "M1b L31"
+symbols = [
+  "shelfhold.catalog.domain.numbering:unit_sort_key",
+  "shelfhold.catalog.domain.numbering:follow_from",
+  "shelfhold.catalog.domain.numbering:is_beyond",
+  "shelfhold.catalog.domain.normalizers:resolve_key",
+  "shelfhold.export.domain.naming:check_incoming",
+  "shelfhold.export.domain.naming:find_number_collisions",
+  "shelfhold.export.domain.naming:manifest_entry",
+  "shelfhold.export.targets.kavita.series:SeriesResolver",
+]
+
+[[allow]]
+category = "unwired-m1b-l19"
+reason = "Follow from Shelfhold (CLI, API) and the presence predicates it uses: M1a follows through the cycle job only."
+until = "M1b L19"
+symbols = [
+  "shelfhold.acquisition.application.follow:follow_dedupe_key",
+  "shelfhold.acquisition.application.follow:submit_follow",
+  "shelfhold.acquisition.application.presence:present_for_acquisition",
+  "shelfhold.acquisition.application.presence:present_in",
+]
+
+[[allow]]
+category = "unwired-m1b-l08"
+reason = "effective_age (age push): PLAN-M1b L08 gives it its first production caller."
+until = "M1b L08"
+symbols = [
+  "shelfhold.export.domain.field_owner:effective_age",
+]
+
+[[allow]]
+category = "unwired-m1b-l06"
+reason = "`secrets import` is not implemented (it is listed in ops.exits.UNSERVED); only the encrypted export exists."
+until = "M1b L06"
+symbols = [
+  "shelfhold.infrastructure.secrets.export:decrypt_export",
+]
+
+[[allow]]
+category = "unwired-m1b-l16"
+reason = "No path deletes the copies of a Unit in M1a (retention and clean-up are M1b); the deletions that exist go through require_purge_allowed (purge) and the typed replay confirmation (restore)."
+until = "M1b L16"
+symbols = [
+  "shelfhold.library.adapters.units:require_deletion_allowed",
+  "shelfhold.library.adapters.units:safe_to_clean",
+  "shelfhold.library.adapters.units:DeletionRefusedError",
+  "shelfhold.library.domain.irreplaceable:require_typed_confirmation",
+]
+
+[[allow]]
+category = "unwired-m1b-l20"
+reason = "Suwayomi account secret opened by the SuwayomiJwt AuthFlow and the service account (L20)."
+until = "M1b L20"
+symbols = [
+  "shelfhold.plugin_host.authflow:load_account_secret",
+]
+
+[[allow]]
+category = "unwired-m1b-l24"
+reason = "Window, priority classes and store access (ENF-OPS-014): M1a has no /store and its window jobs are ordered by the scheduler; request_dispatch is the post-commit fast path of the notification sweep."
+until = "M1b L24"
+symbols = [
+  "shelfhold.jobs.window:ensure_store_access",
+  "shelfhold.jobs.window:StoreOrigin",
+  "shelfhold.jobs.window:OutsideMaintenanceWindowError",
+  "shelfhold.jobs.window:order_window_jobs",
+  "shelfhold.integrations.apprise.jobs:request_dispatch",
+]
+
+[[allow]]
+category = "unwired-m1b-l25"
+reason = "One physical root per device (EF-EXP-059) at root takeover/reinit; M1a registers roots in root_bootstrap."
+until = "M1b L25"
+symbols = [
+  "shelfhold.export.domain.physical_roots:discover_physical_roots",
+]
+
+[[allow]]
+category = "unwired-m2"
+reason = "Consumers arrive with the content and plugin features of M2: image decode worker and caps (B1), CBZ writer from pages, EPUB/OPF dates and upload dates, third-party plugin registry and state (B1), destination plugin config filter, range retry."
+until = "M2"
+symbols = [
+  "shelfhold.infrastructure.imaging.client:*",
+  "shelfhold.infrastructure.imaging.caps:*",
+  "shelfhold.infrastructure.imaging.errors:ImageRejected",
+  "shelfhold.infrastructure.packaging.cbz.packager:write_cbz",
+  "shelfhold.catalog.domain.dates:comicinfo_date_fields",
+  "shelfhold.catalog.domain.dates:opf_date",
+  "shelfhold.catalog.domain.dates:from_upload_timestamp",
+  "shelfhold.plugin_host.registry:*",
+  "shelfhold.plugin_host.public:load_plugin_state",
+  "shelfhold.export.targets.kavita.credentials:public_config",
+  "shelfhold.acquisition.application.ranges:RangeTickets",
+]
+
+[[allow]]
+category = "unwired-m3"
+reason = "Diagnostic bundle, content serving and the `since`/cursor tokens come with the reader and the admin UI of M3 (B1 for content_response); nothing issues or serves them in M1a."
+until = "M3"
+symbols = [
+  "shelfhold.infrastructure.logging:redact_source_urls",
+  "shelfhold.export.domain.provenance_mirror:is_diagnostic_excluded",
+  "shelfhold.interfaces.http_api.content:content_response",
+  "shelfhold.infrastructure.http_headers:attachment_disposition",
+  "shelfhold.interfaces.http_api.lists:encode_since",
+  "shelfhold.interfaces.http_api.pagination:encode_cursor",
+]
+
+[[allow]]
+category = "unwired-m4"
+reason = "Last-write-wins merge of reading progress comes with the sync of M4."
+until = "M4"
+symbols = [
+  "shelfhold.infrastructure.clock:merge_last_write_wins",
+  "shelfhold.infrastructure.clock:Stamped",
+]

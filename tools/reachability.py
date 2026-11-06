@@ -448,6 +448,40 @@ def unlisted_orphans(root: Path) -> list[Orphan]:
     return out
 
 
+_DECLARES = {"add_api_route", "include_router", "add_route", "mount", "add_websocket_route",
+             "api_route", "add_middleware"}  # fmt: skip
+_DECORATORS = {"get", "post", "put", "delete", "patch", "head", "options", "middleware"}
+
+
+def route_declarations(root: Path) -> list[str]:
+    """`req` tests that declare a route, a middleware, or hand `routers=` (a fake service) to the
+    application: the route then exists only in the test, never in `create_app()`."""
+    found: list[str] = []
+    for path in sorted((root / TESTS).rglob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for test in req_tests(tree):
+            what: set[str] = set()
+            for node in ast.walk(test):
+                if isinstance(node, ast.Attribute) and node.attr in _DECLARES:
+                    what.add(node.attr)
+                elif isinstance(node, ast.Name) and node.id == "APIRouter":
+                    what.add("APIRouter")
+                elif isinstance(node, ast.keyword) and node.arg == "routers":
+                    what.add("routers=")
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for deco in node.decorator_list:
+                        if (
+                            isinstance(deco, ast.Call)
+                            and isinstance(deco.func, ast.Attribute)
+                            and deco.func.attr in _DECORATORS
+                        ):
+                            what.add(f"@{deco.func.attr}")
+            if what:
+                rel = path.relative_to(root).as_posix()
+                found.append(f"{rel}::{test.name} ({', '.join(sorted(what))})")
+    return found
+
+
 def main(argv: list[str]) -> int:
     root = Path(argv[1]) if len(argv) > 1 else Path(__file__).resolve().parents[1]
     bad = unlisted_orphans(root)

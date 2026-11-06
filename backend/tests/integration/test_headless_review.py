@@ -19,7 +19,6 @@ from shelfhold.headless import (
 )
 from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.infrastructure.secrets.vault import SecretVault
-from shelfhold.interfaces.http_api.headless import build_headless_router
 from tests.auth_env import auth_env, run_cli
 from tests.headless_env import (
     KAVITA_PASSWORD,
@@ -43,17 +42,18 @@ def _body(name: str = "kavita") -> dict[str, object]:
 def test_http_target_add_needs_a_fresh_session_even_without_the_hardened_profile(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    with headless(settings) as env:
-        router = build_headless_router(lambda: env.admin, lambda: None)
-        with auth_env(monkeypatch, settings, routers=[router]) as api:
-            assert api.login().status_code == 200
-            api.clock.advance(timedelta(minutes=20))  # the password was typed 20 minutes ago
-            stale = api.post("/api/v1/targets", json=_body())
-            assert stale.status_code in {401, 403}
-            assert stale.json()["code"] == "reauth_required"
-            assert env.kavita.calls == [] and env.count("export_target") == 0
-            assert api.login().status_code == 200
-            assert api.post("/api/v1/targets", json=_body()).status_code == 201
+    with (
+        headless(settings) as env,
+        auth_env(monkeypatch, settings, headless_admin=env.admin) as api,
+    ):
+        assert api.login().status_code == 200
+        api.clock.advance(timedelta(minutes=20))  # the password was typed 20 minutes ago
+        stale = api.post("/api/v1/targets", json=_body())
+        assert stale.status_code in {401, 403}
+        assert stale.json()["code"] == "reauth_required"
+        assert env.kavita.calls == [] and env.count("export_target") == 0
+        assert api.login().status_code == 200
+        assert api.post("/api/v1/targets", json=_body()).status_code == 201
 
 
 def test_orphan_key_is_named_when_the_database_write_fails(settings: Settings) -> None:
@@ -127,39 +127,43 @@ def test_target_url_rule(settings: Settings, url: str, ok: bool) -> None:
 def test_trailing_slash_never_redirects_to_a_host_built_location(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    with headless(settings) as env:
-        router = build_headless_router(lambda: env.admin, lambda: "https://shelf.example.org")
-        with auth_env(monkeypatch, settings, routers=[router]) as api:
-            assert api.login().status_code == 200
-            answer = api.client.get(
-                "/api/v1/config/", headers={"Host": "evil.example"}, follow_redirects=False
-            )
-            assert answer.status_code == 404
-            assert "location" not in {k.lower() for k in answer.headers}
+    with (
+        headless(settings) as env,
+        auth_env(
+            monkeypatch, settings, headless_admin=env.admin, public_url="https://shelf.example.org"
+        ) as api,
+    ):
+        assert api.login().status_code == 200
+        answer = api.client.get(
+            "/api/v1/config/", headers={"Host": "evil.example"}, follow_redirects=False
+        )
+        assert answer.status_code == 404
+        assert "location" not in {k.lower() for k in answer.headers}
 
 
 def test_public_url_and_path_map_need_a_session_and_status_flags_the_restart(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with headless(settings) as env:
-        router = build_headless_router(lambda: env.admin, lambda: None)
-        with auth_env(monkeypatch, settings, routers=[router]) as api:
-            assert api.login().status_code == 200
-            capsys.readouterr()
-            assert run_cli(monkeypatch, settings, "admin", "keys", "create") == 0
-            # a log line of a background thread (the job workers of the app under test) may land in
-            # the same capture: the key is the one token of that shape
-            key = KEY_SHAPE.search(capsys.readouterr().out).group(0)  # type: ignore[union-attr]
-            keyed = {"Authorization": f"Bearer {key}"}
-            denied = api.client.patch(
-                "/api/v1/config", json={"values": {"public_url": "https://a.example.org"}},
-                headers=keyed,
-            )  # fmt: skip
-            assert denied.status_code == 403 and denied.json()["code"] == "credential_not_allowed"
-            ok = api.client.patch(
-                "/api/v1/config", json={"values": {"source.check_mode": "piloted"}}, headers=keyed
-            )
-            assert ok.status_code == 200
+    with (
+        headless(settings) as env,
+        auth_env(monkeypatch, settings, headless_admin=env.admin) as api,
+    ):
+        assert api.login().status_code == 200
+        capsys.readouterr()
+        assert run_cli(monkeypatch, settings, "admin", "keys", "create") == 0
+        # a log line of a background thread (the job workers of the app under test) may land in
+        # the same capture: the key is the one token of that shape
+        key = KEY_SHAPE.search(capsys.readouterr().out).group(0)  # type: ignore[union-attr]
+        keyed = {"Authorization": f"Bearer {key}"}
+        denied = api.client.patch(
+            "/api/v1/config", json={"values": {"public_url": "https://a.example.org"}},
+            headers=keyed,
+        )  # fmt: skip
+        assert denied.status_code == 403 and denied.json()["code"] == "credential_not_allowed"
+        ok = api.client.patch(
+            "/api/v1/config", json={"values": {"source.check_mode": "piloted"}}, headers=keyed
+        )
+        assert ok.status_code == 200
         # status: the server started with no public URL; a later `config set` waits for a restart
         record_applied_public_url(env.engine, None)
         env.admin.set("public_url", "https://later.example.org")
@@ -178,26 +182,27 @@ def test_patching_the_path_map_is_a_reserved_action_with_a_fresh_session(
     from datetime import timedelta
 
     values = {"path_map.kavita": '[{"local": "/library/a", "remote": "/a"}]'}
-    with headless(settings) as env:
-        router = build_headless_router(lambda: env.admin, lambda: None)
-        with auth_env(monkeypatch, settings, routers=[router]) as api:
-            assert api.login().status_code == 200
+    with (
+        headless(settings) as env,
+        auth_env(monkeypatch, settings, headless_admin=env.admin) as api,
+    ):
+        assert api.login().status_code == 200
 
-            def patch() -> Any:
-                return api.client.patch(
-                    "/api/v1/config", json={"values": values},
-                    headers={"X-CSRF-Token": api.csrf()},
-                )  # fmt: skip
-
-            # just logged in: fresh, so the gate lets it through (the target is unknown: 404)
-            assert patch().status_code == 404
-            api.clock.advance(timedelta(minutes=20))
-            stale = patch()
-            assert stale.status_code == 401
-            assert stale.json()["type"] == "/api/v1/problems/reauth-required"
-            # another key of the configuration does not ask for it
-            other = api.client.patch(
-                "/api/v1/config", json={"values": {"source.check_mode": "piloted"}},
+        def patch() -> Any:
+            return api.client.patch(
+                "/api/v1/config", json={"values": values},
                 headers={"X-CSRF-Token": api.csrf()},
             )  # fmt: skip
-            assert other.status_code == 200
+
+        # just logged in: fresh, so the gate lets it through (the target is unknown: 404)
+        assert patch().status_code == 404
+        api.clock.advance(timedelta(minutes=20))
+        stale = patch()
+        assert stale.status_code == 401
+        assert stale.json()["type"] == "/api/v1/problems/reauth-required"
+        # another key of the configuration does not ask for it
+        other = api.client.patch(
+            "/api/v1/config", json={"values": {"source.check_mode": "piloted"}},
+            headers={"X-CSRF-Token": api.csrf()},
+        )  # fmt: skip
+        assert other.status_code == 200
