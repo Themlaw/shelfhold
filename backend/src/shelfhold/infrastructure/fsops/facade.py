@@ -760,6 +760,28 @@ class Fsops:
         with self._gated(a) as root:
             root.rename(a.rel, b.rel, replace=replace)
 
+    def relocate_inbox(self, root_path: str, old_rel: str, new_rel: str) -> int:
+        """Move the files of the folder `old_rel` of a writable root into `new_rel` (both relative
+        to the root), then remove `old_rel` if it is empty. One renaming per file, inside the
+        root, never replacing: a name already taken stays where it is. Returns the number moved.
+        The one-time move of the follow inbox into the host area (`.received` -> `.shelfhold/`)."""
+        with self._gated(self._host_root(root_path)) as root:
+            if root.lstat_kind(old_rel) != "dir":
+                return 0
+            root.mkdir(new_rel, parents=True, exist_ok=True)
+            moved = 0
+            for name in sorted(root.listdir(old_rel)):
+                if root.lstat_kind(f"{old_rel}/{name}") != "file":
+                    continue
+                try:
+                    root.rename(f"{old_rel}/{name}", f"{new_rel}/{name}", replace=False)
+                except FileExistsError:
+                    continue
+                moved += 1
+            if not root.listdir(old_rel):
+                root.rmdir(old_rel)
+            return moved
+
     def recycle(self, local: str) -> str:
         """Move into the same root's `.shelfhold/recycle`; returns where it went."""
         located = self._locate(local)

@@ -41,6 +41,7 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 f"{_FSOPS}/facade.py::Fsops.purge_remove_tree",  # L34: bin entries only
                 f"{_FSOPS}/facade.py::Fsops.purge_unlink",  # L34: one regular file, never reserved
                 f"{_FSOPS}/facade.py::Fsops.recycle",  # empty folders it just made
+                f"{_FSOPS}/facade.py::Fsops.relocate_inbox",  # the emptied legacy inbox folder only
                 f"{_FSOPS}/facade.py::Fsops.system_unlink",  # perimeter and condition checked
                 f"{_FSOPS}/facade.py::Fsops.system_remove_tree",
                 f"{_FSOPS}/facade.py::Fsops._system_empty",

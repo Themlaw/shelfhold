@@ -152,6 +152,7 @@ EXPECTED_CLOSED = {
         f"{FSOPS}/confined.py::ConfinedRoot.rmdir",
         f"{FSOPS}/confined.py::ConfinedRoot.unlink",
         f"{FSOPS}/facade.py::Fsops._system_empty",
+        f"{FSOPS}/facade.py::Fsops.relocate_inbox",
         f"{FSOPS}/facade.py::Fsops.purge_remove_tree",
         f"{FSOPS}/facade.py::Fsops.purge_unlink",
         f"{FSOPS}/facade.py::Fsops.recycle",
