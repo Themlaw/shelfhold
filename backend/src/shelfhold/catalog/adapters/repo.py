@@ -17,10 +17,10 @@ from shelfhold.catalog.application.dto import (
 )
 from shelfhold.catalog.application.ports import StoredVariant
 from shelfhold.catalog.domain.identity import sort_title
-from shelfhold.catalog.domain.normalizers import Normalized
+from shelfhold.catalog.domain.normalizers import REMOTE_UNIT_ID_NORMALIZER_ID, Normalized
 from shelfhold.catalog.domain.numbering import NUMBER_NORMALIZER_ID, UnitNumber
 from shelfhold.catalog.domain.placement import NUMBERING_CONFLICT, Place, VariantFacts
-from shelfhold.catalog.lang import variant_lang
+from shelfhold.catalog.lang import LANG_NORMALIZER_ID, variant_lang
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
 
@@ -96,6 +96,7 @@ class SqlEditionStore:
                 work_id=spec.work_id,
                 lang=lang,
                 lang_raw=spec.lang,
+                lang_norm_by=LANG_NORMALIZER_ID,
                 translation_type=spec.translation_type,
                 media=spec.media,
                 publisher=spec.publisher,
@@ -339,6 +340,7 @@ class SqlUnitStore:
                 unit_id=unit_id,
                 source_binding_id=item.binding.id,
                 remote_unit_id=item.remote_unit_id,
+                remote_unit_id_norm_by=REMOTE_UNIT_ID_NORMALIZER_ID,
                 team_id=team_id,
                 lang=lang or "und",
                 lang_raw=item.lang,

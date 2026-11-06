@@ -488,6 +488,7 @@ locked_fields = "JSON list of fields the admin locked against upstream changes."
 description = "An Edition: a Work in a language, translation, media and packaging. Its key is sextuplet-based."
 [tables.edition.columns]
 id = "Edition identifier (ULID)."
+lang_norm_by = "Version of the `lang` normalizer that produced `lang`."
 translation_type = "How the text was produced: original, official, fan..."
 media = "Medium: images, text, audio..."
 publisher = "Publisher; empty string when unknown."
@@ -738,6 +739,7 @@ description = "What one source and one team give for a place. Identity: the bind
 [tables.unit_variant.columns]
 id = "Variant identifier (ULID)."
 remote_unit_id = "Stable upstream identifier of the chapter."
+remote_unit_id_norm_by = "Version of the `remote_unit_id` normalizer that produced the identifier."
 supersedes_variant_id = "Variant this one replaces after a new upstream identifier."
 fetch_handle = "Local integer of the upstream, a cache."
 fetch_handle_seen_at = "When the handle was last valid (UTC)."
@@ -810,6 +812,7 @@ format = "Format written."
 sidecar_sha256 = "Hash of the sidecar file."
 written_by_shelfhold_at = "When Shelfhold wrote the file (UTC)."
 exported_at = "When the export reached the destination (UTC)."
+resolved_at = "When the arrival polling saw the file in the destination's index (UTC)."
 
 [tables.replica]
 description = "The single registry of copies of a Unit's file; `independent_copies` is its only reader."

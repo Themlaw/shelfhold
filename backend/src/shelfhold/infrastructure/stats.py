@@ -1,8 +1,9 @@
 """Local value indicators (EF-INT-025): computed on the instance, from existing tables only.
 
-`stats --since 30d` and `GET /api/v1/stats` read the same figures. Nothing is stored (no view,
-no table, no migration) and nothing leaves the instance: the module opens no connection but the
-database's (ENF-PRIV-001). The window is the last `since_days` days up to `now`.
+`stats --since 30d` and `GET /api/v1/stats` read the same figures. Nothing is stored for them
+(no view, no table: the arrival time is `export_record.resolved_at`, set by the arrival polling)
+and nothing leaves the instance: the module opens no connection but the database's
+(ENF-PRIV-001). The window is the last `since_days` days up to `now`.
 """
 
 import re
@@ -61,12 +62,13 @@ def _events(connection: sa.Connection, types: tuple[str, ...], since: datetime) 
 
 
 def _median_delay(connection: sa.Connection, since: datetime) -> int | None:
-    """Detection (first time the Variant was seen) to visibility (the scan found the file), in
-    seconds. The median is taken by the database: one or two rows come back, never the set."""
+    """Detection (first time the Variant was seen) to visibility (`resolved_at`: the arrival
+    polling found the file in Kavita), in seconds. The median is taken by the database: one or two
+    rows come back, never the set."""
     record = export.export_record
     delay = sa.func.round(
         (
-            sa.func.julianday(record.c.exported_at)
+            sa.func.julianday(record.c.resolved_at)
             - sa.func.julianday(catalog.unit_variant.c.first_seen_at)
         )
         * 86400.0
@@ -78,7 +80,7 @@ def _median_delay(connection: sa.Connection, since: datetime) -> int | None:
             .join(storage.content, storage.content.c.id == export.export_item.c.content_id)
             .join(catalog.unit_variant, catalog.unit_variant.c.id == storage.content.c.variant_id)
         )
-        .where(record.c.state == VISIBLE_STATE, record.c.exported_at >= since)
+        .where(record.c.state == VISIBLE_STATE, record.c.resolved_at >= since)
         .subquery()
     )
     count = int(connection.execute(sa.select(sa.func.count()).select_from(joined)).scalar_one())

@@ -24,6 +24,21 @@ from shelfhold.catalog.lang import (
 
 NormalizerFn = Callable[[str], str]
 
+REMOTE_UNIT_ID_NORMALIZER_NAME = "remote_unit_id"
+REMOTE_UNIT_ID_NORMALIZER_VERSION = 1
+REMOTE_UNIT_ID_NORMALIZER_ID = (
+    f"{REMOTE_UNIT_ID_NORMALIZER_NAME}@{REMOTE_UNIT_ID_NORMALIZER_VERSION}"
+)
+
+
+def normalize_remote_unit_id(raw: str) -> str:
+    """Version 1 keeps the upstream identifier exactly as received (EF-BIB-050, EF-SRC-036).
+
+    The identifier is the identity of a Variant and is never rewritten: a plugin derives a stable
+    one, and a later version of this normalizer may only be applied through a migration plan.
+    """
+    return raw
+
 
 @dataclass(frozen=True, order=True)
 class NormalizerId:
@@ -176,5 +191,10 @@ def default_registry() -> NormalizerRegistry:
     registry.register("number_segment", 1, lambda s: parse_number(s).segment)
     registry.register(
         LANG_NORMALIZER_NAME, LANG_NORMALIZER_VERSION, lambda s: normalize_lang(s).tag
+    )
+    registry.register(
+        REMOTE_UNIT_ID_NORMALIZER_NAME,
+        REMOTE_UNIT_ID_NORMALIZER_VERSION,
+        normalize_remote_unit_id,
     )
     return registry

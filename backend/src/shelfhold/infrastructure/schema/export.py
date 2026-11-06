@@ -324,6 +324,8 @@ export_record = sa.Table(
     sa.Column("remote_ref", sa.String(), nullable=True),  # cache, purged if the server changes
     sa.Column("written_by_shelfhold_at", UtcDateTime(), nullable=True),
     sa.Column("exported_at", UtcDateTime(), nullable=True),
+    # When Kavita's scan was seen to hold the file (set by the arrival polling, EF-INT-025)
+    sa.Column("resolved_at", UtcDateTime(), nullable=True),
     sa.Column("state", sa.String(), nullable=False, server_default="planned"),
     sa.Column("error_code", sa.String(), nullable=True),
     now_column(),

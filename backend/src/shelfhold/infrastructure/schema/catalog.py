@@ -308,6 +308,9 @@ edition = sa.Table(
     _fk("work_id", "work.id"),
     sa.Column("lang", sa.String(), nullable=False),
     sa.Column("lang_raw", sa.String(), nullable=True),
+    sa.Column(
+        "lang_norm_by", sa.String(), nullable=True
+    ),  # `lang@N`: part of the key (ENF-OPS-021)
     sa.Column("translation_type", sa.String(), nullable=False),
     sa.Column("media", sa.String(), nullable=False),
     sa.Column("publisher", sa.String(), nullable=False, server_default=sa.text("''")),
@@ -343,6 +346,7 @@ edition = sa.Table(
     partial_date_check("published_on", "date_precision"),
     in_check("volume_policy", VOLUME_POLICIES),
     norm_by_check("text_version_norm_by"),
+    norm_by_check("lang_norm_by"),
     sa.CheckConstraint(
         '("text_version" = \'\' AND "text_version_contributor_id" IS NULL '
         'AND "text_version_label" IS NULL) '
@@ -513,6 +517,7 @@ unit_variant = sa.Table(
     _fk("unit_id", "unit.id"),
     _fk("source_binding_id", "source_binding.id"),
     sa.Column("remote_unit_id", sa.String(), nullable=False),
+    sa.Column("remote_unit_id_norm_by", sa.String(), nullable=True),  # `remote_unit_id@N`
     _fk("source_item_id", "source_item.id", nullable=True),
     _fk("team_id", "team.id", ondelete="SET NULL", nullable=True),
     sa.Column("lang", sa.String(), nullable=False, server_default="und"),
@@ -532,6 +537,7 @@ unit_variant = sa.Table(
     lang_check("lang", allow_wildcards=True),
     positive_check("revision", minimum=1),
     sa.CheckConstraint("\"remote_unit_id\" <> ''", name="remote_unit_id_not_empty"),
+    norm_by_check("remote_unit_id_norm_by"),
     sa.UniqueConstraint("source_binding_id", "remote_unit_id"),
     # target of the composite foreign key that keeps a content within its Variant's own Unit
     sa.UniqueConstraint("id", "unit_id"),
