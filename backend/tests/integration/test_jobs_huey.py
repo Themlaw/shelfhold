@@ -91,7 +91,8 @@ def test_job_runs_in_its_pool_and_is_tracked(pools: JobPools, engine: Engine) ->
         assert task is not None
         pools.huey(name).execute(task)
     assert ran == ["thumb:c1"]
-    assert statuses(engine) == [("boom", "failed"), ("thumbs", "succeeded")]
+    # a job that raised is tried again (then a dead letter, tests/integration/test_l52_ops_events)
+    assert statuses(engine) == [("boom", "queued"), ("thumbs", "succeeded")]
 
 
 @pytest.mark.req("EF-INT-003")
@@ -165,3 +166,53 @@ def test_boot_catches_up_once(pools: JobPools, clock: ManualClock) -> None:
     report = boot_jobs(pools, instance_lock=Lock(held=True), resolve_intents=lambda: None)
     assert report.queued == 1
     assert pools.huey("io").pending_count() == 1
+
+
+@pytest.mark.req("EF-INT-003")
+def test_task_taken_by_a_killed_worker_is_sent_again_at_boot(
+    pools: JobPools, engine: Engine
+) -> None:
+    pools.register("work", pool="io", handler=lambda job: None)
+    pools.submit("work", dedupe_key="w1")
+    pools.submit("work", dedupe_key="w2")
+    assert pools.huey("io").dequeue() is not None  # a worker took one, and was killed
+    assert pools.huey("io").pending_count() == 1
+    assert pools.forget_lost_dispatches() == 1  # the other is still in the queue: left alone
+    pools.scheduler.startup_scan()
+    assert pools.huey("io").pending_count() == 2  # sent again, once
+    assert pools.forget_lost_dispatches() == 0
+
+
+@pytest.mark.req("EF-INT-003", "ENF-OPS-011")
+def test_waiting_for_a_slot_spends_no_attempt_so_the_first_failure_is_not_a_dead_letter(
+    pools: JobPools, engine: Engine
+) -> None:
+    from huey.exceptions import RetryTask
+
+    calls: list[int] = []
+
+    def boom(job: object) -> None:
+        calls.append(1)
+        raise ValueError("upstream")
+
+    pools.slots.declare("example.org", 1)
+    assert pools.slots.try_acquire("example.org")  # another job holds the only slot
+    pools.register("fetch", pool="io", handler=boom)
+    job_id = pools.submit("fetch", dedupe_key="f1", limit_key="example.org").job_id
+
+    def row() -> tuple[str, int]:
+        with engine.connect() as connection:
+            r = connection.execute(
+                sa.select(platform.job_view.c.status, platform.job_view.c.attempts)
+            ).one()
+        return r.status, r.attempts
+
+    for _ in range(4):  # deferred again and again, the handler never called
+        with pytest.raises(RetryTask):
+            pools._execute(job_id)
+        assert row() == ("queued", 0)
+    assert calls == []
+    pools.slots.release("example.org")
+    with pytest.raises(RetryTask):  # the first real failure: one attempt, tried again
+        pools._execute(job_id)
+    assert calls == [1] and row() == ("queued", 1)

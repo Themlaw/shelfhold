@@ -499,3 +499,31 @@ def test_given_up_tickets_are_announced_and_reopened_when_the_source_is_healthy(
             ]
             >= 1
         )
+
+
+@pytest.mark.req("EF-SRC-026", "ENF-OPS-014")
+def test_root_away_means_no_download_and_no_ticket_abandoned() -> None:
+    """The lease is taken before the bytes come: a root that is away stops the cycle before any
+    download, counts nothing against the source and spends no attempt of the ticket."""
+    from shelfhold.acquisition.public import LeasedReceiver
+
+    def away() -> None:
+        raise OSError("the root is not mounted")
+
+    with follow_bench(max_attempts=2) as bench:
+        bench.run()
+        bench.add_chapter(3)
+        bench.run()
+        guarded = bench.cycle._tickets._receive  # the bench's own bounded receiver, unwrapped
+        assert guarded is not None
+        bench.cycle._tickets._receive = LeasedReceiver(guarded, away)
+        before = len(bench.server.requests_to("/download"))
+        for _ in range(4):  # more cycles than the attempts a ticket has
+            report = bench.run()
+            assert report.paused is None
+        assert len(bench.server.requests_to("/download")) == before  # nothing downloaded
+        rows = bench.rows("SELECT state, attempts FROM download_request")
+        assert rows and all(r["state"] != "abandoned" and r["attempts"] == 0 for r in rows)
+        assert bench.rows("SELECT * FROM source_failure") == []
+        assert bench.events("source.downloads_dropped") == []
+        assert bench.events("source.broken") == []

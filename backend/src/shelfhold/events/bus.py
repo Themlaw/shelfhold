@@ -61,7 +61,14 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
         )
     },
     "mount.sentinel_missing": {"reason": frozenset({"sentinel", "missing_ratio"})},
-    "reconcile.drift": {"kind": frozenset({"unknown_file", "adopted_missing"})},
+    "reconcile.drift": {"kind": frozenset({"unknown_file", "adopted_missing", "unsettled_intent"})},
+    # a key that does not open: the keyring file itself, never a key or a path
+    "secret.undecryptable": {
+        "reason": frozenset(
+            {"keyring_unreadable", "keyring_corrupt", "keyring_missing", "keyring_permissions"}
+        )
+    },
+    "target.permission_denied": {"reason": GENERIC_REASONS},
     # ENF-OPS-006: the volume under its free-space mark.
     "disk.low": {"volume": VOLUME_VALUES},
     "ops.disk_recovered": {"volume": VOLUME_VALUES},

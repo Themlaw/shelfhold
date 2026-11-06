@@ -21,6 +21,11 @@ x-shelfhold: &shelfhold
   volumes:
     - ./data:/data     # database, config, thumbnails (local disk, SSD advised, not NFS)
     - ./store:/store   # kept copies only; a separate volume from /data (ENF-OPS-012)
+    # Switchover from an existing automation (adoption, repatriation; EF-EXP-060): uncomment the
+    # next line to mount, read-only, the folder Suwayomi downloads to, and declare it in the path
+    # map of the target with mode = adopt_ro. Shelfhold reads it and never writes there (the :ro is
+    # the second lock). Remove the line once the switchover is done.
+    # - /path/to/suwayomi/downloads:/upstream/suwayomi:ro
 
 services:
   # Applies migrations, then exits. Shelfhold only starts after it succeeded.

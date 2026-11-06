@@ -26,6 +26,13 @@ class TargetForbidden(TargetError):
         self.route = route
 
 
+class TargetKeyRevoked(TargetForbidden):
+    """401: the key was revoked. Same pause and same exit as `TargetForbidden`, but the code is
+    that of the event it announces, `target.unreachable` (matrix row `kavita_key_revoked`)."""
+
+    code = "target.unreachable"
+
+
 class RouteMissing(TargetError):
     """`target.route_missing`: a listed route answers 404, its features are cut."""
 

@@ -468,3 +468,21 @@ def test_ids_are_coerced_to_int_at_entry() -> None:
     assert h.fake.requests_to("/upload/series")[0].json()["id"] == 42
     with pytest.raises(ValueError):
         run(h.client.library_type("7; DROP"))  # type: ignore[arg-type]
+
+
+@pytest.mark.req("ENF-OPS-011", "ENF-SEC-013")
+def test_kavita_401_revoked_key_pauses_destination_with_target_unreachable() -> None:
+    """Matrix row `kavita_key_revoked`: a 401 is an immediate `target.unreachable`, the destination
+    is disabled (nothing more is sent) until `target reconnect`."""
+    h = harness()
+    h.client._key = AdminKey("the-key-was-revoked-0123456789")  # type: ignore[attr-defined]
+    with pytest.raises(TargetForbidden) as raised:
+        run(h.client.list_libraries())
+    assert raised.value.code == "target.unreachable"  # the code of the event, not target.forbidden
+    assert h.events.codes() == ["target.unreachable"]
+    assert h.client.health.paused
+    count = len(h.fake.requests)
+    with pytest.raises(TargetForbidden) as again:
+        run(h.client.list_libraries())
+    assert again.value.code == "target.unreachable"
+    assert len(h.fake.requests) == count and h.events.codes() == ["target.unreachable"]

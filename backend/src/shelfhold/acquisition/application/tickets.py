@@ -16,7 +16,7 @@ from contextlib import AbstractAsyncContextManager, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import sqlalchemy as sa
 import structlog
@@ -91,6 +91,43 @@ def bounded_receiver(
         )
 
     return receive
+
+
+class CycleAbandoned(Exception):
+    """The cycle cannot write here now (a root away, a lease refused, a frozen instance): it
+    stops before downloading anything, counts no failure against the source and spends no attempt
+    of the ticket. The next cycle asks again."""
+
+
+class LeasedReceiver:
+    """A `Receiver` that first obtains what the filing needs (`acquire`: the lease on the library),
+    and only then lets the bytes come: a download whose result cannot be filed is a download for
+    nothing, and its failure would be counted against the chapter."""
+
+    def __init__(self, inner: Receiver, acquire: Callable[[], object]) -> None:
+        self._inner = inner
+        self._acquire = acquire
+
+    def __call__(self, asset: FileAsset) -> AbstractAsyncContextManager[Received]:
+        return _Leased(self._inner(asset), self._acquire)
+
+
+class _Leased:
+    def __init__(
+        self, inner: AbstractAsyncContextManager[Received], acquire: Callable[[], object]
+    ) -> None:
+        self._inner = inner
+        self._acquire = acquire
+
+    async def __aenter__(self) -> Received:
+        try:
+            self._acquire()
+        except Exception as error:
+            raise CycleAbandoned(type(error).__name__) from error
+        return await self._inner.__aenter__()
+
+    async def __aexit__(self, *exc: Any) -> bool | None:
+        return await self._inner.__aexit__(*exc)
 
 
 def _is_transport(error: BaseException) -> bool:
@@ -236,6 +273,8 @@ class DownloadTickets:
     async def _guarded(self, request: OpenRequest, report: TicketReport) -> None:
         try:
             await self._advance_one(request, report)
+        except CycleAbandoned:
+            raise  # nothing can be filed now: the cycle stops, nothing is counted
         except Exception as error:
             if disposition_of(classify(error)) is Disposition.PAUSE:
                 raise  # the service cannot be driven: the cycle pauses it, nothing is counted

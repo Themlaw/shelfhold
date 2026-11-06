@@ -26,15 +26,27 @@ import asyncio
 import threading
 import time
 from collections.abc import Callable, Iterable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 import structlog
 
-from shelfhold.acquisition.public import FOLLOW_JOB_KIND, FollowCycle, bounded_receiver
-from shelfhold.composition import Composition, KeyringUnavailableError, NoLibraryError
+from shelfhold.acquisition.public import (
+    FOLLOW_JOB_KIND,
+    FollowCycle,
+    LeasedReceiver,
+    bounded_receiver,
+)
+from shelfhold.composition import (
+    Composition,
+    KeyringUnavailableError,
+    NoLibraryError,
+    WriteContext,
+)
+from shelfhold.export.application import blocked_memo
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
 from shelfhold.export.application.pipeline import (
@@ -121,30 +133,77 @@ def tree_destinations(comp: Composition) -> list[Destination]:
 # -- follow.cycle -----------------------------------------------------------------
 
 
+class _LazyWrite:
+    """The write context of a follow cycle, opened by the first thing that needs it.
+
+    A cycle that finds nothing to file reads the database and the service, and nothing else:
+    the lease on `/library` (and the sentinel, the tombstone journal, the inbox) is only taken
+    when a chapter is about to be received, so the 15-minute cron wakes no disk (ENF-OPS-014)."""
+
+    def __init__(self, comp: Composition, stack: ExitStack) -> None:
+        self._comp = comp
+        self._stack = stack
+        self._context: WriteContext | None = None
+
+    def get(self) -> WriteContext:
+        if self._context is None:
+            self._context = self._stack.enter_context(self._comp.write_context())
+        return self._context
+
+
+class _LazyTombstones:
+    """The tombstone checks of the cycle (a read of the database: no lease), on the service that
+    is replayed once per process and found again here, opened at the first check."""
+
+    def __init__(self, comp: Composition) -> None:
+        self._comp = comp
+        self._service: Any = None
+
+    def __getattr__(self, name: str) -> Any:
+        if self._service is None:
+            self._service = self._comp.read_context()[2]
+        return getattr(self._service, name)
+
+
+class _LazyStore:
+    def __init__(self, comp: Composition, lazy: _LazyWrite) -> None:
+        self._comp = comp
+        self._lazy = lazy
+
+    def ingest(self, **arguments: Any) -> Any:
+        w = self._lazy.get()
+        store = PassthroughStore(
+            self._comp.engine, w.fsops, w.loaded.locate, self._comp.settings.data_dir,
+            tombstones=w.tombstones,
+        )  # fmt: skip
+        return store.ingest(**arguments)
+
+
 def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext], None]:
     def run(_context: JobContext) -> None:
         link = comp.suwayomi()
         if link is None:
             return  # no connected service configured yet
         try:
-            with comp.write_context() as w:
-                store = PassthroughStore(
-                    comp.engine, w.fsops, w.loaded.locate, comp.settings.data_dir,
-                    tombstones=w.tombstones,
-                )  # fmt: skip
+            with ExitStack() as stack:
+                lazy = _LazyWrite(comp, stack)
 
                 def place(_unit: str, variant_id: str, _filename: str) -> str:
-                    return w.received_path(variant_id)
+                    return lazy.get().received_path(variant_id)
 
                 cycle = FollowCycle(
-                    comp.engine, w.bus, comp.clock, link.service, link.fetcher,
-                    store=store,
-                    receive=bounded_receiver(
-                        link.guarded, staging_dir=comp.settings.data_dir / "tmp",
-                        max_bytes=comp.settings.received_cbz_max_bytes,
-                        authorize=getattr(link.fetcher, "authorize", None),  # the archive route
-                    ),  # asks for the same credential as the other routes of the service
-                    place=place, slots=pools.slots, tombstones=w.tombstones,
+                    comp.engine, comp.bus, comp.clock, link.service, link.fetcher,
+                    store=cast("PassthroughStore", _LazyStore(comp, lazy)),
+                    receive=LeasedReceiver(
+                        bounded_receiver(
+                            link.guarded, staging_dir=comp.settings.data_dir / "tmp",
+                            max_bytes=comp.settings.received_cbz_max_bytes,
+                            authorize=getattr(link.fetcher, "authorize", None),  # the archive
+                        ),  # asks for the same credential as the other routes of the service
+                        lazy.get,  # the lease first: nothing is downloaded that cannot be filed
+                    ),
+                    place=place, slots=pools.slots,
+                    tombstones=cast("Any", _LazyTombstones(comp)),
                 )  # fmt: skip
 
                 async def once() -> None:
@@ -189,7 +248,7 @@ def build_pipeline(
         segment_policy_confirmed=comp.settings.naming_segment_policy_confirmed,
         sessions=comp.session_opener(fsops, loaded), request_scan=scans,
         detector=lambda destination_id: reconciler.reconcile(destination_id),  # EF-EXP-043
-        gate=comp.gates.writable,
+        gate=comp.gates.writable, operating_bus=comp.bus,
     )  # fmt: skip
     pipeline.use_preflight(PermissionPreflight(comp.engine, fsops, comp.bus, clock=comp.clock))
     pipeline.use_switchover(
@@ -485,6 +544,8 @@ def reconcile_handler(comp: Composition, *, in_window: bool) -> Callable[[JobCon
         for destination in destinations:
             if context.stop_requested:
                 return
+            if in_window:  # it looks at the tree anyway: what a pass learned of it is stale
+                blocked_memo.forget(comp.engine, destination.id)
             reconciler.reconcile(destination.id, in_window=in_window)
             if in_window:
                 pipeline.heal_mirror(destination.id)

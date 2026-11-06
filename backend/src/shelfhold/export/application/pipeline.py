@@ -18,6 +18,8 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
+from shelfhold.events.bus import EventBus
+from shelfhold.export.application import blocked_memo
 from shelfhold.export.application.export_items import create_export_item, ensure_export_series
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
 from shelfhold.export.application.locks import ResourceLocks, library_resource
@@ -192,6 +194,8 @@ def wanted_names(
                 export.shelf_destination.c.id == destination_id
             )
         ).scalar()
+    if blocked_memo.known(engine, destination_id, loaded.version):
+        return [], kind  # the disk already said "taken" for these inputs: nothing to ask or write
     plan_destination(loaded.request, record)
     return sorted(set(asked)), kind
 
@@ -214,6 +218,7 @@ class ExportPipeline:
         mirror: ProvenanceMirror | None = None,
         detector: Callable[[str], object] | None = None,
         gate: Callable[[], None] | None = None,
+        operating_bus: EventBus | None = None,
     ) -> None:
         self._engine = engine
         self._fsops = fsops
@@ -226,7 +231,9 @@ class ExportPipeline:
         self._parse_verified = parse_verified
         self._renderer = renderer or CbzRenderer(fsops, staging_dir=data_dir / "tmp")
         self._locks = ResourceLocks(engine, clock=clock)
-        self.mirror = mirror or ProvenanceMirror(engine, fsops, clock=clock)
+        self.mirror = mirror or ProvenanceMirror(
+            engine, fsops, clock=clock, operating_bus=operating_bus
+        )
         self._detector = detector  # EF-EXP-043: looked at before every export
         self._gate = gate  # raises while the instance is `restored_behind` (EF-INT-026)
         self._preflight: Preflight | None = None
@@ -319,8 +326,11 @@ class ExportPipeline:
         self._require_verified()
         with self._engine.connect() as connection:
             ensure_active(connection, destination_id)
-        if not self._compute(destination_id, disk=False)[2].ops:
+        _ctx, wanted, first = self._compute(destination_id, disk=False)
+        if not first.ops:
             return ApplyReport(None, ())
+        if blocked_memo.known(self._engine, destination_id, wanted.version):
+            return ApplyReport(None, ())  # the disk said "taken" for these inputs: ask no more
         if self._detector is not None:
             self._detector(destination_id)
         if self._switchover is not None:
@@ -331,7 +341,12 @@ class ExportPipeline:
         ctx, loaded, plan = self._compute(destination_id)
         self._heal_mirror(ctx)
         if not plan.ops:
+            # only what the disk alone decides: a name Kavita misreads depends on Kavita, which
+            # can change its mind with no change of ours
+            if plan.blocked and all(b.code == "export.destination_occupied" for b in plan.blocked):
+                blocked_memo.remember(self._engine, destination_id, loaded.version)
             return ApplyReport(None, ())
+        blocked_memo.forget(self._engine, destination_id)
         plan_id = self._store(ctx, loaded, plan)
         return self.apply(plan_id, if_match=loaded.version, job_id=job_id)
 

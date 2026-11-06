@@ -7,18 +7,19 @@ dans la correspondance de chemins (EF-EXP-060).
 
 ## Mise en place
 
-1. Dans le compose de Shelfhold, montez le dossier de téléchargement de Suwayomi en `:ro` sous un
+1. Dans le compose de Shelfhold (le compose d'exemple de ce dépôt en montre la ligne, en commentaire,
+   à décommenter), montez le dossier de téléchargement de Suwayomi en `:ro` sous un
    chemin à part, par exemple :
    ```yaml
    volumes:
-     - /srv/suwayomi/downloads:/library/suwayomi-ro:ro
+     - /srv/suwayomi/downloads:/upstream/suwayomi:ro
    ```
 2. Déclarez-le dans la correspondance de chemins de la destination, avec le chemin que **Kavita**
    voit pour ce même volume :
    ```sh
    shelfhold config set path_map.kavita '[
      {"local": "/library/manga", "remote": "/manga"},
-     {"local": "/library/suwayomi-ro", "remote": "/suwayomi", "mode": "adopt_ro"}
+     {"local": "/upstream/suwayomi", "remote": "/suwayomi", "mode": "adopt_ro"}
    ]'
    ```
    Modifier `path_map.*` exige une session administrateur ([headless.md](headless.md)).

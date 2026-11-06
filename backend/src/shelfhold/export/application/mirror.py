@@ -37,6 +37,7 @@ from shelfhold.export.domain.provenance_mirror import (
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops, PathEscapeError
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
+from shelfhold.integrations.apprise import operating_bus as default_bus
 from shelfhold.library.public import export_sources
 
 __all__ = ["MirrorWriter", "ProvenanceMirror"]
@@ -53,8 +54,13 @@ class MirrorWriter(Protocol):
 
 
 class ProvenanceMirror:
-    def __init__(self, engine: Engine, fsops: Fsops, *, clock: Clock) -> None:
+    def __init__(
+        self, engine: Engine, fsops: Fsops, *, clock: Clock, operating_bus: EventBus | None = None
+    ) -> None:
         self._engine = engine
+        # the bus of the application, with its notification channels: a bare `EventBus` would
+        # write the event and queue no notification (ENF-OBS-005)
+        self._bus = operating_bus or default_bus(clock)
         self._fsops = fsops
         self._clock = clock
         self.skipped: list[str] = []  # files left alone: unreadable, or of a newer major
@@ -135,7 +141,7 @@ class ProvenanceMirror:
         log.warning("mirror_skipped", file=name, reason=reason)
         try:
             with self._engine.begin() as connection:
-                EventBus(self._clock).publish(
+                self._bus.publish(
                     connection,
                     "reconcile.drift",
                     {"mirror_files": 1},  # the reason is in the log

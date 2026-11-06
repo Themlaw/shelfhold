@@ -19,6 +19,9 @@ from shelfhold.infrastructure.schema import platform
 
 job_view = platform.job_view
 ACTIVE = ("queued", "running", "paused")
+MAX_ATTEMPTS = 3  # a job that failed this many times is a dead letter (EF-INT-023)
+RETRY_BACKOFF_S = (30, 300)  # the wait before the second and the third attempt
+FAILED = "job.failed"  # `error_code` of a job that raised
 PREEMPTED = "window.preempted"  # `error_code` of a window job stopped at the end of its window
 
 
@@ -256,13 +259,50 @@ class JobLedger:
                 )
             )
 
-    def mark_deferred(self, job_id: str) -> None:
-        """Back to `queued` (a busy domain slot): the task will be retried later."""
+    def attempts_of(self, job_id: str) -> int:
+        with self._engine.connect() as conn:
+            return int(
+                conn.execute(
+                    sa.select(job_view.c.attempts).where(job_view.c.id == job_id)
+                ).scalar_one()
+            )
+
+    def mark_retry(self, job_id: str, error: str) -> None:
+        """The job raised and has attempts left: back to `queued`, the failure remembered."""
         with self._engine.begin() as conn:
             conn.execute(
                 sa.update(job_view)
                 .where(job_view.c.id == job_id)
-                .values(status="queued", started_at=None)
+                .values(status="queued", started_at=None, last_error=error)
+            )
+
+    def mark_dead_letter(self, conn: Connection, job_id: str, error: str) -> None:
+        """Retries exhausted: the job waits for a human (`jobs retry`). Written on the caller's
+        connection, so that the event that announces it commits with it."""
+        conn.execute(
+            sa.update(job_view)
+            .where(job_view.c.id == job_id)
+            .values(
+                status="dead_letter",
+                finished_at=self._clock.now(),
+                last_error=error,
+                error_code=FAILED,
+            )
+        )
+
+    def mark_deferred(self, job_id: str) -> None:
+        """Back to `queued` (a busy domain slot): the task will be retried later. The handler
+        never ran, so the attempt `claim_running` spent is given back, as `park_running` does:
+        waiting for a slot must not bring a job closer to its dead letter."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                sa.update(job_view)
+                .where(job_view.c.id == job_id)
+                .values(
+                    status="queued",
+                    started_at=None,
+                    attempts=sa.case((job_view.c.attempts > 0, job_view.c.attempts - 1), else_=0),
+                )
             )
 
     def undispatched(self) -> list[PendingJob]:
@@ -274,6 +314,24 @@ class JobLedger:
                 .order_by(job_view.c.id)
             ).all()
         return [self._pending(r) for r in rows]
+
+    def forget_dispatches_not_in(self, present: set[str]) -> int:
+        """Queued rows whose Huey task is no longer anywhere: a worker took it out of the queue
+        and was killed before it claimed the job. They are `undispatched` again."""
+        with self._engine.begin() as conn:
+            rows = conn.execute(
+                sa.select(job_view.c.id, job_view.c.huey_task_id).where(
+                    job_view.c.status == "queued", job_view.c.huey_task_id.is_not(None)
+                )
+            ).all()
+            lost = [r.id for r in rows if r.huey_task_id not in present]
+            for start in range(0, len(lost), 500):
+                conn.execute(
+                    sa.update(job_view)
+                    .where(job_view.c.id.in_(lost[start : start + 500]))
+                    .values(huey_task_id=None)
+                )
+        return len(lost)
 
     def requeue_running(self) -> list[PendingJob]:
         """At boot: a job still `running` lost its worker; it goes back to the queue."""

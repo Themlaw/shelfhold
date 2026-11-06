@@ -37,6 +37,8 @@ Migrations :
 - Documentation d'administration : installation sans interface, adoption, migration depuis des scripts, rapatriement, retour arrière, états d'attente, restauration, purge, garde disque, redéploiement, racines physiques, montage `adopt_ro`, exposition publique, budget mémoire et disque, décisions d'exécution de M1a.
 - Conventions d'API : problèmes RFC 9457 avec catalogue d'erreurs stable, pagination par curseur, idempotence, `If-Match`, réponses 202.
 
+- Exploitation (L52) : une tâche qui échoue est réessayée (3 essais) puis devient `dead_letter` avec l'événement `job.dead_lettered` (sortie `shelfhold jobs list|retry`) ; `reconcile.drift` d'une intention non résolue au démarrage, `secret.undecryptable` d'un trousseau illisible et les événements du miroir passent par le bus d'exploitation et créent leurs notifications ; sonde d'écriture de chaque racine au démarrage (`target.permission_denied` avec la cause et le bloc compose à coller, sans arrêter le démarrage) ; le montage `adopt_ro` figure dans le compose d'exemple ; preuves du kill -9 de 1 000 tâches et du redéploiement en plein export.
+
 ### Connu
 
 - Sur une installation neuve, rien ne lie encore les séries que Suwayomi suit : seule `shelfhold adopt pair` crée la liaison, à partir d'une série adoptée. La découverte automatique de ces séries n'est pas dans cette version de l'arbre.
@@ -44,6 +46,8 @@ Migrations :
 
 ### Modifié
 
+- `follow.cycle` ne prend plus le bail de `/library` quand il n'a rien à y écrire, et un candidat bloqué par « destination occupée » n'est plus cherché sur le disque à chaque passage (la vérification de la fenêtre de maintenance l'oublie) : aucun réveil de disque à vide (ENF-OPS-014).
+- Un 401 de Kavita (clé révoquée) émet `target.unreachable` et désactive la destination, comme la matrice de pannes le prévoit.
 - L'image du compose d'exemple passe à l'étiquette `0.2`.
 - La session d'administration dure 30 jours glissants par défaut ; 30 minutes d'inactivité et 12 heures au plus dans le profil durci.
 - `/healthz` ne montre plus la version aux anonymes ; `/openapi.json` n'est plus public (`GET /api/v1/openapi.json`, authentifié).

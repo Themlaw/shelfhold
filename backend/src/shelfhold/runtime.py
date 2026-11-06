@@ -17,6 +17,7 @@ from sqlalchemy import Engine
 
 from shelfhold.composition import Composition, Gates, open_fsops
 from shelfhold.config import Settings
+from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
@@ -26,11 +27,13 @@ from shelfhold.export.application.root_bootstrap import (
     register_roots,
     target_roots,
 )
-from shelfhold.export.application.roots import load_roots
+from shelfhold.export.application.roots import LoadedRoots, load_roots
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import LEGACY_RECEIVED_DIR, RECEIVED_DIR
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.fsops.probe import ProbeReport, probe_failure, probe_folder
 from shelfhold.infrastructure.instance import (
     GenerationCounter,
     InstanceLock,
@@ -65,6 +68,7 @@ class InstanceRuntime:
     restored_behind: bool = field(default=False, init=False)  # EF-INT-026: read only
     _recheck: Callable[[], None] | None = field(default=None, init=False)
     composition: Composition | None = field(default=None, init=False)
+    startup_probe: list[ProbeReport] = field(default_factory=list, init=False)  # EF-UX-002
 
     def __post_init__(self) -> None:
         self.lock = InstanceLock(self.settings.data_dir)
@@ -174,7 +178,7 @@ class InstanceRuntime:
                 result = journal.resolve_open()
                 report.append(result)
                 return result
-            ready = fsops.boot().ok
+            ready = self._probed(fsops, loaded, engine, clock, bus, instance_id)
             sessions = WriteSessions(
                 fsops, instance_id=instance_id, clock=clock, lock_path=self.lock.path,
                 generations=GenerationCounter(engine), on_behind=freeze,
@@ -196,11 +200,21 @@ class InstanceRuntime:
                 structlog.get_logger().warning(
                     "reconcile.drift", intent=intent_id, reason=result.drift_reasons[intent_id]
                 )
+                with engine.begin() as conn:  # the log is not enough: the channels are told
+                    bus.publish(
+                        conn,
+                        "reconcile.drift",
+                        {"intent_id": intent_id, "kind": "unsettled_intent"},
+                    )
             report.append(result)
             return result
 
         self.pools = JobPools(
-            self.settings.data_dir, engine=engine, clock=clock, seed=instance_id or "unregistered"
+            self.settings.data_dir,
+            engine=engine,
+            clock=clock,
+            seed=instance_id or "unregistered",
+            bus=bus,
         )
         watcher = DiskWatcher(guard, self.pools, engine=engine, bus=bus)
 
@@ -221,6 +235,48 @@ class InstanceRuntime:
         watcher.check()  # the first measure at once: a full disk parks the jobs boot just sent
         self.pools.start_workers()  # the queues are consumed from here on
         return report[0] if report else None
+
+    def _probed(
+        self,
+        fsops: Fsops,
+        loaded: LoadedRoots,
+        engine: Engine,
+        clock: SystemClock,
+        bus: EventBus,
+        instance_id: str | None,
+    ) -> list[str]:
+        """The roots the instance writes to, each probed once at start (EF-UX-002): a folder the
+        container's uid cannot write is reported with its cause and the compose block that fixes
+        it, announced (`target.permission_denied`), and left out of the write session, so one
+        wrong uid on a mount does not stop the others, nor the start."""
+        ready = list(fsops.boot().ok)
+        sessions = WriteSessions(
+            fsops, instance_id=instance_id or "", clock=clock, lock_path=self.lock.path
+        )  # no generation counter: the probe moves nothing of the restore epoch
+        self.startup_probe = []
+        writable = {r.path for r in loaded.roots if r.mode is PathMode.RW}
+        for path in [p for p in ready if p in writable]:
+            report = self._probe_root(fsops, sessions, path)
+            self.startup_probe.append(report)
+            if report.ok:
+                continue
+            ready.remove(path)
+            structlog.get_logger().error(
+                "startup.probe_failed", folder=path, cause=report.cause, step=report.failed_step,
+                yaml_hint=report.yaml_hint,
+            )  # fmt: skip
+            if report.event is not None:
+                with engine.begin() as conn:
+                    bus.publish(conn, report.event, {"reason": "forbidden"})
+        return ready
+
+    @staticmethod
+    def _probe_root(fsops: Fsops, sessions: WriteSessions, path: str) -> ProbeReport:
+        try:
+            with sessions.open(path):
+                return probe_folder(fsops, path)  # type: ignore[arg-type]
+        except OSError as error:  # the lease itself cannot be written there
+            return probe_failure(path, error, step="lease")
 
     def require_space(self) -> None:
         """The write gate handed to every `Fsops` opened by this process."""
