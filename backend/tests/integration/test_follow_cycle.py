@@ -13,7 +13,15 @@ import structlog.testing
 
 from shelfhold.sdk.connected import ConnectedCapability, ServiceHealth, Ticket, TicketState
 from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.refs import FileAsset, ImageRequest, RangedPayload, SeriesInfo, SeriesRef, UnitInfo, UnitRef
+from shelfhold.sdk.refs import (
+    FileAsset,
+    ImageRequest,
+    RangedPayload,
+    SeriesInfo,
+    SeriesRef,
+    UnitInfo,
+    UnitRef,
+)
 from shelfhold.sdk.source import TemporarilyUnavailable
 from tests.fakes.suwayomi import FakeSuwayomi
 from tests.follow_env import Bench, follow_bench, new_chapter

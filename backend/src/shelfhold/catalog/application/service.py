@@ -3,7 +3,8 @@
 from datetime import datetime
 from decimal import Decimal
 
-from shelfhold.catalog.application import editions, ingest, teams
+from shelfhold.catalog.application import contributors, editions, ingest, teams
+from shelfhold.catalog.application.contributors import ContributorStore
 from shelfhold.catalog.application.dto import (
     BindingRef,
     EditionRef,
@@ -25,8 +26,14 @@ from shelfhold.catalog.domain.placement import (
 
 class CatalogService:
     def __init__(
-        self, works: WorkStore, edition_store: EditionStore, team_store: TeamStore, units: UnitStore
+        self,
+        works: WorkStore,
+        edition_store: EditionStore,
+        team_store: TeamStore,
+        units: UnitStore,
+        contributors: ContributorStore | None = None,
     ) -> None:
+        self._contributors = contributors
         self._works = works
         self._editions = edition_store
         self._teams = team_store
@@ -47,6 +54,18 @@ class CatalogService:
 
     def create_contributor(self, name: str) -> str:
         return self._works.insert_contributor(name)
+
+    def work_is_credited(self, work_id: str) -> bool:
+        return self._contributors_store().credited(work_id)
+
+    def credit_work(self, work_id: str, role: str, names: list[str]) -> int:
+        """Credit the Work with the people a source names (EF-BIB-046); returns the new credits."""
+        return contributors.record_credits(self._contributors_store(), work_id, role, names)
+
+    def _contributors_store(self) -> ContributorStore:
+        if self._contributors is None:
+            raise RuntimeError("this catalog was built without a contributor store")
+        return self._contributors
 
     # Editions
     def ensure_edition(self, spec: EditionSpec) -> EditionRef:

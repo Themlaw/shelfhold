@@ -330,12 +330,13 @@ class SuwayomiService:
 
     async def get_series(self, f: Fetcher, ref: SeriesRef) -> SeriesInfo:
         node = await self._manga(f, ref)
-        authors = [str(a) for a in (node.get("author"), node.get("artist")) if a]
+        author, artist = node.get("author"), node.get("artist")
         return SeriesInfo(
             ref=self._ref(node),
             title=str(node["title"]),
             description=node.get("description") or None,
-            authors=list(dict.fromkeys(authors)),
+            authors=[str(author)] if author else [],
+            artists=[str(artist)] if artist else [],
         )
 
     async def followed_series(self, f: Fetcher) -> list[SeriesRef]:

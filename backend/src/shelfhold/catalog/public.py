@@ -5,12 +5,15 @@ from collections.abc import Callable
 import sqlalchemy as sa
 
 from shelfhold.catalog.adapters.repo import (
+    SqlContributorStore,
     SqlEditionStore,
     SqlTeamStore,
     SqlUnitStore,
     SqlWorkStore,
 )
 from shelfhold.catalog.adapters.tx import run_immediate
+from shelfhold.catalog.application.contributors import ARTIST, WRITER
+from shelfhold.catalog.application.dating import period_start, stored_date
 from shelfhold.catalog.application.dto import (
     BindingRef,
     EditionRef,
@@ -22,6 +25,7 @@ from shelfhold.catalog.application.dto import (
 )
 from shelfhold.catalog.application.editions import translation_type_for
 from shelfhold.catalog.application.service import CatalogService
+from shelfhold.catalog.domain.dates import parse_partial_date
 from shelfhold.catalog.domain.identity import (
     TEXT_VERSION_LABELS,
     Discriminant,
@@ -51,6 +55,7 @@ class Catalog(CatalogService):
             SqlEditionStore(connection),
             SqlTeamStore(connection),
             SqlUnitStore(connection),
+            SqlContributorStore(connection),
         )
 
 
@@ -111,8 +116,10 @@ def place_key(raw_number: str | None, source_order: int = 0) -> str:
 
 
 __all__ = [
+    "ARTIST",
     "LANG_NORMALIZER_ID",
     "TEXT_VERSION_LABELS",
+    "WRITER",
     "BindingRef",
     "Catalog",
     "ContributorName",
@@ -137,9 +144,12 @@ __all__ = [
     "ingest_isolated",
     "join_people",
     "numbered_mark",
+    "parse_partial_date",
+    "period_start",
     "person_field_name",
     "place_key",
     "place_parts",
+    "stored_date",
     "translation_discriminant",
     "translation_type_for",
 ]

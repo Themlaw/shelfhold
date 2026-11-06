@@ -53,7 +53,8 @@ class SeriesInfo(SdkModel):
     ref: SeriesRef
     title: str
     description: str | None = None
-    authors: list[str] = Field(default_factory=list)
+    authors: list[str] = Field(default_factory=list)  # writers, as the source spells them
+    artists: list[str] = Field(default_factory=list)  # illustrators, as the source spells them
     external_ids: dict[str, str] = Field(default_factory=dict)
     series_hint: str | None = None
     age_rating: AgeRating | None = None  # suggested by the source; the host decides (EF-EXP-011)
@@ -76,6 +77,8 @@ class UnitInfo(SdkModel):
     lang: LanguageTag | None = None
     lang_raw: str | None = None
     published_at: datetime | None = None  # a zero upload date is None, never 1970-01-01
+    published_on: str | None = None  # ISO 8601 partial ("2023", "2023-05", "2023-05-14")
+    date_precision: Literal["year", "month", "day"] | None = None  # with published_on, never finer
     availability: Literal["free", "purchased", "expiring", "locked", "stubbed", "removed"] = "free"
     available_until: datetime | None = None
     revision_hint: str | None = None

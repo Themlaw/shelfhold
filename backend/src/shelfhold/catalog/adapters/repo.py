@@ -9,6 +9,7 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 
+from shelfhold.catalog.application.dating import stored_date
 from shelfhold.catalog.application.dto import (
     EditionRef,
     EditionSpec,
@@ -70,6 +71,74 @@ class SqlWorkStore:
         contributor_id = new_ulid()
         self._c.execute(sa.insert(catalog.contributor).values(id=contributor_id, primary_name=name))
         return contributor_id
+
+
+class SqlContributorStore:
+    def __init__(self, connection: sa.Connection) -> None:
+        self._c = connection
+
+    def credited(self, work_id: str) -> bool:
+        n = catalog.contribution.c
+        return (
+            self._c.execute(
+                sa.select(sa.literal(1)).where(n.entity_type == "work", n.entity_id == work_id)
+            ).first()
+            is not None
+        )
+
+    def find(self, name: str, kind: str) -> str | None:
+        c, n = catalog.contributor.c, catalog.contributor_name.c
+        return self._c.execute(
+            sa.select(c.id)
+            .select_from(
+                catalog.contributor.join(catalog.contributor_name, n.contributor_id == c.id)
+            )
+            .where(c.kind == kind, sa.func.lower(n.name) == name.casefold())
+            .order_by(c.id)
+            .limit(1)
+        ).scalar()
+
+    def insert(self, name: str, kind: str, family_first: bool) -> str:
+        contributor_id = new_ulid()
+        self._c.execute(
+            sa.insert(catalog.contributor).values(id=contributor_id, kind=kind, primary_name=name)
+        )
+        self._c.execute(
+            sa.insert(catalog.contributor_name).values(
+                contributor_id=contributor_id, name=name, kind="display", lang="und",
+                family_first=family_first,
+            )
+        )  # fmt: skip
+        return contributor_id
+
+    def credit(self, work_id: str, contributor_id: str, role: str, position: int) -> bool:
+        n = catalog.contribution
+        known = self._c.execute(
+            sa.select(sa.literal(1)).where(
+                n.c.contributor_id == contributor_id,
+                n.c.entity_type == "work",
+                n.c.entity_id == work_id,
+                n.c.role == role,
+            )
+        ).first()
+        if known is not None:
+            return False
+        self._c.execute(
+            sa.insert(n).values(
+                contributor_id=contributor_id, entity_type="work", entity_id=work_id,
+                role=role, position=position,
+            )
+        )  # fmt: skip
+        return True
+
+    def next_position(self, work_id: str) -> int:
+        n = catalog.contribution.c
+        top = self._c.execute(
+            sa.select(sa.func.max(n.position)).where(
+                n.entity_type == "work", n.entity_id == work_id
+            )
+        ).scalar()
+        return 0 if top is None else int(top) + 1
 
 
 class SqlEditionStore:
@@ -272,6 +341,7 @@ class SqlUnitStore:
         self, edition_id: str, number: UnitNumber, place: Place, item: IncomingUnit
     ) -> str:
         unit_id = new_ulid()
+        dated = stored_date(item.published_on, item.date_precision, item.published_at)
         self._c.execute(
             sa.insert(catalog.unit).values(
                 id=unit_id,
@@ -288,6 +358,8 @@ class SqlUnitStore:
                 source_order=number.source_order,
                 kind=item.kind,
                 title=item.title,
+                published_on=dated[0] if dated else None,
+                date_precision=dated[1] if dated else None,
                 published_at=item.published_at,
             )
         )
