@@ -2,8 +2,9 @@ name: cleanup
 
 # GHCR cleanup (ENF-QUAL-007): deletes only package versions whose tags ALL start with `pr-` and
 # that are older than the retention. Anything else is kept: edge, sha-*, X.Y.Z, X.Y, the cache
-# package, and every version without a tag (platform manifests, signatures, attestations: they
-# are referenced by digest by the multi-arch manifests, deleting them breaks the images).
+# package, the platform manifests (they carry the temporary tag build-<sha>-<arch>, which is not
+# pr-*) and every version without a tag (signatures, attestations). The multi-arch manifests
+# reference those by digest: deleting them would break the images.
 on:
   schedule:
     - cron: "41 3 * * 0"

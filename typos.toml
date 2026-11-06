@@ -8,6 +8,7 @@ extend-exclude = ["*.md", "docs/", "backend/uv.lock", "backend/src/shelfhold/loc
 cours = "cours"
 sur = "sur"
 opf = "opf"
+intoto = "intoto"
 
 # Exact identifier: a pydantic setting.
 [default.extend-identifiers]

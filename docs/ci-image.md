@@ -7,7 +7,7 @@
 | `ci.yml` / `image-publish` | `push` sur `main`, après `image-main`, `frontend` et `openapi` (ou filtrés) | `packages: write` | `image-publish.yml` : publie les archives OCI **déjà testées**, puis le manifeste multi-arch (`edge`, `sha-<long>`) |
 | `ci.yml` / `scan` | tout run où l'image est construite | `security-events: write` | Grype sur l'archive amd64 testée, SARIF vers l'onglet Sécurité ; **informatif** (hors `ci-success`, `fail-build` désactivé : une CVE publiée demain ne doit pas casser une PR sans rapport) |
 | `codeql.yml` | `pull_request`, `push` sur `main`, hebdomadaire | `security-events: write` | CodeQL Python et TypeScript (dépôt public : code scanning gratuit) |
-| `cleanup.yml` | hebdomadaire, ou à la main (`dry-run` par défaut) | `packages: write` | supprime les versions GHCR dont **tous** les tags sont `pr-*` et plus vieilles que 14 jours ; jamais une version sans tag (manifestes par plateforme, signatures, attestations) |
+| `cleanup.yml` | hebdomadaire, ou à la main (`dry-run` par défaut) | `packages: write` | supprime les versions GHCR dont **tous** les tags sont `pr-*` et plus vieilles que 14 jours ; jamais une version sans tag (signatures, attestations) ni les manifestes par plateforme, qui portent le tag `build-<sha>-<arch>` |
 
 - **Attestations (ENF-SEC-007, palier M1b).** Le job `merge` de `image-publish.yml` est le seul à détenir `id-token: write` et
   `attestations: write` (l'appelant `ci.yml` les accorde à ce seul appel). Il attache une provenance SLSA au manifeste multi-arch et

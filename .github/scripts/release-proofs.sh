@@ -11,8 +11,6 @@ IMAGE="${IMAGE,,}"
 [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "::error::tag must be vX.Y.Z, got ${TAG}"; exit 1; }
 VERSION="${TAG#v}"
 mkdir -p "$OUT"
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
 
 index="$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}')"
 raw="$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --raw)"
@@ -23,30 +21,26 @@ amd64="$(platform_digest amd64)"
 arm64="$(platform_digest arm64)"
 [ -n "$amd64" ] && [ -n "$arm64" ] || { echo "::error::${IMAGE}:${VERSION} lacks a platform"; exit 1; }
 
-# Statements of a digest whose predicate type starts with $2, decoded from the DSSE bundles.
-statements() {
-  local digest="$1" prefix="$2" file
-  (cd "$work" && gh attestation download "oci://${IMAGE}@${digest}" --repo "$REPO" >/dev/null)
-  file="$work/${digest/:/_}.jsonl"
-  [ -f "$file" ] || file="$work/${digest}.jsonl"
-  jq -c --arg prefix "$prefix" '.dsseEnvelope.payload | @base64d | fromjson | select(.predicateType | startswith($prefix))' "$file"
-}
+SHA="$(gh api "repos/${REPO}/commits/${TAG}" --jq .sha)"
+[[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::cannot resolve ${TAG} to a commit"; exit 1; }
 
-for digest in "$index" "$amd64" "$arm64"; do
-  gh attestation verify "oci://${IMAGE}@${digest}" --repo "$REPO" --predicate-type https://slsa.dev/provenance/v1 >/dev/null
-  echo "verified provenance of ${digest}"
-done
-for digest in "$amd64" "$arm64"; do
-  gh attestation verify "oci://${IMAGE}@${digest}" --repo "$REPO" --predicate-type https://spdx.dev/Document/v2.3 >/dev/null
-  echo "verified SBOM of ${digest}"
-done
+# Verifies the attestations of a digest (predicate type $2) and prints their in-toto statements,
+# one per line: what is read is what was verified (signed by image-publish.yml, run on main for
+# the tagged commit), never a separate download.
+verified_statements() {
+  gh attestation verify "oci://${IMAGE}@$1" --repo "$REPO" \
+    --signer-workflow "${REPO}/.github/workflows/image-publish.yml" \
+    --source-ref refs/heads/main --source-digest "$SHA" \
+    --predicate-type "$2" --format json | jq -c '.[].verificationResult.statement'
+}
 
 : > "$OUT/provenance.intoto.jsonl"
 for digest in "$index" "$amd64" "$arm64"; do
-  statements "$digest" https://slsa.dev/provenance >> "$OUT/provenance.intoto.jsonl"
+  verified_statements "$digest" https://slsa.dev/provenance/v1 >> "$OUT/provenance.intoto.jsonl"
+  echo "verified provenance of ${digest}"
 done
-statements "$amd64" https://spdx.dev/ | jq -c -s '.[0].predicate' > "$OUT/sbom.spdx.json"
-statements "$arm64" https://spdx.dev/ | jq -c -s '.[0].predicate' > "$OUT/sbom-arm64.spdx.json"
+verified_statements "$amd64" https://spdx.dev/Document/v2.3 | jq -c -s 'map(.predicate) | .[0]' > "$OUT/sbom.spdx.json"
+verified_statements "$arm64" https://spdx.dev/Document/v2.3 | jq -c -s 'map(.predicate) | .[0]' > "$OUT/sbom-arm64.spdx.json"
 for f in provenance.intoto.jsonl sbom.spdx.json sbom-arm64.spdx.json; do
   [ -s "$OUT/$f" ] && [ "$(cat "$OUT/$f")" != null ] || { echo "::error::empty ${f}"; exit 1; }
 done

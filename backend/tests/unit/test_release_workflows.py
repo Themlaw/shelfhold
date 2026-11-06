@@ -5,6 +5,7 @@ release proofs attached as assets, Grype and CodeQL, and a GHCR cleanup that can
 `pr-*` tags. Every action is pinned by SHA and the write scopes of the OIDC token stay on one job.
 """
 
+import copy
 import re
 from pathlib import Path
 from typing import Any
@@ -49,7 +50,12 @@ def test_release_assets_include_sbom_and_attestations() -> None:
     assert "gh release upload" in text and "--clobber" in text
     script = (ROOT / ".github" / "scripts" / "release-proofs.sh").read_text(encoding="utf-8")
     assert "release-proofs.sh" in text
-    assert "gh attestation verify" in script and "gh attestation download" in script
+    # what is attached is what was verified: signer, ref and commit pinned, statements read from
+    # the output of the verify itself (no separate download)
+    assert "gh attestation verify" in script and "gh attestation download" not in script
+    assert "--signer-workflow" in script and "image-publish.yml" in script
+    assert "--source-ref refs/heads/main" in script and '--source-digest "$SHA"' in script
+    assert ".[].verificationResult.statement" in script and "--format json" in script
     # the benchmark reference is versioned in the repository (artifacts expire)
     assert (ROOT / ".github" / "bench-reference.json").is_file()
     # the proofs wait for the image of the release
@@ -74,38 +80,108 @@ def test_ghcr_cleanup_policy_only_pr_tags() -> None:
     assert "latest" not in text and "edge" not in text.replace("pr-", "")
 
 
+CONTENTS_WRITE_ALLOWED = {("release.yml", "release-proofs")}
+OIDC_HOLDER = ("image-publish.yml", "merge")
+PUSH_MAIN = re.compile(r"github\.event_name == 'push'.*github\.ref == 'refs/heads/main'")
+
+
+def _all() -> dict[str, dict[str, Any]]:
+    return {p.name: _load(p.name) for p in sorted(WORKFLOWS.glob("*.yml"))}
+
+
+def _scopes(perms: Any) -> dict[str, str]:
+    return perms if isinstance(perms, dict) else {}
+
+
+def _leaks(workflows: dict[str, dict[str, Any]]) -> list[str]:
+    """Every way a write scope, or the OIDC token, could reach a job it should not."""
+    leaks: list[str] = []
+    for name, workflow in workflows.items():
+        if "pull_request_target" in (workflow.get(True) or workflow.get("on") or {}):
+            leaks.append(f"{name}: pull_request_target")
+        tops = [("workflow", workflow.get("permissions"))]
+        tops += [(job_id, job.get("permissions")) for job_id, job in workflow["jobs"].items()]
+        for job_id, perms in tops:
+            where = (name, job_id)
+            if perms == "write-all":
+                leaks.append(f"{name}/{job_id}: write-all")
+            scopes = _scopes(perms)
+            if scopes.get("contents") == "write" and where not in CONTENTS_WRITE_ALLOWED:
+                leaks.append(f"{name}/{job_id}: contents: write")
+            if "id-token" in scopes or "attestations" in scopes:
+                job = workflow["jobs"].get(job_id, {})
+                if job_id == "workflow":
+                    leaks.append(f"{name}: id-token or attestations at workflow level")
+                elif "uses" in job:  # a caller: only on a push to main, never on a pull request
+                    if not PUSH_MAIN.search(str(job.get("if", ""))):
+                        leaks.append(f"{name}/{job_id}: caller of OIDC not limited to main")
+                elif where != OIDC_HOLDER:
+                    leaks.append(f"{name}/{job_id}: id-token or attestations")
+    return leaks
+
+
+def _mutated(mutate: Any) -> list[str]:
+    workflows = copy.deepcopy(_all())
+    mutate(workflows)
+    return _leaks(workflows)
+
+
 @pytest.mark.req("ENF-SEC-007")
 def test_attestation_permissions_scoped_to_publish_job() -> None:
     """Original name: test_attestation_permissions_scoped_to_publish_job."""
-    holders = []
-    for path in sorted(WORKFLOWS.glob("*.yml")):
-        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
-        top = workflow.get("permissions") or {}
-        assert "id-token" not in top and "attestations" not in top, path.name
-        for name, job in workflow["jobs"].items():
-            perms = job.get("permissions")
-            if "uses" in job:  # a caller grants the scopes the reusable workflow may use
-                continue
-            if isinstance(perms, dict) and ("id-token" in perms or "attestations" in perms):
-                holders.append((path.name, name, dict(perms)))
-    assert holders == [
-        (
-            "image-publish.yml",
-            "merge",
-            {
-                "contents": "read",
-                "packages": "write",
-                "id-token": "write",
-                "attestations": "write",
-            },
-        )
-    ]
-    # the callers grant the same scopes, to that reusable workflow only
-    ci = _load("ci.yml")["jobs"]["image-publish"]["permissions"]
-    assert ci["id-token"] == "write" and ci["attestations"] == "write"
-    assert "uses" in _load("ci.yml")["jobs"]["image-publish"]
-    release_jobs = _load("release.yml")["jobs"]
-    assert "id-token" not in str(release_jobs)
+    assert _leaks(_all()) == []
+    publish = _load("image-publish.yml")["jobs"]["merge"]["permissions"]
+    assert publish == {
+        "contents": "read",
+        "packages": "write",
+        "id-token": "write",
+        "attestations": "write",
+    }
+    ci = _load("ci.yml")["jobs"]["image-publish"]
+    assert ci["permissions"]["id-token"] == "write" and ci["permissions"]["attestations"] == "write"
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_mutation_oidc_scope_on_a_pull_request_caller_is_a_leak() -> None:
+    def mutate(w: dict[str, dict[str, Any]]) -> None:
+        w["ci.yml"]["jobs"]["image-pr"]["permissions"]["id-token"] = "write"
+
+    assert any("image-pr" in leak for leak in _mutated(mutate))
+
+    def attest(w: dict[str, dict[str, Any]]) -> None:
+        w["ci.yml"]["jobs"]["image-pr"]["permissions"]["attestations"] = "write"
+
+    assert any("image-pr" in leak for leak in _mutated(attest))
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_mutation_write_all_is_a_leak() -> None:
+    def job(w: dict[str, dict[str, Any]]) -> None:
+        w["image-publish.yml"]["jobs"]["publish"]["permissions"] = "write-all"
+
+    assert any("write-all" in leak for leak in _mutated(job))
+
+    def top(w: dict[str, dict[str, Any]]) -> None:
+        w["ci.yml"]["permissions"] = "write-all"
+
+    assert any("write-all" in leak for leak in _mutated(top))
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_mutation_contents_write_outside_the_allow_list_is_a_leak() -> None:
+    def mutate(w: dict[str, dict[str, Any]]) -> None:
+        w["release.yml"]["jobs"]["test-report"]["permissions"]["contents"] = "write"
+
+    assert any("test-report" in leak for leak in _mutated(mutate))
+    assert {("release.yml", "release-proofs")} == CONTENTS_WRITE_ALLOWED
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_mutation_pull_request_target_is_a_leak() -> None:
+    def mutate(w: dict[str, dict[str, Any]]) -> None:
+        w["ci.yml"][True]["pull_request_target"] = {}
+
+    assert any("pull_request_target" in leak for leak in _mutated(mutate))
 
 
 @pytest.mark.req("ENF-SEC-007")

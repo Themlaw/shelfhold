@@ -52,12 +52,16 @@ def test_release_assets_include_schema_sql_and_data_dictionary(
     assert all(name in script for name in ASSETS)
     # ... and the workflow attaches both files to the release
     workflow: dict[str, Any] = yaml.safe_load(RELEASE.read_text(encoding="utf-8"))
-    job = workflow["jobs"]["schema-assets"]
+    generate = workflow["jobs"]["schema-assets"]
+    assert "release-assets.sh" in "\n".join(str(step.get("run", "")) for step in generate["steps"])
+    assert generate["permissions"] == {"contents": "read"}  # generates, never uploads
+    # the single job with `contents: write` attaches them, with the other proofs
+    job = workflow["jobs"]["release-proofs"]
+    assert "schema-assets" in job["needs"]
     steps = "\n".join(str(step.get("run", "")) for step in job["steps"])
-    assert "release-assets.sh" in steps
     assert "gh release upload" in steps
     assert all(name in steps for name in ASSETS)
-    assert job["permissions"]["contents"] == "write"  # the only job of the file that uploads
+    assert job["permissions"]["contents"] == "write"
 
 
 @pytest.mark.req("EF-INT-027")
