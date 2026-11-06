@@ -26,6 +26,14 @@ _EXTENSION_KIND: Final = {
 }  # fmt: skip
 
 
+# What an event may say about a refusal: a closed list (the detail below can carry the archive's
+# own text, which an event never does).
+REASON_KINDS: Final = frozenset(
+    {"duplicate_comicinfo", "magic_mismatch", "no_pages", "not_allowlisted", "unsafe_archive",
+     "unsafe_xml"}
+)  # fmt: skip
+
+
 class UntrustedEntryError(ValueError):
     """An entry is not on the allowlist. `code` is the stable error code, `reason` the detail."""
 
@@ -35,6 +43,13 @@ class UntrustedEntryError(ValueError):
         super().__init__(f"{UNTRUSTED_ENTRY_CODE}: {reason}" + (f" ({entry})" if entry else ""))
         self.reason = reason
         self.entry = entry
+
+    @property
+    def kind(self) -> str:
+        """`reason` reduced to a member of `REASON_KINDS`."""
+        if self.reason in REASON_KINDS:
+            return self.reason
+        return "unsafe_xml" if self.reason.startswith("xml_") else "unsafe_archive"
 
 
 @dataclass(frozen=True, slots=True)

@@ -41,6 +41,7 @@ P3 = {
     "reinits_storage",
     "accepts_admin_risk",  # the admin password of Kavita goes through it (L38)
     "settles_fs_intent",  # `intents resolve` frees the paths of an interrupted operation (L51)
+    "migrates_identity",  # `normalize migrate` rewrites the identity keys of live rows (L55)
 }
 
 

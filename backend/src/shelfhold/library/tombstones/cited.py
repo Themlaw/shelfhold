@@ -36,6 +36,7 @@ def normalizers_of(registry: NormalizerRegistry) -> RegistryNormalizers:
 
 
 def default_normalizers() -> RegistryNormalizers:
+    """The versions in the code (a tombstone may cite any of them)."""
     return normalizers_of(default_registry())
 
 

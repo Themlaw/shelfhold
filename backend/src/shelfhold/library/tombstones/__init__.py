@@ -7,7 +7,11 @@ from shelfhold.library.tombstones.cited import (
     missing_citable,
     normalizers_of,
 )
-from shelfhold.library.tombstones.index import CitedVersionMissingError, MembershipIndex
+from shelfhold.library.tombstones.index import (
+    CitedVersionMissingError,
+    MembershipIndex,
+    Normalizers,
+)
 from shelfhold.library.tombstones.service import (
     LOST_KEYRING_PHRASE,
     InertLine,
@@ -46,6 +50,7 @@ __all__ = [
     "LostKeyringConfirmationError",
     "LostKeyringRefusedError",
     "MembershipIndex",
+    "Normalizers",
     "NotReplayedError",
     "PlaceRef",
     "Recorded",

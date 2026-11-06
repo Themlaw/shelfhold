@@ -1,6 +1,7 @@
 """Trust boundaries for content from outside (EF-BIB-051, ENF-SEC-015); see importlinter.ini."""
 
 from shelfhold.infrastructure.content_trust.cbz_entries import (
+    REASON_KINDS,
     UNTRUSTED_ENTRY_CODE,
     CbzListing,
     UntrustedEntryError,
@@ -17,6 +18,7 @@ from shelfhold.infrastructure.content_trust.sanitize import (
 __all__ = [
     "ALLOWED_HTML_ATTRIBUTES",
     "ALLOWED_HTML_TAGS",
+    "REASON_KINDS",
     "UNTRUSTED_ENTRY_CODE",
     "CbzListing",
     "Destination",

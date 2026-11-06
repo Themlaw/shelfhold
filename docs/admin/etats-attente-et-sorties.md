@@ -72,6 +72,24 @@ disque ne correspond à rien reste ouverte (`reconcile.drift`), sans que rien so
 et chaque appel est inscrit à l'audit (qui, quelle session, quand). La route est
 `POST /api/v1/intents/{id}/resolve`, la liste `GET /api/v1/intents`.
 
+## Migrer un normaliseur
+
+Une clé d'identité (la place d'un chapitre, par exemple) est produite par un normaliseur
+versionné, et chaque ligne garde la version qui l'a produite. Quand une version plus récente est
+livrée, les anciennes lignes restent valides tant que vous ne les avez pas migrées :
+
+- `shelfhold normalize migrate number` : aperçu, sans rien écrire. Il liste les lignes qui
+  changeraient de version, les **fusions** à décider (deux chapitres viseraient la même place ;
+  ils restent tels quels) et les lignes **bloquées par une pierre tombale** (elles ramèneraient un
+  contenu purgé ; `tombstone.migration_hit` est émis, la ligne reste telle quelle). Il donne une
+  empreinte.
+- `shelfhold normalize migrate number --confirm <empreinte>` : applique exactement cet aperçu, en
+  une transaction avec son entrée d'audit. Une empreinte périmée ne change rien (code 4).
+
+C'est une action réservée : session récente ou CLI de l'hôte, jamais une clé d'API. Seul `number`
+est migrable en M1a. Tant que le code ne livre aucun normaliseur plus récent que `number@1`, la commande répond
+« rien à migrer » ; aucun code extérieur n'est chargé au démarrage. Une version citée par une pierre tombale n'est jamais retirée du code.
+
 ## Rattraper l'historique d'une série suivie
 
 `shelfhold backfill --gaps <édition>` comble les numéros manquants sous le filigrane de suivi ;

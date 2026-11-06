@@ -31,6 +31,7 @@ from shelfhold.export.application.restore import (
     DeletionRefusedError,
     DeletionUnavailableError,
     PreviewStaleError,
+    ReplayConfirmationRequiredError,
     RestoreAdopter,
     RestoreGuard,
 )
@@ -74,6 +75,10 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     reconcile.add_argument(
         "--confirm-deletion", action="store_true", help=t("reconcile.confirm_deletion_help")
     )
+    reconcile.add_argument(
+        "--confirm-unit", metavar="UNIT", action="append", default=[],
+        help=t("reconcile.confirm_unit_help"),
+    )  # fmt: skip
     reconcile.set_defaults(handler=run)
 
 
@@ -144,6 +149,8 @@ def _show(preview: AdoptionPreview) -> None:
         print(t("reconcile.proposal_remove_category"))
     for candidate in preview.deletions:
         print(t("reconcile.deletion_line", path=candidate.rel_path, scope=candidate.scope))
+    for unit_id in preview.irreplaceable:
+        print(t("reconcile.irreplaceable_line", unit=unit_id))
     if report.unverified_tombstone_lines:
         print(t("reconcile.unverified_line", count=report.unverified_tombstone_lines))
     for root_id, reason in sorted(preview.blocked_roots.items()):
@@ -184,7 +191,11 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             if args.confirm_deletion and principal is None:
                 print(t("reconcile.deletion_refused"), file=sys.stderr)
                 return REFUSED
-            deletion = DeletionConfirmation(principal) if principal is not None else None
+            deletion = (
+                DeletionConfirmation(principal, frozenset(args.confirm_unit))
+                if principal is not None
+                else None
+            )
             result = adopter.adopt(confirm=args.confirm, deletion=deletion)
     except InstanceLockHeldError:
         print(t("reconcile.instance_running"), file=sys.stderr)
@@ -200,6 +211,11 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             print(t("reconcile.by_hand_line", path=path), file=sys.stderr)
         print(t("reconcile.by_hand"), file=sys.stderr)
         return BLOCKED
+    except ReplayConfirmationRequiredError as required:
+        for unit_id in required.unit_ids:
+            print(t("reconcile.irreplaceable_missing", unit=unit_id), file=sys.stderr)
+        print(t("reconcile.irreplaceable_needs_typing"), file=sys.stderr)
+        return NEEDS_CONFIRMATION
     except (DeletionRefusedError, DeletionUnavailableError):
         print(t("reconcile.deletion_refused"), file=sys.stderr)
         return REFUSED

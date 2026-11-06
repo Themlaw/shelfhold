@@ -29,6 +29,7 @@ from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
 from shelfhold.ops.library import LibraryOps
+from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.restore import RestoreGuardExit
 from shelfhold.ops.services import OpsServices
 
@@ -93,5 +94,5 @@ def open_ops(
         headless=_LazyHeadless(settings), keyring=TombstoneKeyringExit(settings, engine, clock),
         restore=RestoreGuardExit(engine, fsops, clock, bus) if fsops is not None else None,
         library=LibraryOps(composition), intents=IntentOps(composition),
-        backfill=BackfillOps(composition),
+        backfill=BackfillOps(composition), normalize=NormalizeOps(composition),
     )  # fmt: skip

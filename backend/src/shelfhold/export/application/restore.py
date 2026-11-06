@@ -25,6 +25,7 @@ Adopting never deletes. A deletion that the replay asks for happens only after a
 it (reserved action `reconcile.confirm_deletion`), through the purge's executor.
 """
 
+import hmac
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -79,7 +80,13 @@ from shelfhold.infrastructure.schema import (
     platform,
     storage,
 )
-from shelfhold.library.public import EDITION_KEY_COLUMNS, record_destination_copy
+from shelfhold.library.public import (
+    CONFIRMATION_CODE,
+    EDITION_KEY_COLUMNS,
+    confirmation_phrase,
+    irreplaceability,
+    record_destination_copy,
+)
 
 __all__ = [
     "AdoptionBlockedError",
@@ -92,6 +99,7 @@ __all__ = [
     "DeletionUnavailableError",
     "PreviewStaleError",
     "ReadoptLine",
+    "ReplayConfirmationRequiredError",
     "ReplayRoot",
     "RestoreAdopter",
     "RestoreGuard",
@@ -142,6 +150,18 @@ class DeletionRefusedError(PermissionError):
     def __init__(self, verdict: object) -> None:
         super().__init__(f"reconcile.confirm_deletion refused: {type(verdict).__name__}")
         self.verdict = verdict
+
+
+class ReplayConfirmationRequiredError(RuntimeError):
+    """A replayed deletion would erase irreplaceable Units and their identifiers were not typed.
+
+    Nothing was changed. `unit_ids` are the ones still to type (EF-BIB-053 (3))."""
+
+    code = CONFIRMATION_CODE
+
+    def __init__(self, unit_ids: Sequence[str]) -> None:
+        self.unit_ids = tuple(sorted(unit_ids))
+        super().__init__(f"{self.code}: type the identifier of {len(self.unit_ids)} Unit(s)")
 
 
 class DeletionUnavailableError(RuntimeError):
@@ -203,6 +223,7 @@ class DeletionCandidate:
     rel_path: str
     local_path: str
     scope: str
+    unit_ids: tuple[str, ...] = ()  # the Units the file covers, by the database's word only
 
 
 class DeletionExecutor(Protocol):
@@ -214,6 +235,9 @@ class DeletionExecutor(Protocol):
 @dataclass(frozen=True)
 class DeletionConfirmation:
     principal: Principal
+    # The identifiers the admin typed (EF-BIB-053 (3)): one per irreplaceable Unit the deletion
+    # would erase. The reserved action says who may confirm; this says they looked.
+    typed_units: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -249,6 +273,9 @@ class AdoptionPreview:
     deletions: tuple[DeletionCandidate, ...]
     unresolved: tuple[tuple[str, str], ...]  # (rel path, reason)
     blocked_roots: dict[str, str] = field(default_factory=dict)
+    # Units a deletion would erase for good, which nothing upstream can give back (or that the
+    # restored database does not know, which cannot be shown otherwise): to type to confirm
+    irreplaceable: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -413,6 +440,56 @@ def _bounded(value: object, limit: int = MAX_FIELD) -> str | None:
     return value if isinstance(value, str) and 0 < len(value) <= limit else None
 
 
+def _units_of(connection: Connection, line: _Line) -> tuple[str, ...]:
+    """The Units a file covers, by the database's word only. The mirror is an untrusted input and
+    its `unit` / `variant` fields are never read: the file's place `(destination, rel_path)` gives
+    the export item and its coverage, and the line's `(source_key, remote_unit_id)` gives the
+    Variants. A file nothing known in the database covers returns nothing (the caller then asks
+    for its path)."""
+    record, coverage = export.export_record, export.unit_coverage
+    found: set[str] = set(
+        connection.execute(
+            sa.select(coverage.c.unit_id)
+            .select_from(
+                record.join(
+                    coverage,
+                    sa.and_(
+                        coverage.c.carrier_type == "export_item",
+                        coverage.c.carrier_id == record.c.export_item_id,
+                    ),
+                )
+            )
+            .where(
+                record.c.shelf_destination_id == line.destination_id,
+                record.c.rel_path == line.rel_path,
+            )
+        ).scalars()
+    )
+    variant, binding, item = (
+        catalog.unit_variant,
+        acquisition.source_binding,
+        acquisition.source_item,
+    )
+    for covered in line.entry.get("coverage") or []:
+        if not isinstance(covered, dict):
+            continue
+        key, remote = _bounded(covered.get("source_key")), _bounded(covered.get("remote_unit_id"))
+        if key is None or remote is None:
+            continue
+        found.update(
+            connection.execute(
+                sa.select(variant.c.unit_id)
+                .select_from(
+                    variant.join(binding, binding.c.id == variant.c.source_binding_id).join(
+                        item, item.c.id == binding.c.source_item_id
+                    )
+                )
+                .where(item.c.source_key == key, variant.c.remote_unit_id == remote)
+            ).scalars()
+        )
+    return tuple(sorted(found))
+
+
 def _chunks(items: Sequence[str]) -> list[Sequence[str]]:
     return [items[i : i + _CHUNK] for i in range(0, len(items), _CHUNK)]
 
@@ -568,6 +645,7 @@ class RestoreAdopter:
             if (reason := self._screen.root_blocked(f.root_id)) is not None
         }
         report = replace(self._report(survey), unverified_tombstone_lines=self._screen.unverified())
+        irreplaceable = self._irreplaceable(deletions)
         document = {
             "epoch": survey.status.epoch,
             "roots": sorted(
@@ -586,9 +664,27 @@ class RestoreAdopter:
             "relocations": sorted(survey.relocations),
             "decisions": [list(step) for step in self._plan_decisions(survey)],
             "blocked_units": sorted(survey.blocked_units.items()),
+            "irreplaceable": list(irreplaceable),
         }
         return AdoptionPreview(
-            fingerprint_of(document), report, readopt, deletions, unresolved, blocked
+            fingerprint_of(document), report, readopt, deletions, unresolved, blocked,
+            irreplaceable,
+        )  # fmt: skip
+
+    def _irreplaceable(self, deletions: tuple[DeletionCandidate, ...]) -> tuple[str, ...]:
+        """What is to be typed: the id of each irreplaceable Unit the database knows under a
+        file, and the path of a file no known Unit covers (nothing shows it replaceable)."""
+        kept: set[str] = {d.rel_path for d in deletions if not d.unit_ids}
+        wanted = sorted({u for d in deletions for u in d.unit_ids})
+        with self._engine.connect() as connection:
+            kept.update(u for u in wanted if irreplaceability(connection, u).irreplaceable)
+        return tuple(sorted(kept))
+
+    @staticmethod
+    def _typed(deletion: DeletionConfirmation, unit_id: str) -> bool:
+        phrase = confirmation_phrase(unit_id).encode()
+        return any(
+            hmac.compare_digest(typed.strip().encode(), phrase) for typed in deletion.typed_units
         )
 
     @staticmethod
@@ -616,6 +712,10 @@ class RestoreAdopter:
             raise AdoptionBlockedError(root_id, reason)
         if preview.fingerprint != confirm:
             raise PreviewStaleError("the instance changed since the preview: look again")
+        if deletion is not None and preview.deletions:
+            untyped = [u for u in preview.irreplaceable if not self._typed(deletion, u)]
+            if untyped:  # before anything is written: the reserved action is not enough
+                raise ReplayConfirmationRequiredError(untyped)
         if deletion is not None and preview.deletions and self._purger is None:
             raise DeletionUnavailableError("no purge executor: nothing is deleted")
         now = self._clock.now()
@@ -632,7 +732,9 @@ class RestoreAdopter:
                     sa.insert(identity.audit).values(
                         id=new_ulid(), actor_id=deletion.principal.actor_id,
                         action="reconcile.confirm_deletion",
-                        target=f"candidates:{len(preview.deletions)}",
+                        target=f"candidates:{len(preview.deletions)}"
+                        + (f";irreplaceable:{len(preview.irreplaceable)}"
+                           if preview.irreplaceable else ""),
                         session_id=deletion.principal.session_id,
                         auth_time=deletion.principal.auth_time,
                     )
@@ -716,14 +818,21 @@ class RestoreAdopter:
                 unresolved_reason=self._reason(line, survey),
             )  # fmt: skip
             line.outcome, line.reason = judge_line(facts)
-            if line.outcome is LineOutcome.TOMBSTONED and line.on_disk:
-                survey.candidates.setdefault(
-                    (line.destination_id, line.rel_path),
-                    DeletionCandidate(
-                        line.destination_id, line.root_id, line.rel_path, line.local_path,
-                        line.tombstone_scope or "variant",
-                    ),
-                )  # fmt: skip
+            if (
+                line.outcome is LineOutcome.TOMBSTONED
+                and line.on_disk
+                and (line.destination_id, line.rel_path) not in survey.candidates
+            ):
+                with self._engine.connect() as connection:
+                    units = _units_of(connection, line)
+                survey.candidates[(line.destination_id, line.rel_path)] = DeletionCandidate(
+                    line.destination_id,
+                    line.root_id,
+                    line.rel_path,
+                    line.local_path,
+                    line.tombstone_scope or "variant",
+                    units,
+                )
             if (
                 line.outcome in (LineOutcome.READOPT, LineOutcome.UNRESOLVED) and not line.known
             ) or line.outcome is LineOutcome.MODIFIED:

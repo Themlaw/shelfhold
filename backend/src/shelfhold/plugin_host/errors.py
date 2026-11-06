@@ -7,6 +7,7 @@ disabling of a source (EF-BIB-042), so an authentication, version or schema prob
 """
 
 from shelfhold.events.waiting_state import WaitingState
+from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.sdk.source import (
     AuthRequired,
     ContentRemoved,
@@ -45,8 +46,15 @@ class UnsupportedAuthFlow(ValueError):
     """An AuthFlow reserved for a later milestone (V1 injects Basic and ApiKey only)."""
 
 
+UNTRUSTED_CLASS = "untrusted"  # not a `source_failure` value: it is never counted
+
+
 def failure_class_of(error: BaseException) -> str:
-    """`content`, `auth`, `version`, `schema` or `infra` (the values of `source_failure`)."""
+    """`content`, `auth`, `version`, `schema` or `infra` (the values of `source_failure`), or
+    `untrusted` for an archive the host refused (EF-BIB-051 (6)), which `source_failure` never
+    sees."""
+    if isinstance(error, UntrustedEntryError):
+        return UNTRUSTED_CLASS
     if isinstance(error, ServiceVersionMismatch):
         return "version"
     if isinstance(error, AuthRequired | AuthModeUnsupported):

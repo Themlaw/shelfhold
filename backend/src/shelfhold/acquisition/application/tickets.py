@@ -26,6 +26,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from shelfhold.acquisition.application.failures import FailureLedger, from_service
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.infrastructure.fetcher import FetchError, FetchTooLarge, GuardedFetcher
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.ids import new_ulid
@@ -51,6 +52,7 @@ MAX_WAIT_S = 120.0  # the most one cycle sleeps for the pace of the sources
 CLOCK_GRAIN_S = 1e-3  # a wait shorter than this is over (clocks tick in microseconds)
 JITTER = 0.5  # each gap is `interval x (1 + up to JITTER)`, so instances never march in step
 OPEN_STATES = ("requested", "downloaded")
+Announce = Callable[[Connection, str, dict[str, object]], None]
 
 
 def jitter_fraction(request_id: str) -> float:
@@ -152,6 +154,7 @@ class TicketReport:
         0  # asked again after N hours, or given up: announced as source.downloads_dropped
     )
     deferred: int = 0  # held back by the pace or by a busy slot, tried again next cycle
+    refused: int = 0  # archives with an entry off the allowlist: closed, announced, not counted
 
 
 @dataclass(frozen=True)
@@ -188,9 +191,11 @@ class DownloadTickets:
         max_attempts: int = MAX_ATTEMPTS,
         max_wait_s: float = MAX_WAIT_S,
         stall_after: timedelta = STALL_AFTER,
+        announce: Announce | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
+        self._announce = announce
         self._service = service
         self._fetcher = fetcher
         self._ledger = ledger
@@ -391,7 +396,9 @@ class DownloadTickets:
             failure_class=classify(error),
             error=type(error).__name__,
         )
-        if disposition_of(classify(error)) is Disposition.COUNT:
+        if disposition_of(classify(error)) is Disposition.REFUSE:
+            self._refuse(request, error, report)
+        elif disposition_of(classify(error)) is Disposition.COUNT:
             now = self._clock.now()
             with self._engine.begin() as connection:
                 self._ledger.count_content(
@@ -405,6 +412,28 @@ class DownloadTickets:
             self._wait(request, report)  # asleep, busy, unreachable, a 5xx: not a failed attempt
         else:  # a truncated archive...: another attempt, nothing counted against the source
             self._retry(request, report)
+
+    def _refuse(self, request: OpenRequest, error: Exception, report: TicketReport) -> None:
+        """EF-BIB-051 (6): an entry off the allowlist. The same bytes would be refused again, so
+        the ticket is closed for good (`abandoned` keeps the Unit counted as asked: neither the
+        follow cycle nor a backfill asks again), the admin is told once, and nothing is counted
+        against the source: it did not fail, and the Unit is not exported because it was never
+        filed. The event holds the Unit and a closed reason, never an entry name (it is the
+        archive's own text)."""
+        reason = error.kind if isinstance(error, UntrustedEntryError) else "not_allowlisted"
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(acquisition.download_request)
+                .where(acquisition.download_request.c.id == request.id)
+                .values(state="abandoned", updated_at=self._clock.now())
+            )
+            if self._announce is not None:
+                self._announce(
+                    connection,
+                    UntrustedEntryError.code,
+                    {"unit_id": request.unit_id, "reason": reason},
+                )
+        report.refused += 1
 
     def _wait(self, request: OpenRequest, report: TicketReport) -> None:
         """Wait for the server. Only past N hours is the chapter asked again (EF-SRC-026 b), within
