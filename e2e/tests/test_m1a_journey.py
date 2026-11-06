@@ -64,6 +64,7 @@ def install_by_commands(j: Journey) -> None:
     assert shelf.code == 0, shelf.err
 
 
+@pytest.mark.e2e_timeout(120)
 @pytest.mark.req("EF-INT-024")
 def test_m1a_headless_config_apply_declarative_idempotent(journey: Journey) -> None:
     """`config apply -f shelfhold.toml` brings a new installation to its configuration: dry run
@@ -88,6 +89,7 @@ def test_m1a_headless_config_apply_declarative_idempotent(journey: Journey) -> N
     assert PATH_MAP[0]["local"] in listing
 
 
+@pytest.mark.e2e_timeout(420)
 @pytest.mark.req("EF-INT-024", "EF-SRC-008", "EF-SRC-036")
 def test_m1a_headless_install_to_first_chapter_in_kavita(journey: Journey) -> None:
     j = journey
@@ -110,6 +112,7 @@ def test_m1a_headless_install_to_first_chapter_in_kavita(journey: Journey) -> No
     assert not any(f.split("/")[-1].split(" - ")[-1][:1].isdigit() and "5002" in f for f in files)
 
 
+@pytest.mark.e2e_timeout(300)
 @pytest.mark.req("ENF-OPS-017")
 def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
     """A redeploy is `up --force-recreate`: the container is new, the migration service
@@ -166,6 +169,7 @@ def open_intents(j: Journey) -> int:
     return int(done.stdout.strip())
 
 
+@pytest.mark.e2e_timeout(420)
 @pytest.mark.req("ENF-OPS-017")
 def test_redeploy_during_running_export_finishes_without_open_intent(journey: Journey) -> None:
     """The container is recreated while a chapter is being received and exported: SIGTERM is
@@ -188,7 +192,8 @@ def test_redeploy_during_running_export_finishes_without_open_intent(journey: Jo
     ).stdout.strip()  # fmt: skip
     assert exit_code in ("0", "143")
 
-    j.compose("up", "-d", "--wait", "--force-recreate", timeout=600)
+    # Only the service is recreated (the simulated servers keep what was published upstream).
+    j.compose("up", "-d", "--wait", "--no-deps", "--force-recreate", "shelfhold", timeout=600)
 
     assert wait_for(lambda: open_intents(j) == 0, 60), "an intent stayed open after the redeploy"
     assert j.follow_until(lambda: any(f.endswith("Ch.2.cbz") for f in j.library_files()), 300), (
@@ -201,6 +206,7 @@ def test_redeploy_during_running_export_finishes_without_open_intent(journey: Jo
     assert j.kavita()["violations"] == [] and j.suwayomi()["violations"] == []
 
 
+@pytest.mark.e2e_timeout(420)
 @pytest.mark.req("EF-EXP-056", "EF-INT-024")
 def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> None:
     """After a first chapter, `detach --restore-upstream` gives the series back to Suwayomi's own

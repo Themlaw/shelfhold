@@ -8,6 +8,7 @@ Every step an administrator takes goes through the CLI of the running container,
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from collections.abc import Callable
@@ -15,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 E2E = Path(__file__).resolve().parents[1]
-PROJECT = "shelfhold-e2e-journey"
+PROJECT = os.environ.get("SHELFHOLD_E2E_PROJECT", "shelfhold-e2e-journey")
 KAVITA_URL = "http://127.0.0.1:5000"
 SUWAYOMI_URL = "http://127.0.0.1:4567"
 KAVITA_USER = "shelfhold"

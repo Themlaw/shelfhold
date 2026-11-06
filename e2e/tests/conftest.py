@@ -6,6 +6,7 @@ SHELFHOLD_IMAGE names the image (the workflow loads the image of the run, locall
 
 import os
 import shutil
+import signal
 import subprocess
 import time
 from collections.abc import Callable, Iterator
@@ -35,6 +36,31 @@ def compose(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
 
 def exec_python(service: str, code: str) -> str:
     return compose("exec", "-T", service, "python", "-c", code).stdout
+
+
+DEFAULT_TEST_SECONDS = 120
+
+
+@pytest.fixture(autouse=True)
+def _short_timeout(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Each E2E test has its own short limit (marker `e2e_timeout(seconds)`, setup included): a
+    hang fails the test within minutes, with the name of the test, instead of eating the job."""
+    marker = request.node.get_closest_marker("e2e_timeout")
+    seconds = int(marker.args[0]) if marker else DEFAULT_TEST_SECONDS
+
+    def expired(_signum: int, _frame: object) -> None:
+        raise TimeoutError(
+            f"{request.node.nodeid} exceeded its {seconds}s limit (e2e_timeout); "
+            "the compose logs are printed after this failure"
+        )
+
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 @pytest.fixture(scope="session")
