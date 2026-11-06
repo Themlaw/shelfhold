@@ -4,10 +4,6 @@
 Kavita and Suwayomi are the simulated servers of backend/tests/fakes behind a socket
 (e2e/fakes); the library volume is real, so "readable in Kavita" means "indexed from the files
 Shelfhold wrote". Every step is a `shelfhold` command typed in the container: no SQL.
-
-Three tests are expected failures until the production wiring exists (the follow job is not
-registered at start-up, nothing runs the export after a chapter is stored, there is no `detach`
-command). `strict=True`: the day the wiring lands they pass, the marker must then be removed.
 """
 
 import subprocess
@@ -16,8 +12,6 @@ import time
 import pytest
 
 from journey import KAVITA_URL, PATH_MAP, SUWAYOMI_URL, Journey, wait_for
-
-NOT_WIRED = "production wiring of follow, export and detach is not in the image yet (L41)"
 
 SHELFHOLD_TOML = f"""\
 schema_version = 1
@@ -95,7 +89,6 @@ def test_m1a_headless_config_apply_declarative_idempotent(journey: Journey) -> N
 
 
 @pytest.mark.req("EF-INT-024", "EF-SRC-008", "EF-SRC-036")
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NOT_WIRED)
 def test_m1a_headless_install_to_first_chapter_in_kavita(journey: Journey) -> None:
     j = journey
     install_by_commands(j)
@@ -155,7 +148,6 @@ def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
 
 
 @pytest.mark.req("EF-EXP-056", "EF-INT-024")
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NOT_WIRED)
 def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> None:
     """After a first chapter, `detach --restore-upstream` gives the series back to Suwayomi's own
     updater and leaves every exported file where and what it was."""
@@ -167,8 +159,7 @@ def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> 
     )
     before = j.compose("exec", "-T", "shelfhold", "sh", "-c",
                        "cd /library && find . -type f -exec sha256sum {} +").stdout  # fmt: skip
-    assert j.shelfhold("source", "detach", "--help").code == 0, "commande detach absente"
-    detached = j.shelfhold("source", "detach", "--restore-upstream", "--yes")
+    detached = j.shelfhold("detach", "--restore-upstream")
     assert detached.code == 0, detached.err
     after = j.compose("exec", "-T", "shelfhold", "sh", "-c",
                       "cd /library && find . -type f -exec sha256sum {} +").stdout  # fmt: skip
