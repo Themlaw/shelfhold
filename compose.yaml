@@ -1,6 +1,7 @@
 # Shelfhold reference compose (= homelab example, docs/spec/04-structure-repo.md section 5).
 # The image is defined here and in env.IMAGE of the workflows, nowhere else.
-# Before 0.1.0 only the `edge` tag exists; pin X.Y once releases are published.
+# Pinned on X.Y (patch releases only, never a migration): `0.2` is published with the 0.2.0 release.
+# Use `edge` meanwhile (development image).
 #
 # Hardened by default (ENF-SEC-006). Shelfhold still starts if you run it differently
 # (root, writable filesystem), but this profile is the one that is tested.
@@ -8,7 +9,7 @@
 # Host directories must be writable by uid 1000:  mkdir -p data store && chown 1000:1000 data store && chmod 750 data store
 
 x-shelfhold: &shelfhold
-  image: ghcr.io/themlaw/shelfhold:edge
+  image: ghcr.io/themlaw/shelfhold:0.2
   user: "1000:1000"
   read_only: true
   cap_drop: [ALL]

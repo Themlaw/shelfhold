@@ -535,3 +535,58 @@ Solde la dette S1 pour ce qui est de la logique ; la mesure sur 24 h reste due (
 7. **Ports des lots en vol.** `RestoreExit` (L35, fusionné) est branché : `ops/restore.py` lit l'évaluation de `RestoreGuard` (lecture seule, racines montées) pour `status` ; l'adoption elle-même reste la CLI `reconcile --adopt-after-restore` (verrou d'instance et aperçu confirmé par empreinte), donc la route répond `ops.exit_unavailable` en le disant. `AdoptionExit` (L29, L30, L31) n'est pas branché en production ; la route répond `ops.exit_unavailable`. Les CLI `adopt --confirm-migration` et `adopt set-follow-from` vivent dans des modules de L31 : elles figurent dans `CLI_PENDING`, et un test échoue le jour où la commande existe sans que l'entrée soit retirée. `secrets import` (import age du trousseau) n'existe pas encore : `UNSERVED`.
 8. **Événements Kavita sur le bus.** `ops.events.BusTargetEvents` remplace les lignes de journal pour les clients construits ici ; les détails que le bus refuse (titres, chemins) sont écartés un à un, jamais l'événement.
 9. **Provenance de `missing resolve --unfollow`.** La colonne `follow_suppressed_by` est une clé étrangère vers `user` : elle porte le compte d'une session ou d'une clé, et reste vide pour la CLI locale (son uid est dans le journal de la socket).
+
+## L41 : documentation d'administration, clôture du jalon
+
+Ce lot ne change pas le comportement du code : il documente (sur le code de `main` après le volet A), change l'étiquette du compose d'exemple, et clôt la liste des ambiguïtés du plan.
+
+1. **Pages.** `docs/admin/` gagne un index (`README.md`) et les pages d'installation sans
+   interface, d'adoption, de migration depuis des scripts, de rapatriement, de retour arrière,
+   d'états d'attente et de sorties, de restauration (RPO 24 h, export de clé age, époque de
+   restauration), de purge, de garde disque, de redéploiement, de racines physiques, de montage
+   `adopt_ro`, d'exposition publique et de budget mémoire et disque. `durcir.md` gagne la visibilité
+   anonyme (A5, A6, A7) ; `velocite.md` reçoit le relevé de M1a.
+2. **Câblage (volet A de L41, fusionné avant cette documentation).** Branchés : `follow.cycle`, `export.run` (détecteur d'écrivain
+   étranger, plan vérifié par `plugin/parse`, garde de bascule, préflight), `reconcile.cycle` et
+   `reconcile.hash`, l'audit d'accès quotidien avec les clients connectés, `notify.dispatch` et les
+   canaux Apprise sur le bus de tous les éditeurs, les pierres tombales dans le suivi et le
+   passthrough ; `adopt pair|--pair-auto|set-follow-from|--confirm-migration|--repatriate`,
+   `detach --restore-upstream`, `purge --now`, `probe`, avec leurs méthodes de socket et leurs
+   routes. **Reste non branché** : `root takeover|reinit|restored` (aucun service, états hors M1a :
+   M1b) ; `adoption_refused` et `coverage_unknown` ne sont pas persistés dans l'état d'attente lu
+   par `status` ; la route HTTP `/plans` en application reste refusée (plan non vérifié) ;
+   l'exclusion de `.received` par Kavita est à confirmer par le test de nuit.
+3. **Étiquette d'image.** Le compose d'exemple épingle `0.2` (la règle `X.Y` de ENF-OPS-008), qui
+   n'existe qu'à la publication de 0.2.0 : tant qu'elle n'est pas faite, utilisez `edge`. Ce lot ne
+   crée aucun tag.
+4. **Test et mesure.** `test_ram_budget_documented_with_reference_profile` lit `docs/admin/budget-ram.md` et
+   exige le profil de référence, les trois services, les chiffres mesurés du spike S4 et les modes
+   de budget disque. Un chiffre de S4 qui change impose de mettre la page à jour. Les chiffres de
+   S4 sont ceux du squelette de M0 : la page donne aussi la mesure de l'image de la 0.2
+   (102,8 Mo au repos, 133,9 Mo après 8 000 requêtes), faite à la relecture, avec sa méthode.
+5. **`docs/reference/config.md` (généré)** : non produit dans ce lot ; la référence reste
+   `docs/configuration.md`, écrite à la main. À reprendre avec M1b.
+6. **Procédures sans commande** (`secrets import`, lister ou lever une pierre tombale, `root` et
+   `store` en M1b) : documentées comme telles, jamais présentées comme disponibles.
+
+### Ambiguïtés du plan (A1 à A15)
+
+Seules A1, A7, A10 et A11 étaient citées ailleurs dans ce fichier ; le tableau les réunit toutes.
+
+| Réf. | Décision |
+| --- | --- |
+| A1 | `source_binding` est conservé (`edition_id` obligatoire, `priority`, `active`, index unique partiel) ; `series_follow` a pour clé `edition_id`. |
+| A2 | 123 exigences comptées par l'outil (122 plus le volet EF-SRC-037) ; les deux tests de clé d'Édition portent `req("EF-EXP-053", "EF-SRC-037")`. |
+| A3 | `fresh_auth_s` vaut 900 s, réglable, sur la liste de l'arbitrage P3 ; classer et gérer les clés n'exigent pas de fraîcheur par défaut. |
+| A4 | Sessions de 30 jours glissants et « se souvenir de moi » coché pour tous ; les durées courtes relèvent du profil durci. |
+| A5 | L'obligation légale du lien de code source prime : `/healthz` et `/openapi.json` n'exposent plus la version aux anonymes, la page de connexion garde le lien (noté dans `durcir.md`). |
+| A6 | Plus de route OpenAPI publique ; `GET /api/v1/openapi.json` exige une session ou une clé ; pas de `/docs`. |
+| A7 | `/healthz` anonyme : l'état seul ; avec session ou clé : files en pause et version. |
+| A8 | Un seul périodique Huey à la minute scrute `schedule` par `last_run_at` ; test du tick sauté. |
+| A9 | La CLI locale parle JSON-RPC sur socket Unix (`asyncio`), pour disposer de `SO_PEERCRED`. |
+| A10 | Le code de l'adaptateur Suwayomi est dans `plugin_host/adapters/meta/suwayomi` ; `sources/meta_suwayomi` ne garde que le manifeste. |
+| A11 | Le banc de démarrage est `test_bench_readyz_under_15s`, nom de la spec en docstring ; lot coupable. |
+| A12 | EF-UX-002 : test de sonde d'écriture avec indice de compose ; la lecture par Kavita est une vérification manuelle. |
+| A13 | Les tests de la matrice qui relèvent d'un jalon ultérieur ne sont pas écrits en M1a. |
+| A14 | L'« installation de référence » de la DoD est l'E2E plus le nightly Kavita réel ; on fournit le compose `0.2` et les étapes de bascule, sans déployer. |
+| A15 | Pour les noms de tests aux variantes, on prend la forme longue de la spec ; la courte figure en docstring. |
