@@ -14,6 +14,7 @@ from shelfhold.integrations.apprise import (
     validate_channel_url,
 )
 from tests.fakes_fetcher import FakeResolver
+from tests.redaction_support import forget_secret_values
 
 PUBLIC = "93.184.216.34"
 RESOLVER = FakeResolver(
@@ -150,7 +151,7 @@ def test_url_secrets_are_registered_and_repr_hides_the_url() -> None:
     from shelfhold.infrastructure import logging as logs
     from shelfhold.integrations.apprise import ValidatedChannel
 
-    logs.forget_secret_values()
+    forget_secret_values()
     checked = asyncio.run(
         validate_channel_url(
             "ntfy://user:pa55word-secret@93.184.216.34/seg-secret-one/seg-secret-two"
@@ -163,4 +164,4 @@ def test_url_secrets_are_registered_and_repr_hides_the_url() -> None:
     assert isinstance(checked, ValidatedChannel)
     for secret in ("pa55word-secret", "seg-secret-one", "seg-secret-two", "qv-secret-value"):
         assert secret in logs._known_values
-    logs.forget_secret_values()
+    forget_secret_values()
