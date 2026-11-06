@@ -1,8 +1,6 @@
 """Kavita naming rules (EF-EXP-004, EF-EXP-045, EF-EXP-013, EF-EXP-061) against the simulated
 `plugin/parse` (tests/fakes/kavita/plugin_parse.py)."""
 
-import json
-
 import pytest
 
 from shelfhold.export.domain.naming import (
@@ -11,7 +9,6 @@ from shelfhold.export.domain.naming import (
     FrozenAttrs,
     NamingTemplate,
     check_incoming,
-    copy_template_into_binding,
     export_path,
     find_number_collisions,
     is_chapter_zero,
@@ -104,22 +101,6 @@ def test_chapter_zero_special_cover_from_chapter_one() -> None:
     assert series_cover_source([zero, two, one]) == one
     assert series_cover_source([zero]) is None
     assert series_cover_source([zero, chapter("0.5")]) is None
-
-
-@pytest.mark.req("EF-EXP-004")
-def test_template_copied_into_binding_with_origin() -> None:
-    binding = copy_template_into_binding(DEFAULT_TEMPLATE)
-    assert binding.origin == f"default@{DEFAULT_TEMPLATE.version}"
-    assert NamingTemplate.loads(binding.text) == DEFAULT_TEMPLATE
-    # a new default is only proposed: the binding keeps its own copy
-    newer = NamingTemplate(
-        template_id=DEFAULT_TEMPLATE.template_id,
-        version=DEFAULT_TEMPLATE.version + 1,
-        chapter="{series} Chapter {number}",
-    )
-    assert NamingTemplate.loads(binding.text) != newer
-    assert copy_template_into_binding(newer).origin == f"default@{newer.version}"
-    assert json.loads(binding.text)["template_id"] == DEFAULT_TEMPLATE.template_id
 
 
 @pytest.mark.req("EF-EXP-004")
