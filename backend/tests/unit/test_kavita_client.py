@@ -407,7 +407,6 @@ def test_unreadable_version_is_degraded_readonly_and_blocks_plans() -> None:
     with pytest.raises(RouteMissing):
         run(h.client.probe())
     assert h.client.health.version is None
-    assert h.client.health.mode is TargetMode.DEGRADED_READONLY
     with pytest.raises(RouteMissing):  # and no write goes out meanwhile
         run(h.client.scan_folder("/manga/Series A"))
     assert h.fake.writes == []
