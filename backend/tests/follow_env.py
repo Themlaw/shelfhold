@@ -17,10 +17,11 @@ import sqlalchemy as sa
 
 from shelfhold.acquisition.public import FollowCycle, FollowReport, bounded_receiver
 from shelfhold.events.bus import EventBus, PublishedEvent
+from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
 from shelfhold.infrastructure.fetcher.client import IntegrationFetcher
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition
+from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.library.public import PassthroughStore
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
@@ -62,6 +63,7 @@ class Bench:
     binding_id: str
     delivered: list[PublishedEvent] = field(default_factory=list)
     sleeps: list[float] = field(default_factory=list)
+    shelf_id: str = ""  # the adult shelf, when the bench was asked for one
 
     def run(self) -> FollowReport:
         return asyncio.run(self.cycle.run())
@@ -126,6 +128,36 @@ class Bench:
                 )
 
 
+def add_adult_shelf(lib: LibEnv, *, max_age_rating: int | None = None) -> str:
+    """A target, a shelf without ceiling (adult) and its destination: where a discovered series is
+    filed. Returns the shelf id."""
+    target_id, shelf_id, destination_id = new_ulid(), new_ulid(), new_ulid()
+    with lib.engine.begin() as connection:
+        connection.execute(
+            sa.insert(export.export_target).values(
+                id=target_id, kind="kavita", name="Kavita", path_map=[]
+            )
+        )
+        connection.execute(
+            sa.insert(export.shelf).values(
+                id=shelf_id, name="Adultes", phrase="Mes mangas", max_age_rating=max_age_rating
+            )
+        )
+        connection.execute(
+            sa.insert(export.shelf_destination).values(
+                id=destination_id,
+                shelf_id=shelf_id,
+                target_id=target_id,
+                transport="tree",
+                egress="foyer",
+                root_subpath="manga",
+                template=DEFAULT_TEMPLATE.dumps(),
+                template_origin=f"default@{DEFAULT_TEMPLATE.version}",
+            )
+        )
+    return shelf_id
+
+
 def _placement(lib: LibEnv) -> Any:
     def place(unit_id: str, variant_id: str, filename: str) -> str:
         return str(lib.manga / "Series Alpha" / filename)
@@ -142,28 +174,37 @@ def follow_bench(
     service: Any = None,
     max_attempts: int = 8,
     tombstones: Callable[[LibEnv], Any] | None = None,
+    seeded: bool = True,
+    adult_shelf: bool = False,
 ) -> Iterator[Bench]:
+    """`seeded=False`: a fresh installation, no Work and no binding (the cycle discovers them);
+    `adult_shelf`: an adult shelf with a destination exists."""
     server = server or FakeSuwayomi(auth_mode="none")
     with lib_env() as lib:
+        work_id = edition_id = binding_id = ""
+        shelf_id = add_adult_shelf(lib) if adult_shelf else ""
         with lib.engine.begin() as connection:
-            work_id = add_work(connection)
-            edition_id = add_edition(connection, work_id)
-            item_id, binding_id = new_ulid(), new_ulid()
-            connection.execute(
-                sa.insert(acquisition.source_item).values(
-                    id=item_id, plugin_id="suwayomi", source_key="suwayomi:7001",
-                    remote_id="/series-alpha",
+            if seeded:
+                work_id = add_work(connection)
+                edition_id = add_edition(connection, work_id)
+                item_id, binding_id = new_ulid(), new_ulid()
+                connection.execute(
+                    sa.insert(acquisition.source_item).values(
+                        id=item_id, plugin_id="suwayomi", source_key="suwayomi:7001",
+                        remote_id="/series-alpha",
+                    )
+                )  # fmt: skip
+                connection.execute(
+                    sa.insert(acquisition.source_binding).values(
+                        id=binding_id, work_id=work_id, edition_id=edition_id,
+                        source_item_id=item_id, priority=1, active=True,
+                    )
+                )  # fmt: skip
+                connection.execute(
+                    sa.insert(acquisition.series_follow).values(
+                        edition_id=edition_id, work_id=work_id
+                    )
                 )
-            )  # fmt: skip
-            connection.execute(
-                sa.insert(acquisition.source_binding).values(
-                    id=binding_id, work_id=work_id, edition_id=edition_id,
-                    source_item_id=item_id, priority=1, active=True,
-                )
-            )  # fmt: skip
-            connection.execute(
-                sa.insert(acquisition.series_follow).values(edition_id=edition_id, work_id=work_id)
-            )
         clock = ManualClock(START)
         dns = FakeResolver({"suwayomi.lan": [LAN_IP]})
         lan = asyncio.run(LanTargets.declare(["suwayomi.lan:4567"], dns))
@@ -206,5 +247,6 @@ def follow_bench(
             binding_id,
         )
         bench.sleeps = sleeps
+        bench.shelf_id = shelf_id
         bus.subscribe(bench.delivered.append)
         yield bench
