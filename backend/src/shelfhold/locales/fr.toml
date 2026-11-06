@@ -792,6 +792,11 @@ pair_remote_id_help = "Identifiant distant de la série Suwayomi choisie."
 pair_decline_help = "Dit que cette série adoptée n'a pas de jumelle dans Suwayomi : la série qui lui ressemble sera rangée à part au prochain cycle."
 pair_follow_from_help = "Chapitre à partir duquel suivre (par défaut, après le dernier chapitre adopté)."
 set_follow_from_help = "Donne à la main le chapitre à partir duquel suivre une série dont la couverture est inconnue."
+set_coverage_help = "Dit quels chapitres porte un tome adopté (les chapitres couverts ne sont pas redemandés par « backfill --gaps »)."
+coverage_volume_help = "Numéro du tome adopté."
+coverage_first_help = "Premier chapitre du tome."
+coverage_last_help = "Dernier chapitre du tome."
+coverage_set = "Tome {volume} : chapitres {first} à {last} couverts ({added} ajoutés)."
 
 [headless]
 refused = "Refusé ({code}) : {detail}"

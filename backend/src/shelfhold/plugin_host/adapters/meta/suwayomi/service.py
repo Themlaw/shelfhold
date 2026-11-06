@@ -104,6 +104,15 @@ def build_manifest() -> SourceManifest:
     )
 
 
+_VOLUME_PREFIX = re.compile(r"^\s*vol(?:ume)?\.?\s*(\d{1,4}(?:\.\d{1,2})?)\b", re.IGNORECASE)
+
+
+def _volume_label(name: object) -> str | None:
+    """`Vol.3 Ch.21` -> `Vol.3`: the prefix some sources put before the chapter name."""
+    found = _VOLUME_PREFIX.match(name) if isinstance(name, str) else None
+    return f"Vol.{found.group(1)}" if found else None
+
+
 class SuwayomiService:
     wake_target: str | None = None
 
@@ -455,6 +464,7 @@ class SuwayomiService:
             number=format(number_sort, "f") if number_sort is not None else None,
             number_sort=number_sort,
             title=chapter.get("name") or None,
+            volume_label=_volume_label(chapter.get("name")),
             team=chapter.get("scanlator") or None,
             published_at=_upload_date(chapter.get("uploadDate"), self._now()),
             memo={"fetch_handle": chapter["id"], "chapter_url": chapter["url"]},

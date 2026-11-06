@@ -27,6 +27,9 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.catalog.public import translation_type_for
+from shelfhold.export.application import waiting_marks
+from shelfhold.export.application.coverage import adopted_volumes, flag_unknown_coverage
 from shelfhold.export.application.migration_detect import SwitchoverGate
 from shelfhold.export.application.preflight import PermissionPreflight, ProbeResult
 from shelfhold.export.domain.naming import normalize_series_name
@@ -195,7 +198,9 @@ class Pairing:
         *,
         clock: Clock,
         tombstones: TombstoneGate,
+        translation_nature: str = "unknown",
     ) -> None:
+        self._nature = translation_nature  # what the connected service declares (EF-BIB-049)
         self._engine = engine
         self._preflight = preflight
         self._gate = gate
@@ -307,6 +312,8 @@ class Pairing:
         purged chapter right above them (EF-BIB-053). A volume of unknown range counts for none
         (EF-BIB-044). `None`: no chapter file, no automatic follow."""
         unit, edition = catalog.unit, catalog.edition
+        if any(not v.known for v in adopted_volumes(connection, item.edition_id)):
+            return None  # a volume whose chapters are not known may hide any of them (EF-BIB-044)
         rows = connection.execute(
             sa.select(unit.c.number_segment_ordinal, unit.c.number_segment, unit.c.number_norm)
             .where(
@@ -410,6 +417,8 @@ class Pairing:
             follow_segment=follow_segment, confirm_backfill=confirm_backfill,
         )  # fmt: skip
         if isinstance(plan, PairingResult):
+            with self._engine.begin() as connection:  # written down: `status` lists it
+                flag_unknown_coverage(connection, plan.export_series_id, plan.edition_id)
             return plan
         return self._bind_all([plan])[0]
 
@@ -431,6 +440,8 @@ class Pairing:
                     paired.add(plan.item.edition_id)
                     taken.add((plan.ref.source_key, plan.ref.remote_id))
                     binding_id = self._bind(connection, plan, now)
+                    self._retype(connection, plan.item.edition_id)
+                    waiting_marks.clear(connection, "coverage_unknown", [plan.item.series_id])
                     results.append(
                         PairingResult(
                             "paired", plan.item.series_id, plan.item.edition_id, binding_id,
@@ -438,6 +449,26 @@ class Pairing:
                         )
                     )  # fmt: skip
         return results
+
+    def _retype(self, connection: Connection, edition_id: str) -> None:
+        """The adopted Edition is filed under the `translation_type` that discovery would have
+        given the same series (EF-BIB-001, A1): one function, so the keys agree. An Edition of
+        that key already there keeps the adopted one as it is."""
+        wanted = translation_type_for(self._nature)
+        edition = catalog.edition
+        row = connection.execute(sa.select(edition).where(edition.c.id == edition_id)).one()
+        if row.translation_type == wanted:
+            return
+        key = {c: getattr(row, c) for c in EDITION_KEY_COLUMNS} | {"translation_type": wanted}
+        clash = connection.execute(
+            sa.select(edition.c.id).where(
+                edition.c.id != edition_id, *(getattr(edition.c, c) == v for c, v in key.items())
+            )
+        ).first()
+        if clash is None:
+            connection.execute(
+                sa.update(edition).where(edition.c.id == edition_id).values(translation_type=wanted)
+            )
 
     @staticmethod
     def _bind(connection: Connection, plan: _Plan, now: datetime) -> str:

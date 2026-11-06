@@ -94,6 +94,17 @@ def run_set_follow_from(args: argparse.Namespace, channel: OpsChannel) -> int:
 
 
 @ops_command
+def run_set_coverage(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call(
+        "ops.adopt_set_coverage", destination_id=args.sub_destination or args.destination,
+        series=args.series, volume=args.volume, first=args.first, last=args.last,
+    )  # fmt: skip
+    print(t("adopt.coverage_set", volume=args.volume, first=args.first, last=args.last,
+            added=done["added"]))  # fmt: skip
+    return 0
+
+
+@ops_command
 def run_confirm_migration(args: argparse.Namespace, channel: OpsChannel) -> int:
     if args.confirm is None:
         report = channel.call("ops.migration_report", destination_id=args.destination)

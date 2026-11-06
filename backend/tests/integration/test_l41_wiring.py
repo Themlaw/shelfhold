@@ -125,7 +125,7 @@ def test_the_library_commands_exist() -> None:
     adopt = commands["adopt"]
     flags = {o for a in adopt._actions for o in a.option_strings}
     assert {"--repatriate", "--pair-auto", "--confirm-migration"} <= flags
-    assert set(_sub(adopt)) == {"pair", "set-follow-from"}
+    assert set(_sub(adopt)) == {"pair", "set-follow-from", "set-coverage"}
 
 
 def test_the_library_routes_are_admin_only_and_documented(settings: Settings) -> None:

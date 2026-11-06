@@ -27,8 +27,19 @@ from typing import TYPE_CHECKING, Any, Final
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
-from shelfhold.catalog.public import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
+from shelfhold.catalog.public import (
+    LANG_NORMALIZER_ID,
+    LanguageError,
+    edition_key_lang,
+    translation_type_for,
+)
+from shelfhold.export.application.coverage import flag_unknown_coverage
 from shelfhold.export.application.export_items import add_coverage
+from shelfhold.export.application.migration_detect import (
+    SwitchoverDetector,
+    SwitchoverGate,
+    SwitchoverUnconfirmed,
+)
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.naming import (
     DEFAULT_TEMPLATE_REF,
@@ -45,7 +56,7 @@ from shelfhold.infrastructure.archives.safe_open import UnsafeArchiveError, safe
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, export, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.infrastructure.xml.safe_parse import UnsafeXmlError, safe_parse_xml
 from shelfhold.library.public import (
     FILE_HASH_BY,
@@ -572,16 +583,57 @@ class Adopter:
             for item in report.series:
                 added, existing = self._inscribe(connection, ctx, item, now)
                 done, skipped = done + added, skipped + existing
+            self._flag_waiting(connection, ctx)
         # Kavita is touched last, and only to keep our reserved folder out of its scans
         await client.ensure_exclude_patterns(
             int(report.library_ref), HIDDEN_DIR_PATTERNS, adopted=True, confirmed=True
         )
         await self._auditor.audit(client, ctx.target_id)
+        # a shelf that looks fed by Suwayomi is refused until the procedure is confirmed: written
+        # down now, so that `status` says it in any later process (EF-EXP-044, EF-INT-023)
+        gate = SwitchoverGate(
+            self._engine, SwitchoverDetector(self._engine, self._fsops), clock=self._clock
+        )
+        with contextlib.suppress(SwitchoverUnconfirmed):
+            gate.require_clear(destination_id)
         return AdoptionReport(
             report.destination_id, report.library_ref, report.series, report.renames,
             report.duplicates, report.pre_adoption_settings, adopted_files=done,
             already_adopted=skipped,
         )  # fmt: skip
+
+    @staticmethod
+    def _flag_waiting(connection: Connection, ctx: DestinationContext) -> None:
+        """`coverage_unknown` for each adopted series not paired yet whose chapters cannot be
+        told (only volumes, or a volume of unknown range): never followed by itself."""
+        series, link = export.export_series, export.edition_export_series
+        binding = acquisition.source_binding
+        paired = set(
+            connection.execute(
+                sa.select(binding.c.edition_id).where(
+                    binding.c.active, binding.c.linked_from_adoption
+                )
+            ).scalars()
+        )
+        rows = connection.execute(
+            sa.select(series.c.id, link.c.edition_id)
+            .select_from(
+                series.join(
+                    link,
+                    sa.and_(
+                        link.c.export_series_id == series.c.id,
+                        link.c.remote_library_id == series.c.remote_library_id,
+                    ),
+                )
+            )
+            .where(
+                series.c.shelf_destination_id == ctx.destination_id,
+                series.c.frozen_at.isnot(None),
+            )
+        ).all()
+        for row in rows:
+            if row.edition_id not in paired:
+                flag_unknown_coverage(connection, row.id, row.edition_id)
 
     @staticmethod
     def _mark_adopted(
@@ -647,8 +699,8 @@ class Adopter:
         connection.execute(
             sa.insert(catalog.edition).values(
                 id=edition_id, work_id=work_id, lang=lang, lang_raw=item.frozen_language,
-                lang_norm_by=lang_norm_by, translation_type="official", media="images",
-                shelf_id=ctx.shelf_id,
+                lang_norm_by=lang_norm_by, translation_type=translation_type_for("unknown"),
+                media="images", shelf_id=ctx.shelf_id,
             )
         )  # fmt: skip
         return edition_id
@@ -668,7 +720,8 @@ class Adopter:
         values = {
             "kavita_series_id": str(item.kavita_series_id), "frozen_series": item.frozen_series,
             "frozen_localized_series": item.frozen_localized,
-            "frozen_series_sort": item.frozen_sort, "frozen_language": item.frozen_language,
+            "frozen_series_sort": item.frozen_sort,
+            "frozen_language": canonical_language(item.frozen_language),
             "has_volume": item.has_volume, "series_dir": item.series_dir, "frozen_at": now,
         }  # fmt: skip
         if existing is not None:  # an exported series already: its name stays as it is
@@ -858,6 +911,17 @@ def _fingerprint(library_ref: str, series: Sequence[AdoptedSeries]) -> str:
         ],
     ]
     return hashlib.sha256(json.dumps(document, ensure_ascii=True).encode()).hexdigest()[:32]
+
+
+def canonical_language(raw: str | None) -> str | None:
+    """Kavita writes `FR_fr`; the column holds the canonical tag (`fr-FR`, I23) or nothing when
+    the text is no language at all (the raw text stays in the Edition's `lang_raw`)."""
+    if not raw:
+        return None
+    try:
+        return str(edition_key_lang(raw))
+    except LanguageError:
+        return None
 
 
 def dto_type(library: Mapping[str, Any]) -> LibraryType:

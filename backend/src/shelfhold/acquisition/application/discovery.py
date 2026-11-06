@@ -32,7 +32,7 @@ from shelfhold.catalog.public import (
     numbered_mark,
     translation_type_for,
 )
-from shelfhold.export.public import pending_pairing
+from shelfhold.export.public import forget_coverage_unknown, pending_pairing
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import Destination, sanitize_upstream_text
 from shelfhold.infrastructure.ids import new_ulid
@@ -111,6 +111,7 @@ def decline_pairing(engine: sa.Engine, clock: Clock, export_series_id: str) -> N
             )
             .on_conflict_do_nothing()
         )
+        forget_coverage_unknown(connection, export_series_id)
 
 
 @dataclass

@@ -51,6 +51,8 @@ _ORIGINAL_PLACES = ("library", "destination")
 # Where a file is readable by Shelfhold itself: its library, its store, an adopted read-only
 # root. A destination copy or the upstream is not "a file we hold" (I20, EF-BIB-044).
 _READABLE_PLACES = ("library", "store", "adopted_ro")
+# The record of a destination says the file is there (same list as `present_in`).
+_RECORD_PRESENT = ("written", "scanned", "resolved", "adopted")
 
 
 def reference_content_hash(connection: Connection, unit_id: str) -> str | None:
@@ -317,10 +319,23 @@ def manifest_file_hashes(connection: Connection, unit_id: str) -> list[dict[str,
 
 
 def _readable_rows() -> sa.Select[tuple[str]]:
-    """Units with a readable copy of their own, or covered by an item that has one."""
-    coverage = export.unit_coverage
+    """Units with a readable copy of their own, or covered by an item that has one. A file the
+    admin already had in Kavita and Shelfhold adopted is a carrier that is there (I20): it is
+    referenced where it is, as a copy of the destination, and counts as long as it is not gone."""
+    coverage, item = export.unit_coverage, export.export_item
     own = sa.select(replica_table.c.unit_id.label("unit_id")).where(
         replica_table.c.location.in_(_READABLE_PLACES), replica_table.c.unit_id.is_not(None)
+    )
+    record = export.export_record
+    adopted_item = (
+        sa.select(item.c.id)
+        .select_from(item.join(record, record.c.export_item_id == item.c.id))
+        .where(
+            item.c.id == replica_table.c.export_item_id,
+            item.c.kind == "adopted",
+            record.c.state.in_(_RECORD_PRESENT),  # a record gone `missing` is no presence
+        )
+        .exists()
     )
     via_item = (
         sa.select(coverage.c.unit_id.label("unit_id"))
@@ -333,7 +348,12 @@ def _readable_rows() -> sa.Select[tuple[str]]:
                 ),
             )
         )
-        .where(replica_table.c.location.in_(_READABLE_PLACES))
+        .where(
+            sa.or_(
+                replica_table.c.location.in_(_READABLE_PLACES),
+                sa.and_(replica_table.c.location == "destination", adopted_item),
+            )
+        )
     )
     both = own.union(via_item).subquery()
     return sa.select(both.c.unit_id).where(both.c.unit_id.is_not(None))

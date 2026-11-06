@@ -166,6 +166,14 @@ def _set_follow_from(ops: OpsServices, _by: Principal, p: Params) -> object:
     return {"ok": True}
 
 
+def _set_coverage(ops: OpsServices, _by: Principal, p: Params) -> object:
+    added = ops.adopt_set_coverage(
+        destination_id=_dest(p), series=_text(p, "series"), volume=_text(p, "volume"),
+        first=_text(p, "first"), last=_text(p, "last"),
+    )  # fmt: skip
+    return {"ok": True, "added": added}
+
+
 def _confirm_migration(ops: OpsServices, _by: Principal, p: Params) -> object:
     ops.adopt_confirm_migration(destination_id=_dest(p), fingerprint=_text(p, "fingerprint"))
     return {"ok": True}
@@ -304,6 +312,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.tombstone_set_aside_journal": (_set_aside_journal, "tombstone.set_aside_journal"),
     "ops.tombstone_flush": (_tombstone_flush, None),
     "ops.adopt_set_follow_from": (_set_follow_from, None),
+    "ops.adopt_set_coverage": (_set_coverage, None),
     "ops.adopt_confirm_migration": (_confirm_migration, None),
     "ops.pair_propose": (_pair_propose, None),
     "ops.pair_confirm": (_pair_confirm, None),
