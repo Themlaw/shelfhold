@@ -19,3 +19,11 @@ Même règle : instance arrêtée, puis `shelfhold secrets export --passphrase-f
 ## Pourquoi arrêter l'instance
 
 Un seul processus à la fois peut écrire sur les volumes (ENF-OPS-015). Le verrou `/data/.lock` est le même pour l'instance, les migrations et le trousseau . Les commandes qui passent par la socket locale (`config`, `target`, `source`, `shelf`, `admin`, `adopt`, `purge`…) n'ont pas besoin de cet arrêt ; celles qui touchent au trousseau, aux migrations ou à la restauration (`secrets export|rotate`, `migrate`, `reconcile`) l'exigent.
+
+## Ce que `shelfhold status` en dit
+
+`shelfhold status` reprend les avertissements du trousseau (les mêmes que `shelfhold secrets status`),
+et d'abord celui-ci : **la clé maîtresse vit dans `/data`**. Une copie de `/data` par l'outil de
+l'hôte contient alors la clé à côté des secrets qu'elle protège. Placez le trousseau hors de `/data`
+avec `SHELFHOLD_SECRET_KEY_FILE` (secret Docker ou volume distinct). L'avertissement ne montre jamais
+la clé.

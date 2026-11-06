@@ -18,6 +18,7 @@ from sqlalchemy import Engine
 from shelfhold.composition import Composition, Gates, open_fsops
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
+from shelfhold.export.application import root_capabilities
 from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
@@ -268,7 +269,34 @@ class InstanceRuntime:
             if report.event is not None:
                 with engine.begin() as conn:
                     bus.publish(conn, report.event, {"reason": "forbidden"})
+        self._probe_capabilities(fsops, sessions, loaded, engine, ready)
         return ready
+
+    def _probe_capabilities(
+        self,
+        fsops: Fsops,
+        sessions: WriteSessions,
+        loaded: LoadedRoots,
+        engine: Engine,
+        ready: list[str],
+    ) -> None:
+        """Reflink, link to `/store` and inode stability of each writable root (EF-EXP-059),
+        probed once at start, removed at once, and written down for `shelfhold status`. A root
+        that cannot be probed is simply not listed: the start goes on."""
+        store = str(self.settings.store_dir)
+        for root in loaded.roots:
+            if root.mode is not PathMode.RW or root.path not in ready:
+                continue
+            leased = [root.path, *([store] if store in ready and store != root.path else [])]
+            try:
+                with sessions.open(*leased):
+                    found = fsops.probe_capabilities(root.path, store_path=store)
+                with engine.begin() as conn:
+                    root_capabilities.save(conn, root.root_id, found)
+            except (OSError, sa.exc.SQLAlchemyError) as error:
+                structlog.get_logger().warning(
+                    "startup.capabilities_skipped", folder=root.path, error=str(error)
+                )
 
     @staticmethod
     def _probe_root(fsops: Fsops, sessions: WriteSessions, path: str) -> ProbeReport:

@@ -15,6 +15,8 @@ import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import BinaryIO, Literal, Self
 
 from shelfhold.export.domain.path_map import (
@@ -37,6 +39,7 @@ from shelfhold.export.domain.physical_roots import (
     judge_sentinel,
 )
 from shelfhold.export.domain.provenance_mirror import is_mirror_rel
+from shelfhold.infrastructure.fsops.capabilities import RootCapabilities, probe_root
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
 from shelfhold.infrastructure.fsops.emitters import (
     TRASH_RETENTION_S,
@@ -81,6 +84,7 @@ from shelfhold.infrastructure.fsops.writer import (
     ensure_host_dirs,
     write_atomic,
 )
+from shelfhold.infrastructure.observability.network_fs import filesystem_kind
 
 __all__ = ["BootReport", "Fsops", "RootStatus"]
 
@@ -656,6 +660,36 @@ class Fsops:
                 root, located.rel, data, parents=parents, replace=replace, mtime_ns=mtime_ns,
                 verify_digest=verify_digest,
             )  # fmt: skip
+
+    def probe_capabilities(
+        self, root_path: str, *, store_path: str | None = None
+    ) -> RootCapabilities:
+        """What the root can do (reflink, hard link to `/store`, stable inodes), probed under the
+        lease and removed before returning (EF-EXP-059). `/store` takes part only when it is a
+        mounted, writable physical root of this instance; otherwise the link is "not applicable"
+        and the reason says why (M1a has no `/store`)."""
+        located = self._host_root(root_path)
+        store, reason = None, "no /store in this instance"
+        if store_path is not None and Path(store_path).is_dir():
+            try:
+                store = self._host_root(store_path)
+            except OutsidePathMapError:
+                reason = "/store is not a physical root of this instance"
+        if store is not None and store.root_path == located.root_path:
+            store, reason = None, "this root is /store"
+        stamp = datetime.fromtimestamp(self._now(), UTC).isoformat()
+        kind = filesystem_kind(Path(located.root_path))
+        with self._gated(located) as root:
+            if store is None:
+                return probe_root(root, store=None, filesystem=kind, now=stamp, store_reason=reason)
+            try:
+                with self._gated(store) as other:
+                    return probe_root(root, store=other, filesystem=kind, now=stamp)
+            except (RootBlockedError, ReadOnlyRootError, LeaseRaceError):
+                return probe_root(
+                    root, store=None, filesystem=kind, now=stamp,
+                    store_reason="/store is not writable now",
+                )  # fmt: skip
 
     def mkdir(self, local: str, *, parents: bool = True, exist_ok: bool = True) -> None:
         located = self._locate(local)

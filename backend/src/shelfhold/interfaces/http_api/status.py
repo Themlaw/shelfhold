@@ -43,7 +43,7 @@ def build_status_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
 
     @router.get("/status", response_model=StatusOut)
     def status(_admin: Annotated[Principal, Depends(require_admin)]) -> StatusOut:
-        report = get_ops().status()
+        report = get_ops().status(full=False)
         return StatusOut(
             waiting=[WaitingOut(**vars(item)) for item in report.waiting],
             queues=[QueueOut(**vars(queue)) for queue in report.queues],

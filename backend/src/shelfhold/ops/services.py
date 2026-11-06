@@ -11,7 +11,7 @@ classification is theirs (the route or the socket decides before calling).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import sqlalchemy as sa
@@ -20,6 +20,7 @@ from sqlalchemy import Engine
 from shelfhold.acquisition.application.unit_follow import suppress_follow
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.events.bus import EventBus
+from shelfhold.export.application import root_capabilities
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.application.target_state import load_health
@@ -47,7 +48,15 @@ from shelfhold.ops.ports import (
     TargetOps,
     WaitingItem,
 )
-from shelfhold.ops.status import UNKNOWN_LANGUAGE, collect, dress, queues_of
+from shelfhold.ops.status import (
+    UNKNOWN_LANGUAGE,
+    collect,
+    dress,
+    known_bad_report,
+    queues_of,
+    stale_report,
+    tombstoned_report,
+)
 
 __all__ = ["JobRow", "OpsServices", "RecheckOutcome", "StatusReport", "user_of"]
 
@@ -66,11 +75,19 @@ def user_of(principal: Principal) -> str | None:
 class StatusReport:
     waiting: list[WaitingItem]
     queues: list[PausedQueue]
+    stale_series: list[dict[str, object]] = field(default_factory=list)
+    tombstoned_upstream: list[dict[str, object]] = field(default_factory=list)
+    capabilities: list[dict[str, object]] = field(default_factory=list)
+    known_bad: dict[str, object] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         return {
             "waiting": [vars(i) | {} for i in self.waiting],
             "queues": [vars(q) | {} for q in self.queues],
+            "stale_series": self.stale_series,
+            "tombstoned_upstream": self.tombstoned_upstream,
+            "capabilities": self.capabilities,
+            "known_bad": self.known_bad,
         }
 
 
@@ -135,19 +152,29 @@ class OpsServices:
 
     # -- reading -------------------------------------------------------------------------------
 
-    def status(self) -> StatusReport:
+    def status(self, *, full: bool = True) -> StatusReport:
+        """What waits and which queues are paused; with `full`, also the sections of `shelfhold
+        status` that are not waits (they cost a few reads per followed series)."""
         with self._engine.connect() as connection:
             items = collect(connection)
             for port in (self._restore, self._keyring, self._adoption):
                 if port is not None:
                     items += [dress(item) for item in port.waiting()]
-            return StatusReport(items, queues_of(connection, items))
+            if not full:
+                return StatusReport(items, queues_of(connection, items))
+            now = self._clock.now()
+            return StatusReport(
+                items, queues_of(connection, items), stale_report(connection, now),
+                tombstoned_report(connection),
+                [c.as_dict() for c in root_capabilities.read_all(connection)],
+                known_bad_report(connection, now.date()),
+            )  # fmt: skip
 
     def paused_queues(self) -> list[PausedQueue]:
-        return self.status().queues
+        return self.status(full=False).queues
 
     def missing_list(self) -> list[WaitingItem]:
-        return [i for i in self.status().waiting if i.state == "missing"]
+        return [i for i in self.status(full=False).waiting if i.state == "missing"]
 
     def jobs_list(self, *, status: str | None = None) -> list[JobRow]:
         job = platform.job_view

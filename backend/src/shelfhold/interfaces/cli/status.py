@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from typing import Any
 
 import sqlalchemy as sa
 
@@ -22,8 +23,11 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.observability.network_fs import REFUSED_KINDS, filesystem_kind
 from shelfhold.infrastructure.schema import platform
+from shelfhold.infrastructure.secrets.diagnostics import collect_warnings
+from shelfhold.infrastructure.secrets.errors import KeyringError
 from shelfhold.infrastructure.volumes import data_dir_writable_by_others
 from shelfhold.integrations.apprise import operating_bus
+from shelfhold.interfaces.cli.secrets import warning_text
 from shelfhold.ops.wiring import open_ops
 
 
@@ -102,12 +106,28 @@ def _environment_warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
     return found
 
 
+def _keyring_warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
+    """ENF-SEC-005: what the keyring says to the admin, first of all a master key that lives in
+    `/data` (the host's copy of `/data` then holds the key next to the secrets). A keyring that is
+    not there yet is created by the first start: not a warning here. The key is never read out."""
+    try:
+        found = collect_warnings(resolved.values)
+    except (KeyringError, OSError):
+        return [{"code": "keyring_unreadable", "message": t("status.keyring_unreadable")}]
+    return [
+        {"code": f"keyring.{w.code}", "message": warning_text(w)}
+        for w in found
+        if w.code != "keyring_absent"
+    ]
+
+
 def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
     settings = resolved.values
     database = settings.database_path
     if not database.exists() or current_revision(database) != head_revision():
         return [
             *_environment_warnings(resolved),
+            *_keyring_warnings(resolved),
             {"code": "database_not_migrated", "message": t("status.database_not_migrated")},
         ]
     engine = create_db_engine(database)
@@ -124,6 +144,7 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
     mismatched = mismatch_warnings(restore) if restore is not None else []
     return (
         _environment_warnings(resolved)
+        + _keyring_warnings(resolved)
         + pending
         + ([behind] if behind else [])
         + mismatched
@@ -142,7 +163,10 @@ def _waiting(resolved: ResolvedSettings) -> dict[str, object]:
     from the database: no lock, no keyring is created."""
     database = resolved.values.database_path
     if not database.exists() or current_revision(database) != head_revision():
-        return {"waiting": [], "queues": []}
+        return {
+            "waiting": [], "queues": [], "stale_series": [], "tombstoned_upstream": [],
+            "capabilities": [], "known_bad": {},
+        }  # fmt: skip
     engine = create_db_engine(database)
     try:
         return open_ops(resolved.values, engine=engine, mount=False).status().as_dict()
@@ -162,4 +186,51 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         print(t("status.warning_line", message=warning["message"]))
     for item in ops["waiting"]:  # type: ignore[attr-defined]
         print(t("status.waiting_line", **item))
+    for line in report_lines(ops):
+        print(line)
     return 0
+
+
+def _yes_no(value: object) -> str:
+    return t("status.unknown") if value is None else t("status.yes" if value else "status.no")
+
+
+def report_lines(ops: dict[str, object]) -> list[str]:
+    """The sections of `status` that are not a wait: silent series, series buried upstream, what
+    each root can do, and the age of the `known_bad_versions` list."""
+    lines: list[str] = []
+    for s in ops.get("stale_series", []):  # type: ignore[attr-defined]
+        lines.append(t("status.stale_series_line", **s))
+    for s in ops.get("tombstoned_upstream", []):  # type: ignore[attr-defined]
+        lines.append(t("status.tombstoned_upstream_line", **s))
+    for c in ops.get("capabilities", []):  # type: ignore[attr-defined]
+        link = t(f"status.link_{c['hardlink_store']}", reason=c["store_reason"])
+        lines.append(
+            t(
+                "status.capabilities_line", root=c["root"], filesystem=c["filesystem"] or "?",
+                reflink=_yes_no(c["reflink"]), link=link, inodes=_yes_no(c["inodes_stable"]),
+                fallback=t("status.copy_fallback") if c["copy_fallback"] else "",
+            )
+        )  # fmt: skip
+    known: dict[str, Any] = ops.get("known_bad") or {}  # type: ignore[assignment]
+    if known:
+        key = "status.known_bad_outdated" if known["outdated"] else "status.known_bad_line"
+        lines.append(
+            t(
+                key,
+                listed_on=known["listed_on"],
+                age=known["age_days"],
+                minimum=known["minimum_version"],
+            )
+        )
+        lines.extend(
+            t(
+                "status.known_bad_target",
+                name=target["name"],
+                version=target["version"] or "?",
+                advisories=", ".join(target["advisories"]),
+            )
+            for target in known["targets"]
+            if target["advisories"]
+        )
+    return lines

@@ -23,6 +23,7 @@ from shelfhold.headless import wiring as headless_wiring
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
+from shelfhold.ops.adoption import LibraryAdoptionExit
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.intents import IntentOps
@@ -89,10 +90,15 @@ def open_ops(
         auditor=AccessAuditor(engine, clock, events),
     )  # fmt: skip
     fsops = _fsops(engine, settings.umask) if mount else None
+    # the restore guard only reads the sentinels against the database: `status` lists
+    # `restored_behind` without mounting the library for writing
+    guard_fsops = fsops if fsops is not None else _fsops(engine, settings.umask)
+    library = LibraryOps(composition)
     return OpsServices(
         engine, clock=clock, bus=bus, fsops=fsops, targets=targets,
         headless=_LazyHeadless(settings), keyring=TombstoneKeyringExit(settings, engine, clock),
-        restore=RestoreGuardExit(engine, fsops, clock, bus) if fsops is not None else None,
-        library=LibraryOps(composition), intents=IntentOps(composition),
-        backfill=BackfillOps(composition), normalize=NormalizeOps(composition),
+        restore=RestoreGuardExit(engine, guard_fsops, clock, bus) if guard_fsops else None,
+        library=library, adoption=LibraryAdoptionExit(engine, library),
+        intents=IntentOps(composition), backfill=BackfillOps(composition),
+        normalize=NormalizeOps(composition),
     )  # fmt: skip

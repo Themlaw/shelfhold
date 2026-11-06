@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, timedelta
 from enum import StrEnum
 from typing import Final
 
@@ -77,6 +78,17 @@ KNOWN_BAD_VERSIONS: tuple[KnownBad, ...] = (
         "kavita-access-control-2026-09-05", "access_control", below=KavitaVersion((0, 9, 0, 3))
     ),
 )
+
+
+# The day this list was last written. It ships with the release, so it ages: `shelfhold status`
+# shows its age and says so when it is old (ENF-COMP-001); update it with every release.
+KNOWN_BAD_LISTED_ON: Final = date(2026, 11, 6)
+KNOWN_BAD_OUTDATED_AFTER: Final = timedelta(days=120)
+
+
+def known_bad_age(today: date) -> timedelta:
+    """How old the list shipped with this release is (never negative: a clock set back)."""
+    return max(today - KNOWN_BAD_LISTED_ON, timedelta(0))
 
 
 @dataclass(frozen=True)

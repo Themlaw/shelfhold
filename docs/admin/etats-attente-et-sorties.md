@@ -8,8 +8,23 @@ même par la ligne de commande, par la socket locale et par l'API.
 
 - `shelfhold status` (ou `--json`) : chaque attente avec sa raison, l'élément concerné, la commande
   à lancer, et les files en pause. Lecture seule, sans verrou ; fonctionne serveur arrêté.
-  `adoption_refused` et `coverage_unknown` n'y figurent pas encore : ils sont portés par
-  l'événement et la notification, et leur commande de sortie est dans le tableau ci-dessous.
+  `adoption_refused` et `coverage_unknown` y figurent (ils sont inscrits en base par l'adoption et
+  l'appariement, donc visibles depuis n'importe quel processus), avec leur commande de sortie.
+  Sous les attentes, `status` affiche aussi, sans que ce soient des attentes :
+  - les **séries silencieuses** (`series.stale`) : aucun chapitre découvert depuis trois fois la
+    cadence observée de la série, ou depuis 14 jours quand elle n'a pas de cadence mesurable ; une
+    série terminée, annulée ou mise en pause par vous n'est jamais comptée ;
+  - les **séries purgées encore présentes dans Suwayomi** (`series.tombstoned_upstream`) : Shelfhold
+    les ignore, mais en M1a il ne les retire pas de Suwayomi ; faites-le à la main, sinon elles
+    resteront listées ;
+  - par racine physique, ce que le disque permet (`reflink`, lien dur vers `/store`, inodes
+    stables), sondé au démarrage du serveur et sans rien laisser sur la racine
+    ([topologie-racines-physiques.md](topologie-racines-physiques.md)) ;
+  - l'âge de la liste `known_bad_versions` (versions de Kavita connues pour une faille) livrée avec
+    la version de Shelfhold, la version minimale de Kavita prise en charge, et les cibles dont la
+    version figure dans la liste ;
+  - les avertissements du trousseau, dont une clé maîtresse qui vit dans `/data`
+    ([secrets.md](secrets.md)).
 - `GET /api/v1/status` : même contenu, administrateur seulement.
 - `GET /healthz` : état général ; authentifié, il ajoute la liste des files en pause et leur
   raison. Anonyme, il ne montre que l'état (`ok` ou `migrating`).

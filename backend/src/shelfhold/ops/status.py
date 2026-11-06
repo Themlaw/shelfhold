@@ -8,16 +8,32 @@ cannot name different commands.
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
-from shelfhold.export.application import waiting_marks
+from shelfhold.acquisition.public import stale_series
 from shelfhold.export.application.target_health import TargetHealth
+from shelfhold.export.domain.kavita_compat import (
+    KNOWN_BAD_LISTED_ON,
+    KNOWN_BAD_OUTDATED_AFTER,
+    KNOWN_BAD_VERSIONS,
+    MINIMUM_VERSION,
+    known_bad_age,
+)
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 
-__all__ = ["collect", "command_for", "queues_of"]
+__all__ = [
+    "collect",
+    "command_for",
+    "known_bad_report",
+    "queues_of",
+    "stale_report",
+    "tombstoned_report",
+]
 
 UNKNOWN_LANGUAGE = "x-unknown"  # what an adopted Edition without a language carries
 FOREIGN_WRITER = "foreign_writer"  # `export_series.paused_reason`
@@ -86,7 +102,6 @@ def collect(connection: Connection) -> list[WaitingItem]:
     found += _follow(connection)
     found += _languages(connection)
     found += _discovery(connection)
-    found += _adoption(connection)
     return found
 
 
@@ -219,14 +234,6 @@ def _discovery(connection: Connection) -> list[WaitingItem]:
     return items
 
 
-def _adoption(connection: Connection) -> list[WaitingItem]:
-    """What adoption and pairing left waiting, as they wrote it down (`waiting_marks`)."""
-    return [
-        _item(mark.state, "export", mark.subject, mark.reason)
-        for mark in waiting_marks.read_all(connection)
-    ]
-
-
 def _languages(connection: Connection) -> list[WaitingItem]:
     edition = catalog.edition
     rows = connection.execute(
@@ -249,3 +256,57 @@ def queues_of(connection: Connection, items: list[WaitingItem]) -> list[PausedQu
     ):
         queues.setdefault(row.kind, PausedQueue(row.kind, row.error_code or "paused"))
     return sorted(queues.values(), key=lambda q: q.queue)
+
+
+def stale_report(connection: Connection, now: datetime) -> list[dict[str, object]]:
+    """The series that went silent (EF-SRC-026 c, `series.stale` as it stands now): k = 3 times the
+    observed cadence, 14 days for a series without one (the M1a defaults)."""
+    return [
+        {
+            "edition_id": s.edition_id,
+            "title": s.title,
+            "last_discovery": s.last_discovery.isoformat(),
+            "silent_days": max((now - s.last_discovery).days, 0),
+            "threshold_days": s.threshold.days,
+        }
+        for s in stale_series(connection, now)
+    ]
+
+
+def tombstoned_report(connection: Connection) -> list[dict[str, object]]:
+    """The series of the Suwayomi library that a purge buried and the follow cycle leaves alone
+    (EF-BIB-053 (2)): the admin removes them from Suwayomi by hand (M1a)."""
+    notice = acquisition.follow_notice
+    rows = connection.execute(
+        sa.select(notice.c.subject, notice.c.told_at)
+        .where(notice.c.kind == "tombstoned")
+        .order_by(notice.c.told_at, notice.c.key_hash)
+    )
+    return [{"title": r.subject, "since": r.told_at.isoformat()} for r in rows]
+
+
+def known_bad_report(connection: Connection, today: date) -> dict[str, object]:
+    """The `known_bad_versions` list shipped with the release, its age, and the Kavita versions
+    of the targets it applies to (ENF-COMP-001)."""
+    age = known_bad_age(today)
+    targets: list[dict[str, object]] = []
+    for row in connection.execute(
+        sa.select(export.export_target.c.id, export.export_target.c.name,
+                  export.export_target.c.health).order_by(export.export_target.c.id)
+    ):  # fmt: skip
+        health = TargetHealth.from_json(row.health) if row.health else TargetHealth()
+        targets.append(
+            {"target": row.id, "name": row.name, "version": health.version,
+             "advisories": list(health.warnings)}
+        )  # fmt: skip
+    return {
+        "listed_on": KNOWN_BAD_LISTED_ON.isoformat(),
+        "age_days": age.days,
+        "outdated": age > KNOWN_BAD_OUTDATED_AFTER,
+        "minimum_version": str(MINIMUM_VERSION),
+        "entries": [
+            {"advisory": k.advisory, "category": k.category, "below": str(k.below)}
+            for k in KNOWN_BAD_VERSIONS
+        ],
+        "targets": targets,
+    }

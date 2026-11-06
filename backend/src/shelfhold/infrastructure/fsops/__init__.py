@@ -5,6 +5,7 @@ below it. No other module opens a path for writing there (EF-EXP-060, ENF-SEC-01
 """
 
 from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.infrastructure.fsops.capabilities import Link, RootCapabilities
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Strategy
 from shelfhold.infrastructure.fsops.emitters import EMITTER_PERIMETERS, new_probe_name
 from shelfhold.infrastructure.fsops.errors import (
@@ -40,12 +41,14 @@ __all__ = [
     "Fsops",
     "FsopsError",
     "LeaseRaceError",
+    "Link",
     "NotRegularFileError",
     "OutsidePathMapError",
     "PathEscapeError",
     "ReadOnlyRootError",
     "ReservedPathError",
     "RootBlockedError",
+    "RootCapabilities",
     "RootState",
     "RootStatus",
     "SentinelFormatError",
