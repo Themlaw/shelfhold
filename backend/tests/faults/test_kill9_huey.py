@@ -18,6 +18,7 @@ import pytest
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.migrate import migrate
+from shelfhold.jobs.huey_app import POOL_WORKERS
 
 TASKS = 1000
 KILL_AFTER = 40  # rows written by the handler when the parent pulls the trigger
@@ -116,6 +117,11 @@ def test_1000_tasks_sigkill_worker_no_database_locked_resumes(
     assert KILL_AFTER <= done_at_kill < TASKS  # killed in the middle, not after the end
     assert count(database, "SELECT count(*) FROM job_view WHERE status != 'succeeded'") > 0
 
+    finished_before = {
+        row[0] for row in sqlite3.connect(database).execute(
+            "SELECT dedupe_key FROM job_view WHERE status = 'succeeded'"
+        )
+    }  # fmt: skip
     second = spawn(settings, "resume", tmp_path)  # the restart
     try:
         out, err_second = second.communicate(timeout=120)
@@ -136,5 +142,12 @@ def test_1000_tasks_sigkill_worker_no_database_locked_resumes(
         count(database, "SELECT count(*) FROM job_view WHERE status IN ('queued','running')") == 0
     )
     assert count(database, "SELECT count(*) FROM ran") == TASKS  # none lost
+    with sqlite3.connect(database) as connection:
+        times = dict(connection.execute("SELECT key, times FROM ran").fetchall())
+    # a task that had finished is never run again; only those a worker held when it was killed
+    # (at most one per worker thread of the pool) may have run twice
+    assert all(times[key] == 1 for key in finished_before)
+    twice = [key for key, n in times.items() if n != 1]
+    assert len(twice) <= POOL_WORKERS["io"], twice
     assert count(database, "SELECT count(*) FROM resource_lock") == 0  # the locks are free
     assert count(database, "SELECT coalesce(sum(in_use), 0) FROM domain_slot") == 0

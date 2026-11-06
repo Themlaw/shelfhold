@@ -120,8 +120,10 @@ class JobPools:
         seed: str,
         window: MaintenanceWindow = DEFAULT_WINDOW,
         bus: EventBus | None = None,
+        retry_backoff_s: tuple[float, ...] = RETRY_BACKOFF_S,
     ) -> None:
         self.clock = clock
+        self._backoff = retry_backoff_s  # the waits before the 2nd, 3rd... attempt (short in tests)
         self._bus = bus  # the operating bus: a dead letter is an event that notifies
         self.window = window
         self.ledger = JobLedger(engine, clock)
@@ -369,7 +371,7 @@ class JobPools:
             raise RetryTask(delay=RETRY_DELAY_S)  # asked again later, no thread kept waiting
         with self._idle:
             self._running += 1
-        retry_in: int | None = None
+        retry_in: float | None = None
         try:
             context = JobContext(
                 job_id, job.kind, job.dedupe_key, job.scope_key, job.limit_key, window_end,
@@ -400,7 +402,7 @@ class JobPools:
         if retry_in is not None:
             raise RetryTask(delay=retry_in)  # Huey keeps the task and runs it again later
 
-    def _failed(self, job_id: str, kind: str, exc: Exception) -> int | None:
+    def _failed(self, job_id: str, kind: str, exc: Exception) -> float | None:
         """A job raised. Attempts left: the wait before the next one. None: it gave up, and is a
         dead letter, announced on the operating bus in the same transaction (EF-INT-023)."""
         # the class name only: an upstream message may carry a title (EF-BIB-053)
@@ -408,7 +410,7 @@ class JobPools:
         attempts = self.ledger.attempts_of(job_id)
         if attempts < MAX_ATTEMPTS:
             self.ledger.mark_retry(job_id, error)
-            return RETRY_BACKOFF_S[min(attempts, len(RETRY_BACKOFF_S)) - 1]
+            return self._backoff[min(attempts, len(self._backoff)) - 1]
         with self._engine.begin() as conn:
             self.ledger.mark_dead_letter(conn, job_id, error)
             if self._bus is not None:

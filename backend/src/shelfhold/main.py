@@ -13,8 +13,8 @@ from sqlalchemy import Engine
 from shelfhold import __version__
 from shelfhold.composition import Composition, Network
 from shelfhold.config import Settings, load_settings
-from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.events.bus import EventBus
+from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline
 from shelfhold.headless import HeadlessAdmin, wiring

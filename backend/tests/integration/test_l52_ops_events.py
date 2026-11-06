@@ -4,14 +4,13 @@ boot, the bus of the application with its notification channels."""
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from huey.exceptions import RetryTask
 
 from shelfhold.config import Settings
 from shelfhold.export.application.intents import IntentJournal
@@ -53,24 +52,28 @@ def test_retries_exhausted_sets_dead_letter_and_emits_job_dead_lettered(settings
         clock = ManualClock(NOW)
         pools = JobPools(
             settings.data_dir, engine=env.engine, clock=clock, seed="l52",
-            bus=operating_bus(clock),
+            bus=operating_bus(clock), retry_backoff_s=(0.2, 0.2),
         )  # fmt: skip
         pools.register("boom", pool="io", handler=lambda job: 1 / 0)
         job_id = pools.submit("boom", dedupe_key="boom:1").job_id
         seen: list[tuple[str, int]] = []
-        for _ in range(10):
-            with contextlib.suppress(RetryTask):
-                pools._execute(job_id)
-            with env.engine.connect() as connection:
-                row = connection.execute(
-                    sa.select(platform.job_view.c.status, platform.job_view.c.attempts)
-                ).one()
-            seen.append((row.status, row.attempts))
-            if row.status == "dead_letter":
-                break
-        statuses = [s for s, _ in seen]
-        assert statuses[0] == "queued" and statuses[-1] == "dead_letter"  # retried, then gave up
-        assert 2 <= seen[-1][1] <= 5  # a few attempts, not one and not for ever
+        pools.start_workers()  # the real Huey consumers: RetryTask is Huey's own re-delivery
+        try:
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                with env.engine.connect() as connection:
+                    row = connection.execute(
+                        sa.select(platform.job_view.c.status, platform.job_view.c.attempts)
+                    ).one()
+                if not seen or seen[-1] != (row.status, row.attempts):
+                    seen.append((row.status, row.attempts))
+                if row.status == "dead_letter":
+                    break
+                time.sleep(0.05)
+        finally:
+            pools.stop_workers()
+        assert seen[-1] == ("dead_letter", 3)  # tried three times, then gave up
+        assert ("queued", 1) in seen  # and was put back in between, not failed at the first
         with env.engine.connect() as connection:
             job = connection.execute(sa.select(platform.job_view)).one()
         assert job.error_code == "job.failed" and job.last_error == "ZeroDivisionError"
@@ -216,3 +219,80 @@ def test_unreadable_keyring_stops_the_start_and_publishes_secret_undecryptable(
     assert events_of(engine, "secret.undecryptable") == [{"reason": "keyring_corrupt"}]
     assert notified(engine, "secret.undecryptable") == ["ops"]
     engine.dispose()
+
+
+WRITES = {
+    "mkdir",
+    "unlink",
+    "remove",
+    "rmdir",
+    "rename",
+    "replace",
+    "utime",
+    "symlink",
+    "link",
+    "truncate",
+    "chmod",
+}
+
+
+def tree_of(root: Path) -> list[str]:
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*"))
+
+
+@pytest.mark.req("EF-UX-002")
+def test_startup_probe_leaves_nothing_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same start with and without the probe leaves the same tree in the root."""
+    from shelfhold.config import load_settings
+    from shelfhold.infrastructure.fsops.probe import ProbeReport
+
+    listings = []
+    for probed in (False, True):
+        base = tmp_path / str(probed)
+        own = load_settings(
+            {"SHELFHOLD_DATA_DIR": str(base / "data"), "SHELFHOLD_STORE_DIR": str(base / "store")}
+        ).values
+        with instance(own, base) as inst, monkeypatch.context() as patch:
+            inst.configure()
+            if not probed:
+                patch.setattr(
+                    InstanceRuntime, "_probe_root",
+                    staticmethod(lambda *_a: ProbeReport(True, "")),
+                )  # fmt: skip
+            end(boot_runtime(inst))
+            listings.append(tree_of(inst.library))
+    assert listings[1] == listings[0]
+
+
+@pytest.mark.req("EF-UX-002", "EF-EXP-060")
+def test_startup_probe_never_writes_to_an_adopt_ro_root(tmp_path: Path) -> None:
+    """A read-only adoption root is registered, and the start does not touch it at all."""
+    from shelfhold.config import load_settings
+    from shelfhold.export.domain.path_map import PathMode
+    from shelfhold.infrastructure.schema import platform as p
+    from tests.fs_spy import FsSpy
+
+    own = load_settings(
+        {
+            "SHELFHOLD_DATA_DIR": str(tmp_path / "data"),
+            "SHELFHOLD_STORE_DIR": str(tmp_path / "store"),
+        }
+    ).values
+    with instance(own, tmp_path) as inst:
+        inst.configure()
+        upstream = tmp_path / "upstream" / "suwayomi"
+        upstream.mkdir(parents=True)
+        (upstream / "keep.cbz").write_bytes(b"theirs")
+        with inst.engine.begin() as connection:
+            connection.execute(
+                sa.insert(p.physical_root).values(
+                    root_id=new_ulid(), path_entry=str(upstream), mode=PathMode.ADOPT_RO.value
+                )
+            )
+        before = tree_of(upstream)
+        with FsSpy([upstream]).watching() as spy:
+            end(boot_runtime(inst))
+        writes = [a for a in spy.accesses if a.split()[0] in WRITES]
+        assert writes == [] and tree_of(upstream) == before
