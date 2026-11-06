@@ -6,6 +6,12 @@ chapter from 1 on (chapter 0 and the specials never are it); it is posted once, 
 (no `data:` prefix), and what was posted is kept in the `field_owner` registry so that the next
 run posts nothing, until another chapter becomes the lowest. Whether a cover is due is read from
 the database alone; the archive is read from the disk only for a cover that is due.
+
+A cover is posted with a lock, so a cover someone else chose is never covered over: the lock of
+the series is read first and `FieldGuard.decide` answers (EF-EXP-057). A lock Shelfhold does not
+hold is a third party's and the cover is left alone, whichever chapter arrives later. A page that
+cannot be read (archive gone, damaged, no image) is remembered for that chapter, so the next runs
+do not open it again until another chapter becomes the cover.
 """
 
 from __future__ import annotations
@@ -19,12 +25,15 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
+from shelfhold.export.application.field_guard import FieldGuard
+from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import FieldRegistry
+from shelfhold.export.domain.field_owner import FieldAction
 from shelfhold.export.domain.naming import FrozenAttrs, series_cover_source
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import TargetError
-from shelfhold.infrastructure.archives import safe_open_archive
+from shelfhold.infrastructure.archives import UnsafeArchiveError, safe_open_archive
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import check_cbz_entries
 from shelfhold.infrastructure.fsops import Fsops
@@ -36,6 +45,7 @@ __all__ = ["COVER_FIELD", "CoverTask", "SeriesCovers"]
 log = structlog.get_logger(__name__)
 COVER_FIELD = "cover"
 _WRITTEN = ("written", "scanned", "resolved")
+_UNREADABLE = "unreadable"  # kept in the registry for a chapter whose page cannot be read
 
 
 @dataclass(frozen=True)
@@ -47,9 +57,12 @@ class CoverTask:
 
 
 class SeriesCovers:
-    def __init__(self, engine: Engine, clock: Clock, fsops: Callable[[], Fsops]) -> None:
+    def __init__(
+        self, engine: Engine, clock: Clock, fsops: Callable[[], Fsops], events: TargetEvents
+    ) -> None:
         self._engine = engine
         self._clock = clock
+        self._events = events
         self._fsops = fsops  # asked for only when a cover is due
 
     def due(self, destination_id: str) -> list[CoverTask]:
@@ -113,21 +126,57 @@ class SeriesCovers:
                 source = next(r for r, f in zip(series_rows, frozen, strict=True) if f is chosen)
                 task = CoverTask(series_id, known[0], source.unit_id, source.content_hash or "")
                 owned = registry.get(destination_id, series_id, COVER_FIELD)
-                if owned is not None and owned.pushed and owned.last_value == _value(task):
-                    continue
+                settled = _value(task)
+                if (
+                    owned is not None
+                    and owned.pushed
+                    and owned.last_value in (settled, {**settled, _UNREADABLE: True})
+                ):
+                    continue  # posted, or known unreadable: nothing to look at
                 tasks.append(task)
         return tasks
 
     async def publish(self, client: KavitaClient, destination_id: str) -> list[int]:
-        """Post the covers that are due; the Kavita series ids that got one."""
+        """Post the covers that are due and that nobody else holds; the Kavita series ids that
+        got one."""
         tasks = self.due(destination_id)
         if not tasks:
             return []
-        fsops = self._fsops()
+        try:
+            current = await client.series_by_ids([t.kavita_series_id for t in tasks])
+        except TargetError as error:
+            log.info("export.cover_failed", destination_id=destination_id,
+                     reason=type(error).__name__)  # fmt: skip
+            return []
+        fsops: Fsops | None = None
         posted: list[int] = []
         for task in tasks:
-            image = self._first_page(fsops, task.unit_id)
+            series = current.get(task.kavita_series_id)
+            if series is None:
+                continue
+            with self._engine.begin() as connection:
+                owned = FieldRegistry(connection).get(
+                    destination_id, task.export_series_id, COVER_FIELD
+                )
+                claim = owned
+                if owned is not None and _UNREADABLE in (owned.last_value or {}):
+                    claim = None  # a note about a page, not a cover Shelfhold posted
+                action = FieldGuard(FieldRegistry(connection), self._events).decide(
+                    destination_id, task.export_series_id, COVER_FIELD,
+                    locked_in_kavita=series.cover_locked,
+                    kavita_value=None if claim is None else claim.last_value,
+                )  # fmt: skip
+            if action is FieldAction.LEAVE:
+                continue  # a cover someone else chose: never covered over
+            fsops = fsops or self._fsops()
+            try:
+                image = self._first_page(fsops, task.unit_id)
+            except (OSError, UnsafeArchiveError, ValueError, KeyError) as error:
+                log.info("export.cover_unreadable", unit_id=task.unit_id,
+                         reason=type(error).__name__)  # fmt: skip
+                image = None
             if image is None:
+                self._record(destination_id, task, {**_value(task), _UNREADABLE: True})
                 continue
             try:
                 await client.upload_series_cover(task.kavita_series_id, image)
@@ -135,16 +184,15 @@ class SeriesCovers:
                 log.info("export.cover_failed", destination_id=destination_id,
                          reason=type(error).__name__)  # fmt: skip
                 break
-            with self._engine.begin() as connection:
-                FieldRegistry(connection).record_push(
-                    destination_id,
-                    task.export_series_id,
-                    COVER_FIELD,
-                    _value(task),
-                    self._clock.now(),
-                )
+            self._record(destination_id, task, _value(task))
             posted.append(task.kavita_series_id)
         return posted
+
+    def _record(self, destination_id: str, task: CoverTask, value: dict[str, object]) -> None:
+        with self._engine.begin() as connection:
+            FieldRegistry(connection).record_push(
+                destination_id, task.export_series_id, COVER_FIELD, value, self._clock.now()
+            )
 
     def _first_page(self, fsops: Fsops, unit_id: str) -> bytes | None:
         with self._engine.connect() as connection:
@@ -159,5 +207,5 @@ class SeriesCovers:
             return bytes(archive.read(pages[0])) if pages else None
 
 
-def _value(task: CoverTask) -> dict[str, str]:
+def _value(task: CoverTask) -> dict[str, Any]:
     return {"unit_id": task.unit_id, "content_hash": task.content_hash}

@@ -179,11 +179,19 @@ class FakeKavita:
             {
                 "id": sid, "name": name, "libraryId": library_id, "folderPath": folder,
                 "lowestFolderPath": folder, "nameLocked": name_locked,
+                "coverImageLocked": False,
             }
         )  # fmt: skip
         self.files[sid] = list(files)
         self.ages[sid] = {"seriesId": sid, "ageRating": age_rating, "ageRatingLocked": age_locked}
         return sid
+
+    def set_user_cover(self, series_id: int, image: bytes) -> None:
+        """A user picked a cover in Kavita: it is kept and the cover is locked."""
+        self.covers[series_id] = image
+        for series in self.series:
+            if series["id"] == series_id:
+                series["coverImageLocked"] = True
 
     def index_after_scans(
         self, name: str, folder: str, files: list[str], *, library_id: int = 7, scans: int = 1
@@ -475,6 +483,9 @@ class FakeKavita:
             return self._violation("cover upload with a data: prefix (Kavita wants bare base64)")
         try:
             self.covers[body["id"]] = base64.b64decode(url, validate=True)
+            for series in self.series:
+                if series["id"] == body["id"]:
+                    series["coverImageLocked"] = bool(body.get("lockCover"))
         except (binascii.Error, ValueError):
             return self._violation("cover upload is not base64")
         return self._text(200, "")

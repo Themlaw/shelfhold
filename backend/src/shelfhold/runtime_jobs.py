@@ -270,7 +270,8 @@ async def settle_arrival(
     """After an export: confirm what Kavita indexed (EF-EXP-034), then post the covers of the
     series it now knows (EF-EXP-045). Both are read from the database first, so with nothing
     pending neither the network nor a disk is touched beyond that."""
-    poller = ArrivalPoller(comp.engine, comp.clock, BusTargetEvents(comp.engine, comp.bus))
+    events = BusTargetEvents(comp.engine, comp.bus)
+    poller = ArrivalPoller(comp.engine, comp.clock, events)
     try:
         await poller.poll(client, destination_id)
     except TargetError as error:  # one destination failing never stops the others
@@ -280,7 +281,7 @@ async def settle_arrival(
     def disks() -> Fsops:
         return fsops() if fsops is not None else comp.read_context()[0]
 
-    covers = SeriesCovers(comp.engine, comp.clock, disks)
+    covers = SeriesCovers(comp.engine, comp.clock, disks, events)
     try:
         await covers.publish(client, destination_id)
     except (NoLibraryError, KeyringUnavailableError) as error:

@@ -85,6 +85,58 @@ def test_series_cover_moves_to_chapter_one_when_it_arrives_after_chapter_two(
         assert env.inst.kavita.covers == {series_id: png("1")}
 
 
+@pytest.mark.req("EF-EXP-045", "EF-EXP-057")
+def test_series_cover_never_covers_over_a_cover_the_user_chose(
+    settings: Settings, tmp_path
+) -> None:
+    with seeded(settings, tmp_path) as env:
+        series = env.new_series()
+        for number in ("1", "2"):
+            env.add_chapter(series, number)
+        env.export()
+        series_id = index_in_kavita(env)
+        env.inst.kavita.set_user_cover(series_id, b"the user's own cover")
+        settle(env)
+        assert env.inst.kavita.covers == {series_id: b"the user's own cover"}
+        assert env.inst.kavita.requests_to("/Upload/series") == []  # nothing was even sent
+
+
+@pytest.mark.req("EF-EXP-045", "EF-EXP-057")
+def test_chapter_one_arriving_after_two_leaves_a_cover_the_user_chose(
+    settings: Settings, tmp_path
+) -> None:
+    with seeded(settings, tmp_path) as env:
+        series = env.new_series()
+        env.add_chapter(series, "2")
+        env.export()
+        series_id = index_in_kavita(env)
+        env.inst.kavita.set_user_cover(series_id, b"the user's own cover")
+        settle(env)
+        env.add_chapter(series, "1")
+        env.export()
+        index_in_kavita(env)
+        settle(env)
+        assert env.inst.kavita.covers == {series_id: b"the user's own cover"}
+        assert env.inst.kavita.requests_to("/Upload/series") == []
+
+
+@pytest.mark.req("EF-EXP-045")
+def test_a_lost_page_is_skipped_remembered_and_not_read_again(settings: Settings, tmp_path) -> None:
+    with seeded(settings, tmp_path) as env:
+        series = env.new_series()
+        env.add_chapter(series, "1")
+        env.export()
+        series_id = index_in_kavita(env)
+        for archive in (env.inst.library / ".shelfhold").rglob("*.cbz"):
+            archive.unlink()  # the received archive is gone
+        settle(env)  # does not raise: the next destinations would go on
+        assert env.inst.kavita.covers == {}
+        with FsSpy(watched(env)).watching() as spy:
+            settle(env)
+        assert spy.accesses == []  # remembered: the page is not looked for every 5 minutes
+        assert series_id not in env.inst.kavita.covers
+
+
 @pytest.mark.req("EF-EXP-045")
 def test_series_with_only_chapter_zero_gets_no_cover(settings: Settings, tmp_path) -> None:
     with seeded(settings, tmp_path) as env:
@@ -203,7 +255,10 @@ def test_reconcile_scan_only_in_window(settings: Settings, tmp_path) -> None:
     with seeded(settings, tmp_path) as env:
         series = env.new_series()
         env.add_chapter(series, "2")
+        env.add_chapter(series, "3")
         env.export()
+        lost = env.exported_files()[0]
+        lost.unlink()  # deleted by hand: only the window verification will see it
         start = datetime(2026, 11, 6, 6, 0, tzinfo=UTC)  # 07:00 in Paris: the window just closed
         clock = ManualClock(start)
         pools = JobPools(
@@ -227,6 +282,7 @@ def test_reconcile_scan_only_in_window(settings: Settings, tmp_path) -> None:
                 outside.extend(spy.accesses)
         assert outside == []
         assert inside > 0  # the windowed verification did look at the disk
+        assert lost.is_file()  # the drift was seen in the window, planned again, written again
         assert len(ran["export.run"]) >= 90  # the cron ran all day
         assert "reconcile.cycle" in ran and "reconcile.hash" in ran
         with env.inst.engine.connect() as connection:

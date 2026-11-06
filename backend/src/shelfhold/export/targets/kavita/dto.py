@@ -189,6 +189,7 @@ class SeriesInfo:
     folder_path: str
     lowest_folder_path: str
     name_locked: bool
+    cover_locked: bool = False
 
     @classmethod
     def from_json(cls, data: object) -> SeriesInfo:
@@ -201,6 +202,7 @@ class SeriesInfo:
             folder_path=str(data.get("folderPath") or ""),
             lowest_folder_path=str(data.get("lowestFolderPath") or ""),
             name_locked=bool(data.get("nameLocked", False)),
+            cover_locked=bool(data.get("coverImageLocked", False)),
         )
 
     def lives_in(self, folder: str) -> bool:

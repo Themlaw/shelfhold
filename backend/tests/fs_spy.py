@@ -7,6 +7,8 @@ nothing of what the code under test does: each call goes on to the real function
 
 from __future__ import annotations
 
+import builtins
+import io
 import os
 import threading
 from collections.abc import Callable, Iterator, Sequence
@@ -14,11 +16,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from shelfhold.infrastructure.fsops import confined as _confined
+from shelfhold.infrastructure.fsops import openat2 as _openat2
+
 _PATH_FUNCTIONS = (
     "open", "stat", "lstat", "listdir", "scandir", "mkdir", "unlink", "remove", "rmdir",
     "rename", "replace", "utime", "access", "readlink", "symlink", "link", "truncate",
     "statvfs", "chmod", "fstat", "fsync",
 )  # fmt: skip
+_CTYPES_FUNCTIONS = ("openat2", "renameat2_noreplace")  # reached through ctypes, not `os`
 _real_readlink = os.readlink
 
 
@@ -52,7 +58,11 @@ class FsSpy:
 
     def _record(self, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
         pairs = [(args[0] if args else kwargs.get("path"), kwargs.get("dir_fd"))]
-        if name in ("rename", "replace", "link", "symlink"):
+        if name == "openat2":  # (dir_fd, path, flags, ...)
+            pairs = [(args[1] if len(args) > 1 else None, args[0] if args else None)]
+        elif name == "renameat2_noreplace":  # (src_dir_fd, src, dst_dir_fd, dst)
+            pairs = [(args[1], args[0]), (args[3], args[2])]
+        elif name in ("rename", "replace", "link", "symlink"):
             second = args[1] if len(args) > 1 else kwargs.get("dst")
             pairs = [
                 (args[0] if args else kwargs.get("src"), kwargs.get("src_dir_fd")),
@@ -66,8 +76,6 @@ class FsSpy:
 
     @contextmanager
     def watching(self) -> Iterator[FsSpy]:
-        saved: dict[str, Callable[..., Any]] = {}
-
         def wrap(name: str, real: Callable[..., Any]) -> Callable[..., Any]:
             def spy(*args: Any, **kwargs: Any) -> Any:
                 if not getattr(self._inside, "busy", False):
@@ -80,13 +88,17 @@ class FsSpy:
 
             return spy
 
-        for name in _PATH_FUNCTIONS:
-            real = getattr(os, name, None)
+        targets: list[tuple[Any, str]] = [(os, n) for n in _PATH_FUNCTIONS]
+        targets += [(builtins, "open"), (io, "open")]  # `open`, `Path.read_bytes`, `Path.open`
+        targets += [(m, n) for m in (_openat2, _confined) for n in _CTYPES_FUNCTIONS]
+        saved: list[tuple[Any, str, Callable[..., Any]]] = []
+        for owner, name in targets:
+            real = getattr(owner, name, None)
             if real is not None:
-                saved[name] = real
-                setattr(os, name, wrap(name, real))
+                saved.append((owner, name, real))
+                setattr(owner, name, wrap(name, real))
         try:
             yield self
         finally:
-            for name, real in saved.items():
-                setattr(os, name, real)
+            for owner, name, real in saved:
+                setattr(owner, name, real)

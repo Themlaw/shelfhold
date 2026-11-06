@@ -82,10 +82,13 @@ def test_pipeline_refuses_to_export_a_shelf_fed_directly_until_confirmed() -> No
         )
         p.a.adopt()
         p.env.add_chapter(p.env.new_series("Series Gamma"), "1")  # something to write
+        before = {f.name for f in p.env.files()}
         with pytest.raises(SwitchoverUnconfirmed):
             p.env.pipeline.run(p.destination, job_id="01J00000000000000000000010")
+        assert {f.name for f in p.env.files()} == before  # nothing written while unconfirmed
         p.gate.confirm(p.destination, STEPS, fingerprint=p.gate.report(p.destination).fingerprint)
         p.env.pipeline.run(p.destination, job_id="01J00000000000000000000011")
+        assert {f.name for f in p.env.files()} - before  # confirmed: the new chapter is written
 
 
 @pytest.mark.req("EF-EXP-054")
