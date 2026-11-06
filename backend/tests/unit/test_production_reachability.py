@@ -15,6 +15,35 @@ from tests.tools_loader import REPO, load_tool
 reach = load_tool("reachability")
 
 
+def test_req_cited_symbols_have_production_caller() -> None:
+    orphans = reach.unlisted_orphans(REPO)
+    assert not orphans, (
+        "symbols cited by a `req` test that no entry point reaches (traced, not wired); wire them "
+        "or list them in tools/production-reachability-allowlist.toml with a reason and an "
+        "`until`:\n" + "\n".join(f"  {o.symbol}  <- {o.test}" for o in orphans)
+    )
+
+
+def test_req_tests_declare_no_routes() -> None:
+    found = reach.route_declarations(REPO)
+    assert not found, (
+        "a `req` test must exercise create_app() as composed: no route, middleware or `routers=` "
+        "of its own:\n" + "\n".join(f"  {line}" for line in found)
+    )
+
+
+def test_reachability_allowlist_is_justified_and_live() -> None:
+    entries = reach.load_allowlist(REPO)
+    assert reach.check_allowlist(entries) == []
+    orphans = {o.symbol for o in reach.find_orphans(REPO)}
+    stale = [
+        e["symbol"]
+        for e in entries
+        if not any(o == e["symbol"] or o.startswith(f"{e['symbol']}.") for o in orphans)
+    ]
+    assert not stale, f"allowlist entries that are wired or no longer cited: {stale}"
+
+
 # -- the analysis on a synthetic package ---------------------------------------------------------
 
 
