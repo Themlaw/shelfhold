@@ -42,6 +42,7 @@ class ConfigKey:
     validate: Callable[[str], str] | None = None
     readonly: bool = False
     secret: bool = False  # its value is a secret: never on a command line, never shown
+    default_doc: str | None = None  # how the generated reference words a computed default
 
 
 def _public_url(value: str) -> str:
@@ -102,7 +103,8 @@ KEYS: Final = {
                   "(EF-EXP-029).", _whole("export.missing_ceiling")),
         ConfigKey("instance.jurisdiction", default_jurisdiction(),
                   "Country whose copyright law drives the public-domain notices; the default "
-                  "is deduced from the locale (EF-SRC-024).", _jurisdiction),
+                  "is deduced from the locale (EF-SRC-024).", _jurisdiction,
+                  default_doc="déduit de la langue du système"),
         ConfigKey("maintenance.window", MAINTENANCE_WINDOW,
                   "The fixed maintenance window (ENF-OPS-014); read only in M1a.", readonly=True),
         ConfigKey("notify.urls", [], "Notification channels, name=url; the URL is sealed.",

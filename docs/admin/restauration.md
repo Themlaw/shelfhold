@@ -18,6 +18,22 @@ vous-même, à quelle fréquence, et comment repartir d'une copie.
 | `/store` | copies conservées (vide tant que vous n'en gardez pas) | outil de sauvegarde de l'hôte |
 | `/library` | votre bibliothèque | votre sauvegarde habituelle de Kavita : Shelfhold n'en est pas le propriétaire |
 
+### Pour relire la base sans Shelfhold (EF-INT-027)
+
+Chaque release publie en assets deux fichiers générés des migrations : **`schema.sql`** (le schéma
+SQLite complet) et **`data-dictionary.md`** (tables, colonnes, valeurs sentinelles, formats écrits
+sur disque et leurs versions). **Rangez-les avec votre jeu de sauvegarde**, à côté de la copie de
+`/data` : en M1a c'est vous qui les copiez (la sauvegarde intégrée, qui les inclura d'elle-même,
+arrive en M1b). Une base retrouvée des années plus tard se relit alors avec `sqlite3` seul :
+
+```sh
+sqlite3 shelfhold.db < schema.sql   # reconstruit un schéma vide, pour comparer
+sqlite3 -readonly shelfhold.db '.tables'
+```
+
+Prenez ceux de la version qui a écrit la base : la table `alembic_version` donne sa révision de
+schéma. Voir [releasing.md](../releasing.md).
+
 La base est l'autorité ; les fichiers `unit.json` sont des projections régénérables
 (`shelfhold meta rebuild`).
 
