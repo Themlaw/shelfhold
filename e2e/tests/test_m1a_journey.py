@@ -140,7 +140,8 @@ def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
 
     assert j.container_id() not in ("", old)
     assert j.container_id("shelfhold-migrate") != migrated  # the migration service ran again
-    assert j.shelfhold("config", "list").out == before_config
+    after_config = j.shelfhold("config", "list")
+    assert after_config.out == before_config, (after_config.code, after_config.err)
     again = j.shelfhold("shelf", "create", "Manga", "--max-age", "18+", "--target", "kavita",
                         "--subpath", "manga")  # fmt: skip
     assert again.code == 0 and "Manga" in again.out  # the shelf exists: said so, not duplicated

@@ -96,8 +96,17 @@ def bind_private(path: Path, *, backlog: int = 16) -> tuple[socket.socket, os.st
         inner = os.open(staging, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC, dir_fd=directory)
         try:
             listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            listener.bind(addressing.via_directory(inner, "s"))
-            os.chmod(addressing.via_directory(inner, "s"), 0o600)
+            # The staging directory is private (0700, random name, made by this process): its own
+            # path is safe to bind through when it fits `sun_path`. `/proc/self/fd/N` is only the
+            # way for a path that is too long, because it names a descriptor number that another
+            # thread of the process can close and reuse between the `open` and the `bind` (seen
+            # at start-up as `ENOTDIR` on `/proc/self/fd/22/s`).
+            direct = path.parent / staging / "s"
+            target = (
+                str(direct) if addressing.fits(direct) else addressing.via_directory(inner, "s")
+            )
+            listener.bind(target)
+            os.chmod(target, 0o600)
             listener.listen(backlog)
             listener.setblocking(False)
             # rename(2) replaces a symbolic link itself and fails on a directory (EISDIR)

@@ -5,8 +5,10 @@ JSON-RPC, one line per message, over `/data/shelfhold.sock`. Never HTTP, never T
 
 import json
 import os
+import shutil
 import socket
 import stat
+import tempfile
 import time
 from pathlib import Path
 
@@ -277,3 +279,25 @@ def test_drain_after_an_error_has_a_total_deadline(sock_dir: Path) -> None:
                 break
             time.sleep(0.1)
         assert time.monotonic() - started < 2.5
+
+
+def test_binding_does_not_depend_on_a_descriptor_number_when_the_path_is_short(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """At start-up another thread can close and reuse the number of the staging directory's
+    descriptor: `/proc/self/fd/N/s` then fails with ENOTDIR (seen in the redeploy E2E). A short
+    path binds through the private directory's own name instead."""
+    from shelfhold.infrastructure.local_socket import addressing
+    from shelfhold.infrastructure.local_socket.server import bind_private
+
+    def reused(_fd: int, _name: str) -> str:
+        raise AssertionError("the descriptor path must not be used for a short path")
+
+    monkeypatch.setattr(addressing, "via_directory", reused)
+    short = Path(tempfile.mkdtemp(prefix="sh-"))
+    listener, identity = bind_private(short / "s.sock")
+    try:
+        assert stat.S_ISSOCK(identity.st_mode) and stat.S_IMODE(identity.st_mode) == 0o600
+    finally:
+        listener.close()
+        shutil.rmtree(short, ignore_errors=True)
