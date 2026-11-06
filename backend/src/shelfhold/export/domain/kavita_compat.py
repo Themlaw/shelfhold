@@ -52,11 +52,6 @@ MINIMUM_VERSION: Final = KavitaVersion((0, 9, 1, 0))
 MAXIMUM_EXCLUSIVE: Final = KavitaVersion((0, 10, 0, 0))
 
 
-def minimum_version_for(max_age_rating: int | None) -> KavitaVersion:
-    """The minimum is the same for every shelf, adult or family (passe 12, M9)."""
-    return MINIMUM_VERSION
-
-
 @dataclass(frozen=True)
 class KnownBad:
     """A vulnerable release line: warned about, never refused (ENF-COMP-001)."""

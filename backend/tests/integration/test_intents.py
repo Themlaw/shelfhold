@@ -10,7 +10,7 @@ from shelfhold.export.application.intents import (
     INTENT_SCHEMA_VERSION,
     IntentJournal,
     open_intent_paths,
-    skip_covered,
+    within_any,
 )
 from shelfhold.infrastructure.schema import coherence
 from tests.intents_env import IntentEnv, make_intent_env, set_restore_epoch, sha
@@ -150,7 +150,11 @@ def test_reconcile_skips_paths_under_open_intent(ienv: IntentEnv) -> None:
             str(ienv.fs.manga / "Old" / "9.cbz"),
             str(series / "3.cbz"),
         ]
-        assert skip_covered(conn, candidates) == [str(c), str(series / "3.cbz")]
+        covered = open_intent_paths(conn)
+        assert [p for p in candidates if not within_any(p, covered)] == [
+            str(c),
+            str(series / "3.cbz"),
+        ]
 
 
 @pytest.mark.req("EF-EXP-041")

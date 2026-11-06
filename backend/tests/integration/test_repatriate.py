@@ -15,8 +15,8 @@ from shelfhold.export.application.repatriate import (
     RepatriationBlockedError,
     RepatriationStaleError,
     Repatriator,
-    kavita_counts,
 )
+from shelfhold.export.application.repatriate_kavita import compare, read_snapshot
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.infrastructure.fsops import ReadOnlyRootError
 from shelfhold.infrastructure.schema import coherence, export, reading
@@ -42,7 +42,7 @@ def _intents(r: Repatriation) -> list[sa.Row[tuple[object, ...]]]:
 def test_repatriate_then_unmount_keeps_kavita_series_and_progress() -> None:
     with repatriation_env() as r:
         kavita = r.a.wired
-        before_kavita = run(kavita_counts(kavita.client, str(LIBRARY_ID), REMOTE_ROOT))
+        before_kavita = run(read_snapshot(kavita.client, str(LIBRARY_ID), REMOTE_ROOT))
         before_ids = {s["name"]: s["id"] for s in kavita.fake.series}
         before_progress = _positions(r)
         before_writes = len([w for w in kavita.fake.writes if "scan" not in w.path.lower()])
@@ -68,8 +68,8 @@ def test_repatriate_then_unmount_keeps_kavita_series_and_progress() -> None:
                 library_id=LIBRARY_ID,
             )
         assert len(kavita.fake.scans) >= len(SERIES)
-        after = run(kavita_counts(kavita.client, str(LIBRARY_ID), REMOTE_ROOT))
-        assert after == before_kavita and after.series == len(SERIES)
+        after = run(read_snapshot(kavita.client, str(LIBRARY_ID), REMOTE_ROOT))
+        assert compare(before_kavita, after).ok and len(after.series) == len(SERIES)
         assert {s["name"]: s["id"] for s in kavita.fake.series} == before_ids
         others = [w for w in kavita.fake.writes if "scan" not in w.path.lower()]
         assert len(others) == before_writes  # only the scans we asked for, nothing else

@@ -16,7 +16,6 @@ from shelfhold.export.domain.kavita_compat import (
     KavitaVersion,
     TargetMode,
     assess_version,
-    minimum_version_for,
 )
 from shelfhold.export.targets.kavita import (
     HIDDEN_DIR_PATTERNS,
@@ -43,9 +42,8 @@ CBZ = "Series A - Ch.012.cbz"
 
 
 @pytest.mark.req("ENF-COMP-001", "EF-EXP-009")
-@pytest.mark.parametrize("ceiling", [None, 7, 13, 16, 18, 99])
-def test_kavita_minimum_is_0_9_1_for_all_shelves(ceiling: int | None) -> None:
-    assert minimum_version_for(ceiling) == MINIMUM_VERSION == KavitaVersion.parse("0.9.1")
+def test_kavita_minimum_is_0_9_1_for_all_shelves() -> None:
+    assert KavitaVersion.parse("0.9.1") == MINIMUM_VERSION  # one minimum, no ceiling to ask
     below = ["0.9.0.2", "0.9.0", "0.8.9.1", "0.8.9", "0.7.14.10"]
     inside = ["0.9.1", "0.9.1.0", "v0.9.1.4", "0.9.2", "0.9.9.9"]
     outside_above = ["0.10.0", "1.0.0"]
