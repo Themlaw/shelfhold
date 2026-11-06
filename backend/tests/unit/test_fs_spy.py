@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from shelfhold.infrastructure.fsops.openat2 import openat2
+from shelfhold.infrastructure.fsops import confined
 from tests.fs_spy import FsSpy
 
 pytestmark = pytest.mark.req("ENF-OPS-014")
@@ -18,7 +18,7 @@ def test_every_way_to_reach_a_file_is_counted(tmp_path: Path) -> None:
     spy = FsSpy([tmp_path])
     reads = {
         "Path.read_bytes": lambda: (tmp_path / "f").read_bytes(),
-        "builtins.open": lambda: open(tmp_path / "f", "rb").close(),  # noqa: SIM115
+        "builtins.open": lambda: open(tmp_path / "f", "rb").close(),
         "os.stat": lambda: os.stat(tmp_path / "f"),
         "os.listdir": lambda: os.listdir(tmp_path),
     }
@@ -31,7 +31,7 @@ def test_every_way_to_reach_a_file_is_counted(tmp_path: Path) -> None:
     try:
         before = len(spy.accesses)
         with spy.watching():
-            os.close(openat2(dir_fd, "f", os.O_RDONLY))  # ctypes, relative to a descriptor
+            os.close(confined.openat2(dir_fd, "f", os.O_RDONLY))  # ctypes, relative to a descriptor
         assert len(spy.accesses) > before
     finally:
         os.close(dir_fd)
