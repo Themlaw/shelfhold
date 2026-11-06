@@ -594,8 +594,8 @@ Seules A1, A7, A10 et A11 étaient citées ailleurs dans ce fichier ; le tableau
 ## L42 : découverte des séries de la bibliothèque Suwayomi (EF-SRC-009)
 
 1. **Au début de chaque cycle**, `SeriesDiscovery` (`acquisition/application/discovery.py`) donne à chaque série de la bibliothèque sans liaison (quel que soit son état) et sans pierre `series_binding` : l'Œuvre (`Catalog.create_work`, genre `manga`, titre de la série), l'Édition (`ensure_edition`, langue de la sous-source, `official`, `images`, posée sur l'étagère adulte), le `source_item`, la liaison (rang 1) et le `series_follow`, en **une transaction `BEGIN IMMEDIATE`** relue sous verrou. Le filigrane est le plus haut chapitre numéroté visible `(segment, nombre)` ; la première lecture d'une liaison créée est une base de départ (rien n'est demandé, extras compris), le cycle suivant ne demande que les nouveautés.
-2. **Sauts.** Pierre `series_binding` : jamais créée, `series.tombstoned_upstream` une fois (charge `count` : un événement n'a pas de texte). Jumelle adoptée non appariée avec un candidat de score >= 0,9 (`export.public.pending_pairing`, même score que `--pair-auto`) : sautée, comptée (`skipped_pending_pairing`), journalisée. Sous-source sans langue unique (`all`) : sautée (`skipped_language`), reprise au cycle suivant.
-3. **Pas d'étagère adulte** (plafond nul ou >= 18, destination active) : rien n'est créé, `series.awaiting_shelf` part une fois (nouveau code du catalogue, `fr.toml` porte la commande de sortie `shelf create`). Écart : ce n'est pas une valeur de `WaitingState` ni une ligne de `status` (la série n'existe pas en base) ; l'événement et la notification portent l'attente.
+2. **Sauts.** Pierre `series_binding` : jamais créée, `series.tombstoned_upstream` une fois (charge `count` : un événement n'a pas de texte). Jumelle adoptée non appariée avec un candidat de score >= 0,9 (`export.public.pending_pairing`, même score que `--pair-auto`) : sautée, comptée (`skipped_pending_pairing`), journalisée. Sous-source sans langue unique (`all`) : *corrigé à la clôture* : elle n'est pas sautée ; la série est créée avec une Édition `x-unknown` (comptée dans `created_unknown_language`, état `language_unknown` de `status`, sortie `edition set-lang`).
+3. **Pas d'étagère adulte** (plafond nul ou >= 18, destination active) : rien n'est créé, `series.awaiting_shelf` part une fois (nouveau code du catalogue, `fr.toml` porte la commande de sortie `shelf create`). Écart : ce n'est pas une valeur de `WaitingState` (la série n'existe pas en base) ; l'événement et la notification portent l'attente, et `status` en donne une ligne `awaiting_shelf` (*précisé à la clôture*).
 4. **E2E.** Le filigrane étant le plus haut chapitre visible, les deux parcours lancent d'abord un cycle (`Journey.discover_series`, attend que des chapitres soient listés) puis publient en amont ; les deux `xfail` sont retirés.
 
 ## L43 : réponses au contradicteur Opus du jalon
@@ -654,7 +654,7 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
   commande est refusée avec la marche à suivre.
 ## Clôture
 
-Ce lot (`chore(m1a): close the milestone`) ne tranche aucun report d'exigence. Les points qui demandent une décision du porteur sont marqués **décision requise** ; ils portent une destination proposée, pas arbitrée.
+Ce lot (`chore(m1a): close the milestone`) ne tranche aucun report d'exigence : les lignes « Reportée » ci-dessous suivent le jalon que la spec donne déjà. Les points qui demandent une décision du porteur sont marqués **décision requise** ; ils portent une destination proposée, pas arbitrée.
 
 ### Traçabilité (critère a)
 
@@ -671,7 +671,7 @@ Ce lot (`chore(m1a): close the milestone`) ne tranche aucun report d'exigence. L
 
 ### Extension synthétique du nightly
 
-`gradle/verification-metadata.xml` est généré (254 composants) dans l'image `ghcr.io/cirruslabs/android-sdk` épinglée par condensat (JDK 21 ; ssp n'a pas de moteur de conteneurs, la génération a eu lieu en local), puis la construction est rejouée avec la vérification active. Trois défauts de l'extension, jamais construite jusque-là, sont corrigés : le commentaire du fichier contenait `--` (XML invalide), `extensions-lib` 1.4.2 n'a jamais été construit par JitPack (1.4.1, le niveau d'API de `versionName`), et `okhttp` manquait au classpath de compilation. L'APK n'a pas été installé dans un Suwayomi : le premier nightly le fera.
+`gradle/verification-metadata.xml` est généré (254 composants) dans l'image `ghcr.io/cirruslabs/android-sdk` épinglée par condensat (JDK 21 ; la machine de test partagée n'a pas de moteur de conteneurs, la génération a eu lieu sur un poste de développement), puis la construction est rejouée avec la vérification active. Trois défauts de l'extension, jamais construite jusque-là, sont corrigés : le commentaire du fichier contenait `--` (XML invalide), `extensions-lib` 1.4.2 n'a jamais été construit par JitPack (1.4.1, le niveau d'API de `versionName`), et `okhttp` manquait au classpath de compilation. L'APK n'a pas été installé dans un Suwayomi : le premier nightly le fera.
 
 ### Inventaire des dettes du §7 du plan
 
@@ -697,12 +697,12 @@ Ce lot (`chore(m1a): close the milestone`) ne tranche aucun report d'exigence. L
 | L28 (b) nightly du miroir | Traitée | #65, `test_mirror_never_indexed_by_kavita_nightly`. |
 | L28 (c) lecture du miroir à la réadoption | Traitée | #61, `test_restore_behind_readopts_from_manifest_mirror_as_exported`, `test_mirror_restores_follow_decisions_ages_as_suggestions`. |
 | L28 (d) retrait des lignes du miroir à la purge | Traitée | #58 (`_clean_mirror`). |
-| L28 (d) `meta rebuild` reconstruit le miroir | **Décision requise**, proposition M1b | `ProvenanceMirror.rebuild` existe et le miroir est resynchronisé à chaque export (`pipeline.py`), mais la commande ne reconstruit que `unit.json` : écrire dans une racine demande le bail et le verrou d'instance, donc la commande doit passer par le serveur. Aucune doc d'administration ne promet cette reconstruction. |
-| Tests instables `test_library_review44`, `test_library_safeguard`, `test_migration_lock` | Surveillance | Non reproduits : 12 passages sous xdist sur ssp et la suite complète (6 417 tests) verts ; #66 a corrigé les deux derniers. Une récidive en CI ouvre une issue. |
+| L28 (d) `meta rebuild` reconstruit le miroir | **Décision requise**, proposition M1b | `ProvenanceMirror.rebuild` existe et le miroir est resynchronisé à chaque export (`pipeline.py`), mais la commande ne reconstruit que `unit.json` : écrire dans une racine demande le bail et le verrou d'instance, donc la commande doit passer par le serveur. Aucune doc d'administration ne la promet, mais 01 la place en M1a : EF-EXP-063 (« le miroir est une projection régénérable (`shelfhold meta rebuild`) », critère `test_unresolved_mirror_line_never_erased` « quand on lance `meta rebuild` »), EF-INT-014 (passe 6, M1a), ADR-0046. Le report demande donc un amendement de M1a par le porteur ; le test lié ne passe que par `merge_with_database`, jamais par la commande. |
+| Tests instables `test_library_review44`, `test_library_safeguard`, `test_migration_lock` | Surveillance | Non reproduits : 12 passages sous xdist sur une machine de test et la suite complète (6 417 tests) verts ; #66 a corrigé les deux derniers. Une récidive en CI ouvre une issue. |
 | L32 `detector=`, `missing resolve`, `series resume` | Traitée | #66 (`runtime_jobs.py`, `ops/exits.py`). |
-| L33 journal des pierres tombales non chaîné | Reportée à M1b | Décision L33 point 17 ci-dessus ; 03, section M1b, passe 13 (EF-BIB-054). |
+| L33 journal des pierres tombales non chaîné | Reportée à M1b | Décision L33 point 17 ci-dessus ; 03, section M1b, passe 11 (EF-BIB-054, troncature détectée, `tombstone.journal_truncated`). Le doublon et le réordonnancement n'ont pas de destination écrite dans la spec : ils sont sans effet (point 17). |
 | L29 `checked_target_url` contre `validate_target_url` | Traitée par décision | Ce ne sont pas des doublons : `validate_target_url` juge la forme de l'adresse à la configuration, sans réseau ; `checked_target_url` résout le nom à l'usage et refuse un nom qui désigne une adresse publique (`http://` vers un nom privé y est permis). Les fusionner changerait un comportement. La TODO du plan est close. |
-| L30 `FolderProbe` réduit à un adaptateur de `probe_folder` | **Décision requise**, proposition M1b | Refactor sans changement de comportement (un seul site de suppression, `preflight.py` sorti de `FSOPS_CALLERS`) ; les deux sondes coexistent et sont testées. |
+| L30 `FolderProbe` réduit à un adaptateur de `probe_folder` | **Décision requise**, proposition M1b (aucune exigence n'y est liée : le jalon est libre) | Refactor sans changement de comportement (un seul site de suppression, `preflight.py` sorti de `FSOPS_CALLERS`) ; les deux sondes coexistent et sont testées. |
 | L40/L41 lignes de `FAILURE_MATRIX`, `source.version_unsupported` | Traitée | `failure_matrix.py` ; `test_suwayomi_schema_mismatch_pauses_without_counting`. |
 | L35 `root takeover`, `reinit`, `restored` | Reportée à M1b | 03, section M1b, passe 10 (EF-EXP-064) ; `shelfhold status` donne la correction manuelle. |
 | L31 (a) nightly de progression Kavita | Traitée | #65, `test_repatriate_keeps_kavita_progress_nightly`. |
@@ -710,8 +710,9 @@ Ce lot (`chore(m1a): close the milestone`) ne tranche aucun report d'exigence. L
 | L40 `verification-metadata.xml` | Traitée, ce lot | Voir ci-dessus. |
 | Clôture : routes absentes d'OpenAPI | Traitée, ce lot | Voir ci-dessus. |
 | L42 découverte des séries, étape 7, section « Connu » | Traitée | #67 et ce lot. |
+| L43 EF-EXP-011, AgeRating d'une Œuvre non classée | **Décision requise** (correction de spec) | Le code écrit `Adults Only 18+` ou `X18+` là où 01 dit « non classé → aucun `AgeRating` » ; voir la section L43 ci-dessus. Touche une exigence de M1a. |
 
-Ne restent donc ouvertes que les deux **décisions requises** (reconstruction du miroir par `meta rebuild`, réduction de `FolderProbe`), toutes deux sans effet sur une exigence de M1a, et trois suites datées ou conditionnelles (15 novembre, étiquette amont de Kavita, récidive d'un test instable).
+Ne restent donc ouvertes que les trois **décisions requises** (AgeRating d'une Œuvre non classée, reconstruction du miroir par `meta rebuild`, réduction de `FolderProbe`), les deux premières touchant une exigence de M1a (EF-EXP-011, EF-EXP-063), la troisième aucune, et trois suites datées ou conditionnelles (15 novembre, étiquette amont de Kavita, récidive d'un test instable).
 
 ### Reste à faire pour clore le jalon
 
