@@ -40,7 +40,7 @@ Migrations :
 
 ### Connu
 
-- La découverte ne lie que les séries dont la sous-source a une langue unique : une série d'une sous-source multilingue (`all`) est sautée et comptée, jusqu'à ce qu'une langue lui soit donnée.
+- Une série d'une sous-source multilingue (`all`) est découverte avec une Édition de langue inconnue (`x-unknown`, état `language_unknown`) : sa langue se donne par `shelfhold edition set-lang`.
 - Le paquet de diagnostic n'existe pas (M2) ; `shelfhold meta rebuild` ne reconstruit que les fichiers `unit.json`, le miroir de provenance est resynchronisé à chaque export.
 - `root takeover|reinit|restored` et `store reinit` n'existent pas (M1b) ; `adoption_refused` et `coverage_unknown` ne figurent pas dans `shelfhold status` (ils sont portés par l'événement) ; l'application d'un plan par `POST /api/v1/plans/{id}/apply` reste refusée ; `secrets import` n'existe pas.
 
@@ -60,7 +60,7 @@ Migrations :
 - Secrets scellés par un trousseau avec clés retirées, rotation reprenable et export age.
 - Mots de passe en argon2id, cookies `HttpOnly` et `SameSite=Strict`, en-têtes d'identité de proxy retirés, clés d'API stockées hachées et refusées pour les actions réservées.
 - Pierres tombales chiffrées : aucune valeur en clair ni empreinte dans la base ou le journal.
-- Revue contradictoire du jalon (#69) : un AgeRating n'est jamais absent sur une étagère adulte (au moins `Adults Only 18+`, `X18+` si la sous-source ou l'édition est marquée X, le plus strict l'emporte) ; un journal de pierres tombales vide ou abîmé a une sortie réservée (`tombstone set-aside-journal`, lignes authentifiées fusionnées, rien supprimé) ; les lignes dues sont rejouées à chaud (`tombstone flush`, état `tombstone_lines_owed`) sous bail ; `detach --restore-upstream` respecte le gel de restauration ; `path_map.*` devient une action réservée ; les chapitres reçus vivent sous `.shelfhold/received`, hors de la vue de Kavita.
+- Revue contradictoire du jalon (#69) : un AgeRating n'est jamais absent sur une étagère adulte : une Œuvre non classée sort avec `Adults Only 18+`, ou `X18+` si la sous-source est `isNsfw` ou si un ComicInfo adopté disait X ; une Œuvre ou une Édition classée garde son âge, le plus strict des deux l'emporte ; un journal de pierres tombales vide se lit comme absent, un journal tronqué ou abîmé a une sortie réservée (`tombstone set-aside-journal`, lignes authentifiées fusionnées, rien supprimé) ; les lignes dues sont rejouées à chaud (`tombstone flush`, état `tombstone_lines_owed`) sous bail ; `detach --restore-upstream` respecte le gel de restauration ; `path_map.*` devient une action réservée ; les chapitres reçus vivent sous `.shelfhold/received`, hors de la vue de Kavita.
 - Socket de la CLI locale liée par son chemin privé plutôt que par un numéro de descripteur (#67), avec un test garde-fou sur les fermetures de descripteurs au démarrage (#70).
 
 ## [0.1.0] - 2026-11-04 — M0 fondations
