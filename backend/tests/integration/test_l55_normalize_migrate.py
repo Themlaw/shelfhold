@@ -54,7 +54,7 @@ class World:
     """The purged chapter (1500) and five live ones, every one stored under `number@1`."""
 
     def __init__(self, env: Seeded, monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
-        series = env.new_series()
+        series = self.series = env.new_series()
         purged = env.add_chapter(series, "1500")
         self.hit = live_unit(env, series, "1,500", "1.5")  # under @2: 1500, the purged place
         self.merged = live_unit(env, series, "2,000", "2")  # under @2: 2000, taken by `occupant`
@@ -100,6 +100,17 @@ def test_normalize_migrate_preview_intent_blocks_tombstone_hit(
                        "--confirm", "0" * 64) == STALE_PREVIEW  # fmt: skip
         assert stored(env) == world.before
 
+        # a row that appears after the preview changes the plan: the old fingerprint moves nothing
+        late = live_unit(env, world.series, "9,000", "9")
+        assert run_cli(monkeypatch, settings, "normalize", "migrate", "number",
+                       "--confirm", fingerprint) == STALE_PREVIEW  # fmt: skip
+        assert stored(env)[late] == ("9", "number@1")
+        capsys.readouterr()
+        assert run_cli(monkeypatch, settings, "normalize", "migrate", "number") == 0
+        out = capsys.readouterr().out
+        assert f"migrate : {late}" in out
+        fingerprint = fingerprint_of(out)
+
         # the confirmed migration moves what is safe and only that
         assert run_cli(monkeypatch, settings, "normalize", "migrate", "number",
                        "--confirm", fingerprint) == 0  # fmt: skip
@@ -112,9 +123,9 @@ def test_normalize_migrate_preview_intent_blocks_tombstone_hit(
         )  # its value is unchanged: only the version moves
         for held in (world.hit, world.merged):  # blocked by a tombstone, a merge to decide
             assert after[held] == world.before[held]
-        assert "3 ligne(s) migrée(s)" in capsys.readouterr().out
+        assert "4 ligne(s) migrée(s)" in capsys.readouterr().out
         audit = [r for r in env.rows(identity.audit) if r.action == "normalize.migrate"]
-        assert [(a.target) for a in audit] == ["number@2"]
+        assert [a.target for a in audit] == [f"number@2;fp:{fingerprint[:16]};rows:4"]
         assert str(audit[0].actor_id).startswith("local_cli:")
 
         # run again: what was held is still held, nothing else is left to do

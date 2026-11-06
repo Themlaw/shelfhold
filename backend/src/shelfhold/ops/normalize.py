@@ -71,16 +71,31 @@ class NormalizeOps:
             raise CodedRefusal("forbidden", type(verdict).__name__)
         if name not in MIGRATABLE:
             raise InvalidChoiceError(f"choose one of: {', '.join(MIGRATABLE)}")
-        plan = self._plan()
-        applied: int | None = None
-        if confirm is not None:
-            if not hmac.compare_digest(confirm.strip().encode(), plan.fingerprint.encode()):
-                raise StalePreviewError("the plan is not the one that was previewed: look again")
-            with self._comp.engine.begin() as connection:
+        service, registry = self._service()
+        screen = self._screen(service)
+        if confirm is None:
+            with self._comp.engine.connect() as connection:
+                return self._report(plan_number_migration(connection, registry, screen), None)
+        # The plan is made again, the tombstones asked again and the rows moved under one write
+        # lock: nothing can change between what is checked and what is written.
+        # (a hit is told on the bus after the lock: the bus writes in its own transaction)
+        hits: list[Candidate] = []
+        with self._comp.engine.connect() as connection:
+            connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+            with connection.begin():
+                plan = plan_number_migration(
+                    connection, registry, self._screen(service, quiet_hits=hits)
+                )
+                if not hmac.compare_digest(confirm.strip().encode(), plan.fingerprint.encode()):
+                    raise StalePreviewError(
+                        "the plan is not the one that was previewed: look again"
+                    )
                 applied = apply_number_migration(connection, plan, audit=self._audit(principal))
+        if hits:
+            screen(hits)  # the same question, asked aloud: `tombstone.migration_hit`
         return self._report(plan, applied)
 
-    def _plan(self) -> MigrationPlan:
+    def _service(self) -> tuple[TombstoneService, NormalizerRegistry]:
         registry = self._registry()
         try:
             fsops, loaded, _cached = self._comp.read_context()
@@ -89,27 +104,34 @@ class NormalizeOps:
             raise ExitUnavailableError(
                 "the tombstones cannot be checked (no library or no keyring): nothing is migrated"
             ) from error
-        with self._comp.engine.connect() as connection:
-            return plan_number_migration(connection, registry, self._screen(service))
+        return service, registry
 
-    def _screen(self, service: TombstoneService) -> Screen:
+    def _screen(
+        self, service: TombstoneService, *, quiet_hits: list[Candidate] | None = None
+    ) -> Screen:
+        """Which candidates a tombstone blocks. With `quiet_hits`, nothing is written (the caller
+        holds the write lock) and the blocked candidates are appended to it."""
+
         def screen(candidates: Sequence[Candidate]) -> set[str]:
             if not candidates:
                 return set()
             with self._comp.engine.connect() as connection:
                 keys = _edition_keys(connection, {c.edition_id for c in candidates})
-            return service.screen_migration(
-                [
-                    (
-                        c.row_id,
-                        PlaceRef.of(
-                            keys[c.edition_id], track=c.track, number_segment=c.number_segment,
-                            number_raw=c.number_raw, part=c.part,
-                        ),
-                    )
-                    for c in candidates
-                ]
-            )  # fmt: skip
+            places = [
+                (
+                    c,
+                    PlaceRef.of(
+                        keys[c.edition_id], track=c.track, number_segment=c.number_segment,
+                        number_raw=c.number_raw, part=c.part,
+                    ),
+                )
+                for c in candidates
+            ]  # fmt: skip
+            if quiet_hits is None:
+                return service.screen_migration([(c.row_id, place) for c, place in places])
+            blocked = [c for c, place in places if service.check(place, root_id=None).blocked]
+            quiet_hits.extend(blocked)
+            return {c.row_id for c in blocked}
 
         return screen
 
@@ -119,7 +141,8 @@ class NormalizeOps:
             connection.execute(
                 sa.insert(identity.audit).values(
                     id=new_ulid(), actor_id=principal.actor_id, action="normalize.migrate",
-                    target=str(plan.target), session_id=principal.session_id,
+                    target=f"{plan.target};fp:{plan.fingerprint[:16]};rows:{moved}",
+                    session_id=principal.session_id,
                     auth_time=principal.auth_time,
                 )
             )  # fmt: skip
