@@ -44,6 +44,7 @@ class Settings(BaseModel):
 
     data_dir: Path = Path("/data")
     store_dir: Path = Path("/store")
+    library_dir: Path = Path("/library")  # the physical roots live under it (EF-EXP-059)
     host: str = "127.0.0.1"
     port: int = Field(default=8080, ge=1, le=65535)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"

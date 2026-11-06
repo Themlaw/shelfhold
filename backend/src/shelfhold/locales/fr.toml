@@ -298,6 +298,10 @@ action = "Appliquez la commande de correction affichée (ACL, group_add ou umask
 title = "Cette série est déjà appariée à un suivi Suwayomi."
 action = "Un second appariement créerait un doublon : détachez d'abord le premier si vous voulez le remplacer."
 
+[errors."root.blocked"]
+title = "Une racine physique est absente ou ne porte pas la sentinelle attendue : rien n'y est écrit."
+action = "Vérifiez que le volume est monté, puis lancez « shelfhold status » pour voir la racine et la sortie qui convient."
+
 [errors."purge.collateral"]
 title = "Un fichier de cette Unité porte aussi d'autres Unités : l'effacer les effacerait."
 action = "Effacez toutes les Unités du fichier ensemble, ou gardez-le."

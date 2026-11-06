@@ -10,6 +10,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("ops.language_refused", 422, "admin"),
     ErrorCode("ops.still_waiting", 409, "admin"),
     ErrorCode("purge.collateral", 409, "admin"),
+    ErrorCode("root.blocked", 409, "admin"),
 )
 
 

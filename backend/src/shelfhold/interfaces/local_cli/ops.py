@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -228,7 +227,7 @@ def _purge(ops: OpsServices, by: Principal, p: Params) -> object:
         )
     return ops.library.purge(
         kind=kind, anchor_id=_text(p, "anchor_id"), typed=_optional(p, "typed"),
-        principal=by, now=datetime.now(UTC),
+        principal=by,
     )  # fmt: skip
 
 

@@ -23,7 +23,12 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.config import ResolvedSettings
-from shelfhold.export.application.root_bootstrap import register_roots, target_roots
+from shelfhold.export.application.root_bootstrap import (
+    RootPolicy,
+    RootRefusedError,
+    register_roots,
+    target_roots,
+)
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.target_state import load_health, save_health
 from shelfhold.export.domain.bindings import check_shelf_ceiling
@@ -227,7 +232,7 @@ class HeadlessAdmin:
         suwayomi: SuwayomiProbe,
         channels: ChannelValidator | None = None,
         resolve: Callable[[], ResolvedSettings] | None = None,
-        store_dir: Path | None = None,
+        roots: RootPolicy | None = None,
         linker: ShelfLinkPort | None = None,
     ) -> None:
         self._engine = engine
@@ -237,7 +242,7 @@ class HeadlessAdmin:
         self._suwayomi = suwayomi
         self._channels = channels
         self._resolve = resolve
-        self._store_dir = store_dir
+        self._roots = roots
         self._linker = linker
         self._shelves = ShelfService(engine)
         self._store = ChannelStore(vault, clock)
@@ -254,11 +259,24 @@ class HeadlessAdmin:
 
     def _bootstrap(self) -> None:
         """The instance row and the roots the path maps name (idempotent; see `root_bootstrap`)."""
+        if self._roots is None:
+            return
         wanted = target_roots(self._engine)
-        if self._store_dir is not None:
-            wanted.append((str(self._store_dir), PathMode.RW))
-        register_roots(self._engine, wanted)
+        wanted.append((str(self._roots.store_dir), PathMode.RW))
+        try:
+            register_roots(self._engine, wanted, policy=self._roots)
+        except RootRefusedError as refusal:
+            raise InvalidConfigValue(str(refusal)) from None
         self._wake()
+
+    def _check_roots(self, entries: list[dict[str, str]]) -> None:
+        """Before a path map is stored: every folder it names must be allowed to be a root."""
+        if self._roots is None:
+            return
+        try:
+            self._roots.check_all([(e["local"], PathMode(e.get("mode", "rw"))) for e in entries])
+        except RootRefusedError as refusal:
+            raise InvalidConfigValue(str(refusal)) from None
 
     # -- config get | set | list --------------------------------------------------------------
 
@@ -352,15 +370,26 @@ class HeadlessAdmin:
         except ValueError:
             raise InvalidConfigValue("path_map is JSON: a list of {local, remote, mode}") from None
         entries = _normalise_path_map(parsed)
+        self._check_roots(entries)
         with self._engine.begin() as connection:
             row = self._target_row(connection, key.removeprefix(PATH_MAP_PREFIX))
+            before = list(row.path_map)
             connection.execute(
                 sa.update(export.export_target)
                 .where(export.export_target.c.id == row.id)
                 .values(path_map=entries, updated_at=self._clock.now())
             )
         _log.info("headless.config_set", key=key)
-        self._bootstrap()
+        try:
+            self._bootstrap()
+        except Exception:  # the path map is stored only once the roots are registered
+            with self._engine.begin() as connection:
+                connection.execute(
+                    sa.update(export.export_target)
+                    .where(export.export_target.c.id == row.id)
+                    .values(path_map=before, updated_at=self._clock.now())
+                )
+            raise
         return self.get(key)
 
     def _set_channel(self, value: str) -> None:
@@ -396,6 +425,7 @@ class HeadlessAdmin:
     ) -> TargetAdded:
         clean_url = _target_url(url)
         entries = _normalise_path_map(path_map) if path_map else []
+        self._check_roots(entries)  # before a key is exchanged or anything stored
         with self._engine.connect() as connection:
             existing = connection.execute(
                 sa.select(export.export_target).where(export.export_target.c.name == name)

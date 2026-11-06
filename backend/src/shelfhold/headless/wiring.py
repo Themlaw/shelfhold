@@ -9,6 +9,7 @@ from sqlalchemy import Engine
 
 from shelfhold.composition import Composition
 from shelfhold.config import Settings, load_settings
+from shelfhold.export.application.root_bootstrap import RootPolicy
 from shelfhold.export.targets.kavita.adopt import AdoptionRefused
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.linking import ShelfLinker
@@ -78,6 +79,6 @@ def open_headless(settings: Settings) -> HeadlessAdmin:
         suwayomi=HttpSuwayomiProbe(integration_fetcher),
         channels=_Channels(),
         resolve=lambda: load_settings(os.environ, db_loader=load_db_settings),
-        store_dir=settings.store_dir,
+        roots=RootPolicy(settings.library_dir, settings.data_dir, settings.store_dir),
         linker=_ShelfLinker(settings, engine),
     )

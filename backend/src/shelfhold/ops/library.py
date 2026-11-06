@@ -13,7 +13,6 @@ import asyncio
 import functools
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
@@ -49,7 +48,10 @@ from shelfhold.export.application.repatriate import (
     RepatriationPlan,
     Repatriator,
 )
+from shelfhold.export.application.restore import RestoredBehindError
+from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
@@ -133,6 +135,12 @@ _CODED: tuple[tuple[type[Exception], str], ...] = (
 
 def refusal_of(error: Exception) -> OpsError | None:
     """The refusal that stands for a service's exception, or None when it is a real failure."""
+    if isinstance(error, RootBlockedError):  # the exit command is in the message and the catalog
+        frozen = error.state is RootState.RESTORED_BEHIND
+        code = "instance.restored_behind" if frozen else "root.blocked"
+        return CodedRefusal(code, str(error))
+    if isinstance(error, RestoredBehindError):
+        return CodedRefusal("instance.restored_behind", str(error))
     for kind, code in _CODED:
         if isinstance(error, kind):
             return CodedRefusal(code, type(error).__name__)
@@ -418,7 +426,7 @@ class LibraryOps:
 
     @_refused
     def purge(
-        self, *, kind: str, anchor_id: str, typed: str | None, principal: Principal, now: datetime
+        self, *, kind: str, anchor_id: str, typed: str | None, principal: Principal
     ) -> dict[str, Any]:
         with self._comp.write_context() as w:
             service = PurgeService(
@@ -427,7 +435,9 @@ class LibraryOps:
                 fresh_auth_s=self._comp.settings.fresh_auth_s,
             )  # fmt: skip
             run = service.purge_work if kind == "work" else service.purge_unit
-            report: PurgeReport = run(anchor_id, principal=principal, typed=typed, now=now)
+            report: PurgeReport = run(
+                anchor_id, principal=principal, typed=typed, now=self._comp.clock.now()
+            )
         return {
             "anchor_id": report.anchor_id,
             "units": list(report.unit_ids),

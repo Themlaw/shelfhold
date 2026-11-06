@@ -10,6 +10,7 @@ s'il est lisible par tous.
 | --- | --- | --- |
 | `SHELFHOLD_DATA_DIR` | `/data` | Volume chaud : SQLite (WAL), `config.toml`, sauvegardes de migration. Variable seule (jamais dans `config.toml`) |
 | `SHELFHOLD_STORE_DIR` | `/store` | Volume des copies conservées ; distinct de `/data` et non imbriqué (ENF-OPS-012) |
+| `SHELFHOLD_LIBRARY_DIR` | `/library` | Dossier sous lequel vivent les racines physiques en écriture (EF-EXP-059) ; ni `/data` ni `/store` |
 | `SHELFHOLD_FRONTEND_DIR` | (build embarqué) | Répertoire du build statique de la SPA servi par le backend ; sans build, seule l'API répond |
 | `SHELFHOLD_HOST` | `127.0.0.1` | Adresse d'écoute. **Dans un conteneur, définir `SHELFHOLD_HOST=0.0.0.0`** (le Dockerfile arrive en PR5) |
 | `SHELFHOLD_PORT` | `8080` | Port d'écoute |

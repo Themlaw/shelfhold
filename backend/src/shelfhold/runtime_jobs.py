@@ -209,9 +209,16 @@ async def _export_one(
             deadline = time.monotonic() + SCAN_QUIET_S
             while time.monotonic() < deadline and not context.stop_requested:
                 await asyncio.sleep(1)
-            await client.flush_scans()
+            try:
+                await client.flush_scans()
+            except TargetError as error:  # Kavita lost after the writing: the next run scans again
+                log.info("export.scan_failed", destination_id=destination.id,
+                         reason=type(error).__name__)  # fmt: skip
     poller = ArrivalPoller(comp.engine, comp.clock, BusTargetEvents(comp.engine, comp.bus))
-    await poller.poll(client, destination.id)
+    try:
+        await poller.poll(client, destination.id)
+    except TargetError as error:  # one destination failing never stops the others
+        log.info("export.poll_failed", destination_id=destination.id, reason=type(error).__name__)
 
 
 # -- reconcile -----------------------------------------------------------------

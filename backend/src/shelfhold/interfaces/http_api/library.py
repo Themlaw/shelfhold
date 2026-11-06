@@ -7,8 +7,7 @@ action: a fresh session, never a key) and the write probe. The CLI twin of each 
 """
 
 from collections.abc import Callable
-from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -45,7 +44,7 @@ class RepatriateIn(BaseModel):
 
 
 class DetachIn(BaseModel):
-    restore_upstream: bool
+    restore_upstream: Literal[True]  # the only detachment that deletes nothing; false is a 422
     shelf_id: str | None = None
     edition_id: str | None = None
 
@@ -111,7 +110,6 @@ def build_library_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         with refusals():
             return get_ops().library.purge(
                 kind="unit", anchor_id=unit_id, typed=body.typed, principal=principal,
-                now=datetime.now(UTC),
             )  # fmt: skip
 
     @router.post("/works/{work_id}/purge", response_model=Body)
@@ -121,7 +119,6 @@ def build_library_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         with refusals():
             return get_ops().library.purge(
                 kind="work", anchor_id=work_id, typed=body.typed, principal=principal,
-                now=datetime.now(UTC),
             )  # fmt: skip
 
     @router.post("/probe", response_model=Body)

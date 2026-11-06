@@ -7,7 +7,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
-from shelfhold.export.application.root_bootstrap import register_roots
+from shelfhold.export.application.root_bootstrap import RootPolicy, register_roots
 from shelfhold.export.domain.path_map import PathMode
 from shelfhold.export.targets.kavita import AdminKey, KavitaClient
 from shelfhold.export.targets.kavita.adopt import AdoptionRefused
@@ -31,7 +31,9 @@ def test_target_add_and_shelf_create_register_the_instance_and_the_roots(
     root.mkdir(parents=True)
     ro = tmp_path / "upstream"
     ro.mkdir()
-    with headless(settings, store_dir=None) as env:
+    with headless(
+        settings, roots=RootPolicy(tmp_path / "library", settings.data_dir, settings.store_dir)
+    ) as env:
         env.admin.target_add_kavita(
             name="k", url="http://kavita.internal:5000", username="u", password=PASSWORD,
             accept_admin_risk=True,
@@ -45,7 +47,7 @@ def test_target_add_and_shelf_create_register_the_instance_and_the_roots(
             instances = c.execute(sa.select(platform.instance.c.instance_id)).all()
             roots = {r.path_entry: r.mode for r in c.execute(sa.select(platform.physical_root))}
         assert len(instances) == 1
-        assert roots == {str(root): "rw", str(ro): "adopt_ro"}
+        assert roots == {str(root): "rw", str(ro): "adopt_ro", str(settings.store_dir): "rw"}
         assert (root / ".shelfhold-mount-id").is_file()  # the writable root is stamped
         assert not (ro / ".shelfhold-mount-id").exists()  # a read-only root never is
         again = register_roots(env.engine, [(str(root), PathMode.RW)])

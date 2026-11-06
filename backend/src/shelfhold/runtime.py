@@ -21,7 +21,11 @@ from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
 from shelfhold.export.application.restore import RestoredBehindError, RestoreGuard
-from shelfhold.export.application.root_bootstrap import register_roots, target_roots
+from shelfhold.export.application.root_bootstrap import (
+    RootPolicy,
+    register_roots,
+    target_roots,
+)
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.infrastructure.clock import SystemClock
@@ -120,10 +124,14 @@ class InstanceRuntime:
         self.composition = composition
         wanted = target_roots(engine)
         wanted.append((str(self.settings.store_dir), PathMode.RW))
-        try:
-            register_roots(engine, wanted)  # the instance row and the roots of a first start
-        except (OSError, ValueError, sa.exc.SQLAlchemyError) as error:  # never blocks the start
-            structlog.get_logger().warning("root_bootstrap_skipped", error=str(error))
+        policy = RootPolicy(
+            self.settings.library_dir, self.settings.data_dir, self.settings.store_dir
+        )
+        for item in wanted:  # one refused or unwritable folder never stops the others
+            try:
+                register_roots(engine, [item], policy=policy)  # first start of an install
+            except (OSError, ValueError, sa.exc.SQLAlchemyError) as error:
+                structlog.get_logger().warning("root_bootstrap_skipped", error=str(error))
         bus = composition.bus  # an operating event queues one notification per channel
         with engine.connect() as conn:
             row = conn.execute(sa.select(platform.instance.c.instance_id)).first()

@@ -1537,6 +1537,10 @@
       "code": "resync_required",
       "status": 410
     },
+    "/api/v1/problems/root.blocked": {
+      "code": "root.blocked",
+      "status": 409
+    },
     "/api/v1/problems/secret.undecryptable": {
       "code": "secret.undecryptable",
       "status": 503

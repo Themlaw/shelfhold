@@ -169,7 +169,6 @@ def test_probe_reports_a_writable_and_a_missing_folder(settings: Settings, tmp_p
 
 
 def test_purge_of_an_unknown_unit_is_a_coded_refusal(settings: Settings, tmp_path) -> None:
-    from datetime import UTC, datetime
 
     from shelfhold.identity.public import Credential, Principal
     from shelfhold.ops.errors import CodedRefusal
@@ -183,7 +182,6 @@ def test_purge_of_an_unknown_unit_is_a_coded_refusal(settings: Settings, tmp_pat
                 anchor_id="01M6Q0XWXW10VPKHV7VNA88WAQ",
                 typed="x",
                 principal=admin,
-                now=datetime.now(UTC),
             )
         assert refused.value.code in {"ops.unknown_subject", "unit.confirmation_required"}
 

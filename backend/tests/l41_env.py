@@ -15,6 +15,7 @@ from sqlalchemy import Engine
 
 from shelfhold.composition import Composition
 from shelfhold.config import Settings
+from shelfhold.export.application.root_bootstrap import RootPolicy
 from shelfhold.headless import ExchangedKey, HeadlessAdmin
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
@@ -82,7 +83,8 @@ class Instance:
 def instance(settings: Settings, tmp: Path, *, linker: object = None) -> Iterator[Instance]:
     migrate(settings)
     settings.store_dir.mkdir(parents=True, exist_ok=True)
-    library = tmp / "library" / "manga"
+    library_root = tmp / "library"
+    library = library_root / "manga"
     (library / "Kavita").mkdir(parents=True)
     engine = create_db_engine(settings.database_path)
     keyring = boot_check(settings, announce=False)
@@ -98,7 +100,7 @@ def instance(settings: Settings, tmp: Path, *, linker: object = None) -> Iterato
     admin = HeadlessAdmin(
         engine, SecretVault(keyring), clock=SystemClock(), kavita=_Exchange(),  # type: ignore[arg-type]
         suwayomi=FakeSuwayomiProbe(mode="basic_auth"), channels=FakeChannels(),
-        store_dir=settings.store_dir, linker=linker,  # type: ignore[arg-type]
+        roots=RootPolicy(library_root, settings.data_dir, settings.store_dir), linker=linker,  # type: ignore[arg-type]
     )  # fmt: skip
     comp = Composition(settings, engine, clock=SystemClock(), network=network)
     try:
