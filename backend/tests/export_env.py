@@ -133,7 +133,11 @@ def export_env(*, max_age_rating: int | None = 18, transport: str = "tree") -> I
 
 
 def export_env_on(
-    lib: LibEnv, *, max_age_rating: int | None = 18, transport: str = "tree"
+    lib: LibEnv,
+    *,
+    max_age_rating: int | None = 18,
+    transport: str = "tree",
+    suffix: str = "",  # tells the shelf and the target apart from ones already in the library
 ) -> ExportEnv:
     """The shelf, the destination and the pipeline over an existing synthetic library."""
     target_id, shelf_id = new_ulid(), new_ulid()
@@ -147,12 +151,15 @@ def export_env_on(
         )
         connection.execute(
             sa.insert(export.export_target).values(
-                id=target_id, kind="kavita", name="Kavita", path_map=path_map
+                id=target_id, kind="kavita", name=f"Kavita{suffix}", path_map=path_map
             )
         )
         connection.execute(
             sa.insert(export.shelf).values(
-                id=shelf_id, name="Adultes", phrase="Mes mangas", max_age_rating=max_age_rating
+                id=shelf_id,
+                name=f"Adultes{suffix}",
+                phrase=f"Mes mangas{suffix}",
+                max_age_rating=max_age_rating,
             )
         )
         connection.execute(

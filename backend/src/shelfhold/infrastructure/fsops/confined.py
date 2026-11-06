@@ -44,6 +44,9 @@ def mount_id_of(fd: int) -> int | None:
     return None
 
 
+HOST_AREA = ".shelfhold"  # == physical_roots.RESERVED_DIR (this layer cannot import it)
+
+
 class Strategy(StrEnum):
     AUTO = "auto"
     OPENAT2 = "openat2"
@@ -257,6 +260,8 @@ class ConfinedRoot:
             if exist_ok:
                 return
             raise FileExistsError(errno.EEXIST, "the root exists", rel)
+        if parts[0] == HOST_AREA:
+            mode = 0o700  # Shelfhold's own area: owner only, whatever the library's umask
         dir_mode = self.file_mode(mode)
         if parents:
             current = os.dup(self._root_fd())

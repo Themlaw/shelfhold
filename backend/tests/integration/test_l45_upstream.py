@@ -27,14 +27,20 @@ HOSTILE_TITLES = [
     "Chapter 3 ‮evil‬",
     "Chapter\x07 3\x00\x1b[31m",
     '<a href="javascript:alert(1)">Chapter 3</a>',
+    "&#x202E;Chapter 3",  # an entity that spells an invisible character
+    "&#8238;Chapter&#x200B; 3&#xE0041;",
+    "&amp;#x202E;Chapter 3",
 ]
 HOSTILE_TEAMS = [
     "<b>Team</b><script>alert(1)</script>",
     "Team ‮evil",
     "Team\x07\x00 &lt;i&gt;",
     "<img src=x onerror=alert(1)>Team",
+    "&#x202E;Team&#x200B;&#xE0041;",
 ]
-_BAD = re.compile(r"[<>‪-‮⁦-⁩\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|script|onerror|javascript")
+_BAD = re.compile(
+    r"[<>​-‏‪-‮⁠-⁩\U000e0000-\U000e007f\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|script|onerror|javascript"
+)
 
 
 def _comicinfo_of(path: Path) -> ET.Element:
@@ -112,3 +118,34 @@ def test_future_upload_date_does_not_keep_a_team_active() -> None:
         with structlog.testing.capture_logs() as logs:
             bench.run()
         assert [e["reason"] for e in logs if e["event"] == "team.fallback"] == ["majority_inactive"]
+
+
+@pytest.mark.req("ENF-SEC-015")
+@pytest.mark.parametrize(
+    "title",
+    ["&#x202E;Series &#x200B;Alpha", "<b>Series</b> &#xE0041;Alpha\u202e", "&amp;#x202E;Alpha"],
+)
+def test_series_title_sanitized_to_the_exported_cbz(title: str) -> None:
+    """A series found by the real discovery, then followed and exported: the title that reaches
+    the database and the ComicInfo `Series` carries no invisible character."""
+    with follow_bench(seeded=False, adult_shelf=True) as bench:
+        bench.alpha()["title"] = title
+        bench.run()  # discovery: the series is filed, its chapters are the baseline
+        env = export_env_on(bench.lib, suffix=" L45")
+        edition = bench.rows("SELECT id, work_id FROM edition")[0]
+        with bench.lib.engine.begin() as connection:
+            connection.execute(
+                sa.update(catalog.edition)
+                .where(catalog.edition.c.id == edition["id"])
+                .values(shelf_id=env.shelf_id)
+            )
+        bench.alpha()["chapters"].append(new_chapter(5030, 3))
+        bench.run()
+        _settle(bench)
+        stored = bench.rows("SELECT title FROM work WHERE id = :w", w=edition["work_id"])[0]
+        assert not _BAD.search(stored["title"]), stored
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        exported = [p for p in env.files() if p.name.endswith(".cbz")]
+        assert exported, env.files()
+        series = _comicinfo_of(exported[0]).findtext("Series") or ""
+        assert "alpha" in series.lower() and not _BAD.search(series), series

@@ -15,7 +15,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR, STAGING_DIR
-from shelfhold.infrastructure.fsops.confined import ConfinedRoot, split_rel
+from shelfhold.infrastructure.fsops.confined import HOST_AREA, ConfinedRoot, split_rel
 from shelfhold.infrastructure.fsops.emitters import require_inside
 from shelfhold.infrastructure.fsops.errors import CopyVerificationError
 from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of
@@ -82,6 +82,8 @@ def write_atomic(
     staging_dir = STAGING_DIR
     root.mkdir(staging_dir, parents=True, exist_ok=True, durable=False)
     staged = f"{staging_dir}/{uuid.uuid4().hex}"
+    if file_mode is None and parts[0] == HOST_AREA:
+        file_mode = 0o600  # the lease, the journals: owner only, whatever the library's umask
     requested = 0o666 if file_mode is None else file_mode
     fd = root.open_file(staged, os.O_RDWR | os.O_CREAT | os.O_EXCL, requested)
     placed = False

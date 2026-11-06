@@ -764,6 +764,7 @@ def _trusted(info: UnitInfo, now: datetime) -> UnitInfo:
             published = None
     return info.model_copy(
         update={
+            "number": _plain(info.number),
             "title": _plain(info.title),
             "team": _plain(info.team),
             "published_at": published,

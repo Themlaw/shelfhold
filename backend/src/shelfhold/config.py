@@ -101,7 +101,16 @@ class Settings(BaseModel):
         if isinstance(value, str):
             if not re.fullmatch(r"0?[0-7]{1,3}", value.strip()):
                 raise ValueError("umask must be octal text such as 0022")
-            return int(value.strip(), 8)
+            value = int(value.strip(), 8)
+        return value
+
+    @field_validator("umask")
+    @classmethod
+    def _safe_umask(cls, value: int) -> int:
+        if value & 0o700:
+            raise ValueError("umask must not mask the owner's bits: files would be unusable")
+        if not value & 0o002:
+            raise ValueError("umask must mask 'others write' (0o002 set), e.g. 0022 or 0002")
         return value
 
     @field_validator("forward_auth_trusted_cidrs")
