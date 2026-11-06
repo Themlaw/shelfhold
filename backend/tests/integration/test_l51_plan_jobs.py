@@ -239,3 +239,34 @@ def test_idempotency_stores_only_deterministic_answers(status: int) -> None:
     assert not storable(status, Headers({}), False, b"{}")
     for kept in (200, 201, 202, 404, 409, 422):
         assert storable(kept, Headers({"content-type": "application/json"}), False, b"{}")
+
+
+def test_a_412_is_not_replayed_by_the_idempotency_key(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path
+) -> None:
+    """(review) A stale answer depends on the state of the library, not on the request: it is
+    never stored, so the same key can come back once the plan is current again."""
+    with live(monkeypatch, settings, tmp_path) as api:
+        plan_id, etag = preview(api)
+        url = f"/api/v1/plans/{plan_id}/apply"
+        keyed = {"Idempotency-Key": "stale-0001"}
+        api.env.add_chapter(api.series, "3")  # the library moved after the preview
+        one = api.api.post(url, headers={**keyed, "If-Match": etag})
+        two = api.api.post(url, headers={**keyed, "If-Match": etag})
+        assert (one.status_code, two.status_code) == (412, 412)
+        assert "idempotent-replayed" not in one.headers
+        assert "idempotent-replayed" not in two.headers  # it ran again, it was not replayed
+        assert jobs_of(api) == []
+
+
+def test_if_match_accepts_a_list_holding_the_current_version(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path
+) -> None:
+    with live(monkeypatch, settings, tmp_path) as api:
+        plan_id, etag = preview(api)
+        none_of_them = api.apply(plan_id, '"9", "3"')
+        assert none_of_them.status_code == 412  # neither candidate is the version of the plan
+        assert jobs_of(api) == []
+        listed = api.apply(plan_id, f'"9", {etag}')
+        assert listed.status_code == 202, listed.text  # the plan's version is among the candidates
+        assert api.wait_job(listed.json()["job_id"])["status"] == "succeeded"
