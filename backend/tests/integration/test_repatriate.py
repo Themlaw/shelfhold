@@ -53,11 +53,11 @@ def test_repatriate_then_unmount_keeps_kavita_series_and_progress() -> None:
         result = r.apply(plan.fingerprint)  # type: ignore[attr-defined]
         assert (result.copied, result.already_present) == (FILES, 0)  # type: ignore[attr-defined]
         check = r.repatriator.check(r.destination, plan=plan)
-        assert check.safe_to_unmount and (check.series, check.chapters) == (len(SERIES), FILES)
+        assert check.files_intact and (check.series, check.chapters) == (len(SERIES), FILES)
         r.unmount()
         # the mount is gone; the files are where Kavita sees them, byte for byte
         assert len(r.env.files()) == FILES
-        assert r.repatriator.check(r.destination, plan=plan).safe_to_unmount
+        assert r.repatriator.check(r.destination, plan=plan).files_intact
         # Kavita is asked to scan each folder, and indexes what is now under the writable root
         for name in SERIES:
             folder = f"{REMOTE_ROOT}/{name}"
@@ -277,4 +277,4 @@ def test_check_compares_the_counts_with_the_dry_run() -> None:
         with r.env.engine.begin() as connection:
             connection.execute(sa.text("DELETE FROM export_record WHERE rel_path LIKE '%Ch.3%'"))
         check = r.repatriator.check(r.destination, plan=plan)  # type: ignore[arg-type]
-        assert not check.matches_plan and not check.safe_to_unmount
+        assert not check.matches_plan and not check.files_intact

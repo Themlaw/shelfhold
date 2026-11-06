@@ -13,14 +13,14 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.instance import InstanceLock
-from shelfhold.infrastructure.schema import acquisition, catalog, export, identity
+from shelfhold.infrastructure.schema import catalog, export, identity
 from tests.l54_env import Bench54, bench54
 from tests.mirror_env import entry, raw
 
 pytestmark = pytest.mark.req("EF-EXP-063", "ENF-OPS-020")
 
 TABLES = (
-    catalog.work, catalog.edition, catalog.unit, acquisition.variant, export.export_item,
+    catalog.work, catalog.edition, catalog.unit, catalog.unit_variant, export.export_item,
     export.export_record, export.unit_coverage, export.export_series, identity.user,
 )  # fmt: skip
 
@@ -103,6 +103,33 @@ def test_meta_rebuild_never_follows_a_forged_path_or_a_foreign_header(
         assert b.cli("meta", "rebuild") == 0
         assert not outside.exists() and _counts(b) == before
         assert [p.name for p in path.parent.rglob("*") if p.is_file()] == [path.name]
+
+
+def test_meta_rebuild_takes_no_age_or_lineage_from_a_line_of_the_disk(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        path = _exported(b)
+        good = _lines(path)
+        owned = good[1]
+        assert "age_classified" not in owned and "derived_hash" not in owned
+        # the very file the database knows, with an age, a derived hash and a note added by hand
+        forged = {
+            **owned,
+            "age_classified": {"min_age": 0, "x": False},
+            "derived_hash": "sha256:" + "0" * 64,
+            "derived_by": "x@1",
+            "note": "kept: unknown fields travel",
+        }
+        path.write_bytes(raw(good[0], forged))
+        assert b.cli("meta", "rebuild") == 0
+        line = _lines(path)[1]
+        assert "age_classified" not in line and "derived_hash" not in line
+        assert "derived_by" not in line
+        assert line["note"] == "kept: unknown fields travel"
+        assert line["state"] == "exported" and line["coverage"] == owned["coverage"]
 
 
 def test_meta_rebuild_goes_through_the_instance_lock(

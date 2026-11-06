@@ -53,7 +53,7 @@ from shelfhold.infrastructure.observability.shutdown import (
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
-from shelfhold.library.public import migrate_received_dirs
+from shelfhold.library.public import MetaProjection, migrate_received_dirs
 from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 
@@ -211,6 +211,7 @@ class InstanceRuntime:
             report.append(result)
             return result
 
+        self._repair_projections(engine)
         self.pools = JobPools(
             self.settings.data_dir,
             engine=engine,
@@ -237,6 +238,19 @@ class InstanceRuntime:
         watcher.check()  # the first measure at once: a full disk parks the jobs boot just sent
         self.pools.start_workers()  # the queues are consumed from here on
         return report[0] if report else None
+
+    def _repair_projections(self, engine: Engine) -> None:
+        """`unit.json` and `work.json` are projections of the database, written after the
+        transaction: a crash in between left one missing or torn. They are written again now
+        (ENF-OPS-020), under `/data` only; one that cannot be never stops the start."""
+        try:
+            report = MetaProjection(engine, self.settings.data_dir).repair()
+        except (OSError, ValueError, sa.exc.SQLAlchemyError) as error:
+            structlog.get_logger().warning("meta_repair_skipped", error=type(error).__name__)
+            return
+        for kind, found in (("unit", report.read_only), ("work", report.works_read_only)):
+            if found:  # a newer format is never rewritten (ENF-OPS-013)
+                structlog.get_logger().warning("reconcile.drift", kind=f"{kind}_json_newer_format")
 
     def _probed(
         self,

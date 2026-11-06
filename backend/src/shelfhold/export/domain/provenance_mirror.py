@@ -53,6 +53,13 @@ MAX_LINES: Final = 20_000
 MAX_LINE_BYTES: Final = 256 * 1024
 MAX_DEPTH: Final = 12
 UNRESOLVED: Final = "unresolved"
+# Every field of a line this build writes or reads. A line the database owns takes these from the
+# database alone: a disk line (untrusted) never adds an age, a hash or a lineage to it.
+KNOWN_ENTRY_FIELDS: Final = frozenset({
+    "kind", "state", "rel_path", "file_hash", "content_hash", "content_hash_by", "derived_hash",
+    "derived_by", "export_item", "coverage", "template_ref", "edition", "series", "written_at",
+    "age_classified",
+})  # fmt: skip
 
 _VERSION = re.compile(r"^(\d+)\.(\d+)$")
 _ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
@@ -318,15 +325,19 @@ def merge_with_database(
     """The projection of the database, plus what the file holds that the database cannot explain.
 
     A disk line the database now owns (same `export_item`) is replaced by the database's line,
-    unknown fields of an identical `(rel_path, file_hash)` merged in. Every other disk line is
-    kept, `unresolved`: it may be a series born after the last backup, and only the admin decides
-    (GAP-9-03)."""
+    unknown fields (never a known one) of an identical `(rel_path, file_hash)` merged in. Every
+    other disk line is kept, `unresolved`: it may be a series born after the last backup, and
+    only the admin decides (GAP-9-03)."""
     owned = [dict(e) for e in from_database]
     by_key = {(e["rel_path"], e["file_hash"]): e for e in on_disk.entries}
     merged: list[dict[str, Any]] = []
     for line in owned:
         previous = by_key.get((line["rel_path"], line["file_hash"]))
-        merged.append({**previous, **line} if previous is not None else line)
+        if previous is None:
+            merged.append(line)
+        else:
+            extras = {k: v for k, v in previous.items() if k not in KNOWN_ENTRY_FIELDS}
+            merged.append({**extras, **line})
     owned_items = {e["export_item"]["id"] for e in owned}
     for old in on_disk.entries:
         item = old["export_item"]["id"]

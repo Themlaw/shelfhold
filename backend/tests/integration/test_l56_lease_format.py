@@ -40,7 +40,9 @@ def lease_file(env: Env) -> Path:
     return env.library / ".shelfhold" / "lease"
 
 
-def _leave_a_lease_behind(env: Env, clock: ManualClock, boot_id: str, lock: Path) -> dict[str, object]:
+def _leave_a_lease_behind(
+    env: Env, clock: ManualClock, boot_id: str, lock: Path
+) -> dict[str, object]:
     """A run of this instance that died with its lease: what the file said."""
     dead = WriteSessions(env.fsops, instance_id=ME, clock=clock, boot_id=boot_id, lock_path=lock)
     dead.take(str(env.library))
@@ -54,7 +56,9 @@ def test_lease_schema_version_unknown_fields_preserved(env: Env, clock: ManualCl
     assert document["schema_version"] == "1.0"
     newer = {**document, "schema_version": "1.3", "m1b_counter": 7, "m1b_nested": {"a": [1, 2]}}
     lease_file(env).write_text(json.dumps(newer))
-    sessions = WriteSessions(env.fsops, instance_id=ME, clock=clock, boot_id="new-run", lock_path=lock)
+    sessions = WriteSessions(
+        env.fsops, instance_id=ME, clock=clock, boot_id="new-run", lock_path=lock
+    )
     target = env.manga / "S" / "1.cbz"
     with sessions.open(str(target)) as session:
         taken = json.loads(lease_file(env).read_bytes())
@@ -73,7 +77,9 @@ def test_a_lease_without_a_version_is_the_first_format(env: Env, clock: ManualCl
     document = _leave_a_lease_behind(env, clock, "dead-run", lock)
     del document["schema_version"]  # written before the format was versioned
     lease_file(env).write_text(json.dumps(document))
-    sessions = WriteSessions(env.fsops, instance_id=ME, clock=clock, boot_id="new-run", lock_path=lock)
+    sessions = WriteSessions(
+        env.fsops, instance_id=ME, clock=clock, boot_id="new-run", lock_path=lock
+    )
     with sessions.open(str(env.manga / "S" / "1.cbz")):
         assert json.loads(lease_file(env).read_bytes())["schema_version"] == "1.0"
 
@@ -88,7 +94,9 @@ def test_a_lease_of_a_newer_major_is_refused_and_never_rewritten(
     lease_file(env).write_text(json.dumps(foreign))
     raw = lease_file(env).read_bytes()
     clock.advance(seconds=LEASE_VALIDITY.total_seconds() + 60)  # run out: it would be taken over
-    sessions = WriteSessions(env.fsops, instance_id=ME, clock=clock, boot_id="new-run", lock_path=lock)
+    sessions = WriteSessions(
+        env.fsops, instance_id=ME, clock=clock, boot_id="new-run", lock_path=lock
+    )
     with pytest.raises(LeaseConflictError):
         sessions.open(str(env.manga / "S" / "1.cbz")).__enter__()
     assert lease_file(env).read_bytes() == raw  # not corrupted, not taken, not released

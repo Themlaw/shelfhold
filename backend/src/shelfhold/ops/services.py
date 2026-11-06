@@ -38,6 +38,7 @@ from shelfhold.ops.errors import (
 )
 from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.library import LibraryOps
+from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.ports import (
     AdoptionExit,
@@ -135,6 +136,7 @@ class OpsServices:
         intents: IntentOps | None = None,
         backfill: BackfillOps | None = None,
         normalize: NormalizeOps | None = None,
+        meta: MetaOps | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -149,6 +151,7 @@ class OpsServices:
         self._intents = intents
         self._backfill = backfill
         self._normalize = normalize
+        self._meta = meta
 
     # -- reading -------------------------------------------------------------------------------
 
@@ -445,6 +448,13 @@ class OpsServices:
         if self._normalize is None:
             raise ExitUnavailableError("normalizer migration is not connected")
         return self._normalize
+
+    @property
+    def meta(self) -> MetaOps:
+        """`meta rebuild|check` (ENF-OPS-020, EF-EXP-063)."""
+        if self._meta is None:
+            raise ExitUnavailableError("the projections are not connected")
+        return self._meta
 
     def adopt_set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
         if self._adoption is not None:

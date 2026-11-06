@@ -10,6 +10,8 @@ from shelfhold.library.adapters.meta_projection import (
     RepairReport,
     meta_path,
     meta_rel,
+    work_path,
+    work_rel,
 )
 from shelfhold.library.adapters.purge_inventory import (
     content_hashes,
@@ -167,4 +169,6 @@ __all__ = [
     "unresolved_bin_items",
     "upstream_claims",
     "withdraw_upstream_claims",
+    "work_path",
+    "work_rel",
 ]

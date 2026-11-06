@@ -75,6 +75,15 @@ class ParseResult:
 
 
 @dataclass(frozen=True)
+class ChapterFile:
+    """A file Kavita indexed and how far the account of the key has read it (`ChapterDto`)."""
+
+    path: str
+    pages: int
+    pages_read: int
+
+
+@dataclass(frozen=True)
 class LibraryUpdate:
     library_id: int
     changed: bool

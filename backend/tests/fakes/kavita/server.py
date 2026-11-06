@@ -466,7 +466,9 @@ class FakeKavita:
             return self._json({"title": "Not Found", "status": 404}, 404)
         chapters = [
             {
-                "id": i, "pages": 20, "pagesRead": self.progress.get(p, 0),
+                "id": i,
+                "pages": 20,
+                "pagesRead": self.progress.get(p, 0),
                 "files": [{"id": i, "filePath": p}],
             }
             for i, p in enumerate(self.files[int(sid)])

@@ -344,6 +344,11 @@ class KavitaClient:
 
     async def series_files(self, series_id: int) -> list[str]:
         """The files Kavita has indexed for a series (volumes, chapters and specials)."""
+        return [f.path for f in await self.series_chapters(series_id)]
+
+    async def series_chapters(self, series_id: int) -> list[dto.ChapterFile]:
+        """The same files with the progress of the account of the key, as Kavita's API gives it
+        (`pagesRead` of each chapter): what the control before an unmount compares."""
         data = (await self._send(routes.SERIES_DETAIL, query={"seriesId": int(series_id)})).data
         if not isinstance(data, dict):
             raise ProtocolError("series-detail did not answer an object")
@@ -351,12 +356,13 @@ class KavitaClient:
         for volume in data.get("volumes") or []:
             chapters.extend(volume.get("chapters") or [] if isinstance(volume, dict) else [])
         return [
-            str(f["filePath"])
+            dto.ChapterFile(str(f["filePath"]), _count(chapter.get("pages")),
+                            _count(chapter.get("pagesRead")))
             for chapter in chapters
             if isinstance(chapter, dict)
             for f in chapter.get("files") or []
             if isinstance(f, dict) and "filePath" in f
-        ]
+        ]  # fmt: skip
 
     async def series_age(self, series_id: int) -> dto.SeriesAge:
         data = (await self._send(routes.SERIES_METADATA, query={"seriesId": int(series_id)})).data
@@ -428,6 +434,11 @@ class KavitaClient:
             "lockCover": True,
         }
         await self._send(routes.UPLOAD_SERIES_COVER, body=body)
+
+
+def _count(value: object) -> int:
+    """A page count from Kavita: an integer, else 0 (never trusted further than that)."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 def _is_json(raw: bytes) -> bool:
