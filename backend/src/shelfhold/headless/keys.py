@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
 
+from shelfhold.export.application.root_bootstrap import default_jurisdiction
 from shelfhold.headless.errors import InvalidConfigValue
 from shelfhold.headless.urls import validate_public_url
 
@@ -41,6 +42,13 @@ def _check_mode(value: str) -> str:
     return value
 
 
+def _jurisdiction(value: str) -> str:
+    clean = value.strip().upper()
+    if len(clean) != 2 or not clean.isalpha():
+        raise InvalidConfigValue("instance.jurisdiction is a two-letter country code, e.g. FR")
+    return clean
+
+
 KEYS: Final = {
     key.name: key
     for key in (
@@ -49,6 +57,9 @@ KEYS: Final = {
         ConfigKey("source.check_mode", "always_on",
                   "How new chapters are looked for: always_on or piloted (EF-SRC-025).",
                   _check_mode),
+        ConfigKey("instance.jurisdiction", default_jurisdiction(),
+                  "Country whose copyright law drives the public-domain notices; the default "
+                  "is deduced from the locale (EF-SRC-024).", _jurisdiction),
         ConfigKey("maintenance.window", MAINTENANCE_WINDOW,
                   "The fixed maintenance window (ENF-OPS-014); read only in M1a.", readonly=True),
         ConfigKey("notify.urls", [], "Notification channels, name=url; the URL is sealed.",

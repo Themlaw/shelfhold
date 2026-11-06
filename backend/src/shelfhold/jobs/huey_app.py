@@ -20,6 +20,7 @@ from typing import Any, Protocol
 
 from huey import SqliteHuey, crontab
 from huey.api import Huey
+from huey.consumer import Consumer
 from huey.exceptions import RetryTask
 from sqlalchemy import Engine
 
@@ -37,6 +38,13 @@ TICK_POOL = "io"
 TICK_PRIORITY = 100  # above every class: queued downloads never delay the scan (a task already
 # running is not preempted, so `io` keeps a spare worker thread)
 _LOCK_MARK = ".lock."
+
+
+class _EmbeddedConsumer(Consumer):  # type: ignore[misc]
+    """A Huey consumer inside the server process: the server owns the signals, not Huey."""
+
+    def _set_signal_handlers(self) -> None:
+        return None
 
 
 class InstanceLockNotHeldError(RuntimeError):
@@ -114,6 +122,7 @@ class JobPools:
         self._running = 0
         self._idle = threading.Condition()
         self._hueys: dict[str, Huey] = {}
+        self._consumers: list[Consumer] = []
         self._run_job: dict[str, Any] = {}
         for name in POOLS:
             queue_file = data_dir / f"huey-{name}.db"
@@ -129,6 +138,27 @@ class JobPools:
         self._hueys[TICK_POOL].periodic_task(
             crontab(minute="*"), name="tick", priority=TICK_PRIORITY
         )(self.tick)
+
+    # -- the workers ------------------------------------------------------------------------
+
+    def start_workers(self) -> None:
+        """One consumer per pool, with its worker threads (spike S1). Without them the tasks that
+        `boot_jobs` and the `tick` send would wait in the queue files for ever."""
+        if self._consumers:
+            return
+        for name in POOLS:
+            consumer = _EmbeddedConsumer(
+                self._hueys[name], workers=POOL_WORKERS[name], worker_type="thread",
+                check_worker_health=False, shutdown_timeout=10,
+            )  # fmt: skip
+            consumer.start()
+            self._consumers.append(consumer)
+
+    def stop_workers(self) -> None:
+        """After `GracefulShutdown`: nothing is claimed any more, the threads leave."""
+        consumers, self._consumers = self._consumers, []
+        for consumer in consumers:
+            consumer.stop(graceful=True)
 
     # -- Huey instances ---------------------------------------------------------------------
 

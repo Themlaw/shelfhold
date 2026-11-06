@@ -288,6 +288,42 @@ def _dominant(values: Sequence[str]) -> str | None:
 # -- the adopter ---------------------------------------------------------------------------------
 
 
+def ensure_link(engine: Engine, clock: Clock, ctx: DestinationContext, library_ref: str) -> str:
+    """The `remote_library` row of the server's library and its link to the destination."""
+    library, link = export.remote_library, export.shelf_destination_remote_library
+    with engine.begin() as connection:
+        library_id = connection.execute(
+            sa.select(library.c.id).where(
+                library.c.export_target_id == ctx.target_id, library.c.remote_ref == library_ref
+            )
+        ).scalar()
+        if library_id is None:
+            library_id = new_ulid()
+            connection.execute(
+                sa.insert(library).values(
+                    id=library_id,
+                    export_target_id=ctx.target_id,
+                    remote_ref=library_ref,
+                    seen_at=clock.now(),
+                )
+            )
+        linked = connection.execute(
+            sa.select(link.c.remote_library_id).where(
+                link.c.shelf_destination_id == ctx.destination_id,
+                link.c.remote_library_id == library_id,
+            )
+        ).scalar()
+        if linked is None:
+            connection.execute(
+                sa.insert(link).values(
+                    shelf_destination_id=ctx.destination_id,
+                    remote_library_id=library_id,
+                    export_target_id=ctx.target_id,
+                )
+            )
+    return str(library_id)
+
+
 class Adopter:
     def __init__(
         self,
@@ -339,38 +375,7 @@ class Adopter:
         await self._auditor.audit(client, ctx.target_id)
 
     def _ensure_link(self, ctx: DestinationContext, library_ref: str) -> str:
-        library, link = export.remote_library, export.shelf_destination_remote_library
-        with self._engine.begin() as connection:
-            library_id = connection.execute(
-                sa.select(library.c.id).where(
-                    library.c.export_target_id == ctx.target_id, library.c.remote_ref == library_ref
-                )
-            ).scalar()
-            if library_id is None:
-                library_id = new_ulid()
-                connection.execute(
-                    sa.insert(library).values(
-                        id=library_id,
-                        export_target_id=ctx.target_id,
-                        remote_ref=library_ref,
-                        seen_at=self._clock.now(),
-                    )
-                )
-            linked = connection.execute(
-                sa.select(link.c.remote_library_id).where(
-                    link.c.shelf_destination_id == ctx.destination_id,
-                    link.c.remote_library_id == library_id,
-                )
-            ).scalar()
-            if linked is None:
-                connection.execute(
-                    sa.insert(link).values(
-                        shelf_destination_id=ctx.destination_id,
-                        remote_library_id=library_id,
-                        export_target_id=ctx.target_id,
-                    )
-                )
-        return str(library_id)
+        return ensure_link(self._engine, self._clock, ctx, library_ref)
 
     def _linked_ref(self, ctx: DestinationContext) -> str | None:
         if ctx.remote_library_id is None:

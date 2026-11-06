@@ -9,6 +9,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("ops.invalid_choice", 422, "admin"),
     ErrorCode("ops.language_refused", 422, "admin"),
     ErrorCode("ops.still_waiting", 409, "admin"),
+    ErrorCode("purge.collateral", 409, "admin"),
+    ErrorCode("root.blocked", 409, "admin"),
 )
 
 
@@ -51,3 +53,11 @@ class StillWaitingError(OpsError):
     stays, with its reason."""
 
     code = "ops.still_waiting"
+
+
+class CodedRefusal(OpsError):
+    """A refusal of another lot's service, under the catalog code that service already carries."""
+
+    def __init__(self, code: str, message: str = "") -> None:
+        super().__init__(message)
+        self.code = code

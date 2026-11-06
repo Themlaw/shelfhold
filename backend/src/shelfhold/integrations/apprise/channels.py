@@ -16,6 +16,7 @@ from typing import Final
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
+from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.infrastructure.secrets.vault import SecretVault
@@ -24,6 +25,26 @@ from shelfhold.integrations.apprise.destination import ValidatedChannel, registe
 ROW_ID: Final = "core.notifications"
 _NAME: Final = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
 source_config = acquisition.source_config
+
+
+class ChannelNames:
+    """The `ChannelSource` of a bus that has no vault: only the names are read, in clear.
+
+    Enough for a publisher (a CLI command, the server before its keyring exists) to queue one
+    `notification_pending` row per channel; the URLs stay sealed and only the sender opens them.
+    """
+
+    def channel_names(self, connection: Connection) -> list[str]:
+        settings = connection.execute(
+            sa.select(source_config.c.settings).where(source_config.c.plugin_id == ROW_ID)
+        ).scalar_one_or_none()
+        return sorted((settings or {}).get("channels", []))
+
+
+def operating_bus(clock: Clock) -> EventBus:
+    """The bus of the application: an operating event queues one notification per channel (the
+    sender, `notify.dispatch`, opens the sealed URLs later). Every publisher builds it here."""
+    return EventBus(clock, channels=ChannelNames())
 
 
 class ChannelStore:

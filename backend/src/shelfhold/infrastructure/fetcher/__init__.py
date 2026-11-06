@@ -22,6 +22,7 @@ from shelfhold.infrastructure.fetcher.errors import (
 )
 from shelfhold.infrastructure.fetcher.guard import block_reason, is_sinkhole, parse_host
 from shelfhold.infrastructure.fetcher.lan import LanTargets
+from shelfhold.infrastructure.fetcher.network import Network
 from shelfhold.infrastructure.fetcher.resolver import Resolver, SystemResolver
 
 __all__ = [
@@ -38,6 +39,7 @@ __all__ = [
     "InvalidFetchUrl",
     "InvalidLanTarget",
     "LanTargets",
+    "Network",
     "Resolver",
     "Sink",
     "SsrfBlocked",

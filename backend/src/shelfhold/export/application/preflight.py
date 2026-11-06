@@ -152,6 +152,10 @@ class FolderProbe:
     def _remove_probe_file(self, path: str) -> None:
         self._fsops.system_unlink("probe_file_cleanup", path)
 
+    def make_folder(self, folder: str) -> None:
+        """The folder of a destination, made by the sole writer (the probe and Kavita need it)."""
+        self._fsops.mkdir(folder, parents=True, exist_ok=True)
+
     def sweep(self, folder: str) -> int:
         """Remove the probe files an earlier crash left in `folder` (a regular file whose name is
         exactly what `new_probe_name` draws: 16 hex digits, nothing else is ever touched)."""

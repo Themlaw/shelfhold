@@ -83,3 +83,13 @@ class ShelfConflict(HeadlessError):
 
 class SourceUnreachable(HeadlessError):
     code = "source.unreachable"
+
+
+class ShelfExposedToChildren(HeadlessError):
+    """The audit before the link names accounts that must not read the library (EF-EXP-055)."""
+
+    code = "target.child_exposure"
+
+    def __init__(self, accounts: tuple[str, ...]) -> None:
+        super().__init__("library exposed to children: " + ", ".join(accounts))
+        self.accounts = accounts

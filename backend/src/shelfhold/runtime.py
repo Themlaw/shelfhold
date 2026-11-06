@@ -15,14 +15,19 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
+from shelfhold.composition import Composition, Gates
 from shelfhold.config import Settings
-from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
 from shelfhold.export.application.restore import RestoredBehindError, RestoreGuard
+from shelfhold.export.application.root_bootstrap import (
+    RootPolicy,
+    register_roots,
+    target_roots,
+)
 from shelfhold.export.application.roots import load_roots
-from shelfhold.export.domain.path_map import PathMap
+from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
@@ -43,6 +48,7 @@ from shelfhold.infrastructure.observability.shutdown import (
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
+from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 
 @dataclass
@@ -57,6 +63,7 @@ class InstanceRuntime:
     barrier: WriteBarrier = field(default_factory=WriteBarrier, init=False)
     restored_behind: bool = field(default=False, init=False)  # EF-INT-026: read only
     _recheck: Callable[[], None] | None = field(default=None, init=False)
+    composition: Composition | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.lock = InstanceLock(self.settings.data_dir)
@@ -99,7 +106,33 @@ class InstanceRuntime:
             structlog.get_logger().error("boot_skipped_database_unavailable", error=str(error))
             return None
 
+    def gates(self) -> Gates:
+        """What this runtime knows that the services built outside it need to honour."""
+        return Gates(
+            write_gate=self.require_space, stop_gate=self.barrier.require_open,
+            writable=self.require_writable, lock_path=self.lock.path, on_behind=self.on_behind,
+        )  # fmt: skip
+
+    def on_behind(self) -> None:
+        if self._recheck is not None:
+            self._recheck()  # a root remounted ahead of the database: read only from now on
+
     def _boot(self, engine: Engine, clock: SystemClock) -> ResolveReport | None:
+        composition = self.composition or Composition(
+            self.settings, engine, clock=clock, gates=self.gates()
+        )  # the server hands over its own: one lease identity per process
+        self.composition = composition
+        wanted = target_roots(engine)
+        wanted.append((str(self.settings.store_dir), PathMode.RW))
+        policy = RootPolicy(
+            self.settings.library_dir, self.settings.data_dir, self.settings.store_dir
+        )
+        for item in wanted:  # one refused or unwritable folder never stops the others
+            try:
+                register_roots(engine, [item], policy=policy)  # first start of an install
+            except (OSError, ValueError, sa.exc.SQLAlchemyError) as error:
+                structlog.get_logger().warning("root_bootstrap_skipped", error=str(error))
+        bus = composition.bus  # an operating event queues one notification per channel
         with engine.connect() as conn:
             row = conn.execute(sa.select(platform.instance.c.instance_id)).first()
             paths = [r.path_entry for r in conn.execute(sa.select(platform.physical_root))]
@@ -120,7 +153,7 @@ class InstanceRuntime:
             )  # fmt: skip
             journal = IntentJournal(engine, fsops, clock=clock)
             # Before anything else: a database older than the disk is read only (EF-INT-026).
-            restore_guard = RestoreGuard(engine, fsops, clock=clock, bus=EventBus(clock))
+            restore_guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)
 
             def freeze() -> None:
                 status = restore_guard.enter_restored_behind()
@@ -159,10 +192,11 @@ class InstanceRuntime:
         self.pools = JobPools(
             self.settings.data_dir, engine=engine, clock=clock, seed=instance_id or "unregistered"
         )
-        watcher = DiskWatcher(guard, self.pools, engine=engine, bus=EventBus(clock))
+        watcher = DiskWatcher(guard, self.pools, engine=engine, bus=bus)
         register_ops_jobs(
-            self.pools, self.settings, disk_check=watcher.check, audit=self.access_audit
+            self.pools, self.settings, disk_check=watcher.check, audit=access_audit(composition)
         )
+        register_runtime_jobs(self.pools, composition)
         boot_jobs(
             self.pools,
             instance_lock=self.lock,
@@ -170,16 +204,13 @@ class InstanceRuntime:
             release_resource_locks=ResourceLocks(engine, clock=clock).release_all,
         )
         watcher.check()  # the first measure at once: a full disk parks the jobs boot just sent
+        self.pools.start_workers()  # the queues are consumed from here on
         return report[0] if report else None
 
     def require_space(self) -> None:
         """The write gate handed to every `Fsops` opened by this process."""
         if self.disk_guard is not None:
             self.disk_guard.require_space()
-
-    def access_audit(self) -> None:
-        """The daily Kavita access audit. No destination is connected by the runtime yet: L29's
-        wiring supplies `daily_access_audit(auditor, clients)` here once it opens clients."""
 
     def shutdown(self, *, checkpoint_s: float | None = None) -> ShutdownReport | None:
         """SIGTERM, in three steps (ENF-OPS-007); idempotent. `stop` then closes the database."""
@@ -199,6 +230,7 @@ class InstanceRuntime:
 
     def stop(self) -> None:
         if self.pools is not None:
+            self.pools.stop_workers()
             for name in self.pools.names:  # Huey's SQLite connections are file descriptors
                 self.pools.huey(name).storage.close()
             self.pools = None

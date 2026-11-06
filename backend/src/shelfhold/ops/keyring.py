@@ -11,7 +11,6 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.config import Settings
-from shelfhold.events.bus import EventBus
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import RootState
@@ -21,6 +20,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import coherence, platform
 from shelfhold.infrastructure.secrets import diagnostics
 from shelfhold.infrastructure.secrets.errors import SecretsError
+from shelfhold.integrations.apprise import operating_bus
 from shelfhold.library.public import TombstoneRoot, TombstoneService
 from shelfhold.ops.ports import WaitingItem
 
@@ -54,7 +54,7 @@ class TombstoneKeyringExit:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
         fsops = Fsops.open(loaded.path_map, loaded.expected)
-        service = TombstoneService(self._engine, keyring, fsops, EventBus(self._clock))
+        service = TombstoneService(self._engine, keyring, fsops, operating_bus(self._clock))
         roots = [
             TombstoneRoot(r.root_id, r.path, mounted=fsops.root_state(r.path) is RootState.OK)
             for r in loaded.roots

@@ -1501,6 +1501,10 @@
       "code": "precondition_required",
       "status": 428
     },
+    "/api/v1/problems/purge.collateral": {
+      "code": "purge.collateral",
+      "status": 409
+    },
     "/api/v1/problems/reauth-required": {
       "code": "reauth_required",
       "status": 401
@@ -1532,6 +1536,10 @@
     "/api/v1/problems/resync-required": {
       "code": "resync_required",
       "status": 410
+    },
+    "/api/v1/problems/root.blocked": {
+      "code": "root.blocked",
+      "status": 409
     },
     "/api/v1/problems/secret.undecryptable": {
       "code": "secret.undecryptable",

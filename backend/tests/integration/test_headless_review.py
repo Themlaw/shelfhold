@@ -2,6 +2,7 @@
 """Review of PR #55 (L38): freshness of the admin-risk action, orphan key, secret-change marker,
 `public_url` rules, slashes, target URL rule."""
 
+import re
 from datetime import timedelta
 from pathlib import Path
 
@@ -29,6 +30,8 @@ from tests.headless_env import (
 )
 
 pytestmark = pytest.mark.req("EF-INT-024")
+
+KEY_SHAPE = re.compile(r"shk_[0-9a-f]{8}_[A-Za-z0-9_-]{43}")
 
 
 def _body(name: str = "kavita") -> dict[str, object]:
@@ -143,7 +146,9 @@ def test_public_url_and_path_map_need_a_session_and_status_flags_the_restart(
             assert api.login().status_code == 200
             capsys.readouterr()
             assert run_cli(monkeypatch, settings, "admin", "keys", "create") == 0
-            key = capsys.readouterr().out.strip()
+            # a log line of a background thread (the job workers of the app under test) may land in
+            # the same capture: the key is the one token of that shape
+            key = KEY_SHAPE.search(capsys.readouterr().out).group(0)  # type: ignore[union-attr]
             keyed = {"Authorization": f"Bearer {key}"}
             denied = api.client.patch(
                 "/api/v1/config", json={"values": {"public_url": "https://a.example.org"}},

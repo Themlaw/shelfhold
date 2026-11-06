@@ -9,6 +9,7 @@ from pathlib import Path
 import structlog
 
 from shelfhold import __version__
+from shelfhold.composition import Composition, Network
 from shelfhold.config import Settings, load_settings
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline
@@ -28,6 +29,7 @@ from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.headless import build_headless_router
+from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.shelves import build_shelves_router
@@ -47,6 +49,7 @@ def create_app(
     *,
     clock: Clock | None = None,
     routers: Routers = (),
+    network: Network | None = None,
 ) -> HttpApplication:
     resolved = settings or load_settings(os.environ, db_loader=load_db_settings).values
     clock = clock or SystemClock()
@@ -54,6 +57,10 @@ def create_app(
     runtime = InstanceRuntime(resolved)
     # Opened lazily: no connection before the first request, after the start-up checks.
     engine = create_db_engine(resolved.database_path)
+    # One composition per process: the bus with its channels, the lease, the tombstones. The
+    # runtime's jobs and the routes below share it; `network` is the one door to other servers.
+    composition = Composition(resolved, engine, clock=clock, network=network, gates=runtime.gates())
+    runtime.composition = composition
     auth = local_auth(engine, resolved, clock)
     gate = AuthGate(auth, public_url=resolved.public_url)
 
@@ -73,7 +80,7 @@ def create_app(
 
     @cache
     def ops_services() -> OpsServices:
-        return open_ops(resolved, engine=engine)  # the lazy parts open at first use
+        return open_ops(resolved, engine=engine, composition=composition)  # lazy parts
 
     export_routers = (
         build_shelves_router(lambda: ShelfService(engine)),
@@ -82,6 +89,7 @@ def create_app(
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command
         build_ops_router(ops_services),  # EF-INT-023: the exits
+        build_library_router(ops_services),  # pairing, repatriation, detach, purge, probe
     )
 
     def on_shutdown() -> None:

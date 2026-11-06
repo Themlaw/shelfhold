@@ -4,10 +4,6 @@
 Kavita and Suwayomi are the simulated servers of backend/tests/fakes behind a socket
 (e2e/fakes); the library volume is real, so "readable in Kavita" means "indexed from the files
 Shelfhold wrote". Every step is a `shelfhold` command typed in the container: no SQL.
-
-Three tests are expected failures until the production wiring exists (the follow job is not
-registered at start-up, nothing runs the export after a chapter is stored, there is no `detach`
-command). `strict=True`: the day the wiring lands they pass, the marker must then be removed.
 """
 
 import subprocess
@@ -16,8 +12,6 @@ import time
 import pytest
 
 from journey import KAVITA_URL, PATH_MAP, SUWAYOMI_URL, Journey, wait_for
-
-NOT_WIRED = "production wiring of follow, export and detach is not in the image yet (L41)"
 
 SHELFHOLD_TOML = f"""\
 schema_version = 1
@@ -94,13 +88,22 @@ def test_m1a_headless_config_apply_declarative_idempotent(journey: Journey) -> N
     assert PATH_MAP[0]["local"] in listing
 
 
+NO_AUTO_FOLLOW = (
+    "nothing creates a work and a binding for the series Suwayomi follows on a fresh install: "
+    "only `adopt pair` binds, and it needs an adopted series (follow.cycle reads no binding)"
+)
+
+
 @pytest.mark.req("EF-INT-024", "EF-SRC-008", "EF-SRC-036")
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NOT_WIRED)
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NO_AUTO_FOLLOW)
 def test_m1a_headless_install_to_first_chapter_in_kavita(journey: Journey) -> None:
     j = journey
     install_by_commands(j)
     j.publish_upstream()  # a new chapter upstream, after the follow was set up
-    assert wait_for(lambda: bool(j.kavita()["series"]), 25), (
+    # the follow runs at the next tick (at most a minute), then the export waits 30 s of calm
+    # before the scan (EF-EXP-034): ask for the cycle now instead of waiting a quarter hour
+    assert j.shelfhold("jobs", "run", "follow.cycle").code == 0
+    assert wait_for(lambda: bool(j.kavita()["series"]), 180), (
         "aucun job de suivi enregistré : Kavita n'a indexé aucune série"
     )
     files = j.library_files()
@@ -155,20 +158,20 @@ def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
 
 
 @pytest.mark.req("EF-EXP-056", "EF-INT-024")
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NOT_WIRED)
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NO_AUTO_FOLLOW)
 def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> None:
     """After a first chapter, `detach --restore-upstream` gives the series back to Suwayomi's own
     updater and leaves every exported file where and what it was."""
     j = journey
     install_by_commands(j)
     j.publish_upstream()
-    assert wait_for(lambda: bool(j.library_files()), 25), (
+    assert j.shelfhold("jobs", "run", "follow.cycle").code == 0
+    assert wait_for(lambda: any(f.endswith(".cbz") for f in j.library_files()), 120), (
         "aucun job de suivi enregistré : aucun chapitre exporté"
     )
     before = j.compose("exec", "-T", "shelfhold", "sh", "-c",
                        "cd /library && find . -type f -exec sha256sum {} +").stdout  # fmt: skip
-    assert j.shelfhold("source", "detach", "--help").code == 0, "commande detach absente"
-    detached = j.shelfhold("source", "detach", "--restore-upstream", "--yes")
+    detached = j.shelfhold("detach", "--restore-upstream")
     assert detached.code == 0, detached.err
     after = j.compose("exec", "-T", "shelfhold", "sh", "-c",
                       "cd /library && find . -type f -exec sha256sum {} +").stdout  # fmt: skip

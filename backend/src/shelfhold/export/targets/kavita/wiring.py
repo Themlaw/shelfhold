@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit
 
 import sqlalchemy as sa
-import structlog
 from sqlalchemy import Engine
 
 from shelfhold.config import Settings
@@ -29,13 +29,7 @@ from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.credentials import AdminKey, load_admin_key
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.fetcher import (
-    GuardedFetcher,
-    IntegrationFetcher,
-    LanTargets,
-    Resolver,
-    SystemResolver,
-)
+from shelfhold.infrastructure.fetcher import GuardedFetcher, Network, Resolver
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.infrastructure.secrets import SecretVault, diagnostics
@@ -110,20 +104,22 @@ async def checked_target_url(url: str, resolver: Resolver) -> tuple[str, int]:
     return parts.hostname, port
 
 
-class _LogEvents:
-    """The operating events of the Kavita destination, as log lines (the bus joins at L36)."""
-
-    def emit(self, code: str, **detail: object) -> None:
-        structlog.get_logger("shelfhold.export").warning(code, **detail)
-
-
-def open_adoption(settings: Settings, destination_id: str) -> AdoptionSession:
+def open_adoption(
+    settings: Settings,
+    destination_id: str,
+    *,
+    bus: EventBus,
+    events_for: Callable[[Engine], TargetEvents],
+    network: Network | None = None,
+) -> AdoptionSession:
     """The adopter and the Kavita client of a destination's target (`shelfhold adopt`).
 
     The target's address is `export_target.config["url"]`; its host:port is the one `lan_target`
     the fetcher may reach, pinned to what the name resolves to now. The key is opened from the
-    sealed row; the client carries the write guard (`guarded_client`).
+    sealed row; the client carries the write guard (`guarded_client`). The operating events go to
+    the bus of the application (`events_for` builds the sink over the engine opened here).
     """
+    network = network or Network()
     engine = create_db_engine(settings.database_path)
     with engine.connect() as connection:
         paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
@@ -139,19 +135,17 @@ def open_adoption(settings: Settings, destination_id: str) -> AdoptionSession:
             .where(export.shelf_destination.c.id == destination_id)
         ).one()
     url = str(row.config.get("url", ""))
-    resolver = SystemResolver()
-    host, port = asyncio.run(checked_target_url(url, resolver))
-    lan = asyncio.run(LanTargets.declare([f"{host}:{port}"], resolver))
+    asyncio.run(checked_target_url(url, network.resolver))
     clock = SystemClock()
-    events = _LogEvents()
+    events = events_for(engine)
     keyring = diagnostics.boot_check(settings, create=False, announce=False)
     vault = SecretVault(keyring)
     client = open_client(
-        engine, vault, IntegrationFetcher(resolver, lan_targets=lan), target_id=row.id,
+        engine, vault, network.integration_fetcher(url), target_id=row.id,
         base_url=url, events=events, clock=clock,
     )  # fmt: skip
     fsops = Fsops.open(loaded.path_map, loaded.expected, frozen=loaded.restore_pending)
-    tombstones = TombstoneService(engine, keyring, fsops, EventBus(clock))
+    tombstones = TombstoneService(engine, keyring, fsops, bus)
     tombstones.replay(
         [
             TombstoneRoot(r.root_id, r.path, mounted=fsops.root_state(r.path) is RootState.OK)

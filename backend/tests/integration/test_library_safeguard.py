@@ -61,8 +61,17 @@ def ingest_and_render(env: LibEnv, received: bytes) -> Path:
     )  # fmt: skip
     rendered = render(received)
     env.fsops.write_atomic(str(dest), rendered)
+    identity = dest.stat()  # replacing the file changed its inode: the registry records the new one
     with env.engine.begin() as c:  # the exporter's manifest: the file hash of this destination
-        c.execute(sa.update(storage.replica).values(file_hash=sha(rendered)))
+        c.execute(
+            sa.update(storage.replica).values(
+                file_hash=sha(rendered),
+                dev=identity.st_dev,
+                ino=identity.st_ino,
+                size=identity.st_size,
+                mtime_ns=identity.st_mtime_ns,
+            )
+        )  # a stale inode could be reused by the next file written: two copies counted as one
     return dest
 
 

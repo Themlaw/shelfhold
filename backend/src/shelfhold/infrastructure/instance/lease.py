@@ -102,9 +102,10 @@ class WriteSessions:
         self._clock = clock
         self._lock_path = lock_path
 
-    def enforce(self) -> None:
-        """Make `Fsops` refuse every write without our valid lease on the root (ENF-OPS-015)."""
-        self._fsops.enforce_lease(self._verify)
+    def enforce(self, fsops: Fsops | None = None) -> None:
+        """Make `Fsops` refuse every write without our valid lease on the root (ENF-OPS-015).
+        Another `Fsops` of the same process (the one of a job) is bound by the same identity."""
+        (fsops or self._fsops).enforce_lease(self._verify)
 
     def _verify(self, root_path: str, raw: bytes | None) -> None:
         if raw is None:

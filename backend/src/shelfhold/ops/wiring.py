@@ -12,24 +12,21 @@ from functools import cache
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
+from shelfhold.composition import Composition
 from shelfhold.config import Settings
-from shelfhold.events.bus import EventBus
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.export.targets.kavita.audit import AccessAuditor
-from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.reinstall import InstanceService
-from shelfhold.export.targets.kavita.wiring import open_client
 from shelfhold.headless import HeadlessAdmin
 from shelfhold.headless import wiring as headless_wiring
-from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.schema import export, platform
-from shelfhold.infrastructure.secrets import SecretVault, diagnostics
+from shelfhold.infrastructure.schema import platform
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
+from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.restore import RestoreGuardExit
 from shelfhold.ops.services import OpsServices
 
@@ -68,35 +65,23 @@ def _fsops(engine: Engine) -> Fsops | None:
     return Fsops.open(loaded.path_map, loaded.expected)
 
 
-def _client_for(settings: Settings, engine: Engine, clock: Clock, events: BusTargetEvents):  # type: ignore[no-untyped-def]
-    def build(target_id: str) -> KavitaClient:
-        with engine.connect() as connection:
-            url = str(
-                connection.execute(
-                    sa.select(export.export_target.c.config).where(
-                        export.export_target.c.id == target_id
-                    )
-                ).scalar_one()["url"]
-            )
-        vault = SecretVault(diagnostics.boot_check(settings, create=False, announce=False))
-        return open_client(
-            engine, vault, headless_wiring.integration_fetcher(url), target_id=target_id,
-            base_url=url, events=events, clock=clock,
-        )  # fmt: skip
-
-    return build
-
-
 def open_ops(
-    settings: Settings, *, engine: Engine | None = None, mount: bool = True
+    settings: Settings,
+    *,
+    engine: Engine | None = None,
+    mount: bool = True,
+    composition: Composition | None = None,
 ) -> OpsServices:
-    """`mount=False`: the library is not opened (a read of the database, as `status` does)."""
-    engine = engine or create_db_engine(settings.database_path)
-    clock = SystemClock()
-    bus = EventBus(clock)
+    """`mount=False`: the library is not opened (a read of the database, as `status` does).
+    `composition`: the one of the running server; a command run by itself builds its own."""
+    engine = engine or (
+        composition.engine if composition else create_db_engine(settings.database_path)
+    )
+    composition = composition or Composition(settings, engine)
+    clock, bus = composition.clock, composition.bus
     events = BusTargetEvents(engine, bus)
     targets = KavitaTargetOps(
-        engine, clock=clock, client_for=_client_for(settings, engine, clock, events),
+        engine, clock=clock, client_for=composition.kavita_client,
         instance=InstanceService(engine, clock, events),
         auditor=AccessAuditor(engine, clock, events),
     )  # fmt: skip
@@ -105,4 +90,5 @@ def open_ops(
         engine, clock=clock, bus=bus, fsops=fsops, targets=targets,
         headless=_LazyHeadless(settings), keyring=TombstoneKeyringExit(settings, engine, clock),
         restore=RestoreGuardExit(engine, fsops, clock, bus) if fsops is not None else None,
+        library=LibraryOps(composition),
     )  # fmt: skip

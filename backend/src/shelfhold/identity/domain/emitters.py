@@ -82,6 +82,13 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/export/application/purge.py::PurgeService.purge_work": "purge.now",
         "shelfhold/infrastructure/volumes.py::erase_data_path": "purge.now",
         "shelfhold/infrastructure/volumes.py::_remove_tree_at": "purge.now",
+        # `purge --now` doors (L41): the CLI command, the socket method, the two routes (a reserved
+        # action: a fresh session, never a key) and the service-less glue they share
+        "shelfhold/interfaces/cli/purge.py::_purge": "purge.now",
+        "shelfhold/interfaces/local_cli/ops.py::_purge": "purge.now",
+        "shelfhold/interfaces/http_api/library.py::build_library_router.purge_unit": "purge.now",
+        "shelfhold/interfaces/http_api/library.py::build_library_router.purge_work": "purge.now",
+        "shelfhold/ops/library.py::LibraryOps.purge": "purge.now",
         # `reconcile --adopt-after-restore --confirm-deletion` (L35): the port to the purge, reached
         # only after the reserved action was authorised; it deletes nothing by itself
         f"{_EXPORT_APP}/restore.py::DeletionExecutor.purge": "reconcile.confirm_deletion",
