@@ -27,7 +27,7 @@ sur disque et leurs versions). **Rangez-les avec votre jeu de sauvegarde**, à c
 arrive en M1b). Une base retrouvée des années plus tard se relit alors avec `sqlite3` seul :
 
 ```sh
-sqlite3 shelfhold.db < schema.sql   # reconstruit un schéma vide, pour comparer
+sqlite3 vide.db < schema.sql       # schéma vide dans un fichier à part, pour comparer
 sqlite3 -readonly shelfhold.db '.tables'
 ```
 
