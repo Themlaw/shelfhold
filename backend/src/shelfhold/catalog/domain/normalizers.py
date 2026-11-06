@@ -6,6 +6,7 @@ migration plan (with the merge preview) is applied. Nothing is ever recomputed o
 `resolve_key` returns the stored value.
 """
 
+import re
 import unicodedata
 from collections import defaultdict
 from collections.abc import Callable, Iterable
@@ -75,15 +76,6 @@ def resolve_key(stored: Normalized) -> str:
 
 
 @dataclass(frozen=True)
-class NormalizerDeclaration:
-    """A new version of an existing normalizer, as a release ships it (ENF-OPS-021)."""
-
-    name: str
-    version: int
-    fn: NormalizerFn
-
-
-@dataclass(frozen=True)
 class Merge:
     """Preview: raw values that would become a single key after migration."""
 
@@ -126,25 +118,6 @@ class NormalizerRegistry:
         self._functions[nid] = fn
         self._current[name] = version
         return nid
-
-    def extend(
-        self, declarations: Iterable[NormalizerDeclaration]
-    ) -> list[tuple[NormalizerDeclaration, str]]:
-        """Add the declared versions, in version order, and return those refused with the reason.
-
-        Only a new version of a normalizer that exists is accepted, and only the next one: a
-        declaration cannot introduce a name, replace a version or skip one. A refused declaration
-        changes nothing (the others still apply)."""
-        refused: list[tuple[NormalizerDeclaration, str]] = []
-        for declaration in sorted(declarations, key=lambda d: (d.name, d.version)):
-            if declaration.name not in self._current:
-                refused.append((declaration, "unknown_normalizer"))
-                continue
-            try:
-                self.register(declaration.name, declaration.version, declaration.fn)
-            except ValueError as error:
-                refused.append((declaration, str(error)))
-        return refused
 
     def names(self) -> list[str]:
         return sorted(self._current)
@@ -205,6 +178,15 @@ def _key_text(text: str) -> str:
     return " ".join(kept.casefold().split())
 
 
+_THOUSANDS = re.compile(r"(?<![\d.,])\d{1,3}(?:,\d{3})+(?![\d,])")
+
+
+def number_v2(raw: str) -> str:
+    """`number@1` where a comma is read as a thousands separator when it groups exactly three
+    digits ("1,500" -> 1500); a decimal comma ("4,25") stays decimal."""
+    return parse_number(_THOUSANDS.sub(lambda m: m.group().replace(",", ""), raw)).norm
+
+
 def default_registry() -> NormalizerRegistry:
     registry = NormalizerRegistry()
     for name in ("series_name", "team_label", "text_version"):
@@ -215,6 +197,10 @@ def default_registry() -> NormalizerRegistry:
     registry.register(
         NUMBER_NORMALIZER_NAME, NUMBER_NORMALIZER_VERSION, lambda s: parse_number(s).norm
     )
+    # number@2 (EF-BIB-054): "1,500" is fifteen hundred, not 1.5. Declared here, in the code, like
+    # every version; `normalize migrate number` moves the rows (with a preview) and a tombstone
+    # may cite it from then on (CITABLE_NORMALIZERS).
+    registry.register(NUMBER_NORMALIZER_NAME, 2, number_v2)
     # The segment is an output of the number normalizer, re-derived from the raw number.
     registry.register("number_segment", 1, lambda s: parse_number(s).segment)
     registry.register(

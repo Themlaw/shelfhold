@@ -31,7 +31,7 @@ from shelfhold.catalog.application.normalize_migrate import (
     apply_number_migration,
     plan_number_migration,
 )
-from shelfhold.catalog.public import load_registry
+from shelfhold.catalog.public import NormalizerRegistry, default_registry
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.ids import new_ulid
@@ -53,8 +53,13 @@ _CHUNK = 400
 
 
 class NormalizeOps:
-    def __init__(self, comp: Composition) -> None:
+    def __init__(
+        self,
+        comp: Composition,
+        registry: Callable[[], NormalizerRegistry] = default_registry,
+    ) -> None:
         self._comp = comp
+        self._registry = registry  # the versions in the code; a test hands another one in
 
     def migrate(self, name: str, *, confirm: str | None, principal: Principal) -> dict[str, Any]:
         """The plan for `name`; applied too when `confirm` is the fingerprint of that plan."""
@@ -76,7 +81,7 @@ class NormalizeOps:
         return self._report(plan, applied)
 
     def _plan(self) -> MigrationPlan:
-        registry = load_registry()
+        registry = self._registry()
         try:
             fsops, loaded, _cached = self._comp.read_context()
             service = self._comp.fresh_tombstones(fsops, loaded, normalizers_of(registry))

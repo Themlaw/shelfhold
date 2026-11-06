@@ -1,44 +1,52 @@
-"""L55 (ENF-OPS-021): what a release may add to the registry, and what is never imported."""
+"""L55 (ENF-OPS-021, ENF-SEC-009): number@2 is in the code, nothing is loaded from outside."""
 
-from importlib.metadata import EntryPoint
+import ast
+from pathlib import Path
 
 import pytest
 
-from shelfhold.catalog.public import NormalizerDeclaration, default_registry, load_registry
+from shelfhold.catalog.public import default_registry
+from shelfhold.library.tombstones import CITABLE_NORMALIZERS, missing_citable
 
 pytestmark = pytest.mark.req("ENF-OPS-021")
 
-
-def upper(raw: str) -> str:
-    return raw.upper()
+SOURCE = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
 
 
-def test_a_declaration_adds_the_next_version_of_an_existing_normalizer() -> None:
+def test_number_v2_is_in_the_code_and_citable() -> None:
     registry = default_registry()
-    refused = registry.extend([NormalizerDeclaration("number", 2, upper)])
-    assert refused == [] and str(registry.current("number")) == "number@2"
-    assert registry.normalize("number", "x").by == "number@2"
+    assert str(registry.current("number")) == "number@2"
+    assert "number@2" in CITABLE_NORMALIZERS and missing_citable(registry) == []
 
 
 @pytest.mark.parametrize(
-    ("declaration", "reason"),
+    ("raw", "v1", "v2"),
     [
-        (NormalizerDeclaration("brand_new", 1, upper), "unknown_normalizer"),
-        (NormalizerDeclaration("number", 1, upper), "already registered"),
-        (NormalizerDeclaration("number", 3, upper), "skips a version"),
+        ("1,500", "1.5", "1500"),
+        ("12,345,678", "12.345", "12345678"),
+        ("4,25", "4.25", "4.25"),  # a decimal comma stays one
+        ("1,5000", "1.5", "1.5"),
+        ("Ch.7", "7", "7"),
     ],
 )
-def test_a_declaration_cannot_add_a_name_replace_a_version_or_skip_one(
-    declaration: NormalizerDeclaration, reason: str
-) -> None:
+def test_number_v2_reads_only_three_digit_groups_as_thousands(raw: str, v1: str, v2: str) -> None:
+    from shelfhold.catalog.domain.numbering import parse_number
+
     registry = default_registry()
-    before = registry.names()
-    refused = registry.extend([declaration])
-    assert [(d.name, d.version) for d, _ in refused] == [(declaration.name, declaration.version)]
-    assert reason in refused[0][1]
-    assert registry.names() == before and str(registry.current("number")) == "number@1"
+    assert parse_number(raw).norm == v1
+    assert registry.normalize("number", raw).value == v2
 
 
-def test_an_entry_point_with_no_distribution_is_never_loaded() -> None:
-    stranger = EntryPoint("x", "os:system", "shelfhold.normalizers")  # would be a disaster
-    assert str(load_registry([stranger]).current("number")) == "number@1"
+def test_no_production_module_loads_normalizers_from_entry_points() -> None:
+    """A distribution on `sys.path` must never run code at startup (ENF-SEC-009)."""
+    offenders = []
+    for path in SOURCE.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and node.value == "shelfhold.normalizers":
+                offenders.append(str(path.relative_to(SOURCE)))
+            if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "entry_points":
+                groups = [k.value for k in node.keywords if k.arg == "group"]
+                if any("normalizer" in ast.unparse(g) for g in groups):
+                    offenders.append(str(path.relative_to(SOURCE)))
+    assert offenders == []

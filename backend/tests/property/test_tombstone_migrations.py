@@ -26,12 +26,12 @@ pytestmark = pytest.mark.req("EF-BIB-054", "ENF-OPS-021")
 
 def _with_number_v2(fn: Callable[[str], str]) -> NormalizerRegistry:
     registry = default_registry()
-    registry.register("number", 2, fn)
+    registry.register("number", 3, fn)
     return registry
 
 
 def _strict(raw: str) -> str:
-    """A stricter number@2: "7.0" stays "7.0" (it was "7" under number@1)."""
+    """A stricter number@3: "7.0" stays "7.0" (it was "7" under number@1)."""
     return raw.strip()
 
 

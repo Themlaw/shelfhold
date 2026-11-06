@@ -9,7 +9,7 @@ when a version cited by a stored tombstone is unknown (`CitedVersionMissingError
 
 from typing import Final
 
-from shelfhold.catalog.public import NormalizerId, NormalizerRegistry, load_registry
+from shelfhold.catalog.public import NormalizerId, NormalizerRegistry, default_registry
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY
 from shelfhold.library.tombstones.index import RegistryNormalizers
 
@@ -23,6 +23,7 @@ CITABLE_NORMALIZERS: Final[tuple[str, ...]] = (
     "publisher@1",
     "number_segment@1",
     "remote_unit_id@1",
+    "number@2",
 )
 CITABLE_CONTENT_HASHES: Final[tuple[str, ...]] = ("content-hash@1",)
 SUPPORTED_CONTENT_HASHES: Final[frozenset[str]] = frozenset({CONTENT_HASH_BY})
@@ -36,9 +37,8 @@ def normalizers_of(registry: NormalizerRegistry) -> RegistryNormalizers:
 
 
 def default_normalizers() -> RegistryNormalizers:
-    """The versions in the code, and the ones a first-party distribution declares (a tombstone
-    may cite either)."""
-    return normalizers_of(load_registry())
+    """The versions in the code (a tombstone may cite any of them)."""
+    return normalizers_of(default_registry())
 
 
 def missing_citable(

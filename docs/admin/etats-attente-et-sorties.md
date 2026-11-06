@@ -87,9 +87,8 @@ livrée, les anciennes lignes restent valides tant que vous ne les avez pas migr
   une transaction avec son entrée d'audit. Une empreinte périmée ne change rien (code 4).
 
 C'est une action réservée : session récente ou CLI de l'hôte, jamais une clé d'API. Seul `number`
-est migrable en M1a. Une version nouvelle n'est lue que si elle est déclarée par une distribution
-**de Shelfhold** (groupe d'entrées `shelfhold.normalizers`) : le code d'une autre distribution
-n'est jamais importé. Une version citée par une pierre tombale n'est jamais retirée du code.
+est migrable en M1a. Les versions sont celles du code livré (`number@2` lit « 1,500 » comme 1500) : aucun
+code extérieur n'est chargé au démarrage. Une version citée par une pierre tombale n'est jamais retirée du code.
 
 ## Rattraper l'historique d'une série suivie
 

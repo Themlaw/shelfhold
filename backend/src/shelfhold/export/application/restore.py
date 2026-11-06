@@ -818,14 +818,21 @@ class RestoreAdopter:
                 unresolved_reason=self._reason(line, survey),
             )  # fmt: skip
             line.outcome, line.reason = judge_line(facts)
-            if line.outcome is LineOutcome.TOMBSTONED and line.on_disk:
-                if (line.destination_id, line.rel_path) not in survey.candidates:
-                    with self._engine.connect() as connection:
-                        units = _units_of(connection, line)
-                    survey.candidates[(line.destination_id, line.rel_path)] = DeletionCandidate(
-                        line.destination_id, line.root_id, line.rel_path, line.local_path,
-                        line.tombstone_scope or "variant", units,
-                    )
+            if (
+                line.outcome is LineOutcome.TOMBSTONED
+                and line.on_disk
+                and (line.destination_id, line.rel_path) not in survey.candidates
+            ):
+                with self._engine.connect() as connection:
+                    units = _units_of(connection, line)
+                survey.candidates[(line.destination_id, line.rel_path)] = DeletionCandidate(
+                    line.destination_id,
+                    line.root_id,
+                    line.rel_path,
+                    line.local_path,
+                    line.tombstone_scope or "variant",
+                    units,
+                )
             if (
                 line.outcome in (LineOutcome.READOPT, LineOutcome.UNRESOLVED) and not line.known
             ) or line.outcome is LineOutcome.MODIFIED:

@@ -54,9 +54,7 @@ def forge_mirror(aside: Path, forge: Forge, units: dict[str, str]) -> None:
 
 
 @contextmanager
-def scene(
-    monkeypatch: pytest.MonkeyPatch, forge: Forge | None = None
-) -> Iterator[Scene]:
+def scene(monkeypatch: pytest.MonkeyPatch, forge: Forge | None = None) -> Iterator[Scene]:
     """Two exported chapters (3 replaceable, 4 irreplaceable) purged by the real `purge --now`,
     then the database goes back and the disk backup (possibly forged) brings the files back."""
     with restore_env() as env:

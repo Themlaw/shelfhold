@@ -1,8 +1,8 @@
 """L55 (EF-BIB-054 (3), (4), ENF-OPS-021, EF-INT-014): `shelfhold normalize migrate`.
 
 A real instance. The tombstone is laid by the real `purge --now` of the host CLI; the new version
-of the normalizer comes from an installed distribution's entry point (`tests/normalizer_env.py`);
-the command is the real one, over the real channel. The chapter that was purged is `1500`;
+of the normalizer is `number@2`, declared in the code; the command is the real one, over the real
+channel. The chapter that was purged is `1500`;
 `number@2` reads "1,500" as 1500, so the live chapter "1,500" would land on the purged place.
 """
 
@@ -25,7 +25,6 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, identity, platform
 from tests.auth_env import run_cli
 from tests.l50_env import Seeded, Series, seeded
-from tests.normalizer_env import install_normalizer_dist
 
 pytestmark = pytest.mark.req("EF-BIB-054", "ENF-OPS-021", "EF-INT-014")
 STALE_PREVIEW = 4
@@ -60,7 +59,9 @@ class World:
         self.hit = live_unit(env, series, "1,500", "1.5")  # under @2: 1500, the purged place
         self.merged = live_unit(env, series, "2,000", "2")  # under @2: 2000, taken by `occupant`
         self.occupant = live_unit(env, series, "2000", "2000")
-        self.clean = live_unit(env, series, "4,25", "4.25")  # under @2: 425
+        self.clean = live_unit(
+            env, series, "4,25", "4.25"
+        )  # under @2: still 4.25, only the version moves
         self.same = live_unit(env, series, "7", "7")  # under @2: 7, only the version moves
         assert run_cli(monkeypatch, settings, "purge", "--now", "--unit", purged,
                        "--confirm", purged) == 0  # fmt: skip
@@ -76,7 +77,6 @@ def test_normalize_migrate_preview_intent_blocks_tombstone_hit(
 ) -> None:
     with seeded(settings, tmp_path / "inst") as env:
         world = World(env, monkeypatch, settings)
-        install_normalizer_dist(tmp_path / "site", monkeypatch)  # the release that ships number@2
         capsys.readouterr()
 
         # the preview writes nothing, names what would happen and the one thing it blocks
@@ -104,7 +104,7 @@ def test_normalize_migrate_preview_intent_blocks_tombstone_hit(
         assert run_cli(monkeypatch, settings, "normalize", "migrate", "number",
                        "--confirm", fingerprint) == 0  # fmt: skip
         after = stored(env)
-        assert after[world.clean] == ("425", "number@2")
+        assert after[world.clean] == ("4.25", "number@2")
         assert after[world.same] == ("7", "number@2")
         assert after[world.occupant] == (
             "2000",
@@ -124,7 +124,7 @@ def test_normalize_migrate_preview_intent_blocks_tombstone_hit(
         assert f"migrate : {world.clean}" not in again
 
 
-def test_migrating_to_a_version_that_does_not_exist_is_refused(
+def test_migrating_a_normalizer_that_does_not_exist_is_refused(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     settings: Settings,
@@ -133,25 +133,7 @@ def test_migrating_to_a_version_that_does_not_exist_is_refused(
     with seeded(settings, tmp_path / "inst") as env:
         world = World(env, monkeypatch, settings)
         capsys.readouterr()
-        assert run_cli(monkeypatch, settings, "normalize", "migrate", "number") == 0
-        assert "number@1" in capsys.readouterr().out  # already current: nothing to migrate
         assert run_cli(monkeypatch, settings, "normalize", "migrate", "no_such_thing") != 0
-        assert stored(env) == world.before
-
-
-def test_a_distribution_that_is_not_first_party_is_never_imported(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    settings: Settings,
-    tmp_path: Path,
-) -> None:
-    with seeded(settings, tmp_path / "inst") as env:
-        world = World(env, monkeypatch, settings)
-        marker = install_normalizer_dist(tmp_path / "site", monkeypatch, dist="some-stranger")
-        capsys.readouterr()
-        assert run_cli(monkeypatch, settings, "normalize", "migrate", "number") == 0
-        assert "number@1" in capsys.readouterr().out  # the stranger's version 2 is not there
-        assert not marker.exists()  # and its code never ran
         assert stored(env) == world.before
 
 
