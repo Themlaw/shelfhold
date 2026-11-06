@@ -172,3 +172,11 @@ until = "M3"
 tests = [
   "backend/tests/integration/test_http_headers.py::test_svg_served_as_attachment_with_csp_sandbox",
 ]
+
+[[route_test]]
+category = "unwired-m3"
+reason = "Mounts the real /healthz router alone and sets the caller's role by middleware: the member and anonymous roles of the three-way response need accounts that M1a cannot create (one administrator only), so no create_app() session can be a member before M3."
+until = "M3"
+tests = [
+  "backend/tests/integration/test_ops_surface.py::test_healthz_reasons_are_for_administrators_and_never_carry_a_title",
+]

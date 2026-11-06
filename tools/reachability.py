@@ -542,34 +542,70 @@ def load_route_tests(root: Path) -> list[dict[str, Any]]:
     return list(tomllib.loads(path.read_text(encoding="utf-8")).get("route_test", []))
 
 
+def _declares(node: ast.AST) -> set[str]:
+    """What under `node` declares a route, a middleware, a router, or hands `routers=` over."""
+    what: set[str] = set()
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Attribute) and sub.attr in _DECLARES:
+            what.add(sub.attr)
+        elif (
+            isinstance(sub, ast.Call)
+            and isinstance(sub.func, ast.Name)
+            and sub.func.id == "APIRouter"
+        ):
+            what.add("APIRouter")
+        elif (
+            isinstance(sub, ast.keyword)
+            and sub.arg == "routers"
+            and not isinstance(sub.value, ast.Name)  # `routers=routers`: a pass-through parameter
+        ):
+            what.add("routers=")
+        elif isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for deco in sub.decorator_list:
+                if (
+                    isinstance(deco, ast.Call)
+                    and isinstance(deco.func, ast.Attribute)
+                    and deco.func.attr in _DECORATORS
+                ):
+                    what.add(f"@{deco.func.attr}")
+    return what
+
+
+def _module_functions(tree: ast.Module) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    return {s.name: s for s in tree.body if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
 def route_declarations(root: Path, *, listed: bool = False) -> list[str]:
     """`req` tests that declare a route, a middleware, or hand `routers=` (a fake service) to the
-    application: the route then exists only in the test, never in `create_app()`. With
-    `listed`, the ones the allowlist excuses are reported too."""
+    application, in their body, in a helper or fixture of their module that they use, or in a
+    test-support module (`tests/*_env.py`) their file imports: the route then exists only in the
+    test, never in `create_app()`. With `listed`, the ones the allowlist excuses are reported."""
     excused = {t for e in load_route_tests(root) for t in e.get("tests", [])}
     found: list[str] = []
     for path in sorted((root / TESTS).rglob("test_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for test in req_tests(tree):
-            what: set[str] = set()
-            for node in ast.walk(test):
-                if isinstance(node, ast.Attribute) and node.attr in _DECLARES:
-                    what.add(node.attr)
-                elif isinstance(node, ast.Name) and node.id == "APIRouter":
-                    what.add("APIRouter")
-                elif isinstance(node, ast.keyword) and node.arg == "routers":
-                    what.add("routers=")
-                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    for deco in node.decorator_list:
-                        if (
-                            isinstance(deco, ast.Call)
-                            and isinstance(deco.func, ast.Attribute)
-                            and deco.func.attr in _DECORATORS
-                        ):
-                            what.add(f"@{deco.func.attr}")
-            rel = path.relative_to(root).as_posix()
-            if what and (listed or f"{rel}::{test.name}" not in excused):
-                found.append(f"{rel}::{test.name} ({', '.join(sorted(what))})")
+        tests = req_tests(tree)
+        if not tests:
+            continue
+        rel = path.relative_to(root).as_posix()
+        helpers = _module_functions(tree)
+        support: dict[str, set[str]] = {}
+        for helper_path, sub in _helper_imports(root, tree, set()):
+            what = _declares(sub)
+            if what:
+                support[helper_path] = what
+        for test in tests:
+            what = _declares(test)
+            used, _ = _names(test)
+            args = {a.arg for a in test.args.args}
+            for name in sorted((used | args) & helpers.keys() - {test.name}):
+                what |= _declares(helpers[name])  # a helper or a fixture of the module
+            via = [f"{h}: {', '.join(sorted(w))}" for h, w in sorted(support.items())]
+            if what or via:
+                label = f"{rel}::{test.name}"
+                if listed or label not in excused:
+                    detail = ", ".join(sorted(what)) or "; ".join(via)
+                    found.append(f"{label} ({detail})")
     return found
 
 

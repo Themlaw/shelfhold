@@ -167,7 +167,9 @@ def test_symbols_built_by_a_test_helper_count_as_cited(tmp_path: Path) -> None:
         "backend/src/shelfhold/main.py": "def create_app():\n    return 1\n",
         "backend/src/shelfhold/dead.py": "class Dead:\n    pass\n",
         "backend/tests/__init__.py": "",
-        "backend/tests/dead_env.py": "from shelfhold.dead import Dead\n\ndef make():\n    return Dead()\n",
+        "backend/tests/dead_env.py": (
+            "from shelfhold.dead import Dead\n\ndef make():\n    return Dead()\n"
+        ),
         "backend/tests/test_cites.py": """
             import pytest
             from tests.dead_env import make
