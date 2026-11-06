@@ -13,6 +13,8 @@ from starlette.datastructures import Headers
 from shelfhold.config import Settings
 from shelfhold.infrastructure.schema import coherence, platform
 from shelfhold.interfaces.http_api.idempotency import IdempotencyMiddleware
+from shelfhold.interfaces.http_api.preconditions import check_if_match
+from shelfhold.interfaces.http_api.problems import ProblemError
 from tests.auth_env import run_cli
 from tests.l51_env import Live, live
 
@@ -259,14 +261,15 @@ def test_a_412_is_not_replayed_by_the_idempotency_key(
         assert jobs_of(api) == []
 
 
-def test_if_match_accepts_a_list_holding_the_current_version(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path
-) -> None:
-    with live(monkeypatch, settings, tmp_path) as api:
-        plan_id, etag = preview(api)
-        none_of_them = api.apply(plan_id, '"9", "3"')
-        assert none_of_them.status_code == 412  # neither candidate is the version of the plan
-        assert jobs_of(api) == []
-        listed = api.apply(plan_id, f'"9", {etag}')
-        assert listed.status_code == 202, listed.text  # the plan's version is among the candidates
-        assert api.wait_job(listed.json()["job_id"])["status"] == "succeeded"
+def test_if_match_list_of_candidates_is_matched_by_the_shared_precondition_check() -> None:
+    """(review) RFC 9110 §13.1.1 for the helper of the API: a list holding the current version
+    passes. The plan route is stricter on purpose: one strong validator, never a list
+    (`test_if_match_must_be_one_strong_quoted_validator`)."""
+    assert check_if_match('"9", "3"', '"3"') is None
+    for refused in ('"9", "4"', 'W/"3"', ""):
+        with pytest.raises(ProblemError) as error:
+            check_if_match(refused, '"3"')
+        assert error.value.spec.code == "precondition_failed"
+    with pytest.raises(ProblemError) as missing:
+        check_if_match(None, '"3"')
+    assert missing.value.spec.code == "precondition_required"

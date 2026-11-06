@@ -57,15 +57,15 @@ class PlanOut(BaseModel):
 _STRONG_ETAG = re.compile(r'"[0-9a-f]{1,64}"')
 
 
-def _if_match_versions(header: str | None) -> list[str]:
-    """The strong validators of the header, quoted: a list is allowed (RFC 9110 §13.1.1), but not
-    `W/"..."`, a bare value or `*` (a plan is applied only by someone who saw its version)."""
+def _if_match_version(header: str | None) -> str:
+    """The strong validator of the preview, quoted: not `W/"..."`, not bare, not `*` (a plan is
+    applied only by someone who saw its version) and not a list."""
     if header is None:
         raise ProblemError("precondition_required")
-    parts = [part.strip() for part in header.split(",")]
-    if not parts or any(_STRONG_ETAG.fullmatch(part) is None for part in parts):
+    text = header.strip()
+    if _STRONG_ETAG.fullmatch(text) is None:
         raise ProblemError("precondition_failed")
-    return [part[1:-1] for part in parts]
+    return text[1:-1]
 
 
 def require_admin(request: Request) -> Principal:
@@ -76,16 +76,6 @@ def require_admin(request: Request) -> Principal:
     if not (is_admin_session or is_admin_key):
         raise ProblemError("forbidden")
     return principal
-
-
-def _queue(pipeline: PlanPipeline, plan_id: str, candidates: list[str]) -> str:
-    """The plan is applied if its version is one of the candidates."""
-    for version in candidates[:-1]:
-        try:
-            return pipeline.queue_apply(plan_id, if_match=version)
-        except StalePlanError:
-            continue
-    return pipeline.queue_apply(plan_id, if_match=candidates[-1])
 
 
 def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
@@ -114,9 +104,9 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
         request: Request,
         _principal: Principal = Depends(require_admin),  # noqa: B008
     ) -> Response:
-        candidates = _if_match_versions(request.headers.get("if-match"))
+        if_match = _if_match_version(request.headers.get("if-match"))
         try:
-            job_id = _queue(get_pipeline(), plan_id, candidates)
+            job_id = get_pipeline().queue_apply(plan_id, if_match=if_match)
         except StalePlanError:
             raise ProblemError("plan.stale") from None
         except UnknownPlanError:
