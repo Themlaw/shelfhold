@@ -57,6 +57,11 @@ _SOURCE_URL = re.compile(r"""\b[a-z][a-z0-9+.-]*://[^\s'"<>)\]}]+""", re.IGNOREC
 _known_values: set[str] = set()
 
 
+def debug_enabled() -> bool:
+    """True when a DEBUG line would be written: guards any work only a DEBUG line needs."""
+    return logging.getLogger().isEnabledFor(logging.DEBUG)
+
+
 def elapsed_ms(started: float) -> int:
     """Milliseconds since `started` (a `time.perf_counter()` reading): the `duration_ms` field."""
     return round((time.perf_counter() - started) * 1000)

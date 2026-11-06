@@ -8,7 +8,6 @@ ComicInfo last) into the tree of the destination; a `pull` destination only gets
 nothing is written.
 """
 
-import logging
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
@@ -52,7 +51,7 @@ from shelfhold.export.domain.planner import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.logging import elapsed_ms
+from shelfhold.infrastructure.logging import debug_enabled, elapsed_ms
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.library.public import (
     ExportSource,
@@ -405,7 +404,7 @@ class ExportPipeline:
             warnings=len(plan.warnings),
             **{f"ops_{kind}": n for kind, n in by_kind.items()},
         )
-        if log.isEnabledFor(logging.DEBUG):
+        if debug_enabled():
             for op in plan.ops:
                 log.debug(
                     "export.plan_op",
