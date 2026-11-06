@@ -436,13 +436,13 @@ def main(argv: list[str] | None = None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     unreachable = unreachable_symbols(root)
     if unreachable:
-        matrix += "\n## Couverture par symbole non joignable\n\n" + "".join(
+        matrix += "\n## Couverture non joignable (symbol)\n\n" + "".join(
             f"- `{o.symbol}` (cité par `{o.test}`)\n" for o in unreachable
         )
     out.write_text(matrix, encoding="utf-8")
     for o in unreachable:
         print(
-            f"warning: couverture par symbole non joignable : {o.symbol} (cité par {o.test}), "
+            f"warning: couverture non joignable (symbol) : {o.symbol} (cité par {o.test}), "
             "aucun point d'entrée de production ne l'atteint (tools/reachability.py)",
             file=sys.stderr,
         )
