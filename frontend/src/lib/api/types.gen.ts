@@ -140,6 +140,10 @@ export type HumanInterventions = {
  */
 export type LoginRequest = {
     /**
+     * Confirm Remember
+     */
+    confirm_remember?: boolean;
+    /**
      * Password
      */
     password: string;

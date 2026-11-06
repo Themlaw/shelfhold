@@ -2,6 +2,8 @@
 EF-EXP-054)."""
 
 import errno
+import os
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +13,12 @@ from shelfhold.export.application.migration_detect import (
     SwitchoverUnconfirmed,
 )
 from shelfhold.export.application.pairing import PairingRefusedError
-from shelfhold.export.application.preflight import DestinationNotWritableError
+from shelfhold.export.application.preflight import (
+    DestinationNotWritableError,
+    Owner,
+    check_access,
+    fix_commands,
+)
 from shelfhold.export.application.reconcile import Reconciler
 from tests.integration.test_preflight import _deny, _ready
 from tests.pairing_env import SERIES, paired_env
@@ -183,3 +190,38 @@ def test_pair_auto_batch_is_all_or_nothing(monkeypatch: pytest.MonkeyPatch) -> N
         batch = p.pairing.confirm_batch(p.destination, library, fingerprint=report.fingerprint)
         assert not batch.complete and batch.paired == () and len(batch.refused) == 1
         assert p.rows("SELECT * FROM source_binding WHERE linked_from_adoption") == []  # none
+
+
+def _read_only_mount() -> str | None:
+    for line in Path("/proc/mounts").read_text().splitlines():
+        _dev, point, _type, options, *_ = line.split()
+        if "ro" in options.split(",") and Path(point).is_dir() and point.startswith("/"):
+            try:
+                if os.statvfs(point).f_flag & os.ST_RDONLY:
+                    return point
+            except OSError:
+                continue
+    return None
+
+
+@pytest.mark.req("EF-UX-002")
+def test_a_read_only_volume_is_told_apart_and_the_fix_is_to_drop_ro() -> None:
+    mount = _read_only_mount()
+    if mount is None:
+        pytest.skip("no read-only mount on this machine")
+    refused = check_access(mount + "/shelf-to-make")
+    assert refused is not None and refused.cause == "EROFS"
+    text = refused.explain()
+    assert "read-only" in text and "':ro'" in text
+    assert "setfacl" not in text  # rights are not the problem
+
+
+@pytest.mark.req("EF-UX-002")
+def test_the_compose_block_never_names_root() -> None:
+    root_owned = fix_commands("/library/manga", (1000, 1000), Owner(0, 0, 0o755))
+    assert "user:" not in root_owned and "group_add" not in root_owned
+    assert 'user: "0' not in root_owned
+    group_only = fix_commands("/library/manga", (1000, 1000), Owner(0, 50, 0o775))
+    assert "group_add:" in group_only and '- "50"' in group_only and "user:" not in group_only
+    owned = fix_commands("/library/manga", (1000, 1000), Owner(1026, 100, 0o755))
+    assert 'user: "1026:100"' in owned

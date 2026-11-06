@@ -17,6 +17,7 @@ from shelfhold.headless.desired import DesiredConfig, parse_desired
 from shelfhold.headless.errors import (
     AdminRiskNotAccepted,
     ConfigFileError,
+    DestinationNotWritable,
     HeadlessError,
     InvalidConfigValue,
     ReadOnlyConfigKey,
@@ -35,6 +36,7 @@ __all__ = [
     "ConfigFileError",
     "ConfigValue",
     "DesiredConfig",
+    "DestinationNotWritable",
     "ExchangedKey",
     "HeadlessAdmin",
     "HeadlessError",

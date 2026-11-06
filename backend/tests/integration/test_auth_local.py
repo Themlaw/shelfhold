@@ -289,17 +289,20 @@ def test_session_without_remember_me_is_a_browser_session(
 
 
 @pytest.mark.req("EF-USR-022", "ENF-SEC-008")
+@pytest.mark.parametrize("login", [{"remember": False}, {"confirm_remember": True}])
 def test_hardened_profile_admin_session_idle(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, login: dict[str, bool]
 ) -> None:
     with auth_env(monkeypatch, settings, hardened=True) as env:
-        env.login()
+        opened = env.login(**login)
+        if login.get("confirm_remember"):  # the confirmed session is a persistent one
+            assert "max-age=1800" in _cookie_line(opened, SESSION_COOKIE).lower()
         env.clock.advance(timedelta(minutes=29))
         assert env.client.get("/api/v1/auth/session").status_code == 200
         env.clock.advance(timedelta(minutes=31))
         assert env.client.get("/api/v1/auth/session").status_code == 401
         # 12 hours absolute, however active the session is.
-        env.login()
+        env.login(**login)
         for _ in range(12 * 3):
             env.clock.advance(timedelta(minutes=20))
             last = env.client.get("/api/v1/auth/session")

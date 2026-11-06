@@ -37,6 +37,7 @@ __all__ = [
     "PermissionPreflight",
     "ProbeResult",
     "RecheckReport",
+    "check_access",
     "fix_commands",
 ]
 
@@ -103,24 +104,46 @@ def _errno_name(error: OSError) -> str:
     return type(error).__name__
 
 
-def fix_commands(folder: str, runs_as: tuple[int, int], owner: Owner | None) -> str:
-    """The exact commands, for the path as Shelfhold sees it (use the host path on the host)."""
+def fix_commands(
+    folder: str, runs_as: tuple[int, int], owner: Owner | None, cause: str | None = None
+) -> str:
+    """The exact commands, for the path as Shelfhold sees it (use the host path on the host).
+
+    A read-only volume is fixed in the compose file, not by rights. The compose blocks never name
+    root (uid or gid 0): the owner of the folder when it is not root, else its group."""
     uid, gid = runs_as
+    if cause == "EROFS":
+        return (
+            f"The volume of '{folder}' is mounted read-only. In the compose file of Shelfhold,"
+            " remove ':ro' from the volume line of this folder (and from Kavita's if it is the"
+            " same mount), then recreate the container."
+        )
     lines = [
         "To fix, on the host (replace the path by the host path of this folder):",
         f"  setfacl -R -m u:{uid}:rwX -d -m u:{uid}:rwX '{folder}'",
     ]
+    if owner is not None and owner.uid == uid and not owner.mode & 0o200:
+        lines.append(f"  or, the folder is yours but read-only: chmod u+w '{folder}'")
     if owner is not None and owner.gid != gid:
-        lines.append(
-            f"  or add the group of the folder to the container (compose: group_add: "
-            f"[\"{owner.gid}\"]) and run: chmod -R g+rwX '{folder}'"
-        )
-    if owner is not None:
-        lines.append(
-            f'  or run the container as the owner (compose: user: "{owner.uid}:{owner.gid}")'
-        )
+        lines.append(f"  or give the group of the folder write access: chmod -R g+rwX '{folder}'")
     lines.append("  and give new files group write access (umask 002 for the writer).")
+    who, group = (owner.uid, owner.gid) if owner is not None else (uid, gid)
+    blocks: list[str] = []
+    if group != 0:
+        blocks += _yaml("group_add:", f'- "{group}"')
+    if who != 0 and group != 0:
+        blocks += _yaml("user:", f'"{who}:{group}"', inline=True)
+    if blocks:
+        lines.append("Or change the compose file of Shelfhold, one of these blocks:")
+        lines += blocks
     return "\n".join(lines)
+
+
+def _yaml(key: str, value: str, *, inline: bool = False) -> list[str]:
+    """A compose block, indented under the service, ready to paste."""
+    head = ["  services:", "    shelfhold:"]
+    body = [f"      {key} {value}"] if inline else [f"      {key}", f"        {value}"]
+    return [*head, *body]
 
 
 def _owner_of(path: str) -> Owner | None:
@@ -129,6 +152,30 @@ def _owner_of(path: str) -> Owner | None:
     except OSError:
         return None
     return Owner(seen.st_uid, seen.st_gid, seen.st_mode & 0o7777)
+
+
+def check_access(folder: str, *, runs_as: tuple[int, int] | None = None) -> ProbeResult | None:
+    """Can this process create entries in `folder`, or in its nearest existing parent when the
+    folder is yet to be made? None when it can. A read of the permission bits (`access`), no
+    write: it runs where the write side cannot even be opened (a root refusing its sentinel)."""
+    ids = runs_as or (os.geteuid(), os.getegid())
+    existing = folder.rstrip("/") or "/"
+    while not os.path.isdir(existing) and existing != "/":
+        existing = os.path.dirname(existing) or "/"
+    if os.access(existing, os.W_OK | os.X_OK) and not _read_only_volume(existing):
+        return None
+    owner = _owner_of(existing)
+    cause = "EROFS" if _read_only_volume(existing) else "EACCES"
+    return ProbeResult(
+        False, existing, (), "write", cause, ids, owner, fix_commands(existing, ids, owner, cause)
+    )
+
+
+def _read_only_volume(path: str) -> bool:
+    try:
+        return bool(os.statvfs(path).f_flag & os.ST_RDONLY)
+    except OSError:
+        return False
 
 
 class FolderProbe:
@@ -200,7 +247,7 @@ class FolderProbe:
             owner = self._owner_of(base)
             return ProbeResult(
                 False, folder, tuple(done), step, _errno_name(error), ids, owner,
-                fix_commands(folder, ids, owner),
+                fix_commands(folder, ids, owner, _errno_name(error)),
             )  # fmt: skip
         finally:
             if current is not None:  # a step failed with the probe file in place: take it away

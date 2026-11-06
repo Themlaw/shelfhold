@@ -32,14 +32,16 @@ from shelfhold.export.domain.reconcile import (
     Disappeared,
     ManagedFile,
     Seen,
+    Thresholds,
     classify_change,
     classify_missing,
     missing_blocks,
+    thresholds_from,
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.schema import export, platform
 from shelfhold.library.public import (
     destination_identities,
     export_sources,
@@ -103,7 +105,11 @@ class Reconciler:
         }
         seen = {rel: self._fsops.observe(local(rel)) for rel in live}
         gone = [live[rel] for rel, found in seen.items() if found is None]
-        if missing_blocks(total=len(live), missing=len(gone)):
+        limits = self._thresholds()
+        if missing_blocks(
+            total=len(live), missing=len(gone), floor=limits.floor, ratio=limits.ratio,
+            ceiling=limits.ceiling,
+        ):  # fmt: skip
             self._announce_block(destination_id, "missing_ratio")
             return ReconcileReport(blocked="missing_ratio")
 
@@ -276,6 +282,16 @@ class Reconciler:
             else:
                 found.append(f"{rel}/{name}")
         return found
+
+    def _thresholds(self) -> Thresholds:
+        """EF-EXP-029: `config set export.missing_*` is read on every pass, no restart."""
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(platform.app_setting.c.key, platform.app_setting.c.value).where(
+                    platform.app_setting.c.key.like("export.missing\\_%", escape="\\")
+                )
+            )
+            return thresholds_from({key: value for key, value in rows})
 
     def _announce_block(self, destination_id: str, reason: str) -> None:
         if self._blocked.get(destination_id) != reason:  # once while the state does not change

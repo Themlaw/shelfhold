@@ -407,6 +407,10 @@ action = "Lancez « shelfhold reconcile --adopt-after-restore » pour rapprocher
 title = "Erreur interne de Shelfhold."
 action = "Réessayez ; si l'erreur persiste, relevez l'identifiant de requête et consultez les journaux."
 
+[errors."remember_needs_confirmation"]
+title = "Le profil durci demande de confirmer « se souvenir de moi »."
+action = "Décochez « se souvenir de moi » pour une session de navigateur, ou confirmez-le explicitement (confirm_remember) : la session durera alors le temps du profil durci."
+
 [errors."invalid_credentials"]
 title = "Identifiant ou mot de passe incorrect."
 action = "Vérifiez l'identifiant et le mot de passe, puis recommencez."
@@ -768,6 +772,8 @@ set_follow_from_help = "Donne à la main le chapitre à partir duquel suivre une
 [headless]
 refused = "Refusé ({code}) : {detail}"
 admin_risk_warning = "ATTENTION : la clé Kavita est celle d'un compte administrateur ; elle donne tout pouvoir sur Kavita (comptes, bibliothèques, fichiers lus). Relancez avec --accept-admin-risk pour confirmer."
+auth_mode_unsupported = "Suwayomi utilise le mode d'authentification « {mode} » : mode multi-comptes indisponible dans cette version (M1a). Passez Suwayomi en « basic_auth » ou sans authentification, puis relancez la commande."
+piloted_inactive = "Réglage enregistré mais inactif avant M1b : la vérification pilotée par Shelfhold n'existe pas encore, Suwayomi doit rester toujours actif (planificateur de Suwayomi) et le suivi se comporte comme en mode always_on."
 secret_unreadable = "Impossible de lire le secret : {detail}."
 secret_file_world_readable = "Le fichier {path} est lisible par tous : restreignez-le (chmod 600)."
 secret_key_needs_file = "{name} est un secret : fournissez-le avec --value-file (fichier ou « - »), jamais en argument."

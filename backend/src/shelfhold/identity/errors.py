@@ -8,6 +8,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("reauth_required", 401, "user"),
     ErrorCode("credential_not_allowed", 403, "user"),
     ErrorCode("invalid_credentials", 401, "user"),
+    ErrorCode("remember_needs_confirmation", 422, "user"),
     ErrorCode("too_many_attempts", 429, "user"),
     ErrorCode("csrf_failed", 403, "user"),
 )

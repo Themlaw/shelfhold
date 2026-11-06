@@ -5,10 +5,13 @@ say what the observation means. Shelfhold never deletes nor overwrites what a th
 it reports it, and pauses the series it cannot trust.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Final
+
+import structlog
 
 __all__ = [
     "FLOOR_MISSING",
@@ -17,9 +20,11 @@ __all__ = [
     "Disappeared",
     "ManagedFile",
     "Seen",
+    "Thresholds",
     "classify_change",
     "classify_missing",
     "missing_blocks",
+    "thresholds_from",
 ]
 
 # EF-EXP-029 (GAP-5-14): per shelf destination, at least 10 missing files AND more than 5 %, or
@@ -32,6 +37,51 @@ REEXPORT_WINDOW: Final = timedelta(hours=24)  # EF-EXP-018
 # somebody else's habit (a nightly script), not an accident.
 REEXPORT_ATTEMPTED: Final = "reconcile.reexport_attempted"
 LIVE_STATES: Final = frozenset({"written", "scanned", "resolved", "adopted"})
+
+
+MAX_RATIO: Final = 0.5  # beyond half the files, the guard could never see an absent mount
+MAX_CEILING: Final = 1000
+
+
+@dataclass(frozen=True)
+class Thresholds:
+    """The three settable numbers of the rule (`export.missing_floor|ratio|ceiling`)."""
+
+    floor: int = FLOOR_MISSING
+    ratio: float = RATIO_MISSING
+    ceiling: int = CEILING_MISSING
+
+    def problem(self) -> str | None:
+        """Why these numbers would switch the guard off (EF-EXP-029), or None: a share in
+        ]0; 0.5], a ceiling of at most 1000 and a floor between 1 and the ceiling."""
+        if not 0 < self.ratio <= MAX_RATIO:
+            return f"the share is above 0 and at most {MAX_RATIO}"
+        if not 1 <= self.ceiling <= MAX_CEILING:
+            return f"the ceiling is between 1 and {MAX_CEILING}"
+        if not 1 <= self.floor <= self.ceiling:
+            return "the floor is between 1 and the ceiling"
+        return None
+
+
+def thresholds_from(settings: Mapping[str, str]) -> Thresholds:
+    """The stored settings over the defaults. A row edited by hand that does not parse, or that
+    would let the guard never fire, is ignored: the defaults apply and a WARNING says so."""
+
+    def number(key: str, default: float, kind: type[int] | type[float]) -> float:
+        try:
+            return kind(settings[key])
+        except (KeyError, ValueError):
+            return default
+
+    found = Thresholds(
+        floor=int(number("export.missing_floor", FLOOR_MISSING, int)),
+        ratio=number("export.missing_ratio", RATIO_MISSING, float),
+        ceiling=int(number("export.missing_ceiling", CEILING_MISSING, int)),
+    )
+    if (why := found.problem()) is not None:
+        structlog.get_logger().warning("reconcile.thresholds_ignored", reason=why)
+        return Thresholds()
+    return found
 
 
 def missing_blocks(

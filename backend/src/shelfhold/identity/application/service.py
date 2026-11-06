@@ -81,6 +81,14 @@ class ThrottledError(AuthError):
         self.retry_after_s = retry_after_s
 
 
+class RememberNeedsConfirmationError(AuthError):
+    """The hardened profile keeps no "remember me" session without an explicit confirmation
+    (EF-USR-022). Raised after the password is checked, so it tells nothing to a guesser."""
+
+    def __init__(self) -> None:
+        super().__init__("remember_needs_confirmation")
+
+
 class AdminExistsError(AuthError):
     def __init__(self) -> None:
         super().__init__("admin_exists")
@@ -129,7 +137,7 @@ def _by_host_user(target: str, by: Principal | None = None) -> str:
     return target if by is not None else f"{target} uid={os.getuid()}"
 
 
-def _audit_actor(principal: Principal | None) -> str | None:
+def audit_actor(principal: Principal | None) -> str | None:
     if principal is None:
         return None
     return principal.actor_id if principal.credential is Credential.LOCAL_CLI else principal.user_id
@@ -191,7 +199,7 @@ class LocalAuth:
         """Offline host CLI actions have no principal; through the local socket the principal is
         `local_cli` and the actor is `local_cli:<uid>` (L23)."""
         entry = AuditEntry(
-            actor_id=_audit_actor(principal),
+            actor_id=audit_actor(principal),
             action=action,
             at=self.now(),
             target=target,
@@ -285,6 +293,7 @@ class LocalAuth:
         *,
         ip: str,
         remember: bool = True,
+        confirm_remember: bool = False,
         presented_token: str | None = None,
         device_proof: str | None = None,
     ) -> IssuedSession:
@@ -298,6 +307,8 @@ class LocalAuth:
         if user is None or user.password_hash is None or not valid:
             raise self._fail(ip=ip)
         self._throttle.release(ip=ip, account=username, at=at, skip_account=known_device)
+        if remember and not confirm_remember and not self._policy(user.role).remember_default:
+            raise RememberNeedsConfirmationError  # the password was right: nothing is opened
         if self._hasher.needs_rehash(user.password_hash):
             self._store.set_password_hash(user.id, self._hasher.hash(password))
         if presented_token:  # whatever the browser held is closed, never adopted
@@ -473,7 +484,7 @@ class LocalAuth:
                 expires_at=expires_at,
             )
             audit = AuditEntry(
-                actor_id=_audit_actor(by),
+                actor_id=audit_actor(by),
                 action="api_key.rotated",
                 at=now,
                 target=_by_host_user(f"{prefix}>{secret.prefix}", by),

@@ -9,6 +9,7 @@ asks for SQL, and no secret is written anywhere but sealed: not in a log, a plan
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -23,6 +24,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.config import ResolvedSettings
+from shelfhold.export.application.preflight import DestinationNotWritableError
 from shelfhold.export.application.root_bootstrap import (
     RootPolicy,
     RootRefusedError,
@@ -34,8 +36,15 @@ from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import load_health, save_health
 from shelfhold.export.domain.bindings import check_shelf_ceiling
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
-from shelfhold.export.domain.path_map import PathEntry, PathMapError, PathMode
+from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMapError, PathMode, within
+from shelfhold.export.domain.reconcile import (
+    CEILING_MISSING,
+    FLOOR_MISSING,
+    RATIO_MISSING,
+    Thresholds,
+)
 from shelfhold.export.targets.kavita import AdminKey, load_admin_key, store_admin_key
+from shelfhold.headless.actor import Actor
 from shelfhold.headless.desired import (
     DesiredConfig,
     DesiredShelf,
@@ -46,6 +55,7 @@ from shelfhold.headless.desired import (
 from shelfhold.headless.errors import (
     AdminRiskNotAccepted,
     ConfigFileError,
+    DestinationNotWritable,
     InvalidConfigValue,
     ReadOnlyConfigKey,
     ShelfConflict,
@@ -56,7 +66,7 @@ from shelfhold.headless.errors import (
     UnknownConfigKey,
     UnknownTarget,
 )
-from shelfhold.headless.keys import KEYS, PATH_MAP_PREFIX
+from shelfhold.headless.keys import KEYS, PATH_MAP_PREFIX, warning_of
 from shelfhold.headless.ports import (
     ChannelValidator,
     KavitaKeyExchange,
@@ -64,9 +74,10 @@ from shelfhold.headless.ports import (
     SuwayomiProbe,
 )
 from shelfhold.headless.urls import validate_target_url
+from shelfhold.i18n import t
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, export, platform
+from shelfhold.infrastructure.schema import acquisition, export, identity, platform
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.integrations.apprise.channels import ChannelStore
@@ -76,6 +87,7 @@ __all__ = ["ConfigValue", "HeadlessAdmin", "Plan", "PlanChange"]
 
 KEY_NAME = "shelfhold"
 KEY_DAYS = 90  # the Kavita key expires; `target.key_expiring` warns at 14 and 1 days
+ADMIN_RISK_ACTION = "target.admin_risk_accepted"  # ENF-SEC-013
 SUPPORTED_AUTH_MODES = frozenset({"none", "basic_auth"})
 X_CEILING = 99
 Action = Literal["create", "update", "unchanged"]
@@ -89,6 +101,7 @@ class ConfigValue:
     source: str  # default | db | env | toml | fixed
     default: object = None
     overridden_by: str | None = None
+    warning: str | None = None  # a value that is accepted but does not act yet (EF-SRC-025)
 
 
 ConfigValues = list[ConfigValue]
@@ -210,6 +223,10 @@ def _normalise_path_map(raw: object) -> list[dict[str, str]]:
     return out
 
 
+def _overlap(a: str, b: str) -> bool:
+    return within(a, b) is not None or within(b, a) is not None
+
+
 def _ceiling(text: str) -> int:
     value = text.strip().upper().removesuffix("+")
     if value == "X":
@@ -270,10 +287,53 @@ class HeadlessAdmin:
             raise InvalidConfigValue(str(refusal)) from None
         self._wake()
 
-    def _check_roots(self, entries: list[dict[str, str]]) -> None:
-        """Before a path map is stored: every folder it names must be allowed to be a root."""
+    def _default_path_map(self) -> list[dict[str, str]]:
+        """EF-EXP-003: without a map, the shared folder is the parent of Kavita's media
+        (`/library/manga <-> /manga`, books, comics); a folder that does not exist is skipped at
+        registration, so only the ones the admin mounted become roots."""
+        library = str(self._roots.library_dir) if self._roots is not None else "/library"
+        named = self._named_locals()
+        return _normalise_path_map(
+            [{"local": e.local, "remote": e.remote, "mode": e.mode.value}
+             for e in PathMap.default(library).entries
+             if not any(_overlap(e.local, other) for other in named)]
+        )  # fmt: skip
+
+    def _named_locals(self, *, except_target: str | None = None) -> dict[str, PathMode]:
+        """Every folder already named by a target's map or registered as a physical root."""
+        named: dict[str, PathMode] = {}
+        with self._engine.connect() as connection:
+            for row in connection.execute(
+                sa.select(export.export_target.c.id, export.export_target.c.path_map)
+            ):
+                if row.id == except_target:
+                    continue
+                for entry in row.path_map or []:
+                    named[entry["local"]] = PathMode(entry.get("mode", "rw"))
+            for root in connection.execute(
+                sa.select(platform.physical_root.c.path_entry, platform.physical_root.c.mode)
+            ):
+                named.setdefault(root.path_entry, PathMode(root.mode))
+        return named
+
+    def _check_roots(
+        self, entries: list[dict[str, str]], *, except_target: str | None = None
+    ) -> None:
+        """Before a path map is stored: every folder it names must be allowed to be a root, and
+        a read-only declaration cannot turn a folder already writable into a read-only one: its
+        sentinel is written and the registered root stays `rw`."""
         if self._roots is None:
             return
+        named = self._named_locals(except_target=except_target)
+        for entry in entries:
+            if entry.get("mode") != PathMode.ADOPT_RO.value:
+                continue
+            for other, mode in named.items():
+                if mode is PathMode.RW and _overlap(entry["local"], other):
+                    raise InvalidConfigValue(
+                        f"{entry['local']} is already a writable root ({other}): it cannot be "
+                        "declared adopt_ro; mount a dedicated read-only folder instead"
+                    )
         try:
             self._roots.check_all([(e["local"], PathMode(e.get("mode", "rw"))) for e in entries])
         except RootRefusedError as refusal:
@@ -295,7 +355,7 @@ class HeadlessAdmin:
         stored = self._setting(key)
         if stored is not None:
             overridden = self._overridden_by(key)
-            return ConfigValue(key, stored, "db", spec.default, overridden)
+            return ConfigValue(key, stored, "db", spec.default, overridden, warning_of(key, stored))
         return ConfigValue(key, spec.default, "default", spec.default, self._overridden_by(key))
 
     def list(self) -> ConfigValues:
@@ -322,6 +382,8 @@ class HeadlessAdmin:
         if validate is None:  # a key with its own way of being set is handled above
             raise InvalidConfigValue(f"{key} cannot be set this way")
         clean = validate(value)
+        if key.startswith("export.missing_"):
+            self._check_thresholds(key, clean)
         with self._engine.begin() as connection:
             self._write_setting(connection, key, clean)
             if key == "instance.jurisdiction":
@@ -329,6 +391,19 @@ class HeadlessAdmin:
         _log.info("headless.config_set", key=key)
         self._bootstrap()
         return self.get(key)
+
+    def _check_thresholds(self, key: str, clean: str) -> None:
+        """The three numbers together: a floor above the ceiling would switch the guard off."""
+        names = ("export.missing_floor", "export.missing_ratio", "export.missing_ceiling")
+        stored = {n: v for n in names if (v := self._setting(n)) is not None}
+        stored[key] = clean
+        why = Thresholds(
+            floor=int(stored.get(names[0], FLOOR_MISSING)),
+            ratio=float(stored.get(names[1], RATIO_MISSING)),
+            ceiling=int(stored.get(names[2], CEILING_MISSING)),
+        ).problem()
+        if why is not None:
+            raise InvalidConfigValue(f"{key}: {why}")
 
     def _setting(self, key: str) -> str | None:
         with self._engine.connect() as connection:
@@ -371,7 +446,9 @@ class HeadlessAdmin:
         except ValueError:
             raise InvalidConfigValue("path_map is JSON: a list of {local, remote, mode}") from None
         entries = _normalise_path_map(parsed)
-        self._check_roots(entries)
+        with self._engine.connect() as connection:
+            own = self._target_row(connection, key.removeprefix(PATH_MAP_PREFIX)).id
+        self._check_roots(entries, except_target=own)
         with self._engine.begin() as connection:
             row = self._target_row(connection, key.removeprefix(PATH_MAP_PREFIX))
             before = list(row.path_map)
@@ -423,9 +500,14 @@ class HeadlessAdmin:
         password: str,
         accept_admin_risk: bool,
         path_map: PathMapSpec | None = None,
+        actor: Actor | None = None,
     ) -> TargetAdded:
+        """`actor` is the audit actor behind a server call; offline, the host user's uid goes in
+        the target of the audit row (ENF-SEC-013: the accepted risk is journaled)."""
         clean_url = _target_url(url)
-        entries = _normalise_path_map(path_map) if path_map else []
+        entries = (
+            _normalise_path_map(path_map) if path_map is not None else self._default_path_map()
+        )
         self._check_roots(entries)  # before a key is exchanged or anything stored
         with self._engine.connect() as connection:
             existing = connection.execute(
@@ -468,6 +550,7 @@ class HeadlessAdmin:
                 )
                 registry.register_active_key(connection, self._vault.keyring)
                 store_admin_key(self._vault, connection, target_id, AdminKey(exchanged.value))
+                self._audit_admin_risk(connection, name, actor)
         except sa.exc.SQLAlchemyError:
             ident = f" (id {exchanged.key_id})" if exchanged.key_id is not None else ""
             raise TargetExchangeFailed(
@@ -477,6 +560,20 @@ class HeadlessAdmin:
         _log.info("headless.target_added", kind="kavita", name=name, url=clean_url)
         self._bootstrap()
         return TargetAdded(target_id, name, True, exchanged.expires_at)
+
+    def _audit_admin_risk(self, connection: Connection, name: str, actor: Actor | None) -> None:
+        """One row in the same transaction as the target: no accepted risk without its trace."""
+        connection.execute(
+            sa.insert(identity.audit).values(
+                id=new_ulid(),
+                actor_id=actor.actor_id if actor else None,
+                action=ADMIN_RISK_ACTION,
+                target=name if actor else f"{name} uid={os.getuid()}",
+                at=self._clock.now(),
+                session_id=actor.session_id if actor else None,
+                auth_time=actor.auth_time if actor else None,
+            )
+        )
 
     # -- the exits of EF-INT-023 that renew a credential ---------------------------------------
 
@@ -586,7 +683,7 @@ class HeadlessAdmin:
         except ConnectionError:
             raise SourceUnreachable("Suwayomi cannot be reached at this address") from None
         if mode not in SUPPORTED_AUTH_MODES:
-            raise SourceAuthModeUnsupported(f"the server uses {mode!r}: only none and basic_auth")
+            raise SourceAuthModeUnsupported(t("headless.auth_mode_unsupported", mode=mode))
         if mode == "basic_auth" and not (username and password):
             raise InvalidConfigValue("this server needs a user:password secret")
         keep = mode == "basic_auth"
@@ -657,14 +754,14 @@ class HeadlessAdmin:
             shelf_id=shelf_id, target_id=target_row.id, transport="tree", plugin_egress="foyer",
             root_subpath=subpath,
         )  # fmt: skip
-        self._bootstrap()  # the folder of the shelf lives under a registered root
-        self._make_folder(destination_id)
-        if self._linker is not None:
-            try:
+        try:
+            self._bootstrap()  # the folder of the shelf lives under a registered root
+            self._make_folder(destination_id)
+            if self._linker is not None:
                 self._linker.link(target_row.id, destination_id, library_name=name)
-            except Exception:
-                self._unbind(shelf_id, destination_id, shelf_was_new=shelf is None)
-                raise
+        except Exception:
+            self._unbind(shelf_id, destination_id, shelf_was_new=shelf is None)
+            raise
         _log.info("headless.shelf_created", name=name, target=target)
         return ShelfCreated(shelf_id, destination_id, True)
 
@@ -680,7 +777,10 @@ class HeadlessAdmin:
             self._roots.check(local, PathMode.RW)
         except RootRefusedError as refusal:
             raise InvalidConfigValue(str(refusal)) from None
-        self._linker.make_folder(local)
+        try:
+            self._linker.make_folder(local)
+        except DestinationNotWritableError as refusal:  # EF-UX-002: the cause and the fix
+            raise DestinationNotWritable(str(refusal)) from None
 
     def _unbind(self, shelf_id: str, destination_id: str, *, shelf_was_new: bool) -> None:
         """A shelf the audit refused leaves nothing behind (nothing was written in Kavita)."""
@@ -702,13 +802,16 @@ class HeadlessAdmin:
         base_dir: Path,
         dry_run: bool = False,
         secrets: Mapping[str, str] | None = None,
+        actor: Actor | None = None,
     ) -> Plan:
         """`apply` for a file the caller read: `secrets` maps the path of each secret file the
         text names to its first line (the caller is on the host, the server may not see it)."""
         read: SecretReader = (
             read_local_secret if secrets is None else lambda path: secrets.get(str(path))
         )
-        return self.apply(parse_desired(text, base_dir=base_dir), dry_run=dry_run, read=read)
+        return self.apply(
+            parse_desired(text, base_dir=base_dir), dry_run=dry_run, read=read, actor=actor
+        )
 
     def apply(
         self,
@@ -716,6 +819,7 @@ class HeadlessAdmin:
         *,
         dry_run: bool = False,
         read: SecretReader = read_local_secret,
+        actor: Actor | None = None,
     ) -> Plan:
         """The plan; with `dry_run` nothing is written, probed or exchanged."""
         plan = self._plan(desired, read)
@@ -724,7 +828,7 @@ class HeadlessAdmin:
         for change in plan.changes:
             if change.action == "unchanged":
                 continue
-            self._execute(change, desired, read)
+            self._execute(change, desired, read, actor)
         return plan
 
     def _plan(self, desired: DesiredConfig, read: SecretReader) -> Plan:
@@ -856,7 +960,9 @@ class HeadlessAdmin:
             raise ShelfConflict(f"the shelf {shelf.name!r} exists with other settings")
         return PlanChange("shelf", shelf.name, "unchanged")
 
-    def _execute(self, change: PlanChange, desired: DesiredConfig, read: SecretReader) -> None:
+    def _execute(
+        self, change: PlanChange, desired: DesiredConfig, read: SecretReader, actor: Actor | None
+    ) -> None:
         if change.kind == "config":
             self.set(change.subject, desired.settings[change.subject])
         elif change.kind == "notify":
@@ -867,6 +973,7 @@ class HeadlessAdmin:
             self.target_add_kavita(
                 name=target.name, url=target.url, username=target.user, password=password,
                 accept_admin_risk=target.accept_admin_risk, path_map=target.path_map,
+                actor=actor,
             )  # fmt: skip
         elif change.kind == "source":
             source = next(s for s in desired.sources if s.kind == change.subject)

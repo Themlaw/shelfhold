@@ -192,7 +192,7 @@ def _config(raw: object) -> ConfigValue:
     if not isinstance(raw, dict):
         raise ValueError("malformed_reply")
     return ConfigValue(raw["key"], raw["value"], raw["source"], raw.get("default"),
-                       raw.get("overridden_by"))  # fmt: skip
+                       raw.get("overridden_by"), raw.get("warning"))  # fmt: skip
 
 
 class SocketHeadless:

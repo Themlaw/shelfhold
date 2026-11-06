@@ -22,7 +22,9 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
 - `target add kavita` échange le compte contre une **clé nommée à expiration** (90 jours) ; la clé
   est celle d'un compte **administrateur** de Kavita et donne tout pouvoir sur lui : la commande
   s'arrête sur cet avertissement tant que `--accept-admin-risk` n'est pas donné. Le mot de passe du
-  compte n'est pas conservé.
+  compte n'est pas conservé. Chaque acceptation est **journalisée** (table `audit`, action
+  `target.admin_risk_accepted`, avec le nom de la destination et l'utilisateur de l'hôte ou la
+  session qui l'a donnée).
 - Options de `target add kavita` : `--name` (défaut `kavita`) et `--path-map` (le même JSON que la clé
   `path_map.<cible>`, donné d'emblée plutôt que par `config set` ensuite). Options de `shelf create` :
   `--subpath` et `--phrase` (libellé affiché, défaut : le nom). Fichiers de secrets : voir
@@ -30,8 +32,9 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
 - La clé est créée par `/api/Account/create-auth-key` ; si Shelfhold ne peut pas l'enregistrer, l'erreur donne son nom et son identifiant : révoquez-la dans Kavita.
 - L'adresse d'une destination : `http://` seulement sur le réseau local (adresse privée, nom sans point, `.local`, `.lan`, `.internal`), sinon `https://` ; une IP publique est refusée.
 - `source add suwayomi` lit le mode d'authentification du serveur (`none` ou `basic_auth`) ; tout
-  autre mode (`ui_login`) est refusé. Le secret est `utilisateur:mot_de_passe`, une ligne.
-- `shelf create` : seules les étagères **18+** ou **X** existent en M1a.
+  autre mode (`ui_login`) est refusé avec un message dédié (« mode multi-comptes indisponible dans
+  cette version », code `source.auth_mode_unsupported`) : passez Suwayomi en `basic_auth`. Le secret est `utilisateur:mot_de_passe`, une ligne.
+- `shelf create` : seules les étagères **18+** ou **X** existent en M1a. Si Shelfhold ne peut pas écrire dans le dossier de l'étagère, la commande s'arrête (rien n'est créé) et donne la cause (`EACCES`, propriétaire, mode, uid d'exécution), la commande `setfacl` à lancer sur l'hôte et le bloc `compose` exact (`user:` ou `group_add:`) à coller (EF-UX-002).
 - Les commandes sont idempotentes : les relancer ne change rien.
 
 ## `config get|set|list`
@@ -39,11 +42,14 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
 | Clé | Défaut | Rôle |
 | --- | --- | --- |
 | `public_url` | (aucun) | Adresse publique ; toute URL absolue en est tirée, jamais de l'en-tête `Host` (ENF-SEC-016). |
-| `source.check_mode` | `always_on` | `always_on` ou `piloted` (EF-SRC-025). |
+| `source.check_mode` | `always_on` | `always_on` ou `piloted` (EF-SRC-025). `piloted` est enregistré mais **inactif avant M1b** : la commande le dit, et le suivi se comporte comme `always_on`. |
+| `export.missing_floor` | `10` | Sentinelle (EF-EXP-029) : nombre minimal de fichiers manquants dans une destination d'étagère pour que la part compte. |
+| `export.missing_ratio` | `0.05` | Sentinelle : part de fichiers manquants (avec le plancher) à partir de laquelle vérification, suppressions et scans sont bloqués. |
+| `export.missing_ceiling` | `50` | Sentinelle : au-delà de ce nombre de fichiers manquants, blocage quelle que soit la part. Bornes : part dans ]0 ; 0,5], plafond au plus 1000, plancher entre 1 et le plafond (sinon le garde-fou ne pourrait plus se déclencher) ; une ligne modifiée à la main hors bornes est ignorée avec un WARNING. Lus à chaque passe, sans redémarrage. |
 | `maintenance.window` | `03:00-07:00 Europe/Paris` | Fixe en M1a, lecture seule (ENF-OPS-014). |
 | `instance.jurisdiction` | déduite de la langue du système | Code pays à deux lettres (par ex. `FR`) dont le droit d'auteur conduit les mentions de domaine public (EF-SRC-024). |
 | `notify.urls` | (aucun) | `nom=url`, scellée ; fournie par `--value-file`, jamais en argument ([notifications.md](notifications.md)). |
-| `path_map.<cible>` | `[]` | Correspondance des chemins de la destination (JSON). |
+| `path_map.<cible>` | `/library/manga↔/manga`, `/library/books↔/books`, `/library/comics↔/comics` | Correspondance des chemins de la destination (JSON). Sans `--path-map`, `target add kavita` pose cette table par défaut (EF-EXP-003) : on monte le parent des médias de Kavita ; seuls les dossiers présents deviennent des racines, et un dossier déjà nommé par une autre destination ou déjà enregistré est sauté. `--path-map '[]'` pose une table vide. Déclarer `adopt_ro` un dossier déjà racine en écriture est refusé. |
 
 `public_url` n'est lu qu'au démarrage : `shelfhold status` signale qu'un redémarrage est nécessaire. L'environnement et `config.toml` l'emportent sur la base (ENF-OPS-004) : `config set` le signale.
 

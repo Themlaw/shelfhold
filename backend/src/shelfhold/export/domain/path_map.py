@@ -10,11 +10,8 @@ from enum import StrEnum
 
 __all__ = ["PathEntry", "PathMap", "PathMapError", "PathMode", "clean_absolute", "within"]
 
-DEFAULT_PAIRS = (
-    ("/library/manga", "/manga"),
-    ("/library/books", "/books"),
-    ("/library/comics", "/comics"),
-)
+DEFAULT_PAIRS = (("manga", "/manga"), ("books", "/books"), ("comics", "/comics"))
+DEFAULT_LIBRARY = "/library"  # `local` is the library folder plus the name; `remote` is Kavita's
 
 
 class PathMapError(ValueError):
@@ -75,8 +72,11 @@ class PathMap:
             raise PathMapError("two entries share a remote path")
 
     @classmethod
-    def default(cls) -> "PathMap":
-        return cls(tuple(PathEntry(local, remote) for local, remote in DEFAULT_PAIRS))
+    def default(cls, library: str = DEFAULT_LIBRARY) -> "PathMap":
+        """`/library/manga<->/manga`, books, comics: Kavita's parent folder is mounted as the
+        library folder (EF-EXP-003)."""
+        base = clean_absolute(library)
+        return cls(tuple(PathEntry(f"{base}/{name}", remote) for name, remote in DEFAULT_PAIRS))
 
     @classmethod
     def same_path(cls, locals_: Iterable[str]) -> "PathMap":
