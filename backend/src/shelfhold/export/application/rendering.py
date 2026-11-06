@@ -12,19 +12,36 @@ from pathlib import Path, PurePath
 from typing import Any, BinaryIO
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection
 
+from shelfhold.catalog.public import ContributorName, NameKind, parse_partial_date
 from shelfhold.infrastructure.archives import safe_open_archive
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.packaging.cbz import repackage_cbz
-from shelfhold.infrastructure.packaging.comicinfo import ComicInfoData, render_comicinfo
+from shelfhold.infrastructure.packaging.comicinfo import (
+    ComicInfoData,
+    ComicInfoPerson,
+    render_comicinfo,
+)
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import content_hash
 from shelfhold.sdk.age import AgeRating, max_rating
 
 _ADULT_FROM = 18  # M1a has adult shelves only (a ceiling of 18 or more, or none)
 
-__all__ = ["CbzRenderer", "RenderedCbz", "comicinfo_data", "comicinfo_sha256"]
+__all__ = [
+    "CbzRenderer",
+    "RenderedCbz",
+    "comicinfo_data",
+    "comicinfo_sha256",
+    "comicinfo_xml",
+]
+
+log = structlog.get_logger(__name__)
+
+# MARC relator of a credit -> the ComicInfo person field it is written to (EF-BIB-046)
+_ROLE_FIELDS = {"aut": "Writer", "art": "Penciller", "ill": "Penciller"}
 
 
 @dataclass
@@ -120,6 +137,46 @@ def _shelf_ceilings(
     return found
 
 
+def _people(connection: Connection, work_id: str) -> dict[str, list[ComicInfoPerson]]:
+    """The people credited on the Work, per ComicInfo field, in credit order. Every known name
+    goes to the writer, which picks the display form and keeps commas out (I21)."""
+    credit, contributor, name = catalog.contribution, catalog.contributor, catalog.contributor_name
+    rows = connection.execute(
+        sa.select(
+            credit.c.role, credit.c.contributor_id, contributor.c.kind, contributor.c.primary_name
+        )
+        .select_from(credit.join(contributor, contributor.c.id == credit.c.contributor_id))
+        .where(credit.c.entity_type == "work", credit.c.entity_id == work_id)
+        .order_by(credit.c.position, credit.c.contributor_id)
+    ).all()
+    names: dict[str, list[ContributorName]] = {}
+    for found in connection.execute(
+        sa.select(name).where(name.c.contributor_id.in_({r.contributor_id for r in rows}))
+    ):
+        names.setdefault(found.contributor_id, []).append(
+            ContributorName(
+                found.name, found.lang, found.script or "", NameKind(found.kind),
+                bool(found.family_first),
+            )
+        )  # fmt: skip
+    people: dict[str, list[ComicInfoPerson]] = {}
+    for row in rows:
+        field = _ROLE_FIELDS.get(row.role)
+        if field is None:
+            continue
+        known = tuple(names.get(row.contributor_id) or [
+            ContributorName(row.primary_name, "und", "", NameKind.DISPLAY)
+        ])  # fmt: skip
+        people.setdefault(field, []).append(ComicInfoPerson(known, is_org=row.kind == "org"))
+    return people
+
+
+def _dated(published_on: str | None) -> tuple[int | None, int | None, int | None]:
+    """`Year`/`Month`/`Day`: never finer than the stored date (EF-BIB-047)."""
+    date = parse_partial_date(published_on)
+    return (date.year, date.month, date.day) if date else (None, None, None)
+
+
 def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicInfoData:
     unit, edition, work, team = catalog.unit, catalog.edition, catalog.work, catalog.team
     variant = catalog.unit_variant
@@ -130,7 +187,7 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
             edition.c.age_rating.label("edition_age_rating"),
             edition.c.age_x.label("edition_age_x"),
             team.c.label, edition.c.id.label("edition_id"), edition.c.work_id,
-            edition.c.shelf_id,
+            edition.c.shelf_id, unit.c.published_on, unit.c.date_precision,
         )
         .select_from(
             unit.join(edition, edition.c.id == unit.c.edition_id)
@@ -152,6 +209,7 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
     )
     if age is None:
         age = _unrated_age(connection, row)
+    year, month, day = _dated(row.published_on)
     return ComicInfoData(
         series=series,
         title=row.title or "",
@@ -163,7 +221,19 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
         team_label=row.label or "",
         right_to_left=True if row.reading_direction == "rtl" else None,
         age=age,
+        people=_people(connection, row.work_id),
+        year=year,
+        month=month,
+        day=day,
     )  # fmt: skip
+
+
+def comicinfo_xml(connection: Connection, unit_id: str, series: str) -> bytes:
+    """The ComicInfo to write; what the writer had to change is said in the log."""
+    rendered = render_comicinfo(comicinfo_data(connection, unit_id, series))
+    for warning in rendered.warnings:
+        log.warning("export.comicinfo_warning", unit_id=unit_id, detail=warning)
+    return rendered.xml
 
 
 def comicinfo_sha256(connection: Connection, unit_id: str, series: str) -> str:

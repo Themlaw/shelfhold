@@ -24,7 +24,7 @@ from shelfhold.export.application.locks import ResourceLocks, library_resource
 from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.plans import PlanOp, PlanStore
-from shelfhold.export.application.rendering import CbzRenderer, RenderedCbz, comicinfo_data
+from shelfhold.export.application.rendering import CbzRenderer, RenderedCbz, comicinfo_xml
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import (
     DestinationContext,
@@ -47,7 +47,6 @@ from shelfhold.export.domain.planner import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.packaging.comicinfo import render_comicinfo
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.library.public import (
     ExportSource,
@@ -444,7 +443,7 @@ class ExportPipeline:
         source = self._source(planned.unit_id)
         series_name = str(planned.frozen["series"])
         with self._engine.connect() as connection:
-            xml = render_comicinfo(comicinfo_data(connection, planned.unit_id, series_name)).xml
+            xml = comicinfo_xml(connection, planned.unit_id, series_name)
         rendered = self._renderer.render(str(source.local_path), xml)
         try:
             if rendered.content_hash != planned.content_hash:

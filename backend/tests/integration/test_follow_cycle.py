@@ -9,10 +9,19 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import structlog.testing
 
 from shelfhold.sdk.connected import ConnectedCapability, ServiceHealth, Ticket, TicketState
 from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.refs import FileAsset, ImageRequest, RangedPayload, SeriesRef, UnitInfo, UnitRef
+from shelfhold.sdk.refs import (
+    FileAsset,
+    ImageRequest,
+    RangedPayload,
+    SeriesInfo,
+    SeriesRef,
+    UnitInfo,
+    UnitRef,
+)
 from shelfhold.sdk.source import TemporarilyUnavailable
 from tests.fakes.suwayomi import FakeSuwayomi
 from tests.follow_env import Bench, follow_bench, new_chapter
@@ -232,7 +241,7 @@ def test_suwayomi_schema_mismatch_pauses_without_counting() -> None:
 class MinimalService:
     """The least a connected service owes the follow cycle: nothing here is Suwayomi."""
 
-    connected = ConnectedCapability.CATEGORIES | ConnectedCapability.SERVER_QUEUE
+    connected = ConnectedCapability.SERVER_QUEUE  # no categories, no upstream_restore
     wake_target = None
 
     def __init__(self, source_key: str, remote_id: str, cbz: bytes, base_url: str) -> None:
@@ -247,6 +256,9 @@ class MinimalService:
 
     async def followed_series(self, f: Any) -> list[SeriesRef]:
         return [self.ref]
+
+    async def get_series(self, f: Any, ref: SeriesRef) -> SeriesInfo:
+        return SeriesInfo(ref=ref, title=ref.title)
 
     async def list_units(self, f: Any, ref: SeriesRef) -> list[UnitInfo]:
         return [
@@ -285,7 +297,10 @@ def test_minimal_connected_service_passes_follow_cycle() -> None:
     with follow_bench(service=minimal) as bench:  # the cycle only knows sdk.connected
         assert bench.run().requested == 0  # baseline
         minimal.chapters.append("c2")
-        report = bench.run()
+        with structlog.testing.capture_logs() as logs:
+            report = bench.run()
+        skipped = {e["capability"] for e in logs if e["event"] == "follow.capability_skipped"}
+        assert {"categories", "upstream_restore", "health_probe"} <= skipped, logs
         assert report.discovered == 1 and report.requested == 1 and report.fetched == 1
         assert [p.suffix for p in bench.library_files()] == [".cbz"]
 

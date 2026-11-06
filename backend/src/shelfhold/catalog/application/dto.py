@@ -61,6 +61,8 @@ class IncomingUnit:
     page_count: int | None = None
     title: str | None = None
     published_at: datetime | None = None
+    published_on: str | None = None  # partial ISO 8601 date, with its precision (EF-BIB-047)
+    date_precision: str | None = None
     kind: str = "chapter"
 
 

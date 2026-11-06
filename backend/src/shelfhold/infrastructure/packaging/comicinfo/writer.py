@@ -104,7 +104,9 @@ def _people(
             raise ValueError(f"{role}: only a sort name is known ({error})") from None
         if shown.commas_replaced:
             warnings.append(f"{role}: comma replaced in a person name")
-        names.append(shown.text)
+        safe = sanitize_upstream_text(shown.text)  # whatever the database holds (ENF-SEC-015)
+        if safe:
+            names.append(_no_comma(safe, role, warnings))
     return join_people(names)
 
 

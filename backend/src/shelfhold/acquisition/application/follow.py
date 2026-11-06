@@ -56,13 +56,18 @@ from shelfhold.acquisition.domain.requests import (
 from shelfhold.acquisition.domain.team_policy import DEFAULT_INACTIVE_MONTHS
 from shelfhold.acquisition.domain.watermark import Watermark
 from shelfhold.catalog.public import (
+    ARTIST,
+    WRITER,
     BindingRef,
+    Catalog,
     IncomingUnit,
     IngestOutcome,
     IngestResult,
     ingest_isolated,
+    period_start,
     place_key,
     place_parts,
+    stored_date,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.infrastructure.clock import Clock, FutureDateError, reject_future
@@ -88,6 +93,13 @@ from shelfhold.sdk.source import SourceError, SubSource
 log = structlog.get_logger(__name__)
 
 FOLLOW_JOB_KIND = "follow.cycle"
+
+# What a cycle does only for a service that declares the capability (EF-SRC-033).
+_OPTIONAL_STEPS: tuple[tuple[ConnectedCapability, str], ...] = (
+    (ConnectedCapability.HEALTH_PROBE, "functional probe"),
+    (ConnectedCapability.CATEGORIES, "category exclusion"),
+    (ConnectedCapability.UPSTREAM_RESTORE, "upstream settings snapshot"),
+)
 
 
 def follow_dedupe_key(plugin_id: str) -> str:
@@ -243,7 +255,19 @@ class FollowCycle:
             self._ledger.resume(connection)
         self._tickets.reopen_abandoned()
 
+    def _log_skipped_capabilities(self) -> None:
+        """A step the service has no capability for is skipped, and said so (EF-SRC-033)."""
+        for capability, step in _OPTIONAL_STEPS:
+            if capability not in self._service.connected:
+                log.info(
+                    "follow.capability_skipped",
+                    capability=capability.name.lower() if capability.name else "?",
+                    step=step,
+                    service=self._plugin_id,
+                )
+
     async def _cycle(self, report: FollowReport) -> None:
+        self._log_skipped_capabilities()
         if ConnectedCapability.HEALTH_PROBE in self._service.connected:
             health = await from_service(self._service.semantic_health(self._fetcher))
             if not health.ok:
@@ -466,6 +490,7 @@ class FollowCycle:
         fresh = units is not None
         if units is None:
             units = await from_service(self._service.list_units(self._fetcher, ref))
+        await self._credit_authors(binding, ref)
         with self._engine.connect() as connection:
             mark = watermark_of(connection, binding.edition_id)
         if fresh:
@@ -486,6 +511,7 @@ class FollowCycle:
                     remote_unit_id=info.remote_unit_id, raw_number=info.number, seen_at=look.now,
                     source_order=info.source_order, team_label=info.team, lang=info.lang,
                     title=info.title, published_at=info.published_at, kind=info.kind,
+                    published_on=info.published_on, date_precision=info.date_precision,
                 ),
                 then=self._hook(info, look, budget),
             )  # fmt: skip
@@ -504,6 +530,33 @@ class FollowCycle:
             connection.execute(
                 sa.update(table).where(table.c.id == binding.id).values(last_checked=look.now)
             )
+
+    async def _credit_authors(self, binding: _Binding, ref: SeriesRef) -> None:
+        """The authors the source gives become contributors of the Work (EF-BIB-046).
+
+        Asked while the Work has none: what is credited is never rewritten, and a series nobody
+        signs is asked again, which costs one cached read. Text is made safe before it is stored
+        (ENF-SEC-015). A source that cannot answer is no reason to skip the series' chapters.
+        """
+        with self._engine.connect() as connection:
+            if Catalog(connection).work_is_credited(binding.work_id):
+                return
+        try:
+            info = await from_service(self._service.get_series(self._fetcher, ref))
+        except Exception as error:
+            failure_class = classify(error)
+            if disposition_of(failure_class) is Disposition.PAUSE:
+                raise
+            log.warning(
+                "follow.authors_skipped", binding_id=binding.id, failure_class=failure_class
+            )
+            return
+        with self._engine.begin() as connection:
+            catalog_ = Catalog(connection)
+            for role, names in ((WRITER, info.authors), (ARTIST, info.artists)):
+                clean = [text for text in map(_plain, names) if text]
+                if clean:
+                    catalog_.credit_work(binding.work_id, role, clean)
 
     def _hook(
         self, info: UnitInfo, look: _Look, budget: RequestBudget
@@ -777,8 +830,26 @@ def _trusted(info: UnitInfo, now: datetime) -> UnitInfo:
             "title": _plain(info.title),
             "team": _plain(info.team),
             "published_at": published,
+            **_trusted_partial(info, now),
         }
     )
+
+
+def _trusted_partial(info: UnitInfo, now: datetime) -> dict[str, str | None]:
+    """A partial date the source gives (`2023`, `2023-05`): believed only if it is well formed,
+    no finer than it says, and not later than the server's own clock allows (ENF-TIME-001)."""
+    if info.published_on is None:
+        return {"published_on": None, "date_precision": None}
+    kept = stored_date(info.published_on, info.date_precision, None)
+    if kept is None:
+        log.warning("follow.partial_date_ignored", remote_unit_id=info.remote_unit_id)
+        return {"published_on": None, "date_precision": None}
+    try:
+        reject_future(period_start(kept[0]), now=now)
+    except FutureDateError:
+        log.warning("follow.future_date_ignored", remote_unit_id=info.remote_unit_id)
+        return {"published_on": None, "date_precision": None}
+    return {"published_on": kept[0], "date_precision": kept[1]}
 
 
 def _place_of(info: UnitInfo) -> str:
