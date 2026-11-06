@@ -251,7 +251,7 @@ def test_lan_target_is_reachable_only_on_its_declared_host_and_port() -> None:
     _get(f, "http://[fd00::5]/")
     assert rec.hosts == ["192.168.1.20", "fd00::5"]
     assert rec.requests[0].headers["host"] == "nas.lan:8080"
-    for url in ("http://nas.lan:8081/", "http://nas.lan/", "http://192.168.1.21:8080/",
+    for url in ("http://nas.lan:8081/", "http://nas.lan/", "http://10.255.0.7:8080/",
                 "http://[fd00::6]/", "http://192.168.1.20:8080/"):  # fmt: skip
         with pytest.raises(SsrfBlocked):
             _get(f, url)
