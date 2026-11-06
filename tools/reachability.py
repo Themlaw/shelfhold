@@ -24,12 +24,14 @@ Method (limits in docs/decisions/M1a-L58-reachability.md)
 from __future__ import annotations
 
 import ast
+import fnmatch
 import re
 import sys
 import tomllib
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 PACKAGE = "shelfhold"
 ALLOWLIST = "tools/production-reachability-allowlist.toml"
@@ -62,6 +64,7 @@ class Graph:
         self.defs: dict[str, Symbol] = {}
         self.by_simple: dict[str, set[str]] = defaultdict(set)  # simple name -> keys
         self.members: dict[str, set[str]] = defaultdict(set)  # simple name -> member keys
+        self.fields: set[str] = set()  # members that are data (dataclass fields, constants)
         self.edges: dict[str, set[str]] = defaultdict(set)
         self.children: dict[str, set[str]] = defaultdict(set)  # class -> dunders, attributes
         self.modules: set[str] = set()
@@ -137,6 +140,8 @@ def _collect_defs(graph: Graph, module: str, tree: ast.Module) -> None:
                 key = graph.add_def(Symbol(module, f"{prefix}{n}"), member=owner is not None)
                 if owner is not None:
                     graph.children[owner].add(key)
+                    if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        graph.fields.add(key)
                 if isinstance(stmt, ast.ClassDef):
                     visit(stmt.body, f"{prefix}{n}.", key)
 
@@ -357,26 +362,36 @@ class Orphan:
     symbol: str
 
 
-def load_allowlist(root: Path) -> list[dict[str, str]]:
+PERMANENT_CATEGORIES = ("public-sdk", "governance-catalogue")
+
+
+def load_allowlist(root: Path) -> list[dict[str, Any]]:
+    """Entries: `symbols` (a list; `pkg.mod.*` matches a whole module prefix), `category`,
+    `reason`, `until`."""
     path = root / ALLOWLIST
     if not path.exists():
         return []
     return list(tomllib.loads(path.read_text(encoding="utf-8")).get("allow", []))
 
 
-def check_allowlist(entries: list[dict[str, str]]) -> list[str]:
+def check_allowlist(entries: list[dict[str, Any]]) -> list[str]:
     problems: list[str] = []
     seen: set[str] = set()
     for e in entries:
-        sym = e.get("symbol", "?")
-        if sym in seen:
-            problems.append(f"{sym}: listed twice")
-        seen.add(sym)
-        if not e.get("reason", "").strip():
-            problems.append(f"{sym}: no reason")
+        label = e.get("category", "?")
+        symbols = e.get("symbols", [])
+        if not symbols:
+            problems.append(f"{label}: no symbols")
+        for sym in symbols:
+            if sym in seen:
+                problems.append(f"{sym}: listed twice")
+            seen.add(sym)
+        if not str(e.get("reason", "")).strip():
+            problems.append(f"{label}: no reason")
         until = e.get("until", "")
-        if not UNTIL_RE.match(until):
-            problems.append(f"{sym}: until {until!r} names neither an M1b lot nor a milestone")
+        permanent = until == "permanent" and label in PERMANENT_CATEGORIES
+        if not permanent and not UNTIL_RE.match(until):
+            problems.append(f"{label}: until {until!r} names neither an M1b lot nor a milestone")
     return problems
 
 
@@ -391,16 +406,21 @@ def find_orphans(root: Path) -> list[Orphan]:
             if sym is not None and sym.qualname and c.symbol not in live:
                 orphans.append(Orphan(c.test, c.symbol))
         else:  # `x.attr`: orphan when src defines it only as members that none reaches
-            members = graph.members.get(c.symbol, set())
+            members = graph.members.get(c.symbol, set()) - graph.fields  # a field follows its class
             if members and not (members & live):
                 orphans.append(Orphan(c.test, f"{sorted(members)[0]}"))
     return sorted(set(orphans), key=lambda o: (o.symbol, o.test))
 
 
-def _covered(symbol: str, allowed: set[str]) -> bool:
-    """An entry covers its symbol and, for a class, its members (`mod:Class.attr`)."""
+def _matches(symbol: str, pattern: str) -> bool:
+    return fnmatch.fnmatchcase(symbol, pattern if "*" in pattern else pattern)
+
+
+def _covered(symbol: str, patterns: set[str]) -> bool:
+    """An entry covers its symbol, the members of a class (`mod:Class.attr`), and, with `*`, a
+    module prefix (`shelfhold.sdk.*`)."""
     while symbol:
-        if symbol in allowed:
+        if any(_matches(symbol, p) for p in patterns):
             return True
         module, _, qual = symbol.partition(":")
         if "." not in qual:
@@ -409,8 +429,12 @@ def _covered(symbol: str, allowed: set[str]) -> bool:
     return False
 
 
+def allowed_patterns(root: Path) -> set[str]:
+    return {sym for e in load_allowlist(root) for sym in e.get("symbols", [])}
+
+
 def unlisted_orphans(root: Path) -> list[Orphan]:
-    allowed = {e["symbol"] for e in load_allowlist(root)}
+    allowed = allowed_patterns(root)
     orphans = find_orphans(root)
     names = {o.symbol for o in orphans}
     out = []
@@ -422,40 +446,6 @@ def unlisted_orphans(root: Path) -> list[Orphan]:
         if not _covered(o.symbol, allowed):
             out.append(o)
     return out
-
-
-_DECLARES = {"add_api_route", "include_router", "add_route", "mount", "add_websocket_route",
-             "api_route", "add_middleware"}  # fmt: skip
-_DECORATORS = {"get", "post", "put", "delete", "patch", "head", "options", "middleware"}
-
-
-def route_declarations(root: Path) -> list[str]:
-    """`req` tests that declare a route, a middleware, or hand `routers=` (a fake service) to the
-    application: the route then exists only in the test, never in `create_app()`."""
-    found: list[str] = []
-    for path in sorted((root / TESTS).rglob("test_*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for test in req_tests(tree):
-            what: set[str] = set()
-            for node in ast.walk(test):
-                if isinstance(node, ast.Attribute) and node.attr in _DECLARES:
-                    what.add(node.attr)
-                elif isinstance(node, ast.Name) and node.id == "APIRouter":
-                    what.add("APIRouter")
-                elif isinstance(node, ast.keyword) and node.arg == "routers":
-                    what.add("routers=")
-                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    for deco in node.decorator_list:
-                        if (
-                            isinstance(deco, ast.Call)
-                            and isinstance(deco.func, ast.Attribute)
-                            and deco.func.attr in _DECORATORS
-                        ):
-                            what.add(f"@{deco.func.attr}")
-            if what:
-                rel = path.relative_to(root).as_posix()
-                found.append(f"{rel}::{test.name} ({', '.join(sorted(what))})")
-    return found
 
 
 def main(argv: list[str]) -> int:

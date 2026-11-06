@@ -37,9 +37,10 @@ def test_reachability_allowlist_is_justified_and_live() -> None:
     assert reach.check_allowlist(entries) == []
     orphans = {o.symbol for o in reach.find_orphans(REPO)}
     stale = [
-        e["symbol"]
+        sym
         for e in entries
-        if not any(o == e["symbol"] or o.startswith(f"{e['symbol']}.") for o in orphans)
+        for sym in e["symbols"]
+        if not any(reach._covered(o, {sym}) for o in orphans)
     ]
     assert not stale, f"allowlist entries that are wired or no longer cited: {stale}"
 
@@ -122,15 +123,22 @@ def test_reference_from_an_entry_point_clears_the_orphan(tmp_path: Path) -> None
 
 
 def test_allowlist_entry_covers_members_and_needs_reason_and_until() -> None:
-    allowed = {"shelfhold.m:Klass"}
+    allowed = {"shelfhold.m:Klass", "shelfhold.sdk.*"}
     assert reach._covered("shelfhold.m:Klass.attr", allowed)
+    assert reach._covered("shelfhold.sdk.testing.kit:run", allowed)
     assert not reach._covered("shelfhold.m:Other", allowed)
-    good = {"symbol": "a:b", "reason": "why", "until": "M1b L24"}
-    assert reach.check_allowlist([good, {**good, "symbol": "a:c", "until": "M2"}]) == []
+    good = {"category": "c", "symbols": ["a:b"], "reason": "why", "until": "M1b L24"}
+    assert reach.check_allowlist([good, {**good, "symbols": ["a:c"], "until": "M2"}]) == []
     problems = reach.check_allowlist(
-        [{"symbol": "a:b", "reason": " ", "until": "soon"}, {**good, "until": "M1b L99"}]
+        [
+            {"category": "c", "symbols": ["a:b"], "reason": " ", "until": "soon"},
+            {**good, "until": "M1b L99"},
+            {**good, "category": "public-sdk", "symbols": ["a:d"], "until": "permanent"},
+            {**good, "symbols": ["a:e"], "until": "permanent"},  # only some categories
+        ]
     )
-    assert len(problems) == 4  # no reason, bad until, bad until, duplicate symbol
+    # no reason, bad until, duplicate a:b (twice), bad until L99, permanent outside its categories
+    assert len(problems) == 5, problems
 
 
 def test_route_declaration_in_a_req_test_is_reported(tmp_path: Path) -> None:
