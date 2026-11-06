@@ -21,7 +21,8 @@ from shelfhold.infrastructure.schema import coherence, platform
 from shelfhold.infrastructure.secrets import diagnostics
 from shelfhold.infrastructure.secrets.errors import SecretsError
 from shelfhold.integrations.apprise import operating_bus
-from shelfhold.library.public import TombstoneRoot, TombstoneService
+from shelfhold.library.public import SetAsideRefusedError, TombstoneRoot, TombstoneService
+from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.ports import WaitingItem
 
 __all__ = ["TombstoneKeyringExit"]
@@ -45,12 +46,18 @@ class TombstoneKeyringExit:
         owed = coherence.tombstone_pending_root
         with self._engine.connect() as connection:
             owing = sorted(set(connection.execute(sa.select(owed.c.root_id)).scalars()))
+        frozen = self._frozen()
+        # while the instance is `restored_behind` no line can be written: the way out is the
+        # restore's, not a flush
+        command = "shelfhold reconcile --adopt-after-restore" if frozen else ""
         return [
             WaitingItem("tombstone_key_unknown", "tombstones", k, "kid not in the keyring")
             for k in sorted(known - waived)
             if keyring.find(k) is None
         ] + [
-            WaitingItem("tombstone_lines_owed", "tombstones", root_id, "lines owed to a root")
+            WaitingItem(
+                "tombstone_lines_owed", "tombstones", root_id, "lines owed to a root", command
+            )
             for root_id in owing
         ]
 
@@ -78,11 +85,25 @@ class TombstoneKeyringExit:
         self, *, principal: Principal, root_id: str | None = None
     ) -> dict[str, str]:
         service, roots = self._service()
-        return service.set_aside_journal(
-            roots, principal=principal, now=self._clock.now(), root_id=root_id
-        )
+        try:
+            return service.set_aside_journal(
+                roots, principal=principal, now=self._clock.now(), root_id=root_id
+            )
+        except SetAsideRefusedError as error:
+            raise ExitUnavailableError(str(error)) from error
+
+    def _frozen(self) -> bool:
+        with self._engine.connect() as connection:
+            return bool(
+                connection.execute(sa.select(platform.instance.c.restore_generation)).scalar()
+            )
 
     def flush_owed(self) -> list[str]:
+        if self._frozen():
+            raise ExitUnavailableError(
+                "restored_behind: nothing is written yet, "
+                "run `shelfhold reconcile --adopt-after-restore`"
+            )
         service, roots = self._service()
         for root in roots:
             service.flush_pending(root)

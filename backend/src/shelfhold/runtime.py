@@ -182,7 +182,11 @@ class InstanceRuntime:
             with sessions.open(*ready):
                 migrate_received_dirs(
                     engine, fsops,
-                    [(r.root_id, r.path) for r in loaded.roots if r.mode is PathMode.RW],
+                    [
+                        (r.root_id, r.path)
+                        for r in loaded.roots
+                        if r.mode is PathMode.RW and r.path in ready
+                    ],  # a root that is away or refuses is left for the next start
                     old_dir=LEGACY_RECEIVED_DIR, new_dir=RECEIVED_DIR,
                 )  # fmt: skip
                 hook = adopt_written_hook(fsops, loaded.locate, clock)

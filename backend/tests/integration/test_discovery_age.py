@@ -6,6 +6,8 @@ ComicInfo of its files must still say how adult it is, since Kavita's own profil
 flagged the sub-source as adult-only (EF-EXP-011).
 """
 
+import re
+
 import pytest
 import sqlalchemy as sa
 
@@ -63,3 +65,62 @@ def test_a_rated_work_keeps_its_own_age() -> None:
             connection.execute(sa.text("UPDATE work SET age_rating = 16"))
         editions = bench.rows("SELECT id FROM edition")
         assert "<AgeRating>Mature 17+</AgeRating>" in _xml_of_first_unit(bench, editions[0]["id"])
+
+
+# -- review of PR #69, minor 5: an X from any adopted source, and the Edition's own rating -------
+
+
+def _age_of(bench: Bench, edition_id: str) -> str | None:
+    units = bench.rows(f"SELECT id FROM unit WHERE edition_id = '{edition_id}'")  # noqa: S608
+    with bench.lib.engine.begin() as connection:
+        unit_id = units[0]["id"] if units else _first_unit(connection, edition_id)
+        xml = render_comicinfo(comicinfo_data(connection, unit_id, "Series")).xml.decode()
+    match = re.search(r"<AgeRating>(.*?)</AgeRating>", xml)
+    return match.group(1) if match else None
+
+
+def _first_unit(connection: sa.Connection, edition_id: str) -> str:
+    unit_id = new_ulid()
+    connection.execute(
+        sa.text(
+            "INSERT INTO unit (id, edition_id, track, number_segment, number_raw, number_norm,"
+            " part, source_order) VALUES (:i, :e, 'main', '', '1', '1', 1, 1)"
+        ),
+        {"i": unit_id, "e": edition_id},
+    )
+    return unit_id
+
+
+def _suggest(bench: Bench, edition_id: str, provenance: str, value: int, x: int) -> None:
+    with bench.lib.engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "INSERT INTO age_suggestion (id, entity_type, entity_id, value, x, provenance,"
+                " seen_at) VALUES (:i, 'edition', :e, :v, :x, :p, '2026-11-05T08:00:00Z')"
+            ),
+            {"i": new_ulid(), "e": edition_id, "v": value, "x": x, "p": provenance},
+        )
+
+
+def test_an_x_from_an_adopted_comicinfo_exports_x18_and_a_mild_one_does_not_lower() -> None:
+    with follow_bench(seeded=False, adult_shelf=True) as bench:
+        bench.run()
+        edition_id = bench.rows("SELECT id FROM edition")[0]["id"]
+        _suggest(bench, edition_id, "comicinfo", 0, 0)  # "Everyone" is only a suggestion
+        _suggest(bench, edition_id, "provider", 0, 0)
+        assert _age_of(bench, edition_id) == "Adults Only 18+"
+        _suggest(bench, edition_id, "comicinfo", 18, 1)
+        assert _age_of(bench, edition_id) == "X18+"
+
+
+def test_the_edition_own_rating_counts_with_the_work() -> None:
+    with follow_bench(seeded=False, adult_shelf=True) as bench:
+        bench.run()
+        edition_id = bench.rows("SELECT id FROM edition")[0]["id"]
+        with bench.lib.engine.begin() as connection:
+            connection.execute(sa.text("UPDATE edition SET age_rating = 18, age_x = 1"))
+        assert _age_of(bench, edition_id) == "X18+"  # the Work is unrated
+        with bench.lib.engine.begin() as connection:
+            connection.execute(sa.text("UPDATE edition SET age_x = 0, age_rating = 12"))
+            connection.execute(sa.text("UPDATE work SET age_rating = 16"))
+        assert _age_of(bench, edition_id) == "Mature 17+"  # the stricter of the two

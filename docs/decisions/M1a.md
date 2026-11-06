@@ -630,3 +630,21 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
 | 12 | Le SQL de `headless/admin` écrit à la main | Il est couvert par les tests de configuration et par le fichier déclaratif ; le réécrire par les tables du schéma est un refactor sans effet visible, risqué la veille de la release 0.2. | Plan M1b, lot à inscrire : « configuration par fichier déclaratif » (EF-INT-024, suite) |
 | 14 | Le SDK `ExportTarget` : protocole à large surface, un seul adaptateur | Le contrat est publié (MIT) : le réduire casse la promesse de compatibilité ; il se décide avec le second adaptateur de destination. | Plan M1b, lot à inscrire : « second transport / contrat `ExportTarget` v1 » |
 | 15 | Environ 690 lignes réservées aux tests (`testonly`) | Ces points d'entrée servent les bancs et les E2E ; les retirer oblige à les reconstruire dans les tests. À traiter avec la réorganisation des bancs. | Plan M1b, lot à inscrire : « bancs et fixtures partagés » |
+
+## L43 : corrections issues de la revue de la PR #69
+
+- **EF-EXP-011, écart à présenter au porteur.** La spec dit « non classé, aucun AgeRating ». Le lot
+  écrit pourtant `Adults Only 18+` (ou `X18+`) pour une oeuvre non classée sur une étagère adulte :
+  un fichier sans AgeRating est lu comme tout public par certains lecteurs. Un X venu d'un
+  ComicInfo adopté, de `edition.age_x` ou d'un sous-source `isNsfw` donne `X18+` ; la valeur de
+  l'Edition (EF-BIB-037) compte avec celle de l'oeuvre, la plus restrictive gagne. L'oeuvre reste non
+  classée en base (invisible d'un profil enfant). Correction de spec proposée, à valider.
+- **Écriture des lignes dues.** Elle ne se fait plus dans `read_context` : `write_context` et le
+  contrôle périodique les paient. Elles précèdent le bail (il ne peut pas être pris tant qu'elles
+  sont dues), donc l'écriture de ces lignes est vérifiée par le sentinel et le gel, pas par le bail.
+  Pendant `restored_behind`, ni écriture ni suggestion de `tombstone flush`.
+- **Cible Kavita.** `inventory_calls`, `ensure_library_call` et `supported_versions` sont rétablis :
+  le protocole `ExportTarget` du SDK est publié, on ne le réduit pas sans version majeure.
+- **Mise de côté du journal.** Les lignes authentiques du fichier mis de côté sont fusionnées dans
+  la table avant la réécriture ; si une ligne porte une clé enregistrée mais absente du trousseau, la
+  commande est refusée avec la marche à suivre.

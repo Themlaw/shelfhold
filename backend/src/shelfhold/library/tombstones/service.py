@@ -66,6 +66,7 @@ from shelfhold.library.tombstones.journal import (
     header_bytes,
     parse_journal,
     parse_line,
+    parse_lines_ignoring_header,
 )
 from shelfhold.library.tombstones.values import (
     ContentHash,
@@ -157,6 +158,11 @@ class ReplayReport:
 class Verdict:
     blocked: bool
     cause: str | None = None  # tombstoned | key_unknown | journal_unreadable
+
+
+class SetAsideRefusedError(RuntimeError):
+    """The damaged journal holds lines that cannot be authenticated with the keyring at hand:
+    setting it aside could let purged content come back. Restore the keyring first."""
 
 
 class NotReplayedError(RuntimeError):
@@ -594,24 +600,37 @@ class TombstoneService:
         now: datetime,
         root_id: str | None = None,
     ) -> dict[str, str]:
-        """Reserved action: a journal that cannot be read (a truncated header, a damaged file)
-        is put aside under a time-stamped name, never deleted, and the root's journal is written
-        again from the database (every row sealed for that root) and the sentinels. This is the
-        way out of a root that `journal_unreadable` blocks. Returns `root id -> aside name`."""
+        """Reserved action: a journal that cannot be read (a truncated header, a newer major
+        format) is put aside under a time-stamped name, never deleted. Before that, the file is
+        read again ignoring its header: every line that opens with a key of the keyring (AEAD,
+        known `kid`, this root or a predecessor) and is not in the table yet is merged into the
+        table, so a purge that only this journal knew (the database being older, after a restore)
+        stays in force. A line whose key is registered but absent from the keyring cannot be
+        checked: the action is refused, naming the way out (restore the keyring, or accept its
+        loss). The root's journal is then written again from the table, every row sealed for
+        that root and owed to it; the sentinel's registry of kids is not rebuilt here, it is
+        completed when the first line is written. Returns `root id -> aside name`."""
         verdict = authorize_reserved(principal, _SET_ASIDE_ACTION, now=now)
         if not isinstance(verdict, Allowed):
             raise LostKeyringRefusedError(verdict)
         self.replay(roots)
+        chosen = [
+            r
+            for r in roots
+            if r.mounted
+            and r.root_id in self._report.unreadable_roots
+            and (root_id is None or r.root_id == root_id)
+        ]
+        found: dict[str, list[tuple[TombstoneValues, dict[str, str]]]] = {}
+        for root in chosen:  # all checked before the first one is touched
+            found[root.root_id] = self._authentic_lines(root)
         stamp = now.strftime("%Y%m%dT%H%M%SZ")
         done: dict[str, str] = {}
-        for root in roots:
-            if not root.mounted or root.root_id not in self._report.unreadable_roots:
-                continue
-            if root_id is not None and root.root_id != root_id:
-                continue
+        for root in chosen:
             aside = self._disk.set_aside_tombstone_journal(root.path, stamp)
             if aside is None:
                 continue
+            self._merge_into_table(found[root.root_id])
             self._owe_every_line(root.root_id)
             done[root.root_id] = aside
             with self._engine.begin() as connection:
@@ -627,6 +646,63 @@ class TombstoneService:
                 )
         self.replay(roots)  # the lines owed are written when the root accepts writes
         return done
+
+    def _authentic_lines(self, root: TombstoneRoot) -> list[tuple[TombstoneValues, dict[str, str]]]:
+        """The lines of the damaged journal that open under a key we hold. A line that does not
+        authenticate is inert (EF-BIB-054) and left in the file; one whose key is registered but
+        missing refuses the whole action."""
+        try:
+            raw = self._disk.read_tombstone_journal(root.path, max_bytes=MAX_JOURNAL_BYTES)
+            lines = parse_lines_ignoring_header(raw or b"")
+        except (OSError, JournalFormatError):
+            lines = []
+        with self._engine.connect() as connection:
+            registered = set(connection.execute(sa.select(_kid.c.kid)).scalars())
+            lost = set(connection.execute(sa.select(_lost.c.kid)).scalars())
+        registered |= self._authenticated(root.root_id, self._disk.tombstone_kids(root.path))
+        opened: list[tuple[TombstoneValues, dict[str, str]]] = []
+        for line in lines:
+            if self._keyring.find(line.kid) is None:
+                if line.kid in registered and line.kid not in lost:
+                    raise SetAsideRefusedError(
+                        f"the journal of root {root.root_id} holds lines sealed with a key that "
+                        "the keyring lacks: restore the keyring from its export, or accept its "
+                        "loss with `shelfhold tombstone accept-lost-keyring`, then try again"
+                    )
+                continue
+            for candidate in (root.root_id, *root.predecessor_root_ids):
+                try:
+                    opened.append(
+                        self._open(line.scope, line.kid, line.nonce, line.ct, candidate, line.seq)
+                    )
+                except (EnvelopeError, TombstoneValueError):
+                    continue
+                break
+        return opened
+
+    def _merge_into_table(self, entries: list[tuple[TombstoneValues, dict[str, str]]]) -> None:
+        """Add to the table the authentic lines it does not hold (never a deletion)."""
+        with self._engine.begin() as connection:
+            rows = connection.execute(
+                sa.select(_tomb.c.scope, _tomb.c.seq, _tomb.c.kid, _tomb.c.nonce, _tomb.c.ct)
+            ).all()
+            known: set[tuple[object, ...]] = set()
+            for scope, seq, kid, nonce, ct in rows:
+                if self._keyring.find(kid) is None:
+                    continue
+                try:
+                    known.add(
+                        _identity(*self._open(scope, kid, bytes(nonce), bytes(ct), DB_ROOT, seq))
+                    )
+                except (EnvelopeError, TombstoneValueError):
+                    continue
+            for values, cited in entries:
+                if _identity(values, cited) in known:
+                    continue
+                known.add(_identity(values, cited))
+                self._insert_row(
+                    connection, encode_plaintext(values, cited), values.scope, reason="replayed"
+                )
 
     def _owe_every_line(self, root_id: str) -> None:
         """Seal every row of the table for this root and keep it as a line owed to it. A row

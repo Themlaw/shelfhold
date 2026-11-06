@@ -179,7 +179,6 @@ class Composition:
                 self._replay(service, fsops, loaded)
             service = self._tombstones[1]
         service.use_disk(fsops)
-        self._flush_owed(service, fsops, loaded)
         fsops.enforce_tombstone_flush(
             lambda path: any(
                 r.path == path and service.has_pending(r.root_id) for r in loaded.roots
@@ -198,11 +197,15 @@ class Composition:
                 service.flush_pending(TombstoneRoot(r.root_id, r.path, mounted, r.predecessors))
 
     def flush_owed_tombstones(self) -> None:
-        """The periodic look (`ops.disk_check`): pay the lines owed to the roots that came back."""
+        """The periodic look (`ops.disk_check`): pay the lines owed to the roots that came back,
+        before the lease, which cannot be taken while lines are owed."""
         try:
-            self.read_context()
+            fsops, loaded, service = self.read_context()
+            if loaded.restore_pending or not service.owed_roots():
+                return  # frozen: nothing is written; nothing owed: nothing to take a lease for
+            self._flush_owed(service, fsops, loaded)
         except (NoLibraryError, KeyringUnavailableError):
-            return  # nothing registered yet, or no keyring: no line can be owed
+            return  # nothing registered yet, or no keyring, or no root mounted: nothing to pay
 
     @staticmethod
     def _replay(service: TombstoneService, fsops: Fsops, loaded: LoadedRoots) -> None:
@@ -215,7 +218,8 @@ class Composition:
         )
 
     def read_context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
-        """Everything that reads the library or the tombstones, and writes nothing."""
+        """Everything that reads the library or the tombstones, and writes nothing
+        (the lines owed to a root are paid by `write_context` and `flush_owed_tombstones`)."""
         loaded = self.load_roots()
         if loaded is None:
             raise NoLibraryError("no physical root is registered")
@@ -273,6 +277,8 @@ class Composition:
     def write_context(self) -> Iterator[WriteContext]:
         """The lease for the time of the block; `Fsops` refuses a write without it (ENF-OPS-015)."""
         fsops, loaded, tombstones = self.read_context()
+        if not loaded.restore_pending:  # the lines owed to a root that came back, before the lease
+            self._flush_owed(tombstones, fsops, loaded)
         with self._hold(fsops, loaded) as (sessions, mounted):
             self.sessions_for(fsops).enforce()
             yield WriteContext(fsops, loaded, WriteSession(sessions, mounted), tombstones, self.bus)

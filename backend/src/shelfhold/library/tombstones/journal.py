@@ -139,3 +139,21 @@ def parse_journal(raw: bytes) -> Journal:
             reason = "line_too_long" if len(row) > MAX_LINE_BYTES else type(exc).__name__
             journal.malformed.append(MalformedLine(number, reason))
     return journal
+
+
+def parse_lines_ignoring_header(raw: bytes) -> list[JournalLine]:
+    """The lines of a journal whose header cannot be trusted (cut short, a newer major format):
+    the first row is skipped, every other row that parses is returned. Nothing here says a line
+    is authentic; the caller opens each one with its key."""
+    if len(raw) > MAX_JOURNAL_BYTES:
+        raise JournalFormatError("journal too large")
+    rows = raw.split(b"\n")[1:]
+    lines: list[JournalLine] = []
+    for row in rows:
+        if not row:
+            continue
+        try:
+            lines.append(parse_line(row))
+        except (UnicodeDecodeError, ValueError, binascii.Error):
+            continue
+    return lines

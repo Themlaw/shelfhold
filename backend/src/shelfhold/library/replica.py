@@ -32,6 +32,7 @@ __all__ = [
     "library_copies",
     "manifest_file_hashes",
     "median_unit_bytes",
+    "paths_under",
     "readable_unit_ids",
     "record_replica",
     "reference_content_hash",
@@ -146,24 +147,30 @@ def record_replica(
     return replica_id
 
 
-def relocate_root_paths(
-    connection: Connection, root_id: str, old_prefix: str, new_prefix: str
-) -> int:
-    """The copies of a root under the folder `old_prefix` follow it to `new_prefix` (the folder
-    was moved on disk). Idempotent: a row already moved no longer matches."""
-    start = len(old_prefix) + 2  # SQL strings count from 1, after "<prefix>/"
-    return connection.execute(
-        sa.update(replica_table)
-        .where(
+def paths_under(connection: Connection, root_id: str, folder: str) -> list[str]:
+    """The `rel_path` of the copies of a root that sit directly under `folder`."""
+    rows = connection.execute(
+        sa.select(replica_table.c.rel_path).where(
             replica_table.c.physical_root_id == root_id,
-            replica_table.c.rel_path.like(f"{old_prefix}/%"),
+            replica_table.c.rel_path.like(f"{folder}/%"),
         )
-        .values(
-            rel_path=sa.literal(f"{new_prefix}/", sa.Text).concat(
-                sa.func.substr(replica_table.c.rel_path, start)
-            )
-        )
-    ).rowcount
+    ).scalars()
+    return [p for p in rows if p and "/" not in p[len(folder) + 1 :]]
+
+
+def relocate_root_paths(
+    connection: Connection, root_id: str, moves: Sequence[tuple[str, str]]
+) -> int:
+    """The copies of a root follow the files that were really moved on disk: `(old, new)` paths
+    relative to the root, one row each. Idempotent: a row already moved no longer matches."""
+    done = 0
+    for old, new in moves:
+        done += connection.execute(
+            sa.update(replica_table)
+            .where(replica_table.c.physical_root_id == root_id, replica_table.c.rel_path == old)
+            .values(rel_path=new)
+        ).rowcount
+    return done
 
 
 def forget_destination_copies(connection: Connection, export_item_id: str) -> None:

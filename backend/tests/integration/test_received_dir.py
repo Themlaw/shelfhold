@@ -2,6 +2,7 @@
 
 import fnmatch
 import io
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -39,13 +40,38 @@ def test_fsops_writes_the_inbox_and_nothing_else_of_the_host_area(tmp_path: Path
     fsops = Fsops.open(env.path_map, env.expected)
     books = env.expected[1].path  # a root that is a path map entry, as in production
     inbox = f"{books}/{RECEIVED_DIR}"
-    fsops.mkdir(inbox)
     fsops.write_atomic(f"{inbox}/a.cbz", io.BytesIO(b"x"), parents=True)
     assert (Path(books) / RECEIVED_DIR / "a.cbz").read_bytes() == b"x"
     with pytest.raises(ReservedPathError):
         fsops.write_atomic(f"{books}/.shelfhold/tombstones", io.BytesIO(b"x"))
     with pytest.raises(PathEscapeError):  # a climb out of the inbox is refused before anything
         fsops.write_atomic(f"{inbox}/../tombstones", io.BytesIO(b"x"))
+
+
+def _rows(tmp_path: Path, root_id: str, names: list[str]) -> sa.Engine:
+    engine = prepare_database(tmp_path / "shelfhold.db")
+    with sqlite3.connect(tmp_path / "shelfhold.db") as raw:  # no parent rows needed for this
+        raw.execute("PRAGMA foreign_keys=OFF")
+        for name in names:
+            raw.execute(
+                "INSERT INTO replica (id, unit_id, location, physical_root_id, rel_path,"
+                " independent, mutable_by_third_party, fidelity)"
+                " VALUES (?, ?, 'library', ?, ?, 1, 1, 'original')",
+                (new_ulid(), new_ulid(), root_id, f"{LEGACY_RECEIVED_DIR}/{name}.cbz"),
+            )
+    return engine
+
+
+def _paths(engine: sa.Engine) -> list[str]:
+    with engine.connect() as connection:
+        return sorted(connection.execute(sa.text("SELECT rel_path FROM replica")).scalars())
+
+
+def _migrate(engine: sa.Engine, fsops: Fsops, *roots: object) -> int:
+    return migrate_received_dirs(
+        engine, fsops, [(r.root_id, r.path) for r in roots],  # type: ignore[attr-defined]
+        old_dir=LEGACY_RECEIVED_DIR, new_dir=RECEIVED_DIR,
+    )  # fmt: skip
 
 
 def test_an_existing_inbox_moves_under_the_host_area_with_its_rows(tmp_path: Path) -> None:
@@ -58,29 +84,95 @@ def test_an_existing_inbox_moves_under_the_host_area_with_its_rows(tmp_path: Pat
     (old / "two.cbz").write_bytes(b"2")
     (Path(root.path) / RECEIVED_DIR).mkdir(parents=True)
     (Path(root.path) / RECEIVED_DIR / "two.cbz").write_bytes(b"already there")
-    engine = prepare_database(tmp_path / "shelfhold.db")
-    with sqlite3.connect(tmp_path / "shelfhold.db") as raw:  # no parent rows needed for this
-        raw.execute("PRAGMA foreign_keys=OFF")
-        for name in ("one", "two"):
-            raw.execute(
-                "INSERT INTO replica (id, unit_id, location, physical_root_id, rel_path,"
-                " independent, mutable_by_third_party, fidelity)"
-                " VALUES (?, ?, 'library', ?, ?, 1, 1, 'original')",
-                (new_ulid(), new_ulid(), root.root_id, f"{LEGACY_RECEIVED_DIR}/{name}.cbz"),
-            )
-    moved = migrate_received_dirs(
-        engine, fsops, [(root.root_id, root.path)],
-        old_dir=LEGACY_RECEIVED_DIR, new_dir=RECEIVED_DIR,
-    )  # fmt: skip
-    assert moved == 1
+    engine = _rows(tmp_path, root.root_id, ["one", "two"])
+    assert _migrate(engine, fsops, root) == 1
     assert (Path(root.path) / RECEIVED_DIR / "one.cbz").read_bytes() == b"1"
     assert (Path(root.path) / RECEIVED_DIR / "two.cbz").read_bytes() == b"already there"
     assert (old / "two.cbz").exists()  # a taken name is never replaced
-    with engine.connect() as connection:
-        paths = set(connection.execute(sa.text("SELECT rel_path FROM replica")).scalars())
-    assert paths == {f"{RECEIVED_DIR}/one.cbz", f"{RECEIVED_DIR}/two.cbz"}
-    again = migrate_received_dirs(
-        engine, fsops, [(root.root_id, root.path)],
-        old_dir=LEGACY_RECEIVED_DIR, new_dir=RECEIVED_DIR,
-    )  # fmt: skip
-    assert again == 0  # repeatable
+    # the row of the file that moved follows it; the row of the one that stayed does not
+    assert _paths(engine) == [f"{LEGACY_RECEIVED_DIR}/two.cbz", f"{RECEIVED_DIR}/one.cbz"]
+    assert _migrate(engine, fsops, root) == 0  # repeatable
+
+
+def test_a_legacy_inbox_that_is_a_link_is_reported_and_its_rows_stay(tmp_path: Path) -> None:
+    env = make_env(tmp_path)
+    fsops = Fsops.open(env.path_map, env.expected)
+    root = env.expected[1]
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    (real / "one.cbz").write_bytes(b"1")
+    (Path(root.path) / LEGACY_RECEIVED_DIR).symlink_to(real)
+    engine = _rows(tmp_path, root.root_id, ["one"])
+    assert _migrate(engine, fsops, root) == 0
+    assert _paths(engine) == [f"{LEGACY_RECEIVED_DIR}/one.cbz"]  # still where the file is
+    assert (real / "one.cbz").exists()
+
+
+def test_a_sub_folder_of_the_legacy_inbox_is_left_with_its_rows(tmp_path: Path) -> None:
+    env = make_env(tmp_path)
+    fsops = Fsops.open(env.path_map, env.expected)
+    root = env.expected[1]
+    sub = Path(root.path) / LEGACY_RECEIVED_DIR / "sub"
+    sub.mkdir(parents=True)
+    (sub / "x.cbz").write_bytes(b"x")
+    engine = _rows(tmp_path, root.root_id, ["sub/x"])
+    assert _migrate(engine, fsops, root) == 0
+    assert (sub / "x.cbz").exists()
+    assert _paths(engine) == [f"{LEGACY_RECEIVED_DIR}/sub/x.cbz"]
+
+
+def test_a_row_left_stale_by_an_interrupted_run_is_healed(tmp_path: Path) -> None:
+    env = make_env(tmp_path)
+    fsops = Fsops.open(env.path_map, env.expected)
+    root = env.expected[1]
+    new = Path(root.path) / RECEIVED_DIR
+    new.mkdir(parents=True)
+    (new / "one.cbz").write_bytes(b"1")  # moved, but the row was not written
+    engine = _rows(tmp_path, root.root_id, ["one"])
+    _migrate(engine, fsops, root)
+    assert _paths(engine) == [f"{RECEIVED_DIR}/one.cbz"]
+
+
+def test_a_root_that_is_away_does_not_stop_the_others(tmp_path: Path) -> None:
+    env = make_env(tmp_path)
+    fsops = Fsops.open(env.path_map, env.expected)
+    here, away = env.expected[0], env.expected[1]  # `books` sits inside `library`
+    old = Path(here.path) / LEGACY_RECEIVED_DIR
+    old.mkdir()
+    (old / "one.cbz").write_bytes(b"1")
+    shutil.rmtree(away.path)
+    engine = _rows(tmp_path, here.root_id, ["one"])
+    assert _migrate(engine, fsops, away, here) == 1  # no exception, the other root is done
+    assert _paths(engine) == [f"{RECEIVED_DIR}/one.cbz"]
+
+
+def test_the_inbox_folder_itself_cannot_be_moved_or_purged(tmp_path: Path) -> None:
+    env = make_env(tmp_path)
+    fsops = Fsops.open(env.path_map, env.expected)
+    books = env.expected[1].path
+    inbox = f"{books}/{RECEIVED_DIR}"
+    fsops.write_atomic(f"{inbox}/a.cbz", io.BytesIO(b"x"), parents=True)
+    assert not is_received_rel(RECEIVED_DIR)
+    with pytest.raises(ReservedPathError):
+        fsops.rename(inbox, f"{books}/moved")
+    with pytest.raises(ReservedPathError):
+        fsops.purge_remove_tree(inbox)
+    with pytest.raises(ReservedPathError):
+        fsops.mkdir(inbox)
+    assert (Path(books) / RECEIVED_DIR / "a.cbz").exists()
+
+
+def test_a_new_inbox_that_is_a_link_lets_nothing_out(tmp_path: Path) -> None:
+    env = make_env(tmp_path)
+    fsops = Fsops.open(env.path_map, env.expected)
+    root = env.expected[1]
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (Path(root.path) / ".shelfhold").mkdir(exist_ok=True)
+    (Path(root.path) / RECEIVED_DIR).symlink_to(outside)
+    old = Path(root.path) / LEGACY_RECEIVED_DIR
+    old.mkdir()
+    (old / "one.cbz").write_bytes(b"1")
+    engine = _rows(tmp_path, root.root_id, ["one"])
+    _migrate(engine, fsops, root)  # reported and skipped, never raised
+    assert not list(outside.iterdir())

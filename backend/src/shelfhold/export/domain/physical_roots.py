@@ -198,10 +198,11 @@ def judge_sentinel(doc: SentinelDocument | None, expected: ExpectedRoot) -> Sent
 
 
 def is_received_rel(rel: str) -> bool:
-    """`rel` is under `.shelfhold/received/`: the one reserved folder the follow cycle writes to
-    with the ordinary operations (the archives it receives); the rest stays host-only."""
+    """`rel` is something under `.shelfhold/received/`: the one reserved folder the follow cycle
+    writes to with the ordinary operations (the archives it receives); the rest stays host-only.
+    The folder itself is not (three components at least): it cannot be moved or purged."""
     parts = [p for p in rel.split("/") if p not in ("", ".")]
-    return ".." not in parts and parts[:2] == RECEIVED_DIR.split("/")
+    return ".." not in parts and parts[:2] == RECEIVED_DIR.split("/") and len(parts) > 2
 
 
 def is_reserved(rel: str) -> bool:

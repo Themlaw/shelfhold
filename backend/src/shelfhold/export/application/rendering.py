@@ -20,7 +20,7 @@ from shelfhold.infrastructure.packaging.cbz import repackage_cbz
 from shelfhold.infrastructure.packaging.comicinfo import ComicInfoData, render_comicinfo
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import content_hash
-from shelfhold.sdk.age import AgeRating
+from shelfhold.sdk.age import AgeRating, max_rating
 
 _ADULT_FROM = 18  # M1a has adult shelves only (a ceiling of 18 or more, or none)
 
@@ -58,12 +58,19 @@ def _adopted_series(connection: Connection, unit_id: str) -> Any:
     ).first()
 
 
+def _rating(age_rating: int | None, age_x: bool) -> AgeRating | None:
+    if age_x:
+        return AgeRating(18, True)
+    return None if age_rating is None else AgeRating(int(age_rating))
+
+
 def _unrated_age(connection: Connection, row: Any) -> AgeRating | None:
     """The `AgeRating` of a Work nobody has rated (a series found in the library, EF-EXP-011).
 
     A file never leaves without one: on an adult shelf (every shelf of M1a, and the safe side when
     no shelf is known) it is `Adults Only 18+`, or `X18+` when the source flagged the sub-source
-    as adult-only (`isNsfw`, kept as a `sub_source` age suggestion). The Work stays unrated in the
+    as adult-only (`isNsfw`) or an adopted ComicInfo said `X18+`: an X age suggestion, whatever its
+    origin, so it is never written lower than what the sources said. The Work stays unrated in the
     database (invisible to a child profile, EF-USR-015); this is only what the file says. An
     explicit shelf below 18+ keeps the value empty: nothing unrated is exported there.
     """
@@ -80,7 +87,6 @@ def _unrated_age(connection: Connection, row: Any) -> AgeRating | None:
                 ),
                 sa.and_(suggestion.c.entity_type == "work", suggestion.c.entity_id == row.work_id),
             ),
-            suggestion.c.provenance == "sub_source",
             suggestion.c.x,
             suggestion.c.state != "rejected",
         )
@@ -121,6 +127,8 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
         sa.select(
             unit.c.title, unit.c.number_norm, unit.c.track, edition.c.lang, edition.c.publisher,
             work.c.sort_title, work.c.reading_direction, work.c.age_rating, work.c.age_x,
+            edition.c.age_rating.label("edition_age_rating"),
+            edition.c.age_x.label("edition_age_x"),
             team.c.label, edition.c.id.label("edition_id"), edition.c.work_id,
             edition.c.shelf_id,
         )
@@ -133,9 +141,15 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
         .where(unit.c.id == unit_id)
     ).one()  # fmt: skip
     adopted = _adopted_series(connection, unit_id)
-    age = AgeRating(18, True) if row.age_x else None
-    if age is None and row.age_rating is not None:
-        age = AgeRating(int(row.age_rating))
+    # the most restrictive of the Work and its Edition (EF-BIB-037), X above every age
+    age = max_rating(
+        a
+        for a in (
+            _rating(row.age_rating, row.age_x),
+            _rating(row.edition_age_rating, row.edition_age_x),
+        )
+        if a is not None
+    )
     if age is None:
         age = _unrated_age(connection, row)
     return ComicInfoData(

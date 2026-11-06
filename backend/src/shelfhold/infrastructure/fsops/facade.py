@@ -279,9 +279,10 @@ class Fsops:
         self, located: _Located, *, lease: bool = True, tombstone: bool = False
     ) -> Iterator[ConfinedRoot]:
         """The root opened for a write: refused when read-only, when its sentinel says so, when
-        the lease is not ours (once `enforce_lease` is on) or when tombstone lines are owed to it
-        (`tombstone=True`: the write that pays them). After the shutdown's checkpoint delay every
-        write is refused (`stop_gate`)."""
+        the lease is not ours (once `enforce_lease` is on) or when tombstone lines are owed to it.
+        `tombstone=True` is the write that pays them: it precedes the lease, which cannot be taken
+        while lines are owed, so it is checked by the sentinel and the freeze only.
+        After the shutdown's checkpoint delay every write is refused (`stop_gate`)."""
         if self._stop_gate is not None:
             self._stop_gate()
         if located.read_only:
@@ -297,7 +298,8 @@ class Fsops:
                 if verdict.state is RootState.RESTORED_BEHIND and self._behind_hook is not None:
                     self._behind_hook()
                 raise RootBlockedError(located.root_path, verdict.state)
-            if lease and self._lease_verifier is not None:
+            if lease and not tombstone and self._lease_verifier is not None:
+                # the lines owed come before the lease (it cannot be taken while they are owed)
                 self._lease_verifier(located.root_path, _read_lease(root))
             yield root
 
@@ -760,27 +762,37 @@ class Fsops:
         with self._gated(a) as root:
             root.rename(a.rel, b.rel, replace=replace)
 
-    def relocate_inbox(self, root_path: str, old_rel: str, new_rel: str) -> int:
-        """Move the files of the folder `old_rel` of a writable root into `new_rel` (both relative
-        to the root), then remove `old_rel` if it is empty. One renaming per file, inside the
-        root, never replacing: a name already taken stays where it is. Returns the number moved.
-        The one-time move of the follow inbox into the host area (`.received` -> `.shelfhold/`)."""
+    def relocate_inbox(
+        self, root_path: str, old_rel: str, new_rel: str
+    ) -> tuple[list[str], list[str]]:
+        """Move the regular files of the folder `old_rel` of a writable root into `new_rel` (both
+        relative to the root), then remove `old_rel` if it is empty. One renaming per file,
+        inside the root, never replacing. Returns `(moved, left)`: the names moved, and the
+        entries left where they were (a name already taken, a sub-folder, a link, or an
+        `old_rel` that is itself a link or not a folder). The one-time move of the follow inbox
+        into the host area (`.received` -> `.shelfhold/received`)."""
         with self._gated(self._host_root(root_path)) as root:
-            if root.lstat_kind(old_rel) != "dir":
-                return 0
+            kind = root.lstat_kind(old_rel)
+            if kind is None:
+                return [], []
+            if kind != "dir":
+                return [], [old_rel]
             root.mkdir(new_rel, parents=True, exist_ok=True)
-            moved = 0
+            moved: list[str] = []
+            left: list[str] = []
             for name in sorted(root.listdir(old_rel)):
                 if root.lstat_kind(f"{old_rel}/{name}") != "file":
+                    left.append(name)
                     continue
                 try:
                     root.rename(f"{old_rel}/{name}", f"{new_rel}/{name}", replace=False)
                 except FileExistsError:
+                    left.append(name)
                     continue
-                moved += 1
+                moved.append(name)
             if not root.listdir(old_rel):
                 root.rmdir(old_rel)
-            return moved
+            return moved, left
 
     def recycle(self, local: str) -> str:
         """Move into the same root's `.shelfhold/recycle`; returns where it went."""
