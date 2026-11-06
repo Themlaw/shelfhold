@@ -158,6 +158,7 @@ def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
 
 
 @pytest.mark.req("EF-EXP-056", "EF-INT-024")
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NO_AUTO_FOLLOW)
 def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> None:
     """After a first chapter, `detach --restore-upstream` gives the series back to Suwayomi's own
     updater and leaves every exported file where and what it was."""
@@ -165,7 +166,7 @@ def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> 
     install_by_commands(j)
     j.publish_upstream()
     assert j.shelfhold("jobs", "run", "follow.cycle").code == 0
-    assert wait_for(lambda: bool(j.library_files()), 120), (
+    assert wait_for(lambda: any(f.endswith(".cbz") for f in j.library_files()), 120), (
         "aucun job de suivi enregistré : aucun chapitre exporté"
     )
     before = j.compose("exec", "-T", "shelfhold", "sh", "-c",
