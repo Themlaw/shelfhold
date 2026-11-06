@@ -26,7 +26,7 @@ Ce qui reste, volontairement :
 
 - Le dossier de série vidé, et les lignes d'Œuvre et d'Édition (titres compris) jusqu'à M1b.
 - Un fichier qui porte d'autres Unités (volume, archive multi-chapitres) n'est jamais effacé pour
-  une seule : la purge s'arrête (`PurgeCollateralError`) et le rapport le dit.
+  une seule : la purge s'arrête (`purge.collateral`) et le rapport le dit.
 - Une copie sur une racine en lecture seule (`adopt_ro`) n'est jamais touchée.
 
 ## Ce que Shelfhold ne peut pas effacer

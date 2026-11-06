@@ -37,8 +37,8 @@ jour d'une version mineure se lit dans le CHANGELOG avant d'être appliquée.
   (`instance.lease_conflict`) ; pendant un redéploiement, arrêtez l'ancien avant de démarrer le nouveau
   (`docker compose up -d` le fait).
 - Les commandes d'administration qui prennent le verrou (`secrets rotate|export`, `reconcile
-  --adopt-after-restore`, `migrate`) demandent d'arrêter l'instance, ou passent par la socket
-  quand elle tourne ([secrets.md](secrets.md)).
+  --adopt-after-restore`, `migrate`) refusent de tourner tant que l'instance tourne : arrêtez-la
+  d'abord ([secrets.md](secrets.md)). Les autres passent par la socket quand elle tourne.
 
 ## Revenir à la version précédente
 

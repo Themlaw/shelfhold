@@ -14,8 +14,7 @@ Les seuils de reprise doivent être strictement au-dessus de ceux de pause, pour
 bascule pas sans cesse. La mesure est celle de l'espace utilisable par un processus non privilégié.
 
 **Pendant la pause** : les tâches d'écriture sont en pause (code `disk.low`), **sans tentative
-dépensée ni réessai** ; la lecture, l'interface et les sondes continuent (`/readyz` répond,
-dégradé). Les écritures qui ajoutent des octets sont refusées par la couche fichiers elle-même ;
+dépensée ni réessai** ; la lecture, l'interface et les sondes continuent (`/readyz` répond). Les écritures qui ajoutent des octets sont refusées par la couche fichiers elle-même ;
 renommer, déplacer dans le même volume et supprimer restent possibles. `shelfhold status` et
 `/healthz` (authentifié) listent les files en pause et la raison. L'événement `disk.low` est émis
 une fois à chaque passage sous le seuil, `ops.disk_recovered` à la reprise.
