@@ -74,6 +74,8 @@ def test_purge_now_removes_all_replicas_and_thumbnails() -> None:
         unit, placed = spread(env, series)
         other = env.add_chapter(series, "2")  # a neighbour: it must survive
         assert len(files_everywhere(env)) >= 5
+        work_json = env.lib.data / "meta" / "works" / series.work_id[:2] / f"{series.work_id}.json"
+        assert unit in work_json.read_text()
         assert (env.lib.data / "meta" / "units" / unit[:2] / f"{unit}.json").exists()
         mirrors = sorted((env.lib.library / ".shelfhold" / "manifest").rglob("*.jsonl"))
         assert mirrors and unit in "".join(m.read_text() for m in mirrors)  # a line for the Unit
@@ -87,6 +89,7 @@ def test_purge_now_removes_all_replicas_and_thumbnails() -> None:
         for folder in placed["caches"]:  # type: ignore[union-attr]
             assert not folder.exists()  # thumbnails and content cache
         assert not (env.lib.data / "meta" / "units" / unit[:2] / f"{unit}.json").exists()
+        assert unit not in work_json.read_text() and other in work_json.read_text()  # rewritten
         for path in (env.lib.library / ".shelfhold" / "manifest").rglob("*.jsonl"):
             text = path.read_text()
             assert unit not in text  # no line of the purged Unit

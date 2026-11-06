@@ -77,6 +77,7 @@ from shelfhold.library.public import (
     EDITION_KEY_COLUMNS,
     ContentHash,
     Copy,
+    MetaProjection,
     PlaceRef,
     PurgeAuthorization,
     PurgeRefusedError,
@@ -93,6 +94,7 @@ from shelfhold.library.public import (
     unresolved_bin_items,
     upstream_claims,
     withdraw_upstream_claims,
+    work_rel,
 )
 
 __all__ = [
@@ -667,6 +669,8 @@ class PurgeService:
                     },
                 )
             )  # fmt: skip
+        if complete:
+            self._project_work(plan.work_id)  # its work.json no longer lists the purged Units
         self._bus.deliver(events)
         return PurgeReport(
             anchor_id=plan.anchor, unit_ids=tuple(plan.unit_ids), complete=complete,
@@ -675,6 +679,16 @@ class PurgeService:
             closed_tickets=closed, upstream_copies=upstream,
             alerts=(ALERT_DELETE_UPSTREAM,) if upstream else (),
         )  # fmt: skip
+
+    def _project_work(self, work_id: str) -> None:
+        """After the commit: `work.json` is written again from the database, or erased when the
+        Work is gone (a purged Unit's identifier must not outlive it in a projection)."""
+        try:
+            outcome = MetaProjection(self._engine, self._data_dir).project_work(work_id)
+            if outcome == "missing_unit":
+                self._erase_data(work_rel(work_id))
+        except (OSError, ValueError):
+            log.warning("purge.work_json_not_written")
 
     def _unresolved_bin(self, plan: _Plan) -> int:
         with self._engine.connect() as connection:
