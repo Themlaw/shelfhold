@@ -476,11 +476,13 @@ def test_kavita_401_revoked_key_pauses_destination_with_target_unreachable() -> 
     is disabled (nothing more is sent) until `target reconnect`."""
     h = harness()
     h.client._key = AdminKey("the-key-was-revoked-0123456789")  # type: ignore[attr-defined]
-    with pytest.raises(TargetForbidden):
+    with pytest.raises(TargetForbidden) as raised:
         run(h.client.list_libraries())
+    assert raised.value.code == "target.unreachable"  # the code of the event, not target.forbidden
     assert h.events.codes() == ["target.unreachable"]
     assert h.client.health.paused
     count = len(h.fake.requests)
-    with pytest.raises(TargetForbidden):
+    with pytest.raises(TargetForbidden) as again:
         run(h.client.list_libraries())
+    assert again.value.code == "target.unreachable"
     assert len(h.fake.requests) == count and h.events.codes() == ["target.unreachable"]

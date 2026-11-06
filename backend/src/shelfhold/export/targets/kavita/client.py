@@ -39,6 +39,7 @@ from shelfhold.export.targets.kavita.errors import (
     RouteMissing,
     TargetDegraded,
     TargetForbidden,
+    TargetKeyRevoked,
     TargetUnreachable,
 )
 from shelfhold.infrastructure.clock import Clock
@@ -79,6 +80,7 @@ class KavitaClient:
         self._scans = ScanDebouncer(clock, scan_quiet)
         self._destination = KavitaDestination()
         self._unreachable_announced = False
+        self._key_revoked = False  # the pause is the revocation of the key (401)
         self._write_guard: Callable[[], None] | None = None
 
     def set_write_guard(self, guard: Callable[[], None] | None) -> None:
@@ -143,7 +145,7 @@ class KavitaClient:
     ) -> CallResult:
         health = self.health
         if health.paused:
-            raise TargetForbidden(route.label)
+            raise (TargetKeyRevoked if self._key_revoked else TargetForbidden)(route.label)
         if route.label in health.missing_routes:
             raise RouteMissing(route.label)
         if route is not routes.SERVER_INFO and health.version is None:
@@ -198,9 +200,10 @@ class KavitaClient:
         server no longer answering for us: `target.unreachable`."""
         health = self.health
         health.paused, health.paused_route = True, route.label
+        self._key_revoked = True
         health.refresh_waiting()
         self._events.emit("target.unreachable", route=route.label)
-        raise TargetForbidden(route.label)
+        raise TargetKeyRevoked(route.label)
 
     def _forbidden(self, route: routes.Route) -> None:
         health = self.health
@@ -245,6 +248,7 @@ class KavitaClient:
         """`target reconnect`: leave the pause of a 403 once the account has its rights back."""
         health = self.health
         health.paused, health.paused_route = False, None
+        self._key_revoked = False
         health.refresh_waiting()
         return await self.probe()
 
