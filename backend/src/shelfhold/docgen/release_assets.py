@@ -139,19 +139,6 @@ def _columns(connection: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
     return list(connection.execute(f'PRAGMA table_info("{table}")'))
 
 
-def migrated_catalog() -> dict[str, list[str]]:
-    """Table name -> column names of the schema the migrations produce."""
-    with tempfile.TemporaryDirectory() as workdir:
-        database = _migrated_database(Path(workdir))
-        connection = sqlite3.connect(database)
-        try:
-            return {
-                t: [str(c["name"]) for c in _columns(connection, t)] for t in _tables(connection)
-            }
-        finally:
-            connection.close()
-
-
 def _split_top_level(body: str) -> list[str]:
     """Split on the commas outside parentheses and quotes: a multi-line CHECK stays whole."""
     items: list[str] = []

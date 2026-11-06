@@ -15,7 +15,6 @@ from shelfhold.events.bus import EventPayloadError, UnknownEventType
 from shelfhold.events.operating import NOT_NOTIFIED, OPERATING_EVENTS
 from shelfhold.infrastructure.fetcher import LanTargets
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.logging import forget_secret_values
 from shelfhold.infrastructure.schema import platform
 from shelfhold.integrations.apprise import (
     ChannelUrlRefused,
@@ -29,6 +28,7 @@ from shelfhold.integrations.apprise import (
 )
 from shelfhold.jobs.huey_app import JobPools
 from tests.notifications_env import CHANNEL_URL, TOKEN, NotifyEnv, ScriptedSend, notify_env
+from tests.redaction_support import forget_secret_values
 
 pending = platform.notification_pending
 event = platform.event

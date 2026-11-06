@@ -13,12 +13,36 @@ from typing import Any
 import pytest
 import yaml
 
-from shelfhold.config import Settings
+from shelfhold.config import Settings, load_settings
+from shelfhold.infrastructure.migrate import migrate
 
 ROOT = Path(__file__).resolve().parents[3]
 RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 SCRIPT = ROOT / ".github" / "scripts" / "release-assets.sh"
 ASSETS = ("schema.sql", "data-dictionary.md")
+
+
+def _migrated_catalog(workdir: Path) -> dict[str, list[str]]:
+    """Table name -> column names of the schema the migrations produce, on an empty database."""
+    settings = load_settings(
+        {"SHELFHOLD_DATA_DIR": str(workdir / "data"), "SHELFHOLD_STORE_DIR": str(workdir / "store")}
+    ).values
+    migrate(settings)
+    connection = sqlite3.connect(settings.database_path)
+    try:
+        tables = [
+            name
+            for (name,) in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name"
+            )
+        ]
+        return {
+            t: [str(row[1]) for row in connection.execute(f'PRAGMA table_info("{t}")')]
+            for t in tables
+        }
+    finally:
+        connection.close()
 
 
 def _internal(name: str) -> bool:
@@ -105,10 +129,10 @@ def test_schema_sql_is_reproducible(tmp_path: Path) -> None:
 
 
 @pytest.mark.req("EF-INT-027")
-def test_every_table_and_column_has_a_description() -> None:
-    from shelfhold.docgen.release_assets import load_descriptions, migrated_catalog
+def test_every_table_and_column_has_a_description(tmp_path: Path) -> None:
+    from shelfhold.docgen.release_assets import load_descriptions
 
-    catalog = migrated_catalog()
+    catalog = _migrated_catalog(tmp_path)
     descriptions = load_descriptions()
     missing = [
         f"{table}.{column}" if column else table
@@ -120,10 +144,10 @@ def test_every_table_and_column_has_a_description() -> None:
 
 
 @pytest.mark.req("EF-INT-027")
-def test_no_description_names_a_table_or_column_that_does_not_exist() -> None:
-    from shelfhold.docgen.release_assets import DESCRIPTIONS_FILE, migrated_catalog
+def test_no_description_names_a_table_or_column_that_does_not_exist(tmp_path: Path) -> None:
+    from shelfhold.docgen.release_assets import DESCRIPTIONS_FILE
 
-    catalog = migrated_catalog()
+    catalog = _migrated_catalog(tmp_path)
     raw = tomllib.loads(DESCRIPTIONS_FILE.read_text(encoding="utf-8"))
     stale = [f"tables.{t}" for t in raw["tables"] if t not in catalog]
     stale += [
