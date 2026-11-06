@@ -140,6 +140,11 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
 
     monkeypatch.setattr(rj, "SCAN_QUIET_S", 0)
     monkeypatch.setattr(rj.BulkParse, "fetch", staticmethod(fetch))
+
+    async def no_rename(*_: object, **__: object) -> int:
+        return 0
+
+    monkeypatch.setattr(rj, "refresh_names", no_rename)  # no database behind this stub comp
     monkeypatch.setattr(rj, "wanted_names", lambda *_, **__: (["x"], None))
     scans = rj.ScanRelay()
     scans.asked = ["/manga/x"]
