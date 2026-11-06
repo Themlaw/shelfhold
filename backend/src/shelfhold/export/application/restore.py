@@ -113,7 +113,6 @@ __all__ = [
 log = structlog.get_logger(__name__)
 
 _SHA: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
-_ULID: Final = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 _NUMBER: Final = re.compile(r"^\d{1,9}(\.\d{1,6})?$")
 _CHUNK: Final = 400
 _DELETION = RESERVED_ACTIONS["reconcile.confirm_deletion"]
@@ -224,7 +223,7 @@ class DeletionCandidate:
     rel_path: str
     local_path: str
     scope: str
-    unit_ids: tuple[str, ...] = ()  # the Units the file covers, by the database's word when known
+    unit_ids: tuple[str, ...] = ()  # the Units the file covers, by the database's word only
 
 
 class DeletionExecutor(Protocol):
@@ -441,19 +440,53 @@ def _bounded(value: object, limit: int = MAX_FIELD) -> str | None:
     return value if isinstance(value, str) and 0 < len(value) <= limit else None
 
 
-def _units_of(line: _Line, survey: _Survey) -> tuple[str, ...]:
-    """The Units a mirror line covers. The mirror is an untrusted input: a Variant the database
-    knows gives its Unit (the database's word wins over the line's), anything else is the line's
-    claim, kept only if it is shaped like an identifier."""
-    found: set[str] = set()
+def _units_of(connection: Connection, line: _Line) -> tuple[str, ...]:
+    """The Units a file covers, by the database's word only. The mirror is an untrusted input and
+    its `unit` / `variant` fields are never read: the file's place `(destination, rel_path)` gives
+    the export item and its coverage, and the line's `(source_key, remote_unit_id)` gives the
+    Variants. A file nothing known in the database covers returns nothing (the caller then asks
+    for its path)."""
+    record, coverage = export.export_record, export.unit_coverage
+    found: set[str] = set(
+        connection.execute(
+            sa.select(coverage.c.unit_id)
+            .select_from(
+                record.join(
+                    coverage,
+                    sa.and_(
+                        coverage.c.carrier_type == "export_item",
+                        coverage.c.carrier_id == record.c.export_item_id,
+                    ),
+                )
+            )
+            .where(
+                record.c.shelf_destination_id == line.destination_id,
+                record.c.rel_path == line.rel_path,
+            )
+        ).scalars()
+    )
+    variant, binding, item = (
+        catalog.unit_variant,
+        acquisition.source_binding,
+        acquisition.source_item,
+    )
     for covered in line.entry.get("coverage") or []:
         if not isinstance(covered, dict):
             continue
-        variant, unit = covered.get("variant"), covered.get("unit")
-        if isinstance(variant, str) and variant in survey.variants:
-            found.add(survey.variants[variant])
-        elif isinstance(unit, str) and _ULID.fullmatch(unit):
-            found.add(unit)
+        key, remote = _bounded(covered.get("source_key")), _bounded(covered.get("remote_unit_id"))
+        if key is None or remote is None:
+            continue
+        found.update(
+            connection.execute(
+                sa.select(variant.c.unit_id)
+                .select_from(
+                    variant.join(binding, binding.c.id == variant.c.source_binding_id).join(
+                        item, item.c.id == binding.c.source_item_id
+                    )
+                )
+                .where(item.c.source_key == key, variant.c.remote_unit_id == remote)
+            ).scalars()
+        )
     return tuple(sorted(found))
 
 
@@ -639,24 +672,13 @@ class RestoreAdopter:
         )  # fmt: skip
 
     def _irreplaceable(self, deletions: tuple[DeletionCandidate, ...]) -> tuple[str, ...]:
-        """The Units to type. A Unit the database does not know cannot be shown replaceable, so it
-        counts: the safe side is the one that asks."""
+        """What is to be typed: the id of each irreplaceable Unit the database knows under a
+        file, and the path of a file no known Unit covers (nothing shows it replaceable)."""
+        kept: set[str] = {d.rel_path for d in deletions if not d.unit_ids}
         wanted = sorted({u for d in deletions for u in d.unit_ids})
-        if not wanted:
-            return ()
-        found: set[str] = set()
-        kept: list[str] = []
         with self._engine.connect() as connection:
-            for chunk in _chunks(wanted):
-                found.update(
-                    connection.execute(
-                        sa.select(catalog.unit.c.id).where(catalog.unit.c.id.in_(chunk))
-                    ).scalars()
-                )
-            for unit_id in wanted:
-                if unit_id not in found or irreplaceability(connection, unit_id).irreplaceable:
-                    kept.append(unit_id)
-        return tuple(kept)
+            kept.update(u for u in wanted if irreplaceability(connection, u).irreplaceable)
+        return tuple(sorted(kept))
 
     @staticmethod
     def _typed(deletion: DeletionConfirmation, unit_id: str) -> bool:
@@ -797,13 +819,13 @@ class RestoreAdopter:
             )  # fmt: skip
             line.outcome, line.reason = judge_line(facts)
             if line.outcome is LineOutcome.TOMBSTONED and line.on_disk:
-                survey.candidates.setdefault(
-                    (line.destination_id, line.rel_path),
-                    DeletionCandidate(
+                if (line.destination_id, line.rel_path) not in survey.candidates:
+                    with self._engine.connect() as connection:
+                        units = _units_of(connection, line)
+                    survey.candidates[(line.destination_id, line.rel_path)] = DeletionCandidate(
                         line.destination_id, line.root_id, line.rel_path, line.local_path,
-                        line.tombstone_scope or "variant", _units_of(line, survey),
-                    ),
-                )  # fmt: skip
+                        line.tombstone_scope or "variant", units,
+                    )
             if (
                 line.outcome in (LineOutcome.READOPT, LineOutcome.UNRESOLVED) and not line.known
             ) or line.outcome is LineOutcome.MODIFIED:
