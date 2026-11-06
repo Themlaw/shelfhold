@@ -4,7 +4,6 @@ import calendar
 import math
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from enum import StrEnum
 from functools import total_ordering
 
@@ -17,7 +16,6 @@ class DatePrecision(StrEnum):
 
 _PARTIAL = re.compile(r"^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$")
 _ZERO_TEXTS = frozenset({"", "0", "0000", "0000-00", "0000-00-00"})
-_MS_THRESHOLD = 100_000_000_000  # above this a Unix timestamp is in milliseconds (year 5138 in s)
 
 
 @total_ordering
@@ -100,32 +98,6 @@ def parse_partial_date(value: str | int | float | None) -> "PartialDate | None":
         return PartialDate(year or 0, month, day)
     except ValueError as exc:
         raise ValueError(f"invalid partial date: {text!r}") from exc
-
-
-def from_upload_timestamp(value: object) -> datetime | None:
-    """Upload date from a source (Unix seconds or milliseconds).
-
-    Null, zero, negative, NaN, infinite, out-of-range or non-numeric values give `None`.
-    """
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, str):
-        text = value.strip()
-        if text in _ZERO_TEXTS:
-            return None
-        value = text
-    try:
-        number = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(number) or number <= 0:
-        return None
-    if number >= _MS_THRESHOLD:
-        number /= 1000
-    try:
-        return datetime.fromtimestamp(number, tz=UTC)
-    except (OverflowError, OSError, ValueError):
-        return None
 
 
 def comicinfo_date_fields(date: PartialDate) -> dict[str, int]:

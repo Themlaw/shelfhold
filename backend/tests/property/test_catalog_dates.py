@@ -1,5 +1,7 @@
 """EF-BIB-047 properties: round trip and no exported field finer than the data."""
 
+from datetime import UTC, datetime
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -8,10 +10,16 @@ from shelfhold.catalog.domain.dates import (
     DatePrecision,
     PartialDate,
     comicinfo_date_fields,
-    from_upload_timestamp,
     opf_date,
     parse_partial_date,
 )
+from shelfhold.plugin_host.adapters.meta.suwayomi.service import _upload_date
+
+_NOW = datetime(2030, 1, 1, tzinfo=UTC)
+
+
+def upload_date(value: object) -> datetime | None:
+    return _upload_date(value, _NOW)
 
 
 @st.composite
@@ -63,6 +71,6 @@ def test_coarsened_to_never_adds_precision(date: PartialDate, precision: DatePre
 
 @pytest.mark.req("EF-BIB-047")
 @given(st.one_of(st.floats(), st.integers(-(10**20), 10**20), st.text(max_size=12)))
-def test_from_upload_timestamp_never_raises(value: object) -> None:
-    result = from_upload_timestamp(value)
+def test_upload_date_never_raises(value: object) -> None:
+    result = upload_date(value)
     assert result is None or result.tzinfo is not None

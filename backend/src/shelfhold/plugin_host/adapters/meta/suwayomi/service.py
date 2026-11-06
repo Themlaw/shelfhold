@@ -8,6 +8,7 @@ ids of Suwayomi's own database are only cached `fetch_handle`s, re-resolved when
 
 import hashlib
 import json
+import math
 import re
 import time
 import unicodedata
@@ -617,14 +618,30 @@ def _lang(raw: str) -> LanguageTag | Literal["mul"]:
         return "mul"
 
 
+_ZERO_TEXTS = frozenset({"", "0", "0000", "0000-00", "0000-00-00"})
+_MS_THRESHOLD = 100_000_000_000  # above this a Unix timestamp is in milliseconds (year 5138 in s)
+
+
 def _upload_date(raw: Any, now: datetime) -> datetime | None:
-    """The upload date, or None when it is zero, unreadable or later than `now` plus the clock
-    skew (ENF-TIME-001): a source cannot claim a release in 2099."""
+    """The upload date (Unix seconds or milliseconds), or None when it is null, zero, negative,
+    a boolean, NaN, infinite, out of range, unreadable, or later than `now` plus the clock skew
+    (ENF-TIME-001): a source cannot claim a release in 2099."""
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if raw in _ZERO_TEXTS:
+            return None
     try:
-        millis = int(raw)
-        value = datetime.fromtimestamp(millis / 1000, UTC) if millis > 0 else None
-    except (TypeError, ValueError, OverflowError, OSError):
+        number = float(raw)
+    except (TypeError, ValueError):
         return None
-    if value is not None and value > now + DEFAULT_SKEW:
+    if not math.isfinite(number) or number <= 0:
         return None
-    return value
+    if number >= _MS_THRESHOLD:
+        number /= 1000
+    try:
+        value = datetime.fromtimestamp(number, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+    return None if value > now + DEFAULT_SKEW else value
