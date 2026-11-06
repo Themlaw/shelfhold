@@ -215,18 +215,33 @@ class LibraryOps:
 
         return link, asyncio.run(read())
 
+    def _require_not_restored(self) -> None:
+        """No write into the catalog of an instance restored behind its disks (EF-INT-026)."""
+        loaded = self._comp.load_roots()
+        if loaded is not None and loaded.restore_pending:
+            raise RestoredBehindError(
+                "restored_behind: run `shelfhold reconcile --adopt-after-restore`"
+            )
+
     def _refresh_names(self, destination_id: str) -> None:
         """Kavita may have renamed a series: the names the pairing compares are the current ones
         (EF-EXP-057). A Kavita that cannot be asked leaves the cache as it is."""
         table = export.shelf_destination
         try:
+            self._require_not_restored()
             with self._comp.engine.connect() as connection:
                 target_id = connection.execute(
                     sa.select(table.c.target_id).where(table.c.id == destination_id)
                 ).scalar_one()
             client = self._comp.kavita_client(str(target_id))
             asyncio.run(refresh_names(self._comp.engine, client, destination_id))
-        except (KeyringUnavailableError, TargetError, KeyError, sa.exc.NoResultFound):
+        except (
+            KeyringUnavailableError,
+            TargetError,
+            KeyError,
+            sa.exc.NoResultFound,
+            RestoredBehindError,
+        ):
             return
 
     def _pairing(self, w: WriteContext) -> Pairing:
@@ -357,6 +372,7 @@ class LibraryOps:
         (EF-BIB-044): they count as present, `backfill --gaps` asks for none of them. `series` is
         the id of the exported series (`status` prints it) or its name. Returns the chapters
         added."""
+        self._require_not_restored()
         destination_id = self._destination(destination_id)
         self._refresh_names(destination_id)
         s, link = export.export_series, export.edition_export_series

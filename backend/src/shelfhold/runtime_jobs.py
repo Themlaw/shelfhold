@@ -250,6 +250,21 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
     return run
 
 
+def _names_may_refresh(comp: Composition, destination_id: str) -> bool:
+    """The cache of the names is a write: not while the instance is restored behind, nor for a
+    destination that is paused or waits for a human (the export would refuse it as well)."""
+    from shelfhold.export.application.target_state import DestinationPausedError, ensure_active
+
+    try:
+        if comp.gates.writable is not None:
+            comp.gates.writable()
+        with comp.engine.connect() as connection:
+            ensure_active(connection, destination_id)
+    except (DestinationPausedError, RestoredBehindError):
+        return False
+    return True
+
+
 async def _export_one(
     comp: Composition,
     disks: _Disks,
@@ -264,7 +279,8 @@ async def _export_one(
 
     try:
         # the names Kavita shows now (it may rename a series, EF-EXP-057), before any collision
-        await refresh_names(comp.engine, client, destination.id)
+        if _names_may_refresh(comp, destination.id):
+            await refresh_names(comp.engine, client, destination.id)
         # the plan is read from the database: with nothing to write no disk is looked at
         names, kind = wanted_names(
             comp.engine, destination.id,
@@ -428,7 +444,8 @@ class PlanService:
             try:
                 destination = _destination_of(self._comp, destination_id)
                 client = self._comp.kavita_client(destination.target_id)
-                asyncio.run(refresh_names(self._comp.engine, client, destination_id))
+                if _names_may_refresh(self._comp, destination_id):
+                    asyncio.run(refresh_names(self._comp.engine, client, destination_id))
                 names, kind = pipeline.wanted_names(destination_id)
                 bulk = asyncio.run(BulkParse.fetch(client, names, library_type_named(kind)))
                 pipeline.bind_parse(bulk, verified=True)

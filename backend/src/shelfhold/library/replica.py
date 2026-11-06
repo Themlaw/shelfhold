@@ -51,6 +51,8 @@ _ORIGINAL_PLACES = ("library", "destination")
 # Where a file is readable by Shelfhold itself: its library, its store, an adopted read-only
 # root. A destination copy or the upstream is not "a file we hold" (I20, EF-BIB-044).
 _READABLE_PLACES = ("library", "store", "adopted_ro")
+# The record of a destination says the file is there (same list as `present_in`).
+_RECORD_PRESENT = ("written", "scanned", "resolved", "adopted")
 
 
 def reference_content_hash(connection: Connection, unit_id: str) -> str | None:
@@ -324,9 +326,15 @@ def _readable_rows() -> sa.Select[tuple[str]]:
     own = sa.select(replica_table.c.unit_id.label("unit_id")).where(
         replica_table.c.location.in_(_READABLE_PLACES), replica_table.c.unit_id.is_not(None)
     )
+    record = export.export_record
     adopted_item = (
         sa.select(item.c.id)
-        .where(item.c.id == replica_table.c.export_item_id, item.c.kind == "adopted")
+        .select_from(item.join(record, record.c.export_item_id == item.c.id))
+        .where(
+            item.c.id == replica_table.c.export_item_id,
+            item.c.kind == "adopted",
+            record.c.state.in_(_RECORD_PRESENT),  # a record gone `missing` is no presence
+        )
         .exists()
     )
     via_item = (

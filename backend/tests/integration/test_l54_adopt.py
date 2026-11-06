@@ -7,8 +7,10 @@ pairing commands, the follow and export handlers, `Backfill`, `status`."""
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 
 from shelfhold.config import Settings
+from shelfhold.export.application.target_state import DestinationPausedError
 from tests.l54_env import SERIES, Bench54, bench54, comic
 
 pytestmark = pytest.mark.req("EF-BIB-044", "EF-INT-014", "EF-EXP-057", "EF-INT-023")
@@ -179,3 +181,136 @@ def test_adoption_with_underscore_language_fr_fr(
         )
         assert row == {"frozen_language": "fr-FR", "lang": "fr-FR", "lang_raw": "FR_fr"}
         assert "(language_unknown)" not in b.status(capsys)
+
+
+def _mixed_paired(b: Bench54, capsys: pytest.CaptureFixture[str]) -> str:
+    series_id, edition = _adopt_mixed(b, capsys)
+    b.upstream({n: f"Chapter {n}" for n in range(1, 15)})
+    assert _pair(b, series_id, "--follow-from", "12") == 0
+    b.follow()
+    return edition
+
+
+def test_adopted_volume_deleted_in_kavita_is_a_gap_again(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from shelfhold.runtime_jobs import reconcile_handler
+    from tests.l41_env import context
+
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        edition = _mixed_paired(b, capsys)
+        assert b.cli("adopt", "set-coverage", SERIES, "2", "3", "10") == 0
+        assert b.gaps(edition) == 0
+        (b.env.inst.library / "Kavita" / SERIES / f"{SERIES} - Vol.2.cbz").unlink()
+        reconcile_handler(b.env.inst.comp, in_window=True)(context("reconcile.hash"))
+        # `reconcile` only reports an adopted file that is gone and leaves its record `adopted`
+        # (EF-EXP-018); once a record says `missing`, the volume is no presence any more (I20)
+        with b.engine.begin() as connection:
+            connection.execute(
+                sa.text(
+                    "UPDATE export_record SET state = 'missing' WHERE export_item_id IN "
+                    "(SELECT id FROM export_item WHERE frozen_attrs LIKE '%\"volume\"%')"
+                )
+            )
+        assert b.gaps(edition) == 8  # the volume is gone: its chapters are holes again
+
+
+def test_set_coverage_refuses_a_chapter_another_file_carries_and_fractions(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        _adopt_mixed(b, capsys)
+        capsys.readouterr()
+        # chapters 1 and 2 have a file of their own: two files never share a Unit
+        assert b.cli("adopt", "set-coverage", SERIES, "2", "1", "10") != 0
+        assert "1, 2" in capsys.readouterr().err
+        assert b.cli("adopt", "set-coverage", SERIES, "2", "3", "9.5") != 0
+        assert b.cli("adopt", "set-coverage", SERIES, "2", "1.9", "9") != 0
+        assert not b.rows("SELECT 1 FROM unit_coverage WHERE origin = 'manual' AND position > 0")
+
+
+def test_set_coverage_is_refused_while_restored_behind(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        _adopt_mixed(b, capsys)
+        with b.engine.begin() as connection:
+            connection.execute(sa.text("UPDATE instance SET restore_generation = 1"))
+        capsys.readouterr()
+        assert b.cli("adopt", "set-coverage", SERIES, "2", "3", "10") != 0
+        assert "restored_behind" in capsys.readouterr().err
+        assert not b.rows("SELECT 1 FROM unit_coverage WHERE origin = 'manual' AND position > 0")
+
+
+def test_names_are_not_refreshed_for_a_paused_destination(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        b.kavita_series("Old Folder", ["Old Name - Ch.1.cbz"], name="Old Name",
+                        info=_info("Old Name"))  # fmt: skip
+        assert b.adopt(capsys) == 0
+        (shown,) = [s for s in b.env.inst.kavita.series if s["name"] == "Old Name"]
+        shown["name"] = "Renamed"
+        with b.engine.begin() as connection:
+            connection.execute(sa.text("UPDATE shelf SET paused_reason = 'child_exposure'"))
+        with pytest.raises(DestinationPausedError):  # the arrival poll refuses it as well
+            b.export()
+        (row,) = b.rows("SELECT name_raw FROM export_series WHERE frozen_series = 'Old Name'")
+        assert row["name_raw"] == "Old Name"  # nothing written for a destination that waits
+
+
+def test_declined_pairing_clears_coverage_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        b.kavita_series("Volumes Only", ["Volumes Only - Vol.1.cbz"])
+        assert b.adopt(capsys) == 0
+        assert "(coverage_unknown)" in b.status(capsys)
+        assert b.cli("adopt", "pair", "--series", b.series_id("Volumes Only"), "--decline") == 0
+        assert "(coverage_unknown)" not in b.status(capsys)
+
+
+def test_switchover_confirmation_is_one_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    import shelfhold.export.application.migration_detect as md
+    from shelfhold.export.application.migration_detect import (
+        STEPS,
+        SwitchoverDetector,
+        SwitchoverGate,
+    )
+
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        b.kavita_series("Fed Series", ["Team_Chapter 1.cbz"], info=_info("Fed Series", number="1"))
+        assert b.adopt(capsys) == 0
+        fsops, _loaded, _tombstones = b.env.inst.comp.read_context()
+        gate = SwitchoverGate(
+            b.engine, SwitchoverDetector(b.engine, fsops), clock=b.env.inst.comp.clock
+        )
+        fingerprint = gate.report(b.env.destination_id).fingerprint
+
+        def broken(*_: object, **__: object) -> None:
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(md.waiting_marks, "clear", broken)
+        with pytest.raises(RuntimeError):
+            gate.confirm(b.env.destination_id, STEPS, fingerprint=fingerprint)
+        assert not gate.is_confirmed(b.env.destination_id)  # neither the steps nor the mark

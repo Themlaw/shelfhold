@@ -146,6 +146,28 @@ def _chapter_unit(connection: Connection, edition_id: str, number: str) -> str:
     return unit_id
 
 
+def _held_elsewhere(connection: Connection, edition_id: str, number: str, item_id: str) -> bool:
+    """The chapter exists and an export item other than `item_id` already covers it."""
+    unit, cov = catalog.unit, export.unit_coverage
+    return (
+        connection.execute(
+            sa.select(cov.c.unit_id)
+            .select_from(cov.join(unit, unit.c.id == cov.c.unit_id))
+            .where(
+                unit.c.edition_id == edition_id,
+                unit.c.track == "main",
+                unit.c.number_segment == "",
+                unit.c.number_norm == number,
+                unit.c.part == "",
+                cov.c.carrier_type == "export_item",
+                cov.c.carrier_id != item_id,
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
+
+
 def attach_chapter(
     connection: Connection, item_id: str, unit_id: str, *, origin: str, create: bool = True
 ) -> bool:
@@ -180,6 +202,10 @@ def set_volume_coverage(
     """Chapters `first` to `last` (whole numbers) are what the adopted volume `volume` holds.
     Returns the number of chapters newly put under it."""
     try:
+        if Decimal(first) != Decimal(first).to_integral_value() or (
+            Decimal(last) != Decimal(last).to_integral_value()
+        ):
+            raise CoverageError("the first and the last chapter are whole numbers")
         low, high = int(Decimal(first)), int(Decimal(last))
         wanted = format(Decimal(volume).normalize(), "f")
     except (InvalidOperation, ValueError):
@@ -189,6 +215,13 @@ def set_volume_coverage(
     target = next((v for v in adopted_volumes(connection, edition_id) if v.number == wanted), None)
     if target is None:
         raise LookupError(f"no adopted volume {volume} in this series")
+    taken = [
+        str(n)
+        for n in range(low, high + 1)
+        if _held_elsewhere(connection, edition_id, str(n), target.export_item_id)
+    ]
+    if taken:  # two files never share a Unit: nothing is written
+        raise CoverageError(f"chapters already carried by another file: {', '.join(taken)}")
     added = 0
     for number in range(low, high + 1):
         unit_id = _chapter_unit(connection, edition_id, str(number))
@@ -205,6 +238,15 @@ def attach_to_volume(connection: Connection, edition_id: str, unit_id: str, labe
         return False
     for volume in adopted_volumes(connection, edition_id):
         if volume.number == number:
+            held = connection.execute(
+                sa.select(export.unit_coverage.c.carrier_id).where(
+                    export.unit_coverage.c.unit_id == unit_id,
+                    export.unit_coverage.c.carrier_type == "export_item",
+                    export.unit_coverage.c.carrier_id != volume.export_item_id,
+                )
+            ).first()
+            if held is not None:  # another file carries it already: never two
+                return False
             attach_chapter(connection, volume.export_item_id, unit_id, origin="source_name")
             return True
     return False
