@@ -30,6 +30,7 @@ android {
 
 dependencies {
     // Provided by the host at run time, hence compileOnly.
-    compileOnly("com.github.tachiyomiorg:extensions-lib:1.4.2")
+    compileOnly("com.github.tachiyomiorg:extensions-lib:1.4.1")
+    compileOnly("com.squareup.okhttp3:okhttp:5.0.0-alpha.14") // HTTP types of the host API
     compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
 }
