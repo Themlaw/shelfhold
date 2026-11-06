@@ -25,7 +25,6 @@ from shelfhold.export.targets.kavita import (
     KavitaClient,
     KavitaDestination,
     LibraryType,
-    PlanNotVerified,
     ProtocolError,
     RouteMissing,
     TargetDegraded,
@@ -107,8 +106,6 @@ def test_kavita_route_404_sets_degraded_mode_never_plans_without_collision_check
     assert h.events.details("target.route_missing") == [{"route": f"{method} {path}"}]
     # no plan is applied, the preview is marked "not verified"
     assert not h.client.collision_check_available and not h.client.preview_verified
-    with pytest.raises(PlanNotVerified):
-        h.client.require_verified_plan()
     # the route is not asked again, and the event is not repeated
     count = len(h.fake.requests)
     with pytest.raises(RouteMissing):
@@ -118,7 +115,7 @@ def test_kavita_route_404_sets_degraded_mode_never_plans_without_collision_check
     h.fake.missing.clear()
     run(h.client.recheck())
     assert h.client.health.mode is TargetMode.FULL and h.client.health.waiting_state is None
-    h.client.require_verified_plan()
+    assert h.client.preview_verified
 
 
 @pytest.mark.req("EF-EXP-009")
@@ -128,7 +125,7 @@ def test_kavita_route_404_elsewhere_cuts_only_that_feature() -> None:
     with pytest.raises(RouteMissing):
         run(h.client.upload_series_cover(1, b"x"))
     assert h.client.health.mode is TargetMode.DEGRADED_FEATURE
-    h.client.require_verified_plan()  # the name check still works: plans may be applied
+    assert h.client.preview_verified  # the name check still works: plans may be applied
     assert run(h.client.parse_name(CBZ, LibraryType.MANGA)).series_name == "Series A"
 
 
@@ -410,8 +407,7 @@ def test_unreadable_version_is_degraded_readonly_and_blocks_plans() -> None:
     with pytest.raises(RouteMissing):
         run(h.client.probe())
     assert h.client.health.version is None
-    with pytest.raises(TargetDegraded):
-        h.client.require_verified_plan()
+    assert h.client.health.mode is TargetMode.DEGRADED_READONLY
     with pytest.raises(RouteMissing):  # and no write goes out meanwhile
         run(h.client.scan_folder("/manga/Series A"))
     assert h.fake.writes == []

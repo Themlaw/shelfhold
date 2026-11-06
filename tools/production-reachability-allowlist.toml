@@ -1,0 +1,93 @@
+# Symbols cited by a `req` test that no production entry point reaches, and why that is fine.
+# An empty list is the goal. Every entry has a `reason` and an `until` (an M1b lot, L00..L32 of
+# PLAN-M1b, or a milestone); an entry for a class covers its members. Reviewed with each lot.
+
+[[allow]]
+symbol = "shelfhold.infrastructure.imaging.client:diagnose_worker"
+reason = "B1 (remediation plan): no image is decoded in M1a pass-through mode; the decode worker and its image caps have their first caller with the cover/page serving of M2."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.infrastructure.imaging.client:make_thumbnail"
+reason = "B1 (remediation plan): no image is decoded in M1a pass-through mode; the decode worker and its image caps have their first caller with the cover/page serving of M2."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.infrastructure.imaging.client:probe_image"
+reason = "B1 (remediation plan): no image is decoded in M1a pass-through mode; the decode worker and its image caps have their first caller with the cover/page serving of M2."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.infrastructure.imaging.client:run_worker"
+reason = "B1 (remediation plan): no image is decoded in M1a pass-through mode; the decode worker and its image caps have their first caller with the cover/page serving of M2."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.infrastructure.imaging.client:WorkerLimits"
+reason = "B1 (remediation plan): no image is decoded in M1a pass-through mode; the decode worker and its image caps have their first caller with the cover/page serving of M2."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.infrastructure.imaging.caps:caps_for"
+reason = "B1 (remediation plan): no image is decoded in M1a pass-through mode; the decode worker and its image caps have their first caller with the cover/page serving of M2."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.infrastructure.imaging.caps:DEFAULT_CAPS"
+reason = "B1 (remediation plan): no image is decoded in M1a pass-through mode; the decode worker and its image caps have their first caller with the cover/page serving of M2."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.infrastructure.imaging.errors:ImageRejected"
+reason = "B1 (remediation plan): no image is decoded in M1a pass-through mode; the decode worker and its image caps have their first caller with the cover/page serving of M2."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.interfaces.http_api.content:content_response"
+reason = "B1 (remediation plan): the content route that serves an image or a file arrives with the reader (M2/M3); nothing serves content in pass-through mode."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.infrastructure.http_headers:attachment_disposition"
+reason = "B1 (remediation plan): the content route that serves an image or a file arrives with the reader (M2/M3); nothing serves content in pass-through mode."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.plugin_host.registry:PluginRegistry"
+reason = "B1 (remediation plan): the plugin registry is consumed when third-party plugins can be installed; first-party sources are wired by hand in M1a."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.plugin_host.registry:PluginCandidate"
+reason = "B1 (remediation plan): the plugin registry is consumed when third-party plugins can be installed; first-party sources are wired by hand in M1a."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.plugin_host.registry:PluginOrigin"
+reason = "B1 (remediation plan): the plugin registry is consumed when third-party plugins can be installed; first-party sources are wired by hand in M1a."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.plugin_host.registry:discover"
+reason = "B1 (remediation plan): the plugin registry is consumed when third-party plugins can be installed; first-party sources are wired by hand in M1a."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.plugin_host.registry:candidates_from_entry_points"
+reason = "B1 (remediation plan): the plugin registry is consumed when third-party plugins can be installed; first-party sources are wired by hand in M1a."
+until = "M2"
+
+[[allow]]
+symbol = "shelfhold.jobs.window:ensure_store_access"
+reason = "Remediation plan 1.40: ENF-OPS-014 `ensure_store_access` guards /store access, and M1a has no /store (pass-through mode only)."
+until = "M1b L24"
+
+[[allow]]
+symbol = "shelfhold.jobs.window:StoreOrigin"
+reason = "Remediation plan 1.40: ENF-OPS-014 `ensure_store_access` guards /store access, and M1a has no /store (pass-through mode only)."
+until = "M1b L24"
+
+[[allow]]
+symbol = "shelfhold.jobs.window:OutsideMaintenanceWindowError"
+reason = "Remediation plan 1.40: ENF-OPS-014 `ensure_store_access` guards /store access, and M1a has no /store (pass-through mode only)."
+until = "M1b L24"

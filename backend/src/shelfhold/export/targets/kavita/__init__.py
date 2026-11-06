@@ -16,7 +16,6 @@ from shelfhold.export.targets.kavita.dto import (
 )
 from shelfhold.export.targets.kavita.errors import (
     ConfirmationRequired,
-    PlanNotVerified,
     ProtocolError,
     RouteMissing,
     RouteNotAllowed,
@@ -39,7 +38,6 @@ __all__ = [
     "LibraryType",
     "LibraryUpdate",
     "ParseResult",
-    "PlanNotVerified",
     "ProtocolError",
     "Route",
     "RouteMissing",

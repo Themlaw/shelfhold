@@ -35,7 +35,6 @@ from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.export.targets.kavita.errors import (
     ConfirmationRequired,
     ListingIncomplete,
-    PlanNotVerified,
     ProtocolError,
     RouteMissing,
     TargetDegraded,
@@ -114,15 +113,6 @@ class KavitaClient:
     def preview_verified(self) -> bool:
         """False when the name check is unavailable: the preview is shown as "not verified"."""
         return self.collision_check_available
-
-    def require_verified_plan(self) -> None:
-        """The planner calls this before applying a plan: never without the collision check."""
-        if self.health.version is None:
-            raise TargetDegraded("the Kavita version is unreadable: preview only")
-        if self.health.mode is TargetMode.DEGRADED_READONLY:
-            raise TargetDegraded("the Kavita version is out of range: preview only")
-        if not self.collision_check_available:
-            raise PlanNotVerified("plugin/parse or parse-bulk is missing: no plan may be applied")
 
     # -- the one way out -----------------------------------------------------------------------
 

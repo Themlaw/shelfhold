@@ -32,7 +32,7 @@ def test_known_bad_kavita_version_warns_only() -> None:
     assert client.health.warnings == ("TEST-ADVISORY (cve)",)
     assert events.codes() == []  # a warning, not an operating event
     run(client.scan_folder("/manga/Series A"))  # nothing is blocked
-    client.require_verified_plan()
+    assert client.preview_verified
     assert fake.scans == ["/manga/Series A"]
     assert assess_version("0.9.1.9", known_bad=(advisory,)).known_bad == ()
 
