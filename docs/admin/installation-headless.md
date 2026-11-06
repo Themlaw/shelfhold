@@ -56,14 +56,19 @@ les routes sont dans [headless.md](headless.md).
    (EF-EXP-034). S'il n'apparaît pas dans Kavita, l'état `not_indexed` le dit avec la cause
    probable (exclusion de dossier, type de bibliothèque).
 
-   Le suivi ne porte que sur les séries **liées**. Sur une installation neuve, c'est la découverte
-   des séries de la bibliothèque Suwayomi, faite au début de chaque cycle, qui les lie : le premier
-   cycle enregistre ce que Suwayomi montre déjà **sans rien demander**, seuls les chapitres publiés
-   après lui sont récupérés. Elle exige une étagère adulte (`shelf create`). *Cette découverte
-   arrive avec la PR de découverte des séries Suwayomi (#67), non fusionnée à la date de cette
-   relecture : tant qu'elle ne l'est pas, seule `shelfhold adopt pair` lie une série, et elle
-   suppose une série adoptée ; le parcours « installation neuve jusqu'au premier chapitre » de
-   `e2e/tests/test_m1a_journey.py` est alors un échec attendu.*
+   Le suivi ne porte que sur les séries **liées**, et Shelfhold les lie lui-même : au début de
+   chaque cycle, il découvre les séries de la bibliothèque Suwayomi qui n'ont pas encore de liaison
+   et leur crée une Œuvre, une Édition sur votre étagère adulte et la liaison. Le premier cycle
+   enregistre ce que Suwayomi montre déjà **sans rien demander** : seuls les chapitres publiés
+   après lui sont récupérés. Trois cas à connaître :
+
+   - **pas d'étagère adulte** : rien n'est créé et la notification `series.awaiting_shelf` donne la
+     commande (`shelfhold shelf create`) ; la découverte reprend au cycle suivant ;
+   - **série déjà adoptée depuis Kavita** : elle est laissée à `shelfhold adopt pair` (ou
+     `--pair-auto`) tant que son appariement attend ; `adopt pair --decline` dit qu'elle n'a pas de
+     jumelle dans Suwayomi ;
+   - **sous-source sans langue unique** (`all`) : la série est sautée et comptée, jusqu'à ce qu'une
+     langue lui soit donnée.
 
 ## Si vous avez déjà une bibliothèque
 

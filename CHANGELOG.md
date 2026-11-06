@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ## [0.2.0] - non publiée — M1a
 
-Migration : oui (migrations 0002 à 0010, voir ci-dessous), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à 0.1 passe par la restauration de cette sauvegarde (`docs/admin/restauration.md`).
+Migration : oui (migrations 0002 à 0011, voir ci-dessous), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à 0.1 passe par la restauration de cette sauvegarde (`docs/admin/restauration.md`).
 
 Migrations :
 
@@ -17,6 +17,7 @@ Migrations :
 - 0008 : opération `register` pour les destinations en tirage.
 - 0009 : `tombstone_lost_kid` (clés de pierres tombales abandonnées).
 - 0010 : `export_series.paused_reason` (série en pause par un autre écrivain).
+- 0011 : `follow_notice` (ce que le suivi a déjà dit ou attend de l'administrateur, pour ne pas le redire après un redémarrage) et une seule liaison active par série amont (index unique partiel ; sur une base qui en aurait deux, la plus ancienne reste active).
 
 ### Ajouté
 
@@ -29,19 +30,23 @@ Migrations :
 - Restauration : époque de restauration, état `restored_behind` en lecture seule, `shelfhold reconcile --adopt-after-restore`.
 - Exploitation : garde disque avec hystérésis, refus de `/data` sur stockage réseau, arrêt propre, matrice de pannes avec simulateur, états d'attente et commandes de sortie (`shelfhold status`, routes `/api/v1/status` et d'exploitation), notifications Apprise, planificateur Huey avec fenêtre de maintenance, assets de release `schema.sql` et dictionnaire de données, `shelfhold stats` local sans télémétrie.
 - Câblage de production : racine de composition partagée par le serveur, la CLI et les tâches ; consommateurs Huey embarqués ; tâches `follow.cycle`, `export.run`, `reconcile.cycle`, `reconcile.hash`, audit d'accès quotidien et `notify.dispatch` ; canaux Apprise sur le bus d'exploitation de tous les éditeurs ; commandes `adopt pair|--pair-auto|set-follow-from|--confirm-migration|--repatriate`, `detach --restore-upstream`, `purge --now` et `probe` avec leurs routes ; enregistrement de l'instance et des racines physiques ; lien de l'étagère avec une bibliothèque Kavita (`shelf create`). Code d'erreur `purge.collateral`.
-- Tests de bout en bout : parcours d'installation sans interface, redéploiement sans perte et détachement sur l'image, contre des Kavita et Suwayomi simulés ; test de nuit contre de vrais Kavita et Suwayomi. Le parcours « installation neuve jusqu'au premier chapitre » attend la découverte des séries de la bibliothèque Suwayomi (voir « Connu »).
+- Découverte des séries de la bibliothèque Suwayomi (#67) : au début de chaque cycle, chaque série suivie par Suwayomi qui n'a pas de liaison reçoit son Œuvre, son Édition sur l'étagère adulte et sa liaison. Le premier cycle ne demande rien (seuls les chapitres publiés après lui sont récupérés) ; une série sous pierre tombale n'est jamais créée ; une série adoptée en attente d'appariement est laissée à `adopt pair`. Sans étagère adulte, l'événement `series.awaiting_shelf` dit la commande à lancer (`shelf create`). `adopt pair --decline` dit qu'une série adoptée n'a pas de jumelle.
+- Tests de bout en bout : parcours d'installation neuve jusqu'au premier chapitre, redéploiement sans perte et détachement sur l'image, contre des Kavita et Suwayomi simulés ; test de nuit contre de vrais Kavita et Suwayomi, avec une extension Suwayomi de test construite par le dépôt (dépendances vérifiées par somme de contrôle).
+- Contrôle de release : une version corrective (X.Y.Z, Z > 0) qui ajouterait une migration est refusée par `release.yml` (ENF-OPS-002).
 - Configuration sans interface : `config get|set|apply`, `target add`, `source add`, `shelf create`, CLI locale par socket Unix avec `SO_PEERCRED`.
 - Authentification locale : administrateur, sessions serveur, CSRF, tentatives limitées, clés d'API hachées, actions réservées avec fraîcheur (`reauth-required`), profil durci facultatif.
-- Documentation d'administration : installation sans interface, adoption, migration depuis des scripts, rapatriement, retour arrière, états d'attente, restauration, purge, garde disque, redéploiement, racines physiques, montage `adopt_ro`, exposition publique, budget mémoire et disque, décisions d'exécution de M1a.
+- Documentation d'administration (#64) : installation sans interface, adoption, migration depuis des scripts, rapatriement, retour arrière, états d'attente, restauration, purge, garde disque, redéploiement, racines physiques, montage `adopt_ro`, exposition publique, budget mémoire et disque, décisions d'exécution de M1a.
 - Conventions d'API : problèmes RFC 9457 avec catalogue d'erreurs stable, pagination par curseur, idempotence, `If-Match`, réponses 202.
 
 ### Connu
 
-- Sur une installation neuve, rien ne lie encore les séries que Suwayomi suit : seule `shelfhold adopt pair` crée la liaison, à partir d'une série adoptée. La découverte automatique de ces séries n'est pas dans cette version de l'arbre.
+- La découverte ne lie que les séries dont la sous-source a une langue unique : une série d'une sous-source multilingue (`all`) est sautée et comptée, jusqu'à ce qu'une langue lui soit donnée.
+- Le paquet de diagnostic n'existe pas (M2) ; `shelfhold meta rebuild` ne reconstruit que les fichiers `unit.json`, le miroir de provenance est resynchronisé à chaque export.
 - `root takeover|reinit|restored` et `store reinit` n'existent pas (M1b) ; `adoption_refused` et `coverage_unknown` ne figurent pas dans `shelfhold status` (ils sont portés par l'événement) ; l'application d'un plan par `POST /api/v1/plans/{id}/apply` reste refusée ; `secrets import` n'existe pas.
 
 ### Modifié
 
+- La description d'API (`open-api/openapi.json`) et le client du front couvrent maintenant toutes les routes : configuration, cibles, sources, état et exploitation y figuraient à tort absentes.
 - L'image du compose d'exemple passe à l'étiquette `0.2`.
 - La session d'administration dure 30 jours glissants par défaut ; 30 minutes d'inactivité et 12 heures au plus dans le profil durci.
 - `/healthz` ne montre plus la version aux anonymes ; `/openapi.json` n'est plus public (`GET /api/v1/openapi.json`, authentifié).
