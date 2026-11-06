@@ -6,7 +6,6 @@ migration plan (with the merge preview) is applied. Nothing is ever recomputed o
 `resolve_key` returns the stored value.
 """
 
-import re
 import unicodedata
 from collections import defaultdict
 from collections.abc import Callable, Iterable
@@ -178,15 +177,6 @@ def _key_text(text: str) -> str:
     return " ".join(kept.casefold().split())
 
 
-_THOUSANDS = re.compile(r"(?<![\d.,])\d{1,3}(?:,\d{3})+(?![\d,])")
-
-
-def number_v2(raw: str) -> str:
-    """`number@1` where a comma is read as a thousands separator when it groups exactly three
-    digits ("1,500" -> 1500); a decimal comma ("4,25") stays decimal."""
-    return parse_number(_THOUSANDS.sub(lambda m: m.group().replace(",", ""), raw)).norm
-
-
 def default_registry() -> NormalizerRegistry:
     registry = NormalizerRegistry()
     for name in ("series_name", "team_label", "text_version"):
@@ -197,10 +187,6 @@ def default_registry() -> NormalizerRegistry:
     registry.register(
         NUMBER_NORMALIZER_NAME, NUMBER_NORMALIZER_VERSION, lambda s: parse_number(s).norm
     )
-    # number@2 (EF-BIB-054): "1,500" is fifteen hundred, not 1.5. Declared here, in the code, like
-    # every version; `normalize migrate number` moves the rows (with a preview) and a tombstone
-    # may cite it from then on (CITABLE_NORMALIZERS).
-    registry.register(NUMBER_NORMALIZER_NAME, 2, number_v2)
     # The segment is an output of the number normalizer, re-derived from the raw number.
     registry.register("number_segment", 1, lambda s: parse_number(s).segment)
     registry.register(

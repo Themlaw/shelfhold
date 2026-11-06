@@ -87,8 +87,8 @@ livrée, les anciennes lignes restent valides tant que vous ne les avez pas migr
   une transaction avec son entrée d'audit. Une empreinte périmée ne change rien (code 4).
 
 C'est une action réservée : session récente ou CLI de l'hôte, jamais une clé d'API. Seul `number`
-est migrable en M1a. Les versions sont celles du code livré (`number@2` lit « 1,500 » comme 1500) : aucun
-code extérieur n'est chargé au démarrage. Une version citée par une pierre tombale n'est jamais retirée du code.
+est migrable en M1a. Tant que le code ne livre aucun normaliseur plus récent que `number@1`, la commande répond
+« rien à migrer » ; aucun code extérieur n'est chargé au démarrage. Une version citée par une pierre tombale n'est jamais retirée du code.
 
 ## Rattraper l'historique d'une série suivie
 

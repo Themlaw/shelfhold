@@ -1,4 +1,4 @@
-"""L55 (ENF-OPS-021, ENF-SEC-009): number@2 is in the code, nothing is loaded from outside."""
+"""L55 (ENF-OPS-021, ENF-SEC-009): nothing is loaded from outside."""
 
 import ast
 from pathlib import Path
@@ -13,28 +13,13 @@ pytestmark = pytest.mark.req("ENF-OPS-021")
 SOURCE = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
 
 
-def test_number_v2_is_in_the_code_and_citable() -> None:
+def test_production_registry_declares_no_number_version_beyond_the_stored_one() -> None:
+    """The spec defines no `number@2`: the code ships `number@1` only, which is what ingestion
+    writes, so `normalize migrate` has nothing to propose."""
     registry = default_registry()
-    assert str(registry.current("number")) == "number@2"
-    assert "number@2" in CITABLE_NORMALIZERS and missing_citable(registry) == []
-
-
-@pytest.mark.parametrize(
-    ("raw", "v1", "v2"),
-    [
-        ("1,500", "1.5", "1500"),
-        ("12,345,678", "12.345", "12345678"),
-        ("4,25", "4.25", "4.25"),  # a decimal comma stays one
-        ("1,5000", "1.5", "1.5"),
-        ("Ch.7", "7", "7"),
-    ],
-)
-def test_number_v2_reads_only_three_digit_groups_as_thousands(raw: str, v1: str, v2: str) -> None:
-    from shelfhold.catalog.domain.numbering import parse_number
-
-    registry = default_registry()
-    assert parse_number(raw).norm == v1
-    assert registry.normalize("number", raw).value == v2
+    assert str(registry.current("number")) == "number@1"
+    assert not any(n.endswith("@2") for n in CITABLE_NORMALIZERS)
+    assert missing_citable(registry) == []
 
 
 def test_no_production_module_loads_normalizers_from_entry_points() -> None:
