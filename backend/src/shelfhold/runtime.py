@@ -15,7 +15,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
-from shelfhold.composition import Composition, Gates
+from shelfhold.composition import Composition, Gates, open_fsops
 from shelfhold.config import Settings
 from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
@@ -30,7 +30,6 @@ from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.instance import (
     GenerationCounter,
     InstanceLock,
@@ -147,10 +146,9 @@ class InstanceRuntime:
         def resolve() -> ResolveReport:
             if loaded is None or instance_id is None:
                 return ResolveReport()  # no instance row yet: nothing was ever written
-            fsops = Fsops.open(
-                loaded.path_map, loaded.expected, write_gate=guard.require_space,
-                stop_gate=self.barrier.require_open, frozen=loaded.restore_pending,
-            )  # fmt: skip
+            fsops = open_fsops(
+                loaded, write_gate=guard.require_space, stop_gate=self.barrier.require_open
+            )
             journal = IntentJournal(engine, fsops, clock=clock)
             # Before anything else: a database older than the disk is read only (EF-INT-026).
             restore_guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)

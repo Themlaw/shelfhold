@@ -29,7 +29,7 @@ from sqlalchemy import Engine
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
-from shelfhold.export.application.roots import LoadedRoots, load_roots
+from shelfhold.export.application.roots import LoadedRoots, load_roots, open_fsops
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.client import KavitaClient
@@ -62,6 +62,7 @@ __all__ = [
     "SessionOpener",
     "SuwayomiLink",
     "WriteContext",
+    "open_fsops",
     "operating_bus",
 ]
 
@@ -165,10 +166,7 @@ class Composition:
             return None
 
     def open_fsops(self, loaded: LoadedRoots) -> Fsops:
-        return Fsops.open(
-            loaded.path_map, loaded.expected, write_gate=self.gates.write_gate,
-            stop_gate=self.gates.stop_gate, frozen=loaded.restore_pending,
-        )  # fmt: skip
+        return open_fsops(loaded, write_gate=self.gates.write_gate, stop_gate=self.gates.stop_gate)
 
     def tombstones(self, fsops: Fsops, loaded: LoadedRoots) -> TombstoneService:
         """The tombstone service, replayed (a purged file is never acquired again). One per

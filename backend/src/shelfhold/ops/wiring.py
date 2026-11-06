@@ -12,7 +12,7 @@ from functools import cache
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
-from shelfhold.composition import Composition
+from shelfhold.composition import Composition, open_fsops
 from shelfhold.config import Settings
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
@@ -62,7 +62,7 @@ def _fsops(engine: Engine) -> Fsops | None:
             loaded = load_roots(connection, PathMap.same_path(paths))
     except sa.exc.OperationalError:  # not migrated yet: nothing is mounted
         return None
-    return Fsops.open(loaded.path_map, loaded.expected)
+    return open_fsops(loaded)
 
 
 def open_ops(

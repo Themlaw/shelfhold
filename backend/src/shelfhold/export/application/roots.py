@@ -7,6 +7,7 @@ says, and such a root gets no writable `ExpectedRoot`, so fsops never writes it 
 ever taken on it.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import sqlalchemy as sa
@@ -14,9 +15,10 @@ from sqlalchemy import Connection
 
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute, within
 from shelfhold.export.domain.physical_roots import ExpectedRoot
+from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
 
-__all__ = ["LoadedRoots", "load_roots"]
+__all__ = ["LoadedRoots", "load_roots", "open_fsops"]
 
 
 @dataclass(frozen=True)
@@ -88,3 +90,17 @@ def load_roots(connection: Connection, path_map: PathMap) -> LoadedRoots:
         if r.mode is PathMode.RW
     ]
     return LoadedRoots(PathMap(tuple(entries)), expected, roots, head.restore_generation > 0)
+
+
+def open_fsops(
+    loaded: LoadedRoots,
+    *,
+    write_gate: Callable[[], None] | None = None,
+    stop_gate: Callable[[], None] | None = None,
+) -> Fsops:
+    """The one way to open the library's `Fsops`: the gates a caller has (disk, stop barrier) and
+    the restore freeze (`restore_pending`), which no assembly may forget."""
+    return Fsops.open(
+        loaded.path_map, loaded.expected, write_gate=write_gate, stop_gate=stop_gate,
+        frozen=loaded.restore_pending,
+    )  # fmt: skip
