@@ -28,6 +28,7 @@ from shelfhold.acquisition.application.backfill import (
 from shelfhold.acquisition.application.discovery import SeriesDiscovery
 from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
 from shelfhold.acquisition.application.planning import (
+    NOTHING_YET,
     highest_numbered,
     pending,
     set_watermark,
@@ -115,7 +116,7 @@ class FollowReport:
     reactivated: int = 0
     created: int = 0  # series of the library given their Work, Edition and binding (EF-SRC-009)
     skipped_pending_pairing: int = 0  # left to `adopt pair`: an adopted twin waits for it
-    skipped_language: int = 0  # a sub-source of no single language gives no Edition key
+    unknown_language: int = 0  # filed as `x-unknown`: `edition set-lang` gives the language
     awaiting_shelf: int = 0  # no adult shelf to file them on
     stale: int = 0
     paused: str | None = None  # the waiting state (or failure class) the service is paused in
@@ -192,7 +193,7 @@ class FollowCycle:
         self._tombstones = tombstones  # EF-BIB-053: required, a cycle never runs without it
         self._told: set[str] = set()  # bindings already announced as tombstoned upstream
         self._discovery = SeriesDiscovery(engine, clock, self._plugin_id, tombstones, self._emit)
-        self._fresh: set[str] = set()  # bindings discovered this cycle: their first look
+        self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
 
     # -- the cycle ---------------------------------------------------------------------------
     async def run(self) -> FollowReport:
@@ -279,11 +280,11 @@ class FollowCycle:
             lambda ref: from_service(self._service.list_units(self._fetcher, ref)),
             lambda: from_service(self._service.sub_sources(self._fetcher)),
         )
-        self._fresh = found.fresh
+        self._listed = found.units
         report.created += found.created
         report.tombstoned += found.tombstoned
         report.skipped_pending_pairing += found.skipped_pending_pairing
-        report.skipped_language += found.skipped_language
+        report.unknown_language += found.created_unknown_language
         report.awaiting_shelf += found.awaiting_shelf
 
     def _reconcile_library(
@@ -451,10 +452,13 @@ class FollowCycle:
         self, binding: _Binding, report: FollowReport, budget: RequestBudget
     ) -> None:
         ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
-        units = await from_service(self._service.list_units(self._fetcher, ref))
+        units = self._listed.pop(binding.id, None)  # a series just discovered: read once
+        fresh = units is not None
+        if units is None:
+            units = await from_service(self._service.list_units(self._fetcher, ref))
         with self._engine.connect() as connection:
             mark = watermark_of(connection, binding.edition_id)
-        if binding.id in self._fresh:
+        if fresh:
             mark = None  # just discovered: this look is its baseline, nothing is asked (extras too)
         # Without a watermark the first look only learns what is there (it becomes the watermark):
         # a series followed from now on is asked for what is new, never for its whole archive.
@@ -480,7 +484,8 @@ class FollowCycle:
                 self._prefs.elect(connection, unit_id, look.now)
         report.requested += len(look.opened)
         with self._engine.begin() as connection:
-            if mark is None and (top := highest_numbered(connection, binding.edition_id)):
+            top = highest_numbered(connection, binding.edition_id) if mark is None else None
+            if top is not None and top != NOTHING_YET:  # none numbered yet: the next look takes it
                 set_watermark(connection, binding.edition_id, top, baseline_at=look.now)
             table = acquisition.source_binding
             connection.execute(

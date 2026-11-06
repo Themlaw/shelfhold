@@ -12,7 +12,8 @@ exists), and one that has nowhere to go (no adult shelf: `series.awaiting_shelf`
 catalog entry carries the command that leaves the wait: `shelf create`).
 """
 
-from collections.abc import Awaitable, Callable, Sequence
+import hashlib
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -20,7 +21,6 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from shelfhold.acquisition.application.planning import NOTHING_YET
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.watermark import Watermark
 from shelfhold.catalog.public import (
@@ -32,22 +32,83 @@ from shelfhold.catalog.public import (
 )
 from shelfhold.export.public import pending_pairing
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.content_trust import Destination, sanitize_upstream_text
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import SeriesBindingRef, TombstoneGate
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import SubSource
 
-__all__ = ["Discovery", "SeriesDiscovery"]
+__all__ = ["Discovery", "Notices", "SeriesDiscovery", "decline_pairing"]
 
 log = structlog.get_logger(__name__)
 
 WORK_KIND = "manga"
+UNKNOWN_LANGUAGE = "x-unknown"  # `edition set-lang` leaves it (language_unknown)
+TITLE_MAX = 200
 ADULT_FROM = 18  # a ceiling of 18 or more, or none, is an adult shelf (M1a has no other)
 
 Emit = Callable[[sa.Connection, str, dict[str, object]], None]
 ListUnits = Callable[[SeriesRef], Awaitable[list[UnitInfo]]]
 SubSources = Callable[[], Awaitable[list[SubSource]]]
+
+
+def digest(*parts: str) -> str:
+    return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()
+
+
+class Notices:
+    """What the cycle has told and what waits, kept in `follow_notice`: a new process (the job
+    builds a `FollowCycle` each time) never tells twice, and a condition that ceases leaves."""
+
+    def __init__(self, clock: Clock) -> None:
+        self._clock = clock
+
+    def sync(self, connection: sa.Connection, kind: str, current: Mapping[str, str]) -> list[str]:
+        """Make the rows of `kind` equal `current` (`key_hash -> subject`); the keys new now."""
+        table = acquisition.follow_notice
+        held = set(
+            connection.execute(sa.select(table.c.key_hash).where(table.c.kind == kind)).scalars()
+        )
+        gone = held - current.keys()
+        if gone:
+            connection.execute(
+                sa.delete(table).where(table.c.kind == kind, table.c.key_hash.in_(gone))
+            )
+        fresh = [key for key in current if key not in held]
+        for key in fresh:
+            connection.execute(
+                sa.insert(table).values(
+                    kind=kind, key_hash=key, subject=current[key], told_at=self._clock.now()
+                )
+            )
+        return fresh
+
+    @staticmethod
+    def declined(connection: sa.Connection) -> set[str]:
+        table = acquisition.follow_notice
+        return set(
+            connection.execute(
+                sa.select(table.c.subject).where(table.c.kind == "pairing_declined")
+            ).scalars()
+        )
+
+
+def decline_pairing(engine: sa.Engine, clock: Clock, export_series_id: str) -> None:
+    """The admin says an adopted series has no twin in the library: what looks like one is
+    discovered as a series of its own from the next cycle on."""
+    table = acquisition.follow_notice
+    with engine.begin() as connection:
+        connection.execute(
+            sqlite_insert(table)
+            .values(
+                kind="pairing_declined",
+                key_hash=digest(export_series_id),
+                subject=export_series_id,
+                told_at=clock.now(),
+            )
+            .on_conflict_do_nothing()
+        )
 
 
 @dataclass
@@ -56,8 +117,8 @@ class Discovery:
     tombstoned: int = 0
     awaiting_shelf: int = 0
     skipped_pending_pairing: int = 0
-    skipped_language: int = 0
-    fresh: set[str] = field(default_factory=set)  # bindings created now: their first look
+    created_unknown_language: int = 0  # filed, `language_unknown` until `edition set-lang`
+    units: dict[str, list[UnitInfo]] = field(default_factory=dict)  # binding -> its listing
 
 
 class SeriesDiscovery:
@@ -69,8 +130,7 @@ class SeriesDiscovery:
         self._plugin_id = plugin_id
         self._tombstones = tombstones
         self._emit = emit
-        self._told: set[tuple[str, str]] = set()  # tombstoned series already announced
-        self._waiting = False  # the lack of an adult shelf is already announced
+        self._notices = Notices(clock)
 
     async def run(
         self, library: Sequence[SeriesRef], list_units: ListUnits, sub_sources: SubSources
@@ -78,32 +138,31 @@ class SeriesDiscovery:
         found = Discovery()
         with self._engine.connect() as connection:
             known = self._known(connection)
-            twins = pending_pairing(connection, [r for r in library if self._key(r) not in known])
+            fresh = [r for r in library if self._key(r) not in known]
+            declined = Notices.declined(connection)
+            twins = pending_pairing(connection, fresh, declined=declined) if fresh else {}
             shelf_id = self._adult_shelf(connection)
-        fresh = [r for r in library if self._key(r) not in known]
         todo: list[SeriesRef] = []
+        buried: dict[str, str] = {}
         for ref in fresh:
             if self._tombstoned(ref):
                 found.tombstoned += 1
+                buried[self._digest(ref)] = ""
             elif self._key(ref) in twins:
                 found.skipped_pending_pairing += 1
-                log.info("follow.discovery_left_to_pairing", source_key=ref.source_key)
             else:
                 todo.append(ref)
-        if not todo:
-            return found
+        waiting = {
+            self._digest(ref): twins[self._key(ref)] for ref in fresh if self._key(ref) in twins
+        }
+        self._sync(buried, waiting, awaiting=bool(todo) and shelf_id is None)
         if shelf_id is None:
             found.awaiting_shelf = len(todo)
-            self._tell_waiting(len(todo))
+        if not todo or shelf_id is None:
             return found
-        self._waiting = False
         langs = {s.source_key: s.lang for s in await sub_sources()}
         for ref in todo:
             lang = self._language(langs.get(ref.source_key))
-            if lang is None:
-                found.skipped_language += 1
-                log.warning("follow.discovery_language_unknown", source_key=ref.source_key)
-                continue
             try:
                 units = await list_units(ref)
             except Exception as error:
@@ -115,12 +174,28 @@ class SeriesDiscovery:
             binding_id = self._create(ref, lang, shelf_id, _watermark(units))
             if binding_id is not None:
                 found.created += 1
-                found.fresh.add(binding_id)
+                found.created_unknown_language += int(lang is None)
+                found.units[binding_id] = units
         return found
+
+    # -- what is told, what waits -------------------------------------------------------------
+    def _sync(self, buried: dict[str, str], waiting: dict[str, str], *, awaiting: bool) -> None:
+        """Persist the conditions (so no process tells them twice) and announce the new ones."""
+        with self._engine.begin() as connection:
+            for _ in self._notices.sync(connection, "tombstoned", buried):
+                self._emit(connection, "series.tombstoned_upstream", {"count": 1})
+            for _ in self._notices.sync(
+                connection, "awaiting_shelf", {digest("shelf"): ""} if awaiting else {}
+            ):
+                self._emit(connection, "series.awaiting_shelf", {"count": 1})
+            self._notices.sync(connection, "pending_pairing", waiting)
 
     # -- what exists ------------------------------------------------------------------------
     def _key(self, ref: SeriesRef) -> tuple[str, str]:
         return (ref.source_key, ref.remote_id)
+
+    def _digest(self, ref: SeriesRef) -> str:
+        return digest(self._plugin_id, ref.source_key, ref.remote_id)
 
     def _known(self, connection: sa.Connection) -> set[tuple[str, str]]:
         """Series that have a binding, whatever its state: a removed one is reactivated, never
@@ -150,25 +225,13 @@ class SeriesDiscovery:
 
     def _tombstoned(self, ref: SeriesRef) -> bool:
         candidate = SeriesBindingRef(self._plugin_id, ref.source_key, ref.remote_id)
-        if not self._tombstones.check(candidate, root_id=None).blocked:
-            return False
-        if self._key(ref) not in self._told:
-            self._told.add(self._key(ref))
-            with self._engine.begin() as connection:
-                self._emit(connection, "series.tombstoned_upstream", {"count": 1})
-        return True
-
-    def _tell_waiting(self, count: int) -> None:
-        if self._waiting:
-            return
-        self._waiting = True
-        with self._engine.begin() as connection:
-            self._emit(connection, "series.awaiting_shelf", {"count": count})
+        return bool(self._tombstones.check(candidate, root_id=None).blocked)
 
     @staticmethod
     def _language(lang: str | None) -> str | None:
         """The language of the sub-source as an Edition key allows it; `None` for `mul`, for a
-        sub-source the service did not list and for a tag without a script."""
+        sub-source the service did not list and for a tag without a script: the Edition is then
+        filed as `x-unknown` and waits for `edition set-lang` (`language_unknown`)."""
         if lang is None or lang == "mul":
             return None
         try:
@@ -176,8 +239,22 @@ class SeriesDiscovery:
         except LanguageError:
             return None
 
+    @staticmethod
+    def _title(ref: SeriesRef) -> str:
+        """An upstream title is untrusted text: cleaned, bounded, and the remote identifier when
+        nothing is left of it."""
+        for text in (ref.title, ref.remote_id):
+            clean = sanitize_upstream_text(
+                text, destination=Destination.PLAIN, max_length=TITLE_MAX
+            )
+            if clean.strip():
+                return clean.strip()
+        return "?"
+
     # -- the five rows, in one transaction ------------------------------------------------------
-    def _create(self, ref: SeriesRef, lang: str, shelf_id: str, mark: Watermark) -> str | None:
+    def _create(
+        self, ref: SeriesRef, lang: str | None, shelf_id: str, mark: Watermark | None
+    ) -> str | None:
         """Work, Edition, `source_item`, binding and follow, all or none. Read again under the
         write lock: two cycles racing leave one of each. `None`: another cycle got there first."""
         now = self._clock.now()
@@ -187,33 +264,49 @@ class SeriesDiscovery:
                 if self._key(ref) in self._known(connection):
                     return None
                 books = Catalog(connection)
-                work_id = books.create_work(WORK_KIND, ref.title)
-                edition = books.ensure_edition(
-                    EditionSpec(work_id, lang, translation_type="official", media="images")
-                )
+                work_id = books.create_work(WORK_KIND, self._title(ref))
+                if lang is None:  # no key can carry it: the shape adoption uses, set-lang leaves it
+                    edition_id = new_ulid()
+                    connection.execute(
+                        sa.insert(catalog.edition).values(
+                            id=edition_id, work_id=work_id, lang=UNKNOWN_LANGUAGE,
+                            translation_type="official", media="images",
+                        )
+                    )  # fmt: skip
+                else:
+                    edition_id = books.ensure_edition(
+                        EditionSpec(work_id, lang, translation_type="official", media="images")
+                    ).id
                 connection.execute(
                     sa.update(catalog.edition)
-                    .where(catalog.edition.c.id == edition.id)
+                    .where(catalog.edition.c.id == edition_id)
                     .values(shelf_id=shelf_id)
                 )
                 item_id = self._source_item(connection, ref, now)
                 binding_id = new_ulid()
                 connection.execute(
                     sa.insert(acquisition.source_binding).values(
-                        id=binding_id, work_id=work_id, edition_id=edition.id,
+                        id=binding_id, work_id=work_id, edition_id=edition_id,
                         source_item_id=item_id, priority=1, active=True,
                     )
                 )  # fmt: skip
                 follow = acquisition.series_follow
+                # No numbered chapter yet: the watermark stays null, the first numbered look sets it
+                values = (
+                    {}
+                    if mark is None
+                    else {
+                        "follow_from_segment": mark.segment,
+                        "follow_from_number": format(mark.number, "f"),
+                        "follow_from_norm_by": "number@1",
+                        "updated_at": now,
+                    }
+                )
                 connection.execute(
                     sqlite_insert(follow)
-                    .values(
-                        edition_id=edition.id, work_id=work_id, follow_from_segment=mark.segment,
-                        follow_from_number=format(mark.number, "f"),
-                        follow_from_norm_by="number@1", updated_at=now,
-                    )
+                    .values(edition_id=edition_id, work_id=work_id, **values)
                     .on_conflict_do_nothing(index_elements=["edition_id"])
-                )  # fmt: skip
+                )
                 return binding_id
 
     def _source_item(self, connection: sa.Connection, ref: SeriesRef, now: object) -> str:
@@ -238,14 +331,14 @@ class SeriesDiscovery:
         return item_id
 
 
-def _watermark(units: Sequence[UnitInfo]) -> Watermark:
+def _watermark(units: Sequence[UnitInfo]) -> Watermark | None:
     """The highest numbered chapter visible, `(segment, number)`: a more recent segment is beyond
-    whatever its number (I34). A series that shows only extras starts from nothing."""
+    whatever its number (I34). `None` while nothing is numbered: the first numbered look then
+    takes the watermark (the archive that shows up late is not asked for)."""
     marks = [m for u in units if (m := numbered_mark(u.number, u.source_order)) is not None]
     if not marks:
-        return NOTHING_YET
-    top = max(
+        return None
+    return max(
         (Watermark.of(segment, Decimal(number)) for segment, number in marks),
         key=lambda w: (w.ordinal, w.number),
     )
-    return top

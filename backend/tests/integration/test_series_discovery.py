@@ -14,8 +14,11 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 
-from tests.follow_env import Bench, add_adult_shelf, follow_bench
+from shelfhold.acquisition.public import FollowReport
+from shelfhold.ops.status import collect
+from tests.follow_env import Bench, add_adult_shelf, follow_bench, new_chapter
 from tests.pairing_env import paired_env
 
 LOCALE = Path(__file__).resolve().parents[2] / "src" / "shelfhold" / "locales" / "fr.toml"
@@ -26,6 +29,11 @@ COUNTS = {
     "source_binding": "SELECT count(*) AS n FROM source_binding",
     "series_follow": "SELECT count(*) AS n FROM series_follow",
 }
+
+
+def _job_run(bench: Bench) -> FollowReport:
+    """One run of the `follow.cycle` job: it builds a new `FollowCycle` each time (runtime_jobs)."""
+    return asyncio.run(bench.new_cycle().run())
 
 
 def _counts(bench: Bench) -> dict[str, int]:
@@ -90,10 +98,11 @@ def test_tombstoned_library_series_never_created() -> None:
             return False
 
     with follow_bench(seeded=False, adult_shelf=True, tombstones=lambda _lib: Blocks()) as bench:
-        first = bench.run()
+        first = _job_run(bench)
         assert first.created == 1 and first.tombstoned == 1
         assert set(_series(bench)) == {"/series-beta"}
-        bench.run()
+        _job_run(bench)  # a new process each time: the database remembers what was told
+        _job_run(bench)
         assert set(_series(bench)) == {"/series-beta"}
         told = bench.events("series.tombstoned_upstream")
         assert len(told) == 1
@@ -150,25 +159,157 @@ def test_new_cycle_object_does_not_create_twice() -> None:
 def test_library_series_without_adult_shelf_waits_with_exit_command() -> None:
     """No adult shelf: nothing is created, the wait is told once with the command that leaves it."""
     with follow_bench(seeded=False) as bench:
-        report = bench.run()
+        report = _job_run(bench)
         assert report.created == 0 and report.awaiting_shelf == 2
         assert _counts(bench) == dict.fromkeys(COUNTS, 0)
-        bench.run()
+        _job_run(bench)
+        _job_run(bench)
         told = bench.events("series.awaiting_shelf")
         assert len(told) == 1
+        with bench.lib.engine.connect() as connection:
+            (item,) = [i for i in collect(connection) if i.state == "awaiting_shelf"]
+        assert "shelfhold shelf create" in item.command
         locale = tomllib.loads(LOCALE.read_text("utf-8"))
         assert "shelfhold shelf create" in locale["errors"]["series.awaiting_shelf"]["action"]
         bench.shelf_id = ""  # the admin creates the shelf: the next cycle files the series
         add_adult_shelf(bench.lib)
         assert bench.run().created == 2
+        with bench.lib.engine.connect() as connection:  # the wait ended: it leaves the status
+            assert [i for i in collect(connection) if i.state == "awaiting_shelf"] == []
+        assert bench.rows("SELECT * FROM follow_notice") == []
+
+
+@pytest.mark.req("EF-SRC-009", "ENF-I18N-005")
+def test_series_with_unknown_sub_source_language_waits_for_set_lang() -> None:
+    """A sub-source that is not of one language (`all`) gives no Edition key: the series is filed
+    as `x-unknown` and `status` lists `language_unknown` with `edition set-lang`."""
+    with follow_bench(seeded=False, adult_shelf=True) as bench:
+        bench.server.state["mangas"][2]["inLibrary"] = True  # Series Gamma, source 7003 (`all`)
+        report = bench.run()
+        assert report.created == 3 and report.unknown_language == 1
+        assert _series(bench)["/series-gamma"]["lang"] == "x-unknown"
+        with bench.lib.engine.connect() as connection:
+            (item,) = [i for i in collect(connection) if i.state == "language_unknown"]
+        assert "edition set-lang" in item.command
+
+
+@pytest.mark.req("EF-EXP-038", "EF-SRC-009", "EF-INT-023")
+def test_twin_scoring_below_auto_threshold_is_left_to_pairing_and_listed() -> None:
+    """0.75 is the proposal threshold of `adopt pair`: a look-alike title below the batch
+    threshold is not created either; `status` lists it with the pairing command."""
+    with paired_env() as p:
+        p.server.state["mangas"][0]["title"] = "Series Alpha Reborn"
+        p.adopt_files(["Series Alpha - Ch.1.cbz"])
+        p.a.adopt()
+        report = p.cycle_once()
+        assert report.skipped_pending_pairing == 1 and report.created == 1
+        remotes = [
+            r["r"]
+            for r in p.rows(
+                "SELECT i.remote_id r FROM source_binding b JOIN "
+                "source_item i ON i.id = b.source_item_id"
+            )
+        ]
+        assert "/series-alpha" not in remotes
+        (proposal,) = p.pairing.propose(p.destination, p.library())
+        assert proposal.state == "ready"  # still pairable: nothing took the upstream series
+        with p.env.lib.engine.connect() as connection:
+            (item,) = [i for i in collect(connection) if i.state == "pending_pairing"]
+        assert "adopt pair" in item.command and "--decline" in item.command
+
+
+@pytest.mark.req("EF-EXP-038", "EF-SRC-009")
+def test_declined_pairing_lets_the_discovery_create_the_series() -> None:
+    from shelfhold.acquisition.public import decline_pairing
+
+    with paired_env() as p:
+        p.server.state["mangas"][0]["title"] = "Series Alpha Reborn"
+        p.adopt_files(["Series Alpha - Ch.1.cbz"])
+        p.a.adopt()
+        p.cycle_once()
+        (proposal,) = p.pairing.propose(p.destination, p.library())
+        decline_pairing(p.env.lib.engine, p.env.clock, proposal.export_series_id)
+        assert p.cycle_once().created == 1  # the declined look-alike is filed on its own
+        with p.env.lib.engine.connect() as connection:
+            assert [i for i in collect(connection) if i.state == "pending_pairing"] == []
+
+
+@pytest.mark.req("EF-EXP-053", "EF-SRC-009")
+def test_archive_that_appears_after_an_extras_only_look_is_not_requested() -> None:
+    """No numbered chapter at discovery: the watermark stays null; when 40 numbered chapters show
+    up, the first numbered look takes the highest one and nothing is asked for."""
+    with follow_bench(seeded=False, adult_shelf=True) as bench:
+        mangas = bench.server.state["mangas"]
+        extras = [
+            dict(c, chapterNumber=-1.0, name=f"Extra {i}")
+            for i, c in enumerate(mangas[1]["chapters"])
+        ]
+        mangas[1]["chapters"] = extras
+        assert bench.run().requested == 0
+        assert _series(bench)["/series-beta"]["number"] is None  # not "-1": nothing numbered yet
+        mangas[1]["chapters"] = [
+            dict(new_chapter(9000 + n, n, url=f"/series-beta/ch-{n:03d}"), sourceOrder=n - 1)
+            for n in range(1, 41)
+        ]
+        total = sum(bench.run().requested for _ in range(3))
+        assert total == 0
+        assert _series(bench)["/series-beta"]["number"] == "40"
+        mangas[1]["chapters"].append(
+            dict(new_chapter(9041, 41, url="/series-beta/ch-041"), sourceOrder=40)
+        )
+        assert bench.run().requested == 1
 
 
 @pytest.mark.req("EF-SRC-009")
-def test_series_with_unknown_sub_source_language_is_not_created() -> None:
-    """A sub-source that is not of one language (`all`) gives no Edition key: the series waits."""
+def test_discovery_lists_each_new_series_once() -> None:
     with follow_bench(seeded=False, adult_shelf=True) as bench:
-        bench.server.state["mangas"][2]["inLibrary"] = True  # Series Gamma, source 7003 (`all`)
-        bench.server.state["mangas"][2]["chapters"][0]["chapterNumber"] = 1.0
-        report = bench.run()
-        assert report.created == 2 and report.skipped_language == 1
-        assert "/series-gamma" not in _series(bench)
+        bench.run()
+        listings = [
+            r for r in bench.server.requests if r.path == "/api/graphql" and "chapters" in r.fields
+        ]
+        per_manga = len(listings)
+        assert per_manga <= 2  # one `chapters` query per new series, not two
+
+
+@pytest.mark.req("EF-SRC-009", "ENF-SEC-015")
+@pytest.mark.parametrize("bad", ["", "   ", "x" * 20000, "\u202eEvil\x00name https://x.y"])
+def test_upstream_title_is_cleaned_bounded_and_never_empty(bad: str) -> None:
+    with follow_bench(seeded=False, adult_shelf=True) as bench:
+        bench.server.state["mangas"][0]["title"] = bad
+        assert bench.run().created == 2
+        (row,) = bench.rows(
+            "SELECT w.title t FROM work w JOIN source_binding b ON b.work_id = w.id "
+            "JOIN source_item i ON i.id = b.source_item_id "
+            "WHERE i.remote_id = '/series-alpha'"
+        )
+        assert 0 < len(row["t"]) <= 200
+        assert "\x00" not in row["t"] and "\u202e" not in row["t"]
+        if not bad.strip():
+            assert row["t"] == "/series-alpha"  # the remote identifier stands in
+
+
+@pytest.mark.req("EF-SRC-009")
+def test_one_active_binding_per_upstream_series_in_the_schema() -> None:
+    """The database itself refuses a second active binding on one source_item."""
+    from shelfhold.catalog.public import Catalog, EditionSpec
+    from shelfhold.infrastructure.ids import new_ulid
+    from shelfhold.infrastructure.schema import acquisition
+
+    with follow_bench(seeded=False, adult_shelf=True) as bench:
+        bench.run()
+        item = bench.rows("SELECT source_item_id i FROM source_binding LIMIT 1")[0]["i"]
+        with pytest.raises(sa.exc.IntegrityError), bench.lib.engine.begin() as c:
+            w = Catalog(c).create_work("manga", "Dup")
+            e = Catalog(c).ensure_edition(
+                EditionSpec(w, "en", translation_type="official", media="images")
+            )
+            c.execute(
+                sa.insert(acquisition.source_binding).values(
+                    id=new_ulid(),
+                    work_id=w,
+                    edition_id=e.id,
+                    source_item_id=item,
+                    priority=1,
+                    active=True,
+                )
+            )

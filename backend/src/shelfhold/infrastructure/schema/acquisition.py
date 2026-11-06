@@ -169,6 +169,29 @@ sa.Index(
     unique=True,
     sqlite_where=sa.text('"active"'),
 )
+# An upstream series is followed by one Edition at a time: a second active binding on the same
+# `source_item` is a duplicate (L42 review).
+sa.Index(
+    "uq_source_binding_active_source_item",
+    source_binding.c.source_item_id,
+    unique=True,
+    sqlite_where=sa.text('"active"'),
+)
+
+# What the follow cycle has told the admin and what still waits for them (L42 review): one row per
+# condition, deleted when the condition ceases, so a new process never tells it twice. `key_hash`
+# is a digest of the upstream key (no title, no path); `subject` is the identifier the exit command
+# takes (an ULID), empty when there is none.
+follow_notice = sa.Table(
+    "follow_notice",
+    metadata,
+    sa.Column("kind", sa.String(), nullable=False),
+    sa.Column("key_hash", sa.String(), nullable=False),
+    sa.Column("subject", sa.String(), nullable=False, server_default=""),
+    sa.Column("told_at", UtcDateTime(), nullable=False),
+    sa.PrimaryKeyConstraint("kind", "key_hash"),
+    in_check("kind", ("tombstoned", "awaiting_shelf", "pending_pairing", "pairing_declined")),
+)
 
 # One follow per Edition, whatever its bindings (arbitrage 2). The watermark is the pair
 # (segment, number) of EF-BIB-050: nothing at or below it is requested by the first cycle.

@@ -40,6 +40,14 @@ _TEMPLATES = {
     "tombstone_key_unknown": "shelfhold tombstone accept-lost-keyring",
     "adoption_refused": "shelfhold adopt --confirm-migration",
     "coverage_unknown": "shelfhold adopt set-follow-from {subject} <chapter>",
+    # L42: series of the Suwayomi library the follow cycle did not file (not states of the
+    # enumeration: their exit is a command that exists, not a route of the table)
+    "pending_pairing": (
+        "shelfhold adopt pair --series {subject} (--source-key <key> --remote-id <id> | --decline)"
+    ),
+    "awaiting_shelf": (
+        "shelfhold shelf create <name> --max-age 18+ --target <target> --subpath <folder>"
+    ),
 }
 
 
@@ -75,6 +83,7 @@ def collect(connection: Connection) -> list[WaitingItem]:
     found += _not_indexed(connection)
     found += _follow(connection)
     found += _languages(connection)
+    found += _discovery(connection)
     return found
 
 
@@ -182,6 +191,28 @@ def _follow(connection: Connection) -> list[WaitingItem]:
             continue
         state = str(pause.get("waiting_state") or pause.get("failure_class") or "source_paused")
         items.append(_item(state, "follow", row.plugin_id, str(pause.get("failure_class", state))))
+    return items
+
+
+def _discovery(connection: Connection) -> list[WaitingItem]:
+    """Series of the library the follow cycle leaves alone until the admin acts (L42)."""
+    notice = acquisition.follow_notice
+    rows = connection.execute(
+        sa.select(notice.c.kind, notice.c.subject)
+        .where(notice.c.kind.in_(("pending_pairing", "awaiting_shelf")))
+        .order_by(notice.c.kind, notice.c.subject)
+    )
+    items: list[WaitingItem] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        if (row.kind, row.subject) in seen:  # one adopted series, several look-alikes: one line
+            continue
+        seen.add((row.kind, row.subject))
+        if row.kind == "pending_pairing":
+            reason = "a series of the library looks like this adopted series"
+            items.append(_item("pending_pairing", "catalog", row.subject, reason))
+        else:
+            items.append(_item("awaiting_shelf", "catalog", "-", "no adult shelf to file them on"))
     return items
 
 

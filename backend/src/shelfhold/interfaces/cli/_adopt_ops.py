@@ -43,6 +43,10 @@ def run_pair(args: argparse.Namespace, channel: OpsChannel) -> int:
     if args.series is None:
         _print_proposals(channel.call("ops.pair_propose", destination_id=destination)["proposals"])
         return 0
+    if args.decline:
+        channel.call("ops.pair_decline", export_series_id=args.series)
+        print(t("pair.declined", id=args.series))
+        return 0
     if not args.source_key or not args.remote_id:
         return fail(t("pair.needs_source"), NEEDS_CONFIRMATION)
     done = channel.call(

@@ -1,6 +1,7 @@
 """What the interfaces and the composition root may use from the acquisition context."""
 
 from shelfhold.acquisition.application.backfill import Backfill, BackfillConfirmationRequired
+from shelfhold.acquisition.application.discovery import decline_pairing
 from shelfhold.acquisition.application.failures import FailureLedger, Pause
 from shelfhold.acquisition.application.follow import (
     FOLLOW_JOB_KIND,
@@ -76,6 +77,7 @@ __all__ = [
     "cadence",
     "choose_team",
     "classify",
+    "decline_pairing",
     "disposition_of",
     "follow_dedupe_key",
     "follow_job",

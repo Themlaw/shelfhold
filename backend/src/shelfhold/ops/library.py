@@ -22,6 +22,7 @@ from shelfhold.acquisition.application.upstream import (
     DetachScope,
     UpstreamSnapshots,
 )
+from shelfhold.acquisition.public import decline_pairing
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
 from shelfhold.export.application.migration_detect import (
     STEPS,
@@ -249,6 +250,20 @@ class LibraryOps:
             )  # fmt: skip
         self._snapshot(link)
         return _result(result)
+
+    @_refused
+    def pair_decline(self, export_series_id: str) -> dict[str, Any]:
+        """An adopted series has no twin in the Suwayomi library: what looks like one is created
+        as a series of its own at the next follow cycle (L42)."""
+        series = export.export_series
+        with self._comp.engine.connect() as connection:
+            known = connection.execute(
+                sa.select(series.c.id).where(series.c.id == export_series_id)
+            ).first()
+        if known is None:
+            raise UnknownSubjectError("no such adopted series")
+        decline_pairing(self._comp.engine, self._comp.clock, export_series_id)
+        return {"export_series_id": export_series_id, "state": "declined"}
 
     @_refused
     def pair_auto(
