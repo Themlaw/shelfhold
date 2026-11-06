@@ -21,6 +21,7 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
+from shelfhold.composition import open_fsops
 from shelfhold.config import ResolvedSettings
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.restore import (
@@ -40,7 +41,6 @@ from shelfhold.i18n import t
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.instance import (
     GenerationCounter,
     InstanceLock,
@@ -88,7 +88,7 @@ def open_restore(resolved: ResolvedSettings) -> Iterator[tuple[RestoreAdopter, R
         with engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = Fsops.open(loaded.path_map, loaded.expected, frozen=loaded.restore_pending)
+        fsops = open_fsops(loaded)
         clock = SystemClock()
         bus = operating_bus(clock)
         guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)

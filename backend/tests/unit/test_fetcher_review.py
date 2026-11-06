@@ -44,7 +44,7 @@ def _dns() -> FakeResolver:
         {
             "up.example.org": [PUBLIC],
             "kavita.lan": ["192.168.1.20"],
-            "suwayomi.lan": ["192.168.1.21"],
+            "suwayomi.lan": ["10.255.0.7"],
         }
     )
 

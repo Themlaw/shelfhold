@@ -13,12 +13,11 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.export.application.pipeline import ExportPipeline
-from shelfhold.export.application.roots import load_roots
+from shelfhold.export.application.roots import load_roots, open_fsops
 from shelfhold.export.domain.naming import Parsed
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
 
 __all__ = ["open_pipeline"]
@@ -46,10 +45,7 @@ def open_pipeline(
     with engine.connect() as connection:
         paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
         loaded = load_roots(connection, PathMap.same_path(paths))
-    fsops = Fsops.open(
-        loaded.path_map, loaded.expected, write_gate=write_gate, stop_gate=stop_gate,
-        frozen=loaded.restore_pending,
-    )  # fmt: skip
+    fsops = open_fsops(loaded, write_gate=write_gate, stop_gate=stop_gate)
 
     return ExportPipeline(
         engine, fsops, locate=loaded.locate, data_dir=Path(settings.data_dir), clock=SystemClock(),

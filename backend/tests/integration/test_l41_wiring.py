@@ -23,7 +23,7 @@ pytestmark = pytest.mark.req("EF-INT-023", "EF-EXP-034", "EF-SRC-009")
 
 JOBS = {
     "follow.cycle", "export.run", "reconcile.cycle", "reconcile.hash",
-    "target.access_audit", "ops.disk_check",
+    "target.access_audit", "ops.disk_check", "intents.prune", "target.key_expiry",
 }  # fmt: skip
 
 
@@ -64,6 +64,23 @@ def test_a_fresh_install_runs_every_job_quietly(settings: Settings) -> None:
             and callable(follow_handler)
             and callable(reconcile_handler)
         )
+    finally:
+        engine.dispose()
+
+
+def test_the_daily_housekeeping_jobs_run_quietly_and_prune_closed_intents(
+    settings: Settings,
+) -> None:
+    from shelfhold.composition import Composition
+    from shelfhold.runtime_jobs import INTENT_RETENTION, intents_prune, key_expiry
+
+    migrate(settings)
+    engine = create_db_engine(settings.database_path)
+    try:
+        comp = Composition(settings, engine, clock=SystemClock())
+        assert intents_prune(comp)() == 0  # no library yet: no journal to prune
+        key_expiry(comp)()  # no target: nothing to read, nothing raised
+        assert timedelta(days=7) <= INTENT_RETENTION
     finally:
         engine.dispose()
 

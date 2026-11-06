@@ -5,6 +5,7 @@
 import re
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -168,3 +169,35 @@ def test_public_url_and_path_map_need_a_session_and_status_flags_the_restart(
         record_applied_public_url(env.engine, "https://later.example.org")
         assert run_cli(monkeypatch, settings, "status", "--json") == 0
         assert "public_url_restart" not in capsys.readouterr().out
+
+
+@pytest.mark.req("EF-USR-024", "EF-INT-024")
+def test_patching_the_path_map_is_a_reserved_action_with_a_fresh_session(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    from datetime import timedelta
+
+    values = {"path_map.kavita": '[{"local": "/library/a", "remote": "/a"}]'}
+    with headless(settings) as env:
+        router = build_headless_router(lambda: env.admin, lambda: None)
+        with auth_env(monkeypatch, settings, routers=[router]) as api:
+            assert api.login().status_code == 200
+
+            def patch() -> Any:
+                return api.client.patch(
+                    "/api/v1/config", json={"values": values},
+                    headers={"X-CSRF-Token": api.csrf()},
+                )  # fmt: skip
+
+            # just logged in: fresh, so the gate lets it through (the target is unknown: 404)
+            assert patch().status_code == 404
+            api.clock.advance(timedelta(minutes=20))
+            stale = patch()
+            assert stale.status_code == 401
+            assert stale.json()["type"] == "/api/v1/problems/reauth-required"
+            # another key of the configuration does not ask for it
+            other = api.client.patch(
+                "/api/v1/config", json={"values": {"source.check_mode": "piloted"}},
+                headers={"X-CSRF-Token": api.csrf()},
+            )  # fmt: skip
+            assert other.status_code == 200

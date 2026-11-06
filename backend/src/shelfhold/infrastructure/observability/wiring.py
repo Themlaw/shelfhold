@@ -10,10 +10,8 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 
 import structlog
-from sqlalchemy import Engine
 
 from shelfhold.config import Settings
-from shelfhold.export.application.target_state import target_write_guard
 from shelfhold.export.targets.kavita import KavitaClient
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.infrastructure.observability.disk_guard import DiskGuard, DiskThresholds
@@ -76,9 +74,3 @@ def daily_access_audit(
             )
 
     return run
-
-
-def guarded_kavita_client(client: KavitaClient, engine: Engine, *, target_id: str) -> KavitaClient:
-    """No write route while a shelf of the target is paused or the target waits for a human."""
-    client.set_write_guard(target_write_guard(engine, target_id))
-    return client

@@ -405,6 +405,13 @@ class LibraryOps:
     def give_back_upstream(
         self, *, shelf_id: str | None = None, edition_id: str | None = None
     ) -> dict[str, Any]:
+        loaded = self._comp.load_roots()
+        if loaded is not None and loaded.restore_pending:
+            # the snapshots are those of a backup older than the disk: nothing is given back
+            # to Suwayomi until `reconcile --adopt-after-restore` (EF-INT-026)
+            raise RestoredBehindError(
+                "restored_behind: run `shelfhold reconcile --adopt-after-restore`"
+            )
         link = self._suwayomi()
         detacher = Detacher(
             self._comp.engine,

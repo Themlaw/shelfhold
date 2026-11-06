@@ -19,6 +19,7 @@ from shelfhold.export.domain.path_map import PathEntry, PathMap, clean_absolute,
 __all__ = [
     "LEASE_FILE",
     "MAX_RESTORE_EPOCH",
+    "RECEIVED_DIR",
     "RECYCLE_DIR",
     "RESERVED_DIR",
     "SENTINEL_EPOCH_FIELD",
@@ -34,6 +35,7 @@ __all__ = [
     "SentinelFormatError",
     "SentinelVerdict",
     "discover_physical_roots",
+    "is_received_rel",
     "is_reserved",
     "judge_sentinel",
 ]
@@ -43,6 +45,8 @@ RESERVED_DIR = ".shelfhold"
 LEASE_FILE = f"{RESERVED_DIR}/lease"  # the per-root write lease (ENF-OPS-015)
 STAGING_DIR = f"{RESERVED_DIR}/staging"
 RECYCLE_DIR = f"{RESERVED_DIR}/recycle"
+RECEIVED_DIR = f"{RESERVED_DIR}/received"  # archives received, before export: never in a library
+LEGACY_RECEIVED_DIR = ".received"  # before 0.2.1: it sat in the library, Kavita could scan it
 TOMBSTONE_JOURNAL = f"{RESERVED_DIR}/tombstones"  # append-only journal 2.0 (EF-BIB-053)
 SENTINEL_KIDS_FIELD = "tombstone_kids"  # registry of issued kids, copied per root (GAP-13-01)
 SENTINEL_EPOCH_FIELD = "restore_epoch"  # the restore counter the database had when last stamped
@@ -191,6 +195,14 @@ def judge_sentinel(doc: SentinelDocument | None, expected: ExpectedRoot) -> Sent
     if doc.generation < expected.generation:
         return SentinelVerdict(RootState.STALE)
     return SentinelVerdict(RootState.RESTORED_BEHIND)
+
+
+def is_received_rel(rel: str) -> bool:
+    """`rel` is something under `.shelfhold/received/`: the one reserved folder the follow cycle
+    writes to with the ordinary operations (the archives it receives); the rest stays host-only.
+    The folder itself is not (three components at least): it cannot be moved or purged."""
+    parts = [p for p in rel.split("/") if p not in ("", ".")]
+    return ".." not in parts and parts[:2] == RECEIVED_DIR.split("/") and len(parts) > 2
 
 
 def is_reserved(rel: str) -> bool:

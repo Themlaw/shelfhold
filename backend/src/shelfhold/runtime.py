@@ -15,7 +15,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
-from shelfhold.composition import Composition, Gates
+from shelfhold.composition import Composition, Gates, open_fsops
 from shelfhold.config import Settings
 from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
@@ -28,9 +28,9 @@ from shelfhold.export.application.root_bootstrap import (
 )
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap, PathMode
+from shelfhold.export.domain.physical_roots import LEGACY_RECEIVED_DIR, RECEIVED_DIR
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.instance import (
     GenerationCounter,
     InstanceLock,
@@ -48,6 +48,7 @@ from shelfhold.infrastructure.observability.shutdown import (
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
+from shelfhold.library.public import migrate_received_dirs
 from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 
@@ -147,10 +148,9 @@ class InstanceRuntime:
         def resolve() -> ResolveReport:
             if loaded is None or instance_id is None:
                 return ResolveReport()  # no instance row yet: nothing was ever written
-            fsops = Fsops.open(
-                loaded.path_map, loaded.expected, write_gate=guard.require_space,
-                stop_gate=self.barrier.require_open, frozen=loaded.restore_pending,
-            )  # fmt: skip
+            fsops = open_fsops(
+                loaded, write_gate=guard.require_space, stop_gate=self.barrier.require_open
+            )
             journal = IntentJournal(engine, fsops, clock=clock)
             # Before anything else: a database older than the disk is read only (EF-INT-026).
             restore_guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)
@@ -180,6 +180,15 @@ class InstanceRuntime:
             )  # fmt: skip
             sessions.enforce()  # no write path skips the lease from here on
             with sessions.open(*ready):
+                migrate_received_dirs(
+                    engine, fsops,
+                    [
+                        (r.root_id, r.path)
+                        for r in loaded.roots
+                        if r.mode is PathMode.RW and r.path in ready
+                    ],  # a root that is away or refuses is left for the next start
+                    old_dir=LEGACY_RECEIVED_DIR, new_dir=RECEIVED_DIR,
+                )  # fmt: skip
                 hook = adopt_written_hook(fsops, loaded.locate, clock)
                 result = journal.resolve_open(on_done=hook)
             for intent_id in result.drifted:
@@ -193,8 +202,13 @@ class InstanceRuntime:
             self.settings.data_dir, engine=engine, clock=clock, seed=instance_id or "unregistered"
         )
         watcher = DiskWatcher(guard, self.pools, engine=engine, bus=bus)
+
+        def disk_check() -> None:
+            watcher.check()
+            composition.flush_owed_tombstones()  # a root that came back pays what it owes
+
         register_ops_jobs(
-            self.pools, self.settings, disk_check=watcher.check, audit=access_audit(composition)
+            self.pools, self.settings, disk_check=disk_check, audit=access_audit(composition)
         )
         register_runtime_jobs(self.pools, composition)
         boot_jobs(

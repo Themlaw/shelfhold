@@ -13,9 +13,11 @@ from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.restore import DeletionCandidate
 from shelfhold.export.application.restore_purge import DeletionIncompleteError, RestoreDeletion
 from shelfhold.export.domain.physical_roots import MAX_RESTORE_EPOCH, RootState
+from shelfhold.library.tombstones import TombstoneRoot
 from tests.auth_env import auth_env, db_rows, run_cli
 from tests.integration.test_restore_epoch import purge_after_backup, restored
 from tests.integration.test_restore_review import SENTINEL, edit_sentinel, stored
+from tests.intents_env import NOW
 from tests.restore_env import RestoreEnv, restore_env
 
 pytestmark = pytest.mark.req("EF-INT-026")
@@ -215,3 +217,38 @@ def test_a_paired_move_is_shown_in_the_preview_and_the_fingerprint() -> None:
         moved = env.adopter().preview()
         assert moved.report.relocated != preview.report.relocated
         assert moved.fingerprint != preview.fingerprint
+
+
+@pytest.mark.req("EF-INT-026", "EF-BIB-053")
+def test_a_damaged_journal_that_freezes_the_restore_has_an_exit() -> None:
+    """Contradictor review, blocker 2: the adoption refused on a journal it could not read, and
+    the only exit it named did not exist. Setting the journal aside leaves the freeze."""
+    from shelfhold.export.application.restore import AdoptionBlockedError
+    from shelfhold.infrastructure.fsops.tombstone_journal import TOMBSTONE_JOURNAL
+    from tests.tombstone_env import ADMIN
+
+    with restore_env() as env:
+        env.add_chapters(3, 4)
+        backup = env.backup()
+        env.export()
+        env.restore(backup)
+        journal = env.library / TOMBSTONE_JOURNAL
+        journal.parent.mkdir(parents=True, exist_ok=True)
+        journal.write_bytes(b"SHELF")  # a header cut short
+        env.guard().enter_restored_behind()
+        assert env.fsops.frozen
+        adopter = env.adopter()
+        with pytest.raises(AdoptionBlockedError):
+            adopter.adopt(confirm=adopter.preview().fingerprint)
+
+        service = env.tombstones()
+        here = next(r for r in env.loaded.roots if r.path == str(env.library))
+        root = TombstoneRoot(here.root_id, here.path, mounted=True)
+        asides = service.set_aside_journal([root], principal=ADMIN, now=NOW)  # frozen: allowed
+        assert asides[here.root_id].startswith(".shelfhold/tombstones.aside-")
+        assert (env.library / asides[here.root_id]).read_bytes() == b"SHELF"  # nothing deleted
+
+        fresh = env.adopter()
+        preview = fresh.preview()
+        assert not preview.blocked_roots
+        fresh.adopt(confirm=preview.fingerprint)

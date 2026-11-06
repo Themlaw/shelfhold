@@ -25,7 +25,6 @@ PERIMETER_CASES = [
     ("staging_orphan_cleanup", ".shelfhold/staging/orphan.part"),
     ("probe_file_cleanup", f"manga/Series/{PROBE}"),
     ("trash_retention_purge", ".shelfhold/recycle/01JC/chapter.cbz"),
-    ("disk_guard_purge", ".shelfhold/recycle/01JC/chapter.cbz"),
 ]
 OUTSIDE = [
     "manga/Series/1.cbz",
@@ -42,9 +41,7 @@ def env(request: pytest.FixtureRequest, tmp_path: Path) -> Env:
     strategy: Strategy = request.param
     made = make_env(tmp_path, strategy=strategy)
     # The trash is 31 days old and the disk guard is triggered, unless a test says otherwise.
-    made.fsops = Fsops.open(
-        made.path_map, made.expected, strategy=strategy, disk_guard=lambda: True, now=lambda: NOW
-    )
+    made.fsops = Fsops.open(made.path_map, made.expected, strategy=strategy, now=lambda: NOW)
     return made
 
 
@@ -195,28 +192,6 @@ def test_the_trash_emitter_removes_what_is_30_days_old_or_more(env: Env) -> None
         "trash_retention_purge", str(env.library / ".shelfhold/recycle/01OLD")
     )
     assert not old.exists()
-
-
-@pytest.mark.req("EF-USR-024")
-def test_the_disk_guard_emitter_needs_the_guard_to_be_really_triggered(
-    env: Env, tmp_path: Path
-) -> None:
-    path = _touch(env.library, ".shelfhold/recycle/01NOW/a.cbz", age_days=0)
-    for guard in (None, lambda: False):
-        quiet = Fsops.open(
-            env.path_map,
-            env.expected,
-            strategy=env.fsops._strategy,
-            disk_guard=guard,
-            now=lambda: NOW,
-        )
-        with pytest.raises(EmitterConditionError):
-            quiet.system_unlink("disk_guard_purge", str(path))
-        with pytest.raises(EmitterConditionError):
-            quiet.system_remove_tree("disk_guard_purge", str(path.parent))
-    assert path.exists()
-    env.fsops.system_remove_tree("disk_guard_purge", str(path.parent))  # guard triggered: allowed
-    assert not path.exists()
 
 
 @pytest.mark.req("EF-USR-024")

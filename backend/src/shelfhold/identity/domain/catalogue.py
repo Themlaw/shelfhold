@@ -39,10 +39,12 @@ _DECLARED = (
     _action("tombstone.lift", Effect.TOUCHES_TOMBSTONES),
     _action("tombstone.list", Effect.TOUCHES_TOMBSTONES),
     _action("tombstone.accept_lost_keyring", Effect.TOUCHES_TOMBSTONES),
+    _action("tombstone.set_aside_journal", Effect.TOUCHES_TOMBSTONES),
     _action("root.takeover", Effect.REINITS_STORAGE),
     _action("root.reinit", Effect.REINITS_STORAGE),
     _action("store.takeover", Effect.REINITS_STORAGE),
     _action("store.reinit", Effect.REINITS_STORAGE),
+    _action("config.path_map", Effect.REINITS_STORAGE),  # which folders are written (`path_map.*`)
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),
@@ -103,6 +105,8 @@ EXIT_ROUTES: tuple[ExitRoute, ...] = (
     _exit(
         "tombstone accept-lost-keyring", "tombstone_key_unknown", "tombstone.accept_lost_keyring"
     ),
+    _exit("tombstone set-aside-journal", "restored_behind", "tombstone.set_aside_journal"),
+    _exit("tombstone flush", "tombstone_lines_owed"),
     _exit("target recheck", "route_missing"),
     # M1b
     _exit("rate", "rating_pending", "rate"),

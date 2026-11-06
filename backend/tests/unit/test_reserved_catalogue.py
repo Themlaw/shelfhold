@@ -11,6 +11,7 @@ RESERVED = {
     ("target rotate-key", "key_expiring"),
     ("secrets import", "tombstone_key_unknown"),
     ("tombstone accept-lost-keyring", "tombstone_key_unknown"),
+    ("tombstone set-aside-journal", "restored_behind"),  # contradictor review, blocker 2
     ("rate", "rating_pending"),
     ("rate", "follow_suspended"),
     ("root takeover", "foreign_root"),
@@ -37,6 +38,7 @@ NOT_RESERVED = {
     ("source recheck", "auth_mode_unsupported"),
     ("adopt set-follow-from", "coverage_unknown"),
     ("edition set-lang", "language_unknown"),
+    ("tombstone flush", "tombstone_lines_owed"),  # contradictor review, blocker 3
     ("reconcile --adopt-after-restore", "restored_behind"),
     ("jobs list", "safeguard_backlog"),
     ("root restored", "root_behind"),

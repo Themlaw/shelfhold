@@ -160,7 +160,9 @@ class SeriesDiscovery:
             found.awaiting_shelf = len(todo)
         if not todo or shelf_id is None:
             return found
-        langs = {s.source_key: s.lang for s in await sub_sources()}
+        subs = await sub_sources()
+        langs = {s.source_key: s.lang for s in subs}
+        adult_only = {s.source_key for s in subs if s.content_warning == "nsfw"}
         for ref in todo:
             lang = self._language(langs.get(ref.source_key))
             try:
@@ -171,7 +173,9 @@ class SeriesDiscovery:
                     raise  # the service cannot be driven: the whole cycle pauses
                 log.warning("follow.discovery_skipped", failure_class=failure_class)
                 continue  # that series' problem: found again at the next cycle
-            binding_id = self._create(ref, lang, shelf_id, _watermark(units))
+            binding_id = self._create(
+                ref, lang, shelf_id, _watermark(units), adult_only=ref.source_key in adult_only
+            )
             if binding_id is not None:
                 found.created += 1
                 found.created_unknown_language += int(lang is None)
@@ -253,8 +257,9 @@ class SeriesDiscovery:
 
     # -- the five rows, in one transaction ------------------------------------------------------
     def _create(
-        self, ref: SeriesRef, lang: str | None, shelf_id: str, mark: Watermark | None
-    ) -> str | None:
+        self, ref: SeriesRef, lang: str | None, shelf_id: str, mark: Watermark | None,
+        *, adult_only: bool = False,
+    ) -> str | None:  # fmt: skip
         """Work, Edition, `source_item`, binding and follow, all or none. Read again under the
         write lock: two cycles racing leave one of each. `None`: another cycle got there first."""
         now = self._clock.now()
@@ -282,6 +287,13 @@ class SeriesDiscovery:
                     .where(catalog.edition.c.id == edition_id)
                     .values(shelf_id=shelf_id)
                 )
+                if adult_only:  # the sub-source says X (`isNsfw`): a suggestion, never a rating
+                    connection.execute(
+                        sa.insert(catalog.age_suggestion).values(
+                            id=new_ulid(), entity_type="edition", entity_id=edition_id,
+                            value=ADULT_FROM, x=True, provenance="sub_source", seen_at=now,
+                        )
+                    )  # fmt: skip
                 item_id = self._source_item(connection, ref, now)
                 binding_id = new_ulid()
                 connection.execute(

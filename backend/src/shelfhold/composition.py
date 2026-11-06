@@ -29,9 +29,9 @@ from sqlalchemy import Engine
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
-from shelfhold.export.application.roots import LoadedRoots, load_roots
+from shelfhold.export.application.roots import LoadedRoots, load_roots, open_fsops
 from shelfhold.export.domain.path_map import PathMap, PathMode
-from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.export.domain.physical_roots import RECEIVED_DIR, RootState
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.wiring import open_client
 from shelfhold.infrastructure.clock import Clock, SystemClock
@@ -62,12 +62,11 @@ __all__ = [
     "SessionOpener",
     "SuwayomiLink",
     "WriteContext",
+    "open_fsops",
     "operating_bus",
 ]
 
 log = structlog.get_logger(__name__)
-
-RECEIVED_DIR = ".received"  # under a writable root: what the follow cycle receives, before export
 
 
 @dataclass(frozen=True)
@@ -165,10 +164,7 @@ class Composition:
             return None
 
     def open_fsops(self, loaded: LoadedRoots) -> Fsops:
-        return Fsops.open(
-            loaded.path_map, loaded.expected, write_gate=self.gates.write_gate,
-            stop_gate=self.gates.stop_gate, frozen=loaded.restore_pending,
-        )  # fmt: skip
+        return open_fsops(loaded, write_gate=self.gates.write_gate, stop_gate=self.gates.stop_gate)
 
     def tombstones(self, fsops: Fsops, loaded: LoadedRoots) -> TombstoneService:
         """The tombstone service, replayed (a purged file is never acquired again). One per
@@ -182,12 +178,36 @@ class Composition:
                 self._tombstones = (signature, service)
                 self._replay(service, fsops, loaded)
             service = self._tombstones[1]
+        service.use_disk(fsops)
         fsops.enforce_tombstone_flush(
             lambda path: any(
                 r.path == path and service.has_pending(r.root_id) for r in loaded.roots
             )
         )
         return service
+
+    @staticmethod
+    def _flush_owed(service: TombstoneService, fsops: Fsops, loaded: LoadedRoots) -> None:
+        """A root that was away during a purge owes lines to its journal; once it is back they
+        are written at the next look, not at the next restart (fsops refuses every other write
+        to it until then)."""
+        for r in loaded.roots:
+            if r.mode is PathMode.RW and service.has_pending(r.root_id):
+                mounted = fsops.root_state(r.path) is RootState.OK
+                service.flush_pending(TombstoneRoot(r.root_id, r.path, mounted, r.predecessors))
+
+    def flush_owed_tombstones(self) -> None:
+        """The periodic look (`ops.disk_check`): pay the lines owed to the roots that came back,
+        under the lease taken for the purpose (the session pays them before the generation
+        moves)."""
+        try:
+            fsops, loaded, service = self.read_context()
+            if loaded.restore_pending or not service.owed_roots():
+                return  # frozen: nothing is written; nothing owed: nothing to take a lease for
+            with self._hold(fsops, loaded):  # the lease pays them (`_pay_owed`)
+                pass
+        except (NoLibraryError, KeyringUnavailableError):
+            return  # nothing registered yet, or no keyring, or no root mounted: nothing to pay
 
     @staticmethod
     def _replay(service: TombstoneService, fsops: Fsops, loaded: LoadedRoots) -> None:
@@ -200,7 +220,8 @@ class Composition:
         )
 
     def read_context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
-        """Everything that reads the library or the tombstones, and writes nothing."""
+        """Everything that reads the library or the tombstones, and writes nothing
+        (the lines owed to a root are paid by `write_context` and `flush_owed_tombstones`)."""
         loaded = self.load_roots()
         if loaded is None:
             raise NoLibraryError("no physical root is registered")
@@ -218,8 +239,15 @@ class Composition:
         return WriteSessions(
             fsops, instance_id=instance_id, clock=self.clock, boot_id=self._boot_id,
             lock_path=self.gates.lock_path, generations=GenerationCounter(self.engine),
-            on_behind=self.gates.on_behind,
+            on_behind=self.gates.on_behind, pay_owed=lambda: self._pay_owed(fsops),
         )  # fmt: skip
+
+    def _pay_owed(self, fsops: Fsops) -> None:
+        """Called by the session with the lease held, before the generation moves."""
+        loaded = self.load_roots()
+        if loaded is None or loaded.restore_pending:
+            return
+        self._flush_owed(self.tombstones(fsops, loaded), fsops, loaded)
 
     @contextmanager
     def _hold(

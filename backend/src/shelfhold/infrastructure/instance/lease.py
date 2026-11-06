@@ -93,8 +93,10 @@ class WriteSessions:
         boot_id: str | None = None,
         generations: GenerationCounter | None = None,
         on_behind: Callable[[], None] | None = None,
+        pay_owed: Callable[[], None] | None = None,
     ) -> None:
         self._generations = generations
+        self._pay_owed = pay_owed  # the tombstone lines owed, written under the lease just taken
         self._on_behind = on_behind  # a root remounted ahead of the database (EF-INT-026)
         self._fsops = fsops
         self.instance_id = instance_id
@@ -253,6 +255,8 @@ class WriteSessions:
                         self._on_behind()
                     raise
                 taken.append(root)
+            if self._pay_owed is not None:
+                self._pay_owed()  # lease first, lines second, generation last (EF-BIB-052)
             self._advance_generations(taken)
             yield WriteSession(self, tuple(roots), guard)
         finally:

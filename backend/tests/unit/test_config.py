@@ -12,6 +12,7 @@ from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.settings_store import SettingsStore
 from shelfhold.interfaces.cli import main as cli_main
 from shelfhold.main import create_app
+from tests.settings_env import put_setting
 
 
 @pytest.mark.req("ENF-OPS-004")
@@ -105,7 +106,7 @@ def test_settings_store_roundtrip_feeds_the_db_layer(env: dict[str, str]) -> Non
     settings = load_settings(env).values
     migrate(settings)
     store = SettingsStore(settings.database_path)
-    store.set("log_level", "WARNING")
+    put_setting(settings.database_path, "log_level", "WARNING")
     resolved = load_settings(env, db_loader=lambda _data_dir: store.all())
     assert resolved.values.log_level == "WARNING"
     assert resolved.fields["log_level"].source == "db"

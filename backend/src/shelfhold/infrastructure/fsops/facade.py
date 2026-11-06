@@ -32,6 +32,7 @@ from shelfhold.export.domain.physical_roots import (
     RootState,
     SentinelDocument,
     SentinelVerdict,
+    is_received_rel,
     is_reserved,
     judge_sentinel,
 )
@@ -72,6 +73,7 @@ from shelfhold.infrastructure.fsops.tombstone_journal import (
     append_line,
     read_journal,
     sentinel_kids,
+    set_aside,
 )
 from shelfhold.infrastructure.fsops.writer import (
     HashingReader,
@@ -147,13 +149,11 @@ class Fsops:
         *,
         umask: int | None = None,
         strategy: Strategy = Strategy.AUTO,
-        disk_guard: Callable[[], bool] | None = None,
         write_gate: Callable[[], None] | None = None,
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
         frozen: bool = False,
     ) -> None:
-        self._disk_guard = disk_guard
         self._stop_gate = stop_gate  # raises once the shutdown went past its checkpoint delay
         self._write_gate = write_gate  # raises while the disk guard is paused (ENF-OPS-006)
         self._now = now
@@ -205,7 +205,6 @@ class Fsops:
         *,
         umask: int | None = None,
         strategy: Strategy = Strategy.AUTO,
-        disk_guard: Callable[[], bool] | None = None,
         write_gate: Callable[[], None] | None = None,
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
@@ -214,7 +213,7 @@ class Fsops:
         """No file system access: roots are opened, and their sentinels read, per operation.
         `frozen`: the database says `restored_behind` (read from `LoadedRoots.restore_pending`)."""
         return cls(
-            path_map, expected, umask=umask, strategy=strategy, disk_guard=disk_guard,
+            path_map, expected, umask=umask, strategy=strategy,
             write_gate=write_gate, stop_gate=stop_gate, now=now, frozen=frozen,
         )  # fmt: skip
 
@@ -236,9 +235,15 @@ class Fsops:
         if best is None:
             raise OutsidePathMapError(f"{local!r} is under no physical root")
         root_path, rel, read_only = best
-        if is_reserved(rel) and not host and not (read_mirror and is_mirror_rel(rel)):
+        received = is_received_rel(rel)  # the archives of the follow cycle, host area, ordinary ops
+        if (
+            is_reserved(rel)
+            and not host
+            and not received
+            and not (read_mirror and is_mirror_rel(rel))
+        ):
             raise ReservedPathError(f"{local!r} is reserved to the host")
-        host = host or (read_mirror and is_mirror_rel(rel))
+        host = host or received or (read_mirror and is_mirror_rel(rel))
         if not read_only and not (host and is_reserved(rel)):  # host folders sit above the map
             try:
                 entry = self._path_map.entry_for(path)
@@ -275,8 +280,8 @@ class Fsops:
     ) -> Iterator[ConfinedRoot]:
         """The root opened for a write: refused when read-only, when its sentinel says so, when
         the lease is not ours (once `enforce_lease` is on) or when tombstone lines are owed to it
-        (`tombstone=True`: the write that pays them). After the shutdown's checkpoint delay every
-        write is refused (`stop_gate`)."""
+        (`tombstone=True`: the write that pays them, still under the lease).
+        After the shutdown's checkpoint delay every write is refused (`stop_gate`)."""
         if self._stop_gate is not None:
             self._stop_gate()
         if located.read_only:
@@ -605,6 +610,22 @@ class Fsops:
         with self._root(self._host_root(root_path).root_path) as root:
             return read_journal(root, max_bytes)
 
+    def set_aside_tombstone_journal(self, root_path: str, stamp: str) -> str | None:
+        """Rename an unreadable journal to `tombstones.aside-<stamp>` (nothing is deleted). Allowed
+        while the instance is `restored_behind` (it is how a restore leaves that state when a
+        journal is damaged), but only for this instance's own root. The new name, or None."""
+        if self._stop_gate is not None:
+            self._stop_gate()
+        key = self._host_root(root_path).root_path
+        with self._root(key) as root:
+            current = read_sentinel(root)
+            expected = self._expected[key]
+            if current is None:
+                raise RootBlockedError(key, RootState.MISSING)
+            if (current.root_id, current.instance_id) != (expected.root_id, expected.instance_id):
+                raise RootBlockedError(key, RootState.MISMATCH)
+            return set_aside(root, stamp)
+
     def tombstone_kids(self, root_path: str) -> dict[str, dict[str, str]]:
         """The registry entries of the root's sentinel, kid -> tags (unverified: the caller
         holds the keys). Empty when the sentinel is absent or unreadable."""
@@ -673,7 +694,11 @@ class Fsops:
 
     @staticmethod
     def _require_purgeable(rel: str) -> None:
-        if is_reserved(rel) and not Perimeter(below=RECYCLE_DIR).allows(rel):
+        if (
+            is_reserved(rel)
+            and not Perimeter(below=RECYCLE_DIR).allows(rel)
+            and not is_received_rel(rel)  # a received archive is purged like any copy
+        ):
             raise ReservedPathError(f"{rel!r} belongs to the host: a purge never deletes it")
 
     def system_unlink(self, emitter: str, local: str) -> None:
@@ -713,8 +738,6 @@ class Fsops:
                 return  # nothing to delete: the removal below reports it
             if age < TRASH_RETENTION_S:
                 raise EmitterConditionError(f"{entry} is {int(age)} s old: kept 30 days")
-        elif emitter == "disk_guard_purge" and not (self._disk_guard and self._disk_guard()):
-            raise EmitterConditionError("the disk guard is not triggered")
 
     def _system_empty(self, root: ConfinedRoot, emitter: str, rel: str) -> int:
         require_content_inside(emitter, rel)
@@ -736,6 +759,38 @@ class Fsops:
             raise CrossRootError(f"{a.root_path} and {b.root_path} are different physical roots")
         with self._gated(a) as root:
             root.rename(a.rel, b.rel, replace=replace)
+
+    def relocate_inbox(
+        self, root_path: str, old_rel: str, new_rel: str
+    ) -> tuple[list[str], list[str]]:
+        """Move the regular files of the folder `old_rel` of a writable root into `new_rel` (both
+        relative to the root), then remove `old_rel` if it is empty. One renaming per file,
+        inside the root, never replacing. Returns `(moved, left)`: the names moved, and the
+        entries left where they were (a name already taken, a sub-folder, a link, or an
+        `old_rel` that is itself a link or not a folder). The one-time move of the follow inbox
+        into the host area (`.received` -> `.shelfhold/received`)."""
+        with self._gated(self._host_root(root_path)) as root:
+            kind = root.lstat_kind(old_rel)
+            if kind is None:
+                return [], []
+            if kind != "dir":
+                return [], [old_rel]
+            root.mkdir(new_rel, parents=True, exist_ok=True)
+            moved: list[str] = []
+            left: list[str] = []
+            for name in sorted(root.listdir(old_rel)):
+                if root.lstat_kind(f"{old_rel}/{name}") != "file":
+                    left.append(name)
+                    continue
+                try:
+                    root.rename(f"{old_rel}/{name}", f"{new_rel}/{name}", replace=False)
+                except FileExistsError:
+                    left.append(name)
+                    continue
+                moved.append(name)
+            if not root.listdir(old_rel):
+                root.rmdir(old_rel)
+            return moved, left
 
     def recycle(self, local: str) -> str:
         """Move into the same root's `.shelfhold/recycle`; returns where it went."""

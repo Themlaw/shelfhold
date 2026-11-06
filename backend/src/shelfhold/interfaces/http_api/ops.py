@@ -27,6 +27,7 @@ __all__ = ["build_ops_router"]
 _ROTATE_KEY = reserved_action(RESERVED_ACTIONS["target.rotate_key"])
 _SET_SECRET = reserved_action(RESERVED_ACTIONS["source.set_secret"])
 _LOST_KEYRING = reserved_action(RESERVED_ACTIONS["tombstone.accept_lost_keyring"])
+_SET_ASIDE = reserved_action(RESERVED_ACTIONS["tombstone.set_aside_journal"])
 Admin = Annotated[Principal, Depends(require_admin)]
 
 
@@ -91,6 +92,18 @@ class KeyringIn(BaseModel):
 
 class KeyringOut(BaseModel):
     waived: list[str]
+
+
+class SetAsideIn(BaseModel):
+    root_id: str | None = None  # default: every root whose journal cannot be read
+
+
+class SetAsideOut(BaseModel):
+    aside: dict[str, str]  # root id -> the name the journal was put aside under
+
+
+class FlushOut(BaseModel):
+    still_owed: list[str]  # roots that still owe lines (not mounted yet, or refusing writes)
 
 
 @contextmanager
@@ -223,5 +236,19 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
                 confirmation=body.confirmation, principal=principal
             )
         return KeyringOut(waived=waived)
+
+    @router.post(_path("tombstone", "set-aside-journal"), response_model=SetAsideOut)
+    def set_aside_journal(
+        body: SetAsideIn,
+        principal: Annotated[Principal, Depends(_SET_ASIDE)],
+    ) -> SetAsideOut:
+        with refusals():
+            aside = get_ops().tombstone_set_aside_journal(principal=principal, root_id=body.root_id)
+        return SetAsideOut(aside=aside)
+
+    @router.post(_path("tombstone", "flush"), response_model=FlushOut)
+    def tombstone_flush(_principal: Admin) -> FlushOut:
+        with refusals():
+            return FlushOut(still_owed=get_ops().tombstone_flush())
 
     return router

@@ -258,6 +258,14 @@ def tombstone_key_unknown() -> None:
         assert keyring.waived == [("the keyring is lost", "local_cli")]
 
 
+def tombstone_lines_owed() -> None:
+    with export_env() as env:
+        keyring = FakeKeyring(kids=[], owed=["01JROOT0000000000000000000"])
+        ops = make_ops(env, keyring=keyring)
+        _listed_then_gone(ops, "tombstone_lines_owed", ops.tombstone_flush)
+        assert keyring.owed == []
+
+
 def adoption_refused() -> None:
     with export_env() as env:
         adoption = FakeAdoption()
@@ -332,7 +340,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         missing, paused_foreign_writer, dead_letter, instance_changed, target_forbidden,
         key_expiring, not_indexed, auth_expired, adoption_refused, permission_denied,
         child_exposure, auth_mode_unsupported, coverage_unknown, language_unknown,
-        restored_behind, tombstone_key_unknown, route_missing,
+        restored_behind, tombstone_key_unknown, tombstone_lines_owed, route_missing,
     )
 }  # fmt: skip
 

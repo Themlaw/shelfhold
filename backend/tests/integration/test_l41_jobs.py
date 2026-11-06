@@ -124,6 +124,27 @@ def test_pairing_and_giving_back_need_a_connected_service(settings: Settings, tm
                 call()
 
 
+@pytest.mark.req("EF-EXP-056", "EF-INT-026")
+def test_detach_restore_upstream_refuses_while_the_instance_is_restored_behind(
+    settings: Settings, tmp_path
+) -> None:
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import platform
+    from shelfhold.ops.errors import CodedRefusal
+
+    with instance(settings, tmp_path) as inst:
+        inst.configure(suwayomi=True)
+        with inst.engine.begin() as connection:  # a backup older than the disk
+            connection.execute(
+                sa.update(platform.instance).values(restore_generation=1, restore_epoch=1)
+            )
+        with pytest.raises(CodedRefusal) as refused:
+            _ops(inst).give_back_upstream()
+        assert refused.value.code == "instance.restored_behind"
+        assert inst.suwayomi.requests == []  # Suwayomi was not touched
+
+
 def test_pairing_proposes_from_what_suwayomi_follows(settings: Settings, tmp_path) -> None:
     from shelfhold.ops.errors import UnknownSubjectError
 

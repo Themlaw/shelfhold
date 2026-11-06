@@ -37,6 +37,7 @@ SPEC_WAITING_STATES = {
     "store_lost",
     "source_instance_changed",
     "tombstone_key_unknown",
+    "tombstone_lines_owed",
     "route_missing",
 }
 

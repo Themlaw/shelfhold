@@ -36,6 +36,8 @@ ENDPOINTS: Final = MappingProxyType(
             "POST", "/api/v1/reconcile/adopt-after-restore",
         ),
         "tombstone accept-lost-keyring": ("POST", "/api/v1/tombstones/accept-lost-keyring"),
+        "tombstone set-aside-journal": ("POST", "/api/v1/tombstones/set-aside-journal"),
+        "tombstone flush": ("POST", "/api/v1/tombstones/flush"),
     }
 )  # fmt: skip
 
@@ -59,6 +61,7 @@ M1A_STATES: Final = frozenset(
         WaitingState.LANGUAGE_UNKNOWN,
         WaitingState.RESTORED_BEHIND,
         WaitingState.TOMBSTONE_KEY_UNKNOWN,
+        WaitingState.TOMBSTONE_LINES_OWED,
         WaitingState.ROUTE_MISSING,
     }
 )

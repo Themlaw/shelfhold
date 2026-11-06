@@ -50,12 +50,27 @@ class FakeKeyring:
 
     kids: list[str] = field(default_factory=lambda: ["kid-lost"])
     waived: list[tuple[str, str]] = field(default_factory=list)
+    owed: list[str] = field(default_factory=list)  # roots that owe lines
+    aside: list[tuple[str, str | None]] = field(default_factory=list)
 
     def waiting(self) -> list[WaitingItem]:
         return [
             WaitingItem("tombstone_key_unknown", "tombstones", kid, "kid not in the keyring")
             for kid in self.kids
+        ] + [
+            WaitingItem("tombstone_lines_owed", "tombstones", root, "lines owed to a root")
+            for root in self.owed
         ]
+
+    def set_aside_journal(
+        self, *, principal: Principal, root_id: str | None = None
+    ) -> dict[str, str]:
+        self.aside.append((principal.credential.value, root_id))
+        return {"root": "tombstones.aside-20260101T000000Z"}
+
+    def flush_owed(self) -> list[str]:
+        self.owed = []
+        return []
 
     def accept_lost_keyring(self, *, confirmation: str, principal: Principal) -> list[str]:
         self.waived.append((confirmation, principal.credential.value))

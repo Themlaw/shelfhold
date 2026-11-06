@@ -61,7 +61,6 @@ SYSTEM_EMITTERS = frozenset(
         "staging_orphan_cleanup",  # EF-EXP-006, ENF-OPS-009
         "probe_file_cleanup",  # `.shelfhold-probe-*`, EF-EXP-054
         "trash_retention_purge",  # trash older than 30 days, ENF-OPS-009
-        "disk_guard_purge",  # EF-BIB-030 (M3), ENF-OPS-006
     }
 )
 

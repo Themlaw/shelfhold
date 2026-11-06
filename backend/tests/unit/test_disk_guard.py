@@ -69,7 +69,6 @@ def test_the_guard_refuses_writes_while_low_and_names_the_code() -> None:
     with pytest.raises(DiskLowError) as raised:
         guard.require_space()
     assert raised.value.code == "disk.low"
-    assert guard.triggered()
 
 
 @pytest.mark.req("ENF-OPS-006")

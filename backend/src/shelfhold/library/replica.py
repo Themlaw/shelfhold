@@ -32,10 +32,12 @@ __all__ = [
     "library_copies",
     "manifest_file_hashes",
     "median_unit_bytes",
+    "paths_under",
     "readable_unit_ids",
     "record_replica",
     "reference_content_hash",
     "relocate_destination_copy",
+    "relocate_root_paths",
     "rendered_file_hashes",
     "replica_copies",
     "replica_hashes",
@@ -143,6 +145,34 @@ def record_replica(
         )
     )
     return replica_id
+
+
+def paths_under(
+    connection: Connection, root_id: str, folder: str
+) -> list[tuple[str, int | None, str | None]]:
+    """`(rel_path, size, file_hash)` of the copies of a root that sit directly under `folder`."""
+    rows = connection.execute(
+        sa.select(replica_table.c.rel_path, replica_table.c.size, replica_table.c.file_hash).where(
+            replica_table.c.physical_root_id == root_id,
+            replica_table.c.rel_path.like(f"{folder}/%"),
+        )
+    ).all()
+    return [(p, size, h) for p, size, h in rows if p and "/" not in p[len(folder) + 1 :]]
+
+
+def relocate_root_paths(
+    connection: Connection, root_id: str, moves: Sequence[tuple[str, str]]
+) -> int:
+    """The copies of a root follow the files that were really moved on disk: `(old, new)` paths
+    relative to the root, one row each. Idempotent: a row already moved no longer matches."""
+    done = 0
+    for old, new in moves:
+        done += connection.execute(
+            sa.update(replica_table)
+            .where(replica_table.c.physical_root_id == root_id, replica_table.c.rel_path == old)
+            .values(rel_path=new)
+        ).rowcount
+    return done
 
 
 def forget_destination_copies(connection: Connection, export_item_id: str) -> None:

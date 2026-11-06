@@ -10,7 +10,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from shelfhold.headless import (
@@ -29,6 +29,7 @@ __all__ = ["build_headless_router"]
 
 _RISK = RESERVED_ACTIONS["admin_risk.accept"]
 _SECRET = RESERVED_ACTIONS["source.set_secret"]
+_PATH_MAP = reserved_action(RESERVED_ACTIONS["config.path_map"])
 
 
 class ConfigRow(BaseModel):
@@ -102,14 +103,15 @@ def build_headless_router(
     @router.patch("/config")
     def patch_config(
         body: ConfigPatch,
+        request: Request,
         principal: Principal = Depends(admin_only),  # noqa: B008
     ) -> ConfigOut:
         if SECRET_KEYS & body.values.keys():  # a channel URL is a secret: the CLI or the file
             raise ProblemError("credential_not_allowed")
-        if any(k == "public_url" or k.startswith(PATH_MAP_PREFIX) for k in body.values) and (
-            principal.credential is not Credential.SESSION
-        ):  # where links point and which folders are written: a session, never a key
-            raise ProblemError("credential_not_allowed")
+        if "public_url" in body.values and principal.credential is not Credential.SESSION:
+            raise ProblemError("credential_not_allowed")  # where links point: a session, no key
+        if any(k.startswith(PATH_MAP_PREFIX) for k in body.values):
+            _PATH_MAP(request)  # which folders are written: a reserved action, fresh session (P3)
         admin = get_admin()
         try:
             for key, value in body.values.items():

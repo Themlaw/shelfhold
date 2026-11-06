@@ -19,7 +19,7 @@ from sqlalchemy import Engine
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.ports import TargetEvents
-from shelfhold.export.application.roots import load_roots
+from shelfhold.export.application.roots import load_roots, open_fsops
 from shelfhold.export.application.target_state import load_health, target_write_guard
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import RootState
@@ -30,7 +30,6 @@ from shelfhold.export.targets.kavita.credentials import AdminKey, load_admin_key
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fetcher import GuardedFetcher, Network, Resolver
-from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.infrastructure.secrets import SecretVault, diagnostics
 from shelfhold.library.public import TombstoneRoot, TombstoneService
@@ -144,7 +143,7 @@ def open_adoption(
         engine, vault, network.integration_fetcher(url), target_id=row.id,
         base_url=url, events=events, clock=clock,
     )  # fmt: skip
-    fsops = Fsops.open(loaded.path_map, loaded.expected, frozen=loaded.restore_pending)
+    fsops = open_fsops(loaded)
     tombstones = TombstoneService(engine, keyring, fsops, bus)
     tombstones.replay(
         [

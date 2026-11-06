@@ -126,10 +126,6 @@ class DiskGuard:
     def low(self) -> tuple[str, ...]:
         return tuple(sorted(self._low))
 
-    def triggered(self) -> bool:
-        """The condition of the `disk_guard_purge` emitter: the guard is really in pause."""
-        return bool(self._low)
-
     def require_space(self) -> None:
         """For a write that adds data: refused while any volume is paused. The measure is at most
         `ttl_s` old, taken here and not by a job (no consumer may be running)."""

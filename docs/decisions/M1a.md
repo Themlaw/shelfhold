@@ -597,3 +597,58 @@ Seules A1, A7, A10 et A11 étaient citées ailleurs dans ce fichier ; le tableau
 2. **Sauts.** Pierre `series_binding` : jamais créée, `series.tombstoned_upstream` une fois (charge `count` : un événement n'a pas de texte). Jumelle adoptée non appariée avec un candidat de score >= 0,9 (`export.public.pending_pairing`, même score que `--pair-auto`) : sautée, comptée (`skipped_pending_pairing`), journalisée. Sous-source sans langue unique (`all`) : sautée (`skipped_language`), reprise au cycle suivant.
 3. **Pas d'étagère adulte** (plafond nul ou >= 18, destination active) : rien n'est créé, `series.awaiting_shelf` part une fois (nouveau code du catalogue, `fr.toml` porte la commande de sortie `shelf create`). Écart : ce n'est pas une valeur de `WaitingState` ni une ligne de `status` (la série n'existe pas en base) ; l'événement et la notification portent l'attente.
 4. **E2E.** Le filigrane étant le plus haut chapitre visible, les deux parcours lancent d'abord un cycle (`Journey.discover_series`, attend que des chapitres soient listés) puis publient en amont ; les deux `xfail` sont retirés.
+
+## L43 : réponses au contradicteur Opus du jalon
+
+Chaque objection est corrigée, ou reportée avec sa justification (section suivante).
+
+### Bloquants
+
+1. **AgeRating jamais posé.** Une série découverte reste non classée en base (invisible d'un profil enfant, EF-USR-015 : classer, c'est approuver), mais le fichier ne sort plus sans `AgeRating`. `comicinfo_data` (`export/application/rendering.py`) applique, pour une Œuvre non classée : `Adults Only 18+` sur une étagère adulte (plafond nul ou >= 18, seul cas de M1a, et le côté prudent quand aucune étagère n'est connue) ; `X18+` quand la sous-source Suwayomi est `isNsfw` (la découverte consigne alors une suggestion d'âge `sub_source`, valeur 18, drapeau X, jamais un classement) ; rien sous une étagère < 18+ explicite (rien de non classé n'y est exporté). Cela remplace la ligne « non classé → aucun `AgeRating` » d'EF-EXP-011 pour les étagères adultes : un `AgeRating` ne manque jamais. Goldens régénérés : les trois ComicInfo de `tests/golden/adopted_series/` gagnent la ligne `<AgeRating>Adults Only 18+</AgeRating>` et rien d'autre (série adoptée sans âge, étagère adulte) ; les goldens de l'échelle (`tests/golden/comicinfo/`) sont inchangés (ils testent l'écrivain, où « non classé » garde « aucune valeur »). `effective_age` et `series_age` ne sont pas branchés : ils ne portent que l'âge dérivé des tags Kavita, dont la poussée est M1b (EF-EXP-040) et M2 (EF-EXP-033) ; les brancher ici ajouterait une lecture Kavita au rendu. Tests : `test_discovery_age.py`.
+2. **Gel sans sortie, journal de pierres tombales illisible.** Un journal vide se lit comme absent (création puis arrêt avant l'en-tête). Pour un en-tête tronqué ou un fichier abîmé, l'action réservée `tombstone.set_aside_journal` (`shelfhold tombstone set-aside-journal [--root]`, `POST /api/v1/tombstones/set-aside-journal`, hôte seulement, jamais une clé, fraîcheur P3) renomme le journal en `tombstones.aside-<horodatage>` (rien n'est supprimé), puis le fait réécrire depuis la base : chaque ligne de la table est rescellée pour la racine et devient une ligne due, écrite dès que la racine accepte les écritures (le gel `restored_behind` les diffère, l'adoption les débloque). Elle est permise pendant le gel et ne vise que la racine de cette instance (identité de sentinelle vérifiée). Sortie ajoutée à `restored_behind` dans le catalogue. Message de `fr.toml` corrigé : `secrets import` n'existe pas (reste déclaré non servi, `UNSERVED`) ; les trois autres messages qui le citent (`warning_tombstone_kid_missing` et deux actions) restent à reprendre avec l'import du trousseau (M1b).
+3. **Lignes dues jamais rejouées à chaud.** `Composition.tombstones()` appelle `flush_pending` pour chaque racine montée qui doit des lignes, à chaque ouverture de contexte, et `ops.disk_check` (chaque minute) fait de même via `flush_owed_tombstones`. Le service rattache l'`Fsops` du moment (`use_disk`) : celui du premier appel pouvait rester gelé. Nouvel état d'attente `tombstone_lines_owed` (L36) : dans l'énumération, `status` (une ligne par racine), la commande de sortie `tombstone flush` (`POST /api/v1/tombstones/flush`, non réservée : elle ne fait que payer ce qui est dû), le scénario de `test_ops_exits.py` et l'entrée `tests/unit/test_ids_and_enums.py`. Sans événement propre (`WAITING_WITHOUT_EVENT`) : l'état se résout seul dès que la racine revient.
+
+### Mineurs
+
+4. `detach --restore-upstream` (`give_back_upstream`) refuse avec `instance.restored_behind` tant que la base est en retard : les relevés `upstream_snapshot` sont ceux d'une sauvegarde, Suwayomi n'est pas touché.
+5. L'entrée du cycle de suivi passe de `<racine>/.received/` à `<racine>/.shelfhold/received/` : réservée (`is_received_rel`, seule partie de la zone hôte ouverte aux opérations ordinaires d'`Fsops`, comme le miroir de provenance l'est en lecture) et exclue de Kavita (`**/.shelfhold/**`). Migration au démarrage, sous le bail, avant la résolution des intentions : `migrate_received_dirs` renomme chaque fichier dans sa racine (renommage confiné, sans remplacement : un nom pris reste où il est), met à jour `replica.rel_path`, puis retire l'ancien dossier vide. Répétable : les lignes `replica` sont réécrites à chaque démarrage, une exécution interrompue est terminée par la suivante.
+6. `PATCH /api/v1/config` sur `path_map.*` exige l'action réservée `config.path_map` (effet `REINITS_STORAGE` : quels dossiers sont écrits), donc session fraîche (P3) et jamais une clé ; `public_url` garde la règle « session seulement ».
+7. `disk_guard_purge` : l'émetteur est retiré (liste fermée `SYSTEM_EMITTERS`, périmètre, condition, paramètre `disk_guard` d'`Fsops`, `DiskGuard.triggered`). Rien ne l'appelait ; il reviendra en M3 avec la purge de la corbeille sous garde disque (EF-BIB-030), avec son propre test et son propre cas dans la liste fermée.
+8. `intents.prune` (rétention de 30 jours des intentions closes, tous les jours à 03 h 41) et `target.key_expiry` (J-14/J-1 de la clé Kavita relue, tous les jours à 06 h 23) sont inscrits à l'ordonnanceur ; un échec d'une cible n'arrête pas les autres. Test par `create_app` (`test_l41_wiring.py`).
+9. Dépôt public : l'adresse privée de deux tests du Fetcher est remplacée par `10.255.0.7` ; aucune autre adresse du dépôt n'est celle d'un réseau réel (recherche `git grep` sur les plages privées, noms d'hôtes compris).
+
+### Simplifications faites
+
+10. Une seule fabrique `open_fsops(loaded, *, write_gate, stop_gate)` avec le gel de restauration, dans `export/application/roots.py` (à côté de `LoadedRoots`), réexportée par `composition.py` : `export.application` ne peut pas importer la composition (contrat d'import). Remplace les assemblages de `cli/status.py`, `cli/reconcile.py`, `kavita/wiring.py`, `export/application/wiring.py`, `ops/wiring.py`, `ops/keyring.py` et `runtime.py`.
+13. Code mort retiré (aucun appelant hors tests) : `guarded_kavita_client` (le test pose la garde lui-même), `SettingsStore.set` (aide de test dans `tests/settings_env.py`), `JobLedger.active_dedupe_keys`, `KavitaDestination.inventory_calls|ensure_library_call|supported_versions` (le protocole du SDK `ExportTarget` les déclare encore : voir 14).
+
+### Contradicteur : objections reportées
+
+| Réf. | Objection | Pourquoi pas maintenant | Reprise |
+| --- | --- | --- | --- |
+| 11 | Un seul gel au lieu de trois (`restored_behind` de la base, de `Fsops` et du runtime) | Les trois portent trois moments (démarrage, écriture, tâche en cours) ; les fusionner touche chaque chemin d'écriture du jalon et le correctif des bloquants 2 et 3 y a besoin des trois niveaux. À refaire avec les racines multiples, pas avant. | Plan M1b, lot à inscrire : racines multiples (`root takeover`, `root reinit`) |
+| 12 | Le SQL de `headless/admin` écrit à la main | Il est couvert par les tests de configuration et par le fichier déclaratif ; le réécrire par les tables du schéma est un refactor sans effet visible, risqué la veille de la release 0.2. | Plan M1b, lot à inscrire : « configuration par fichier déclaratif » (EF-INT-024, suite) |
+| 14 | Le SDK `ExportTarget` : protocole à large surface, un seul adaptateur | Le contrat est publié (MIT) : le réduire casse la promesse de compatibilité ; il se décide avec le second adaptateur de destination. | Plan M1b, lot à inscrire : « second transport / contrat `ExportTarget` v1 » |
+| 15 | Environ 690 lignes réservées aux tests (`testonly`) | Ces points d'entrée servent les bancs et les E2E ; les retirer oblige à les reconstruire dans les tests. À traiter avec la réorganisation des bancs. | Plan M1b, lot à inscrire : « bancs et fixtures partagés » |
+
+## L43 : corrections issues de la revue de la PR #69
+
+- **EF-EXP-011, écart à présenter au porteur.** La spec dit « non classé, aucun AgeRating ». Le lot
+  écrit pourtant `Adults Only 18+` (ou `X18+`) pour une oeuvre non classée sur une étagère adulte :
+  un fichier sans AgeRating est lu comme tout public par certains lecteurs. Un X venu d'un
+  ComicInfo adopté, de `edition.age_x` ou d'un sous-source `isNsfw` donne `X18+` ; la valeur de
+  l'Edition (EF-BIB-037) compte avec celle de l'oeuvre, la plus restrictive gagne. L'oeuvre reste non
+  classée en base (invisible d'un profil enfant). Correction de spec proposée, à valider.
+- **Écriture des lignes dues.** Elle ne se fait plus dans `read_context`. Toute écriture de pierre
+  tombale reste soumise à la vérification du bail (sinon un processus au bail périmé réécrirait le
+  sentinel d'après une lecture dépassée et le ferait reculer, EF-INT-026). L'ordre de
+  `WriteSessions.open` devient : prendre le bail, payer les lignes dues, puis avancer la génération
+  (c'est `stamp_sentinel` qui refuse tant que des lignes sont dues, pas le bail). Pendant
+  `restored_behind`, ni écriture ni suggestion de `tombstone flush`. La migration de l'inbox au
+  démarrage saute les racines qui doivent des lignes (EF-BIB-052) et ne répare une ligne `replica`
+  que si la taille et l'empreinte du fichier correspondent.
+- **Cible Kavita.** `inventory_calls`, `ensure_library_call` et `supported_versions` sont rétablis :
+  le protocole `ExportTarget` du SDK est publié, on ne le réduit pas sans version majeure.
+- **Mise de côté du journal.** Les lignes authentiques du fichier mis de côté sont fusionnées dans
+  la table avant la réécriture ; si une ligne porte une clé enregistrée mais absente du trousseau, la
+  commande est refusée avec la marche à suivre.

@@ -26,6 +26,7 @@ class WaitingState(StrEnum):
     LANGUAGE_UNKNOWN = "language_unknown"
     RESTORED_BEHIND = "restored_behind"
     TOMBSTONE_KEY_UNKNOWN = "tombstone_key_unknown"
+    TOMBSTONE_LINES_OWED = "tombstone_lines_owed"
     ROUTE_MISSING = "route_missing"
     # M1b
     RATING_PENDING = "rating_pending"

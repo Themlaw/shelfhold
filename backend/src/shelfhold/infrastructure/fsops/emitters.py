@@ -59,7 +59,6 @@ EMITTER_PERIMETERS: Mapping[str, Perimeter] = MappingProxyType(
         "staging_orphan_cleanup": Perimeter(below=STAGING_DIR),
         "probe_file_cleanup": Perimeter(name=PROBE_NAME, tree=False, needs_file=True),
         "trash_retention_purge": Perimeter(below=RECYCLE_DIR),
-        "disk_guard_purge": Perimeter(below=RECYCLE_DIR),
     }
 )
 

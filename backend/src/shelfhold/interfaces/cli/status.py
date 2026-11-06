@@ -7,6 +7,7 @@ import json
 
 import sqlalchemy as sa
 
+from shelfhold.composition import open_fsops
 from shelfhold.config import ResolvedSettings
 from shelfhold.export.application.restore import RestoreGuard
 from shelfhold.export.application.roots import load_roots
@@ -18,7 +19,6 @@ from shelfhold.i18n import t
 from shelfhold.identity.public import IDENTITY_HEADER_AUDIT, local_auth
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.observability.network_fs import REFUSED_KINDS, filesystem_kind
 from shelfhold.infrastructure.schema import platform
@@ -66,7 +66,7 @@ def _restore_status(resolved: ResolvedSettings) -> RestoreStatus | None:
             if not paths:
                 return None
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = Fsops.open(loaded.path_map, loaded.expected, frozen=loaded.restore_pending)
+        fsops = open_fsops(loaded)
         return RestoreGuard(
             engine, fsops, clock=SystemClock(), bus=operating_bus(SystemClock())
         ).assess()
