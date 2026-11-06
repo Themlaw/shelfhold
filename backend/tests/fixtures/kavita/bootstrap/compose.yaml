@@ -1,0 +1,21 @@
+# Real Kavita for the nightly (L40): the official image, from its public registry, on an
+# internal-only network (no route out, no published port). The tag is chosen by the workflow
+# (KAVITA_IMAGE). Configuration lives in a named volume removed with the project; the library is
+# a read-only bind of a directory the tests fill with synthetic CBZ. Driven by tests/nightly/.
+services:
+  kavita:
+    image: ${KAVITA_IMAGE:?set KAVITA_IMAGE to the Kavita image under test}
+    restart: "no"
+    networks: [nightly]
+    environment:
+      TZ: Etc/UTC
+    volumes:
+      - config:/kavita/config
+      - ${KAVITA_LIBRARY:?set KAVITA_LIBRARY to a directory}:/library:ro
+
+networks:
+  nightly:
+    internal: true
+
+volumes:
+  config:

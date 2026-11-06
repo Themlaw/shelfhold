@@ -47,6 +47,11 @@ path = "e2e/tests/test_image_smoke.py"
 tests = ["test_root_serves_the_spa_index"]
 reason = "fumée du SPA servi par l'image (spike S2), aucune exigence propre"
 
+[[exception]]
+path = "backend/tests/unit/test_nightly_workflow.py"
+tests = ["test_nightly_runs_kavita_on_the_line_the_pinned_version_and_the_latest"]
+reason = "contrôle du texte de la matrice du nightly (trois lignes, image épinglée par digest) : aucune exigence propre, ENF-COMP-001 n'est pas démontrée par un texte"
+
 # Requirements honestly declared PARTIELLE: some tests exist, the full requirement is not
 # yet verifiable. Each entry names the milestone that completes it.
 [[partial]]
@@ -60,6 +65,21 @@ reason = "porte P0 et règles d'arrêt documentées (portes.md) et relevé de d�
 path = "backend/tests/contract/suwayomi/test_suwayomi_contract.py"
 workflow = "contract.yml"
 reason = "banc de contrat contre un Suwayomi réel épinglé (Docker, spike S5) : workflow_dispatch et hebdomadaire, non requis par décision M0 5"
+
+[[out_of_required_ci]]
+path = "backend/tests/nightly/test_kavita_nightly.py"
+workflow = "nightly.yml"
+reason = "Kavita officiel réel (ligne 0.9.1, version épinglée, dernière) sur réseau interne : planifié et manuel, jamais requis pour fusionner (L40)"
+
+[[out_of_required_ci]]
+path = "backend/tests/nightly/test_suwayomi_synthetic_extension.py"
+workflow = "nightly.yml"
+reason = "Suwayomi réel épinglé avec l'extension synthétique construite dans le job, réseau sortant coupé : planifié et manuel, jamais requis pour fusionner (ENF-LEG-013, L40)"
+
+[[out_of_required_ci]]
+path = "e2e/tests/test_m1a_journey.py"
+workflow = "image.yml"
+reason = "deux parcours (premier chapitre dans Kavita, détachement) attendent le câblage de production du suivi, de l'export et de la commande de détachement (xfail strict, lot L41) ; les autres tests du fichier tournent dans la CI requise"
 
 # Aspects of multi-part requirements not yet testable at M0, with the milestone that owns them.
 [[deferred]]

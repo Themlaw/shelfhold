@@ -69,7 +69,7 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers -m 'not contract'"
+addopts = "-ra --strict-markers -m 'not contract and not nightly'"
 markers = [
     "req(*ids): requirement IDs (EF-/ENF-) the test verifies; see tools/traceability.py",
     "property: Hypothesis property tests (tests/property); marker applied from the directory",
@@ -77,6 +77,7 @@ markers = [
     "faults: fault-injection and crash tests (tests/faults); marker applied from the directory",
     "bench: culpable benches with a threshold from the spec (tests/bench); marker applied from the directory",
     "contract: contract bench against a real pinned Suwayomi (needs Docker; run with -m contract)",
+    "nightly: real Kavita and Suwayomi with the synthetic extension (needs Docker; run with -m nightly)",
 ]
 
 [tool.coverage.run]

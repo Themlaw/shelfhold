@@ -14,5 +14,5 @@ seul le contrat d'API réduit est versionné ici.
 
 `pinned.json` et `latest.json` sont aujourd'hui identiques : la version épinglée est la dernière
 stable. Le jour où elles divergent, `latest.json` est remplacé par le nouveau tag (la dérive
-éventuelle ouvre une issue par le nightly, non bloquant). Le champ `info.version` du fichier du
+éventuelle fait échouer le job nightly, qui n'ouvre aucune issue : l'échec se lit dans l'onglet Actions, non bloquant pour les PR). Le minimum `0.9.1.0` n'est pas testé sur image réelle : Docker Hub ne publie que le tag `0.9.1` (= v0.9.1.4) ; les trois lignes de la matrice du nightly (tag `0.9.1`, digest, `latest`) sont aujourd'hui la même image. Le champ `info.version` du fichier du
 tag `v0.9.1.4` dit `0.9.1.1` : Kavita ne le met pas à jour à chaque tag, le tag fait foi.

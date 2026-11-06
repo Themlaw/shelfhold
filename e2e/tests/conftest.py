@@ -10,8 +10,12 @@ import subprocess
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from journey import Journey
 
 COMPOSE_FILE = Path(__file__).resolve().parents[1] / "compose.yaml"
 
@@ -57,3 +61,24 @@ def wait_for(predicate: Callable[[], bool], seconds: float = 20.0) -> bool:
             return True
         time.sleep(0.5)
     return False
+
+
+@pytest.fixture
+def journey() -> Iterator["Journey"]:
+    """A fresh journey stack per test: image under test + simulated Kavita and Suwayomi."""
+    from journey import Journey
+
+    if not os.environ.get("SHELFHOLD_IMAGE"):
+        pytest.skip("SHELFHOLD_IMAGE is not set") if not os.environ.get("CI") else pytest.fail(
+            "SHELFHOLD_IMAGE is not set"
+        )
+    if shutil.which("docker") is None:
+        pytest.skip("docker is not available")
+    stack = Journey()
+    stack.compose("down", "-v", "-t", "1", check=False)
+    try:
+        stack.compose("up", "--wait", "-d")
+        yield stack
+    finally:
+        print(stack.compose("logs", "--no-color", check=False).stdout)
+        stack.compose("down", "-v", "-t", "1", check=False)

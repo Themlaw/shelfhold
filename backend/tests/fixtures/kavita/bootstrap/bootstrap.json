@@ -1,0 +1,13 @@
+{
+  "_comment": "First-run set-up of a throwaway Kavita: the account is created through the API (first user becomes the administrator); nothing is edited by hand. Values are synthetic and live as long as the job.",
+  "admin": {
+    "username": "nightly-admin",
+    "password": "nightly-synthetic-password-0040",
+    "email": "nightly@example.org"
+  },
+  "key_name": "shelfhold-nightly",
+  "key_days": 7,
+  "library_root": "/library",
+  "ready_timeout_s": 240,
+  "scan_timeout_s": 120
+}

@@ -224,7 +224,8 @@ def test_suwayomi_schema_mismatch_pauses_without_counting() -> None:
         report = bench.run()
         assert report.paused == "schema"
         assert bench.rows("SELECT * FROM source_failure") == []
-        assert len(bench.events("source.broken")) == 1
+        assert bench.events("source.broken") == []  # not an outage: the service answers
+        assert len(bench.events("source.version_unsupported")) == 1
         assert bench.binding()["active"]  # nothing deactivated
 
 

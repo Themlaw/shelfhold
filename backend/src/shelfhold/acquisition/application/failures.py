@@ -23,7 +23,7 @@ from shelfhold.sdk.source import SourceChanged
 _PAUSE_EVENTS = {
     "auth": "source.auth_expired",
     "version": "source.version_unsupported",
-    "schema": "source.broken",
+    "schema": "source.version_unsupported",  # the upstream schema moved: a version problem
 }
 
 

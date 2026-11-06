@@ -1,0 +1,60 @@
+# Journey overlay (EF-INT-024, ENF-OPS-017): used with compose.yaml, `-f compose.yaml -f journey.yaml`.
+# Adds the two simulated servers (the image under test also carries the Python they need; the
+# fakes of backend/tests are mounted read-only, nothing is built or pulled) and the library volume
+# that Shelfhold writes and the simulated Kavita reads. Same network namespace as Shelfhold, so
+# the guard of the Fetcher meets the same situation as in production: a declared LAN address.
+name: shelfhold-e2e-journey
+
+x-fake: &fake
+  image: ${SHELFHOLD_IMAGE:?}
+  user: "1000:1000"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  network_mode: service:egress-watch
+  environment:
+    PYTHONPATH: /fakes:/pkg
+    PYTHONDONTWRITEBYTECODE: "1"
+  depends_on:
+    egress-watch: { condition: service_healthy }
+  tmpfs: ["/tmp"]
+
+services:
+  library-init:
+    image: ${SHELFHOLD_IMAGE:?}
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    command: ["sh", "-c", "chown 1000:1000 /library"]
+    restart: "no"
+    volumes:
+      - library:/library
+    network_mode: none
+
+  fake-kavita:
+    <<: *fake
+    command: ["python", "/fakes/kavita/serve.py"]
+    volumes:
+      - ./fakes:/fakes:ro
+      - ../backend/tests:/pkg/tests:ro
+      - library:/library:ro
+
+  fake-suwayomi:
+    <<: *fake
+    command: ["python", "/fakes/suwayomi/serve.py"]
+    volumes:
+      - ./fakes:/fakes:ro
+      - ../backend/tests:/pkg/tests:ro
+
+  shelfhold:
+    depends_on:
+      library-init: { condition: service_completed_successfully }
+      fake-kavita: { condition: service_started }
+      fake-suwayomi: { condition: service_started }
+    volumes:
+      - library:/library
+    stop_grace_period: 30s
+
+volumes:
+  library:
