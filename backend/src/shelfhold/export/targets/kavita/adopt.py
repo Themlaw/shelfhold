@@ -13,6 +13,7 @@ number of an adopted file here and the collision checks of the planner afterward
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import posixpath
@@ -26,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Final
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
+from shelfhold.catalog.public import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.export.application.export_items import add_coverage
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.naming import (
@@ -635,10 +637,18 @@ class Adopter:
                 sort_title=(item.frozen_sort or item.frozen_series).casefold(),
             )
         )
+        lang, lang_norm_by = UNKNOWN_LANGUAGE, None
+        if item.frozen_language:
+            # Kavita's language goes through the same normalizer as any Edition key; one it
+            # refuses stays in `lang_raw` and the placeholder stands in the key
+            with contextlib.suppress(LanguageError):
+                lang = str(edition_key_lang(item.frozen_language))
+                lang_norm_by = LANG_NORMALIZER_ID
         connection.execute(
             sa.insert(catalog.edition).values(
-                id=edition_id, work_id=work_id, lang=item.frozen_language or UNKNOWN_LANGUAGE,
-                translation_type="official", media="images", shelf_id=ctx.shelf_id,
+                id=edition_id, work_id=work_id, lang=lang, lang_raw=item.frozen_language,
+                lang_norm_by=lang_norm_by, translation_type="official", media="images",
+                shelf_id=ctx.shelf_id,
             )
         )  # fmt: skip
         return edition_id

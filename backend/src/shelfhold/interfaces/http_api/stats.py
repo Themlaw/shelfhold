@@ -40,6 +40,7 @@ class StatsOut(BaseModel):
     human_interventions: HumanInterventions
     units_exported: int
     median_detection_to_visible_s: int | None
+    arrivals_pending: int
     guards_triggered: GuardsTriggered
 
 

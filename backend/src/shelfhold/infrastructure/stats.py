@@ -1,8 +1,9 @@
 """Local value indicators (EF-INT-025): computed on the instance, from existing tables only.
 
-`stats --since 30d` and `GET /api/v1/stats` read the same figures. Nothing is stored (no view,
-no table, no migration) and nothing leaves the instance: the module opens no connection but the
-database's (ENF-PRIV-001). The window is the last `since_days` days up to `now`.
+`stats --since 30d` and `GET /api/v1/stats` read the same figures. Nothing is stored for them
+(no view, no table: the arrival time is `export_record.resolved_at`, set by the arrival polling)
+and nothing leaves the instance: the module opens no connection but the database's
+(ENF-PRIV-001). The window is the last `since_days` days up to `now`.
 """
 
 import re
@@ -22,6 +23,7 @@ _SINCE = re.compile(r"^([1-9][0-9]{0,3})d$")
 # Rows that count as an exported Unit, and the one that means "visible in Kavita": a scan found it.
 EXPORTED_STATES = ("written", "scanned", "resolved")
 VISIBLE_STATE = "resolved"
+AWAITED_STATES = ("written", "scanned")  # waiting for the arrival polling to see them
 SENTINEL_EVENTS = ("mount.sentinel_missing",)
 FOREIGN_WRITER_EVENTS = ("target.foreign_writer_detected",)
 _WAITING_EVENTS = tuple(sorted(set(WAITING_STATE_EVENT.values())))
@@ -45,6 +47,7 @@ class Stats:
     human_interventions: dict[str, int]
     units_exported: int
     median_detection_to_visible_s: int | None
+    arrivals_pending: int  # written, not yet seen in the destination's index
     guards_triggered: dict[str, int]
 
     def as_dict(self) -> dict[str, object]:
@@ -61,12 +64,13 @@ def _events(connection: sa.Connection, types: tuple[str, ...], since: datetime) 
 
 
 def _median_delay(connection: sa.Connection, since: datetime) -> int | None:
-    """Detection (first time the Variant was seen) to visibility (the scan found the file), in
-    seconds. The median is taken by the database: one or two rows come back, never the set."""
+    """Detection (first time the Variant was seen) to visibility (`resolved_at`: the arrival
+    polling found the file in Kavita), in seconds. The median is taken by the database: one or two
+    rows come back, never the set."""
     record = export.export_record
     delay = sa.func.round(
         (
-            sa.func.julianday(record.c.exported_at)
+            sa.func.julianday(record.c.resolved_at)
             - sa.func.julianday(catalog.unit_variant.c.first_seen_at)
         )
         * 86400.0
@@ -78,7 +82,7 @@ def _median_delay(connection: sa.Connection, since: datetime) -> int | None:
             .join(storage.content, storage.content.c.id == export.export_item.c.content_id)
             .join(catalog.unit_variant, catalog.unit_variant.c.id == storage.content.c.variant_id)
         )
-        .where(record.c.state == VISIBLE_STATE, record.c.exported_at >= since)
+        .where(record.c.state == VISIBLE_STATE, record.c.resolved_at >= since)
         .subquery()
     )
     count = int(connection.execute(sa.select(sa.func.count()).select_from(joined)).scalar_one())
@@ -113,6 +117,9 @@ def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
             )
         ).scalar_one()
         median = _median_delay(connection, since)
+        pending = connection.execute(
+            sa.select(sa.func.count()).where(record.c.state.in_(AWAITED_STATES))
+        ).scalar_one()
         return Stats(
             since_days=since_days,
             human_interventions={
@@ -121,6 +128,7 @@ def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
             },
             units_exported=int(exported),
             median_detection_to_visible_s=median,
+            arrivals_pending=int(pending),
             guards_triggered={
                 "sentinel": _events(connection, SENTINEL_EVENTS, since),
                 "foreign_writer": _events(connection, FOREIGN_WRITER_EVENTS, since),

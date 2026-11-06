@@ -147,7 +147,12 @@ class ArrivalPoller:
                 connection.execute(
                     sa.update(t)
                     .where(*where)
-                    .values(state="resolved", remote_ref=str(series_id), error_code=None)
+                    .values(
+                        state="resolved",
+                        remote_ref=str(series_id),
+                        error_code=None,
+                        resolved_at=self._clock.now(),  # the moment the scan was seen to hold it
+                    )
                 )
                 report.indexed.append(record.rel_path)
             elif step is Step.RESCAN:

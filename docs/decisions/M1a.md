@@ -652,3 +652,16 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
 - **Mise de côté du journal.** Les lignes authentiques du fichier mis de côté sont fusionnées dans
   la table avant la réécriture ; si une ligne porte une clé enregistrée mais absente du trousseau, la
   commande est refusée avec la marche à suivre.
+
+## L46 — versions des normaliseurs et heure d'arrivée (migration 0012)
+
+- **Migration 0012** (jeton du lot) : `edition.lang_norm_by` (`lang@1`), `unit_variant.remote_unit_id_norm_by`
+  (`remote_unit_id@1`) et `export_record.resolved_at`. Les lignes existantes sont remplies : toute langue
+  stockée vient de `lang@1`, tout identifiant est gardé tel que reçu, et un enregistrement déjà `resolved`
+  prend son heure d'export comme heure d'arrivée. M1b L01 devient 0013.
+- **`remote_unit_id@1`** est l'identité : l'identifiant amont n'est jamais réécrit (EF-BIB-050). Il est
+  ajouté à `CITABLE_NORMALIZERS`. Le normaliseur stable propre à Suwayomi arrive avec L48.
+- **`stats`** : le délai médian détection vers visible Kavita se mesure jusqu'à `resolved_at`, posé par le
+  polling d'arrivée au moment où le fichier est vu dans l'index, et non plus jusqu'à l'heure d'écriture.
+  Les tests passent par le cycle de suivi, le pipeline d'export, le polling contre le faux Kavita, puis
+  `shelfhold stats` ; plus aucune ligne d'export n'est écrite à la main.

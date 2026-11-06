@@ -585,6 +585,10 @@
       },
       "StatsOut": {
         "properties": {
+          "arrivals_pending": {
+            "title": "Arrivals Pending",
+            "type": "integer"
+          },
           "guards_triggered": {
             "$ref": "#/components/schemas/GuardsTriggered"
           },
@@ -616,6 +620,7 @@
           "human_interventions",
           "units_exported",
           "median_detection_to_visible_s",
+          "arrivals_pending",
           "guards_triggered"
         ],
         "title": "StatsOut",

@@ -370,6 +370,10 @@ export type ShelfOut = {
  * StatsOut
  */
 export type StatsOut = {
+    /**
+     * Arrivals Pending
+     */
+    arrivals_pending: number;
     guards_triggered: GuardsTriggered;
     human_interventions: HumanInterventions;
     /**

@@ -243,6 +243,7 @@ header = "Indicateurs des {days} derniers jours (calculés sur cette instance, a
 waiting_states = "Interventions humaines, états d'attente : {count}"
 replays = "Interventions humaines, rejeux « À vérifier » : {count}"
 units_exported = "Unités exportées : {count}"
+arrivals_pending = "Arrivées en attente dans Kavita : {count}"
 median_delay = "Délai médian entre détection et visibilité dans Kavita (secondes) : {value}"
 guards = "Gardes déclenchées : sentinelle {sentinel}, autre écrivain {writer}"
 
