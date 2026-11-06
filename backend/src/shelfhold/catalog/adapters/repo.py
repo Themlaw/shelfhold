@@ -194,7 +194,8 @@ class SqlUnitStore:
         v = catalog.unit_variant.c
         row = self._c.execute(
             sa.select(v.id, v.unit_id, v.team_id, v.revision).where(
-                v.source_binding_id == binding_id, v.remote_unit_id == remote_unit_id
+                v.source_binding_id == binding_id,
+                v.remote_unit_id == normalize_remote_unit_id(remote_unit_id),
             )
         ).first()
         return None if row is None else StoredVariant(*row)

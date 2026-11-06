@@ -52,6 +52,10 @@ class CatalogService:
     def ensure_edition(self, spec: EditionSpec) -> EditionRef:
         return editions.ensure_edition(self._editions, spec)
 
+    @staticmethod
+    def translation_type_for(nature: str) -> str:
+        return editions.translation_type_for(nature)
+
     def edition_for_translation(
         self,
         spec: EditionSpec,

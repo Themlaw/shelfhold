@@ -20,6 +20,7 @@ from shelfhold.catalog.application.dto import (
     TeamRef,
     UnitView,
 )
+from shelfhold.catalog.application.editions import translation_type_for
 from shelfhold.catalog.application.service import CatalogService
 from shelfhold.catalog.domain.identity import (
     TEXT_VERSION_LABELS,
@@ -140,4 +141,5 @@ __all__ = [
     "place_key",
     "place_parts",
     "translation_discriminant",
+    "translation_type_for",
 ]
