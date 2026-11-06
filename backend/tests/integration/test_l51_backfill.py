@@ -1,6 +1,7 @@
 """L51 (EF-EXP-053): `backfill --gaps|--all` and its route show an estimate first and, above 100
 Units or 5 GiB, start only on a confirmation that carries the figures the caller saw."""
 
+import json
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -9,7 +10,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
-from shelfhold.infrastructure.schema import acquisition
+from shelfhold.infrastructure.schema import acquisition, platform
 from tests.auth_env import run_cli
 from tests.integration.test_schema_catalog import add_unit, add_variant
 from tests.l50_env import Seeded, Series
@@ -129,3 +130,53 @@ def test_a_small_backfill_needs_no_confirmation(
         assert started.status_code == 200 and started.json()["needs_confirmation"] is False
         missing = run_cli(monkeypatch, settings, "backfill", "--all", "01JNOSUCHEDITION000000000A")
         assert missing != 0
+
+
+def test_inflated_confirmation_is_refused_and_the_ceiling_is_the_estimate(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """(review) A confirmation larger than the estimate is not a confirmation of what was shown:
+    it would be stored as the ceiling and let the series grow without any further question."""
+    with live(monkeypatch, settings, tmp_path, chapters=(), seed=followed_with(UNITS)) as api:
+        edition = api.series.edition_id
+        url = f"/api/v1/editions/{edition}/backfill"
+        figures = api.client.get(url, params={"mode": "all"}).json()
+
+        for units, size in (
+            (10**9, figures["size_bytes"]),
+            (UNITS, 10**15),
+            (UNITS + 1, figures["size_bytes"]),
+        ):
+            inflated = api.api.post(
+                url, json={"mode": "all", "confirm_units": units, "confirm_bytes": size}
+            )
+            assert inflated.status_code == 409, inflated.text
+            assert inflated.json()["estimate"]["units"] == UNITS
+        capsys.readouterr()
+        assert (
+            run_cli(
+                monkeypatch, settings, "backfill", "--all", edition,
+                "--confirm-units", str(10**9), "--confirm-bytes", str(10**15),
+            )
+            == 3
+        )  # fmt: skip
+        assert mode_of(api.env, api.series) == "none"
+        with api.env.inst.engine.connect() as connection:
+            keys = connection.execute(sa.select(platform.app_setting.c.key)).scalars().all()
+            assert not [k for k in keys if "backfill" in k]  # no ceiling was stored
+
+        started = api.api.post(
+            url,
+            json={"mode": "all", "confirm_units": UNITS, "confirm_bytes": figures["size_bytes"]},
+        )
+        assert started.status_code == 200
+        with api.env.inst.engine.connect() as connection:
+            stored = connection.execute(
+                sa.select(platform.app_setting.c.value).where(
+                    platform.app_setting.c.key.like("%backfill%")
+                )
+            ).scalar_one()
+        assert json.loads(stored) == {"units": UNITS, "bytes": figures["size_bytes"]}

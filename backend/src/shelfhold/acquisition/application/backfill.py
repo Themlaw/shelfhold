@@ -97,22 +97,20 @@ class Backfill:
         confirm_units: int | None = None,
         confirm_bytes: int | None = None,
     ) -> BackfillEstimate:
-        """The confirmation is the figures the user saw: if the estimate taken now is above
-        them (the series changed since), it is refused and the fresh estimate is shown again.
-        The accepted ceiling is kept on the series; the cycle stops the backfill if later
+        """The confirmation is the figures the user saw, and they must equal the estimate taken
+        now: if the series changed since (up or down), or the figures were made up, it is refused
+        and the fresh estimate is shown again. The accepted ceiling is that estimate, kept on
+        the series; the cycle stops the backfill if later
         arrivals would go beyond it."""
         estimate = self.estimate(edition_id, mode)
         if estimate.needs_confirmation and (
             confirm_units is None
             or confirm_bytes is None
-            or estimate.units > confirm_units
-            or estimate.size_bytes > confirm_bytes
-        ):
+            or estimate.units != confirm_units
+            or estimate.size_bytes != confirm_bytes
+        ):  # exactly what was shown: a larger figure would be a blank cheque
             raise BackfillConfirmationRequired(estimate)
-        ceiling = (
-            max(CONFIRM_UNITS, confirm_units or 0),
-            max(CONFIRM_BYTES, confirm_bytes or 0),
-        )
+        ceiling = (estimate.units, estimate.size_bytes)  # never the client's figures
         follow = acquisition.series_follow
         with self._engine.begin() as connection:
             changed = connection.execute(
