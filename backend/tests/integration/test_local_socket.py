@@ -301,3 +301,52 @@ def test_binding_does_not_depend_on_a_descriptor_number_when_the_path_is_short(
     finally:
         listener.close()
         shutil.rmtree(short, ignore_errors=True)
+
+
+def test_a_long_path_keeps_its_staging_descriptor_until_asyncio_has_the_socket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A path too long for `sun_path` binds as `/proc/self/fd/N/s`, and asyncio stats that name
+    again when it registers the socket. Closing N before that let another thread's file take the
+    number (`ENOTDIR`, the flaky `run_cli backfill` of the L51 tests under load). Here the
+    number is taken by a regular file at that very moment, as a busy process would."""
+    import asyncio
+
+    from shelfhold.infrastructure.local_socket.server import LocalSocketServer
+
+    data = tmp_path
+    for part in ("a" * 40, "b" * 40):
+        data = data / part
+    data.mkdir(parents=True)
+    taken: list[int] = []
+    real = asyncio.start_unix_server
+
+    async def crowded(
+        callback: object, *args: object, sock: socket.socket, **kwargs: object
+    ) -> object:
+        wanted = int(sock.getsockname().split("/")[4])
+        spare = []
+        while True:  # open files until one has the number the socket was bound under, if free
+            fd = os.open(os.devnull, os.O_RDONLY)
+            spare.append(fd)
+            taken.append(fd)
+            if fd >= wanted:
+                break
+        try:
+            return await real(callback, *args, sock=sock, **kwargs)  # type: ignore[arg-type]
+        finally:
+            for fd in spare:
+                os.close(fd)
+
+    monkeypatch.setattr(asyncio, "start_unix_server", crowded)
+
+    async def run() -> None:
+        async def handler(*_args: object) -> bytes:
+            return b""
+
+        server = LocalSocketServer(data / "shelfhold.sock", handler)  # type: ignore[arg-type]
+        await server.start()
+        await server.stop()
+
+    asyncio.run(run())
+    assert taken
