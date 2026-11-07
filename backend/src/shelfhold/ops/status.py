@@ -312,3 +312,31 @@ def known_bad_report(connection: Connection, today: date) -> dict[str, object]:
         ],
         "targets": targets,
     }
+
+
+def service_url_report(connection: Connection) -> list[dict[str, object]]:
+    """A service address (Suwayomi) the URL rule refuses now: no request leaves for it, and the
+    administrator is told which address and why (ENF-SEC-001). Fixed by `source add suwayomi`."""
+    from shelfhold.headless.urls import service_url_problem
+
+    found: list[dict[str, object]] = []
+    for settings in connection.execute(
+        sa.select(acquisition.source_config.c.settings).where(
+            acquisition.source_config.c.plugin_id == "suwayomi"
+        )
+    ).scalars():
+        url = (settings or {}).get("base_url")
+        problem = service_url_problem(str(url)) if url else None
+        if problem is not None:
+            found.append(
+                {"service": "suwayomi", "url": _without_userinfo(str(url)), "reason": problem}
+            )
+    return found
+
+
+def _without_userinfo(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    return f"{parts.scheme}://{host}{':' + str(parts.port) if parts.port else ''}{parts.path}"

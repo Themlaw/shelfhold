@@ -410,3 +410,83 @@ def test_name_taken_by_a_foreign_kavita_series_waits_and_is_refused_by_the_exit(
         assert b.cli("edition", "set-series-name", series.edition_id, "Alpha (mine)") == 0
         b.export()
         assert (b.env.inst.library / "Kavita" / "Alpha (mine)").is_dir()
+
+
+# -- ENF-SEC-001: the URL rule resolves names and sees through transition addresses (review) --------
+
+
+def _resolves(monkeypatch: pytest.MonkeyPatch, table: dict[str, list[str]]) -> None:
+    import shelfhold.headless.urls as urls
+
+    monkeypatch.setattr(urls, "_resolver", lambda: lambda host: table.get(host, []))
+
+
+@pytest.mark.req("ENF-SEC-001")
+@pytest.mark.parametrize("name", ["suwayomi.lan", "suwayomi", "box.local"])
+def test_http_to_a_local_looking_name_that_resolves_to_a_public_address_is_refused(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    from shelfhold.headless.urls import validate_target_url
+
+    _resolves(monkeypatch, {name: ["192.168.1.9", "93.184.216.34"]})  # one global answer is enough
+    with pytest.raises(ValueError, match="https"):
+        validate_target_url(f"http://{name}:4567")
+    assert validate_target_url(f"https://{name}:4567")  # https is accepted whatever it resolves to
+    _resolves(monkeypatch, {name: ["192.168.1.9"]})
+    assert validate_target_url(f"http://{name}:4567")
+
+
+@pytest.mark.req("ENF-SEC-001")
+@pytest.mark.parametrize(
+    "address",
+    [
+        "2002:0808:0808::1",
+        "64:ff9b::8.8.8.8",
+        "2001:0:4136:e378:8000:63bf:f7f7:f7f7",
+        "::ffff:8.8.8.8",
+    ],
+)  # 6to4, NAT64, Teredo (client 8.8.8.8 once complemented), mapped
+def test_transition_addresses_carrying_a_public_ipv4_are_public_for_the_rule_and_the_fetcher(
+    address: str,
+) -> None:
+    import ipaddress
+
+    from shelfhold.headless.urls import validate_target_url
+    from shelfhold.infrastructure.fetcher.guard import lan_block_reason
+
+    with pytest.raises(ValueError, match="public"):
+        validate_target_url(f"http://[{address}]:4567")
+    assert lan_block_reason(ipaddress.ip_address(address)) is not None  # a declared LAN target too
+
+
+@pytest.mark.req("ENF-SEC-001")
+def test_transition_address_carrying_a_private_ipv4_stays_a_lan_address() -> None:
+    import ipaddress
+
+    from shelfhold.infrastructure.fetcher.guard import lan_block_reason
+
+    assert lan_block_reason(ipaddress.ip_address("64:ff9b::192.168.1.9")) is None
+
+
+@pytest.mark.req("ENF-SEC-001", "EF-INT-023")
+def test_stored_suwayomi_address_is_revalidated_and_status_says_when_it_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from tests.l53_env import status_json
+
+    with instance(settings, tmp_path) as inst:
+        inst.configure(suwayomi=True)
+        assert inst.comp.suwayomi() is not None
+        with inst.engine.begin() as connection:  # edited behind the facade
+            connection.execute(
+                sa.text("UPDATE source_config SET settings = :s WHERE plugin_id = 'suwayomi'"),
+                {"s": '{"base_url": "http://8.8.8.8:4567"}'},
+            )
+        assert inst.comp.suwayomi() is None  # no service, so no request
+        report = status_json(monkeypatch, settings, capsys)
+        (refused,) = report["service_urls"]
+        assert refused["service"] == "suwayomi" and "8.8.8.8" in refused["url"]
+        assert "public" in refused["reason"]
