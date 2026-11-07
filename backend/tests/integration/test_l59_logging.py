@@ -21,6 +21,7 @@ import pytest
 import sqlalchemy as sa
 import structlog
 from huey.exceptions import RetryTask
+from pydantic import SecretStr
 
 import shelfhold.runtime_jobs as rj
 from shelfhold.config import Settings
@@ -541,3 +542,61 @@ def test_console_mode_cannot_forge_a_line_or_drive_the_terminal(
     assert "\x1b[2J" not in out and "\\x1b[2J" in out  # written, not interpreted
     assert not any(line.lstrip().startswith(("2026", "[critical]")) for line in out.splitlines())
     assert "\\n" in out and "\r" not in out
+
+
+# -- review: authentication secrets, the white list of the configuration, the user name -----------
+
+
+@pytest.mark.req("ENF-SEC-005", "ENF-SEC-013", "ENF-OBS-001")
+def test_no_authentication_secret_in_the_debug_logs(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    logs: Logs,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import re
+
+    from shelfhold.infrastructure.secrets.keyring import Keyring
+    from tests.auth_env import (
+        CSRF_COOKIE,
+        SESSION_COOKIE,
+        WRONG,
+        auth_env,
+        run_cli,
+    )
+    from tests.auth_env import (
+        PASSWORD as ADMIN_PASSWORD,
+    )
+
+    token = "-".join(("tok", "synthetic", "k9", "w2"))
+    settings = settings.model_copy(update={"api_token": SecretStr(token)})
+    logs.start("DEBUG")
+    with auth_env(monkeypatch, settings) as api:
+        assert api.login(password=WRONG).status_code == 401  # a failed login
+        assert api.login().status_code == 200
+        session, csrf = api.client.cookies.get(SESSION_COOKIE), api.csrf()
+        reauth = api.post("/api/v1/auth/reauth", json={"method": "password", "password": WRONG})
+        assert reauth.status_code in (400, 401, 403)  # a failed reauthentication
+        ok = api.post(
+            "/api/v1/auth/reauth", json={"method": "password", "password": ADMIN_PASSWORD}
+        )
+        assert ok.status_code == 200
+        session_after, csrf_after = api.client.cookies.get(SESSION_COOKIE), api.csrf()
+        logs.drain()  # keep what was logged so far; the CLI prints the key on purpose
+        assert run_cli(monkeypatch, settings, "admin", "keys", "create") == 0
+        key = re.search(r"shk_[0-9a-f]{8}_[A-Za-z0-9_-]{43}", capsys.readouterr().out)
+        assert key is not None
+        keyring = Keyring.from_json((settings.data_dir / "keyring").read_bytes())
+        material = keyring.active.material
+    text = "\n".join(str(v) for r in logs.drain() for v in r.values()) + "".join(logs.lines)
+    secrets = {
+        "admin password": ADMIN_PASSWORD, "wrong password": WRONG, "session cookie": session,
+        "session cookie after reauth": session_after, "csrf": csrf,
+        "csrf after reauth": csrf_after,
+        "api key": key.group(0), "api token": token,
+        "keyring key": base64.b64encode(material).decode(),
+    }  # fmt: skip
+    assert "auth.audit" in text and "auth.login_failed" in text  # the paths really logged
+    for label, secret in secrets.items():
+        assert secret and secret not in text, label
+    assert SESSION_COOKIE and CSRF_COOKIE
