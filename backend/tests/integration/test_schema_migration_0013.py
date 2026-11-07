@@ -61,7 +61,7 @@ def test_webauthn_credential_id_unique(settings: Settings) -> None:
         insert_credential(db, CRED, b"abc")
         with pytest.raises(sqlite3.IntegrityError, match="credential_id"):
             insert_credential(db, OTHER, b"abc")
-        insert_credential(db, OTHER, b"abd")
+        insert_credential(db, OTHER, b"xyz")
         row = db.execute(
             "SELECT sign_count, transports, revoked_at FROM webauthn_credential WHERE id = ?",
             (CRED,),
