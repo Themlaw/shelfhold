@@ -9,9 +9,9 @@ from itertools import product
 from pathlib import Path
 
 import pytest
-from shelfhold.events.activity import ActivityEvent, Viewer, activity_view
 
 import shelfhold.events as events_package
+from shelfhold.events.activity import ActivityEvent, Viewer, activity_view
 
 pytestmark = pytest.mark.req("EF-USR-016")
 

@@ -26,7 +26,11 @@ _key = identity.api_key
 
 def _user_of(row: Any) -> UserRecord:
     return UserRecord(
-        id=row.u_id, username=row.u_username, role=row.u_role, password_hash=row.u_password_hash
+        id=row.u_id,
+        username=row.u_username,
+        role=row.u_role,
+        password_hash=row.u_password_hash,
+        can_rate=bool(row.u_can_rate),
     )
 
 
@@ -36,7 +40,22 @@ _USER_COLUMNS = (
     _user.c.username.label("u_username"),
     _user.c.role.label("u_role"),
     _user.c.password_hash.label("u_password_hash"),
+    _user.c.can_rate.label("u_can_rate"),
 )
+
+
+def audit_insert(entry: AuditEntry) -> sa.Insert:
+    """The audit line as an INSERT: a caller with a transaction of its own writes it in there, so
+    the action and its trace commit or fail together (EF-USR-016)."""
+    return sa.insert(identity.audit).values(
+        id=new_ulid(),
+        actor_id=entry.actor_id,
+        action=entry.action,
+        target=entry.target,
+        at=entry.at,
+        session_id=entry.session_id,
+        auth_time=entry.auth_time,
+    )
 
 
 class _NoLiveKeyError(Exception):
@@ -258,7 +277,7 @@ class SqlIdentityStore:
                         expires_at=new.expires_at,
                     )
                 )
-                conn.execute(self._audit_insert(audit))
+                conn.execute(audit_insert(audit))
         except _NoLiveKeyError:  # the block was rolled back: nothing was written
             return False
         except sa.exc.IntegrityError as error:
@@ -278,18 +297,6 @@ class SqlIdentityStore:
         with self._engine.connect() as conn:
             return [str(target) for (target,) in conn.execute(query)]
 
-    @staticmethod
-    def _audit_insert(entry: AuditEntry) -> sa.Insert:
-        return sa.insert(identity.audit).values(
-            id=new_ulid(),
-            actor_id=entry.actor_id,
-            action=entry.action,
-            target=entry.target,
-            at=entry.at,
-            session_id=entry.session_id,
-            auth_time=entry.auth_time,
-        )
-
     def audit(self, entry: AuditEntry) -> None:
         with self._engine.begin() as conn:
-            conn.execute(self._audit_insert(entry))
+            conn.execute(audit_insert(entry))

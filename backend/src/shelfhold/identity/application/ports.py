@@ -12,6 +12,7 @@ class UserRecord:
     username: str
     role: str
     password_hash: str | None
+    can_rate: bool = False
 
 
 @dataclass(frozen=True)

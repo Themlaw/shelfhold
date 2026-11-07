@@ -264,6 +264,12 @@ def test_reauth_problem_type_in_openapi(api: AuthEnv) -> None:
     schema = api.app.openapi()  # type: ignore[attr-defined]
     types = schema["x-problem-types"]
     assert types["/api/v1/problems/reauth-required"]["status"] == 401
+    # L04: the two ages are part of the type, and nothing else of the session
+    fields = types["/api/v1/problems/reauth-required"]["extensions"]
+    assert set(fields) == {"auth_age_s", "max_age_s"}
+    assert all(spec == {"type": "integer"} for spec in fields.values())
+    body = schema["components"]["schemas"]["ReauthRequiredProblem"]
+    assert {"auth_age_s", "max_age_s"} <= set(body["required"])
     assert types["/api/v1/problems/credential-not-allowed"]["status"] == 403
     purge = schema["paths"]["/api/v1/units/{unit_id}/purge"]["post"]
     assert {"401", "403"} <= set(purge["responses"])

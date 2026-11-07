@@ -46,6 +46,21 @@ class Problem(BaseModel):
     request_id: str | None = None
 
 
+class ReauthRequiredProblem(Problem):
+    """`reauth-required` (EF-USR-022): how old the last password entry is, and the age allowed.
+    Nothing else about the session leaves with it. `-1`: no usable `auth_time`."""
+
+    auth_age_s: int
+    max_age_s: int
+    action: str
+    reauth_method: str | None = None
+    reauth_methods: list[str] = []
+
+
+# Extension members of a problem type, documented next to its `type` URI in `x-problem-types`.
+PROBLEM_EXTENSIONS: dict[str, tuple[str, ...]] = {"reauth_required": ("auth_age_s", "max_age_s")}
+
+
 class ProblemError(Exception):
     """Raise from a route or a dependency to answer with a problem."""
 
@@ -211,9 +226,21 @@ def install_problem_openapi(app: FastAPI, *, public_paths: frozenset[str] = froz
         for name in ("HTTPValidationError", "ValidationError"):
             schema.get("components", {}).get("schemas", {}).pop(name, None)
         schema["x-problem-types"] = {
-            spec.type_uri: {"code": spec.code, "status": spec.status}
+            spec.type_uri: {
+                "code": spec.code,
+                "status": spec.status,
+                **(
+                    {"extensions": {name: {"type": "integer"} for name in fields}}
+                    if (fields := PROBLEM_EXTENSIONS.get(spec.code))
+                    else {}
+                ),
+            }
             for spec in sorted(all_error_codes(), key=lambda s: s.code)
         }
+        components = schema.setdefault("components", {}).setdefault("schemas", {})
+        components["ReauthRequiredProblem"] = ReauthRequiredProblem.model_json_schema(
+            ref_template="#/components/schemas/{model}"
+        )
         return schema
 
     app.openapi = openapi  # type: ignore[method-assign]

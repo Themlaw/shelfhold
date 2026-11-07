@@ -9,18 +9,22 @@ admin risk declares the effect, and the rule follows.
 - A session: allowed; fresh (`auth_time` within `fresh_auth_s`, 900 s by default) only for the
   irreversible or secret-revealing effects, plus parental control when a restricted profile
   exists (P3). The hardened profile asks for freshness on every reserved action.
-- A session of a role outside `allowed_roles` (default `admin`): 403 `forbidden`.
+- A session of a role outside `allowed_roles` (default `admin`), a role the specification does
+  not know, or a user without the right to classify for `rate`: 403 `forbidden`.
+- An action that is not the registry's own object: refused (closed by default).
 - The host CLI: allowed.
 
 The rule applies to actions triggered by a credential. The closed list `SYSTEM_EMITTERS` names the
 only internal emitters exempt from it (N2); each acts only on paths the host created itself.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
 from shelfhold.identity.domain.credentials import Credential, Principal
+from shelfhold.identity.domain.roles import KNOWN_ROLES, holds_rate_right
 
 DEFAULT_FRESH_AUTH_S = 900
 
@@ -107,7 +111,12 @@ class ReauthRequired:
     max_age_s: int
 
 
-Verdict = Allowed | CredentialNotAllowed | RoleNotAllowed | ReauthRequired
+@dataclass(frozen=True)
+class ActionNotDeclared:
+    name: str
+
+
+Verdict = Allowed | CredentialNotAllowed | RoleNotAllowed | ReauthRequired | ActionNotDeclared
 
 
 def authorize_reserved(
@@ -119,13 +128,27 @@ def authorize_reserved(
     restricted_profile_exists: bool = False,
     hardened: bool = False,
     allowed_roles: frozenset[str] = DEFAULT_RESERVED_ROLES,
+    registry: Mapping[str, ReservedAction] | None = None,
 ) -> Verdict:
+    """`registry` is `RESERVED_ACTIONS` unless a test brings synthetic actions of its own."""
+    if registry is None:
+        from shelfhold.identity.domain.catalogue import RESERVED_ACTIONS
+
+        registry = RESERVED_ACTIONS
+    if registry.get(action.name) != action:  # an undeclared action, or a look-alike of one
+        return ActionNotDeclared(action.name)
     credential = principal.credential
     # `is`, never `==`: a look-alike value must not pass for the enum member
     if credential is not Credential.LOCAL_CLI and credential is not Credential.SESSION:
         return CredentialNotAllowed(credential)  # keys and device tokens, whatever their scope
-    if principal.role not in allowed_roles:  # review PR #43 (M4): `admin` unless the route says;
-        return RoleNotAllowed(principal.role)  # the local CLI is held to it too (PR #49)
+    # review PR #43 (M4): `admin` unless the route says; the local CLI is held to it too (PR #49).
+    # A role outside the specification is refused even when a route lists it (closed by default).
+    if principal.role not in allowed_roles or principal.role not in KNOWN_ROLES:
+        return RoleNotAllowed(principal.role)
+    if Effect.RATES_CONTENT in action.effects and not holds_rate_right(
+        principal.role, principal.can_rate
+    ):
+        return RoleNotAllowed(principal.role)  # EF-BIB-036: classify is a right, not a role
     if credential is Credential.LOCAL_CLI:
         return Allowed()
     if not action.needs_fresh_auth(
@@ -137,4 +160,5 @@ def authorize_reserved(
     age = int((now - principal.auth_time).total_seconds())
     if 0 <= age <= fresh_auth_s:
         return Allowed()
-    return ReauthRequired(auth_age_s=age, max_age_s=fresh_auth_s)
+    # nothing but the two ages leaves: an `auth_time` in the future is reported as unknown (-1)
+    return ReauthRequired(auth_age_s=age if age >= 0 else -1, max_age_s=fresh_auth_s)

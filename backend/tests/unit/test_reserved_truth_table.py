@@ -265,7 +265,7 @@ FRESHNESS_LINE = {
             "admin_risk.accept",
         ),
         "p3",
-    ),  # fmt: skip
+    ),
     **dict.fromkeys(
         (
             "shelf.max_age_rating",
@@ -274,7 +274,7 @@ FRESHNESS_LINE = {
             "target.recheck_child_exposure",
         ),
         "parental",
-    ),  # fmt: skip
+    ),
     **dict.fromkeys(
         (
             "rate",
@@ -285,7 +285,7 @@ FRESHNESS_LINE = {
             "device_token.manage",
         ),
         "none",
-    ),  # fmt: skip
+    ),
 }
 PROFILES = list(product([False, True], [False, True]))  # (restricted, hardened)
 

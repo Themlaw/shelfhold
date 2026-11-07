@@ -6,10 +6,12 @@ freshness) is played with a real login, a real key or the socket handler, and th
 problem body and the audit row are read back from the database.
 """
 
+import json
 import re
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from itertools import product
 from types import SimpleNamespace
 
 import pytest
@@ -17,7 +19,14 @@ from fastapi import APIRouter, Depends
 
 from shelfhold.config import Settings
 from shelfhold.identity.adapters.passwords import Argon2Hasher
-from shelfhold.identity.public import NO_REAUTH_EFFECTS, RESERVED_ACTIONS, Credential, Principal
+from shelfhold.identity.public import (
+    CREDENTIAL_AXIS,
+    NO_REAUTH_EFFECTS,
+    RESERVED_ACTIONS,
+    TABLE_ROLES,
+    Credential,
+    Principal,
+)
 from shelfhold.infrastructure.local_socket import Peer, RpcError
 from shelfhold.interfaces.http_api.auth import reserved_action
 from shelfhold.interfaces.local_cli.dispatch import IdentityDispatcher
@@ -41,16 +50,13 @@ NO_FRESHNESS = ["rate", "request.unmask", "keys.create", "keys.rotate", "keys.re
 
 def probe_router() -> APIRouter:
     router = APIRouter(prefix="/api/v1/_probe")
-    for name, action in RESERVED_ACTIONS.items():
+    for name in RESERVED_ACTIONS:
+        guard = Depends(reserved_action(RESERVED_ACTIONS[name]))
 
-        def make(action_name: str = name) -> None:  # one closure per action
-            @router.post(f"/{action_name}")
-            def run(
-                _p: Principal = Depends(reserved_action(RESERVED_ACTIONS[action_name])),
-            ) -> dict:
-                return {"ok": action_name}
+        def run(_p: Principal = guard, _name: str = name) -> dict[str, str]:
+            return {"ok": _name}
 
-        make()
+        router.add_api_route(f"/{name}", run, methods=["POST"])
     return router
 
 
@@ -214,3 +220,85 @@ def test_every_declared_action_is_reachable_through_the_socket_handler_for_the_h
         for name in RESERVED_ACTIONS:
             with pytest.raises(RpcError):
                 dispatcher._authorize(stranger, name)
+
+
+@pytest.mark.req("EF-USR-022", "ENF-SEC-010")
+def test_cli_prints_the_generated_table_under_the_instance_settings(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
+) -> None:
+    capsys.readouterr()
+    assert run_cli(monkeypatch, settings, "access-table", "--json") == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert {(r["action"], r["role"], r["credential"]) for r in rows} == set(
+        product(RESERVED_ACTIONS, TABLE_ROLES, CREDENTIAL_AXIS)
+    )
+    rate = {(r["role"], r["credential"]): r["fresh_auth_s"] for r in rows if r["action"] == "rate"}
+    assert set(rate.values()) == {None}  # no freshness for classifying by default
+    hardened = settings.model_copy(update={"auth_hardened": True})
+    assert run_cli(monkeypatch, hardened, "access-table", "--json") == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert {r["fresh_auth_s"] for r in rows if r["action"] == "rate"} == {900}
+    assert run_cli(monkeypatch, settings, "access-table") == 0
+    line = next(
+        row
+        for row in capsys.readouterr().out.splitlines()
+        if row.startswith("purge.now\tadmin\tsession\t")
+    )
+    assert line.endswith("\tReauthRequired\t900")
+
+
+def _insert_event(env: AuthEnv, *, visibility: str, actor: str | None, payload: str = "{}") -> int:
+    connection = sqlite3.connect(env.settings.database_path)
+    try:
+        with connection:
+            cursor = connection.execute(
+                "INSERT INTO event (type, schema_version, payload, occurred_at, actor_id, visibility) "
+                "VALUES ('job.dead_lettered', 1, ?, '2026-11-05 09:00:00', ?, ?)",
+                (payload, actor, visibility),
+            )
+            return int(cursor.lastrowid or 0)
+    finally:
+        connection.close()
+
+
+@pytest.mark.req("EF-USR-016", "ENF-SEC-010")
+def test_activity_route_masks_unmask_is_audited_and_refused_to_keys(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    add_user(api, "member")
+    work_id = "01HZZZZZZZZZZZZZZZZZZZZZZW"
+    connection = sqlite3.connect(api.settings.database_path)
+    try:
+        with connection:
+            [(kind,)] = connection.execute("SELECT key FROM work_kind LIMIT 1").fetchall()
+            connection.execute(
+                "INSERT INTO work (id, kind, title, sort_title) VALUES (?, ?, 'Un titre', 'un')",
+                (work_id, kind),
+            )
+    finally:
+        connection.close()
+    event_id = _insert_event(
+        api, visibility="private", actor=ULID_MEMBER, payload=f'{{"work_id": "{work_id}"}}'
+    )
+    api.login()
+    listed = api.client.get("/api/v1/activity").json()
+    [item] = [i for i in listed if i["event_id"] == event_id]
+    assert item["title"] is None and item["title_masked"] is True
+    assert "Un titre" not in api.client.get("/api/v1/activity").text
+    key = make_key(monkeypatch, capsys, api)
+    refused = api.client.post(
+        f"/api/v1/activity/{event_id}/unmask", headers={"Authorization": f"Bearer {key}"}
+    )
+    assert refused.status_code == 403
+    assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed"
+    assert db_rows(api.settings, "SELECT 1 FROM audit WHERE action = 'request.unmask'") == []
+    shown = api.post(f"/api/v1/activity/{event_id}/unmask")
+    assert shown.status_code == 200 and shown.json()["title"] == "Un titre"
+    [(target, session_id, auth_time)] = db_rows(
+        api.settings,
+        "SELECT target, session_id, auth_time FROM audit WHERE action = 'request.unmask'",
+    )
+    assert target == f"event:{event_id}" and session_id and auth_time
+    # a key reads the feed as the integration role: a private event is not in it at all
+    seen = api.client.get("/api/v1/activity", headers={"Authorization": f"Bearer {key}"}).json()
+    assert all(i["event_id"] != event_id for i in seen)

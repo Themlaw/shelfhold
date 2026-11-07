@@ -33,6 +33,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from shelfhold.identity.public import (
     DEFAULT_RESERVED_ROLES,
     IDENTITY_HEADER_AUDIT,
+    Allowed,
     Credential,
     CredentialNotAllowed,
     IssuedSession,
@@ -317,6 +318,8 @@ def reserved_action(
                     "reauth_methods": methods,
                 },
             )
+        if not isinstance(verdict, Allowed):  # closed by default: a verdict nobody mapped refuses
+            raise ProblemError("forbidden", extensions={"action": action.name})
         return principal
 
     dependency.__name__ = f"reserved_{action.name.replace('.', '_')}"

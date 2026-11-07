@@ -725,6 +725,60 @@ export type ReadyzResponse = {
 };
 
 /**
+ * ReauthRequiredProblem
+ *
+ * `reauth-required` (EF-USR-022): how old the last password entry is, and the age allowed.
+ * Nothing else about the session leaves with it. `-1`: no usable `auth_time`.
+ */
+export type ReauthRequiredProblem = {
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Auth Age S
+     */
+    auth_age_s: number;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Max Age S
+     */
+    max_age_s: number;
+    /**
+     * Reauth Method
+     */
+    reauth_method?: string | null;
+    /**
+     * Reauth Methods
+     */
+    reauth_methods?: Array<string>;
+    /**
+     * Request Id
+     */
+    request_id?: string | null;
+    /**
+     * Status
+     */
+    status: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Type
+     */
+    type: string;
+    [key: string]: unknown;
+};
+
+/**
  * ReauthResponse
  */
 export type ReauthResponse = {

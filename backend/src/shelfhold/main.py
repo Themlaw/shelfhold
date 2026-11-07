@@ -36,6 +36,7 @@ from shelfhold.infrastructure.secrets.errors import (
 )
 from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
+from shelfhold.interfaces.http_api.activity import build_activity_router
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.backfill import build_backfill_router
@@ -166,6 +167,7 @@ def create_app(
         build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202
         build_intents_router(ops_services),  # EF-INT-014: the open intents and their settlement
         build_backfill_router(ops_services),  # EF-EXP-053: estimate, confirmation, start
+        build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command
         build_ops_router(ops_services),  # EF-INT-023: the exits

@@ -1191,6 +1191,95 @@
         "title": "ReadyzResponse",
         "type": "object"
       },
+      "ReauthRequiredProblem": {
+        "additionalProperties": true,
+        "description": "`reauth-required` (EF-USR-022): how old the last password entry is, and the age allowed.\nNothing else about the session leaves with it. `-1`: no usable `auth_time`.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "auth_age_s": {
+            "title": "Auth Age S",
+            "type": "integer"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "max_age_s": {
+            "title": "Max Age S",
+            "type": "integer"
+          },
+          "reauth_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reauth Method"
+          },
+          "reauth_methods": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Reauth Methods",
+            "type": "array"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "action",
+          "auth_age_s",
+          "max_age_s"
+        ],
+        "title": "ReauthRequiredProblem",
+        "type": "object"
+      },
       "ReauthResponse": {
         "properties": {
           "auth_time": {
@@ -4981,6 +5070,14 @@
     },
     "/api/v1/problems/reauth-required": {
       "code": "reauth_required",
+      "extensions": {
+        "auth_age_s": {
+          "type": "integer"
+        },
+        "max_age_s": {
+          "type": "integer"
+        }
+      },
       "status": 401
     },
     "/api/v1/problems/reconcile.drift": {

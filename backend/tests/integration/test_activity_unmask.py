@@ -1,12 +1,13 @@
-"""EF-USR-016: unmasking a private title is explicit, reserved and audited in the same transaction."""
+"""EF-USR-016: unmasking a private title is explicit, reserved and audited in the same
+transaction."""
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.events.activity import ActivityEvent, UnmaskRefusedError, Viewer, unmask_title
 
 from shelfhold.config import Settings
+from shelfhold.events.activity import ActivityEvent, UnmaskRefusedError, Viewer, unmask_title
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import identity
