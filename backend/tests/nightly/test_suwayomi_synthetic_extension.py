@@ -138,7 +138,11 @@ def test_contract_synthetic_extension_plays_download_queue(bench: ExtensionBench
     bench.gql(
         f"mutation {{ enqueueChapterDownload(input: {{id: {first['id']}}}) {{ __typename }} }}"
     )
-    bench.gql("mutation { startDownloader(input: {}) { __typename } }")
+    try:  # the host waits for a state change: it times out when the queue already runs
+        bench.gql("mutation { startDownloader(input: {}) { __typename } }")
+    except AssertionError as error:
+        if "Timed out waiting" not in str(error):
+            raise
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         if bench.gql(f"{{ chapter(id: {first['id']}) {{ isDownloaded }} }}")["chapter"][
