@@ -84,8 +84,15 @@ def _failure(identifier: object, code: int, message: str, data: object = None) -
     return _response(identifier, error=error)
 
 
-def bind_private(path: Path, *, backlog: int = 16) -> tuple[socket.socket, os.stat_result]:
-    """Create the listening socket at `path` atomically; see the module docstring."""
+def bind_private(
+    path: Path, *, backlog: int = 16, hold: contextlib.ExitStack | None = None
+) -> tuple[socket.socket, os.stat_result]:
+    """Create the listening socket at `path` atomically; see the module docstring.
+
+    The socket keeps the name it was bound under, and when that name is `/proc/self/fd/N/s` asyncio
+    looks it up again (`os.stat(sock.getsockname())`) while it registers the socket. A descriptor
+    closed by then may already be another file's number (`ENOTDIR`), so a caller that goes on to
+    hand the socket to asyncio passes an `ExitStack` as `hold` and closes it once that is done."""
     directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     staging = f".shelfhold-sock-{secrets.token_hex(8)}"
     listener: socket.socket | None = None
@@ -113,7 +120,10 @@ def bind_private(path: Path, *, backlog: int = 16) -> tuple[socket.socket, os.st
             os.rename("s", path.name, src_dir_fd=inner, dst_dir_fd=directory)
             identity = os.lstat(path.name, dir_fd=directory)
         finally:
-            os.close(inner)
+            if hold is not None:
+                hold.callback(os.close, inner)
+            else:
+                os.close(inner)
         return listener, identity
     except BaseException:
         if listener is not None:
@@ -158,15 +168,20 @@ class LocalSocketServer:
         self._identity: os.stat_result | None = None
 
     async def start(self) -> None:
-        listener, self._identity = bind_private(self.path, backlog=self._max_connections * 2)
-        try:
-            self._server = await asyncio.start_unix_server(
-                self._serve, sock=listener, limit=self._max_line
+        with (
+            contextlib.ExitStack() as hold
+        ):  # the staging directory stays open until asyncio is done
+            listener, self._identity = bind_private(
+                self.path, backlog=self._max_connections * 2, hold=hold
             )
-        except BaseException:
-            listener.close()
-            self._remove_socket()
-            raise
+            try:
+                self._server = await asyncio.start_unix_server(
+                    self._serve, sock=listener, limit=self._max_line
+                )
+            except BaseException:
+                listener.close()
+                self._remove_socket()
+                raise
 
     async def stop(self) -> None:
         if self._server is not None:
