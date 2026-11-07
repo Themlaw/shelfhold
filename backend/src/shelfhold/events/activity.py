@@ -10,8 +10,10 @@ The rules, per viewer role and `visibility` (anything not listed is hidden: clos
 
 - `ops`: an operation (job, bytes, error). Admin sees it with its title; the integration role
   sees it without one; members and children do not see it.
-- `household`: visible to the adults of the house (admin, member) and, for their own items, to
-  the owner. A child sees only their own. The integration role gets the operation, never a title.
+- `household`: "visible des parents" (EF-USR-016). No parent link exists in M1b, so an adult counts
+  as a parent: every adult (admin, member) sees it with its title, whoever owns it, a child
+  included; an unowned one too. A child sees only their own. The integration role gets the
+  operation, never a title.
 - `private`: the owner sees it. Admin sees the operation of another adult's request with the
   **title masked**, and the title of a child's (parental oversight). Nobody else sees it.
   The integration role never receives a private event (a private title never leaves).
@@ -55,7 +57,7 @@ class ActivityEvent:
     """An event as the projection sees it. `title` is the display text resolved from the ULIDs
     of the payload by the caller; `owner_*` is the person it belongs to, when there is one."""
 
-    id: int
+    id: int | str  # an event row (int) or the ULID of a download request
     type: str
     visibility: str
     payload: Mapping[str, object]
@@ -66,12 +68,29 @@ class ActivityEvent:
 
 @dataclass(frozen=True)
 class ActivityItem:
-    event_id: int
+    event_id: int | str
     type: str
     visibility: str
     payload: Mapping[str, object]
     title: str | None = field(default=None, repr=False)
     title_masked: bool = False
+
+
+def download_request_event(
+    *,
+    request_id: str,
+    state: str,
+    visibility: str | None,
+    requester_id: str | None,
+    requester_role: str | None,
+    title: str | None,
+) -> ActivityEvent:
+    """A download request as an activity entry (D19). No visibility means an operation (`ops`:
+    the administrator's), never a guess in favour of the reader."""
+    return ActivityEvent(
+        id=request_id, type="download_request", visibility=visibility or "ops",
+        payload={"state": state}, owner_id=requester_id, owner_role=requester_role, title=title,
+    )  # fmt: skip
 
 
 def _item(event: ActivityEvent, *, title: str | None, masked: bool) -> ActivityItem:
@@ -93,9 +112,7 @@ def _project(viewer: Viewer, event: ActivityEvent, *, reveal: bool = False) -> A
             return _item(event, title=event.title, masked=False)
         return _item(event, title=None, masked=True)
     if role == "member":
-        if visibility == "household" and (own or event.owner_role != "child"):
-            return _item(event, title=event.title, masked=False)
-        if visibility == "private" and own:
+        if visibility == "household" or (visibility == "private" and own):
             return _item(event, title=event.title, masked=False)
         return None
     if role == "child":
@@ -149,7 +166,7 @@ def unmask_title(
                 actor_id=audit_actor(principal),
                 action=_UNMASK.name,
                 at=now,
-                target=f"event:{event.id}",
+                target=f"{'event' if isinstance(event.id, int) else 'request'}:{event.id}",
                 session_id=principal.session_id,
                 auth_time=principal.auth_time,
             )

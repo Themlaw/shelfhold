@@ -30,8 +30,10 @@ export const listActivity = <ThrowOnError extends boolean = false>(options?: Opt
 
 /**
  * Unmask
+ *
+ * `ref`: the number of an event, or the ULID of a download request.
  */
-export const unmask = <ThrowOnError extends boolean = false>(options: Options<UnmaskData, ThrowOnError>): RequestResult<UnmaskResponses, UnmaskErrors, ThrowOnError> => (options.client ?? client).post<UnmaskResponses, UnmaskErrors, ThrowOnError>({ url: '/api/v1/activity/{event_id}/unmask', ...options });
+export const unmask = <ThrowOnError extends boolean = false>(options: Options<UnmaskData, ThrowOnError>): RequestResult<UnmaskResponses, UnmaskErrors, ThrowOnError> => (options.client ?? client).post<UnmaskResponses, UnmaskErrors, ThrowOnError>({ url: '/api/v1/activity/{ref}/unmask', ...options });
 
 /**
  * Adopt Confirm Migration

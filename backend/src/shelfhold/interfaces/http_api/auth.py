@@ -323,6 +323,7 @@ def reserved_action(
         return principal
 
     dependency.__name__ = f"reserved_{action.name.replace('.', '_')}"
+    dependency.reserved_action = action  # type: ignore[attr-defined]  # what a scan reads
     return dependency
 
 

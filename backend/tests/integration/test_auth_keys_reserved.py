@@ -15,7 +15,7 @@ import pytest
 from fastapi.routing import APIRoute
 
 from shelfhold.config import Settings
-from shelfhold.identity.public import Principal
+from shelfhold.identity.public import Principal, ReservedAction
 from tests.auth_env import (
     PASSWORD,
     SESSION_COOKIE,
@@ -307,16 +307,16 @@ def test_idempotency_keys_are_scoped_to_the_authenticated_actor(
 
 
 def _reserved_routes(app: object) -> list[tuple[str, str, str]]:
-    """(method, path, dependency name) of every route of the real app guarded by a `reserved_*`
+    """(method, path, declared action name) of every route of the real app guarded by a `reserved_*`
     dependency, found in the route table and not listed by hand."""
     found: list[tuple[str, str, str]] = []
 
     def names(dependant: object) -> list[str]:
         out: list[str] = []
         for sub in dependant.dependencies:  # type: ignore[attr-defined]
-            call = getattr(sub.call, "__name__", "")
-            if call.startswith("reserved_"):
-                out.append(call)
+            declared = getattr(sub.call, "reserved_action", None)  # the action, not a name prefix
+            if isinstance(declared, ReservedAction):
+                out.append(declared.name)
             out.extend(names(sub))
         return out
 
@@ -342,7 +342,7 @@ def test_reserved_routes_of_create_app_refuse_api_keys(
         routes = _reserved_routes(env.app)
         guards = {name for _method, _path, name in routes}
         # the routes of production, not throwaway ones: purge, key rotation, secrets, ceilings...
-        assert {"reserved_purge_now", "reserved_admin_risk_accept"} <= guards
+        assert {"purge.now", "admin_risk.accept", "request.unmask"} <= guards
         assert len(routes) >= 6
         key = _create_key(monkeypatch, capsys, settings)
         for method, path, name in routes:

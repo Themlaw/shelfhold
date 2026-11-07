@@ -25,7 +25,7 @@ export type ActivityOut = {
     /**
      * Event Id
      */
-    event_id: number;
+    event_id: number | string;
     /**
      * Occurred At
      */
@@ -1103,7 +1103,7 @@ export type UnmaskedOut = {
     /**
      * Event Id
      */
-    event_id: number;
+    event_id: number | string;
     /**
      * Title
      */
@@ -1241,12 +1241,12 @@ export type UnmaskData = {
     body?: never;
     path: {
         /**
-         * Event Id
+         * Ref
          */
-        event_id: number;
+        ref: string;
     };
     query?: never;
-    url: '/api/v1/activity/{event_id}/unmask';
+    url: '/api/v1/activity/{ref}/unmask';
 };
 
 export type UnmaskErrors = {

@@ -79,10 +79,9 @@ def make_key(
 
 def real_reserved_routes(env: AuthEnv) -> list[tuple[str, str, str]]:
     """(method, concrete path, action) of the routes of the real app behind a reserved action."""
-    by_dependency = {name.replace(".", "_"): name for name in RESERVED_ACTIONS}
     found = []
-    for method, path, dependency in _reserved_routes(env.app):
-        action = by_dependency[dependency.removeprefix("reserved_")]
+    for method, path, action in _reserved_routes(env.app):
+        assert action in RESERVED_ACTIONS
         found.append((method, re.sub(r"\{[^}]+\}", "x", path), action))
     return sorted(set(found))
 
@@ -279,13 +278,9 @@ def _insert_event(env: AuthEnv, *, visibility: str, actor: str | None, payload: 
         connection.close()
 
 
-@pytest.mark.req("EF-USR-016", "ENF-SEC-010")
-def test_activity_route_masks_unmask_is_audited_and_refused_to_keys(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
-) -> None:
-    add_user(api, "member")
+def _insert_work(env: AuthEnv) -> str:
     work_id = "01HZZZZZZZZZZZZZZZZZZZZZZW"
-    connection = sqlite3.connect(api.settings.database_path)
+    connection = sqlite3.connect(env.settings.database_path)
     try:
         with connection:
             [(kind,)] = connection.execute("SELECT key FROM work_kind LIMIT 1").fetchall()
@@ -295,6 +290,15 @@ def test_activity_route_masks_unmask_is_audited_and_refused_to_keys(
             )
     finally:
         connection.close()
+    return work_id
+
+
+@pytest.mark.req("EF-USR-016", "ENF-SEC-010")
+def test_activity_route_masks_unmask_is_audited_and_refused_to_keys(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    add_user(api, "member")
+    work_id = _insert_work(api)
     event_id = _insert_event(
         api, visibility="private", actor=ULID_MEMBER, payload=f'{{"work_id": "{work_id}"}}'
     )
@@ -312,11 +316,110 @@ def test_activity_route_masks_unmask_is_audited_and_refused_to_keys(
     assert db_rows(api.settings, "SELECT 1 FROM audit WHERE action = 'request.unmask'") == []
     shown = api.post(f"/api/v1/activity/{event_id}/unmask")
     assert shown.status_code == 200 and shown.json()["title"] == "Un titre"
-    [(target, session_id, auth_time)] = db_rows(
+    [(target, session_id, auth_time)] = db_rows(  # the guard's own line has no target
         api.settings,
-        "SELECT target, session_id, auth_time FROM audit WHERE action = 'request.unmask'",
+        "SELECT target, session_id, auth_time FROM audit "
+        "WHERE action = 'request.unmask' AND target IS NOT NULL",
     )
     assert target == f"event:{event_id}" and session_id and auth_time
     # a key reads the feed as the integration role: a private event is not in it at all
     seen = api.client.get("/api/v1/activity", headers={"Authorization": f"Bearer {key}"}).json()
     assert all(i["event_id"] != event_id for i in seen)
+
+
+def _normal(response: Any) -> tuple[int, dict[str, Any]]:
+    body = response.json()
+    return response.status_code, {k: v for k, v in body.items() if k not in ("request_id",)}
+
+
+def _insert_request(env: AuthEnv, *, visibility: str | None, requester: str | None) -> str:
+    request_id = "01HZZZZZZZZZZZZZZZZZZZZZZR"
+    connection = sqlite3.connect(env.settings.database_path)
+    try:
+        with connection:
+            connection.execute(
+                "INSERT INTO download_request (id, target_kind, range_ref, source_binding_id, "
+                "state, requested_at, visibility, requester_user_id) "
+                "VALUES (?, 'range', '{}', 'x', 'requested', '2026-11-05 09:00:00', ?, ?)",
+                (request_id, visibility, requester),
+            )
+    finally:
+        connection.close()
+    return request_id
+
+
+@pytest.mark.req("EF-USR-016", "ENF-SEC-010")
+def test_unmask_does_not_tell_whether_an_entry_exists(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    add_user(api, "member")
+    work_id = _insert_work(api)
+    other = _insert_event(
+        api, visibility="private", actor=ULID_MEMBER, payload=f'{{"work_id": "{work_id}"}}'
+    )
+    ops = _insert_event(api, visibility="ops", actor=None)  # nothing masked for the admin
+    ids = [other + 1000, other, ops]  # absent, present and masked, present and not masked
+    paths = [f"/api/v1/activity/{i}/unmask" for i in ids]
+    key = make_key(monkeypatch, capsys, api)
+    by_key = [
+        _normal(api.client.post(p, headers={"Authorization": f"Bearer {key}"})) for p in paths
+    ]
+    assert by_key[0][0] == 403 and by_key[0] == by_key[1] == by_key[2]
+    assert api.login("member1").status_code == 200
+    by_member = [_normal(api.post(p, json={})) for p in paths]
+    assert by_member[0][0] == 403 and by_member[0] == by_member[1] == by_member[2]
+    api.client.cookies.clear()
+    api.login()
+    by_admin = [_normal(api.post(p, json={})) for p in paths]
+    assert by_admin[1][0] == 200  # the one that is masked is revealed
+    gone = [by_admin[0], by_admin[2]]  # absent, and nothing masked: the same 404
+    assert gone[0][0] == 404 and gone[0] == gone[1]
+
+
+@pytest.mark.req("EF-USR-022", "EF-USR-016")
+def test_unmask_reauth_problem_carries_action_and_methods_like_other_reserved_routes(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    with auth_env(monkeypatch, settings, hardened=True) as env:
+        env.login(remember=False)
+        env.clock.advance(timedelta(minutes=20))
+        body = env.post("/api/v1/activity/1/unmask", json={})
+        assert body.status_code == 401
+        problem = body.json()
+        assert problem["type"] == "/api/v1/problems/reauth-required"
+        other = env.post(PURGE, json={"typed": "x"}).json()
+        assert set(problem) == set(other)  # the same members as any reserved route
+        assert (problem["auth_age_s"], problem["max_age_s"]) == (1200, 900)
+        assert problem["reauth_methods"] == ["password"] and problem["reauth_method"] == "password"
+
+
+@pytest.mark.req("EF-USR-016", "ENF-SEC-010")
+def test_download_requests_go_through_activity_view_and_unmask_is_audited(
+    api: AuthEnv,
+) -> None:
+    add_user(api, "member")
+    request_id = _insert_request(api, visibility="private", requester=ULID_MEMBER)
+    api.login()
+    [item] = [i for i in api.client.get("/api/v1/activity").json() if i["event_id"] == request_id]
+    assert item["visibility"] == "private" and item["title_masked"] is True
+    # the title of a request is the Work behind it: with none resolvable, nothing is revealed
+    assert api.post(f"/api/v1/activity/{request_id}/unmask", json={}).status_code == 404
+    api.client.cookies.clear()
+    api.login("member1")
+    seen = api.client.get("/api/v1/activity").json()
+    assert [i["event_id"] for i in seen] == [request_id]  # a member sees their own request
+    assert seen[0]["title_masked"] is False
+
+
+@pytest.mark.req("EF-USR-016")
+def test_unowned_request_is_an_operation_for_the_admin_only(api: AuthEnv) -> None:
+    add_user(api, "member")
+    request_id = _insert_request(api, visibility=None, requester=None)
+    api.login("member1")
+    assert [
+        i for i in api.client.get("/api/v1/activity").json() if i["event_id"] == request_id
+    ] == []
+    api.client.cookies.clear()
+    api.login()
+    mine = [i for i in api.client.get("/api/v1/activity").json() if i["event_id"] == request_id]
+    assert [i["visibility"] for i in mine] == ["ops"]

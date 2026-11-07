@@ -42,7 +42,7 @@ EXPECTED = {
     ("member", "ops", "none"): "hidden",
     ("member", "household", "self"): "title",
     ("member", "household", "adult"): "title",
-    ("member", "household", "child"): "hidden",
+    ("member", "household", "child"): "title",  # an adult counts as a parent (D19)
     ("member", "private", "self"): "title",
     ("member", "private", "adult"): "hidden",
     ("member", "private", "child"): "hidden",

@@ -773,6 +773,8 @@ target_kind = "What is requested: a Unit or a range."
 range_ref = "JSON range: Edition, first and last Unit, volume label."
 ticket = "Opaque ticket, set once the service answered."
 requested_at = "When the request was made (UTC)."
+visibility = "Who may see the request: `private`, `household` or `ops`; null: an operation, for the administrator."
+requester_user_id = "User who asked (`user.id`), null when no one did or before accounts exist."
 
 [tables.revision_pending]
 description = "Revisions seen before M2, never applied in bulk."

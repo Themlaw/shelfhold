@@ -22,8 +22,15 @@
       "ActivityOut": {
         "properties": {
           "event_id": {
-            "title": "Event Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Event Id"
           },
           "occurred_at": {
             "format": "date-time",
@@ -1780,8 +1787,15 @@
       "UnmaskedOut": {
         "properties": {
           "event_id": {
-            "title": "Event Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Event Id"
           },
           "title": {
             "title": "Title",
@@ -1998,17 +2012,18 @@
         ]
       }
     },
-    "/api/v1/activity/{event_id}/unmask": {
+    "/api/v1/activity/{ref}/unmask": {
       "post": {
+        "description": "`ref`: the number of an event, or the ULID of a download request.",
         "operationId": "unmask",
         "parameters": [
           {
             "in": "path",
-            "name": "event_id",
+            "name": "ref",
             "required": true,
             "schema": {
-              "title": "Event Id",
-              "type": "integer"
+              "title": "Ref",
+              "type": "string"
             }
           }
         ],
