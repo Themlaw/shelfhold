@@ -175,19 +175,8 @@ def paused_series(connection: Connection, destination_id: str) -> frozenset[str]
 def _inputs(
     connection: Connection, ctx: DestinationContext
 ) -> tuple[tuple[EditionFacts, ...], list[sa.Row[Any]], dict[str, ExportSource]]:
-    edition, work, unit = catalog.edition, catalog.work, catalog.unit
-    editions = tuple(
-        EditionFacts(r.id, r.work_id, r.title, r.lang, r.text_version)
-        for r in connection.execute(
-            sa.select(
-                edition.c.id, edition.c.work_id, edition.c.lang, edition.c.text_version,
-                work.c.title,
-            )
-            .select_from(edition.join(work, work.c.id == edition.c.work_id))
-            .where(edition.c.shelf_id == ctx.shelf_id)
-            .order_by(edition.c.id)
-        )
-    )  # fmt: skip
+    unit = catalog.unit
+    editions = edition_facts(connection, ctx.shelf_id)
     unit_rows = list(
         connection.execute(
             sa.select(unit)
@@ -196,6 +185,39 @@ def _inputs(
         )
     )
     return editions, unit_rows, export_sources(connection, [u.id for u in unit_rows])
+
+
+def edition_facts(connection: Connection, shelf_id: str) -> tuple[EditionFacts, ...]:
+    """The Editions filed on a shelf, with the Series above their Work when there is one: the
+    Kavita series is the Series if present, else the Work (EF-BIB-025)."""
+    edition, work = catalog.edition, catalog.work
+    member, series = catalog.series_member, catalog.series
+    found: dict[str, EditionFacts] = {}
+    for r in connection.execute(
+        sa.select(
+            edition.c.id,
+            edition.c.work_id,
+            edition.c.lang,
+            edition.c.text_version,
+            work.c.title,
+            series.c.id.label("series_id"),
+            series.c.title.label("series_title"),
+        )
+        .select_from(
+            edition.join(work, work.c.id == edition.c.work_id)
+            .outerjoin(member, member.c.work_id == work.c.id)
+            .outerjoin(series, series.c.id == member.c.series_id)
+        )
+        .where(edition.c.shelf_id == shelf_id)
+        .order_by(edition.c.id, series.c.id)
+    ):  # a Work in two Series would be listed twice: the first, by id, names it
+        found.setdefault(
+            r.id,
+            EditionFacts(
+                r.id, r.work_id, r.title, r.lang, r.text_version, r.series_id, r.series_title
+            ),
+        )
+    return tuple(found.values())
 
 
 def version_of(connection: Connection, ctx: DestinationContext) -> str:
@@ -230,6 +252,7 @@ def _world(
                 sorted(s.edition_ids),
                 s.frozen_series,
                 s.series_dir,
+                s.series_key,
             ]
             for s in series
         ),
@@ -286,6 +309,7 @@ def _series(
             frozenset(works[r.id]), frozenset(editions[r.id]),
             r.frozen_series if r.frozen_at is not None else None,
             r.series_dir if r.frozen_at is not None else None,
+            (r.proposal_key or {}).get("series"),
         )
         for r in connection.execute(
             sa.select(s).where(s.c.remote_library_id == library).order_by(s.c.id)

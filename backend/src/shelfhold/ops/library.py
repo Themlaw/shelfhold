@@ -24,6 +24,14 @@ from shelfhold.acquisition.application.upstream import (
     UpstreamSnapshots,
 )
 from shelfhold.acquisition.public import decline_pairing
+from shelfhold.catalog.public import (
+    ListedUnit,
+    RelinkRefusedError,
+    RelinkRequest,
+    RelinkResult,
+    relink_isolated,
+    translation_type_for,
+)
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
 from shelfhold.export.application.coverage import (
     CoverageError,
@@ -147,6 +155,17 @@ def _kavita(verdict: KavitaVerdict | None) -> dict[str, Any]:
     }
 
 
+def _relinked(r: RelinkResult) -> dict[str, Any]:
+    return {
+        "binding_id": r.binding_id,
+        "edition_id": r.edition_id,
+        "edition_created": r.edition_created,
+        "missing": [m.raw_number if m.raw_number is not None else "" for m in r.missing],
+        "to_rate": r.to_rate,
+        "carried_teams": list(r.carried_teams),
+    }
+
+
 def _check(check: RepatriationCheck) -> dict[str, Any]:
     return {
         "series": check.series,
@@ -170,6 +189,7 @@ _CODED: tuple[tuple[type[Exception], str], ...] = (
     (SwitchoverIncompleteError, "pairing.switchover_unconfirmed"),
     (NoLibraryError, "ops.exit_unavailable"),
     (KeyringUnavailableError, "ops.exit_unavailable"),
+    (RelinkRefusedError, "forbidden"),
 )
 
 
@@ -247,6 +267,29 @@ class LibraryOps:
 
         return link, asyncio.run(read())
 
+    def _listing(
+        self, source_key: str, remote_id: str
+    ) -> tuple[SeriesRef | None, list[ListedUnit]]:
+        """The series Suwayomi follows under this source, with the releases it lists now."""
+        link = self._suwayomi()
+        self._nature = str(getattr(link.service.manifest, "translation_nature", "unknown"))
+
+        async def read() -> tuple[SeriesRef | None, list[ListedUnit]]:
+            try:
+                library = await link.service.followed_series(link.fetcher)
+                ref = next(
+                    (r for r in library if (r.source_key, r.remote_id) == (source_key, remote_id)),
+                    None,
+                )
+                if ref is None:
+                    return None, []
+                units = await link.service.list_units(link.fetcher, ref)
+                return ref, [ListedUnit(u.number, u.source_order) for u in units]
+            finally:
+                await link.guarded.aclose()
+
+        return asyncio.run(read())
+
     def _require_not_restored(self) -> None:
         """No write into the catalog of an instance restored behind its disks (EF-INT-026)."""
         loaded = self._comp.load_roots()
@@ -311,6 +354,36 @@ class LibraryOps:
             tombstones=w.tombstones,
             translation_nature=self._nature,
         )
+
+    # -- relink (EF-BIB-029) -------------------------------------------------------------------
+
+    @_refused
+    def relink(
+        self,
+        work_id: str,
+        *,
+        source_key: str,
+        remote_id: str,
+        lang: str | None,
+        replaces: str | None,
+        principal: Principal,
+    ) -> dict[str, Any]:
+        """Attach the series Suwayomi follows under another source to a Work that exists. Nothing
+        is fetched here: the next follow cycle asks for the numbers the Edition lacks."""
+        ref, listed = self._listing(source_key, remote_id)
+        if ref is None:
+            raise UnknownSubjectError("Suwayomi does not follow that series")
+        result = relink_isolated(
+            self._comp.engine,
+            RelinkRequest(
+                work_id=work_id, plugin_id=SERVICE_ID, source_key=ref.source_key,
+                remote_id=ref.remote_id, listed=tuple(listed), lang=lang,
+                replaces_binding_id=replaces, translation_type=translation_type_for(self._nature),
+                memo=ref.memo, memo_version=ref.memo_version,
+            ),
+            principal=principal, now=self._comp.clock.now(),
+        )  # fmt: skip
+        return _relinked(result)
 
     # -- pairing (L30) -------------------------------------------------------------------------
 

@@ -67,6 +67,13 @@ class SqlWorkStore:
             )
         ).scalar()
 
+    def insert_member(self, series_id: str, work_id: str, position: str) -> None:
+        self._c.execute(
+            sa.insert(catalog.series_member).values(
+                series_id=series_id, work_id=work_id, position=position
+            )
+        )
+
     def insert_contributor(self, name: str) -> str:
         contributor_id = new_ulid()
         self._c.execute(sa.insert(catalog.contributor).values(id=contributor_id, primary_name=name))

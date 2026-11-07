@@ -217,16 +217,21 @@ def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> 
     install_by_commands(j)
     j.discover_series()
     j.publish_upstream()
-    assert j.follow_until(lambda: any(f.endswith(".cbz") for f in j.library_files()), 300), (
-        "aucun job de suivi enregistré : aucun chapitre exporté"
-    )
-    before = j.compose("exec", "-T", "shelfhold", "sh", "-c",
-                       "cd /library && find . -path ./.shelfhold -prune -o -type f -exec sha256sum {} +").stdout  # fmt: skip
+    # every published chapter exported and no intent open: a cycle still running would write
+    # Ch.2 between the two looks below, which is not what detach is judged on
+    assert j.follow_until(
+        lambda: any(f.endswith("Ch.2.cbz") for f in j.library_files()) and open_intents(j) == 0,
+        300,
+    ), "aucun job de suivi enregistré : les chapitres publiés ne sont pas tous exportés"
+    # the host area (`.shelfhold/`, `.shelfhold-mount-id`) is the host's own: its lease and its
+    # sentinel are rewritten by the host; detach is judged on the exported files only
+    look = "cd /library && find . \\( -path ./.shelfhold -o -name .shelfhold-mount-id \\) -prune -o -type f -exec sha256sum {} +"  # noqa: E501
+    before = j.compose("exec", "-T", "shelfhold", "sh", "-c", look).stdout
+    assert ".cbz" in before
     detached = j.shelfhold("detach", "--restore-upstream")
     assert detached.code == 0, detached.err
-    after = j.compose("exec", "-T", "shelfhold", "sh", "-c",
-                      "cd /library && find . -path ./.shelfhold -prune -o -type f -exec sha256sum {} +").stdout  # fmt: skip
-    assert after == before  # .shelfhold/ is excluded: the lease is rewritten by its heartbeat
+    after = j.compose("exec", "-T", "shelfhold", "sh", "-c", look).stdout
+    assert after == before
     state = j.suwayomi()
     assert "violations" in state and state["violations"] == []
 

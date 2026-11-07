@@ -1,6 +1,7 @@
 """The catalog facade: the only door other contexts use (import-linter `contexts-independent`)."""
 
 from collections.abc import Callable
+from datetime import datetime
 
 import sqlalchemy as sa
 
@@ -24,12 +25,28 @@ from shelfhold.catalog.application.dto import (
     UnitView,
 )
 from shelfhold.catalog.application.editions import translation_type_for
+from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.rating import (
     RatingRefusedError,
     RatingResult,
     RatingService,
     Withdrawal,
 )
+from shelfhold.catalog.application.relations import (
+    RelatedWork,
+    RelationError,
+    relate_works,
+    relations_of,
+    unrelate_works,
+)
+from shelfhold.catalog.application.relink import (
+    ListedUnit,
+    Relinker,
+    RelinkRefusedError,
+    RelinkRequest,
+    RelinkResult,
+)
+from shelfhold.catalog.application.series import SeriesAlreadyAttachedError
 from shelfhold.catalog.application.service import CatalogService
 from shelfhold.catalog.domain.age import (
     Admission,
@@ -62,6 +79,7 @@ from shelfhold.catalog.domain.normalizers import (
 from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, place_of
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
+from shelfhold.identity.public import Principal
 
 
 class Catalog(CatalogService):
@@ -75,6 +93,22 @@ class Catalog(CatalogService):
             SqlUnitStore(connection),
             SqlContributorStore(connection),
         )
+
+
+class RelinkService(Relinker):
+    """`relink` over the catalog of an open connection (EF-BIB-029)."""
+
+    def __init__(self, rating: RatingService | None = None) -> None:
+        super().__init__(Catalog, rating or RatingService())
+
+
+def relink_isolated(
+    engine: sa.Engine, request: RelinkRequest, *, principal: Principal, now: datetime
+) -> RelinkResult:
+    """`relink` in its own `BEGIN IMMEDIATE` transaction, audit entry included."""
+    return run_immediate(
+        engine, lambda c: RelinkService().relink(c, request, principal=principal, now=now)
+    )
 
 
 def ingest_isolated(
@@ -120,19 +154,6 @@ def numbered_mark(raw_number: str | None, source_order: int = 0) -> tuple[str, s
     return None if place.unnumbered else (place.segment, place.number_norm)
 
 
-def place_key(raw_number: str | None, source_order: int = 0) -> str:
-    """A stable text for the place a release takes in its Edition (EF-BIB-034): two releases with
-    the same key are offers for the same Unit. An unnumbered release is placed by its order."""
-    try:
-        number = parse_number(raw_number, source_order=source_order)
-    except NumberError:  # unreadable: unnumbered, like the ingest
-        number = parse_number(None, source_order=source_order)
-    place = place_of(number)
-    if place.unnumbered:
-        return f"unnumbered:{source_order}"
-    return f"{place.track}|{place.segment}|{place.number_norm}|{place.part}"
-
-
 __all__ = [
     "ARTIST",
     "LANG_NORMALIZER_ID",
@@ -150,6 +171,7 @@ __all__ = [
     "IngestOutcome",
     "IngestResult",
     "LanguageError",
+    "ListedUnit",
     "NameKind",
     "NoPersonFieldName",
     "NormalizerId",
@@ -158,6 +180,13 @@ __all__ = [
     "RatingRefusedError",
     "RatingResult",
     "RatingService",
+    "RelatedWork",
+    "RelationError",
+    "RelinkRefusedError",
+    "RelinkRequest",
+    "RelinkResult",
+    "RelinkService",
+    "SeriesAlreadyAttachedError",
     "TeamRef",
     "TextVersionRef",
     "UnitView",
@@ -178,7 +207,11 @@ __all__ = [
     "person_field_name",
     "place_key",
     "place_parts",
+    "relate_works",
+    "relations_of",
+    "relink_isolated",
     "stored_date",
     "translation_discriminant",
     "translation_type_for",
+    "unrelate_works",
 ]

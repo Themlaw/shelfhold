@@ -114,6 +114,19 @@ def test_comicinfo_translator_is_team_web_empty_by_default() -> None:
     assert text_of(with_team, "Web") is None  # no source reference unless explicitly given
 
 
+@pytest.mark.req("EF-BIB-033")
+def test_notes_and_web_are_written_only_when_given_and_validate() -> None:
+    given = render_comicinfo(
+        ComicInfoData(
+            series="S", summary="Résumé", notes="CC0", web="https://example.org/a?b=1&c=2"
+        )
+    ).xml
+    assert text_of(given, "Notes") == "CC0"
+    assert text_of(given, "Web") == "https://example.org/a?b=1&c=2"
+    assert given.index(b"<Summary>") < given.index(b"<Notes>") < given.index(b"<Web>")
+    kavita_schema().validate(given.decode("utf-8"))
+
+
 @pytest.mark.req("EF-EXP-063")
 def test_exported_file_carries_no_shelfhold_identity() -> None:
     xml = render_comicinfo(FULL).xml

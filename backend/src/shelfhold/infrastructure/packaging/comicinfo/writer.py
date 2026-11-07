@@ -4,8 +4,9 @@ Pure and deterministic: the same data gives the same bytes. The element order is
 (`xs:sequence`), with the two elements Kavita reads outside the schema, `LocalizedSeries` and
 `SeriesSort`, right after `Series`. Empty values are omitted.
 
-What it never writes: the Shelfhold identity (no `Notes`, `ScanInformation`, `Tags` or `GTIN`;
-`Web` only when the caller gives one, empty by default), an inverted person name ("Family, Given"
+What it never writes: the Shelfhold identity (no `ScanInformation`, `Tags` or `GTIN`; `Notes` and
+`Web` only when the caller gives them, empty by default: they carry the rights and the origin
+of an Edition that has them, EF-BIB-033), an inverted person name ("Family, Given"
 becomes "Given Family"; any other comma is replaced and reported), a sort name in a person field,
 and any untrusted markup (the summary goes through `sanitize_upstream_text`, then XML escaping).
 `Translator` is the Team label, a public metadata. Commas inside a value of a person-like field
@@ -33,8 +34,8 @@ PERSON_ROLES: Final = (
 )  # fmt: skip
 ELEMENT_ORDER: Final = (
     "Title", "Series", "LocalizedSeries", "SeriesSort", "Number", "Count", "Volume",
-    "Summary", "Year", "Month", "Day", *PERSON_ROLES, "Translator", "Publisher", "Genre", "Web",
-    "PageCount", "LanguageISO", "Format", "Manga", "AgeRating",
+    "Summary", "Notes", "Year", "Month", "Day", *PERSON_ROLES, "Translator", "Publisher", "Genre",
+    "Web", "PageCount", "LanguageISO", "Format", "Manga", "AgeRating",
 )  # fmt: skip
 _INVALID_XML: Final = re.compile("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]")
 SUMMARY_MAX: Final = 4000
@@ -59,6 +60,7 @@ class ComicInfoData:
     localized_series: str = ""
     summary: str = ""  # raw upstream text
     summary_html: bool = False
+    notes: str = ""  # the rights of the Edition, copied when it has them (EF-BIB-033)
     year: int | None = None
     month: int | None = None
     day: int | None = None
@@ -135,13 +137,14 @@ def render_comicinfo(data: ComicInfoData, *, lang: str | None = None) -> Rendere
         "Count": number(data.count),
         "Volume": number(data.volume),
         "Summary": summary,
+        "Notes": sanitize_upstream_text(data.notes),
         "Year": number(data.year),
         "Month": number(data.month),
         "Day": number(data.day),
         "Translator": _no_comma(sanitize_upstream_text(data.team_label), "Translator", warnings),
         "Publisher": _no_comma(data.publisher, "Publisher", warnings),
         "Genre": ", ".join(_no_comma(g, "Genre", warnings) for g in data.genres),
-        "Web": data.web,
+        "Web": sanitize_upstream_text(data.web),
         "PageCount": number(data.page_count),
         "LanguageISO": data.language_iso,
         "Format": data.format,

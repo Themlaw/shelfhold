@@ -311,6 +311,13 @@ def _backfill_start(ops: OpsServices, _by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _relink(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.library.relink(
+        _text(p, "work_id"), source_key=_text(p, "source_key"), remote_id=_text(p, "remote_id"),
+        lang=_optional(p, "lang"), replaces=_optional(p, "replaces"), principal=by,
+    )  # fmt: skip
+
+
 def _probe(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.library.probe(_text(p, "folder"))
 
@@ -350,6 +357,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.detach_restore_upstream": (_give_back, None),
     "ops.purge": (_purge, "purge.now"),
     "ops.probe": (_probe, None),
+    "ops.relink": (_relink, None),
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
     "ops.normalize_migrate": (_normalize_migrate, "normalize.migrate"),
