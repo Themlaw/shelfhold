@@ -21,7 +21,6 @@ symbols = [
   "shelfhold.events.operating:WAITING_WITHOUT_EVENT",
   "shelfhold.export.targets.kavita.routes:SETUP_ROUTES",
   "shelfhold.identity.domain.catalogue:EXIT_STATES_LATER",
-  "shelfhold.identity.domain.credentials:CREDENTIAL_AXIS",
   "shelfhold.identity.domain.credentials:credential_axis",
   "shelfhold.identity.domain.emitters:DELETION_SITES",
   "shelfhold.identity.domain.reserved:SYSTEM_EMITTERS",

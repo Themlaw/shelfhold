@@ -11,7 +11,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from shelfhold.identity.domain.catalogue import RESERVED_ACTIONS
-from shelfhold.identity.domain.credentials import CREDENTIAL_AXIS, Credential, Principal
+from shelfhold.identity.domain.credentials import (
+    CREDENTIAL_AXIS,
+    Credential,
+    Principal,
+    credential_axis,
+)
 from shelfhold.identity.domain.reserved import (
     DEFAULT_FRESH_AUTH_S,
     ReservedAction,
@@ -30,36 +35,23 @@ class TruthRow:
 
 
 def sample_principal(role: str, axis: str, *, now: datetime, fresh_auth_s: int) -> Principal:
-    """A principal standing on `axis`: the stale session proved its password 3 h ago, past any
-    `fresh_auth_s` the settings accept (86 400 s at most is checked by the caller's range)."""
-
-    def make(
-        credential: Credential,
-        *,
-        session_id: str | None = None,
-        auth_time: datetime | None = None,
-        key_id: str | None = None,
-        scopes: tuple[str, ...] = (),
-    ) -> Principal:
-        return Principal(
+    """The principal that stands on `axis` for `role`: found by asking `credential_axis` which of
+    the credentials a candidate belongs to, so the table never names one by hand. The stale session
+    proved its password one second past `fresh_auth_s`."""
+    scope = axis.partition(":")[2]
+    age = timedelta(seconds=fresh_auth_s + 1 if axis == "session" else min(30, fresh_auth_s // 2))
+    for credential in Credential:
+        is_session = credential is Credential.SESSION
+        candidate = Principal(
             user_id="table-user", username="table", role=role, credential=credential,
-            session_id=session_id, auth_time=auth_time, key_id=key_id, scopes=scopes,
+            session_id="table-session" if is_session else None,
+            auth_time=now - age if is_session else None,
+            key_id=None if is_session else "table-key",
+            scopes=(scope,) if scope else (),
             can_rate=role in RATE_ROLES,
         )  # fmt: skip
-
-    match axis.split(":"):
-        case ["fresh_session"]:
-            age = timedelta(seconds=min(30, fresh_auth_s // 2))
-            return make(Credential.SESSION, session_id="table-session", auth_time=now - age)
-        case ["session"]:
-            age = timedelta(seconds=fresh_auth_s + 1)
-            return make(Credential.SESSION, session_id="table-session", auth_time=now - age)
-        case ["api_key", scope]:
-            return make(Credential.API_KEY, key_id="table-key", scopes=(scope,))
-        case ["device_token"]:
-            return make(Credential.DEVICE_TOKEN, key_id="table-token")
-        case ["local_cli"]:
-            return make(Credential.LOCAL_CLI)
+        if credential_axis(candidate, now=now, fresh_auth_s=fresh_auth_s) == axis:
+            return candidate
     raise ValueError(axis)
 
 

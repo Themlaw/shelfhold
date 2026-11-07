@@ -1,6 +1,7 @@
 """Pure identity rules: session policy, attempt limiting, reserved actions (EF-USR-022, -024)."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -16,9 +17,17 @@ from shelfhold.identity.public import (
     ReauthRequired,
     ReservedAction,
     RoleNotAllowed,
-    authorize_reserved,
+    Verdict,
     session_policy,
 )
+from shelfhold.identity.public import authorize_reserved as _authorize_reserved
+
+
+def authorize_reserved(principal: Principal, action: ReservedAction, **kwargs: Any) -> Verdict:
+    """These tests play synthetic actions: each one is its own registry (the real closed registry
+    is tested in `test_roles_rate_right`)."""
+    return _authorize_reserved(principal, action, registry={action.name: action}, **kwargs)
+
 
 T0 = datetime(2026, 11, 5, 9, 0, tzinfo=UTC)
 ALL_EFFECTS = list(Effect)
@@ -34,6 +43,7 @@ def _principal(credential: Credential, *, auth_age: timedelta = timedelta(0)) ->
         auth_time=T0 - auth_age if credential is Credential.SESSION else None,
         key_id="01JC0000000000000000000003" if credential is Credential.API_KEY else None,
         scopes=("admin",) if credential is Credential.API_KEY else (),
+        can_rate=True,
     )
 
 

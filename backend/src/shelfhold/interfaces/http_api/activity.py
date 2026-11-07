@@ -55,7 +55,7 @@ class UnmaskedOut(BaseModel):
 
 def viewer_of(principal: Principal) -> Viewer:
     """A key or a token is a program: it reads like the integration role, whoever issued it."""
-    if principal.credential in (Credential.SESSION, Credential.LOCAL_CLI):
+    if principal.credential is Credential.SESSION:
         return Viewer(principal.user_id, principal.role)
     return Viewer(None, INTEGRATION_ROLE)
 
