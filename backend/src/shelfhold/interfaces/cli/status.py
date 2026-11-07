@@ -163,7 +163,7 @@ def _waiting(resolved: ResolvedSettings) -> dict[str, object]:
     if not database.exists() or current_revision(database) != head_revision():
         return {
             "waiting": [], "queues": [], "stale_series": [], "tombstoned_upstream": [],
-            "capabilities": [], "known_bad": {}, "service_urls": [],
+            "capabilities": [], "known_bad": {}, "service_urls": [], "unverifiable_dirs": [],
         }  # fmt: skip
     engine = create_db_engine(database)
     try:
@@ -221,6 +221,8 @@ def report_lines(ops: dict[str, object]) -> list[str]:
         )  # fmt: skip
     for refused in ops.get("service_urls", []):  # type: ignore[attr-defined]
         lines.append(t("status.service_url_refused", **refused))
+    for unverified in ops.get("unverifiable_dirs", []):  # type: ignore[attr-defined]
+        lines.append(t("status.download_dir_unverifiable", **unverified))
     known: dict[str, Any] = ops.get("known_bad") or {}  # type: ignore[assignment]
     if known:
         values = {

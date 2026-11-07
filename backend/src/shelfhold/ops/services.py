@@ -67,6 +67,7 @@ from shelfhold.ops.status import (
     service_url_report,
     stale_report,
     tombstoned_report,
+    unverifiable_download_dirs,
 )
 
 __all__ = ["JobRow", "OpsServices", "RecheckOutcome", "StatusReport", "user_of"]
@@ -92,6 +93,7 @@ class StatusReport:
     capabilities: list[dict[str, object]] = field(default_factory=list)
     known_bad: dict[str, object] = field(default_factory=dict)
     service_urls: list[dict[str, object]] = field(default_factory=list)
+    unverifiable_dirs: list[dict[str, object]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -102,6 +104,7 @@ class StatusReport:
             "capabilities": self.capabilities,
             "known_bad": self.known_bad,
             "service_urls": self.service_urls,
+            "unverifiable_dirs": self.unverifiable_dirs,
         }
 
 
@@ -192,6 +195,7 @@ class OpsServices:
                 tombstoned_report(connection),
                 [c.as_dict() for c in root_capabilities.read_all(connection)],
                 known_bad_report(connection, now.date()), service_url_report(connection),
+                unverifiable_download_dirs(connection),
             )  # fmt: skip
 
     def restored_behind(self) -> bool:

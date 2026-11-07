@@ -298,7 +298,7 @@ class LibraryOps:
         except Exception:  # any failure of the service: the signal stays as it was
             _log.warning("switchover.download_dir_unreadable", destination=destination_id)
             return gate
-        if path:
+        if path is not None:
             gate.declare_download_dir(destination_id, path)
         return gate
 

@@ -263,9 +263,44 @@ class SwitchoverGate:
                 sa.select(platform.app_setting.c.value).where(platform.app_setting.c.key == key)
             ).scalar()
 
-    def declare_download_dir(self, destination_id: str, download_dir: str) -> None:
-        """Where Suwayomi downloads (as this process sees it): a signal for the scan."""
-        self._put(self._dir_key(destination_id), clean_absolute(download_dir))
+    @staticmethod
+    def _unverifiable_key(destination_id: str) -> str:
+        return f"switchover.dir_unverifiable.{destination_id}"
+
+    def declare_download_dir(self, destination_id: str, download_dir: str) -> bool:
+        """Where Suwayomi downloads, as Suwayomi says it: a signal for the scan, when it can be
+        compared. The path is Suwayomi's own (its container's); 01 foresees no path map on the
+        source side, so it is comparable only when it lies under a root this process knows.
+        Otherwise (an empty default, a relative path, a path of its own namespace) the shelf is
+        recorded as *not verifiable*, which `status` says; it is not taken for "not shared"."""
+        with self._engine.connect() as connection:
+            ctx = load_context(connection, destination_id)
+        raw = download_dir.strip()
+        reason = "not_set" if not raw else "relative" if not raw.startswith("/") else None
+        path = clean_absolute(raw) if reason is None else None
+        if path is not None and not any(
+            within(path, entry.local) is not None for entry in ctx.path_map.entries
+        ):
+            reason = "outside_known_roots"
+        with self._engine.begin() as connection:
+            if reason is None and path is not None:
+                self._put_in(connection, self._dir_key(destination_id), path)
+                connection.execute(
+                    sa.delete(platform.app_setting).where(
+                        platform.app_setting.c.key == self._unverifiable_key(destination_id)
+                    )
+                )
+                return True
+            self._put_in(
+                connection, self._unverifiable_key(destination_id),
+                json.dumps({"reason": reason, "path": raw}),
+            )  # fmt: skip
+            connection.execute(
+                sa.delete(platform.app_setting).where(
+                    platform.app_setting.c.key == self._dir_key(destination_id)
+                )
+            )
+        return False
 
     def report(self, destination_id: str) -> SwitchoverReport:
         return self._detector.scan(destination_id, self._get(self._dir_key(destination_id)))

@@ -593,3 +593,38 @@ def test_scan_guard_of_a_dedicated_adopt_ro_mount_is_its_presence_not_a_sentinel
     shutil.rmtree(env.upstream)  # the read-only volume is gone
     with pytest.raises(RootBlockedError):
         env.fsops.require_scan_allowed(str(env.upstream / "Series"))
+
+
+# -- EF-EXP-044: a download folder that cannot be compared is said, not silent (review) --------------
+
+
+@pytest.mark.req("EF-EXP-044", "EF-INT-023")
+@pytest.mark.parametrize(
+    "reported", ["", "relative/dir", "/home/suwayomi/.local/share/Tachidesk/downloads"]
+)
+def test_download_folder_of_suwayomi_that_cannot_be_compared_is_listed_as_unverifiable(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+    reported: str,
+) -> None:
+    from shelfhold.ops.wiring import open_ops
+    from tests.l53_env import status_json, status_text
+    from tests.l54_env import SERIES, bench54, comic
+
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        b.kavita_series(SERIES, [f"{SERIES} - Ch.1.cbz"], info=comic(SERIES, number="1"))
+        assert b.adopt(capsys) == 0
+        inst = b.env.inst
+        ops = open_ops(settings, engine=inst.engine, composition=inst.comp)
+        inst.suwayomi.state["downloads_path"] = reported
+        report = ops.library.migration_report(b.env.destination_id)
+        assert report["detected"] is False  # nothing could be compared: not "not shared"
+        (listed,) = status_json(monkeypatch, settings, capsys)["unverifiable_dirs"]
+        assert listed["destination"] == b.env.destination_id and listed["path"] == reported
+        assert "non vérifiable" in status_text(monkeypatch, settings, capsys)
+        # the folder becomes comparable: the mark goes, the signal is raised
+        inst.suwayomi.state["downloads_path"] = str(inst.library / "Kavita")
+        assert ops.library.migration_report(b.env.destination_id)["detected"] is True
+        assert status_json(monkeypatch, settings, capsys)["unverifiable_dirs"] == []

@@ -340,3 +340,25 @@ def _without_userinfo(url: str) -> str:
     parts = urlsplit(url)
     host = parts.hostname or ""
     return f"{parts.scheme}://{host}{':' + str(parts.port) if parts.port else ''}{parts.path}"
+
+
+def unverifiable_download_dirs(connection: Connection) -> list[dict[str, object]]:
+    """The shelves for which the download folder Suwayomi reports could not be compared with the
+    library (empty, relative, or in Suwayomi's own namespace): "not verifiable" is said, not
+    silence (EF-EXP-044; 01 has no path map on the source side)."""
+    table = platform.app_setting
+    found: list[dict[str, object]] = []
+    prefix = "switchover.dir_unverifiable."
+    for row in connection.execute(
+        sa.select(table.c.key, table.c.value)
+        .where(table.c.key.like(prefix + "%"))
+        .order_by(table.c.key)
+    ):
+        import json
+
+        detail = json.loads(row.value)
+        found.append(
+            {"destination": row.key[len(prefix) :], "reason": detail.get("reason"),
+             "path": detail.get("path", "")}
+        )  # fmt: skip
+    return found
