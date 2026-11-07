@@ -119,6 +119,10 @@ enabled = "Plugin {name} confirmé. Il est chargé au prochain démarrage si SHE
 disabled = "Confirmation de {name} retirée."
 removed = "Plugin {name} désinstallé."
 none = "Aucun plugin tiers installé."
+row = "{name} {version}\t{status}"
+row_loaded = "{plugin}\t{status}\t{reason}"
+status_ready = "prêt"
+status_disabled = "désactivé : {reason}"
 
 [secrets]
 exported = "Trousseau exporté (age, scrypt) : {path}"

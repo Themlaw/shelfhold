@@ -28,8 +28,12 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     add.add_argument("--sha256", required=True, help=t("cli.plugin_sha256_help"))
     add.set_defaults(handler=run_install)
 
-    for name, handler in (("enable", run_enable), ("disable", run_disable), ("remove", run_remove)):
-        sub = actions.add_parser(name, help=t(f"cli.plugin_{name}_help"), allow_abbrev=False)
+    for name, handler, help_text in (
+        ("enable", run_enable, t("cli.plugin_enable_help")),
+        ("disable", run_disable, t("cli.plugin_disable_help")),
+        ("remove", run_remove, t("cli.plugin_remove_help")),
+    ):
+        sub = actions.add_parser(name, help=help_text, allow_abbrev=False)
         sub.add_argument("name", help=t("cli.plugin_name_help"))
         sub.set_defaults(handler=handler)
 
@@ -129,10 +133,21 @@ def run_list(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     if args.load:  # the same start-up load as the server, then the verdict of each plugin
         _registry, records = start_plugins(resolved.values)
         for record in records:
-            print(f"{record.key}\t{record.status.value}\t{record.reason or ''}")
+            print(
+                t(
+                    "plugin.row_loaded",
+                    plugin=record.key,
+                    status=record.status.value,
+                    reason=record.reason or "",
+                )
+            )
         return 0
     for verdict in guard.verdicts(layout, os.environ):
         plugin = state.installed[verdict.name]
-        status = "ready" if verdict.granted else f"disabled: {verdict.reason}"
-        print(f"{plugin.name} {plugin.version}\t{status}")
+        status = (
+            t("plugin.status_ready")
+            if verdict.granted
+            else t("plugin.status_disabled", reason=verdict.reason)
+        )
+        print(t("plugin.row", name=plugin.name, version=plugin.version, status=status))
     return 0

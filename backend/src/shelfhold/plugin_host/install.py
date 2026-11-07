@@ -27,7 +27,6 @@ import re
 import shutil
 import subprocess
 import sys
-import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -39,6 +38,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 
+from shelfhold.infrastructure.archives import UnsafeArchiveError, safe_open_archive
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import metadata as schema
 from shelfhold.infrastructure.secrets.atomic import write_private
@@ -194,34 +194,39 @@ def inspect_wheel(wheel: Path) -> WheelInfo:
     if wheel.suffix != ".whl":
         raise PluginInstallError("bad_wheel", "not a .whl file")
     try:
-        archive = zipfile.ZipFile(wheel)
-    except (zipfile.BadZipFile, OSError) as exc:
+        # A wheel is a ZIP; the opener knows it by extension, so the stream is given as `.zip`.
+        with (
+            wheel.open("rb") as stream,
+            safe_open_archive(stream, name="wheel.zip") as archive,  # audited, never extracted
+        ):
+            names = [e.name for e in archive.entries if not e.is_dir]
+            return _inspect_names(names, lambda n: bytes(archive.read(n)))
+    except (UnsafeArchiveError, OSError, KeyError) as exc:
         raise PluginInstallError("bad_wheel", str(exc)) from exc
-    with archive:
-        names = [n for n in archive.namelist() if not n.endswith("/")]
-        for n in names:
-            parts = PurePosixPath(n).parts
-            if n.startswith("/") or ".." in parts or "\\" in n or not parts:
-                raise PluginInstallError("bad_wheel", f"unsafe path {n!r}")
-            if n.lower().endswith(".pth"):
-                raise PluginInstallError("bad_wheel", f".pth file {n!r} (never executed)")
-            if parts[0].endswith(".data"):
-                raise PluginInstallError("bad_wheel", f"{parts[0]!r}: data directories refused")
-        infos = {
-            PurePosixPath(n).parts[0]
-            for n in names
-            if PurePosixPath(n).parts[0].endswith(".dist-info")
-        }
-        if len(infos) != 1:
-            raise PluginInstallError("bad_wheel", f"{len(infos)} dist-info directories")
-        dist_info = infos.pop()
-        match = _DIST_INFO.match(dist_info)
-        if match is None:
-            raise PluginInstallError("bad_wheel", f"bad dist-info name {dist_info!r}")
-        try:
-            meta = archive.read(f"{dist_info}/METADATA").decode("utf-8", "replace")
-        except KeyError as exc:
-            raise PluginInstallError("bad_wheel", "no METADATA") from exc
+
+
+def _inspect_names(names: list[str], read: Callable[[str], bytes]) -> WheelInfo:
+    for n in names:
+        parts = PurePosixPath(n).parts
+        if n.startswith("/") or ".." in parts or "\\" in n or not parts:
+            raise PluginInstallError("bad_wheel", f"unsafe path {n!r}")
+        if n.lower().endswith(".pth"):
+            raise PluginInstallError("bad_wheel", f".pth file {n!r} (never executed)")
+        if parts[0].endswith(".data"):
+            raise PluginInstallError("bad_wheel", f"{parts[0]!r}: data directories refused")
+    infos = {
+        PurePosixPath(n).parts[0] for n in names if PurePosixPath(n).parts[0].endswith(".dist-info")
+    }
+    if len(infos) != 1:
+        raise PluginInstallError("bad_wheel", f"{len(infos)} dist-info directories")
+    dist_info = infos.pop()
+    match = _DIST_INFO.match(dist_info)
+    if match is None:
+        raise PluginInstallError("bad_wheel", f"bad dist-info name {dist_info!r}")
+    try:
+        meta = read(f"{dist_info}/METADATA").decode("utf-8", "replace")
+    except KeyError as exc:
+        raise PluginInstallError("bad_wheel", "no METADATA") from exc
     declared = re.search(r"^Name:\s*(\S+)\s*$", meta, re.MULTILINE)
     if declared is None:
         raise PluginInstallError("bad_wheel", "METADATA declares no Name")
