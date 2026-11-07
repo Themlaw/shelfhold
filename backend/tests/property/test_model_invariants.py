@@ -47,7 +47,14 @@ from shelfhold.catalog.domain.numbering import (
 )
 from shelfhold.catalog.domain.placement import place_of
 from shelfhold.catalog.lang import LanguageError, normalize_lang
-from shelfhold.catalog.public import BindingRef, EditionRef, IncomingUnit, IngestOutcome
+from shelfhold.catalog.public import (
+    Admission,
+    BindingRef,
+    EditionRef,
+    IncomingUnit,
+    IngestOutcome,
+    RatingService,
+)
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.infrastructure.fsops import (
@@ -57,7 +64,12 @@ from shelfhold.infrastructure.fsops import (
     ReservedPathError,
     RootBlockedError,
 )
+from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.instance import WriteSessions
+from shelfhold.infrastructure.schema import catalog as catalog_tables
+from shelfhold.infrastructure.schema import export as export_tables
+from shelfhold.sdk.age import AGE_TIERS, AgeRating
 from shelfhold.sdk.refs import UnitInfo
 from tests.catalog_env import Harness, at, harness
 from tests.fsops_env import Env, make_env
@@ -934,3 +946,125 @@ def test_i42_remote_unit_id_is_stable_across_reinstalls(
             assert h.scalar("SELECT count(*) FROM unit_variant") == stored
             for u in found:  # the local integer is a cache, never part of the identity
                 assert str(u.memo["fetch_handle"]) not in u.remote_unit_id.split(":", 2)[-1]
+
+
+# -- classification (L08, ENF-QUAL-006): the real service over a real database ---------------------
+
+CEILINGS = (0, 10, 13, 16)  # the shelves below 18+
+RATER = Principal(
+    user_id=new_ulid(), username="admin", role="admin", credential=Credential.LOCAL_CLI,
+    can_rate=True,
+)  # fmt: skip
+
+
+def weight(age: AgeRating | None) -> int:
+    """Independent of `AgeRating`: X is above every age, an unrated Work is 18."""
+    if age is None:
+        return 18
+    return 99 if age.x else age.min_age
+
+
+class ClassificationInvariants(RuleBasedStateMachine):
+    """I-age: the effective age is the maximum; a Work nobody rated is never under 18+ (I48)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack = ExitStack()
+        self.h = self.stack.enter_context(harness())
+        self.service = RatingService()
+        self.now = at(0)
+        self.work_id = self.h.work()
+        self.work_age: AgeRating | None = None
+        self.editions: dict[str, tuple[AgeRating | None, bool]] = {}  # explicit age, rated
+        self.suggested: dict[str, list[AgeRating]] = {}
+        self.shelves: dict[int, str] = {}
+        for ceiling in CEILINGS:
+            shelf_id = new_ulid()
+            self.h.connection.execute(
+                sa.insert(export_tables.shelf).values(
+                    id=shelf_id, name=f"s{ceiling}", phrase=f"s{ceiling}", max_age_rating=ceiling
+                )
+            )
+            self.shelves[ceiling] = shelf_id
+
+    def teardown(self) -> None:
+        self.stack.close()
+
+    def tick(self) -> None:
+        self.now = self.now.replace(microsecond=0) + (at(1) - at(0))
+
+    @rule(lang=st.sampled_from(["en", "fr", "ja", "es", "de"]))
+    def add_edition(self, lang: str) -> None:
+        edition = self.h.edition(self.work_id, lang=lang)
+        self.editions.setdefault(edition.id, (None, False))
+        self.suggested.setdefault(edition.id, [])
+
+    @rule(tier=st.sampled_from(AGE_TIERS), x=st.booleans())
+    def rate_work(self, tier: int, x: bool) -> None:
+        age = AgeRating(18, True) if x else AgeRating(tier)
+        self.tick()
+        self.service.rate(self.h.connection, self.work_id, age, principal=RATER, now=self.now)
+        self.work_age = age
+        self.editions = {k: (explicit, True) for k, (explicit, _) in self.editions.items()}
+
+    @rule(pick=st.integers(0, 9), tier=st.sampled_from(AGE_TIERS))
+    def rate_edition(self, pick: int, tier: int) -> None:
+        if not self.editions:
+            return
+        edition_id = sorted(self.editions)[pick % len(self.editions)]
+        self.tick()
+        self.service.rate_edition(
+            self.h.connection, edition_id, AgeRating(tier), principal=RATER, now=self.now
+        )
+        self.editions[edition_id] = (AgeRating(tier), True)
+
+    @rule(pick=st.integers(0, 9), tier=st.sampled_from(AGE_TIERS), x=st.booleans())
+    def suggest(self, pick: int, tier: int, x: bool) -> None:
+        if not self.editions:
+            return
+        edition_id = sorted(self.editions)[pick % len(self.editions)]
+        age = AgeRating(18, True) if x else AgeRating(tier)
+        self.h.connection.execute(
+            sa.insert(catalog_tables.age_suggestion).values(
+                id=new_ulid(), entity_type="edition", entity_id=edition_id, value=age.min_age,
+                x=age.x, provenance="sub_source", seen_at=self.now,
+            )
+        )  # fmt: skip
+        self.suggested[edition_id].append(age)
+
+    def known(self) -> list[AgeRating]:
+        ages = [a for a, _ in self.editions.values() if a is not None]
+        return ages + ([self.work_age] if self.work_age is not None else [])
+
+    @invariant()
+    def effective_age_is_the_maximum(self) -> None:  # I-age
+        got = self.service.effective_age_of(self.h.connection, self.work_id)
+        known = self.known()
+        assert (got is None) == (not known)
+        if known:
+            assert got is not None and weight(got) == max(weight(a) for a in known)
+
+    @invariant()
+    def unrated_is_never_under_18_and_the_rule_holds(self) -> None:  # I-age, I48
+        effective = max((weight(a) for a in self.known()), default=None)
+        for edition_id, (explicit, rated) in self.editions.items():
+            age = weight(explicit) if explicit is not None else (18 if effective is None else effective)
+            for ceiling, shelf_id in self.shelves.items():
+                got = self.service.admission_of(self.h.connection, edition_id, shelf_id=shelf_id)
+                allowed = (
+                    rated
+                    and age <= ceiling
+                    and all(weight(s) <= age for s in self.suggested[edition_id])
+                )
+                assert (got is Admission.ALLOWED) == allowed
+                if not self.known():
+                    assert got is not Admission.ALLOWED  # nobody rated anything: never below 18+
+
+
+@pytest.mark.req("ENF-QUAL-006", "EF-BIB-037", "EF-BIB-055")
+def test_classification_invariants_property_suite() -> None:
+    """ENF-QUAL-006: effective age = maximum of the Editions; an unrated Work is never below 18+."""
+    run_state_machine_as_test(
+        ClassificationInvariants,
+        settings=settings(max_examples=60, stateful_step_count=20, deadline=None, derandomize=True),
+    )
