@@ -529,3 +529,56 @@ def test_series_name_that_cannot_be_a_folder_is_refused_and_the_edition_keeps_wa
             ]
         }
         assert not list((b.env.inst.library / "Kavita").glob("*/"))  # nothing was created
+
+
+# -- EF-EXP-029: the control before an unmount does not scan an unmounted library (review) ----------
+
+
+@pytest.mark.req("EF-EXP-029", "EF-EXP-051")
+def test_repatriation_check_sends_no_scan_when_the_sentinel_of_the_library_is_gone(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from tests.l56_env import repatriation_bench
+
+    with repatriation_bench(monkeypatch, capsys, settings, tmp_path) as r:
+        fingerprint = r.fingerprint(capsys)
+        assert r.cli("--confirm", fingerprint) == 0
+        r.unmount()
+        fake = r.b.env.inst.kavita
+        fake.scans.clear()
+        sentinel = _sentinel_of(r.b.env.inst)
+        kept = sentinel.read_bytes()
+        sentinel.unlink()
+        capsys.readouterr()
+        assert r.cli("--check") == 3  # nothing is verified, so nothing is declared safe
+        assert "sentinelle" in capsys.readouterr().err
+        assert fake.scans == []  # Kavita was not asked to read an unmounted folder
+        sentinel.write_bytes(kept)
+        assert r.cli("--check") == 0
+        assert fake.scans
+
+
+@pytest.mark.req("EF-EXP-029", "EF-EXP-060")
+def test_scan_guard_of_a_dedicated_adopt_ro_mount_is_its_presence_not_a_sentinel(
+    tmp_path: Path,
+) -> None:
+    """01 gives `adopt_ro` no sentinel (it is never written): a scan is allowed while the mount is
+    there and refused as a blocked root when it is not. The writable root next to it keeps its
+    sentinel: without it, no scan."""
+    import shutil
+
+    from shelfhold.infrastructure.fsops.errors import RootBlockedError
+    from tests.fsops_env import make_env
+
+    env = make_env(tmp_path)
+    env.fsops.require_scan_allowed(str(env.upstream / "Series"))  # mounted, no sentinel: allowed
+    env.fsops.require_scan_allowed(str(env.manga / "Series"))  # its sentinel is there
+    (env.library / ".shelfhold-mount-id").unlink()
+    with pytest.raises(RootBlockedError):
+        env.fsops.require_scan_allowed(str(env.manga / "Series"))
+    shutil.rmtree(env.upstream)  # the read-only volume is gone
+    with pytest.raises(RootBlockedError):
+        env.fsops.require_scan_allowed(str(env.upstream / "Series"))

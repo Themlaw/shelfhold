@@ -981,6 +981,7 @@ kavita_unreachable = "Kavita ne répond pas ou refuse la lecture : rien n'est v�
 kavita_no_library = "Kavita : la destination n'est liée à aucune bibliothèque, rien n'est vérifié."
 kavita_baseline_incomplete = "Kavita : l'état d'avant la copie ne couvre pas les fichiers adoptés (le compte de la clé ne voit pas tout, ou un scan était en cours) : rien n'est vérifié."
 kavita_incomplete = "Kavita : la liste des séries est trop longue pour être lue en entier, rien n'est vérifié."
+kavita_scan_refused = "Kavita : le montage de la bibliothèque n'a pas la sentinelle attendue, le scan n'est pas envoyé et rien n'est vérifié. Remontez le bon volume, puis relancez le contrôle."
 kavita_not_asked = "Kavita n'a pas été interrogée, rien n'est vérifié."
 
 [detach]

@@ -342,9 +342,16 @@ class Fsops:
             return error.state
 
     def require_scan_allowed(self, local: str) -> None:
+        """The sentinel's word before a scan (EF-EXP-029). A dedicated `adopt_ro` mount is never
+        written, so it carries no sentinel (EF-EXP-060): its word is that the mount is there. An
+        `adopt_ro` entry nested in a writable root is under that root's sentinel."""
         located = self._locate(local)
-        if located.read_only:
-            return
+        if located.read_only and located.root_path in self._read_only:
+            try:
+                with self._root(located.root_path):
+                    return
+            except OSError as error:  # the volume is not there: Kavita would read an empty folder
+                raise RootBlockedError(located.root_path, RootState.MISSING) from error
         if self._frozen:
             raise RootBlockedError(located.root_path, RootState.RESTORED_BEHIND)
         with self._root(located.root_path) as root:

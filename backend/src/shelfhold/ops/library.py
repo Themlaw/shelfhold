@@ -65,6 +65,7 @@ from shelfhold.export.application.repatriate_kavita import (
 )
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
+from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.series import refresh_names
@@ -566,6 +567,22 @@ class LibraryOps:
         if store.load(destination_id) is None:  # a damaged value is in the way
             raise RepatriationBlockedError(())
 
+    def _scan_allowed(self, destination_id: str) -> Callable[[str], bool]:
+        """The sentinel's word before a scan (`require_scan_allowed`), for the folder of Kavita."""
+
+        def allowed(remote: str) -> bool:
+            try:
+                with self._comp.engine.connect() as connection:
+                    ctx = load_context(connection, destination_id)
+                fsops, _loaded, _tombstones = self._comp.read_context()
+                fsops.require_scan_allowed(ctx.path_map.to_local(remote))
+            except (RootBlockedError, PathMapError, OSError, LookupError):
+                _log.info("repatriate.scan_refused", folder=remote, reason="root_not_ready")
+                return False
+            return True
+
+        return allowed
+
     def _kavita_verdict(self, destination_id: str, repatriator: Repatriator) -> KavitaVerdict:
         """Scan the folder, read Kavita again, compare it with the baseline."""
         baseline = BaselineStore(self._comp.engine).load(destination_id)
@@ -576,7 +593,14 @@ class LibraryOps:
                 if not covers(baseline, remote_root, rels, series):
                     return KavitaVerdict(reason="baseline_incomplete")
             return asyncio.run(
-                verify(client, baseline, library_ref, remote_root, unreachable=_KAVITA_UNAVAILABLE)
+                verify(
+                    client,
+                    baseline,
+                    library_ref,
+                    remote_root,
+                    unreachable=_KAVITA_UNAVAILABLE,
+                    scan_allowed=self._scan_allowed(destination_id),
+                )
             )
         except _KAVITA_UNAVAILABLE:
             return KavitaVerdict(reason="unreachable")
