@@ -1663,17 +1663,19 @@
         "type": "object"
       },
       "SecretsImportIn": {
-        "description": "Two paths on the host of the server: the passphrase never travels in the request.",
+        "description": "Two plain file names in `<data folder>/import/` on the host of the server: the passphrase\nnever travels in the request, and the caller picks no path.",
         "properties": {
           "in_file": {
-            "maxLength": 4096,
+            "maxLength": 128,
             "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
             "title": "In File",
             "type": "string"
           },
           "passphrase_file": {
-            "maxLength": 4096,
+            "maxLength": 128,
             "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
             "title": "Passphrase File",
             "type": "string"
           }
@@ -1693,6 +1695,11 @@
             },
             "title": "Added",
             "type": "array"
+          },
+          "deferred": {
+            "default": false,
+            "title": "Deferred",
+            "type": "boolean"
           },
           "present": {
             "title": "Present",

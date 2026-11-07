@@ -1035,7 +1035,8 @@ export type SecretIn = {
 /**
  * SecretsImportIn
  *
- * Two paths on the host of the server: the passphrase never travels in the request.
+ * Two plain file names in `<data folder>/import/` on the host of the server: the passphrase
+ * never travels in the request, and the caller picks no path.
  */
 export type SecretsImportIn = {
     /**
@@ -1056,6 +1057,10 @@ export type SecretsImportOut = {
      * Added
      */
     added: Array<string>;
+    /**
+     * Deferred
+     */
+    deferred?: boolean;
     /**
      * Present
      */
