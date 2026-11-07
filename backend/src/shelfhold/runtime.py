@@ -272,6 +272,10 @@ class InstanceRuntime:
     def _repair_projections(self, engine: Engine) -> None:
         log = structlog.get_logger()
         try:
+            with engine.connect() as connection:
+                if self.freeze_state.frozen_in(connection):
+                    log.warning("meta_repair_skipped", reason="restored_behind")  # no write
+                    return
             report = MetaProjection(engine, self.settings.data_dir).repair()
         except (OSError, ValueError, sa.exc.SQLAlchemyError) as error:
             log.warning("meta_repair_skipped", error=type(error).__name__)  # the next start tries
