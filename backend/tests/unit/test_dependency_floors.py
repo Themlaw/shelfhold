@@ -74,3 +74,12 @@ def test_floors_are_declared_in_pyproject_not_only_in_the_lock() -> None:
 def test_exclude_newer_supply_chain_window_is_kept() -> None:
     project = tomllib.loads((BACKEND / "pyproject.toml").read_text(encoding="utf-8"))
     assert project["tool"]["uv"]["exclude-newer"] == "14 days"
+
+
+def test_the_webauthn_binding_imports_the_pinned_library() -> None:
+    from importlib.metadata import version
+
+    from shelfhold.identity.webauthn import library
+
+    assert library.webauthn.__name__ == "webauthn"
+    assert tuple(int(p) for p in version("webauthn").split(".")[:2]) >= (3, 0)
