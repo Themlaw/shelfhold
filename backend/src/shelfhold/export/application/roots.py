@@ -100,11 +100,12 @@ def open_fsops(
     umask: int,
     write_gate: Callable[[], None] | None = None,
     stop_gate: Callable[[], None] | None = None,
+    freeze: FreezeState | None = None,
 ) -> Fsops:
     """The one way to open the library's `Fsops`: the gates a caller has (disk, stop barrier), the
     restore freeze (`FreezeState`, one copy per writer) and the library umask
     (`SHELFHOLD_UMASK`, EF-EXP-006), which no assembly may forget: `umask` has no default."""
     return Fsops.open(
         loaded.path_map, loaded.expected, umask=umask, write_gate=write_gate, stop_gate=stop_gate,
-        freeze=loaded.freeze.fork(),
+        freeze=freeze if freeze is not None else loaded.freeze.fork(),
     )  # fmt: skip
