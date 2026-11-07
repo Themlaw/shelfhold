@@ -81,12 +81,6 @@ path = "e2e/tests/test_m1a_journey.py"
 workflow = "image.yml"
 reason = "deux parcours (premier chapitre dans Kavita, détachement) attendent le câblage de production du suivi, de l'export et de la commande de détachement (xfail strict, lot L41) ; les autres tests du fichier tournent dans la CI requise"
 
-# Aspects of multi-part requirements not yet testable at M0, with the milestone that owns them.
-[[deferred]]
-requirement = "ENF-OPS-002"
-aspect = "« pas de migration dans une release patch » (contrôle CI)"
-reason = "n'a de sens qu'à partir de la première release patch (0.1.x) ; contrôle à ajouter avec la sortie de v0.1.0 (release publiée à la main), avant la clôture de M1a"
-
 [[exception]]
 path = "backend/tests/unit/test_production_reachability.py"
 reason = "garde de joignabilité des tests `req` (L58) : contrôle les tests, pas une exigence du produit"

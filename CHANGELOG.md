@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ## [0.2.0] - non publiée — M1a
 
-Migration : oui (migrations 0002 à 0010, voir ci-dessous), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à 0.1 passe par la restauration de cette sauvegarde (`docs/admin/restauration.md`).
+Migration : oui (migrations 0002 à 0012, voir ci-dessous), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à 0.1 passe par la restauration de cette sauvegarde (`docs/admin/restauration.md`).
 
 Migrations :
 
@@ -17,6 +17,8 @@ Migrations :
 - 0008 : opération `register` pour les destinations en tirage.
 - 0009 : `tombstone_lost_kid` (clés de pierres tombales abandonnées).
 - 0010 : `export_series.paused_reason` (série en pause par un autre écrivain).
+- 0011 : `follow_notice` (ce que le suivi a déjà dit ou attend de l'administrateur, pour ne pas le redire après un redémarrage) et une seule liaison active par série amont (index unique partiel ; sur une base qui en aurait deux, la plus ancienne reste active).
+- 0012 : normaliseurs versionnés de la langue d'Édition (`lang@1`) et de l'identifiant amont (`remote_unit_id@1`), et `export_record.resolved_at` (heure d'arrivée dans Kavita).
 
 ### Ajouté
 
@@ -35,7 +37,11 @@ Migrations :
 - Un CBZ dont une entrée n'est pas une image de la liste blanche (SVG, HTML, extension mensongère) est écarté : jamais redemandé, `content.untrusted_entry` émis, aucun échec de contenu compté.
 - Exploitation : garde disque avec hystérésis, refus de `/data` sur stockage réseau, arrêt propre, matrice de pannes avec simulateur, états d'attente et commandes de sortie (`shelfhold status`, routes `/api/v1/status` et d'exploitation), notifications Apprise, planificateur Huey avec fenêtre de maintenance, assets de release `schema.sql` et dictionnaire de données, `shelfhold stats` local sans télémétrie.
 - Câblage de production : racine de composition partagée par le serveur, la CLI et les tâches ; consommateurs Huey embarqués ; tâches `follow.cycle`, `export.run`, `reconcile.cycle`, `reconcile.hash`, audit d'accès quotidien et `notify.dispatch` ; canaux Apprise sur le bus d'exploitation de tous les éditeurs ; commandes `adopt pair|--pair-auto|set-follow-from|--confirm-migration|--repatriate`, `detach --restore-upstream`, `purge --now` et `probe` avec leurs routes ; enregistrement de l'instance et des racines physiques ; lien de l'étagère avec une bibliothèque Kavita (`shelf create`). Code d'erreur `purge.collateral`.
-- Tests de bout en bout : parcours d'installation sans interface, redéploiement sans perte et détachement sur l'image, contre des Kavita et Suwayomi simulés ; test de nuit contre de vrais Kavita et Suwayomi. Le parcours « installation neuve jusqu'au premier chapitre » attend la découverte des séries de la bibliothèque Suwayomi (voir « Connu »).
+- Découverte des séries de la bibliothèque Suwayomi (#67, EF-SRC-009) : au début de chaque cycle, chaque série suivie par Suwayomi qui n'a pas de liaison reçoit son Œuvre, son Édition sur l'étagère adulte et sa liaison. Le premier cycle ne demande rien (seuls les chapitres publiés après lui sont récupérés) ; une série sous pierre tombale n'est jamais créée ; une série adoptée en attente d'appariement est laissée à `adopt pair`. Sans étagère adulte, l'événement `series.awaiting_shelf` dit la commande à lancer (`shelf create`).
+- Tests de bout en bout : parcours d'installation neuve jusqu'au premier chapitre, redéploiement sans perte et détachement sur l'image, contre des Kavita et Suwayomi simulés ; test de nuit contre de vrais Kavita et Suwayomi, avec une extension Suwayomi de test construite par le dépôt (dépendances vérifiées par somme de contrôle).
+- Remédiation de l'audit (L45 à L59) : `SHELFHOLD_UMASK` (défaut `0022`) appliqué aux fichiers de la bibliothèque (EF-EXP-006) ; contributeurs et dates partielles de l'ingestion jusqu'au ComicInfo (L49) ; couverture de série envoyée à Kavita (EF-EXP-045) ; `adopt set-coverage` et couverture `Vol.N`, `adoption_refused` et `coverage_unknown` persistés (L54) ; contrôle vérifié du rapatriement par l'API de Kavita, projection `work.json`, bail versionné, `shelfhold meta rebuild|check` du miroir de provenance (L56) ; golden CBZ, invariants I24 à I42, bornes de couverture, documentation d'exposition publique et de sauvegarde (L57) ; `docs/reference/config.md` généré (EF-INT-024).
+- Contrôles de qualité : garde de joignabilité des symboles cités par les tests `req` (liste d'autorisations `tools/production-reachability-allowlist.toml`), diff OpenAPI complet, migrations publiées figées par empreinte (`tools/check_patch_migrations.py`), contrats import-linter en erreur (L58).
+- Contrôle de release : une version corrective (X.Y.Z, Z > 0) qui ajouterait une migration, ou modifierait une migration publiée, est refusée par `release.yml` (ENF-OPS-002).
 - Configuration sans interface : `config get|set|apply`, `target add`, `source add`, `shelf create`, CLI locale par socket Unix avec `SO_PEERCRED`.
 - Authentification locale : administrateur, sessions serveur, CSRF, tentatives limitées, clés d'API hachées, actions réservées avec fraîcheur (`reauth-required`), profil durci facultatif.
 - Documentation d'administration : installation sans interface, adoption, migration depuis des scripts, rapatriement, retour arrière, états d'attente, restauration, purge, garde disque, redéploiement, racines physiques, montage `adopt_ro`, exposition publique, budget mémoire et disque, décisions d'exécution de M1a.
@@ -47,7 +53,8 @@ Migrations :
 
 ### Connu
 
-- Sur une installation neuve, rien ne lie encore les séries que Suwayomi suit : seule `shelfhold adopt pair` crée la liaison, à partir d'une série adoptée. La découverte automatique de ces séries n'est pas dans cette version de l'arbre.
+- Une série d'une sous-source multilingue (`all`) est découverte avec une Édition de langue inconnue (`x-unknown`, état `language_unknown`) : sa langue se donne par `shelfhold edition set-lang`.
+- Le paquet de diagnostic n'existe pas (M2).
 - `root takeover|reinit|restored` et `store reinit` n'existent pas (M1b) ; `adoption_refused` et `coverage_unknown` ne figurent pas dans `shelfhold status` (ils sont portés par l'événement) ; l'application d'un plan par `POST /api/v1/plans/{id}/apply` reste refusée ; `secrets import` n'existe pas.
 
 ### Modifié
@@ -61,6 +68,7 @@ Migrations :
 
 ### Sécurité
 
+- Risque administrateur accepté à l'ajout d'une destination (`--accept-admin-risk`) tracé dans le journal d'audit ; session « se souvenir de moi » durcie ; routes réservées réelles (L47). Texte amont assaini jusqu'au ComicInfo, plafonds d'archive, dates futures refusées (L45).
 - En-têtes de sécurité globaux sur toutes les réponses.
 - Garde SSRF du Fetcher avec cibles du réseau local épinglées ; toute adresse publique refusée pour une destination.
 - Archives et XML non fiables ouverts par des chemins bornés (liste blanche CBZ, plafonds d'image, décodage dans un processus sans réseau), texte amont assaini.
