@@ -171,6 +171,7 @@ EXPECTED_CLOSED = {
         "shelfhold/infrastructure/local_socket/server.py::bind_private",
         "shelfhold/plugin_host/install.py::install_wheel",
         "shelfhold/plugin_host/install.py::remove_plugin",
+        "shelfhold/plugin_host/install.py::_undo",
         f"{FSOPS}/probe.py::_remove_probe_dir",
     },
     "restore": {"shelfhold/infrastructure/migrate.py::_restore_database"},

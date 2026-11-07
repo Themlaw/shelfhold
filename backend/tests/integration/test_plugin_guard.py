@@ -356,3 +356,63 @@ def test_review_forged_state_cannot_remove_files_outside_the_plugin_directory(
         done = cli.run("plugin", "remove", name)
         assert done.returncode == 1 and "bad_state" in done.stderr, name
         assert (victim / "keep").exists()
+
+
+@pytest.mark.req("EF-SRC-019")
+@pytest.mark.parametrize(
+    "files",
+    [
+        {
+            "x_plug/__init__.py": "",
+            "evil.egg-info/PKG-INFO": "Name: evil",
+            "evil.egg-info/entry_points.txt": "",
+        },
+        {"x_plug/__init__.py": "", "sitecustomize.py": ""},
+        {"x_plug/__init__.py": "", "usercustomize.py": ""},
+        {"x_plug/__init__.py": "", "x_plug/__pycache__/m.cpython-313.pyc": ""},
+        {"x_plug/__init__.py": "", "x_plug/native.cpython-313-x86_64-linux-gnu.so": "x"},
+        {"x_plug/__init__.py": "", "x_plug.libs/lib.so": "x"},
+        {"x_plug/__init__.py": "", "a_link": ""},
+        {"json.cpython-313-x86_64-linux-gnu.so": "x"},  # the stdlib's name once its suffixes go
+        {"json.py": ""},
+    ],
+    ids=[
+        "egg-info",
+        "sitecustomize",
+        "usercustomize",
+        "pycache",
+        "extension",
+        "libs",
+        "stray-file",
+        "so-json",
+        "json",
+    ],
+)
+def test_review_wheel_content_that_plugins_never_need_is_refused(
+    cli: Cli, tmp_path: Path, files: dict[str, str]
+) -> None:
+    wheel = build_wheel(tmp_path, "x-plug", {}, extra=files)
+    done = cli.run("plugin", "install", str(wheel.path), "--sha256", wheel.sha256)
+    assert done.returncode == 1 and ("bad_wheel" in done.stderr or "conflict" in done.stderr)
+    site = cli.data / "plugins" / "site-packages"
+    assert not site.exists() or list(site.iterdir()) == []
+    assert any(a == "plugin.install_refused" for a, _ in cli.audit_actions())
+
+
+@pytest.mark.req("EF-SRC-019")
+def test_review_a_failed_placement_is_a_refusal_not_a_traceback(
+    cli: Cli, tmp_path: Path, probe: Path
+) -> None:
+    install(cli, tmp_path, probe)
+    other = plugin_wheel(tmp_path, "other-plug", "other", probe, "other_plug")
+    site = cli.data / "plugins" / "site-packages"
+    site.chmod(0o500)  # the files cannot be placed
+    try:
+        done = cli.run("plugin", "install", str(other.path), "--sha256", other.sha256)
+    finally:
+        site.chmod(0o700)
+    assert done.returncode == 1 and "bad_wheel" in done.stderr and "Traceback" not in done.stderr
+    assert not (site / "other_plug").exists()
+    assert ("plugin.install_refused", "other_plug-1.0-py3-none-any.whl:bad_wheel") in (
+        cli.audit_actions()
+    )

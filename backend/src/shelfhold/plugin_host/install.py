@@ -20,6 +20,7 @@ confirmation (``enable``) is bound to that digest: reinstalling or editing the f
 from __future__ import annotations
 
 import hashlib
+import importlib.machinery
 import importlib.util
 import json
 import os
@@ -232,7 +233,33 @@ class WheelInfo:
 
 def _top_level(path: str) -> str:
     first = PurePosixPath(path).parts[0]
-    return first[:-3] if first.endswith(".py") else first
+    for suffix in sorted(importlib.machinery.all_suffixes(), key=len, reverse=True):
+        if first.endswith(suffix):
+            return first[: -len(suffix)]
+    return first
+
+
+_STARTUP_HOOKS = frozenset({"sitecustomize", "usercustomize"})
+
+
+def _refuse_content(n: str, parts: tuple[str, ...]) -> None:
+    """Content a plugin has no use for and the host must not unpack."""
+    first = parts[0]
+    if first.endswith((".egg-info", ".egg-link")):
+        raise PluginInstallError("bad_wheel", f"{first!r}: egg-info refused (fake metadata)")
+    if "__pycache__" in parts or n.endswith((".pyc", ".pyo")):
+        raise PluginInstallError("bad_wheel", f"{n!r}: bytecode refused (sources only)")
+    if first.endswith(".dist-info"):
+        return
+    top = _top_level(n)
+    if top in _STARTUP_HOOKS:
+        raise PluginInstallError("bad_wheel", f"{top!r}: start-up hook refused")
+    if len(parts) == 1 and first != f"{top}.py":
+        raise PluginInstallError("bad_wheel", f"{first!r}: top-level file that is not a module")
+    if not top.isidentifier() or "." in first.removesuffix(".py"):
+        raise PluginInstallError("bad_wheel", f"{first!r}: not a plain module or package name")
+    if n.endswith((*importlib.machinery.EXTENSION_SUFFIXES, ".so", ".pyd")):
+        raise PluginInstallError("bad_wheel", f"{n!r}: compiled modules refused (sources only)")
 
 
 def inspect_wheel(wheel: Path) -> WheelInfo:
@@ -259,6 +286,7 @@ def _inspect_names(names: list[str], read: Callable[[str], bytes]) -> WheelInfo:
             raise PluginInstallError("bad_wheel", f".pth file {n!r} (never executed)")
         if parts[0].endswith(".data"):
             raise PluginInstallError("bad_wheel", f"{parts[0]!r}: data directories refused")
+        _refuse_content(n, parts)
     infos = {
         PurePosixPath(n).parts[0] for n in names if PurePosixPath(n).parts[0].endswith(".dist-info")
     }
@@ -416,8 +444,19 @@ def install_wheel(
             raise PluginInstallError("install_failed", (done.stderr or done.stdout).strip()[-400:])
         _check_staged(target, info)
         layout.site.mkdir(parents=True, exist_ok=True, mode=0o700)
-        for entry in on_disk(target, info.top_levels, info.dist_info):
-            os.replace(target / entry, layout.site / entry)
+        moved: list[Path] = []
+        try:
+            for entry in on_disk(target, info.top_levels, info.dist_info):
+                if (layout.site / entry).exists() or (layout.site / entry).is_symlink():
+                    raise PluginInstallError("conflict", f"{entry!r} already exists")
+                os.replace(target / entry, layout.site / entry)
+                moved.append(layout.site / entry)
+        except OSError as exc:
+            _undo(moved)
+            raise PluginInstallError("bad_wheel", f"cannot place the files: {exc}") from exc
+        except PluginInstallError:
+            _undo(moved)
+            raise
         digest = tree_digest(layout.site, on_disk(layout.site, info.top_levels, info.dist_info))
         installed = Installed(
             info.name, info.version, expected, info.top_levels, info.dist_info, digest
@@ -428,6 +467,14 @@ def install_wheel(
         return installed
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+
+
+def _undo(moved: Sequence[Path]) -> None:
+    for path in moved:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            path.unlink(missing_ok=True)
 
 
 def _check_staged(target: Path, info: WheelInfo) -> None:

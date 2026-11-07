@@ -62,6 +62,7 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 # itself under /data/plugins (EF-SRC-019); never a library path
                 "shelfhold/plugin_host/install.py::install_wheel",
                 "shelfhold/plugin_host/install.py::remove_plugin",
+                "shelfhold/plugin_host/install.py::_undo",
                 # the probe folder the write check made itself (EF-UX-002)
                 f"{_FSOPS}/probe.py::_remove_probe_dir",
             }
