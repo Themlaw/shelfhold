@@ -602,6 +602,72 @@ def test_no_authentication_secret_in_the_debug_logs(
     assert SESSION_COOKIE and CSRF_COOKIE
 
 
+@pytest.mark.req("EF-USR-025", "ENF-SEC-005", "ENF-OBS-001")
+def test_no_passkey_value_in_the_debug_logs(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, logs: Logs
+) -> None:
+    """M1b L05: no credential id, public key, user handle or challenge, at any level, through
+    registration, login, a refused counter, re-authentication and revocation."""
+    from tests.auth_env import CSRF_HEADER, auth_env, db_rows
+    from tests.integration.test_passkeys import (
+        LOGIN,
+        PASSKEYS,
+        REAUTH,
+        REAUTH_OPTIONS,
+        login_flow,
+    )
+    from tests.passkey_env import SoftPasskey, b64u
+
+    logs.start("DEBUG")
+    passkey = SoftPasskey()
+    challenges: list[str] = []
+    with auth_env(monkeypatch, settings, public_url="https://testserver") as api:
+        api.login()
+        options = api.post(f"{PASSKEYS}/options", json={}).json()
+        challenges.append(options["options"]["challenge"])
+        done = api.post(
+            PASSKEYS,
+            json={
+                "flow": options["flow"], "name": "Laptop",
+                "credential": passkey.create(options["options"]),
+            },
+        )  # fmt: skip
+        assert done.status_code == 201
+        anonymous = api.other_client("198.51.100.99")
+        flow = login_flow(anonymous)
+        challenges.append(flow["options"]["challenge"])
+        for counter in (4, 2):  # a login, then a regression
+            credential = passkey.get(flow["options"], counter=counter)
+            anonymous.post(LOGIN, json={"flow": flow["flow"], "credential": credential})
+            flow = login_flow(anonymous)
+            challenges.append(flow["options"]["challenge"])
+        reauth = api.post(REAUTH_OPTIONS, json={}).json()
+        challenges.append(reauth["options"]["challenge"])
+        api.post(
+            REAUTH,
+            json={
+                "method": "passkey", "flow": reauth["flow"],
+                "credential": passkey.get(reauth["options"]),
+            },
+        )  # fmt: skip
+        [(item_id, public_key)] = db_rows(
+            api.settings, "SELECT id, public_key FROM webauthn_credential"
+        )
+        api.client.delete(f"{PASSKEYS}/{item_id}", headers={CSRF_HEADER: api.csrf()})
+    text = "\n".join(str(v) for r in logs.drain() for v in r.values()) + "".join(logs.lines)
+    assert "auth.audit" in text and "passkey" in text  # the paths really logged
+    secrets = {
+        "credential id": b64u(passkey.credential_id),
+        "credential id hex": passkey.credential_id.hex(),
+        "public key": b64u(public_key), "public key hex": public_key.hex(),
+        "user handle": b64u(passkey.user_handle or b"?"), "flow": flow["flow"],
+        **{f"challenge {n}": c for n, c in enumerate(challenges)},
+    }  # fmt: skip
+    for label, secret in secrets.items():
+        assert secret and secret not in text, label
+    assert REAUTH
+
+
 @pytest.mark.req("ENF-SEC-005", "ENF-OBS-001")
 def test_every_setting_is_logged_or_declared_secret_and_the_four_stay_visible(
     settings: Settings, logs: Logs
