@@ -23,6 +23,7 @@ from sqlalchemy import Engine
 
 from shelfhold.export.domain.path_map import PathMode, clean_absolute, within
 from shelfhold.export.domain.physical_roots import SentinelDocument
+from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import create_sentinel
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot
 from shelfhold.infrastructure.fsops.sentinel import read_sentinel
@@ -139,16 +140,14 @@ def register_roots(
 
     Refused before anything is stamped: a folder outside the library, on or around `/data` or
     `/store`, or overlapping a registered root (`RootRefusedError`). Nothing is stamped while the
-    instance is frozen (`restore_generation`). A folder that cannot be written is skipped with
+    instance is frozen (`FreezeState`). A folder that cannot be written is skipped with
     `root_bootstrap.unwritable`: the other roots, `/store` included, go on."""
     instance_id = ensure_instance(engine, jurisdiction=jurisdiction)
     wanted = [(clean_absolute(os.path.abspath(raw)), mode) for raw, mode in wanted]
     if policy is not None:
         policy.check_all(wanted)
     with engine.connect() as connection:
-        frozen = bool(
-            connection.execute(sa.select(platform.instance.c.restore_generation)).scalar_one()
-        )
+        frozen = FreezeState.read(connection).frozen
         known = [
             clean_absolute(p)
             for p in connection.execute(sa.select(platform.physical_root.c.path_entry)).scalars()

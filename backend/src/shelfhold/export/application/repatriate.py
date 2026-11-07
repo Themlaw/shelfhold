@@ -39,7 +39,7 @@ from shelfhold.infrastructure.fsops import (
     RootBlockedError,
 )
 from shelfhold.infrastructure.logging import log_outcome
-from shelfhold.infrastructure.schema import export, platform
+from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import relocate_destination_copy
 
 __all__ = [
@@ -234,12 +234,9 @@ class Repatriator:
 
     def frozen(self) -> bool:
         """`restored_behind`: the freeze of this process, or the one the database persists
-        (`restore_generation`, until `reconcile --adopt-after-restore`)."""
+        (`FreezeState`, until `reconcile --adopt-after-restore`)."""
         with self._engine.connect() as connection:
-            persisted = connection.execute(
-                sa.select(platform.instance.c.restore_generation)
-            ).scalar()
-        return self._fsops.frozen or bool(persisted and persisted > 0)
+            return self._fsops.freeze_state.frozen_in(connection)
 
     @staticmethod
     def _source_root(entries: Any, root_subpath: str, source: str | None) -> str:

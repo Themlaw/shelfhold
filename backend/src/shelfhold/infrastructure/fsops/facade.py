@@ -41,6 +41,7 @@ from shelfhold.export.domain.physical_roots import (
     judge_sentinel,
 )
 from shelfhold.export.domain.provenance_mirror import is_mirror_rel
+from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops.capabilities import RootCapabilities, probe_root
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
 from shelfhold.infrastructure.fsops.emitters import (
@@ -164,6 +165,7 @@ class Fsops:
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
         frozen: bool = False,
+        freeze: FreezeState | None = None,
     ) -> None:
         self._stop_gate = stop_gate  # raises once the shutdown went past its checkpoint delay
         self._write_gate = write_gate  # raises while the disk guard is paused (ENF-OPS-006)
@@ -175,12 +177,21 @@ class Fsops:
         self._strategy = strategy
         self._lease_verifier: Callable[[str, bytes | None], None] | None = None
         self._tombstones_owed: Callable[[str], bool] | None = None
-        self._frozen = frozen
+        self._freeze = freeze if freeze is not None else FreezeState(process=frozen)
         self._behind_hook: Callable[[], None] | None = None
 
     @property
     def frozen(self) -> bool:
-        return self._frozen
+        return self._freeze.frozen
+
+    @property
+    def freeze_state(self) -> FreezeState:
+        return self._freeze
+
+    def _frozen_for(self, root_path: str) -> bool:
+        """The freeze, for the root at `root_path`: the instance level or the root's own."""
+        expected = self._expected.get(root_path)
+        return self._freeze.frozen_for(expected.root_id) if expected else self._freeze.frozen
 
     def on_restored_behind(self, hook: Callable[[], None] | None) -> None:
         """Called when a write finds a root whose sentinel is ahead of the database (a root that
@@ -191,10 +202,10 @@ class Fsops:
         """Read-only for the whole instance, every root, until `unfreeze`: the database is older
         than the disk (`restored_behind`, EF-INT-026). Reads, observation and hashing still work;
         no write, deletion, session or scan does."""
-        self._frozen = True
+        self._freeze.freeze()
 
     def unfreeze(self) -> None:
-        self._frozen = False
+        self._freeze.thaw()
 
     def enforce_lease(self, verify: Callable[[str, bytes | None], None] | None) -> None:
         """From now on every write passes `verify(root_path, raw_lease)`, which raises when the
@@ -220,12 +231,14 @@ class Fsops:
         stop_gate: Callable[[], None] | None = None,
         now: Callable[[], float] = time.time,
         frozen: bool = False,
+        freeze: FreezeState | None = None,
     ) -> Self:
         """No file system access: roots are opened, and their sentinels read, per operation.
         `frozen`: the database says `restored_behind` (read from `LoadedRoots.restore_pending`)."""
         return cls(
             path_map, expected, umask=umask, strategy=strategy,
             write_gate=write_gate, stop_gate=stop_gate, now=now, frozen=frozen,
+            freeze=freeze,
         )  # fmt: skip
 
     # -- locating ---------------------------------------------------------------------------
@@ -299,7 +312,7 @@ class Fsops:
                 self._stop_gate()
             if located.read_only:
                 raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
-            if self._frozen:
+            if self._frozen_for(located.root_path):
                 raise RootBlockedError(located.root_path, RootState.RESTORED_BEHIND)
             owed = self._tombstones_owed
             if lease and not tombstone and owed is not None and owed(located.root_path):
@@ -352,7 +365,7 @@ class Fsops:
                     return
             except OSError as error:  # the volume is not there: Kavita would read an empty folder
                 raise RootBlockedError(located.root_path, RootState.MISSING) from error
-        if self._frozen:
+        if self._frozen_for(located.root_path):
             raise RootBlockedError(located.root_path, RootState.RESTORED_BEHIND)
         with self._root(located.root_path) as root:
             verdict = self._verdict(root)
@@ -373,7 +386,7 @@ class Fsops:
         """Per root: judge the sentinel, re-stamp a database one ahead, purge orphan staging."""
         report = BootReport()
         for root_path in sorted(self._expected):
-            if self._frozen:
+            if self._frozen_for(root_path):
                 report.blocked[root_path] = RootState.RESTORED_BEHIND
                 continue
             try:
@@ -404,14 +417,14 @@ class Fsops:
         """Before the database moves a generation: the sentinel could follow (no freeze, no
         tombstone line owed). Raises what `stamp_sentinel` would, so nothing drifts (I39)."""
         key = clean_absolute(root_path)
-        if self._frozen:
+        if self._frozen_for(key):
             raise RootBlockedError(key, RootState.RESTORED_BEHIND)
         if self._owes(key):
             raise TombstonePendingError(key)
 
     def stamp_sentinel(self, root_path: str, *, generation: int) -> None:
         """After the database commit: rewrite the sentinel with the new generation (I39)."""
-        if self._frozen:
+        if self._frozen_for(clean_absolute(root_path)):
             raise RootBlockedError(clean_absolute(root_path), RootState.RESTORED_BEHIND)
         key = clean_absolute(root_path)
         expected = self._expected[key]

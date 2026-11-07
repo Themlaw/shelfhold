@@ -245,8 +245,19 @@ class WriteSessions:
         except LeaseRaceError as error:
             raise LeaseLostError(f"{root_path}: the lease changed under us") from error
 
+    def _follow_freeze(self, root_path: str) -> None:
+        """The database decides: a writer opened before the restore froze the instance stops at
+        its next session and at its next write (EF-INT-026, D11)."""
+        if self._generations is None:
+            return
+        with self._generations.engine.connect() as connection:
+            frozen = self._fsops.freeze_state.sync(connection)
+        if frozen:
+            raise RootBlockedError(root_path, RootState.RESTORED_BEHIND)
+
     def check(self, root_path: str) -> None:
         """Before each write: still ours and valid; renewed when the heartbeat is due."""
+        self._follow_freeze(root_path)
         current = self.read_lease(root_path)
         if (
             current is None
@@ -299,6 +310,7 @@ class WriteSessions:
         try:
             for root in roots:
                 try:
+                    self._follow_freeze(root)
                     self.take(root)
                 except RootBlockedError as blocked:
                     # a root that was away at start comes back ahead of the database: detect it

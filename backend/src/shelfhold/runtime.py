@@ -34,6 +34,7 @@ from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import LEGACY_RECEIVED_DIR, RECEIVED_DIR
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import BootReport, Fsops
 from shelfhold.infrastructure.fsops.capabilities import unprobed
 from shelfhold.infrastructure.fsops.probe import ProbeReport, probe_failure, probe_folder
@@ -68,7 +69,7 @@ class InstanceRuntime:
     disk_guard: DiskGuard | None = field(default=None, init=False)
     shutdown_report: ShutdownReport | None = field(default=None, init=False)
     barrier: WriteBarrier = field(default_factory=WriteBarrier, init=False)
-    restored_behind: bool = field(default=False, init=False)  # EF-INT-026: read only
+    freeze_state: FreezeState = field(default_factory=FreezeState, init=False)  # EF-INT-026
     _recheck: Callable[[], None] | None = field(default=None, init=False)
     composition: Composition | None = field(default=None, init=False)
     startup_probe: list[ProbeReport] = field(default_factory=list, init=False)  # EF-UX-002
@@ -87,6 +88,11 @@ class InstanceRuntime:
             structlog.get_logger().warning("instance_lock_held_by_migration_no_write_mode")
             return
         self.owns_volumes = True
+
+    @property
+    def restored_behind(self) -> bool:
+        """EF-INT-026: read only until `reconcile --adopt-after-restore`."""
+        return self.freeze_state.frozen
 
     def require_writable(self) -> None:
         """The gate of every write the application starts: refused while `restored_behind`."""
@@ -155,9 +161,11 @@ class InstanceRuntime:
         def resolve() -> ResolveReport:
             if loaded is None or instance_id is None:
                 return ResolveReport()  # no instance row yet: nothing was ever written
+            self.freeze_state.follow(loaded.freeze.generation)  # one state for fsops and jobs
             fsops = open_fsops(
                 loaded, umask=self.settings.umask,
                 write_gate=guard.require_space, stop_gate=self.barrier.require_open,
+                freeze=self.freeze_state,
             )  # fmt: skip
             journal = IntentJournal(engine, fsops, clock=clock)
             # Before anything else: a database older than the disk is read only (EF-INT-026).
@@ -166,9 +174,7 @@ class InstanceRuntime:
             def freeze() -> None:
                 status = restore_guard.enter_restored_behind()
                 if status.behind:
-                    self.restored_behind = True
-                    if self.pools is not None:
-                        self.pools.scheduler.hold()
+                    self.freeze_state.freeze()  # the scheduler reads the persisted freeze itself
 
             fsops.on_restored_behind(freeze)
             self._recheck = freeze
@@ -218,6 +224,7 @@ class InstanceRuntime:
             clock=clock,
             seed=instance_id or "unregistered",
             bus=bus,
+            freeze=self.freeze_state,
         )
         watcher = DiskWatcher(guard, self.pools, engine=engine, bus=bus)
 
@@ -265,6 +272,10 @@ class InstanceRuntime:
     def _repair_projections(self, engine: Engine) -> None:
         log = structlog.get_logger()
         try:
+            with engine.connect() as connection:
+                if self.freeze_state.frozen_in(connection):
+                    log.warning("meta_repair_skipped", reason="restored_behind")  # no write
+                    return
             report = MetaProjection(engine, self.settings.data_dir).repair()
         except (OSError, ValueError, sa.exc.SQLAlchemyError) as error:
             log.warning("meta_repair_skipped", error=type(error).__name__)  # the next start tries

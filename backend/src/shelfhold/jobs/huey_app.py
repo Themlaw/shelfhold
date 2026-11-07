@@ -29,6 +29,7 @@ from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.logging import elapsed_ms, exception_detail
 from shelfhold.jobs.errors import JobFailedError
 from shelfhold.jobs.ledger import (
@@ -134,6 +135,7 @@ class JobPools:
         window: MaintenanceWindow = DEFAULT_WINDOW,
         bus: EventBus | None = None,
         retry_backoff_s: tuple[float, ...] = RETRY_BACKOFF_S,
+        freeze: FreezeState | None = None,
     ) -> None:
         self.clock = clock
         self._backoff = retry_backoff_s  # the waits before the 2nd, 3rd... attempt (short in tests)
@@ -141,7 +143,9 @@ class JobPools:
         self.window = window
         self.ledger = JobLedger(engine, clock)
         self.slots = DomainSlots(engine, clock)
-        self.scheduler = Scheduler(engine, clock=clock, seed=seed, dispatcher=self, window=window)
+        self.scheduler = Scheduler(
+            engine, clock=clock, seed=seed, dispatcher=self, window=window, freeze=freeze
+        )
         self._engine = engine
         self._handlers: dict[str, tuple[str, Handler, bool, bool]] = {}
         self._pause_lock = threading.RLock()  # pause, resume and the park of one job agree

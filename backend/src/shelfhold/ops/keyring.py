@@ -17,6 +17,7 @@ from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.schema import coherence, platform
 from shelfhold.infrastructure.secrets import diagnostics
 from shelfhold.infrastructure.secrets.errors import SecretsError
@@ -94,9 +95,7 @@ class TombstoneKeyringExit:
 
     def _frozen(self) -> bool:
         with self._engine.connect() as connection:
-            return bool(
-                connection.execute(sa.select(platform.instance.c.restore_generation)).scalar()
-            )
+            return FreezeState.read(connection).frozen
 
     def flush_owed(self) -> list[str]:
         if self._frozen():
