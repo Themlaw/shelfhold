@@ -241,10 +241,11 @@ def test_secrets_import_refused_to_api_key(
     migrate(settings)
     diagnostics.boot_check(settings)
     exported = with_history()
-    body = {
-        "passphrase_file": str(passphrase_file(tmp_path)),
-        "in_file": str(export_file(tmp_path, exported)),
-    }
+    folder = settings.data_dir / "import"  # the one place the API reads from
+    folder.mkdir()
+    private(folder / "pass", PASSPHRASE + "\n")
+    private(folder / "export.age", encrypt_export(exported, PASSPHRASE))
+    body = {"passphrase_file": "pass", "in_file": "export.age"}
     with auth_env(monkeypatch, settings) as api:
         capsys.readouterr()
         assert run_cli(monkeypatch, api.settings, "admin", "keys", "create", "--name", "ci") == 0
@@ -671,3 +672,45 @@ def test_secrets_import_over_the_socket_of_the_server_carries_paths_only(
     assert all(store_of(settings).load().find(k.kid) for k in exported.keys)
     rows = audits(settings)
     assert len(rows) == 1 and str(rows[0][0]).startswith("local_cli:")
+
+
+def test_the_api_reads_only_plain_names_in_the_import_folder(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    migrate(settings)
+    diagnostics.boot_check(settings)
+    exported = with_history()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    private(outside / "pass", PASSPHRASE + "\n")
+    private(outside / "export.age", encrypt_export(exported, PASSPHRASE))
+    before = store_of(settings).path.read_bytes()
+    with auth_env(monkeypatch, settings) as api:
+        assert api.login().status_code == 200
+
+        def ask(passphrase: str, source: str) -> Any:
+            return api.post(
+                "/api/v1/secrets/import", json={"passphrase_file": passphrase, "in_file": source}
+            )
+
+        assert ask("pass", "export.age").status_code == 422  # no import folder yet
+        folder = settings.data_dir / "import"
+        folder.mkdir()
+        private(folder / "pass", PASSPHRASE + "\n")
+        private(folder / "export.age", encrypt_export(exported, PASSPHRASE))
+        for bad in (
+            "../outside/export.age",
+            str(outside / "export.age"),
+            "sub/export.age",
+            ".hidden",
+            "..",
+            "a b",
+        ):
+            assert ask("pass", bad).status_code == 422, bad
+            assert ask(bad, "export.age").status_code == 422, bad
+        (folder / "link.age").symlink_to(outside / "export.age")  # a link out of the folder
+        assert ask("pass", "link.age").status_code == 422
+        (folder / "pass-link").symlink_to(outside / "pass")
+        assert ask("pass-link", "export.age").status_code == 422
+        assert store_of(settings).path.read_bytes() == before
+        assert ask("pass", "export.age").status_code == 200

@@ -108,10 +108,11 @@ class KeyringOut(BaseModel):
 
 
 class SecretsImportIn(BaseModel):
-    """Two paths on the host of the server: the passphrase never travels in the request."""
+    """Two plain file names in `<data folder>/import/` on the host of the server: the passphrase
+    never travels in the request, and the caller picks no path."""
 
-    passphrase_file: str = Field(min_length=1, max_length=4096)
-    in_file: str = Field(min_length=1, max_length=4096)
+    passphrase_file: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+    in_file: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
 
 
 class SecretsImportOut(BaseModel):
@@ -289,7 +290,10 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     ) -> SecretsImportOut:
         with refusals():
             report = get_ops().secrets_import(
-                passphrase_file=body.passphrase_file, in_file=body.in_file, principal=principal
+                passphrase_file=body.passphrase_file,
+                in_file=body.in_file,
+                principal=principal,
+                confined=True,
             )
         return SecretsImportOut(**report)
 

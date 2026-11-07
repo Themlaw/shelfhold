@@ -347,7 +347,7 @@ def _body(command: str) -> dict[str, Any]:
         "source set-secret": {"secret": "admin:new"},
         "target rotate-key": {"password": "a-synthetic-password"},
         "tombstone accept-lost-keyring": {"confirmation": "the keyring is lost"},
-        "secrets import": {"passphrase_file": "/run/p", "in_file": "/run/export.age"},
+        "secrets import": {"passphrase_file": "p", "in_file": "export.age"},
         "reconcile --adopt-after-restore [confirm-deletion]": {"confirm_deletion": True},
         "reconcile --adopt-after-restore": {"confirm_deletion": False},
         "target recheck [child_exposure]": {},

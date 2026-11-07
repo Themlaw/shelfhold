@@ -507,8 +507,9 @@ class OpsServices:
         return self._keyring.accept_lost_keyring(confirmation=confirmation, principal=principal)
 
     def secrets_import(
-        self, *, passphrase_file: str, in_file: str, principal: Principal
-    ) -> dict[str, Any]:
+        self, *, passphrase_file: str, in_file: str, principal: Principal,
+        confined: bool = False,
+    ) -> dict[str, Any]:  # fmt: skip
         """`secrets import` (reserved): the keys of an age export merged into the keyring, then
         the tombstone lines replayed.
 
@@ -520,7 +521,7 @@ class OpsServices:
             raise ExitUnavailableError("the tombstone service is not connected")
         return self._keyring.import_keyring(
             passphrase_file=passphrase_file, in_file=in_file, principal=principal,
-            replay=not self.restored_behind(),
+            replay=not self.restored_behind(), confined=confined,
         )  # fmt: skip
 
     def tombstone_set_aside_journal(

@@ -29,7 +29,7 @@ BODIES: dict[str, dict[str, object]] = {
     "reconcile --adopt-after-restore [confirm-deletion]": {"confirm_deletion": True},
     "tombstone accept-lost-keyring": {"confirmation": "x"},
     "tombstone set-aside-journal": {},
-    "secrets import": {"passphrase_file": "/run/p", "in_file": "/run/export.age"},
+    "secrets import": {"passphrase_file": "p", "in_file": "export.age"},
 }
 
 

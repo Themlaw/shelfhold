@@ -264,3 +264,41 @@ def test_a_passphrase_file_that_is_not_a_regular_file_is_refused(tmp_path: Path)
         read_passphrase_file(fifo)  # never blocks on a pipe
     with pytest.raises(ExportError):
         read_passphrase_file(tmp_path)
+
+
+def test_a_passphrase_file_that_is_a_link_is_refused(tmp_path: Path) -> None:
+    real = passphrase_file(tmp_path, 0o600)
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    with pytest.raises(ExportError):
+        read_passphrase_file(link)
+
+
+VIRTUAL = ["/proc/self/environ", "/proc/self/cmdline", "/sys/kernel/uevent_seqnum"]
+
+
+@pytest.mark.parametrize("name", VIRTUAL)
+def test_a_passphrase_file_in_a_virtual_tree_is_refused(name: str) -> None:
+    with pytest.raises(ExportError):
+        read_passphrase_file(Path(name))
+
+
+def _status(uid: int, mode: int) -> os.stat_result:
+    return os.stat_result((stat.S_IFREG | mode, 1, 1, 1, uid, 0, 10, 0, 0, 0))
+
+
+def test_a_root_owned_passphrase_file_is_accepted_only_as_a_docker_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from shelfhold.infrastructure.secrets import export
+
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    export._check_passphrase_permissions(Path("/run/secrets/export_pass"), _status(0, 0o444))
+    with pytest.raises(ExportError, match="outside /run/secrets"):
+        export._check_passphrase_permissions(Path("/etc/export_pass"), _status(0, 0o444))
+    with pytest.raises(ExportError, match="outside /run/secrets"):
+        export._check_passphrase_permissions(Path("/run/secrets-x/p"), _status(0, 0o444))
+    with pytest.raises(ExportError, match="accessible"):
+        export._check_passphrase_permissions(Path("/run/secrets/p"), _status(0, 0o666))
+    with pytest.raises(ExportError, match="another user"):
+        export._check_passphrase_permissions(Path("/run/secrets/p"), _status(4242, 0o400))

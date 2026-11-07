@@ -742,6 +742,14 @@ def test_no_keyring_import_value_in_the_debug_logs(
         (tmp_path / f"{name}.age").write_text(text, encoding="utf-8")
 
     migrate(settings)
+    folder = settings.data_dir / "import"  # where the route reads, by plain name
+    folder.mkdir()
+    for name in ("pass", "good.age", "other passphrase.age", "conflict.age", "forged.age"):
+        source = tmp_path / name
+        if source.exists():
+            copy = folder / name.replace(" ", "_")
+            copy.write_bytes(source.read_bytes())
+            copy.chmod(0o600)
     local = diagnostics.boot_check(settings)
     diagnostics.store_for(settings).write(
         Keyring(
@@ -776,14 +784,14 @@ def test_no_keyring_import_value_in_the_debug_logs(
             keep()
             api.post(
                 "/api/v1/secrets/import",
-                json={"passphrase_file": str(pass_file), "in_file": str(tmp_path / f"{name}.age")},
+                json={"passphrase_file": "pass", "in_file": f"{name}.age".replace(" ", "_")},
             )
             keep()
         diagnostics.store_for(settings).write(Keyring(keys=(local.active,)))  # a clean merge now
         assert (
             api.post(
                 "/api/v1/secrets/import",
-                json={"passphrase_file": str(pass_file), "in_file": str(tmp_path / "good.age")},
+                json={"passphrase_file": "pass", "in_file": "good.age"},
             ).status_code
             == 200
         )

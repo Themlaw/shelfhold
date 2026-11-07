@@ -8,6 +8,7 @@ reserved action there, where its rule and its audit live.
 from __future__ import annotations
 
 import os
+import re
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -53,6 +54,8 @@ __all__ = ["TombstoneKeyringExit"]
 
 _IMPORT = threading.Lock()  # one import at a time in this process; the instance lock does the rest
 MAX_AUDITED_KIDS = 100
+IMPORT_FOLDER = "import"  # `<data>/import/`: where the API reads the two files of an import
+SIMPLE_NAME = re.compile(r"[A-Za-z0-9._-]{1,128}")
 
 
 class TombstoneKeyringExit:
@@ -148,7 +151,13 @@ class TombstoneKeyringExit:
         )
 
     def import_keyring(
-        self, *, passphrase_file: str, in_file: str, principal: Principal, replay: bool = True
+        self,
+        *,
+        passphrase_file: str,
+        in_file: str,
+        principal: Principal,
+        replay: bool = True,
+        confined: bool = False,
     ) -> dict[str, Any]:
         """`secrets import` (reserved: fresh session or host CLI, never a key, audited).
 
@@ -168,13 +177,21 @@ class TombstoneKeyringExit:
         )  # fmt: skip
         if not isinstance(verdict, Allowed):  # the route and the socket decided first
             raise CodedRefusal("forbidden", type(verdict).__name__)
-        for name in (passphrase_file, in_file):
-            if not os.path.isabs(name):
-                raise InvalidChoiceError("give the files as absolute paths")
+        if confined:  # the API: names in `<data>/import/`, never a path chosen by the caller
+            folder = self._import_folder()
+            passphrase_path, export_path = (
+                folder / n for n in self._simple((passphrase_file, in_file))
+            )
+        else:
+            for name in (passphrase_file, in_file):
+                if not os.path.isabs(name):
+                    raise InvalidChoiceError("give the files as absolute paths")
+            passphrase_path, export_path = Path(passphrase_file), Path(in_file)
         try:
-            passphrase = read_passphrase_file(Path(passphrase_file))
+            passphrase = read_passphrase_file(passphrase_path)
             register_secret_value(passphrase)
-            imported = decrypt_export(read_export_file(Path(in_file)), passphrase)
+            text = read_export_file(export_path, nofollow=confined)
+            imported = decrypt_export(text, passphrase)
             diagnostics.register_for_scrubbing(imported)  # no log line may carry a key
         except ExportError as error:
             raise InvalidChoiceError(str(error)) from None
@@ -203,6 +220,19 @@ class TombstoneKeyringExit:
             "replayed": replayed,
             "deferred": not replay,  # restored_behind: `reconcile --adopt-after-restore` replays
         }
+
+    def _import_folder(self) -> Path:
+        folder = self._settings.data_dir / IMPORT_FOLDER
+        if folder.is_symlink() or not folder.is_dir():
+            raise InvalidChoiceError(f"create the folder {IMPORT_FOLDER}/ in the data folder first")
+        return folder
+
+    @staticmethod
+    def _simple(names: tuple[str, ...]) -> tuple[str, ...]:
+        for name in names:
+            if SIMPLE_NAME.fullmatch(name) is None or name.startswith("."):
+                raise InvalidChoiceError("give plain file names (letters, digits, . _ -)")
+        return names
 
     def _write_keyring(self, imported: Keyring) -> tuple[tuple[str, ...], Keyring]:
         store = diagnostics.store_for(self._settings)

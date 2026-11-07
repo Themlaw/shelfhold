@@ -64,7 +64,13 @@ class KeyringExit(Protocol):
     ) -> dict[str, str]: ...
     def flush_owed(self) -> list[str]: ...
     def import_keyring(
-        self, *, passphrase_file: str, in_file: str, principal: Principal, replay: bool = True
+        self,
+        *,
+        passphrase_file: str,
+        in_file: str,
+        principal: Principal,
+        replay: bool = True,
+        confined: bool = False,
     ) -> dict[str, Any]: ...
 
 

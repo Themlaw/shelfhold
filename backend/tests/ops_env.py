@@ -78,8 +78,9 @@ class FakeKeyring:
         return []
 
     def import_keyring(
-        self, *, passphrase_file: str, in_file: str, principal: Principal, replay: bool = True
-    ) -> dict[str, Any]:
+        self, *, passphrase_file: str, in_file: str, principal: Principal,
+        replay: bool = True, confined: bool = False,
+    ) -> dict[str, Any]:  # fmt: skip
         self.imports.append((passphrase_file, in_file, principal.credential.value))
         self.kids = []
         return {

@@ -14,13 +14,14 @@ Une rotation interrompue se reprend en relançant la même commande. Les clés r
 
 ## Export de la clé maîtresse
 
-Même règle : instance arrêtée, puis `shelfhold secrets export --passphrase-file <fichier> --out <fichier>` (`--out -` écrit sur la sortie standard). Le fichier produit est chiffré au format age ; il est à garder hors de l'hôte. Le fichier de phrase de passe doit être lisible par son propriétaire seul (`chmod 600`) ; la même règle vaut pour l'import.
+Même règle : instance arrêtée, puis `shelfhold secrets export --passphrase-file <fichier> --out <fichier>` (`--out -` écrit sur la sortie standard). Le fichier produit est chiffré au format age ; il est à garder hors de l'hôte. Le fichier de phrase de passe doit appartenir au compte qui lance la commande et n'être accessible qu'à lui (`chmod 600`) ; la même règle vaut pour l'import. Un lien symbolique est refusé (copiez le fichier), de même qu'un fichier de `/proc`, `/sys` ou `/dev`. Seule exception : un secret Docker appartenant à root sous `/run/secrets/` (mode 0444), pourvu que personne d'autre ne puisse l'écrire.
 
 ## Import d'un trousseau exporté
 
 `shelfhold secrets import --passphrase-file <fichier> --in <export>` fusionne les clés d'un export dans le trousseau, puis rejoue les pierres tombales en attente. C'est la sortie normale de l'état `tombstone_key_unknown` (une sauvegarde de `/data` antérieure à une rotation, un trousseau qui n'a pas suivi).
 
-- **Action réservée.** Depuis l'hôte (le compte qui atteint `/data`), ou depuis l'API avec une session dont le mot de passe a été retapé récemment (`POST /api/v1/secrets/import`, deux chemins de fichiers lus **sur l'hôte du serveur**) ; une clé d'API est toujours refusée. L'opération est inscrite à l'audit, dans la même transaction que le registre des clés.
+- **Action réservée.** Depuis l'hôte (le compte qui atteint `/data`, chemins absolus), ou depuis l'API avec une session dont le mot de passe a été retapé récemment ; une clé d'API est toujours refusée. L'opération est inscrite à l'audit, dans la même transaction que le registre des clés.
+- **Route API.** `POST /api/v1/secrets/import` avec `{"passphrase_file": "nom", "in_file": "nom"}` : ce ne sont pas des chemins mais deux **noms simples** (lettres, chiffres, `.`, `_`, `-`) de fichiers du dossier `import/` du dossier de données (`/data/import/`, à créer), ouverts sans suivre les liens. Aucun autre emplacement n'est lisible par l'API.
 - **Fusion sans écrasement.** Les clés de l'export qui manquent au trousseau sont ajoutées comme clés retirées ; la clé active en place reste active. Un identifiant de clé déjà présent avec un autre matériel fait refuser l'import entier (le message donne l'identifiant, jamais la clé). Rien n'est supprimé.
 - **Trousseau absent.** Si le trousseau est perdu mais que la base existe (le démarrage refuse alors de créer une autre clé), l'import le recrée à partir de l'export, clé active comprise.
 - **Fichier forgé.** Un fichier tronqué, au mauvais en-tête, avec un identifiant en double, une clé de mauvaise taille ou trop volumineux (plus de 1 Mio) n'importe rien et ne dit rien de son contenu.

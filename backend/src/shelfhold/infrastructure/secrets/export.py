@@ -28,11 +28,17 @@ MAX_HEADER_BYTES = 4096
 MAX_EXPORT_BYTES = 1024 * 1024  # a keyring of 1000 keys armored is ~170 KiB
 
 
-def _open_regular(path: Path, what: str) -> tuple[int, os.stat_result]:
+SECRETS_MOUNT = "/run/secrets"  # where Docker puts a secret (owned by root, mode 0444)
+VIRTUAL_TREES = ("/proc/", "/sys/", "/dev/")  # files that are not files (`/proc/self/environ`)
+
+
+def _open_regular(path: Path, what: str, *, nofollow: bool = False) -> tuple[int, os.stat_result]:
     """A descriptor on a regular file; a pipe or a device is refused without being read, so a
-    FIFO cannot make the command wait. The permissions are the caller's to judge."""
+    FIFO cannot make the command wait. `nofollow`: the last component is not a link. The
+    permissions are the caller's to judge."""
+    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC | (os.O_NOFOLLOW if nofollow else 0)
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+        descriptor = os.open(path, flags)
     except OSError as exc:
         raise ExportError(f"cannot read the {what}: {exc.strerror}") from None
     try:
@@ -54,11 +60,18 @@ def _read_bounded(descriptor: int, limit: int, what: str) -> bytes:
 
 
 def _check_passphrase_permissions(path: Path, status: os.stat_result) -> None:
-    """Owner-only, as the keyring is. A file that root owns (a Docker or Kubernetes secret, 0444
-    by design) only has to be out of reach of writers."""
+    """Owner-only, as the keyring is. The one exception is a Docker secret: a file root owns
+    under `/run/secrets` (0444 by design) only has to be out of reach of writers."""
     if status.st_uid not in (0, os.geteuid()):
         raise ExportError("the passphrase file belongs to another user")
-    others = 0o022 if status.st_uid == 0 and os.geteuid() != 0 else 0o077
+    others = 0o077
+    if status.st_uid == 0 and os.geteuid() != 0:
+        if not os.path.realpath(path).startswith(SECRETS_MOUNT + "/"):
+            raise ExportError(
+                f"the passphrase file belongs to root outside {SECRETS_MOUNT}; "
+                f"copy it and fix it with: chmod 600 {path}"
+            )
+        others = 0o022
     if status.st_mode & others:
         raise ExportError(
             f"the passphrase file is accessible by other users; fix it with: chmod 600 {path}"
@@ -67,7 +80,9 @@ def _check_passphrase_permissions(path: Path, status: os.stat_result) -> None:
 
 def read_passphrase_file(path: Path) -> str:
     """The passphrase is the file's content without its final line break."""
-    descriptor, status = _open_regular(path, "passphrase file")
+    if os.path.realpath(path).startswith(VIRTUAL_TREES):
+        raise ExportError("the passphrase file is not a regular file")
+    descriptor, status = _open_regular(path, "passphrase file", nofollow=True)
     try:
         _check_passphrase_permissions(path, status)
     except BaseException:
@@ -86,10 +101,10 @@ def read_passphrase_file(path: Path) -> str:
     return text
 
 
-def read_export_file(path: Path) -> str:
+def read_export_file(path: Path, *, nofollow: bool = False) -> str:
     """An export file as text, read within a bound: it is encrypted and signed by nobody, so
     nothing about it is trusted before it has been decrypted and parsed."""
-    descriptor, _status = _open_regular(path, "export file")
+    descriptor, _status = _open_regular(path, "export file", nofollow=nofollow)
     raw = _read_bounded(descriptor, MAX_EXPORT_BYTES, "export file")
     if len(raw) > MAX_EXPORT_BYTES:
         raise ExportError("the export file is too large")
