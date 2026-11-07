@@ -14,11 +14,13 @@ FLOORS: dict[str, tuple[str, str | None]] = {
     "python-multipart": ("0.0.30", None),
     "apprise": ("2.1", "3"),
     "huey": ("3.5.4", "3.6"),
+    "webauthn": ("3.0.1", "4"),  # M1b L00: passkeys (P8), identity.webauthn only
 }
 M1A_RUNTIME = {
     "huey", "argon2-cffi", "pynacl", "pyrage", "defusedxml", "nh3", "httpx2", "apprise",
     "pillow", "python-multipart", "python-ulid", "langcodes",
 }  # fmt: skip
+M1B_RUNTIME = {"webauthn"}
 M1A_DEV = {"hypothesis", "syrupy", "pytest-xdist", "xmlschema"}
 
 
@@ -64,7 +66,7 @@ def test_floors_are_declared_in_pyproject_not_only_in_the_lock() -> None:
     constrained = _names(project["tool"]["uv"]["constraint-dependencies"])
     for name in FLOORS:
         assert name in declared | constrained, f"{name} has no floor in pyproject.toml"
-    assert declared >= M1A_RUNTIME
+    assert declared >= M1A_RUNTIME | M1B_RUNTIME
     assert _names(project["dependency-groups"]["dev"]) >= M1A_DEV
 
 
@@ -72,3 +74,13 @@ def test_floors_are_declared_in_pyproject_not_only_in_the_lock() -> None:
 def test_exclude_newer_supply_chain_window_is_kept() -> None:
     project = tomllib.loads((BACKEND / "pyproject.toml").read_text(encoding="utf-8"))
     assert project["tool"]["uv"]["exclude-newer"] == "14 days"
+
+
+@pytest.mark.req("ENF-SEC-016")
+def test_the_webauthn_binding_imports_the_pinned_library() -> None:
+    from importlib.metadata import version
+
+    from shelfhold.identity.webauthn import library
+
+    assert library.webauthn.__name__ == "webauthn"
+    assert tuple(int(p) for p in version("webauthn").split(".")[:2]) >= (3, 0)
