@@ -60,6 +60,9 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice::no layer cache at ${CACHE_REF}, building from scratch"
           fi
+      - name: Version of the image (the OCI label follows backend/pyproject.toml)
+        id: version
+        run: echo "version=$(sed -n 's/^version = \"\(.*\)\"$/\1/p' backend/pyproject.toml | head -n1)" >> "$GITHUB_OUTPUT"
       - name: Build (registry layer cache) and export the OCI archive that is tested then published
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -69,6 +72,7 @@ jobs:
           outputs: type=oci,dest=${{ runner.temp }}/image-${{ matrix.arch }}.tar,name=shelfhold:ci
           build-args: |
             WITH_FRONTEND=${{ steps.frontend.outputs.present }}
+            VERSION=${{ steps.version.outputs.version }}
             REVISION=${{ github.sha }}
           cache-from: ${{ steps.cache.outputs.present == 'true' && format('type=registry,ref={0}-cache:{1}', env.IMAGE, matrix.arch) || '' }}
           cache-to: ${{ inputs.cache-write && format('type=registry,ref={0}-cache:{1},mode=max', env.IMAGE, matrix.arch) || '' }}
