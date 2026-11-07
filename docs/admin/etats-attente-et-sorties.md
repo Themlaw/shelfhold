@@ -56,15 +56,14 @@ moins de 15 minutes, ou la ligne de commande locale ; une clé d'API est refusé
 | `series_name_collision` | Le nom de série d'une Édition est déjà pris dans la bibliothèque Kavita (par exemple deux Œuvres du même titre, `en` et `fr`) : rien n'est exporté pour elle, ni écrasé | `shelfhold edition set-series-name <édition> "<nom>"` (API : `POST /api/v1/editions/{id}/series-name`) | non |
 | `mount_sentinel_missing` | La sentinelle `.shelfhold-mount-id` d'une racine manque ou n'est pas la bonne (volume non monté, disque vide) : écritures et scans bloqués | montez le bon volume, puis `shelfhold target recheck <cible>` | non |
 | `restored_behind` | La base est en retard sur les fichiers : lecture seule | `shelfhold reconcile --adopt-after-restore`, voir [restauration.md](restauration.md) | seule la suppression confirmée |
-| `tombstone_key_unknown` | Un journal de pierres tombales est chiffré par une clé absente du trousseau | remettre le fichier de trousseau d'origine à sa place (`/data/keyring`), ou `shelfhold tombstone accept-lost-keyring --confirm "the keyring is lost"` | oui |
+| `tombstone_key_unknown` | Un journal de pierres tombales est chiffré par une clé absente du trousseau | `shelfhold secrets import --passphrase-file <fichier> --in <export>` (voir [secrets.md](secrets.md)), ou remettre le fichier de trousseau d'origine à sa place ; en dernier recours `shelfhold tombstone accept-lost-keyring --confirm "the keyring is lost"` | oui |
 
 Notes :
 
 - `series resume` sur une série `permission_denied` relance la sonde d'écriture et refuse avec la
   correction si elle échoue.
 - `tombstone accept-lost-keyring` lève le blocage de réacquisition pour les clés manquantes **d'aujourd'hui**
-  seulement ; une clé perdue plus tard n'est pas pardonnée d'avance. La phrase de confirmation se tape à l'identique, en anglais. L'import d'un trousseau exporté (`secrets import`) n'est pas livré
-  dans cette version.
+  seulement ; une clé perdue plus tard n'est pas pardonnée d'avance. La phrase de confirmation se tape à l'identique, en anglais ; pendant `restored_behind` elle est plus longue et énonce le coût (voir [secrets.md](secrets.md)).
 - Les états qui concernent les racines physiques (`foreign_root`, `root_lost`, `root_behind`) et
   `/store` (`store_lost`), la notation et la mise à l'abri arrivent avec M1b. Leurs commandes
   (`root takeover|reinit`, `store reinit`) sont décrites dans

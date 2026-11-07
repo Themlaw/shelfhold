@@ -82,6 +82,11 @@ log = structlog.get_logger(__name__)
 
 TABLE_FORMAT: Final = 2  # `content_tombstone.v`: format 2.0, the same associated data as a line
 LOST_KEYRING_PHRASE: Final = "the keyring is lost"
+# Under `restored_behind` the waiver is the way out of a deadlock (no export, the adoption is
+# blocked by `key_unknown`): the phrase states what it costs.
+FROZEN_LOST_KEYRING_PHRASE: Final = (
+    "the keyring is lost, its tombstones become inert and purged content may come back"
+)
 INERT_REASONS: Final = frozenset(
     {"authentication_failed", "kid_unregistered", "lost_keyring", "malformed"}
 )
@@ -741,6 +746,7 @@ class TombstoneService:
         confirmation: str,
         principal: Principal,
         now: datetime,
+        frozen: bool = False,
     ) -> list[str]:
         """Reserved action (checked here too, not only at the route), typed confirmation,
         audited with its actor and the kids: the registered kids missing from the keyring
@@ -750,8 +756,12 @@ class TombstoneService:
         if not isinstance(verdict, Allowed):
             raise LostKeyringRefusedError(verdict)
         actor_id = principal.actor_id
-        if confirmation != LOST_KEYRING_PHRASE:
-            raise LostKeyringConfirmationError("type the confirmation phrase exactly")
+        phrase = FROZEN_LOST_KEYRING_PHRASE if frozen else LOST_KEYRING_PHRASE
+        if confirmation != phrase:
+            raise LostKeyringConfirmationError(
+                f"type the confirmation phrase exactly: {phrase}" if frozen
+                else "type the confirmation phrase exactly"
+            )  # fmt: skip
         self.replay(roots)
         with self._engine.begin() as connection:
             db_kids = set(connection.execute(sa.select(_kid.c.kid)).scalars())

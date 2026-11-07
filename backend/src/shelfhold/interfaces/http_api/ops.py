@@ -29,6 +29,7 @@ __all__ = ["build_ops_router"]
 _ROTATE_KEY = reserved_action(RESERVED_ACTIONS["target.rotate_key"])
 _SET_SECRET = reserved_action(RESERVED_ACTIONS["source.set_secret"])
 _LOST_KEYRING = reserved_action(RESERVED_ACTIONS["tombstone.accept_lost_keyring"])
+_SECRETS_IMPORT = reserved_action(RESERVED_ACTIONS["secrets.import"])
 _SET_ASIDE = reserved_action(RESERVED_ACTIONS["tombstone.set_aside_journal"])
 Admin = Annotated[Principal, Depends(require_admin)]
 
@@ -104,6 +105,21 @@ class KeyringIn(BaseModel):
 
 class KeyringOut(BaseModel):
     waived: list[str]
+
+
+class SecretsImportIn(BaseModel):
+    """Two plain file names in `<data folder>/import/` on the host of the server: the passphrase
+    never travels in the request, and the caller picks no path."""
+
+    passphrase_file: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+    in_file: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+
+
+class SecretsImportOut(BaseModel):
+    added: list[str]  # key ids merged into the keyring (never the keys)
+    present: int  # key ids of the file the keyring already held
+    replayed: int  # tombstone lines read again with the merged keyring
+    deferred: bool = False  # restored_behind: the replay is the adoption's
 
 
 class SetAsideIn(BaseModel):
@@ -266,6 +282,20 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
                 confirmation=body.confirmation, principal=principal
             )
         return KeyringOut(waived=waived)
+
+    @router.post(_path("secrets", "import"), response_model=SecretsImportOut)
+    def secrets_import(
+        body: SecretsImportIn,
+        principal: Annotated[Principal, Depends(_SECRETS_IMPORT)],
+    ) -> SecretsImportOut:
+        with refusals():
+            report = get_ops().secrets_import(
+                passphrase_file=body.passphrase_file,
+                in_file=body.in_file,
+                principal=principal,
+                confined=True,
+            )
+        return SecretsImportOut(**report)
 
     @router.post(_path("tombstone", "set-aside-journal"), response_model=SetAsideOut)
     def set_aside_journal(

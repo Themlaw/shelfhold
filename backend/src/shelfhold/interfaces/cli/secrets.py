@@ -1,4 +1,4 @@
-"""``shelfhold secrets export|rotate|status`` (ENF-SEC-005).
+"""``shelfhold secrets export|import|rotate|status`` (ENF-SEC-005).
 
 The passphrase is read from a file (``--passphrase-file``); there is deliberately no option that
 takes it on the command line, and abbreviations are off so ``--passphrase`` is not a shortcut.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -26,6 +27,8 @@ from shelfhold.infrastructure.secrets.errors import (
 )
 from shelfhold.infrastructure.secrets.export import encrypt_export, read_passphrase_file
 from shelfhold.infrastructure.secrets.rotation import RotationIncompleteError, retire_key, rotate
+from shelfhold.interfaces.cli._ops import ops_command
+from shelfhold.interfaces.local_cli import OpsChannel
 
 STDOUT = "-"
 
@@ -40,6 +43,15 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     )
     export.add_argument("--out", required=True, help=t("cli.secrets_out_help"))
     export.set_defaults(handler=run_export, configure_logging=False)
+
+    load = actions.add_parser("import", help=t("cli.secrets_import_help"), allow_abbrev=False)
+    load.add_argument(
+        "--passphrase-file", required=True, type=Path, help=t("cli.secrets_passphrase_file_help")
+    )
+    load.add_argument(
+        "--in", required=True, dest="in_file", type=Path, help=t("cli.secrets_in_help")
+    )
+    load.set_defaults(handler=run_import, configure_logging=False)
 
     rotation = actions.add_parser("rotate", help=t("cli.secrets_rotate_help"), allow_abbrev=False)
     rotation.add_argument("--retire", metavar="KID", help=t("cli.secrets_retire_help"))
@@ -85,6 +97,23 @@ def run_export(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         print(t("secrets.export_not_recorded"), file=sys.stderr)
     if args.out != STDOUT:
         print(t("secrets.exported", path=args.out))
+    return 0
+
+
+@ops_command
+def run_import(args: argparse.Namespace, channel: OpsChannel) -> int:
+    """The files are named by absolute path: the server that may answer has another working
+    directory. The passphrase is read by whoever applies the import, from its file."""
+    report = channel.call(
+        "ops.secrets_import",
+        passphrase_file=os.path.abspath(args.passphrase_file),
+        in_file=os.path.abspath(args.in_file),
+    )
+    print(t("secrets.imported", added=len(report["added"]), present=report["present"]))
+    if report.get("deferred"):
+        print(t("secrets.import_deferred"))
+    else:
+        print(t("secrets.import_replayed", count=report["replayed"]))
     return 0
 
 
@@ -147,6 +176,7 @@ def warning_text(warning: diagnostics.KeyringWarning) -> str:
         "never_exported": t("secrets.warning_never_exported"),
         "export_older_than_rotation": t("secrets.warning_export_older_than_rotation"),
         "tombstones_not_exported": t("secrets.warning_tombstones_not_exported"),
+        "tombstone_kids_lost": t("secrets.warning_tombstone_kids_lost", detail=detail),
         "tombstone_kid_missing": t("secrets.warning_tombstone_kid_missing", detail=detail),
     }
     return texts[warning.code]

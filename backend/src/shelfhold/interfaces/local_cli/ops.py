@@ -154,6 +154,12 @@ def _accept_lost_keyring(ops: OpsServices, by: Principal, p: Params) -> object:
     return {"waived": waived}
 
 
+def _secrets_import(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.secrets_import(
+        passphrase_file=_text(p, "passphrase_file"), in_file=_text(p, "in_file"), principal=by
+    )
+
+
 def _set_aside_journal(ops: OpsServices, by: Principal, p: Params) -> object:
     root = _text(p, "root_id", required=False) or None
     return {"aside": ops.tombstone_set_aside_journal(principal=by, root_id=root)}
@@ -327,6 +333,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.edition_set_series_name": (_edition_set_series_name, None),
     "ops.restore_adopt": (_restore_adopt, "reconcile.confirm_deletion"),
     "ops.tombstone_accept_lost_keyring": (_accept_lost_keyring, "tombstone.accept_lost_keyring"),
+    "ops.secrets_import": (_secrets_import, "secrets.import"),
     "ops.tombstone_set_aside_journal": (_set_aside_journal, "tombstone.set_aside_journal"),
     "ops.tombstone_flush": (_tombstone_flush, None),
     "ops.adopt_set_follow_from": (_set_follow_from, None),
@@ -355,13 +362,14 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
 
 # While the instance is `restored_behind` (the database older than the disks, EF-INT-026) nothing
 # of the operating surface writes, even before the first start that follows the restore has frozen
-# the roots; what stays: reading, and the two exits meant for that state.
+# the roots; what stays: reading, the exits of the restore, and `secrets import` (its /data half).
 READS_AND_RESTORE_EXITS = frozenset(
     {
         "ops.status", "ops.missing_list", "ops.jobs_list", "ops.pair_propose",
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
         "ops.intents_list", "ops.backfill_estimate", "ops.meta_check",
-        "ops.restore_adopt", "ops.tombstone_set_aside_journal",
+        "ops.restore_adopt", "ops.tombstone_set_aside_journal", "ops.secrets_import",
+        "ops.tombstone_accept_lost_keyring",
     }
 )  # fmt: skip
 

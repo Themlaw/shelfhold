@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
@@ -500,7 +501,30 @@ class OpsServices:
     ) -> list[str]:
         if self._keyring is None:
             raise ExitUnavailableError("the tombstone service is not connected")
-        return self._keyring.accept_lost_keyring(confirmation=confirmation, principal=principal)
+        # An exit of the freeze, on every door: without an export it is the only way out of
+        # `key_unknown`, which blocks the adoption. Under the freeze the phrase is longer (it
+        # says what the waiver costs), the journals are read and none is written.
+        return self._keyring.accept_lost_keyring(
+            confirmation=confirmation, principal=principal, frozen=self.restored_behind()
+        )
+
+    def secrets_import(
+        self, *, passphrase_file: str, in_file: str, principal: Principal,
+        confined: bool = False,
+    ) -> dict[str, Any]:  # fmt: skip
+        """`secrets import` (reserved): the keys of an age export merged into the keyring, then
+        the tombstone lines replayed.
+
+        It is an exit of the freeze for its `/data` half only (keyring, registry, audit): a
+        restore from before a rotation is blocked by `key_unknown` until the keys are back, and
+        `reconcile --adopt-after-restore` is the one that replays, with the keyring on disk. So
+        under `restored_behind` nothing is replayed here (no root is read or written)."""
+        if self._keyring is None:
+            raise ExitUnavailableError("the tombstone service is not connected")
+        return self._keyring.import_keyring(
+            passphrase_file=passphrase_file, in_file=in_file, principal=principal,
+            replay=not self.restored_behind(), confined=confined,
+        )  # fmt: skip
 
     def tombstone_set_aside_journal(
         self, *, principal: Principal, root_id: str | None = None

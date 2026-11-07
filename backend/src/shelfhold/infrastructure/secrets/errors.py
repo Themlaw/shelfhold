@@ -78,6 +78,15 @@ class KeyringMissingError(KeyringError):
         self.reason = reason
 
 
+class KeyConflictError(KeyringError):
+    """An imported key has the id of a key we hold, with other material: the import is refused
+    whole (a merge never overwrites). Names the id, never a byte of either key."""
+
+    def __init__(self, kid: str) -> None:
+        super().__init__(f"key {kid!r} exists in the keyring with other material")
+        self.kid = kid
+
+
 class KeyRetirementRefusedError(KeyringError):
     """`reason`: unknown, active, in_use, cited_by_tombstone, root_unavailable, not_retired."""
 

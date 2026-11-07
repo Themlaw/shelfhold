@@ -88,6 +88,7 @@ def test_unusable_passphrase_file_is_refused(tmp_path: Path, content: bytes) -> 
 def test_passphrase_file_trailing_newline_is_not_part_of_the_passphrase(tmp_path: Path) -> None:
     path = tmp_path / "pass"
     path.write_bytes(b"a long enough passphrase\r\n")
+    path.chmod(0o600)
     assert read_passphrase_file(path) == "a long enough passphrase"
 
 

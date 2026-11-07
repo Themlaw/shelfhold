@@ -75,9 +75,15 @@ def sync_registry(connection: Connection, keyring: Keyring) -> None:
         connection.execute(
             statement.on_conflict_do_update(
                 index_elements=["kid"],
-                set_={
-                    "state": statement.excluded.state,
-                    "retired_at": statement.excluded.retired_at,
+                set_={  # `compromised` is one-way: a keyring copy cannot lift it
+                    "state": sa.case(
+                        (_secret_key.c.state == "compromised", _secret_key.c.state),
+                        else_=statement.excluded.state,
+                    ),
+                    "retired_at": sa.case(
+                        (_secret_key.c.state == "compromised", _secret_key.c.retired_at),
+                        else_=statement.excluded.retired_at,
+                    ),
                 },
             )
         )

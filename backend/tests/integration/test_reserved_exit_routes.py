@@ -29,6 +29,7 @@ BODIES: dict[str, dict[str, object]] = {
     "reconcile --adopt-after-restore [confirm-deletion]": {"confirm_deletion": True},
     "tombstone accept-lost-keyring": {"confirmation": "x"},
     "tombstone set-aside-journal": {},
+    "secrets import": {"passphrase_file": "p", "in_file": "export.age"},
 }
 
 
@@ -52,6 +53,10 @@ class _Ops:
     def tombstone_accept_lost_keyring(self, **_: object) -> list[str]:
         self.calls.append("tombstone_accept_lost_keyring")
         return []
+
+    def secrets_import(self, **_: object) -> dict[str, object]:
+        self.calls.append("secrets_import")
+        return {"added": [], "present": 0, "replayed": 0}
 
     def tombstone_set_aside_journal(self, **_: object) -> dict[str, str]:
         self.calls.append("tombstone_set_aside_journal")

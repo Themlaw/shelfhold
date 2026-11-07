@@ -31,7 +31,7 @@ def store_for(settings: Settings) -> KeyringStore:
     )
 
 
-def _register_for_scrubbing(keyring: Keyring) -> None:
+def register_for_scrubbing(keyring: Keyring) -> None:
     for key in keyring.keys:
         register_secret_value(base64.b64encode(key.material).decode("ascii"))
 
@@ -64,7 +64,7 @@ def boot_check(settings: Settings, *, create: bool = True, announce: bool = True
         except FileExistsError:
             pass  # another process created it first: use theirs
     keyring = store.load()
-    _register_for_scrubbing(keyring)
+    register_for_scrubbing(keyring)
     return keyring
 
 
@@ -120,6 +120,8 @@ def _tombstone_warnings(settings: Settings, keyring: Keyring) -> list[KeyringWar
         keyring.exported_at is None or keyring.exported_at < kids.first_at
     ):
         warnings.append(KeyringWarning("tombstones_not_exported"))
+    if kids.lost:  # durable: a waiver is never forgotten by `status`
+        warnings.append(KeyringWarning("tombstone_kids_lost", str(len(kids.lost))))
     missing = kids.kids - {key.kid for key in keyring.keys} - kids.lost
     if missing:
         warnings.append(KeyringWarning("tombstone_kid_missing", str(len(missing))))

@@ -10,8 +10,10 @@ import binascii
 import contextlib
 import dataclasses
 import fcntl
+import hmac
 import json
 import os
+import re
 import stat
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -24,6 +26,7 @@ import nacl.utils
 from shelfhold.infrastructure.secrets.atomic import write_private
 from shelfhold.infrastructure.secrets.envelope import ALG, KEY_BYTES
 from shelfhold.infrastructure.secrets.errors import (
+    KeyConflictError,
     KeyringCorruptError,
     KeyringMissingError,
     KeyringPermissionsError,
@@ -33,6 +36,10 @@ from shelfhold.infrastructure.secrets.errors import (
 
 KEYRING_FORMAT = 1
 KEY_STATES = ("active", "retired", "compromised")
+KID_PATTERN = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+)  # what `Key.generate` makes is "k-<hex>"
+MAX_KEYS = 1000  # a keyring has a handful; a file with more is not one
 
 
 def _utc(now: datetime | None) -> datetime:
@@ -78,6 +85,14 @@ class Rotation:
 
     to_kid: str
     started_at: datetime
+
+
+@dataclass(frozen=True)
+class Merge:
+    """A keyring with the keys of an import added, and the ids that were new."""
+
+    keyring: "Keyring"
+    added: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -137,6 +152,31 @@ class Keyring:
     def without(self, kid: str) -> "Keyring":
         return dataclasses.replace(self, keys=tuple(k for k in self.keys if k.kid != kid))
 
+    def merge(self, imported: "Keyring", *, now: datetime | None = None) -> Merge:
+        """Add the keys of `imported` that this keyring does not hold, as retired ones.
+
+        Never an overwrite: a key id we hold with other material (or another algorithm) refuses
+        the whole merge before anything is built. Keys we already hold keep their state here, the
+        active key stays the one in use, and the rotation marker of the other keyring is not
+        adopted (it describes rows of another database).
+        """
+        moment = _utc(now)
+        kept = list(self.keys)
+        added: list[str] = []
+        for key in imported.keys:
+            mine = self.find(key.kid)
+            if mine is None:
+                state = "compromised" if key.state == "compromised" else "retired"
+                kept.append(
+                    dataclasses.replace(key, state=state, retired_at=key.retired_at or moment)
+                )
+                added.append(key.kid)
+            elif mine.alg != key.alg or not hmac.compare_digest(mine.material, key.material):
+                raise KeyConflictError(key.kid)
+        if not added:
+            return Merge(self, ())
+        return Merge(dataclasses.replace(self, keys=tuple(kept)), tuple(added))
+
     def to_json(self) -> bytes:
         document: dict[str, Any] = {
             "format": KEYRING_FORMAT,
@@ -165,7 +205,10 @@ class Keyring:
             document = json.loads(raw)
             if not isinstance(document, dict) or document.get("format") != KEYRING_FORMAT:
                 raise ValueError("unsupported keyring format")
-            keys = tuple(cls._parse_key(entry) for entry in document["keys"])
+            entries = document["keys"]
+            if not isinstance(entries, list) or len(entries) > MAX_KEYS:
+                raise ValueError("keys is not a list of a reasonable size")
+            keys = tuple(cls._parse_key(entry) for entry in entries)
             if not keys:
                 raise ValueError("no key")
             rotation = document.get("rotation")
@@ -185,11 +228,16 @@ class Keyring:
             if parsed_rotation is not None and keyring.active.kid != parsed_rotation.to_kid:
                 raise ValueError("rotation target is not the active key")
             return keyring
-        except (ValueError, KeyError, TypeError, binascii.Error) as exc:
+        except (ValueError, KeyError, TypeError, binascii.Error, RecursionError) as exc:
             raise KeyringCorruptError(source, f"{type(exc).__name__}: {exc}") from None
 
     @staticmethod
     def _parse_key(entry: dict[str, Any]) -> Key:
+        if not isinstance(entry, dict):
+            raise ValueError("a key entry is not an object")
+        kid = entry["kid"]
+        if not isinstance(kid, str) or KID_PATTERN.fullmatch(kid) is None:
+            raise ValueError("invalid key id")
         material = base64.b64decode(entry["key"], validate=True)
         state = entry["state"]
         retired_at = _parse_stamp(entry.get("retired_at"))
@@ -198,7 +246,7 @@ class Keyring:
         if state != "active" and retired_at is None:
             raise ValueError("a retired key has a retirement date")
         return Key(
-            kid=str(entry["kid"]),
+            kid=kid,
             material=material,
             state=state,
             alg=entry["alg"],

@@ -42,7 +42,12 @@ La base est l'autorité ; les fichiers `unit.json` sont des projections régén�
 Sans la clé, une base restaurée ne peut plus déchiffrer ses secrets (comptes Kavita et Suwayomi,
 notifications) ni lire les pierres tombales. Instance arrêtée :
 
+Le fichier de phrase de passe (`export.pass`) est écrit par vous, appartient au compte qui lance
+Shelfhold (uid 1000) et est en `chmod 600` ; un fichier lisible par d'autres, un lien symbolique
+ou un fichier de `/proc` est refusé.
+
 ```sh
+chmod 600 /data/export.pass
 docker compose stop shelfhold
 docker compose run --rm shelfhold shelfhold secrets export \
     --passphrase-file /data/export.pass --out /data/keyring.age

@@ -7,6 +7,7 @@ never touches it, ENF-SEC-005). The file is created owner-only (0600) with its h
 registry of kids (`tombstone_kids` in the sentinel) only grows and keeps every unknown field.
 """
 
+import json
 import os
 import stat
 
@@ -166,3 +167,64 @@ def sentinel_kid_names(path: str) -> frozenset[str] | None:
         else:
             return None
     return frozenset(names)
+
+
+# -- what `status` reads: the kids a journal cites, and the registry of the sentinel ---------------
+
+MAX_KID_CHARS = 64
+MAX_LINE_BYTES = 8 * 1024
+_KID_CACHE: dict[str, tuple[tuple[int, int, int], frozenset[str]]] = {}
+
+
+def journal_kid_names(path: str, *, max_bytes: int) -> frozenset[str]:
+    """Read only: the `kid` of every line of the journal of the root at `path`, and nothing else
+    (no line is opened, replayed or trusted; a forged kid is only a name). The answer is kept
+    until the journal changes (size, modification time or inode), so a look costs one `fstat`.
+    A root that is not mounted, has no journal or an unreadable one yields nothing."""
+    try:
+        with ConfinedRoot.open(path) as root:
+            try:
+                fd = root.open_file(TOMBSTONE_JOURNAL, os.O_RDONLY)
+            except FileNotFoundError:
+                _KID_CACHE.pop(path, None)
+                return frozenset()
+            try:
+                status = os.fstat(fd)
+                key = (status.st_size, status.st_mtime_ns, status.st_ino)
+                cached = _KID_CACHE.get(path)
+                if cached is not None and cached[0] == key:
+                    return cached[1]
+                if status.st_size > max_bytes:
+                    return frozenset()
+                chunks: list[bytes] = []
+                while chunk := os.read(fd, 1 << 20):
+                    chunks.append(chunk)
+                    if sum(map(len, chunks)) > max_bytes:
+                        return frozenset()
+            finally:
+                os.close(fd)
+    except (OSError, ValueError):
+        return frozenset()
+    names: set[str] = set()
+    for row in b"".join(chunks).split(b"\n")[1:]:  # the first row is the header
+        if not row or len(row) > MAX_LINE_BYTES:
+            continue
+        try:
+            kid = json.loads(row).get("kid")
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(kid, str) and 0 < len(kid) <= MAX_KID_CHARS and kid.isascii():
+            names.add(kid)
+    found = frozenset(names)
+    _KID_CACHE[path] = (key, found)
+    return found
+
+
+def sentinel_kid_tags(path: str) -> dict[str, dict[str, str]]:
+    """Read only: the registry of the sentinel of the root at `path` (kid -> {signer: tag}); empty
+    when the root or its sentinel cannot be read."""
+    try:
+        with ConfinedRoot.open(path) as root:
+            return sentinel_kids(read_sentinel(root))
+    except (OSError, SentinelFormatError, ValueError):
+        return {}
