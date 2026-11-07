@@ -255,6 +255,9 @@ download_request = sa.Table(
     now_column("requested_at"),
     sa.Column("updated_at", UtcDateTime(), nullable=True),
     sa.Column("attempts", sa.Integer(), nullable=False, server_default="0"),
+    # D19 / EF-USR-016: who asked and who may see it. Null: an operation, for the admin only.
+    sa.Column("visibility", sa.String(), nullable=True),  # private | household | ops
+    sa.Column("requester_user_id", sa.String(26), nullable=True),  # `user.id`, set from M3
     ulid_check("id"),
     in_check("target_kind", DOWNLOAD_TARGETS),
     in_check("state", DOWNLOAD_STATES),

@@ -30,6 +30,7 @@ class Principal:
     key_id: str | None = None  # API key or device token
     scopes: tuple[str, ...] = ()
     read_only: bool = False
+    can_rate: bool = False  # the right to classify (EF-BIB-036); closed unless the user holds it
 
     @property
     def actor_id(self) -> str:

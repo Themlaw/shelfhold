@@ -12,4 +12,5 @@ def principal_for_peer(peer: Peer) -> Principal:
         username=f"uid:{peer.uid}",
         role="admin",
         credential=Credential.LOCAL_CLI,
+        can_rate=True,  # the host is the administrator (EF-USR-024)
     )

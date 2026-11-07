@@ -16,6 +16,7 @@ from shelfhold.identity.public import (
     CREDENTIAL_AXIS,
     NO_REAUTH_EFFECTS,
     RESERVED_ACTIONS,
+    TABLE_ROLES,
     Allowed,
     Credential,
     CredentialNotAllowed,
@@ -26,6 +27,7 @@ from shelfhold.identity.public import (
     RoleNotAllowed,
     authorize_reserved,
     credential_axis,
+    truth_table,
 )
 
 T0 = datetime(2026, 11, 5, 9, 0, tzinfo=UTC)
@@ -46,7 +48,7 @@ P3 = {
 
 
 def principal_for(axis: str, role: str = "admin") -> Principal:
-    base = {"user_id": "u1", "username": "someone", "role": role}
+    base = {"user_id": "u1", "username": "someone", "role": role, "can_rate": role == "admin"}
     match axis.split(":"):
         case ["fresh_session"]:
             return Principal(
@@ -93,7 +95,10 @@ def test_an_unclassified_effect_would_require_freshness() -> None:
     stale = principal_for("session")
     action = ReservedAction("synthetic.new", frozenset({Effect.DELETES_PERMANENTLY}))
     assert isinstance(
-        authorize_reserved(stale, action, now=T0, fresh_auth_s=FRESH_S), ReauthRequired
+        authorize_reserved(
+            stale, action, now=T0, fresh_auth_s=FRESH_S, registry={action.name: action}
+        ),
+        ReauthRequired,
     )
 
 
@@ -161,6 +166,7 @@ def test_truth_table_cell(
         fresh_auth_s=FRESH_S,
         restricted_profile_exists=restricted,
         hardened=hardened,
+        registry={**RESERVED_ACTIONS, action.name: action},
     )
     assert isinstance(
         verdict,
@@ -170,7 +176,7 @@ def test_truth_table_cell(
 
 @pytest.mark.req("EF-USR-024")
 def test_a_route_may_name_the_other_roles_it_admits() -> None:
-    action = RESERVED_ACTIONS["rate"]
+    action = RESERVED_ACTIONS["keys.create"]
     member = principal_for("fresh_session", "member")
     assert isinstance(authorize_reserved(member, action, now=T0), RoleNotAllowed)
     allowed = authorize_reserved(
@@ -201,6 +207,7 @@ def test_truth_table_credential_axis_exhaustive(
     verdict = authorize_reserved(
         principal, action, now=T0, fresh_auth_s=fresh_s,
         restricted_profile_exists=restricted, hardened=hardened,
+        registry={action.name: action},
     )  # fmt: skip
     # The "session" row is 3 h old, always beyond any `fresh_s` drawn here.
     assert isinstance(
@@ -221,3 +228,113 @@ def test_table_covers_every_cell() -> None:
     assert len(cells) == len(CREDENTIAL_AXIS) * len(ROLES) * len(ALL_ACTIONS)
     names = [a.name for a in ALL_ACTIONS]
     assert len(names) == len(set(names))
+
+
+# --- the table generated from the registry, with its `fresh_auth_s` column (EF-USR-022, K5) ------
+
+# One line per declared action, written by hand: "p3" (fresh by default), "parental" (fresh once a
+# restricted profile exists) or "none" (fresh only in the hardened profile). An action added to
+# `RESERVED_ACTIONS` with no line here fails the test below: a reserved action cannot ship without
+# its row in the table.
+FRESHNESS_LINE = {
+    **dict.fromkeys(
+        (
+            "purge.now",
+            "trash.empty",
+            "unit.delete",
+            "detach.full",
+            "destination.remove_all",
+            "reserved_dir.erase",
+            "reconcile.confirm_deletion",
+            "secrets.export",
+            "secrets.rotate",
+            "secrets.import",
+            "source.set_secret",
+            "target.rotate_key",
+            "tombstone.lift",
+            "tombstone.list",
+            "tombstone.accept_lost_keyring",
+            "tombstone.set_aside_journal",
+            "root.takeover",
+            "root.reinit",
+            "store.takeover",
+            "store.reinit",
+            "config.path_map",
+            "intents.resolve",
+            "normalize.migrate",
+            "admin_risk.accept",
+        ),
+        "p3",
+    ),
+    **dict.fromkeys(
+        (
+            "shelf.max_age_rating",
+            "shelf.allowed_profiles",
+            "profile.kavita_mapping",
+            "target.recheck_child_exposure",
+        ),
+        "parental",
+    ),
+    **dict.fromkeys(
+        (
+            "rate",
+            "request.unmask",
+            "keys.create",
+            "keys.rotate",
+            "keys.revoke",
+            "device_token.manage",
+        ),
+        "none",
+    ),
+}
+PROFILES = list(product([False, True], [False, True]))  # (restricted, hardened)
+
+
+def line_needs_fresh(name: str, *, restricted: bool, hardened: bool) -> bool:
+    line = FRESHNESS_LINE[name]
+    return hardened or line == "p3" or (line == "parental" and restricted)
+
+
+@pytest.mark.req("EF-USR-022", "ENF-SEC-010")
+def test_every_reserved_action_has_its_line_in_the_table() -> None:
+    assert set(FRESHNESS_LINE) == set(RESERVED_ACTIONS), (
+        "a reserved action without a line (or a line without its action)"
+    )
+
+
+@pytest.mark.req("EF-USR-022", "EF-USR-024", "ENF-SEC-010")
+@pytest.mark.parametrize(("restricted", "hardened"), PROFILES)
+def test_generated_table_covers_every_action_role_and_credential(
+    restricted: bool, hardened: bool
+) -> None:
+    rows = truth_table(
+        now=T0, fresh_auth_s=FRESH_S, restricted_profile_exists=restricted, hardened=hardened
+    )
+    keys = [(r.action, r.role, r.credential) for r in rows]
+    assert len(keys) == len(set(keys))
+    assert set(keys) == set(product(RESERVED_ACTIONS, TABLE_ROLES, CREDENTIAL_AXIS))
+    for row in rows:
+        want = expected(
+            row.credential, RESERVED_ACTIONS[row.action].effects,
+            restricted=restricted, hardened=hardened, role=row.role,
+        )  # fmt: skip
+        assert row.outcome == want.__name__, row
+        needs = line_needs_fresh(row.action, restricted=restricted, hardened=hardened)
+        # the column: the age a session must prove, whatever the verdict of this cell
+        assert row.fresh_auth_s == (FRESH_S if needs else None), row
+
+
+@pytest.mark.req("EF-USR-022", "ENF-SEC-010")
+def test_generated_table_picks_up_an_action_added_later() -> None:
+    extra = ReservedAction("synthetic.later", frozenset({Effect.DELETES_PERMANENTLY}))
+    rows = truth_table(
+        now=T0, fresh_auth_s=FRESH_S, registry={**RESERVED_ACTIONS, extra.name: extra}
+    )
+    later = [r for r in rows if r.action == "synthetic.later"]
+    assert len(later) == len(TABLE_ROLES) * len(CREDENTIAL_AXIS)
+    assert {r.fresh_auth_s for r in later} == {FRESH_S}
+
+
+@pytest.mark.req("EF-USR-022", "ENF-SEC-010")
+def test_table_roles_are_the_three_roles_and_the_integration_role() -> None:
+    assert TABLE_ROLES == ("admin", "member", "child", "integration")

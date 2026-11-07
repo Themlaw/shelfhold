@@ -273,6 +273,7 @@ class LocalAuth:
             credential=Credential.SESSION,
             session_id=session_id,
             auth_time=now,
+            can_rate=user.can_rate,
         )
         return IssuedSession(
             token=token,
@@ -348,6 +349,7 @@ class LocalAuth:
             credential=Credential.SESSION,
             session_id=record.id,
             auth_time=record.auth_time,
+            can_rate=record.user.can_rate,
         )
         max_age = _seconds(min(policy.idle, expiry - now)) if record.remember else None
         return SessionAuth(
@@ -536,6 +538,7 @@ class LocalAuth:
             key_id=record.id,
             scopes=record.scopes,
             read_only=record.read_only,
+            can_rate=record.user.can_rate,
         )
 
     # --- reserved actions --------------------------------------------------------------------

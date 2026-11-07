@@ -1,7 +1,13 @@
 """What the interfaces and the composition root may use from the identity context."""
 
 from shelfhold.identity.adapters.factory import local_auth
-from shelfhold.identity.application.ports import ApiKeyRecord, ReauthMethod, UserRecord
+from shelfhold.identity.adapters.store import audit_insert
+from shelfhold.identity.application.ports import (
+    ApiKeyRecord,
+    AuditEntry,
+    ReauthMethod,
+    UserRecord,
+)
 from shelfhold.identity.application.service import (
     IDENTITY_HEADER_AUDIT,
     AdminExistsError,
@@ -44,6 +50,7 @@ from shelfhold.identity.domain.reserved import (
     DEFAULT_RESERVED_ROLES,
     NO_REAUTH_EFFECTS,
     SYSTEM_EMITTERS,
+    ActionNotDeclared,
     Allowed,
     CredentialNotAllowed,
     Effect,
@@ -53,8 +60,16 @@ from shelfhold.identity.domain.reserved import (
     Verdict,
     authorize_reserved,
 )
+from shelfhold.identity.domain.roles import (
+    INTEGRATION_ROLE,
+    KNOWN_ROLES,
+    RATE_ROLES,
+    TABLE_ROLES,
+    holds_rate_right,
+)
 from shelfhold.identity.domain.throttle import LoginThrottle
 from shelfhold.identity.domain.tokens import same_secret
+from shelfhold.identity.domain.truth_table import TruthRow, truth_table
 
 __all__ = [
     "CLOSED_SITES",
@@ -64,17 +79,23 @@ __all__ = [
     "EXIT_ROUTES",
     "EXIT_STATES_LATER",
     "IDENTITY_HEADER_AUDIT",
+    "INTEGRATION_ROLE",
+    "KNOWN_ROLES",
     "MAX_PASSWORD_LENGTH",
     "NO_REAUTH_EFFECTS",
     "OWN_SCRATCH",
     "PRIMITIVE",
+    "RATE_ROLES",
     "REPLAY",
     "RESERVED_ACTIONS",
     "RESTORE",
     "SYSTEM_EMITTERS",
+    "TABLE_ROLES",
+    "ActionNotDeclared",
     "AdminExistsError",
     "Allowed",
     "ApiKeyRecord",
+    "AuditEntry",
     "AuthError",
     "CreatedApiKey",
     "Credential",
@@ -94,14 +115,18 @@ __all__ = [
     "SessionAuth",
     "SessionPolicy",
     "ThrottledError",
+    "TruthRow",
     "UnknownReauthMethodError",
     "UnknownUserError",
     "UserRecord",
     "Verdict",
     "audit_actor",
+    "audit_insert",
     "authorize_reserved",
     "credential_axis",
+    "holds_rate_right",
     "local_auth",
     "same_secret",
     "session_policy",
+    "truth_table",
 ]

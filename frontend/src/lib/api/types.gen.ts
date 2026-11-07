@@ -19,6 +19,42 @@ export type About = {
 };
 
 /**
+ * ActivityOut
+ */
+export type ActivityOut = {
+    /**
+     * Event Id
+     */
+    event_id: number | string;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Payload
+     */
+    payload: {
+        [key: string]: unknown;
+    };
+    /**
+     * Title
+     */
+    title: string | null;
+    /**
+     * Title Masked
+     */
+    title_masked: boolean;
+    /**
+     * Type
+     */
+    type: string;
+    /**
+     * Visibility
+     */
+    visibility: string;
+};
+
+/**
  * BackfillIn
  */
 export type BackfillIn = {
@@ -725,6 +761,60 @@ export type ReadyzResponse = {
 };
 
 /**
+ * ReauthRequiredProblem
+ *
+ * `reauth-required` (EF-USR-022): how old the last password entry is, and the age allowed.
+ * Nothing else about the session leaves with it. `-1`: no usable `auth_time`.
+ */
+export type ReauthRequiredProblem = {
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Auth Age S
+     */
+    auth_age_s: number;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Max Age S
+     */
+    max_age_s: number;
+    /**
+     * Reauth Method
+     */
+    reauth_method?: string | null;
+    /**
+     * Reauth Methods
+     */
+    reauth_methods?: Array<string>;
+    /**
+     * Request Id
+     */
+    request_id?: string | null;
+    /**
+     * Status
+     */
+    status: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Type
+     */
+    type: string;
+    [key: string]: unknown;
+};
+
+/**
  * ReauthResponse
  */
 export type ReauthResponse = {
@@ -1007,6 +1097,20 @@ export type TargetIn = {
 };
 
 /**
+ * UnmaskedOut
+ */
+export type UnmaskedOut = {
+    /**
+     * Event Id
+     */
+    event_id: number | string;
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
  * WaitingOut
  */
 export type WaitingOut = {
@@ -1092,6 +1196,84 @@ export type AboutResponses = {
 };
 
 export type AboutResponse = AboutResponses[keyof AboutResponses];
+
+export type ListActivityData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/activity';
+};
+
+export type ListActivityErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListActivityError = ListActivityErrors[keyof ListActivityErrors];
+
+export type ListActivityResponses = {
+    /**
+     * Response List Activity
+     *
+     * Successful Response
+     */
+    200: Array<ActivityOut>;
+};
+
+export type ListActivityResponse = ListActivityResponses[keyof ListActivityResponses];
+
+export type UnmaskData = {
+    body?: never;
+    path: {
+        /**
+         * Ref
+         */
+        ref: string;
+    };
+    query?: never;
+    url: '/api/v1/activity/{ref}/unmask';
+};
+
+export type UnmaskErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type UnmaskError = UnmaskErrors[keyof UnmaskErrors];
+
+export type UnmaskResponses = {
+    /**
+     * Successful Response
+     */
+    200: UnmaskedOut;
+};
+
+export type UnmaskResponse = UnmaskResponses[keyof UnmaskResponses];
 
 export type AdoptConfirmMigrationData = {
     body: MigrationIn;

@@ -23,6 +23,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
+from shelfhold.events.activity import ActivityEvent, Viewer, activity_view
 from shelfhold.events.bus import EventBus
 from shelfhold.events.operating import AGGREGATED
 from shelfhold.infrastructure.clock import Clock
@@ -131,8 +132,10 @@ class NotificationDispatcher:
                     pending.c.id,
                     pending.c.channel,
                     pending.c.attempts,
+                    event.c.id.label("event_id"),
                     event.c.type,
                     event.c.payload,
+                    event.c.visibility,
                 )
                 .select_from(pending.join(event, event.c.id == pending.c.event_id))
                 .where(pending.c.next_try_at <= now)
@@ -147,8 +150,19 @@ class NotificationDispatcher:
                     .where(pending.c.id == r.id, pending.c.next_try_at <= now)
                     .values(next_try_at=now + lease)
                 ).rowcount
-                if won:
-                    claimed.append(_Row(r.id, r.channel, r.attempts, r.type, r.payload or {}))
+                if not won:
+                    continue
+                # EF-USR-016: a notification is a projection like any other. The channels are the
+                # administrator's, so the event is seen as the administrator sees it; an event
+                # that is not theirs to see is never sent (and has nothing left to wait for).
+                item = activity_view(
+                    Viewer(None, "admin"),
+                    ActivityEvent(r.event_id, r.type, r.visibility, r.payload or {}),
+                )
+                if item is None:
+                    conn.execute(sa.delete(pending).where(pending.c.id == r.id))
+                    continue
+                claimed.append(_Row(r.id, r.channel, r.attempts, r.type, dict(item.payload)))
         return claimed
 
     def _renew(self, group: list[_Row]) -> None:
