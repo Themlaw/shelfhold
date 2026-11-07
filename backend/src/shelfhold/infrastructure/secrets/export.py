@@ -23,6 +23,8 @@ ARMOR_END = "-----END AGE ENCRYPTED FILE-----"
 ARMOR_COLUMNS = 64
 MIN_PASSPHRASE_CHARS = 12
 MAX_PASSPHRASE_FILE_BYTES = 4096
+MAX_SCRYPT_LOG_N = 20  # age writes 18; 2**23 would cost 8 GiB and minutes (a forged header)
+MAX_HEADER_BYTES = 4096
 MAX_EXPORT_BYTES = 1024 * 1024  # a keyring of 1000 keys armored is ~170 KiB
 
 
@@ -112,6 +114,23 @@ def dearmor(text: str) -> bytes:
         raise ExportError("the armor is not valid base64") from None
 
 
+def check_scrypt_cost(binary: bytes) -> None:
+    """Read the `-> scrypt <salt> <log_n>` line of the age header and refuse a cost above
+    `MAX_SCRYPT_LOG_N`, before the library derives anything: the work factor is the file's, so a
+    forged file could otherwise ask for gigabytes. The same generic error as any damaged file;
+    the header is only inspected, it is authenticated later by age itself."""
+    head = binary[:MAX_HEADER_BYTES].split(b"\n---", 1)[0]
+    lines = head.split(b"\n")
+    if lines[0] != b"age-encryption.org/v1":
+        raise ExportError("wrong passphrase or damaged file")
+    stanzas = [line.split(b" ") for line in lines[1:] if line.startswith(b"-> ")]
+    if len(stanzas) != 1 or stanzas[0][1:2] != [b"scrypt"] or len(stanzas[0]) != 4:
+        raise ExportError("wrong passphrase or damaged file")
+    log_n = stanzas[0][3]
+    if not log_n.isdigit() or len(log_n) > 3 or not 1 <= int(log_n) <= MAX_SCRYPT_LOG_N:
+        raise ExportError("wrong passphrase or damaged file")
+
+
 def encrypt_export(keyring: Keyring, passphrase: str) -> str:
     """The whole keyring (retired keys included) as an armored age file."""
     return armor(pyrage.passphrase.encrypt(keyring.to_json(), passphrase))
@@ -123,6 +142,7 @@ def decrypt_export(text: str, passphrase: str) -> Keyring:
     if len(text) > MAX_EXPORT_BYTES:
         raise ExportError("the export file is too large")
     binary = dearmor(text)
+    check_scrypt_cost(binary)
     try:
         clear = pyrage.passphrase.decrypt(binary, passphrase)
     except (pyrage.DecryptError, ValueError):

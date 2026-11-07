@@ -187,6 +187,32 @@ def test_a_forged_export_is_refused_and_says_nothing_of_its_content(label: str) 
     assert "\\x01" not in text and "AQEB" not in text  # no key material echoed
 
 
+def _with_log_n(log_n: str) -> str:
+    binary = pyrage.passphrase.encrypt(b"x" * 50, PASSPHRASE)
+    head, rest = binary.split(b"\n---", 1)
+    lines = head.split(b"\n")
+    parts = lines[1].split(b" ")
+    parts[3] = log_n.encode()
+    lines[1] = b" ".join(parts)
+    return armor(b"\n".join(lines) + b"\n---" + rest)
+
+
+@pytest.mark.parametrize("log_n", ["21", "23", "63", "255", "99999", "0", "-1", "x"])
+def test_a_forged_scrypt_cost_is_refused_before_any_derivation(
+    log_n: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def derivation(*_a: object, **_k: object) -> bytes:
+        raise AssertionError("the library was called")
+
+    monkeypatch.setattr(pyrage.passphrase, "decrypt", derivation)
+    with pytest.raises(ExportError, match="wrong passphrase or damaged file"):
+        decrypt_export(_with_log_n(log_n), PASSPHRASE)
+
+
+def test_the_cost_age_writes_by_default_is_accepted() -> None:
+    assert decrypt_export(GOOD, PASSPHRASE).keys
+
+
 def test_a_giant_export_file_is_refused_before_it_is_decrypted(tmp_path: Path) -> None:
     path = tmp_path / "giant.age"
     path.write_bytes(b"A" * (MAX_EXPORT_BYTES + 1))

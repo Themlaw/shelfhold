@@ -428,7 +428,13 @@ def forged_files(tmp_path: Path) -> dict[str, Path]:
     def doc(*keys: dict[str, Any]) -> dict[str, Any]:
         return {"format": 1, "keys": list(keys)}
 
+    binary = pyrage.passphrase.encrypt(b"x" * 50, PASSPHRASE)
+    greedy = binary.replace(b"scrypt", b"scrypt", 1)
+    head, rest = greedy.split(b"\n---", 1)
+    lines = head.split(b"\n")
+    lines[1] = b" ".join([*lines[1].split(b" ")[:3], b"23"])
     contents = {
+        "scrypt cost 2**23": armor(b"\n".join(lines) + b"\n---" + rest),
         "truncated": good[: len(good) // 2],
         "wrong header": good.replace("BEGIN AGE ENCRYPTED FILE", "BEGIN SOMETHING ELSE", 1),
         "duplicate kid": sealed(doc(entry(b"\1" * KEY_BYTES), entry(b"\2" * KEY_BYTES, "retired"))),
