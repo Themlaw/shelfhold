@@ -122,7 +122,7 @@ def test_m2_an_unwritable_root_does_not_stop_the_others(settings: Settings, tmp_
 
 def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) -> None:
     class Client:
-        async def flush_scans(self) -> None:
+        async def flush_scans(self, allowed: object = None) -> None:
             raise TargetUnreachable("Library/scan-folder: ConnectError")
 
     class Pipeline:
@@ -154,7 +154,7 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
     context = SimpleNamespace(stop_requested=False, job_id="j")
 
     class Poller:
-        def __init__(self, *_: object) -> None: ...
+        def __init__(self, *_: object, **__: object) -> None: ...
         async def poll(self, *_: object) -> None:
             raise TargetUnreachable("poll")
 

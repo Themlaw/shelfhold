@@ -39,6 +39,10 @@ SPEC_WAITING_STATES = {
     "tombstone_key_unknown",
     "tombstone_lines_owed",
     "route_missing",
+    # L60 (EF-EXP-029, EF-EXP-032): the matrix names the sentinel state and the plan blocks on a
+    # name collision; both need a way out in `status`
+    "mount_sentinel_missing",
+    "series_name_collision",
 }
 
 

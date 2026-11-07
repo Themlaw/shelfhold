@@ -227,3 +227,67 @@ def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> 
     assert after == before  # .shelfhold/ is excluded: the lease is rewritten by its heartbeat
     state = j.suwayomi()
     assert "violations" in state and state["violations"] == []
+
+
+FOREIGN = "foreign-writer.cbz"
+
+
+@pytest.mark.e2e_timeout(480)
+@pytest.mark.req("EF-INT-023", "EF-EXP-043", "EF-INT-024")
+def test_exits_work_after_target_add_on_the_running_server(journey: Journey) -> None:
+    """`target add` is typed while the server runs: the roots it registers are read by the exits
+    that follow (`series resume`, `target recheck`), not the ones known at start (L60)."""
+    j = journey
+    install_by_commands(j)  # the server was started before any root existed
+    j.discover_series()
+    j.publish_upstream()
+    assert j.follow_until(lambda: any(f.endswith("Ch.2.cbz") for f in j.library_files()), 300)
+    exported = next(f for f in j.library_files() if f.endswith("Ch.2.cbz"))
+    folder = exported.rsplit("/", 1)[0]
+    j.put(f"{folder}/{FOREIGN}", "not ours")  # another writer, in the folder Shelfhold manages
+    assert j.shelfhold("jobs", "run", "reconcile.cycle").code == 0
+    assert wait_for(lambda: "paused_foreign_writer" in j.waiting(), 90), j.shelfhold("status").out
+    (item,) = j.waiting()["paused_foreign_writer"]
+    assert str(item["command"]).startswith("shelfhold series resume ")
+    resumed = j.shelfhold("series", "resume", str(item["subject"]))
+    assert resumed.code == 0, resumed.err + resumed.out
+    assert "OutsidePathMapError" not in resumed.err
+    target = j.db_value("select id from export_target")
+    rechecked = j.shelfhold("target", "recheck", target)
+    assert rechecked.code == 0, rechecked.err + rechecked.out
+    assert "OutsidePathMapError" not in rechecked.err
+
+
+def exported_cbz(j: Journey) -> list[str]:
+    """The files in the series folders of the shelf (the received ones wait under .shelfhold)."""
+    return [f for f in j.library_files() if f.endswith(".cbz") and "/.shelfhold/" not in f]
+
+
+@pytest.mark.e2e_timeout(480)
+@pytest.mark.req("EF-EXP-032", "EF-INT-023")
+def test_two_series_with_one_title_wait_for_a_name_then_export(journey: Journey) -> None:
+    """The same title in `en` and in `fr`: nothing is written silently under one name. `status`
+    names both Editions and the command; the name given, both series are exported (L60)."""
+    j = journey
+    install_by_commands(j)
+    j.twin_titles()
+    j.discover_series()
+    j.publish_upstream()
+    assert j.follow_until(lambda: "series_name_collision" in j.waiting(), 300), (
+        j.shelfhold("status").out
+    )
+    items = j.waiting()["series_name_collision"]
+    assert len(items) == 2
+    assert exported_cbz(j) == []  # no silent skip, no overwrite (received files stay in .shelfhold)
+    command = str(items[0]["command"])
+    assert command.startswith("shelfhold edition set-series-name ")
+    named = j.shelfhold("edition", "set-series-name", str(items[0]["subject"]), "Series Alpha (fr)")
+    assert named.code == 0, named.err + named.out
+    assert j.shelfhold("jobs", "run", "export.run").code == 0
+    assert wait_for(
+        lambda: len(exported_cbz(j)) >= 2
+        and "series_name_collision" not in j.waiting(),
+        120,
+    ), j.shelfhold("status").out
+    folders = {f.split("/")[3] for f in exported_cbz(j)}
+    assert len(folders) == 2  # two series, two names

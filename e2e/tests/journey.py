@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import time
 from collections.abc import Callable
@@ -65,7 +66,7 @@ class Journey:
         for name in self.files:
             command += ["-f", str(E2E / name)]
         subprocess.run(  # noqa: S603
-            [*command, "exec", "-T", service, "sh", "-c", f"umask 077; cat > {path}"],
+            [*command, "exec", "-T", service, "sh", "-c", f"umask 077; cat > {shlex.quote(path)}"],
             input=text,
             text=True,
             check=True,
@@ -91,6 +92,28 @@ class Journey:
 
     def publish_upstream(self) -> None:
         self.fake("suwayomi", SUWAYOMI_URL + "/_fake/publish", post=True)
+
+    def twin_titles(self) -> None:
+        """The second series of the simulated Suwayomi takes the title of the first (en, fr)."""
+        self.fake("suwayomi", SUWAYOMI_URL + "/_fake/twin", post=True)
+
+    def waiting(self) -> dict[str, list[dict[str, object]]]:
+        """`shelfhold status --json`: the waiting states, by state."""
+        done = self.shelfhold("status", "--json")
+        assert done.code == 0, done.err
+        found: dict[str, list[dict[str, object]]] = {}
+        for item in json.loads(done.out)["waiting"]:
+            found.setdefault(str(item["state"]), []).append(item)
+        return found
+
+    def db_value(self, sql: str) -> str:
+        """A read-only look at the database (an identifier to give a command, never a write)."""
+        done = self.compose(
+            "exec", "-T", "shelfhold", "python", "-c",
+            "import sqlite3,sys; print(sqlite3.connect('file:/data/shelfhold.db?mode=ro', uri=True)"
+            ".execute(sys.argv[1]).fetchone()[0])", sql,
+        )  # fmt: skip
+        return done.stdout.strip()
 
     def units_known(self) -> int:
         """Chapters the follow has listed so far (read-only look at the database, for waiting)."""
