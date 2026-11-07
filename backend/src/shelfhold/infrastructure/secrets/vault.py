@@ -18,6 +18,12 @@ from shelfhold.infrastructure.secrets.envelope import (
 from shelfhold.infrastructure.secrets.errors import EnvelopeFormatError, UnknownKidError
 from shelfhold.infrastructure.secrets.keyring import Keyring
 
+# A user name is an identifier, not a secret. Registered by value it would blank every occurrence
+# of the word in the logs: with the user `shelfhold`, the logger name `shelfhold.jobs.huey_app`
+# became `***.jobs.huey_app`. The password next to it is still registered, and so is the whole
+# document (docs/decisions/M1a.md, review of L59).
+IDENTIFIER_FIELDS = frozenset({"username", "user", "login"})
+
 
 def _remember(plaintext: bytes) -> None:
     """Scrub this secret by value from every later log line, exceptions included.
@@ -31,13 +37,16 @@ def _remember(plaintext: bytes) -> None:
         parsed = json.loads(text)
     except ValueError:
         return
-    pending = [parsed]
+    pending: list[object] = [parsed]
     while pending:
         item = pending.pop()
         if isinstance(item, str):
             register_secret_value(item)
         elif isinstance(item, dict):
-            pending.extend(item.values())
+            for key, value in item.items():
+                if key.lower() in IDENTIFIER_FIELDS and isinstance(value, str):
+                    continue  # who, not what: see the note on IDENTIFIER_FIELDS
+                pending.append(value)
         elif isinstance(item, list):
             pending.extend(item)
 

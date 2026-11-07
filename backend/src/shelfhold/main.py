@@ -76,14 +76,34 @@ def announce_keyring_failure(engine: Engine, bus: EventBus, error: KeyringError)
         structlog.get_logger().error("secret.undecryptable", reason=reason)
 
 
+# The effective configuration at start-up is a white list: a new setting is not logged until
+# someone decides it holds no secret (a test makes the decision explicit). The right-hand name is
+# the one in the log: the filter masks any key whose name looks like a secret (`auth`, `key`,
+# `secret`), and these four are not secrets, so they are logged under names that do not match.
+LOGGED_SETTINGS: dict[str, str] = {
+    "data_dir": "data_dir", "store_dir": "store_dir", "library_dir": "library_dir",
+    "host": "host", "port": "port", "log_level": "log_level", "log_format": "log_format",
+    "umask": "umask", "public_url": "public_url", "frontend_dir": "frontend_dir",
+    "plugin_repos": "plugin_repos", "active_sources": "active_sources",
+    "source_url": "source_url", "received_cbz_max_bytes": "received_cbz_max_bytes",
+    "naming_segment_policy_confirmed": "naming_segment_policy_confirmed",
+    "cli_allow_host": "cli_allow_host", "allow_network_data_dir": "allow_network_data_dir",
+    "disk_pause_percent": "disk_pause_percent", "disk_pause_gib": "disk_pause_gib",
+    "disk_resume_percent": "disk_resume_percent", "disk_resume_gib": "disk_resume_gib",
+    "auth_hardened": "hardened_profile",  # a switch
+    "fresh_auth_s": "recent_login_window_s",  # a duration
+    "secret_key_file": "trousseau_path",  # where the keyring is: a path, not the keyring
+    "forward_auth_trusted_cidrs": "proxy_trusted_cidrs",  # networks, not credentials
+}  # fmt: skip
+SECRET_SETTINGS = frozenset({"api_token"})  # never logged, whatever its value
+
+
 def log_effective_config(settings: Settings) -> None:
-    """The effective configuration at start-up (INFO). A secret is masked by the model itself
-    (`SecretStr`), then by the log filter, which also scrubs by key name."""
-    structlog.get_logger().info(
-        "startup.config",
-        version=__version__,
-        config=strip_url_queries(settings.model_dump(mode="json")),
-    )
+    """The effective configuration at start-up (INFO): the white list above, query strings cut
+    off every URL, then the log filter on top."""
+    dump = settings.model_dump(mode="json")
+    config = {shown: strip_url_queries(dump[field]) for field, shown in LOGGED_SETTINGS.items()}
+    structlog.get_logger().info("startup.config", version=__version__, config=config)
 
 
 def create_app(

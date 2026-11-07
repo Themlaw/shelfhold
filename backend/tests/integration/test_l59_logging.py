@@ -600,3 +600,40 @@ def test_no_authentication_secret_in_the_debug_logs(
     for label, secret in secrets.items():
         assert secret and secret not in text, label
     assert SESSION_COOKIE and CSRF_COOKIE
+
+
+@pytest.mark.req("ENF-SEC-005", "ENF-OBS-001")
+def test_every_setting_is_logged_or_declared_secret_and_the_four_stay_visible(
+    settings: Settings, logs: Logs
+) -> None:
+    from shelfhold.config import Settings as SettingsModel
+    from shelfhold.main import LOGGED_SETTINGS, SECRET_SETTINGS, log_effective_config
+
+    assert set(SettingsModel.model_fields) == set(LOGGED_SETTINGS) | SECRET_SETTINGS
+    assert not set(LOGGED_SETTINGS) & SECRET_SETTINGS
+    logs.start("INFO")
+    log_effective_config(settings.model_copy(update={"auth_hardened": True, "fresh_auth_s": 321}))
+    config = named(logs.drain(), "startup.config")[0]["config"]
+    assert isinstance(config, dict)
+    assert config["hardened_profile"] is True and config["recent_login_window_s"] == 321
+    assert config["trousseau_path"] is None and "proxy_trusted_cidrs" in config
+    assert "api_token" not in config
+    assert all(value != "***" for value in config.values())
+
+
+@pytest.mark.req("ENF-SEC-005", "ENF-OBS-001")
+def test_a_sealed_user_name_is_not_a_secret_by_value_but_its_password_is(logs: Logs) -> None:
+    from shelfhold.infrastructure.secrets.vault import _remember
+
+    _remember(
+        json.dumps(
+            {"username": "shelfhold", "password": "pw-7chars", "x": {"user": "bob"}}
+        ).encode()
+    )
+    logs.start("INFO")
+    structlog.get_logger("shelfhold.jobs.huey_app").info(
+        "l59.names", who="shelfhold", pw="pw-7chars"
+    )
+    record = next(r for r in logs.drain() if r["event"] == "l59.names")
+    assert record["logger"] == "shelfhold.jobs.huey_app" and record["who"] == "shelfhold"
+    assert record["pw"] == "***"
