@@ -53,6 +53,7 @@ from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.ops import OpsServices
 from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.wiring import open_ops
+from shelfhold.plugin_host.public import start_plugins
 from shelfhold.runtime import InstanceRuntime
 from shelfhold.runtime_jobs import PlanService
 
@@ -185,6 +186,8 @@ def create_app(
         runtime.acquire()  # ENF-OPS-015: first, before anything else; a second instance refuses
         try:
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
+            # EF-SRC-019: third-party code only once this process owns /data and the schema is ours
+            start_plugins(resolved)
             try:
                 boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops it
             except KeyringError as error:

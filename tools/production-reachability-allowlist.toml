@@ -46,15 +46,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l07"
-reason = "Third-party plugin guard (ENF-SEC-009, EF-SRC-019): the registry that discovers entry points and classifies first-party and third-party plugins, and the stored plugin state, are the guard of L07. M1a loads no plugin by entry point: a test proves no production module reads a shelfhold group and that the registry is unreachable from every entry point."
-until = "M1b L07"
-symbols = [
-  "shelfhold.plugin_host.public:load_plugin_state",
-  "shelfhold.plugin_host.registry:*",
-]
-
-[[allow]]
 category = "unwired-m1b-l08"
 reason = "Age model of the catalog and its columns (effective age, explicit Edition age, suggested ages): PLAN-M1b L08 gives the helpers of the age rating their first production callers."
 until = "M1b L08"
