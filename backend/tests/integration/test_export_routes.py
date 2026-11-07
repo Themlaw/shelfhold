@@ -42,7 +42,7 @@ class FakePipeline:
 
 
 @pytest.mark.req("EF-EXP-002", "EF-INT-024")
-def test_shelf_route_refuses_below_18_and_creates_an_adult_shelf(
+def test_shelf_route_creates_shelves_on_the_scale_and_refuses_an_age_off_it(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     with auth_env(monkeypatch, settings) as api:
@@ -50,11 +50,11 @@ def test_shelf_route_refuses_below_18_and_creates_an_adult_shelf(
         assert anonymous.status_code == 401
         assert api.login().status_code == 200
         refused = api.post(
-            "/api/v1/shelves", json={"name": "Enfants", "phrase": "Jeunesse", "max_age_rating": 12}
+            "/api/v1/shelves", json={"name": "Enfants", "phrase": "Jeunesse", "max_age_rating": 11}
         )
         assert refused.status_code == 422
-        assert refused.json()["code"] == "shelf.parental_control_unavailable"
-        for name, ceiling in (("Adultes", 18), ("X", 99), ("Sans plafond", None)):
+        assert refused.json()["code"] == "shelf.ceiling_invalid"
+        for name, ceiling in (("Adultes", 18), ("X", 99), ("Sans plafond", None), ("Ados", 13)):
             created = api.post(
                 "/api/v1/shelves", json={"name": name, "phrase": name, "max_age_rating": ceiling}
             )
@@ -65,7 +65,12 @@ def test_shelf_route_refuses_below_18_and_creates_an_adult_shelf(
                 connection.execute(sa.text("SELECT name FROM shelf ORDER BY name")).scalars().all()
             )
         engine.dispose()
-        assert rows == ["Adultes", "Sans plafond", "X"]  # nothing was stored for the refused one
+        assert rows == [
+            "Ados",
+            "Adultes",
+            "Sans plafond",
+            "X",
+        ]  # nothing was stored for the refused one
 
 
 @pytest.mark.req("EF-EXP-008", "EF-EXP-042")

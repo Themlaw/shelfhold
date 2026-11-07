@@ -114,9 +114,9 @@ def test_every_command_through_the_running_server(
         assert _run(monkeypatch, settings, "source", "add", "suwayomi", "--url", SUWAYOMI_URL) == 1
         assert "source.auth_mode_unsupported" in out().err
 
-        assert _run(monkeypatch, settings, "shelf", "create", "Kids", "--max-age", "12",
+        assert _run(monkeypatch, settings, "shelf", "create", "Kids", "--max-age", "11",
                     "--target", "kavita") == 1  # fmt: skip
-        assert "shelf.parental_control_unavailable" in out().err
+        assert "shelf.ceiling_invalid" in out().err  # 11 is no tier of the scale
         shelf = ["shelf", "create", "Manga", "--max-age", "18+", "--target", "kavita",
                  "--subpath", "manga", "--phrase", "Mangas"]  # fmt: skip
         assert _run(monkeypatch, settings, *shelf) == 0
