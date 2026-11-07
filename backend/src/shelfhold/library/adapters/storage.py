@@ -12,28 +12,40 @@ payload they carry.
 """
 
 import hashlib
+import re
 from collections.abc import Callable, Iterable
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
-from typing import Final, Protocol
+from typing import Any, Final, Literal, Protocol
 
 import sqlalchemy as sa
-from sqlalchemy import Engine
+from sqlalchemy import Connection, Engine
 
 from shelfhold.infrastructure.archives import DEFAULT_LIMITS, ArchiveLimits, safe_open_archive
 from shelfhold.infrastructure.content_trust import check_cbz_entries
-from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.fsops import CopyVerificationError, Fsops, FsopsError
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import storage
+from shelfhold.infrastructure.schema import export, storage
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY, content_hash
+from shelfhold.library.domain.copies import CopyFacts, is_independent
 from shelfhold.library.domain.failures import (
     ReceivedTooLargeError,
+    SafeguardFailedError,
     TombstonedContentError,
     VariantAlreadyStoredError,
 )
-from shelfhold.library.replica import record_replica
+from shelfhold.library.domain.store_budget import Candidate
+from shelfhold.library.replica import (
+    library_copies,
+    record_library_rewrite,
+    record_replica,
+    record_store_observation,
+    sibling_inodes,
+    store_copies,
+)
 from shelfhold.library.tombstones.values import ContentHash
 
 CBZ_MEDIA_TYPE: Final = "application/vnd.comicbook+zip"
@@ -163,3 +175,308 @@ class PassthroughStore:
         return Ingested(
             content_id, replica_id, original, payload_hash, identity.size, len(listing.images)
         )
+
+
+# -- keeping a copy (EF-BIB-027) ---------------------------------------------------------------
+
+
+class IntentLog(Protocol):
+    """The part of the intent journal a copy to /store needs (`export` owns the journal)."""
+
+    def record(
+        self,
+        *,
+        op: str,
+        src: str | None = None,
+        dst: str | None = None,
+        expected_sha256: str | None = None,
+        expected_file_id: Any = None,
+    ) -> str: ...
+
+    def mark_applying(self, intent_id: str) -> None: ...
+
+    def mark_done(self, intent_id: str, *, within: Connection | None = None) -> None: ...
+
+    def cancel(self, intent_id: str) -> None: ...
+
+
+@dataclass(frozen=True)
+class Derivative:
+    original_sha256: str  # the bytes as received, kept in /store
+    derived_sha256: str  # the canonical derivative that /library holds from now on
+    derived_by: str  # `processor@version`
+
+
+@dataclass(frozen=True)
+class Kept:
+    unit_id: str
+    rel_path: str  # under /store
+    method: Literal["reflink", "copy", "extracted"]
+    file_hash: str
+
+
+def keep_rel(unit_id: str, content_id: str) -> str:
+    return f"units/{unit_id[:2]}/{unit_id}/{content_id}.cbz"
+
+
+def keep_candidates(engine: Engine) -> list[Candidate]:
+    """Units still in passthrough that a shelf in `keep` mode asks to keep, oldest content first.
+
+    Switching a shelf to `keep` proposes this catch-up (GAP-5-22); new Units of a keep shelf take
+    the same road once they are exported, so one query serves both."""
+    content, item, record = storage.content, export.export_item, export.export_record
+    destination, shelf = export.shelf_destination, export.shelf
+    query = (
+        sa.select(content.c.unit_id, sa.func.max(content.c.size).label("size"), content.c.id)
+        .select_from(
+            content.join(item, item.c.content_id == content.c.id)
+            .join(record, record.c.export_item_id == item.c.id)
+            .join(destination, destination.c.id == record.c.shelf_destination_id)
+            .join(shelf, shelf.c.id == destination.c.shelf_id)
+        )
+        .where(
+            content.c.retention == "passthrough",
+            content.c.unit_id.is_not(None),
+            shelf.c.retention_mode == "keep",
+        )
+        .group_by(content.c.id)
+        .order_by(content.c.id)
+    )
+    with engine.connect() as connection:
+        return [Candidate(r.unit_id, int(r.size)) for r in connection.execute(query)]
+
+
+class KeepCopier:
+    """Keep a copy of a Unit in /store, as an independent copy: never a link (EF-BIB-027, D9).
+
+    The file in /library, when it is still byte for byte what was received, is copied by
+    `Fsops.copy_independent` (a reflink clone if the file system allows it, else a copy flushed
+    to disk and read back), under a `copy_cross_root` intent: after a crash the target is absent
+    (nothing happened) or complete, and `complete_interrupted_keep` finishes the bookkeeping at
+    the next start. A library file that was rendered since (ComicInfo for a destination) is not a
+    copy of the original: `extract` (the safeguard) strips the rendering and verifies the payload
+    instead, and /store never holds a rendered file (I25)."""
+
+    def __init__(
+        self,
+        engine: Engine,
+        fsops: Fsops,
+        locate: RootLocator,
+        store_dir: str,
+        data_dir: Path,
+        journal: IntentLog,
+        *,
+        extract: Callable[[str], Any] | None = None,
+    ) -> None:
+        self._engine = engine
+        self._fsops = fsops
+        self._locate = locate
+        self._store = store_dir.rstrip("/")
+        self._journal = journal
+        self._extract = extract
+        self._projection = MetaProjection(engine, data_dir)
+
+    def keep(self, unit_id: str) -> Kept:
+        with self._engine.connect() as connection:
+            content = connection.execute(
+                sa.select(storage.content)
+                .where(
+                    storage.content.c.unit_id == unit_id,
+                    storage.content.c.retention == "passthrough",
+                )
+                .order_by(storage.content.c.id)
+            ).first()
+            if content is None:
+                raise SafeguardFailedError("no_content", "nothing in passthrough to keep")
+            copies = list(library_copies(connection, unit_id))
+        for copy in copies:
+            with suppress(FileNotFoundError, FsopsError):
+                if self._fsops.sha256_of(copy.local) == content.original_sha256:
+                    return self._copy(unit_id, content, copy.local)
+        if self._extract is None:
+            raise SafeguardFailedError("library_differs_from_original")
+        result = self._extract(unit_id)
+        return Kept(unit_id, result.rel_path, "extracted", result.file_hash)
+
+    def declare_derivative(self, unit_id: str, derived: Path, derived_by: str) -> Derivative:
+        """A source declared a descrambling (EF-BIB-006): `derived` is the canonical file, the
+        bytes as received stay in /store, both traced by hash.
+
+        The original is copied to /store first (an independent copy, under its intent); only then
+        is the derivative written over the /library file, atomically and read back. A crash in
+        between leaves the original kept and /library unchanged: the same call, repeated, goes on
+        from there. The derivative is audited as any archive is before it replaces anything."""
+        with self._engine.connect() as connection:
+            content = connection.execute(
+                sa.select(storage.content)
+                .where(
+                    storage.content.c.unit_id == unit_id,
+                    storage.content.c.retention.in_(("passthrough", "keep")),
+                    storage.content.c.derived_hash.is_(None),
+                )
+                .order_by(storage.content.c.id)
+            ).first()
+            if content is None:
+                raise SafeguardFailedError("no_content", "nothing to derive")
+            copies = list(library_copies(connection, unit_id))
+        with safe_open_archive(derived, name="derived.cbz") as archive:
+            check_cbz_entries(archive)
+        derived_hash = sha256_file(derived)
+        if content.retention == "passthrough":
+            self.keep(unit_id)  # the original first, byte for byte
+        target = next(
+            (c for c in copies if self._fsops.sha256_of(c.local) == content.original_sha256), None
+        )
+        if target is None:
+            raise SafeguardFailedError("library_differs_from_original")
+        with derived.open("rb") as stream:
+            written = self._fsops.write_atomic(
+                target.local, stream, replace=True,
+                verify_digest=lambda: derived_hash.removeprefix("sha256:"),
+            )  # fmt: skip
+        with self._engine.begin() as connection:
+            record_library_rewrite(
+                connection, target.replica_id, file_hash=derived_hash,
+                dev=self._fsops.device_of(target.local), ino=written.ino, size=written.size,
+                mtime_ns=written.mtime_ns, verified_at=datetime.now(UTC),
+            )  # fmt: skip
+            connection.execute(
+                sa.update(storage.content)
+                .where(storage.content.c.id == content.id)
+                .values(derived_hash=derived_hash, derived_by=derived_by)
+            )
+        self._projection.project(unit_id)
+        return Derivative(content.original_sha256, derived_hash, derived_by)
+
+    def _copy(self, unit_id: str, content: Any, source: str) -> Kept:
+        rel = keep_rel(unit_id, content.id)
+        target = f"{self._store}/{rel}"
+        seen = self._fsops.observe(source)
+        intent_id = self._journal.record(
+            op="copy_cross_root", src=source, dst=target,
+            expected_sha256=content.original_sha256,
+            expected_file_id=seen[1] if seen else None,
+        )  # fmt: skip
+        self._journal.mark_applying(intent_id)
+        try:
+            done = self._fsops.copy_independent(
+                source, target, parents=True, replace=True,
+                expected_sha256=content.original_sha256.removeprefix("sha256:"),
+            )  # fmt: skip
+        except CopyVerificationError as error:  # the library file changed since it was looked at
+            self._journal.cancel(intent_id)
+            raise SafeguardFailedError("library_differs_from_original", str(error)) from error
+        except BaseException:
+            self._journal.cancel(intent_id)  # staged and atomic: nothing landed
+            raise
+        with self._engine.begin() as connection:
+            independent = complete_keep(
+                connection, self._fsops, self._locate, content.id, target, source,
+                datetime.now(UTC),
+            )  # fmt: skip
+            self._journal.mark_done(intent_id, within=connection)
+        if not independent:  # impossible by construction; said, not hidden
+            raise SafeguardFailedError("not_independent", "the copy shares an inode")
+        self._projection.project(unit_id)
+        return Kept(unit_id, rel, "reflink" if done.reflinked else "copy", "sha256:" + done.sha256)
+
+
+def complete_keep(
+    connection: Connection,
+    fsops: Fsops,
+    locate: RootLocator,
+    content_id: str,
+    target: str,
+    source: str | None,
+    now: datetime,
+) -> bool:
+    """The bookkeeping of a copy that is on disk: the content is kept, the registry knows the
+    copy. Whether it counts is decided here, from the disk (distinct inode, hash read now), never
+    from the way it was made. Returns that verdict."""
+    row = connection.execute(
+        sa.select(storage.content).where(
+            storage.content.c.id == content_id, storage.content.c.retention == "passthrough"
+        )
+    ).first()
+    if row is None:  # already completed: a replayed intent changes nothing
+        return True
+    found = fsops.observe(target)
+    if found is None:
+        raise FileNotFoundError(target)
+    identity = found[1]
+    device = fsops.device_of(target)
+    seen_hash = fsops.sha256_of(target)
+    siblings = sibling_inodes(connection, row.unit_id)
+    if source is not None and (origin := fsops.observe(source)) is not None:
+        siblings.add((fsops.device_of(source), origin[1].ino))  # the file it was copied from
+    independent = is_independent(
+        CopyFacts(device, identity.ino, seen_hash),
+        stored_sha256=row.original_sha256, siblings=siblings,
+    )  # fmt: skip
+    rel = keep_rel(row.unit_id, content_id)
+    connection.execute(
+        sa.update(storage.content)
+        .where(storage.content.c.id == content_id)
+        .values(retention="keep", path=rel, store_provenance="received")
+    )
+    root_id, root_rel = locate(target)
+    record_replica(
+        connection, unit_id=row.unit_id, location="store", content_hash=row.content_hash,
+        file_hash=seen_hash, independent=independent, physical_root_id=root_id,
+        rel_path=root_rel, dev=device, ino=identity.ino, size=identity.size,
+        mtime_ns=identity.mtime_ns, verified_at=now,
+    )  # fmt: skip
+    return independent
+
+
+def complete_interrupted_keep(
+    connection: Connection,
+    fsops: Fsops,
+    locate: RootLocator,
+    *,
+    src: str | None,
+    dst: str,
+    now: datetime,
+) -> None:
+    """For the intent journal's replay at start-up: a `copy_cross_root` whose target is a kept
+    copy (`.../units/<xx>/<unit>/<content>.cbz` in /store) gets its bookkeeping completed. Any
+    other copy (a repatriation) is not ours: nothing happens."""
+    match = _KEEP_NAME.search(dst)
+    if match is None:
+        return
+    complete_keep(connection, fsops, locate, match["content"], dst, src, now)
+
+
+_KEEP_NAME: Final = re.compile(r"/units/[0-9A-Z]{2}/[0-9A-Z]{26}/(?P<content>[0-9A-Z]{26})\.cbz\Z")
+
+
+def verify_kept(engine: Engine, fsops: Fsops, unit_id: str) -> int:
+    """Look at the Unit's /store copies again: each counts only with a distinct inode and the
+    hash it was stored at. Returns how many count."""
+    counted = 0
+    now = datetime.now(UTC)
+    with engine.begin() as connection:
+        siblings = sibling_inodes(connection, unit_id)
+        for copy in store_copies(connection, unit_id):
+            try:
+                found = fsops.observe(copy.local)
+                seen = fsops.sha256_of(copy.local)
+            except (FileNotFoundError, FsopsError):
+                found, seen = None, None
+            if found is None:
+                record_store_observation(
+                    connection, copy.replica_id, independent=False, dev=None, ino=None,
+                    size=None, mtime_ns=None, verified_at=now,
+                )  # fmt: skip
+                continue
+            identity, device = found[1], fsops.device_of(copy.local)
+            good = is_independent(
+                CopyFacts(device, identity.ino, seen or ""), stored_sha256=copy.file_hash,
+                siblings=siblings,
+            )  # fmt: skip
+            counted += good
+            record_store_observation(
+                connection, copy.replica_id, independent=good, dev=device, ino=identity.ino,
+                size=identity.size, mtime_ns=identity.mtime_ns, verified_at=now,
+            )  # fmt: skip
+    return counted

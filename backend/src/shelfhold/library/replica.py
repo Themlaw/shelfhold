@@ -26,21 +26,27 @@ from shelfhold.library.domain.copies import Copy
 
 __all__ = [
     "LibraryCopy",
+    "StoreCopy",
     "erase_replicas",
     "has_readable_copy",
     "independent_copies",
+    "kept_file_hashes",
     "library_copies",
     "manifest_file_hashes",
     "median_unit_bytes",
     "paths_under",
     "readable_unit_ids",
+    "record_library_rewrite",
     "record_replica",
+    "record_store_observation",
     "reference_content_hash",
     "relocate_destination_copy",
     "relocate_root_paths",
     "rendered_file_hashes",
     "replica_copies",
     "replica_hashes",
+    "sibling_inodes",
+    "store_copies",
     "update_observation",
     "upstream_claims",
     "withdraw_upstream_claims",
@@ -248,6 +254,112 @@ def library_copies(connection: Connection, unit_id: str) -> Sequence[LibraryCopy
         LibraryCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash, r.content_hash)
         for r in rows
     ]
+
+
+@dataclass(frozen=True)
+class StoreCopy:
+    replica_id: str
+    local: str
+    file_hash: str | None  # the bytes that were put in /store
+
+
+def store_copies(connection: Connection, unit_id: str) -> Sequence[StoreCopy]:
+    """The Unit's copies in /store, oldest first (the kept originals, EF-BIB-027)."""
+    root = platform.physical_root
+    rows = connection.execute(
+        sa.select(
+            replica_table.c.id,
+            replica_table.c.rel_path,
+            replica_table.c.file_hash,
+            root.c.path_entry,
+        )
+        .join(root, root.c.root_id == replica_table.c.physical_root_id)
+        .where(replica_table.c.unit_id == unit_id, replica_table.c.location == "store")
+        .order_by(replica_table.c.id)
+    )
+    return [StoreCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash) for r in rows]
+
+
+def kept_file_hashes(connection: Connection) -> dict[str, str]:
+    """Unit -> the hash of the file in /store, for the Units that have one (the kept originals)."""
+    rows = connection.execute(
+        sa.select(replica_table.c.unit_id, replica_table.c.file_hash)
+        .where(
+            replica_table.c.location == "store",
+            replica_table.c.unit_id.is_not(None),
+            replica_table.c.file_hash.is_not(None),
+        )
+        .order_by(replica_table.c.id)
+    )
+    return {r.unit_id: r.file_hash for r in rows}
+
+
+def sibling_inodes(connection: Connection, unit_id: str) -> set[tuple[int, int]]:
+    """`(dev, ino)` of the Unit's other copies on disk (library, destinations, adopted files):
+    a /store file that is one of them is not a copy of its own."""
+    rows = connection.execute(
+        sa.select(replica_table.c.dev, replica_table.c.ino).where(
+            replica_table.c.unit_id == unit_id,
+            replica_table.c.location != "store",
+            replica_table.c.location != "upstream",
+            replica_table.c.dev.is_not(None),
+            replica_table.c.ino.is_not(None),
+        )
+    )
+    return {(r.dev, r.ino) for r in rows}
+
+
+def record_library_rewrite(
+    connection: Connection,
+    replica_id: str,
+    *,
+    file_hash: str,
+    dev: int,
+    ino: int,
+    size: int,
+    mtime_ns: int,
+    verified_at: datetime,
+) -> None:
+    """A /library file replaced in place (an atomic write makes a new inode): the manifest's hash
+    and the identity of what is there now, so a stale inode is never counted as a copy."""
+    connection.execute(
+        sa.update(replica_table)
+        .where(replica_table.c.id == replica_id, replica_table.c.location == "library")
+        .values(
+            file_hash=file_hash,
+            dev=dev,
+            ino=ino,
+            size=size,
+            mtime_ns=mtime_ns,
+            verified_at=verified_at,
+        )
+    )
+
+
+def record_store_observation(
+    connection: Connection,
+    replica_id: str,
+    *,
+    independent: bool,
+    dev: int | None,
+    ino: int | None,
+    size: int | None,
+    mtime_ns: int | None,
+    verified_at: datetime,
+) -> None:
+    """What a look at a /store file found: its inode and whether it counts as a copy of its own."""
+    connection.execute(
+        sa.update(replica_table)
+        .where(replica_table.c.id == replica_id, replica_table.c.location == "store")
+        .values(
+            independent=independent,
+            dev=dev,
+            ino=ino,
+            size=size,
+            mtime_ns=mtime_ns,
+            verified_at=verified_at,
+        )
+    )
 
 
 def update_observation(
