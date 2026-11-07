@@ -230,6 +230,18 @@ symbols = [
   "shelfhold.interfaces.http_api.lists:encode_since",
 ]
 
+[[allow]]
+category = "unwired-m4"
+reason = "Related Works (EF-BIB-039): M1b holds the model and the service (a typed link, never a merge). The admin API that links two Works, the page that shows the relation and the push to the \"related series\" of Kavita are M4's, the first callers."
+until = "M4"
+symbols = [
+  "shelfhold.catalog.application.relations:RelatedWork",
+  "shelfhold.catalog.application.relations:RelationError",
+  "shelfhold.catalog.application.relations:relate_works",
+  "shelfhold.catalog.application.relations:relations_of",
+  "shelfhold.catalog.application.relations:unrelate_works",
+]
+
 [[route_test]]
 category = "generic-mechanics"
 reason = "Proves a generic mechanic of the HTTP stack (identity headers, idempotency replay, reserved-action gate, unhandled-exception log line) on the real middleware of create_app() with a toy route: no product route carries the case (a reserved action that touches secrets, a request header dump, a failing handler)."

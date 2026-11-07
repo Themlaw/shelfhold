@@ -32,6 +32,13 @@ from shelfhold.catalog.application.rating import (
     RatingService,
     Withdrawal,
 )
+from shelfhold.catalog.application.relations import (
+    RelatedWork,
+    RelationError,
+    relate_works,
+    relations_of,
+    unrelate_works,
+)
 from shelfhold.catalog.application.relink import (
     ListedUnit,
     Relinker,
@@ -173,6 +180,8 @@ __all__ = [
     "RatingRefusedError",
     "RatingResult",
     "RatingService",
+    "RelatedWork",
+    "RelationError",
     "RelinkRefusedError",
     "RelinkRequest",
     "RelinkResult",
@@ -198,8 +207,11 @@ __all__ = [
     "person_field_name",
     "place_key",
     "place_parts",
+    "relate_works",
+    "relations_of",
     "relink_isolated",
     "stored_date",
     "translation_discriminant",
     "translation_type_for",
+    "unrelate_works",
 ]
