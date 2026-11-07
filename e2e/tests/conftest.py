@@ -108,3 +108,24 @@ def journey() -> Iterator["Journey"]:
     finally:
         print(stack.compose("logs", "--no-color", check=False).stdout)
         stack.compose("down", "-v", "-t", "1", check=False)
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """`E2E_SHARD=<name>` keeps the tests of that shard (e2e/shards.py); a test in no shard is an
+    error, so that none is silently left out of the CI."""
+    shard = os.environ.get("E2E_SHARD")
+    if not shard:
+        return
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from shards import SHARDS
+
+    listed = {name for names in SHARDS.values() for name in names}
+    orphans = sorted(i.name for i in items if i.name not in listed)
+    if orphans:
+        raise pytest.UsageError(f"e2e tests in no shard (e2e/shards.py): {orphans}")
+    keep = set(SHARDS[shard])
+    selected = [i for i in items if i.name in keep]
+    config.hook.pytest_deselected(items=[i for i in items if i.name not in keep])
+    items[:] = selected
