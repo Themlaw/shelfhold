@@ -89,16 +89,31 @@ def test_entry_point_outside_the_plugin_modules_is_blocked(tmp_path: Path) -> No
     assert record.status is PluginStatus.DISABLED
 
 
-def test_loader_appends_after_the_host_and_never_processes_pth(tmp_path: Path) -> None:
+def test_loader_serves_granted_tops_from_the_end_of_meta_path_never_sys_path(
+    tmp_path: Path,
+) -> None:
     from shelfhold.plugin_host import registry
 
     marker = tmp_path / "ran"
     (tmp_path / "x.pth").write_text(f"import pathlib; pathlib.Path({str(marker)!r}).touch()\n")
+    (tmp_path / "granted_mod").mkdir()
+    (tmp_path / "granted_mod" / "__init__.py").write_text("VALUE = 1\n")
+    (tmp_path / "other_mod.py").write_text("VALUE = 2\n")
     ep: Any = SimpleNamespace(load=lambda: object(), module="m", name="k")
-    saved = list(sys.path)
+    paths, metas = list(sys.path), list(sys.meta_path)
     try:
-        registry._third_party_loader(tmp_path, ep)()
-        assert sys.path[-1] == str(tmp_path) and sys.path[:-1] == saved
+        registry._third_party_loader(tmp_path, ep, ["granted_mod"])()
+        assert sys.path == paths and str(tmp_path) not in sys.path
+        assert isinstance(sys.meta_path[-1], registry.ThirdPartyFinder)
+        assert sys.meta_path[:-1] == metas
+        import importlib
+
+        assert importlib.import_module("granted_mod").VALUE == 1
+        with pytest.raises(ImportError):
+            importlib.import_module("other_mod")  # in the directory, not granted
+        assert not (tmp_path / "granted_mod" / "__pycache__").exists()  # no bytecode written
     finally:
-        sys.path[:] = saved
+        sys.path[:] = paths
+        sys.meta_path[:] = metas
+        sys.modules.pop("granted_mod", None)
     assert not marker.exists()

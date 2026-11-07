@@ -132,9 +132,10 @@ def test_third_party_site_packages_after_host_and_name_conflict_refused(
     assert "demo\tloaded" in started.stdout
     (snap,) = snapshots(probe)
     site = str(cli.data / "plugins" / "site-packages")
-    path = [str(p) for p in snap["path"]]  # type: ignore[attr-defined]
-    host = [p for p in path if p != site and "site-packages" in p]
-    assert site in path and host and path.index(site) > max(path.index(p) for p in host)
+    # the directory is never on sys.path: only a finder at the very end of sys.meta_path serves it
+    assert site not in [str(p) for p in snap["path"]]  # type: ignore[attr-defined]
+    meta = snap["meta_path"]
+    assert meta[-1] == "ThirdPartyFinder" and "PathFinder" in meta[:-1]  # type: ignore[index,operator]
     assert site not in str(snap["httpx_file"]) and site not in str(snap["shelfhold_file"])
     from shelfhold import __version__
 
@@ -224,12 +225,12 @@ def test_third_party_plugin_receives_no_secret(cli: Cli, tmp_path: Path, probe: 
             assert (args, kwargs) == ((), {})
             return object()
 
-    load = registry._third_party_loader(tmp_path, Entry())
-    saved = set(sys.path)
+    load = registry._third_party_loader(tmp_path, Entry(), ())
+    saved = list(sys.meta_path)
     try:
         assert load() is not None
     finally:
-        sys.path[:] = [p for p in sys.path if p in saved]
+        sys.meta_path[:] = saved
 
 
 @pytest.mark.req("EF-SRC-019")
@@ -289,3 +290,44 @@ def test_review_loading_leaves_no_bytecode_behind(cli: Cli, tmp_path: Path, prob
     for _ in range(2):  # a second start still loads: the first one wrote no __pycache__
         assert "demo\tloaded" in cli.run("plugin", "list", "--load", **ENABLE).stdout
     assert not list((cli.data / "plugins" / "site-packages").rglob("__pycache__"))
+
+
+@pytest.mark.req("EF-SRC-019")
+def test_review_unconfirmed_plugin_stays_unimportable_when_another_is_granted(
+    cli: Cli, tmp_path: Path, probe: Path
+) -> None:
+    """Review 97, blocker 2: once one plugin was granted the whole directory was importable, so
+    an installed but unconfirmed plugin B ran when the host imported its module lazily (here
+    `h2`, which `httpx2` imports when HTTP/2 is on)."""
+    install(cli, tmp_path, probe)
+    pwned = tmp_path / "pwned"
+    other = build_wheel(tmp_path, "b-plug", {"h2/__init__.py": f"open({str(pwned)!r}, 'a')\n"})
+    done = cli.run("plugin", "install", str(other.path), "--sha256", other.sha256)
+    assert done.returncode == 0, done.stderr
+    enable(cli)  # only demo-plug
+    code = (
+        "import importlib.util, sys\n"
+        "from pathlib import Path\n"
+        "from types import SimpleNamespace\n"
+        "from shelfhold.plugin_host.public import start_plugins\n"
+        f"s = SimpleNamespace(data_dir=Path({str(cli.data)!r}), plugin_repos=(),"
+        " active_sources=())\n"
+        "records = start_plugins(s)[1]\n"
+        "print([(r.key, r.status.value) for r in records])\n"
+        "print('h2 spec:', importlib.util.find_spec('h2'))\n"
+        "try:\n"
+        "    import h2\n"
+        "except ImportError as exc:\n"
+        "    print('h2 not importable')\n"
+    )
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code],
+        env={**cli.env, **ENABLE},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    assert "('demo', 'loaded')" in done.stdout, done.stderr
+    assert "h2 spec: None" in done.stdout and "h2 not importable" in done.stdout
+    assert not pwned.exists()

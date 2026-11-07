@@ -10,21 +10,29 @@ process with the host's rights: it is the unsandboxed-plugin exception, isolatio
 Third-party entry points are read from the separate third-party ``site-packages`` only
 (``metadata.distributions(path=[...])``), never from ``sys.path``, and only for the distributions
 that the installer recorded: a stray or fake ``*.dist-info`` changes nothing. That directory is
-appended to ``sys.path`` after the host's entries and no ``.pth`` file is processed.
+never put on ``sys.path`` (so no ``.pth`` is processed and nothing in it is importable by
+accident): a finder at the *end* of ``sys.meta_path`` resolves only the top-level modules of the
+plugins that were granted, from source files only, so the host's own modules always win.
 
 Compatibility (EF-SRC-001): the host accepts ``api == N`` natively and ``api == N-1`` through a shim
 that rewrites the old manifest into the current shape; any other value is refused with a reason and
 the remaining plugins still load.
 """
 
+import importlib.abc
+import importlib.machinery
+import importlib.util
 import os
 import re
 import sys
+import threading
 from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from importlib import metadata
+from importlib.machinery import ModuleSpec
 from pathlib import Path
+from types import CodeType
 from typing import Any
 
 from shelfhold.sdk.models import API_VERSION, PluginKind, PluginManifest
@@ -144,20 +152,99 @@ def third_party_candidates(
         if reason is None and ep.module.split(".")[0] not in known[name].top_levels:
             reason = f"entry point {ep.name!r} points outside the plugin's own modules"
         found.append(
-            replace(candidate, load=_third_party_loader(site_dir, ep), dist=name, blocked=reason)
+            replace(
+                candidate,
+                load=_third_party_loader(site_dir, ep, known[name].top_levels),
+                dist=name,
+                blocked=reason,
+            )
         )
     return found
 
 
-def _third_party_loader(site_dir: Path, ep: Any) -> Callable[[], Any]:
+class _SourceOnlyLoader(importlib.machinery.SourceFileLoader):
+    """Always compiles from the source file: a bytecode cache is neither read nor written."""
+
+    def get_code(self, fullname: str) -> CodeType:
+        path = self.get_filename(fullname)
+        return self.source_to_code(self.get_data(path), path)
+
+
+class ThirdPartyFinder(importlib.abc.MetaPathFinder):
+    """Resolves the top-level modules of granted plugins, and what lies under them, in one
+    directory. It sits after every other finder, so a name the host can import is never ours."""
+
+    def __init__(self, site: Path) -> None:
+        self._site = site.resolve()
+        self._granted: set[str] = set()
+        self._lock = threading.Lock()
+
+    def grant(self, top_levels: Iterable[str]) -> None:
+        with self._lock:
+            self._granted.update(top_levels)
+
+    def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> ModuleSpec | None:
+        top = fullname.split(".")[0]
+        if top not in self._granted:
+            return None
+        if path is None:
+            if "." in fullname:
+                return None
+            dirs = [self._site]
+        else:
+            dirs = [Path(p) for p in path]
+        leaf = fullname.rsplit(".", 1)[-1]
+        for base in dirs:
+            for file, package in (
+                (base / leaf / "__init__.py", True),
+                (base / f"{leaf}.py", False),
+            ):
+                spec = self._spec(fullname, top, file, package)
+                if spec is not None:
+                    return spec
+        return None
+
+    def _spec(self, fullname: str, top: str, file: Path, package: bool) -> ModuleSpec | None:
+        try:
+            if file.is_symlink() or not file.is_file():
+                return None
+            real = file.resolve()
+            root = self._site / (top if (self._site / top).is_dir() else f"{top}.py")
+            if real != root and root not in real.parents:
+                return None  # never a file outside the plugin's own tree
+        except OSError:
+            return None
+        return importlib.util.spec_from_file_location(
+            fullname,
+            real,
+            loader=_SourceOnlyLoader(fullname, str(real)),
+            submodule_search_locations=[str(real.parent)] if package else None,
+        )
+
+
+_FINDERS: dict[Path, ThirdPartyFinder] = {}
+
+
+def finder_for(site: Path) -> ThirdPartyFinder:
+    """The one finder of a directory, appended once to the end of `sys.meta_path`."""
+    key = site.resolve()
+    if key not in _FINDERS:
+        _FINDERS[key] = ThirdPartyFinder(key)
+    finder = _FINDERS[key]
+    if finder not in sys.meta_path:
+        sys.meta_path.append(finder)
+    return finder
+
+
+def _third_party_loader(site_dir: Path, ep: Any, top_levels: Iterable[str]) -> Callable[[], Any]:
+    granted = tuple(top_levels)
+
     def load() -> Any:
         """Called with no argument and handed nothing: no settings, no secret, no host object.
-        The process environment is the one channel left; names that look like secrets are taken
+        Only now, for a granted plugin, are its own top-level modules made importable. The
+        process environment is the one channel left; names that look like secrets are taken
         out of it while the plugin's code is imported."""
-        sys.dont_write_bytecode = True  # the digest covers every file: importing adds none
-        site = str(site_dir)
-        if site not in sys.path:
-            sys.path.append(site)  # after the host's entries; no addsitedir, so no .pth runs
+        finder_for(site_dir).grant(granted)
         hidden = {k: v for k, v in os.environ.items() if SECRET_ENV.search(k)}
         for k in hidden:
             del os.environ[k]

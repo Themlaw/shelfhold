@@ -42,6 +42,7 @@ snapshot = {{
     "shelfhold_version": m.version("shelfhold"),
     "group_names": sorted(e.name for e in m.entry_points(group="shelfhold.plugins")),
     "path": list(sys.path),
+    "meta_path": [getattr(f, "__name__", type(f).__name__) for f in sys.meta_path],
 }}
 with open({str(probe)!r}, "a", encoding="utf-8") as out:
     out.write(json.dumps(snapshot) + "\\n")
