@@ -85,8 +85,18 @@ def _item(record: PasskeyRecord) -> PasskeyItem:
     )
 
 
+def _why(reason: str) -> str:
+    messages = {
+        "no_public_url": t("passkeys.unavailable.no_public_url"),
+        "invalid_url": t("passkeys.unavailable.invalid_url"),
+        "insecure_context": t("passkeys.unavailable.insecure_context"),
+        "ip_host": t("passkeys.unavailable.ip_host"),
+    }
+    return messages.get(reason, messages["no_public_url"])
+
+
 def _unavailable(error: PasskeyUnavailableError) -> ProblemError:
-    return ProblemError("passkey_unavailable", detail=t(f"passkeys.unavailable.{error.reason}"))
+    return ProblemError("passkey_unavailable", detail=_why(error.reason))
 
 
 def build_passkeys_router() -> APIRouter:
@@ -109,7 +119,7 @@ def build_passkeys_router() -> APIRouter:
     ) -> PasskeyList:
         auth = gate_of(request).auth
         status = auth.passkey_status()
-        reason = t(f"passkeys.unavailable.{status.reason}") if status.reason else None
+        reason = _why(status.reason) if status.reason else None
         return PasskeyList(
             available=status.available,
             reason=reason,

@@ -26,7 +26,7 @@ from shelfhold.identity.public import (
     ThrottledError,
     UnknownReauthMethodError,
 )
-from shelfhold.infrastructure.http_headers import hash_csp
+from shelfhold.infrastructure.http_headers import allow_own_scripts, hash_csp
 from shelfhold.interfaces.http_api.auth import (
     LOGIN_PAGE,
     LOGIN_PATH,
@@ -55,10 +55,20 @@ def passkey_script() -> str:
     )
 
 
+def _fragment(name: str) -> Template:
+    return Template(
+        resources.files("shelfhold.interfaces.http_api")
+        .joinpath(f"pages/{name}")
+        .read_text("utf-8")
+    )
+
+
+_BUTTON = _fragment("passkey_button.html")
+_SCRIPT_TAG = _fragment("passkey_script.html")
 LOGIN_CSP = hash_csp(_TEMPLATE.template)
 # With passkeys the page loads one more script, from its own origin: `'self'` joins the hashes in
 # `script-src`, nothing else changes (no `unsafe-inline`, no other origin).
-PASSKEY_LOGIN_CSP = LOGIN_CSP.replace("script-src ", "script-src 'self' ", 1)
+PASSKEY_LOGIN_CSP = allow_own_scripts(LOGIN_CSP)
 
 
 def login_page_html(source_url: str, *, passkeys: bool = False) -> str:
@@ -66,12 +76,13 @@ def login_page_html(source_url: str, *, passkeys: bool = False) -> str:
     `passkeys`: the button and the same-origin script are there only in a secure context."""
     button = script = ""
     if passkeys:
-        button = (
-            f'<button type="button" id="passkey" data-options="{PASSKEY_LOGIN_OPTIONS_PATH}" '
-            f'data-login="{PASSKEY_LOGIN_PATH}" data-error="{escape(t("login.error"))}">'
-            f"{escape(t('login.passkey'))}</button>"
+        button = _BUTTON.substitute(
+            options=PASSKEY_LOGIN_OPTIONS_PATH,
+            login=PASSKEY_LOGIN_PATH,
+            error=escape(t("login.error")),
+            label=escape(t("login.passkey")),
         )
-        script = f'<script src="{PASSKEY_SCRIPT_PATH}" defer></script>'
+        script = _SCRIPT_TAG.substitute(src=PASSKEY_SCRIPT_PATH)
     values = {
         "title": t("login.title"),
         "username": t("login.username"),

@@ -47,13 +47,14 @@ class MemoryChallenges:
             purpose, bound_to, owner, secrets.token_bytes(CHALLENGE_BYTES), now + CHALLENGE_TTL
         )
         with self._lock:
-            self._purge(now)
-            mine = [key for key, value in self._entries.items() if value.owner == owner]
+            live = OrderedDict((k, v) for k, v in self._entries.items() if now < v.expires_at)
+            mine = [key for key, value in live.items() if value.owner == owner]
             for key in mine[: max(0, len(mine) - self._per_owner + 1)]:
-                del self._entries[key]
-            while len(self._entries) >= self._capacity:
-                self._entries.popitem(last=False)
-            self._entries[flow] = entry
+                live.pop(key)
+            while len(live) >= self._capacity:
+                live.popitem(last=False)
+            live[flow] = entry
+            self._entries = live
         return Issued(flow, entry.challenge)
 
     def consume(self, flow: str, purpose: Purpose, *, bound_to: str, now: datetime) -> bytes | None:
@@ -64,7 +65,3 @@ class MemoryChallenges:
         if entry.purpose != purpose or not secrets.compare_digest(entry.bound_to, bound_to):
             return None
         return entry.challenge
-
-    def _purge(self, now: datetime) -> None:
-        for key in [k for k, v in self._entries.items() if now >= v.expires_at]:
-            del self._entries[key]

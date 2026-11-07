@@ -81,3 +81,9 @@ def hash_csp(html: str) -> str:
             directives.append(f"{directive} {' '.join(hashes)}")
     directives += ["connect-src 'self'", "form-action 'self'", "base-uri 'none'"]
     return "; ".join(directives)
+
+
+def allow_own_scripts(csp: str) -> str:
+    """The same CSP, with `'self'` in `script-src`: a script file of the page's own origin (the
+    passkey sign-in). Hashes stay; `unsafe-inline` never appears."""
+    return csp.replace("script-src ", "script-src 'self' ", 1)
