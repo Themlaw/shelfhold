@@ -714,3 +714,50 @@ def test_the_api_reads_only_plain_names_in_the_import_folder(
         assert ask("pass-link", "export.age").status_code == 422
         assert store_of(settings).path.read_bytes() == before
         assert ask("pass", "export.age").status_code == 200
+
+
+class Killed2(BaseException):
+    """A SIGKILL after the commit: nothing after it runs."""
+
+
+def test_a_rerun_after_a_kill_between_the_commit_and_the_replay_audits_once(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    from shelfhold.ops import keyring as ops_keyring
+
+    migrate(settings)
+    diagnostics.boot_check(settings)
+    source = export_file(tmp_path, with_history())
+
+    def killed(self: object) -> int:
+        raise Killed2
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ops_keyring.TombstoneKeyringExit, "_replay", killed)
+        with pytest.raises(Killed2):
+            import_cli(monkeypatch, settings, tmp_path, source)
+    assert len(audits(settings)) == 1  # committed with the registry
+    assert import_cli(monkeypatch, settings, tmp_path, source) == 0  # the rerun
+    assert len(audits(settings)) == 1
+
+
+def test_the_registry_never_lifts_a_compromised_mark(settings: Settings) -> None:
+    migrate(settings)
+    keyring = diagnostics.boot_check(settings)
+    retired = keyring.rotated().rotation_completed()
+    engine = create_db_engine(settings.database_path)
+    try:
+        with engine.begin() as connection:
+            registry.sync_registry(connection, retired)
+            connection.execute(
+                sa.update(secret_key)
+                .where(secret_key.c.kid == keyring.active.kid)
+                .values(state="compromised")
+            )
+            registry.sync_registry(connection, retired)  # a keyring copy that says "retired"
+            row = connection.execute(
+                sa.select(secret_key.c.state).where(secret_key.c.kid == keyring.active.kid)
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    assert row == "compromised"

@@ -199,18 +199,23 @@ class TombstoneKeyringExit:
         with _IMPORT:
             added, target = self._write_keyring(imported)
             kids = added or tuple(key.kid for key in imported.keys)
+            audited = "kids:" + ",".join(kids[:MAX_AUDITED_KIDS])
             with self._engine.begin() as connection:
                 registry.sync_registry(connection, target)
-                connection.execute(
-                    sa.insert(identity.audit).values(
-                        id=new_ulid(),
-                        actor_id=principal.actor_id,
-                        action="secrets.import",
-                        target="kids:" + ",".join(kids[:MAX_AUDITED_KIDS]),
-                        session_id=principal.session_id,
-                        auth_time=principal.auth_time,
+                # a run that adds nothing and finds its audit row already there is the rerun of
+                # an import killed after its commit: it is not audited twice
+                done = not added and self._already_audited(connection, audited)
+                if not done:
+                    connection.execute(
+                        sa.insert(identity.audit).values(
+                            id=new_ulid(),
+                            actor_id=principal.actor_id,
+                            action="secrets.import",
+                            target=audited,
+                            session_id=principal.session_id,
+                            auth_time=principal.auth_time,
+                        )
                     )
-                )
             if self._composition is not None:
                 self._composition.keyring_changed()
             replayed = self._replay() if replay else 0
@@ -220,6 +225,15 @@ class TombstoneKeyringExit:
             "replayed": replayed,
             "deferred": not replay,  # restored_behind: `reconcile --adopt-after-restore` replays
         }
+
+    @staticmethod
+    def _already_audited(connection: sa.Connection, target: str) -> bool:
+        found = connection.execute(
+            sa.select(identity.audit.c.id).where(
+                identity.audit.c.action == "secrets.import", identity.audit.c.target == target
+            )
+        ).first()
+        return found is not None
 
     def _import_folder(self) -> Path:
         folder = self._settings.data_dir / IMPORT_FOLDER
