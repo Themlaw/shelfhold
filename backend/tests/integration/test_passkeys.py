@@ -9,6 +9,7 @@ import re
 import sqlite3
 from collections.abc import Iterator
 from datetime import timedelta
+from html.parser import HTMLParser
 from typing import Any
 
 import pytest
@@ -719,16 +720,66 @@ def test_login_page_csp_still_has_no_unsafe_inline(api: AuthEnv) -> None:
     assert directives["connect-src"] == "'self'"
     assert directives["frame-ancestors"] == "'none'"
     # the only inline script is the unchanged one; the passkey code is a same-origin file
-    inline = re.findall(r"<script>(.*?)</script>", page.text, flags=re.DOTALL)
-    assert len(inline) == 1 and "navigator.credentials" not in inline[0]
-    sources = re.findall(r'<script[^>]*\ssrc="([^"]*)"', page.text)
-    assert sources == ["/login/passkey.js"]
-    assert not re.search(
-        r"\son\w+=", re.sub(r"<script.*?</script>", "", page.text, flags=re.DOTALL)
-    )
-    assert "javascript:" not in page.text
-    for needle in ("og:", "twitter:", "<img", "shelfhold", "kavita"):
-        assert needle not in re.sub(r'href="[^"]*"', "", page.text.lower())  # still neutral
+    page_parts = PageParts.of(page.text)
+    assert len(page_parts.inline_scripts) == 1
+    assert "navigator.credentials" not in page_parts.inline_scripts[0]
+    assert page_parts.script_sources == ["/login/passkey.js"]
+    assert page_parts.event_attributes == []  # no `onclick=` and the like
+    assert not [v for v in page_parts.attribute_values if v.lower().startswith("javascript:")]
+    assert "<img" not in page.text.lower() and page_parts.tags.isdisjoint({"img", "iframe"})
+    visible = (page_parts.text + " ".join(page_parts.non_link_values)).lower()
+    for needle in ("og:", "twitter:", "shelfhold", "kavita"):
+        assert needle not in visible  # still neutral
+
+
+class PageParts(HTMLParser):
+    """What a page contains, read by an HTML parser (no regular expression on markup)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tags: set[str] = set()
+        self.inline_scripts: list[str] = []
+        self.script_sources: list[str] = []
+        self.event_attributes: list[str] = []
+        self.attribute_values: list[str] = []
+        self.non_link_values: list[str] = []
+        self.text = ""
+        self._in_script = False
+        self._in_style = False
+
+    @classmethod
+    def of(cls, html: str) -> "PageParts":
+        parts = cls()
+        parts.feed(html)
+        parts.close()
+        return parts
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.tags.add(tag)
+        for name, value in attrs:
+            self.attribute_values.append(value or "")
+            if name.startswith("on"):
+                self.event_attributes.append(name)
+            if name != "href":
+                self.non_link_values.append(value or "")
+        if tag == "script":
+            source = dict(attrs).get("src")
+            if source:
+                self.script_sources.append(source)
+            else:
+                self._in_script = True
+                self.inline_scripts.append("")
+        self._in_style = tag == "style"
+
+    def handle_endtag(self, tag: str) -> None:
+        self._in_script = self._in_script and tag != "script"
+        self._in_style = self._in_style and tag != "style"
+
+    def handle_data(self, data: str) -> None:
+        if self._in_script:
+            self.inline_scripts[-1] += data
+        elif not self._in_style:
+            self.text += data
 
 
 def test_passkey_script_is_served_from_the_same_origin(api: AuthEnv) -> None:
