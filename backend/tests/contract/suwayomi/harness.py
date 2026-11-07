@@ -71,7 +71,16 @@ class Bench:
         )
 
     def _address(self) -> str:
-        cid = self._compose("ps", "-q", "suwayomi").stdout.strip()
+        # `-a`: a container that exited at start-up is still listed, and its log is the diagnosis
+        cid = self._compose("ps", "-a", "-q", "suwayomi").stdout.strip()
+        if not cid:
+            raise RuntimeError(f"the Suwayomi container was not created\n{self.logs()[-3000:]}")
+        state = subprocess.run(  # noqa: S603
+            ["docker", "inspect", "-f", "{{.State.Status}} {{.State.ExitCode}}", cid],  # noqa: S607
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()  # fmt: skip
+        if not state.startswith("running"):
+            raise RuntimeError(f"the Suwayomi container is {state}\n{self.logs()[-3000:]}")
         fmt = "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"
         out = subprocess.run(  # noqa: S603
             ["docker", "inspect", "-f", fmt, cid],  # noqa: S607
