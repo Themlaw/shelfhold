@@ -48,6 +48,16 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
 - **apprise** (BSD-2-Clause) : notifications ; planchers de sécurité ENF-SEC-016.
   **Pillow** (MIT-CMU) et **python-multipart** (Apache-2.0) : planchers ENF-SEC-016, vérifiés dans
   le verrou par `test_dependency_floors_enforced_in_lockfile`.
+- **webauthn** (py_webauthn, BSD-3-Clause) : passkeys (P8), plancher `>=3.0.1,<4` (3.0.1 publiée le
+  2026-09-25) ; dépendances transitives verrouillées : cbor2 (MIT), cryptography (Apache-2.0 ou
+  BSD-3-Clause), pyOpenSSL (Apache-2.0), pyasn1 et pyasn1-modules (BSD). Importée par le seul
+  paquet `shelfhold.identity.webauthn` (contrat `webauthn-confined`) ; repli : `cryptography` et
+  `cbor2` directement.
+- **Contrats M1b (L00)** : `sablier-confined` (seul `integrations.sablier` appelle Sablier),
+  `backup-dir-sole-writer` (seul `ops.backup` écrit le répertoire de sauvegarde, via
+  `ops.backup.store`) et `third-party-plugins-single-loader` (seul `plugin_host` charge des
+  plugins tiers : `importlib`, `pkgutil` et `runpy` sont interdits ailleurs, hors les lecteurs de
+  ressources listés dans `ignore_imports`).
 - **python-ulid** (MIT) : identifiants. **langcodes** (MIT) : `normalize_lang()` (ADR-0042) ; repli :
   table d'alias figée et versionnée. Contrat `lang-single-producer`.
 - Développement : **hypothesis** (MPL-2.0), **syrupy** (MIT), **pytest-xdist** (MIT) et

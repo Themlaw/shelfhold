@@ -76,11 +76,6 @@ path = "backend/tests/nightly/test_suwayomi_synthetic_extension.py"
 workflow = "nightly.yml"
 reason = "Suwayomi réel épinglé avec l'extension synthétique construite dans le job, réseau sortant coupé : planifié et manuel, jamais requis pour fusionner (ENF-LEG-013, L40)"
 
-[[out_of_required_ci]]
-path = "e2e/tests/test_m1a_journey.py"
-workflow = "image.yml"
-reason = "parcours de bout en bout sur l'image construite (installation sans interface jusqu'au premier chapitre, redéploiement, détachement, sorties après `target add`), contre des Kavita et Suwayomi simulés : exécutés par image.yml, pas par les tests de la CI requise ; plus aucun xfail depuis le câblage de production (L41)"
-
 [[exception]]
 path = "backend/tests/unit/test_production_reachability.py"
 reason = "garde de joignabilité des tests `req` (L58) : contrôle les tests, pas une exigence du produit"

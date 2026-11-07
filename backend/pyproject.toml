@@ -26,6 +26,8 @@ dependencies = [
     "python-ulid>=3.0.0",  # identifiers
     "langcodes>=3.5.1",  # normalize_lang() (ADR-0042); fallback: a frozen alias table
     "tzdata>=2026.1",  # Europe/Paris for the maintenance window; python-slim ships no zoneinfo
+    # M1b (L00). Floor is ENF-SEC-016; rationale in docs/dependencies.md.
+    "webauthn>=3.0.1,<4",  # passkeys (py_webauthn, P8), imported only by shelfhold.identity.webauthn
 ]
 
 [dependency-groups]
