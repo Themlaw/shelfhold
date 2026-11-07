@@ -6,6 +6,7 @@ archive must have the `content_hash` of the original, so that only the sidecar d
 """
 
 import hashlib
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePath
@@ -177,6 +178,22 @@ def _dated(published_on: str | None) -> tuple[int | None, int | None, int | None
     return (date.year, date.month, date.day) if date else (None, None, None)
 
 
+_URL = re.compile(r"https?://[^\s<>\"']+")
+
+
+def _rights(connection: Connection, edition_id: str) -> tuple[str, str]:
+    """`(Notes, Web)` for an Edition that has `rights` (a licence or a text, with its origin URL):
+    copied into the file because the file itself says nothing of them (EF-BIB-033). An Edition
+    without rights writes neither, and the file carries no mention of Shelfhold."""
+    text = connection.execute(
+        sa.select(catalog.edition.c.rights).where(catalog.edition.c.id == edition_id)
+    ).scalar()
+    if not text or not text.strip():
+        return "", ""
+    found = _URL.search(text)
+    return text.strip(), found.group(0).rstrip(".,;)") if found else ""
+
+
 def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicInfoData:
     unit, edition, work, team = catalog.unit, catalog.edition, catalog.work, catalog.team
     variant = catalog.unit_variant
@@ -205,6 +222,7 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
     if age is None:
         age = _unrated_age(connection, row)
     year, month, day = _dated(row.published_on)
+    notes, web = _rights(connection, row.edition_id)
     return ComicInfoData(
         series=series,
         title=row.title or "",
@@ -217,6 +235,8 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
         right_to_left=True if row.reading_direction == "rtl" else None,
         age=age,
         people=_people(connection, row.work_id),
+        notes=notes,
+        web=web,
         year=year,
         month=month,
         day=day,
