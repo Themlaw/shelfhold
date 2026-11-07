@@ -24,7 +24,9 @@ def album(n: int, *, series: bool = True, lang: str = "fr") -> EditionFacts:
 
 def unit(edition: EditionFacts, number: str) -> UnitFacts:
     return UnitFacts(
-        unit_id=f"u-{edition.edition_id}", edition_id=edition.edition_id, number_norm=number,
+        unit_id=f"u-{edition.edition_id}",
+        edition_id=edition.edition_id,
+        number_norm=number,
         content_hash="sha256:" + "a" * 64,
     )
 

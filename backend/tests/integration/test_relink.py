@@ -62,8 +62,12 @@ def fifty_rated(h: Harness, *, team: str | None = "Team A"):  # type: ignore[no-
     for n in range(1, 51):
         h.catalog.ingest(
             IncomingUnit(
-                binding=binding, remote_unit_id=f"old-{n}", raw_number=str(n), seen_at=at(n),
-                source_order=n - 1, team_label=team,
+                binding=binding,
+                remote_unit_id=f"old-{n}",
+                raw_number=str(n),
+                seen_at=at(n),
+                source_order=n - 1,
+                team_label=team,
             )
         )
     return edition, binding
@@ -81,7 +85,9 @@ def shelf(h: Harness, ceiling: int | None) -> str:
 
 def file_on(h: Harness, edition_id: str, shelf_id: str) -> None:
     h.connection.execute(
-        sa.update(catalog.edition).where(catalog.edition.c.id == edition_id).values(shelf_id=shelf_id)
+        sa.update(catalog.edition)
+        .where(catalog.edition.c.id == edition_id)
+        .values(shelf_id=shelf_id)
     )
 
 
@@ -94,9 +100,7 @@ def test_relink_fetches_only_missing_numbers(h: Harness) -> None:
     )  # fmt: skip
     assert [m.raw_number for m in result.missing] == ["51", "52"]
     assert result.edition_id == edition.id and not result.edition_created
-    active = h.rows(
-        "SELECT id FROM source_binding WHERE edition_id = :e AND active", e=edition.id
-    )
+    active = h.rows("SELECT id FROM source_binding WHERE edition_id = :e AND active", e=edition.id)
     assert [r["id"] for r in active] == [result.binding_id]  # the old one is retired
     assert h.scalar("SELECT count(*) FROM unit WHERE edition_id = :e", e=edition.id) == 50
     again = SERVICE.relink(
@@ -164,9 +168,7 @@ def test_relink_carries_team_aliases(h: Harness) -> None:
         now=NOW,
     )  # fmt: skip
     assert h.scalar("SELECT count(*) FROM team") == teams_before  # I27: no new Team
-    moved = h.rows(
-        "SELECT label FROM team_alias WHERE source_binding_id = :b", b=result.binding_id
-    )
+    moved = h.rows("SELECT label FROM team_alias WHERE source_binding_id = :b", b=result.binding_id)
     assert [r["label"] for r in moved] == ["Team  A"]
     assert h.rows("SELECT label FROM team_alias WHERE source_binding_id = :b", b=old.id)  # kept
     assert h.catalog.team_priority(edition.id) == priority
@@ -196,9 +198,7 @@ def test_relink_is_audited_and_refused_to_a_key(h: Harness) -> None:
     edition, _old = fifty_rated(h)
     for who in ({"credential": Credential.API_KEY}, {"role": "member"}):
         with pytest.raises(RelinkRefusedError):
-            SERVICE.relink(
-                h.connection, request(edition.work_id), principal=admin(**who), now=NOW
-            )
+            SERVICE.relink(h.connection, request(edition.work_id), principal=admin(**who), now=NOW)
     assert h.scalar("SELECT count(*) FROM audit") == 0
     SERVICE.relink(h.connection, request(edition.work_id), principal=admin(), now=NOW)
     entry = h.connection.execute(

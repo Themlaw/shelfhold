@@ -29,7 +29,7 @@ def migrated(b: Bench54) -> tuple[str, str, str]:
          "name": f"Chapter {n}", "chapterNumber": float(n), "sourceOrder": n - 1}
         for n in (1, 2, 3, 4)
     ]  # fmt: skip
-    return work, old, str(gamma["id"])
+    return work, old, gamma["url"]
 
 
 @pytest.mark.req("EF-INT-014", "EF-BIB-029")
@@ -44,20 +44,26 @@ def test_cli_relink(
         asked = len(b.downloaded())
         capsys.readouterr()
         code = b.cli(
-            "relink", work, "--source-key", "7003", "--remote-id", remote, "--replaces", old
+            "relink",
+            work,
+            "--source-key",
+            "suwayomi:7003",
+            "--remote-id",
+            remote,
+            "--replaces",
+            old,
         )
-        shown = capsys.readouterr().out
-        assert code == 0
-        assert "3" in shown and "4" in shown  # the numbers it lacks
+        captured = capsys.readouterr()
+        shown = captured.out
+        assert code == 0, captured.err
+        assert "2 numéro(s) manquant(s)" in shown and "3,4" in shown  # what it lacks
         (binding,) = b.rows(
             "SELECT id, edition_id FROM source_binding WHERE work_id = :w AND active", w=work
         )
         assert binding["id"] != old
         b.follow()
         later = b.downloaded()[asked:]
-        assert sorted(later) == sorted(
-            f"/api/v1/chapter/{cid}/download" for cid in (6003, 6004)
-        ) or len(later) == 2  # only chapters 3 and 4 are asked for
+        assert later == [f"/api/v1/chapter/{cid}/download" for cid in (6003, 6004)]  # only these
         assert b.rows("SELECT count(*) AS n FROM unit WHERE edition_id = :e",
                       e=binding["edition_id"])[0]["n"] == 4  # fmt: skip
         assert b.rows("SELECT count(*) AS n FROM work")[0]["n"] == 2  # Alpha and Beta, no Gamma

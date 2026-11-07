@@ -13,11 +13,17 @@ from shelfhold.infrastructure.schema import export
 
 __all__ = [
     "CoverageError",
+    "FrozenSeriesError",
     "SeriesCollisionError",
     "add_coverage",
     "create_export_item",
     "ensure_export_series",
+    "reassign_edition_series",
 ]
+
+
+class FrozenSeriesError(Exception):
+    """An adopted series keeps its name, its folder and its Editions (EF-EXP-052)."""
 
 
 class SeriesCollisionError(Exception):
@@ -94,6 +100,15 @@ def ensure_export_series(
     ).scalar()
     if existing is not None:
         return str(existing)
+    series_id = ref.export_series_id or _series_of_same_group(connection, remote_library_id, ref)
+    if series_id is not None:  # another album of the Series made it: this Edition joins it
+        connection.execute(
+            sa.insert(link).values(
+                edition_id=ref.edition_id, remote_library_id=remote_library_id,
+                export_series_id=series_id, assigned_at=now, assigned_by=assigned_by,
+            )
+        )  # fmt: skip
+        return series_id
     series_id = new_ulid()
     try:
         with connection.begin_nested():
@@ -113,3 +128,58 @@ def ensure_export_series(
         )
     )  # fmt: skip
     return series_id
+
+
+def _series_of_same_group(
+    connection: Connection, remote_library_id: str, ref: SeriesRef
+) -> str | None:
+    """The exported series of this library already made for the same catalog Series and name."""
+    group = (ref.proposal_key or {}).get("series")
+    if not group:
+        return None
+    series = export.export_series
+    row = connection.execute(
+        sa.select(series.c.id, series.c.proposal_key).where(
+            series.c.remote_library_id == remote_library_id,
+            series.c.normalized_name == ref.normalized_name,
+        )
+    ).first()
+    if row is None or (row.proposal_key or {}).get("series") != group:
+        return None
+    return str(row.id)
+
+
+def reassign_edition_series(
+    connection: Connection,
+    *,
+    edition_id: str,
+    remote_library_id: str,
+    shelf_destination_id: str,
+    ref: SeriesRef,
+    now: datetime,
+) -> str:
+    """Move the link of an Edition to another exported series: the step of an explicit plan
+    (EF-EXP-062), taken after a Series was attached late or Works were merged (I26).
+
+    Only `edition_export_series` changes: no file, no item, no record, no name of an existing
+    series is touched, and an adopted series, whose name and folder are frozen, is never left.
+    """
+    link, series = export.edition_export_series, export.export_series
+    with connection.begin_nested():
+        current = connection.execute(
+            sa.select(link.c.export_series_id, series.c.frozen_at)
+            .join(series, series.c.id == link.c.export_series_id)
+            .where(link.c.edition_id == edition_id, link.c.remote_library_id == remote_library_id)
+        ).first()
+        if current is not None:
+            if current.frozen_at is not None:
+                raise FrozenSeriesError(str(current.export_series_id))
+            connection.execute(
+                sa.delete(link).where(
+                    link.c.edition_id == edition_id, link.c.remote_library_id == remote_library_id
+                )
+            )
+        return ensure_export_series(
+            connection, shelf_destination_id=shelf_destination_id,
+            remote_library_id=remote_library_id, ref=ref, now=now, assigned_by="plan",
+        )  # fmt: skip

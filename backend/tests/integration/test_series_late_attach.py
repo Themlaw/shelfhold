@@ -14,7 +14,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from tests.export_env import ExportEnv, Series, export_env
 
-JOB = "01J00000000000000000000000"
+GROUP = {"series": "01JSERIES0000000000000CYCLE"}
 
 
 def run(env: ExportEnv) -> None:
@@ -81,20 +81,22 @@ def test_late_series_attach_changes_only_edition_export_series_link() -> None:
         env.add_chapter(second, "2")
         run(env)
         before = tables(env)
-        old_link = {r.edition_id: r.export_series_id for r in env.rows(export.edition_export_series)}
+        old_link = {
+            r.edition_id: r.export_series_id for r in env.rows(export.edition_export_series)
+        }
         attach(env, "Le Cycle", [first, second])
         library = library_of(env)
         with env.engine.begin() as connection:
             target = reassign_edition_series(
                 connection, edition_id=first.edition_id, remote_library_id=library,
                 shelf_destination_id=env.destination_id,
-                ref=SeriesRef(first.edition_id, "Le Cycle", "le cycle", proposal_key={"series": "s"}),
+                ref=SeriesRef(first.edition_id, "Le Cycle", "le cycle", GROUP),
                 now=env.clock.now(),
             )  # fmt: skip
             again = reassign_edition_series(
                 connection, edition_id=second.edition_id, remote_library_id=library,
                 shelf_destination_id=env.destination_id,
-                ref=SeriesRef(second.edition_id, "Le Cycle", "le cycle", proposal_key={"series": "s"}),
+                ref=SeriesRef(second.edition_id, "Le Cycle", "le cycle", GROUP),
                 now=env.clock.now(),
             )  # fmt: skip
         assert target == again  # both albums now in one exported series

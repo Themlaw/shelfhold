@@ -47,16 +47,13 @@ symbols = [
 
 [[allow]]
 category = "unwired-m1b-l11"
-reason = "The `rate` service (EF-BIB-036) has no command yet: `shelfhold rate` of L11 is its first production caller. The age scale helpers it alone uses (tiers, columns, label key, shelf comparison) wait with it. The effective age itself is wired: the ComicInfo of an exported file takes it."
+reason = "The `rate` service (EF-BIB-036) has no command yet: `shelfhold rate` of L11 is its first production caller. The age scale helpers it alone uses (tiers, columns, label key) wait with it. The effective age and the admission of an Edition to a shelf are wired: the ComicInfo of an exported file takes the first, `relink` (L09) the second."
 until = "M1b L11"
 symbols = [
-  "shelfhold.catalog.application.rating:*",
-  "shelfhold.catalog.domain.age:Admission",
-  "shelfhold.catalog.domain.age:EditionAge",
-  "shelfhold.catalog.domain.age:admission",
-  "shelfhold.catalog.domain.age:ceiling_of",
+  "shelfhold.catalog.application.rating:RatingRefusedError",
+  "shelfhold.catalog.application.rating:RatingService.rate",
+  "shelfhold.catalog.application.rating:RatingService.rate_edition",
   "shelfhold.sdk.age:AGE_TIERS",
-  "shelfhold.sdk.age:AgeRating.allowed_under",
   "shelfhold.sdk.age:label_key",
   "shelfhold.sdk.age:to_columns",
 ]
@@ -149,8 +146,6 @@ symbols = [
   "shelfhold.catalog.application.service:CatalogService.elect_preferred",
   "shelfhold.catalog.application.service:CatalogService.irreplaceable_candidates",
   "shelfhold.catalog.application.service:CatalogService.place_owner",
-  "shelfhold.catalog.application.service:CatalogService.resolve_team",
-  "shelfhold.catalog.application.service:CatalogService.set_team_priority",
   "shelfhold.catalog.application.service:CatalogService.units_beyond",
   "shelfhold.catalog.domain.dates:PartialDate.coarsened_to",
   "shelfhold.catalog.domain.dates:comicinfo_date_fields",
@@ -208,6 +203,17 @@ symbols = [
   "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.filters",
   "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.limit_key_for",
   "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.limit_slots",
+]
+
+[[allow]]
+category = "unwired-m3-series"
+reason = "A Series attached after its Works exist, and the explicit plan that moves the exported link of an Edition to the series (EF-BIB-025, EF-EXP-062, I26): the model and the guard of an adopted series are here, the plan with its path warning (EF-EXP-037) and the merge and split of Works (EF-BIB-019) are M3's, the only callers."
+until = "M3"
+symbols = [
+  "shelfhold.catalog.application.series:SeriesAlreadyAttachedError",
+  "shelfhold.catalog.application.service:CatalogService.attach_to_series",
+  "shelfhold.export.application.export_items:FrozenSeriesError",
+  "shelfhold.export.application.export_items:reassign_edition_series",
 ]
 
 [[allow]]

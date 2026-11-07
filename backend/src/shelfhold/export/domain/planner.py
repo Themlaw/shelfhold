@@ -11,8 +11,8 @@ Idempotence (EF-EXP-007): a Unit whose record is written and whose `content_hash
 hash are those of today yields no operation at all.
 """
 
-from collections import Counter
-from collections.abc import Callable, Mapping
+from collections import defaultdict
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Final, Literal
 
@@ -100,6 +100,7 @@ class SeriesFacts:
     edition_ids: frozenset[str] = frozenset()
     frozen_series: str | None = None  # an adopted series: the `Series` its files carry
     series_dir: str | None = None  # ... and the folder they are in (EF-EXP-052)
+    series_key: str | None = None  # the catalog Series it was proposed from (EF-BIB-025)
 
 
 @dataclass(frozen=True)
@@ -287,6 +288,23 @@ def _op(
     )
 
 
+def _series_of_same_group(
+    known: Iterable[SeriesFacts], library: str | None, ref: SeriesRef
+) -> SeriesFacts | None:
+    """The exported series already made from the same catalog Series under this name."""
+    group = (ref.proposal_key or {}).get("series")
+    if not group:
+        return None
+    return next(
+        (
+            s for s in known
+            if s.remote_library_id == library and s.normalized_name == ref.normalized_name
+            and s.series_key == group
+        ),
+        None,
+    )  # fmt: skip
+
+
 def _series_resolution(
     request: PlanRequest,
     editions: Mapping[str, EditionFacts],
@@ -323,14 +341,23 @@ def _series_resolution(
             )
             continue
         proposal = propose_series_name(edition, siblings)
-        proposals[edition_id] = SeriesRef(
-            edition_id, proposal.name, proposal.normalized, None, proposal.key
-        )
-    taken = Counter(ref.normalized_name for ref in proposals.values())
+        ref = SeriesRef(edition_id, proposal.name, proposal.normalized, None, proposal.key)
+        joined = _series_of_same_group(known.values(), library, ref)
+        if joined is not None:  # another album of the Series already made the exported series
+            resolved[edition_id] = SeriesRef(
+                edition_id, joined.name_raw, joined.normalized_name, joined.export_series_id,
+                frozen_series=joined.frozen_series, series_dir=joined.series_dir,
+            )  # fmt: skip
+            continue
+        proposals[edition_id] = ref
+    owners: dict[str, set[str]] = defaultdict(set)  # who asks for a name: a Series counts once
+    for edition_id, ref in proposals.items():
+        group = (ref.proposal_key or {}).get("series")
+        owners[ref.normalized_name].add(str(group) if group else f"edition:{edition_id}")
     in_library = {s.normalized_name for s in known.values() if s.remote_library_id == library}
     in_library |= request.foreign_names  # a series of another source bears its name too
     for edition_id, ref in proposals.items():
-        if ref.normalized_name in in_library or taken[ref.normalized_name] > 1:
+        if ref.normalized_name in in_library or len(owners[ref.normalized_name]) > 1:
             resolved[edition_id] = Blocked(
                 None, "export.series_name_collision", ref.name_raw,
                 suggestion="define an exported series name",

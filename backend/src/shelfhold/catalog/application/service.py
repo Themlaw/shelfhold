@@ -3,7 +3,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from shelfhold.catalog.application import contributors, editions, ingest, teams
+from shelfhold.catalog.application import contributors, editions, ingest, series, teams
 from shelfhold.catalog.application.contributors import ContributorStore
 from shelfhold.catalog.application.dto import (
     BindingRef,
@@ -51,6 +51,10 @@ class CatalogService:
 
     def series_of(self, work_id: str) -> str | None:
         return self._works.series_of(work_id)
+
+    def attach_to_series(self, series_id: str, work_id: str, position: str) -> None:
+        """A Series that comes after the Work: only the membership is written (EF-BIB-025)."""
+        series.attach_work(self._works, series_id, work_id, position)
 
     def create_contributor(self, name: str) -> str:
         return self._works.insert_contributor(name)
