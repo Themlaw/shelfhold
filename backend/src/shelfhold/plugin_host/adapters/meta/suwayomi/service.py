@@ -405,8 +405,9 @@ class SuwayomiService:
         """Give the series back to Suwayomi's schedule. The category that excluded it from
         updates goes: only the one Shelfhold recorded (`shelfhold_excluded`); with no record, no
         exclusion is removed (it may be the administrator's own). The categories and the update
-        strategy of the snapshot come back. Nothing is written for an invalid snapshot (it counts as none), and
-        the restoration is only done if the series is no longer held out by the removed ones."""
+        strategy of the snapshot come back. Nothing is written for an invalid snapshot (it counts
+        as none), and the restoration is only done if the series is no longer held out by the
+        removed ones."""
         if not self.snapshot_valid(snap):
             snap = {}
         node = await self._manga(f, ref)
