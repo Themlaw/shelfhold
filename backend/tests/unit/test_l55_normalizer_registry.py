@@ -61,14 +61,23 @@ def test_no_production_module_loads_code_from_entry_points_or_by_name() -> None:
 
 
 @pytest.mark.req("ENF-SEC-009")
-def test_the_one_exempt_discovery_module_is_never_reached_from_production() -> None:
-    """`plugin_host/registry.py` reads the `shelfhold.plugins` group and loads first-party
-    plugins only; its guard for third parties is M1b's. M1a runs none of it: no entry point of
-    the application reaches it, so the exemption cannot become a loader at startup."""
+def test_the_exempt_discovery_module_is_reached_only_through_the_start_up_guard() -> None:
+    """`plugin_host/registry.py` reads the `shelfhold.plugins` group, from the third-party
+    directory alone. Since M1b L07 it is live, and one module starts it: `plugin_host.public`
+    (`start_plugins`, called by the server start-up and `plugin list --load`). No other
+    production module may name the loader or the registry's discovery functions."""
     tool = load_tool("reachability")
-    graph = tool.build_graph(REPO / "backend" / "src")
-    live = tool.reachable(graph)
-    assert not [s for s in live if s.startswith("shelfhold.plugin_host.registry")]
+    live = tool.reachable(tool.build_graph(REPO / "backend" / "src"))
+    assert any(s.startswith("shelfhold.plugin_host.registry") for s in live)
+    callers = {
+        path.relative_to(SOURCE).as_posix()
+        for path in SOURCE.rglob("*.py")
+        if any(
+            name in path.read_text(encoding="utf-8")
+            for name in ("third_party_candidates", "_third_party_loader")
+        )
+    }
+    assert callers == {"plugin_host/registry.py", "plugin_host/public.py"}
 
 
 @pytest.mark.req("ENF-SEC-009")

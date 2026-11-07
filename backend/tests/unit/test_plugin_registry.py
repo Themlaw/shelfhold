@@ -167,13 +167,6 @@ def test_meta_suwayomi_manifest_is_valid_untrusted_and_inactive() -> None:
 
 
 @pytest.mark.req("ENF-SEC-009")
-def test_discover_reads_the_entry_point_group_without_loading_anything() -> None:
-    from shelfhold.plugin_host.registry import discover
-
-    assert all(c.origin in set(PluginOrigin) for c in discover())  # none registered in M1a
-
-
-@pytest.mark.req("ENF-SEC-009")
 def test_duplicate_plugin_key_is_refused() -> None:
     registry = PluginRegistry()
     first = registry.load_all([_candidate("same", API_VERSION)])[0]
