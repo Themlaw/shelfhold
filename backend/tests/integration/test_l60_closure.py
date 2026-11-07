@@ -8,6 +8,8 @@ series names and the sentinel, the pairing and migration services for the downlo
 
 from __future__ import annotations
 
+import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -144,6 +146,12 @@ def test_follow_handler_keeps_the_file_of_a_range_it_asked_for(
             connection.execute(
                 sa.insert(acquisition.series_follow).values(edition_id=edition_id, work_id=work_id)
             )
+        ranged = settings.data_dir / "ranged"
+        ranged.mkdir(exist_ok=True)
+        stale, fresh = ranged / f"{new_ulid()}.epub", ranged / f"{new_ulid()}.epub"
+        for orphan in (stale, fresh):  # written, then the transaction did not commit
+            orphan.write_bytes(b"orphan")
+        os.utime(stale, (time.time() - 7200, time.time() - 7200))  # old enough to be abandoned
         for _ in range(5):  # discover, queued, downloading, ready
             rj.follow_handler(inst.comp, Pools())(context("follow.cycle"))  # type: ignore[arg-type]
         with inst.engine.connect() as connection:
@@ -151,6 +159,9 @@ def test_follow_handler_keeps_the_file_of_a_range_it_asked_for(
             covered = connection.execute(
                 sa.select(sa.func.count()).select_from(export.unit_coverage)
             ).scalar_one()
+        assert not stale.exists()  # swept by the cycle
+        assert fresh.exists()  # too young: its transaction may still be open
+        fresh.unlink()
         kept = sorted(p.name for p in (settings.data_dir / "ranged").iterdir())
         assert len(items) == 2 and covered == 10  # Vol.1 (8 units) and the rolling Vol.2 (2)
         assert sorted(Path(n).stem for n in kept) == sorted(items)  # one file per item, by id

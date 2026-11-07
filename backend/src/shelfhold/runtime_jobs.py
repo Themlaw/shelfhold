@@ -200,6 +200,8 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                 def place(_unit: str, variant_id: str, _filename: str) -> str:
                     return lazy.get().received_path(variant_id)
 
+                keeper = RangedKeeper(comp.settings.data_dir)
+                keeper.sweep(comp.engine)  # files of a transaction that did not commit
                 cycle = FollowCycle(
                     comp.engine, comp.bus, comp.clock, link.service, link.fetcher,
                     store=cast("PassthroughStore", _LazyStore(comp, lazy)),
@@ -212,7 +214,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                         lazy.get,  # the lease first: nothing is downloaded that cannot be filed
                     ),
                     place=place, slots=pools.slots,
-                    keep_range=RangedKeeper(comp.settings.data_dir),  # EF-SRC-034
+                    keep_range=keeper,  # EF-SRC-034
                     tombstones=cast("Any", _LazyTombstones(comp)),
                 )  # fmt: skip
 
