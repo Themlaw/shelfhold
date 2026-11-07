@@ -79,9 +79,12 @@ def import_cli(
     )
 
 
-def audits(settings: Settings, action: str = "secrets.import") -> list[tuple[object, ...]]:
+def audits(settings: Settings) -> list[tuple[object, ...]]:
+    """The rows of the import itself (the identity layer adds its own at the door of a route)."""
     return db_rows(
-        settings, "SELECT actor_id, target, session_id FROM audit WHERE action = ?", action
+        settings,
+        "SELECT actor_id, target, session_id FROM audit "
+        "WHERE action = 'secrets.import' AND target LIKE 'kids:%'",
     )
 
 
@@ -624,3 +627,41 @@ def test_secrets_import_is_a_reserved_exit_of_the_catalogue() -> None:
     route = next(r for r in EXIT_ROUTES if r.command == "secrets import")
     assert route.reserved is not None and route.reserved.name == "secrets.import"
     assert route.waiting_state == "tombstone_key_unknown"
+
+
+def test_secrets_import_over_the_socket_of_the_server_carries_paths_only(
+    settings: Settings, tmp_path: Path
+) -> None:
+    """The running server applies the import: the request holds two paths, the passphrase is read
+    from its file by the server, and the host CLI is the principal (it is allowed, never a key)."""
+    from shelfhold.identity.public import local_auth
+    from shelfhold.infrastructure.local_socket import RpcFailure, call
+    from shelfhold.interfaces.local_cli import IdentityDispatcher
+    from shelfhold.ops.wiring import open_ops
+    from tests.local_socket_env import serving
+
+    migrate(settings)
+    diagnostics.boot_check(settings)
+    exported = with_history()
+    params = {
+        "passphrase_file": str(passphrase_file(tmp_path)),
+        "in_file": str(export_file(tmp_path, exported)),
+    }
+    engine = create_db_engine(settings.database_path)
+    try:
+        auth = local_auth(engine, settings)
+        sock = tmp_path / "s.sock"
+        with serving(sock, IdentityDispatcher(auth, ops=open_ops(settings, engine=engine))):
+            for bad in ({}, {"in_file": params["in_file"]}, {**params, "in_file": ""}):
+                with pytest.raises(RpcFailure):
+                    call(sock, "ops.secrets_import", bad)
+            with pytest.raises(RpcFailure, match="absolute"):
+                call(sock, "ops.secrets_import", {**params, "in_file": "export.age"})
+            answer = call(sock, "ops.secrets_import", params)
+    finally:
+        engine.dispose()
+    assert isinstance(answer, dict) and set(answer["added"]) == {k.kid for k in exported.keys}
+    assert PASSPHRASE not in json.dumps(answer)
+    assert all(store_of(settings).load().find(k.kid) for k in exported.keys)
+    rows = audits(settings)
+    assert len(rows) == 1 and str(rows[0][0]).startswith("local_cli:")

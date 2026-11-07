@@ -143,6 +143,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "src/shelfhold/infrastructure/local_socket/**" = ["TID251"]
 # tests are not production egress (the contract bench talks to a pinned Suwayomi container)
 "tests/**" = ["S101", "TID251"]
+"src/shelfhold/infrastructure/secrets/export.py" = ["TID251"]  # the passphrase and export files the operator names
 "src/shelfhold/infrastructure/secrets/atomic.py" = ["TID251"]  # /data and the operator-chosen export file
 "tests/unit/test_governance_docs.py" = ["S101", "S603", "S607"]
 "tests/contract/**" = ["S101", "S106", "E501", "TID251"]

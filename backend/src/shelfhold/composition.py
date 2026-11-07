@@ -150,6 +150,13 @@ class Composition:
     def vault(self) -> SecretVault:
         return SecretVault(self.keyring())
 
+    def keyring_changed(self) -> None:
+        """`secrets import` merged keys while this process runs: the tombstone service it holds
+        was built with the keyring of its time, so it is dropped and the next use rebuilds it
+        (and replays) with the keyring on disk."""
+        with self._lock:
+            self._tombstones = None
+
     # -- the roots ---------------------------------------------------------------------------
 
     def load_roots(self) -> LoadedRoots | None:

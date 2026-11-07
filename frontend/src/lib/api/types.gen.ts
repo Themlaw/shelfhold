@@ -1033,6 +1033,40 @@ export type SecretIn = {
 };
 
 /**
+ * SecretsImportIn
+ *
+ * Two paths on the host of the server: the passphrase never travels in the request.
+ */
+export type SecretsImportIn = {
+    /**
+     * In File
+     */
+    in_file: string;
+    /**
+     * Passphrase File
+     */
+    passphrase_file: string;
+};
+
+/**
+ * SecretsImportOut
+ */
+export type SecretsImportOut = {
+    /**
+     * Added
+     */
+    added: Array<string>;
+    /**
+     * Present
+     */
+    present: number;
+    /**
+     * Replayed
+     */
+    replayed: number;
+};
+
+/**
  * SeriesNameIn
  */
 export type SeriesNameIn = {
@@ -2679,6 +2713,39 @@ export type RestoreAdoptResponses = {
 };
 
 export type RestoreAdoptResponse = RestoreAdoptResponses[keyof RestoreAdoptResponses];
+
+export type SecretsImportData = {
+    body: SecretsImportIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/secrets/import';
+};
+
+export type SecretsImportErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SecretsImportError = SecretsImportErrors[keyof SecretsImportErrors];
+
+export type SecretsImportResponses = {
+    /**
+     * Successful Response
+     */
+    200: SecretsImportOut;
+};
+
+export type SecretsImportResponse = SecretsImportResponses[keyof SecretsImportResponses];
 
 export type SeriesResumeData = {
     body?: never;

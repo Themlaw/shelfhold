@@ -7,6 +7,11 @@ reserved action there, where its rule and its audit live.
 
 from __future__ import annotations
 
+import os
+import threading
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
@@ -15,25 +20,53 @@ from shelfhold.config import Settings
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import RootState
-from shelfhold.identity.public import Principal
+from shelfhold.i18n import t
+from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.freeze import FreezeState
-from shelfhold.infrastructure.schema import coherence, platform
-from shelfhold.infrastructure.secrets import diagnostics
-from shelfhold.infrastructure.secrets.errors import SecretsError
+from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.logging import register_secret_value
+from shelfhold.infrastructure.schema import coherence, identity, platform
+from shelfhold.infrastructure.secrets import diagnostics, registry
+from shelfhold.infrastructure.secrets.errors import (
+    ExportError,
+    KeyConflictError,
+    KeyringError,
+    SecretsError,
+)
+from shelfhold.infrastructure.secrets.export import (
+    decrypt_export,
+    read_export_file,
+    read_passphrase_file,
+)
+from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.integrations.apprise import operating_bus
 from shelfhold.library.public import SetAsideRefusedError, TombstoneRoot, TombstoneService
-from shelfhold.ops.errors import ExitUnavailableError
+from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, InvalidChoiceError
 from shelfhold.ops.ports import WaitingItem
+
+if TYPE_CHECKING:
+    from shelfhold.composition import Composition
 
 __all__ = ["TombstoneKeyringExit"]
 
+_IMPORT = threading.Lock()  # one import at a time in this process; the instance lock does the rest
+MAX_AUDITED_KIDS = 100
+
 
 class TombstoneKeyringExit:
-    def __init__(self, settings: Settings, engine: Engine, clock: Clock) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        engine: Engine,
+        clock: Clock,
+        composition: Composition | None = None,
+    ) -> None:
         self._settings = settings
         self._engine = engine
         self._clock = clock
+        self._composition = composition
 
     def waiting(self) -> list[WaitingItem]:
         try:
@@ -113,3 +146,93 @@ class TombstoneKeyringExit:
         return service.accept_lost_keyring(
             roots, confirmation=confirmation, principal=principal, now=self._clock.now()
         )
+
+    def import_keyring(
+        self, *, passphrase_file: str, in_file: str, principal: Principal
+    ) -> dict[str, Any]:
+        """`secrets import` (reserved: fresh session or host CLI, never a key, audited).
+
+        Order, and what a kill between two steps leaves: (1) the passphrase file and the export
+        are read and checked, the keys merged in memory: nothing is written; (2) the keyring is
+        replaced in one atomic step (fsynced file, rename, fsynced folder): it is the old one or
+        the merged one, never half of one, and the merged one is the durable intention; (3) the
+        registry of the database and the audit row commit together; (4) the lines are replayed.
+        Running the command again with the same file finds nothing to add and does (3) and (4)
+        again, which is how an interruption is resumed. Both channels (the socket of the server,
+        the host CLI under the instance lock) already exclude every other writer of the keyring.
+        """
+        now = self._clock.now()
+        verdict = authorize_reserved(
+            principal, RESERVED_ACTIONS["secrets.import"], now=now,
+            fresh_auth_s=self._settings.fresh_auth_s, hardened=self._settings.auth_hardened,
+        )  # fmt: skip
+        if not isinstance(verdict, Allowed):  # the route and the socket decided first
+            raise CodedRefusal("forbidden", type(verdict).__name__)
+        for name in (passphrase_file, in_file):
+            if not os.path.isabs(name):
+                raise InvalidChoiceError("give the files as absolute paths")
+        try:
+            passphrase = read_passphrase_file(Path(passphrase_file))
+            register_secret_value(passphrase)
+            imported = decrypt_export(read_export_file(Path(in_file)), passphrase)
+            diagnostics.register_for_scrubbing(imported)  # no log line may carry a key
+        except ExportError as error:
+            raise InvalidChoiceError(str(error)) from None
+        del passphrase
+        with _IMPORT:
+            added, target = self._write_keyring(imported)
+            kids = added or tuple(key.kid for key in imported.keys)
+            with self._engine.begin() as connection:
+                registry.sync_registry(connection, target)
+                connection.execute(
+                    sa.insert(identity.audit).values(
+                        id=new_ulid(),
+                        actor_id=principal.actor_id,
+                        action="secrets.import",
+                        target="kids:" + ",".join(kids[:MAX_AUDITED_KIDS]),
+                        session_id=principal.session_id,
+                        auth_time=principal.auth_time,
+                    )
+                )
+            if self._composition is not None:
+                self._composition.keyring_changed()
+            replayed = self._replay()
+        return {
+            "added": list(added),
+            "present": len(imported.keys) - len(added),
+            "replayed": replayed,
+        }
+
+    def _write_keyring(self, imported: Keyring) -> tuple[tuple[str, ...], Keyring]:
+        store = diagnostics.store_for(self._settings)
+        try:
+            if not store.exists():  # the keyring is gone (restore of /data without it): adopt it
+                ensure_volumes(self._settings)
+                adopted = imported.exported(self._clock.now())
+                store.create(adopted)
+                return tuple(key.kid for key in imported.keys), adopted
+            merge = store.load().merge(imported, now=self._clock.now())
+            if merge.added:
+                store.write(merge.keyring)
+            return merge.added, merge.keyring
+        except KeyConflictError as error:
+            raise InvalidChoiceError(str(error)) from None
+        except KeyringError as error:
+            raise ExitUnavailableError(t("secrets.keyring_error", detail=error)) from None
+        except OSError as error:
+            raise ExitUnavailableError(
+                t("secrets.write_failed", detail=error.strerror or "I/O error")
+            ) from None
+
+    def _replay(self) -> int:
+        """The journals and the lines owed to a root, read again with the merged keyring."""
+        with self._engine.connect() as connection:
+            configured = connection.execute(sa.select(platform.instance.c.instance_id)).first()
+        if configured is None:
+            return 0  # an instance that was never set up holds no line to read
+        try:
+            service, roots = self._service()
+            report = service.replay(roots)
+        except (OSError, sa.exc.SQLAlchemyError, SecretsError) as error:
+            raise ExitUnavailableError(t("secrets.import_replay_failed")) from error
+        return report.flushed + report.merged

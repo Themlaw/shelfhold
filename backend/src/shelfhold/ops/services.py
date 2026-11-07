@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
@@ -31,6 +32,7 @@ from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.naming import normalize_series_name, series_name_refusal
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.domain.planner import SeriesRef
+from shelfhold.i18n import t
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
@@ -501,6 +503,20 @@ class OpsServices:
         if self._keyring is None:
             raise ExitUnavailableError("the tombstone service is not connected")
         return self._keyring.accept_lost_keyring(confirmation=confirmation, principal=principal)
+
+    def secrets_import(
+        self, *, passphrase_file: str, in_file: str, principal: Principal
+    ) -> dict[str, Any]:
+        """`secrets import` (reserved): the keys of an age export merged into the keyring, then
+        the tombstone lines replayed. It writes the keyring and the registry of the database, so
+        the freeze of `restored_behind` holds it as it holds every write but the restore's."""
+        if self._keyring is None:
+            raise ExitUnavailableError("the tombstone service is not connected")
+        if self.restored_behind():
+            raise CodedRefusal("instance.restored_behind", t("local_cli.restored_behind"))
+        return self._keyring.import_keyring(
+            passphrase_file=passphrase_file, in_file=in_file, principal=principal
+        )
 
     def tombstone_set_aside_journal(
         self, *, principal: Principal, root_id: str | None = None

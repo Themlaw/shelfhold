@@ -56,7 +56,7 @@ _TEMPLATES = {
     "mount_sentinel_missing": "shelfhold target recheck {extra}",
     "series_name_collision": 'shelfhold edition set-series-name {subject} "<name>"',
     "restored_behind": "shelfhold reconcile --adopt-after-restore",
-    "tombstone_key_unknown": "shelfhold tombstone accept-lost-keyring",
+    "tombstone_key_unknown": "shelfhold secrets import --passphrase-file <file> --in <file>",
     "tombstone_lines_owed": "shelfhold tombstone flush",
     "adoption_refused": "shelfhold adopt --confirm-migration",
     "coverage_unknown": "shelfhold adopt set-follow-from {subject} <chapter>",

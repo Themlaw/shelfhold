@@ -36,6 +36,7 @@ ENDPOINTS: Final = MappingProxyType(
         "reconcile --adopt-after-restore [confirm-deletion]": (
             "POST", "/api/v1/reconcile/adopt-after-restore",
         ),
+        "secrets import": ("POST", "/api/v1/secrets/import"),
         "tombstone accept-lost-keyring": ("POST", "/api/v1/tombstones/accept-lost-keyring"),
         "tombstone set-aside-journal": ("POST", "/api/v1/tombstones/set-aside-journal"),
         "tombstone flush": ("POST", "/api/v1/tombstones/flush"),
@@ -75,10 +76,9 @@ M1A_STATES: Final = frozenset(
 CLI_PENDING: Final = MappingProxyType[str, str]({})  # L41: every command of the table exists
 
 
-# Declared by the catalogue, served by no code yet: `secrets import` needs the age import of the
-# keyring export (ENF-SEC-005), which only the export half has. `tombstone accept-lost-keyring`
-# leaves the same state meanwhile.
-UNSERVED: Final = MappingProxyType({"secrets import": "keyring import (age) is not written yet"})
+# Declared by the catalogue, served by no code yet. Empty since `secrets import` (M1b L06) landed;
+# the table stays for the next exit that arrives before its service.
+UNSERVED: Final = MappingProxyType[str, str]({})
 
 
 def bare(command: str) -> str:

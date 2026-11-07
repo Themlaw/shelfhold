@@ -31,7 +31,7 @@ def store_for(settings: Settings) -> KeyringStore:
     )
 
 
-def _register_for_scrubbing(keyring: Keyring) -> None:
+def register_for_scrubbing(keyring: Keyring) -> None:
     for key in keyring.keys:
         register_secret_value(base64.b64encode(key.material).decode("ascii"))
 
@@ -64,7 +64,7 @@ def boot_check(settings: Settings, *, create: bool = True, announce: bool = True
         except FileExistsError:
             pass  # another process created it first: use theirs
     keyring = store.load()
-    _register_for_scrubbing(keyring)
+    register_for_scrubbing(keyring)
     return keyring
 
 

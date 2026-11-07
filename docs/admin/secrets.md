@@ -14,7 +14,19 @@ Une rotation interrompue se reprend en relançant la même commande. Les clés r
 
 ## Export de la clé maîtresse
 
-Même règle : instance arrêtée, puis `shelfhold secrets export --passphrase-file <fichier> --out <fichier>` (`--out -` écrit sur la sortie standard). Le fichier produit est chiffré au format age ; il est à garder hors de l'hôte. L'import d'un trousseau exporté (`secrets import`) n'existe pas dans cette version : on remet le fichier de trousseau d'origine à sa place.
+Même règle : instance arrêtée, puis `shelfhold secrets export --passphrase-file <fichier> --out <fichier>` (`--out -` écrit sur la sortie standard). Le fichier produit est chiffré au format age ; il est à garder hors de l'hôte. Le fichier de phrase de passe doit être lisible par son propriétaire seul (`chmod 600`) ; la même règle vaut pour l'import.
+
+## Import d'un trousseau exporté
+
+`shelfhold secrets import --passphrase-file <fichier> --in <export>` fusionne les clés d'un export dans le trousseau, puis rejoue les pierres tombales en attente. C'est la sortie normale de l'état `tombstone_key_unknown` (une sauvegarde de `/data` antérieure à une rotation, un trousseau qui n'a pas suivi).
+
+- **Action réservée.** Depuis l'hôte (le compte qui atteint `/data`), ou depuis l'API avec une session dont le mot de passe a été retapé récemment (`POST /api/v1/secrets/import`, deux chemins de fichiers lus **sur l'hôte du serveur**) ; une clé d'API est toujours refusée. L'opération est inscrite à l'audit, dans la même transaction que le registre des clés.
+- **Fusion sans écrasement.** Les clés de l'export qui manquent au trousseau sont ajoutées comme clés retirées ; la clé active en place reste active. Un identifiant de clé déjà présent avec un autre matériel fait refuser l'import entier (le message donne l'identifiant, jamais la clé). Rien n'est supprimé.
+- **Trousseau absent.** Si le trousseau est perdu mais que la base existe (le démarrage refuse alors de créer une autre clé), l'import le recrée à partir de l'export, clé active comprise.
+- **Fichier forgé.** Un fichier tronqué, au mauvais en-tête, avec un identifiant en double, une clé de mauvaise taille ou trop volumineux (plus de 1 Mio) n'importe rien et ne dit rien de son contenu.
+- **Reprise.** Le trousseau est remplacé en une seule étape atomique (fichier synchronisé sur le disque, renommage, dossier synchronisé) : il n'est jamais à moitié écrit. Après une interruption, relancer la même commande termine le travail (registre, audit, rejeu).
+- **Pendant `restored_behind`.** L'import est refusé comme toute écriture ; la sortie est `shelfhold reconcile --adopt-after-restore`, puis l'import.
+- **Instance qui tourne.** La commande passe par la socket locale ; instance arrêtée, elle prend le verrou d'instance. La phrase de passe est lue du fichier par le processus qui applique l'import : elle ne passe ni par la ligne de commande, ni par la socket, ni par les journaux.
 
 ## Pourquoi arrêter l'instance
 

@@ -70,9 +70,9 @@ def test_merge_adds_unknown_kids_as_retired_and_keeps_the_active_key() -> None:
 
 
 def test_merge_is_idempotent_and_changes_nothing_the_second_time() -> None:
-    local = Keyring.generate()
-    once = local.merge(keyring_with_history(), now=NOW)
-    again = once.keyring.merge(keyring_with_history(), now=NOW)
+    local, incoming = Keyring.generate(), keyring_with_history()
+    once = local.merge(incoming, now=NOW)
+    again = once.keyring.merge(incoming, now=NOW)
     assert again.added == () and again.keyring.keys == once.keyring.keys
 
 

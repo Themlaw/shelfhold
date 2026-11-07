@@ -117,7 +117,8 @@ def open_ops(
     library = LibraryOps(composition)
     return OpsServices(
         engine, clock=clock, bus=bus, fsops=live, targets=targets,
-        headless=_LazyHeadless(settings), keyring=TombstoneKeyringExit(settings, engine, clock),
+        headless=_LazyHeadless(settings),
+        keyring=TombstoneKeyringExit(settings, engine, clock, composition),
         restore=RestoreGuardExit(engine, read_only, clock, bus),
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), backfill=BackfillOps(composition),

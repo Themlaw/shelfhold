@@ -8,12 +8,14 @@ the command line.
 
 import base64
 import binascii
+import os
+import stat
 import textwrap
 from pathlib import Path
 
 import pyrage
 
-from shelfhold.infrastructure.secrets.errors import ExportError
+from shelfhold.infrastructure.secrets.errors import ExportError, KeyringCorruptError
 from shelfhold.infrastructure.secrets.keyring import Keyring
 
 ARMOR_BEGIN = "-----BEGIN AGE ENCRYPTED FILE-----"
@@ -21,15 +23,55 @@ ARMOR_END = "-----END AGE ENCRYPTED FILE-----"
 ARMOR_COLUMNS = 64
 MIN_PASSPHRASE_CHARS = 12
 MAX_PASSPHRASE_FILE_BYTES = 4096
+MAX_EXPORT_BYTES = 1024 * 1024  # a keyring of 1000 keys armored is ~170 KiB
+
+
+def _open_regular(path: Path, what: str) -> tuple[int, os.stat_result]:
+    """A descriptor on a regular file; a pipe or a device is refused without being read, so a
+    FIFO cannot make the command wait. The permissions are the caller's to judge."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError as exc:
+        raise ExportError(f"cannot read the {what}: {exc.strerror}") from None
+    try:
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode):
+            raise ExportError(f"the {what} is not a regular file")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor, status
+
+
+def _read_bounded(descriptor: int, limit: int, what: str) -> bytes:
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            return handle.read(limit + 1)
+    except OSError as exc:
+        raise ExportError(f"cannot read the {what}: {exc.strerror}") from None
+
+
+def _check_passphrase_permissions(path: Path, status: os.stat_result) -> None:
+    """Owner-only, as the keyring is. A file that root owns (a Docker or Kubernetes secret, 0444
+    by design) only has to be out of reach of writers."""
+    if status.st_uid not in (0, os.geteuid()):
+        raise ExportError("the passphrase file belongs to another user")
+    others = 0o022 if status.st_uid == 0 and os.geteuid() != 0 else 0o077
+    if status.st_mode & others:
+        raise ExportError(
+            f"the passphrase file is accessible by other users; fix it with: chmod 600 {path}"
+        )
 
 
 def read_passphrase_file(path: Path) -> str:
     """The passphrase is the file's content without its final line break."""
+    descriptor, status = _open_regular(path, "passphrase file")
     try:
-        with path.open("rb") as handle:
-            raw = handle.read(MAX_PASSPHRASE_FILE_BYTES + 1)
-    except OSError as exc:
-        raise ExportError(f"cannot read the passphrase file: {exc.strerror}") from None
+        _check_passphrase_permissions(path, status)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    raw = _read_bounded(descriptor, MAX_PASSPHRASE_FILE_BYTES, "passphrase file")
     if len(raw) > MAX_PASSPHRASE_FILE_BYTES:
         raise ExportError("the passphrase file is too large")
     try:
@@ -40,6 +82,19 @@ def read_passphrase_file(path: Path) -> str:
     if len(text) < MIN_PASSPHRASE_CHARS:
         raise ExportError(f"the passphrase must have at least {MIN_PASSPHRASE_CHARS} characters")
     return text
+
+
+def read_export_file(path: Path) -> str:
+    """An export file as text, read within a bound: it is encrypted and signed by nobody, so
+    nothing about it is trusted before it has been decrypted and parsed."""
+    descriptor, _status = _open_regular(path, "export file")
+    raw = _read_bounded(descriptor, MAX_EXPORT_BYTES, "export file")
+    if len(raw) > MAX_EXPORT_BYTES:
+        raise ExportError("the export file is too large")
+    try:
+        return raw.decode("ascii")
+    except UnicodeDecodeError:
+        raise ExportError("not an armored age file") from None
 
 
 def armor(binary: bytes) -> str:
@@ -63,9 +118,16 @@ def encrypt_export(keyring: Keyring, passphrase: str) -> str:
 
 
 def decrypt_export(text: str, passphrase: str) -> Keyring:
+    """The keyring of an export. Whatever is wrong (not age, wrong passphrase, damaged, not a
+    keyring) is one `ExportError` that says nothing of the content: the file is untrusted."""
+    if len(text) > MAX_EXPORT_BYTES:
+        raise ExportError("the export file is too large")
     binary = dearmor(text)
     try:
         clear = pyrage.passphrase.decrypt(binary, passphrase)
     except (pyrage.DecryptError, ValueError):
         raise ExportError("wrong passphrase or damaged file") from None
-    return Keyring.from_json(clear, source="export")
+    try:
+        return Keyring.from_json(clear, source="export")
+    except KeyringCorruptError:
+        raise ExportError("the file does not hold a valid keyring") from None

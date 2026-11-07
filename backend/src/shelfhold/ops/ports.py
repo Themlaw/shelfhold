@@ -8,7 +8,7 @@ are not listed. Nothing here imports another lot's module.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from shelfhold.identity.public import Principal
 
@@ -63,6 +63,9 @@ class KeyringExit(Protocol):
         self, *, principal: Principal, root_id: str | None = None
     ) -> dict[str, str]: ...
     def flush_owed(self) -> list[str]: ...
+    def import_keyring(
+        self, *, passphrase_file: str, in_file: str, principal: Principal
+    ) -> dict[str, Any]: ...
 
 
 class AdoptionExit(Protocol):

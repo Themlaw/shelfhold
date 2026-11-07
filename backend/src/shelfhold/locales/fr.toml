@@ -46,6 +46,8 @@ meta_check_help = "Liste les projections qui divergent de la base, sans rien éc
 meta_unit_help = "Se limite à un chapitre (identifiant)."
 secrets_help = "Gère les secrets chiffrés au repos : export, rotation, état du trousseau."
 secrets_export_help = "Exporte le trousseau dans un fichier age protégé par une phrase de passe."
+secrets_import_help = "Fusionne les clés d'un export age dans le trousseau, puis rejoue les pierres tombales en attente (action réservée)."
+secrets_in_help = "Fichier d'export produit par « shelfhold secrets export »."
 secrets_passphrase_file_help = "Fichier contenant la phrase de passe (jamais en argument de ligne de commande)."
 secrets_out_help = "Fichier de sortie ; « - » pour la sortie standard."
 secrets_rotate_help = "Fait tourner la clé des secrets (reprend une rotation interrompue)."
@@ -107,6 +109,9 @@ rotation_resumed = "Rotation reprise et terminée : clé {kid}, {count} secret(s
 rotation_in_progress = "Le verrou est tenu par une instance de Shelfhold ou par une autre opération sur les secrets : arrêtez Shelfhold, puis relancez la commande (procédure dans docs/admin/secrets.md)."
 rotation_incomplete = "Rotation interrompue : {remaining} secret(s) sont encore sous une ancienne clé. Relancez « shelfhold secrets rotate »."
 rotation_failed = "Rotation impossible : {detail}"
+imported = "Trousseau fusionné : {added} clé(s) ajoutée(s) comme retirée(s), {present} déjà présente(s)."
+import_replayed = "Pierres tombales rejouées : {count} ligne(s)."
+import_replay_failed = "Les clés sont importées, mais le rejeu des pierres tombales n'a pas abouti : relancez la même commande."
 export_again = "Exportez de nouveau le trousseau : « shelfhold secrets export »."
 retired = "Clé {kid} retirée du trousseau."
 retire_refused_unknown = "La clé {kid} n'existe pas dans le trousseau."
@@ -123,7 +128,7 @@ warning_rotation_incomplete = "Une rotation est inachevée : relancez « shelfho
 warning_never_exported = "Le trousseau n'a jamais été exporté : « shelfhold secrets export --passphrase-file … --out … »."
 warning_export_older_than_rotation = "Le dernier export est antérieur à la dernière rotation : exportez de nouveau le trousseau."
 warning_tombstones_not_exported = "Des pierres tombales existent et le trousseau n'a pas été exporté depuis la première : sans lui, elles ne se lisent plus. Exportez-le avec « shelfhold secrets export »."
-warning_tombstone_kid_missing = "{detail} clé(s) citée(s) par des pierres tombales manquent au trousseau : réimportez le dernier export (« shelfhold secrets import »)."
+warning_tombstone_kid_missing = "{detail} clé(s) citée(s) par des pierres tombales manquent au trousseau : réimportez le dernier export (« shelfhold secrets import --passphrase-file <fichier> --in <fichier> »)."
 boot_keyring_unreadable = "Démarrage refusé : le trousseau est illisible pour cet utilisateur ({detail})."
 boot_keyring_corrupt = "Démarrage refusé : trousseau inutilisable ({detail})."
 boot_keyring_permissions = "Démarrage refusé : le trousseau {path} est non conforme (droits trop ouverts, propriétaire inattendu, ou modifiable par d'autres). Corrigez : chmod 600 {path} (et chown au compte qui lance Shelfhold)."
@@ -578,7 +583,7 @@ action = "Rechargez la liste complète puis repartez du nouveau jeton."
 
 [errors."secret.undecryptable"]
 title = "Un secret n'a pas pu être déchiffré."
-action = "Restaurez le trousseau de clés depuis son export (« shelfhold secrets import »), puis redémarrez Shelfhold."
+action = "Restaurez le trousseau de clés depuis son export (« shelfhold secrets import --passphrase-file <fichier> --in <fichier> »), puis redémarrez Shelfhold."
 
 [errors."series.stale"]
 title = "Des séries ne sont plus mises à jour."
@@ -714,7 +719,7 @@ action = "Mettez Kavita à jour vers une version prise en charge (voir les notes
 
 [errors."tombstone.key_unknown"]
 title = "Une clé citée par une pierre tombale est inconnue."
-action = "Importez le trousseau (« shelfhold secrets import ») ou acceptez la perte avec « shelfhold tombstone accept-lost-keyring »."
+action = "Importez le trousseau (« shelfhold secrets import --passphrase-file <fichier> --in <fichier> ») ou acceptez la perte avec « shelfhold tombstone accept-lost-keyring »."
 
 [errors."ops.preview_stale"]
 title = "L'aperçu confirmé n'est plus celui de l'instance."

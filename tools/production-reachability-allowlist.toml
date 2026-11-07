@@ -37,12 +37,12 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l06"
-reason = "`secrets import` is not implemented (it is listed in ops.exits.UNSERVED): only the encrypted export exists, so the decrypt of an export and the wire form of an envelope have no production caller until the age keyring import of L06."
-until = "M1b L06"
+category = "unwired-m1b-l23"
+reason = "`secrets import` (M1b L06) is wired and carries the decrypt of an export; the wire form of a sealed secret (`Envelope.to_wire` / `from_wire`) is not part of it, since an export holds keys and not sealed rows. It has no production caller until the integrated backup of L23 moves a sealed secret outside its table, or is deleted there if the backup copies the database as it is."
+until = "M1b L23"
 symbols = [
-  "shelfhold.infrastructure.secrets.envelope:Envelope",
-  "shelfhold.infrastructure.secrets.export:decrypt_export",
+  "shelfhold.infrastructure.secrets.envelope:Envelope.from_wire",
+  "shelfhold.infrastructure.secrets.envelope:Envelope.to_wire",
 ]
 
 [[allow]]
