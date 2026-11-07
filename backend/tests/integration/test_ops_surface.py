@@ -323,6 +323,11 @@ def test_ops_methods_over_the_local_socket(settings: Settings, tmp_path: Path) -
                     {"confirmation": "the keyring is lost"},
                 )  # fmt: skip
             assert keyring.waived == []
+            # `secrets import` is no exit of the restore: it writes the keyring and replays the
+            # journals, so the freeze holds it too (M1b L06)
+            with pytest.raises(RpcFailure, match="restored_behind"):
+                call(sock, "ops.secrets_import", {"passphrase_file": "/p", "in_file": "/e"})
+            assert keyring.imports == []
             call(sock, "ops.restore_adopt", {"confirm_deletion": False})
             call(sock, "ops.tombstone_accept_lost_keyring", {"confirmation": "the keyring is lost"})
             assert keyring.waived == [("the keyring is lost", "local_cli")]
@@ -341,6 +346,7 @@ def _body(command: str) -> dict[str, Any]:
         "source set-secret": {"secret": "admin:new"},
         "target rotate-key": {"password": "a-synthetic-password"},
         "tombstone accept-lost-keyring": {"confirmation": "the keyring is lost"},
+        "secrets import": {"passphrase_file": "/run/p", "in_file": "/run/export.age"},
         "reconcile --adopt-after-restore [confirm-deletion]": {"confirm_deletion": True},
         "reconcile --adopt-after-restore": {"confirm_deletion": False},
         "target recheck [child_exposure]": {},
@@ -369,7 +375,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
         served = [r for r in reserved if r.command in endpoint_table()]
         assert {r.command for r in served} >= {
             "source set-secret", "target rotate-key", "tombstone accept-lost-keyring",
-            "target recheck [child_exposure]",
+            "secrets import", "target recheck [child_exposure]",
             "reconcile --adopt-after-restore [confirm-deletion]",
         }  # fmt: skip
         with auth_env(monkeypatch, settings, ops_services=ops) as api:
@@ -389,6 +395,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
                 assert refused.status_code == 403, route.command
                 assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed"
             assert keyring.waived == [] and restore.calls == []  # nothing ran
+            assert keyring.imports == []
             for route in served:
                 method, path = _url(route.command, **ids)
                 put_health(env, child_exposure=True)

@@ -703,3 +703,103 @@ def test_a_sealed_user_name_is_not_a_secret_by_value_but_its_password_is(logs: L
     record = next(r for r in logs.drain() if r["event"] == "l59.names")
     assert record["logger"] == "shelfhold.jobs.huey_app" and record["who"] == "shelfhold"
     assert record["pw"] == "***"
+
+
+@pytest.mark.req("ENF-SEC-005", "ENF-OBS-001")
+def test_no_keyring_import_value_in_the_debug_logs(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    tmp_path: Path,
+    logs: Logs,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """M1b L06: `secrets import` at DEBUG, by the host CLI and by the route, for a good file, a
+    file under another passphrase, a forged one and a conflicting one. Neither the passphrase, nor
+    the material of a key (base64, hex, or a fragment of it), nor the armored file leaks."""
+    from shelfhold.infrastructure.migrate import migrate
+    from shelfhold.infrastructure.secrets import diagnostics
+    from shelfhold.infrastructure.secrets.export import encrypt_export
+    from shelfhold.infrastructure.secrets.keyring import Key, Keyring
+    from tests.auth_env import auth_env, db_rows, run_cli
+
+    passphrase = "l59-import-passphrase-Zk4"  # noqa: S105
+    wrong = "l59-another-passphrase-Qw9"
+    pass_file = tmp_path / "pass"
+    pass_file.write_text(passphrase + "\n", encoding="utf-8")
+    pass_file.chmod(0o600)
+    wrong_file = tmp_path / "wrong"
+    wrong_file.write_text(wrong + "\n", encoding="utf-8")
+    wrong_file.chmod(0o600)
+    history = Keyring.generate().rotated().rotation_completed()
+    clash = Keyring(keys=(Key(kid=history.active.kid, material=b"\x07" * 32),))
+    files = {
+        "good": encrypt_export(history, passphrase),
+        "other passphrase": encrypt_export(history, wrong),
+        "conflict": encrypt_export(clash, passphrase),
+        "forged": encrypt_export(history, passphrase)[:-120],
+    }
+    for name, text in files.items():
+        (tmp_path / f"{name}.age").write_text(text, encoding="utf-8")
+
+    migrate(settings)
+    local = diagnostics.boot_check(settings)
+    diagnostics.store_for(settings).write(
+        Keyring(
+            keys=(
+                *local.keys,
+                Key(
+                    kid=history.active.kid,
+                    material=b"\x09" * 32,
+                    state="retired",
+                    retired_at=datetime.now(UTC),
+                ),
+            )
+        )
+    )  # so that "conflict" really conflicts, and "good" does not
+    logs.start("DEBUG")
+    collected: list[str] = []
+
+    def keep() -> None:  # the logs are on stdout, the messages of the command on stderr
+        captured = capsys.readouterr()
+        collected.extend((captured.out, captured.err))
+
+    with auth_env(monkeypatch, settings) as api:
+        assert api.login().status_code == 200
+        keep()
+        for name in ("other passphrase", "forged", "conflict"):
+            code = run_cli(
+                monkeypatch, settings, "secrets", "import",
+                "--passphrase-file", str(wrong_file if name == "other passphrase" else pass_file),
+                "--in", str(tmp_path / f"{name}.age"),
+            )  # fmt: skip
+            assert code == 1, name
+            keep()
+            api.post(
+                "/api/v1/secrets/import",
+                json={"passphrase_file": str(pass_file), "in_file": str(tmp_path / f"{name}.age")},
+            )
+            keep()
+        diagnostics.store_for(settings).write(Keyring(keys=(local.active,)))  # a clean merge now
+        assert (
+            api.post(
+                "/api/v1/secrets/import",
+                json={"passphrase_file": str(pass_file), "in_file": str(tmp_path / "good.age")},
+            ).status_code
+            == 200
+        )
+        assert run_cli(
+            monkeypatch, settings, "secrets", "import",
+            "--passphrase-file", str(pass_file), "--in", str(tmp_path / "good.age"),
+        ) == 0  # fmt: skip
+        keep()
+    text = logs.everything() + "".join(collected)
+    text += json.dumps([[str(v) for v in row] for row in db_rows(settings, "SELECT * FROM audit")])
+    leaked: dict[str, str] = {"passphrase": passphrase, "other passphrase": wrong}
+    for key in (*history.keys, *clash.keys):
+        leaked[f"base64 {key.kid}"] = base64.b64encode(key.material).decode()
+        leaked[f"hex {key.kid}"] = key.material.hex()
+        leaked[f"urlsafe {key.kid}"] = base64.urlsafe_b64encode(key.material).decode()
+    leaked["armored body"] = files["good"].splitlines()[1]
+    assert any(part.strip() for part in collected)  # the commands really ran and said something
+    for label, value in leaked.items():
+        assert value and value not in text, label

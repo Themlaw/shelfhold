@@ -56,6 +56,7 @@ class FakeKeyring:
     waived: list[tuple[str, str]] = field(default_factory=list)
     owed: list[str] = field(default_factory=list)  # roots that owe lines
     aside: list[tuple[str, str | None]] = field(default_factory=list)
+    imports: list[tuple[str, str, str]] = field(default_factory=list)  # (passphrase_file, in, who)
 
     def waiting(self) -> list[WaitingItem]:
         return [
@@ -75,6 +76,13 @@ class FakeKeyring:
     def flush_owed(self) -> list[str]:
         self.owed = []
         return []
+
+    def import_keyring(
+        self, *, passphrase_file: str, in_file: str, principal: Principal
+    ) -> dict[str, Any]:
+        self.imports.append((passphrase_file, in_file, principal.credential.value))
+        self.kids = []
+        return {"added": ["k-0123456789abcdef"], "present": 1, "replayed": 0}
 
     def accept_lost_keyring(self, *, confirmation: str, principal: Principal) -> list[str]:
         self.waived.append((confirmation, principal.credential.value))
