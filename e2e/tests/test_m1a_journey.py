@@ -140,6 +140,7 @@ def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
         check=True,  # noqa: S607
     ).stdout.split("\n")
     runtime = {"/usr", "/usr/sbin", "/usr/sbin/docker-init", "/library", "/data", "/store", "/tmp"}
+    runtime.add("/open-window")  # the mount point of the journey overlay (journey.yaml)
     written = [line for line in diff if line and line.split(" ", 1)[1] not in runtime]
     assert written == []  # read_only: only the runtime's own init and mount points differ
     migrated = j.container_id("shelfhold-migrate")
