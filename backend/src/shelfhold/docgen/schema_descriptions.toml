@@ -452,6 +452,8 @@ rate_limit_override = "Admin override of the rate limit."
 terms_url = "URL of the source's terms."
 consecutive_failures = "Failures in a row since the last success."
 family_safe = "Marked \"family\" by the admin."
+instance_fingerprint = "Identity of the connected service's install, as it last reported it."
+instance_fingerprint_seen_at = "When the fingerprint was last read from the service (UTC)."
 
 [tables.tombstone_lost_kid]
 description = "Keys declared lost by the admin; lines under them are inert from then on. Append-only."
@@ -831,3 +833,30 @@ verified_at = "When the copy was last verified (UTC)."
 description = "Alembic bookkeeping: the revision the database is at."
 [tables.alembic_version.columns]
 version_num = "Identifier of the applied migration revision (for example `0010`)."
+
+[tables.webauthn_credential]
+description = "Passkeys registered by users (WebAuthn). Revoked credentials are kept, marked."
+[tables.webauthn_credential.columns]
+id = "Credential row identifier (ULID)."
+user_id = "Owner of the passkey (`user.id`)."
+credential_id = "WebAuthn credential identifier, raw bytes; unique across users."
+public_key = "COSE public key of the credential."
+sign_count = "Signature counter last reported by the authenticator."
+transports = "JSON list of transports the authenticator offers (for example `usb`, `internal`)."
+aaguid = "Authenticator model identifier, when the authenticator discloses it."
+name = "Label the user gave the passkey."
+last_used_at = "When the passkey last signed in or re-authenticated (UTC)."
+revoked_at = "When the passkey was revoked (UTC); NULL while usable."
+
+[tables.backup_run]
+description = "One row per backup attempt, for `backup verify` and the status page."
+[tables.backup_run.columns]
+id = "Run identifier (ULID)."
+started_at = "When the run began (UTC)."
+finished_at = "When the run ended (UTC); NULL while running."
+state = "`running`, `ok` or `failed`."
+cause = "What triggered the run, or why it failed."
+file_name = "Name of the archive written in the backup directory."
+size = "Size of the archive in bytes."
+sha256 = "SHA-256 of the archive, lower-case hex."
+schema_revision = "Database schema revision the archive holds."

@@ -6,8 +6,10 @@ from shelfhold.infrastructure.schema._base import (
     UtcDateTime,
     bool_column,
     in_check,
+    json_shape_check,
     metadata,
     now_column,
+    positive_check,
     prefixed_hash_check,
     ulid_check,
     ulid_column,
@@ -43,6 +45,33 @@ user = sa.Table(
     in_check("color_scheme", COLOR_SCHEMES),
     sa.CheckConstraint('"role" <> \'admin\' OR "can_rate"', name="admin_can_rate"),
     sa.UniqueConstraint("username"),
+)
+
+# A passkey (EF-USR-025, ADR-0050). `credential_id` is the raw WebAuthn identifier, unique across
+# users; `sign_count` is the authenticator's counter (a regression flags a cloned key);
+# `revoked_at` retires the credential without deleting its history.
+webauthn_credential = sa.Table(
+    "webauthn_credential",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("credential_id", sa.LargeBinary(), nullable=False),
+    sa.Column("public_key", sa.LargeBinary(), nullable=False),
+    sa.Column("sign_count", sa.Integer(), nullable=False, server_default="0"),
+    sa.Column("transports", sa.JSON(), nullable=False, server_default="[]"),
+    sa.Column("aaguid", sa.String(), nullable=True),
+    sa.Column("name", sa.String(), nullable=False),
+    now_column(),
+    sa.Column("last_used_at", UtcDateTime(), nullable=True),
+    sa.Column("revoked_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    positive_check("sign_count"),
+    json_shape_check("transports", "array"),
+    sa.CheckConstraint("\"name\" <> ''", name="name_not_empty"),
+    sa.UniqueConstraint("credential_id"),
+    sa.Index("ix_webauthn_credential_user", "user_id"),
 )
 
 # `token_hash` is what the cookie value is checked against; the raw token is never stored.

@@ -20,7 +20,15 @@ def _copy(tmp_path: Path) -> Path:
 
 @pytest.mark.req("ENF-OPS-002")
 def test_published_migrations_match_the_frozen_list() -> None:
-    assert guard.check(REPO) == []
+    # A migration of the milestone in progress is frozen at the release that ships it (and the
+    # release workflow runs the strict check): here only the published ones are held.
+    last_published = max(guard.load_frozen(REPO))
+    problems = [
+        p
+        for p in guard.check(REPO)
+        if not (": not in " in p and p.split(":", 1)[0] > last_published)
+    ]
+    assert problems == []
 
 
 @pytest.mark.req("ENF-OPS-002")
