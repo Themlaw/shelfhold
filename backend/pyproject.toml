@@ -86,6 +86,8 @@ markers = [
 source = ["src/shelfhold"]
 branch = true
 relative_files = true
+# the CLI and server tests run `shelfhold` in child interpreters: measure them too
+patch = ["subprocess"]
 
 [tool.coverage.report]
 fail_under = 80
