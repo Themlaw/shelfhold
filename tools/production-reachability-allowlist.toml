@@ -146,7 +146,6 @@ until = "M1b L31"
 symbols = [
   "shelfhold.acquisition.application.presence:present_for_acquisition",
   "shelfhold.acquisition.application.presence:present_in",
-  "shelfhold.acquisition.application.upstream:UpstreamSnapshots.record_exclusion",
   "shelfhold.catalog.adapters.repo:SqlUnitStore.mark_removed",
   "shelfhold.catalog.adapters.repo:SqlUnitStore.units_in_order",
   "shelfhold.catalog.adapters.repo:SqlWorkStore.series_of",

@@ -76,6 +76,12 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
         folder = f"{library['folders'][0].rstrip('/')}/elsewhere/{name}"
         fake.add_series(name, folder, [f"{folder}/1.cbz"], library_id=library["id"])
         return _json({})
+    if path == "/_fake/index" and method == "POST":
+        # Kavita looks at a folder of the shared volume: ?folder=<path> (as a scan would)
+        from urllib.parse import parse_qs, urlsplit
+
+        _scan(json.dumps({"folderPath": parse_qs(urlsplit(target).query)["folder"][0]}).encode())
+        return _json({})
     if (method, lowered) == ("POST", "/api/account/login"):
         data = json.loads(body or b"{}")
         if data.get("username") != ADMIN or data.get("password") != PASSWORD:

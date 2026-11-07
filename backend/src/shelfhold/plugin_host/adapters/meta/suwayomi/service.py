@@ -68,6 +68,7 @@ from shelfhold.sdk.source import (
 KEY = "suwayomi"
 CBZ_MIME = "application/vnd.comicbook+zip"
 SUPPORTED_MODES = frozenset({"none", "basic_auth"})  # every other mode is refused (EF-SRC-031)
+MARK = "Shelfhold"  # the category that holds a series out of updates (= EXCLUSION_MARK)
 UPDATE_STRATEGIES = frozenset({"ALWAYS_UPDATE", "ONLY_FETCH_ONCE"})
 MANGA_CACHE_SECONDS = 60.0  # one follow cycle; `begin_cycle` drops it earlier
 MAX_FILENAME_BYTES = 120
@@ -403,21 +404,20 @@ class SuwayomiService:
 
     async def restore_upstream(self, f: Fetcher, ref: SeriesRef, snap: dict[str, object]) -> None:
         """Give the series back to Suwayomi's schedule. The category that excluded it from
-        updates goes: only the one Shelfhold recorded (`shelfhold_excluded`); with no record, no
-        exclusion is removed (it may be the administrator's own). The categories and the update
-        strategy of the snapshot come back. Nothing is written for an invalid snapshot (it counts
-        as none), and the restoration is only done if the series is no longer held out by the
-        removed ones."""
+        updates goes: only the one Shelfhold recorded (`shelfhold_excluded`); with no record,
+        only an exclusion that bears its mark (the category named `Shelfhold`). The categories
+        and the update strategy of the snapshot come back. Nothing is written for an invalid
+        snapshot (it counts as none), and the restoration is only done if the series is no
+        longer held out by the removed ones."""
         if not self.snapshot_valid(snap):
             snap = {}
         node = await self._manga(f, ref)
         manga_id = int(node["id"])
         current = (await self._query(f, q.MANGA_SETTINGS, {"id": manga_id})).get("manga") or {}
         have = {int(c["id"]) for c in (current.get("categories") or {}).get("nodes") or []}
-        known = {
-            int(c["id"]): str(c.get("includeInUpdate", "")).upper()
-            for c in (await self._query(f, q.CATEGORIES))["categories"]["nodes"]
-        }
+        nodes = (await self._query(f, q.CATEGORIES))["categories"]["nodes"]
+        known = {int(c["id"]): str(c.get("includeInUpdate", "")).upper() for c in nodes}
+        named = {int(c["id"]): str(c.get("name", "")) for c in nodes}
         wanted_raw = snap.get("categories")
         wanted = {
             int(c["id"]) for c in (wanted_raw if isinstance(wanted_raw, list) else [])
@@ -427,9 +427,11 @@ class SuwayomiService:
         if isinstance(recorded, list):
             remove = sorted(i for i in have - wanted if i in recorded)
         else:
-            # No record of what Shelfhold put: an exclusion on the series may be the administrator's
-            # own, and only what Shelfhold set goes. Nothing is removed.
-            remove = []
+            # No record (an installation from before the records): only the exclusion that bears
+            # Shelfhold's mark goes; any other may be the administrator's own and stays.
+            remove = sorted(
+                i for i in have - wanted if known.get(i) == "EXCLUDE" and named.get(i) == MARK
+            )
         add = sorted(wanted - have)
         if add or remove:
             await self._query(
@@ -442,6 +444,18 @@ class SuwayomiService:
         left = {int(c["id"]) for c in (after.get("categories") or {}).get("nodes") or []}
         if left & set(remove):
             raise SourceChanged("the series is still held out of the updates")
+
+    async def kept_exclusions(self, f: Fetcher, ref: SeriesRef) -> list[str]:
+        """The names of the categories that still hold the series out of the scheduled updates
+        after a restoration: the administrator's own, which a detachment leaves and says."""
+        node = await self._manga(f, ref)
+        current = (await self._query(f, q.MANGA_SETTINGS, {"id": int(node["id"])})).get("manga")
+        categories = (current or {}).get("categories") or {}
+        return [
+            str(c.get("name", c["id"]))
+            for c in categories.get("nodes") or []
+            if str(c.get("includeInUpdate", "")).upper() == "EXCLUDE"
+        ]
 
     # -- units -------------------------------------------------------------------------------
     @staticmethod

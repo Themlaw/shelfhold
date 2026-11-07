@@ -144,15 +144,17 @@ def test_snapshot_is_taken_once_and_holds_no_secret() -> None:
 
 
 @pytest.mark.req("EF-EXP-056")
-def test_detach_without_a_record_leaves_an_exclusion_the_administrator_set() -> None:
-    """Review of L60: with no record of what Shelfhold put, nothing is removed; an exclusion of
-    the administrator's own category stays (Shelfhold records its own in the snapshot)."""
+def test_detach_without_a_record_removes_only_the_exclusion_with_shelfhold_s_mark() -> None:
+    """An installation from before the records: the exclusion named `Shelfhold` goes, the one the
+    administrator added under another name stays, and the detachment says so."""
     with paired_env() as p:
         ref = _paired(p)
         keep = p.server.add_category("Reading")
         p.server.assign(ALPHA, keep)
         excluded = p.server.add_category("Shelfhold", include_in_update="EXCLUDE")
         p.server.assign(ALPHA, excluded)
+        mine = p.server.add_category("MyDropped", include_in_update="EXCLUDE")
+        p.server.assign(ALPHA, mine)
         snapshots = UpstreamSnapshots(p.env.engine, clock=p.env.clock)
         report = asyncio.run(
             Detacher(p.env.engine, snapshots, connected_service_id="suwayomi").restore_upstream(
@@ -162,7 +164,32 @@ def test_detach_without_a_record_leaves_an_exclusion_the_administrator_set() -> 
         assert [(s.ref.remote_id, s.restored_from) for s in report.series] == [
             (ref.remote_id, "default")
         ]
-        assert p.server.categories_of(ALPHA) == [keep, excluded]  # both are the administrator's
+        assert p.server.categories_of(ALPHA) == [keep, mine]
+        assert [s.note for s in report.series] == ["exclusion_kept|MyDropped"]
+
+
+@pytest.mark.req("EF-EXP-056")
+def test_taking_hold_records_the_exclusion_and_the_detachment_removes_exactly_it() -> None:
+    """`record_exclusions` is what the pairing calls after the snapshot: the category that bears
+    Shelfhold's mark is written down; an administrator's exclusion added the same way is not."""
+    with paired_env() as p:
+        ref = _paired(p)
+        snapshots = UpstreamSnapshots(p.env.engine, clock=p.env.clock)
+        keep = p.server.add_category("Reading")
+        p.server.assign(ALPHA, keep)
+        asyncio.run(snapshots.take(p.service, p.fetcher, connected_service_id="suwayomi", ref=ref))
+        mine = p.server.add_category("MyDropped", include_in_update="EXCLUDE")
+        p.server.assign(ALPHA, mine)
+        held = p.server.add_category("Shelfhold", include_in_update="EXCLUDE")
+        p.server.assign(ALPHA, held)
+        recorded = asyncio.run(
+            snapshots.record_exclusions(p.service, p.fetcher, connected_service_id="suwayomi")
+        )
+        assert list(recorded.values()) == [[held]]
+        assert (snapshots.get("suwayomi", series_key(ref)) or {})["shelfhold_excluded"] == [held]
+        report = _restore(p, snapshots)
+        assert report.complete  # type: ignore[attr-defined]
+        assert p.server.categories_of(ALPHA) == [keep, mine]  # exactly what Shelfhold put went
 
 
 @pytest.mark.req("EF-EXP-056")
@@ -251,6 +278,7 @@ def test_only_the_exclusion_shelfhold_recorded_is_removed() -> None:
         report = _restore(p, snapshots)
         assert report.complete  # type: ignore[attr-defined]
         assert p.server.categories_of(ALPHA) == [1, mine]
+        assert [s.note for s in report.series] == ["exclusion_kept|MyDropped"]  # type: ignore[attr-defined]
 
 
 @pytest.mark.req("EF-EXP-056")

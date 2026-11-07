@@ -48,10 +48,24 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
              "chapterNumber": 2.0, "sourceOrder": 1}  # fmt: skip
         )
         return 200, {}, b"{}"
+    if path == "/_fake/category" and method == "POST":
+        # ?name=<n>&exclude=1&assign=<manga url>: a category of the library, `exclude` holding its
+        # series out of the scheduled updates
+        from urllib.parse import parse_qs, urlsplit
+
+        query = parse_qs(urlsplit(target).query)
+        ident = fake.add_category(
+            query["name"][0], include_in_update="EXCLUDE" if "exclude" in query else "UNSET"
+        )
+        for url in query.get("assign", []):
+            fake.assign(url, ident)
+        return 200, {"content-type": "application/json"}, json.dumps({"id": ident}).encode()
     if path == "/_fake/state":
         state = {"requests": [f"{r.method} {r.path}" for r in fake.requests],
                  "violations": fake.violations,
-                 "categories": fake.categories}  # fmt: skip
+                 "categories": fake.categories,
+                 "assigned": {m["url"]: sorted(m.get("categoryIds", []))
+                              for m in fake.state["mangas"]}}  # fmt: skip
         return 200, {"content-type": "application/json"}, json.dumps(state).encode()
     response = fake.handle(method, target, headers, body)
     return response.status, dict(response.headers), response.body

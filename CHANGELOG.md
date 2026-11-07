@@ -59,7 +59,7 @@ Migrations :
 - `root takeover|reinit|restored` et `store reinit` n'existent pas (M1b) : une sentinelle durablement absente ou différente se résout en remontant le bon volume, puis `shelfhold target recheck`. `secrets import` n'existe pas (`tombstone accept-lost-keyring` quitte le même état).
 - Un service connecté qui déclare `ranged_content` voit ses fichiers de plage gardés sous `/data/ranged/` avec leur couverture ; leur export est de M2 (aucun service de M1a n'a cette capacité : Suwayomi livre un fichier par chapitre).
 - Le dossier de téléchargement de Suwayomi (`settings.downloadsPath`) est un chemin de son propre conteneur, et 01 ne prévoit pas de correspondance côté source : il n'est comparé à la bibliothèque (signal de la bascule, EF-EXP-044) que s'il tombe sous une racine que Shelfhold connaît ; vide (valeur par défaut), relatif ou propre à son espace de noms, la bascule est « non vérifiable » et `shelfhold status` le dit. Il n'est lu que lors du rapport de bascule et de l'appariement.
-- `detach --restore-upstream` ne retire que la catégorie d'exclusion que Shelfhold a notée ; sans note, aucune catégorie n'est retirée (elle peut être la vôtre).
+- `detach --restore-upstream` retire la catégorie d'exclusion que Shelfhold a posée et notée (à chaque appariement ou reprise, il note celle qui porte sa marque, la catégorie « Shelfhold », apparue depuis le relevé) ; celle que vous avez ajoutée vous-même reste en place et la commande la liste. Installation d'avant ces notes : seule une catégorie nommée « Shelfhold » est retirée, toute autre est listée sans être retirée.
 
 ### Modifié
 

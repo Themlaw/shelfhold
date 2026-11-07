@@ -8,6 +8,7 @@ series names and the sentinel, the pairing and migration services for the downlo
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from contextlib import asynccontextmanager
@@ -24,6 +25,7 @@ from shelfhold.headless import InvalidConfigValue, parse_desired
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.library.public import Received
+from shelfhold.ops.library import LibraryOps
 from shelfhold.plugin_host.adapters.meta.suwayomi.probe import HttpSuwayomiProbe
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.testing import FakeRangedConnectedService, fake_ranged_fetcher
@@ -628,3 +630,46 @@ def test_download_folder_of_suwayomi_that_cannot_be_compared_is_listed_as_unveri
         inst.suwayomi.state["downloads_path"] = str(inst.library / "Kavita")
         assert ops.library.migration_report(b.env.destination_id)["detected"] is True
         assert status_json(monkeypatch, settings, capsys)["unverifiable_dirs"] == []
+
+
+# -- EF-EXP-056: the detachment removes what Shelfhold put, and only that (review) -------------------
+
+
+@pytest.mark.req("EF-EXP-056", "EF-INT-023")
+def test_taking_hold_records_shelfhold_s_exclusion_and_detach_leaves_the_administrator_s(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """Through the commands: adopt, pair (the snapshot), the category named `Shelfhold` that holds
+    the series out of Suwayomi's updates and another one of the administrator's, the next command
+    that takes hold of the series (which writes the record), then `detach --restore-upstream`."""
+    from tests.l54_env import SERIES, bench54, comic
+
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        b.kavita_series(SERIES, [f"{SERIES} - Ch.1.cbz"], info=comic(SERIES, number="1"))
+        assert b.adopt(capsys) == 0
+        series_id = b.series_id(SERIES)
+        b.upstream({n: f"Chapter {n}" for n in range(1, 4)})
+        server = b.env.inst.suwayomi
+        reading = server.add_category("Reading")
+        server.assign("/series-alpha", reading)
+        pair = ("adopt", "pair", "--series", series_id, "--source-key", "suwayomi:7001",
+                "--remote-id", "/series-alpha", "--follow-from", "2")  # fmt: skip
+        capsys.readouterr()
+        assert b.cli(*pair) == 0  # the snapshot is taken here
+        assert b.rows("SELECT 1 FROM upstream_snapshot")  # the snapshot is really taken
+        mine = server.add_category("MyDropped", include_in_update="EXCLUDE")
+        held = server.add_category("Shelfhold", include_in_update="EXCLUDE")
+        server.assign("/series-alpha", mine)
+        server.assign("/series-alpha", held)
+        capsys.readouterr()
+        LibraryOps(b.env.inst.comp)._snapshot()  # the next command that takes hold: it records
+        (row,) = b.rows("SELECT payload FROM upstream_snapshot")
+        assert json.loads(row["payload"])["shelfhold_excluded"] == [held]
+        capsys.readouterr()
+        assert b.cli("detach", "--restore-upstream") == 0
+        out = capsys.readouterr().out
+        assert server.categories_of("/series-alpha") == [reading, mine]
+        assert "MyDropped" in out  # the one that stays is said

@@ -6,6 +6,7 @@ Kavita and Suwayomi are the simulated servers of backend/tests/fakes behind a so
 Shelfhold wrote". Every step is a `shelfhold` command typed in the container: no SQL.
 """
 
+import json
 import subprocess
 import time
 
@@ -227,6 +228,62 @@ def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> 
     assert after == before  # .shelfhold/ is excluded: the lease is rewritten by its heartbeat
     state = j.suwayomi()
     assert "violations" in state and state["violations"] == []
+
+
+@pytest.mark.e2e_timeout(480)
+@pytest.mark.req("EF-EXP-056", "EF-INT-024")
+def test_detach_removes_the_exclusion_shelfhold_placed_and_keeps_the_administrator_s(
+    journey: Journey,
+) -> None:
+    """Two adopted series are paired with Suwayomi one after the other; between the two, the
+    category `Shelfhold` that holds a series out of Suwayomi's updates and another one the
+    administrator added are in place. `detach --restore-upstream` removes the first and leaves
+    the second, and says so (EF-EXP-056)."""
+    j = journey
+    install_by_commands(j)
+    j.adopted_series("Series Alpha")
+    j.adopted_series("Series Beta")
+    library = str(j.kavita()["libraries"][0]["id"])  # type: ignore[index]
+    (row,) = j.sql("select id from shelf_destination where transport = 'tree'")
+    base = ("adopt", "--destination", str(row[0]), "--library", library)
+    preview = j.shelfhold(*base, "--dry-run")
+    assert preview.code == 0, preview.err
+    fingerprint = preview.out.split("aperçu :")[1].split()[0]
+    adopted = j.shelfhold(*base, "--confirm", fingerprint)
+    assert adopted.code == 0, adopted.err
+    destination = str(row[0])
+    listing = j.shelfhold("adopt", "pair", "--destination", destination).out
+    alpha, beta = (
+        next(line.split()[1] for line in listing.splitlines() if f"Series {n}" in line)
+        for n in ("Alpha", "Beta")
+    )
+
+    def pair(series_id: str, key: str, remote: str) -> None:
+        done = j.shelfhold(
+            "adopt", "pair", "--destination", destination, "--series", series_id,
+            "--source-key", key, "--remote-id", remote, "--follow-from", "1",
+        )  # fmt: skip
+        assert done.code == 0, done.err + done.out
+
+    j.suwayomi_category("Reading", exclude=False, assign=("/series-alpha",))  # there before
+    pair(alpha, "suwayomi:7001", "/series-alpha")  # Shelfhold takes hold of Alpha: snapshot
+    # then the categories: the one Shelfhold holds the series out of updates with, and the
+    # administrator's own, both excluding Alpha from Suwayomi's scheduled updates
+    j.suwayomi_category("Shelfhold", exclude=True, assign=("/series-alpha",))
+    j.suwayomi_category("MyDropped", exclude=True, assign=("/series-alpha",))
+    pair(beta, "suwayomi:7002", "/series-beta")  # the next takeover writes down what Shelfhold put
+    ((payload,),) = j.sql(
+        "select payload from upstream_snapshot where series_ref like '%series-alpha'"
+    )
+    assert json.loads(str(payload))["shelfhold_excluded"] == [2]  # `Shelfhold`, not `MyDropped`
+    detached = j.shelfhold("detach", "--restore-upstream")
+    assert detached.code == 0, detached.err
+    assert "MyDropped" in detached.out  # the exclusion that stays is said
+    categories = j.suwayomi()["assigned"]["/series-alpha"]  # type: ignore[index]
+    assert categories == [
+        1,
+        3,
+    ]  # Reading (it was there before) and MyDropped (the administrator's) remain
 
 
 FOREIGN = "foreign-writer.cbz"

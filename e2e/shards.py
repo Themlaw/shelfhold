@@ -19,6 +19,7 @@ SHARDS: dict[str, tuple[str, ...]] = {
     "redeploy-export": ("test_redeploy_during_running_export_finishes_without_open_intent",),
     "detach-exits": (
         "test_detach_restores_suwayomi_updates_and_leaves_files",
+        "test_detach_removes_the_exclusion_shelfhold_placed_and_keeps_the_administrator_s",
         "test_exits_work_after_target_add_on_the_running_server",
     ),
     "name-collision": ("test_two_series_with_one_title_wait_for_a_name_then_export",),

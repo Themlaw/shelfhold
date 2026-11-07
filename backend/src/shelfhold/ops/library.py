@@ -469,13 +469,20 @@ class LibraryOps:
             flag_unknown_coverage(connection, row.id, row.edition_id)
         return added
 
-    def _snapshot(self, link: Any) -> None:
-        """The upstream settings, taken before anything is changed there (EF-EXP-056)."""
+    def _snapshot(self, _listed: Any = None) -> None:
+        """The upstream settings, taken before anything is changed there (EF-EXP-056). The link
+        that listed the library has closed its client: this one opens its own."""
+        link = self._suwayomi()
         snapshots = UpstreamSnapshots(self._comp.engine, clock=self._comp.clock)
 
         async def take() -> None:
             try:
                 await snapshots.take_missing(
+                    link.service, link.fetcher, connected_service_id=SERVICE_ID
+                )
+                # Shelfhold has taken hold of the series: what it holds out of Suwayomi's updates
+                # is written down, the only thing a detachment will remove
+                await snapshots.record_exclusions(
                     link.service, link.fetcher, connected_service_id=SERVICE_ID
                 )
             finally:

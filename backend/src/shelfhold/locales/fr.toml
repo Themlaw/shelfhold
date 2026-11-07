@@ -995,6 +995,7 @@ line = "Liaison {binding} : réglages rendus ({source}) : {ok}"
 ok = "fait"
 managed = "Dossier géré par Shelfhold : {folder} ({count} fichier(s)) ; vos anciens scripts doivent le laisser tranquille."
 files_kept = "Aucun fichier n'a été supprimé ni déplacé."
+exclusion_kept = "Liaison {binding} : la série reste exclue des mises à jour de Suwayomi par une catégorie qui n'est pas la vôtre à retirer par Shelfhold ({names}) : retirez-la vous-même si vous voulez que Suwayomi la mette à jour."
 
 [purge]
 help = "Efface pour de bon une Unité ou une Œuvre (action réservée)."

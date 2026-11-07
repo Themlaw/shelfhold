@@ -93,6 +93,32 @@ class Journey:
     def publish_upstream(self) -> None:
         self.fake("suwayomi", SUWAYOMI_URL + "/_fake/publish", post=True)
 
+    def adopted_series(self, name: str) -> None:
+        """A series the administrator already has in Kavita's library: its CBZ (with a ComicInfo)
+        written on the shared volume, then indexed by the simulated Kavita."""
+        from urllib.parse import quote
+
+        folder = str(self.kavita()["libraries"][0]["folders"][0]) + "/" + name  # type: ignore[index]
+        code = (
+            "import sys, zipfile, pathlib; d = pathlib.Path(sys.argv[1]); d.mkdir(parents=True, "
+            "exist_ok=True); n = sys.argv[2]; "
+            "z = zipfile.ZipFile(d / (n + ' - Ch.1.cbz'), 'w'); "
+            "z.writestr('001.png', b'\\x89PNG\\r\\n\\x1a\\n' + n.encode()); "
+            'z.writestr(\'ComicInfo.xml\', \'<?xml version="1.0" encoding="utf-8"?><ComicInfo>'
+            "<Series>' + n + '</Series><LanguageISO>en</LanguageISO><Number>1</Number>"
+            "</ComicInfo>'); z.close()"
+        )
+        self.compose("exec", "-T", "shelfhold", "python", "-c", code, folder, name)
+        self.fake("kavita", KAVITA_URL + "/_fake/index?folder=" + quote(folder), post=True)
+
+    def suwayomi_category(self, name: str, *, exclude: bool, assign: tuple[str, ...]) -> None:
+        """A category in Suwayomi's library (`exclude`: its series skip the scheduled updates)."""
+        from urllib.parse import quote
+
+        query = f"name={quote(name)}" + ("&exclude=1" if exclude else "")
+        query += "".join("&assign=" + quote(url) for url in assign)
+        self.fake("suwayomi", SUWAYOMI_URL + "/_fake/category?" + query, post=True)
+
     def foreign_series(self, name: str) -> None:
         """Kavita holds a series called `name` that comes from another source than Shelfhold."""
         from urllib.parse import quote
@@ -130,6 +156,15 @@ class Journey:
             check=False,
         )  # fmt: skip
         return int(done.stdout.strip() or 0) if done.returncode == 0 else 0
+
+    def sql(self, query: str) -> list[tuple[object, ...]]:
+        """A read-only look at the database."""
+        code = (
+            "import json, sqlite3; print(json.dumps(sqlite3.connect('file:/data/shelfhold.db?mode"
+            "=ro', uri=True).execute(" + repr(query) + ").fetchall()))"
+        )
+        done = self.compose("exec", "-T", "shelfhold", "python", "-c", code)
+        return [tuple(r) for r in json.loads(done.stdout)]
 
     def discover_series(self) -> None:
         """The first follow cycle: the series of the Suwayomi library get their Work and Edition
