@@ -448,3 +448,46 @@ def test_review_nothing_third_party_loads_when_the_start_is_refused(
     )
     assert done.returncode != 0 and "from_the_future" in done.stderr
     assert snapshots(probe) == []
+
+
+@pytest.mark.req("EF-SRC-019")
+def test_review_install_is_offline_and_resolves_no_dependency(cli: Cli, tmp_path: Path) -> None:
+    """Regression guard for "no dependency resolution, offline": index variables point at a
+    socket that records any contact, the wheel declares `Requires-Dist`, and the install must
+    succeed without a single connection and without installing the dependency."""
+    import hashlib
+    import socket
+    import zipfile
+
+    built = build_wheel(tmp_path, "dep-plug", {"dep_plug/__init__.py": "x = 1\n"})
+    with zipfile.ZipFile(built.path) as archive:
+        files = {n: archive.read(n) for n in archive.namelist()}
+    files["dep_plug-1.0.dist-info/METADATA"] += b"Requires-Dist: requests>=2\n"
+    with zipfile.ZipFile(built.path, "w") as archive:
+        for name, body in files.items():
+            archive.writestr(name, body)
+    sha = hashlib.sha256(built.path.read_bytes()).hexdigest()
+
+    with socket.socket() as dead_index:
+        dead_index.bind(("127.0.0.1", 0))
+        dead_index.listen(8)
+        dead_index.setblocking(False)
+        url = f"http://127.0.0.1:{dead_index.getsockname()[1]}/simple"
+        done = cli.run(
+            "plugin",
+            "install",
+            str(built.path),
+            "--sha256",
+            sha,
+            UV_INDEX_URL=url,
+            UV_EXTRA_INDEX_URL=url,
+            PIP_INDEX_URL=url,
+            PIP_EXTRA_INDEX_URL=url,
+            UV_NO_BINARY="1",
+            UV_OFFLINE="0",
+        )
+        assert done.returncode == 0, done.stderr
+        with pytest.raises(BlockingIOError):
+            dead_index.accept()  # nobody connected to the index
+    site = cli.data / "plugins" / "site-packages"
+    assert sorted(p.name for p in site.iterdir()) == ["dep_plug", "dep_plug-1.0.dist-info"]
