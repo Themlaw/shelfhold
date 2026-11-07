@@ -88,7 +88,10 @@ class RatingService:
             .where(edition.c.work_id == work_id, edition.c.rated_at.is_(None))
             .values(rated_at=now)
         )
-        return self._done(connection, f"work:{work_id}", work_id, rating, principal, now)
+        editions = connection.execute(sa.select(edition.c.id).where(edition.c.work_id == work_id))
+        covered = [("work", work_id), *(("edition", r[0]) for r in editions)]
+        settled = _settle(connection, covered, rating)
+        return self._done(connection, f"work:{work_id}", work_id, rating, principal, now, settled)
 
     def rate_edition(
         self, connection: Connection, edition_id: str, rating: AgeRating, *,
@@ -107,7 +110,10 @@ class RatingService:
         ).first()
         if row is None:
             raise LookupError(f"no such Edition: {edition_id}")
-        return self._done(connection, f"edition:{edition_id}", row.work_id, rating, principal, now)
+        settled = _settle(connection, [("edition", edition_id)], rating)
+        return self._done(
+            connection, f"edition:{edition_id}", row.work_id, rating, principal, now, settled
+        )
 
     # -- reads ----------------------------------------------------------------------------------
     def effective_age_of(self, connection: Connection, work_id: str) -> AgeRating | None:
@@ -136,8 +142,18 @@ class RatingService:
 
     def _done(
         self, connection: Connection, target: str, work_id: str, rating: AgeRating,
-        principal: Principal, now: datetime,
+        principal: Principal, now: datetime, settled: tuple[int, int] = (0, 0),
     ) -> RatingResult:  # fmt: skip
+        if settled != (0, 0):  # the admin ruled on what files and sources had said
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=principal.actor_id, action="age_suggestion.settle", at=now,
+                        target=f"{target};accepted:{settled[0]};rejected:{settled[1]}",
+                        session_id=principal.session_id, auth_time=principal.auth_time,
+                    )
+                )
+            )  # fmt: skip
         connection.execute(
             audit_insert(
                 AuditEntry(
@@ -187,7 +203,7 @@ class RatingService:
                         suggestion.c.entity_type == "work", suggestion.c.entity_id == row.work_id
                     ),
                 ),
-                suggestion.c.state != "rejected",
+                suggestion.c.state == "open",
             )
         )
         return EditionAge(
@@ -196,6 +212,31 @@ class RatingService:
             work=self.effective_age_of(connection, row.work_id),
             suggested=tuple(AgeRating(18, True) if x else AgeRating(int(v)) for v, x in seen),
         )
+
+
+def _settle(
+    connection: Connection, covered: list[tuple[str, str]], rating: AgeRating
+) -> tuple[int, int]:
+    """Rating is the way out of a block: the open suggestions on what was rated are ruled on, in
+    the rating's transaction. At most the new age: accepted; above it: rejected (the admin decided
+    knowing it). One that arrives afterwards stays open and blocks again (EF-BIB-055)."""
+    suggestion = catalog.age_suggestion
+    rows = connection.execute(
+        sa.select(suggestion.c.id, suggestion.c.value, suggestion.c.x).where(
+            suggestion.c.state == "open",
+            sa.tuple_(suggestion.c.entity_type, suggestion.c.entity_id).in_(covered),
+        )
+    ).all()
+    accepted = [
+        r.id for r in rows if not (AgeRating(18, True) if r.x else AgeRating(r.value)) > rating
+    ]
+    rejected = [r.id for r in rows if r.id not in accepted]
+    for state, ids in (("accepted", accepted), ("rejected", rejected)):
+        if ids:
+            connection.execute(
+                sa.update(suggestion).where(suggestion.c.id.in_(ids)).values(state=state)
+            )
+    return (len(accepted), len(rejected))
 
 
 def _check_tier(rating: AgeRating) -> None:

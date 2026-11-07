@@ -158,3 +158,59 @@ def test_raising_the_age_plans_the_withdrawal_from_incompatible_shelves(h: Harne
     ]
     # a plan, not an action: the Edition is still filed until the admin applies it
     assert h.scalar("SELECT shelf_id FROM edition WHERE id = :i", i=edition.id) == family
+
+
+def suggest(h: Harness, edition_id: str, age: AgeRating, provenance: str) -> None:
+    h.connection.execute(
+        sa.insert(catalog.age_suggestion).values(
+            id=new_ulid(), entity_type="edition", entity_id=edition_id, value=age.min_age,
+            x=age.x, provenance=provenance, seen_at=NOW,
+        )
+    )  # fmt: skip
+
+
+def states(h: Harness) -> list[str]:
+    return [r[0] for r in h.connection.execute(
+        sa.select(catalog.age_suggestion.c.state).order_by(catalog.age_suggestion.c.provenance)
+    )]  # fmt: skip
+
+
+@pytest.mark.req("EF-BIB-055")
+def test_rating_is_the_way_out_of_a_suggestion_block(h: Harness) -> None:
+    edition = h.edition()
+    family = shelf(h, 10)
+    suggest(h, edition.id, X, "sub_source")
+    result = SERVICE.rate(h.connection, edition.work_id, AgeRating(10), principal=admin(), now=NOW)
+    assert SERVICE.admission_of(h.connection, edition.id, shelf_id=family) is Admission.ALLOWED
+    assert states(h) == ["rejected"]  # above the rating: the admin ruled
+    assert result.effective == AgeRating(10)
+    settle = h.connection.execute(
+        sa.select(identity.audit.c.target).where(identity.audit.c.action == "age_suggestion.settle")
+    ).scalar_one()
+    assert settle.endswith("accepted:0;rejected:1")
+
+
+@pytest.mark.req("EF-BIB-055")
+def test_suggestion_after_the_rating_blocks_again_until_rated_again(h: Harness) -> None:
+    edition = h.edition()
+    family = shelf(h, 10)
+    SERVICE.rate(h.connection, edition.work_id, AgeRating(10), principal=admin(), now=NOW)
+    suggest(h, edition.id, AgeRating(10), "comicinfo")  # not above: accepted with the next rating
+    suggest(h, edition.id, X, "sub_source")
+    assert (
+        SERVICE.admission_of(h.connection, edition.id, shelf_id=family)
+        is Admission.SUGGESTION_ABOVE
+    )
+    SERVICE.rate(h.connection, edition.work_id, AgeRating(10), principal=admin(), now=NOW)
+    assert SERVICE.admission_of(h.connection, edition.id, shelf_id=family) is Admission.ALLOWED
+    assert states(h) == ["accepted", "rejected"]
+
+
+@pytest.mark.req("EF-BIB-055")
+def test_rating_an_edition_settles_only_its_own_suggestions(h: Harness) -> None:
+    mine = h.edition(lang="en")
+    other = h.edition(mine.work_id, lang="fr")
+    suggest(h, mine.id, X, "sub_source")
+    suggest(h, other.id, X, "comicinfo")
+    SERVICE.rate_edition(h.connection, mine.id, AgeRating(10), principal=admin(), now=NOW)
+    assert states(h) == ["open", "rejected"]  # comicinfo (the other Edition) stays open

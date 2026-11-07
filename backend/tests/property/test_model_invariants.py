@@ -976,7 +976,8 @@ class ClassificationInvariants(RuleBasedStateMachine):
         self.work_id = self.h.work()
         self.work_age: AgeRating | None = None
         self.editions: dict[str, tuple[AgeRating | None, bool]] = {}  # explicit age, rated
-        self.suggested: dict[str, list[AgeRating]] = {}
+        self.suggested: dict[str, list[AgeRating]] = {}  # the open ones
+        self.seen: set[tuple[str, AgeRating]] = set()  # one row per (value, provenance)
         self.shelves: dict[int, str] = {}
         for ceiling in CEILINGS:
             shelf_id = new_ulid()
@@ -1006,6 +1007,7 @@ class ClassificationInvariants(RuleBasedStateMachine):
         self.service.rate(self.h.connection, self.work_id, age, principal=RATER, now=self.now)
         self.work_age = age
         self.editions = {k: (explicit, True) for k, (explicit, _) in self.editions.items()}
+        self.suggested = {k: [] for k in self.suggested}  # ruled on: accepted or rejected
 
     @rule(pick=st.integers(0, 9), tier=st.sampled_from(AGE_TIERS))
     def rate_edition(self, pick: int, tier: int) -> None:
@@ -1017,6 +1019,7 @@ class ClassificationInvariants(RuleBasedStateMachine):
             self.h.connection, edition_id, AgeRating(tier), principal=RATER, now=self.now
         )
         self.editions[edition_id] = (AgeRating(tier), True)
+        self.suggested[edition_id] = []
 
     @rule(pick=st.integers(0, 9), tier=st.sampled_from(AGE_TIERS), x=st.booleans())
     def suggest(self, pick: int, tier: int, x: bool) -> None:
@@ -1024,8 +1027,9 @@ class ClassificationInvariants(RuleBasedStateMachine):
             return
         edition_id = sorted(self.editions)[pick % len(self.editions)]
         age = AgeRating(18, True) if x else AgeRating(tier)
-        if age in self.suggested[edition_id]:
-            return  # one row per (value, provenance)
+        if (edition_id, age) in self.seen:
+            return
+        self.seen.add((edition_id, age))
         self.h.connection.execute(
             sa.insert(catalog_tables.age_suggestion).values(
                 id=new_ulid(), entity_type="edition", entity_id=edition_id, value=age.min_age,
