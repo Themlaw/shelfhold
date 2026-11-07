@@ -169,6 +169,8 @@ EXPECTED_CLOSED = {
         "shelfhold/infrastructure/secrets/atomic.py::write_private",
         "shelfhold/infrastructure/local_socket/server.py::LocalSocketServer._remove_socket",
         "shelfhold/infrastructure/local_socket/server.py::bind_private",
+        "shelfhold/plugin_host/install.py::install_wheel",
+        "shelfhold/plugin_host/install.py::remove_plugin",
         f"{FSOPS}/probe.py::_remove_probe_dir",
     },
     "restore": {"shelfhold/infrastructure/migrate.py::_restore_database"},

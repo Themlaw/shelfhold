@@ -58,6 +58,10 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 # the CLI socket this process bound (and its staging directory), in /data
                 "shelfhold/infrastructure/local_socket/server.py::LocalSocketServer._remove_socket",
                 "shelfhold/infrastructure/local_socket/server.py::bind_private",
+                # the plugin staging directory and the plugin files `plugin install` unpacked
+                # itself under /data/plugins (EF-SRC-019); never a library path
+                "shelfhold/plugin_host/install.py::install_wheel",
+                "shelfhold/plugin_host/install.py::remove_plugin",
                 # the probe folder the write check made itself (EF-UX-002)
                 f"{_FSOPS}/probe.py::_remove_probe_dir",
             }

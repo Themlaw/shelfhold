@@ -307,8 +307,8 @@ def installer_prefix() -> list[str]:
     """`python -m pip` when this interpreter has pip, otherwise `uv pip`."""
     if importlib.util.find_spec("pip") is not None:
         return [sys.executable, "-m", "pip", "install"]
-    uv = shutil.which("uv")
-    if uv is None:
+    uv = shutil.which("uv") or os.environ.get("UV")  # `uv run` exports its own path as UV
+    if uv is None or not Path(uv).exists():
         raise PluginInstallError("no_installer", "neither pip nor uv is available")
     return [uv, "pip", "install", "--python", sys.executable]
 
