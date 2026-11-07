@@ -182,6 +182,7 @@ class _LazyStore:
 
 def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
+        arrived: list[int] = []
         link = comp.suwayomi()
         if link is None:
             log.debug("follow.skipped", reason="no_connected_service")
@@ -213,6 +214,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                     try:
                         report = await cycle.run()
                         context.record(**report.counters())
+                        arrived.append(report.fetched)
                     finally:
                         await link.guarded.aclose()
 
@@ -221,7 +223,8 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
             log.info("follow.cycle_skipped", reason=type(error).__name__)
             context.record(skipped=type(error).__name__)
             return
-        pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)  # what arrived goes out
+        if any(arrived):  # what arrived goes out; a quiet cycle asks for nothing (the cron does)
+            pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)
 
     return run
 

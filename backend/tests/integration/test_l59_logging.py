@@ -18,6 +18,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
+import sqlalchemy as sa
 import structlog
 from huey.exceptions import RetryTask
 
@@ -123,6 +124,8 @@ def test_debug_follow_then_export_emit_the_expected_events(
         "fsops.write_atomic",
     ):  # fmt: skip
         assert expected in events, expected
+    asked = [r for r in named(records, "job.dispatched") if r["job_kind"] == "export.run"]
+    assert len(asked) >= 2  # the cycle that fetched a chapter queued the export, then the test's
     summary = next(r for r in named(records, "follow.cycle_summary") if r["fetched"])
     assert summary["level"] == "info"  # a cycle that brought a chapter is told at INFO
     finished = named(records, "job.finished")
@@ -175,6 +178,19 @@ def test_a_follow_cycle_without_news_emits_at_most_two_info_lines(
         run_job(pools, "follow.cycle")
         logs.start("INFO")
         run_job(pools, "follow.cycle")  # the 15-minute cron: nothing new
+        with env.inst.engine.connect() as connection:  # what the cycle left in the queue
+            queued = [
+                str(row[0])
+                for row in connection.execute(
+                    sa.text(
+                        "SELECT id FROM job_view "
+                        "WHERE kind = 'export.run' AND status != 'succeeded'"
+                    )
+                )
+            ]
+        assert queued == []  # a cycle that brought nothing does not wake the export
+        for job_id in queued:
+            pools._execute(job_id)
         records = logs.drain()
     info = [r for r in records if r["level"] == "info"]
     assert 0 < len(info) <= 2, [r["event"] for r in info]
