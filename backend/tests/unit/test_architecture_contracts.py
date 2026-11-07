@@ -250,7 +250,7 @@ VIOLATIONS = [
      "import shelfhold.plugin_host.adapters.meta.lncrawl\n", None),
     ("suwayomi-confined", "plugin_host/adapters/meta/lncrawl/other.py",
      "import shelfhold.plugin_host.adapters.meta.suwayomi\n", None),
-    ("suwayomi-confined", "plugin_host/registry.py",
+    ("suwayomi-confined", "plugin_host/other.py",
      "import shelfhold.plugin_host.adapters.meta.suwayomi\n", None),
     ("export-not-acquisition", "export/application/other.py",
      "from shelfhold.acquisition import public\n", None),
