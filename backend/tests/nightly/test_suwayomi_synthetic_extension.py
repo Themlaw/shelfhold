@@ -87,6 +87,7 @@ def bench(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ExtensionBench]:
             pytest.fail(f"the synthetic extension was not built at {APK}")
         pytest.skip(f"no synthetic extension built at {APK} (run build.sh)")
     data = tmp_path_factory.mktemp("suwayomi-extension")
+    data.chmod(0o777)  # the container's user is not the runner's: it writes its data here
     instance = ExtensionBench(
         mode="basic_auth",
         data_dir=data,
