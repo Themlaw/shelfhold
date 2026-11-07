@@ -57,6 +57,7 @@ from shelfhold.catalog.public import (
 )
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.restore import RestoredBehindError
+from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.fsops import (
     CrossRootError,
     PathEscapeError,
@@ -64,7 +65,6 @@ from shelfhold.infrastructure.fsops import (
     ReservedPathError,
     RootBlockedError,
 )
-from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.instance import WriteSessions
 from shelfhold.infrastructure.schema import catalog as catalog_tables
@@ -1024,6 +1024,8 @@ class ClassificationInvariants(RuleBasedStateMachine):
             return
         edition_id = sorted(self.editions)[pick % len(self.editions)]
         age = AgeRating(18, True) if x else AgeRating(tier)
+        if age in self.suggested[edition_id]:
+            return  # one row per (value, provenance)
         self.h.connection.execute(
             sa.insert(catalog_tables.age_suggestion).values(
                 id=new_ulid(), entity_type="edition", entity_id=edition_id, value=age.min_age,
@@ -1048,7 +1050,11 @@ class ClassificationInvariants(RuleBasedStateMachine):
     def unrated_is_never_under_18_and_the_rule_holds(self) -> None:  # I-age, I48
         effective = max((weight(a) for a in self.known()), default=None)
         for edition_id, (explicit, rated) in self.editions.items():
-            age = weight(explicit) if explicit is not None else (18 if effective is None else effective)
+            age = (
+                weight(explicit)
+                if explicit is not None
+                else (18 if effective is None else effective)
+            )
             for ceiling, shelf_id in self.shelves.items():
                 got = self.service.admission_of(self.h.connection, edition_id, shelf_id=shelf_id)
                 allowed = (

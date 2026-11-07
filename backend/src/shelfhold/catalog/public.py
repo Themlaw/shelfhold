@@ -24,7 +24,21 @@ from shelfhold.catalog.application.dto import (
     UnitView,
 )
 from shelfhold.catalog.application.editions import translation_type_for
+from shelfhold.catalog.application.rating import (
+    RatingRefusedError,
+    RatingResult,
+    RatingService,
+    Withdrawal,
+)
 from shelfhold.catalog.application.service import CatalogService
+from shelfhold.catalog.domain.age import (
+    Admission,
+    EditionAge,
+    admission,
+    ceiling_of,
+    content_warning_age,
+    effective_age,
+)
 from shelfhold.catalog.domain.dates import parse_partial_date
 from shelfhold.catalog.domain.identity import (
     TEXT_VERSION_LABELS,
@@ -124,10 +138,12 @@ __all__ = [
     "LANG_NORMALIZER_ID",
     "TEXT_VERSION_LABELS",
     "WRITER",
+    "Admission",
     "BindingRef",
     "Catalog",
     "ContributorName",
     "Discriminant",
+    "EditionAge",
     "EditionRef",
     "EditionSpec",
     "IncomingUnit",
@@ -139,12 +155,20 @@ __all__ = [
     "NormalizerId",
     "NormalizerRegistry",
     "PersonField",
+    "RatingRefusedError",
+    "RatingResult",
+    "RatingService",
     "TeamRef",
     "TextVersionRef",
     "UnitView",
     "VariantFacts",
+    "Withdrawal",
+    "admission",
+    "ceiling_of",
+    "content_warning_age",
     "default_registry",
     "edition_key_lang",
+    "effective_age",
     "ingest_isolated",
     "join_people",
     "numbered_mark",

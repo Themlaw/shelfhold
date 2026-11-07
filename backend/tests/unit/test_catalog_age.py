@@ -1,4 +1,4 @@
-"""L08 (EF-BIB-037, EF-BIB-036, EF-BIB-055): the age of a Work, of an Edition, and who is admitted."""
+"""L08 (EF-BIB-037, EF-BIB-036, EF-BIB-055): age of a Work, of an Edition, admission."""
 
 import pytest
 
@@ -42,7 +42,9 @@ def test_suggested_age_above_rating_blocks() -> None:
     flagged = EditionAge(explicit=None, rated=True, work=ALL, suggested=(X,))
     assert admission(flagged, FAMILY) is Admission.SUGGESTION_ABOVE
     lower = EditionAge(explicit=None, rated=True, work=TEEN, suggested=(ALL,))
-    assert admission(lower, AgeRating(13)) is Admission.ALLOWED  # a lower suggestion changes nothing
+    assert (
+        admission(lower, AgeRating(13)) is Admission.ALLOWED
+    )  # a lower suggestion changes nothing
 
 
 @pytest.mark.req("EF-BIB-037", "EF-BIB-055")

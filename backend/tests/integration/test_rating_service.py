@@ -48,7 +48,9 @@ def shelf(h: Harness, ceiling: int | None) -> str:
 
 def file_on(h: Harness, edition_id: str, shelf_id: str) -> None:
     h.connection.execute(
-        sa.update(catalog.edition).where(catalog.edition.c.id == edition_id).values(shelf_id=shelf_id)
+        sa.update(catalog.edition)
+        .where(catalog.edition.c.id == edition_id)
+        .values(shelf_id=shelf_id)
     )
 
 
@@ -62,9 +64,11 @@ def test_rate_goes_through_the_reserved_action_and_is_audited(h: Harness) -> Non
     row = h.connection.execute(
         sa.select(catalog.work).where(catalog.work.c.id == edition.work_id)
     ).one()
-    assert (row.age_rating, row.age_x, row.rated_at) == (13, False, NOW.replace(tzinfo=None))
+    assert (row.age_rating, row.age_x, row.rated_at) == (13, False, NOW)
     assert result.label == "age.min.13"
-    entry = h.connection.execute(sa.select(identity.audit).where(identity.audit.c.action == "rate")).one()
+    entry = h.connection.execute(
+        sa.select(identity.audit).where(identity.audit.c.action == "rate")
+    ).one()
     assert entry.target == f"work:{edition.work_id}"
 
 
@@ -101,7 +105,9 @@ def test_new_edition_after_rating_is_unrated_until_admin_rates(h: Harness) -> No
     assert SERVICE.admission_of(h.connection, first.id, shelf_id=family) is Admission.ALLOWED
     later = h.edition(first.work_id, lang="fr")  # arrives after the classing
     assert h.scalar("SELECT rated_at FROM edition WHERE id = :i", i=later.id) is None
-    assert SERVICE.admission_of(h.connection, later.id, shelf_id=family) is Admission.UNRATED_EDITION
+    assert (
+        SERVICE.admission_of(h.connection, later.id, shelf_id=family) is Admission.UNRATED_EDITION
+    )
     assert SERVICE.admission_of(h.connection, first.id, shelf_id=family) is Admission.ALLOWED
     SERVICE.rate(h.connection, first.work_id, ALL, principal=admin(), now=NOW)  # the admin rates
     assert SERVICE.admission_of(h.connection, later.id, shelf_id=family) is Admission.ALLOWED
@@ -118,7 +124,10 @@ def test_suggested_age_above_rating_blocks_and_never_rates(h: Harness) -> None:
             provenance="sub_source", seen_at=NOW,
         )
     )  # fmt: skip
-    assert SERVICE.admission_of(h.connection, edition.id, shelf_id=family) is Admission.SUGGESTION_ABOVE
+    assert (
+        SERVICE.admission_of(h.connection, edition.id, shelf_id=family)
+        is Admission.SUGGESTION_ABOVE
+    )
     assert h.scalar("SELECT age_rating FROM work WHERE id = :i", i=edition.work_id) == 0
 
 
@@ -131,7 +140,10 @@ def test_explicit_edition_age_and_effective_age_of_the_work(h: Harness) -> None:
     assert SERVICE.effective_age_of(h.connection, uncensored.work_id) == ADULT
     family = shelf(h, 10)
     assert SERVICE.admission_of(h.connection, kids.id, shelf_id=family) is Admission.ALLOWED
-    assert SERVICE.admission_of(h.connection, uncensored.id, shelf_id=family) is Admission.ABOVE_CEILING
+    assert (
+        SERVICE.admission_of(h.connection, uncensored.id, shelf_id=family)
+        is Admission.ABOVE_CEILING
+    )
 
 
 @pytest.mark.req("EF-BIB-037")
