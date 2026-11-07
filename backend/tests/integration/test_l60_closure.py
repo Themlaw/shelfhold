@@ -490,3 +490,42 @@ def test_stored_suwayomi_address_is_revalidated_and_status_says_when_it_is_refus
         (refused,) = report["service_urls"]
         assert refused["service"] == "suwayomi" and "8.8.8.8" in refused["url"]
         assert "public" in refused["reason"]
+
+
+# -- EF-EXP-032: what an administrator may name a series (review) ----------------------------------
+
+_BAD_NAMES = [
+    "A\x00B", "A\tB", "A\nB", "A‮B", "A⁦B", "A/B", "A\\B", ".", "..", ".shelfhold",
+    "CON", "nul", "Com1", "LPT9.txt", "aux.v2",
+]  # fmt: skip
+
+
+@pytest.mark.req("EF-EXP-032")
+@pytest.mark.parametrize("name", _BAD_NAMES)
+def test_series_name_that_cannot_be_a_folder_is_refused_and_the_edition_keeps_waiting(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+    name: str,
+) -> None:
+    from tests.l53_env import status_json, waiting_states
+    from tests.l54_env import bench54
+
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        first = b.env.new_series("Monster", lang="en")
+        second = b.env.new_series("Monster", lang="fr")
+        for series in (first, second):
+            b.env.add_chapter(series, "1")
+        b.export()
+        capsys.readouterr()
+        assert b.cli("edition", "set-series-name", first.edition_id, name) != 0
+        refusal = capsys.readouterr().err
+        assert refusal.strip(), "the refusal says why"
+        assert first.edition_id in {
+            i["subject"]
+            for i in waiting_states(status_json(monkeypatch, settings, capsys))[
+                "series_name_collision"
+            ]
+        }
+        assert not list((b.env.inst.library / "Kavita").glob("*/"))  # nothing was created

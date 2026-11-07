@@ -28,7 +28,7 @@ from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import load_health
-from shelfhold.export.domain.naming import normalize_series_name
+from shelfhold.export.domain.naming import normalize_series_name, series_name_refusal
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.domain.planner import SeriesRef
 from shelfhold.identity.public import Principal
@@ -354,6 +354,9 @@ class OpsServices:
         """Leave `series_name_collision` (EF-EXP-032): the exported series of this Edition gets
         the name the administrator chose, the first export then writes into it. Refused when the
         name is taken in the library too, or when the Edition does not wait for a name."""
+        refusal = series_name_refusal(name)
+        if refusal is not None:
+            raise InvalidChoiceError(refusal)
         clean = " ".join(name.split())
         normalized = normalize_series_name(clean)
         if not clean or not normalized or len(clean) > MAX_SERIES_NAME:

@@ -79,6 +79,44 @@ def sanitize_name(text: str, *, max_bytes: int = MAX_COMPONENT_BYTES) -> str:
 _KEEP: Final = frozenset("+!" + chr(0xFF0A) + chr(0xFF01) + chr(0xFF0B))
 
 
+_BIDI = frozenset("\u200e\u200f\u061c") | {
+    chr(c) for c in (*range(0x202A, 0x202F), *range(0x2066, 0x206A))
+}
+_WINDOWS_RESERVED = frozenset(
+    {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{n}" for n in range(1, 10)),
+        *(f"lpt{n}" for n in range(1, 10)),
+    }
+)
+
+
+def series_name_refusal(name: str) -> str | None:
+    """Why an administrator-chosen series name cannot be a folder name, or None (EF-EXP-032).
+
+    The name becomes a folder under the library: no NUL or control character, no bidi mark (it
+    would make a listing read differently from what it holds), no path separator, not `.` or `..`,
+    no name Windows reserves (the library may be read from there), not Shelfhold's own `.shelfhold`.
+    """
+    if any(unicodedata.category(c) == "Cc" for c in name):
+        return "a series name holds no control character (NUL, tab, line break...)"
+    if any(c in _BIDI for c in name):
+        return "a series name holds no bidirectional control character"
+    if "/" in name or "\\" in name:
+        return "a series name holds no / or \\"
+    stripped = name.strip()
+    if stripped in {".", ".."}:
+        return "a series name is not . or .."
+    if stripped.lower() == ".shelfhold":
+        return ".shelfhold is reserved by Shelfhold"
+    if stripped.split(".", 1)[0].strip().lower() in _WINDOWS_RESERVED:
+        return "this name is reserved by Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9)"
+    return None
+
+
 def normalize_series_name(name: str) -> str:
     """The series key Kavita derives from a name: letters, digits and a few signs, lowercased.
 
