@@ -325,6 +325,66 @@ def coverage_unknown(
         )
 
 
+def series_name_collision(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """Two Works of one title in one library: the export blocks, `status` lists both Editions,
+    `edition set-series-name` names one of them. Nothing here writes the state: the export job does."""
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        ctx = L53Context(monkeypatch, capsys, settings)
+        english = b.env.new_series("Monster", lang="en")
+        french = b.env.new_series("Monster", lang="fr")
+        for series in (english, french):
+            b.env.add_chapter(series, "1")
+        b.export()
+        assert {i["subject"] for i in ctx.listed("series_name_collision")} == {
+            english.edition_id, french.edition_id,
+        }  # fmt: skip
+
+        def leave() -> None:
+            assert b.cli("edition", "set-series-name", english.edition_id, "Monster (en)") == 0
+            assert b.cli("edition", "set-series-name", french.edition_id, "Monster (fr)") == 0
+
+        ctx.listed_then_gone("series_name_collision", leave)
+
+
+def mount_sentinel_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """The volume of the library comes back without its sentinel: the export blocks and writes
+    `mount.sentinel_missing`; `status` lists it; `target recheck` leaves it once the sentinel is
+    the expected one again."""
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        ctx = L53Context(monkeypatch, capsys, settings)
+        with b.engine.connect() as connection:
+            roots = (
+                connection.execute(sa.text("SELECT path_entry FROM physical_root")).scalars().all()
+            )
+            target_id = connection.execute(sa.text("SELECT id FROM export_target")).scalar_one()
+        folder = str(b.env.inst.library / "Kavita")
+        (root,) = [Path(r) for r in roots if folder.startswith(r.rstrip("/") + "/")]
+        sentinel = root / ".shelfhold-mount-id"
+        kept = sentinel.read_bytes()
+        series = b.env.new_series("Alpha")
+        b.env.add_chapter(series, "1")
+        sentinel.unlink()
+        b.export()
+        (item,) = ctx.listed("mount_sentinel_missing")
+        assert item["command"] == f"shelfhold target recheck {target_id}"
+
+        def leave() -> None:
+            sentinel.write_bytes(kept)
+            assert b.cli("target", "recheck", target_id) == 0
+
+        ctx.listed_then_gone("mount_sentinel_missing", leave)
+
+
 def restored_behind(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     with restore_env() as env:
         restored(env)  # six chapters exported after the backup, then the backup put back
@@ -417,6 +477,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         key_expiring, not_indexed, auth_expired, adoption_refused, permission_denied,
         child_exposure, auth_mode_unsupported, coverage_unknown, language_unknown,
         restored_behind, tombstone_key_unknown, tombstone_lines_owed, route_missing,
+        series_name_collision, mount_sentinel_missing,
     )
 }  # fmt: skip
 

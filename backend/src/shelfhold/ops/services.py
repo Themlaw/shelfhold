@@ -11,6 +11,7 @@ classification is theirs (the route or the socket decides before calling).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -20,20 +21,28 @@ from sqlalchemy import Engine
 from shelfhold.acquisition.application.unit_follow import suppress_follow
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.events.bus import EventBus
-from shelfhold.export.application import root_capabilities
+from shelfhold.export.application import root_capabilities, waiting_marks
+from shelfhold.export.application.export_items import SeriesCollisionError, ensure_export_series
+from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
+from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import load_health
+from shelfhold.export.domain.naming import normalize_series_name, series_name_refusal
+from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.export.domain.planner import SeriesRef
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export, platform
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.errors import (
+    CodedRefusal,
     ExitUnavailableError,
     InvalidChoiceError,
     LanguageRefusedError,
     NotWaitingError,
+    StillWaitingError,
     UnknownSubjectError,
 )
 from shelfhold.ops.intents import IntentOps
@@ -55,14 +64,17 @@ from shelfhold.ops.status import (
     dress,
     known_bad_report,
     queues_of,
+    service_url_report,
     stale_report,
     tombstoned_report,
+    unverifiable_download_dirs,
 )
 
 __all__ = ["JobRow", "OpsServices", "RecheckOutcome", "StatusReport", "user_of"]
 
 DEAD = ("dead_letter", "failed")
 NOT_INDEXED = "target.not_indexed"
+MAX_SERIES_NAME = 200
 ULID_PATTERN = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
 
 
@@ -80,6 +92,8 @@ class StatusReport:
     tombstoned_upstream: list[dict[str, object]] = field(default_factory=list)
     capabilities: list[dict[str, object]] = field(default_factory=list)
     known_bad: dict[str, object] = field(default_factory=dict)
+    service_urls: list[dict[str, object]] = field(default_factory=list)
+    unverifiable_dirs: list[dict[str, object]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -89,6 +103,8 @@ class StatusReport:
             "tombstoned_upstream": self.tombstoned_upstream,
             "capabilities": self.capabilities,
             "known_bad": self.known_bad,
+            "service_urls": self.service_urls,
+            "unverifiable_dirs": self.unverifiable_dirs,
         }
 
 
@@ -126,7 +142,7 @@ class OpsServices:
         *,
         clock: Clock,
         bus: EventBus,
-        fsops: Fsops | None = None,
+        fsops: Fsops | Callable[[], Fsops | None] | None = None,
         targets: TargetOps | None = None,
         headless: HeadlessOps | None = None,
         restore: RestoreExit | None = None,
@@ -141,7 +157,7 @@ class OpsServices:
         self._engine = engine
         self._clock = clock
         self._bus = bus
-        self._fsops = fsops
+        self._fsops_source = fsops
         self._targets = targets
         self._headless = headless
         self._restore = restore
@@ -152,6 +168,14 @@ class OpsServices:
         self._backfill = backfill
         self._normalize = normalize
         self._meta = meta
+
+    @property
+    def _fsops(self) -> Fsops | None:
+        """The library as the roots are registered now: a root added by `target add` while the
+        server runs is known to the next `series resume` or `target recheck` (a callable is asked
+        at each use; a given `Fsops` is used as it is)."""
+        source = self._fsops_source
+        return source() if callable(source) else source
 
     # -- reading -------------------------------------------------------------------------------
 
@@ -170,7 +194,8 @@ class OpsServices:
                 items, queues_of(connection, items), stale_report(connection, now),
                 tombstoned_report(connection),
                 [c.as_dict() for c in root_capabilities.read_all(connection)],
-                known_bad_report(connection, now.date()),
+                known_bad_report(connection, now.date()), service_url_report(connection),
+                unverifiable_download_dirs(connection),
             )  # fmt: skip
 
     def restored_behind(self) -> bool:
@@ -252,9 +277,10 @@ class OpsServices:
     def series_resume(self, export_series_id: str) -> bool:
         """After the switch-over (or the rights back): what is on disk is the new baseline. A series
         paused for `permission_denied` is probed first (the same probe as `target recheck`)."""
-        if self._fsops is None:
+        fsops = self._fsops
+        if fsops is None:
             raise ExitUnavailableError("no library is mounted here")
-        reconciler = Reconciler(self._engine, self._fsops, clock=self._clock, bus=self._bus)
+        reconciler = Reconciler(self._engine, fsops, clock=self._clock, bus=self._bus)
         if not reconciler.resume_series(export_series_id):
             raise NotWaitingError("this series is not paused")
         return True
@@ -328,6 +354,42 @@ class OpsServices:
                 ) from None
         return tag
 
+    def edition_set_series_name(self, edition_id: str, name: str) -> tuple[str, str]:
+        """Leave `series_name_collision` (EF-EXP-032): the exported series of this Edition gets
+        the name the administrator chose, the first export then writes into it. Refused when the
+        name is taken in the library too, or when the Edition does not wait for a name."""
+        refusal = series_name_refusal(name)
+        if refusal is not None:
+            raise InvalidChoiceError(refusal)
+        clean = " ".join(name.split())
+        normalized = normalize_series_name(clean)
+        if not clean or not normalized or len(clean) > MAX_SERIES_NAME:
+            raise InvalidChoiceError("give a series name of letters and digits, 200 characters")
+        with self._engine.begin() as connection:
+            mark = waiting_marks.read_one(connection, "series_name_collision", edition_id)
+            if mark is None:
+                raise NotWaitingError("this Edition does not wait for a series name")
+            ctx = load_context(connection, mark["destination_id"])
+            if ctx.remote_library_id is None:
+                raise NotWaitingError("the destination has no remote library any more")
+            if normalized in load_foreign_names(connection, ctx.destination_id):
+                raise CodedRefusal(  # a series of another source already bears it in Kavita
+                    "export.series_name_collision", "Kavita already shows a series with this name"
+                )
+            try:
+                series_id = ensure_export_series(
+                    connection, shelf_destination_id=ctx.destination_id,
+                    remote_library_id=ctx.remote_library_id, now=self._clock.now(),
+                    ref=SeriesRef(edition_id, clean, normalized, proposal_key={"chosen": "admin"}),
+                    assigned_by="plan",
+                )  # fmt: skip
+            except SeriesCollisionError:
+                raise CodedRefusal(
+                    "export.series_name_collision", "another series already has this name"
+                ) from None
+            waiting_marks.clear(connection, "series_name_collision", [edition_id])
+        return series_id, clean
+
     # -- targets -------------------------------------------------------------------------------
 
     def _destinations(self, target_id: str) -> list[str]:
@@ -366,19 +428,42 @@ class OpsServices:
         self._require_target(target_id)
         cleared: list[str] = []
         denied: list[str] = []
-        if self._fsops is not None:
-            preflight = PermissionPreflight(self._engine, self._fsops, self._bus, clock=self._clock)
+        fsops = self._fsops
+        if fsops is not None:
+            preflight = PermissionPreflight(self._engine, fsops, self._bus, clock=self._clock)
             for destination in self._destinations(target_id):
                 report = preflight.recheck(destination)
                 cleared += report.cleared
                 denied += report.denied
+        blocked = self._recheck_mounts(fsops, target_id)
         with self._engine.connect() as connection:
             waiting = load_health(connection, target_id).waiting_state
         if self._targets is not None:
             self._targets.recheck(target_id)
         elif waiting is not None:
             raise ExitUnavailableError("this instance has no Kavita connection")
+        if blocked:
+            raise StillWaitingError("the mount of the library still lacks its sentinel")
         return RecheckOutcome(tuple(cleared), tuple(denied))
+
+    def _recheck_mounts(self, fsops: Fsops | None, target_id: str) -> list[str]:
+        """`mount_sentinel_missing` (EF-EXP-029) leaves once the sentinel of the root is the one
+        expected again: it is read here, on request, and never by a periodic look. The
+        destinations whose mount is still wrong are returned."""
+        if fsops is None:
+            return []
+        blocked: list[str] = []
+        for destination in self._destinations(target_id):
+            with self._engine.connect() as connection:
+                mark = waiting_marks.read_one(connection, "mount_sentinel_missing", destination)
+                if mark is None:
+                    continue
+                root = load_context(connection, destination).root_local
+            if root is not None and fsops.status(root).state is not RootState.OK:
+                blocked.append(destination)
+            else:
+                waiting_marks.clear_mount_blocked(self._engine, destination)
+        return blocked
 
     def target_reconnect(self, target_id: str) -> None:
         self._require_target(target_id)

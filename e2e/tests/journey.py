@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import time
 from collections.abc import Callable
@@ -65,7 +66,7 @@ class Journey:
         for name in self.files:
             command += ["-f", str(E2E / name)]
         subprocess.run(  # noqa: S603
-            [*command, "exec", "-T", service, "sh", "-c", f"umask 077; cat > {path}"],
+            [*command, "exec", "-T", service, "sh", "-c", f"umask 077; cat > {shlex.quote(path)}"],
             input=text,
             text=True,
             check=True,
@@ -92,6 +93,60 @@ class Journey:
     def publish_upstream(self) -> None:
         self.fake("suwayomi", SUWAYOMI_URL + "/_fake/publish", post=True)
 
+    def adopted_series(self, name: str) -> None:
+        """A series the administrator already has in Kavita's library: its CBZ (with a ComicInfo)
+        written on the shared volume, then indexed by the simulated Kavita."""
+        from urllib.parse import quote
+
+        folder = str(self.kavita()["libraries"][0]["folders"][0]) + "/" + name  # type: ignore[index]
+        code = (
+            "import sys, zipfile, pathlib; d = pathlib.Path(sys.argv[1]); d.mkdir(parents=True, "
+            "exist_ok=True); n = sys.argv[2]; "
+            "z = zipfile.ZipFile(d / (n + ' - Ch.1.cbz'), 'w'); "
+            "z.writestr('001.png', b'\\x89PNG\\r\\n\\x1a\\n' + n.encode()); "
+            'z.writestr(\'ComicInfo.xml\', \'<?xml version="1.0" encoding="utf-8"?><ComicInfo>'
+            "<Series>' + n + '</Series><LanguageISO>en</LanguageISO><Number>1</Number>"
+            "</ComicInfo>'); z.close()"
+        )
+        self.compose("exec", "-T", "shelfhold", "python", "-c", code, folder, name)
+        self.fake("kavita", KAVITA_URL + "/_fake/index?folder=" + quote(folder), post=True)
+
+    def suwayomi_category(self, name: str, *, exclude: bool, assign: tuple[str, ...]) -> None:
+        """A category in Suwayomi's library (`exclude`: its series skip the scheduled updates)."""
+        from urllib.parse import quote
+
+        query = f"name={quote(name)}" + ("&exclude=1" if exclude else "")
+        query += "".join("&assign=" + quote(url) for url in assign)
+        self.fake("suwayomi", SUWAYOMI_URL + "/_fake/category?" + query, post=True)
+
+    def foreign_series(self, name: str) -> None:
+        """Kavita holds a series called `name` that comes from another source than Shelfhold."""
+        from urllib.parse import quote
+
+        self.fake("kavita", KAVITA_URL + "/_fake/foreign_series?name=" + quote(name), post=True)
+
+    def twin_titles(self) -> None:
+        """The second series of the simulated Suwayomi takes the title of the first (en, fr)."""
+        self.fake("suwayomi", SUWAYOMI_URL + "/_fake/twin", post=True)
+
+    def waiting(self) -> dict[str, list[dict[str, object]]]:
+        """`shelfhold status --json`: the waiting states, by state."""
+        done = self.shelfhold("status", "--json")
+        assert done.code == 0, done.err
+        found: dict[str, list[dict[str, object]]] = {}
+        for item in json.loads(done.out)["waiting"]:
+            found.setdefault(str(item["state"]), []).append(item)
+        return found
+
+    def db_value(self, sql: str) -> str:
+        """A read-only look at the database (an identifier to give a command, never a write)."""
+        done = self.compose(
+            "exec", "-T", "shelfhold", "python", "-c",
+            "import sqlite3,sys; print(sqlite3.connect('file:/data/shelfhold.db?mode=ro', uri=True)"
+            ".execute(sys.argv[1]).fetchone()[0])", sql,
+        )  # fmt: skip
+        return done.stdout.strip()
+
     def units_known(self) -> int:
         """Chapters the follow has listed so far (read-only look at the database, for waiting)."""
         done = self.compose(
@@ -101,6 +156,15 @@ class Journey:
             check=False,
         )  # fmt: skip
         return int(done.stdout.strip() or 0) if done.returncode == 0 else 0
+
+    def sql(self, query: str) -> list[tuple[object, ...]]:
+        """A read-only look at the database."""
+        code = (
+            "import json, sqlite3; print(json.dumps(sqlite3.connect('file:/data/shelfhold.db?mode"
+            "=ro', uri=True).execute(" + repr(query) + ").fetchall()))"
+        )
+        done = self.compose("exec", "-T", "shelfhold", "python", "-c", code)
+        return [tuple(r) for r in json.loads(done.stdout)]
 
     def discover_series(self) -> None:
         """The first follow cycle: the series of the Suwayomi library get their Work and Edition

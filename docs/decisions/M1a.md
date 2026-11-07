@@ -776,3 +776,65 @@ Chaque objection est corrigée, ou reportée avec sa justification (section suiv
 3. **Export après un cycle.** Un cycle de suivi ne relance `export.run` que s'il a récupéré un chapitre ; le cron d'export reste le filet. Un cycle sans nouveauté ne laisse rien en file (ENF-OPS-014).
 4. **Configuration au démarrage : liste blanche.** `LOGGED_SETTINGS` nomme les réglages journalisés ; `api_token` n'y est jamais. Quatre réglages qui ne sont pas des secrets mais dont le nom ressemble à un secret (`auth_hardened`, `fresh_auth_s`, `secret_key_file`, `forward_auth_trusted_cidrs`) sont journalisés sous un nom que le filtre par nom de clé ne masque pas. Un test exige que tout champ de `Settings` soit dans l'une des deux listes : un nouveau réglage n'est pas journalisé tant que quelqu'un n'a pas décidé qu'il ne porte aucun secret.
 5. **Identifiants et secrets par valeur (vault).** Option retenue : ne pas enregistrer par valeur les champs `username`, `user` et `login` d'un document JSON scellé, et enregistrer tout le reste (mot de passe compris, quelle que soit sa longueur). Rejeté : un seuil de longueur (12 caractères) laisserait sortir en clair un mot de passe court, alors qu'un identifiant n'est pas un secret. Avec l'ancien comportement, l'utilisateur `shelfhold` transformait le nom des loggers en `***.jobs.huey_app`. Le texte entier du secret et, pour Suwayomi, le mot de passe enregistré par l'AuthFlow restent masqués.
+
+## L60 : objections de la clôture de M1a (remplace la PR #87)
+
+1. **Racines vives.** Les services d'exploitation (`series resume`, `target recheck`, aperçu des plans), le constat de `restored_behind`, le pipeline en cache du serveur et la garde disque lisaient les racines au démarrage : un `target add` fait ensuite donnait `OutsidePathMapError`. Ils relisent maintenant les racines à chaque appel (fournisseur de `Fsops`) ; le pipeline du serveur est rouvert quand la signature des racines change.
+2. **Collision de nom (EF-EXP-032).** Écart assumé avec la liste de la spec (EF-INT-023) : deux états d'attente sont ajoutés, `series_name_collision` (sortie `edition set-series-name`, CLI et API) et `mount_sentinel_missing` (sortie `target recheck`). Les deux sont écrits par la tâche d'export dans `app_setting` (marques `waiting_marks`) pour que `status`, qui tourne dans un autre processus, les voie ; aucune migration. Le nom choisi est stocké dans `export_series` avec `assigned_by = "plan"`.
+3. **Plages (EF-SRC-034).** `follow_handler` passe `keep_range=RangedKeeper(...)` : le fichier d'une plage est gardé sous `/data/ranged/` avec sa couverture ; son export est de M2.
+4. **Sentinelle et scans.** `flush_scans` et la relance d'arrivée demandent `require_scan_allowed` ; un dossier sous une racine sans sentinelle n'est pas scanné. Le garde de l'export utilise la table de chemins de la destination (celle de la bibliothèque ne connaît pas les chemins de Kavita) : un essai l'a montré en refusant tous les scans.
+5. **Adresse de Suwayomi (ENF-SEC-001).** Même règle que pour une destination (`http://` réservé au réseau local, IP publique refusée) pour Suwayomi, avant toute requête, y compris par fichier déclaratif.
+6. **Dossier de téléchargement (EF-EXP-044).** `SwitchoverGate.declare_download_dir` est appelé avec `settings.downloadsPath` lu à Suwayomi ; `SentinelVerdict`, `require_scan_allowed` et `declare_download_dir` quittent la liste L31/L25.
+7. **Nightly.** Voir « Corrigé à la clôture » : les quatre jobs sont verts sur la branche.
+8. **Liste L31 (point 12), cas douteux** : des entrées dont une exigence de M1a dépend peut-être : `KavitaClient.collision_check_available` et `preview_verified` (EF-EXP-009, ENF-COMP-001), `SwitchoverDetector.classify_download_dir` (EF-EXP-044, EF-EXP-051), `Adopter.link_library` (EF-EXP-055), `BulkParse.for_plan` (EF-EXP-028, EF-INT-014), `IntentJournal.apply_rename` (EF-EXP-041), `UpstreamSnapshots.record_exclusion` (EF-EXP-056), `LoginThrottle.tracked_keys` (ENF-SEC-008), `discover_physical_roots` (EF-EXP-059), `SeriesResolver`, `request_dispatch`. Aucune n'est retirée ici : le lot L31 de M1b doit les câbler, pas les supprimer.
+9. **Chemin de téléchargement de Suwayomi (EF-EXP-044), écart.** 01 compare « les chemins de téléchargement » à la correspondance de chemins de la destination et ne prévoit aucune correspondance déclarée côté source : le `downloadsPath` de Suwayomi est un chemin de son propre conteneur. Il n'est donc comparé que s'il tombe sous une racine que ce processus connaît ; vide (valeur par défaut), relatif ou propre à son espace de noms, il est enregistré comme **non vérifiable** et `shelfhold status` le dit (`unverifiable_dirs`), au lieu de passer pour « non partagé ». Une correspondance côté source (`source add suwayomi --download-map`) est un ajout de M1b.
+10. **Racine `adopt_ro` et scans (EF-EXP-029, EF-EXP-060).** 01 ne donne aucune sentinelle à une racine `adopt_ro` (jamais écrite) : son contrôle avant un scan est que le montage soit là ; une entrée `adopt_ro` imbriquée dans une racine inscriptible relève de la sentinelle de cette racine. Le contrôle de rapatriement (`--check`) passe par la même garde.
+11. **Collision avec une série d'une autre source (EF-EXP-032).** L'inventaire des séries de la bibliothèque Kavita cible est relu par la tâche d'export (et l'aperçu) et ses noms normalisés sont gardés (`export.kavita_names.<destination>`, sans migration) : le planificateur et `edition set-series-name` les refusent. Une bibliothèque illisible laisse la dernière liste en place.
+
+## Clôture
+
+Cette section résume ce que M1a laisse ouvert en le fermant : les écarts acceptés et les reports, avec le lot qui les porte. Elle s'appuie sur les décisions des lots ci-dessus et sur `tools/production-reachability-allowlist.toml`, dont chaque entrée porte une raison et une échéance (`until`) ; un test refuse une entrée qui serait câblée ou qui ne serait plus citée, la liste ne peut donc que se réduire. Les écarts de lot déjà tranchés (L43, objections 1 à 10 de la revue du contradicteur) ne sont pas repris. La revue de clôture (`M1a-revue.md`) et l'étiquette `v0.2.0` restent à faire après la fusion.
+
+### Traçabilité
+
+`tools/traceability.py --milestone M1a` et `--milestone M0` : 0 erreur, couverture de 100 % (la sortie est celle de la CI). Les écarts acceptés côté exigences :
+
+- **ENF-GOV-006** reste déclarée partielle : seuls les entretiens utilisateurs manquent, reportés par la décision M0 9 (ils dépendent du porteur).
+- **ENF-OPS-002** : le volet « pas de migration dans une release patch » était reporté « avant la clôture de M1a ». Il est fait (L58, `tools/check_patch_migrations.py` dans `release.yml`) ; l'entrée `[[deferred]]` est retirée.
+- **ENF-COMP-001** : la version minimale 0.9.1 est testée sur la ligne 0.9.1 de l'image officielle (aujourd'hui v0.9.1.4), faute d'étiquette 0.9.1.0 publiée en amont ; l'entrée s'ajoutera à la matrice du nightly quand l'amont la publie (limite écrite dans `nightly.yml`).
+- Le test de l'extension Suwayomi synthétique ne tourne qu'en nightly, comme la spec le prescrit pour ENF-LEG-013 ; les exigences concernées ont aussi des tests de CI requise.
+
+### Corrigé à la clôture
+
+- Extension Suwayomi synthétique du nightly : `gradle/verification-metadata.xml` était invalide (le commentaire d'en-tête contenait `--`) et sa liste de composants vide ; elle est maintenant générée (254 composants) dans l'image `ghcr.io/cirruslabs/android-sdk` épinglée par condensat. `extensions-lib` passe de 1.4.2 (jamais construite par JitPack) à 1.4.1, et `okhttp` est ajouté en `compileOnly`. Corrigé en L60 après une exécution du nightly en échec : le harnais échouait avec un identifiant de conteneur vide (il affiche maintenant l'état et le journal du conteneur), le dossier de données du banc n'était pas accessible à l'utilisateur du conteneur, l'extension n'avait pas de table de ressources que l'analyseur d'APK de Suwayomi sache lire (une chaîne `app_name` y est ajoutée), et `startDownloader` expire quand la file tourne déjà (le test attend le chapitre de toute façon). **Les quatre jobs du nightly sont verts sur la branche de L60** (exécution 42332421124).
+- Contrats import-linter : tous à `error`, sauf `comicbox` (ce n'est pas une dépendance, son ignore ne peut rien trouver).
+- Documentation : `installation-headless.md` décrit la découverte des séries (L42) au lieu d'annoncer une PR non fusionnée.
+
+### Reports vers M1b
+
+Les entrées « unwired-m1b-* » de la liste d'autorisations sont du code de M1a dont le premier appelant de production arrive avec le lot de M1b indiqué :
+
+| Lot M1b | Ce qui attend son appelant |
+| --- | --- |
+| L06 | import d'un export age du trousseau (`secrets import`), déchiffrement et forme filaire de l'enveloppe |
+| L07 | garde des plugins tiers (registre des points d'entrée, état stocké) : M1a n'en charge aucun |
+| L08, L13 | modèle d'âge de l'Édition (âge effectif, âges suggérés) et envoi de l'âge à Kavita |
+| L15 | suppression des exemplaires d'une Unité avec confirmation typée (EF-BIB-031, EF-BIB-042) |
+| L16 | « mettre à l'abri » dans `/store` (EF-BIB-038, -045, -048) |
+| L18, L20 | capacités d'écriture de Suwayomi (suivre, ne plus suivre, rafraîchir) et secret du compte de service |
+| L24 | fenêtre, classes de priorité, rétention technique, corbeille de 30 jours, VACUUM mensuel |
+| L25 | une racine physique par périphérique (EF-EXP-059), états de sentinelle à la reprise ou à la réinitialisation d'une racine |
+| L31 | inventaire du code que seuls les tests appellent : câblé, supprimé ou déplacé dans `tests/support` |
+
+Hors liste d'autorisations, trois reports de comportement :
+
+- `root takeover|reinit|restored` et `store reinit` n'existent pas (03, section M1b) ; `shelfhold status` donne la correction manuelle (L35). `secrets import` n'existe pas non plus (L06 ci-dessus).
+- Le journal des pierres tombales n'est pas chaîné : troncature, doublon et réordonnancement par un tiers qui écrit dans la racine ne sont pas détectés (L33, point 17 ; EF-BIB-054, 03 M1b).
+- Objections du contradicteur reportées (L43, tableau ci-dessus) : un seul gel au lieu de trois (11), SQL de `headless/admin` écrit à la main (12), surface du SDK `ExportTarget` (14), lignes `testonly` (15). Elles sont à inscrire au plan de M1b.
+
+### Reports vers M2 et M3, et dettes datées
+
+- **M2** : consommateurs du décodage d'image et de ses plafonds, écriture de CBZ à partir de pages, dates EPUB/OPF, téléchargement par Unité, filtres et limites par clé du contrat de Source ; **paquet de diagnostic** (L28, `test_watermarked_never_in_diagnostic_bundle`, ENF-LEG-009), dont les deux garde-fous de M1a existent.
+- **M3** : service de contenu (`content_response`), jetons `?since=` adossés à la séquence d'événements, rôles membre et anonyme de `/healthz` (M1a n'a qu'un administrateur).
+- **15 novembre 2026** : retirer `exclude-newer-package` (huey, apprise) de `backend/pyproject.toml`, puis `uv lock` (`docs/dependencies.md`).
+- **Tests instables** (`test_library_review44`, `test_library_safeguard`, `test_migration_lock`) : non reproduits ; une récidive en CI ouvre une issue.

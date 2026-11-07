@@ -60,6 +60,9 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice::no layer cache at ${CACHE_REF}, building from scratch"
           fi
+      - name: Version of the image (the OCI label follows backend/pyproject.toml)
+        id: version
+        run: echo "version=$(sed -n 's/^version = \"\(.*\)\"$/\1/p' backend/pyproject.toml | head -n1)" >> "$GITHUB_OUTPUT"
       - name: Build (registry layer cache) and export the OCI archive that is tested then published
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -69,6 +72,7 @@ jobs:
           outputs: type=oci,dest=${{ runner.temp }}/image-${{ matrix.arch }}.tar,name=shelfhold:ci
           build-args: |
             WITH_FRONTEND=${{ steps.frontend.outputs.present }}
+            VERSION=${{ steps.version.outputs.version }}
             REVISION=${{ github.sha }}
           cache-from: ${{ steps.cache.outputs.present == 'true' && format('type=registry,ref={0}-cache:{1}', env.IMAGE, matrix.arch) || '' }}
           cache-to: ${{ inputs.cache-write && format('type=registry,ref={0}-cache:{1},mode=max', env.IMAGE, matrix.arch) || '' }}
@@ -84,13 +88,15 @@ jobs:
           compression-level: 1
 
   e2e:
-    name: e2e (${{ matrix.arch }})
+    name: e2e (${{ matrix.arch }}, ${{ matrix.shard }})
     needs: build
     strategy:
       fail-fast: false
+      # One runner per shard, the same image artifact for all (e2e/shards.py: each under 10 minutes).
       matrix:
-        include: ${{ fromJSON(inputs.arm64 && '[{"arch":"amd64","runner":"ubuntu-24.04"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' || '[{"arch":"amd64","runner":"ubuntu-24.04"}]') }}
-    runs-on: ${{ matrix.runner }}
+        arch: ${{ fromJSON(inputs.arm64 && '["amd64","arm64"]' || '["amd64"]') }}
+        shard: [smoke-install, redeploy, redeploy-export, detach-exits, exits-live-roots, detach-exclusion, name-collision, name-foreign]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -106,11 +112,14 @@ jobs:
           name: image-${{ matrix.arch }}
           path: ${{ runner.temp }}
       - name: Load the image that will be published
-        run: docker/load-oci.sh "$RUNNER_TEMP/image-${{ matrix.arch }}.tar"
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: docker/load-oci.sh "$RUNNER_TEMP/image-${ARCH}.tar"
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: Smoke (up --wait, /readyz, SPA index) and no outbound request
         working-directory: e2e
         env:
           SHELFHOLD_IMAGE: shelfhold:ci
+          E2E_SHARD: ${{ matrix.shard }}
         run: uv run --project ../backend --locked pytest tests

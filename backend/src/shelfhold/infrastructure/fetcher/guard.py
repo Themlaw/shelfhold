@@ -55,6 +55,7 @@ _V6_BLOCKED: Final = [
 ]
 _NAT64: Final = ipaddress.ip_network("64:ff9b::/96")
 _SIXTOFOUR: Final = ipaddress.ip_network("2002::/16")
+_TEREDO: Final = ipaddress.ip_network("2001::/32")
 _METADATA: Final = (ipaddress.ip_address("169.254.169.254"), ipaddress.ip_address("fd00:ec2::254"))
 _NUMERIC_LABEL: Final = re.compile(r"0x[0-9a-f]*|[0-9]+", re.IGNORECASE)
 _V4_UNSPECIFIED: Final = ipaddress.IPv4Address(0)
@@ -96,6 +97,22 @@ def effective_v4(ip: IPAddress) -> ipaddress.IPv4Address | None:
     return None
 
 
+def embedded_v4(ip: IPAddress) -> list[ipaddress.IPv4Address]:
+    """Every IPv4 address an IPv6 transition form carries: mapped, NAT64, 6to4, and Teredo (the
+    server and the obfuscated client, which is the bit-wise complement of the last 4 bytes)."""
+    if isinstance(ip, ipaddress.IPv4Address):
+        return []
+    found = []
+    carried = effective_v4(ip)
+    if carried is not None:
+        found.append(carried)
+    if ip in _TEREDO:
+        packed = ip.packed
+        found.append(ipaddress.IPv4Address(packed[4:8]))
+        found.append(ipaddress.IPv4Address(bytes(b ^ 0xFF for b in packed[12:])))
+    return found
+
+
 def block_reason(ip: IPAddress) -> str | None:
     """Why a public destination may not be this address, or None when it may."""
     v4 = effective_v4(ip)
@@ -119,6 +136,8 @@ def lan_block_reason(ip: IPAddress) -> str | None:
     """What stays forbidden even for a declared LAN target: it is the admin's own network, so
     private, loopback, CGNAT, link-local and ULA are allowed, but never the cloud metadata
     service, multicast, broadcast, the unspecified address or the reserved ranges."""
+    if any(v4.is_global for v4 in embedded_v4(ip)) and not isinstance(ip, ipaddress.IPv4Address):
+        return "an IPv6 transition address that carries a public IPv4"
     v4 = effective_v4(ip)
     if v4 is not None:
         if v4 in _METADATA or ip in _METADATA:

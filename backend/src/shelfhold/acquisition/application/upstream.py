@@ -44,6 +44,7 @@ __all__ = [
 log = structlog.get_logger(__name__)
 CAPABILITY: Final = "upstream_restore"
 SCHEMA_VERSION: Final = 1
+EXCLUSION_MARK: Final = "Shelfhold"  # the name of the category that holds a series out of updates
 MAX_PAYLOAD_BYTES: Final = 16 * 1024
 _SECRET_WORDS: Final = ("password", "passwd", "secret", "token", "apikey", "api_key", "cookie")
 
@@ -124,12 +125,32 @@ class UpstreamSnapshots:
                 report.failed.append((ref, type(error).__name__))
         return report
 
+    async def record_exclusions(
+        self, service: Any, f: Fetcher, *, connected_service_id: str
+    ) -> dict[str, list[int]]:
+        """`record_exclusion` for every series Shelfhold follows through an adoption pairing: the
+        moment it takes hold of them (right after the snapshot). A series that fails does not
+        stop the others; the next call tries it again."""
+        recorded: dict[str, list[int]] = {}
+        for _, ref in self.followed(connected_service_id, None):
+            try:
+                added = await self.record_exclusion(
+                    service, f, connected_service_id=connected_service_id, ref=ref
+                )
+            except Exception:  # one series must not hide the rest
+                log.warning("upstream.record_exclusion_failed", series=series_key(ref))
+                continue
+            if added:
+                recorded[series_key(ref)] = added
+        return recorded
+
     async def record_exclusion(
         self, service: Any, f: Fetcher, *, connected_service_id: str, ref: SeriesRef
     ) -> list[int]:
         """Once the series is held out of the scheduled updates (after the pairing), remember
-        which exclusion categories are new since the snapshot: the only ones a detachment
-        removes. Returns their ids."""
+        which exclusion categories are new since the snapshot and bear Shelfhold's mark (the
+        category named `EXCLUSION_MARK`): the only ones a detachment removes. An exclusion under
+        another name is the administrator's own. Returns their ids."""
         key = series_key(ref)
         snap = self.get(connected_service_id, key)
         if snap is None:
@@ -139,7 +160,9 @@ class UpstreamSnapshots:
         added = sorted(
             int(c["id"])
             for c in now.get("categories", [])
-            if c.get("include_in_update") == "EXCLUDE" and int(c["id"]) not in known
+            if c.get("include_in_update") == "EXCLUDE"
+            and c.get("name") == EXCLUSION_MARK
+            and int(c["id"]) not in known
         )
         payload = validate_payload({**snap, "shelfhold_excluded": added})
         table = acquisition.upstream_snapshot
@@ -307,6 +330,14 @@ class Detacher:
                                    error=type(error).__name__, note=note)
                 )  # fmt: skip
                 continue
+            kept = getattr(service, "kept_exclusions", None)
+            if kept is not None:  # an exclusion that is not Shelfhold's stays, and is said
+                try:
+                    left = await kept(f, ref)
+                except Exception:  # reading it is a courtesy; the restoration is done
+                    left = []
+                if left:
+                    note = "exclusion_kept|" + ", ".join(left)
             self._stop_following(binding_id)
             self._snapshots.forget(self._service_id, key)
             report.series.append(

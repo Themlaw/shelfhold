@@ -76,6 +76,15 @@ class LanguageOut(BaseModel):
     lang: str
 
 
+class SeriesNameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class SeriesNameOut(BaseModel):
+    export_series_id: str
+    name: str
+
+
 class FollowFromIn(BaseModel):
     series: str = Field(min_length=1)
     chapter: str = Field(min_length=1)
@@ -214,6 +223,14 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     def edition_set_lang(edition_id: str, body: LanguageIn, _admin: Admin) -> LanguageOut:
         with refusals():
             return LanguageOut(lang=get_ops().edition_set_lang(edition_id, body.lang))
+
+    @router.post(_path("edition", "set-series-name"), response_model=SeriesNameOut)
+    def edition_set_series_name(
+        edition_id: str, body: SeriesNameIn, _admin: Admin
+    ) -> SeriesNameOut:
+        with refusals():
+            series_id, name = get_ops().edition_set_series_name(edition_id, body.name)
+            return SeriesNameOut(export_series_id=series_id, name=name)
 
     @router.post(_path("adopt", "set-follow-from"))
     def adopt_set_follow_from(destination_id: str, body: FollowFromIn, _admin: Admin) -> Done:

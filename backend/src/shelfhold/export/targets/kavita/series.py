@@ -16,13 +16,15 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
 
+from shelfhold.export.application.foreign_names import save_foreign_names
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.domain.naming import normalize_series_name
 from shelfhold.export.targets.kavita import dto
 from shelfhold.export.targets.kavita.client import KavitaClient
+from shelfhold.export.targets.kavita.errors import ListingIncomplete, TargetError
 from shelfhold.infrastructure.schema import export
 
-__all__ = ["Resolution", "SeriesResolver", "folded", "refresh_names"]
+__all__ = ["Resolution", "SeriesResolver", "folded", "refresh_foreign_names", "refresh_names"]
 
 
 def folded(name: str) -> str:
@@ -141,3 +143,25 @@ async def refresh_names(engine: Engine, client: KavitaClient, destination_id: st
             continue
         changed += 1
     return changed
+
+
+async def refresh_foreign_names(engine: Engine, client: KavitaClient, destination_id: str) -> int:
+    """Read the names of every series the target library shows, and keep their normalized forms
+    (`foreign_names`): a series nobody from Shelfhold wrote still bears its name (EF-EXP-032).
+    A listing that cannot be read leaves the last one in place; nothing is written in Kavita."""
+    with engine.connect() as connection:
+        ctx = load_context(connection, destination_id)
+        library = connection.execute(
+            sa.select(export.remote_library.c.remote_ref).where(
+                export.remote_library.c.id == ctx.remote_library_id
+            )
+        ).scalar()
+    if library is None or not str(library).isdigit():
+        return 0
+    try:
+        listed = await client.series_of_library(int(library))
+    except (TargetError, ListingIncomplete):
+        return 0
+    names = {normalize_series_name(s.name) for s in listed}
+    save_foreign_names(engine, destination_id, sorted(n for n in names if n))
+    return len(names)

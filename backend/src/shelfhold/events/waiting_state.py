@@ -28,6 +28,8 @@ class WaitingState(StrEnum):
     TOMBSTONE_KEY_UNKNOWN = "tombstone_key_unknown"
     TOMBSTONE_LINES_OWED = "tombstone_lines_owed"
     ROUTE_MISSING = "route_missing"
+    SERIES_NAME_COLLISION = "series_name_collision"
+    MOUNT_SENTINEL_MISSING = "mount_sentinel_missing"  # event `mount.sentinel_missing`
     # M1b
     RATING_PENDING = "rating_pending"
     FOLLOW_SUSPENDED = "follow_suspended"

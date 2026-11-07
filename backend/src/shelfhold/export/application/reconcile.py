@@ -25,6 +25,7 @@ from shelfhold.export.application.preflight import (
     PermissionPreflight,
 )
 from shelfhold.export.application.snapshot import load_context
+from shelfhold.export.application.waiting_marks import clear_mount_blocked, mark_mount_blocked
 from shelfhold.export.domain.physical_roots import RESERVED_DIR, SENTINEL_FILE, RootState
 from shelfhold.export.domain.reconcile import (
     LIVE_STATES,
@@ -136,6 +137,7 @@ class Reconciler:
             return ReconcileReport(blocked="missing_ratio")
 
         self._blocked.pop(destination_id, None)  # the state changed: a new block is news again
+        clear_mount_blocked(self._engine, destination_id)
         folders = sorted({f.rel_path.split("/", 1)[0] for f in managed})
         known = {f.rel_path for f in managed}
         foreign: dict[str, str] = {}  # folder -> why
@@ -339,6 +341,7 @@ class Reconciler:
         if self._blocked.get(destination_id) != reason:  # once while the state does not change
             self._blocked[destination_id] = reason
             self._announce(destination_id, "mount.sentinel_missing", reason=reason)
+        mark_mount_blocked(self._engine, destination_id, reason)  # `status` shows it
 
     def _refresh(self, refresh: list[tuple[str, int, int, int, int]], settled: list[str]) -> None:
         if not refresh and not settled:

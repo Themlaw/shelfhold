@@ -6,6 +6,7 @@ Kavita and Suwayomi are the simulated servers of backend/tests/fakes behind a so
 Shelfhold wrote". Every step is a `shelfhold` command typed in the container: no SQL.
 """
 
+import json
 import subprocess
 import time
 
@@ -139,6 +140,7 @@ def test_redeploy_recreates_container_without_loss(journey: Journey) -> None:
         check=True,  # noqa: S607
     ).stdout.split("\n")
     runtime = {"/usr", "/usr/sbin", "/usr/sbin/docker-init", "/library", "/data", "/store", "/tmp"}
+    runtime.add("/open-window")  # the mount point of the journey overlay (journey.yaml)
     written = [line for line in diff if line and line.split(" ", 1)[1] not in runtime]
     assert written == []  # read_only: only the runtime's own init and mount points differ
     migrated = j.container_id("shelfhold-migrate")
@@ -227,3 +229,158 @@ def test_detach_restores_suwayomi_updates_and_leaves_files(journey: Journey) -> 
     assert after == before  # .shelfhold/ is excluded: the lease is rewritten by its heartbeat
     state = j.suwayomi()
     assert "violations" in state and state["violations"] == []
+
+
+@pytest.mark.e2e_timeout(480)
+@pytest.mark.req("EF-EXP-056", "EF-INT-024")
+def test_detach_removes_the_exclusion_shelfhold_placed_and_keeps_the_administrator_s(
+    journey: Journey,
+) -> None:
+    """Two adopted series are paired with Suwayomi one after the other; between the two, the
+    category `Shelfhold` that holds a series out of Suwayomi's updates and another one the
+    administrator added are in place. `detach --restore-upstream` removes the first and leaves
+    the second, and says so (EF-EXP-056)."""
+    j = journey
+    install_by_commands(j)
+    j.adopted_series("Series Alpha")
+    j.adopted_series("Series Beta")
+    library = str(j.kavita()["libraries"][0]["id"])  # type: ignore[index]
+    (row,) = j.sql("select id from shelf_destination where transport = 'tree'")
+    base = ("adopt", "--destination", str(row[0]), "--library", library)
+    preview = j.shelfhold(*base, "--dry-run")
+    assert preview.code == 0, preview.err
+    fingerprint = preview.out.split("aperçu :")[1].split()[0]
+    adopted = j.shelfhold(*base, "--confirm", fingerprint)
+    assert adopted.code == 0, adopted.err
+    destination = str(row[0])
+    listing = j.shelfhold("adopt", "pair", "--destination", destination).out
+    alpha, beta = (
+        next(line.split()[1] for line in listing.splitlines() if f"Series {n}" in line)
+        for n in ("Alpha", "Beta")
+    )
+
+    def pair(series_id: str, key: str, remote: str) -> None:
+        done = j.shelfhold(
+            "adopt", "pair", "--destination", destination, "--series", series_id,
+            "--source-key", key, "--remote-id", remote, "--follow-from", "1",
+        )  # fmt: skip
+        assert done.code == 0, done.err + done.out
+
+    j.suwayomi_category("Reading", exclude=False, assign=("/series-alpha",))  # there before
+    pair(alpha, "suwayomi:7001", "/series-alpha")  # Shelfhold takes hold of Alpha: snapshot
+    # then the categories: the one Shelfhold holds the series out of updates with, and the
+    # administrator's own, both excluding Alpha from Suwayomi's scheduled updates
+    j.suwayomi_category("Shelfhold", exclude=True, assign=("/series-alpha",))
+    j.suwayomi_category("MyDropped", exclude=True, assign=("/series-alpha",))
+    pair(beta, "suwayomi:7002", "/series-beta")  # the next takeover writes down what Shelfhold put
+    ((payload,),) = j.sql(
+        "select payload from upstream_snapshot where series_ref like '%series-alpha'"
+    )
+    assert json.loads(str(payload))["shelfhold_excluded"] == [2]  # `Shelfhold`, not `MyDropped`
+    detached = j.shelfhold("detach", "--restore-upstream")
+    assert detached.code == 0, detached.err
+    assert "MyDropped" in detached.out  # the exclusion that stays is said
+    categories = j.suwayomi()["assigned"]["/series-alpha"]  # type: ignore[index]
+    assert categories == [
+        1,
+        3,
+    ]  # Reading (it was there before) and MyDropped (the administrator's) remain
+
+
+FOREIGN = "foreign-writer.cbz"
+
+
+@pytest.mark.e2e_timeout(480)
+@pytest.mark.req("EF-INT-023", "EF-EXP-043", "EF-INT-024")
+def test_exits_work_after_target_add_on_the_running_server(journey: Journey) -> None:
+    """`target add` is typed while the server runs: the roots it registers are read by the exits
+    that follow (`series resume`, `target recheck`), not the ones known at start (L60)."""
+    j = journey
+    install_by_commands(j)  # the server was started before any root existed
+    j.discover_series()
+    j.publish_upstream()
+    assert j.follow_until(lambda: any(f.endswith("Ch.2.cbz") for f in j.library_files()), 300)
+    exported = next(f for f in j.library_files() if f.endswith("Ch.2.cbz"))
+    folder = exported.rsplit("/", 1)[0]
+    # the export that wrote Ch.2 is closed (a path under an open intent is not looked at)
+    assert wait_for(lambda: open_intents(j) == 0, 120)
+    j.put(f"{folder}/{FOREIGN}", "not ours")  # another writer, in the folder Shelfhold manages
+
+    def paused() -> bool:
+        assert j.shelfhold("jobs", "run", "reconcile.cycle").code == 0
+        return "paused_foreign_writer" in j.waiting()
+
+    assert wait_for(paused, 120), j.shelfhold("status").out
+    (item,) = j.waiting()["paused_foreign_writer"]
+    assert str(item["command"]).startswith("shelfhold series resume ")
+    resumed = j.shelfhold("series", "resume", str(item["subject"]))
+    assert resumed.code == 0, resumed.err + resumed.out
+    assert "OutsidePathMapError" not in resumed.err
+    target = j.db_value("select id from export_target")
+    rechecked = j.shelfhold("target", "recheck", target)
+    assert rechecked.code == 0, rechecked.err + rechecked.out
+    assert "OutsidePathMapError" not in rechecked.err
+
+
+def exported_cbz(j: Journey) -> list[str]:
+    """The files in the series folders of the shelf (the received ones wait under .shelfhold)."""
+    return [f for f in j.library_files() if f.endswith(".cbz") and "/.shelfhold/" not in f]
+
+
+@pytest.mark.e2e_timeout(480)
+@pytest.mark.req("EF-EXP-032", "EF-INT-023")
+def test_two_series_with_one_title_wait_for_a_name_then_export(journey: Journey) -> None:
+    """The same title in `en` and in `fr`: nothing is written silently under one name. `status`
+    names both Editions and the command; the name given, both series are exported (L60)."""
+    j = journey
+    install_by_commands(j)
+    j.twin_titles()
+    j.discover_series()
+    j.publish_upstream()
+    assert j.follow_until(lambda: "series_name_collision" in j.waiting(), 300), (
+        j.shelfhold("status").out
+    )
+    items = j.waiting()["series_name_collision"]
+    assert len(items) == 2
+    assert exported_cbz(j) == []  # no silent skip, no overwrite (received files stay in .shelfhold)
+    command = str(items[0]["command"])
+    assert command.startswith("shelfhold edition set-series-name ")
+    named = j.shelfhold("edition", "set-series-name", str(items[0]["subject"]), "Series Alpha (fr)")
+    assert named.code == 0, named.err + named.out
+    assert j.shelfhold("jobs", "run", "export.run").code == 0
+    assert wait_for(
+        lambda: len(exported_cbz(j)) >= 2
+        and "series_name_collision" not in j.waiting(),
+        120,
+    ), j.shelfhold("status").out
+    folders = {f.split("/")[3] for f in exported_cbz(j)}
+    assert len(folders) == 2  # two series, two names
+
+
+@pytest.mark.e2e_timeout(480)
+@pytest.mark.req("EF-EXP-032", "EF-INT-023")
+def test_name_taken_by_a_series_of_another_source_in_kavita_waits_for_a_name(
+    journey: Journey,
+) -> None:
+    """Kavita already shows "Series Alpha", written by someone else: nothing is exported under
+    that name, `status` lists the Edition, the exit refuses the same name and takes another."""
+    j = journey
+    install_by_commands(j)
+    j.foreign_series("Series Alpha")
+    j.discover_series()
+    j.publish_upstream()
+    assert j.follow_until(lambda: "series_name_collision" in j.waiting(), 300), (
+        j.shelfhold("status").out
+    )
+    (item,) = j.waiting()["series_name_collision"]
+    assert not any("Series Alpha/" in f for f in exported_cbz(j))
+    taken = j.shelfhold("edition", "set-series-name", str(item["subject"]), "series  alpha")
+    assert taken.code != 0  # the foreign series bears that name (normalized)
+    named = j.shelfhold("edition", "set-series-name", str(item["subject"]), "Series Alpha (mine)")
+    assert named.code == 0, named.err + named.out
+    assert j.shelfhold("jobs", "run", "export.run").code == 0
+    assert wait_for(
+        lambda: any("Series Alpha (mine)/" in f for f in exported_cbz(j))
+        and "series_name_collision" not in j.waiting(),
+        120,
+    ), j.shelfhold("status").out

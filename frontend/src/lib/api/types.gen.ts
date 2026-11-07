@@ -811,6 +811,30 @@ export type SecretIn = {
 };
 
 /**
+ * SeriesNameIn
+ */
+export type SeriesNameIn = {
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * SeriesNameOut
+ */
+export type SeriesNameOut = {
+    /**
+     * Export Series Id
+     */
+    export_series_id: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * SessionInfo
  */
 export type SessionInfo = {
@@ -1700,6 +1724,44 @@ export type EditionSetLangResponses = {
 };
 
 export type EditionSetLangResponse = EditionSetLangResponses[keyof EditionSetLangResponses];
+
+export type EditionSetSeriesNameData = {
+    body: SeriesNameIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/series-name';
+};
+
+export type EditionSetSeriesNameErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EditionSetSeriesNameError = EditionSetSeriesNameErrors[keyof EditionSetSeriesNameErrors];
+
+export type EditionSetSeriesNameResponses = {
+    /**
+     * Successful Response
+     */
+    200: SeriesNameOut;
+};
+
+export type EditionSetSeriesNameResponse = EditionSetSeriesNameResponses[keyof EditionSetSeriesNameResponses];
 
 export type IntentsListData = {
     body?: never;

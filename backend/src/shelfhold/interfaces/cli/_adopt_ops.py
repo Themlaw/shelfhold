@@ -170,6 +170,7 @@ def _report_check(check: dict[str, Any]) -> int:
             "no_library": t("repatriate.kavita_no_library"),
             "baseline_incomplete": t("repatriate.kavita_baseline_incomplete"),
             "incomplete": t("repatriate.kavita_incomplete"),
+            "scan_refused": t("repatriate.kavita_scan_refused"),
         }
         print(reasons.get(kavita["reason"], t("repatriate.kavita_not_asked")), file=sys.stderr)
     else:
@@ -189,6 +190,9 @@ def run_detach(args: argparse.Namespace, channel: OpsChannel) -> int:
     for row in done["series"]:
         print(t("detach.line", binding=row["binding_id"], source=row["restored_from"],
                 ok=t("detach.ok") if row["ok"] else (row["error"] or "?")))  # fmt: skip
+        if str(row.get("note") or "").startswith("exclusion_kept|"):
+            print(t("detach.exclusion_kept", binding=row["binding_id"],
+                    names=row["note"].removeprefix("exclusion_kept|")))  # fmt: skip
     for folder, files in done["managed"].items():
         print(t("detach.managed", folder=folder, count=len(files)))
     print(t("detach.files_kept"))

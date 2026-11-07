@@ -39,6 +39,8 @@ NOT_RESERVED = {
     ("adopt set-follow-from", "coverage_unknown"),
     ("edition set-lang", "language_unknown"),
     ("tombstone flush", "tombstone_lines_owed"),  # contradictor review, blocker 3
+    ("target recheck", "mount_sentinel_missing"),  # L60: EF-EXP-029 in `status`
+    ("edition set-series-name", "series_name_collision"),  # L60: EF-EXP-032
     ("reconcile --adopt-after-restore", "restored_behind"),
     ("jobs list", "safeguard_backlog"),
     ("root restored", "root_behind"),

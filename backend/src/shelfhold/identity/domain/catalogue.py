@@ -112,6 +112,8 @@ EXIT_ROUTES: tuple[ExitRoute, ...] = (
     _exit("tombstone set-aside-journal", "restored_behind", "tombstone.set_aside_journal"),
     _exit("tombstone flush", "tombstone_lines_owed"),
     _exit("target recheck", "route_missing"),
+    _exit("edition set-series-name", "series_name_collision"),
+    _exit("target recheck", "mount_sentinel_missing"),
     # M1b
     _exit("rate", "rating_pending", "rate"),
     _exit("rate", "follow_suspended", "rate"),

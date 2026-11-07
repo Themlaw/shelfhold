@@ -222,6 +222,17 @@ class InstanceRuntime:
         watcher = DiskWatcher(guard, self.pools, engine=engine, bus=bus)
 
         def disk_check() -> None:
+            with engine.connect() as conn:  # a root added since start-up is watched too
+                roots = (
+                    conn.execute(
+                        sa.select(platform.physical_root.c.path_entry).where(
+                            platform.physical_root.c.mode == PathMode.RW.value
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            guard.follow_roots(roots)
             watcher.check()
             composition.flush_owed_tombstones()  # a root that came back pays what it owes
 

@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import sqlalchemy as sa
+from sqlalchemy import Engine
 
 from shelfhold.config import Settings
 from shelfhold.export.application.pipeline import ExportPipeline
@@ -20,7 +21,7 @@ from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.schema import platform
 
-__all__ = ["open_pipeline"]
+__all__ = ["open_pipeline", "roots_signature"]
 
 
 class NoRemoteParse:
@@ -32,6 +33,17 @@ class NoRemoteParse:
 
 def _unchecked(_name: str) -> Parsed:
     return NoRemoteParse()
+
+
+def roots_signature(engine: Engine) -> tuple[tuple[str, str, str], ...]:
+    """What the registered physical roots are now: a pipeline opened for another signature has
+    stale roots (`target add` registers one while the server runs)."""
+    table = platform.physical_root
+    with engine.connect() as connection:
+        rows = connection.execute(
+            sa.select(table.c.root_id, table.c.path_entry, table.c.mode).order_by(table.c.root_id)
+        )
+        return tuple((r.root_id, r.path_entry, r.mode) for r in rows)
 
 
 def open_pipeline(

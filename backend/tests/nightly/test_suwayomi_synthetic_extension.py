@@ -87,6 +87,7 @@ def bench(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ExtensionBench]:
             pytest.fail(f"the synthetic extension was not built at {APK}")
         pytest.skip(f"no synthetic extension built at {APK} (run build.sh)")
     data = tmp_path_factory.mktemp("suwayomi-extension")
+    data.chmod(0o777)  # the container's user is not the runner's: it writes its data here
     instance = ExtensionBench(
         mode="basic_auth",
         data_dir=data,
@@ -137,7 +138,11 @@ def test_contract_synthetic_extension_plays_download_queue(bench: ExtensionBench
     bench.gql(
         f"mutation {{ enqueueChapterDownload(input: {{id: {first['id']}}}) {{ __typename }} }}"
     )
-    bench.gql("mutation { startDownloader(input: {}) { __typename } }")
+    try:  # the host waits for a state change: it times out when the queue already runs
+        bench.gql("mutation { startDownloader(input: {}) { __typename } }")
+    except AssertionError as error:
+        if "Timed out waiting" not in str(error):
+            raise
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         if bench.gql(f"{{ chapter(id: {first['id']}) {{ isDownloaded }} }}")["chapter"][

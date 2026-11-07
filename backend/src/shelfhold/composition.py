@@ -34,6 +34,7 @@ from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR, RootState
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.wiring import open_client
+from shelfhold.headless.urls import service_url_problem
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.fetcher import GuardedFetcher, Network
 from shelfhold.infrastructure.fsops import Fsops
@@ -349,6 +350,8 @@ class Composition:
             if not url:
                 return None
             secret = self._suwayomi_secret(connection)
+        if service_url_problem(str(url)) is not None:  # edited behind the facade, or its name moved
+            return None  # no request leaves for it; `status` says why
         guarded = self.network.integration_fetcher(url)
         fetcher: Any = guarded
         if secret is not None:

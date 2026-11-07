@@ -270,7 +270,10 @@ class FakeSuwayomi:
         return {"name": self.state["name"], "version": self.version, "buildType": "Stable"}
 
     def _q_settings(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-        return {"authMode": self.auth_mode.upper()}
+        return {
+            "authMode": self.auth_mode.upper(),
+            "downloadsPath": self.state.get("downloads_path", "/downloads"),
+        }
 
     def _q_sources(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         return {"nodes": copy.deepcopy(self.state["sources"])}

@@ -51,10 +51,10 @@ class Seeded:
     tmp: Path
     scans: rj.ScanRelay = field(default_factory=rj.ScanRelay)
 
-    def new_series(self, title: str = "Dr Stone") -> Series:
+    def new_series(self, title: str = "Dr Stone", *, lang: str = "fr") -> Series:
         with self.inst.engine.begin() as connection:
             work = add_work(connection, title=title, sort_title=title.lower())
-            edition = add_edition(connection, work, lang="fr", shelf_id=self.shelf_id)
+            edition = add_edition(connection, work, lang=lang, shelf_id=self.shelf_id)
             item = add_source_item(connection, remote_id=f"series-{new_ulid()}")
             binding = add_binding(connection, work, edition, item)
         return Series(work, edition, binding)

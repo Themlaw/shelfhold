@@ -26,3 +26,13 @@ class SystemResolver:
         for info in infos:
             seen[str(info[4][0]).split("%", 1)[0]] = None
         return list(seen)
+
+
+def resolve_host(host: str) -> list[str]:
+    """The addresses a name resolves to now (synchronous, for the validation of a configured URL);
+    empty when it does not resolve."""
+    try:
+        found = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except OSError:
+        return []
+    return sorted({str(item[4][0]).split("%", 1)[0] for item in found})

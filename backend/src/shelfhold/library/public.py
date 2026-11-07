@@ -20,6 +20,7 @@ from shelfhold.library.adapters.purge_inventory import (
     derived_rels,
     unresolved_bin_items,
 )
+from shelfhold.library.adapters.ranged import RangedKeeper
 from shelfhold.library.adapters.receive import Received, receive_cbz
 from shelfhold.library.adapters.received_migration import migrate_received_dirs
 from shelfhold.library.adapters.safeguard import Safeguard, SafeguardResult
@@ -119,6 +120,7 @@ __all__ = [
     "PlaceRef",
     "PurgeAuthorization",
     "PurgeRefusedError",
+    "RangedKeeper",
     "Received",
     "ReceivedTooLargeError",
     "RepairReport",

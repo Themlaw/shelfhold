@@ -27,6 +27,7 @@ from shelfhold.export.application.snapshot import DestinationContext, load_conte
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.emitters import PROBE_NAME, new_probe_name
+from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.schema import export
 
 __all__ = [
@@ -63,6 +64,7 @@ class ProbeResult:
     runs_as: tuple[int, int]
     owner: Owner | None
     fix: str  # the commands, empty when the probe passed
+    blocked: RootBlockedError | None = None  # the sentinel refused the write (EF-EXP-029)
 
     def explain(self) -> str:
         """The message of a refusal: what failed, where, who owns it, and what to run."""
@@ -248,6 +250,7 @@ class FolderProbe:
             return ProbeResult(
                 False, folder, tuple(done), step, _errno_name(error), ids, owner,
                 fix_commands(folder, ids, owner, _errno_name(error)),
+                error if isinstance(error, RootBlockedError) else None,
             )  # fmt: skip
         finally:
             if current is not None:  # a step failed with the probe file in place: take it away
@@ -291,6 +294,8 @@ class PermissionPreflight:
         self.sweep(destination_id)
         result = self.check_root(destination_id)
         if result is not None and not result.ok:
+            if result.blocked is not None:  # a mount without its sentinel is not a rights problem
+                raise result.blocked
             raise DestinationNotWritableError(result)
 
     def series_folder(self, destination_id: str, export_series_id: str) -> str | None:

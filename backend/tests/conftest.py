@@ -70,3 +70,12 @@ def malicious() -> ModuleType:
     sys.modules[spec.name] = module  # dataclasses resolve their module through sys.modules
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(autouse=True)
+def _no_dns_in_url_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The URL rule resolves names (ENF-SEC-001); a test never reaches the network for it. A name
+    resolves to nothing unless the test says otherwise (`shelfhold.headless.urls._resolver`)."""
+    import shelfhold.headless.urls as urls
+
+    monkeypatch.setattr(urls, "_resolver", lambda: lambda _host: [])

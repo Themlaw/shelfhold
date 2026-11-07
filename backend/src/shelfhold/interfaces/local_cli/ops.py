@@ -139,6 +139,11 @@ def _edition_set_lang(ops: OpsServices, _by: Principal, p: Params) -> object:
     return {"lang": ops.edition_set_lang(_text(p, "edition_id"), _text(p, "lang"))}
 
 
+def _edition_set_series_name(ops: OpsServices, _by: Principal, p: Params) -> object:
+    series_id, name = ops.edition_set_series_name(_text(p, "edition_id"), _text(p, "name"))
+    return {"export_series_id": series_id, "name": name}
+
+
 def _restore_adopt(ops: OpsServices, by: Principal, p: Params) -> object:
     ops.restore_adopt(confirm_deletion=_flag(p, "confirm_deletion"), principal=by)
     return {"ok": True}
@@ -319,6 +324,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.source_set_secret": (_source_set_secret, "source.set_secret"),
     "ops.source_recheck": (_source_recheck, None),
     "ops.edition_set_lang": (_edition_set_lang, None),
+    "ops.edition_set_series_name": (_edition_set_series_name, None),
     "ops.restore_adopt": (_restore_adopt, "reconcile.confirm_deletion"),
     "ops.tombstone_accept_lost_keyring": (_accept_lost_keyring, "tombstone.accept_lost_keyring"),
     "ops.tombstone_set_aside_journal": (_set_aside_journal, "tombstone.set_aside_journal"),

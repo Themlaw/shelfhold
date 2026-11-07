@@ -136,9 +136,7 @@ category = "unwired-m1b-l25"
 reason = "One physical root per device (EF-EXP-059) and the sentinel states at root takeover/reinit; M1a registers roots in root_bootstrap and every write already goes through the gated fsops primitives (the pre-checks of scan and delete are their L25 callers)."
 until = "M1b L25"
 symbols = [
-  "shelfhold.export.domain.physical_roots:SentinelVerdict",
   "shelfhold.infrastructure.fsops.facade:Fsops.require_delete_allowed",
-  "shelfhold.infrastructure.fsops.facade:Fsops.require_scan_allowed",
 ]
 
 [[allow]]
@@ -148,7 +146,6 @@ until = "M1b L31"
 symbols = [
   "shelfhold.acquisition.application.presence:present_for_acquisition",
   "shelfhold.acquisition.application.presence:present_in",
-  "shelfhold.acquisition.application.upstream:UpstreamSnapshots.record_exclusion",
   "shelfhold.catalog.adapters.repo:SqlUnitStore.mark_removed",
   "shelfhold.catalog.adapters.repo:SqlUnitStore.units_in_order",
   "shelfhold.catalog.adapters.repo:SqlWorkStore.series_of",
@@ -176,7 +173,6 @@ symbols = [
   "shelfhold.export.application.intents:RenameStep",
   "shelfhold.export.application.intents:ResolveReport.still_open",
   "shelfhold.export.application.migration_detect:SwitchoverDetector.classify_download_dir",
-  "shelfhold.export.application.migration_detect:SwitchoverGate.declare_download_dir",
   "shelfhold.export.domain.naming:check_incoming",
   "shelfhold.export.domain.naming:find_number_collisions",
   "shelfhold.export.domain.naming:manifest_entry",

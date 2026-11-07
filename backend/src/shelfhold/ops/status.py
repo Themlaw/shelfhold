@@ -53,6 +53,8 @@ _TEMPLATES = {
     "child_exposure": "shelfhold target recheck {subject}",
     "route_missing": "shelfhold target recheck {subject}",
     "language_unknown": "shelfhold edition set-lang {subject} <lang>",
+    "mount_sentinel_missing": "shelfhold target recheck {extra}",
+    "series_name_collision": 'shelfhold edition set-series-name {subject} "<name>"',
     "restored_behind": "shelfhold reconcile --adopt-after-restore",
     "tombstone_key_unknown": "shelfhold tombstone accept-lost-keyring",
     "tombstone_lines_owed": "shelfhold tombstone flush",
@@ -310,3 +312,53 @@ def known_bad_report(connection: Connection, today: date) -> dict[str, object]:
         ],
         "targets": targets,
     }
+
+
+def service_url_report(connection: Connection) -> list[dict[str, object]]:
+    """A service address (Suwayomi) the URL rule refuses now: no request leaves for it, and the
+    administrator is told which address and why (ENF-SEC-001). Fixed by `source add suwayomi`."""
+    from shelfhold.headless.urls import service_url_problem
+
+    found: list[dict[str, object]] = []
+    for settings in connection.execute(
+        sa.select(acquisition.source_config.c.settings).where(
+            acquisition.source_config.c.plugin_id == "suwayomi"
+        )
+    ).scalars():
+        url = (settings or {}).get("base_url")
+        problem = service_url_problem(str(url)) if url else None
+        if problem is not None:
+            found.append(
+                {"service": "suwayomi", "url": _without_userinfo(str(url)), "reason": problem}
+            )
+    return found
+
+
+def _without_userinfo(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    return f"{parts.scheme}://{host}{':' + str(parts.port) if parts.port else ''}{parts.path}"
+
+
+def unverifiable_download_dirs(connection: Connection) -> list[dict[str, object]]:
+    """The shelves for which the download folder Suwayomi reports could not be compared with the
+    library (empty, relative, or in Suwayomi's own namespace): "not verifiable" is said, not
+    silence (EF-EXP-044; 01 has no path map on the source side)."""
+    table = platform.app_setting
+    found: list[dict[str, object]] = []
+    prefix = "switchover.dir_unverifiable."
+    for row in connection.execute(
+        sa.select(table.c.key, table.c.value)
+        .where(table.c.key.like(prefix + "%"))
+        .order_by(table.c.key)
+    ):
+        import json
+
+        detail = json.loads(row.value)
+        found.append(
+            {"destination": row.key[len(prefix) :], "reason": detail.get("reason"),
+             "path": detail.get("path", "")}
+        )  # fmt: skip
+    return found

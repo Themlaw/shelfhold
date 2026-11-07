@@ -207,12 +207,19 @@ async def verify(
     *,
     unreachable: tuple[type[Exception], ...],
     sleep: Callable[[float], Any] = asyncio.sleep,
+    scan_allowed: Callable[[str], bool] | None = None,
 ) -> KavitaVerdict:
-    """Scan, then read until Kavita agrees with the baseline or the attempts are spent."""
+    """Scan, then read until Kavita agrees with the baseline or the attempts are spent.
+
+    `scan_allowed(remote_root)` is the sentinel's word on the folder (EF-EXP-029): a scan of a
+    folder whose mount is not the expected one would make Kavita drop its series, so it is not
+    sent and the check says so."""
     if baseline is None:
         return KavitaVerdict(reason="no_baseline")
     if library_ref is None:
         return KavitaVerdict(reason="no_library")
+    if scan_allowed is not None and not scan_allowed(remote_root):
+        return KavitaVerdict(reason="scan_refused")
     try:
         await client.scan_folder(remote_root)
         verdict = KavitaVerdict(reason="unreachable")
