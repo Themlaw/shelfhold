@@ -307,6 +307,7 @@ def _migrate_locked(
     state.write(done=0, total=len(steps))
     config = Config()
     config.set_main_option("script_location", str(script_location or default_script_location()))
+    config.attributes["public_url"] = settings.public_url  # 0015 fills the RP ID of passkeys
     engine = create_db_engine(settings.database_path)
     try:
         for index, revision in enumerate(steps):

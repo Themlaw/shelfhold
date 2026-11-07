@@ -811,3 +811,69 @@ def test_a_key_can_neither_register_nor_revoke_a_passkey(
     options = api.client.post(f"{PASSKEYS}/options", json={}, headers=headers)
     assert options.status_code == 403 and options.json()["code"] == "credential_not_allowed"
     assert api.client.delete(f"{PASSKEYS}/x", headers=headers).status_code == 403
+
+
+# --- review PR #95: sessions of a revoked passkey, atomic reset --------------------------------
+
+
+def test_revoking_a_passkey_closes_the_sessions_it_opened(api: AuthEnv) -> None:
+    passkey = registered(api)
+    other = anonymous(api, "198.51.100.110")
+    assert passkey_login(other, passkey).status_code == 200
+    assert other.get("/api/v1/auth/session").status_code == 200
+    [(item_id,)] = db_rows(api.settings, "SELECT id FROM webauthn_credential")
+    assert db_rows(api.settings, "SELECT count(*) FROM session WHERE passkey_id = ?", item_id) == [
+        (1,)
+    ]
+    gone = api.client.delete(f"{PASSKEYS}/{item_id}", headers={CSRF_HEADER: api.csrf()})
+    assert gone.status_code == 204
+    assert other.get("/api/v1/auth/session").status_code == 401  # the stolen device is out
+    assert api.client.get("/api/v1/auth/session").status_code == 200  # the password session stays
+
+
+def test_reset_password_is_one_transaction_a_passkey_login_cannot_slip_through(
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shelfhold.identity.adapters.store import SqlIdentityStore
+
+    passkey = registered(api)
+    real = SqlIdentityStore.insert_session
+    sock = api.settings.data_dir / "shelfhold.sock"
+
+    def reset_first(self: SqlIdentityStore, session: Any) -> None:
+        # the assertion was verified; the host resets the account before the session is written
+        call(sock, "identity.reset_password", {"username": ADMIN, "password": "a new passphrase!"})
+        real(self, session)
+
+    monkeypatch.setattr(SqlIdentityStore, "insert_session", reset_first)
+    client = anonymous(api, "198.51.100.111")
+    refused = passkey_login(client, passkey)
+    assert refused.status_code == 401
+    assert db_rows(api.settings, "SELECT count(*) FROM session WHERE revoked_at IS NULL") == [(0,)]
+    monkeypatch.undo()
+
+
+# --- review PR #95: `status` and the RP ID of the passkeys -------------------------------------
+
+
+def test_status_warns_when_the_rp_id_is_no_longer_the_one_of_the_passkeys(
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from tests.auth_env import run_cli
+
+    registered(api)
+    assert stored_rp_id(api.settings) == "testserver"  # recorded at registration
+    monkeypatch.setenv("SHELFHOLD_PUBLIC_URL", "https://testserver:8443")  # same domain
+    capsys.readouterr()
+    assert run_cli(monkeypatch, api.settings, "status", "--json") == 0
+    assert "passkey_rp_changed" not in capsys.readouterr().out
+    for url in ("https://other.example.org", "http://192.168.1.4:8080"):  # new domain, no domain
+        monkeypatch.setenv("SHELFHOLD_PUBLIC_URL", url)
+        assert run_cli(monkeypatch, api.settings, "status", "--json") == 0
+        out = capsys.readouterr().out
+        assert "passkey_rp_changed" in out and "testserver" in out
+
+
+def stored_rp_id(settings: Settings) -> Any:
+    [(value,)] = db_rows(settings, "SELECT rp_id FROM webauthn_credential")
+    return value

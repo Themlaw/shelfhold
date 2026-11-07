@@ -31,6 +31,7 @@ from shelfhold.identity.application.ports import (
     KeyConflictError,
     NewApiKey,
     NewSession,
+    PasskeyGoneError,
     PasskeyRecord,
     PasswordHasherPort,
     ReauthMethod,
@@ -300,18 +301,22 @@ class LocalAuth:
         user = self._store.user_by_name(username)
         if user is None:
             raise UnknownUserError
-        self._store.set_password_hash(user.id, self._hasher.hash(password))
-        closed = self._store.revoke_sessions(now=self.now(), user_id=user.id)
+        # One transaction: the password, the sessions and the passkeys change together, so a
+        # passkey sign-in cannot slip between the steps (a lost or stolen device is the usual
+        # reason for a reset, ADR-0050: its passkeys go too).
+        closed, revoked = self._store.reset_credentials(
+            user.id, self._hasher.hash(password), now=self.now()
+        )
         self._audit("user.password_reset", by, target=user.id)
-        # A lost or stolen device is the usual reason for a reset: its passkeys go too (ADR-0050);
-        # the new password is the only way back in until a passkey is registered again.
-        if self._store.revoke_passkeys(user.id, now=self.now()):
+        if revoked:
             self._audit("user.passkeys_revoked", by, target=user.id)
         return closed
 
     # --- sessions ----------------------------------------------------------------------------
 
-    def _issue(self, user: UserRecord, *, remember: bool, ip: str | None) -> IssuedSession:
+    def _issue(
+        self, user: UserRecord, *, remember: bool, ip: str | None, passkey_id: str | None = None
+    ) -> IssuedSession:
         now = self.now()
         policy = self._policy(user.role)
         token, csrf = new_token(), new_token()
@@ -326,6 +331,7 @@ class LocalAuth:
                 absolute_expiry=initial_expiry(policy, now),
                 remember=remember,
                 ip=ip,
+                passkey_id=passkey_id,
             )
         )
         principal = Principal(
@@ -501,6 +507,11 @@ class LocalAuth:
             raise InvalidCredentialsError
         return user
 
+    def stale_passkey_rp_ids(self, current_rp_id: str | None) -> list[str]:
+        """RP IDs that live passkeys are bound to and that are not the instance's (ADR-0050,
+        "change of domain"): those passkeys can no longer be used."""
+        return sorted(rp for rp in self._store.passkey_rp_ids() if rp != current_rp_id)
+
     def passkeys_of(self, principal: Principal) -> Sequence[PasskeyRecord]:
         return self._store.passkeys_of(principal.user_id)
 
@@ -563,7 +574,10 @@ class LocalAuth:
             raise RememberNeedsConfirmationError
         if presented_token:  # whatever the browser held is closed, never adopted
             self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
-        issued = self._issue(user, remember=remember, ip=ip)
+        try:
+            issued = self._issue(user, remember=remember, ip=ip, passkey_id=passkey.id)
+        except PasskeyGoneError:  # revoked between the assertion and the session
+            raise self._fail(ip=ip) from None
         self._audit("auth.passkey_login", issued.principal, target=passkey.id)
         return issued
 

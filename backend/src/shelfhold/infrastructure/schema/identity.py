@@ -62,6 +62,7 @@ webauthn_credential = sa.Table(
     sa.Column("sign_count", sa.Integer(), nullable=False, server_default="0"),
     sa.Column("transports", sa.JSON(), nullable=False, server_default="[]"),
     sa.Column("aaguid", sa.String(), nullable=True),
+    sa.Column("rp_id", sa.String(), nullable=True),  # the domain it is bound to (`status` compares)
     sa.Column("name", sa.String(), nullable=False),
     now_column(),
     sa.Column("last_used_at", UtcDateTime(), nullable=True),
@@ -92,10 +93,13 @@ session = sa.Table(
     sa.Column("user_agent_label", sa.String(), nullable=True),
     sa.Column("ip", sa.String(), nullable=True),
     sa.Column("revoked_at", UtcDateTime(), nullable=True),
+    # The passkey that opened it: revoking the passkey closes the session (review PR #95).
+    sa.Column("passkey_id", sa.String(26), nullable=True),  # no FK: see migration 0015
     ulid_check("id"),
     prefixed_hash_check("token_hash"),
     sa.UniqueConstraint("token_hash"),
     sa.Index("ix_session_user", "user_id"),
+    sa.Index("ix_session_passkey", "passkey_id"),
     sa.Index("ix_session_expiry", "absolute_expiry"),
 )
 

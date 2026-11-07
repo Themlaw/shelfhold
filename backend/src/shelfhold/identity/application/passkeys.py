@@ -194,6 +194,7 @@ class PasskeyCeremony:
             aaguid=verified.aaguid,
             name=cleaned,
             now=self._now(),
+            rp_id=rp.id,
         )
         if not self._store.insert_passkey(new):
             raise PasskeyRefusedError("duplicate")

@@ -14,6 +14,7 @@ from shelfhold.identity.application.ports import (
     NewApiKey,
     NewPasskey,
     NewSession,
+    PasskeyGoneError,
     PasskeyRecord,
     SessionRecord,
     UserRecord,
@@ -72,6 +73,7 @@ def _passkey_of(row: Any) -> PasskeyRecord:
         aaguid=row.aaguid,
         name=row.name,
         created_at=row.created_at,
+        rp_id=row.rp_id,
         last_used_at=row.last_used_at,
         revoked_at=row.revoked_at,
     )
@@ -146,6 +148,7 @@ class SqlIdentityStore:
                         sign_count=passkey.sign_count,
                         transports=list(passkey.transports),
                         aaguid=passkey.aaguid,
+                        rp_id=passkey.rp_id,
                         name=passkey.name,
                         created_at=passkey.now,
                     )
@@ -210,21 +213,59 @@ class SqlIdentityStore:
             conn.execute(
                 sa.update(_passkey).where(_passkey.c.id == passkey_id).values(revoked_at=now)
             )
+            conn.execute(  # what that passkey opened goes with it
+                sa.update(_session)
+                .where(_session.c.passkey_id == passkey_id, _session.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
         return "revoked"
 
-    def revoke_passkeys(self, user_id: str, *, now: datetime) -> int:
-        with self._engine.begin() as conn:
-            result = conn.execute(
+    def passkey_rp_ids(self) -> set[str]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(_passkey.c.rp_id)
+                .where(_passkey.c.revoked_at.is_(None), _passkey.c.rp_id.is_not(None))
+                .distinct()
+            ).scalars()
+            return {str(rp_id) for rp_id in rows}
+
+    def reset_credentials(
+        self, user_id: str, password_hash: str, *, now: datetime
+    ) -> tuple[int, int]:
+        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with immediate.begin() as conn:
+            conn.execute(
+                sa.update(_user).where(_user.c.id == user_id).values(password_hash=password_hash)
+            )
+            passkeys = conn.execute(
                 sa.update(_passkey)
                 .where(_passkey.c.user_id == user_id, _passkey.c.revoked_at.is_(None))
                 .values(revoked_at=now)
-            )
-        return int(result.rowcount)
+            ).rowcount
+            sessions = conn.execute(
+                sa.update(_session)
+                .where(_session.c.user_id == user_id, _session.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            ).rowcount
+        return int(sessions), int(passkeys)
 
     # --- sessions ----------------------------------------------------------------------------
 
     def insert_session(self, session: NewSession) -> None:
-        with self._engine.begin() as conn:
+        engine = (
+            self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+            if session.passkey_id
+            else self._engine
+        )
+        with engine.begin() as conn:
+            if session.passkey_id:  # the write lock is held: no revocation can come in between
+                live = conn.execute(
+                    sa.select(_passkey.c.id).where(
+                        _passkey.c.id == session.passkey_id, _passkey.c.revoked_at.is_(None)
+                    )
+                ).first()
+                if live is None:
+                    raise PasskeyGoneError
             conn.execute(
                 sa.insert(_session).values(
                     id=session.id,
@@ -237,6 +278,7 @@ class SqlIdentityStore:
                     absolute_expiry=session.absolute_expiry,
                     remember=session.remember,
                     ip=session.ip,
+                    passkey_id=session.passkey_id,
                 )
             )
 

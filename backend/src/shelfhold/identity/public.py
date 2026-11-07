@@ -57,6 +57,7 @@ from shelfhold.identity.domain.emitters import (
     RESTORE,
 )
 from shelfhold.identity.domain.passkeys import MAX_NAME as PASSKEY_NAME_MAX
+from shelfhold.identity.domain.passkeys import RelyingParty, relying_party
 from shelfhold.identity.domain.reserved import (
     DEFAULT_RESERVED_ROLES,
     NO_REAUTH_EFFECTS,
@@ -128,6 +129,7 @@ __all__ = [
     "Principal",
     "ReauthMethod",
     "ReauthRequired",
+    "RelyingParty",
     "RememberNeedsConfirmationError",
     "ReservedAction",
     "RoleNotAllowed",
@@ -146,6 +148,7 @@ __all__ = [
     "credential_axis",
     "holds_rate_right",
     "local_auth",
+    "relying_party",
     "same_secret",
     "session_policy",
     "truth_table",

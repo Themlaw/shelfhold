@@ -152,6 +152,7 @@ ip_host = "Une clé d'accès est liée à un nom de domaine, pas à une adresse 
 
 [status]
 public_url_restart = "public_url a changé depuis le démarrage du serveur : redémarrez-le pour qu'il en tienne compte."
+passkey_rp_changed = "Des clés d'accès sont liées à {old}, qui n'est plus le domaine de public_url : elles ne fonctionnent plus. Le mot de passe reste en repli ; révoquez-les puis enregistrez-en de nouvelles."
 waiting_line = "En attente ({state}) : {reason}. Commande : {command}"
 no_warning = "Aucun avertissement."
 warning_line = "Avertissement : {message}"
