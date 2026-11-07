@@ -877,3 +877,39 @@ def test_status_warns_when_the_rp_id_is_no_longer_the_one_of_the_passkeys(
 def stored_rp_id(settings: Settings) -> Any:
     [(value,)] = db_rows(settings, "SELECT rp_id FROM webauthn_credential")
     return value
+
+
+# --- review PR #95: IDN and root dot in the public URL -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "rp_id"),
+    [
+        ("https://bücher.example/", "xn--bcher-kva.example"),
+        ("https://shelf.example.org./", "shelf.example.org"),
+        ("https://SHELF.Example.org:443/", "shelf.example.org"),
+    ],
+)
+def test_rp_id_is_ascii_without_root_dot(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, url: str, rp_id: str
+) -> None:
+    with auth_env(monkeypatch, settings, public_url=url) as api:
+        api.login()
+        options = api.post(f"{PASSKEYS}/options", json={}).json()["options"]
+        assert options["rp"]["id"] == rp_id
+        authenticator = SoftPasskey(origin=f"https://{rp_id}", rp_id=rp_id)
+        assert register(api, authenticator)[1].status_code == 201  # what a browser would send
+        assert stored_rp_id(api.settings) == rp_id
+
+
+@pytest.mark.parametrize(
+    "url", ["https://" + "a" * 70 + ".example", "https://.", "https://exa mple.org"]
+)
+def test_an_unusable_host_makes_passkeys_unavailable_with_a_reason(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, url: str
+) -> None:
+    with auth_env(monkeypatch, settings, public_url=url) as api:
+        api.login()
+        listing = api.client.get(PASSKEYS).json()
+        assert listing["available"] is False and "adresse" in listing["reason"]
+        assert api.post(f"{PASSKEYS}/options", json={}).status_code == 409

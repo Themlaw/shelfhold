@@ -10,6 +10,7 @@
 """
 
 import ipaddress
+import re
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
@@ -24,6 +25,7 @@ KNOWN_TRANSPORTS = frozenset({"usb", "nfc", "ble", "smart-card", "hybrid", "inte
 
 Purpose = Literal["registration", "login", "reauth"]
 Reason = Literal["no_public_url", "invalid_url", "insecure_context", "ip_host"]
+_HOST = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*")
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
@@ -62,7 +64,13 @@ def relying_party(public_url: str | None) -> RelyingParty | PasskeysUnavailable:
     scheme = parts.scheme.lower()
     if scheme not in _DEFAULT_PORTS or not host or parts.username or parts.password:
         return PasskeysUnavailable("invalid_url")
-    host = host.lower()
+    # The browser's RP ID and origin are ASCII (punycode) and have no root dot: so are ours.
+    try:
+        host = host.lower().removesuffix(".").encode("idna").decode("ascii")
+    except UnicodeError:
+        return PasskeysUnavailable("invalid_url")  # an empty or over-long label, a bad character
+    if not host or len(host) > 253 or not _HOST.fullmatch(host):
+        return PasskeysUnavailable("invalid_url")  # letters, digits and hyphens only
     try:
         ipaddress.ip_address(host)
     except ValueError:
