@@ -13,15 +13,30 @@ from collections.abc import Iterable
 from typing import Final, NamedTuple
 
 import sqlalchemy as sa
-from sqlalchemy import Connection
+from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.schema import platform
 
-__all__ = ["MARKED_STATES", "Mark", "clear", "put", "read_all"]
+__all__ = [
+    "MARKED_STATES",
+    "Mark",
+    "clear",
+    "clear_except",
+    "clear_mount_blocked",
+    "mark_mount_blocked",
+    "put",
+    "read_all",
+    "read_one",
+]
 
 PREFIX: Final = "waiting."
-MARKED_STATES: Final = ("adoption_refused", "coverage_unknown")
+MARKED_STATES: Final = (
+    "adoption_refused",
+    "coverage_unknown",
+    "series_name_collision",
+    "mount_sentinel_missing",
+)
 
 
 class Mark(NamedTuple):
@@ -34,10 +49,11 @@ def _key(state: str, subject: str) -> str:
     return f"{PREFIX}{state}.{subject}"
 
 
-def put(connection: Connection, state: str, subject: str, reason: str) -> None:
+def put(connection: Connection, state: str, subject: str, reason: str, **extra: str) -> None:
+    """`extra`: what the exit needs to know about the subject (the destination, for instance)."""
     if state not in MARKED_STATES:
         raise ValueError(f"{state} is not a persisted waiting state")
-    value = json.dumps({"reason": reason})
+    value = json.dumps({"reason": reason, **extra})
     connection.execute(
         sqlite_insert(platform.app_setting)
         .values(key=_key(state, subject), value=value)
@@ -51,6 +67,43 @@ def clear(connection: Connection, state: str, subjects: Iterable[str]) -> None:
         connection.execute(
             sa.delete(platform.app_setting).where(platform.app_setting.c.key.in_(keys))
         )
+
+
+def mark_mount_blocked(engine: Engine, destination_id: str, reason: str) -> None:
+    """The root of a destination fails its sentinel, or lost too many files (EF-EXP-029): the
+    exports, deletions and scans stay blocked and `status` says so until it is right again."""
+    with engine.begin() as connection:
+        put(
+            connection, "mount_sentinel_missing", destination_id,
+            {"sentinel": "the mount does not carry the expected sentinel",
+             "missing_ratio": "too many files of the library are missing"}.get(reason, reason),
+            destination_id=destination_id,
+        )  # fmt: skip
+
+
+def clear_mount_blocked(engine: Engine, destination_id: str) -> None:
+    with engine.begin() as connection:
+        clear(connection, "mount_sentinel_missing", [destination_id])
+
+
+def read_one(connection: Connection, state: str, subject: str) -> dict[str, str] | None:
+    raw = connection.execute(
+        sa.select(platform.app_setting.c.value).where(
+            platform.app_setting.c.key == _key(state, subject)
+        )
+    ).scalar()
+    return None if raw is None else {k: str(v) for k, v in json.loads(raw).items()}
+
+
+def clear_except(connection: Connection, state: str, scope: str, keep: Iterable[str]) -> None:
+    """Drop the marks of `state` written for `scope` (a destination) whose subject is not kept."""
+    kept = set(keep)
+    for found in read_all(connection):
+        if found.state != state or found.subject in kept:
+            continue
+        one = read_one(connection, state, found.subject)
+        if one is not None and one.get("destination_id") == scope:
+            clear(connection, state, [found.subject])
 
 
 def read_all(connection: Connection) -> list[Mark]:

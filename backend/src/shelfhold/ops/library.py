@@ -16,6 +16,7 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
+import structlog
 
 from shelfhold.acquisition.application.upstream import (
     Detacher,
@@ -78,8 +79,11 @@ from shelfhold.sdk.refs import SeriesRef
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition, WriteContext
+    from shelfhold.infrastructure.fsops import Fsops
 
 __all__ = ["LibraryOps"]
+
+_log = structlog.get_logger("shelfhold.export")
 
 # Kavita cannot be asked: the control refuses instead of guessing
 _KAVITA_UNAVAILABLE: tuple[type[Exception], ...] = (
@@ -271,12 +275,37 @@ class LibraryOps:
         ):
             return
 
-    def _pairing(self, w: WriteContext) -> Pairing:
-        detector = SwitchoverDetector(self._comp.engine, w.fsops)
+    def _gate(self, fsops: Fsops, destination_id: str) -> SwitchoverGate:
+        """The switch-over gate, with the folder the Suwayomi server downloads to (the signal
+        `download_dir` of EF-EXP-044) read from that server now. A server that cannot be asked
+        leaves the folder declared before, if any."""
+        gate = SwitchoverGate(
+            self._comp.engine, SwitchoverDetector(self._comp.engine, fsops), clock=self._comp.clock
+        )
+        link = self._comp.suwayomi()
+        if link is None:
+            return gate
+
+        async def read() -> str | None:
+            try:
+                return await link.service.download_dir(link.fetcher)  # type: ignore[no-any-return]
+            finally:
+                await link.guarded.aclose()
+
+        try:
+            path = asyncio.run(read())
+        except Exception:  # any failure of the service: the signal stays as it was
+            _log.warning("switchover.download_dir_unreadable", destination=destination_id)
+            return gate
+        if path:
+            gate.declare_download_dir(destination_id, path)
+        return gate
+
+    def _pairing(self, w: WriteContext, destination_id: str) -> Pairing:
         return Pairing(
             self._comp.engine,
             PermissionPreflight(self._comp.engine, w.fsops, w.bus, clock=self._comp.clock),
-            SwitchoverGate(self._comp.engine, detector, clock=self._comp.clock),
+            self._gate(w.fsops, destination_id),
             clock=self._comp.clock,
             tombstones=w.tombstones,
             translation_nature=self._nature,
@@ -290,7 +319,10 @@ class LibraryOps:
         self._refresh_names(destination_id)
         _link, library = self._library()
         with self._comp.write_context() as w:
-            return [_proposal(p) for p in self._pairing(w).propose(destination_id, library)]
+            return [
+                _proposal(p)
+                for p in self._pairing(w, destination_id).propose(destination_id, library)
+            ]
 
     @_refused
     def pair_confirm(
@@ -312,7 +344,7 @@ class LibraryOps:
         if ref is None:
             raise UnknownSubjectError("Suwayomi does not follow that series")
         with self._comp.write_context() as w:
-            result = self._pairing(w).confirm(
+            result = self._pairing(w, destination_id).confirm(
                 destination_id, export_series_id, ref, follow_from=follow_from,
                 confirm_backfill=confirm_backfill,
             )  # fmt: skip
@@ -346,7 +378,7 @@ class LibraryOps:
         destination_id = self._destination(destination_id)
         link, library = self._library()
         with self._comp.write_context() as w:
-            pairing = self._pairing(w)
+            pairing = self._pairing(w, destination_id)
             if fingerprint is None:
                 report: AutoPairReport = pairing.pair_auto(
                     destination_id, library, min_score=min_score
@@ -374,7 +406,7 @@ class LibraryOps:
         self._refresh_names(destination_id)
         link, library = self._library()
         with self._comp.write_context() as w:
-            pairing = self._pairing(w)
+            pairing = self._pairing(w, destination_id)
             wanted = [
                 p
                 for p in pairing.propose(destination_id, library)
@@ -456,9 +488,7 @@ class LibraryOps:
     def migration_report(self, destination_id: str | None) -> dict[str, Any]:
         destination_id = self._destination(destination_id)
         fsops, _loaded, _tombstones = self._comp.read_context()
-        gate = SwitchoverGate(
-            self._comp.engine, SwitchoverDetector(self._comp.engine, fsops), clock=self._comp.clock
-        )
+        gate = self._gate(fsops, destination_id)
         report = gate.report(destination_id)
         return {
             "detected": report.detected,
@@ -472,9 +502,7 @@ class LibraryOps:
     def confirm_migration(self, *, destination_id: str | None, fingerprint: str) -> None:
         destination_id = self._destination(destination_id)
         fsops, _loaded, _tombstones = self._comp.read_context()
-        gate = SwitchoverGate(
-            self._comp.engine, SwitchoverDetector(self._comp.engine, fsops), clock=self._comp.clock
-        )
+        gate = self._gate(fsops, destination_id)
         gate.confirm(destination_id, list(STEPS), fingerprint=fingerprint)
 
     # -- repatriation and detachment (L31) -----------------------------------------------------

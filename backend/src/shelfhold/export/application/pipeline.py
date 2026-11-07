@@ -21,7 +21,7 @@ from sqlalchemy import Engine
 from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus
-from shelfhold.export.application import blocked_memo
+from shelfhold.export.application import blocked_memo, waiting_marks
 from shelfhold.export.application.export_items import create_export_item, ensure_export_series
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
 from shelfhold.export.application.locks import ResourceLocks, library_resource
@@ -45,6 +45,7 @@ from shelfhold.export.domain.planner import (
     Blocked,
     Plan,
     PlannedOp,
+    PlanRequest,
     PlanWarning,
     SeriesRef,
     plan_destination,
@@ -172,6 +173,27 @@ def decode_op(payload: dict[str, Any]) -> PlannedOp:
     )  # fmt: skip
 
 
+def mark_name_collisions(
+    engine: Engine, destination_id: str, request: PlanRequest, plan: Plan
+) -> None:
+    """A plan blocked by a series name (EF-EXP-032) waits for the administrator: written down
+    for `status`, which reads the database from another process. The mark goes with the
+    collision (`edition set-series-name` or a change of the library leaves it)."""
+    edition_of = {u.unit_id: u.edition_id for u in request.units}
+    colliding: dict[str, str] = {}
+    for blocked in plan.blocked:
+        if blocked.code == "export.series_name_collision" and blocked.unit_id in edition_of:
+            colliding.setdefault(edition_of[blocked.unit_id], blocked.detail)
+    with engine.begin() as connection:
+        waiting_marks.clear_except(connection, "series_name_collision", destination_id, colliding)
+        for edition_id, name in colliding.items():
+            waiting_marks.put(
+                connection, "series_name_collision", edition_id,
+                f"another series is already called {name!r} in this library",
+                destination_id=destination_id,
+            )  # fmt: skip
+
+
 def wanted_names(
     engine: Engine, destination_id: str, *, segment_policy_confirmed: bool = False
 ) -> tuple[list[str], str | None]:
@@ -199,7 +221,9 @@ def wanted_names(
         ).scalar()
     if blocked_memo.known(engine, destination_id, loaded.version):
         return [], kind  # the disk already said "taken" for these inputs: nothing to ask or write
-    plan_destination(loaded.request, record)
+    mark_name_collisions(
+        engine, destination_id, loaded.request, plan_destination(loaded.request, record)
+    )
     return sorted(set(asked)), kind
 
 
@@ -291,7 +315,9 @@ class ExportPipeline:
                 covered_locals=covered,
                 segment_policy_confirmed=self._segment_policy_confirmed,
             )  # fmt: skip
-        return ctx, loaded, plan_destination(loaded.request, self._parse)
+        plan = plan_destination(loaded.request, self._parse)
+        mark_name_collisions(self._engine, destination_id, loaded.request, plan)
+        return ctx, loaded, plan
 
     def _store(self, ctx: DestinationContext, loaded: LoadedRequest, plan: Plan) -> str:
         files = [ctx.local(op.rel_path) for op in plan.ops if op.rel_path is not None]

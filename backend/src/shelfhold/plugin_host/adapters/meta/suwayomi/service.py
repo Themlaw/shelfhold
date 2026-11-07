@@ -230,6 +230,14 @@ class SuwayomiService:
             return "ui_login"
         raise SourceChanged("the server did not report its authentication mode")
 
+    async def download_dir(self, f: Fetcher) -> str | None:
+        """Where the server writes its downloads, as the server sees it (read by the switch-over
+        detection, EF-EXP-044). A server that does not say gives none."""
+        data = await self._query(f, q.DOWNLOADS_PATH)
+        settings = data.get("settings")
+        path = settings.get("downloadsPath") if isinstance(settings, dict) else None
+        return path if isinstance(path, str) and path.startswith("/") else None
+
     async def _ensure_supported_mode(self, f: Fetcher) -> None:
         if self._mode_verified:
             return

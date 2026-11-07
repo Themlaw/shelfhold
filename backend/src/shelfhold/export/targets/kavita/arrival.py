@@ -9,6 +9,7 @@ the destination waits for the admin (`jobs retry` once fixed). Nothing is export
 from __future__ import annotations
 
 import posixpath
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -19,9 +20,12 @@ from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.application.target_state import ensure_active, save_health
 from shelfhold.export.domain.kavita_arrival import DEFAULT_DELAY, Step, next_step, probable_causes
+from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.reinstall import library_type_of
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.schema import export
 
 __all__ = ["ArrivalPoller", "ArrivalReport"]
@@ -45,12 +49,25 @@ class ArrivalPoller:
         *,
         delay: timedelta = DEFAULT_DELAY,
         max_scans: int = 2,
+        fsops: Callable[[], Fsops] | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
         self._events = events
         self._delay = delay
         self._max_scans = max_scans  # 2; 1 when the second scan is cut
+        self._fsops = fsops  # the sentinel's word before a scan (`require_scan_allowed`)
+
+    def _scan_allowed(self, ctx: DestinationContext, remote_folder: str) -> bool:
+        """A folder under a root whose sentinel is missing or wrong is not scanned: Kavita would
+        read an empty folder as a deletion. Without the means to tell, nothing is scanned."""
+        if self._fsops is None:
+            return True
+        try:
+            self._fsops().require_scan_allowed(ctx.path_map.to_local(remote_folder))
+        except (RootBlockedError, PathMapError, OSError, LookupError, RuntimeError):
+            return False
+        return True
 
     async def poll(self, client: KavitaClient, destination_id: str) -> ArrivalReport:
         report = ArrivalReport()
@@ -93,6 +110,8 @@ class ArrivalPoller:
         causes = await self._causes(client, library_id, expected_type, outcomes)
         for record, step, series_id, remote in outcomes:
             folder = posixpath.dirname(remote)
+            if step is Step.RESCAN and not self._scan_allowed(ctx, folder):
+                continue  # the record stays as it is: the next poll asks again
             if step is Step.RESCAN and folder not in rescanned_folders:
                 rescanned_folders.add(folder)
                 await client.scan_folder(folder)

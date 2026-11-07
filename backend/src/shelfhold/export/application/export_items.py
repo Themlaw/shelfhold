@@ -79,6 +79,7 @@ def ensure_export_series(
     remote_library_id: str,
     ref: SeriesRef,
     now: datetime,
+    assigned_by: str = "first_export",
 ) -> str:
     """The series of an Edition in a remote library; created once, never recomputed.
 
@@ -108,7 +109,7 @@ def ensure_export_series(
     connection.execute(
         sa.insert(link).values(
             edition_id=ref.edition_id, remote_library_id=remote_library_id,
-            export_series_id=series_id, assigned_at=now, assigned_by="first_export",
+            export_series_id=series_id, assigned_at=now, assigned_by=assigned_by,
         )
     )  # fmt: skip
     return series_id

@@ -16,7 +16,7 @@ from shelfhold.config import Settings, load_settings
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.application.shelves import ShelfService
-from shelfhold.export.application.wiring import open_pipeline
+from shelfhold.export.application.wiring import open_pipeline, roots_signature
 from shelfhold.headless import HeadlessAdmin, wiring
 from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.identity.public import local_auth
@@ -126,15 +126,26 @@ def create_app(
     auth = local_auth(engine, resolved, clock)
     gate = AuthGate(auth, public_url=resolved.public_url)
 
-    @cache
+    opened: list[tuple[object, ExportPipeline]] = []
+
     def pipeline() -> ExportPipeline:
         # Plans are previewed here; the job `export.apply` reads the names from Kavita again.
-        return open_pipeline(
-            resolved,
-            write_gate=runtime.require_space,
-            stop_gate=runtime.barrier.require_open,
-            gate=runtime.require_writable,
-        )
+        # Opened again when the roots changed since: a root added by `target add` while the
+        # server runs must be known to the next preview.
+        signature = roots_signature(engine)
+        if not opened or opened[0][0] != signature:
+            opened[:] = [
+                (
+                    signature,
+                    open_pipeline(
+                        resolved,
+                        write_gate=runtime.require_space,
+                        stop_gate=runtime.barrier.require_open,
+                        gate=runtime.require_writable,
+                    ),
+                )
+            ]
+        return opened[0][1]
 
     @cache
     def headless_admin() -> HeadlessAdmin:

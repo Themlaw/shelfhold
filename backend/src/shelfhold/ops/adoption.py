@@ -9,11 +9,14 @@ class holds nothing of its own: it reads the marks and forwards the two commands
 
 from __future__ import annotations
 
+import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.export.application import waiting_marks
+from shelfhold.infrastructure.schema import export
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.ports import WaitingItem
+from shelfhold.ops.status import command_for
 
 __all__ = ["LibraryAdoptionExit"]
 
@@ -26,7 +29,20 @@ class LibraryAdoptionExit:
     def waiting(self) -> list[WaitingItem]:
         with self._engine.connect() as connection:
             marks = waiting_marks.read_all(connection)
-        return [WaitingItem(m.state, "export", m.subject, m.reason) for m in marks]
+            targets = {
+                row.id: row.target_id
+                for row in connection.execute(
+                    sa.select(export.shelf_destination.c.id, export.shelf_destination.c.target_id)
+                )
+            }
+        items = []
+        for m in marks:
+            if m.state == "mount_sentinel_missing":  # its exit is the recheck of the target
+                command, reserved = command_for(m.state, m.subject, targets.get(m.subject, ""))
+                items.append(WaitingItem(m.state, "export", m.subject, m.reason, command, reserved))
+            else:
+                items.append(WaitingItem(m.state, "export", m.subject, m.reason))
+        return items
 
     def set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
         self._library.set_follow_from(destination_id=destination_id, series=series, chapter=chapter)

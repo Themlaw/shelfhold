@@ -7,6 +7,7 @@ database and never creates a keyring. A component that another lot has not conne
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import cache
 
 import sqlalchemy as sa
@@ -14,12 +15,14 @@ from sqlalchemy import Engine
 
 from shelfhold.composition import Composition, open_fsops
 from shelfhold.config import Settings
+from shelfhold.events.bus import EventBus
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.headless import HeadlessAdmin
 from shelfhold.headless import wiring as headless_wiring
+from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
@@ -70,6 +73,18 @@ def _fsops(engine: Engine, umask: int) -> Fsops | None:
     return open_fsops(loaded, umask=umask)
 
 
+def _live_fsops(
+    engine: Engine, umask: int, clock: Clock, bus: EventBus
+) -> Callable[[], Fsops | None]:
+    def current() -> Fsops | None:
+        fsops = _fsops(engine, umask)
+        if fsops is not None and RestoreGuardExit(engine, lambda: fsops, clock, bus).waiting():
+            fsops.freeze()  # restored behind: this process writes nothing under /library either
+        return fsops
+
+    return current
+
+
 def open_ops(
     settings: Settings,
     *,
@@ -90,17 +105,20 @@ def open_ops(
         instance=InstanceService(engine, clock, events),
         auditor=AccessAuditor(engine, clock, events),
     )  # fmt: skip
-    fsops = _fsops(engine, settings.umask) if mount else None
+    # The roots are read when an exit runs, not when this object is built: `target add` registers
+    # a root while the server runs, and `series resume` / `target recheck` must see it.
+    live = _live_fsops(engine, settings.umask, clock, bus) if mount else None
+
     # the restore guard only reads the sentinels against the database: `status` lists
     # `restored_behind` without mounting the library for writing
-    guard_fsops = fsops if fsops is not None else _fsops(engine, settings.umask)
-    if mount and fsops is not None and RestoreGuardExit(engine, fsops, clock, bus).waiting():
-        fsops.freeze()  # restored behind: this process writes nothing under /library either
+    def read_only() -> Fsops | None:
+        return _fsops(engine, settings.umask)
+
     library = LibraryOps(composition)
     return OpsServices(
-        engine, clock=clock, bus=bus, fsops=fsops, targets=targets,
+        engine, clock=clock, bus=bus, fsops=live, targets=targets,
         headless=_LazyHeadless(settings), keyring=TombstoneKeyringExit(settings, engine, clock),
-        restore=RestoreGuardExit(engine, guard_fsops, clock, bus) if guard_fsops else None,
+        restore=RestoreGuardExit(engine, read_only, clock, bus),
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), backfill=BackfillOps(composition),
         normalize=NormalizeOps(composition), meta=MetaOps(composition),

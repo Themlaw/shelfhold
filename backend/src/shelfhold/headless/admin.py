@@ -198,12 +198,22 @@ def _http_url(url: str, what: str) -> str:
     return url.rstrip("/")
 
 
-def _target_url(url: str) -> str:
-    clean = _http_url(url, "the Kavita address")
+def _service_url(url: str, what: str) -> str:
+    """The address of any service the administrator configures (ENF-SEC-001): the same rule for
+    Kavita and Suwayomi, applied before the first request leaves."""
+    clean = _http_url(url, what)
     try:
         return validate_target_url(clean)
     except ValueError as error:
         raise InvalidConfigValue(str(error)) from None
+
+
+def _target_url(url: str) -> str:
+    return _service_url(url, "the Kavita address")
+
+
+def _suwayomi_address(url: str) -> str:
+    return _service_url(url, "the Suwayomi address")
 
 
 def _normalise_path_map(raw: object) -> list[dict[str, str]]:
@@ -671,7 +681,7 @@ class HeadlessAdmin:
     # -- source add suwayomi ------------------------------------------------------------------
 
     def source_add_suwayomi(self, *, url: str, secret: str | None) -> SourceAdded:
-        clean_url = _http_url(url, "the Suwayomi address")
+        clean_url = _suwayomi_address(url)
         username: str | None = None
         password: str | None = None
         if secret:
@@ -900,7 +910,7 @@ class HeadlessAdmin:
     def _plan_source(self, source: DesiredSource, read: SecretReader) -> PlanChange:
         if source.kind != "suwayomi":
             raise ConfigFileError(f"source kind {source.kind!r}: only suwayomi in M1a")
-        url = _http_url(source.url, "the Suwayomi address")
+        url = _suwayomi_address(source.url)
         with self._engine.connect() as connection:
             row = connection.execute(
                 sa.select(

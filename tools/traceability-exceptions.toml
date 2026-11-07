@@ -79,7 +79,7 @@ reason = "Suwayomi réel épinglé avec l'extension synthétique construite dans
 [[out_of_required_ci]]
 path = "e2e/tests/test_m1a_journey.py"
 workflow = "image.yml"
-reason = "deux parcours (premier chapitre dans Kavita, détachement) attendent le câblage de production du suivi, de l'export et de la commande de détachement (xfail strict, lot L41) ; les autres tests du fichier tournent dans la CI requise"
+reason = "parcours de bout en bout sur l'image construite (installation sans interface jusqu'au premier chapitre, redéploiement, détachement, sorties après `target add`), contre des Kavita et Suwayomi simulés : exécutés par image.yml, pas par les tests de la CI requise ; plus aucun xfail depuis le câblage de production (L41)"
 
 [[exception]]
 path = "backend/tests/unit/test_production_reachability.py"

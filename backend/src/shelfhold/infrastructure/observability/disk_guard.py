@@ -9,7 +9,7 @@ emitter of its own, EF-BIB-030).
 import os
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -98,6 +98,17 @@ class DiskGuard:
         self._measured_at: float | None = None
         self._unreported: list[DiskChange] = []  # transitions the watcher has not announced yet
         self._mutex = threading.Lock()
+
+    def follow_roots(self, roots: Iterable[str]) -> None:
+        """Watch the library roots registered since start-up (`target add` adds one while the
+        server runs): the volumes are not fixed at boot (ENF-OPS-006)."""
+        with self._mutex:
+            watched = set(self._volumes.values())
+            for root in roots:
+                path = Path(root)
+                if path not in watched:
+                    self._volumes[f"library_{len(self._volumes) + 1}"] = path
+                    watched.add(path)
 
     def evaluate(self) -> DiskState:
         """Measure every volume once and hand over the transitions not yet announced."""

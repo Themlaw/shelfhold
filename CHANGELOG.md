@@ -45,6 +45,7 @@ Migrations :
 - Configuration sans interface : `config get|set|apply`, `target add`, `source add`, `shelf create`, CLI locale par socket Unix avec `SO_PEERCRED`.
 - Authentification locale : administrateur, sessions serveur, CSRF, tentatives limitées, clés d'API hachées, actions réservées avec fraîcheur (`reauth-required`), profil durci facultatif.
 - Documentation d'administration : installation sans interface, adoption, migration depuis des scripts, rapatriement, retour arrière, états d'attente, restauration, purge, garde disque, redéploiement, racines physiques, montage `adopt_ro`, exposition publique, budget mémoire et disque, décisions d'exécution de M1a.
+- Fermeture du jalon (L60) : `shelfhold edition set-series-name <édition> "<nom>"` (route `POST /api/v1/editions/{id}/series-name`) fixe le nom exporté d'une série dont le nom est déjà pris dans la bibliothèque (EF-EXP-032) ; l'état d'attente `series_name_collision` figure dans `shelfhold status` avec cette commande, comme `mount_sentinel_missing` (EF-EXP-029, sortie `shelfhold target recheck <cible>`). Les scans de Kavita, au vidage différé et à la relance d'arrivée, demandent la sentinelle de la racine (`require_scan_allowed`). Le dossier de téléchargement de Suwayomi devient un signal de la bascule (EF-EXP-044) et les demandes par plage sont câblées dans le suivi (EF-SRC-034).
 - Conventions d'API : problèmes RFC 9457 avec catalogue d'erreurs stable, pagination par curseur, idempotence, `If-Match`, réponses 202.
 
 - Exploitation (L52) : une tâche qui échoue est réessayée (3 essais) puis devient `dead_letter` avec l'événement `job.dead_lettered` (sortie `shelfhold jobs list|retry`) ; `reconcile.drift` d'une intention non résolue au démarrage, `secret.undecryptable` d'un trousseau illisible et les événements du miroir passent par le bus d'exploitation et créent leurs notifications ; sonde d'écriture de chaque racine au démarrage (`target.permission_denied` avec la cause et le bloc compose à coller, sans arrêter le démarrage) ; le montage `adopt_ro` figure dans le compose d'exemple ; preuves du kill -9 de 1 000 tâches et du redéploiement en plein export.
@@ -54,11 +55,14 @@ Migrations :
 ### Connu
 
 - Une série d'une sous-source multilingue (`all`) est découverte avec une Édition de langue inconnue (`x-unknown`, état `language_unknown`) : sa langue se donne par `shelfhold edition set-lang`.
-- Le paquet de diagnostic n'existe pas (M2).
-- `root takeover|reinit|restored` et `store reinit` n'existent pas (M1b) ; `adoption_refused` et `coverage_unknown` ne figurent pas dans `shelfhold status` (ils sont portés par l'événement) ; l'application d'un plan par `POST /api/v1/plans/{id}/apply` reste refusée ; `secrets import` n'existe pas.
+- Le paquet de diagnostic n'existe pas (M3) ; `is_diagnostic_excluded` et `redact_source_urls` sont posés pour lui.
+- `root takeover|reinit|restored` et `store reinit` n'existent pas (M1b) : une sentinelle durablement absente ou différente se résout en remontant le bon volume, puis `shelfhold target recheck`. `secrets import` n'existe pas (`tombstone accept-lost-keyring` quitte le même état).
+- Un service connecté qui déclare `ranged_content` voit ses fichiers de plage gardés sous `/data/ranged/` avec leur couverture ; leur export est de M2 (aucun service de M1a n'a cette capacité : Suwayomi livre un fichier par chapitre).
+- Le dossier de téléchargement de Suwayomi (`settings.downloadsPath`) n'est lu que lors du rapport de bascule et de l'appariement : une série adoptée dont le dossier lui est étranger ne le signale qu'à ce moment.
 
 ### Modifié
 
+- Les racines physiques sont relues à chaque appel par `series resume`, `target recheck`, l'aperçu des plans, le constat de `restored_behind` et la garde disque : un `target add` fait pendant que le serveur tourne est connu sans redémarrage (L60).
 - `follow.cycle` ne prend plus le bail de `/library` quand il n'a rien à y écrire, et un candidat bloqué par « destination occupée » n'est plus cherché sur le disque à chaque passage (la vérification de la fenêtre de maintenance l'oublie) : aucun réveil de disque à vide (ENF-OPS-014).
 - Un 401 de Kavita (clé révoquée) émet `target.unreachable` et désactive la destination, comme la matrice de pannes le prévoit.
 - L'image du compose d'exemple passe à l'étiquette `0.2`.
@@ -70,7 +74,7 @@ Migrations :
 
 - Risque administrateur accepté à l'ajout d'une destination (`--accept-admin-risk`) tracé dans le journal d'audit ; session « se souvenir de moi » durcie ; routes réservées réelles (L47). Texte amont assaini jusqu'au ComicInfo, plafonds d'archive, dates futures refusées (L45).
 - En-têtes de sécurité globaux sur toutes les réponses.
-- Garde SSRF du Fetcher avec cibles du réseau local épinglées ; toute adresse publique refusée pour une destination.
+- Garde SSRF du Fetcher avec cibles du réseau local épinglées ; toute adresse publique refusée pour une destination, et la même règle (`http://` réservé au réseau local, IP publique refusée) pour l'adresse de Suwayomi, avant toute requête (ENF-SEC-001, L60).
 - Archives et XML non fiables ouverts par des chemins bornés (liste blanche CBZ, plafonds d'image, décodage dans un processus sans réseau), texte amont assaini.
 - Secrets scellés par un trousseau avec clés retirées, rotation reprenable et export age.
 - Mots de passe en argon2id, cookies `HttpOnly` et `SameSite=Strict`, en-têtes d'identité de proxy retirés, clés d'API stockées hachées et refusées pour les actions réservées.

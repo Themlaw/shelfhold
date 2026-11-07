@@ -31,6 +31,7 @@ ENDPOINTS: Final = MappingProxyType(
         ),
         "adopt set-follow-from": ("POST", "/api/v1/adoption/{destination_id}/follow-from"),
         "edition set-lang": ("POST", "/api/v1/editions/{edition_id}/language"),
+        "edition set-series-name": ("POST", "/api/v1/editions/{edition_id}/series-name"),
         "reconcile --adopt-after-restore": ("POST", "/api/v1/reconcile/adopt-after-restore"),
         "reconcile --adopt-after-restore [confirm-deletion]": (
             "POST", "/api/v1/reconcile/adopt-after-restore",
@@ -63,6 +64,8 @@ M1A_STATES: Final = frozenset(
         WaitingState.TOMBSTONE_KEY_UNKNOWN,
         WaitingState.TOMBSTONE_LINES_OWED,
         WaitingState.ROUTE_MISSING,
+        WaitingState.SERIES_NAME_COLLISION,
+        WaitingState.MOUNT_SENTINEL_MISSING,
     }
 )
 

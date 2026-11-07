@@ -62,7 +62,11 @@ from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.application.restore import RestoredBehindError
+from shelfhold.export.application.snapshot import load_context
+from shelfhold.export.application.waiting_marks import mark_mount_blocked
 from shelfhold.export.application.wiring import NoRemoteParse
+from shelfhold.export.domain.path_map import PathMapError
+from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
 from shelfhold.export.targets.kavita.arrival import ArrivalPoller
 from shelfhold.export.targets.kavita.audit import AccessAuditor
@@ -76,11 +80,12 @@ from shelfhold.export.targets.kavita.errors import (
 )
 from shelfhold.export.targets.kavita.series import refresh_names
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
-from shelfhold.library.public import PassthroughStore
+from shelfhold.library.public import PassthroughStore, RangedKeeper
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
 
@@ -207,6 +212,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                         lazy.get,  # the lease first: nothing is downloaded that cannot be filed
                     ),
                     place=place, slots=pools.slots,
+                    keep_range=RangedKeeper(comp.settings.data_dir),  # EF-SRC-034
                     tombstones=cast("Any", _LazyTombstones(comp)),
                 )  # fmt: skip
 
@@ -387,6 +393,13 @@ async def _export_bound(
                 pipeline.require_names_checked(plan_id)
                 report = pipeline.apply(plan_id, if_match=version, job_id=context.job_id)
             applied = len(report.ops)
+    except RootBlockedError as error:  # the mount is not the one Shelfhold wrote (EF-EXP-029)
+        if error.state is not RootState.RESTORED_BEHIND:  # that one is `restored_behind`
+            mark_mount_blocked(comp.engine, destination.id, "sentinel")
+        log.info("export.root_blocked", destination_id=destination.id, root=error.root_path)
+        if apply is not None:
+            raise JobFailedError("root.blocked") from None
+        return 0
     except (DestinationPausedError, TargetError) as error:
         if apply is not None:  # asked for by a person: the job says why it did not go through
             raise JobFailedError(_code_of(error)) from None
@@ -400,12 +413,31 @@ async def _export_bound(
             while time.monotonic() < deadline and not context.stop_requested:
                 await asyncio.sleep(1)
             try:
-                await client.flush_scans()
+                await client.flush_scans(_scan_guard(comp, disks, destination.id))
             except TargetError as error:  # Kavita lost after the writing: the next run scans again
                 log.info("export.scan_failed", destination_id=destination.id,
                          reason=type(error).__name__)  # fmt: skip
     await settle_arrival(comp, client, destination.id, fsops=disks.fsops)
     return applied
+
+
+def _scan_guard(comp: Composition, disks: _Disks, destination_id: str) -> Callable[[str], bool]:
+    """`allowed(remote_path)` for `flush_scans`: the sentinel of the root under the folder must
+    allow a scan (EF-EXP-005, `require_scan_allowed`), else Kavita would see an unmounted
+    folder as emptied and drop its series. A folder the destination's path map cannot place is
+    not scanned."""
+
+    def allowed(remote: str) -> bool:
+        try:
+            with comp.engine.connect() as connection:
+                ctx = load_context(connection, destination_id)
+            disks.fsops().require_scan_allowed(ctx.path_map.to_local(remote))
+        except (RootBlockedError, PathMapError, OSError, LookupError):
+            log.info("export.scan_refused", folder=remote, reason="root_not_ready")
+            return False
+        return True
+
+    return allowed
 
 
 def _code_of(error: Exception) -> str:
@@ -434,15 +466,16 @@ async def settle_arrival(
     series it now knows (EF-EXP-045). Both are read from the database first, so with nothing
     pending neither the network nor a disk is touched beyond that."""
     events = BusTargetEvents(comp.engine, comp.bus)
-    poller = ArrivalPoller(comp.engine, comp.clock, events)
+
+    def disks() -> Fsops:
+        return fsops() if fsops is not None else comp.read_context()[0]
+
+    poller = ArrivalPoller(comp.engine, comp.clock, events, fsops=disks)
     try:
         await poller.poll(client, destination_id)
     except TargetError as error:  # one destination failing never stops the others
         log.info("export.poll_failed", destination_id=destination_id, reason=type(error).__name__)
         return
-
-    def disks() -> Fsops:
-        return fsops() if fsops is not None else comp.read_context()[0]
 
     covers = SeriesCovers(comp.engine, comp.clock, disks, events)
     try:

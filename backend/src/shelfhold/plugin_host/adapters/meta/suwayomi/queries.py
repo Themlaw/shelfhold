@@ -6,6 +6,7 @@ exist in this module, and a test refuses any request outside these root fields.
 
 ABOUT = "query { aboutServer { name version buildType } }"
 AUTH_MODE = "query { settings { authMode } }"
+DOWNLOADS_PATH = "query { settings { downloadsPath } }"
 SOURCES = "query { sources { nodes { id displayName lang isNsfw } } }"
 _MANGA_FIELDS = "id sourceId url title description author artist"
 LIBRARY = f"query {{ mangas(condition: {{inLibrary: true}}) {{ nodes {{ {_MANGA_FIELDS} }} }} }}"

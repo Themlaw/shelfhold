@@ -53,6 +53,8 @@ _TEMPLATES = {
     "child_exposure": "shelfhold target recheck {subject}",
     "route_missing": "shelfhold target recheck {subject}",
     "language_unknown": "shelfhold edition set-lang {subject} <lang>",
+    "mount_sentinel_missing": "shelfhold target recheck {extra}",
+    "series_name_collision": 'shelfhold edition set-series-name {subject} "<name>"',
     "restored_behind": "shelfhold reconcile --adopt-after-restore",
     "tombstone_key_unknown": "shelfhold tombstone accept-lost-keyring",
     "tombstone_lines_owed": "shelfhold tombstone flush",

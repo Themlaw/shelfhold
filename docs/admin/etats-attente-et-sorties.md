@@ -53,6 +53,8 @@ moins de 15 minutes, ou la ligne de commande locale ; une clé d'API est refusé
 | `child_exposure` | Un compte Kavita d'enfant voit la bibliothèque | retirez l'accès dans Kavita, puis `target recheck <cible>` | oui |
 | `route_missing` | Kavita n'a pas une fonction attendue | mettez Kavita à jour, puis `target recheck <cible>` | non |
 | `language_unknown` | Une Édition adoptée n'a pas de langue | `shelfhold edition set-lang <édition> <langue>` (ex. `fr`, `ja`, `pt-BR`) | non |
+| `series_name_collision` | Le nom de série d'une Édition est déjà pris dans la bibliothèque Kavita (par exemple deux Œuvres du même titre, `en` et `fr`) : rien n'est exporté pour elle, ni écrasé | `shelfhold edition set-series-name <édition> "<nom>"` (API : `POST /api/v1/editions/{id}/series-name`) | non |
+| `mount_sentinel_missing` | La sentinelle `.shelfhold-mount-id` d'une racine manque ou n'est pas la bonne (volume non monté, disque vide) : écritures et scans bloqués | montez le bon volume, puis `shelfhold target recheck <cible>` | non |
 | `restored_behind` | La base est en retard sur les fichiers : lecture seule | `shelfhold reconcile --adopt-after-restore`, voir [restauration.md](restauration.md) | seule la suppression confirmée |
 | `tombstone_key_unknown` | Un journal de pierres tombales est chiffré par une clé absente du trousseau | remettre le fichier de trousseau d'origine à sa place (`/data/keyring`), ou `shelfhold tombstone accept-lost-keyring --confirm "the keyring is lost"` | oui |
 
