@@ -23,12 +23,12 @@ from huey.exceptions import RetryTask
 
 import shelfhold.runtime_jobs as rj
 from shelfhold.config import Settings
+from shelfhold.infrastructure import logging as shelfhold_logging
 from shelfhold.infrastructure.fetcher.client import GuardedFetcher
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import (
     configure_logging,
-    forget_secret_values,
     route_of,
     untrusted_name,
 )
@@ -73,7 +73,7 @@ def logs(capsys: pytest.CaptureFixture[str]) -> Iterator[Logs]:
     root.setLevel(logging.WARNING)
     structlog.reset_defaults()
     structlog.contextvars.clear_contextvars()
-    forget_secret_values()
+    shelfhold_logging._known_values.clear()
 
 
 def named(records: list[dict[str, object]], event: str) -> list[dict[str, object]]:
