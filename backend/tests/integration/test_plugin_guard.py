@@ -200,7 +200,9 @@ def test_third_party_cannot_mask_host_pth_never_run_fake_dist_info_ignored(
 
 
 @pytest.mark.req("EF-SRC-019")
-def test_third_party_plugin_receives_no_secret(cli: Cli, tmp_path: Path, probe: Path) -> None:
+def test_third_party_plugin_is_handed_no_secret_in_the_objects_it_receives(
+    cli: Cli, tmp_path: Path, probe: Path
+) -> None:
     (cli.data / "shelfhold.toml").write_text('public_url = "https://example.test"\n')
     install(cli, tmp_path, probe)
     enable(cli)

@@ -3,7 +3,7 @@
 A plugin is a local wheel file with its sha256. It is installed with
 ``--only-binary :all: --require-hashes --no-deps`` (nothing is resolved, built or downloaded: the
 command also says ``--no-index``) into a ``site-packages`` of its own under ``<data>/plugins``,
-which the host appends to ``sys.path`` after its own entries (``registry``). Before any file is
+which is never on ``sys.path`` (``registry``: a finder after all others serves granted plugins). Before any file is
 written the wheel is read as a zip and refused when:
 
 - its distribution name, after PEP 503 normalisation, is the host's or one of its dependencies'
