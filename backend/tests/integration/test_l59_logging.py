@@ -439,6 +439,7 @@ LEGACY_NAMES = {  # they predate the convention; renaming them would break the l
     "meta_repair_skipped",
     "migrate_done",
     "migration_done",
+    "migration_failed",
     "migration_restored",
     "migration_started",
     "migration_up_to_date",

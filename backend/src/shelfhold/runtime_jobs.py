@@ -309,7 +309,11 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
                 continue  # the target has no sealed key yet
             scans.client, scans.asked = client, []
             try:
-                asyncio.run(_export_one(comp, disks, client, destination, scans, context))
+                context.add(
+                    ops_applied=asyncio.run(
+                        _export_one(comp, disks, client, destination, scans, context)
+                    )
+                )
             except (NoLibraryError, KeyringUnavailableError) as error:
                 log.info("export.run_skipped", reason=type(error).__name__)
                 return
@@ -340,11 +344,12 @@ async def _export_one(
     scans: ScanRelay,
     context: JobContext,
     apply: tuple[str, str] | None = None,
-) -> None:
-    """`apply`: a stored plan and the validator of its preview, instead of a plan made now."""
+) -> int:
+    """`apply`: a stored plan and the validator of its preview, instead of a plan made now.
+    Returns the number of operations applied (for the counters of `job.finished`)."""
 
     with bound_contextvars(target_id=destination.target_id, destination_id=destination.id):
-        await _export_bound(comp, disks, client, destination, scans, context, apply)
+        return await _export_bound(comp, disks, client, destination, scans, context, apply)
 
 
 async def _export_bound(
@@ -355,9 +360,10 @@ async def _export_bound(
     scans: ScanRelay,
     context: JobContext,
     apply: tuple[str, str] | None,
-) -> None:
+) -> int:
     from shelfhold.export.application.target_state import DestinationPausedError
 
+    applied = 0
     try:
         # the names Kavita shows now (it may rename a series, EF-EXP-057), before any collision
         if _names_may_refresh(comp, destination.id):
@@ -377,14 +383,14 @@ async def _export_bound(
                 plan_id, version = apply
                 pipeline.require_names_checked(plan_id)
                 report = pipeline.apply(plan_id, if_match=version, job_id=context.job_id)
-            context.add(ops_applied=len(report.ops))
+            applied = len(report.ops)
     except (DestinationPausedError, TargetError) as error:
         if apply is not None:  # asked for by a person: the job says why it did not go through
             raise JobFailedError(_code_of(error)) from None
         log.info(
             "export.destination_waits", destination_id=destination.id, reason=type(error).__name__
         )
-        return
+        return 0
     finally:
         if scans.asked:  # the debounce: scans leave after a quiet moment
             deadline = time.monotonic() + SCAN_QUIET_S
@@ -396,6 +402,7 @@ async def _export_bound(
                 log.info("export.scan_failed", destination_id=destination.id,
                          reason=type(error).__name__)  # fmt: skip
     await settle_arrival(comp, client, destination.id, fsops=disks.fsops)
+    return applied
 
 
 def _code_of(error: Exception) -> str:
@@ -477,8 +484,12 @@ def apply_handler(comp: Composition) -> Callable[[JobContext], None]:
             raise JobFailedError("target.route_missing") from None  # no sealed key: nothing to ask
         scans.client = client
         try:
-            asyncio.run(
-                _export_one(comp, disks, client, destination, scans, context, (plan_id, version))
+            context.add(
+                ops_applied=asyncio.run(
+                    _export_one(
+                        comp, disks, client, destination, scans, context, (plan_id, version)
+                    )
+                )
             )
         except (
             StalePlanError,
