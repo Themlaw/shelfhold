@@ -324,6 +324,9 @@ source_config = sa.Table(
     sa.Column("consecutive_failures", sa.Integer(), nullable=False, server_default="0"),
     sa.Column("rights_basis", sa.String(), nullable=True),
     bool_column("family_safe", default=False),  # marked "family" by the admin (EF-USR-014)
+    # What the connected service said it is (EF-SRC-036): a change means another install.
+    sa.Column("instance_fingerprint", sa.String(), nullable=True),
+    sa.Column("instance_fingerprint_seen_at", UtcDateTime(), nullable=True),
     now_column(),
     sa.Column("updated_at", UtcDateTime(), nullable=True),
     positive_check("consecutive_failures"),

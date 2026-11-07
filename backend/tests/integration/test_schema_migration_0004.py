@@ -32,6 +32,7 @@ EXPORT_TABLES = {
     "document_alias",
 }  # fmt: skip
 READING_TABLES = {"reading_position"}
+M1B_TABLES = {"webauthn_credential", "backup_run"}  # migration 0013
 ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 OTHER = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
 
@@ -39,9 +40,10 @@ OTHER = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
 @pytest.mark.req("ENF-OPS-002")
 def test_single_alembic_head() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0012"]
+    assert script.get_heads() == ["0013"]
     chain = [rev.revision for rev in script.walk_revisions()]
     assert chain == [
+        "0013",
         "0012",
         "0011",
         "0010",
@@ -68,6 +70,7 @@ def test_metadata_covers_exactly_the_migrated_tables(tmp_path: Path) -> None:
         | STORAGE_TABLES
         | EXPORT_TABLES
         | READING_TABLES
+        | M1B_TABLES
     )
     assert tables(database) == {t.name for t in metadata.sorted_tables} == expected
     for module, names in ((storage, STORAGE_TABLES), (export, EXPORT_TABLES)):
@@ -113,10 +116,11 @@ def test_upgrade_from_0003_keeps_existing_rows_and_fills_the_new_foreign_keys(
         "0010",
         "0011",
         "0012",
+        "0013",
     )
     assert result.backup is not None
-    assert "0003-to-0012" in result.backup.name
-    assert current_revision(database) == "0012"
+    assert "0003-to-0013" in result.backup.name
+    assert current_revision(database) == "0013"
     with closing(sqlite3.connect(database)) as db:
         assert db.execute("SELECT value FROM app_setting").fetchall() == [("DEBUG",)]
         assert db.execute("SELECT id, shelf_id FROM edition").fetchall() == [(ULID, None)]

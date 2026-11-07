@@ -19,6 +19,7 @@ ROOT_MODES = ("rw", "adopt_ro")  # PathMap mode: `adopt_ro` is never written (EF
 SENTINEL_STATES = ("ok", "missing", "mismatch", "stale")
 JOB_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled", "dead_letter", "paused")
 PRIORITY_CLASSES = ("new", "request", "backfill")
+BACKUP_STATES = ("running", "ok", "failed")
 EVENT_VISIBILITIES = ("private", "household", "ops")
 
 # Migration 0001, kept as is: the lowest configuration layer (ENF-OPS-004).
@@ -51,6 +52,32 @@ instance = sa.Table(
     positive_check("restore_epoch"),
     positive_check("restore_generation"),
     sa.UniqueConstraint("singleton"),
+)
+
+# One row per backup attempt (EF-INT-015). The archive is not in the database: `file_name`, `size`
+# and `sha256` describe the file `backup verify` checks; `schema_revision` is the Alembic revision
+# it holds. `finished_at` stays empty while the run is `running`.
+backup_run = sa.Table(
+    "backup_run",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("started_at", UtcDateTime(), nullable=False),
+    sa.Column("finished_at", UtcDateTime(), nullable=True),
+    sa.Column("state", sa.String(), nullable=False, server_default="running"),
+    sa.Column("cause", sa.String(), nullable=True),
+    sa.Column("file_name", sa.String(), nullable=True),
+    sa.Column("size", sa.Integer(), nullable=True),
+    sa.Column("sha256", sa.String(), nullable=True),
+    sa.Column("schema_revision", sa.String(), nullable=True),
+    ulid_check("id"),
+    in_check("state", BACKUP_STATES),
+    positive_check("size"),
+    sa.CheckConstraint(
+        '"sha256" IS NULL OR (length("sha256") = 64 AND "sha256" NOT GLOB \'*[^0-9a-f]*\')',
+        name="sha256_hex",
+    ),
+    sa.CheckConstraint('"state" <> \'running\' OR "finished_at" IS NULL', name="running_open"),
+    sa.Index("ix_backup_run_started", "started_at"),
 )
 
 # One row per physical root: an entry of the path map, with a stable identity of its own.
