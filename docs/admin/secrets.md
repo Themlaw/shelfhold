@@ -26,7 +26,7 @@ Même règle : instance arrêtée, puis `shelfhold secrets export --passphrase-f
 - **Trousseau absent.** Si le trousseau est perdu mais que la base existe (le démarrage refuse alors de créer une autre clé), l'import le recrée à partir de l'export, clé active comprise.
 - **Fichier forgé.** Un fichier tronqué, au mauvais en-tête, avec un identifiant en double, une clé de mauvaise taille ou trop volumineux (plus de 1 Mio) n'importe rien et ne dit rien de son contenu.
 - **Reprise.** Le trousseau est remplacé en une seule étape atomique (fichier synchronisé sur le disque, renommage, dossier synchronisé) : il n'est jamais à moitié écrit. Après une interruption, relancer la même commande termine le travail (registre, audit, rejeu).
-- **Pendant `restored_behind`.** L'import est permis, pour sa partie `/data` seulement (trousseau, registre, audit) : une sauvegarde antérieure à une rotation bloque `reconcile --adopt-after-restore` tant que les clés manquent. Aucune pierre tombale n'est rejouée à ce moment (la commande le dit) : c'est la réadoption qui rejoue, avec le trousseau du disque. L'ordre est donc : `secrets import`, puis `reconcile --adopt-after-restore`. `tombstone accept-lost-keyring` reste refusé pendant le gel, sur toutes les portes.
+- **Pendant `restored_behind`.** L'import est permis, pour sa partie `/data` seulement (trousseau, registre, audit) : une sauvegarde antérieure à une rotation bloque `reconcile --adopt-after-restore` tant que les clés manquent. Aucune pierre tombale n'est rejouée à ce moment (la commande le dit) : c'est la réadoption qui rejoue, avec le trousseau du disque. L'ordre est donc : `secrets import`, puis `reconcile --adopt-after-restore`. Sans export, la sortie est `tombstone accept-lost-keyring` (voir ci-dessous), permise elle aussi pendant le gel.
 - **Instance qui tourne.** La commande passe par la socket locale ; instance arrêtée, elle prend le verrou d'instance. La phrase de passe est lue du fichier par le processus qui applique l'import : elle ne passe ni par la ligne de commande, ni par la socket, ni par les journaux.
 
 ## Pourquoi arrêter l'instance
@@ -40,3 +40,11 @@ et d'abord celui-ci : **la clé maîtresse vit dans `/data`**. Une copie de `/da
 l'hôte contient alors la clé à côté des secrets qu'elle protège. Placez le trousseau hors de `/data`
 avec `SHELFHOLD_SECRET_KEY_FILE` (secret Docker ou volume distinct). L'avertissement ne montre jamais
 la clé.
+
+## Trousseau perdu, sans export
+
+`shelfhold tombstone accept-lost-keyring --confirm "<phrase>"` (action réservée : session récente ou hôte, jamais une clé d'API ; audité dans la même transaction) abandonne les clés de pierres tombales qui manquent au trousseau. Les lignes qu'elles protégeaient deviennent **inertes** : du contenu purgé peut revenir à la réacquisition ou à la réadoption. Ce n'est donc qu'un dernier recours, après `secrets import`.
+
+- Hors gel, la phrase est `the keyring is lost`.
+- Pendant `restored_behind` (sauvegarde antérieure à une rotation, sans export), la commande est permise parce qu'elle est la seule sortie de `key_unknown`, qui bloque `reconcile --adopt-after-restore`. La phrase énonce alors la conséquence : `the keyring is lost, its tombstones become inert and purged content may come back`. Les journaux sont lus, aucun n'est écrit ; l'ordre est cette commande, puis `reconcile --adopt-after-restore`.
+- `shelfhold status` et `shelfhold secrets status` gardent un avertissement durable (`clé(s) de pierres tombales déclarées perdues`) : retrouver le trousseau plus tard n'annule pas la déclaration.

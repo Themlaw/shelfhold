@@ -13,6 +13,7 @@ from shelfhold.library.tombstones.index import (
     Normalizers,
 )
 from shelfhold.library.tombstones.service import (
+    FROZEN_LOST_KEYRING_PHRASE,
     LOST_KEYRING_PHRASE,
     InertLine,
     JournalDisk,
@@ -42,6 +43,7 @@ __all__ = [
     "CITABLE_CONTENT_HASHES",
     "CITABLE_NORMALIZERS",
     "EDITION_KEY_COLUMNS",
+    "FROZEN_LOST_KEYRING_PHRASE",
     "LOST_KEYRING_PHRASE",
     "CitedVersionMissingError",
     "ContentHash",

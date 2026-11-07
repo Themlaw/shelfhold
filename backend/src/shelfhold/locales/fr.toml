@@ -129,6 +129,7 @@ warning_rotation_incomplete = "Une rotation est inachevée : relancez « shelfho
 warning_never_exported = "Le trousseau n'a jamais été exporté : « shelfhold secrets export --passphrase-file … --out … »."
 warning_export_older_than_rotation = "Le dernier export est antérieur à la dernière rotation : exportez de nouveau le trousseau."
 warning_tombstones_not_exported = "Des pierres tombales existent et le trousseau n'a pas été exporté depuis la première : sans lui, elles ne se lisent plus. Exportez-le avec « shelfhold secrets export »."
+warning_tombstone_kids_lost = "{detail} clé(s) de pierres tombales ont été déclarées perdues (« tombstone accept-lost-keyring ») : les lignes qu'elles protégeaient sont inertes et du contenu purgé peut revenir à la réacquisition ou à la réadoption. Retrouver le trousseau n'annule pas cette déclaration."
 warning_tombstone_kid_missing = "{detail} clé(s) citée(s) par des pierres tombales manquent au trousseau : réimportez le dernier export (« shelfhold secrets import --passphrase-file <fichier> --in <fichier> »)."
 boot_keyring_unreadable = "Démarrage refusé : le trousseau est illisible pour cet utilisateur ({detail})."
 boot_keyring_corrupt = "Démarrage refusé : trousseau inutilisable ({detail})."

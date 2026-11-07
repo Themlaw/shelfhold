@@ -98,7 +98,7 @@ class TombstoneKeyringExit:
             for root_id in owing
         ]
 
-    def _service(self) -> tuple[TombstoneService, list[TombstoneRoot]]:
+    def _service(self, *, freeze: bool = False) -> tuple[TombstoneService, list[TombstoneRoot]]:
         """The service over the mounted roots. A root counts as mounted when its sentinel can
         be judged, `restored_behind` included (the exits below are how that state is left)."""
         keyring = diagnostics.boot_check(self._settings, create=False, announce=False)
@@ -106,6 +106,8 @@ class TombstoneKeyringExit:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
         fsops = open_fsops(loaded, umask=self._settings.umask)
+        if freeze:
+            fsops.freeze()
         service = TombstoneService(self._engine, keyring, fsops, operating_bus(self._clock))
         roots = [
             TombstoneRoot(
@@ -144,11 +146,14 @@ class TombstoneKeyringExit:
             service.flush_pending(root)
         return service.owed_roots()
 
-    def accept_lost_keyring(self, *, confirmation: str, principal: Principal) -> list[str]:
-        service, roots = self._service()
+    def accept_lost_keyring(
+        self, *, confirmation: str, principal: Principal, frozen: bool = False
+    ) -> list[str]:
+        service, roots = self._service(freeze=frozen)  # frozen: read the journals, write none
         return service.accept_lost_keyring(
-            roots, confirmation=confirmation, principal=principal, now=self._clock.now()
-        )
+            roots, confirmation=confirmation, principal=principal, now=self._clock.now(),
+            frozen=frozen,
+        )  # fmt: skip
 
     def import_keyring(
         self,

@@ -314,15 +314,15 @@ def test_ops_methods_over_the_local_socket(settings: Settings, tmp_path: Path) -
                 "restored_behind",
                 "tombstone_key_unknown",
             }
-            from shelfhold.infrastructure.local_socket import RpcFailure
 
-            # restored behind: nothing but the exits of the restore writes (review of PR #82)
-            with pytest.raises(RpcFailure, match="restored_behind"):
-                call(
-                    sock, "ops.tombstone_accept_lost_keyring",
-                    {"confirmation": "the keyring is lost"},
-                )  # fmt: skip
-            assert keyring.waived == []
+            # restored behind: `accept-lost-keyring` is an exit of the freeze too (no export, no
+            # way out of `key_unknown` otherwise), and says what it costs: the long phrase
+            call(
+                sock, "ops.tombstone_accept_lost_keyring",
+                {"confirmation": "the keyring is lost, its tombstones become inert and purged content may come back"},
+            )  # fmt: skip
+            assert keyring.waived and keyring.waived[0][1] == "local_cli"
+            keyring.waived.clear()
             # `secrets import` is an exit of the freeze for its /data half: it is the way out of
             # `key_unknown`, which blocks the adoption (M1b L06 review); nothing is replayed
             answer = call(sock, "ops.secrets_import", {"passphrase_file": "/p", "in_file": "/e"})

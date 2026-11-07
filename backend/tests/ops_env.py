@@ -90,7 +90,9 @@ class FakeKeyring:
             "deferred": not replay,
         }
 
-    def accept_lost_keyring(self, *, confirmation: str, principal: Principal) -> list[str]:
+    def accept_lost_keyring(
+        self, *, confirmation: str, principal: Principal, frozen: bool = False
+    ) -> list[str]:
         self.waived.append((confirmation, principal.credential.value))
         gone, self.kids = self.kids, []
         return gone

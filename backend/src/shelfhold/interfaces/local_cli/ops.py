@@ -369,6 +369,7 @@ READS_AND_RESTORE_EXITS = frozenset(
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
         "ops.intents_list", "ops.backfill_estimate", "ops.meta_check",
         "ops.restore_adopt", "ops.tombstone_set_aside_journal", "ops.secrets_import",
+        "ops.tombstone_accept_lost_keyring",
     }
 )  # fmt: skip
 

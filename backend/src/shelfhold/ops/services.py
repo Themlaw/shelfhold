@@ -32,7 +32,6 @@ from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.naming import normalize_series_name, series_name_refusal
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.domain.planner import SeriesRef
-from shelfhold.i18n import t
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
@@ -502,9 +501,12 @@ class OpsServices:
     ) -> list[str]:
         if self._keyring is None:
             raise ExitUnavailableError("the tombstone service is not connected")
-        if self.restored_behind():  # it replays the journals: the freeze holds it, on every door
-            raise CodedRefusal("instance.restored_behind", t("local_cli.restored_behind"))
-        return self._keyring.accept_lost_keyring(confirmation=confirmation, principal=principal)
+        # An exit of the freeze, on every door: without an export it is the only way out of
+        # `key_unknown`, which blocks the adoption. Under the freeze the phrase is longer (it
+        # says what the waiver costs), the journals are read and none is written.
+        return self._keyring.accept_lost_keyring(
+            confirmation=confirmation, principal=principal, frozen=self.restored_behind()
+        )
 
     def secrets_import(
         self, *, passphrase_file: str, in_file: str, principal: Principal,

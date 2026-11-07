@@ -63,7 +63,7 @@ Notes :
 - `series resume` sur une série `permission_denied` relance la sonde d'écriture et refuse avec la
   correction si elle échoue.
 - `tombstone accept-lost-keyring` lève le blocage de réacquisition pour les clés manquantes **d'aujourd'hui**
-  seulement ; une clé perdue plus tard n'est pas pardonnée d'avance. La phrase de confirmation se tape à l'identique, en anglais.
+  seulement ; une clé perdue plus tard n'est pas pardonnée d'avance. La phrase de confirmation se tape à l'identique, en anglais ; pendant `restored_behind` elle est plus longue et énonce le coût (voir [secrets.md](secrets.md)).
 - Les états qui concernent les racines physiques (`foreign_root`, `root_lost`, `root_behind`) et
   `/store` (`store_lost`), la notation et la mise à l'abri arrivent avec M1b. Leurs commandes
   (`root takeover|reinit`, `store reinit`) sont décrites dans
