@@ -9,7 +9,7 @@ import pytest
 from fastapi import APIRouter, Depends, Request
 
 from shelfhold.config import Settings
-from shelfhold.identity.public import Effect, Principal, ReservedAction
+from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
 from tests.auth_env import (
     ADMIN,
@@ -21,7 +21,7 @@ from tests.auth_env import (
     run_cli,
 )
 
-EXPORT = ReservedAction("review.secrets_export", frozenset({Effect.TOUCHES_SECRETS}))
+EXPORT = RESERVED_ACTIONS["secrets.export"]  # a declared action: an undeclared one is refused
 
 
 def _router(calls: list[str]) -> APIRouter:

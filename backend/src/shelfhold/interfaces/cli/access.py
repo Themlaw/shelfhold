@@ -9,7 +9,10 @@ restricted profile exists (parental control then asks for a fresh session).
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import os
+import sys
 from datetime import UTC, datetime
 
 from shelfhold.config import ResolvedSettings
@@ -37,7 +40,8 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     if args.json:
         print(json.dumps([vars(row) for row in rows], sort_keys=True))
         return 0
+    writer = csv.writer(sys.stdout, dialect="excel-tab", lineterminator=os.linesep)
     for row in rows:
         fresh = "-" if row.fresh_auth_s is None else str(row.fresh_auth_s)
-        print(f"{row.action}\t{row.role}\t{row.credential}\t{row.outcome}\t{fresh}")
+        writer.writerow([row.action, row.role, row.credential, row.outcome, fresh])
     return 0

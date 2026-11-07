@@ -277,7 +277,7 @@ class SqlIdentityStore:
                         expires_at=new.expires_at,
                     )
                 )
-                conn.execute(audit_insert(audit))
+                conn.execute(self._audit_insert(audit))
         except _NoLiveKeyError:  # the block was rolled back: nothing was written
             return False
         except sa.exc.IntegrityError as error:
@@ -297,6 +297,10 @@ class SqlIdentityStore:
         with self._engine.connect() as conn:
             return [str(target) for (target,) in conn.execute(query)]
 
+    @staticmethod
+    def _audit_insert(entry: AuditEntry) -> sa.Insert:
+        return audit_insert(entry)
+
     def audit(self, entry: AuditEntry) -> None:
         with self._engine.begin() as conn:
-            conn.execute(audit_insert(entry))
+            conn.execute(self._audit_insert(entry))

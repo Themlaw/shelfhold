@@ -111,7 +111,9 @@ def test_reserved_exit_commands_require_fresh_session_or_cli(
         )
         assert stale.status_code == (401 if wants_fresh else 200), route
     # the host CLI is allowed on all of them
-    cli = Principal(user_id="-", username="host", role="admin", credential=Credential.LOCAL_CLI)
+    cli = Principal(
+        user_id="-", username="host", role="admin", credential=Credential.LOCAL_CLI, can_rate=True
+    )
     for action in by_name.values():
         verdict = authorize_reserved(cli, action, now=api.clock.now())
         assert isinstance(verdict, Allowed)
