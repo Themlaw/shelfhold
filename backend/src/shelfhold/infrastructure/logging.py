@@ -226,6 +226,20 @@ def _redact_item(item: object, depth: int) -> object:
     return redact_value(item, depth)
 
 
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _escape_controls(_logger: WrappedLogger, _method: str, event_dict: EventDict) -> EventDict:
+    """Console mode writes text as it is: a newline would forge a line and an ANSI sequence would
+    drive the terminal. Control characters of every text value become their written form."""
+    for key, value in event_dict.items():
+        if isinstance(value, str):
+            event_dict[key] = _CONTROL.sub(
+                lambda m: m.group().encode("unicode_escape").decode("ascii"), value
+            )
+    return event_dict
+
+
 def _redact(_logger: WrappedLogger, _method: str, event_dict: EventDict) -> EventDict:
     for key in list(event_dict):
         if _SENSITIVE.search(key):
@@ -269,6 +283,7 @@ def configure_logging(*, level: str, log_format: Literal["json", "console"]) -> 
                 structlog.stdlib.ProcessorFormatter.remove_processors_meta,
                 structlog.processors.format_exc_info,
                 _redact,  # tracebacks and messages are text now: scrub them too
+                *([_escape_controls] if log_format == "console" else []),
                 renderer,
             ],
         )

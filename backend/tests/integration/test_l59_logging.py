@@ -501,3 +501,27 @@ def test_a_registered_secret_never_survives_the_failure_detail(
     text = "\n".join(str(v) for r in records for v in r.values())  # decoded, not JSON-escaped
     for piece in (secret, secret[:12], repr(secret)[1:-1], secret.replace("\\", "\\\\")):
         assert piece not in text, (label, piece)
+
+
+@pytest.mark.req("ENF-SEC-005", "ENF-OBS-001")
+def test_console_mode_cannot_forge_a_line_or_drive_the_terminal(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure_logging(level="DEBUG", log_format="console")
+    capsys.readouterr()
+    try:
+        structlog.get_logger("l59").info("l59.hostile\n2026 [error] forged \x1b[2J", field="a\rb")
+        try:
+            raise ValueError("boom\n[critical] forged traceback line \x1b[31m")
+        except ValueError:
+            structlog.get_logger("l59").exception("l59.failure")
+        out = capsys.readouterr().out
+    finally:
+        root = logging.getLogger()
+        for handler in [h for h in root.handlers if getattr(h, "_shelfhold_handler", False)]:
+            root.removeHandler(handler)
+        root.setLevel(logging.WARNING)
+        structlog.reset_defaults()
+    assert "\x1b[2J" not in out and "\\x1b[2J" in out  # written, not interpreted
+    assert not any(line.lstrip().startswith(("2026", "[critical]")) for line in out.splitlines())
+    assert "\\n" in out and "\r" not in out
