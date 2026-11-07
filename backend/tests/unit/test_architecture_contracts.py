@@ -261,6 +261,19 @@ VIOLATIONS = [
     ("export-layers", "export/domain/other.py", "import shelfhold.export.targets\n", None),
     ("identity-layers", "identity/application/other.py",
      "import shelfhold.identity.adapters\n", None),
+    # M1b L00
+    ("webauthn-confined", "library/other.py", "import webauthn\n", "identity/webauthn/other.py"),
+    ("webauthn-confined", "identity/adapters/other.py", "import webauthn\n", None),
+    ("sablier-confined", "export/other.py", "import shelfhold.integrations.sablier\n",
+     "integrations/sablier/client.py"),
+    ("sablier-confined", "integrations/apprise/other.py",
+     "import shelfhold.integrations.sablier\n", None),
+    ("backup-dir-sole-writer", "export/other.py", "import shelfhold.ops.backup.store\n",
+     "ops/backup/run.py"),
+    ("backup-dir-sole-writer", "ops/status_other.py", "import shelfhold.ops.backup.store\n", None),
+    ("third-party-plugins-single-loader", "identity/other.py", "import importlib.metadata\n",
+     "plugin_host/loader.py"),
+    ("third-party-plugins-single-loader", "export/other.py", "import pkgutil\n", None),
 ]  # fmt: skip
 
 
@@ -288,6 +301,24 @@ def test_each_contract_breaks_on_a_violation_and_allows_its_sanctioned_module(
         ok = _run_in_copy(tmp_path / "ok", {sanctioned: code})
         assert f"{_contract_name(contract)} BROKEN" not in ok.stdout, ok.stdout
         assert ok.returncode == 0, ok.stdout
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_no_traceability_exception_is_stale() -> None:
+    """An `out_of_required_ci` entry must name a test file that still carries a conditional mark."""
+    import importlib.util
+
+    tool = BACKEND.parent / "tools" / "traceability.py"
+    spec = importlib.util.spec_from_file_location("traceability_l00", tool)
+    assert spec is not None
+    assert spec.loader is not None
+    tr = importlib.util.module_from_spec(spec)
+    sys.modules["traceability_l00"] = tr
+    spec.loader.exec_module(tr)
+    root = BACKEND.parent
+    conditional = {t.path for t in tr.collect_python(root) if t.conditional}
+    stale = [e["path"] for e in tr.load_out_of_required_ci(root) if e["path"] not in conditional]
+    assert not stale, f"stale out_of_required_ci entries: {stale}"
 
 
 @pytest.mark.req("ENF-QUAL-002")
