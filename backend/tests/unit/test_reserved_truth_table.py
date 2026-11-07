@@ -283,6 +283,8 @@ FRESHNESS_LINE = {
             "keys.rotate",
             "keys.revoke",
             "device_token.manage",
+            "passkey.register",
+            "passkey.revoke",
         ),
         "none",
     ),

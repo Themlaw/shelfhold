@@ -751,3 +751,63 @@ def test_the_passkey_secrets_are_never_stored_in_clear_in_responses(api: AuthEnv
     everything = api.client.get(PASSKEYS).text + str(api.client.get("/api/v1/auth/session").json())
     public_key = stored(api.settings, "public_key")
     assert b64u(public_key) not in everything and b64u(passkey.credential_id) not in everything
+
+
+# --- review PR #95: freshness of the registration and the revocation ---------------------------
+
+
+def test_passkey_register_and_revoke_need_fresh_auth_in_the_hardened_profile(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    with auth_env(monkeypatch, settings, public_url="https://testserver", hardened=True) as api:
+        assert api.login(remember=False).status_code == 200
+        passkey, done = register(api)
+        assert done.status_code == 201  # fresh: the session was just opened
+        [(item_id,)] = db_rows(api.settings, "SELECT id FROM webauthn_credential")
+        api.clock.advance(timedelta(minutes=20))
+        stale = api.post(f"{PASSKEYS}/options", json={})
+        assert stale.status_code == 401
+        assert stale.json()["type"].endswith("/reauth-required")
+        gone = api.client.delete(f"{PASSKEYS}/{item_id}", headers={CSRF_HEADER: api.csrf()})
+        assert gone.status_code == 401
+        assert stored(api.settings, "revoked_at") is None  # nothing happened
+        flow = api.post(REAUTH_OPTIONS, json={}).json()
+        credential = passkey.get(flow["options"])
+        reauth = api.post(
+            REAUTH, json={"method": "passkey", "flow": flow["flow"], "credential": credential}
+        )
+        assert reauth.status_code == 200
+        gone = api.client.delete(f"{PASSKEYS}/{item_id}", headers={CSRF_HEADER: api.csrf()})
+        assert gone.status_code in (204, 409)
+        rows = db_rows(
+            api.settings,
+            "SELECT action, session_id, auth_time FROM audit "
+            "WHERE action IN ('passkey.register', 'passkey.revoke')",
+        )
+        assert {r[0] for r in rows} == {"passkey.register", "passkey.revoke"}
+        assert all(r[1] and r[2] for r in rows)  # session_id and auth_time on each
+
+
+def test_passkey_register_and_revoke_have_no_freshness_by_default(api: AuthEnv) -> None:
+    registered(api)
+    api.clock.advance(timedelta(hours=3))  # the default session lasts 30 days
+    assert register(api, name="Later")[1].status_code == 201
+    rows = db_rows(
+        api.settings, "SELECT session_id, auth_time FROM audit WHERE action = 'passkey.register'"
+    )
+    assert len(rows) >= 2 and all(r[0] and r[1] for r in rows)  # audited either way
+
+
+def test_a_key_can_neither_register_nor_revoke_a_passkey(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    from tests.auth_env import run_cli
+
+    capsys.readouterr()
+    assert run_cli(monkeypatch, api.settings, "admin", "keys", "create") == 0
+    key = re.search(r"shk_[0-9a-f]{8}_[A-Za-z0-9_-]{43}", capsys.readouterr().out)
+    assert key
+    headers = {"Authorization": f"Bearer {key.group(0)}"}
+    options = api.client.post(f"{PASSKEYS}/options", json={}, headers=headers)
+    assert options.status_code == 403 and options.json()["code"] == "credential_not_allowed"
+    assert api.client.delete(f"{PASSKEYS}/x", headers=headers).status_code == 403

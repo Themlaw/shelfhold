@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from shelfhold.i18n import t
 from shelfhold.identity.public import (
+    RESERVED_ACTIONS,
     InvalidCredentialsError,
     LastLoginFactorError,
     PasskeyRecord,
@@ -31,11 +32,15 @@ from shelfhold.interfaces.http_api.auth import (
     PASSKEY_SCRIPT_PATH,
     gate_of,
     require_session,
+    reserved_action,
     set_session_cookies,
 )
 from shelfhold.interfaces.http_api.login import CsrfToken, _client_ip, _throttled, passkey_script
 from shelfhold.interfaces.http_api.problems import ProblemError
 
+# Fresh proof in the hardened profile only (P3, review PR #95); API keys never.
+_REGISTER = reserved_action(RESERVED_ACTIONS["passkey.register"])
+_REVOKE = reserved_action(RESERVED_ACTIONS["passkey.revoke"])
 PASSKEYS_PATH = "/api/v1/auth/passkeys"
 PASSKEY_REAUTH_OPTIONS_PATH = f"{PASSKEYS_PATH}/reauth/options"
 
@@ -129,7 +134,7 @@ def build_passkeys_router() -> APIRouter:
 
     @router.post(f"{PASSKEYS_PATH}/options", response_model=PasskeyFlow)
     def passkey_registration_options(
-        request: Request, principal: Annotated[Principal, Depends(require_session)]
+        request: Request, principal: Annotated[Principal, Depends(_REGISTER)]
     ) -> JSONResponse:
         try:
             issued = gate_of(request).auth.passkey_registration_options(principal)
@@ -145,7 +150,7 @@ def build_passkeys_router() -> APIRouter:
     def passkey_register(
         body: PasskeyRegistration,
         request: Request,
-        principal: Annotated[Principal, Depends(require_session)],
+        principal: Annotated[Principal, Depends(_REGISTER)],
     ) -> PasskeyItem:
         try:
             record = gate_of(request).auth.passkey_register(
@@ -161,7 +166,7 @@ def build_passkeys_router() -> APIRouter:
     def passkey_revoke(
         passkey_id: str,
         request: Request,
-        principal: Annotated[Principal, Depends(require_session)],
+        principal: Annotated[Principal, Depends(_REVOKE)],
     ) -> Response:
         try:
             gate_of(request).auth.passkey_revoke(principal, passkey_id)

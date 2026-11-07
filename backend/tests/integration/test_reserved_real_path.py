@@ -29,7 +29,7 @@ from shelfhold.identity.public import (
 from shelfhold.infrastructure.local_socket import Peer, RpcError
 from shelfhold.interfaces.local_cli.dispatch import IdentityDispatcher
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
-from tests.auth_env import ADMIN, PASSWORD, AuthEnv, auth_env, db_rows, run_cli
+from tests.auth_env import ADMIN, CSRF_HEADER, PASSWORD, AuthEnv, auth_env, db_rows, run_cli
 from tests.integration.test_auth_keys_reserved import _reserved_routes
 
 KEY = re.compile(r"shk_([0-9a-f]{8})_[A-Za-z0-9_-]{43}")
@@ -89,6 +89,9 @@ def real_reserved_routes(env: AuthEnv) -> list[tuple[str, str, str]]:
 def call(env: AuthEnv, method: str, path: str, **kwargs: Any) -> Any:
     if method == "GET":
         return env.client.get(path, **kwargs)
+    if method == "DELETE":
+        headers = {CSRF_HEADER: env.csrf(), **kwargs.pop("headers", {})}
+        return env.client.delete(path, headers=headers, **kwargs)
     return env.post(path, json={}, **kwargs)  # an empty body: a 422 means the rule let it through
 
 
@@ -129,10 +132,11 @@ def test_real_reserved_routes_refuse_keys_and_non_admin_roles(
 ) -> None:
     key = make_key(monkeypatch, capsys, api)
     for method, path, action in real_reserved_routes(api):
-        keyed = (
-            api.client.get(path, headers={"Authorization": f"Bearer {key}"})
-            if method == "GET"
-            else api.client.post(path, json={}, headers={"Authorization": f"Bearer {key}"})
+        keyed = api.client.request(
+            method,
+            path,
+            headers={"Authorization": f"Bearer {key}"},
+            json=None if method in {"GET", "DELETE"} else {},
         )
         assert keyed.status_code == 403, (path, action)
         assert keyed.json()["type"] == "/api/v1/problems/credential-not-allowed"
