@@ -12,7 +12,6 @@ name the probe itself drew (the perimeter is enforced by fsops).
 
 from __future__ import annotations
 
-import contextlib
 import errno
 import os
 from collections.abc import Callable
@@ -26,8 +25,8 @@ from shelfhold.events.bus import EventBus
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.fsops.emitters import PROBE_NAME, new_probe_name
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
+from shelfhold.infrastructure.fsops.probe import probe_folder, sweep_probe_files
 from shelfhold.infrastructure.schema import export
 
 __all__ = [
@@ -44,7 +43,7 @@ __all__ = [
 
 DENIED: Final = "permission_denied"  # `export_series.paused_reason`, the waiting state
 EVENT: Final = "target.permission_denied"
-STEPS: Final = ("write", "rename", "remove")
+STEPS: Final = ("write", "rename", "mkdir")
 
 
 @dataclass(frozen=True)
@@ -181,7 +180,8 @@ def _read_only_volume(path: str) -> bool:
 
 
 class FolderProbe:
-    """Create, rename and remove a probe file in a folder; leaves nothing behind."""
+    """The permission view of `infrastructure/fsops/probe.probe_folder`: the same protocol (write,
+    rename, make a folder), told with the errno, the owner and the commands that fix it."""
 
     def __init__(
         self,
@@ -198,30 +198,11 @@ class FolderProbe:
     def ids(self) -> tuple[int, int]:
         return self._runs_as or (os.geteuid(), os.getegid())
 
-    def _remove_probe_file(self, path: str) -> None:
-        self._fsops.system_unlink("probe_file_cleanup", path)
-
-    def make_folder(self, folder: str) -> None:
-        """The folder of a destination, made by the sole writer (the probe and Kavita need it)."""
-        self._fsops.mkdir(folder, parents=True, exist_ok=True)
-
     def sweep(self, folder: str) -> int:
-        """Remove the probe files an earlier crash left in `folder` (a regular file whose name is
-        exactly what `new_probe_name` draws: 16 hex digits, nothing else is ever touched)."""
-        try:
-            entries = self._fsops.list_dir(folder)
-        except OSError:
-            return 0
-        swept = 0
-        for name, kind in sorted(entries.items()):
-            if kind == "file" and PROBE_NAME.fullmatch(name):
-                with contextlib.suppress(OSError):
-                    self._remove_probe_file(f"{folder.rstrip('/')}/{name}")
-                    swept += 1
-        return swept
+        return sweep_probe_files(self._fsops, folder)  # type: ignore[arg-type]
 
     def run(self, folder: str) -> ProbeResult:
-        ids = self._runs_as or (os.geteuid(), os.getegid())
+        ids = self.ids
         base = folder.rstrip("/")
         seen = self._fsops.observe(base) if base else None
         if seen is None or seen[0] != "dir":
@@ -229,36 +210,16 @@ class FolderProbe:
                 False, folder, (), "exists", "folder_missing", ids, None,
                 "Check the volume mount and the path map: there is nothing to fix with rights.",
             )  # fmt: skip
-        first, second = f"{base}/{new_probe_name()}", f"{base}/{new_probe_name()}"
-        done: list[str] = []
-        current: str | None = None
-        step = "write"
-        try:
-            self._fsops.write_atomic(first, b"shelfhold probe\n", parents=False, replace=False)
-            current = first
-            done.append("write")
-            step = "rename"
-            self._fsops.rename(first, second)
-            current = second
-            done.append("rename")
-            step = "remove"
-            self._remove_probe_file(second)
-            current = None
-            done.append("remove")
-        except OSError as error:
-            owner = self._owner_of(base)
-            return ProbeResult(
-                False, folder, tuple(done), step, _errno_name(error), ids, owner,
-                fix_commands(folder, ids, owner, _errno_name(error)),
-                error if isinstance(error, RootBlockedError) else None,
-            )  # fmt: skip
-        finally:
-            if current is not None:  # a step failed with the probe file in place: take it away
-                with contextlib.suppress(
-                    OSError
-                ):  # the cause is reported; a leftover is swept at the next export
-                    self._remove_probe_file(current)
-        return ProbeResult(True, folder, tuple(done), None, None, ids, None, "")
+        report = probe_folder(self._fsops, base)  # type: ignore[arg-type]
+        if report.ok:
+            return ProbeResult(True, folder, report.steps, None, None, ids, None, "")
+        cause = report.errno_name
+        owner = self._owner_of(base)
+        return ProbeResult(
+            False, folder, report.steps, report.failed_step, cause, ids, owner,
+            fix_commands(folder, ids, owner, cause),
+            report.error if isinstance(report.error, RootBlockedError) else None,
+        )  # fmt: skip
 
 
 class PermissionPreflight:

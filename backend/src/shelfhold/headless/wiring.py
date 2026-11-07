@@ -11,7 +11,6 @@ from shelfhold.composition import Composition
 from shelfhold.config import Settings, load_settings
 from shelfhold.export.application.preflight import (
     DestinationNotWritableError,
-    FolderProbe,
     check_access,
 )
 from shelfhold.export.application.root_bootstrap import RootPolicy
@@ -30,6 +29,7 @@ from shelfhold.infrastructure.fetcher import (
     Network,
     SystemResolver,
 )
+from shelfhold.infrastructure.fsops.probe import make_folder
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.infrastructure.settings_store import load_db_settings
@@ -81,7 +81,7 @@ class _ShelfLinker:
         if refused is not None:
             raise DestinationNotWritableError(refused)
         with self._comp.write_context() as w:
-            FolderProbe(w.fsops).make_folder(local)
+            make_folder(w.fsops, local)  # type: ignore[arg-type]
 
 
 def shelf_linker(settings: Settings, engine: Engine) -> ShelfLinkPort:

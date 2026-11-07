@@ -366,7 +366,6 @@ def _opens_for_writing(node: ast.Call) -> bool:
 # one of these types (a receiver *name* proves nothing: `disk = Path(x)` is a name too).
 FSOPS_CALLERS = (
     "shelfhold/export/application/intents.py",
-    "shelfhold/export/application/preflight.py",
     "shelfhold/infrastructure/instance/lease.py",
 )
 WRITE_NAMES = {*PATH_WRITE_METHODS, *OS_WRITE_FUNCTIONS, *LIBRARY_ONLY}
@@ -537,3 +536,35 @@ def test_ruff_bans_os_file_mutations_outside_fsops() -> None:
 )
 def test_the_path_write_scan_catches_the_review_pr43_bypasses(code: str) -> None:
     assert path_write_offences(code)
+
+
+# --- M1b L03: the headless facade goes through its record functions, not through SQL ---
+
+
+@pytest.mark.req("EF-INT-024")
+def test_headless_admin_issues_no_raw_sql() -> None:
+    source = (SRC / "shelfhold" / "headless" / "admin.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import | ast.ImportFrom)
+        for alias in node.names
+    }
+    queries = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and ((isinstance(node.value, ast.Name) and node.value.id == "sa") or node.attr == "execute")
+    ]
+    assert queries == []
+    assert "sqlalchemy" not in imported and "sqlite_insert" not in imported
+
+
+@pytest.mark.req("EF-EXP-054")
+def test_probe_file_cleanup_has_one_deletion_site() -> None:
+    from shelfhold.identity.domain.emitters import DELETION_SITES
+
+    sites = [s for s, name in DELETION_SITES.items() if name == "probe_file_cleanup"]
+    assert not [s for s in sites if "preflight.py" in s]
+    assert "shelfhold/export/application/preflight.py" not in FSOPS_CALLERS

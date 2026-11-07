@@ -483,7 +483,7 @@ Solde la dette S1 pour ce qui est de la logique ; la mesure sur 24 h reste due (
 4. **Bascule** : la confirmation est liée à l'empreinte du rapport vu (`SwitchoverStale`) et mémorise l'ensemble des séries ; une série qui en sort est refusée de nouveau. `name_motif` exige `<équipe>_<chapitre>` complet (marqueur ou nombre en tête du chapitre). Le signal `download_dir` vient du dossier déclaré par `declare_download_dir`. Le pipeline appelle `require_clear` avant tout export.
 5. **Sonde** : balayage des fichiers `.shelfhold-probe-<16 hex>` réguliers (racine et dossiers de série) avant chaque export, pas seulement au démarrage ; dossier absent = `folder_missing` sans commande ACL ; dossier inconnu refusé par `confirm`. `series resume` d'une série `permission_denied` relance la sonde et refuse avec `explain()` si elle échoue.
 6. **Lot `--pair-auto`** : une seule lecture de la porte, toutes les sondes d'abord, une transaction ; un dossier refusé n'apparie aucune série (`BatchResult.complete` faux).
-7. **Reste à faire après la fusion de L37 (#59)** : réduire `FolderProbe` à un adaptateur de `fsops/probe.probe_folder`, ne garder qu'un site `probe_file_cleanup`, retirer l'entrée de `DELETION_SITES` et `preflight.py` de `FSOPS_CALLERS`.
+7. **Fait en M1b L03** (restait à faire après la fusion de L37, #59) : réduire `FolderProbe` à un adaptateur de `fsops/probe.probe_folder`, ne garder qu'un site `probe_file_cleanup`, retirer l'entrée de `DELETION_SITES` et `preflight.py` de `FSOPS_CALLERS`.
 
 ## L37 : garde disque, refus du NFS, arrêt propre, matrice de pannes (ENF-OPS-006, -007, -010, -011, EF-UX-002)
 
@@ -830,7 +830,7 @@ Hors liste d'autorisations, trois reports de comportement :
 
 - `root takeover|reinit|restored` et `store reinit` n'existent pas (03, section M1b) ; `shelfhold status` donne la correction manuelle (L35). `secrets import` n'existe pas non plus (L06 ci-dessus).
 - Le journal des pierres tombales n'est pas chaîné : troncature, doublon et réordonnancement par un tiers qui écrit dans la racine ne sont pas détectés (L33, point 17 ; EF-BIB-054, 03 M1b).
-- Objections du contradicteur reportées (L43, tableau ci-dessus) : un seul gel au lieu de trois (11), SQL de `headless/admin` écrit à la main (12), surface du SDK `ExportTarget` (14), lignes `testonly` (15). Elles sont à inscrire au plan de M1b.
+- Objections du contradicteur reportées (L43, tableau ci-dessus) : un seul gel au lieu de trois (11), SQL de `headless/admin` écrit à la main (12, fait en M1b L03 : `headless/records.py`), surface du SDK `ExportTarget` (14), lignes `testonly` (15). Elles sont à inscrire au plan de M1b.
 
 ### Reports vers M2 et M3, et dettes datées
 

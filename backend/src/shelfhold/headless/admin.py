@@ -17,10 +17,9 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
-import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.config import ResolvedSettings
@@ -44,6 +43,7 @@ from shelfhold.export.domain.reconcile import (
     Thresholds,
 )
 from shelfhold.export.targets.kavita import AdminKey, load_admin_key, store_admin_key
+from shelfhold.headless import records
 from shelfhold.headless.actor import Actor
 from shelfhold.headless.desired import (
     DesiredConfig,
@@ -77,7 +77,6 @@ from shelfhold.headless.urls import validate_target_url
 from shelfhold.i18n import t
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, export, identity, platform
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.integrations.apprise.channels import ChannelStore
@@ -279,11 +278,7 @@ class HeadlessAdmin:
         """A running server picks the follow and the export up at its next tick instead of at the
         next quarter hour: what was just configured is worth acting on now. No server: no row."""
         with self._engine.begin() as connection:
-            connection.execute(
-                sa.update(platform.schedule)
-                .where(platform.schedule.c.job_kind.in_(WAKE_KINDS), platform.schedule.c.enabled)
-                .values(next_due_at=self._clock.now())
-            )
+            records.wake_schedule(connection, WAKE_KINDS, self._clock.now())
 
     def _bootstrap(self) -> None:
         """The instance row and the roots the path maps name (idempotent; see `root_bootstrap`)."""
@@ -313,16 +308,12 @@ class HeadlessAdmin:
         """Every folder already named by a target's map or registered as a physical root."""
         named: dict[str, PathMode] = {}
         with self._engine.connect() as connection:
-            for row in connection.execute(
-                sa.select(export.export_target.c.id, export.export_target.c.path_map)
-            ):
+            for row in records.target_path_maps(connection):
                 if row.id == except_target:
                     continue
                 for entry in row.path_map or []:
                     named[entry["local"]] = PathMode(entry.get("mode", "rw"))
-            for root in connection.execute(
-                sa.select(platform.physical_root.c.path_entry, platform.physical_root.c.mode)
-            ):
+            for root in records.physical_roots(connection):
                 named.setdefault(root.path_entry, PathMode(root.mode))
         return named
 
@@ -371,9 +362,7 @@ class HeadlessAdmin:
     def list(self) -> ConfigValues:
         rows = [self.get(name) for name in KEYS]
         with self._engine.connect() as connection:
-            names = connection.execute(
-                sa.select(export.export_target.c.name).order_by(export.export_target.c.name)
-            ).scalars()
+            names = records.target_names(connection)
             rows += [self._get_path_map(PATH_MAP_PREFIX + name) for name in names]
         return rows
 
@@ -397,7 +386,7 @@ class HeadlessAdmin:
         with self._engine.begin() as connection:
             self._write_setting(connection, key, clean)
             if key == "instance.jurisdiction":
-                connection.execute(sa.update(platform.instance).values(jurisdiction=clean))
+                records.set_jurisdiction(connection, clean)
         _log.info("headless.config_set", key=key)
         self._bootstrap()
         return self.get(key)
@@ -417,17 +406,11 @@ class HeadlessAdmin:
 
     def _setting(self, key: str) -> str | None:
         with self._engine.connect() as connection:
-            return connection.execute(
-                sa.select(platform.app_setting.c.value).where(platform.app_setting.c.key == key)
-            ).scalar_one_or_none()
+            return records.setting(connection, key)
 
     @staticmethod
     def _write_setting(connection: Connection, key: str, value: str) -> None:
-        table = platform.app_setting
-        statement = sqlite_insert(table).values(key=key, value=value)
-        connection.execute(
-            statement.on_conflict_do_update(index_elements=["key"], set_={"value": value})
-        )
+        records.write_setting(connection, key, value)
 
     def _overridden_by(self, key: str) -> str | None:
         """`env` or `toml` when a higher layer defines this key (ENF-OPS-004): the database value
@@ -438,9 +421,7 @@ class HeadlessAdmin:
         return state.source if state.source in {"env", "toml"} else None
 
     def _target_row(self, connection: Connection, name: str) -> Any:
-        row = connection.execute(
-            sa.select(export.export_target).where(export.export_target.c.name == name)
-        ).first()
+        row = records.target_named(connection, name)
         if row is None:
             raise UnknownTarget(f"no target named {name!r}")
         return row
@@ -462,21 +443,13 @@ class HeadlessAdmin:
         with self._engine.begin() as connection:
             row = self._target_row(connection, key.removeprefix(PATH_MAP_PREFIX))
             before = list(row.path_map)
-            connection.execute(
-                sa.update(export.export_target)
-                .where(export.export_target.c.id == row.id)
-                .values(path_map=entries, updated_at=self._clock.now())
-            )
+            records.set_path_map(connection, row.id, entries, self._clock.now())
         _log.info("headless.config_set", key=key)
         try:
             self._bootstrap()
         except Exception:  # the path map is stored only once the roots are registered
             with self._engine.begin() as connection:
-                connection.execute(
-                    sa.update(export.export_target)
-                    .where(export.export_target.c.id == row.id)
-                    .values(path_map=before, updated_at=self._clock.now())
-                )
+                records.set_path_map(connection, row.id, before, self._clock.now())
             raise
         return self.get(key)
 
@@ -520,9 +493,7 @@ class HeadlessAdmin:
         )
         self._check_roots(entries)  # before a key is exchanged or anything stored
         with self._engine.connect() as connection:
-            existing = connection.execute(
-                sa.select(export.export_target).where(export.export_target.c.name == name)
-            ).first()
+            existing = records.target_named(connection, name)
         if existing is not None:
             if existing.kind != "kavita" or existing.config.get("url") != clean_url:
                 raise TargetConflict(f"a target named {name!r} exists with another address")
@@ -548,20 +519,18 @@ class HeadlessAdmin:
         }
         try:
             with self._engine.begin() as connection:
-                connection.execute(
-                    sa.insert(export.export_target).values(
-                        id=target_id,
-                        kind="kavita",
-                        name=name,
-                        config=config,
-                        path_map=entries,
-                        version_seen=exchanged.version,
-                    )
+                records.insert_kavita_target(
+                    connection,
+                    target_id=target_id,
+                    name=name,
+                    config=config,
+                    path_map=entries,
+                    version_seen=exchanged.version,
                 )
                 registry.register_active_key(connection, self._vault.keyring)
                 store_admin_key(self._vault, connection, target_id, AdminKey(exchanged.value))
                 self._audit_admin_risk(connection, name, actor)
-        except sa.exc.SQLAlchemyError:
+        except SQLAlchemyError:
             ident = f" (id {exchanged.key_id})" if exchanged.key_id is not None else ""
             raise TargetExchangeFailed(
                 f"the key {KEY_NAME!r}{ident} was created in Kavita but could not be saved:"
@@ -573,16 +542,15 @@ class HeadlessAdmin:
 
     def _audit_admin_risk(self, connection: Connection, name: str, actor: Actor | None) -> None:
         """One row in the same transaction as the target: no accepted risk without its trace."""
-        connection.execute(
-            sa.insert(identity.audit).values(
-                id=new_ulid(),
-                actor_id=actor.actor_id if actor else None,
-                action=ADMIN_RISK_ACTION,
-                target=name if actor else f"{name} uid={os.getuid()}",
-                at=self._clock.now(),
-                session_id=actor.session_id if actor else None,
-                auth_time=actor.auth_time if actor else None,
-            )
+        records.insert_audit(
+            connection,
+            audit_id=new_ulid(),
+            actor_id=actor.actor_id if actor else None,
+            action=ADMIN_RISK_ACTION,
+            target=name if actor else f"{name} uid={os.getuid()}",
+            at=self._clock.now(),
+            session_id=actor.session_id if actor else None,
+            auth_time=actor.auth_time if actor else None,
         )
 
     # -- the exits of EF-INT-023 that renew a credential ---------------------------------------
@@ -591,14 +559,7 @@ class HeadlessAdmin:
         """`target rotate-key`: a new named key from the dedicated admin account, sealed in place
         of the old one, which Kavita lets expire; the J-14 / J-1 notices start over."""
         with self._engine.connect() as connection:
-            row = connection.execute(
-                sa.select(export.export_target).where(
-                    sa.or_(
-                        export.export_target.c.id == target, export.export_target.c.name == target
-                    ),
-                    export.export_target.c.kind == "kavita",
-                )
-            ).first()
+            row = records.kavita_target(connection, target)
         if row is None:
             raise UnknownTarget(f"no Kavita target {target!r}")
         username = str(row.config.get("username", ""))
@@ -617,10 +578,10 @@ class HeadlessAdmin:
         with self._engine.begin() as connection:
             registry.register_active_key(connection, self._vault.keyring)
             store_admin_key(self._vault, connection, row.id, AdminKey(exchanged.value))
-            connection.execute(
-                sa.update(export.export_target)
-                .where(export.export_target.c.id == row.id)
-                .values(config={**row.config, "key_expires_at": expires_at, "key_name": new_name})
+            records.set_target_config(
+                connection,
+                row.id,
+                {**row.config, "key_expires_at": expires_at, "key_name": new_name},
             )
             health = load_health(connection, row.id)
             health.key_notices = KeyNoticeState(exchanged.expires_at, frozenset())
@@ -639,11 +600,8 @@ class HeadlessAdmin:
 
     def _suwayomi_url(self) -> str:
         with self._engine.connect() as connection:
-            settings = connection.execute(
-                sa.select(acquisition.source_config.c.settings).where(
-                    acquisition.source_config.c.plugin_id == "suwayomi"
-                )
-            ).scalar()
+            row = records.source_row(connection)
+        settings = row.settings if row is not None else None
         if not isinstance(settings, dict) or not settings.get("base_url"):
             raise InvalidConfigValue("no Suwayomi source yet: add one with `shelfhold source add`")
         return str(settings["base_url"])
@@ -699,24 +657,11 @@ class HeadlessAdmin:
         keep = mode == "basic_auth"
         settings = {"base_url": clean_url, "auth_mode": mode}
         with self._engine.begin() as connection:
-            row = connection.execute(
-                sa.select(acquisition.source_config.c.settings).where(
-                    acquisition.source_config.c.plugin_id == "suwayomi"
-                )
-            ).first()
-            created = row is None
+            created = records.source_row(connection) is None
             if created:
-                connection.execute(
-                    sa.insert(acquisition.source_config).values(
-                        plugin_id="suwayomi", settings=settings
-                    )
-                )
+                records.insert_source(connection, settings)
             else:
-                connection.execute(
-                    sa.update(acquisition.source_config)
-                    .where(acquisition.source_config.c.plugin_id == "suwayomi")
-                    .values(settings=settings, updated_at=self._clock.now())
-                )
+                records.update_source(connection, settings, self._clock.now())
             if keep:
                 document = json.dumps({"username": username, "password": password}).encode()
                 self._vault.seal_row(connection, "source_config", "suwayomi", document)
@@ -733,20 +678,10 @@ class HeadlessAdmin:
         check_shelf_ceiling(ceiling)  # a ceiling below 18+ is refused before anything is stored
         with self._engine.connect() as connection:
             target_row = self._target_row(connection, target)
-            shelf = connection.execute(
-                sa.select(export.shelf.c.id, export.shelf.c.max_age_rating).where(
-                    export.shelf.c.name == name
-                )
-            ).first()
+            shelf = records.shelf_named(connection, name)
             destination = None
             if shelf is not None:
-                destination = connection.execute(
-                    sa.select(
-                        export.shelf_destination.c.id, export.shelf_destination.c.root_subpath
-                    )
-                    .where(export.shelf_destination.c.shelf_id == shelf.id)
-                    .where(export.shelf_destination.c.target_id == target_row.id)
-                ).first()
+                destination = records.shelf_binding(connection, shelf.id, target_row.id)
         if shelf is not None and shelf.max_age_rating != ceiling:
             raise ShelfConflict(f"the shelf {name!r} exists with another age ceiling")
         if shelf is not None and destination is not None:
@@ -795,13 +730,7 @@ class HeadlessAdmin:
     def _unbind(self, shelf_id: str, destination_id: str, *, shelf_was_new: bool) -> None:
         """A shelf the audit refused leaves nothing behind (nothing was written in Kavita)."""
         with self._engine.begin() as connection:
-            connection.execute(
-                sa.delete(export.shelf_destination).where(
-                    export.shelf_destination.c.id == destination_id
-                )
-            )
-            if shelf_was_new:
-                connection.execute(sa.delete(export.shelf).where(export.shelf.c.id == shelf_id))
+            records.unbind(connection, shelf_id, destination_id, drop_shelf=shelf_was_new)
 
     # -- config apply -------------------------------------------------------------------------
 
@@ -889,9 +818,7 @@ class HeadlessAdmin:
         url = _target_url(target.url)
         wanted = _normalise_path_map(target.path_map) if target.path_map is not None else None
         with self._engine.connect() as connection:
-            row = connection.execute(
-                sa.select(export.export_target).where(export.export_target.c.name == target.name)
-            ).first()
+            row = records.target_named(connection, target.name)
         if row is None:
             if not target.accept_admin_risk:
                 raise AdminRiskNotAccepted
@@ -912,11 +839,7 @@ class HeadlessAdmin:
             raise ConfigFileError(f"source kind {source.kind!r}: only suwayomi in M1a")
         url = _suwayomi_address(source.url)
         with self._engine.connect() as connection:
-            row = connection.execute(
-                sa.select(
-                    acquisition.source_config.c.settings, acquisition.source_config.c.secret_kid
-                ).where(acquisition.source_config.c.plugin_id == "suwayomi")
-            ).first()
+            row = records.source_row(connection)
             if row is None:
                 return PlanChange("source", "suwayomi", "create", None, url)
             changed = self._secret_changed(connection, row, source, read)
@@ -950,20 +873,10 @@ class HeadlessAdmin:
             with self._engine.connect() as connection:
                 self._target_row(connection, shelf.target)
         with self._engine.connect() as connection:
-            row = connection.execute(
-                sa.select(export.shelf.c.id, export.shelf.c.max_age_rating).where(
-                    export.shelf.c.name == shelf.name
-                )
-            ).first()
+            row = records.shelf_named(connection, shelf.name)
             bound = None
             if row is not None:
-                bound = connection.execute(
-                    sa.select(export.shelf_destination.c.root_subpath)
-                    .join(export.export_target,
-                          export.export_target.c.id == export.shelf_destination.c.target_id)
-                    .where(export.shelf_destination.c.shelf_id == row.id,
-                           export.export_target.c.name == shelf.target)
-                ).scalar_one_or_none()  # fmt: skip
+                bound = records.bound_subpath(connection, row.id, shelf.target)
         if row is None or bound is None:
             return PlanChange("shelf", shelf.name, "create", None, shelf.target)
         if row.max_age_rating != ceiling or bound != shelf.subpath:
