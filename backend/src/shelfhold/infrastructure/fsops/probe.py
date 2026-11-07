@@ -6,12 +6,14 @@ Only the write probe: the check that Kavita reads the probe file is a documented
 `probe_file_cleanup` emitter, the folder it made through `rmdir` (both are names it drew itself).
 """
 
+import contextlib
 import errno
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from shelfhold.infrastructure.fsops.emitters import new_probe_name
+from shelfhold.infrastructure.fsops.emitters import PROBE_NAME, new_probe_name
 
 STEPS = ("write", "rename", "mkdir")
 
@@ -22,6 +24,7 @@ class ProbeDisk(Protocol):
     def mkdir(self, local: str, *, parents: bool = True, exist_ok: bool = True) -> None: ...
     def rmdir(self, local: str) -> None: ...
     def system_unlink(self, emitter: str, local: str) -> None: ...
+    def list_dir(self, local: str) -> Mapping[str, str]: ...
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,14 @@ class ProbeReport:
     cause: str | None = None
     event: str | None = None  # the matrix event that announces it
     yaml_hint: str = field(default="", repr=False)
+    errno_name: str | None = None  # `EACCES`, `ENOSPC`... or the class of an unexpected error
+    error: OSError | None = field(default=None, repr=False)  # the error that stopped the probe
+
+
+def _errno_name(error: OSError) -> str:
+    if error.errno is not None and error.errno in errno.errorcode:
+        return errno.errorcode[error.errno]
+    return type(error).__name__
 
 
 def _cause_of(error: OSError) -> tuple[str, str | None]:
@@ -99,6 +110,7 @@ def probe_folder(disk: ProbeDisk, folder: str) -> ProbeReport:
         return ProbeReport(
             False, folder, tuple(done), step, cause, event,
             _yaml_hint(folder) if event == "target.permission_denied" else "",
+            _errno_name(error), error,
         )  # fmt: skip
     finally:
         if made_dir:
@@ -106,3 +118,24 @@ def probe_folder(disk: ProbeDisk, folder: str) -> ProbeReport:
         if made_file is not None:
             _remove_probe_file(disk, made_file)
     return ProbeReport(True, folder, tuple(done))
+
+
+def make_folder(disk: ProbeDisk, folder: str) -> None:
+    """The folder of a destination, made by the sole writer (the probe and Kavita need it)."""
+    disk.mkdir(folder, parents=True, exist_ok=True)
+
+
+def sweep_probe_files(disk: ProbeDisk, folder: str) -> int:
+    """Remove the probe files an earlier crash left in `folder` (a regular file whose name is
+    exactly what `new_probe_name` draws: 16 hex digits, nothing else is ever touched)."""
+    try:
+        entries = disk.list_dir(folder)
+    except OSError:
+        return 0
+    swept = 0
+    for name, kind in sorted(entries.items()):
+        if kind == "file" and PROBE_NAME.fullmatch(name):
+            with contextlib.suppress(OSError):
+                _remove_probe_file(disk, f"{folder.rstrip('/')}/{name}")
+                swept += 1
+    return swept
