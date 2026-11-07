@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from shelfhold.config import Settings, load_settings
 from shelfhold.export.application.restore import AdoptionBlockedError
 from shelfhold.identity.public import Credential, Principal
-from shelfhold.infrastructure.schema import identity
+from shelfhold.infrastructure.schema import coherence, identity
 from shelfhold.infrastructure.secrets.export import encrypt_export
 from shelfhold.library.tombstones import (
     FROZEN_LOST_KEYRING_PHRASE,
@@ -81,12 +81,15 @@ def test_secrets_import_unblocks_the_adoption_of_a_pre_rotation_restore(tmp_path
 
         ops = ops_over(env)
         assert ops.restored_behind()  # the freeze holds, and the import goes through it
+        listed = [i.subject for i in ops.status().waiting if i.state == "tombstone_key_unknown"]
+        assert listed == [rotated.active.kid]  # visible although the restored registry lacks it
         report = ops.secrets_import(
             passphrase_file=str(passphrase), in_file=str(export), principal=HOST
         )
         assert report["deferred"] is True and report["replayed"] == 0
         assert env.fsops.frozen  # nothing was thawed, no root was written
         assert env.keyring().find(rotated.active.kid) is not None
+        assert [i for i in ops.status().waiting if i.state == "tombstone_key_unknown"] == []
 
         service = (
             env.tombstones()
@@ -122,6 +125,25 @@ def test_accept_lost_keyring_is_the_freeze_exit_when_there_is_no_export(tmp_path
 
         ops = ops_over(env)
         assert ops.restored_behind()
+        # the restored registry does not cite the new kid (it was born after the backup): the
+        # journal of the root does, and `status` must say so, with the exit
+        with env.engine.connect() as connection:
+            registered = set(connection.execute(sa.select(coherence.tombstone_kid.c.kid)).scalars())
+        assert rotated.active.kid not in registered
+        journal = env.library / ".shelfhold" / "tombstones"
+        before = journal.read_bytes()
+        mtime = journal.stat().st_mtime_ns
+        waiting = [i for i in ops.status().waiting if i.state == "tombstone_key_unknown"]
+        assert [i.subject for i in waiting] == [rotated.active.kid]
+        assert waiting[0].command.startswith("shelfhold secrets import") and waiting[0].reserved
+        assert journal.read_bytes() == before and journal.stat().st_mtime_ns == mtime  # read only
+        # a line of a forged kid is a name nobody vouches for: the sentinel does not register it
+        with journal.open("ab") as handle:
+            handle.write(b'{"kid": "k-forged0000000000", "v": "x"}\n')
+        assert [i.subject for i in ops.status().waiting if i.state == "tombstone_key_unknown"] == [
+            rotated.active.kid
+        ]
+        journal.write_bytes(before)  # (and the cache follows the file, not the clock)
         with pytest.raises(LostKeyringConfirmationError) as short:  # the short phrase is not enough
             ops.tombstone_accept_lost_keyring(confirmation=LOST_KEYRING_PHRASE, principal=HOST)
         assert FROZEN_LOST_KEYRING_PHRASE in str(short.value)
@@ -130,6 +152,7 @@ def test_accept_lost_keyring_is_the_freeze_exit_when_there_is_no_export(tmp_path
             confirmation=FROZEN_LOST_KEYRING_PHRASE, principal=HOST
         )
         assert waived and env.fsops.frozen  # the kid is abandoned, nothing was thawed
+        assert [i for i in ops.status().waiting if i.state == "tombstone_key_unknown"] == []
         from shelfhold.infrastructure.secrets import diagnostics
 
         where = SimpleNamespace(database_path=env.db_path)  # the database of this fixture

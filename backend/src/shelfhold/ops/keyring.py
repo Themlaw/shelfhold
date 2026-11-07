@@ -25,6 +25,7 @@ from shelfhold.i18n import t
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.freeze import FreezeState
+from shelfhold.infrastructure.fsops.tombstone_journal import journal_kid_names, sentinel_kid_tags
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.schema import coherence, identity, platform
@@ -41,9 +42,11 @@ from shelfhold.infrastructure.secrets.export import (
     read_passphrase_file,
 )
 from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.infrastructure.secrets.tombstone_aead import verify_kid_tag
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.integrations.apprise import operating_bus
 from shelfhold.library.public import SetAsideRefusedError, TombstoneRoot, TombstoneService
+from shelfhold.library.tombstones.journal import MAX_JOURNAL_BYTES
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, InvalidChoiceError
 from shelfhold.ops.ports import WaitingItem
 
@@ -80,6 +83,8 @@ class TombstoneKeyringExit:
         with self._engine.connect() as connection:
             known = set(connection.execute(sa.select(kid.c.kid)).scalars())
             waived = set(connection.execute(sa.select(lost.c.kid)).scalars())
+        cited = self._cited_by_journals(keyring, waived)
+        known |= cited
         owed = coherence.tombstone_pending_root
         with self._engine.connect() as connection:
             owing = sorted(set(connection.execute(sa.select(owed.c.root_id)).scalars()))
@@ -97,6 +102,33 @@ class TombstoneKeyringExit:
             )
             for root_id in owing
         ]
+
+    def _cited_by_journals(self, keyring: Keyring, waived: set[str]) -> set[str]:
+        """The kids the journal of a root cites and the keyring lacks, as replay would block on
+        them: the sentinel of that root registers them with a tag that verifies under a key we
+        hold. Needed because a database restored from before the rotation may not cite the kid
+        at all. Read only; the journals are read once per change (a cache, by size and date)."""
+        with self._engine.connect() as connection:
+            roots = connection.execute(
+                sa.select(platform.physical_root.c.root_id, platform.physical_root.c.path_entry)
+            ).all()
+        found: set[str] = set()
+        for root_id, path in roots:
+            unknown = {
+                kid
+                for kid in journal_kid_names(path, max_bytes=MAX_JOURNAL_BYTES)
+                if keyring.find(kid) is None and kid not in waived
+            }
+            if not unknown:
+                continue
+            registry_tags = sentinel_kid_tags(path)
+            for kid in unknown:
+                for signer, tag in registry_tags.get(kid, {}).items():
+                    key = keyring.find(signer)
+                    if key is not None and verify_kid_tag(key.material, root_id, kid, tag):
+                        found.add(kid)
+                        break
+        return found
 
     def _service(self, *, freeze: bool = False) -> tuple[TombstoneService, list[TombstoneRoot]]:
         """The service over the mounted roots. A root counts as mounted when its sentinel can
