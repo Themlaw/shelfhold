@@ -15,7 +15,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection
 
-from shelfhold.catalog.public import ContributorName, NameKind, parse_partial_date
+from shelfhold.catalog.public import ContributorName, NameKind, effective_age, parse_partial_date
 from shelfhold.infrastructure.archives import safe_open_archive
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.packaging.cbz import repackage_cbz
@@ -26,7 +26,7 @@ from shelfhold.infrastructure.packaging.comicinfo import (
 )
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import content_hash
-from shelfhold.sdk.age import AgeRating, max_rating
+from shelfhold.sdk.age import AgeRating
 
 _ADULT_FROM = 18  # M1a has adult shelves only (a ceiling of 18 or more, or none)
 
@@ -199,13 +199,8 @@ def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicIn
     ).one()  # fmt: skip
     adopted = _adopted_series(connection, unit_id)
     # the most restrictive of the Work and its Edition (EF-BIB-037), X above every age
-    age = max_rating(
-        a
-        for a in (
-            _rating(row.age_rating, row.age_x),
-            _rating(row.edition_age_rating, row.edition_age_x),
-        )
-        if a is not None
+    age = effective_age(
+        _rating(row.age_rating, row.age_x), [_rating(row.edition_age_rating, row.edition_age_x)]
     )
     if age is None:
         age = _unrated_age(connection, row)

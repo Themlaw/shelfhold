@@ -28,6 +28,7 @@ from shelfhold.catalog.public import (
     Catalog,
     EditionSpec,
     LanguageError,
+    content_warning_age,
     edition_key_lang,
     numbered_mark,
     translation_type_for,
@@ -38,6 +39,7 @@ from shelfhold.infrastructure.content_trust import Destination, sanitize_upstrea
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import SeriesBindingRef, TombstoneGate
+from shelfhold.sdk.age import AgeRating
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import SubSource
 
@@ -199,7 +201,7 @@ class SeriesDiscovery:
         if not todo or shelf_id is None:
             return found
         langs = {s.source_key: s.lang for s in subs}
-        adult_only = {s.source_key for s in subs if s.content_warning == "nsfw"}
+        warned = {s.source_key: content_warning_age(s.content_warning) for s in subs}
         if self._nature == "unknown":  # the kind then decides the discriminant (EF-BIB-049)
             log.info("discovery.translation_nature_unknown", plugin_id=self._plugin_id)
         for ref in todo:
@@ -213,7 +215,7 @@ class SeriesDiscovery:
                 log.warning("follow.discovery_skipped", failure_class=failure_class)
                 continue  # that series' problem: found again at the next cycle
             binding_id = self._create(
-                ref, lang, shelf_id, _watermark(units), adult_only=ref.source_key in adult_only
+                ref, lang, shelf_id, _watermark(units), suggested=warned.get(ref.source_key)
             )
             log.debug(
                 "discovery.series_created",
@@ -306,7 +308,7 @@ class SeriesDiscovery:
     # -- the five rows, in one transaction ------------------------------------------------------
     def _create(
         self, ref: SeriesRef, lang: str | None, shelf_id: str, mark: Watermark | None,
-        *, adult_only: bool = False,
+        *, suggested: AgeRating | None = None,
     ) -> str | None:  # fmt: skip
         """Work, Edition, `source_item`, binding and follow, all or none. Read again under the
         write lock: two cycles racing leave one of each. `None`: another cycle got there first."""
@@ -338,11 +340,12 @@ class SeriesDiscovery:
                     .where(catalog.edition.c.id == edition_id)
                     .values(shelf_id=shelf_id)
                 )
-                if adult_only:  # the sub-source says X (`isNsfw`): a suggestion, never a rating
+                if suggested is not None:  # the sub-source says X (`isNsfw`): never a rating
                     connection.execute(
                         sa.insert(catalog.age_suggestion).values(
                             id=new_ulid(), entity_type="edition", entity_id=edition_id,
-                            value=ADULT_FROM, x=True, provenance="sub_source", seen_at=now,
+                            value=suggested.min_age, x=suggested.x,
+                            provenance="sub_source", seen_at=now,
                         )
                     )  # fmt: skip
                 item_id = self._source_item(connection, ref, now)

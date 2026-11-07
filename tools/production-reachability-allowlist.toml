@@ -46,10 +46,15 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l08"
-reason = "Age model of the catalog and its columns (effective age, explicit Edition age, suggested ages): PLAN-M1b L08 gives the helpers of the age rating their first production callers."
-until = "M1b L08"
+category = "unwired-m1b-l11"
+reason = "The `rate` service (EF-BIB-036) has no command yet: `shelfhold rate` of L11 is its first production caller. The age scale helpers it alone uses (tiers, columns, label key, shelf comparison) wait with it. The effective age itself is wired: the ComicInfo of an exported file takes it."
+until = "M1b L11"
 symbols = [
+  "shelfhold.catalog.application.rating:*",
+  "shelfhold.catalog.domain.age:Admission",
+  "shelfhold.catalog.domain.age:EditionAge",
+  "shelfhold.catalog.domain.age:admission",
+  "shelfhold.catalog.domain.age:ceiling_of",
   "shelfhold.sdk.age:AGE_TIERS",
   "shelfhold.sdk.age:AgeRating.allowed_under",
   "shelfhold.sdk.age:label_key",
