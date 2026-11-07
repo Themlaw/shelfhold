@@ -19,6 +19,42 @@ export type About = {
 };
 
 /**
+ * ActivityOut
+ */
+export type ActivityOut = {
+    /**
+     * Event Id
+     */
+    event_id: number;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Payload
+     */
+    payload: {
+        [key: string]: unknown;
+    };
+    /**
+     * Title
+     */
+    title: string | null;
+    /**
+     * Title Masked
+     */
+    title_masked: boolean;
+    /**
+     * Type
+     */
+    type: string;
+    /**
+     * Visibility
+     */
+    visibility: string;
+};
+
+/**
  * BackfillIn
  */
 export type BackfillIn = {
@@ -1061,6 +1097,20 @@ export type TargetIn = {
 };
 
 /**
+ * UnmaskedOut
+ */
+export type UnmaskedOut = {
+    /**
+     * Event Id
+     */
+    event_id: number;
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
  * WaitingOut
  */
 export type WaitingOut = {
@@ -1146,6 +1196,84 @@ export type AboutResponses = {
 };
 
 export type AboutResponse = AboutResponses[keyof AboutResponses];
+
+export type ListActivityData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/activity';
+};
+
+export type ListActivityErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListActivityError = ListActivityErrors[keyof ListActivityErrors];
+
+export type ListActivityResponses = {
+    /**
+     * Response List Activity
+     *
+     * Successful Response
+     */
+    200: Array<ActivityOut>;
+};
+
+export type ListActivityResponse = ListActivityResponses[keyof ListActivityResponses];
+
+export type UnmaskData = {
+    body?: never;
+    path: {
+        /**
+         * Event Id
+         */
+        event_id: number;
+    };
+    query?: never;
+    url: '/api/v1/activity/{event_id}/unmask';
+};
+
+export type UnmaskErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type UnmaskError = UnmaskErrors[keyof UnmaskErrors];
+
+export type UnmaskResponses = {
+    /**
+     * Successful Response
+     */
+    200: UnmaskedOut;
+};
+
+export type UnmaskResponse = UnmaskResponses[keyof UnmaskResponses];
 
 export type AdoptConfirmMigrationData = {
     body: MigrationIn;

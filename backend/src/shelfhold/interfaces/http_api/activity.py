@@ -122,7 +122,7 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
                         occurred_at=row.occurred_at,
                         title=item.title,
                         title_masked=item.title_masked,
-                    )  # fmt: skip
+                    )
                 )
                 if len(out) == limit:
                     break

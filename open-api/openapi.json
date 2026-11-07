@@ -19,6 +19,58 @@
         "title": "About",
         "type": "object"
       },
+      "ActivityOut": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "integer"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "title_masked": {
+            "title": "Title Masked",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "visibility": {
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "type",
+          "visibility",
+          "payload",
+          "occurred_at",
+          "title",
+          "title_masked"
+        ],
+        "title": "ActivityOut",
+        "type": "object"
+      },
       "BackfillIn": {
         "properties": {
           "confirm_bytes": {
@@ -1725,6 +1777,24 @@
         "title": "TargetIn",
         "type": "object"
       },
+      "UnmaskedOut": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "title"
+        ],
+        "title": "UnmaskedOut",
+        "type": "object"
+      },
       "WaitingOut": {
         "properties": {
           "command": {
@@ -1857,6 +1927,137 @@
           }
         },
         "summary": "About"
+      }
+    },
+    "/api/v1/activity": {
+      "get": {
+        "operationId": "list_activity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActivityOut"
+                  },
+                  "title": "Response List Activity",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "List Activity",
+        "tags": [
+          "activity"
+        ]
+      }
+    },
+    "/api/v1/activity/{event_id}/unmask": {
+      "post": {
+        "operationId": "unmask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnmaskedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Unmask",
+        "tags": [
+          "activity"
+        ]
       }
     },
     "/api/v1/adoption/{destination_id}/confirm-migration": {

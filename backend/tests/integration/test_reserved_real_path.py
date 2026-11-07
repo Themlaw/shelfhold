@@ -252,7 +252,8 @@ def _insert_event(env: AuthEnv, *, visibility: str, actor: str | None, payload: 
     try:
         with connection:
             cursor = connection.execute(
-                "INSERT INTO event (type, schema_version, payload, occurred_at, actor_id, visibility) "
+                "INSERT INTO event "
+                "(type, schema_version, payload, occurred_at, actor_id, visibility) "
                 "VALUES ('job.dead_lettered', 1, ?, '2026-11-05 09:00:00', ?, ?)",
                 (payload, actor, visibility),
             )
