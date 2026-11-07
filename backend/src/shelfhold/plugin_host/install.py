@@ -49,6 +49,10 @@ CONFIRMATION = "mêmes droits que Shelfhold"
 RESERVED_DISTRIBUTIONS = frozenset({"shelfhold", "shelfhold-sdk", "httpx", "httpcore"})
 RESERVED_MODULES = frozenset({"shelfhold", "httpx", "httpcore"})  # whatever is installed here
 PIP_FLAGS = ("--only-binary", ":all:", "--require-hashes", "--no-deps", "--no-index")
+NO_COMPILE = {
+    "pip": "--no-compile",
+    "uv": "--no-compile-bytecode",
+}  # nothing is compiled at install
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _DIST_INFO = re.compile(r"^(?P<name>.+)-(?P<version>[^-]+)\.dist-info$")
 
@@ -150,18 +154,35 @@ def write_state(layout: Layout, state: PluginFile) -> None:
 
 
 def tree_digest(site: Path, entries: Sequence[str]) -> str:
-    """Digest of the files of a plugin (bytecode caches left out: importing writes them)."""
+    """Digest of every file under the given entries, with no exclusion: a `__pycache__` or a
+    `.pyc` is a file like another (a planted unchecked-hash `.pyc` runs without its source).
+    Symbolic links are hashed as links, never followed."""
     h = hashlib.sha256()
     for entry in sorted(entries):
         base = site / entry
-        files = [base] if base.is_file() else sorted(p for p in base.rglob("*") if p.is_file())
+        files = [base] if not base.is_dir() else sorted(base.rglob("*"))
         for path in files:
-            rel = path.relative_to(site).as_posix()
-            if "__pycache__" in rel or rel.endswith(".pyc"):
+            if path.is_dir() and not path.is_symlink():
                 continue
+            rel = path.relative_to(site).as_posix()
             h.update(rel.encode() + b"\0")
-            h.update(hashlib.sha256(path.read_bytes()).digest())
+            if path.is_symlink():
+                h.update(b"link:" + os.readlink(path).encode())
+            elif path.exists():
+                h.update(hashlib.sha256(path.read_bytes()).digest())
+            else:
+                h.update(b"missing")
     return h.hexdigest()
+
+
+def unexpected_entries(layout: Layout, state: PluginFile) -> list[str]:
+    """What sits in the third-party directory without belonging to an installed plugin."""
+    if not layout.site.is_dir():
+        return []
+    expected = {
+        n for i in state.installed.values() for n in on_disk(layout.site, i.top_levels, i.dist_info)
+    }
+    return sorted(p.name for p in layout.site.iterdir() if p.name not in expected)
 
 
 def on_disk(site: Path, tops: Sequence[str], dist_info: str) -> list[str]:
@@ -314,7 +335,8 @@ def installer_prefix() -> list[str]:
 
 
 def install_command(prefix: Sequence[str], target: Path, requirements: Path) -> list[str]:
-    return [*prefix, "--target", str(target), *PIP_FLAGS, "-r", str(requirements)]
+    tool = "pip" if "-m" in prefix else "uv"
+    return [*prefix, "--target", str(target), *PIP_FLAGS, NO_COMPILE[tool], "-r", str(requirements)]
 
 
 def requirement_line(name: str, wheel: Path, sha256: str) -> str:
@@ -391,7 +413,6 @@ def _check_staged(target: Path, info: WheelInfo) -> None:
         info.dist_info,
         *info.top_levels,
         *(f"{t}.py" for t in info.top_levels),
-        "__pycache__",
         ".lock",  # uv --target
     }
     extra = sorted(p.name for p in target.iterdir() if p.name not in allowed)
@@ -459,6 +480,7 @@ def verdicts(layout: Layout, environ: dict[str, str] | os._Environ[str]) -> list
     """For each installed plugin: granted only with the variable, a confirmation and unchanged
     files. Each condition is checked again at every start; none is remembered on its own."""
     state = read_state(layout)
+    strays = unexpected_entries(layout, state)
     out = []
     for name, plugin in sorted(state.installed.items()):
         confirmation = state.confirmed.get(name)
@@ -466,6 +488,8 @@ def verdicts(layout: Layout, environ: dict[str, str] | os._Environ[str]) -> list
             out.append(Verdict(name, False, f"{ENV_ALLOW}=1 is not set"))
         elif confirmation is None:
             out.append(Verdict(name, False, "no typed confirmation (shelfhold plugin enable)"))
+        elif strays:  # a file nobody installed voids every confirmation
+            out.append(Verdict(name, False, f"unexpected files in site-packages: {strays}"))
         elif (
             confirmation.digest != plugin.digest or current_digest(layout, plugin) != plugin.digest
         ):

@@ -154,6 +154,7 @@ def _third_party_loader(site_dir: Path, ep: Any) -> Callable[[], Any]:
         """Called with no argument and handed nothing: no settings, no secret, no host object.
         The process environment is the one channel left; names that look like secrets are taken
         out of it while the plugin's code is imported."""
+        sys.dont_write_bytecode = True  # the digest covers every file: importing adds none
         site = str(site_dir)
         if site not in sys.path:
             sys.path.append(site)  # after the host's entries; no addsitedir, so no .pth runs

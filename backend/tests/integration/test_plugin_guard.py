@@ -136,6 +136,10 @@ def test_third_party_site_packages_after_host_and_name_conflict_refused(
     host = [p for p in path if p != site and "site-packages" in p]
     assert site in path and host and path.index(site) > max(path.index(p) for p in host)
     assert site not in str(snap["httpx_file"]) and site not in str(snap["shelfhold_file"])
+    from shelfhold import __version__
+
+    assert snap["shelfhold_version"] == __version__
+    assert snap["group_names"] == [] or "demo" in snap["group_names"]  # type: ignore[operator]
     # the conflicting names are refused, before and after PEP 503 normalisation
     for dist, module in (
         ("shelfhold", "plug_a"),
@@ -156,7 +160,7 @@ def test_third_party_site_packages_after_host_and_name_conflict_refused(
         assert done.returncode == 1 and "conflict" in done.stderr, (dist, module, done.stderr)
     # nothing else got installed
     names = {p.name for p in (cli.data / "plugins" / "site-packages").iterdir()}
-    assert names - {"__pycache__", ".lock"} == {"demo_plug", "demo_plug-1.0.dist-info"}
+    assert names == {"demo_plug", "demo_plug-1.0.dist-info"}
 
 
 @pytest.mark.req("EF-SRC-019")
@@ -179,14 +183,10 @@ def test_third_party_cannot_mask_host_pth_never_run_fake_dist_info_ignored(
     )
     (site / "payload.py").write_text(f"import pathlib; pathlib.Path({str(payload)!r}).touch()\n")
     (site / "httpx_shadow.py").write_text("")
+    # a file nobody installed voids the confirmations: the plugin does not even load
     started = cli.run("plugin", "list", "--load", **ENABLE)
-    assert "demo\tloaded" in started.stdout and "evil" not in started.stdout
-    assert not marker.exists() and not payload.exists()
-    (snap,) = snapshots(probe)
-    from shelfhold import __version__
-
-    assert snap["shelfhold_version"] == __version__ != "9.9"
-    assert "evil" not in snap["group_names"]  # type: ignore[operator]
+    assert "unexpected files in site-packages" in started.stdout
+    assert not marker.exists() and not payload.exists() and snapshots(probe) == []
     # a wheel carrying a .pth, a data directory or a foreign dist-info is refused at install
     for name, files in (
         ("pth-plug", {"pth_plug/__init__.py": "", "x.pth": "import os"}),
@@ -254,3 +254,38 @@ def test_plugin_disabled_without_the_variable_when_the_server_starts(
         )
         assert done.returncode == 0, done.stderr
     assert len(snapshots(probe)) == 1  # loaded once, at start, and only with the variable
+
+
+@pytest.mark.req("EF-SRC-019")
+def test_review_pyc_planted_after_confirmation_never_runs(
+    cli: Cli, tmp_path: Path, probe: Path
+) -> None:
+    """Review 97, blocker 1: an unchecked-hash .pyc dropped in `__pycache__` after the typed
+    confirmation used to run with the confirmation still valid."""
+    import py_compile
+
+    install(cli, tmp_path, probe)
+    enable(cli)
+    site = cli.data / "plugins" / "site-packages" / "demo_plug"
+    assert not (site / "__pycache__").exists()  # nothing is compiled at install
+    pwned = tmp_path / "pwned"
+    evil = tmp_path / "evil.py"
+    evil.write_text(f"open({str(pwned)!r}, 'a').write('x')\n" + (site / "__init__.py").read_text())
+    cache = site / "__pycache__"
+    cache.mkdir()
+    py_compile.compile(
+        str(evil),
+        cfile=str(cache / f"__init__.{sys.implementation.cache_tag}.pyc"),
+        invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+    )
+    started = cli.run("plugin", "list", "--load", **ENABLE)
+    assert "files changed" in started.stdout and not pwned.exists() and snapshots(probe) == []
+
+
+@pytest.mark.req("EF-SRC-019")
+def test_review_loading_leaves_no_bytecode_behind(cli: Cli, tmp_path: Path, probe: Path) -> None:
+    install(cli, tmp_path, probe)
+    enable(cli)
+    for _ in range(2):  # a second start still loads: the first one wrote no __pycache__
+        assert "demo\tloaded" in cli.run("plugin", "list", "--load", **ENABLE).stdout
+    assert not list((cli.data / "plugins" / "site-packages").rglob("__pycache__"))
