@@ -17,10 +17,8 @@ SHARDS: dict[str, tuple[str, ...]] = {
     ),
     "redeploy": ("test_redeploy_recreates_container_without_loss",),
     "redeploy-export": ("test_redeploy_during_running_export_finishes_without_open_intent",),
-    "detach-exits": (
-        "test_detach_restores_suwayomi_updates_and_leaves_files",
-        "test_exits_work_after_target_add_on_the_running_server",
-    ),
+    "detach-exits": ("test_detach_restores_suwayomi_updates_and_leaves_files",),
+    "exits-live-roots": ("test_exits_work_after_target_add_on_the_running_server",),
     "detach-exclusion": (
         "test_detach_removes_the_exclusion_shelfhold_placed_and_keeps_the_administrator_s",
     ),

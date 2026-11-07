@@ -301,9 +301,15 @@ def test_exits_work_after_target_add_on_the_running_server(journey: Journey) -> 
     assert j.follow_until(lambda: any(f.endswith("Ch.2.cbz") for f in j.library_files()), 300)
     exported = next(f for f in j.library_files() if f.endswith("Ch.2.cbz"))
     folder = exported.rsplit("/", 1)[0]
+    # the export that wrote Ch.2 is closed (a path under an open intent is not looked at)
+    assert wait_for(lambda: open_intents(j) == 0, 120)
     j.put(f"{folder}/{FOREIGN}", "not ours")  # another writer, in the folder Shelfhold manages
-    assert j.shelfhold("jobs", "run", "reconcile.cycle").code == 0
-    assert wait_for(lambda: "paused_foreign_writer" in j.waiting(), 90), j.shelfhold("status").out
+
+    def paused() -> bool:
+        assert j.shelfhold("jobs", "run", "reconcile.cycle").code == 0
+        return "paused_foreign_writer" in j.waiting()
+
+    assert wait_for(paused, 120), j.shelfhold("status").out
     (item,) = j.waiting()["paused_foreign_writer"]
     assert str(item["command"]).startswith("shelfhold series resume ")
     resumed = j.shelfhold("series", "resume", str(item["subject"]))
