@@ -74,6 +74,7 @@ from shelfhold.infrastructure.ids import new_ulid
 ADMIN_ROLE = "admin"
 IDENTITY_HEADER_AUDIT = "auth.identity_header_stripped"  # read back by `shelfhold status`
 API_KEY_TOUCH_INTERVAL = timedelta(minutes=1)
+OPTIONS_PER_MINUTE = 30  # passkey sign-in options per address
 
 
 class AuthError(Exception):
@@ -239,6 +240,9 @@ class LocalAuth:
         self._device_proof = device_proof
         methods = list(reauth_methods if reauth_methods is not None else [PasswordReauth(hasher)])
         self._passkeys = passkeys
+        self._options_throttle = LoginThrottle(
+            per_address=OPTIONS_PER_MINUTE, per_account=OPTIONS_PER_MINUTE
+        )
         if passkeys is not None and passkeys.available:  # the method exists in a secure context
             methods.append(PasskeyReauth(passkeys))
         self._reauth = {method.name: method for method in methods}
@@ -546,7 +550,12 @@ class LocalAuth:
         return self._ceremony().reauth_options(user, str(principal.session_id))
 
     def passkey_login_options(self, *, ip: str) -> PasskeyOptions:
-        return self._ceremony().login_options(ip)
+        """Anonymous and cheap to call: each address gets a few per minute (429 beyond)."""
+        ceremony = self._ceremony()
+        wait = self._options_throttle.reserve(ip=ip, account=ip, now=self.now())
+        if wait is not None:
+            raise ThrottledError(max(1, math.ceil(wait)))
+        return ceremony.login_options()
 
     def passkey_login(
         self,
@@ -554,6 +563,7 @@ class LocalAuth:
         credential: Mapping[str, object],
         *,
         ip: str,
+        binder: str = "",
         remember: bool = True,
         confirm_remember: bool = False,
         presented_token: str | None = None,
@@ -565,7 +575,7 @@ class LocalAuth:
         account = f"passkey:{ip}"  # no account is known before the assertion: one key per address
         at = self._reserve_attempt(ip=ip, account=account)
         try:
-            user, passkey = ceremony.finish_login(flow, credential)
+            user, passkey = ceremony.finish_login(flow, binder, credential)
         except PasskeyError as refused:
             structlog.get_logger().warning("auth.passkey_refused", reason=refused.reason, ip=ip)
             raise self._fail(ip=ip) from None

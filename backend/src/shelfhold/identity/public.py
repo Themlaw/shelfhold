@@ -56,8 +56,8 @@ from shelfhold.identity.domain.emitters import (
     REPLAY,
     RESTORE,
 )
+from shelfhold.identity.domain.passkeys import CHALLENGE_TTL, RelyingParty, relying_party
 from shelfhold.identity.domain.passkeys import MAX_NAME as PASSKEY_NAME_MAX
-from shelfhold.identity.domain.passkeys import RelyingParty, relying_party
 from shelfhold.identity.domain.reserved import (
     DEFAULT_RESERVED_ROLES,
     NO_REAUTH_EFFECTS,
@@ -84,6 +84,7 @@ from shelfhold.identity.domain.tokens import same_secret
 from shelfhold.identity.domain.truth_table import TruthRow, truth_table
 
 __all__ = [
+    "CHALLENGE_TTL",
     "CLOSED_SITES",
     "CREDENTIAL_AXIS",
     "DEFAULT_RESERVED_ROLES",

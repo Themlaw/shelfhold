@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from shelfhold.i18n import t
 from shelfhold.identity.public import (
+    CHALLENGE_TTL,
     RESERVED_ACTIONS,
     InvalidCredentialsError,
     LastLoginFactorError,
@@ -30,9 +31,11 @@ from shelfhold.interfaces.http_api.auth import (
     PASSKEY_LOGIN_OPTIONS_PATH,
     PASSKEY_LOGIN_PATH,
     PASSKEY_SCRIPT_PATH,
+    clear_flow_cookie,
     gate_of,
     require_session,
     reserved_action,
+    set_flow_cookie,
     set_session_cookies,
 )
 from shelfhold.interfaces.http_api.login import CsrfToken, _client_ip, _throttled, passkey_script
@@ -190,13 +193,24 @@ def build_passkeys_router() -> APIRouter:
 
     @router.post(PASSKEY_LOGIN_OPTIONS_PATH, response_model=PasskeyFlow)
     def passkey_login_options(request: Request) -> JSONResponse:
+        gate = gate_of(request)
         try:
-            issued = gate_of(request).auth.passkey_login_options(ip=_client_ip(request))
+            issued = gate.auth.passkey_login_options(ip=_client_ip(request))
         except PasskeyUnavailableError as error:
             raise _unavailable(error) from None
-        return JSONResponse(
+        except ThrottledError as error:
+            raise _throttled(error) from None
+        response = JSONResponse(
             {"flow": issued.flow, "options": issued.options}, headers={"Cache-Control": "no-store"}
         )
+        # The flow belongs to this browser: only it can finish it (HttpOnly, Strict, short).
+        set_flow_cookie(
+            response,
+            gate.cookies_for(request.scope),
+            issued.binder or "",
+            max_age=int(CHALLENGE_TTL.total_seconds()),
+        )
+        return response
 
     @router.post(PASSKEY_LOGIN_PATH, response_model=CsrfToken)
     def passkey_login(body: PasskeyLoginRequest, request: Request) -> Response:
@@ -207,6 +221,7 @@ def build_passkeys_router() -> APIRouter:
                 body.flow,
                 body.credential,
                 ip=_client_ip(request),
+                binder=request.cookies.get(names.flow, ""),
                 remember=body.remember,
                 confirm_remember=body.confirm_remember,
                 presented_token=request.cookies.get(names.session),
@@ -221,6 +236,7 @@ def build_passkeys_router() -> APIRouter:
             raise ProblemError("remember_needs_confirmation") from None
         response = JSONResponse({"csrf_token": issued.csrf_secret})
         set_session_cookies(response, names, issued)
+        clear_flow_cookie(response, names)  # used up
         return response
 
     return router

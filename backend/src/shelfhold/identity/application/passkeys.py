@@ -12,6 +12,8 @@ the ceremony honest:
   reason word.
 """
 
+import hashlib
+import secrets
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any, Protocol
@@ -98,9 +100,14 @@ class PasskeyRefusedError(PasskeyError):
 
 
 class PasskeyOptions:
-    def __init__(self, flow: str, options: dict[str, Any]) -> None:
+    def __init__(self, flow: str, options: dict[str, Any], binder: str | None = None) -> None:
         self.flow = flow
         self.options = options
+        self.binder = binder  # sign-in only: the secret the browser keeps in its flow cookie
+
+
+def _digest(binder: str) -> str:
+    return hashlib.sha256(binder.encode()).hexdigest()
 
 
 class PasskeyCeremony:
@@ -111,10 +118,15 @@ class PasskeyCeremony:
         challenges: ChallengePort,
         rp: RelyingParty | PasskeysUnavailable,
         clock: Clock,
+        *,
+        anonymous_challenges: ChallengePort | None = None,
     ) -> None:
         self._store = store
         self._webauthn = webauthn
-        self._challenges = challenges
+        self._challenges = challenges  # registration and re-authentication: tied to a session
+        # Sign-in challenges have no session yet: a store of their own, so that a flood of
+        # anonymous requests can never push out the challenge of someone who is registering.
+        self._anonymous = anonymous_challenges or challenges
         self._rp = rp
         self._clock = clock
 
@@ -205,13 +217,19 @@ class PasskeyCeremony:
 
     # --- assertions (login, re-authentication) -----------------------------------------------
 
-    def login_options(self, ip: str) -> PasskeyOptions:
+    def login_options(self) -> PasskeyOptions:
+        """The flow is bound to the browser that asked: a random `binder` it keeps in a cookie
+        (only its digest is held here), not to an address that a household or a proxy shares."""
         rp = self._require()
-        issued = self._challenges.issue("login", bound_to="", owner=f"ip:{ip}", now=self._now())
+        binder = secrets.token_urlsafe(32)
+        issued = self._anonymous.issue(
+            "login", bound_to=_digest(binder), owner=_digest(binder), now=self._now()
+        )
         # No `allowCredentials`: the authenticator offers its discoverable credentials.
         return PasskeyOptions(
             issued.flow,
             self._webauthn.authentication_options(rp=rp, challenge=issued.challenge, allow=()),
+            binder,
         )
 
     def reauth_options(self, user: UserRecord, session_id: str) -> PasskeyOptions:
@@ -226,9 +244,9 @@ class PasskeyCeremony:
         )
 
     def finish_login(
-        self, flow: str, credential: Mapping[str, object]
+        self, flow: str, binder: str, credential: Mapping[str, object]
     ) -> tuple[UserRecord, PasskeyRecord]:
-        return self._assert(flow, "login", "", credential, expected_user=None)
+        return self._assert(flow, "login", _digest(binder), credential, expected_user=None)
 
     def finish_reauth(
         self, user: UserRecord, session_id: str, flow: str, credential: Mapping[str, object]
@@ -246,7 +264,8 @@ class PasskeyCeremony:
     ) -> tuple[UserRecord, PasskeyRecord]:
         rp = self._require()
         now = self._now()
-        challenge = self._challenges.consume(flow, purpose, bound_to=bound_to, now=now)
+        bank = self._anonymous if purpose == "login" else self._challenges
+        challenge = bank.consume(flow, purpose, bound_to=bound_to, now=now)
         if challenge is None:
             raise PasskeyRefusedError("challenge")  # unknown, replayed, expired, or not ours
         try:

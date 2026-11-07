@@ -13,6 +13,8 @@ from shelfhold.identity.domain.passkeys import relying_party
 from shelfhold.identity.webauthn.library import WebAuthnLibrary
 from shelfhold.infrastructure.clock import Clock, SystemClock
 
+ANONYMOUS_CAPACITY = 4096  # sign-in challenges in flight, a store apart from the sessions' own
+
 
 def local_auth(engine: Engine, settings: Settings, clock: Clock | None = None) -> LocalAuth:
     store = SqlIdentityStore(engine)
@@ -20,7 +22,12 @@ def local_auth(engine: Engine, settings: Settings, clock: Clock | None = None) -
     # The relying party is the public URL and nothing else (ADR-0050); without a secure context
     # the ceremony stays, but every step refuses and the login page offers nothing.
     passkeys = PasskeyCeremony(
-        store, WebAuthnLibrary(), MemoryChallenges(), relying_party(settings.public_url), clock
+        store,
+        WebAuthnLibrary(),
+        MemoryChallenges(),
+        relying_party(settings.public_url),
+        clock,
+        anonymous_challenges=MemoryChallenges(capacity=ANONYMOUS_CAPACITY),
     )
     return LocalAuth(
         store,

@@ -19,7 +19,7 @@ partie publique de la clé.
 
 ## Enregistrer, utiliser, révoquer
 
-- **Enregistrer** : page `/compte/passkeys` (connecté), nommer l'appareil, suivre le geste. Autant de
+- **Enregistrer** (et **révoquer**) : page `/compte/passkeys` (connecté), nommer l'appareil, suivre le geste. Autant de
   clés que d'appareils (25 au plus par compte).
 - **Se connecter** : sur la page de connexion, « Se connecter avec une clé d'accès ». Aucun
   identifiant à saisir : la clé désigne le compte. La session est neuve et `auth_time` vaut
@@ -28,6 +28,8 @@ partie publique de la clé.
   d'accès à la place du mot de passe et remet `auth_time` à jour.
 - **Révoquer** : bouton sur la même page. On ne peut pas retirer son **dernier moyen de connexion** :
   sans mot de passe, la dernière clé reste.
+
+En profil durci (`durcir.md`), enregistrer ou révoquer une clé demande une authentification récente (15 min), comme les autres actions réservées. Révoquer une clé ferme aussi les sessions qu'elle a ouvertes.
 
 ## Perdre un appareil, oublier son mot de passe
 
@@ -45,7 +47,7 @@ flux de connexion), à usage unique et valable deux minutes ; origine et RP ID e
 sous-domaine ou un autre port est refusé) ; vérification de l'utilisateur par l'appareil ; signature ;
 compteur de signature qui doit avancer (un recul signale une clé clonée : refus et entrée d'audit).
 Une clé qui ne compte jamais (compteur toujours à 0, cas des clés synchronisées) est tolérée.
-Les tentatives comptent dans la limite de connexion, comme celles du mot de passe. Chaque
+Le défi d'une connexion est lié au navigateur qui l'a demandé par un cookie de 2 minutes ; la demande d'options est limitée à 30 par minute et par adresse. Les tentatives comptent dans la limite de connexion, comme celles du mot de passe. Chaque
 enregistrement, connexion, révocation et recul de compteur est dans l'audit ; les journaux ne
 contiennent ni identifiant de clé, ni clé publique, ni défi.
 

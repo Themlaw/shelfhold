@@ -41,7 +41,7 @@ IP = "198.51.100.7"
 SECOND_ULID = "01HZZZZZZZZZZZZZZZZZZZZZZM"
 ADD_MEMBER = (
     "INSERT INTO user (id, username, role, can_rate, password_hash) "
-    "VALUES (?, 'member1', 'member', 0, ?)"
+    "VALUES (?, 'member1', 'admin', 1, ?)"  # a second admin: the only role before M3
 )
 
 pytestmark = pytest.mark.req("EF-USR-025")
@@ -405,7 +405,10 @@ def test_passkey_login_renews_the_session_identifier(api: AuthEnv) -> None:
     forced = planted.post(
         LOGIN,
         json={"flow": flow["flow"], "credential": passkey.get(flow["options"])},
-        headers={"Cookie": f"{SESSION_COOKIE}=attacker-chosen-value"},
+        headers={
+            "Cookie": f"{SESSION_COOKIE}=attacker-chosen-value; "
+            f"__Host-pkflow={planted.cookies['__Host-pkflow']}"
+        },
     )
     assert forced.status_code == 200
     issued = [c for c in forced.headers.get_list("set-cookie") if c.startswith(SESSION_COOKIE)]
@@ -962,5 +965,83 @@ def test_an_unusable_host_makes_passkeys_unavailable_with_a_reason(
     with auth_env(monkeypatch, settings, public_url=url) as api:
         api.login()
         listing = api.client.get(PASSKEYS).json()
-        assert listing["available"] is False and "adresse" in listing["reason"]
+        assert listing["available"] is False and "public_url" in listing["reason"]
         assert api.post(f"{PASSKEYS}/options", json={}).status_code == 409
+
+
+# --- review PR #95: anonymous sign-in challenges --------------------------------------------
+
+
+def test_a_sign_in_flow_belongs_to_the_browser_that_asked(api: AuthEnv) -> None:
+    passkey = registered(api)
+    owner = anonymous(api, "198.51.100.120")
+    flow = login_flow(owner)
+    cookie = next(
+        c for c in owner.post(LOGIN_OPTIONS, json={}).headers.get_list("set-cookie")
+        if c.startswith("__Host-pkflow=")
+    )  # fmt: skip
+    assert {"HttpOnly", "Secure", "SameSite=Strict", "Max-Age=120", "Path=/"} <= {
+        part.strip() for part in cookie.split(";")
+    }
+    credential = passkey.get(flow["options"])
+    body = {"flow": flow["flow"], "credential": credential}
+    # same address, another browser: no cookie, a wrong one
+    nat = anonymous(api, "198.51.100.120")
+    assert nat.post(LOGIN, json=body).status_code == 401
+    nat.cookies.set("__Host-pkflow", "guess", domain="testserver.local")
+    assert nat.post(LOGIN, json=body).status_code == 401
+    # the flow is burnt by the failed tries: a new one, finished by its own browser
+    assert passkey_login(owner, passkey).status_code == 200
+    assert "__Host-pkflow" not in owner.cookies or owner.cookies["__Host-pkflow"] == ""
+
+
+def test_the_sign_in_cookie_is_plain_over_http_localhost(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    base = "http://localhost:8080"
+    with auth_env(monkeypatch, settings, public_url=base, base_url=base) as api:
+        response = api.other_client(IP, base).post(LOGIN_OPTIONS, json={})
+        cookie = next(c for c in response.headers.get_list("set-cookie") if c.startswith("pkflow="))
+        assert "HttpOnly" in cookie and "SameSite=Strict" in cookie and "Secure" not in cookie
+
+
+def test_other_clients_cannot_push_out_a_sign_in_challenge(api: AuthEnv) -> None:
+    passkey = registered(api)
+    user = anonymous(api, "198.51.100.130")
+    flow = login_flow(user)
+    for n in range(12):  # strangers, some behind the user's own address
+        for _ in range(8):
+            assert login_flow(anonymous(api, f"198.51.100.{140 + n}"))
+    for _ in range(12):
+        assert login_flow(anonymous(api, "198.51.100.130"))
+    credential = passkey.get(flow["options"])
+    assert (
+        user.post(LOGIN, json={"flow": flow["flow"], "credential": credential}).status_code == 200
+    )
+
+
+def test_an_anonymous_flood_cannot_push_out_a_registration(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    monkeypatch.setattr("shelfhold.identity.adapters.factory.ANONYMOUS_CAPACITY", 4)
+    with auth_env(monkeypatch, settings, public_url="https://testserver") as api:
+        api.login()
+        started = api.post(f"{PASSKEYS}/options", json={}).json()
+        for n in range(20):  # five times the room of the anonymous store
+            assert login_flow(anonymous(api, f"198.51.100.{150 + n}"))
+        credential = SoftPasskey().create(started["options"])
+        done = api.post(
+            PASSKEYS, json={"flow": started["flow"], "name": "x", "credential": credential}
+        )
+        assert done.status_code == 201
+
+
+def test_sign_in_options_are_throttled_per_address(api: AuthEnv) -> None:
+    client = anonymous(api, "198.51.100.200")
+    for _ in range(30):
+        assert client.post(LOGIN_OPTIONS, json={}).status_code == 200
+    blocked = client.post(LOGIN_OPTIONS, json={})
+    assert blocked.status_code == 429 and int(blocked.headers["Retry-After"]) >= 1
+    assert anonymous(api, "198.51.100.201").post(LOGIN_OPTIONS, json={}).status_code == 200
+    api.clock.advance(timedelta(minutes=2))
+    assert client.post(LOGIN_OPTIONS, json={}).status_code == 200
