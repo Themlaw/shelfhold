@@ -370,7 +370,7 @@ class RestoreGuard:
                         restore_epoch_at=self._clock.now(),
                     )
                 )
-                self._fsops.freeze_state.persist(connection, max(top, 1))
+                written = self._fsops.freeze_state.persist(connection, max(top, 1))
                 published.append(
                     self._bus.publish(
                         connection,
@@ -378,6 +378,7 @@ class RestoreGuard:
                         {"epoch": epoch, "roots": len(status.behind_roots)},
                     )
                 )
+            self._fsops.freeze_state.follow(written)  # committed: this writer follows
         self._bus.deliver(published)
         self._fsops.freeze()
         return RestoreStatus(epoch, status.findings, pending=True)
@@ -575,9 +576,7 @@ class RestoreAdopter:
 
     def _thaw(self) -> None:
         """The end of `restored_behind`: the persisted freeze goes, then the instance thaws."""
-        with self._engine.begin() as connection:
-            self._fsops.freeze_state.lift(connection)
-        self._fsops.unfreeze()
+        self._fsops.freeze_state.lift(self._engine)  # memory follows the commit, not before
 
     def _relocate(self, connection: Connection, survey: _Survey, now: datetime) -> None:
         """The manifest (and the copy registry) follow a file that an intent moved after the

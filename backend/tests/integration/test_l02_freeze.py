@@ -12,6 +12,8 @@ from shelfhold.export.application.roots import load_roots, open_fsops
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import Fsops, RootBlockedError
+from shelfhold.infrastructure.instance import WriteSessions
+from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.scheduler import Scheduler
 from tests.fakes_clock import ManualClock
@@ -101,15 +103,72 @@ def test_freeze_lifted_only_by_adopt_after_restore() -> None:
         assert scheduler.scan().queued != ()
 
 
+def _persist(env: RestoreEnv, state: FreezeState, generation: int) -> None:
+    with env.engine.begin() as connection:
+        written = state.persist(connection, generation)
+    state.follow(written)
+
+
 @pytest.mark.req("EF-INT-026")
 def test_the_state_is_persisted_and_lifted_in_the_database() -> None:
     with restore_env() as env:
         state = FreezeState()
-        with env.engine.begin() as connection:
-            state.persist(connection, 3)
+        _persist(env, state, 3)
         with env.engine.connect() as connection:
             assert FreezeState.read(connection).generation == 3 and state.frozen_in(connection)
-        with env.engine.begin() as connection:
-            state.lift(connection)
+        state.lift(env.engine)
         with env.engine.connect() as connection:
             assert not FreezeState.read(connection).frozen and not state.frozen_in(connection)
+
+
+@pytest.mark.req("EF-INT-026")
+def test_review_a_failed_commit_leaves_the_state_frozen_like_the_database() -> None:
+    with restore_env() as env:
+        state = FreezeState()
+        _persist(env, state, 2)
+
+        def locked(_connection) -> None:
+            raise sa.exc.OperationalError("COMMIT", {}, Exception("database is locked"))
+
+        sa.event.listen(env.engine, "commit", locked)
+        try:
+            with pytest.raises(sa.exc.OperationalError):
+                state.lift(env.engine)
+        finally:
+            sa.event.remove(env.engine, "commit", locked)
+        with env.engine.connect() as connection:
+            assert FreezeState.read(connection).frozen  # the database kept the freeze
+        assert state.frozen  # and so did the adopter
+
+
+def _forked_sessions(env: RestoreEnv) -> tuple[WriteSessions, str]:
+    """A writer opened before any freeze, over a root whose sentinel is aligned (the /store)."""
+    fork = open_fsops(_loaded(env), umask=0o022)
+    sessions = WriteSessions(
+        fork, instance_id=str(env.sentinel()["instance_id"]), clock=env.ex.clock,
+        generations=GenerationCounter(env.engine),
+    )  # fmt: skip
+    sessions.enforce()
+    return sessions, str(env.ex.lib.store)
+
+
+@pytest.mark.req("EF-INT-026")
+def test_review_a_writer_forked_before_the_freeze_stops_in_a_new_session() -> None:
+    with restore_env() as env:
+        sessions, store = _forked_sessions(env)
+        _persist(env, FreezeState(), 11)  # another writer freezes the database
+        with pytest.raises(RootBlockedError), sessions.open(store):
+            pass
+        assert sessions._fsops.frozen  # the fork follows the database
+
+
+@pytest.mark.req("EF-INT-026")
+def test_review_a_session_opened_before_the_freeze_fails_at_its_next_write() -> None:
+    with restore_env() as env:
+        sessions, store = _forked_sessions(env)
+        with sessions.open(store) as session:
+            session.write_atomic(f"{store}/before.bin", b"x", parents=True)
+            _persist(env, FreezeState(), 11)
+            with pytest.raises(RootBlockedError):
+                session.write_atomic(f"{store}/after.bin", b"x", parents=True)
+        assert not (env.ex.lib.store / "after.bin").exists()

@@ -20,6 +20,10 @@ class GenerationCounter:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
+    @property
+    def engine(self) -> Engine:
+        return self._engine
+
     def advance(self, root_path: str) -> int | None:
         """Commit `generation + 1` for the root at `root_path`; None for a root the database does
         not know (nothing to compare the sentinel with)."""

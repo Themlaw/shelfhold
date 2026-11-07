@@ -19,13 +19,13 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 import sqlalchemy as sa
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Engine
 
 from shelfhold.infrastructure.schema import platform
 
 
 class FreezeState:
-    __slots__ = ("_generation", "_process", "_roots")
+    __slots__ = ("_generation", "_process", "_roots", "_thawed")
 
     def __init__(
         self, *, process: bool = False, generation: int = 0, roots: Iterable[str] = ()
@@ -33,6 +33,7 @@ class FreezeState:
         self._process = process
         self._generation = max(int(generation), 0)
         self._roots = frozenset(roots)
+        self._thawed = False  # a deliberate local thaw (the adoption's deletion window)
 
     # -- the database ------------------------------------------------------------------------
 
@@ -51,17 +52,34 @@ class FreezeState:
         Nothing is cached: the persisted level is the truth."""
         return self.frozen or self._stored(connection) > 0
 
-    def persist(self, connection: Connection, generation: int) -> None:
-        """The freeze survives a restart (until the adoption); this state follows."""
+    def persist(self, connection: Connection, generation: int) -> int:
+        """Write the freeze in the caller's transaction and return the value written. Nothing
+        changes in memory: `follow` does that once the transaction has committed."""
         value = max(int(generation), 1)
         connection.execute(sa.update(platform.instance).values(restore_generation=value))
-        self._generation = value
+        return value
 
-    def lift(self, connection: Connection) -> None:
-        """The end of the freeze, written by the adoption alone."""
-        connection.execute(sa.update(platform.instance).values(restore_generation=0))
+    def follow(self, generation: int) -> None:
+        """The freeze that `persist` wrote is committed: this state follows."""
+        self._generation = max(int(generation), 0)
+        self._thawed = False
+
+    def lift(self, engine: Engine) -> None:
+        """The end of the freeze, written by the adoption alone. This state is thawed only after
+        the commit: a commit that fails leaves it frozen, like the database."""
+        with engine.begin() as connection:
+            connection.execute(sa.update(platform.instance).values(restore_generation=0))
         self._generation = 0
         self._process = False
+        self._thawed = False
+
+    def sync(self, connection: Connection) -> bool:
+        """Read the persisted level and, unless this writer was thawed on purpose, follow it: a
+        writer opened before the freeze stops writing at its next session or write."""
+        stored = self._stored(connection)
+        if stored > 0 and not self._thawed:
+            self._generation = stored
+        return self.frozen
 
     # -- this process ------------------------------------------------------------------------
 
@@ -79,11 +97,13 @@ class FreezeState:
 
     def freeze(self) -> None:
         self._process = True
+        self._thawed = False
 
     def thaw(self) -> None:
         """Let go in this process only: the database keeps its word (see `lift`)."""
         self._process = False
         self._generation = 0
+        self._thawed = True
 
     def fork(self) -> FreezeState:
         """Each writer owns its copy: thawing one never thaws another."""
