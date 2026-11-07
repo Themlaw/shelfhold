@@ -76,6 +76,7 @@ def test_exclude_newer_supply_chain_window_is_kept() -> None:
     assert project["tool"]["uv"]["exclude-newer"] == "14 days"
 
 
+@pytest.mark.req("ENF-SEC-016")
 def test_the_webauthn_binding_imports_the_pinned_library() -> None:
     from importlib.metadata import version
 
