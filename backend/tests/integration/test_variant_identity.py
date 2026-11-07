@@ -29,7 +29,7 @@ def unit(binding, remote: str, raw: str | None, minute: int = 0, **kw) -> Incomi
     )
 
 
-@pytest.mark.req("EF-BIB-001")
+@pytest.mark.req("EF-BIB-001", "EF-BIB-025")
 def test_series_optional_above_work() -> None:
     with harness() as h:
         lone = h.work()
@@ -37,6 +37,12 @@ def test_series_optional_above_work() -> None:
         member = h.catalog.create_work("novel", "Tome one", series_id=series, position="1")
         assert h.catalog.series_of(lone) is None
         assert h.catalog.series_of(member) == series
+        # a Series can come later: the Work, its Editions and its Units are not touched
+        edition = h.edition(lone)
+        h.catalog.attach_to_series(series, lone, "2")
+        assert h.catalog.series_of(lone) == series
+        assert h.edition(lone).id == edition.id
+        assert h.scalar("SELECT position FROM series_member WHERE work_id = :w", w=lone) == "2"
         # an Edition hangs from a Work whether or not a Series exists above it
         assert h.edition(lone).work_id == lone
         assert h.edition(member, kind="novel", media="text").work_id == member
