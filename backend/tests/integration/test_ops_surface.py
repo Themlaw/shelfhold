@@ -323,11 +323,12 @@ def test_ops_methods_over_the_local_socket(settings: Settings, tmp_path: Path) -
                     {"confirmation": "the keyring is lost"},
                 )  # fmt: skip
             assert keyring.waived == []
-            # `secrets import` is no exit of the restore: it writes the keyring and replays the
-            # journals, so the freeze holds it too (M1b L06)
-            with pytest.raises(RpcFailure, match="restored_behind"):
-                call(sock, "ops.secrets_import", {"passphrase_file": "/p", "in_file": "/e"})
-            assert keyring.imports == []
+            # `secrets import` is an exit of the freeze for its /data half: it is the way out of
+            # `key_unknown`, which blocks the adoption (M1b L06 review); nothing is replayed
+            answer = call(sock, "ops.secrets_import", {"passphrase_file": "/p", "in_file": "/e"})
+            assert isinstance(answer, dict) and answer["deferred"] is True
+            assert keyring.imports == [("/p", "/e", "local_cli")]
+            keyring.imports.clear()
             call(sock, "ops.restore_adopt", {"confirm_deletion": False})
             call(sock, "ops.tombstone_accept_lost_keyring", {"confirmation": "the keyring is lost"})
             assert keyring.waived == [("the keyring is lost", "local_cli")]

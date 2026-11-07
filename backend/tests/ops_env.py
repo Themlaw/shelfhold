@@ -78,11 +78,16 @@ class FakeKeyring:
         return []
 
     def import_keyring(
-        self, *, passphrase_file: str, in_file: str, principal: Principal
+        self, *, passphrase_file: str, in_file: str, principal: Principal, replay: bool = True
     ) -> dict[str, Any]:
         self.imports.append((passphrase_file, in_file, principal.credential.value))
         self.kids = []
-        return {"added": ["k-0123456789abcdef"], "present": 1, "replayed": 0}
+        return {
+            "added": ["k-0123456789abcdef"],
+            "present": 1,
+            "replayed": 0,
+            "deferred": not replay,
+        }
 
     def accept_lost_keyring(self, *, confirmation: str, principal: Principal) -> list[str]:
         self.waived.append((confirmation, principal.credential.value))

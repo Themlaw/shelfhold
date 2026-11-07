@@ -118,6 +118,7 @@ class SecretsImportOut(BaseModel):
     added: list[str]  # key ids merged into the keyring (never the keys)
     present: int  # key ids of the file the keyring already held
     replayed: int  # tombstone lines read again with the merged keyring
+    deferred: bool = False  # restored_behind: the replay is the adoption's
 
 
 class SetAsideIn(BaseModel):

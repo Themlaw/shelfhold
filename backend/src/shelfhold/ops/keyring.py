@@ -148,7 +148,7 @@ class TombstoneKeyringExit:
         )
 
     def import_keyring(
-        self, *, passphrase_file: str, in_file: str, principal: Principal
+        self, *, passphrase_file: str, in_file: str, principal: Principal, replay: bool = True
     ) -> dict[str, Any]:
         """`secrets import` (reserved: fresh session or host CLI, never a key, audited).
 
@@ -196,11 +196,12 @@ class TombstoneKeyringExit:
                 )
             if self._composition is not None:
                 self._composition.keyring_changed()
-            replayed = self._replay()
+            replayed = self._replay() if replay else 0
         return {
             "added": list(added),
             "present": len(imported.keys) - len(added),
             "replayed": replayed,
+            "deferred": not replay,  # restored_behind: `reconcile --adopt-after-restore` replays
         }
 
     def _write_keyring(self, imported: Keyring) -> tuple[tuple[str, ...], Keyring]:

@@ -362,13 +362,13 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
 
 # While the instance is `restored_behind` (the database older than the disks, EF-INT-026) nothing
 # of the operating surface writes, even before the first start that follows the restore has frozen
-# the roots; what stays: reading, and the two exits meant for that state.
+# the roots; what stays: reading, the exits of the restore, and `secrets import` (its /data half).
 READS_AND_RESTORE_EXITS = frozenset(
     {
         "ops.status", "ops.missing_list", "ops.jobs_list", "ops.pair_propose",
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
         "ops.intents_list", "ops.backfill_estimate", "ops.meta_check",
-        "ops.restore_adopt", "ops.tombstone_set_aside_journal",
+        "ops.restore_adopt", "ops.tombstone_set_aside_journal", "ops.secrets_import",
     }
 )  # fmt: skip
 

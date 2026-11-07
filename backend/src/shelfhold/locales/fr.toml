@@ -111,6 +111,7 @@ rotation_incomplete = "Rotation interrompue : {remaining} secret(s) sont encore 
 rotation_failed = "Rotation impossible : {detail}"
 imported = "Trousseau fusionné : {added} clé(s) ajoutée(s) comme retirée(s), {present} déjà présente(s)."
 import_replayed = "Pierres tombales rejouées : {count} ligne(s)."
+import_deferred = "L'instance est en lecture seule (restored_behind) : les pierres tombales seront rejouées par « shelfhold reconcile --adopt-after-restore », qui est maintenant débloqué."
 import_replay_failed = "Les clés sont importées, mais le rejeu des pierres tombales n'a pas abouti : relancez la même commande."
 export_again = "Exportez de nouveau le trousseau : « shelfhold secrets export »."
 retired = "Clé {kid} retirée du trousseau."

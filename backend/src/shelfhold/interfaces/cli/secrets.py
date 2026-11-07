@@ -110,7 +110,10 @@ def run_import(args: argparse.Namespace, channel: OpsChannel) -> int:
         in_file=os.path.abspath(args.in_file),
     )
     print(t("secrets.imported", added=len(report["added"]), present=report["present"]))
-    print(t("secrets.import_replayed", count=report["replayed"]))
+    if report.get("deferred"):
+        print(t("secrets.import_deferred"))
+    else:
+        print(t("secrets.import_replayed", count=report["replayed"]))
     return 0
 
 

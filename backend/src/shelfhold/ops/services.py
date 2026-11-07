@@ -502,21 +502,26 @@ class OpsServices:
     ) -> list[str]:
         if self._keyring is None:
             raise ExitUnavailableError("the tombstone service is not connected")
+        if self.restored_behind():  # it replays the journals: the freeze holds it, on every door
+            raise CodedRefusal("instance.restored_behind", t("local_cli.restored_behind"))
         return self._keyring.accept_lost_keyring(confirmation=confirmation, principal=principal)
 
     def secrets_import(
         self, *, passphrase_file: str, in_file: str, principal: Principal
     ) -> dict[str, Any]:
         """`secrets import` (reserved): the keys of an age export merged into the keyring, then
-        the tombstone lines replayed. It writes the keyring and the registry of the database, so
-        the freeze of `restored_behind` holds it as it holds every write but the restore's."""
+        the tombstone lines replayed.
+
+        It is an exit of the freeze for its `/data` half only (keyring, registry, audit): a
+        restore from before a rotation is blocked by `key_unknown` until the keys are back, and
+        `reconcile --adopt-after-restore` is the one that replays, with the keyring on disk. So
+        under `restored_behind` nothing is replayed here (no root is read or written)."""
         if self._keyring is None:
             raise ExitUnavailableError("the tombstone service is not connected")
-        if self.restored_behind():
-            raise CodedRefusal("instance.restored_behind", t("local_cli.restored_behind"))
         return self._keyring.import_keyring(
-            passphrase_file=passphrase_file, in_file=in_file, principal=principal
-        )
+            passphrase_file=passphrase_file, in_file=in_file, principal=principal,
+            replay=not self.restored_behind(),
+        )  # fmt: skip
 
     def tombstone_set_aside_journal(
         self, *, principal: Principal, root_id: str | None = None

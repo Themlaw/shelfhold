@@ -25,7 +25,7 @@ Même règle : instance arrêtée, puis `shelfhold secrets export --passphrase-f
 - **Trousseau absent.** Si le trousseau est perdu mais que la base existe (le démarrage refuse alors de créer une autre clé), l'import le recrée à partir de l'export, clé active comprise.
 - **Fichier forgé.** Un fichier tronqué, au mauvais en-tête, avec un identifiant en double, une clé de mauvaise taille ou trop volumineux (plus de 1 Mio) n'importe rien et ne dit rien de son contenu.
 - **Reprise.** Le trousseau est remplacé en une seule étape atomique (fichier synchronisé sur le disque, renommage, dossier synchronisé) : il n'est jamais à moitié écrit. Après une interruption, relancer la même commande termine le travail (registre, audit, rejeu).
-- **Pendant `restored_behind`.** L'import est refusé comme toute écriture ; la sortie est `shelfhold reconcile --adopt-after-restore`, puis l'import.
+- **Pendant `restored_behind`.** L'import est permis, pour sa partie `/data` seulement (trousseau, registre, audit) : une sauvegarde antérieure à une rotation bloque `reconcile --adopt-after-restore` tant que les clés manquent. Aucune pierre tombale n'est rejouée à ce moment (la commande le dit) : c'est la réadoption qui rejoue, avec le trousseau du disque. L'ordre est donc : `secrets import`, puis `reconcile --adopt-after-restore`. `tombstone accept-lost-keyring` reste refusé pendant le gel, sur toutes les portes.
 - **Instance qui tourne.** La commande passe par la socket locale ; instance arrêtée, elle prend le verrou d'instance. La phrase de passe est lue du fichier par le processus qui applique l'import : elle ne passe ni par la ligne de commande, ni par la socket, ni par les journaux.
 
 ## Pourquoi arrêter l'instance
