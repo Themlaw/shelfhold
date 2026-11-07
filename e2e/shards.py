@@ -22,4 +22,5 @@ SHARDS: dict[str, tuple[str, ...]] = {
         "test_exits_work_after_target_add_on_the_running_server",
     ),
     "name-collision": ("test_two_series_with_one_title_wait_for_a_name_then_export",),
+    "name-foreign": ("test_name_taken_by_a_series_of_another_source_in_kavita_waits_for_a_name",),
 }

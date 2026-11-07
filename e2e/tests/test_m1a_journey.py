@@ -291,3 +291,32 @@ def test_two_series_with_one_title_wait_for_a_name_then_export(journey: Journey)
     ), j.shelfhold("status").out
     folders = {f.split("/")[3] for f in exported_cbz(j)}
     assert len(folders) == 2  # two series, two names
+
+
+@pytest.mark.e2e_timeout(480)
+@pytest.mark.req("EF-EXP-032", "EF-INT-023")
+def test_name_taken_by_a_series_of_another_source_in_kavita_waits_for_a_name(
+    journey: Journey,
+) -> None:
+    """Kavita already shows "Series Alpha", written by someone else: nothing is exported under
+    that name, `status` lists the Edition, the exit refuses the same name and takes another."""
+    j = journey
+    install_by_commands(j)
+    j.foreign_series("Series Alpha")
+    j.discover_series()
+    j.publish_upstream()
+    assert j.follow_until(lambda: "series_name_collision" in j.waiting(), 300), (
+        j.shelfhold("status").out
+    )
+    (item,) = j.waiting()["series_name_collision"]
+    assert not any("Series Alpha/" in f for f in exported_cbz(j))
+    taken = j.shelfhold("edition", "set-series-name", str(item["subject"]), "series  alpha")
+    assert taken.code != 0  # the foreign series bears that name (normalized)
+    named = j.shelfhold("edition", "set-series-name", str(item["subject"]), "Series Alpha (mine)")
+    assert named.code == 0, named.err + named.out
+    assert j.shelfhold("jobs", "run", "export.run").code == 0
+    assert wait_for(
+        lambda: any("Series Alpha (mine)/" in f for f in exported_cbz(j))
+        and "series_name_collision" not in j.waiting(),
+        120,
+    ), j.shelfhold("status").out

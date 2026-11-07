@@ -19,6 +19,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.intents import within_any
 from shelfhold.export.application.rendering import comicinfo_sha256
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate
@@ -151,6 +152,7 @@ def load_request(
         covered=(lambda rel: root is not None and within_any(f"{root}/{rel}", covered_locals)),
         library_ceilings=ceilings, segment_policy_confirmed=segment_policy_confirmed,
         paused_series=paused_series(connection, ctx.destination_id),
+        foreign_names=load_foreign_names(connection, ctx.destination_id),
     )  # fmt: skip
     return LoadedRequest(
         request,

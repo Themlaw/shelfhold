@@ -78,7 +78,7 @@ from shelfhold.export.targets.kavita.errors import (
     TargetForbidden,
     TargetUnreachable,
 )
-from shelfhold.export.targets.kavita.series import refresh_names
+from shelfhold.export.targets.kavita.series import refresh_foreign_names, refresh_names
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
@@ -377,6 +377,7 @@ async def _export_bound(
         # the names Kavita shows now (it may rename a series, EF-EXP-057), before any collision
         if _names_may_refresh(comp, destination.id):
             await refresh_names(comp.engine, client, destination.id)
+        await refresh_foreign_names(comp.engine, client, destination.id)
         # the plan is read from the database: with nothing to write no disk is looked at
         names, kind = wanted_names(
             comp.engine, destination.id,
@@ -575,6 +576,7 @@ class PlanService:
                 client = self._comp.kavita_client(destination.target_id)
                 if _names_may_refresh(self._comp, destination_id):
                     asyncio.run(refresh_names(self._comp.engine, client, destination_id))
+                asyncio.run(refresh_foreign_names(self._comp.engine, client, destination_id))
                 names, kind = pipeline.wanted_names(destination_id)
                 bulk = asyncio.run(BulkParse.fetch(client, names, library_type_named(kind)))
                 pipeline.bind_parse(bulk, verified=True)

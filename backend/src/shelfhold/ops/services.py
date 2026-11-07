@@ -23,6 +23,7 @@ from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_ke
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import root_capabilities, waiting_marks
 from shelfhold.export.application.export_items import SeriesCollisionError, ensure_export_series
+from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.application.snapshot import load_context
@@ -361,6 +362,10 @@ class OpsServices:
             ctx = load_context(connection, mark["destination_id"])
             if ctx.remote_library_id is None:
                 raise NotWaitingError("the destination has no remote library any more")
+            if normalized in load_foreign_names(connection, ctx.destination_id):
+                raise CodedRefusal(  # a series of another source already bears it in Kavita
+                    "export.series_name_collision", "Kavita already shows a series with this name"
+                )
             try:
                 series_id = ensure_export_series(
                     connection, shelf_destination_id=ctx.destination_id,

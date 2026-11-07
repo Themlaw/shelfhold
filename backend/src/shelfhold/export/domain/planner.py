@@ -115,6 +115,7 @@ class PlanRequest:
     covered: Callable[[str], bool] = lambda rel: False
     library_ceilings: frozenset[int | None] = frozenset()  # shelves sharing the remote library
     paused_series: frozenset[str] = frozenset()  # paused by a foreign writer (EF-EXP-043)
+    foreign_names: frozenset[str] = frozenset()  # normalized names Kavita shows, from any source
     segment_policy_confirmed: bool = False
 
 
@@ -327,6 +328,7 @@ def _series_resolution(
         )
     taken = Counter(ref.normalized_name for ref in proposals.values())
     in_library = {s.normalized_name for s in known.values() if s.remote_library_id == library}
+    in_library |= request.foreign_names  # a series of another source bears its name too
     for edition_id, ref in proposals.items():
         if ref.normalized_name in in_library or taken[ref.normalized_name] > 1:
             resolved[edition_id] = Blocked(

@@ -93,6 +93,12 @@ class Journey:
     def publish_upstream(self) -> None:
         self.fake("suwayomi", SUWAYOMI_URL + "/_fake/publish", post=True)
 
+    def foreign_series(self, name: str) -> None:
+        """Kavita holds a series called `name` that comes from another source than Shelfhold."""
+        from urllib.parse import quote
+
+        self.fake("kavita", KAVITA_URL + "/_fake/foreign_series?name=" + quote(name), post=True)
+
     def twin_titles(self) -> None:
         """The second series of the simulated Suwayomi takes the title of the first (en, fr)."""
         self.fake("suwayomi", SUWAYOMI_URL + "/_fake/twin", post=True)

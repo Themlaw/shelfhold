@@ -30,6 +30,7 @@ from tests.fakes.suwayomi.server import FakeSuwayomi, FakeSuwayomiFetcher
 from tests.headless_env import SUWAYOMI_URL, headless
 from tests.integration.test_schema_catalog import add_edition, add_work
 from tests.l41_env import context, instance
+from tests.l50_env import REMOTE_ROOT
 
 # -- ENF-SEC-001: one rule for every service address ------------------------------------------------
 
@@ -374,3 +375,38 @@ def test_download_folder_read_from_suwayomi_is_a_signal_of_the_report(
         # confirmation is tied to what was seen, then the shelf is clear
         ops.library.confirm_migration(destination_id=destination, fingerprint=report["fingerprint"])
         assert ops.library.migration_report(destination)["confirmed"] is True
+
+
+# -- EF-EXP-032: a series of another source bears its name in Kavita too (review) -------------------
+
+
+@pytest.mark.req("EF-EXP-032", "EF-INT-023")
+def test_name_taken_by_a_foreign_kavita_series_waits_and_is_refused_by_the_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from tests.l53_env import status_json, waiting_states
+    from tests.l54_env import bench54
+
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        # a series Kavita holds from elsewhere: Shelfhold has no export_series for it
+        b.env.inst.kavita.add_series(
+            "Alpha", f"{REMOTE_ROOT}/elsewhere/Alpha", [f"{REMOTE_ROOT}/elsewhere/Alpha/1.cbz"],
+            library_id=int(b.library_ref),
+        )  # fmt: skip
+        series = b.env.new_series("Alpha")
+        b.env.add_chapter(series, "1")
+        b.export()
+        assert not any(f.suffix == ".cbz" for f in (b.env.inst.library / "Kavita").rglob("*"))
+        (item,) = waiting_states(status_json(monkeypatch, settings, capsys))[
+            "series_name_collision"
+        ]
+        assert item["subject"] == series.edition_id
+        assert item["command"] == f'shelfhold edition set-series-name {series.edition_id} "<name>"'
+        capsys.readouterr()
+        assert b.cli("edition", "set-series-name", series.edition_id, "alpha") != 0  # taken there
+        assert b.cli("edition", "set-series-name", series.edition_id, "Alpha (mine)") == 0
+        b.export()
+        assert (b.env.inst.library / "Kavita" / "Alpha (mine)").is_dir()
