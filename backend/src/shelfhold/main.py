@@ -53,6 +53,7 @@ from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.ops import OpsServices
 from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.wiring import open_ops
+from shelfhold.plugin_host.public import start_plugins
 from shelfhold.runtime import InstanceRuntime
 from shelfhold.runtime_jobs import PlanService
 
@@ -182,6 +183,7 @@ def create_app(
     def on_startup() -> None:
         log_effective_config(resolved)
         ensure_volumes(resolved)
+        start_plugins(resolved)  # EF-SRC-019: the one start-up load, behind the guard
         runtime.acquire()  # ENF-OPS-015: first, before anything else; a second instance refuses
         try:
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema

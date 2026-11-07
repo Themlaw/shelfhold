@@ -139,6 +139,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "src/shelfhold/infrastructure/secrets/keyring.py" = ["TID251"]  # /data/keyring
 "src/shelfhold/jobs/huey_app.py" = ["TID251"]  # the queue database under /data
 "src/shelfhold/infrastructure/fetcher/**" = ["TID251"]
+"src/shelfhold/plugin_host/install.py" = ["TID251"]  # /data/plugins: the plugins directory, never the library
 # the local CLI socket: AF_UNIX only, created in /data (EF-USR-024); never an outbound connection
 "src/shelfhold/infrastructure/local_socket/**" = ["TID251"]
 # tests are not production egress (the contract bench talks to a pinned Suwayomi container)

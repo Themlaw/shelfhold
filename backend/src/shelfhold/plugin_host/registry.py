@@ -1,20 +1,30 @@
-"""Plugin registry: validates manifests, negotiates ``api``, loads first-party plugins only.
+"""Plugin registry: validates manifests, negotiates ``api``, loads plugins behind the guard.
 
-M1a loads in-process first-party plugins and nothing else (ENF-SEC-009): third-party plugins are
-disabled and their code is never imported, since origin is decided from the distribution that
-ships the entry point, before anything is loaded. The guard on installation and the isolation of
-third-party plugins come in M1b and M6.
+Third-party plugins are disabled by default and their code is never imported (ENF-SEC-009,
+EF-SRC-019): origin is decided from the distribution that ships the entry point, before anything
+is loaded. A third-party plugin loads only when the caller hands the registry a grant, which
+``plugin_host.public.start_plugins`` builds from the environment variable, the typed confirmation
+and the digest of the installed files (``plugin_host.install``). A granted plugin runs in the host
+process with the host's rights: it is the unsandboxed-plugin exception, isolation comes in M6.
+
+Third-party entry points are read from the separate third-party ``site-packages`` only
+(``metadata.distributions(path=[...])``), never from ``sys.path``, and only for the distributions
+that the installer recorded: a stray or fake ``*.dist-info`` changes nothing. That directory is
+appended to ``sys.path`` after the host's entries and no ``.pth`` file is processed.
 
 Compatibility (EF-SRC-001): the host accepts ``api == N`` natively and ``api == N-1`` through a shim
 that rewrites the old manifest into the current shape; any other value is refused with a reason and
 the remaining plugins still load.
 """
 
+import os
 import re
+import sys
 from collections.abc import Callable, Collection, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from importlib import metadata
+from pathlib import Path
 from typing import Any
 
 from shelfhold.sdk.models import API_VERSION, PluginKind, PluginManifest
@@ -35,7 +45,7 @@ class PluginOrigin(StrEnum):
 class PluginStatus(StrEnum):
     LOADED = "loaded"
     LOADED_SHIM = "loaded_shim"  # api N-1, translated by the shim
-    DISABLED = "disabled"  # third party in M1a
+    DISABLED = "disabled"  # third party without the guard's grant
     INCOMPATIBLE = "incompatible"  # api out of range, invalid manifest, load failure
 
 
@@ -65,6 +75,8 @@ class PluginCandidate:
     key: str
     origin: PluginOrigin
     load: Callable[[], Any]
+    dist: str | None = None  # normalised distribution name, for third-party candidates
+    blocked: str | None = None  # why the guard refuses it (shown, never loaded)
 
 
 @dataclass(frozen=True)
@@ -78,8 +90,12 @@ class PluginRecord:
 
 
 def _normalise(name: str) -> str:
-    """PEP 503 normalisation of a distribution name."""
+    """PEP 503 normalisation of a distribution name (also applied to plugin keys)."""
     return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def normalise_name(name: str) -> str:
+    return _normalise(name)
 
 
 def candidates_from_entry_points(entry_points: Iterable[Any]) -> list[PluginCandidate]:
@@ -95,9 +111,61 @@ def candidates_from_entry_points(entry_points: Iterable[Any]) -> list[PluginCand
     return found
 
 
-def discover() -> list[PluginCandidate]:
-    """Candidates registered under the ``shelfhold.plugins`` entry-point group."""
-    return candidates_from_entry_points(metadata.entry_points(group=ENTRY_POINT_GROUP))
+@dataclass(frozen=True)
+class InstalledPlugin:
+    """What the installer recorded for one third-party distribution (``plugin_host.install``)."""
+
+    name: str  # normalised
+    top_levels: tuple[str, ...]
+
+
+SECRET_ENV = re.compile(r"SECRET|PASSWORD|PASSPHRASE|TOKEN|KEY|CREDENTIAL|_FILE$", re.IGNORECASE)
+
+
+def third_party_candidates(
+    site_dir: Path, installed: Iterable[InstalledPlugin], *, blocked: Mapping[str, str]
+) -> list[PluginCandidate]:
+    """Entry points of the recorded distributions, read from `site_dir` alone; nothing is
+    imported. `blocked` maps a normalised distribution name to the reason it must not load."""
+    known = {p.name: p for p in installed}
+    pairs: list[tuple[str, Any]] = []
+    for dist in metadata.distributions(path=[str(site_dir)]):
+        raw = dist.metadata["Name"] if dist.metadata else None
+        name = _normalise(raw) if isinstance(raw, str) else ""
+        if name in known:  # not installed by the guard: ignored, whatever it declares
+            pairs.extend((name, ep) for ep in dist.entry_points if ep.group == ENTRY_POINT_GROUP)
+    found = []
+    for (name, ep), candidate in zip(
+        pairs, candidates_from_entry_points(ep for _, ep in pairs), strict=True
+    ):
+        if candidate.origin is PluginOrigin.FIRST_PARTY:  # a recorded plugin is never the host
+            continue
+        reason = blocked.get(name)
+        if reason is None and ep.module.split(".")[0] not in known[name].top_levels:
+            reason = f"entry point {ep.name!r} points outside the plugin's own modules"
+        found.append(
+            replace(candidate, load=_third_party_loader(site_dir, ep), dist=name, blocked=reason)
+        )
+    return found
+
+
+def _third_party_loader(site_dir: Path, ep: Any) -> Callable[[], Any]:
+    def load() -> Any:
+        """Called with no argument and handed nothing: no settings, no secret, no host object.
+        The process environment is the one channel left; names that look like secrets are taken
+        out of it while the plugin's code is imported."""
+        site = str(site_dir)
+        if site not in sys.path:
+            sys.path.append(site)  # after the host's entries; no addsitedir, so no .pth runs
+        hidden = {k: v for k, v in os.environ.items() if SECRET_ENV.search(k)}
+        for k in hidden:
+            del os.environ[k]
+        try:
+            return ep.load()
+        finally:
+            os.environ.update(hidden)
+
+    return load
 
 
 class PluginRegistry:
@@ -107,7 +175,9 @@ class PluginRegistry:
         api_version: int = API_VERSION,
         shims: Mapping[int, ManifestShim] | None = None,
         active_keys: Collection[str] | None = None,
+        granted_distributions: Collection[str] = (),
     ) -> None:
+        self._granted = frozenset(_normalise(n) for n in granted_distributions)
         self._api = api_version
         self._shims = dict(shims or {})
         self._active_keys = None if active_keys is None else frozenset(active_keys)
@@ -141,31 +211,35 @@ class PluginRegistry:
         """
         items = list(candidates)
         groups: dict[str, list[PluginCandidate]] = {}
-        for candidate in items:
-            groups.setdefault(candidate.key, []).append(candidate)
+        for candidate in items:  # keys are compared after PEP 503 normalisation
+            groups.setdefault(_normalise(candidate.key), []).append(candidate)
         decided: dict[int, PluginRecord] = {}
         for key, group in groups.items():
             firsts = [c for c in group if c.origin is PluginOrigin.FIRST_PARTY]
-            taken = self.get(key)
+            taken = next((r for r in self._records if _normalise(r.key) == key), None)
             held = taken is not None and taken.status in _LOADED
+            thirds = [c for c in group if c.origin is not PluginOrigin.FIRST_PARTY]
             for c in group:
                 if len(firsts) > 1 and c.origin is PluginOrigin.FIRST_PARTY:
-                    why = f"duplicate_key: {len(firsts)} first-party plugins declare {key!r}"
+                    why = f"duplicate_key: {len(firsts)} first-party plugins declare {c.key!r}"
                 elif held or (firsts and c.origin is not PluginOrigin.FIRST_PARTY):
-                    why = f"duplicate_key: {key!r} is already held by a first-party plugin"
+                    why = f"duplicate_key: {c.key!r} is already held by a first-party plugin"
+                elif not firsts and len(thirds) > 1:
+                    why = f"duplicate_key: {len(thirds)} third-party plugins declare {c.key!r}"
                 else:
                     continue
-                decided[id(c)] = PluginRecord(key, c.origin, PluginStatus.INCOMPATIBLE, why)
+                decided[id(c)] = PluginRecord(c.key, c.origin, PluginStatus.INCOMPATIBLE, why)
         records = [decided.get(id(c)) or self._load(c) for c in items]
         self._records.extend(records)
         return records
 
     def _load(self, candidate: PluginCandidate) -> PluginRecord:
         key, origin = candidate.key, candidate.origin
-        if origin is not PluginOrigin.FIRST_PARTY:
-            return PluginRecord(
-                key, origin, PluginStatus.DISABLED, "third-party plugins are disabled in M1a"
-            )
+        if origin is not PluginOrigin.FIRST_PARTY and (
+            candidate.blocked or candidate.dist is None or candidate.dist not in self._granted
+        ):
+            reason = candidate.blocked or "third-party plugins are disabled by default"
+            return PluginRecord(key, origin, PluginStatus.DISABLED, reason)
         try:
             instance = candidate.load()
             manifest, status = self._manifest(getattr(instance, "manifest", None))
