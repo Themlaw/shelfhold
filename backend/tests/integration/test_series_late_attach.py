@@ -90,13 +90,13 @@ def test_late_series_attach_changes_only_edition_export_series_link() -> None:
             target = reassign_edition_series(
                 connection, edition_id=first.edition_id, remote_library_id=library,
                 shelf_destination_id=env.destination_id,
-                ref=SeriesRef(first.edition_id, "Le Cycle", "le cycle", GROUP),
+                ref=SeriesRef(first.edition_id, "Le Cycle", "le cycle", proposal_key=GROUP),
                 now=env.clock.now(),
             )  # fmt: skip
             again = reassign_edition_series(
                 connection, edition_id=second.edition_id, remote_library_id=library,
                 shelf_destination_id=env.destination_id,
-                ref=SeriesRef(second.edition_id, "Le Cycle", "le cycle", GROUP),
+                ref=SeriesRef(second.edition_id, "Le Cycle", "le cycle", proposal_key=GROUP),
                 now=env.clock.now(),
             )  # fmt: skip
         assert target == again  # both albums now in one exported series
