@@ -331,3 +331,28 @@ def test_review_unconfirmed_plugin_stays_unimportable_when_another_is_granted(
     assert "('demo', 'loaded')" in done.stdout, done.stderr
     assert "h2 spec: None" in done.stdout and "h2 not importable" in done.stdout
     assert not pwned.exists()
+
+
+@pytest.mark.req("EF-SRC-019")
+def test_review_forged_state_cannot_remove_files_outside_the_plugin_directory(
+    cli: Cli, tmp_path: Path, probe: Path
+) -> None:
+    install(cli, tmp_path, probe)
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "keep").write_text("x")
+    state = cli.data / "plugins" / "state.json"
+    raw = json.loads(state.read_text(encoding="utf-8"))
+    entry = dict(raw["installed"]["demo-plug"])
+    for name, tops, info in (
+        ("up-plug", ["../../../victim"], "x.dist-info"),
+        ("abs-plug", [str(victim)], "x.dist-info"),
+        ("info-plug", ["demo_plug"], "../../../victim"),
+        ("empty-plug", [], "x.dist-info"),
+    ):
+        raw["installed"][name] = {**entry, "top_levels": tops, "dist_info": info}
+    state.write_text(json.dumps(raw), encoding="utf-8")
+    for name in ("up-plug", "abs-plug", "info-plug", "empty-plug"):
+        done = cli.run("plugin", "remove", name)
+        assert done.returncode == 1 and "bad_state" in done.stderr, name
+        assert (victim / "keep").exists()

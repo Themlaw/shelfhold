@@ -185,6 +185,30 @@ def unexpected_entries(layout: Layout, state: PluginFile) -> list[str]:
     return sorted(p.name for p in layout.site.iterdir() if p.name not in expected)
 
 
+def safe_component(name: str) -> bool:
+    """One path component: no separator, no `..`, not empty, not hidden from a plain listing."""
+    return (
+        bool(name)
+        and name not in (".", "..")
+        and "/" not in name
+        and "\\" not in name
+        and "\0" not in name
+    )
+
+
+def state_is_sound(layout: Layout, plugin: Installed) -> bool:
+    """`state.json` is a file on disk like another: what it names must stay under the directory."""
+    names = [
+        *plugin.top_levels,
+        f"{plugin.top_levels[0]}.py" if plugin.top_levels else "",
+        plugin.dist_info,
+    ]
+    if not plugin.top_levels or not all(safe_component(n) for n in names):
+        return False
+    root = layout.site.resolve()
+    return all((root / n).resolve().parent == root for n in names)
+
+
 def on_disk(site: Path, tops: Sequence[str], dist_info: str) -> list[str]:
     """Names in `site` for the modules (a package directory or a single `.py`) and the dist-info."""
     names = [t if (site / t).is_dir() else f"{t}.py" for t in tops]
@@ -426,6 +450,10 @@ def remove_plugin(layout: Layout, name: str) -> Installed:
     plugin = state.installed.get(key)
     if plugin is None:
         raise PluginInstallError("unknown", f"{name!r} is not installed")
+    if not state_is_sound(layout, plugin):
+        raise PluginInstallError(
+            "bad_state", "state.json names a path outside the plugin directory"
+        )
     for entry in on_disk(layout.site, plugin.top_levels, plugin.dist_info):
         path = layout.site / entry
         if path.is_dir():
@@ -454,6 +482,10 @@ def confirm(layout: Layout, name: str, typed: str) -> Confirmation:
         raise PluginInstallError("unknown", f"{name!r} is not installed")
     if typed.strip() != CONFIRMATION:
         raise PluginInstallError("confirmation_mismatch")
+    if not state_is_sound(layout, plugin):
+        raise PluginInstallError(
+            "bad_state", "state.json names a path outside the plugin directory"
+        )
     digest = current_digest(layout, plugin)
     if digest != plugin.digest:
         raise PluginInstallError("modified", "installed files differ from the recorded install")
@@ -488,6 +520,8 @@ def verdicts(layout: Layout, environ: dict[str, str] | os._Environ[str]) -> list
             out.append(Verdict(name, False, f"{ENV_ALLOW}=1 is not set"))
         elif confirmation is None:
             out.append(Verdict(name, False, "no typed confirmation (shelfhold plugin enable)"))
+        elif not state_is_sound(layout, plugin):
+            out.append(Verdict(name, False, "state.json names a path outside the plugin directory"))
         elif strays:  # a file nobody installed voids every confirmation
             out.append(Verdict(name, False, f"unexpected files in site-packages: {strays}"))
         elif (
