@@ -183,10 +183,10 @@ def create_app(
     def on_startup() -> None:
         log_effective_config(resolved)
         ensure_volumes(resolved)
-        start_plugins(resolved)  # EF-SRC-019: the one start-up load, behind the guard
         runtime.acquire()  # ENF-OPS-015: first, before anything else; a second instance refuses
         try:
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
+            start_plugins(resolved)  # EF-SRC-019: third-party code only once this process owns /data
             try:
                 boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops it
             except KeyringError as error:

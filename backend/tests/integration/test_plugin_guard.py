@@ -416,3 +416,33 @@ def test_review_a_failed_placement_is_a_refusal_not_a_traceback(
     assert ("plugin.install_refused", "other_plug-1.0-py3-none-any.whl:bad_wheel") in (
         cli.audit_actions()
     )
+
+
+@pytest.mark.req("EF-SRC-019")
+def test_review_nothing_third_party_loads_when_the_start_is_refused(
+    cli: Cli, tmp_path: Path, probe: Path
+) -> None:
+    """Review 97: plugins load after the instance lock and the schema check, not before."""
+    import sqlite3
+    from contextlib import closing
+
+    install(cli, tmp_path, probe)
+    enable(cli)
+    with closing(sqlite3.connect(cli.data / "shelfhold.db")) as db:
+        db.execute("UPDATE alembic_version SET version_num = 'from_the_future'")
+        db.commit()
+    code = (
+        "from fastapi.testclient import TestClient\n"
+        "from shelfhold.main import create_app\n"
+        "with TestClient(create_app()): pass\n"
+    )
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code],
+        env={**cli.env, **ENABLE},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    assert done.returncode != 0 and "from_the_future" in done.stderr
+    assert snapshots(probe) == []
