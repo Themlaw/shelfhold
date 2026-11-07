@@ -11,7 +11,7 @@ import base64
 import contextlib
 import json
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -461,3 +461,43 @@ def test_the_admin_page_on_logs_names_no_host_ip_or_personal_path() -> None:
     assert "contexte.action" in text and "duration_ms" in text
     assert not re.search(r"\b\d{1,3}(\.\d{1,3}){3}\b", text)  # no IP address
     assert not re.search(r"/home/|/Users/|\.lan\b|\.local\b|\.ts\.net", text)  # no host, no path
+
+
+# -- review: the masking by value comes before the cut and the escape ------
+
+
+@pytest.mark.req("ENF-SEC-005", "ENF-OBS-001")
+@pytest.mark.parametrize(
+    ("label", "build"),
+    [
+        ("backslash and both quotes", lambda s: f"refused: {s}"),
+        ("past the 480th character", lambda s: "x" * 480 + s),
+        ("straddling the 500th character", lambda s: "y" * 495 + s),
+    ],
+)
+def test_a_registered_secret_never_survives_the_failure_detail(
+    settings: Settings, tmp_path: Path, logs: Logs, label: str, build: Callable[[str], str]
+) -> None:
+    from shelfhold.infrastructure.logging import register_secret_value
+
+    secret = "pa\\ss\"wo'rd-synthetic-7Q" if "quotes" in label else "K3y-synthetic-ABCDEFGHIJKLMNOP"
+    register_secret_value(secret)
+    with seeded(settings, tmp_path) as env:
+        pools = JobPools(
+            env.inst.settings.data_dir,
+            engine=env.inst.engine,
+            clock=env.inst.comp.clock,
+            seed="l59",
+        )
+        logs.start("DEBUG")
+
+        def boom(_context: object) -> None:
+            raise RuntimeError(build(secret))
+
+        pools.register("l59.review", pool="io", handler=boom, writes=False)  # type: ignore[arg-type]
+        run_job(pools, "l59.review")
+        records = logs.drain()
+    assert named(records, "job.failure_detail"), label
+    text = "\n".join(str(v) for r in records for v in r.values())  # decoded, not JSON-escaped
+    for piece in (secret, secret[:12], repr(secret)[1:-1], secret.replace("\\", "\\\\")):
+        assert piece not in text, (label, piece)

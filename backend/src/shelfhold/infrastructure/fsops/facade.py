@@ -87,6 +87,7 @@ from shelfhold.infrastructure.fsops.writer import (
     ensure_host_dirs,
     write_atomic,
 )
+from shelfhold.infrastructure.logging import escaped
 from shelfhold.infrastructure.observability.network_fs import filesystem_kind
 
 __all__ = ["BootReport", "Fsops", "RootStatus"]
@@ -667,7 +668,7 @@ class Fsops:
     ) -> FileIdentity:
         """Stage, flush, (optionally) read the staged file back against `verify_digest()` (a
         hex SHA-256), then put it in place: nothing is placed when the digest does not match."""
-        log.debug("fsops.write_atomic", path=repr(local))
+        log.debug("fsops.write_atomic", path=escaped(local))
         located = self._locate(local)
         self._require_space()
         with self._gated(located) as root:
@@ -718,14 +719,14 @@ class Fsops:
                 )  # fmt: skip
 
     def mkdir(self, local: str, *, parents: bool = True, exist_ok: bool = True) -> None:
-        log.debug("fsops.mkdir", path=repr(local))
+        log.debug("fsops.mkdir", path=escaped(local))
         located = self._locate(local)
         self._require_space()
         with self._gated(located) as root:
             root.mkdir(located.rel, parents=parents, exist_ok=exist_ok)
 
     def unlink(self, local: str) -> None:
-        log.debug("fsops.unlink", path=repr(local))
+        log.debug("fsops.unlink", path=escaped(local))
         located = self._locate(local)
         with self._gated(located) as root:
             root.unlink(located.rel)
@@ -736,7 +737,7 @@ class Fsops:
         recorded the tombstone and has written the intent; this is the primitive, and it adds
         what only fsops can check: the path is under a writable root, never through a link, never
         a directory, never the host's own files (sentinel, lease, tombstone journal, mirror)."""
-        log.debug("fsops.purge_unlink", path=repr(local))
+        log.debug("fsops.purge_unlink", path=escaped(local))
         located = self._locate(local, host=True)
         self._require_purgeable(located.rel)
         with self._gated(located) as root:
@@ -747,7 +748,7 @@ class Fsops:
     def purge_remove_tree(self, local: str) -> None:
         """The same for one entry of a root's bin (`.shelfhold/recycle/<id>`) and what it holds,
         the only folder a purge removes."""
-        log.debug("fsops.purge_remove_tree", path=repr(local))
+        log.debug("fsops.purge_remove_tree", path=escaped(local))
         located = self._locate(local, host=True)
         if not Perimeter(below=RECYCLE_DIR).allows(located.rel):
             raise ReservedPathError(f"{local!r} is not inside a bin")
@@ -773,7 +774,7 @@ class Fsops:
         The perimeter is enforced here, on the path relative to its physical root, before
         anything is opened; the condition is read from the file system (the age of the trash
         entry) or from the owner of this object (the disk guard), never from the caller."""
-        log.debug("fsops.system_unlink", path=repr(local))
+        log.debug("fsops.system_unlink", path=escaped(local))
         located = self._locate(local, host=True)
         require_inside(emitter, located.rel)
         with self._gated(located) as root:
@@ -783,7 +784,7 @@ class Fsops:
     def system_remove_tree(self, emitter: str, local: str) -> None:
         """A system emitter deletes a folder and what it holds, same rules as `system_unlink`;
         never for the probe emitter, which removes single files only."""
-        log.debug("fsops.system_remove_tree", path=repr(local))
+        log.debug("fsops.system_remove_tree", path=escaped(local))
         located = self._locate(local, host=True)
         require_inside(emitter, located.rel)
         require_tree_allowed(emitter)
@@ -810,7 +811,7 @@ class Fsops:
         return root.empty_dir(rel)
 
     def rmdir(self, local: str) -> None:
-        log.debug("fsops.rmdir", path=repr(local))
+        log.debug("fsops.rmdir", path=escaped(local))
         located = self._locate(local)
         with self._gated(located) as root:
             root.rmdir(located.rel)
@@ -819,7 +820,7 @@ class Fsops:
         """Within one physical root only; between two roots it would be a copy (I24).
 
         An existing target is an error (`FileExistsError`) unless `replace=True`."""
-        log.debug("fsops.rename", src=repr(src), dst=repr(dst), replace=replace)
+        log.debug("fsops.rename", src=escaped(src), dst=escaped(dst), replace=replace)
         a, b = self._locate(src), self._locate(dst)
         if a.read_only or b.read_only:
             raise ReadOnlyRootError("an adoption root is never written")

@@ -96,9 +96,16 @@ def route_of(url: str) -> str:
     return _scrub_text(f"{host}{port}{parts.path}")
 
 
+def escaped(value: object, *, limit: int = 500) -> str:
+    """Free text for a log line: masked first (a known secret must still match whole), then cut,
+    then escaped with `repr`. Any other order lets a cut or an escape hide a secret from the
+    masking by value (a backslash or a quote changes the text, a cut splits the secret)."""
+    return repr(_scrub_text(value if isinstance(value, str) else str(value))[:limit])
+
+
 def untrusted_name(name: str, *, limit: int = 200) -> str:
-    """A name taken from an untrusted archive, for a DEBUG line only: escaped (`repr`) and cut."""
-    return repr(name[:limit])
+    """A name taken from an untrusted archive, for a DEBUG line only: masked, cut, escaped."""
+    return escaped(name, limit=limit)
 
 
 def exception_detail(error: BaseException, *, depth: int = 12) -> dict[str, object]:
@@ -109,7 +116,7 @@ def exception_detail(error: BaseException, *, depth: int = 12) -> dict[str, obje
         f"{Path(frame.filename).name}:{frame.lineno} in {frame.name}"
         for frame in traceback.extract_tb(error.__traceback__)[-depth:]
     ]
-    return {"error": type(error).__name__, "message": repr(str(error)[:500]), "frames": frames}
+    return {"error": type(error).__name__, "message": escaped(str(error)), "frames": frames}
 
 
 def log_outcome[F: Callable[..., Any]](
