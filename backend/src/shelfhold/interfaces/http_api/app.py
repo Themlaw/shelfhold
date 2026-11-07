@@ -12,7 +12,7 @@ from shelfhold.infrastructure.http_headers import ROBOTS_TXT
 from shelfhold.infrastructure.idempotency_store import IdempotencyStore
 from shelfhold.interfaces.http_api.about import build_about_router, default_source_url
 from shelfhold.interfaces.http_api.auth import (
-    LOGIN_PATH,
+    ANONYMOUS_JSON_PATHS,
     AuthGate,
     AuthMiddleware,
     install_auth,
@@ -29,6 +29,7 @@ from shelfhold.interfaces.http_api.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from shelfhold.interfaces.http_api.passkeys import build_passkeys_router
 from shelfhold.interfaces.http_api.problems import (
     default_problem_responses,
     install_problem_handlers,
@@ -86,7 +87,7 @@ def create_http_app(
         responses=default_problem_responses(),  # RFC 9457 (EF-INT-001)
     )
     install_problem_handlers(app)
-    install_problem_openapi(app, public_paths=frozenset({LOGIN_PATH}))
+    install_problem_openapi(app, public_paths=ANONYMOUS_JSON_PATHS)
     install_auth(app, auth)
     if auth is not None:
         actor_of = actor_of or principal_actor
@@ -111,6 +112,7 @@ def create_http_app(
     app.include_router(build_health_router(health, version=version))
     resolved_source = source_url or default_source_url(version)
     app.include_router(build_login_router(resolved_source))
+    app.include_router(build_passkeys_router())
     app.include_router(build_about_router(version=version, source_url=resolved_source))
     for router in routers:
         app.include_router(router)

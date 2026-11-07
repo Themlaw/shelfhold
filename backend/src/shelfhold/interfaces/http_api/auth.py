@@ -52,6 +52,11 @@ from shelfhold.interfaces.http_api.problems import ProblemError, build_problem_r
 
 LOGIN_PAGE = "/login"
 LOGIN_PATH = "/api/v1/auth/login"
+PASSKEY_SCRIPT_PATH = "/login/passkey.js"
+PASSKEY_LOGIN_OPTIONS_PATH = "/api/v1/auth/passkeys/login/options"
+PASSKEY_LOGIN_PATH = "/api/v1/auth/passkeys/login"
+# Anonymous state-changing routes: JSON only (a cross-site form cannot send it), no CSRF token.
+ANONYMOUS_JSON_PATHS = frozenset({LOGIN_PATH, PASSKEY_LOGIN_OPTIONS_PATH, PASSKEY_LOGIN_PATH})
 CSRF_HEADER = "X-CSRF-Token"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -61,11 +66,14 @@ class CookieNames:
     session: str
     csrf: str
     device: str  # signed proof of a past login on this browser (attempt limiting only)
+    flow: str  # binds a passkey sign-in challenge to the browser that asked for it
     secure: bool
 
 
-SECURE_COOKIES = CookieNames("__Host-sid", "__Host-csrf", "__Host-dev", secure=True)
-PLAIN_COOKIES = CookieNames("sid", "csrf", "dev", secure=False)
+SECURE_COOKIES = CookieNames(
+    "__Host-sid", "__Host-csrf", "__Host-dev", "__Host-pkflow", secure=True
+)
+PLAIN_COOKIES = CookieNames("sid", "csrf", "dev", "pkflow", secure=False)
 DEVICE_COOKIE_MAX_AGE_S = 365 * 24 * 3600
 
 
@@ -132,6 +140,18 @@ def set_session_cookies(response: Response, names: CookieNames, issued: IssuedSe
     response.headers["Cache-Control"] = "no-store"
 
 
+def set_flow_cookie(response: Response, names: CookieNames, value: str, *, max_age: int) -> None:
+    """Short-lived, `HttpOnly`, `SameSite=Strict`, `Secure` as soon as the request is HTTPS."""
+    response.headers.append(
+        "set-cookie",
+        _cookie_header(names.flow, value, names=names, http_only=True, max_age=max_age),
+    )
+
+
+def clear_flow_cookie(response: Response, names: CookieNames) -> None:
+    set_flow_cookie(response, names, "", max_age=0)
+
+
 def clear_session_cookies(response: Response, names: CookieNames) -> None:
     for name, http_only in ((names.session, True), (names.csrf, False)):
         response.headers.append(
@@ -181,7 +201,7 @@ class AuthMiddleware:
         if unsafe and not by_key and headers.get("sec-fetch-site", "").lower() == "cross-site":
             await self._problem(scope, receive, send, "csrf_failed")
             return
-        if unsafe and scope["path"] == LOGIN_PATH:
+        if unsafe and scope["path"] in ANONYMOUS_JSON_PATHS:
             content_type = headers.get("content-type", "").split(";")[0].strip().lower()
             if content_type != "application/json":  # a cross-site form cannot send JSON
                 await self._problem(scope, receive, send, "csrf_failed")

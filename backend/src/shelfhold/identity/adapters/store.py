@@ -12,7 +12,10 @@ from shelfhold.identity.application.ports import (
     AuditEntry,
     KeyConflictError,
     NewApiKey,
+    NewPasskey,
     NewSession,
+    PasskeyGoneError,
+    PasskeyRecord,
     SessionRecord,
     UserRecord,
 )
@@ -22,6 +25,7 @@ from shelfhold.infrastructure.schema import identity
 _user = identity.user
 _session = identity.session
 _key = identity.api_key
+_passkey = identity.webauthn_credential
 
 
 def _user_of(row: Any) -> UserRecord:
@@ -55,6 +59,23 @@ def audit_insert(entry: AuditEntry) -> sa.Insert:
         at=entry.at,
         session_id=entry.session_id,
         auth_time=entry.auth_time,
+    )
+
+
+def _passkey_of(row: Any) -> PasskeyRecord:
+    return PasskeyRecord(
+        id=row.id,
+        user_id=row.user_id,
+        credential_id=bytes(row.credential_id),
+        public_key=bytes(row.public_key),
+        sign_count=row.sign_count,
+        transports=tuple(row.transports or ()),
+        aaguid=row.aaguid,
+        name=row.name,
+        created_at=row.created_at,
+        rp_id=row.rp_id,
+        last_used_at=row.last_used_at,
+        revoked_at=row.revoked_at,
     )
 
 
@@ -113,10 +134,138 @@ class SqlIdentityStore:
                 sa.update(_user).where(_user.c.id == user_id).values(password_hash=password_hash)
             )
 
+    # --- passkeys (EF-USR-025) ---------------------------------------------------------------
+
+    def insert_passkey(self, passkey: NewPasskey) -> bool:
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    sa.insert(_passkey).values(
+                        id=passkey.id,
+                        user_id=passkey.user_id,
+                        credential_id=passkey.credential_id,
+                        public_key=passkey.public_key,
+                        sign_count=passkey.sign_count,
+                        transports=list(passkey.transports),
+                        aaguid=passkey.aaguid,
+                        rp_id=passkey.rp_id,
+                        name=passkey.name,
+                        created_at=passkey.now,
+                    )
+                )
+        except sa.exc.IntegrityError:
+            return False
+        return True
+
+    def passkeys_of(self, user_id: str) -> Sequence[PasskeyRecord]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(_passkey)
+                .where(_passkey.c.user_id == user_id, _passkey.c.revoked_at.is_(None))
+                .order_by(_passkey.c.created_at, _passkey.c.id)
+            ).all()
+        return [_passkey_of(row) for row in rows]
+
+    def passkey_by_credential(self, credential_id: bytes) -> PasskeyRecord | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(_passkey).where(_passkey.c.credential_id == credential_id)
+            ).first()
+        return _passkey_of(row) if row else None
+
+    def record_passkey_use(self, passkey_id: str, *, sign_count: int, now: datetime) -> bool:
+        # The counter moves forward in the statement itself: of two concurrent presentations of
+        # the same assertion only one finds `sign_count < :new` (0 stays 0: no counter).
+        advanced = _passkey.c.sign_count < sign_count
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                sa.update(_passkey)
+                .where(
+                    _passkey.c.id == passkey_id,
+                    _passkey.c.revoked_at.is_(None),
+                    sa.or_(
+                        advanced, sa.and_(_passkey.c.sign_count == 0, sa.literal(sign_count) == 0)
+                    ),
+                )
+                .values(sign_count=sign_count, last_used_at=now)
+            )
+        return result.rowcount == 1
+
+    def revoke_passkey(self, user_id: str, passkey_id: str, *, now: datetime) -> str:
+        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with immediate.begin() as conn:
+            live = (
+                conn.execute(
+                    sa.select(_passkey.c.id).where(
+                        _passkey.c.user_id == user_id, _passkey.c.revoked_at.is_(None)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if passkey_id not in live:
+                return "not_found"
+            password = conn.execute(
+                sa.select(_user.c.password_hash).where(_user.c.id == user_id)
+            ).scalar_one_or_none()
+            if password is None and len(live) <= 1:
+                return "last_factor"
+            conn.execute(
+                sa.update(_passkey).where(_passkey.c.id == passkey_id).values(revoked_at=now)
+            )
+            conn.execute(  # what that passkey opened goes with it
+                sa.update(_session)
+                .where(_session.c.passkey_id == passkey_id, _session.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+        return "revoked"
+
+    def passkey_rp_ids(self) -> set[str]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(_passkey.c.rp_id)
+                .where(_passkey.c.revoked_at.is_(None), _passkey.c.rp_id.is_not(None))
+                .distinct()
+            ).scalars()
+            return {str(rp_id) for rp_id in rows}
+
+    def reset_credentials(
+        self, user_id: str, password_hash: str, *, now: datetime
+    ) -> tuple[int, int]:
+        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with immediate.begin() as conn:
+            conn.execute(
+                sa.update(_user).where(_user.c.id == user_id).values(password_hash=password_hash)
+            )
+            passkeys = conn.execute(
+                sa.update(_passkey)
+                .where(_passkey.c.user_id == user_id, _passkey.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            ).rowcount
+            sessions = conn.execute(
+                sa.update(_session)
+                .where(_session.c.user_id == user_id, _session.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            ).rowcount
+        return int(sessions), int(passkeys)
+
     # --- sessions ----------------------------------------------------------------------------
 
     def insert_session(self, session: NewSession) -> None:
-        with self._engine.begin() as conn:
+        engine = (
+            self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+            if session.passkey_id
+            else self._engine
+        )
+        with engine.begin() as conn:
+            if session.passkey_id:  # the write lock is held: no revocation can come in between
+                live = conn.execute(
+                    sa.select(_passkey.c.id).where(
+                        _passkey.c.id == session.passkey_id, _passkey.c.revoked_at.is_(None)
+                    )
+                ).first()
+                if live is None:
+                    raise PasskeyGoneError
             conn.execute(
                 sa.insert(_session).values(
                     id=session.id,
@@ -129,6 +278,7 @@ class SqlIdentityStore:
                     absolute_expiry=session.absolute_expiry,
                     remember=session.remember,
                     ip=session.ip,
+                    passkey_id=session.passkey_id,
                 )
             )
 

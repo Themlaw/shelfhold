@@ -16,6 +16,13 @@ from datetime import datetime, timedelta
 
 import structlog
 
+from shelfhold.identity.application.passkeys import (
+    PasskeyCeremony,
+    PasskeyError,
+    PasskeyOptions,
+    PasskeyRefusedError,
+    PasskeyUnavailableError,
+)
 from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
@@ -24,6 +31,8 @@ from shelfhold.identity.application.ports import (
     KeyConflictError,
     NewApiKey,
     NewSession,
+    PasskeyGoneError,
+    PasskeyRecord,
     PasswordHasherPort,
     ReauthMethod,
     UserRecord,
@@ -65,6 +74,7 @@ from shelfhold.infrastructure.ids import new_ulid
 ADMIN_ROLE = "admin"
 IDENTITY_HEADER_AUDIT = "auth.identity_header_stripped"  # read back by `shelfhold status`
 API_KEY_TOUCH_INTERVAL = timedelta(minutes=1)
+OPTIONS_PER_MINUTE = 30  # passkey sign-in options per address
 
 
 class AuthError(Exception):
@@ -103,6 +113,23 @@ class UnknownUserError(AuthError):
 class UnknownReauthMethodError(AuthError):
     def __init__(self) -> None:
         super().__init__("unknown_reauth_method")
+
+
+class LastLoginFactorError(AuthError):
+    def __init__(self) -> None:
+        super().__init__("last_login_factor")
+
+
+class UnknownPasskeyError(AuthError):
+    def __init__(self) -> None:
+        super().__init__("unknown_passkey")
+
+
+@dataclass(frozen=True)
+class PasskeyStatus:
+    available: bool
+    reason: str | None
+    rp_id: str | None
 
 
 @dataclass(frozen=True)
@@ -161,6 +188,35 @@ class PasswordReauth:
         return self._hasher.verify(user.password_hash, password)
 
 
+class PasskeyReauth:
+    """Re-authentication by passkey (EF-USR-025): the assertion answers a challenge issued for
+    this very session, and the credential must belong to the account that is re-authenticating."""
+
+    name = "passkey"
+
+    def __init__(self, ceremony: PasskeyCeremony) -> None:
+        self._ceremony = ceremony
+
+    def verify(self, user: UserRecord, payload: Mapping[str, object]) -> bool:
+        flow, credential, session_id = (
+            payload.get("flow"),
+            payload.get("credential"),
+            payload.get("session_id"),
+        )
+        if not (
+            isinstance(flow, str)
+            and isinstance(credential, Mapping)
+            and isinstance(session_id, str)
+        ):
+            return False
+        try:
+            self._ceremony.finish_reauth(user, session_id, flow, credential)
+        except PasskeyError as refused:
+            structlog.get_logger().warning("auth.passkey_refused", reason=refused.reason)
+            return False
+        return True
+
+
 class LocalAuth:
     def __init__(
         self,
@@ -173,6 +229,7 @@ class LocalAuth:
         throttle: LoginThrottle | None = None,
         reauth_methods: Sequence[ReauthMethod] | None = None,
         device_proof: DeviceProofPort | None = None,
+        passkeys: PasskeyCeremony | None = None,
     ) -> None:
         self._store = store
         self._hasher = hasher
@@ -181,7 +238,13 @@ class LocalAuth:
         self.fresh_auth_s = fresh_auth_s
         self._throttle = throttle or LoginThrottle()
         self._device_proof = device_proof
-        methods = reauth_methods if reauth_methods is not None else [PasswordReauth(hasher)]
+        methods = list(reauth_methods if reauth_methods is not None else [PasswordReauth(hasher)])
+        self._passkeys = passkeys
+        self._options_throttle = LoginThrottle(
+            per_address=OPTIONS_PER_MINUTE, per_account=OPTIONS_PER_MINUTE
+        )
+        if passkeys is not None and passkeys.available:  # the method exists in a secure context
+            methods.append(PasskeyReauth(passkeys))
         self._reauth = {method.name: method for method in methods}
 
     @property
@@ -242,14 +305,22 @@ class LocalAuth:
         user = self._store.user_by_name(username)
         if user is None:
             raise UnknownUserError
-        self._store.set_password_hash(user.id, self._hasher.hash(password))
-        closed = self._store.revoke_sessions(now=self.now(), user_id=user.id)
+        # One transaction: the password, the sessions and the passkeys change together, so a
+        # passkey sign-in cannot slip between the steps (a lost or stolen device is the usual
+        # reason for a reset, ADR-0050: its passkeys go too).
+        closed, revoked = self._store.reset_credentials(
+            user.id, self._hasher.hash(password), now=self.now()
+        )
         self._audit("user.password_reset", by, target=user.id)
+        if revoked:
+            self._audit("user.passkeys_revoked", by, target=user.id)
         return closed
 
     # --- sessions ----------------------------------------------------------------------------
 
-    def _issue(self, user: UserRecord, *, remember: bool, ip: str | None) -> IssuedSession:
+    def _issue(
+        self, user: UserRecord, *, remember: bool, ip: str | None, passkey_id: str | None = None
+    ) -> IssuedSession:
         now = self.now()
         policy = self._policy(user.role)
         token, csrf = new_token(), new_token()
@@ -264,6 +335,7 @@ class LocalAuth:
                 absolute_expiry=initial_expiry(policy, now),
                 remember=remember,
                 ip=ip,
+                passkey_id=passkey_id,
             )
         )
         principal = Principal(
@@ -393,7 +465,9 @@ class LocalAuth:
             raise UnknownReauthMethodError
         at = self._reserve_attempt(ip=ip, account=principal.username)
         user = self._store.user_by_id(principal.user_id)
-        if user is None or not verifier.verify(user, payload):
+        # The session is the server's to name: whatever the body said is overwritten.
+        proof = {**payload, "session_id": principal.session_id}
+        if user is None or not verifier.verify(user, proof):
             raise self._fail(ip=ip)
         self._throttle.release(ip=ip, account=principal.username, at=at)
         now = self.now()
@@ -413,6 +487,109 @@ class LocalAuth:
             remember=remember,
             cookie_max_age_s=_seconds(policy.idle) if remember else None,
         )
+
+    # --- passkeys (EF-USR-025, ADR-0050) -------------------------------------------------------
+
+    def _ceremony(self) -> PasskeyCeremony:
+        if self._passkeys is None:
+            raise PasskeyUnavailableError("no_public_url")
+        return self._passkeys
+
+    def passkey_status(self) -> PasskeyStatus:
+        ceremony = self._passkeys
+        if ceremony is None:
+            return PasskeyStatus(False, "no_public_url", None)
+        return PasskeyStatus(ceremony.available, ceremony.unavailable_reason, ceremony.rp_id)
+
+    @property
+    def passkeys_available(self) -> bool:
+        return self._passkeys is not None and self._passkeys.available
+
+    def _account(self, principal: Principal) -> UserRecord:
+        user = self._store.user_by_id(principal.user_id)
+        if user is None or principal.session_id is None:
+            raise InvalidCredentialsError
+        return user
+
+    def stale_passkey_rp_ids(self, current_rp_id: str | None) -> list[str]:
+        """RP IDs that live passkeys are bound to and that are not the instance's (ADR-0050,
+        "change of domain"): those passkeys can no longer be used."""
+        return sorted(rp for rp in self._store.passkey_rp_ids() if rp != current_rp_id)
+
+    def passkeys_of(self, principal: Principal) -> Sequence[PasskeyRecord]:
+        return self._store.passkeys_of(principal.user_id)
+
+    def passkey_registration_options(self, principal: Principal) -> PasskeyOptions:
+        user = self._account(principal)
+        return self._ceremony().registration_options(user, str(principal.session_id))
+
+    def passkey_register(
+        self, principal: Principal, flow: str, credential: Mapping[str, object], name: str
+    ) -> PasskeyRecord:
+        user = self._account(principal)
+        try:
+            passkey = self._ceremony().finish_registration(
+                user, str(principal.session_id), flow, credential, name
+            )
+        except PasskeyRefusedError as refused:
+            structlog.get_logger().warning("auth.passkey_refused", reason=refused.reason)
+            raise
+        self._audit("passkey.registered", principal, target=passkey.id)
+        return passkey
+
+    def passkey_revoke(self, principal: Principal, passkey_id: str) -> None:
+        outcome = self._store.revoke_passkey(principal.user_id, passkey_id, now=self.now())
+        if outcome == "last_factor":
+            raise LastLoginFactorError
+        if outcome != "revoked":
+            raise UnknownPasskeyError
+        self._audit("passkey.revoked", principal, target=passkey_id)
+
+    def passkey_reauth_options(self, principal: Principal) -> PasskeyOptions:
+        user = self._account(principal)
+        return self._ceremony().reauth_options(user, str(principal.session_id))
+
+    def passkey_login_options(self, *, ip: str) -> PasskeyOptions:
+        """Anonymous and cheap to call: each address gets a few per minute (429 beyond)."""
+        ceremony = self._ceremony()
+        wait = self._options_throttle.reserve(ip=ip, account=ip, now=self.now())
+        if wait is not None:
+            raise ThrottledError(max(1, math.ceil(wait)))
+        return ceremony.login_options()
+
+    def passkey_login(
+        self,
+        flow: str,
+        credential: Mapping[str, object],
+        *,
+        ip: str,
+        binder: str = "",
+        remember: bool = True,
+        confirm_remember: bool = False,
+        presented_token: str | None = None,
+    ) -> IssuedSession:
+        """Discoverable login: the credential names the account. Same throttle as a password
+        (every attempt is counted before it is checked), same answer for every refusal, a new
+        session whatever the browser held (no fixation), `auth_time` = now."""
+        ceremony = self._ceremony()
+        account = f"passkey:{ip}"  # no account is known before the assertion: one key per address
+        at = self._reserve_attempt(ip=ip, account=account)
+        try:
+            user, passkey = ceremony.finish_login(flow, binder, credential)
+        except PasskeyError as refused:
+            structlog.get_logger().warning("auth.passkey_refused", reason=refused.reason, ip=ip)
+            raise self._fail(ip=ip) from None
+        self._throttle.release(ip=ip, account=account, at=at)
+        if remember and not confirm_remember and not self._policy(user.role).remember_default:
+            raise RememberNeedsConfirmationError
+        if presented_token:  # whatever the browser held is closed, never adopted
+            self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
+        try:
+            issued = self._issue(user, remember=remember, ip=ip, passkey_id=passkey.id)
+        except PasskeyGoneError:  # revoked between the assertion and the session
+            raise self._fail(ip=ip) from None
+        self._audit("auth.passkey_login", issued.principal, target=passkey.id)
+        return issued
 
     # --- API keys ----------------------------------------------------------------------------
 

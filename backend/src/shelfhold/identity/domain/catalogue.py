@@ -61,6 +61,10 @@ _DECLARED = (
     _action("keys.rotate", Effect.MANAGES_CREDENTIALS),
     _action("keys.revoke", Effect.MANAGES_CREDENTIALS),
     _action("device_token.manage", Effect.MANAGES_CREDENTIALS),
+    # A passkey is a persistent way in: adding or retiring one needs a fresh proof in the hardened
+    # profile only (review PR #95; the default is the porteur's call, docs/decisions/M1b.md)
+    _action("passkey.register", Effect.MANAGES_CREDENTIALS),
+    _action("passkey.revoke", Effect.MANAGES_CREDENTIALS),
     _action("admin_risk.accept", Effect.ACCEPTS_ADMIN_RISK),
 )
 

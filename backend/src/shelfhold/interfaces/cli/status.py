@@ -17,7 +17,12 @@ from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.domain.restore import RestoreStatus
 from shelfhold.headless.applied import applied_public_url
 from shelfhold.i18n import t
-from shelfhold.identity.public import IDENTITY_HEADER_AUDIT, local_auth
+from shelfhold.identity.public import (
+    IDENTITY_HEADER_AUDIT,
+    RelyingParty,
+    local_auth,
+    relying_party,
+)
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.migrate import current_revision, head_revision
@@ -130,13 +135,25 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         ]
     engine = create_db_engine(database)
     try:
-        headers = local_auth(engine, settings).recent_audit_targets(IDENTITY_HEADER_AUDIT)
+        auth = local_auth(engine, settings)
+        headers = auth.recent_audit_targets(IDENTITY_HEADER_AUDIT)
         applied = applied_public_url(engine)
+        current = relying_party(settings.public_url)
+        stale_rps = auth.stale_passkey_rp_ids(
+            current.id if isinstance(current, RelyingParty) else None
+        )
     finally:
         engine.dispose()
     pending: list[dict[str, str]] = []
     if applied is not None and applied != (settings.public_url or ""):
         pending.append({"code": "public_url_restart", "message": t("status.public_url_restart")})
+    for rp_id in stale_rps:  # ADR-0050: a change of domain strands the passkeys
+        pending.append(
+            {
+                "code": "passkey_rp_changed",
+                "message": t("status.passkey_rp_changed", old=rp_id),
+            }
+        )
     restore = _restore_status(resolved)
     behind = restored_behind_warning(restore) if restore is not None else None
     mismatched = mismatch_warnings(restore) if restore is not None else []
