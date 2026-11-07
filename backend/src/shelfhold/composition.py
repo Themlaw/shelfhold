@@ -158,7 +158,11 @@ class Composition:
                 paths = [
                     r.path_entry for r in connection.execute(sa.select(platform.physical_root))
                 ]
-                if not paths or connection.execute(sa.select(platform.instance)).first() is None:
+                if (
+                    not paths
+                    or connection.execute(sa.select(platform.instance.c.instance_id)).first()
+                    is None
+                ):
                     return None
                 return load_roots(connection, PathMap.same_path(paths))
         except sa.exc.OperationalError:  # not migrated yet
