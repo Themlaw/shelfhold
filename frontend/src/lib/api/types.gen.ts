@@ -596,6 +596,138 @@ export type PairIn = {
 };
 
 /**
+ * PasskeyFlow
+ *
+ * A challenge and the browser options for `navigator.credentials` (base64url fields).
+ */
+export type PasskeyFlow = {
+    /**
+     * Flow
+     */
+    flow: string;
+    /**
+     * Options
+     */
+    options: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * PasskeyItem
+ */
+export type PasskeyItem = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Last Used At
+     */
+    last_used_at: string | null;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Transports
+     */
+    transports: Array<string>;
+};
+
+/**
+ * PasskeyList
+ */
+export type PasskeyList = {
+    /**
+     * Available
+     */
+    available: boolean;
+    /**
+     * Items
+     */
+    items: Array<PasskeyItem>;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Rp Id
+     */
+    rp_id?: string | null;
+};
+
+/**
+ * PasskeyLoginRequest
+ */
+export type PasskeyLoginRequest = {
+    /**
+     * Confirm Remember
+     */
+    confirm_remember?: boolean;
+    /**
+     * Credential
+     */
+    credential: {
+        [key: string]: unknown;
+    };
+    /**
+     * Flow
+     */
+    flow: string;
+    /**
+     * Remember
+     */
+    remember?: boolean;
+};
+
+/**
+ * PasskeyReauth
+ *
+ * The assertion answers a challenge from `/api/v1/auth/passkeys/reauth/options`.
+ */
+export type PasskeyReauth = {
+    /**
+     * Credential
+     */
+    credential: {
+        [key: string]: unknown;
+    };
+    /**
+     * Flow
+     */
+    flow: string;
+    /**
+     * Method
+     */
+    method: 'passkey';
+};
+
+/**
+ * PasskeyRegistration
+ */
+export type PasskeyRegistration = {
+    /**
+     * Credential
+     */
+    credential: {
+        [key: string]: unknown;
+    };
+    /**
+     * Flow
+     */
+    flow: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * PasswordReauth
  */
 export type PasswordReauth = {
@@ -1619,8 +1751,235 @@ export type LogoutResponses = {
 
 export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
 
+export type PasskeysListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys';
+};
+
+export type PasskeysListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PasskeysListError = PasskeysListErrors[keyof PasskeysListErrors];
+
+export type PasskeysListResponses = {
+    /**
+     * Successful Response
+     */
+    200: PasskeyList;
+};
+
+export type PasskeysListResponse = PasskeysListResponses[keyof PasskeysListResponses];
+
+export type PasskeyRegisterData = {
+    body: PasskeyRegistration;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys';
+};
+
+export type PasskeyRegisterErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PasskeyRegisterError = PasskeyRegisterErrors[keyof PasskeyRegisterErrors];
+
+export type PasskeyRegisterResponses = {
+    /**
+     * Successful Response
+     */
+    201: PasskeyItem;
+};
+
+export type PasskeyRegisterResponse = PasskeyRegisterResponses[keyof PasskeyRegisterResponses];
+
+export type PasskeyLoginData = {
+    body: PasskeyLoginRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/login';
+};
+
+export type PasskeyLoginErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PasskeyLoginError = PasskeyLoginErrors[keyof PasskeyLoginErrors];
+
+export type PasskeyLoginResponses = {
+    /**
+     * Successful Response
+     */
+    200: CsrfToken;
+};
+
+export type PasskeyLoginResponse = PasskeyLoginResponses[keyof PasskeyLoginResponses];
+
+export type PasskeyLoginOptionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/login/options';
+};
+
+export type PasskeyLoginOptionsErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PasskeyLoginOptionsError = PasskeyLoginOptionsErrors[keyof PasskeyLoginOptionsErrors];
+
+export type PasskeyLoginOptionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: PasskeyFlow;
+};
+
+export type PasskeyLoginOptionsResponse = PasskeyLoginOptionsResponses[keyof PasskeyLoginOptionsResponses];
+
+export type PasskeyRegistrationOptionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/options';
+};
+
+export type PasskeyRegistrationOptionsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PasskeyRegistrationOptionsError = PasskeyRegistrationOptionsErrors[keyof PasskeyRegistrationOptionsErrors];
+
+export type PasskeyRegistrationOptionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: PasskeyFlow;
+};
+
+export type PasskeyRegistrationOptionsResponse = PasskeyRegistrationOptionsResponses[keyof PasskeyRegistrationOptionsResponses];
+
+export type PasskeyReauthOptionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/reauth/options';
+};
+
+export type PasskeyReauthOptionsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PasskeyReauthOptionsError = PasskeyReauthOptionsErrors[keyof PasskeyReauthOptionsErrors];
+
+export type PasskeyReauthOptionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: PasskeyFlow;
+};
+
+export type PasskeyReauthOptionsResponse = PasskeyReauthOptionsResponses[keyof PasskeyReauthOptionsResponses];
+
+export type PasskeyRevokeData = {
+    body?: never;
+    path: {
+        /**
+         * Passkey Id
+         */
+        passkey_id: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/passkeys/{passkey_id}';
+};
+
+export type PasskeyRevokeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PasskeyRevokeError = PasskeyRevokeErrors[keyof PasskeyRevokeErrors];
+
+export type PasskeyRevokeResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type PasskeyRevokeResponse = PasskeyRevokeResponses[keyof PasskeyRevokeResponses];
+
 export type ReauthData = {
-    body: PasswordReauth;
+    /**
+     * Body
+     */
+    body: ({
+        method: 'password';
+    } & PasswordReauth) | ({
+        method: 'passkey';
+    } & PasskeyReauth);
     path?: never;
     query?: never;
     url: '/api/v1/auth/reauth';

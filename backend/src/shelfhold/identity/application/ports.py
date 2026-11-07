@@ -78,6 +78,34 @@ class AuditEntry:
     auth_time: datetime | None = None
 
 
+@dataclass(frozen=True)
+class PasskeyRecord:
+    id: str
+    user_id: str
+    credential_id: bytes
+    public_key: bytes
+    sign_count: int
+    transports: tuple[str, ...]
+    aaguid: str | None
+    name: str
+    created_at: datetime
+    last_used_at: datetime | None
+    revoked_at: datetime | None
+
+
+@dataclass(frozen=True)
+class NewPasskey:
+    id: str
+    user_id: str
+    credential_id: bytes
+    public_key: bytes
+    sign_count: int
+    transports: tuple[str, ...]
+    aaguid: str | None
+    name: str
+    now: datetime
+
+
 class KeyConflictError(Exception):
     """The new key's prefix is taken: nothing was written."""
 
@@ -114,6 +142,30 @@ class IdentityStore(Protocol):
         """Revoke the live key `old_prefix`, store `new` and the audit line, all or nothing.
         False: no live key has that prefix (nothing written). `KeyConflictError`: prefix taken."""
         ...
+
+    def insert_passkey(self, passkey: NewPasskey) -> bool:
+        """False: that credential id is already stored (by anyone, revoked or not)."""
+        ...
+
+    def passkeys_of(self, user_id: str) -> Sequence[PasskeyRecord]:
+        """The live passkeys, oldest first."""
+        ...
+
+    def passkey_by_credential(self, credential_id: bytes) -> PasskeyRecord | None:
+        """Revoked ones too: the caller refuses them."""
+        ...
+
+    def record_passkey_use(self, passkey_id: str, *, sign_count: int, now: datetime) -> bool:
+        """Atomic: False when the stored counter already reached `sign_count` (a replay lost the
+        race), or when the passkey was revoked meanwhile. A counter that never counts stays 0."""
+        ...
+
+    def revoke_passkey(self, user_id: str, passkey_id: str, *, now: datetime) -> str:
+        """`revoked`, `not_found`, or `last_factor` (no password and no other live passkey);
+        decided and written in one transaction."""
+        ...
+
+    def revoke_passkeys(self, user_id: str, *, now: datetime) -> int: ...
 
     def audit(self, entry: AuditEntry) -> None: ...
     def audit_targets(self, action: str, *, since: datetime) -> list[str]: ...

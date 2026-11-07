@@ -140,8 +140,15 @@ username = "Identifiant"
 password = "Mot de passe"
 remember = "Se souvenir de moi"
 submit = "Se connecter"
+passkey = "Se connecter avec une clé d'accès"
 error = "Connexion impossible."
 source = "Code source"
+
+[passkeys.unavailable]
+no_public_url = "Les clés d'accès demandent que l'adresse publique (public_url) soit définie en https:// ou en http://localhost."
+invalid_url = "L'adresse publique (public_url) n'est pas une adresse web valide : les clés d'accès sont indisponibles."
+insecure_context = "Les clés d'accès demandent HTTPS, ou http://localhost : elles sont indisponibles sur cette adresse en http://."
+ip_host = "Une clé d'accès est liée à un nom de domaine, pas à une adresse IP : utilisez un nom (https:// ou http://localhost)."
 
 [status]
 public_url_restart = "public_url a changé depuis le démarrage du serveur : redémarrez-le pour qu'il en tienne compte."
@@ -535,6 +542,22 @@ action = "Relisez la ressource pour obtenir son ETag actuel, puis recommencez."
 [errors."precondition_required"]
 title = "L'en-tête If-Match est obligatoire pour cette action."
 action = "Relisez la ressource et envoyez son ETag dans If-Match."
+
+[errors."passkey_unavailable"]
+title = "Les clés d'accès ne sont pas disponibles ici."
+action = "Définissez public_url en https:// (ou utilisez http://localhost), redémarrez Shelfhold, puis rouvrez la page."
+
+[errors."passkey_refused"]
+title = "La clé d'accès n'a pas pu être enregistrée."
+action = "Recommencez depuis la page des clés d'accès, avec l'appareil et le geste (empreinte, visage, code) demandés."
+
+[errors."passkey_not_found"]
+title = "Cette clé d'accès n'existe pas ou est déjà révoquée."
+action = "Actualisez la liste des clés d'accès."
+
+[errors."last_login_factor"]
+title = "C'est votre dernier moyen de connexion."
+action = "Enregistrez une autre clé d'accès avant de révoquer celle-ci."
 
 [errors."reauth_required"]
 title = "Confirmez votre mot de passe pour continuer."

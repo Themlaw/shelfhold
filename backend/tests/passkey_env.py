@@ -54,7 +54,7 @@ class SoftPasskey:
     def _flags(self, extra: int = 0) -> int:
         return FLAG_UP | (FLAG_UV if self.uv else 0) | extra
 
-    def _cose_key(self) -> bytes:
+    def _public_key_cbor(self) -> bytes:
         numbers = self.key.public_key().public_numbers()
         return cbor2.dumps(
             {1: 2, 3: -7, -1: 1, -2: numbers.x.to_bytes(32), -3: numbers.y.to_bytes(32)}
@@ -71,7 +71,7 @@ class SoftPasskey:
             b"\x00" * 16
             + struct.pack(">H", len(self.credential_id))
             + self.credential_id
-            + self._cose_key()
+            + self._public_key_cbor()
         )
         auth_data = (
             rp_hash + bytes([self._flags(FLAG_AT)]) + struct.pack(">I", self.counter) + attested

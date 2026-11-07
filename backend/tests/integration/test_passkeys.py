@@ -192,11 +192,11 @@ def test_registration_name_is_bounded(api: AuthEnv, name: str) -> None:
 
 
 def test_passkeys_per_account_are_capped(api: AuthEnv, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("shelfhold.identity.domain.passkeys.MAX_PASSKEYS", 2)
+    monkeypatch.setattr("shelfhold.identity.application.passkeys.MAX_PASSKEYS", 2)
     api.login()
     assert register(api, name="a")[1].status_code == 201
     assert register(api, name="b")[1].status_code == 201
-    assert register(api, name="c")[1].status_code == 422
+    assert api.post(f"{PASSKEYS}/options", json={}).status_code == 422
 
 
 # --- challenge ---------------------------------------------------------------------------------
@@ -265,10 +265,10 @@ def test_a_challenge_is_bound_to_its_purpose_and_its_session(api: AuthEnv) -> No
     )
     # a login challenge cannot register
     flow = login_flow(client)
-    other = SoftPasskey()
+    registration = api.post(f"{PASSKEYS}/options", json={}).json()["options"]
     refused = api.post(
         PASSKEYS,
-        json={"flow": flow["flow"], "name": "x", "credential": other.create(flow["options"])},
+        json={"flow": flow["flow"], "name": "x", "credential": SoftPasskey().create(registration)},
     )
     assert refused.status_code == 422
     # a registration challenge of one session is useless to another
@@ -398,11 +398,17 @@ def test_passkey_login_renews_the_session_identifier(api: AuthEnv) -> None:
     old = anonymous(api, "198.51.100.30")
     old.cookies.set(SESSION_COOKIE, held[SESSION_COOKIE])
     assert old.get("/api/v1/auth/session").status_code == 401  # and the old one is closed
-    # a session id planted by an attacker before login is not adopted either
+    # a session id planted by an attacker before the login is not adopted either
     planted = anonymous(api, "198.51.100.31")
-    planted.cookies.set(SESSION_COOKIE, "attacker-chosen-value")
-    assert passkey_login(planted, passkey).status_code == 200
-    assert planted.cookies[SESSION_COOKIE] != "attacker-chosen-value"
+    flow = login_flow(planted)
+    forced = planted.post(
+        LOGIN,
+        json={"flow": flow["flow"], "credential": passkey.get(flow["options"])},
+        headers={"Cookie": f"{SESSION_COOKIE}=attacker-chosen-value"},
+    )
+    assert forced.status_code == 200
+    issued = [c for c in forced.headers.get_list("set-cookie") if c.startswith(SESSION_COOKIE)]
+    assert issued and "attacker-chosen-value" not in issued[0]
 
 
 def test_passkey_login_respects_the_login_throttle(api: AuthEnv) -> None:
@@ -676,14 +682,25 @@ def test_passkey_requires_secure_context(
 def test_localhost_over_http_is_a_secure_context(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    with auth_env(
-        monkeypatch, settings, public_url="http://localhost:8080", base_url="http://localhost:8080"
-    ) as api:
-        api.login()
+    base = "http://localhost:8080"
+    with auth_env(monkeypatch, settings, public_url=base, base_url=base) as api:
+        assert api.login().status_code == 200  # plain cookies over http: `csrf`, not `__Host-`
+        headers = {CSRF_HEADER: api.client.cookies["csrf"]}
         assert api.client.get(PASSKEYS).json()["available"] is True
-        local = SoftPasskey(origin="http://localhost:8080", rp_id="localhost")
-        assert register(api, local)[1].status_code == 201
-        plain = api.other_client(IP, "http://localhost:8080")
+        local = SoftPasskey(origin=base, rp_id="localhost")
+        body = api.client.post(f"{PASSKEYS}/options", json={}, headers=headers).json()
+        assert body["options"]["rp"]["id"] == "localhost"
+        done = api.client.post(
+            PASSKEYS,
+            json={
+                "flow": body["flow"],
+                "name": "Local",
+                "credential": local.create(body["options"]),
+            },
+            headers=headers,
+        )
+        assert done.status_code == 201
+        plain = api.other_client(IP, base)
         assert passkey_login(plain, local).status_code == 200
 
 

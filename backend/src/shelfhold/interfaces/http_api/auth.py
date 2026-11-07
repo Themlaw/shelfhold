@@ -52,6 +52,11 @@ from shelfhold.interfaces.http_api.problems import ProblemError, build_problem_r
 
 LOGIN_PAGE = "/login"
 LOGIN_PATH = "/api/v1/auth/login"
+PASSKEY_SCRIPT_PATH = "/login/passkey.js"
+PASSKEY_LOGIN_OPTIONS_PATH = "/api/v1/auth/passkeys/login/options"
+PASSKEY_LOGIN_PATH = "/api/v1/auth/passkeys/login"
+# Anonymous state-changing routes: JSON only (a cross-site form cannot send it), no CSRF token.
+ANONYMOUS_JSON_PATHS = frozenset({LOGIN_PATH, PASSKEY_LOGIN_OPTIONS_PATH, PASSKEY_LOGIN_PATH})
 CSRF_HEADER = "X-CSRF-Token"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -181,7 +186,7 @@ class AuthMiddleware:
         if unsafe and not by_key and headers.get("sec-fetch-site", "").lower() == "cross-site":
             await self._problem(scope, receive, send, "csrf_failed")
             return
-        if unsafe and scope["path"] == LOGIN_PATH:
+        if unsafe and scope["path"] in ANONYMOUS_JSON_PATHS:
             content_type = headers.get("content-type", "").split(";")[0].strip().lower()
             if content_type != "application/json":  # a cross-site form cannot send JSON
                 await self._problem(scope, receive, send, "csrf_failed")

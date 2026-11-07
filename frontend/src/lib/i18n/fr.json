@@ -6,5 +6,15 @@
   "health.loading": "Vérification en cours…",
   "health.ok": "Le serveur répond.",
   "health.migrating": "Migration en cours : {done, plural, =0 {aucune étape terminée} one {# étape terminée} other {# étapes terminées}} sur {total}.",
-  "health.error": "Le serveur est injoignable."
+  "health.error": "Le serveur est injoignable.",
+  "passkeys.title": "Clés d'accès",
+  "passkeys.none": "Aucune clé d'accès enregistrée. Le mot de passe reste votre moyen de connexion.",
+  "passkeys.name": "Nom de l'appareil",
+  "passkeys.add": "Ajouter une clé d'accès",
+  "passkeys.revoke": "Révoquer",
+  "passkeys.added": "Clé d'accès ajoutée.",
+  "passkeys.revoked": "Clé d'accès révoquée.",
+  "passkeys.last_factor": "C'est votre dernier moyen de connexion : enregistrez-en un autre avant de révoquer celui-ci.",
+  "passkeys.unsupported": "Ce navigateur ne gère pas les clés d'accès.",
+  "passkeys.error": "L'opération a échoué. Recommencez avec l'appareil et le geste demandés."
 }

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, EditionSetSeriesNameData, EditionSetSeriesNameErrors, EditionSetSeriesNameResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, JobStatusData, JobStatusErrors, JobStatusResponses, ListActivityData, ListActivityErrors, ListActivityResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses, UnmaskData, UnmaskErrors, UnmaskResponses } from './types.gen';
+import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, EditionSetSeriesNameData, EditionSetSeriesNameErrors, EditionSetSeriesNameResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, JobStatusData, JobStatusErrors, JobStatusResponses, ListActivityData, ListActivityErrors, ListActivityResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PasskeyLoginData, PasskeyLoginErrors, PasskeyLoginOptionsData, PasskeyLoginOptionsErrors, PasskeyLoginOptionsResponses, PasskeyLoginResponses, PasskeyReauthOptionsData, PasskeyReauthOptionsErrors, PasskeyReauthOptionsResponses, PasskeyRegisterData, PasskeyRegisterErrors, PasskeyRegisterResponses, PasskeyRegistrationOptionsData, PasskeyRegistrationOptionsErrors, PasskeyRegistrationOptionsResponses, PasskeyRevokeData, PasskeyRevokeErrors, PasskeyRevokeResponses, PasskeysListData, PasskeysListErrors, PasskeysListResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses, UnmaskData, UnmaskErrors, UnmaskResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -121,6 +121,55 @@ export const login = <ThrowOnError extends boolean = false>(options: Options<Log
  * Logout
  */
 export const logout = <ThrowOnError extends boolean = false>(options?: Options<LogoutData, ThrowOnError>): RequestResult<LogoutResponses, LogoutErrors, ThrowOnError> => (options?.client ?? client).post<LogoutResponses, LogoutErrors, ThrowOnError>({ url: '/api/v1/auth/logout', ...options });
+
+/**
+ * Passkeys List
+ */
+export const passkeysList = <ThrowOnError extends boolean = false>(options?: Options<PasskeysListData, ThrowOnError>): RequestResult<PasskeysListResponses, PasskeysListErrors, ThrowOnError> => (options?.client ?? client).get<PasskeysListResponses, PasskeysListErrors, ThrowOnError>({ url: '/api/v1/auth/passkeys', ...options });
+
+/**
+ * Passkey Register
+ */
+export const passkeyRegister = <ThrowOnError extends boolean = false>(options: Options<PasskeyRegisterData, ThrowOnError>): RequestResult<PasskeyRegisterResponses, PasskeyRegisterErrors, ThrowOnError> => (options.client ?? client).post<PasskeyRegisterResponses, PasskeyRegisterErrors, ThrowOnError>({
+    url: '/api/v1/auth/passkeys',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Passkey Login
+ */
+export const passkeyLogin = <ThrowOnError extends boolean = false>(options: Options<PasskeyLoginData, ThrowOnError>): RequestResult<PasskeyLoginResponses, PasskeyLoginErrors, ThrowOnError> => (options.client ?? client).post<PasskeyLoginResponses, PasskeyLoginErrors, ThrowOnError>({
+    url: '/api/v1/auth/passkeys/login',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Passkey Login Options
+ */
+export const passkeyLoginOptions = <ThrowOnError extends boolean = false>(options?: Options<PasskeyLoginOptionsData, ThrowOnError>): RequestResult<PasskeyLoginOptionsResponses, PasskeyLoginOptionsErrors, ThrowOnError> => (options?.client ?? client).post<PasskeyLoginOptionsResponses, PasskeyLoginOptionsErrors, ThrowOnError>({ url: '/api/v1/auth/passkeys/login/options', ...options });
+
+/**
+ * Passkey Registration Options
+ */
+export const passkeyRegistrationOptions = <ThrowOnError extends boolean = false>(options?: Options<PasskeyRegistrationOptionsData, ThrowOnError>): RequestResult<PasskeyRegistrationOptionsResponses, PasskeyRegistrationOptionsErrors, ThrowOnError> => (options?.client ?? client).post<PasskeyRegistrationOptionsResponses, PasskeyRegistrationOptionsErrors, ThrowOnError>({ url: '/api/v1/auth/passkeys/options', ...options });
+
+/**
+ * Passkey Reauth Options
+ */
+export const passkeyReauthOptions = <ThrowOnError extends boolean = false>(options?: Options<PasskeyReauthOptionsData, ThrowOnError>): RequestResult<PasskeyReauthOptionsResponses, PasskeyReauthOptionsErrors, ThrowOnError> => (options?.client ?? client).post<PasskeyReauthOptionsResponses, PasskeyReauthOptionsErrors, ThrowOnError>({ url: '/api/v1/auth/passkeys/reauth/options', ...options });
+
+/**
+ * Passkey Revoke
+ */
+export const passkeyRevoke = <ThrowOnError extends boolean = false>(options: Options<PasskeyRevokeData, ThrowOnError>): RequestResult<PasskeyRevokeResponses, PasskeyRevokeErrors, ThrowOnError> => (options.client ?? client).delete<PasskeyRevokeResponses, PasskeyRevokeErrors, ThrowOnError>({ url: '/api/v1/auth/passkeys/{passkey_id}', ...options });
 
 /**
  * Reauth

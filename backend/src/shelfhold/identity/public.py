@@ -2,9 +2,16 @@
 
 from shelfhold.identity.adapters.factory import local_auth
 from shelfhold.identity.adapters.store import audit_insert
+from shelfhold.identity.application.passkeys import (
+    PasskeyError,
+    PasskeyOptions,
+    PasskeyRefusedError,
+    PasskeyUnavailableError,
+)
 from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
+    PasskeyRecord,
     ReauthMethod,
     UserRecord,
 )
@@ -15,10 +22,13 @@ from shelfhold.identity.application.service import (
     CreatedApiKey,
     InvalidCredentialsError,
     IssuedSession,
+    LastLoginFactorError,
     LocalAuth,
+    PasskeyStatus,
     RememberNeedsConfirmationError,
     SessionAuth,
     ThrottledError,
+    UnknownPasskeyError,
     UnknownReauthMethodError,
     UnknownUserError,
     audit_actor,
@@ -46,6 +56,7 @@ from shelfhold.identity.domain.emitters import (
     REPLAY,
     RESTORE,
 )
+from shelfhold.identity.domain.passkeys import MAX_NAME as PASSKEY_NAME_MAX
 from shelfhold.identity.domain.reserved import (
     DEFAULT_RESERVED_ROLES,
     NO_REAUTH_EFFECTS,
@@ -84,6 +95,7 @@ __all__ = [
     "MAX_PASSWORD_LENGTH",
     "NO_REAUTH_EFFECTS",
     "OWN_SCRATCH",
+    "PASSKEY_NAME_MAX",
     "PRIMITIVE",
     "RATE_ROLES",
     "REPLAY",
@@ -104,8 +116,15 @@ __all__ = [
     "ExitRoute",
     "InvalidCredentialsError",
     "IssuedSession",
+    "LastLoginFactorError",
     "LocalAuth",
     "LoginThrottle",
+    "PasskeyError",
+    "PasskeyOptions",
+    "PasskeyRecord",
+    "PasskeyRefusedError",
+    "PasskeyStatus",
+    "PasskeyUnavailableError",
     "Principal",
     "ReauthMethod",
     "ReauthRequired",
@@ -116,6 +135,7 @@ __all__ = [
     "SessionPolicy",
     "ThrottledError",
     "TruthRow",
+    "UnknownPasskeyError",
     "UnknownReauthMethodError",
     "UnknownUserError",
     "UserRecord",
