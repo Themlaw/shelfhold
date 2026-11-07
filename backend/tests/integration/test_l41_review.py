@@ -159,6 +159,12 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
             raise TargetUnreachable("poll")
 
     monkeypatch.setattr(rj, "ArrivalPoller", Poller)
+    monkeypatch.setattr(rj, "_scan_guard", lambda *_a: lambda _folder: True)  # no database here
+
+    async def no_listing(*_: object) -> int:
+        return 0
+
+    monkeypatch.setattr(rj, "refresh_foreign_names", no_listing)
     monkeypatch.setattr(rj, "BusTargetEvents", lambda *_: None)
     comp = SimpleNamespace(
         engine=None,

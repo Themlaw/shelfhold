@@ -52,6 +52,9 @@ def _taken(p: Paired, ref: SeriesRef) -> UpstreamSnapshots:
     excluded = p.server.add_category("Shelfhold", include_in_update="EXCLUDE")
     p.server.assign(ALPHA, excluded)
     p.server.state["mangas"][0]["updateStrategy"] = "ALWAYS_UPDATE"
+    asyncio.run(  # what Shelfhold put is written down: the only thing a detachment removes
+        snapshots.record_exclusion(p.service, p.fetcher, connected_service_id="suwayomi", ref=ref)
+    )
     return snapshots
 
 
@@ -141,7 +144,9 @@ def test_snapshot_is_taken_once_and_holds_no_secret() -> None:
 
 
 @pytest.mark.req("EF-EXP-056")
-def test_detach_without_snapshot_only_removes_the_exclusion() -> None:
+def test_detach_without_a_record_leaves_an_exclusion_the_administrator_set() -> None:
+    """Review of L60: with no record of what Shelfhold put, nothing is removed; an exclusion of
+    the administrator's own category stays (Shelfhold records its own in the snapshot)."""
     with paired_env() as p:
         ref = _paired(p)
         keep = p.server.add_category("Reading")
@@ -157,7 +162,7 @@ def test_detach_without_snapshot_only_removes_the_exclusion() -> None:
         assert [(s.ref.remote_id, s.restored_from) for s in report.series] == [
             (ref.remote_id, "default")
         ]
-        assert p.server.categories_of(ALPHA) == [keep]  # the other category is left alone
+        assert p.server.categories_of(ALPHA) == [keep, excluded]  # both are the administrator's
 
 
 @pytest.mark.req("EF-EXP-056")

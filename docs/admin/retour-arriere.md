@@ -4,7 +4,7 @@
 
 ## Ce qui est rendu, ce qui reste
 
-- **Rendu à Suwayomi** : les catégories d'exclusion que Shelfhold avait posées sont retirées, les
+- **Rendu à Suwayomi** : les catégories d'exclusion que Shelfhold avait posées et notées sont retirées (jamais celle que vous avez ajoutée vous-même), les
   catégories qu'il avait relevées avant d'agir sont remises si elles existent encore, et la
   stratégie de mise à jour automatique est restaurée. Shelfhold relève ces réglages **avant** de
   rien changer, au moment de l'appariement ; le premier relevé gagne.
