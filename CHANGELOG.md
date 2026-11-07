@@ -20,6 +20,7 @@ Migrations :
 
 ### Ajouté
 
+- Journaux détaillés à plusieurs niveaux (`docs/admin/journaux.md`) : début et fin de chaque job avec durée et compteurs, décisions du suivi, de l'export, du rapprochement et de la purge, appels à Kavita et à Suwayomi (route sans query string), écritures de fichiers ; contexte lié (`job_id`, `series_id`, `edition_id`, `unit_id`, `target_id`) ; aucun secret ni nom de fichier d'archive non fiable au-dessus de `DEBUG`.
 - Pont Suwayomi vers Kavita : service connecté Suwayomi (GraphQL, CBZ, authentification Basic, sous-sources), suivi « toujours actif » avec tickets de téléchargement, classes d'échec et fraîcheur par série, politique d'équipe, filigrane de suivi, rattrapage et demandes par plage.
 - Export vers Kavita : client à routes en liste blanche et plage de versions, clé nommée à expiration, nommage Kavita, ComicInfo 2.0 (brouillon 2.1) et empaquetage CBZ, planificateur avec aperçu et application, manifeste, séries exportées, miroir de provenance par racine (format 1.2), réinstallation de Kavita détectée, arrivée par scrutation, propriété des champs et audit d'accès.
 - Modèle de catalogue : Œuvres, Éditions, Unités, Variantes et équipes, numérotation versionnée, BCP 47, dates partielles.

@@ -56,6 +56,7 @@ from shelfhold.infrastructure.archives.safe_open import UnsafeArchiveError, safe
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.logging import log_outcome
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.infrastructure.xml.safe_parse import UnsafeXmlError, safe_parse_xml
 from shelfhold.library.public import (
@@ -556,6 +557,15 @@ class Adopter:
 
     # -- the adoption: only once confirmed --------------------------------------------------------
 
+    @log_outcome(
+        "adopt.finished",
+        lambda r: {
+            "series": len(r.series),
+            "adopted_files": r.adopted_files,
+            "already_adopted": r.already_adopted,
+            "warnings": len(r.warnings),
+        },
+    )
     async def adopt(
         self,
         client: KavitaClient,

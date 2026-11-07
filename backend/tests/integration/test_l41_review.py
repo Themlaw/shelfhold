@@ -9,6 +9,7 @@ import sqlalchemy as sa
 
 import shelfhold.runtime_jobs as rj
 from shelfhold.config import Settings
+from shelfhold.export.application.pipeline import ApplyReport
 from shelfhold.export.application.root_bootstrap import (
     RootPolicy,
     RootRefusedError,
@@ -126,7 +127,8 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
 
     class Pipeline:
         def bind_parse(self, *_: object, **__: object) -> None: ...
-        def run(self, *_: object, **__: object) -> None: ...
+        def run(self, *_: object, **__: object) -> ApplyReport:
+            return ApplyReport(None, ())
 
     class Disks:
         def get(self) -> tuple[object, object]:

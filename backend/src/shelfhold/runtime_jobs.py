@@ -33,6 +33,7 @@ from typing import Any, cast
 
 import sqlalchemy as sa
 import structlog
+from structlog.contextvars import bound_contextvars
 
 from shelfhold.acquisition.public import (
     FOLLOW_JOB_KIND,
@@ -180,9 +181,12 @@ class _LazyStore:
 
 
 def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext], None]:
-    def run(_context: JobContext) -> None:
+    def run(context: JobContext) -> None:
+        arrived: list[int] = []
         link = comp.suwayomi()
         if link is None:
+            log.debug("follow.skipped", reason="no_connected_service")
+            context.record(skipped="no_connected_service")
             return  # no connected service configured yet
         try:
             with ExitStack() as stack:
@@ -208,15 +212,19 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
 
                 async def once() -> None:
                     try:
-                        await cycle.run()
+                        report = await cycle.run()
+                        context.record(**report.counters())
+                        arrived.append(report.fetched)
                     finally:
                         await link.guarded.aclose()
 
                 asyncio.run(once())
         except (NoLibraryError, KeyringUnavailableError) as error:
             log.info("follow.cycle_skipped", reason=type(error).__name__)
+            context.record(skipped=type(error).__name__)
             return
-        pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)  # what arrived goes out
+        if any(arrived):  # what arrived goes out; a quiet cycle asks for nothing (the cron does)
+            pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)
 
     return run
 
@@ -288,6 +296,7 @@ class _Disks:
 def export_handler(comp: Composition) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
         destinations = tree_destinations(comp)
+        context.record(destinations=len(destinations))
         if not destinations:
             return
         scans = ScanRelay()
@@ -298,10 +307,16 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
             try:
                 client = comp.kavita_client(destination.target_id)
             except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound):
+                log.debug("export.destination_skipped", target_id=destination.target_id,
+                          reason="no_sealed_key")  # fmt: skip
                 continue  # the target has no sealed key yet
             scans.client, scans.asked = client, []
             try:
-                asyncio.run(_export_one(comp, disks, client, destination, scans, context))
+                context.add(
+                    ops_applied=asyncio.run(
+                        _export_one(comp, disks, client, destination, scans, context)
+                    )
+                )
             except (NoLibraryError, KeyringUnavailableError) as error:
                 log.info("export.run_skipped", reason=type(error).__name__)
                 return
@@ -332,10 +347,26 @@ async def _export_one(
     scans: ScanRelay,
     context: JobContext,
     apply: tuple[str, str] | None = None,
-) -> None:
-    """`apply`: a stored plan and the validator of its preview, instead of a plan made now."""
+) -> int:
+    """`apply`: a stored plan and the validator of its preview, instead of a plan made now.
+    Returns the number of operations applied (for the counters of `job.finished`)."""
+
+    with bound_contextvars(target_id=destination.target_id, destination_id=destination.id):
+        return await _export_bound(comp, disks, client, destination, scans, context, apply)
+
+
+async def _export_bound(
+    comp: Composition,
+    disks: _Disks,
+    client: KavitaClient,
+    destination: Destination,
+    scans: ScanRelay,
+    context: JobContext,
+    apply: tuple[str, str] | None,
+) -> int:
     from shelfhold.export.application.target_state import DestinationPausedError
 
+    applied = 0
     try:
         # the names Kavita shows now (it may rename a series, EF-EXP-057), before any collision
         if _names_may_refresh(comp, destination.id):
@@ -350,18 +381,19 @@ async def _export_one(
             bulk = await BulkParse.fetch(client, names, library_type_named(kind))
             pipeline.bind_parse(bulk, verified=True)
             if apply is None:
-                pipeline.run(destination.id, job_id=context.job_id)
+                report = pipeline.run(destination.id, job_id=context.job_id)
             else:
                 plan_id, version = apply
                 pipeline.require_names_checked(plan_id)
-                pipeline.apply(plan_id, if_match=version, job_id=context.job_id)
+                report = pipeline.apply(plan_id, if_match=version, job_id=context.job_id)
+            applied = len(report.ops)
     except (DestinationPausedError, TargetError) as error:
         if apply is not None:  # asked for by a person: the job says why it did not go through
             raise JobFailedError(_code_of(error)) from None
         log.info(
             "export.destination_waits", destination_id=destination.id, reason=type(error).__name__
         )
-        return
+        return 0
     finally:
         if scans.asked:  # the debounce: scans leave after a quiet moment
             deadline = time.monotonic() + SCAN_QUIET_S
@@ -373,6 +405,7 @@ async def _export_one(
                 log.info("export.scan_failed", destination_id=destination.id,
                          reason=type(error).__name__)  # fmt: skip
     await settle_arrival(comp, client, destination.id, fsops=disks.fsops)
+    return applied
 
 
 def _code_of(error: Exception) -> str:
@@ -454,8 +487,12 @@ def apply_handler(comp: Composition) -> Callable[[JobContext], None]:
             raise JobFailedError("target.route_missing") from None  # no sealed key: nothing to ask
         scans.client = client
         try:
-            asyncio.run(
-                _export_one(comp, disks, client, destination, scans, context, (plan_id, version))
+            context.add(
+                ops_applied=asyncio.run(
+                    _export_one(
+                        comp, disks, client, destination, scans, context, (plan_id, version)
+                    )
+                )
             )
         except (
             StalePlanError,

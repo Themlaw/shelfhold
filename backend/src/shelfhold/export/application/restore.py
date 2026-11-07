@@ -71,6 +71,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.logging import log_outcome
 from shelfhold.infrastructure.schema import (
     acquisition,
     catalog,
@@ -698,6 +699,15 @@ class RestoreAdopter:
             if ln.outcome is LineOutcome.READOPT and ln.lineage is not None
         )  # fmt: skip
 
+    @log_outcome(
+        "restore.adopted",
+        lambda r: {
+            "readopted": len(r.readopted),
+            "pending_deletions": len(r.pending_deletions),
+            "deleted": len(r.deleted),
+            "unresolved": len(r.unresolved),
+        },
+    )
     def adopt(
         self, *, confirm: str, deletion: DeletionConfirmation | None = None
     ) -> AdoptionResult:

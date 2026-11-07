@@ -25,7 +25,7 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.health import HealthProbe
 from shelfhold.infrastructure.idempotency_store import IdempotencyStore
 from shelfhold.infrastructure.local_socket import SOCKET_NAME, LocalSocketServer
-from shelfhold.infrastructure.logging import configure_logging
+from shelfhold.infrastructure.logging import configure_logging, strip_url_queries
 from shelfhold.infrastructure.migrate import check_schema_not_newer
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.errors import (
@@ -74,6 +74,36 @@ def announce_keyring_failure(engine: Engine, bus: EventBus, error: KeyringError)
             )
     except sa.exc.SQLAlchemyError:  # no database yet (first start): the log is all there is
         structlog.get_logger().error("secret.undecryptable", reason=reason)
+
+
+# The effective configuration at start-up is a white list: a new setting is not logged until
+# someone decides it holds no secret (a test makes the decision explicit). The right-hand name is
+# the one in the log: the filter masks any key whose name looks like a secret (`auth`, `key`,
+# `secret`), and these four are not secrets, so they are logged under names that do not match.
+LOGGED_SETTINGS: dict[str, str] = {
+    "data_dir": "data_dir", "store_dir": "store_dir", "library_dir": "library_dir",
+    "host": "host", "port": "port", "log_level": "log_level", "log_format": "log_format",
+    "umask": "umask", "public_url": "public_url", "frontend_dir": "frontend_dir",
+    "plugin_repos": "plugin_repos", "active_sources": "active_sources",
+    "source_url": "source_url", "received_cbz_max_bytes": "received_cbz_max_bytes",
+    "naming_segment_policy_confirmed": "naming_segment_policy_confirmed",
+    "cli_allow_host": "cli_allow_host", "allow_network_data_dir": "allow_network_data_dir",
+    "disk_pause_percent": "disk_pause_percent", "disk_pause_gib": "disk_pause_gib",
+    "disk_resume_percent": "disk_resume_percent", "disk_resume_gib": "disk_resume_gib",
+    "auth_hardened": "hardened_profile",  # a switch
+    "fresh_auth_s": "recent_login_window_s",  # a duration
+    "secret_key_file": "trousseau_path",  # where the keyring is: a path, not the keyring
+    "forward_auth_trusted_cidrs": "proxy_trusted_cidrs",  # networks, not credentials
+}  # fmt: skip
+SECRET_SETTINGS = frozenset({"api_token"})  # never logged, whatever its value
+
+
+def log_effective_config(settings: Settings) -> None:
+    """The effective configuration at start-up (INFO): the white list above, query strings cut
+    off every URL, then the log filter on top."""
+    dump = settings.model_dump(mode="json")
+    config = {shown: strip_url_queries(dump[field]) for field, shown in LOGGED_SETTINGS.items()}
+    structlog.get_logger().info("startup.config", version=__version__, config=config)
 
 
 def create_app(
@@ -137,6 +167,7 @@ def create_app(
         engine.dispose()
 
     def on_startup() -> None:
+        log_effective_config(resolved)
         ensure_volumes(resolved)
         runtime.acquire()  # ENF-OPS-015: first, before anything else; a second instance refuses
         try:

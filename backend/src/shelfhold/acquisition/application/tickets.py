@@ -30,6 +30,7 @@ from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.infrastructure.fetcher import FetchError, FetchTooLarge, GuardedFetcher
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.logging import untrusted_name
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.jobs.public import DomainSlots
 from shelfhold.library.public import (
@@ -273,6 +274,16 @@ class DownloadTickets:
             else:
                 await self._guarded(request, report)
         await self._drain(queues, report)
+        log.debug(
+            "follow.tickets_advanced",
+            submitted=report.submitted,
+            fetched=report.fetched,
+            waiting=report.waiting,
+            retried=report.retried,
+            abandoned=report.abandoned,
+            refused=report.refused,
+            deferred=report.deferred,
+        )
         return report
 
     async def _guarded(self, request: OpenRequest, report: TicketReport) -> None:
@@ -334,6 +345,9 @@ class DownloadTickets:
             report.submitted += 1
         ticket = Ticket(token=str(request.ticket), target_kind="unit")
         state = await from_service(self._service.poll(self._fetcher, ticket))
+        log.debug(
+            "follow.ticket_polled", request_id=request.id, unit_id=request.unit_id, state=state
+        )
         if state in ("queued", "downloading"):
             self._wait(request, report)  # Suwayomi has not finished: wait, no failure
             return
@@ -353,7 +367,8 @@ class DownloadTickets:
             ),
         )
         ticket = await from_service(self._service.request(self._fetcher, target))
-        self._update(request.id, ticket=ticket.token)
+        self._update(request.id, ticket=ticket.token)  # the token itself is never logged
+        log.debug("follow.ticket_requested", request_id=request.id, unit_id=request.unit_id)
         return ticket.token
 
     async def _fetch(self, request: OpenRequest, ticket: Ticket, report: TicketReport) -> None:
@@ -387,6 +402,14 @@ class DownloadTickets:
             self._ledger.reset_content(connection, request.binding_id, request.source_key)
             self._ledger.record_download(connection, request.source_key, ok=True, now=now)
         report.fetched += 1
+        log.debug(
+            "follow.chapter_fetched",
+            request_id=request.id,
+            unit_id=request.unit_id,
+            variant_id=request.variant_id,
+            size=received.size,
+            filename=untrusted_name(payload.filename),
+        )
 
     # -- failures ----------------------------------------------------------------------------
     def _failed(self, request: OpenRequest, error: Exception, report: TicketReport) -> None:
@@ -434,6 +457,10 @@ class DownloadTickets:
                     {"unit_id": request.unit_id, "reason": reason},
                 )
         report.refused += 1
+        log.warning("follow.entry_refused", unit_id=request.unit_id, reason=reason)
+        if isinstance(error, UntrustedEntryError) and error.entry:
+            log.debug("follow.entry_refused_name", unit_id=request.unit_id,
+                      entry=untrusted_name(error.entry))  # fmt: skip
 
     def _wait(self, request: OpenRequest, report: TicketReport) -> None:
         """Wait for the server. Only past N hours is the chapter asked again (EF-SRC-026 b), within

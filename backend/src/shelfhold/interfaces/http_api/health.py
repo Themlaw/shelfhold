@@ -87,6 +87,7 @@ def build_health_router(health: HealthPort, *, version: str | None = None) -> AP
             }
         else:
             body = {"state": "ok"}
+        structlog.get_logger().debug("liveness.checked", migrating=progress is not None)
         if _authenticated(request):
             body["version"] = version
             body["paused_queues"] = _paused_queues(health) if progress is None else []
@@ -107,6 +108,7 @@ def build_health_router(health: HealthPort, *, version: str | None = None) -> AP
         if failed:
             structlog.get_logger().warning("readiness_failed", checks=failed)
         ready = not failed
+        structlog.get_logger().debug("readiness.checked", ready=ready, checks=len(checks))
         body: dict[str, object] = {"state": "ready" if ready else "not_ready"}
         if _authenticated(request):
             body["checks"] = checks

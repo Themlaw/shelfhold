@@ -12,11 +12,13 @@ import asyncio
 import hashlib
 import ipaddress
 import ssl
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
 import httpx2
+import structlog
 
 from shelfhold import __version__
 from shelfhold.infrastructure.fetcher.errors import (
@@ -40,6 +42,7 @@ from shelfhold.infrastructure.fetcher.guard import (
 )
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.fetcher.resolver import Resolver
+from shelfhold.infrastructure.logging import elapsed_ms, route_of
 from shelfhold.sdk.fetcher import Response
 
 _REDIRECTS: Final = frozenset({301, 302, 303, 307, 308})
@@ -85,6 +88,9 @@ class _Tally:
         self.sink.write(chunk)
         self.size += len(chunk)
         self.digest.update(chunk)
+
+
+log = structlog.get_logger(__name__)
 
 
 class GuardedFetcher:
@@ -204,15 +210,28 @@ class GuardedFetcher:
         tally: _Tally | None,
         total_timeout: float | None,
     ) -> Response:
+        started = time.perf_counter()
+        route = route_of(url)  # host and path: the query string may carry a key, never logged
         try:
             async with asyncio.timeout(
                 self._limits.total_timeout if total_timeout is None else total_timeout
             ):
-                return await self._follow(method, url, headers, params, body, max_bytes, tally)
+                response = await self._follow(method, url, headers, params, body, max_bytes, tally)
         except (TimeoutError, httpx2.TimeoutException) as exc:
+            log.warning("http.failed", method=method, route=route, reason="timeout",
+                        duration_ms=elapsed_ms(started))  # fmt: skip
             raise FetchTimeout("the response took too long") from exc
         except (httpx2.HTTPError, httpx2.StreamError) as exc:
+            log.warning("http.failed", method=method, route=route, reason=type(exc).__name__,
+                        duration_ms=elapsed_ms(started))  # fmt: skip
             raise FetchUnreachable(f"the request failed: {type(exc).__name__}") from exc
+        except FetchError as exc:
+            log.warning("http.refused", method=method, route=route, reason=type(exc).__name__,
+                        duration_ms=elapsed_ms(started))  # fmt: skip
+            raise
+        log.debug("http.call", method=method, route=route, status=response.status,
+                  duration_ms=elapsed_ms(started))  # fmt: skip
+        return response
 
     async def _follow(
         self,

@@ -23,4 +23,5 @@ Une commande marquée **[M1b]** n'existe pas encore en 0.2 : la page dit ce qu'o
 | Plusieurs disques sous `/library` | [topologie-racines-physiques.md](topologie-racines-physiques.md), [montage-adopt-ro.md](montage-adopt-ro.md) |
 | Durcir, exposer sur Internet | [durcir.md](durcir.md), [exposition-publique.md](exposition-publique.md) |
 | Secrets, notifications, qui possède quel champ | [secrets.md](secrets.md), [notifications.md](notifications.md), [proprietaire-des-champs.md](proprietaire-des-champs.md) |
+| Lire les journaux, régler leur niveau | [journaux.md](journaux.md) |
 | Dimensionner la machine | [budget-ram.md](budget-ram.md) |

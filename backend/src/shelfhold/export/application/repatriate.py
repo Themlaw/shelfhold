@@ -38,6 +38,7 @@ from shelfhold.infrastructure.fsops import (
     PathEscapeError,
     RootBlockedError,
 )
+from shelfhold.infrastructure.logging import log_outcome
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.library.public import relocate_destination_copy
 
@@ -306,6 +307,16 @@ class Repatriator:
 
     # -- the copy ---------------------------------------------------------------------------
 
+    @log_outcome(
+        "repatriate.finished",
+        lambda r: {
+            "copied": r.copied,
+            "already_present": r.already_present,
+            "bytes_copied": r.bytes_copied,
+            "series": r.series,
+            "chapters": r.chapters,
+        },
+    )
     def apply(
         self,
         destination_id: str,

@@ -42,7 +42,9 @@ def test_the_follow_cycle_waits_for_a_connected_service(settings: Settings, tmp_
         assert Pools.submitted == []  # no Suwayomi configured: nothing runs, nothing is exported
 
 
-def test_the_follow_cycle_runs_then_asks_for_an_export(settings: Settings, tmp_path) -> None:
+def test_the_follow_cycle_runs_and_asks_for_an_export_only_when_a_chapter_arrived(
+    settings: Settings, tmp_path
+) -> None:
     class Pools:
         def __init__(self) -> None:
             self.submitted: list[str] = []
@@ -56,7 +58,7 @@ def test_the_follow_cycle_runs_then_asks_for_an_export(settings: Settings, tmp_p
         pools = Pools()
         follow_handler(inst.comp, pools)(context("follow.cycle"))  # type: ignore[arg-type]
         assert inst.suwayomi.requests  # the cycle really spoke to the service
-        assert pools.submitted == ["export.run"]
+        assert pools.submitted == []  # nothing arrived: the export cron is enough
 
 
 def test_export_and_reconcile_run_over_a_configured_destination(

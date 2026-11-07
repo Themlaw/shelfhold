@@ -32,6 +32,10 @@ WORKER = textwrap.dedent(
     from shelfhold.infrastructure.instance import InstanceLock
     from shelfhold.jobs.huey_app import JobPools, boot_jobs
 
+    from shelfhold.infrastructure.logging import configure_logging
+
+    # stdout is a pipe nobody drains before the kill: a configured logger, as in production
+    configure_logging(level="WARNING", log_format="json")
     mode, total = sys.argv[1], int(sys.argv[2])
     settings = load_settings(os.environ).values
     engine = create_db_engine(settings.database_path)

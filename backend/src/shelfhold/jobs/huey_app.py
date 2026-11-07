@@ -12,8 +12,9 @@ so a backlog (catch-up in batches) never delays a new chapter.
 
 import os
 import threading
+import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -24,9 +25,11 @@ from huey.api import Huey
 from huey.consumer import Consumer
 from huey.exceptions import RetryTask
 from sqlalchemy import Engine
+from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.logging import elapsed_ms, exception_detail
 from shelfhold.jobs.errors import JobFailedError
 from shelfhold.jobs.ledger import (
     MAX_ATTEMPTS,
@@ -79,6 +82,16 @@ class JobContext:
     ledger: JobLedger
     preempted: bool = False
     stop: Callable[[], bool] = lambda: False  # SIGTERM was received: checkpoint and leave
+    counters: dict[str, object] = field(default_factory=dict)  # the result, in `job.finished`
+
+    def record(self, **counters: object) -> None:
+        """Counts a handler reports about its run; they come out in the `job.finished` line."""
+        self.counters.update(counters)
+
+    def add(self, **counts: int) -> None:
+        """Adds to counts several steps of a run (one per destination) report."""
+        for name, amount in counts.items():
+            self.counters[name] = int(str(self.counters.get(name, 0))) + amount
 
     @property
     def stop_requested(self) -> bool:
@@ -321,7 +334,9 @@ class JobPools:
         """The one periodic: scan `schedule` and queue what is due."""
         if self._stopping:
             return ScanReport(())
-        return self.scheduler.scan()
+        report = self.scheduler.scan()
+        log.debug("scheduler.scanned", queued=len(report.queued))
+        return report
 
     # -- Dispatcher -------------------------------------------------------------------------
 
@@ -334,6 +349,9 @@ class JobPools:
         priority = CLASS_PRIORITY.get(job.priority_class, CLASS_PRIORITY["new"])
         task = self._run_job[pool].s(job.job_id, priority=priority)
         self._hueys[pool].enqueue(task)
+        log.debug(
+            "job.dispatched", job_id=job.job_id, job_kind=job.kind, pool=pool, priority=priority
+        )
         return str(task.id)
 
     # -- the task body, run by a worker thread ----------------------------------------------
@@ -343,13 +361,16 @@ class JobPools:
             raise RetryTask(delay=RETRY_DELAY_S)
         if self._stopping:
             self.ledger.forget_dispatch(job_id)  # the task is consumed: the next boot re-sends it
+            log.debug("job.skipped", job_id=job_id, reason="stopping")
             return
         job = self.ledger.get(job_id)
         route = self._handlers.get(job.kind)
         if route is None:
+            log.warning("job.unknown_kind", job_id=job_id, job_kind=job.kind)
             self.ledger.mark_finished(job_id, error="no handler", error_code="job.unknown_kind")
             return
         if route[3] and self._park_if_paused(job_id):
+            log.debug("job.skipped", job_id=job_id, job_kind=job.kind, reason="writes_paused")
             return  # parked, not failed, not retried
         window_end = None
         if route[2]:  # a window job runs in the window it was queued for, as persisted
@@ -365,6 +386,7 @@ class JobPools:
                 raise RetryTask(eta=start.replace(tzinfo=None))
             window_end = end
         if not self.ledger.claim_running(job_id):
+            log.debug("job.skipped", job_id=job_id, job_kind=job.kind, reason="already_claimed")
             return  # the same job reached us twice: the other task has it, or it is done
         if job.limit_key is not None and not self.slots.try_acquire(job.limit_key):
             self.ledger.mark_deferred(job_id)
@@ -372,33 +394,50 @@ class JobPools:
         with self._idle:
             self._running += 1
         retry_in: float | None = None
-        try:
-            context = JobContext(
-                job_id, job.kind, job.dedupe_key, job.scope_key, job.limit_key, window_end,
-                job.cursor_index, self.clock, self.ledger, stop=lambda: self._stopping,
-            )  # fmt: skip
-            route[1](context)
-        except JobFailedError as exc:
-            self.ledger.mark_finished(job_id, error=exc.code, error_code=exc.code)
-        except OSError as exc:
-            if getattr(exc, "code", None) != "disk.low":  # DiskLowError: the disk filled mid-job
+        started = time.perf_counter()
+        outcome = "ok"
+        context = JobContext(
+            job_id, job.kind, job.dedupe_key, job.scope_key, job.limit_key, window_end,
+            job.cursor_index, self.clock, self.ledger, stop=lambda: self._stopping,
+        )  # fmt: skip
+        with bound_contextvars(job_id=job_id, job_kind=job.kind, pool=route[0]):
+            log.info("job.started", attempts=self.ledger.attempts_of(job_id))
+            try:
+                route[1](context)
+            except JobFailedError as exc:
+                outcome = "failed"
+                self.ledger.mark_finished(job_id, error=exc.code, error_code=exc.code)
+                log.error("job.failed", error_code=exc.code)
+            except OSError as exc:
+                if getattr(exc, "code", None) != "disk.low":  # DiskLowError: the disk filled
+                    outcome = "error"
+                    retry_in = self._failed(job_id, job.kind, exc)
+                else:
+                    outcome = "parked"
+                    self.ledger.park_running(job_id, "disk.low")
+                    self.pause_writes("disk.low")
+            except Exception as exc:
+                outcome = "error"
                 retry_in = self._failed(job_id, job.kind, exc)
             else:
-                self.ledger.park_running(job_id, "disk.low")
-                self.pause_writes("disk.low")
-        except Exception as exc:
-            retry_in = self._failed(job_id, job.kind, exc)
-        else:
-            if context.preempted:
-                self.ledger.mark_preempted(job_id)
-            else:
-                self.ledger.mark_finished(job_id)
-        finally:
-            if job.limit_key is not None:
-                self.slots.release(job.limit_key)
-            with self._idle:
-                self._running -= 1
-                self._idle.notify_all()
+                if context.preempted:
+                    outcome = "preempted"
+                    self.ledger.mark_preempted(job_id)
+                else:
+                    self.ledger.mark_finished(job_id)
+            finally:
+                if job.limit_key is not None:
+                    self.slots.release(job.limit_key)
+                with self._idle:
+                    self._running -= 1
+                    self._idle.notify_all()
+                log.info(
+                    "job.finished",
+                    outcome=outcome,
+                    duration_ms=elapsed_ms(started),
+                    retry_in_s=retry_in,
+                    **context.counters,
+                )
         if retry_in is not None:
             raise RetryTask(delay=retry_in)  # Huey keeps the task and runs it again later
 
@@ -408,9 +447,13 @@ class JobPools:
         # the class name only: an upstream message may carry a title (EF-BIB-053)
         error = type(exc).__name__
         attempts = self.ledger.attempts_of(job_id)
+        log.debug("job.failure_detail", **exception_detail(exc))  # DEBUG only, message escaped
         if attempts < MAX_ATTEMPTS:
             self.ledger.mark_retry(job_id, error)
-            return self._backoff[min(attempts, len(self._backoff)) - 1]
+            delay = self._backoff[min(attempts, len(self._backoff)) - 1]
+            log.warning("job.retry", error=error, attempt=attempts, delay_s=delay)
+            return delay
+        log.error("job.dead_lettered", error=error, attempts=attempts)
         with self._engine.begin() as conn:
             self.ledger.mark_dead_letter(conn, job_id, error)
             if self._bus is not None:
