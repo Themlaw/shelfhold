@@ -7,6 +7,7 @@ one (EF-EXP-006). No `chown`: the files belong to the container's user, and the 
 """
 
 import contextlib
+import fcntl
 import hashlib
 import os
 import shutil
@@ -15,6 +16,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR, STAGING_DIR
+from shelfhold.infrastructure.fsops.capabilities import FICLONE, NOT_SUPPORTED
 from shelfhold.infrastructure.fsops.confined import HOST_AREA, ConfinedRoot, split_rel
 from shelfhold.infrastructure.fsops.emitters import require_inside
 from shelfhold.infrastructure.fsops.errors import CopyVerificationError
@@ -29,6 +31,7 @@ __all__ = [
     "put_file",
     "verify_copy",
     "write_atomic",
+    "write_independent",
 ]
 
 
@@ -76,6 +79,57 @@ def write_atomic(
     verify_digest: Callable[[], str] | None = None,
     file_mode: int | None = None,
 ) -> FileIdentity:
+    identity, _cloned = _write(
+        root, rel, data, None, parents=parents, replace=replace, mtime_ns=mtime_ns,
+        verify_digest=verify_digest, file_mode=file_mode,
+    )  # fmt: skip
+    return identity
+
+
+def write_independent(
+    root: ConfinedRoot,
+    rel: str,
+    source_fd: int,
+    *,
+    parents: bool = False,
+    replace: bool = False,
+    verify_digest: Callable[[], str],
+) -> tuple[FileIdentity, bool]:
+    """An independent copy of the file behind `source_fd` (EF-BIB-027): a reflink clone
+    (`FICLONE`) when the file system shares extents, else the bytes copied. Either way a new inode
+    that is flushed and read back against `verify_digest()` before it is put in place; never a
+    hard link. Returns the identity of the copy and whether it is a clone."""
+    reader = os.fdopen(os.dup(source_fd), "rb", closefd=True)
+    with reader:
+        return _write(
+            root, rel, reader, source_fd, parents=parents, replace=replace, mtime_ns=None,
+            verify_digest=verify_digest, file_mode=None,
+        )  # fmt: skip
+
+
+def _clone_into(fd: int, source_fd: int) -> bool:
+    """Share the extents of `source_fd` with the empty staged file; False when it cannot."""
+    try:
+        fcntl.ioctl(fd, FICLONE, source_fd)
+    except OSError as error:
+        if error.errno in NOT_SUPPORTED:
+            return False
+        raise
+    return True
+
+
+def _write(
+    root: ConfinedRoot,
+    rel: str,
+    data: bytes | Readable,
+    clone_from: int | None,
+    *,
+    parents: bool,
+    replace: bool,
+    mtime_ns: int | None,
+    verify_digest: Callable[[], str] | None,
+    file_mode: int | None,
+) -> tuple[FileIdentity, bool]:
     parts = split_rel(rel)
     if not parts:
         raise FileExistsError("the root itself is not a file")
@@ -90,12 +144,14 @@ def write_atomic(
     try:
         if root.umask is not None or file_mode is not None:
             os.fchmod(fd, root.file_mode(requested))
-        with os.fdopen(os.dup(fd), "wb", closefd=True) as sink:
-            if isinstance(data, bytes):
-                sink.write(data)
-            else:
-                shutil.copyfileobj(data, sink, CHUNK)
-            sink.flush()
+        cloned = clone_from is not None and _clone_into(fd, clone_from)
+        if not cloned:
+            with os.fdopen(os.dup(fd), "wb", closefd=True) as sink:
+                if isinstance(data, bytes):
+                    sink.write(data)
+                else:
+                    shutil.copyfileobj(data, sink, CHUNK)
+                sink.flush()
         if mtime_ns is not None:
             os.utime(fd, ns=(mtime_ns, mtime_ns))
         os.fsync(fd)
@@ -107,7 +163,7 @@ def write_atomic(
         put_file(root, staged, rel, replace=replace)
         placed = True
         root.fsync_dir("/".join(parts[:-1]) or ".")
-        return identity
+        return identity, cloned
     finally:
         os.close(fd)
         if not placed or not replace:
@@ -115,11 +171,9 @@ def write_atomic(
 
 
 def put_file(root: ConfinedRoot, staged: str, rel: str, *, replace: bool) -> None:
-    """Rename into place (replacing), or link without clobbering (`FileExistsError`)."""
-    if replace:
-        root.rename(staged, rel, replace=True, durable=False)  # the caller flushes the folder
-    else:
-        root.link(staged, rel)
+    """Rename into place, replacing or not (`FileExistsError`): a rename in both cases, so no
+    second name for the staged inode ever exists (never a hard link, EF-BIB-027)."""
+    root.rename(staged, rel, replace=replace, durable=False)  # the caller flushes the folder
 
 
 def _discard(root: ConfinedRoot, staged: str) -> None:

@@ -78,11 +78,18 @@ symbols = [
 
 [[allow]]
 category = "unwired-m1b-l16"
-reason = "\"Mettre à l'abri\" (EF-BIB-038, EF-BIB-045, EF-BIB-048): the mechanism that puts the original in /store is L16's job; M1a has no /store and queues no such job."
+reason = "The check that a kept copy still counts (distinct inode, hash read again) is what \"Mettre à l'abri\" (L16) re-runs before any upstream purge, with the (dev, ino) and content_hash it puts in the intent; the nightly catch-up of L14 decides the verdict once, when it makes the copy. The same job shares the store budget with L14 (EF-BIB-042 (4))."
 until = "M1b L16"
 symbols = [
-  "shelfhold.library.adapters.safeguard:Safeguard",
-  "shelfhold.library.domain.failures:SafeguardFailedError",
+  "shelfhold.library.adapters.storage:verify_kept",
+]
+
+[[allow]]
+category = "unwired-m2-derivative"
+reason = "A canonical derivative is declared by a source that descrambles, a Processor (OCR, upscaling) or the EPUB neutralizer (EF-BIB-006, EF-BIB-051): none exists before M2, so nothing calls `declare_derivative` in M1b. The mechanism (original kept in /store, derivative traced by hash) is proved by its test."
+until = "M2"
+symbols = [
+  "shelfhold.library.adapters.storage:KeepCopier.declare_derivative",
 ]
 
 [[allow]]
@@ -110,7 +117,6 @@ symbols = [
   "shelfhold.infrastructure.fsops.facade:Fsops.recycle",
   "shelfhold.infrastructure.fsops.facade:Fsops.system_remove_tree",
   "shelfhold.infrastructure.observability.disk_guard:DiskGuard.has_room_for_vacuum",
-  "shelfhold.jobs.huey_app:JobContext.run_steps",
   "shelfhold.jobs.huey_app:JobPools.periodic_tasks",
   "shelfhold.jobs.huey_app:JobPools.tick_matches",
   "shelfhold.jobs.window:MaintenanceWindow.span_containing",
@@ -118,7 +124,6 @@ symbols = [
   "shelfhold.jobs.window:StoreOrigin",
   "shelfhold.jobs.window:ensure_store_access",
   "shelfhold.jobs.window:order_window_jobs",
-  "shelfhold.jobs.window:run_until",
   "shelfhold.library.adapters.units:safe_to_clean",
 ]
 

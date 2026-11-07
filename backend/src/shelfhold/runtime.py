@@ -20,7 +20,7 @@ from shelfhold.composition import Composition, Gates, open_fsops
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import root_capabilities
-from shelfhold.export.application.intents import IntentJournal, ResolveReport
+from shelfhold.export.application.intents import IntentJournal, OpenIntent, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
 from shelfhold.export.application.restore import RestoredBehindError, RestoreGuard
@@ -55,7 +55,11 @@ from shelfhold.infrastructure.observability.shutdown import (
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
-from shelfhold.library.public import MetaProjection, migrate_received_dirs
+from shelfhold.library.public import (
+    MetaProjection,
+    complete_interrupted_keep,
+    migrate_received_dirs,
+)
 from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 
@@ -203,7 +207,16 @@ class InstanceRuntime:
                     ],  # a root that is away or refuses is left for the next start
                     old_dir=LEGACY_RECEIVED_DIR, new_dir=RECEIVED_DIR,
                 )  # fmt: skip
-                hook = adopt_written_hook(fsops, loaded.locate, clock)
+                adopt = adopt_written_hook(fsops, loaded.locate, clock)
+
+                def hook(connection: sa.Connection, intent: OpenIntent) -> None:
+                    adopt(connection, intent)
+                    if intent.op == "copy_cross_root" and intent.dst is not None:
+                        complete_interrupted_keep(  # a kept copy on disk, its bookkeeping owed
+                            connection, fsops, loaded.locate, src=intent.src, dst=intent.dst,
+                            now=clock.now(),
+                        )  # fmt: skip
+
                 result = journal.resolve_open(on_done=hook)
             for intent_id in result.drifted:
                 structlog.get_logger().warning(

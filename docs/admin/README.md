@@ -18,6 +18,7 @@ Une commande marquée **[M1b]** n'existe pas encore en 0.2 : la page dit ce qu'o
 | Savoir ce que Shelfhold attend de moi, et quelle commande répond | [etats-attente-et-sorties.md](etats-attente-et-sorties.md) |
 | Sauvegarder et restaurer | [restauration.md](restauration.md) |
 | Effacer pour de bon | [purge.md](purge.md) |
+| Garder une copie dans `/store`, ce que compte la page Santé, l'index de `/store` | [copie-conservee.md](copie-conservee.md) |
 | Comprendre la pause « disque presque plein » | [garde-disque.md](garde-disque.md) |
 | Mettre à jour ou recréer le conteneur | [redeploiement.md](redeploiement.md) |
 | Plusieurs disques sous `/library` | [topologie-racines-physiques.md](topologie-racines-physiques.md), [montage-adopt-ro.md](montage-adopt-ro.md) |

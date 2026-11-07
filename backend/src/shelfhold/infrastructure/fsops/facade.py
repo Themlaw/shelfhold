@@ -87,14 +87,24 @@ from shelfhold.infrastructure.fsops.writer import (
     Readable,
     ensure_host_dirs,
     write_atomic,
+    write_independent,
 )
 from shelfhold.infrastructure.logging import escaped
 from shelfhold.infrastructure.observability.network_fs import filesystem_kind
 
-__all__ = ["BootReport", "Fsops", "RootStatus"]
+__all__ = ["BootReport", "Fsops", "IndependentCopy", "RootStatus"]
 
 
 log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class IndependentCopy:
+    """What `copy_independent` made: a file of its own inode, with the digest it was verified at."""
+
+    sha256: str  # hex
+    reflinked: bool  # the extents are shared (copy-on-write); the inode is still its own
+    identity: FileIdentity
 
 
 @dataclass(frozen=True)
@@ -930,3 +940,44 @@ class Fsops:
                     else reader.digest.hexdigest,
                 )
                 return reader.digest.hexdigest()
+
+    def copy_independent(
+        self,
+        src: str,
+        dst: str,
+        *,
+        parents: bool = False,
+        replace: bool = False,
+        expected_sha256: str | None = None,
+    ) -> IndependentCopy:
+        """A copy that shares no inode with its source (EF-BIB-027, D9): a reflink clone when the
+        file system allows it, else a copy flushed to disk; read back and compared to
+        `expected_sha256` (hex) when given, else to the digest of the source, before it is put in
+        place. Never a hard link, whatever the capabilities of the roots say.
+
+        The caller records the intent (`copy_cross_root`) around the call, as the repatriation
+        does: a crash leaves the target absent or complete, and the intent is replayed from that."""
+        a, b = self._locate(src), self._locate(dst)
+        if b.read_only:
+            raise ReadOnlyRootError(f"{b.root_path} is an adoption root: never written")
+        self._require_space()
+        with self._root(a.root_path) as source, self._gated(b) as target:
+            fd = source.open_file(a.rel, os.O_RDONLY)
+            try:
+                expected = expected_sha256 or _digest_of(fd)
+                identity, cloned = write_independent(
+                    target, b.rel, fd, parents=parents, replace=replace,
+                    verify_digest=lambda: expected,
+                )  # fmt: skip
+            finally:
+                os.close(fd)
+        return IndependentCopy(sha256=expected, reflinked=cloned, identity=identity)
+
+
+def _digest_of(fd: int) -> str:
+    digest = hashlib.sha256()
+    offset = 0
+    while chunk := os.pread(fd, 1 << 20, offset):
+        digest.update(chunk)
+        offset += len(chunk)
+    return digest.hexdigest()
