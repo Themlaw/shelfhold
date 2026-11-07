@@ -4,8 +4,6 @@ Every point that applies the freeze reads the same persisted state: the write se
 (`Fsops`), the task start (`Scheduler`), the services (`Repatriator.frozen`, `LoadedRoots`).
 Only `reconcile --adopt-after-restore` lifts it."""
 
-from datetime import timedelta
-
 import pytest
 import sqlalchemy as sa
 
@@ -28,12 +26,12 @@ class _Sink:
     def __init__(self) -> None:
         self.sent: list[str] = []
 
-    def dispatch(self, job) -> str:  # noqa: ANN001
+    def dispatch(self, job) -> str:
         self.sent.append(job.kind)
         return "t"
 
 
-def _loaded(env: RestoreEnv):  # noqa: ANN202
+def _loaded(env: RestoreEnv):
     with env.engine.connect() as connection:
         paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
         return load_roots(connection, PathMap.same_path(paths))
@@ -98,7 +96,7 @@ def test_freeze_lifted_only_by_adopt_after_restore() -> None:
         adopter = env.adopter()
         adopter.adopt(confirm=adopter.preview().fingerprint)  # the one exit
         assert set(_points(env, clock).values()) == {False}
-        clock.advance(timedelta(minutes=5))
+        clock.advance(minutes=5)
         scheduler, sink = _scheduler(env, clock)
         assert scheduler.scan().queued != ()
 

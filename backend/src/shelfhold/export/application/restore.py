@@ -68,6 +68,7 @@ from shelfhold.export.domain.restore import (
 )
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError
 from shelfhold.infrastructure.ids import new_ulid
@@ -301,12 +302,9 @@ class RestoreGuard:
         """Read only: every read-write root against its sentinel, as the database stands now."""
         with self._engine.connect() as connection:
             head = connection.execute(
-                sa.select(
-                    platform.instance.c.instance_id,
-                    platform.instance.c.restore_epoch,
-                    platform.instance.c.restore_generation,
-                )
+                sa.select(platform.instance.c.instance_id, platform.instance.c.restore_epoch)
             ).first()
+            pending = FreezeState.read(connection).frozen
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             if head is None or not paths:
                 return RestoreStatus(0, ())
@@ -339,9 +337,7 @@ class RestoreGuard:
                     None if doc is None else doc.restore_epoch,
                 )
             )
-        return RestoreStatus(
-            int(head.restore_epoch), tuple(findings), pending=int(head.restore_generation) > 0
-        )
+        return RestoreStatus(int(head.restore_epoch), tuple(findings), pending=pending)
 
     def enter_restored_behind(self) -> RestoreStatus:
         """Start-up: if the database is behind, move the epoch counter (once per restore), say so
@@ -372,9 +368,9 @@ class RestoreGuard:
                     sa.update(platform.instance).values(
                         restore_epoch=epoch,
                         restore_epoch_at=self._clock.now(),
-                        restore_generation=max(top, 1),
                     )
                 )
+                self._fsops.freeze_state.persist(connection, max(top, 1))
                 published.append(
                     self._bus.publish(
                         connection,
@@ -580,7 +576,7 @@ class RestoreAdopter:
     def _thaw(self) -> None:
         """The end of `restored_behind`: the persisted freeze goes, then the instance thaws."""
         with self._engine.begin() as connection:
-            connection.execute(sa.update(platform.instance).values(restore_generation=0))
+            self._fsops.freeze_state.lift(connection)
         self._fsops.unfreeze()
 
     def _relocate(self, connection: Connection, survey: _Survey, now: datetime) -> None:

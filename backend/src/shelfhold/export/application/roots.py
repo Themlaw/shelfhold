@@ -8,13 +8,14 @@ ever taken on it.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute, within
 from shelfhold.export.domain.physical_roots import ExpectedRoot
+from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
 
@@ -35,7 +36,12 @@ class LoadedRoots:
     path_map: PathMap
     expected: list[ExpectedRoot]
     roots: tuple[RootRow, ...]
-    restore_pending: bool = False  # `restored_behind` until the adoption (persisted, EF-INT-026)
+    freeze: FreezeState = field(default_factory=FreezeState)  # persisted, until the adoption
+
+    @property
+    def restore_pending(self) -> bool:
+        """`restored_behind`: the freeze of the database (EF-INT-026), until the adoption."""
+        return self.freeze.frozen
 
     def locate(self, local: str) -> tuple[str, str]:
         """`(root id, path relative to that root)` of a local path."""
@@ -61,11 +67,7 @@ def _containing(roots: tuple[RootRow, ...], path: str) -> RootRow | None:
 
 def load_roots(connection: Connection, path_map: PathMap) -> LoadedRoots:
     head = connection.execute(
-        sa.select(
-            platform.instance.c.instance_id,
-            platform.instance.c.restore_epoch,
-            platform.instance.c.restore_generation,
-        )
+        sa.select(platform.instance.c.instance_id, platform.instance.c.restore_epoch)
     ).one()
     instance_id = head.instance_id
     table = platform.physical_root
@@ -89,7 +91,7 @@ def load_roots(connection: Connection, path_map: PathMap) -> LoadedRoots:
         for r in roots
         if r.mode is PathMode.RW
     ]
-    return LoadedRoots(PathMap(tuple(entries)), expected, roots, head.restore_generation > 0)
+    return LoadedRoots(PathMap(tuple(entries)), expected, roots, FreezeState.read(connection))
 
 
 def open_fsops(
@@ -99,10 +101,10 @@ def open_fsops(
     write_gate: Callable[[], None] | None = None,
     stop_gate: Callable[[], None] | None = None,
 ) -> Fsops:
-    """The one way to open the library's `Fsops`: the gates a caller has (disk, stop barrier) and
-    the restore freeze (`restore_pending`) and the library umask (`SHELFHOLD_UMASK`, EF-EXP-006),
-    which no assembly may forget: `umask` has no default."""
+    """The one way to open the library's `Fsops`: the gates a caller has (disk, stop barrier), the
+    restore freeze (`FreezeState`, one copy per writer) and the library umask
+    (`SHELFHOLD_UMASK`, EF-EXP-006), which no assembly may forget: `umask` has no default."""
     return Fsops.open(
         loaded.path_map, loaded.expected, umask=umask, write_gate=write_gate, stop_gate=stop_gate,
-        frozen=loaded.restore_pending,
+        freeze=loaded.freeze.fork(),
     )  # fmt: skip

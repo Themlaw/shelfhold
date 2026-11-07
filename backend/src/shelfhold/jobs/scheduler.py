@@ -18,6 +18,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.cron import CronSpec
@@ -74,19 +75,24 @@ class Scheduler:
         self._dispatcher = dispatcher
         self._window = window
         self._ledger = JobLedger(engine, clock)
-        self._held = False
+        self._freeze = FreezeState()
 
     @property
     def held(self) -> bool:
-        return self._held
+        """Read at every scan and at the start of every task: the held process, or the freeze the
+        database holds (`restored_behind`), so that no copy of the freeze can fall behind."""
+        with self._engine.connect() as connection:
+            return self._freeze.frozen_in(connection)
 
     def hold(self) -> None:
-        """Dispatch nothing until `release`: the instance is `restored_behind` (EF-INT-026). The
-        schedule itself is untouched, so nothing is lost: the next scan catches up."""
-        self._held = True
+        """Dispatch nothing from this process until `release`: the instance is `restored_behind`
+        (EF-INT-026). The schedule itself is untouched, so nothing is lost: the next scan catches
+        up. `release` lets go of this hold only; a freeze the database holds ends with the
+        adoption."""
+        self._freeze.freeze()
 
     def release(self) -> None:
-        self._held = False
+        self._freeze.thaw()
 
     # -- registration ---------------------------------------------------------------------
 
@@ -171,7 +177,7 @@ class Scheduler:
         return self.scan()
 
     def scan(self) -> ScanReport:
-        if self._held:
+        if self.held:
             return ScanReport(())
         now = self._clock.now()
         stranded = self._ledger.undispatched()  # queued by an earlier scan, never sent: first
