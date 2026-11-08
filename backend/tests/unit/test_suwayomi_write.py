@@ -183,6 +183,7 @@ def test_only_mutations_verified_by_s5_are_allow_listed() -> None:
     assert roots == {
         "enqueueChapterDownload", "dequeueChapterDownload", "updateManga", "createCategory",
         "updateCategory", "updateMangaCategories", "deleteDownloadedChapter",
+        "fetchChapters",  # the piloted refresh (L21)
     }  # fmt: skip
     _service, f, server = make()
     # any other mutation is refused by the referee, and recorded

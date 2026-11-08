@@ -21,8 +21,8 @@ from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
 from shelfhold.infrastructure.fetcher.client import IntegrationFetcher
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.wake import Wakes
 from shelfhold.infrastructure.schema import acquisition, catalog, export
+from shelfhold.infrastructure.wake import Wakes
 from shelfhold.library.public import PassthroughStore
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
 from shelfhold.sdk.connected import ConnectedCapability

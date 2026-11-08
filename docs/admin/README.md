@@ -13,6 +13,7 @@ Une commande marquée **[M1b]** n'existe pas encore en 0.2 : la page dit ce qu'o
 | Installer sans interface, jusqu'au premier chapitre | [installation-headless.md](installation-headless.md), clés et fichier déclaratif dans [headless.md](headless.md) |
 | Brancher une bibliothèque Kavita qui existe déjà | [adopter-kavita.md](adopter-kavita.md) |
 | Remplacer mes scripts (Suwayomi vers Kavita) | [migration-depuis-scripts.md](migration-depuis-scripts.md) |
+| Laisser Sablier arrêter Suwayomi ou Kavita, et les réveiller à la demande | [reveil-sablier.md](reveil-sablier.md) |
 | Sortir un volume de Suwayomi avant de le démonter | [rapatrier-avant-demontage.md](rapatrier-avant-demontage.md) |
 | Défaire la bascule | [retour-arriere.md](retour-arriere.md) |
 | Savoir ce que Shelfhold attend de moi, et quelle commande répond | [etats-attente-et-sorties.md](etats-attente-et-sorties.md) |

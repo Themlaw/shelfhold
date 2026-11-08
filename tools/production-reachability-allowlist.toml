@@ -80,14 +80,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l21"
-reason = "`request_refresh` is the driven mode (EF-SRC-025), which comes with the WakeHook (L21). Follow and unfollow are wired by L19 (`shelfhold follow`, `/api/v1/follows`)."
-until = "M1b L21"
-symbols = [
-  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.request_refresh",
-]
-
-[[allow]]
 category = "unwired-m1b-l24"
 reason = "Window, priority classes, technical retention and SQLite maintenance (ENF-OPS-014, ENF-OPS-009): M1a has no /store and its window jobs are ordered by the scheduler; the recycle bin (30 days), the monthly VACUUM and the stepwise runner with its schedule matcher are L24's (PLAN-M1b: run_steps and tick_matches get a production caller there or leave for L31)."
 until = "M1b L24"

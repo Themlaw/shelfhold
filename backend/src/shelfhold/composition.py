@@ -54,6 +54,7 @@ from shelfhold.integrations.apprise import operating_bus
 from shelfhold.library.public import Normalizers, TombstoneRoot, TombstoneService
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
+from shelfhold.sdk.connected import ConnectedCapability
 from shelfhold.sdk.models import AuthBasic
 
 __all__ = [
@@ -427,7 +428,26 @@ class Composition:
             fetcher = suwayomi_jwt_fetcher(cast("Any", guarded), secret, origin=url)
         elif secret is not None:
             fetcher = AuthInjectingFetcher(cast("Any", guarded), AuthBasic(), secret, origin=url)
-        return SuwayomiLink(SuwayomiService(url), fetcher, guarded, url)
+        service = SuwayomiService(
+            url, refresh_mode="driven" if self.check_mode() == "piloted" else "always_on"
+        )
+        if self.wakes().attached(SUWAYOMI_WAKE):  # EF-INT-022: it sleeps behind Sablier
+            service.wake_target = SUWAYOMI_WAKE
+            service.connected |= ConnectedCapability.WAKE
+        return SuwayomiLink(service, fetcher, guarded, url)
+
+    def check_mode(self) -> str:
+        """`always_on` or `piloted` (EF-SRC-025): the stored `source.check_mode`, else `piloted`
+        when a WakeHook is configured and `always_on` otherwise (D8)."""
+        from shelfhold.headless.keys import effective_check_mode
+
+        with self.engine.connect() as connection:
+            stored = connection.execute(
+                sa.select(platform.app_setting.c.value).where(
+                    platform.app_setting.c.key == "source.check_mode"
+                )
+            ).scalar()
+        return effective_check_mode(stored, wake_configured=self.settings.wake_configured)
 
     def _suwayomi_secret(self, connection: sa.Connection) -> dict[str, str] | None:
         import json

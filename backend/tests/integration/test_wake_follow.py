@@ -147,10 +147,10 @@ def test_piloted_refresh_wakes_and_refreshes_suwayomi_after_24h_sleep() -> None:
         bench.run()  # the first look only learns what is there
         _asleep(bench, hook)
         bench.server.publish_upstream(new_chapter(5030, 3), MANGA_ALPHA)  # published meanwhile
+        before = len(bench.server.refreshed)
         report = bench.run()
         assert hook.log[-1] == "wake:suwayomi"
-        assert MANGA_ALPHA in bench.server.refreshed  # the series was refreshed ...
-        assert len(set(bench.server.refreshed)) == len(bench.server.refreshed)  # ... once each
+        assert bench.server.refreshed[before:] == [MANGA_ALPHA]  # refreshed once, after the wake
         assert report.discovered == 1 and report.requested == 1
         assert bench.rows("SELECT state FROM download_request") == [{"state": "requested"}]
         bench.run()

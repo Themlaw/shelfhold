@@ -18,7 +18,6 @@ from shelfhold.export.domain.reconcile import (
 )
 from shelfhold.headless.errors import InvalidConfigValue
 from shelfhold.headless.urls import validate_public_url
-from shelfhold.i18n import t
 
 __all__ = [
     "KEYS",
@@ -26,6 +25,7 @@ __all__ = [
     "PATH_MAP_PREFIX",
     "SECRET_KEYS",
     "ConfigKey",
+    "effective_check_mode",
     "warning_of",
 ]
 
@@ -50,6 +50,14 @@ def _public_url(value: str) -> str:
         return validate_public_url(value)
     except ValueError as error:
         raise InvalidConfigValue(str(error)) from None
+
+
+def effective_check_mode(stored: str | None, *, wake_configured: bool) -> str:
+    """What the follow runs in. An explicit `source.check_mode` wins; without one the mode is
+    `piloted` when a WakeHook is configured and `always_on` otherwise (EF-SRC-025, D8)."""
+    if stored in CHECK_MODES:
+        return str(stored)
+    return "piloted" if wake_configured else "always_on"
 
 
 def _check_mode(value: str) -> str:
@@ -91,7 +99,8 @@ KEYS: Final = {
                   _public_url),
         ConfigKey("source.check_mode", "always_on",
                   "How new chapters are looked for: always_on or piloted (EF-SRC-025).",
-                  _check_mode),
+                  _check_mode,
+                  default_doc="`always_on`, ou `piloted` quand un réveil (Sablier) est configuré"),
         ConfigKey("export.missing_floor", FLOOR_MISSING,
                   "Sentinel: files missing in a shelf destination before the share counts "
                   "(EF-EXP-029).", _whole("export.missing_floor")),
@@ -115,8 +124,6 @@ SECRET_KEYS: Final = frozenset(name for name, key in KEYS.items() if key.secret)
 
 
 def warning_of(key: str, value: object) -> str | None:
-    """A value that is accepted but does not act yet: said at `config set` and `config get`
-    (EF-SRC-025: the piloted check is M1b, the follow cycle behaves as `always_on` until then)."""
-    if key == "source.check_mode" and value == "piloted":
-        return t("headless.piloted_inactive")
+    """A value that is accepted but does not act: said at `config set` and `config get`. None
+    today: the piloted check of EF-SRC-025 acts since M1b (L21)."""
     return None

@@ -49,7 +49,7 @@ Enregistrées en base ; l'environnement et `config.toml` l'emportent. Le rôle e
 | Clé | Défaut | Modifiable | Secret | Rôle |
 | --- | --- | --- | --- | --- |
 | `public_url` | aucun | oui | non | Public address; every absolute link is built from it. |
-| `source.check_mode` | `always_on` | oui | non | How new chapters are looked for: always_on or piloted (EF-SRC-025). |
+| `source.check_mode` | `always_on`, ou `piloted` quand un réveil (Sablier) est configuré | oui | non | How new chapters are looked for: always_on or piloted (EF-SRC-025). |
 | `export.missing_floor` | `10` | oui | non | Sentinel: files missing in a shelf destination before the share counts (EF-EXP-029). |
 | `export.missing_ratio` | `0.05` | oui | non | Sentinel: share of missing files, above which (with the floor) exports, removals and scans are blocked (EF-EXP-029). |
 | `export.missing_ceiling` | `50` | oui | non | Sentinel: more missing files than this block whatever the share (EF-EXP-029). |

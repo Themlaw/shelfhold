@@ -219,6 +219,8 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                     place=place, slots=pools.slots,
                     keep_range=keeper,  # EF-SRC-034
                     tombstones=cast("Any", _LazyTombstones(comp)),
+                    wakes=comp.wakes(),
+                    check_mode="piloted" if comp.check_mode() == "piloted" else "always_on",
                 )  # fmt: skip
 
                 async def once() -> None:

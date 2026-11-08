@@ -319,9 +319,14 @@ class SuwayomiService:
         return ServiceHealth(ok=True, version=version)
 
     async def request_refresh(self, f: Fetcher, refs: list[SeriesRef]) -> None:
-        """Always-on: Suwayomi follows its own schedule and nothing is sent. The driven mode
-        belongs to M1b (EF-SRC-025)."""
-        return None
+        """Always-on: Suwayomi follows its own schedule and nothing is sent. Driven (piloted,
+        EF-SRC-025 a): `fetchChapters` for each series, which returns once Suwayomi has asked the
+        source. The pace between two series of one source is the core's (`limit_key`)."""
+        if self.refresh_mode != "driven":
+            return None
+        for ref in refs:
+            manga = await self._manga(f, ref)
+            await self._query(f, q.FETCH_CHAPTERS, {"id": int(manga["id"])})
 
     # -- sub-sources and limits (EF-SRC-021) -------------------------------------------------
     def filters(self) -> list[FilterSpec]:
