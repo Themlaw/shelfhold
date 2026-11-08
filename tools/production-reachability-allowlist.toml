@@ -84,7 +84,6 @@ category = "unwired-m1b-l24"
 reason = "Window, priority classes, technical retention and SQLite maintenance (ENF-OPS-014, ENF-OPS-009): M1a has no /store and its window jobs are ordered by the scheduler; the recycle bin (30 days), the monthly VACUUM and the stepwise runner with its schedule matcher are L24's (PLAN-M1b: run_steps has its production callers, tick_matches left with L24)."
 until = "M1b L24"
 symbols = [
-  "shelfhold.infrastructure.observability.disk_guard:DiskGuard.has_room_for_vacuum",
   "shelfhold.jobs.huey_app:JobPools.periodic_tasks",
   "shelfhold.jobs.window:order_window_jobs",
   "shelfhold.library.adapters.units:safe_to_clean",

@@ -148,6 +148,7 @@ class JobPools:
         freeze: FreezeState | None = None,
     ) -> None:
         self.clock = clock
+        self._data_dir = data_dir
         self._backoff = retry_backoff_s  # the waits before the 2nd, 3rd... attempt (short in tests)
         self._bus = bus  # the operating bus: a dead letter is an event that notifies
         self.window = window
@@ -207,6 +208,11 @@ class JobPools:
     @property
     def names(self) -> tuple[str, ...]:
         return POOLS
+
+    def queue_files(self) -> dict[str, Path]:
+        """The SQLite file of each pool's queue, by name (`huey-io`...): upkeep treats them like the
+        database (ENF-OPS-016)."""
+        return {f"huey-{name}": self._data_dir / f"huey-{name}.db" for name in POOLS}
 
     def huey(self, pool: str) -> Huey:
         return self._hueys[pool]
