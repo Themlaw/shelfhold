@@ -163,6 +163,7 @@ EXPECTED_CLOSED = {
         "shelfhold/infrastructure/instance/lease.py::WriteSession.rmdir",
         "shelfhold/infrastructure/instance/lease.py::WriteSession.unlink",
     },
+    "database_rows": {"shelfhold/acquisition/application/instance.py::_purge_orphans"},
     "own_scratch": {
         f"{FSOPS}/facade.py::_claim_lease",
         "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",

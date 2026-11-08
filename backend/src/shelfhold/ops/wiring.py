@@ -61,6 +61,9 @@ class _LazyHeadless:
     def source_recheck(self) -> object:
         return self._admin().source_recheck()
 
+    def source_reconnect(self) -> object:
+        return self._admin().source_reconnect()
+
 
 def _fsops(engine: Engine, umask: int) -> Fsops | None:
     try:

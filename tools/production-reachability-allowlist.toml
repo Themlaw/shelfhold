@@ -72,9 +72,9 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l18"
-reason = "Suwayomi write capabilities (follow/unfollow, refresh): M1a only reads the library of the service."
-until = "M1b L18"
+category = "unwired-m1b-l19"
+reason = "Follow and unfollow are written (L18) and proved against the simulated Suwayomi; the request that follows a series from Shelfhold (CLI, API, approved request) is L19. `request_refresh` is the driven mode (EF-SRC-025), which comes with the WakeHook."
+until = "M1b L19"
 symbols = [
   "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.request_refresh",
   "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.set_follow",

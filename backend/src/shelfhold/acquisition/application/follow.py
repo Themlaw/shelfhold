@@ -34,6 +34,7 @@ from shelfhold.acquisition.application.discovery import (
     digest,
 )
 from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
+from shelfhold.acquisition.application.instance import check_instance
 from shelfhold.acquisition.application.planning import (
     NOTHING_YET,
     highest_numbered,
@@ -97,7 +98,11 @@ from shelfhold.library.public import (
     VariantRef,
     has_readable_copy,
 )
-from shelfhold.plugin_host.errors import AuthModeUnsupported, ServiceVersionMismatch
+from shelfhold.plugin_host.errors import (
+    AuthModeUnsupported,
+    ServiceInstanceChanged,
+    ServiceVersionMismatch,
+)
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
@@ -309,12 +314,22 @@ class FollowCycle:
                     service=self._plugin_id,
                 )
 
+    async def _check_instance(self) -> None:
+        """Another installation of the tool pauses the follow, before anything is read from it
+        (EF-SRC-036): its empty library must not look like series that were removed."""
+        current = await from_service(self._service.instance_fingerprint(self._fetcher))
+        with self._engine.begin() as connection:
+            if check_instance(connection, self._plugin_id, current, self._clock.now()):
+                raise ServiceInstanceChanged()
+
     async def _cycle(self, report: FollowReport) -> None:
         self._log_skipped_capabilities()
         if ConnectedCapability.HEALTH_PROBE in self._service.connected:
             health = await from_service(self._service.semantic_health(self._fetcher))
             if not health.ok:
                 raise _probe_error(health.detail)
+        if ConnectedCapability.INSTANCE_FINGERPRINT in self._service.connected:
+            await self._check_instance()
         library = await from_service(self._service.followed_series(self._fetcher))
         log.debug("follow.library_listed", series=len(library), service=self._plugin_id)
         await self._discover_series(library, report)

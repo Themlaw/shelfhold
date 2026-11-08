@@ -274,6 +274,7 @@ help_target_reconnect = "Lève la pause d'une destination (droits rétablis, Kav
 help_target_rotate_key = "Crée une nouvelle clé nommée (action réservée)."
 help_source_set_secret = "Enregistre un nouveau secret de la source (action réservée)."
 help_source_recheck = "Revérifie la source et reprend le suivi."
+help_source_reconnect = "Reprend le suivi après une réinstallation de la source : la nouvelle installation devient la référence."
 help_intents = "Intentions de fichiers restées ouvertes après une interruption."
 help_intents_list = "Liste les intentions ouvertes (opération, état, chemins)."
 help_intents_resolve = "Règle une intention ouverte : rejoue ou achève l'opération si le disque correspond exactement à une étape connue, sinon la laisse ouverte (action réservée)."

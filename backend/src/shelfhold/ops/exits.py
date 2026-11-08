@@ -34,6 +34,7 @@ ENDPOINTS: Final = MappingProxyType(
         "target rotate-key": ("POST", "/api/v1/targets/{target_id}/rotate-key"),
         "source set-secret": ("POST", "/api/v1/sources/suwayomi/secret"),
         "source recheck": ("POST", "/api/v1/sources/suwayomi/recheck"),
+        "source reconnect": ("POST", "/api/v1/sources/suwayomi/reconnect"),
         "adopt --confirm-migration": (
             "POST", "/api/v1/adoption/{destination_id}/confirm-migration",
         ),
@@ -82,7 +83,13 @@ M1A_STATES: Final = frozenset(
 # The M1b states whose exit is served here, in a table of their own so that the M1a partition stays
 # what it was: `rate` leaves both "À classer" states (EF-INT-023, EF-EXP-048). The other M1b states
 # arrive with their lots; `shelf withdraw` (L10) is served by its own router.
-M1B_SERVED_STATES: Final = frozenset({WaitingState.RATING_PENDING, WaitingState.FOLLOW_SUSPENDED})
+M1B_SERVED_STATES: Final = frozenset(
+    {
+        WaitingState.RATING_PENDING,
+        WaitingState.FOLLOW_SUSPENDED,
+        WaitingState.SOURCE_INSTANCE_CHANGED,  # `source reconnect` (L18)
+    }
+)
 
 # Commands whose CLI module belongs to a lot still in flight (the route and the service exist
 # here). The lot that lands the CLI removes its entry: a test fails while it is listed and the

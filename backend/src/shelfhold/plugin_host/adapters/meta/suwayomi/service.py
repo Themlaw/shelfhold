@@ -28,6 +28,7 @@ from shelfhold.plugin_host.errors import (
 )
 from shelfhold.sdk.connected import (
     ConnectedCapability,
+    ReleaseResult,
     ServiceHealth,
     Ticket,
     TicketState,
@@ -70,6 +71,7 @@ CBZ_MIME = "application/vnd.comicbook+zip"
 SUPPORTED_MODES = frozenset({"none", "basic_auth"})  # every other mode is refused (EF-SRC-031)
 MARK = "Shelfhold"  # the category that holds a series out of updates (= EXCLUSION_MARK)
 UPDATE_STRATEGIES = frozenset({"ALWAYS_UPDATE", "ONLY_FETCH_ONCE"})
+PROBE_VALID_SECONDS = 600.0  # a follow needs a fingerprint read this lately (one cycle)
 MANGA_CACHE_SECONDS = 60.0  # one follow cycle; `begin_cycle` drops it earlier
 MAX_FILENAME_BYTES = 120
 _FORBIDDEN_NAME = re.compile(r'[\\/:*?"<>|]')
@@ -135,10 +137,13 @@ class SuwayomiService:
             | ConnectedCapability.UPSTREAM_RESTORE
             | ConnectedCapability.HEALTH_PROBE
             | ConnectedCapability.AUTH_MODE
+            | ConnectedCapability.RELEASE_CLAIM
+            | ConnectedCapability.INSTANCE_FINGERPRINT
         )
         self._mode_verified = False
         self._handles: dict[str, int] = {}  # ticket token -> last known local chapter id
         self._mangas: tuple[float, list[dict[str, Any]]] | None = None
+        self._probed_at: float | None = None  # monotonic time of the last fingerprint read
 
     # -- transport ---------------------------------------------------------------------------
     async def _post(self, f: Fetcher, query: str, variables: dict[str, Any] | None = None) -> Any:
@@ -361,9 +366,99 @@ class SuwayomiService:
     async def followed_series(self, f: Fetcher) -> list[SeriesRef]:
         return list((await self.search(f, "", {}, None)).items)
 
-    async def set_follow(self, f: Fetcher, ref: SeriesRef, on: bool) -> None:
+    async def set_follow(
+        self, f: Fetcher, ref: SeriesRef, on: bool, *, remove_upstream: bool = False
+    ) -> None:
+        """Follow or unfollow, both idempotent (EF-SRC-029).
+
+        A series Suwayomi already holds in its library is linked as it is: nothing is written, the
+        user's own categories are not touched. One that is known but not in the library enters it,
+        in the `Shelfhold` category, which Suwayomi's own schedule leaves out. Unfollowing lets go
+        of the category and keeps the series in Suwayomi, unless `remove_upstream` is asked for."""
         node = await self._manga(f, ref)
-        await self._query(f, q.SET_LIBRARY, {"id": node["id"], "inLibrary": on})
+        manga_id = int(node["id"])
+        state = (await self._query(f, q.MANGA_LIBRARY_STATE, {"id": manga_id})).get("manga") or {}
+        in_library = bool(state.get("inLibrary"))
+        held = {int(c["id"]) for c in (state.get("categories") or {}).get("nodes") or []}
+        try:
+            if on:
+                if in_library:
+                    return  # attached to what is there: never added twice
+                category = await self._shelfhold_category(f, create=True)
+                await self._query(f, q.SET_LIBRARY, {"id": manga_id, "inLibrary": True})
+                if category is not None and category not in held:
+                    await self._query(
+                        f, q.SET_MANGA_CATEGORIES, {"id": manga_id, "add": [category], "remove": []}
+                    )
+            elif remove_upstream:
+                if in_library:
+                    await self._query(f, q.SET_LIBRARY, {"id": manga_id, "inLibrary": False})
+            else:
+                category = await self._shelfhold_category(f, create=False)
+                if category is not None and category in held:
+                    await self._query(
+                        f, q.SET_MANGA_CATEGORIES, {"id": manga_id, "add": [], "remove": [category]}
+                    )
+        finally:
+            self._mangas = None  # the library moved: the next read is fresh
+
+    async def _shelfhold_category(self, f: Fetcher, *, create: bool) -> int | None:
+        """The id of the `Shelfhold` category, created once if `create` and missing. It must be
+        excluded from the scheduled updates: one that is not is refused, never changed."""
+        for attempt in (0, 1):
+            found = await self._find_category(f)
+            if found is not None:
+                category = int(found["id"])
+                if create:
+                    await self._exclude_from_download(f, category)
+                return category
+            if not create or attempt:
+                break
+            if not self._instance_probed():
+                # a Suwayomi installed again has no category, and making one before the
+                # fingerprint was looked at would hide it (EF-SRC-036)
+                raise TemporarilyUnavailable("the instance was not probed in this cycle")
+            await self._query(f, q.CREATE_SHELFHOLD_CATEGORY)
+        if create:
+            raise SourceChanged("the Shelfhold category could not be created")
+        return None
+
+    async def _exclude_from_download(self, f: Fetcher, category: int) -> None:
+        """The category holds its series out of the automatic download, and `includeInUpdate` is
+        never written. Set once, read back: a server that did not take it is a changed schema."""
+        nodes = (await self._query(f, q.CATEGORY_DOWNLOAD))["categories"]["nodes"]
+        mine = next((c for c in nodes if int(c["id"]) == category), None)
+        if mine is not None and str(mine.get("includeInDownload", "")).upper() == "EXCLUDE":
+            return
+        await self._query(f, q.EXCLUDE_CATEGORY_FROM_DOWNLOAD, {"id": category})
+        nodes = (await self._query(f, q.CATEGORY_DOWNLOAD))["categories"]["nodes"]
+        mine = next((c for c in nodes if int(c["id"]) == category), None)
+        if mine is None or str(mine.get("includeInDownload", "")).upper() != "EXCLUDE":
+            raise SourceChanged("the Shelfhold category could not be excluded from the download")
+
+    def _instance_probed(self) -> bool:
+        """The fingerprint was read lately: a follow runs after the cycle's probe, never before."""
+        return (
+            self._probed_at is not None
+            and time.monotonic() - self._probed_at <= PROBE_VALID_SECONDS
+        )
+
+    async def _find_category(self, f: Fetcher) -> dict[str, Any] | None:
+        """The category named `Shelfhold` (the lowest id if two): a read, nothing is written."""
+        nodes = (await self._query(f, q.CATEGORIES))["categories"]["nodes"]
+        named = sorted((c for c in nodes if str(c.get("name")) == MARK), key=lambda c: c["id"])
+        return dict(named[0]) if named else None
+
+    # -- INSTANCE_FINGERPRINT (EF-SRC-036) ---------------------------------------------------
+    async def instance_fingerprint(self, f: Fetcher) -> str:
+        """What tells this installation from another: the identity of the category Shelfhold made
+        in it. Following moves nothing; a new database does not have it. `""` while there is none
+        (nothing has been followed yet)."""
+        found = await self._find_category(f)
+        self._probed_at = time.monotonic()
+        if found is None:
+            return ""
+        return hashlib.sha256(f"{KEY}|{MARK}|{int(found['id'])}".encode()).hexdigest()[:32]
 
     # -- UPSTREAM_RESTORE (EF-EXP-056) -------------------------------------------------------
     async def snapshot_upstream(self, f: Fetcher, ref: SeriesRef) -> dict[str, object]:
@@ -600,6 +695,17 @@ class SuwayomiService:
         found = await self._ticket_node(f, t)
         if found is not None:
             await self._query(f, q.DEQUEUE, {"id": found[0]})
+
+    # -- RELEASE_CLAIM -----------------------------------------------------------------------
+    async def release(self, f: Fetcher, t: Ticket) -> ReleaseResult:
+        """Erase the downloaded chapter of this ticket on the Suwayomi side (EF-BIB-038): an
+        erasure upstream, irreversible. The only caller is the purge of L16, after its guards (a
+        kept copy that still counts). A chapter that is not downloaded, or gone, erases nothing."""
+        found = await self._ticket_node(f, t)
+        if found is None or not found[1].get("isDownloaded"):
+            return ReleaseResult(released=False)
+        await self._query(f, q.DELETE_DOWNLOADED_CHAPTER, {"id": found[0]})
+        return ReleaseResult(released=True)
 
 
 def _chapter_url(unit: UnitInfo) -> str:

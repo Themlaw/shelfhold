@@ -1,9 +1,10 @@
 """Failure classes and what each one does (02 section 3.4, EF-SRC-009, EF-SRC-028).
 
 An error of a connected service belongs to one class, and the class alone decides the outcome:
-only `content` is counted (it can make a Unit irreplaceable, EF-BIB-042); `auth`, `version` and
-`schema` mean the service itself cannot be driven, so the whole service pauses and nothing is
-counted against any series; `infra` (asleep, rate-limited, truncated, reset) is retried later;
+only `content` is counted (it can make a Unit irreplaceable, EF-BIB-042); `auth`, `version`,
+`schema` and `instance` mean the service itself cannot be driven, so the whole service pauses
+and nothing is counted against any series; `infra` (asleep, rate-limited, truncated, reset) is
+retried later;
 `untrusted` (a file with an entry off the allowlist, EF-BIB-051 (6)) is neither: the same bytes
 would be refused again, and the source did nothing a failure count should answer for.
 """
@@ -26,6 +27,7 @@ _DISPOSITIONS = {
     "auth": Disposition.PAUSE,
     "version": Disposition.PAUSE,
     "schema": Disposition.PAUSE,
+    "instance": Disposition.PAUSE,  # another installation of the tool (EF-SRC-036)
     "infra": Disposition.RETRY,
 }
 

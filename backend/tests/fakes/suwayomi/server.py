@@ -44,11 +44,12 @@ ALLOWED_ROUTES = (
 ALLOWED_FIELDS = frozenset({
     "aboutServer", "settings", "sources", "mangas", "manga", "chapters", "chapter",
     "enqueueChapterDownload", "dequeueChapterDownload", "updateManga",
-    "categories", "updateMangaCategories",
+    "categories", "updateMangaCategories", "createCategory", "updateCategory",
+    "deleteDownloadedChapter",
 })  # fmt: skip
 FORBIDDEN_FIELDS = frozenset({
     "fetchChapterPages", "fetchChapters", "fetchManga", "fetchSourceManga", "updateLibrary",
-    "updateCategoryManga", "deleteDownloadedChapter", "deleteDownloadedChapters",
+    "updateCategoryManga", "deleteDownloadedChapters", "deleteCategory",
     "clearDownloader", "startDownloader", "login", "refreshToken", "restoreBackup",
     "installExternalExtension", "updateExtension", "addExtensionStore", "setSettings",
 })  # fmt: skip
@@ -86,10 +87,19 @@ class FakeSuwayomi:
     _enqueued: set[int] = field(default_factory=set)
     categories: list[dict[str, Any]] = field(default_factory=list)  # id, name, includeInUpdate
     updated_by_schedule: list[int] = field(default_factory=list)  # manga ids, in order
+    deleted: list[int] = field(default_factory=list)  # chapter ids of `deleteDownloadedChapter`
 
     # -- scenario helpers -------------------------------------------------------------------
-    def reinstall(self) -> None:
-        """Same tool, same upstream sources, but every local integer id is new (EF-SRC-036)."""
+    def reinstall(self, *, wipe: bool = False) -> None:
+        """Same tool, same upstream sources, but every local integer id is new (EF-SRC-036).
+
+        `wipe`: the database is recreated empty, as a fresh installation is (no category, no
+        series in the library); the sources and their chapters stay known."""
+        if wipe:
+            self.categories.clear()
+            for manga in self.state["mangas"]:
+                manga["inLibrary"] = False
+                manga["categoryIds"] = []
         self._polls.clear()
         self._downloaded.clear()
         self._enqueued.clear()
@@ -98,10 +108,19 @@ class FakeSuwayomi:
             for chapter in manga["chapters"]:
                 chapter["id"] += RENUMBER_OFFSET
 
-    def add_category(self, name: str, *, include_in_update: str = "UNSET") -> int:
+    def add_category(
+        self, name: str, *, include_in_update: str = "UNSET", include_in_download: str = "UNSET"
+    ) -> int:
         """A category of the library (`EXCLUDE`: its series are left out of scheduled updates)."""
         ident = 1 + max((c["id"] for c in self.categories), default=0)
-        self.categories.append({"id": ident, "name": name, "includeInUpdate": include_in_update})
+        self.categories.append(
+            {
+                "id": ident,
+                "name": name,
+                "includeInUpdate": include_in_update,
+                "includeInDownload": include_in_download,
+            }
+        )
         return ident
 
     def assign(self, manga_url: str, category_id: int) -> None:
@@ -367,6 +386,38 @@ class FakeSuwayomi:
         wanted = self._wanted_id(query, variables, "id")
         self._enqueued.discard(wanted)  # type: ignore[arg-type]
         return {"downloadStatus": {"state": "STOPPED"}}
+
+    def _q_createCategory(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        """`createCategory(input: {name, includeInUpdate})`, answering `category { id name }`."""
+        match = re.search(r"createCategory\s*\(\s*input\s*:\s*\{([^}]*)\}", query)
+        keys = set(re.findall(r"(\w+)\s*:", match.group(1))) if match else set()
+        if keys - {"name"}:  # the category is created plain, then excluded from the download
+            self.violations.append(f"createCategory keys not allowed: {sorted(keys)}")
+        name = re.search(r'name\s*:\s*"([^"]*)"', query)
+        wanted = name.group(1) if name else str(variables.get("name", ""))
+        if any(c["name"] == wanted for c in self.categories):
+            self.violations.append(f"category created twice: {wanted!r}")
+        ident = self.add_category(wanted)
+        return {"category": {"id": ident, "name": wanted}}
+
+    def _q_updateCategory(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        """`updateCategory(input: {id, patch})`: only `includeInDownload` may be written, and
+        never `includeInUpdate` (it would stop the refresh of every followed series)."""
+        self._check_patch(query, {"includeInDownload"})
+        wanted = self._wanted_id(query, variables, "id")
+        flag = re.search(r"includeInDownload\s*:\s*([A-Z]+)", query)
+        for category in self.categories:
+            if category["id"] == wanted and flag:
+                category["includeInDownload"] = flag.group(1)
+        return {"category": {"id": wanted}}
+
+    def _q_deleteDownloadedChapter(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        """Removes the downloaded file only (the chapter stays known): upstream erasure."""
+        wanted = self._wanted_id(query, variables, "id")
+        self._downloaded.discard(wanted)  # type: ignore[arg-type]
+        self._enqueued.discard(wanted)  # type: ignore[arg-type]
+        self.deleted.append(wanted)  # type: ignore[arg-type]
+        return {"chapters": {"id": wanted}}
 
     def _q_updateManga(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         self._check_patch(query, {"inLibrary", "updateStrategy"})

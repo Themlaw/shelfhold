@@ -22,6 +22,7 @@ from sqlalchemy import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from shelfhold.acquisition.application.failures import FailureLedger
+from shelfhold.acquisition.application.instance import reconnect
 from shelfhold.config import ResolvedSettings
 from shelfhold.export.application.preflight import DestinationNotWritableError
 from shelfhold.export.application.root_bootstrap import (
@@ -640,6 +641,14 @@ class HeadlessAdmin:
         added = self.source_add_suwayomi(url=url, secret=secret)
         self._resume_follow()
         return added
+
+    def source_reconnect(self) -> bool:
+        """`source reconnect`: Suwayomi was installed again and the admin says it is the one to
+        follow. The old fingerprint is forgotten and the follow resumes; the next cycle takes the
+        new installation as its reference and finds the series again by their upstream identity.
+        False when the service is not paused for that (nothing changes)."""
+        with self._engine.begin() as connection:
+            return reconnect(connection, "suwayomi", self._clock.now())
 
     # -- source add suwayomi ------------------------------------------------------------------
 

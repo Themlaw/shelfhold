@@ -460,6 +460,28 @@ def auth_expired(settings: Settings) -> None:
         assert h.suwayomi.calls[-1]["password"] == "new-secret"
 
 
+def source_instance_changed(settings: Settings) -> None:
+    """M1b L18: Suwayomi was reinstalled; `source reconnect` takes the pause off and the next
+    cycle takes the fingerprint of the new installation as its reference."""
+    with headless(settings) as h:
+        h.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="admin:s3cret")
+        with h.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE source_config SET instance_fingerprint = 'old' "
+                        "WHERE plugin_id = 'suwayomi'")
+            )  # fmt: skip
+        pause_follow(h.engine, failure_class="instance", state="source_instance_changed")
+        ops = OpsServices(h.engine, clock=h.clock, bus=_bus(h), headless=h.admin)
+        (item,) = _waiting(ops, "source_instance_changed")
+        assert item.command == "shelfhold source reconnect"  # type: ignore[attr-defined]
+        _listed_then_gone(ops, "source_instance_changed", ops.source_reconnect)
+        with h.engine.connect() as connection:
+            stored = connection.execute(
+                sa.text("SELECT instance_fingerprint FROM source_config")
+            ).scalar_one()
+        assert stored is None  # the reference is read again by the next cycle
+
+
 def auth_mode_unsupported(settings: Settings) -> None:
     with headless(settings) as h:
         h.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="admin:s3cret")
@@ -542,6 +564,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         child_exposure, auth_mode_unsupported, coverage_unknown, language_unknown,
         restored_behind, tombstone_key_unknown, tombstone_lines_owed, route_missing,
         series_name_collision, mount_sentinel_missing, rating_pending, follow_suspended,
+        source_instance_changed,
     )
 }  # fmt: skip
 

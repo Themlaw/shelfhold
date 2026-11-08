@@ -53,6 +53,7 @@ _TEMPLATES = {
     "target_forbidden": "shelfhold target reconnect {subject}",
     "key_expiring": "shelfhold target rotate-key {subject} --password-file <file>",
     "auth_expired": "shelfhold source set-secret --secret-file <file>",
+    "source_instance_changed": "shelfhold source reconnect",
     "auth_mode_unsupported": "shelfhold source recheck",
     "permission_denied": "shelfhold target recheck {extra}",
     "child_exposure": "shelfhold target recheck {subject}",

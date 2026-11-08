@@ -495,6 +495,11 @@ class OpsServices:
             raise ExitUnavailableError("the configuration facade is not connected")
         self._headless.source_recheck()
 
+    def source_reconnect(self) -> None:
+        if self._headless is None:
+            raise ExitUnavailableError("the configuration facade is not connected")
+        self._headless.source_reconnect()
+
     # -- the ports of the other lots ------------------------------------------------------------
 
     def restore_adopt(self, *, confirm_deletion: bool, principal: Principal) -> None:

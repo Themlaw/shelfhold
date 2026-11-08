@@ -81,4 +81,5 @@ def test_meta_suwayomi_manifest_and_declared_capabilities() -> None:
     assert ConnectedCapability.SERVER_QUEUE in declared
     assert ConnectedCapability.HEALTH_PROBE in declared
     assert ConnectedCapability.AUTH_MODE in declared
-    assert ConnectedCapability.INSTANCE_FINGERPRINT not in declared  # M1b
+    assert ConnectedCapability.INSTANCE_FINGERPRINT in declared  # M1b L18
+    assert ConnectedCapability.RELEASE_CLAIM in declared
