@@ -324,6 +324,28 @@ class ShelfService:
             )  # fmt: skip
         return destination_id
 
+    def pause_family_of_target(self, target_id: str) -> list[str]:
+        """A new path map moves the folders a Kavita library reads, so who can read what has to be
+        audited again: every linked shelf below 18+ of the target waits for a `target recheck`."""
+        paused = []
+        with self._engine.begin() as connection:
+            rows = connection.execute(
+                sa.select(export.shelf.c.id, export.shelf.c.max_age_rating)
+                .select_from(
+                    export.shelf.join(
+                        export.shelf_destination,
+                        export.shelf_destination.c.shelf_id == export.shelf.c.id,
+                    )
+                )
+                .where(export.shelf_destination.c.target_id == target_id)
+                .distinct()
+            ).all()
+            for row in rows:
+                linked = is_family(row.max_age_rating) and self._is_linked(connection, row.id)
+                if linked and pause_shelf(connection, row.id, CHILD_EXPOSURE):
+                    paused.append(row.id)
+        return paused
+
     def check_path_map(self, target_id: str, entries: list[dict[str, str]]) -> None:
         """A new path map of a target moves the folders of its bindings: they must still not
         overlap another binding's, nor share a remote folder (the same rules as binding)."""

@@ -455,6 +455,7 @@ class HeadlessAdmin:
             with self._engine.begin() as connection:
                 records.set_path_map(connection, row.id, before, self._clock.now())
             raise
+        self._shelves.pause_family_of_target(own)  # audited again before anything is written
         return self.get(key)
 
     def _set_channel(self, value: str) -> None:

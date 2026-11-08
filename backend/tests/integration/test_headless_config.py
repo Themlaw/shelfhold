@@ -615,3 +615,25 @@ def test_an_empty_path_map_is_kept_empty_not_defaulted(settings: Settings, tmp_p
             accept_admin_risk=True, path_map=[],
         )  # fmt: skip
         assert env.admin.get("path_map.kavita").value == []
+
+
+def test_path_map_change_pauses_the_linked_family_shelf_until_recheck(settings: Settings) -> None:
+    from tests.integration.test_schema_storage_export import add_library, link_library
+
+    with headless(settings) as env:
+        env.admin.target_add_kavita(
+            name="kavita", url=KAVITA_URL, username="u", password="p" * 12,
+            accept_admin_risk=True,
+        )  # fmt: skip
+        env.admin.set("path_map.kavita", '[{"local": "/library/manga", "remote": "/manga"}]')
+        made = env.admin.shelf_create(name="Kids", max_age="13", target="kavita", subpath="kids")
+        with env.engine.begin() as connection:
+            target = connection.execute(sa.text("SELECT id FROM export_target")).scalar_one()
+            library = add_library(connection, target)
+            link_library(connection, made.destination_id, target, library)
+        env.admin.set("path_map.kavita", '[{"local": "/library/manga", "remote": "/mnt/manga"}]')
+        with env.engine.connect() as connection:
+            reason = connection.execute(
+                sa.text("SELECT paused_reason FROM shelf WHERE id = :s"), {"s": made.shelf_id}
+            ).scalar_one()
+        assert reason == "child_exposure"
