@@ -177,9 +177,7 @@ reason = "Consumers arrive with the content and plugin features of M2: image dec
 until = "M2"
 symbols = [
   "shelfhold.catalog.domain.dates:opf_date",
-  "shelfhold.infrastructure.imaging.caps:*",
   "shelfhold.infrastructure.imaging.client:*",
-  "shelfhold.infrastructure.imaging.errors:ImageRejected",
   "shelfhold.infrastructure.packaging.cbz.packager:write_cbz",
   "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.fetch_unit",
   "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.filters",
