@@ -46,18 +46,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l11"
-reason = "The `rate` service (EF-BIB-036) has no command yet: `shelfhold rate` of L11 is its first production caller. The age scale helpers it alone uses (tiers, columns, label key) wait with it. The effective age and the admission of an Edition to a shelf are wired: the ComicInfo of an exported file takes the first, `relink` (L09) the second."
-until = "M1b L11"
-symbols = [
-  "shelfhold.catalog.application.rating:RatingRefusedError",
-  "shelfhold.catalog.application.rating:RatingService.rate",
-  "shelfhold.catalog.application.rating:RatingService.rate_edition",
-  "shelfhold.sdk.age:label_key",
-  "shelfhold.sdk.age:to_columns",
-]
-
-[[allow]]
 category = "unwired-m1b-l13"
 reason = "effective_age decides which age Kavita receives and who owns the locked field: the Kavita age push of L13 is its first production caller."
 until = "M1b L13"

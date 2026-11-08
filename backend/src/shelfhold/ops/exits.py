@@ -11,7 +11,15 @@ from typing import Final
 
 from shelfhold.events.waiting_state import WaitingState
 
-__all__ = ["CLI_PENDING", "ENDPOINTS", "M1A_STATES", "UNSERVED", "bare", "endpoint_of"]
+__all__ = [
+    "CLI_PENDING",
+    "ENDPOINTS",
+    "M1A_STATES",
+    "M1B_SERVED_STATES",
+    "UNSERVED",
+    "bare",
+    "endpoint_of",
+]
 
 # command (as in EXIT_ROUTES) -> (method, path)
 ENDPOINTS: Final = MappingProxyType(
@@ -40,6 +48,7 @@ ENDPOINTS: Final = MappingProxyType(
         "tombstone accept-lost-keyring": ("POST", "/api/v1/tombstones/accept-lost-keyring"),
         "tombstone set-aside-journal": ("POST", "/api/v1/tombstones/set-aside-journal"),
         "tombstone flush": ("POST", "/api/v1/tombstones/flush"),
+        "rate": ("POST", "/api/v1/works/{work_id}/rating"),
     }
 )  # fmt: skip
 
@@ -69,6 +78,11 @@ M1A_STATES: Final = frozenset(
         WaitingState.MOUNT_SENTINEL_MISSING,
     }
 )
+
+# The M1b states whose exit is served here, in a table of their own so that the M1a partition stays
+# what it was: `rate` leaves both "À classer" states (EF-INT-023, EF-EXP-048). The other M1b states
+# arrive with their lots; `shelf withdraw` (L10) is served by its own router.
+M1B_SERVED_STATES: Final = frozenset({WaitingState.RATING_PENDING, WaitingState.FOLLOW_SUSPENDED})
 
 # Commands whose CLI module belongs to a lot still in flight (the route and the service exist
 # here). The lot that lands the CLI removes its entry: a test fails while it is listed and the

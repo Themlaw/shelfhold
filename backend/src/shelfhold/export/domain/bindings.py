@@ -49,12 +49,6 @@ class LibraryNotDedicatedError(BindingError):
     code = "shelf.library_not_dedicated"
 
 
-class AdoptionNeedsRatingError(BindingError):
-    """Adopting a library files Works nobody rated: not into a shelf below 18+ (EF-BIB-055)."""
-
-    code = "shelf.adoption_needs_rating"
-
-
 class RemoteFolderSharedError(BindingError):
     """Two shelves would write the same folder of the same server."""
 

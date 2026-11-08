@@ -30,6 +30,7 @@ BODIES: dict[str, dict[str, object]] = {
     "tombstone accept-lost-keyring": {"confirmation": "x"},
     "tombstone set-aside-journal": {},
     "secrets import": {"passphrase_file": "p", "in_file": "export.age"},
+    "rate": {"age": "13+"},
 }
 
 
@@ -42,6 +43,14 @@ class _Ops:
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.rating = SimpleNamespace(rate=self._rate)
+
+    def _rate(self, age: str, **_: object) -> dict[str, object]:
+        self.calls.append("rate")
+        return {
+            "target": "work:x", "label": "age.min.13", "effective": 13, "effective_x": False,
+            "withdrawals": [],
+        }  # fmt: skip
 
     def target_recheck_is_reserved(self, _target: str) -> bool:
         return True  # the conditional exit under test

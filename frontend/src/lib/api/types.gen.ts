@@ -931,6 +931,45 @@ export type QueueOut = {
 };
 
 /**
+ * RateIn
+ */
+export type RateIn = {
+    /**
+     * Age
+     */
+    age: string;
+};
+
+/**
+ * RatedOut
+ *
+ * The Work is rated; the files a raised age no longer lets stay on a shelf below 18+ are
+ * listed in `withdrawals` and nothing was taken out (`shelf withdraw`, EF-BIB-037).
+ */
+export type RatedOut = {
+    /**
+     * Effective
+     */
+    effective: number | null;
+    /**
+     * Effective X
+     */
+    effective_x: boolean;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Target
+     */
+    target: string;
+    /**
+     * Withdrawals
+     */
+    withdrawals: Array<WithdrawalOut>;
+};
+
+/**
  * ReadyzResponse
  */
 export type ReadyzResponse = {
@@ -1385,6 +1424,24 @@ export type WithdrawIn = {
      * Shelf Id
      */
     shelf_id?: string | null;
+};
+
+/**
+ * WithdrawalOut
+ */
+export type WithdrawalOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Shelf Id
+     */
+    shelf_id: string;
 };
 
 /**
@@ -3675,6 +3732,44 @@ export type PurgeWorkResponses = {
 };
 
 export type PurgeWorkResponse = PurgeWorkResponses[keyof PurgeWorkResponses];
+
+export type RateWorkData = {
+    body: RateIn;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/api/v1/works/{work_id}/rating';
+};
+
+export type RateWorkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RateWorkError = RateWorkErrors[keyof RateWorkErrors];
+
+export type RateWorkResponses = {
+    /**
+     * Successful Response
+     */
+    200: RatedOut;
+};
+
+export type RateWorkResponse = RateWorkResponses[keyof RateWorkResponses];
 
 export type HealthzData = {
     body?: never;

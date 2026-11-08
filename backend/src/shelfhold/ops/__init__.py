@@ -11,7 +11,15 @@ from shelfhold.ops.errors import (
     StillWaitingError,
     UnknownSubjectError,
 )
-from shelfhold.ops.exits import CLI_PENDING, ENDPOINTS, M1A_STATES, UNSERVED, bare, endpoint_of
+from shelfhold.ops.exits import (
+    CLI_PENDING,
+    ENDPOINTS,
+    M1A_STATES,
+    M1B_SERVED_STATES,
+    UNSERVED,
+    bare,
+    endpoint_of,
+)
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 from shelfhold.ops.services import JobRow, OpsServices, RecheckOutcome, StatusReport, user_of
@@ -21,6 +29,7 @@ __all__ = [
     "CODES",
     "ENDPOINTS",
     "M1A_STATES",
+    "M1B_SERVED_STATES",
     "UNSERVED",
     "CodedRefusal",
     "ExitUnavailableError",

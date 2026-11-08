@@ -59,6 +59,7 @@ from shelfhold.ops.ports import (
     TargetOps,
     WaitingItem,
 )
+from shelfhold.ops.rating import RatingOps
 from shelfhold.ops.status import (
     UNKNOWN_LANGUAGE,
     collect,
@@ -154,6 +155,7 @@ class OpsServices:
         backfill: BackfillOps | None = None,
         normalize: NormalizeOps | None = None,
         meta: MetaOps | None = None,
+        rating: RatingOps | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -169,6 +171,7 @@ class OpsServices:
         self._backfill = backfill
         self._normalize = normalize
         self._meta = meta
+        self._rating = rating
 
     @property
     def _fsops(self) -> Fsops | None:
@@ -545,6 +548,13 @@ class OpsServices:
         if self._library is None:
             raise ExitUnavailableError("the library operations are not connected")
         return self._library
+
+    @property
+    def rating(self) -> RatingOps:
+        """`rate`, and the batch of "À classer" (EF-INT-014, EF-EXP-048)."""
+        if self._rating is None:
+            raise ExitUnavailableError("rating is not connected")
+        return self._rating
 
     @property
     def intents(self) -> IntentOps:

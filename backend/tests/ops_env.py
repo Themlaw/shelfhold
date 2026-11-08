@@ -18,6 +18,7 @@ from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
 from shelfhold.ops import KavitaTargetOps, OpsServices, WaitingItem
+from shelfhold.ops.rating import RatingOps
 from tests.export_env import ExportEnv
 from tests.kavita_export_env import Wired
 
@@ -109,6 +110,7 @@ def make_ops(env: ExportEnv, wired: Wired | None = None, **ports: Any) -> OpsSer
             instance=InstanceService(env.engine, env.clock, wired.events),
             auditor=auditor,
         )
+    ports.setdefault("rating", RatingOps(env.engine, env.clock))
     return OpsServices(
         env.engine, clock=env.clock, bus=EventBus(env.clock), fsops=env.lib.fsops,
         targets=targets, **ports,

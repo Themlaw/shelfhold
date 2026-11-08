@@ -1,8 +1,8 @@
 """`rate`: the only door that sets an age (EF-BIB-036), and the questions that follow from it.
 
 A reserved action (`rate`): the host CLI or an admin session holding the right to classify, never
-a key. The caller owns the transaction; the audit entry is written in it, with the rows. There is
-no command yet (L11): this is the service it will call.
+a key. The caller owns the transaction; the audit entry is written in it, with the rows.
+`shelfhold rate` and `POST /api/v1/works/{id}/rating` both call this service (L11).
 
 Rating a Work stamps `rated_at` on the Editions it contained; an Edition that arrives later keeps
 a null `rated_at` and is unrated until an admin rates (EF-BIB-055). Raising an age returns a plan
@@ -30,6 +30,7 @@ from shelfhold.identity.public import (
     audit_insert,
     authorize_reserved,
 )
+from shelfhold.infrastructure.follow_suspended import lift
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.sdk.age import AGE_TIERS, AgeRating, label_key, to_columns
 
@@ -90,6 +91,7 @@ class RatingService:
         )
         editions = connection.execute(sa.select(edition.c.id).where(edition.c.work_id == work_id))
         covered = [("work", work_id), *(("edition", r[0]) for r in editions)]
+        lift(connection, work_id)  # rating is the way out of an adopted child library (EF-EXP-048)
         settled = _settle(connection, covered, rating)
         return self._done(connection, f"work:{work_id}", work_id, rating, principal, now, settled)
 

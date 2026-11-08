@@ -83,6 +83,7 @@ from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.export.public import attach_to_volume
 from shelfhold.infrastructure.clock import Clock, FutureDateError, reject_future
 from shelfhold.infrastructure.content_trust import sanitize_upstream_text
+from shelfhold.infrastructure.follow_suspended import suspended_work_ids
 from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
 from shelfhold.jobs.ledger import Created
@@ -323,10 +324,12 @@ class FollowCycle:
         self._series_taken = {}
         self._buried = {}
         self._buried_ids = {}
+        suspended = self._suspended()
         followed = [
             binding
             for binding in self._bindings()
             if binding.active
+            and binding.work_id not in suspended  # adopted child library, unrated (EF-EXP-048)
             and binding.check_override != "paused"
             and (binding.source_key, binding.remote_id) in present
             and not self._series_tombstoned(binding, report)
@@ -523,6 +526,11 @@ class FollowCycle:
         return {k: str(getattr(row, k)) for k in EDITION_KEY_COLUMNS}
 
     # -- bindings ----------------------------------------------------------------------------
+    def _suspended(self) -> frozenset[str]:
+        """Works whose following an adoption suspended until an admin rates them."""
+        with self._engine.connect() as connection:
+            return suspended_work_ids(connection)
+
     def _bindings(self) -> list[_Binding]:
         b, si, f = acquisition.source_binding, acquisition.source_item, acquisition.series_follow
         query = (

@@ -19,6 +19,7 @@ from shelfhold.ops.events import BusTargetEvents
 from tests.fakes.kavita.server import default_libraries, member
 from tests.l50_env import Seeded, seeded
 from tests.l54_env import bench54
+from tests.library_env import cbz_bytes
 
 
 def family(env: Seeded, name: str = "Famille") -> str:
@@ -217,28 +218,40 @@ def test_unshelved_edition_not_exported_kept_native_in_store(
         assert b.env.exported_files() == []  # still nowhere
 
 
-@pytest.mark.req("EF-USR-015", "EF-BIB-055")
-def test_adoption_into_a_family_shelf_is_refused_until_the_works_are_rated(
+@pytest.mark.req("EF-EXP-048", "EF-USR-015", "EF-BIB-055")
+def test_adoption_into_a_family_shelf_suspends_the_unrated_works(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     settings: Settings,
     tmp_path: Path,
 ) -> None:
+    """L11 lifts the refusal of L10: the Work is adopted, nobody rated it, so it waits in "À
+    classer" with its following suspended and the file stays exactly where it was."""
     with bench54(monkeypatch, settings, tmp_path) as b:
         dedicated_adult_library(b.env)
         destination = family(b.env)
         ref = link(b.env, destination)
         folder = b.env.inst.library / "Famille" / "Lupin"
         folder.mkdir(parents=True)
-        (folder / "Lupin v01.cbz").write_bytes(b"PK")
+        written = cbz_bytes((("1.png", b"\x89PNG\r\n\x1a\nlupin"),))
+        (folder / "Lupin v01.cbz").write_bytes(written)
+        b.env.inst.kavita.add_series(
+            "Lupin", "/manga/Famille/Lupin", ["/manga/Famille/Lupin/Lupin v01.cbz"],
+            library_id=int(ref),
+        )  # fmt: skip
         base = ("adopt", "--destination", destination, "--library", ref)
         capsys.readouterr()
-        code = b.cli(*base, "--dry-run")
-        out = capsys.readouterr()
-        assert code != 0 and "shelf.adoption_needs_rating" in (out.out + out.err)
-        shelved = b.rows(
-            "SELECT count(*) AS n FROM edition WHERE shelf_id IN "
-            "(SELECT shelf_id FROM shelf_destination WHERE id = :d)",
-            d=destination,
-        )
-        assert shelved[0]["n"] == 0
+        assert b.cli(*base, "--dry-run") == 0
+        shown = capsys.readouterr().out
+        assert "À classer : Lupin" in shown and "suivi suspendu" in shown
+        fingerprint = shown.split("aperçu :")[1].split()[0]
+        assert b.cli(*base, "--confirm", fingerprint) == 0
+        assert (folder / "Lupin v01.cbz").read_bytes() == written  # not touched
+        (work,) = b.rows("SELECT id, rated_at, age_rating FROM work")
+        assert work["rated_at"] is None and work["age_rating"] is None
+        (edition,) = b.rows("SELECT shelf_id, rated_at FROM edition")
+        assert edition["rated_at"] is None
+        (shelf,) = b.rows("SELECT follow_suspended FROM shelf WHERE id = :s", s=edition["shelf_id"])
+        assert work["id"] in shelf["follow_suspended"]
+        status = b.status(capsys)
+        assert "follow_suspended" in status and "shelfhold rate" in status

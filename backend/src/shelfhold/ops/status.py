@@ -16,6 +16,7 @@ from sqlalchemy import Connection
 from shelfhold.acquisition.public import stale_series
 from shelfhold.catalog.public import RatingService
 from shelfhold.export.application.target_health import TargetHealth
+from shelfhold.export.application.to_rate import to_rate
 from shelfhold.export.application.withdrawal import build_plan
 from shelfhold.export.domain.kavita_compat import (
     KNOWN_BAD_LISTED_ON,
@@ -58,6 +59,8 @@ _TEMPLATES = {
     "mount_sentinel_missing": "shelfhold target recheck {extra}",
     "series_name_collision": 'shelfhold edition set-series-name {subject} "<name>"',
     "withdrawal_pending": "shelfhold shelf withdraw",
+    "rating_pending": "shelfhold rate <age> --work {subject} (all at once: --pending)",
+    "follow_suspended": "shelfhold rate <age> --work {subject} (all at once: --pending)",
     "restored_behind": "shelfhold reconcile --adopt-after-restore",
     "tombstone_key_unknown": "shelfhold secrets import --passphrase-file <file> --in <file>",
     "tombstone_lines_owed": "shelfhold tombstone flush",
@@ -108,7 +111,16 @@ def collect(connection: Connection) -> list[WaitingItem]:
     found += _languages(connection)
     found += _discovery(connection)
     found += _withdrawals(connection)
+    found += _to_rate(connection)
     return found
+
+
+def _to_rate(connection: Connection) -> list[WaitingItem]:
+    """Unrated Works that wait in "À classer": suspended with an adopted child library, or held
+    out of a shelf below 18+. `rate` is the exit of both, a reserved action (EF-EXP-048)."""
+    return [
+        _item(i.state, "catalog", i.work_id, f"{i.title}: {i.reason}") for i in to_rate(connection)
+    ]
 
 
 def _withdrawals(connection: Connection) -> list[WaitingItem]:

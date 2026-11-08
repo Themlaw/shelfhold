@@ -1,8 +1,8 @@
 """L29: adopting an existing adult Kavita library (EF-EXP-028, EF-EXP-045, EF-EXP-052, EF-EXP-055).
 
 Untouchable: adoption never rewrites, moves or deletes an existing file. It reads, it records.
-Renames stay a preview; nothing is entered before the admin confirms; a library that children can
-read is refused before M1b.
+Renames stay a preview; nothing is entered before the admin confirms. A library that children can
+read is adopted with its unrated Works suspended (EF-EXP-048, `test_child_adoption.py`).
 """
 
 import pytest
@@ -269,21 +269,6 @@ def test_adoption_report_lists_existing_same_number_duplicates() -> None:
         _adopt(a)
         assert a.state() == before  # reported and proposed, never deleted
         assert _count(env, export.export_record) == 3
-
-
-@pytest.mark.req("EF-EXP-028", "EF-EXP-055")
-def test_child_library_adoption_refused_before_m1b() -> None:
-    with export_env() as env:
-        a = adoption(env)
-        _library(a)
-        a.wired.fake.users.append(member("enfant", libraries=(LIBRARY_ID,), age_rating=6))
-        with pytest.raises(AdoptionRefused) as refused:
-            run(a.adopter.preview(a.wired.client, env.destination_id))
-        assert refused.value.accounts == ("enfant",)  # the list of accounts is given
-        with pytest.raises(AdoptionRefused):
-            _adopt(a)
-        assert a.wired.fake.writes == []  # no write in Kavita
-        assert _count(env, export.export_record) == 0  # nothing entered
 
 
 @pytest.mark.req("EF-EXP-055")

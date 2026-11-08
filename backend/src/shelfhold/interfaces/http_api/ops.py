@@ -31,6 +31,7 @@ _SET_SECRET = reserved_action(RESERVED_ACTIONS["source.set_secret"])
 _LOST_KEYRING = reserved_action(RESERVED_ACTIONS["tombstone.accept_lost_keyring"])
 _SECRETS_IMPORT = reserved_action(RESERVED_ACTIONS["secrets.import"])
 _SET_ASIDE = reserved_action(RESERVED_ACTIONS["tombstone.set_aside_journal"])
+_RATE = reserved_action(RESERVED_ACTIONS["rate"])
 Admin = Annotated[Principal, Depends(require_admin)]
 
 
@@ -122,6 +123,27 @@ class SecretsImportOut(BaseModel):
     deferred: bool = False  # restored_behind: the replay is the adoption's
 
 
+class RateIn(BaseModel):
+    age: str = Field(min_length=1, max_length=8, examples=["13+", "18+", "X"])
+
+
+class WithdrawalOut(BaseModel):
+    edition_id: str
+    shelf_id: str
+    reason: str
+
+
+class RatedOut(BaseModel):
+    """The Work is rated; the files a raised age no longer lets stay on a shelf below 18+ are
+    listed in `withdrawals` and nothing was taken out (`shelf withdraw`, EF-BIB-037)."""
+
+    target: str
+    label: str  # i18n key of the age
+    effective: int | None
+    effective_x: bool
+    withdrawals: list[WithdrawalOut]
+
+
 class SetAsideIn(BaseModel):
     root_id: str | None = None  # default: every root whose journal cannot be read
 
@@ -209,6 +231,18 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
                 conditional(request, "target.recheck_child_exposure")
             outcome = ops.target_recheck(target_id)
         return RecheckOut(cleared=list(outcome.cleared), denied=list(outcome.denied))
+
+    @router.post(_path("rate"))
+    def rate_work(
+        work_id: str, body: RateIn, principal: Annotated[Principal, Depends(_RATE)]
+    ) -> RatedOut:
+        """Fix the age of a Work: the exit of `rating_pending` and `follow_suspended`. Reserved
+        (EF-BIB-036): a fresh admin session holding the right to classify, never a key."""
+        with refusals():
+            done = get_ops().rating.rate(
+                body.age, work_id=work_id, edition_id=None, principal=principal
+            )
+        return RatedOut(**done)
 
     @router.post(_path("target", "rotate-key"))
     def target_rotate_key(

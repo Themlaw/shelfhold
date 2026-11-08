@@ -34,6 +34,7 @@ from shelfhold.ops import (
     CLI_PENDING,
     ENDPOINTS,
     M1A_STATES,
+    M1B_SERVED_STATES,
     UNSERVED,
     OpsServices,
     bare,
@@ -41,7 +42,9 @@ from shelfhold.ops import (
 )
 from tests.auth_env import run_cli
 from tests.export_env import ExportEnv, export_env
+from tests.fakes.kavita import member
 from tests.headless_env import KAVITA_KEY, KAVITA_URL, SUWAYOMI_URL, Headless, headless
+from tests.integration.test_cli_rate import held_work, with_family_shelf
 from tests.integration.test_restore_epoch import restored
 from tests.integration.test_restore_review2 import production
 from tests.kavita_export_env import wire
@@ -79,7 +82,8 @@ M1B_STATES = frozenset(
     }
 )
 M3_STATES = frozenset({s for s in WaitingState if s.value in EXIT_STATES_LATER})
-LATER_STATES = M1B_STATES | M3_STATES
+PLAYED_STATES = M1A_STATES | M1B_SERVED_STATES  # the states with an end-to-end scenario below
+LATER_STATES = (M1B_STATES - M1B_SERVED_STATES) | M3_STATES
 
 
 def _waiting(ops: OpsServices, state: str) -> list[object]:
@@ -465,6 +469,65 @@ def auth_mode_unsupported(settings: Settings) -> None:
         _listed_then_gone(ops, "auth_mode_unsupported", ops.source_recheck)
 
 
+# The two states of the M1b parental control (L11): both leave through `rate`, the only door that
+# sets an age. `follow_suspended` is produced by the real adoption of a library the children can
+# read; `rating_pending` is a Work nobody rated waiting out of a shelf below 18+ (held, as the
+# follow cycle leaves it for a sub-source that says "safe").
+
+
+def follow_suspended(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        ctx = L53Context(monkeypatch, capsys, settings)
+        b.env.inst.kavita.users.append(
+            member("enfant", libraries=(int(b.library_ref),), age_rating=6)
+        )
+        b.kavita_series("Lupin", ["Lupin - Ch.1.cbz"], info=comic("Lupin", number="1"))
+        b.kavita_series("Monster", ["Monster - Ch.1.cbz"], info=comic("Monster", number="1"))
+        assert b.adopt(capsys) == 0  # a library the children can read is adopted (EF-EXP-048)
+        items = ctx.listed("follow_suspended")
+        assert len(items) == 2 and all(i["command"].startswith("shelfhold rate ") for i in items)
+        first, second = (i["subject"] for i in items)
+        assert ctx.cli("rate", "10+", "--work", first) == 0
+        assert [i["subject"] for i in ctx.listed("follow_suspended")] == [second]  # per Work
+        ctx.listed_then_gone(
+            "follow_suspended",
+            lambda: (
+                ctx.cli("rate", "10+", "--pending", "--confirm", _token(ctx, capsys)) == 0
+                or pytest.fail("refused")
+            ),
+        )
+
+
+def _token(ctx: L53Context, capsys: pytest.CaptureFixture[str]) -> str:
+    capsys.readouterr()
+    assert ctx.cli("rate", "10+", "--pending") == 2  # the list, then what to type
+    return capsys.readouterr().out.split("--confirm ")[1].split()[0]
+
+
+def rating_pending(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        ctx = L53Context(monkeypatch, capsys, settings)
+        with_family_shelf(b)
+        work = held_work(b, "Lupin")
+        (item,) = ctx.listed("rating_pending")
+        assert item["subject"] == work
+        assert item["command"].startswith(f"shelfhold rate <age> --work {work}")
+        ctx.listed_then_gone(
+            "rating_pending",
+            lambda: ctx.cli("rate", "10+", "--work", work) == 0 or pytest.fail("refused"),
+        )
+
+
 def _bus(h: Headless):  # type: ignore[no-untyped-def]
     from shelfhold.events.bus import EventBus
 
@@ -478,7 +541,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         key_expiring, not_indexed, auth_expired, adoption_refused, permission_denied,
         child_exposure, auth_mode_unsupported, coverage_unknown, language_unknown,
         restored_behind, tombstone_key_unknown, tombstone_lines_owed, route_missing,
-        series_name_collision, mount_sentinel_missing,
+        series_name_collision, mount_sentinel_missing, rating_pending, follow_suspended,
     )
 }  # fmt: skip
 
@@ -499,9 +562,9 @@ def test_every_waiting_state_has_exit_command(
         # the exit arrives with the milestone where the state appears (EF-INT-023): until then it
         # is declared in the catalogue and has no scenario; M3 states have no route yet
         assert (state.value in EXIT_STATES_LATER) == (not routes)
-        assert state not in M1A_STATES
+        assert state not in PLAYED_STATES
         return
-    assert state in M1A_STATES and routes, f"{state} has no exit command"
+    assert state in PLAYED_STATES and routes, f"{state} has no exit command"
     assert state.value in SCENARIOS, f"{state} has no end-to-end scenario"
     served = [r for r in routes if r.command not in UNSERVED]  # declared, not written yet
     assert served, f"{state} has no served exit"
@@ -527,7 +590,9 @@ def test_every_exit_route_is_in_the_openapi(command: str) -> None:
 
 
 def test_exit_tables_agree() -> None:
-    declared = {r.command for r in EXIT_ROUTES if r.waiting_state in {s.value for s in M1A_STATES}}
+    declared = {
+        r.command for r in EXIT_ROUTES if r.waiting_state in {s.value for s in PLAYED_STATES}
+    }
     assert declared == set(ENDPOINTS) | set(UNSERVED)
     assert not set(ENDPOINTS) & set(UNSERVED)
 
@@ -577,4 +642,4 @@ def test_language_unknown_has_exit_command(tmp_path: Path) -> None:
 
 
 def test_waiting_state_scenarios_cover_the_m1a_states() -> None:
-    assert set(SCENARIOS) == {s.value for s in M1A_STATES}
+    assert set(SCENARIOS) == {s.value for s in PLAYED_STATES}
