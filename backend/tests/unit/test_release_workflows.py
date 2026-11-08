@@ -220,3 +220,112 @@ def test_codeql_covers_python_and_typescript() -> None:
     languages = {entry["language"] for entry in job["strategy"]["matrix"]["include"]}
     assert languages == {"python", "javascript-typescript"}
     assert "pull_request" in workflow[True] and "schedule" in workflow[True]
+
+
+# --- release tool downloads: cache keyed by version and sha256, verified after every restore ---
+
+TOOLS = ("hadolint", "gitleaks")
+
+
+def _lint_steps() -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = _load("ci.yml")["jobs"]["lint"]["steps"]
+    return steps
+
+
+@pytest.mark.req("ENF-QUAL-007")
+@pytest.mark.parametrize("tool", TOOLS)
+def test_tool_download_is_cached_by_version_and_sha256(tool: str) -> None:
+    steps = _lint_steps()
+    caches = [s for s in steps if str(s.get("uses", "")).startswith("actions/cache@")]
+    (cache,) = [s for s in caches if tool in str(s["with"]["key"])]
+    assert PIN.match(cache["uses"].split(" ")[0])
+    key = str(cache["with"]["key"])
+    assert f"{tool.upper()}_VERSION" in key and f"{tool.upper()}_SHA256" in key
+    # the fetch step comes after the restore and always checks the sum, hit or miss
+    fetch = [i for i, s in enumerate(steps) if "fetch-tool.sh" in str(s.get("run", "")) and tool in str(s["run"])]
+    assert fetch and steps.index(cache) < fetch[0]
+    script = (ROOT / ".github" / "scripts" / "fetch-tool.sh").read_text(encoding="utf-8")
+    assert "sha256sum --check --strict" in script
+    assert script.index("sha256sum --check --strict") > script.index("curl")  # checked after both
+
+
+@pytest.mark.req("ENF-QUAL-007")
+def test_fetch_tool_rejects_a_poisoned_cache(tmp_path: Path) -> None:
+    import hashlib
+    import subprocess
+
+    script = ROOT / ".github" / "scripts" / "fetch-tool.sh"
+    good = b"tool"
+    digest = hashlib.sha256(good).hexdigest()
+    dest = tmp_path / "tool"
+    dest.write_bytes(b"poisoned")
+    src = tmp_path / "src"
+    src.write_bytes(good)
+    ok = subprocess.run(  # noqa: S603
+        ["bash", str(script), src.as_uri(), digest, str(dest)], capture_output=True, text=True
+    )
+    assert ok.returncode == 0 and dest.read_bytes() == good  # bad cache replaced by a fresh fetch
+    dest.write_bytes(b"poisoned")
+    bad = subprocess.run(  # noqa: S603
+        ["bash", str(script), src.as_uri(), "0" * 64, str(dest)], capture_output=True, text=True
+    )
+    assert bad.returncode != 0
+
+
+# --- cleanup: the policy is run on a simulated list of versions ---
+
+
+def _simulated_versions() -> list[dict[str, Any]]:
+    def v(vid: int, tags: list[str], updated: str) -> dict[str, Any]:
+        return {"id": vid, "updated_at": updated, "metadata": {"container": {"tags": tags}}}
+
+    old, new = "2026-01-01T00:00:00Z", "2999-01-01T00:00:00Z"
+    return [
+        v(1, ["pr-12"], old),  # doomed
+        v(2, ["pr-12", "pr-13"], old),  # doomed: every tag is pr-*
+        v(3, ["pr-14"], new),  # too recent
+        v(4, [], old),  # untagged digest: index child or attestation
+        v(5, ["edge"], old),
+        v(6, ["sha-abc1234"], old),
+        v(7, ["1.2"], old),
+        v(8, ["1.2.3"], old),
+        v(9, ["latest"], old),
+        v(10, ["pr-15", "edge"], old),  # mixed: kept
+        v(11, ["build-abc-amd64"], old),
+        v(12, ["pr-16", "latest"], old),  # mixed: kept
+    ]
+
+
+@pytest.mark.req("ENF-QUAL-007")
+def test_ghcr_cleanup_selects_only_pr_only_old_versions() -> None:
+    import json
+    import shutil
+    import subprocess
+
+    jq = shutil.which("jq")
+    if jq is None:
+        pytest.skip("jq is not installed")
+    (job,) = _load("cleanup.yml")["jobs"].values()
+    run = _text(job)
+    program = re.search(r"jq -r --arg cutoff \"\$cutoff\" '(.*?)'", run, re.S)
+    assert program is not None
+    out = subprocess.run(  # noqa: S603
+        [jq, "-r", "--arg", "cutoff", "2026-06-01T00:00:00Z", program.group(1)],
+        input=json.dumps(_simulated_versions()),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    selected = sorted(int(line.split()[0]) for line in out.stdout.splitlines())
+    assert selected == [1, 2]
+
+
+@pytest.mark.req("ENF-QUAL-007")
+def test_ghcr_cleanup_is_scheduled_with_a_dry_run() -> None:
+    workflow = _load("cleanup.yml")
+    triggers = workflow[True]
+    assert "schedule" in triggers
+    assert triggers["workflow_dispatch"]["inputs"]["dry-run"]["default"] is True
+    (job,) = workflow["jobs"].values()
+    assert "DRY_RUN" in _text(job)
+    assert not (workflow.get("permissions") or {})
