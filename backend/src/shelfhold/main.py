@@ -49,6 +49,7 @@ from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
+from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.ops import OpsServices
 from shelfhold.ops.health import OpsHealth
@@ -173,6 +174,7 @@ def create_app(
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command
         build_ops_router(ops_services),  # EF-INT-023: the exits
+        build_triage_router(ops_services),  # EF-USR-015, EF-EXP-046: the two lists, the batch
         build_library_router(ops_services),  # pairing, repatriation, detach, purge, probe
     )
 

@@ -17,6 +17,8 @@ from __future__ import annotations
 import hmac
 from typing import TYPE_CHECKING, Any
 
+import sqlalchemy as sa
+
 from shelfhold.catalog.public import (
     RatingRefusedError,
     RatingResult,
@@ -25,6 +27,7 @@ from shelfhold.catalog.public import (
 )
 from shelfhold.export.application.to_rate import ToRate, batch_token, to_rate
 from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.schema import catalog
 from shelfhold.ops.errors import (
     CodedRefusal,
     InvalidChoiceError,
@@ -39,6 +42,8 @@ if TYPE_CHECKING:
     from shelfhold.infrastructure.clock import Clock
 
 __all__ = ["RatingOps"]
+
+_VIEW_LIMIT = 500
 
 
 def _item(i: ToRate) -> dict[str, str]:
@@ -107,6 +112,33 @@ class RatingOps:
         with self._engine.connect() as connection:
             items = to_rate(connection)
         return {"age": text, "items": [_item(i) for i in items], "token": batch_token(items, text)}
+
+    def listing(self, age: str | None) -> dict[str, Any]:
+        """The screen "À classer": the waiting Works, and the batch token when an age is chosen."""
+        if age is not None:
+            return self.pending(age)
+        with self._engine.connect() as connection:
+            items = to_rate(connection)
+        return {"age": None, "items": [_item(i) for i in items], "token": None}
+
+    def unshelved(self) -> list[dict[str, str]]:
+        """The view "À ranger": the Editions filed on no shelf (EF-EXP-046); never exported."""
+        edition, work = catalog.edition, catalog.work
+        query = (
+            sa.select(
+                edition.c.id, edition.c.work_id, work.c.title, edition.c.lang, edition.c.media
+            )
+            .select_from(edition.join(work, work.c.id == edition.c.work_id))
+            .where(edition.c.shelf_id.is_(None))
+            .order_by(edition.c.id)
+            .limit(_VIEW_LIMIT)
+        )
+        with self._engine.connect() as connection:
+            return [
+                {"edition_id": r.id, "work_id": r.work_id, "title": r.title, "lang": r.lang,
+                 "media": r.media}
+                for r in connection.execute(query)
+            ]  # fmt: skip
 
     def rate_batch(self, age: str, *, confirm: str, principal: Principal) -> dict[str, Any]:
         """Rate every Work that waits, for the token that was read; one audit entry per Work."""

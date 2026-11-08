@@ -73,6 +73,36 @@ export type BackfillIn = {
 };
 
 /**
+ * BatchRatedOut
+ */
+export type BatchRatedOut = {
+    /**
+     * Effective
+     */
+    effective: number | null;
+    /**
+     * Effective X
+     */
+    effective_x: boolean;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Target
+     */
+    target: string;
+    /**
+     * Withdrawals
+     */
+    withdrawals: Array<WithdrawalOut>;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * CeilingIn
  */
 export type CeilingIn = {
@@ -931,6 +961,34 @@ export type QueueOut = {
 };
 
 /**
+ * RateBatchIn
+ */
+export type RateBatchIn = {
+    /**
+     * Age
+     */
+    age: string;
+    /**
+     * Confirm
+     */
+    confirm: string;
+};
+
+/**
+ * RateBatchOut
+ */
+export type RateBatchOut = {
+    /**
+     * Age
+     */
+    age: string;
+    /**
+     * Rated
+     */
+    rated: Array<BatchRatedOut>;
+};
+
+/**
  * RateIn
  */
 export type RateIn = {
@@ -1366,6 +1424,82 @@ export type TargetIn = {
      * Username
      */
     username: string;
+};
+
+/**
+ * ToRateItem
+ */
+export type ToRateItem = {
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * ToRateOut
+ */
+export type ToRateOut = {
+    /**
+     * Age
+     */
+    age: string | null;
+    /**
+     * Items
+     */
+    items: Array<ToRateItem>;
+    /**
+     * Token
+     */
+    token: string | null;
+};
+
+/**
+ * ToShelveItem
+ */
+export type ToShelveItem = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Lang
+     */
+    lang: string;
+    /**
+     * Media
+     */
+    media: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * ToShelveOut
+ */
+export type ToShelveOut = {
+    /**
+     * Items
+     */
+    items: Array<ToShelveItem>;
 };
 
 /**
@@ -3550,6 +3684,77 @@ export type TargetRotateKeyResponses = {
 
 export type TargetRotateKeyResponse = TargetRotateKeyResponses[keyof TargetRotateKeyResponses];
 
+export type ToRateListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Age
+         */
+        age?: string | null;
+    };
+    url: '/api/v1/to-rate';
+};
+
+export type ToRateListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ToRateListError = ToRateListErrors[keyof ToRateListErrors];
+
+export type ToRateListResponses = {
+    /**
+     * Successful Response
+     */
+    200: ToRateOut;
+};
+
+export type ToRateListResponse = ToRateListResponses[keyof ToRateListResponses];
+
+export type ToShelveListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/to-shelve';
+};
+
+export type ToShelveListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ToShelveListError = ToShelveListErrors[keyof ToShelveListErrors];
+
+export type ToShelveListResponses = {
+    /**
+     * Successful Response
+     */
+    200: ToShelveOut;
+};
+
+export type ToShelveListResponse = ToShelveListResponses[keyof ToShelveListResponses];
+
 export type AcceptLostKeyringData = {
     body: KeyringIn;
     path?: never;
@@ -3690,6 +3895,39 @@ export type PurgeUnitResponses = {
 };
 
 export type PurgeUnitResponse = PurgeUnitResponses[keyof PurgeUnitResponses];
+
+export type RateBatchData = {
+    body: RateBatchIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/works/rating-batch';
+};
+
+export type RateBatchErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RateBatchError = RateBatchErrors[keyof RateBatchErrors];
+
+export type RateBatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: RateBatchOut;
+};
+
+export type RateBatchResponse = RateBatchResponses[keyof RateBatchResponses];
 
 export type PurgeWorkData = {
     body: PurgeIn;

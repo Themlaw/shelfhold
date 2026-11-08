@@ -119,6 +119,54 @@
         "title": "BackfillIn",
         "type": "object"
       },
+      "BatchRatedOut": {
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective"
+          },
+          "effective_x": {
+            "title": "Effective X",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "withdrawals": {
+            "items": {
+              "$ref": "#/components/schemas/WithdrawalOut"
+            },
+            "title": "Withdrawals",
+            "type": "array"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "label",
+          "effective",
+          "effective_x",
+          "withdrawals",
+          "work_id"
+        ],
+        "title": "BatchRatedOut",
+        "type": "object"
+      },
       "CeilingIn": {
         "properties": {
           "max_age_rating": {
@@ -1502,6 +1550,54 @@
         "title": "QueueOut",
         "type": "object"
       },
+      "RateBatchIn": {
+        "properties": {
+          "age": {
+            "examples": [
+              "13+",
+              "18+",
+              "X"
+            ],
+            "maxLength": 8,
+            "minLength": 1,
+            "title": "Age",
+            "type": "string"
+          },
+          "confirm": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "age",
+          "confirm"
+        ],
+        "title": "RateBatchIn",
+        "type": "object"
+      },
+      "RateBatchOut": {
+        "properties": {
+          "age": {
+            "title": "Age",
+            "type": "string"
+          },
+          "rated": {
+            "items": {
+              "$ref": "#/components/schemas/BatchRatedOut"
+            },
+            "title": "Rated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "age",
+          "rated"
+        ],
+        "title": "RateBatchOut",
+        "type": "object"
+      },
       "RateIn": {
         "properties": {
           "age": {
@@ -2203,6 +2299,123 @@
           "password"
         ],
         "title": "TargetIn",
+        "type": "object"
+      },
+      "ToRateItem": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_id",
+          "title",
+          "state",
+          "reason"
+        ],
+        "title": "ToRateItem",
+        "type": "object"
+      },
+      "ToRateOut": {
+        "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ToRateItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          }
+        },
+        "required": [
+          "age",
+          "items",
+          "token"
+        ],
+        "title": "ToRateOut",
+        "type": "object"
+      },
+      "ToShelveItem": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "lang": {
+            "title": "Lang",
+            "type": "string"
+          },
+          "media": {
+            "title": "Media",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "work_id",
+          "title",
+          "lang",
+          "media"
+        ],
+        "title": "ToShelveItem",
+        "type": "object"
+      },
+      "ToShelveOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ToShelveItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ToShelveOut",
         "type": "object"
       },
       "UnmaskedOut": {
@@ -5919,6 +6132,128 @@
         ]
       }
     },
+    "/api/v1/to-rate": {
+      "get": {
+        "description": "The Works that wait in \"À classer\"; with `age`, the token that rates them all.",
+        "operationId": "to_rate_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "age",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Age"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToRateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "To Rate List",
+        "tags": [
+          "triage"
+        ]
+      }
+    },
+    "/api/v1/to-shelve": {
+      "get": {
+        "description": "The Editions on no shelf: not exported, kept as received (EF-EXP-046).",
+        "operationId": "to_shelve_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToShelveOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "To Shelve List",
+        "tags": [
+          "triage"
+        ]
+      }
+    },
     "/api/v1/tombstones/accept-lost-keyring": {
       "post": {
         "operationId": "accept_lost_keyring",
@@ -6163,6 +6498,68 @@
         "summary": "Purge Unit",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/api/v1/works/rating-batch": {
+      "post": {
+        "description": "\"Classer tout en lot\": reserved (EF-BIB-036); all of them or none.",
+        "operationId": "rate_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Rate Batch",
+        "tags": [
+          "triage"
         ]
       }
     },
