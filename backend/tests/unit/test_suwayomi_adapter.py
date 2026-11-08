@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine
 
+from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.archives.safe_open import safe_open_archive
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.schema import metadata
@@ -181,6 +182,23 @@ def test_ui_login_mode_detected_and_refused_m1a(m1b: bool) -> None:
             run(attempt)
     sent = set().union(*(r.fields for r in server.requests))
     assert sent <= {"aboutServer", "settings", "user", "mangas"}  # no account data came back
+
+
+@pytest.mark.req("EF-SRC-031")
+def test_unsupported_auth_mode_pauses_with_auth_mode_unsupported() -> None:
+    """A mode no release drives is still refused, with the dedicated code and waiting state; the
+    row `suwayomi_multi_account` of the failure matrix is proved by this one (M1b: `ui_login` is
+    driven, so `source.auth_mode_unsupported` is for the modes that remain, and for an account
+    that may install extensions)."""
+    service, f, server = make(FakeSuwayomi(auth_mode="none"))
+    server._q_settings = lambda _q, _v: {"authMode": "SAML", "downloadsPath": ""}  # type: ignore[method-assign]
+    with pytest.raises(AuthModeUnsupported) as raised:
+        run(service.followed_series(f))
+    assert raised.value.code == "source.auth_mode_unsupported"
+    assert raised.value.waiting_state is WaitingState.AUTH_MODE_UNSUPPORTED
+    health = run(service.semantic_health(f))
+    assert not health.ok and health.detail == "source.auth_mode_unsupported"
+    assert set().union(*(r.fields for r in server.requests)) <= {"aboutServer", "settings"}
 
 
 @pytest.mark.req("EF-SRC-031")
