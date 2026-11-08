@@ -73,7 +73,7 @@ SUPPORTED_MODES = frozenset({"none", "basic_auth", "ui_login"})  # every other m
 _PRIVILEGED_WORDS = ("ADMIN", "SUPERUSER", "SUPER_USER", "OWNER", "ROOT", "EXTENSION")
 _ROLES_UNREADABLE = (
     "les rôles du compte de service n'ont pas pu être lus de façon sûre : "
-    "le service est mis en pause jusqu'à un compte aux droits minimaux"
+    "le service attend, en pause, jusqu'à un compte aux droits minimaux"
 )
 _UNKNOWN_FIELD = re.compile(
     r"(cannot query field|fieldundefined|is undefined|unknown field|not defined)", re.IGNORECASE
