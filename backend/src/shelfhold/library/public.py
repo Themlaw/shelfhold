@@ -39,11 +39,13 @@ from shelfhold.library.adapters.storage import (
 )
 from shelfhold.library.adapters.store_index import INDEX_NAME, IndexReport, StoreIndex
 from shelfhold.library.adapters.units import (
+    ContentErrorCandidate,
     DeletionAuthorization,
     DeletionRefusedError,
     Irreplaceability,
     PurgeAuthorization,
     PurgeRefusedError,
+    content_error_candidates,
     erase_units,
     irreplaceability,
     require_deletion_allowed,
@@ -124,6 +126,7 @@ __all__ = [
     "Batch",
     "Candidate",
     "ConfirmationRequiredError",
+    "ContentErrorCandidate",
     "ContentHash",
     "ContentTombstones",
     "Copy",
@@ -170,6 +173,7 @@ __all__ = [
     "WorkRef",
     "complete_interrupted_keep",
     "confirmation_phrase",
+    "content_error_candidates",
     "content_hash",
     "content_hashes",
     "content_ids",

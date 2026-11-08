@@ -14,12 +14,13 @@ from shelfhold.identity.public import (
     Verdict,
     authorize_reserved,
 )
-from shelfhold.infrastructure.schema import acquisition, catalog
+from shelfhold.infrastructure.schema import acquisition, catalog, storage
 from shelfhold.library.adapters.purge_inventory import erase_content_rows
 from shelfhold.library.domain.irreplaceable import (
     ConfirmationRequiredError,
     VariantState,
     confirmation_phrase,
+    is_candidate,
     is_irreplaceable,
     require_typed_confirmation,
 )
@@ -46,6 +47,60 @@ def irreplaceability(connection: Connection, unit_id: str) -> Irreplaceability:
         )
     ]
     return Irreplaceability(is_irreplaceable(states, unit), independent_copies(connection, unit_id))
+
+
+@dataclass(frozen=True)
+class ContentErrorCandidate:
+    unit_id: str
+    source_key: str  # the upstream source whose content errors made it a candidate
+    errors: int
+    last_error_code: str | None
+    independent_copies: int
+
+
+def content_error_candidates(connection: Connection) -> list[ContentErrorCandidate]:
+    """Units that hold a copy and whose live Variant sits on a binding whose own upstream source
+    failed on content `is_candidate` times in a row (EF-BIB-042 (3), EF-BIB-031). Read only: a
+    candidate is flagged, never copied, moved or deleted here."""
+    failure, binding = acquisition.source_failure, acquisition.source_binding
+    item, variant = acquisition.source_item, catalog.unit_variant
+    rows = connection.execute(
+        sa.select(
+            variant.c.unit_id,
+            failure.c.limit_key,
+            failure.c.consecutive_content_errors,
+            failure.c.last_error_code,
+        )
+        .select_from(
+            failure.join(binding, binding.c.id == failure.c.source_binding_id)
+            .join(
+                item,
+                sa.and_(
+                    item.c.id == binding.c.source_item_id, item.c.source_key == failure.c.limit_key
+                ),
+            )
+            .join(variant, variant.c.source_binding_id == binding.c.id)
+        )
+        .where(
+            failure.c.failure_class == "content",
+            failure.c.consecutive_content_errors > 0,
+            variant.c.removed_at.is_(None),
+            sa.exists().where(storage.content.c.variant_id == variant.c.id),
+        )
+        .distinct()
+        .order_by(variant.c.unit_id)
+    ).all()
+    return [
+        ContentErrorCandidate(
+            r.unit_id,
+            r.limit_key,
+            r.consecutive_content_errors,
+            r.last_error_code,
+            independent_copies(connection, r.unit_id),
+        )
+        for r in rows
+        if is_candidate(r.consecutive_content_errors)
+    ]
 
 
 class DeletionRefusedError(PermissionError):

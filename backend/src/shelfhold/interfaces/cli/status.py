@@ -181,6 +181,7 @@ def _waiting(resolved: ResolvedSettings) -> dict[str, object]:
         return {
             "waiting": [], "queues": [], "stale_series": [], "tombstoned_upstream": [],
             "capabilities": [], "known_bad": {}, "service_urls": [], "unverifiable_dirs": [],
+            "content_error_candidates": [],
         }  # fmt: skip
     engine = create_db_engine(database)
     try:
@@ -218,6 +219,8 @@ def report_lines(ops: dict[str, object]) -> list[str]:
     lines: list[str] = []
     for s in ops.get("stale_series", []):  # type: ignore[attr-defined]
         lines.append(t("status.stale_series_line", **s))
+    for s in ops.get("content_error_candidates", []):  # type: ignore[attr-defined]
+        lines.append(t("status.irreplaceable_candidate_line", **s))
     for s in ops.get("tombstoned_upstream", []):  # type: ignore[attr-defined]
         lines.append(t("status.tombstoned_upstream_line", **s))
     for c in ops.get("capabilities", []):  # type: ignore[attr-defined]

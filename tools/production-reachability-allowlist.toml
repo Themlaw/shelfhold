@@ -46,9 +46,9 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l15"
-reason = "Deletion of the copies of a Unit needs the irreplaceable candidates and their typed confirmation (EF-BIB-031, EF-BIB-042): M1a has no path that deletes the copies of a Unit (the deletions that exist go through the purge gate and the typed replay confirmation, proved on their real routes)."
-until = "M1b L15"
+category = "unwired-m1b-l16"
+reason = "Deletion of the copies of a Unit needs the typed confirmation (EF-BIB-031): there is still no path that deletes the copies of a Unit (the deletions that exist go through the purge gate and the typed replay confirmation, proved on their real routes). The irreplaceable candidates now exist (L15, listed by `status`); the first deletion that reads them is the upstream purge of L16."
+until = "M1b L16"
 symbols = [
   "shelfhold.library.adapters.units:DeletionRefusedError",
   "shelfhold.library.adapters.units:require_deletion_allowed",

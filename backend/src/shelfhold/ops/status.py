@@ -27,9 +27,11 @@ from shelfhold.export.domain.kavita_compat import (
 )
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
+from shelfhold.library.public import content_error_candidates
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 
 __all__ = [
+    "candidate_report",
     "collect",
     "command_for",
     "known_bad_report",
@@ -304,6 +306,21 @@ def stale_report(connection: Connection, now: datetime) -> list[dict[str, object
             "threshold_days": s.threshold.days,
         }
         for s in stale_series(connection, now)
+    ]
+
+
+def candidate_report(connection: Connection) -> list[dict[str, object]]:
+    """Units that became irreplaceable candidates after repeated content errors of their upstream
+    source (EF-BIB-042 (3)). A list to read: nothing is copied or removed because of it."""
+    return [
+        {
+            "unit_id": c.unit_id,
+            "source_key": c.source_key,
+            "errors": c.errors,
+            "last_error": c.last_error_code or "",
+            "independent_copies": c.independent_copies,
+        }
+        for c in content_error_candidates(connection)
     ]
 
 

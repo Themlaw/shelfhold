@@ -13,7 +13,7 @@ import pytest
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.library.domain.irreplaceable import CANDIDATE_AFTER, is_candidate
-from shelfhold.library.public import irreplaceable_candidates
+from shelfhold.library.public import content_error_candidates
 from shelfhold.sdk.fetcher import Response
 from shelfhold.sdk.source import ContentRemoved, TemporarilyUnavailable
 from tests.fakes.suwayomi import FakeSuwayomi
@@ -42,7 +42,7 @@ def _gone(bench: Bench, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _candidates(bench: Bench) -> list[Any]:
     with bench.lib.engine.connect() as connection:
-        return irreplaceable_candidates(connection)
+        return content_error_candidates(connection)
 
 
 def _lose_chapter(bench: Bench, number: int) -> None:
@@ -169,7 +169,7 @@ def test_candidates_are_listed_by_status(monkeypatch: pytest.MonkeyPatch) -> Non
 
             report = candidate_report(connection)
         assert [r["unit_id"] for r in report] == [c.unit_id for c in _candidates(bench)]
-        lines = report_lines({"irreplaceable_candidates": report})
+        lines = report_lines({"content_error_candidates": report})
         assert len(lines) == 1 and report[0]["unit_id"] in lines[0]
 
 
