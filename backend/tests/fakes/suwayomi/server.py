@@ -354,7 +354,7 @@ class FakeSuwayomi:
         if bad or not found:
             return self._violation(f"GraphQL fields not allow-listed: {sorted(bad) or 'none'}")
         if found & {"login", "refreshToken"}:
-            return self._token_mutation(query, found)
+            return self._token_mutation(query)
         if not authenticated and found != {"aboutServer"}:
             return self._json({"data": None, "errors": [{"message": "Unauthorized"}]})
         if "user" in found and not self.expose_roles:  # a schema without that field (S5)
@@ -375,11 +375,11 @@ class FakeSuwayomi:
         self._pairs.append((access, refresh))
         return access, refresh
 
-    def _token_mutation(self, query: str, found: frozenset[str]) -> Response:
+    def _token_mutation(self, query: str) -> Response:
         """`login` and `refreshToken`, accepted only in the S5 forms and only in `ui_login`."""
-        if self.auth_mode != "ui_login" or len(found & {"login", "refreshToken"}) != 1:
-            return self._violation("token mutation outside ui_login or mixed with others")
         login, refresh = _LOGIN.match(query), _REFRESH.match(query)
+        if self.auth_mode != "ui_login" or not (login or refresh):
+            return self._violation("login/refreshToken outside ui_login or not in the S5 forms")
         if login:
             self.logins += 1
             user, password = json.loads(login["u"]), json.loads(login["p"])
@@ -404,7 +404,7 @@ class FakeSuwayomi:
             else:
                 self._refresh.pop(new_refresh)
             return self._json({"data": {"refreshToken": payload}})
-        return self._violation("login/refreshToken not in the S5 forms")
+        raise AssertionError("unreachable")
 
     @staticmethod
     def _wanted_id(query: str, variables: dict[str, Any], key: str) -> int | None:

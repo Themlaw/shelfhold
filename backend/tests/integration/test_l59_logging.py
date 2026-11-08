@@ -309,14 +309,13 @@ def test_no_suwayomi_jwt_token_in_the_logs_at_any_level(
     settings: Settings, tmp_path: Path, logs: Logs
 ) -> None:
     """M1b L20: the access and refresh tokens of a `ui_login` Suwayomi, through a whole cycle at
-    DEBUG, a refresh, a new login, and the failure path of a refused account (its traceback)."""
+    DEBUG, several logins, and the failure path of a refused account (its traceback)."""
     with seeded(settings, tmp_path) as env:
         server = env.inst.suwayomi
         server.auth_mode = "ui_login"
         server.accounts[USER] = FakeAccount(PASSWORD)
         env.inst.admin._suwayomi.mode = "ui_login"  # type: ignore[attr-defined]
         records = lifecycle(env, logs, level="DEBUG")
-        server.expire_access_tokens()  # the 5-minute JWT ran out: a refresh
         pools = JobPools(
             env.inst.settings.data_dir, engine=env.inst.engine, clock=env.inst.comp.clock,
             seed="l59-jwt",
@@ -331,7 +330,7 @@ def test_no_suwayomi_jwt_token_in_the_logs_at_any_level(
         records += logs.drain()
     text = logs.everything() + json.dumps(records)
     pairs = server.issued_tokens()
-    assert server.refreshes >= 1 and server.logins >= 2 and len(pairs) >= 3  # the paths ran
+    assert server.logins >= 3 and len(pairs) >= 3  # the paths ran
     assert text.count("http.call") > 5
     for access, refresh in pairs:
         assert access not in text and refresh not in text

@@ -68,7 +68,9 @@ from shelfhold.sdk.source import (
 
 KEY = "suwayomi"
 CBZ_MIME = "application/vnd.comicbook+zip"
-SUPPORTED_MODES = frozenset({"none", "basic_auth"})  # every other mode is refused (EF-SRC-031)
+SUPPORTED_MODES = frozenset({"none", "basic_auth", "ui_login"})  # every other mode is refused
+# D1: a role that lets an account install extensions. The service account never has one.
+_INSTALL_ROLES = frozenset({"ADMIN", "ADMINISTRATOR"})
 MARK = "Shelfhold"  # the category that holds a series out of updates (= EXCLUSION_MARK)
 UPDATE_STRATEGIES = frozenset({"ALWAYS_UPDATE", "ONLY_FETCH_ONCE"})
 PROBE_VALID_SECONDS = 600.0  # a follow needs a fingerprint read this lately (one cycle)
@@ -141,6 +143,7 @@ class SuwayomiService:
             | ConnectedCapability.INSTANCE_FINGERPRINT
         )
         self._mode_verified = False
+        self._mode = ""  # the authentication mode last read from the server
         self._handles: dict[str, int] = {}  # ticket token -> last known local chapter id
         self._mangas: tuple[float, list[dict[str, Any]]] | None = None
         self._probed_at: float | None = None  # monotonic time of the last fingerprint read
@@ -231,9 +234,11 @@ class SuwayomiService:
         settings = (data.get("settings") if isinstance(data, dict) else None) or {}
         reported = settings.get("authMode")
         if isinstance(reported, str) and reported:
-            return reported.lower()
+            self._mode = reported.lower()
+            return self._mode
         if self._unauthorized(payload):
-            return "ui_login"
+            self._mode = "ui_login"
+            return self._mode
         raise SourceChanged("the server did not report its authentication mode")
 
     async def download_dir(self, f: Fetcher) -> str | None:
@@ -247,9 +252,36 @@ class SuwayomiService:
     async def _ensure_supported_mode(self, f: Fetcher) -> None:
         if self._mode_verified:
             return
-        if await self.auth_mode(f) not in SUPPORTED_MODES:
+        mode = await self.auth_mode(f)
+        if mode not in SUPPORTED_MODES:
             raise AuthModeUnsupported()
+        if mode == "ui_login":
+            await self.ensure_least_privilege(f)
         self._mode_verified = True
+
+    async def ensure_least_privilege(self, f: Fetcher) -> None:
+        """D1: the account Shelfhold logs in with must not be able to install extensions. Suwayomi
+        v2.4.2366 exposes no role (S5), so then there is nothing to check and the account is
+        accepted; the documentation asks for a dedicated account as soon as Suwayomi allows one. A
+        server that does expose the roles has an account that may install refused here."""
+        roles = await self.account_roles(f)
+        if roles and any(_installs_extensions(role) for role in roles):
+            raise AuthModeUnsupported(
+                "le compte de service peut installer des extensions Suwayomi : "
+                "utilisez un compte aux droits minimaux"
+            )
+
+    async def account_roles(self, f: Fetcher) -> list[str] | None:
+        """The roles of the logged-in account, or None when the server does not expose them."""
+        payload = await self._post(f, q.ACCOUNT_ROLES)
+        if self._unauthorized(payload):
+            raise self._refused(f)
+        data = payload.get("data")
+        user = data.get("user") if isinstance(data, dict) else None
+        roles = user.get("roles") if isinstance(user, dict) else None
+        if not isinstance(roles, list):
+            return None  # a schema without the field (a GraphQL validation error): not exposed
+        return [str(role) for role in roles]
 
     # -- HEALTH_PROBE ------------------------------------------------------------------------
     async def semantic_health(self, f: Fetcher) -> ServiceHealth:
@@ -700,12 +732,35 @@ class SuwayomiService:
     async def release(self, f: Fetcher, t: Ticket) -> ReleaseResult:
         """Erase the downloaded chapter of this ticket on the Suwayomi side (EF-BIB-038): an
         erasure upstream, irreversible. The only caller is the purge of L16, after its guards (a
-        kept copy that still counts). A chapter that is not downloaded, or gone, erases nothing."""
+        kept copy that still counts). A chapter that is not downloaded, or gone, erases nothing.
+
+        In `ui_login` the downloads are shared between accounts, each holding a reference: the
+        erasure only withdraws the claim of the service account and the file stays while another
+        account keeps it. What it freed is then measured, size before and presence after, never
+        supposed (EF-SRC-031); the library of another account is not looked at."""
         found = await self._ticket_node(f, t)
         if found is None or not found[1].get("isDownloaded"):
             return ReleaseResult(released=False)
+        shared = self._mode == "ui_login"
+        size = await self._archive_size(f, found[0]) if shared else None
         await self._query(f, q.DELETE_DOWNLOADED_CHAPTER, {"id": found[0]})
-        return ReleaseResult(released=True)
+        if not shared:
+            return ReleaseResult(released=True)
+        after = await self._ticket_node(f, t)
+        present = after is not None and bool(after[1].get("isDownloaded"))
+        return ReleaseResult(
+            released=True, freed_bytes=0 if present else (size or 0), still_present=present
+        )
+
+    async def _archive_size(self, f: Fetcher, chapter_id: int) -> int:
+        """The size of the file as the server serves it, before it is erased."""
+        url = self.base_url + q.DOWNLOAD_PATH.format(id=chapter_id)
+        return (await f.download(ImageRequest(url=url))).size
+
+
+def _installs_extensions(role: str) -> bool:
+    name = role.strip().upper()
+    return name in _INSTALL_ROLES or "EXTENSION" in name
 
 
 def _chapter_url(unit: UnitInfo) -> str:

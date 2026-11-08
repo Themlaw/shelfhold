@@ -12,8 +12,10 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
+from shelfhold.plugin_host.adapters.meta.suwayomi.jwt import suwayomi_jwt_fetcher
 from shelfhold.plugin_host.adapters.meta.suwayomi.service import SuwayomiService
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
+from shelfhold.plugin_host.errors import AuthExpired, AuthModeUnsupported
 from shelfhold.sdk.models import AuthBasic
 from shelfhold.sdk.source import AuthRequired
 
@@ -43,8 +45,29 @@ class HttpSuwayomiProbe:
                 origin=url,
             )
         try:
-            return await SuwayomiService(url).auth_mode(fetcher)
-        except AuthRequired:
-            return "basic_auth"  # a 401 without (or despite) credentials: Basic is what it asks
+            try:
+                mode = await SuwayomiService(url).auth_mode(fetcher)
+            except AuthRequired:
+                return "basic_auth"  # a 401 without (or despite) credentials: Basic is what it asks
+            if mode == "ui_login" and username and password:
+                await self._check_service_account(inner, url, username, password)
+            return mode
         finally:
             await inner.aclose()
+
+    @staticmethod
+    async def _check_service_account(
+        inner: GuardedFetcher, url: str, username: str, password: str
+    ) -> None:
+        """`ui_login` (EF-SRC-031): the account logs in, and, when the server shows the roles, is
+        not one that may install extensions (D1). `PermissionError`: the server refuses the
+        account. `ValueError`: the account is too powerful (the message says why)."""
+        jwt = suwayomi_jwt_fetcher(
+            cast("Any", inner), {"username": username, "password": password}, origin=url
+        )
+        try:
+            await SuwayomiService(url).ensure_least_privilege(cast("Any", jwt))
+        except AuthExpired:
+            raise PermissionError("the server refuses this account") from None
+        except AuthModeUnsupported as too_powerful:
+            raise ValueError(str(too_powerful)) from None

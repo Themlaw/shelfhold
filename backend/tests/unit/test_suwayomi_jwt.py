@@ -13,7 +13,8 @@ import pytest
 from shelfhold.infrastructure.logging import _scrub_text
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
 from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
-from shelfhold.plugin_host.authflow import SuwayomiJwtFetcher
+from shelfhold.plugin_host.adapters.meta.suwayomi.jwt import suwayomi_jwt_fetcher
+from shelfhold.plugin_host.authflow import JwtFetcher
 from shelfhold.plugin_host.errors import AuthExpired, AuthModeUnsupported
 from shelfhold.sdk.refs import SeriesRef, UnitRef
 from tests.fakes.suwayomi import (
@@ -53,8 +54,8 @@ def ui_login_server(**kw: object) -> FakeSuwayomi:
 
 def jwt_fetcher(
     server: FakeSuwayomi, clock: Clock | None = None, *, password: str = PASSWORD
-) -> SuwayomiJwtFetcher:
-    return SuwayomiJwtFetcher(
+) -> JwtFetcher:
+    return suwayomi_jwt_fetcher(
         FakeSuwayomiFetcher(server),  # type: ignore[arg-type]
         {"username": USER, "password": password},
         origin=BASE_URL,
@@ -62,7 +63,7 @@ def jwt_fetcher(
     )
 
 
-def library_titles(service: SuwayomiService, f: SuwayomiJwtFetcher) -> list[str]:
+def library_titles(service: SuwayomiService, f: JwtFetcher) -> list[str]:
     return sorted(r.title for r in run(service.followed_series(f)))  # type: ignore[arg-type]
 
 
@@ -92,8 +93,8 @@ def test_suwayomi_jwt_login_refresh_rotation() -> None:
     assert (server.logins, server.refreshes) == (1, 4)
 
     server.expire_all_tokens()  # the refresh token is dead too: a new login with the account
-    library_titles(service, f)
-    assert (server.logins, server.refreshes) == (2, 4)
+    library_titles(service, f)  # the dead refresh token was tried (and refused), then the login
+    assert (server.logins, server.refreshes) == (2, 5)
     assert server.violations == []
 
 
@@ -169,6 +170,7 @@ def test_service_account_never_gets_install_extensions() -> None:
     server = ui_login_server(expose_roles=True)
     f, service = jwt_fetcher(server), SuwayomiService(BASE_URL)
     run(service.followed_series(f))  # type: ignore[arg-type]
+    run(service.instance_fingerprint(f))  # type: ignore[arg-type]
     run(service.set_follow(f, GAMMA, True))  # type: ignore[arg-type]
     sent = set().union(*(r.fields for r in server.requests))
     assert not sent & FORBIDDEN_FIELDS and server.violations == []
@@ -198,6 +200,7 @@ def test_other_accounts_library_never_read() -> None:
     f, service = jwt_fetcher(server), SuwayomiService(BASE_URL)
     # only the service account's library is the truth: Gamma (mom's alone) is not followed
     assert library_titles(service, f) == ["Series Alpha", "Series Beta"]
+    run(service.instance_fingerprint(f))  # type: ignore[arg-type]
     run(service.set_follow(f, GAMMA, True))  # type: ignore[arg-type]
     assert library_titles(service, f) == ["Series Alpha", "Series Beta", "Series Gamma"]
     run(service.set_follow(f, GAMMA, False))  # type: ignore[arg-type]
@@ -208,7 +211,7 @@ def test_other_accounts_library_never_read() -> None:
 
 
 # -- purge in ui_login --------------------------------------------------------------------------
-def ready_ticket(service: SuwayomiService, f: SuwayomiJwtFetcher, server: FakeSuwayomi):
+def ready_ticket(service: SuwayomiService, f: JwtFetcher, server: FakeSuwayomi):
     _, units = run(service.followed_series(f)), run(service.list_units(f, ALPHA))  # type: ignore[arg-type]
     ticket = run(service.request(f, UnitRef(series=ALPHA, unit=units[0])))  # type: ignore[arg-type]
     while run(service.poll(f, ticket)) != "ready":  # type: ignore[arg-type]

@@ -15,6 +15,8 @@ from typing import Any
 
 import pytest
 
+from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
+
 from .harness import LOCAL_SOURCE_ID, PASSWORD, PINNED_VERSION, SYNTHETIC, USER, Bench
 
 pytestmark = pytest.mark.contract
@@ -266,6 +268,24 @@ def test_ui_login_token_flow(bench: Bench) -> None:
     )
     assert refreshed["refreshToken"]["accessToken"]
     assert bench.request("GET", "/api/v1/settings/about").status == 200  # Bearer on REST
+
+
+@pytest.mark.req("EF-SRC-031")
+def test_adapter_token_documents_work_on_the_pinned_server(bench: Bench) -> None:
+    """The very documents the adapter sends (`queries.login`, `queries.refresh_token`) are the
+    forms of S5. The roles query (D1) is only recorded: v2.4.2366 is expected not to expose it."""
+    if bench.mode != "ui_login":
+        pytest.skip("JWT flow exists only in ui_login")
+    granted = bench.graphql(q.login(USER, bench.password), authenticated=False).json()
+    pair = granted["data"]["login"]
+    assert pair["accessToken"] and pair["refreshToken"]
+    refreshed = bench.graphql(q.refresh_token(pair["refreshToken"]), authenticated=False).json()
+    assert refreshed["data"]["refreshToken"]["accessToken"]
+    bench.token = refreshed["data"]["refreshToken"]["accessToken"]
+    roles = bench.graphql(q.ACCOUNT_ROLES)
+    assert (
+        roles.status == 200
+    )  # an error (field unknown) or a list: both are handled by the adapter
 
 
 @pytest.mark.req("EF-SRC-008")

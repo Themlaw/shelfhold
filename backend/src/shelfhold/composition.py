@@ -349,7 +349,10 @@ class Composition:
 
     def suwayomi(self) -> SuwayomiLink | None:
         """The configured Suwayomi (service, authenticated fetcher), or None when there is none."""
-        from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
+        from shelfhold.plugin_host.adapters.meta.suwayomi import (
+            SuwayomiService,
+            suwayomi_jwt_fetcher,
+        )
 
         with self.engine.connect() as connection:
             settings = connection.execute(
@@ -358,6 +361,7 @@ class Composition:
                 )
             ).scalar_one_or_none()
             url = (settings or {}).get("base_url")
+            mode = (settings or {}).get("auth_mode")
             if not url:
                 return None
             secret = self._suwayomi_secret(connection)
@@ -365,7 +369,9 @@ class Composition:
             return None  # no request leaves for it; `status` says why
         guarded = self.network.integration_fetcher(url)
         fetcher: Any = guarded
-        if secret is not None:
+        if secret is not None and mode == "ui_login":  # EF-SRC-031: a JWT pair, not Basic
+            fetcher = suwayomi_jwt_fetcher(cast("Any", guarded), secret, origin=url)
+        elif secret is not None:
             fetcher = AuthInjectingFetcher(cast("Any", guarded), AuthBasic(), secret, origin=url)
         return SuwayomiLink(SuwayomiService(url), fetcher, guarded, url)
 

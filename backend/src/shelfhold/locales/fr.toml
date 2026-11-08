@@ -998,7 +998,7 @@ coverage_set = "Tome {volume} : chapitres {first} à {last} couverts ({added} aj
 [headless]
 refused = "Refusé ({code}) : {detail}"
 admin_risk_warning = "ATTENTION : la clé Kavita est celle d'un compte administrateur ; elle donne tout pouvoir sur Kavita (comptes, bibliothèques, fichiers lus). Relancez avec --accept-admin-risk pour confirmer."
-auth_mode_unsupported = "Suwayomi utilise le mode d'authentification « {mode} » : mode multi-comptes indisponible dans cette version (M1a). Passez Suwayomi en « basic_auth » ou sans authentification, puis relancez la commande."
+auth_mode_unsupported = "Suwayomi utilise le mode d'authentification « {mode} » : mode non pris en charge dans cette version. Passez Suwayomi en « basic_auth », en « ui_login » (compte de service) ou sans authentification, puis relancez la commande."
 piloted_inactive = "Réglage enregistré mais inactif avant M1b : la vérification pilotée par Shelfhold n'existe pas encore, Suwayomi doit rester toujours actif (planificateur de Suwayomi) et le suivi se comporte comme en mode always_on."
 secret_unreadable = "Impossible de lire le secret : {detail}."
 secret_file_world_readable = "Le fichier {path} est lisible par tous : restreignez-le (chmod 600)."

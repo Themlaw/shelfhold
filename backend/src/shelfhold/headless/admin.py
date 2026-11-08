@@ -88,7 +88,7 @@ __all__ = ["ConfigValue", "HeadlessAdmin", "Plan", "PlanChange"]
 KEY_NAME = "shelfhold"
 KEY_DAYS = 90  # the Kavita key expires; `target.key_expiring` warns at 14 and 1 days
 ADMIN_RISK_ACTION = "target.admin_risk_accepted"  # ENF-SEC-013
-SUPPORTED_AUTH_MODES = frozenset({"none", "basic_auth"})
+SUPPORTED_AUTH_MODES = frozenset({"none", "basic_auth", "ui_login"})
 X_CEILING = 99
 Action = Literal["create", "update", "unchanged"]
 _log = structlog.get_logger()
@@ -664,11 +664,15 @@ class HeadlessAdmin:
             mode = self._suwayomi.auth_mode(url=clean_url, username=username, password=password)
         except ConnectionError:
             raise SourceUnreachable("Suwayomi cannot be reached at this address") from None
+        except PermissionError:  # `ui_login`: the server refuses the account (nothing is stored)
+            raise InvalidConfigValue("Suwayomi refuses this user:password account") from None
+        except ValueError as too_powerful:  # `ui_login`: an account that may install extensions
+            raise SourceAuthModeUnsupported(str(too_powerful)) from None
         if mode not in SUPPORTED_AUTH_MODES:
             raise SourceAuthModeUnsupported(t("headless.auth_mode_unsupported", mode=mode))
-        if mode == "basic_auth" and not (username and password):
+        if mode in ("basic_auth", "ui_login") and not (username and password):
             raise InvalidConfigValue("this server needs a user:password secret")
-        keep = mode == "basic_auth"
+        keep = mode in ("basic_auth", "ui_login")
         settings = {"base_url": clean_url, "auth_mode": mode}
         with self._engine.begin() as connection:
             created = records.source_row(connection) is None
@@ -876,7 +880,7 @@ class HeadlessAdmin:
         self, connection: Connection, row: Any, source: DesiredSource, read: SecretReader
     ) -> bool:
         """Does the secret file say something else than what is sealed? Only the fact is kept."""
-        if row.settings.get("auth_mode") != "basic_auth":
+        if row.settings.get("auth_mode") not in ("basic_auth", "ui_login"):
             return False  # nothing is stored, and a server without login ignores a secret
         wanted = _secret(read, source.secret_file, "secret")
         if wanted is None:

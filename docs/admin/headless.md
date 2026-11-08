@@ -31,9 +31,13 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
   [installation-headless.md](installation-headless.md) (conteneur en lecture seule, entrée standard `-`).
 - La clé est créée par `/api/Account/create-auth-key` ; si Shelfhold ne peut pas l'enregistrer, l'erreur donne son nom et son identifiant : révoquez-la dans Kavita.
 - L'adresse d'une destination : `http://` seulement sur le réseau local (adresse privée, nom sans point, `.local`, `.lan`, `.internal`), sinon `https://` ; une IP publique est refusée.
-- `source add suwayomi` lit le mode d'authentification du serveur (`none` ou `basic_auth`) ; tout
-  autre mode (`ui_login`) est refusé avec un message dédié (« mode multi-comptes indisponible dans
-  cette version », code `source.auth_mode_unsupported`) : passez Suwayomi en `basic_auth`. Le secret est `utilisateur:mot_de_passe`, une ligne.
+- `source add suwayomi` lit le mode d'authentification du serveur (`none`, `basic_auth` ou
+  `ui_login`) ; tout autre mode est refusé (`source.auth_mode_unsupported`). Le secret est
+  `utilisateur:mot_de_passe`, une ligne. En `ui_login` (Suwayomi multi-comptes), c'est celui du
+  **compte de service** de Shelfhold : créez-lui un compte dédié aux droits minimaux dès que votre
+  Suwayomi le permet (jamais l'installation d'extensions ; un compte que le serveur dit pouvoir en
+  installer est refusé). Shelfhold ne lit que la bibliothèque de ce compte, jamais celle des autres :
+  la famille demande ses séries par Shelfhold. Les jetons de connexion ne sont gardés qu'en mémoire.
 - `shelf create` : seules les étagères **18+** ou **X** existent en M1a. Si Shelfhold ne peut pas écrire dans le dossier de l'étagère, la commande s'arrête (rien n'est créé) et donne la cause (`EACCES`, propriétaire, mode, uid d'exécution), la commande `setfacl` à lancer sur l'hôte et le bloc `compose` exact (`user:` ou `group_add:`) à coller (EF-UX-002).
 - Les commandes sont idempotentes : les relancer ne change rien.
 

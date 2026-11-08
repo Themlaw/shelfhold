@@ -20,7 +20,8 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.schema import metadata
 from shelfhold.jobs.slots import DomainSlots
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
-from shelfhold.plugin_host.authflow import AuthInjectingFetcher, SuwayomiJwtFetcher
+from shelfhold.plugin_host.adapters.meta.suwayomi.jwt import suwayomi_jwt_fetcher
+from shelfhold.plugin_host.authflow import AuthInjectingFetcher
 from shelfhold.plugin_host.errors import (
     AuthExpired,
     AuthModeUnsupported,
@@ -167,7 +168,7 @@ def test_ui_login_mode_detected_and_refused_m1a(m1b: bool) -> None:
     secret = {"username": USER, "password": PASSWORD}
     f: Any
     if m1b:
-        f = SuwayomiJwtFetcher(FakeSuwayomiFetcher(server), secret, origin=BASE_URL)
+        f = suwayomi_jwt_fetcher(FakeSuwayomiFetcher(server), secret, origin=BASE_URL)
     else:
         f = AuthInjectingFetcher(FakeSuwayomiFetcher(server), AuthBasic(), secret, origin=BASE_URL)
     assert run(service.auth_mode(f)) == "ui_login"

@@ -52,6 +52,10 @@ class ServiceHealth(SdkModel):
 
 class ReleaseResult(SdkModel):
     released: bool
+    # Measured after the release, never assumed (EF-SRC-031): the bytes the service really freed
+    # and whether the file is still there (another account may keep it). None: not measured.
+    freed_bytes: int | None = None
+    still_present: bool | None = None
 
 
 class ConnectedService(Source, Protocol):
