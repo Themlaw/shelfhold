@@ -91,6 +91,8 @@ LOGGED_SETTINGS: dict[str, str] = {
     "plugin_repos": "plugin_repos", "active_sources": "active_sources",
     "source_url": "source_url", "received_cbz_max_bytes": "received_cbz_max_bytes",
     "naming_segment_policy_confirmed": "naming_segment_policy_confirmed",
+    "wake_url": "wake_url", "wake_suwayomi": "wake_suwayomi", "wake_kavita": "wake_dest",
+    "wake_timeout_s": "wake_timeout_s", "wake_session_s": "wake_duration_s",
     "cli_allow_host": "cli_allow_host", "allow_network_data_dir": "allow_network_data_dir",
     "disk_pause_percent": "disk_pause_percent", "disk_pause_gib": "disk_pause_gib",
     "disk_resume_percent": "disk_resume_percent", "disk_resume_gib": "disk_resume_gib",
@@ -99,7 +101,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "secret_key_file": "trousseau_path",  # where the keyring is: a path, not the keyring
     "forward_auth_trusted_cidrs": "proxy_trusted_cidrs",  # networks, not credentials
 }  # fmt: skip
-SECRET_SETTINGS = frozenset({"api_token"})  # never logged, whatever its value
+SECRET_SETTINGS = frozenset({"api_token", "wake_token"})  # never logged, whatever its value
 
 
 def log_effective_config(settings: Settings) -> None:
