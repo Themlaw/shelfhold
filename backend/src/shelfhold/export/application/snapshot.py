@@ -23,7 +23,11 @@ from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.intents import within_any
 from shelfhold.export.application.rendering import comicinfo_sha256
-from shelfhold.export.application.target_state import load_health
+from shelfhold.export.application.target_state import (
+    DestinationPausedError,
+    ensure_active,
+    load_health,
+)
 from shelfhold.export.domain.bindings import PARTITIONED, effective_partitioning, is_family
 from shelfhold.export.domain.kavita_compat import TargetMode, blocks_family_shelf
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate
@@ -194,6 +198,12 @@ def barrier_holds(connection: Connection, destination_id: str, edition_id: str) 
     has nothing to ask. A plan that waited, a record put back to `planned`, a rating that moved:
     none of them gets a file into the library of the children."""
     ctx = load_context(connection, destination_id)
+    try:
+        # a pause set since the run began (a ceiling changed, an audit, a reinstalled server) is
+        # read here, under the lock, whatever the ceiling has become
+        ensure_active(connection, destination_id)
+    except DestinationPausedError:
+        return False
     if not is_family(ctx.max_age_rating):
         return True
     if ctx.partitioning not in PARTITIONED or ctx.access_control_known_bad:

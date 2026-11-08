@@ -285,3 +285,35 @@ def test_cli_shelf_withdraw_shows_the_plan_and_asks_for_its_version(
         capsys.readouterr()
         assert b.cli("shelf", "withdraw") == 0
         assert "Aucune Édition à retirer" in capsys.readouterr().out
+
+
+@pytest.mark.req("EF-EXP-055", "EF-USR-015")
+def test_pause_set_while_the_export_renders_stops_the_write() -> None:
+    """The ceiling is raised (which pauses the linked shelf) and the Work rated 16 while the export
+    renders: the pause is read again under the lock, in the reserving transaction."""
+    from shelfhold.export.application.target_state import CHILD_EXPOSURE, pause_shelf
+
+    with family_env(13) as env:
+        series = env.new_series()
+        env.add_chapter(series, "1")
+        rate(env, series, 10)
+        real = env.pipeline._renderer.render
+        fired: list[int] = []
+
+        def render(path, xml):
+            if not fired:
+                fired.append(1)
+                with env.engine.begin() as connection:
+                    connection.execute(
+                        sa.update(export.shelf)
+                        .where(export.shelf.c.id == env.shelf_id)
+                        .values(max_age_rating=99)
+                    )
+                    pause_shelf(connection, env.shelf_id, CHILD_EXPOSURE)
+                rate(env, series, 16)
+            return real(path, xml)
+
+        env.pipeline._renderer.render = render
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        assert fired and env.files() == []
+        assert env.rows(export.export_record) == []
