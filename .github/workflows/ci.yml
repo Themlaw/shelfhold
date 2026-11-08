@@ -113,6 +113,11 @@ jobs:
         working-directory: backend
         run: uv run --locked lint-imports --config importlinter.ini
       - name: typos
+        id: typos-first
+        continue-on-error: true  # the action downloads its binary from a release: one more try below
+        uses: crate-ci/typos@7f9d0819ca1c008ade73f4b41fa9d258d48f605b # v1.51.1
+      - name: typos (second try; a real finding fails it again)
+        if: steps.typos-first.outcome == 'failure'
         uses: crate-ci/typos@7f9d0819ca1c008ade73f4b41fa9d258d48f605b # v1.51.1
       - name: actionlint
         working-directory: backend
@@ -127,13 +132,13 @@ jobs:
         run: uv run --locked zizmor --format=plain ../.github/workflows
       - name: hadolint
         run: |
-          curl -sSfL -o hadolint "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+          curl -sSfL --retry 6 --retry-all-errors --retry-delay 20 -o hadolint "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
           echo "${HADOLINT_SHA256}  hadolint" | sha256sum --check --strict
           chmod +x hadolint
           ./hadolint docker/Dockerfile
       - name: gitleaks
         run: |
-          curl -sSfL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL --retry 6 --retry-all-errors --retry-delay 20 -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum --check --strict
           tar -xzf gitleaks.tgz gitleaks
           ./gitleaks git --redact --no-banner --verbose --log-opts="HEAD" .
@@ -539,7 +544,16 @@ jobs:
           name: image-amd64
           path: ${{ runner.temp }}/image
       - name: Grype
-        id: grype
+        id: grype-first
+        continue-on-error: true  # its installer fetches a release asset: one more try below
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: oci-archive:${{ runner.temp }}/image/image-amd64.tar
+          fail-build: false
+          output-format: sarif
+      - name: Grype (second try, after a failed download)
+        id: grype-retry
+        if: steps.grype-first.outcome == 'failure'
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           image: oci-archive:${{ runner.temp }}/image/image-amd64.tar
@@ -549,7 +563,7 @@ jobs:
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
-          sarif_file: ${{ steps.grype.outputs.sarif }}
+          sarif_file: ${{ steps.grype-retry.outputs.sarif || steps.grype-first.outputs.sarif }}
           category: grype
 
   traceability:
