@@ -17,6 +17,7 @@ Paths under an open intent are invisible to reconciliation and planning (I9, `sk
 
 import contextlib
 from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -152,10 +153,12 @@ class IntentJournal:
         expected_sha256: str | None = None,
         expected_file_id: FileIdentity | None = None,
         plan_id: str | None = None,
+        within: Connection | None = None,
     ) -> str:
-        """Step 1: the intent, `pending`, committed before anything touches the disk."""
+        """Step 1: the intent, `pending`, committed before anything touches the disk. `within`:
+        the transaction of the rows it goes with (a withdrawal), so that both exist or neither."""
         intent_id = new_ulid()
-        with self._engine.begin() as conn:
+        with nullcontext(within) if within is not None else self._engine.begin() as conn:
             epoch = conn.execute(sa.select(platform.instance.c.restore_epoch)).scalar_one()
             conn.execute(
                 sa.insert(coherence.fs_intent).values(

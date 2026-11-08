@@ -6,20 +6,23 @@ library the children can read. The plan lists those Editions and the files they 
 until an admin applies it, by a fresh session or the host CLI (`shelf.withdraw`, never a key), with
 the version of the plan they read (`plan.stale`, 412, when anything moved since).
 
-Applying is, per Edition and in this order, the safe one:
+Applying takes the `work` lock of every Edition concerned, the one an export holds from its last
+look at the barrier to its write: a withdrawal and an export of the same Work never interleave,
+so no file can land after the plan was read. Then, per Edition and in this order:
 
-1. an intent (`recycle`) per file, committed with the hash of the file it is for;
-2. one transaction: the records become `recycled`, the Edition is unshelved ("À classer"), the audit
-   entry is written;
-3. the file moves into the bin of its root (`.shelfhold/recycle`, never deleted, restorable) and
-   Kavita is asked to scan the folder the file left, which is how it forgets the series.
+1. one transaction: an intent (`recycle`) per file with the hash of the file it is for, the records
+   `recycled`, the Edition unshelved ("À classer"), the audit entry: all of it or nothing;
+2. the file moves into the bin of its root (`.shelfhold/recycle`, never deleted, restorable); a
+   move that fails is replayed at once, then left to the next start;
+3. Kavita is asked to scan the folder the file left, which is how it forgets the series.
 
-A crash after 2 leaves the intent: the next start finishes the move of that file and no other.
+A crash after 1 leaves the intent: the next start finishes the move of that file and no other.
 """
 
 import hashlib
 import json
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
@@ -29,6 +32,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import RatingService
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.locks import LockBusyError, ResourceLocks, work_resource
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.domain.bindings import is_family
@@ -42,9 +46,11 @@ from shelfhold.identity.public import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 
 __all__ = [
+    "WithdrawalBusyError",
     "WithdrawalItem",
     "WithdrawalPlan",
     "WithdrawalRefusedError",
@@ -57,6 +63,12 @@ __all__ = [
 log = structlog.get_logger(__name__)
 
 LIVE_STATES = ("written", "scanned", "resolved", "adopted")  # a file may be in the shelf
+
+
+class WithdrawalBusyError(Exception):
+    """A job is exporting one of these Works: try again in a moment (nothing was changed)."""
+
+    code = "lock.busy"
 
 
 class WithdrawalRefusedError(Exception):
@@ -94,16 +106,39 @@ class WithdrawalReport:
 def build_plan(
     connection: Connection, rating: RatingService, shelf_id: str | None = None
 ) -> WithdrawalPlan:
-    """Every Edition filed on a shelf below 18+ that the admission refuses now, with its files."""
+    """Every Edition whose files are in the library of a shelf below 18+ and must not be: the ones
+    the admission refuses now, and the ones filed nowhere else (unshelved, or on another shelf)
+    that still hold live records there, so that no file is left behind."""
     ceilings = dict(
         connection.execute(sa.select(export.shelf.c.id, export.shelf.c.max_age_rating)).all()
     )
-    items = [
-        WithdrawalItem(
-            w.edition_id, w.shelf_id, w.reason.value, _files(connection, w.edition_id, w.shelf_id)
-        )
+    found: dict[tuple[str, str], str] = {
+        (w.edition_id, w.shelf_id): w.reason.value
         for w in rating.withdrawals(connection, shelf_id=shelf_id)
         if is_family(ceilings[w.shelf_id])  # an adult shelf keeps what it holds
+    }
+    record, item = export.export_record, export.export_item
+    destination, edition = export.shelf_destination, catalog.edition
+    stray = connection.execute(
+        sa.select(item.c.edition_id, destination.c.shelf_id)
+        .select_from(
+            record.join(item, item.c.id == record.c.export_item_id)
+            .join(destination, destination.c.id == record.c.shelf_destination_id)
+            .join(edition, edition.c.id == item.c.edition_id)
+        )
+        .where(
+            record.c.state.in_(LIVE_STATES),
+            record.c.rel_path.is_not(None),
+            edition.c.shelf_id.is_distinct_from(destination.c.shelf_id),
+        )
+        .distinct()
+    )
+    for r in stray:
+        if is_family(ceilings[r.shelf_id]) and shelf_id in (None, r.shelf_id):
+            found.setdefault((r.edition_id, r.shelf_id), "unshelved")
+    items = [
+        WithdrawalItem(edition_id, shelf, reason, _files(connection, edition_id, shelf))
+        for (edition_id, shelf), reason in sorted(found.items())
     ]
     material = json.dumps([asdict(i) for i in items], sort_keys=True, separators=(",", ":"))
     return WithdrawalPlan(tuple(items), hashlib.sha256(material.encode()).digest()[:16].hex())
@@ -141,6 +176,7 @@ class WithdrawalService:
         rating: RatingService | None = None,
         fresh_auth_s: int = 900,
         restricted_profile_exists: Callable[[], bool] = lambda: False,
+        lock_wait: float = 5.0,
     ) -> None:
         self._engine = engine
         self._fsops = fsops
@@ -149,6 +185,8 @@ class WithdrawalService:
         self._rating = rating or RatingService()
         self._fresh_auth_s = fresh_auth_s
         self._restricted = restricted_profile_exists
+        self._locks = ResourceLocks(engine, clock=clock)
+        self._lock_wait = lock_wait
 
     # -- the plan: reads only -----------------------------------------------------------------
 
@@ -176,54 +214,100 @@ class WithdrawalService:
         )  # fmt: skip
         if not isinstance(verdict, Allowed):
             raise WithdrawalRefusedError(type(verdict).__name__)
-        current = self.plan(shelf_id)
-        if current.version != if_match:
+        first = self.plan(shelf_id)
+        if first.version != if_match:
             raise StalePlanError("the ratings moved since the plan was read: read it again")
+        works = self._works_of(first)
+        try:
+            with (
+                self._locks.hold_resources(
+                    new_ulid(), [work_resource(w) for w in works], timeout=self._lock_wait
+                )
+                if works
+                else nullcontext()
+            ):
+                # read again under the locks: an export that was writing has finished or waits
+                current = self.plan(shelf_id)
+                if current.version != if_match:
+                    raise StalePlanError("a file arrived while the locks were taken: read again")
+                return self._apply_locked(current, principal, now)
+        except LockBusyError as busy:
+            raise WithdrawalBusyError(str(busy)) from None
+
+    def _works_of(self, plan: WithdrawalPlan) -> list[str]:
+        if not plan.items:
+            return []
+        with self._engine.connect() as connection:
+            return sorted(
+                set(
+                    connection.execute(
+                        sa.select(catalog.edition.c.work_id).where(
+                            catalog.edition.c.id.in_([i.edition_id for i in plan.items])
+                        )
+                    ).scalars()
+                )
+            )
+
+    def _apply_locked(
+        self, plan: WithdrawalPlan, principal: Principal, now: datetime
+    ) -> WithdrawalReport:
         journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
         withdrawn: list[str] = []
         moved = 0
         pending: list[str] = []
-        for item in current.items:
-            intents = self._intents(journal, item)
-            self._commit(item, intents, principal, now)
+        for item in plan.items:
+            intents = self._commit(journal, item, principal, now)
             withdrawn.append(item.edition_id)
             for local, intent_id in intents:
-                try:
-                    journal.mark_applying(intent_id)
-                    self._fsops.recycle(local)
-                    journal.mark_done(intent_id)
+                if self._move(journal, local, intent_id):
                     moved += 1
-                except Exception:  # the intent stays open: the next start finishes this file
-                    log.warning("withdrawal.move_pending", intent_id=intent_id)
+                else:
                     pending.append(local)
             self._scan_folders(item)
         return WithdrawalReport(tuple(withdrawn), moved, tuple(pending))
 
-    def _intents(self, journal: IntentJournal, item: WithdrawalItem) -> list[tuple[str, str]]:
-        found = []
-        for file in item.files:
-            with self._engine.connect() as connection:
-                local = load_context(connection, file.destination_id).local(file.rel_path)
-            observed = self._fsops.observe(local)
-            if observed is None or observed[0] != "file":
-                continue  # not there any more: only the rows are left to settle
-            intent = journal.record(
-                op="recycle", src=local, expected_sha256=self._fsops.sha256_of(local),
-                expected_file_id=observed[1],
-            )  # fmt: skip
-            found.append((local, intent))
-        return found
+    def _move(self, journal: IntentJournal, local: str, intent_id: str) -> bool:
+        """The file leaves; a failure is replayed at once through the intent (the same resolver as
+        at start), and if it still fails the intent stays open for the next start."""
+        try:
+            journal.mark_applying(intent_id)
+            self._fsops.recycle(local)
+            journal.mark_done(intent_id)
+            return True
+        except Exception:
+            log.warning("withdrawal.move_failed", intent_id=intent_id)
+        try:
+            report = journal.resolve_one(intent_id)
+        except Exception:
+            log.warning("withdrawal.move_pending", intent_id=intent_id)
+            return False
+        return report is None or intent_id in {*report.completed, *report.replayed}
 
     def _commit(
         self,
+        journal: IntentJournal,
         item: WithdrawalItem,
-        intents: list[tuple[str, str]],
         principal: Principal,
         now: datetime,
-    ) -> None:
+    ) -> list[tuple[str, str]]:
+        """Intents, records, Edition and audit in one transaction."""
         record = export.export_record
+        intents: list[tuple[str, str]] = []
         with self._engine.begin() as connection:
             for file in item.files:
+                local = load_context(connection, file.destination_id).local(file.rel_path)
+                observed = self._fsops.observe(local)
+                if observed is not None and observed[0] == "file":
+                    intents.append(
+                        (
+                            local,
+                            journal.record(
+                                op="recycle", src=local, within=connection,
+                                expected_sha256=self._fsops.sha256_of(local),
+                                expected_file_id=observed[1],
+                            ),
+                        )
+                    )  # fmt: skip
                 connection.execute(
                     sa.update(record)
                     .where(
@@ -234,7 +318,10 @@ class WithdrawalService:
                 )
             connection.execute(
                 sa.update(catalog.edition)
-                .where(catalog.edition.c.id == item.edition_id)
+                .where(
+                    catalog.edition.c.id == item.edition_id,
+                    catalog.edition.c.shelf_id == item.shelf_id,
+                )
                 .values(shelf_id=None)
             )
             connection.execute(
@@ -246,6 +333,7 @@ class WithdrawalService:
                     )
                 )
             )  # fmt: skip
+        return intents
 
     def _scan_folders(self, item: WithdrawalItem) -> None:
         """Kavita forgets a series by scanning the folder its files left (one scan per folder)."""

@@ -74,6 +74,7 @@ from shelfhold.export.application.repatriate_kavita import (
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.withdrawal import (
+    WithdrawalBusyError,
     WithdrawalPlan,
     WithdrawalRefusedError,
     WithdrawalService,
@@ -86,7 +87,7 @@ from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.schema import export, identity
 from shelfhold.library.public import ConfirmationRequiredError
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
 from shelfhold.sdk.refs import SeriesRef
@@ -831,6 +832,7 @@ class LibraryOps:
             service = WithdrawalService(
                 self._comp.engine, w.fsops, clock=self._comp.clock, request_scan=asked.append,
                 fresh_auth_s=self._comp.settings.fresh_auth_s,
+                restricted_profile_exists=self._restricted_profile_exists,
             )  # fmt: skip
             try:
                 report = service.apply(
@@ -839,12 +841,24 @@ class LibraryOps:
                 )  # fmt: skip
             except WithdrawalRefusedError as error:
                 raise CodedRefusal("forbidden", str(error)) from None
+            except WithdrawalBusyError as error:
+                raise CodedRefusal("job.busy", str(error)) from None
         self._scan_everywhere(asked)
         return {
             "withdrawn": list(report.withdrawn),
             "files": report.files,
             "pending": list(report.pending),
         }
+
+    def _restricted_profile_exists(self) -> bool:
+        """P3: a parental change asks a fresh password once a child profile exists."""
+        with self._comp.engine.connect() as connection:
+            return (
+                connection.execute(
+                    sa.select(identity.user.c.id).where(identity.user.c.role == "child")
+                ).first()
+                is not None
+            )
 
     def _scan_everywhere(self, remote_paths: list[str]) -> None:
         """Kavita forgets a series by scanning the folder: every Kavita target is asked (a scan of

@@ -39,6 +39,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("shelf.adoption_needs_rating", 409, "admin"),
     ErrorCode("target.remote_folder_shared", 409, "admin"),
     ErrorCode("export.series_other_shelf", 409, "admin"),
+    ErrorCode("job.busy", 409, "user"),
     ErrorCode("export.age_tier_mix", 409, "admin"),
     # L30: pairing with the Suwayomi follow, switchover (EF-EXP-038, EF-EXP-044, EF-EXP-054)
     ErrorCode("pairing.switchover_unconfirmed", 409, "admin"),

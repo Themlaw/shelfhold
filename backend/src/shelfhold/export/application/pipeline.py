@@ -228,6 +228,10 @@ def wanted_names(
     return sorted(set(asked)), kind
 
 
+class FamilyBarrierClosedError(Exception):
+    """The shelf below 18+ does not take this Edition (any more): nothing is written."""
+
+
 class ExportPipeline:
     def __init__(
         self,
@@ -548,9 +552,6 @@ class ExportPipeline:
     ) -> str | None:
         folder = planned.rel_path.split("/", 1)[0] if planned.rel_path else ""
         with self._engine.connect() as connection:
-            if not barrier_holds(connection, ctx.destination_id, planned.series.edition_id):
-                log.warning("export.family_barrier", edition_id=planned.series.edition_id)
-                return None  # the shelf below 18+ no longer takes it: nothing is written
             if planned.series.export_series_id in paused_series(connection, ctx.destination_id):
                 log.debug("export.series_paused", export_series_id=planned.series.export_series_id)
                 return None  # paused since the plan was stored: nothing is written into it
@@ -563,11 +564,16 @@ class ExportPipeline:
             job_id, work=planned.work_id, series=f"{ctx.destination_id}/{folder}",
             library=library, timeout=LOCK_WAIT_SECONDS,
         ) as held:  # fmt: skip
-            if planned.kind == "register":
-                self._register(ctx, planned)
-                return None
             try:
+                if planned.kind == "register":
+                    self._register(ctx, planned)
+                    return None
                 self._write(ctx, planned, plan_id, held.ensure)
+            except FamilyBarrierClosedError:
+                # read again under the `work` lock, in the very transaction that reserves the line
+                # (a withdrawal takes the same lock): the shelf below 18+ no longer takes it
+                log.warning("export.family_barrier", edition_id=planned.series.edition_id)
+                return None
             except DestinationPermissionError:
                 if self._preflight is None:
                     raise
@@ -634,6 +640,7 @@ class ExportPipeline:
         there, the intent is closed; anything else is a drift and nothing is touched."""
         target = ctx.local(str(planned.rel_path))
         with self._engine.begin() as connection:  # reservation: a clash stops here, nothing placed
+            self._require_barrier(connection, ctx, planned)
             item_id = self._item(connection, ctx, planned, source)
             self._record(connection, ctx, planned, item_id, self._reserved(planned, rendered))
         journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
@@ -674,6 +681,13 @@ class ExportPipeline:
             raise
 
     @staticmethod
+    def _require_barrier(
+        connection: sa.Connection, ctx: DestinationContext, planned: PlannedOp
+    ) -> None:
+        if not barrier_holds(connection, ctx.destination_id, planned.series.edition_id):
+            raise FamilyBarrierClosedError(planned.series.edition_id)
+
+    @staticmethod
     def _reserved(planned: PlannedOp, rendered: RenderedCbz) -> dict[str, Any]:
         return {
             "locator_type": "path", "rel_path": planned.rel_path, "format": "cbz",
@@ -687,6 +701,7 @@ class ExportPipeline:
         source = self._source(planned.unit_id)
         now = self._clock.now()
         with self._engine.begin() as connection:
+            self._require_barrier(connection, ctx, planned)
             item_id = self._item(connection, ctx, planned, source)
             values = {
                 "locator_type": "none", "content_hash": source.content_hash,
