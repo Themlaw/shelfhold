@@ -351,6 +351,7 @@ def _body(command: str) -> dict[str, Any]:
         "reconcile --adopt-after-restore [confirm-deletion]": {"confirm_deletion": True},
         "reconcile --adopt-after-restore": {"confirm_deletion": False},
         "target recheck [child_exposure]": {},
+        "rate": {"age": "13+"},
     }.get(command, {})
 
 
@@ -371,7 +372,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
         keyring, restore = FakeKeyring(), FakeRestore()
         ops = make_ops(env, w, keyring=keyring, restore=restore, headless=_Headless())
         put_health(env, child_exposure=True)
-        ids = {"target_id": env.target_id}
+        ids = {"target_id": env.target_id, "work_id": env.new_series().work_id}
         reserved = [r for r in EXIT_ROUTES if r.reserved is not None]
         served = [r for r in reserved if r.command in endpoint_table()]
         assert {r.command for r in served} >= {
@@ -539,6 +540,7 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("intents.resolve")  # L51: reserved; the drift it settles is no waiting state
     declared.add("normalize.migrate")  # L55: reserved; no waiting state either
     declared.add("shelf.withdraw")  # M1b L10: applying the removal plan of a family shelf
+    declared.add("rate")  # M1b L11: the exit of rating_pending and follow_suspended
     on_socket = {action for _impl, action in OPS_METHODS.values() if action}
     assert on_socket == declared
     for action in on_socket:  # and every name is a real action of the registry
