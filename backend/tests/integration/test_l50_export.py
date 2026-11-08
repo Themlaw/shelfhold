@@ -6,6 +6,7 @@ import asyncio
 import json
 import threading
 import time
+import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -360,3 +361,50 @@ def test_late_volume_and_corrected_title_rename_nothing_under_the_production_wir
             ops = set(connection.execute(sa.text("SELECT op FROM fs_intent")).scalars())
         assert "rename" not in ops
         assert json.dumps(sorted(files)) == json.dumps(sorted(p.name for p in env.exported_files()))
+
+
+# -- EF-EXP-046: the cover of a series whose first page is AVIF -----------------------------------
+
+
+def avif_page(colour: tuple[int, int, int] = (200, 10, 10)) -> bytes:
+    import io
+
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.new("RGB", (64, 48), colour).save(out, "AVIF")
+    return out.getvalue()
+
+
+@pytest.mark.req("EF-EXP-046")
+def test_avif_first_page_cover_set_as_jpeg_or_webp(settings: Settings, tmp_path) -> None:
+    with seeded(settings, tmp_path) as env:
+        series = env.new_series()
+        avif = avif_page()
+        env.add_chapter(series, "1", page=("001.avif", avif))
+        env.export()
+        series_id = index_in_kavita(env)
+        settle(env)
+        cover = env.inst.kavita.covers[series_id]
+        assert cover[:4] == b"RIFF" and cover[8:12] == b"WEBP"  # WebP, decoded in the sandbox
+        assert env.inst.kavita.violations == []
+        (exported,) = env.exported_files()
+        with zipfile.ZipFile(exported) as archive:  # the pages are inchanged, still AVIF
+            assert archive.read("001.avif") == avif
+
+
+@pytest.mark.req("EF-EXP-046")
+def test_undecodable_avif_cover_is_refused_by_the_worker_and_not_posted(
+    settings: Settings, tmp_path
+) -> None:
+    with seeded(settings, tmp_path) as env:
+        series = env.new_series()
+        broken = b"\x00\x00\x00\x20ftypavif\x00\x00\x00\x00avifmif1miaf" + b"\xff" * 64
+        env.add_chapter(series, "1", page=("001.avif", broken))
+        env.export()
+        series_id = index_in_kavita(env)
+        settle(env)
+        assert series_id not in env.inst.kavita.covers  # nothing undecodable reaches Kavita
+        puts = len(env.inst.kavita.requests_to("/Upload/series"))
+        settle(env)
+        assert len(env.inst.kavita.requests_to("/Upload/series")) == puts == 0  # not retried

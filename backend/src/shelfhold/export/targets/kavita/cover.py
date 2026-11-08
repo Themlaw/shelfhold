@@ -16,6 +16,7 @@ do not open it again until another chapter becomes the cover.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import PurePath
@@ -37,6 +38,8 @@ from shelfhold.infrastructure.archives import UnsafeArchiveError, safe_open_arch
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import check_cbz_entries
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.imaging import ImageKind, ImageRejected, make_thumbnail
+from shelfhold.infrastructure.imaging.errors import WORKER_FAILED
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import export_sources
 
@@ -45,6 +48,7 @@ __all__ = ["COVER_FIELD", "CoverTask", "SeriesCovers"]
 log = structlog.get_logger(__name__)
 COVER_FIELD = "cover"
 _WRITTEN = ("written", "scanned", "resolved")
+_COVER_EDGE = 1600  # longest side of a cover converted from AVIF or JXL
 _UNREADABLE = "unreadable"  # kept in the registry for a chapter whose page cannot be read
 
 
@@ -175,6 +179,11 @@ class SeriesCovers:
                 log.info("export.cover_unreadable", unit_id=task.unit_id,
                          reason=type(error).__name__)  # fmt: skip
                 image = None
+            if image is not None and needs_conversion(image):
+                try:
+                    image = await _convert(image, task.unit_id)
+                except ImageRejected:  # the worker itself failed, not the page: ask again later
+                    continue
             if image is None:
                 self._record(destination_id, task, {**_value(task), _UNREADABLE: True})
                 continue
@@ -205,6 +214,32 @@ class SeriesCovers:
         ):
             pages = check_cbz_entries(archive).images
             return bytes(archive.read(pages[0])) if pages else None
+
+
+def needs_conversion(image: bytes) -> bool:
+    """AVIF or JXL: formats Kavita does not take as a cover (EF-EXP-046); read from the magic
+    bytes, never decoded here."""
+    avif = image[4:8] == b"ftyp" and any(b in image[8:32] for b in (b"avif", b"avis"))
+    jxl = image.startswith((b"\xff\x0a", b"\x00\x00\x00\x0cJXL \r\n\x87\n"))
+    return avif or jxl
+
+
+async def _convert(image: bytes, unit_id: str) -> bytes | None:
+    """WebP of an AVIF or JXL page, decoded by the sandboxed worker of `infrastructure.imaging`
+    (no network, RLIMIT on memory and CPU, caps on bytes and pixels of a `cover`): the page is an
+    untrusted image. A page the worker refuses gives no cover and is remembered as unreadable; a
+    worker that fails by itself raises, and the next run asks again. The
+    pages in the file are never transcoded (EF-EXP-046)."""
+    try:
+        thumbnail = await asyncio.to_thread(
+            make_thumbnail, image, ImageKind.COVER, max_edge=_COVER_EDGE, fmt="webp"
+        )
+    except ImageRejected as error:
+        if error.code == WORKER_FAILED:
+            raise
+        log.info("export.cover_unreadable", unit_id=unit_id, reason=error.code)
+        return None
+    return thumbnail.data
 
 
 def _value(task: CoverTask) -> dict[str, Any]:
