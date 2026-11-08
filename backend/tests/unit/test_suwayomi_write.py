@@ -3,6 +3,7 @@ instance fingerprint. Against the simulated server only; it referees every write
 
 import asyncio
 import re
+import time
 from collections.abc import Awaitable
 
 import pytest
@@ -11,6 +12,7 @@ from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
 from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
 from shelfhold.sdk.connected import ConnectedCapability
 from shelfhold.sdk.refs import SeriesRef, UnitRef
+from shelfhold.sdk.source import TemporarilyUnavailable
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
 
 GAMMA = SeriesRef(source_key="suwayomi:7003", remote_id="/series-gamma", title="Series Gamma")
@@ -29,6 +31,14 @@ def make() -> tuple[SuwayomiService, FakeSuwayomiFetcher, FakeSuwayomi]:
     return SuwayomiService(BASE_URL), FakeSuwayomiFetcher(server), server
 
 
+def follow(
+    service: SuwayomiService, f: FakeSuwayomiFetcher, ref: SeriesRef, on: bool = True, **kw: bool
+) -> None:
+    """As the cycle does: the fingerprint is read first, then the series is followed."""
+    run(service.instance_fingerprint(f))
+    run(service.set_follow(f, ref, on, **kw))
+
+
 def sent(server: FakeSuwayomi, field: str) -> int:
     return sum(1 for r in server.requests if field in r.fields)
 
@@ -41,9 +51,11 @@ def manga(server: FakeSuwayomi, url: str) -> dict[str, object]:
 def test_follow_creates_single_entry_in_shelfhold_category_no_autodownload() -> None:
     service, f, server = make()
     assert not manga(server, "/series-gamma")["inLibrary"]
-    run(service.set_follow(f, GAMMA, True))
+    follow(service, f, GAMMA)
     (category,) = server.categories
-    assert category["name"] == "Shelfhold" and category["includeInUpdate"] == "EXCLUDE"
+    assert category["name"] == "Shelfhold"
+    assert category["includeInDownload"] == "EXCLUDE"  # no automatic download (EF-SRC-009)
+    assert category["includeInUpdate"] == "UNSET"  # Suwayomi still refreshes the followed series
     assert manga(server, "/series-gamma")["inLibrary"] is True
     assert server.categories_of("/series-gamma") == [category["id"]]
     assert sent(server, "enqueueChapterDownload") == 0  # nothing is downloaded by following
@@ -55,7 +67,7 @@ def test_follow_creates_single_entry_in_shelfhold_category_no_autodownload() -> 
 def test_follow_existing_series_links_without_duplicate() -> None:
     service, f, server = make()
     before = len(server.state["mangas"])
-    run(service.set_follow(f, ALPHA, True))  # already in the library of Suwayomi
+    follow(service, f, ALPHA)  # already in the library of Suwayomi
     assert len(server.state["mangas"]) == before
     assert sent(server, "updateManga") == 0 and sent(server, "createCategory") == 0
     assert server.categories_of("/series-alpha") == []  # the user's own organisation is kept
@@ -66,11 +78,11 @@ def test_follow_existing_series_links_without_duplicate() -> None:
 @pytest.mark.req("EF-SRC-029")
 def test_unfollow_keeps_suwayomi_series_unless_explicit() -> None:
     service, f, server = make()
-    run(service.set_follow(f, GAMMA, True))
-    run(service.set_follow(f, GAMMA, False))
+    follow(service, f, GAMMA)
+    follow(service, f, GAMMA, False)
     assert manga(server, "/series-gamma")["inLibrary"] is True  # still in Suwayomi
     assert server.categories_of("/series-gamma") == []  # but no longer held by Shelfhold
-    run(service.set_follow(f, GAMMA, False, remove_upstream=True))
+    follow(service, f, GAMMA, False, remove_upstream=True)
     assert manga(server, "/series-gamma")["inLibrary"] is False  # only on explicit request
     assert server.violations == []
 
@@ -79,12 +91,12 @@ def test_unfollow_keeps_suwayomi_series_unless_explicit() -> None:
 def test_follow_unfollow_idempotent() -> None:
     service, f, server = make()
     for _ in range(3):
-        run(service.set_follow(f, GAMMA, True))
+        follow(service, f, GAMMA)
     assert len(server.categories) == 1  # the category is never duplicated
     assert server.categories_of("/series-gamma") == [server.categories[0]["id"]]
     for _ in range(3):
-        run(service.set_follow(f, GAMMA, False))
-    run(service.set_follow(f, GAMMA, True))
+        follow(service, f, GAMMA, False)
+    follow(service, f, GAMMA)
     assert len(server.categories) == 1 and sent(server, "createCategory") == 1
     assert server.violations == []
 
@@ -92,9 +104,71 @@ def test_follow_unfollow_idempotent() -> None:
 @pytest.mark.req("EF-SRC-029")
 def test_an_existing_shelfhold_category_is_reused_not_recreated() -> None:
     service, f, server = make()
-    ident = server.add_category("Shelfhold", include_in_update="EXCLUDE")
-    run(service.set_follow(f, GAMMA, True))
+    ident = server.add_category("Shelfhold", include_in_download="EXCLUDE")
+    follow(service, f, GAMMA)
     assert sent(server, "createCategory") == 0 and server.categories_of("/series-gamma") == [ident]
+
+
+@pytest.mark.req("EF-SRC-029")
+def test_include_in_update_is_never_written() -> None:
+    """Excluding the category from the updates would stop the refresh of every followed series:
+    the simulated server refuses it on `createCategory` and on `updateCategory`."""
+    service, f, server = make()
+    follow(service, f, GAMMA)
+    assert server.violations == []  # the adapter itself never sends it
+    run(
+        f.post(
+            f"{BASE_URL}/api/graphql",
+            json={
+                "query": (
+                    'mutation { createCategory(input: {name: "x", includeInUpdate: EXCLUDE}) '
+                    "{ category { id } } }"
+                )
+            },
+        )
+    )
+    run(
+        f.post(
+            f"{BASE_URL}/api/graphql",
+            json={
+                "query": (
+                    "mutation { updateCategory(input: {id: 1, patch: {includeInUpdate: EXCLUDE}}) "
+                    "{ category { id } } }"
+                )
+            },
+        )
+    )
+    assert len(server.violations) == 2
+    writes = [r.body.decode() for r in server.requests[:-2] if b"mutation" in r.body]
+    assert writes and not any("includeInUpdate" in w for w in writes)  # reads may name it
+
+
+@pytest.mark.req("EF-SRC-029")
+def test_an_existing_shelfhold_category_not_excluded_from_download_is_set_once() -> None:
+    service, f, server = make()
+    server.add_category("Shelfhold")  # made by hand: nothing excludes it from the download
+    follow(service, f, GAMMA)
+    follow(service, f, GAMMA, False)
+    follow(service, f, GAMMA, False, remove_upstream=True)
+    follow(service, f, GAMMA)
+    assert sent(server, "createCategory") == 0 and sent(server, "updateCategory") == 1
+    assert server.categories[0]["includeInDownload"] == "EXCLUDE"
+    assert server.categories[0]["includeInUpdate"] == "UNSET" and server.violations == []
+
+
+@pytest.mark.req("EF-SRC-036")
+def test_no_follow_recreates_the_category_before_the_fingerprint_was_probed() -> None:
+    service, f, server = make()
+    with pytest.raises(TemporarilyUnavailable):
+        run(service.set_follow(f, GAMMA, True))  # no probe yet
+    assert server.categories == [] and sent(server, "createCategory") == 0
+    follow(service, f, GAMMA)  # probed, then followed
+    assert len(server.categories) == 1
+    server.reinstall(wipe=True)  # a new installation, a long time after the last probe
+    service._probed_at = time.monotonic() - 10_000  # type: ignore[attr-defined]
+    with pytest.raises(TemporarilyUnavailable):
+        run(service.set_follow(f, GAMMA, True))
+    assert server.categories == []  # nothing was created in the new installation
 
 
 @pytest.mark.req("EF-SRC-029", "EF-SRC-033")
@@ -108,7 +182,7 @@ def test_only_mutations_verified_by_s5_are_allow_listed() -> None:
     }
     assert roots == {
         "enqueueChapterDownload", "dequeueChapterDownload", "updateManga", "createCategory",
-        "updateMangaCategories", "deleteDownloadedChapter",
+        "updateCategory", "updateMangaCategories", "deleteDownloadedChapter",
     }  # fmt: skip
     _service, f, server = make()
     # any other mutation is refused by the referee, and recorded
@@ -147,8 +221,8 @@ def test_release_claim_erases_nothing_that_is_not_downloaded() -> None:
 def test_nothing_but_release_claim_deletes_upstream() -> None:
     service, f, server = make()
     _, units = run(_units(service, f, ALPHA))
-    run(service.set_follow(f, GAMMA, True))
-    run(service.set_follow(f, GAMMA, False, remove_upstream=True))
+    follow(service, f, GAMMA)
+    follow(service, f, GAMMA, False, remove_upstream=True)
     ticket = run(service.request(f, UnitRef(series=ALPHA, unit=units[0])))
     run(service.poll(f, ticket))
     run(service.cancel(f, ticket))
@@ -166,11 +240,11 @@ def test_instance_fingerprint_follows_the_shelfhold_category_not_the_library() -
     service, f, server = make()
     assert ConnectedCapability.INSTANCE_FINGERPRINT in service.connected
     assert run(service.instance_fingerprint(f)) == ""  # no Shelfhold category yet: unknown
-    run(service.set_follow(f, GAMMA, True))
+    follow(service, f, GAMMA)
     first = run(service.instance_fingerprint(f))
     assert first and run(service.instance_fingerprint(f)) == first  # stable
-    run(service.set_follow(f, ALPHA, True))
-    run(service.set_follow(f, GAMMA, False, remove_upstream=True))
+    follow(service, f, ALPHA)
+    follow(service, f, GAMMA, False, remove_upstream=True)
     assert run(service.instance_fingerprint(f)) == first  # following does not move it
     server.reinstall()  # renumbered ids, same installation of the upstream sources
     assert run(SuwayomiService(BASE_URL).instance_fingerprint(f)) == first

@@ -56,9 +56,18 @@ MANGA_LIBRARY_STATE = (
     "categories { nodes { id name includeInUpdate } } } }"
 )
 CREATE_SHELFHOLD_CATEGORY = (
-    'mutation { createCategory(input: {name: "Shelfhold", includeInUpdate: EXCLUDE}) '
-    "{ category { id name } } }"
+    'mutation { createCategory(input: {name: "Shelfhold"}) { category { id name } } }'
 )
+# "Excluded from the automatic download" is `includeInDownload: EXCLUDE` (EF-SRC-009). Never
+# `includeInUpdate`: it would stop Suwayomi refreshing the chapters of the followed series. Neither
+# `updateCategory` nor `includeInDownload` is among what S5 measured and the repository pins no
+# schema: the shape is the safest one, a plain create then this patch, to confirm against a real
+# Suwayomi (nightly). A literal enum value, so that no schema type name is invented here.
+EXCLUDE_CATEGORY_FROM_DOWNLOAD = (
+    "mutation ($id: Int!) { updateCategory(input: {id: $id, patch: {includeInDownload: EXCLUDE}}) "
+    "{ category { id includeInDownload } } }"
+)
+CATEGORY_DOWNLOAD = "query { categories { nodes { id name includeInDownload } } }"
 # EF-SRC-033 `release_claim`: erases the downloaded file of a chapter on the Suwayomi side (S5)
 DELETE_DOWNLOADED_CHAPTER = (
     "mutation ($id: Int!) { deleteDownloadedChapter(input: {id: $id}) { chapters { id } } }"

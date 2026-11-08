@@ -17,7 +17,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.events.waiting_state import WaitingState
-from shelfhold.infrastructure.schema import acquisition
+from shelfhold.infrastructure.schema import acquisition, catalog
 
 __all__ = ["check_instance", "reconnect"]
 
@@ -45,9 +45,15 @@ def check_instance(connection: Connection, plugin_id: str, current: str, now: da
     return False
 
 
-def reconnect(connection: Connection, plugin_id: str) -> bool:
+def reconnect(connection: Connection, plugin_id: str, now: datetime) -> bool:
     """`source reconnect`: leave the pause that another installation caused, and only that one.
-    Returns False when the service is not paused for it (another pause waits for its own exit)."""
+    Returns False when the service is not paused for it (another pause waits for its own exit).
+
+    The tickets still open on the old installation and the cached `fetch_handle`s are purged
+    here (EF-SRC-036 (3)), not at the detection, which touches nothing: the tickets go back to
+    `requested` with no ticket (the cycle asks the new installation again for what is still
+    wanted; no Unit, Variant or file is touched) and the handles are forgotten (read again by
+    `(sourceId, chapter.url)`)."""
     ledger = FailureLedger(plugin_id)
     pause = ledger.paused(connection)
     if pause is None or pause.waiting_state != WaitingState.SOURCE_INSTANCE_CHANGED:
@@ -57,9 +63,37 @@ def reconnect(connection: Connection, plugin_id: str) -> bool:
         .where(_CONFIG.c.plugin_id == plugin_id)
         .values(instance_fingerprint=None, instance_fingerprint_seen_at=None)
     )
+    _purge_orphans(connection, plugin_id, now)
     ledger.clear_mass_alert(connection)
     ledger.resume(connection)
     return True
+
+
+def _purge_orphans(connection: Connection, plugin_id: str, now: datetime) -> None:
+    bindings = (
+        sa.select(acquisition.source_binding.c.id)
+        .join(
+            acquisition.source_item,
+            acquisition.source_item.c.id == acquisition.source_binding.c.source_item_id,
+        )
+        .where(acquisition.source_item.c.plugin_id == plugin_id)
+    )
+    request = acquisition.download_request
+    connection.execute(
+        sa.update(request)
+        .where(
+            request.c.source_binding_id.in_(bindings),
+            request.c.state.in_(("requested", "downloaded")),
+            request.c.ticket.is_not(None),
+        )
+        .values(ticket=None, state="requested", attempts=0, updated_at=now)
+    )
+    variant = catalog.unit_variant
+    connection.execute(
+        sa.update(variant)
+        .where(variant.c.source_binding_id.in_(bindings))
+        .values(fetch_handle=None, fetch_handle_seen_at=None)
+    )
 
 
 def _write(connection: Connection, plugin_id: str, fingerprint: str, now: datetime) -> None:

@@ -44,7 +44,8 @@ ALLOWED_ROUTES = (
 ALLOWED_FIELDS = frozenset({
     "aboutServer", "settings", "sources", "mangas", "manga", "chapters", "chapter",
     "enqueueChapterDownload", "dequeueChapterDownload", "updateManga",
-    "categories", "updateMangaCategories", "createCategory", "deleteDownloadedChapter",
+    "categories", "updateMangaCategories", "createCategory", "updateCategory",
+    "deleteDownloadedChapter",
 })  # fmt: skip
 FORBIDDEN_FIELDS = frozenset({
     "fetchChapterPages", "fetchChapters", "fetchManga", "fetchSourceManga", "updateLibrary",
@@ -107,10 +108,19 @@ class FakeSuwayomi:
             for chapter in manga["chapters"]:
                 chapter["id"] += RENUMBER_OFFSET
 
-    def add_category(self, name: str, *, include_in_update: str = "UNSET") -> int:
+    def add_category(
+        self, name: str, *, include_in_update: str = "UNSET", include_in_download: str = "UNSET"
+    ) -> int:
         """A category of the library (`EXCLUDE`: its series are left out of scheduled updates)."""
         ident = 1 + max((c["id"] for c in self.categories), default=0)
-        self.categories.append({"id": ident, "name": name, "includeInUpdate": include_in_update})
+        self.categories.append(
+            {
+                "id": ident,
+                "name": name,
+                "includeInUpdate": include_in_update,
+                "includeInDownload": include_in_download,
+            }
+        )
         return ident
 
     def assign(self, manga_url: str, category_id: int) -> None:
@@ -381,15 +391,25 @@ class FakeSuwayomi:
         """`createCategory(input: {name, includeInUpdate})`, answering `category { id name }`."""
         match = re.search(r"createCategory\s*\(\s*input\s*:\s*\{([^}]*)\}", query)
         keys = set(re.findall(r"(\w+)\s*:", match.group(1))) if match else set()
-        if keys - {"name", "includeInUpdate"}:
+        if keys - {"name"}:  # the category is created plain, then excluded from the download
             self.violations.append(f"createCategory keys not allowed: {sorted(keys)}")
         name = re.search(r'name\s*:\s*"([^"]*)"', query)
         wanted = name.group(1) if name else str(variables.get("name", ""))
         if any(c["name"] == wanted for c in self.categories):
             self.violations.append(f"category created twice: {wanted!r}")
-        flag = re.search(r"includeInUpdate\s*:\s*([A-Z]+)", query)
-        ident = self.add_category(wanted, include_in_update=flag.group(1) if flag else "UNSET")
+        ident = self.add_category(wanted)
         return {"category": {"id": ident, "name": wanted}}
+
+    def _q_updateCategory(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        """`updateCategory(input: {id, patch})`: only `includeInDownload` may be written, and
+        never `includeInUpdate` (it would stop the refresh of every followed series)."""
+        self._check_patch(query, {"includeInDownload"})
+        wanted = self._wanted_id(query, variables, "id")
+        flag = re.search(r"includeInDownload\s*:\s*([A-Z]+)", query)
+        for category in self.categories:
+            if category["id"] == wanted and flag:
+                category["includeInDownload"] = flag.group(1)
+        return {"category": {"id": wanted}}
 
     def _q_deleteDownloadedChapter(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         """Removes the downloaded file only (the chapter stays known): upstream erasure."""

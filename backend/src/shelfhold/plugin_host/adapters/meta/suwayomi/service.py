@@ -71,6 +71,7 @@ CBZ_MIME = "application/vnd.comicbook+zip"
 SUPPORTED_MODES = frozenset({"none", "basic_auth"})  # every other mode is refused (EF-SRC-031)
 MARK = "Shelfhold"  # the category that holds a series out of updates (= EXCLUSION_MARK)
 UPDATE_STRATEGIES = frozenset({"ALWAYS_UPDATE", "ONLY_FETCH_ONCE"})
+PROBE_VALID_SECONDS = 600.0  # a follow needs a fingerprint read this lately (one cycle)
 MANGA_CACHE_SECONDS = 60.0  # one follow cycle; `begin_cycle` drops it earlier
 MAX_FILENAME_BYTES = 120
 _FORBIDDEN_NAME = re.compile(r'[\\/:*?"<>|]')
@@ -142,6 +143,7 @@ class SuwayomiService:
         self._mode_verified = False
         self._handles: dict[str, int] = {}  # ticket token -> last known local chapter id
         self._mangas: tuple[float, list[dict[str, Any]]] | None = None
+        self._probed_at: float | None = None  # monotonic time of the last fingerprint read
 
     # -- transport ---------------------------------------------------------------------------
     async def _post(self, f: Fetcher, query: str, variables: dict[str, Any] | None = None) -> Any:
@@ -406,15 +408,40 @@ class SuwayomiService:
         for attempt in (0, 1):
             found = await self._find_category(f)
             if found is not None:
-                if str(found.get("includeInUpdate", "")).upper() != "EXCLUDE":
-                    raise SourceChanged("the Shelfhold category is not excluded from the updates")
-                return int(found["id"])
+                category = int(found["id"])
+                if create:
+                    await self._exclude_from_download(f, category)
+                return category
             if not create or attempt:
                 break
+            if not self._instance_probed():
+                # a Suwayomi installed again has no category, and making one before the
+                # fingerprint was looked at would hide it (EF-SRC-036)
+                raise TemporarilyUnavailable("the instance was not probed in this cycle")
             await self._query(f, q.CREATE_SHELFHOLD_CATEGORY)
         if create:
             raise SourceChanged("the Shelfhold category could not be created")
         return None
+
+    async def _exclude_from_download(self, f: Fetcher, category: int) -> None:
+        """The category holds its series out of the automatic download, and `includeInUpdate` is
+        never written. Set once, read back: a server that did not take it is a changed schema."""
+        nodes = (await self._query(f, q.CATEGORY_DOWNLOAD))["categories"]["nodes"]
+        mine = next((c for c in nodes if int(c["id"]) == category), None)
+        if mine is not None and str(mine.get("includeInDownload", "")).upper() == "EXCLUDE":
+            return
+        await self._query(f, q.EXCLUDE_CATEGORY_FROM_DOWNLOAD, {"id": category})
+        nodes = (await self._query(f, q.CATEGORY_DOWNLOAD))["categories"]["nodes"]
+        mine = next((c for c in nodes if int(c["id"]) == category), None)
+        if mine is None or str(mine.get("includeInDownload", "")).upper() != "EXCLUDE":
+            raise SourceChanged("the Shelfhold category could not be excluded from the download")
+
+    def _instance_probed(self) -> bool:
+        """The fingerprint was read lately: a follow runs after the cycle's probe, never before."""
+        return (
+            self._probed_at is not None
+            and time.monotonic() - self._probed_at <= PROBE_VALID_SECONDS
+        )
 
     async def _find_category(self, f: Fetcher) -> dict[str, Any] | None:
         """The category named `Shelfhold` (the lowest id if two): a read, nothing is written."""
@@ -428,6 +455,7 @@ class SuwayomiService:
         in it. Following moves nothing; a new database does not have it. `""` while there is none
         (nothing has been followed yet)."""
         found = await self._find_category(f)
+        self._probed_at = time.monotonic()
         if found is None:
             return ""
         return hashlib.sha256(f"{KEY}|{MARK}|{int(found['id'])}".encode()).hexdigest()[:32]

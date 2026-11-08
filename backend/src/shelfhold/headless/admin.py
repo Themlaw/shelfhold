@@ -648,7 +648,7 @@ class HeadlessAdmin:
         new installation as its reference and finds the series again by their upstream identity.
         False when the service is not paused for that (nothing changes)."""
         with self._engine.begin() as connection:
-            return reconnect(connection, "suwayomi")
+            return reconnect(connection, "suwayomi", self._clock.now())
 
     # -- source add suwayomi ------------------------------------------------------------------
 
