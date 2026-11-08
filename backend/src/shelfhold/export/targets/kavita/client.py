@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -40,6 +40,7 @@ from shelfhold.export.targets.kavita.errors import (
     ListingIncomplete,
     ProtocolError,
     RouteMissing,
+    TargetAsleep,
     TargetDegraded,
     TargetForbidden,
     TargetKeyRevoked,
@@ -48,6 +49,7 @@ from shelfhold.export.targets.kavita.errors import (
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 from shelfhold.infrastructure.logging import elapsed_ms
+from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.sdk.export_target import ApiCall
 
 BULK_BATCH: Final = 100  # `parse-bulk` takes 100 names at most
@@ -76,6 +78,7 @@ class KavitaClient:
         health: TargetHealth | None = None,
         scan_quiet: timedelta = DEFAULT_QUIET,
         known_bad: tuple[KnownBad, ...] | None = None,
+        wake: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._known_bad = KNOWN_BAD_VERSIONS if known_bad is None else known_bad
         self._fetcher = fetcher
@@ -89,6 +92,7 @@ class KavitaClient:
         self._unreachable_announced = False
         self._key_revoked = False  # the pause is the revocation of the key (401)
         self._write_guard: Callable[[], None] | None = None
+        self._wake = wake  # EF-INT-022: a Kavita behind Sablier is woken before it is called
 
     def set_write_guard(self, guard: Callable[[], None] | None) -> None:
         """Called before every write route: raises while the destination is paused."""
@@ -144,6 +148,7 @@ class KavitaClient:
         health = self.health
         if health.paused:
             raise (TargetKeyRevoked if self._key_revoked else TargetForbidden)(route.label)
+        await self._awake(route)
         if route.label in health.missing_routes:
             raise RouteMissing(route.label)
         if route is not routes.SERVER_INFO and health.version is None:
@@ -190,6 +195,20 @@ class KavitaClient:
         if response.status not in expect:
             raise ProtocolError(f"{route.label} answered {response.status}")
         return CallResult(response.status, _decode(response.body, route))
+
+    async def _awake(self, route: routes.Route) -> None:
+        """Before any call (`scan-folder`, the audit, the arrival check): wake Kavita. A Kavita
+        that stays asleep puts the batch off. It is not `target.unreachable`, and since every
+        write starts from a call, nothing is written."""
+        if self._wake is None:
+            return
+        try:
+            await self._wake()
+        except WakeDeferred:
+            log.info("kavita.asleep", route=route.label)
+            raise TargetAsleep(
+                f"{route.label}: Kavita is asleep and was not woken in time"
+            ) from None
 
     def _route_missing(self, route: routes.Route) -> None:
         health = self.health

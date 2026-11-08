@@ -18,6 +18,13 @@ class TargetUnreachable(TargetError):
     """`target.unreachable`: Kavita does not answer (network, DNS, SSRF guard, timeout)."""
 
 
+class TargetAsleep(TargetError):
+    """`wake.deferred`: Kavita sleeps behind Sablier and could not be woken in time. The batch is
+    put off: it is neither `target.unreachable` nor a failure, and nothing was written."""
+
+    code = "wake.deferred"
+
+
 class TargetForbidden(TargetError):
     """`target.forbidden`: 401/403, the dedicated account was demoted or its key revoked."""
 

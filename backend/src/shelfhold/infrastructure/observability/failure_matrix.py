@@ -133,9 +133,10 @@ _REAL_TESTS = {
 }
 
 
-# The M1b rows whose emitter has shipped: the real test that plays them (L18).
+# The M1b rows whose emitter has shipped: the real test that plays them (L18, L21).
 _CLOSED = {
     "suwayomi_reinstalled": "tests/integration/test_suwayomi_reinstall.py::test_connected_service_reinstall_pauses_without_cascade",
+    "kavita_asleep_sablier": "tests/integration/test_wake_kavita.py::test_kavita_asleep_wake_timeout_defers_without_unreachable_or_write",
 }
 
 

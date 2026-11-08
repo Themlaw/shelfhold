@@ -37,6 +37,7 @@ from shelfhold.export.targets.kavita.wiring import open_client
 from shelfhold.headless.urls import service_url_problem
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.fetcher import GuardedFetcher, Network
+from shelfhold.infrastructure.fetcher.client import FetchLimits
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.instance import (
     HEARTBEAT_INTERVAL,
@@ -48,6 +49,7 @@ from shelfhold.infrastructure.schema import acquisition, export, platform
 from shelfhold.infrastructure.secrets import SecretVault, diagnostics
 from shelfhold.infrastructure.secrets.errors import SecretsError
 from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.infrastructure.wake import Wakes
 from shelfhold.integrations.apprise import operating_bus
 from shelfhold.library.public import Normalizers, TombstoneRoot, TombstoneService
 from shelfhold.ops.events import BusTargetEvents
@@ -78,6 +80,8 @@ class SuwayomiLink:
     url: str
 
 
+KAVITA_WAKE = "kavita"  # the labels of the WakeHook (`Settings.wake_targets`)
+SUWAYOMI_WAKE = "suwayomi"
 _DEFAULT_NETWORK = Network()  # tests replace it; nothing else reaches another server
 
 
@@ -138,6 +142,8 @@ class Composition:
         self._held_lock = threading.Lock()
         self._held = 0
         self._lease: tuple[ExitStack, WriteSessions, tuple[str, ...]] | None = None
+        self._wakes: Wakes | None = None
+        self._wakes_lock = threading.Lock()
 
     # -- secrets -----------------------------------------------------------------------------
 
@@ -322,6 +328,48 @@ class Composition:
         self.sessions_for(fsops).enforce()
         return SessionOpener(self, fsops, loaded)
 
+    # -- the WakeHook (EF-INT-022) ------------------------------------------------------------
+
+    def wakes(self) -> Wakes:
+        """The coordinator of the wake: one per process, so a session already open is not asked
+        for again. Without a configured hook it wakes nothing and costs nothing."""
+        with self._wakes_lock:
+            if self._wakes is None:
+                self._wakes = self._build_wakes()
+            return self._wakes
+
+    def _build_wakes(self) -> Wakes:
+        from datetime import timedelta
+
+        from shelfhold.integrations.sablier import SablierHook, SablierTarget
+
+        settings = self.settings
+        session = timedelta(seconds=settings.wake_session_s)
+        url = settings.wake_url or ""
+        hook = None
+        targets = settings.wake_targets() if settings.wake_configured else {}
+        if targets and service_url_problem(url) is not None:
+            log.warning("wake.address_refused")  # no request leaves for it
+            targets = {}
+        if targets:
+            delay = float(settings.wake_timeout_s)
+            limits = FetchLimits(
+                total_timeout=delay + 10, read_timeout=delay + 5
+            )  # the wake delay is its own: Sablier holds the call open until the tool is ready
+            token = settings.wake_token
+            hook = SablierHook(
+                self.network.one_shot(url, limits),  # type: ignore[arg-type]
+                url,
+                {label: SablierTarget(names=n, group=g) for label, (n, g) in targets.items()},
+                session_duration=session,
+                timeout=timedelta(seconds=delay),
+                headers={"Authorization": f"Bearer {token.get_secret_value()}"} if token else None,
+            )
+        return Wakes(
+            hook, frozenset(targets), engine=self.engine, bus=self.bus, clock=self.clock,
+            session_duration=session,
+        )  # fmt: skip
+
     # -- Kavita ------------------------------------------------------------------------------
 
     def kavita_client(self, target_id: str) -> KavitaClient:
@@ -333,9 +381,15 @@ class Composition:
                     )
                 ).scalar_one()["url"]
             )
+        wakes = self.wakes()
+
+        async def wake() -> None:
+            await wakes.ensure(KAVITA_WAKE)
+
         return open_client(
             self.engine, self.vault(), self.network.integration_fetcher(url), target_id=target_id,
             base_url=url, events=BusTargetEvents(self.engine, self.bus), clock=self.clock,
+            wake=wake if wakes.attached(KAVITA_WAKE) else None,
         )  # fmt: skip
 
     def kavita_targets(self) -> list[str]:
