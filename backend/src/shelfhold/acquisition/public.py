@@ -11,6 +11,14 @@ from shelfhold.acquisition.application.follow import (
     follow_job,
     submit_follow,
 )
+from shelfhold.acquisition.application.follow_request import (
+    FollowConfirmationRequired,
+    FollowOutcome,
+    FollowRefused,
+    FollowRequests,
+    ServiceLink,
+    ServiceNotConnectedError,
+)
 from shelfhold.acquisition.application.planning import pending
 from shelfhold.acquisition.application.preference import TeamPreference
 from shelfhold.acquisition.application.presence import present_for_acquisition, present_in
@@ -59,8 +67,12 @@ __all__ = [
     "Disposition",
     "DownloadTickets",
     "FailureLedger",
+    "FollowConfirmationRequired",
     "FollowCycle",
+    "FollowOutcome",
+    "FollowRefused",
     "FollowReport",
+    "FollowRequests",
     "LeasedReceiver",
     "Pause",
     "Placement",
@@ -70,6 +82,8 @@ __all__ = [
     "RangeUnit",
     "Receiver",
     "RequestBudget",
+    "ServiceLink",
+    "ServiceNotConnectedError",
     "SnapshotRefusedError",
     "StaleSeries",
     "TakeReport",

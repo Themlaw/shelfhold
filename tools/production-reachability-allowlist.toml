@@ -72,20 +72,19 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l19"
-reason = "Follow and unfollow are written (L18) and proved against the simulated Suwayomi; the request that follows a series from Shelfhold (CLI, API, approved request) is L19. `request_refresh` is the driven mode (EF-SRC-025), which comes with the WakeHook."
-until = "M1b L19"
-symbols = [
-  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.request_refresh",
-  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.set_follow",
-]
-
-[[allow]]
 category = "unwired-m1b-l20"
 reason = "Suwayomi account secret opened by the SuwayomiJwt AuthFlow and the service account (L20)."
 until = "M1b L20"
 symbols = [
   "shelfhold.plugin_host.authflow:load_account_secret",
+]
+
+[[allow]]
+category = "unwired-m1b-l21"
+reason = "`request_refresh` is the driven mode (EF-SRC-025), which comes with the WakeHook (L21). Follow and unfollow are wired by L19 (`shelfhold follow`, `/api/v1/follows`)."
+until = "M1b L21"
+symbols = [
+  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.request_refresh",
 ]
 
 [[allow]]

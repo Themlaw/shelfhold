@@ -309,6 +309,18 @@ backfill_started = "Rattrapage lancé : le suivi demandera ces chapitres dans se
 backfill_needs_confirmation = "Cette estimation dépasse 100 chapitres ou 5 Gio. Pour la confirmer : shelfhold backfill --{mode} {edition} --confirm-units {units} --confirm-bytes {size}"
 backfill_choose_mode = "Choisissez --gaps ou --all."
 backfill_confirm_pair = "--confirm-units et --confirm-bytes vont ensemble."
+help_follow_series = "Suit une série du service connecté depuis Shelfhold : une seule entrée dans sa bibliothèque, catégorie « Shelfhold », sans téléchargement automatique."
+help_unfollow_series = "Ne suit plus une série : elle reste dans le service connecté, sauf avec --remove-upstream et --confirm."
+help_follow_source_key = "Clé de la source de la série, telle que le service la donne (par exemple suwayomi:7001)."
+help_follow_remote_id = "Identifiant de la série chez la source (son adresse relative)."
+help_unfollow_remove_upstream = "Retire aussi la série de la bibliothèque du service connecté (aucun fichier n'est supprimé)."
+help_unfollow_confirm = "Confirme le retrait de la bibliothèque du service connecté."
+follow_done = "Série suivie : une entrée dans la bibliothèque du service."
+follow_already = "Série déjà suivie : rien n'a été ajouté."
+follow_in_progress = "Un autre suivi de cette série est en cours : rien n'a été envoyé."
+unfollow_done = "Série non suivie : elle reste dans le service connecté."
+unfollow_removed = "Série non suivie et retirée de la bibliothèque du service connecté."
+unfollow_needs_confirmation = "Retirer la série de la bibliothèque du service connecté demande une confirmation. Pour la confirmer : shelfhold unfollow --remove-upstream --confirm {source_key} {remote_id}"
 
 help_normalize = "Normaliseurs versionnés : migration explicite des clés d'identité (ENF-OPS-021)."
 help_normalize_migrate = "Aperçoit la migration d'un normaliseur vers sa version courante (fusions, lignes bloquées par une pierre tombale), ou l'applique avec --confirm (action réservée)."
@@ -861,6 +873,14 @@ action = "Vérifiez la source principale ; Shelfhold y revient dès qu'elle fonc
 [errors."backfill.confirmation_required"]
 title = "Le rattrapage dépasse 100 chapitres ou 5 Gio : il demande une confirmation."
 action = "Vérifiez l'estimation (nombre, taille, espace libre), puis confirmez pour lancer le rattrapage."
+
+[errors."follow.service_paused"]
+title = "Le service connecté est en pause : rien n'a été suivi."
+action = "Sortez le service de sa pause avec la commande indiquée par « shelfhold status », puis recommencez."
+
+[errors."follow.confirmation_required"]
+title = "Retirer la série de la bibliothèque du service demande une confirmation."
+action = "Ne plus suivre garde la série dans le service ; pour l'en retirer aussi, confirmez explicitement."
 
 [errors."series.gap"]
 title = "Il manque des chapitres dans la série."

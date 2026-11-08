@@ -46,6 +46,7 @@ from shelfhold.ops.errors import (
     StillWaitingError,
     UnknownSubjectError,
 )
+from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.meta import MetaOps
@@ -159,6 +160,7 @@ class OpsServices:
         normalize: NormalizeOps | None = None,
         meta: MetaOps | None = None,
         rating: RatingOps | None = None,
+        follows: FollowOps | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -175,6 +177,7 @@ class OpsServices:
         self._normalize = normalize
         self._meta = meta
         self._rating = rating
+        self._follows = follows
 
     @property
     def _fsops(self) -> Fsops | None:
@@ -563,6 +566,13 @@ class OpsServices:
         if self._rating is None:
             raise ExitUnavailableError("rating is not connected")
         return self._rating
+
+    @property
+    def follows(self) -> FollowOps:
+        """`follow` and `unfollow` (EF-SRC-029, EF-INT-014)."""
+        if self._follows is None:
+            raise ExitUnavailableError("following is not connected")
+        return self._follows
 
     @property
     def intents(self) -> IntentOps:

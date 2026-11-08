@@ -323,6 +323,34 @@ export type FollowFromIn = {
 };
 
 /**
+ * FollowIn
+ */
+export type FollowIn = {
+    /**
+     * Remote Id
+     */
+    remote_id: string;
+    /**
+     * Source Key
+     */
+    source_key: string;
+};
+
+/**
+ * FollowOut
+ */
+export type FollowOut = {
+    /**
+     * Sent
+     */
+    sent: boolean;
+    /**
+     * State
+     */
+    state: 'followed' | 'unfollowed' | 'in_progress';
+};
+
+/**
  * GuardsTriggered
  */
 export type GuardsTriggered = {
@@ -1500,6 +1528,28 @@ export type ToShelveOut = {
      * Items
      */
     items: Array<ToShelveItem>;
+};
+
+/**
+ * UnfollowIn
+ */
+export type UnfollowIn = {
+    /**
+     * Confirm
+     */
+    confirm?: boolean;
+    /**
+     * Remote Id
+     */
+    remote_id: string;
+    /**
+     * Remove Upstream
+     */
+    remove_upstream?: boolean;
+    /**
+     * Source Key
+     */
+    source_key: string;
 };
 
 /**
@@ -2689,6 +2739,72 @@ export type ShelfProposalResponses = {
 };
 
 export type ShelfProposalResponse = ShelfProposalResponses[keyof ShelfProposalResponses];
+
+export type UnfollowData = {
+    body: UnfollowIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/follows';
+};
+
+export type UnfollowErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type UnfollowError = UnfollowErrors[keyof UnfollowErrors];
+
+export type UnfollowResponses = {
+    /**
+     * Successful Response
+     */
+    200: FollowOut;
+};
+
+export type UnfollowResponse = UnfollowResponses[keyof UnfollowResponses];
+
+export type FollowData = {
+    body: FollowIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/follows';
+};
+
+export type FollowErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type FollowError = FollowErrors[keyof FollowErrors];
+
+export type FollowResponses = {
+    /**
+     * Successful Response
+     */
+    200: FollowOut;
+};
+
+export type FollowResponse = FollowResponses[keyof FollowResponses];
 
 export type IntentsListData = {
     body?: never;
