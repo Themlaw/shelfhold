@@ -348,6 +348,19 @@ def _names_may_refresh(comp: Composition, destination_id: str) -> bool:
     return True
 
 
+async def _probe_version(comp: Composition, client: KavitaClient, target_id: str) -> None:
+    """The version Kavita answers now, kept for the barrier of the shelves below 18+: it reads the
+    database, not the client, and only this probe and the audit refresh it. A server that does not
+    answer leaves the old value, and `blocks_family_shelf` refuses what nobody ever read."""
+    from shelfhold.export.application.target_state import load_health, save_health
+
+    await client.probe()
+    with comp.engine.begin() as connection:
+        health = load_health(connection, target_id)
+        health.version, health.version_mode = client.health.version, client.health.version_mode
+        save_health(connection, target_id, health)
+
+
 async def _export_one(
     comp: Composition,
     disks: _Disks,
@@ -377,6 +390,7 @@ async def _export_bound(
 
     applied = 0
     try:
+        await _probe_version(comp, client, destination.target_id)  # the barrier reads it
         # the names Kavita shows now (it may rename a series, EF-EXP-057), before any collision
         if _names_may_refresh(comp, destination.id):
             await refresh_names(comp.engine, client, destination.id)

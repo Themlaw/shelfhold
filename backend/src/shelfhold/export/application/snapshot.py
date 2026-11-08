@@ -23,8 +23,9 @@ from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.intents import within_any
 from shelfhold.export.application.rendering import comicinfo_sha256
+from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.bindings import PARTITIONED, effective_partitioning, is_family
-from shelfhold.export.domain.kavita_compat import blocks_family_shelf
+from shelfhold.export.domain.kavita_compat import TargetMode, blocks_family_shelf
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute
 from shelfhold.export.domain.planner import (
@@ -197,6 +198,13 @@ def barrier_holds(connection: Connection, destination_id: str, edition_id: str) 
         return True
     if ctx.partitioning not in PARTITIONED or ctx.access_control_known_bad:
         return False
+    if load_health(connection, ctx.target_id).mode is TargetMode.DEGRADED_READONLY:
+        return False  # preview only: a write of any kind stays out of the library of the children
+    shelved = connection.execute(
+        sa.select(catalog.edition.c.shelf_id).where(catalog.edition.c.id == edition_id)
+    ).scalar()
+    if shelved != ctx.shelf_id:
+        return False  # an Edition withdrawn (or never filed here) writes nothing into this shelf
     verdict = RatingService().admission_of(connection, edition_id, shelf_id=ctx.shelf_id)
     return verdict is Admission.ALLOWED
 
