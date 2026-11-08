@@ -16,7 +16,7 @@ import pytest
 
 from shelfhold.config import Settings
 from tests.bench.generator import CI_PROFILE, generate_catalog
-from tests.bench.harness import load_reference, running_server
+from tests.bench.harness import export_peak, load_reference, running_server
 from tests.bench.rss import MIB, rss_tree
 
 
@@ -37,3 +37,12 @@ def test_bench_idle_rss_under_250mb(settings: Settings) -> None:
         rss = rss_tree(server.pid)
     assert rss.processes >= 1
     assert rss.total_bytes < budget * MIB, f"{rss.total_bytes / MIB:.1f} MB over {rss.processes}"
+
+
+@pytest.mark.req("ENF-PERF-009")
+def test_bench_peak_rss_light_export() -> None:
+    """The bench kept in the PR: the same measure as the nightly one, on 50 chapters. The peak
+    of 500 chapters over the whole profile is `tests/nightly/test_bench_rss_heavy.py`."""
+    peak = export_peak(chapters=50, decodes=5, profile=False)
+    assert peak.ops >= 50  # the export really wrote its chapters
+    assert peak.tree_bytes < load_reference()["budgets"]["peak_rss_mb"] * MIB

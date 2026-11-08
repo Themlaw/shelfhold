@@ -50,6 +50,39 @@ Pour refaire la mesure : construire l'image, lancer `shelfhold migrate` puis `sh
 options du compose, lire `VmRSS` dans `/proc/<pid>/status` du processus Python du conteneur, puis
 rejouer la charge et relire `VmRSS` et `memory.peak` du cgroup.
 
+### Les bancs de mémoire (M1b)
+
+Deux bancs mesurent la mémoire résidente (`VmRSS` lu dans `/proc`, processus serveur **et tous ses
+enfants**, dont les workers de décodage d'images) sur le profil de référence généré
+(`backend/tests/bench/generator.py` : 2 000 Œuvres, 60 000 Unités, 500 séries suivies, 6 comptes ;
+`MALLOC_ARENA_MAX=2` comme dans l'image) :
+
+| Banc | Seuil | Mesuré (M1b, 2026-11-08, hors conteneur) | Où il tourne |
+| --- | --- | --- | --- |
+| Repos, 3 s après `/readyz` | **< 250 Mo** | 135 Mo | chaque PR (`backend-bench`) |
+| Pic pendant l'export de 500 chapitres, avec 50 décodages d'images | **< 500 Mo** | 180 Mo (processus + un worker) | nuit et manuel (`nightly.yml`, job `bench-rss`) |
+| Pic, variante légère de 50 chapitres | **< 500 Mo** | 163 Mo | chaque PR |
+
+Le banc lourd reste hors des PR : il construit les 60 000 Unités, ingère et rend 500 archives puis
+échantillonne `/proc` pendant tout l'export, ce qui n'a de sens que sur un runner au calme. Il est
+justifié dans `tools/traceability-exceptions.toml`. Les seuils viennent de
+`.github/bench-reference.json`, versionné dans le dépôt (les artefacts de workflow expirent) et joint
+à chaque release par `release.yml`. Ces mesures sont celles d'un processus Python sur le profil CI
+(fichiers creux) : le profil complet de 2 To se mesure avant une release, hors CI.
+
+**Limite d'espace d'adressage du worker de décodage.** Avant de lire le moindre octet d'image, le
+worker pose `RLIMIT_AS` (limite souple et dure, irrévocable) à `WorkerLimits.memory_bytes`, calculé
+d'après le plafond de pixels du type d'image. Une image dont la décompression dépasserait ce plafond
+est refusée avec `image.decode_failed` (ou `image.too_large` quand l'en-tête suffit) ; seul le
+worker échoue, le serveur continue. Le test `test_decode_worker_rlimit_as_set` le lit dans
+`/proc/<pid>/limits` d'un worker vivant.
+
+**Fenêtre de maintenance.** La vérification du rangement (30 min), la comparaison de hash (1 h) et
+l'intégrité par roulement (2 h) totalisent 3 h 30 sur les 4 h de la fenêtre par défaut. Un banc les
+rejoue sur une horloge injectée à travers l'ordonnanceur et les curseurs : sur un disque plus lent,
+le job le moins prioritaire s'arrête avec la fenêtre et reprend à son curseur la nuit suivante, sans
+refaire un pas déjà fait.
+
 ### Les limites du compose
 
 Le compose d'exemple pose `mem_limit: 768m` sur le service Shelfhold et `mem_limit: 512m` sur

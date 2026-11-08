@@ -156,3 +156,43 @@ REFERENCE = Path(__file__).resolve().parents[3] / ".github" / "bench-reference.j
 def load_reference() -> dict[str, Any]:
     """The versioned reference of the benches: thresholds of the spec and the profile's manifest."""
     return cast("dict[str, Any]", json.loads(REFERENCE.read_text(encoding="utf-8")))
+
+
+BACKEND = Path(__file__).resolve().parents[2]
+EXPORT_GIVE_UP_S = 25 * 60
+
+
+@dataclass(frozen=True, slots=True)
+class ExportPeak:
+    tree_bytes: int  # highest sum of VmRSS over the driver and its children, sampled from outside
+    processes: int  # how many processes made up that peak (the decode workers are among them)
+    own_high_water_bytes: int  # VmHWM of the driver itself, from the kernel
+    ops: int  # files the export wrote
+
+
+def export_peak(*, chapters: int, decodes: int, profile: bool) -> ExportPeak:
+    """Run `tests.bench.export_driver` and report the peak resident memory of its process tree."""
+    from tests.bench.rss import PeakSampler
+
+    command = [sys.executable, "-m", "tests.bench.export_driver", str(chapters), str(decodes)]
+    if profile:
+        command.append("--profile")
+    process = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+        command,
+        cwd=BACKEND, env={**os.environ, "MALLOC_ARENA_MAX": "2"},
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )  # fmt: skip
+    with PeakSampler(process.pid) as sampler:
+        try:
+            out, err = process.communicate(timeout=EXPORT_GIVE_UP_S)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise
+    if process.returncode != 0:
+        raise AssertionError(f"export driver failed ({process.returncode}): {err[-800:]}")
+    report = json.loads(out.strip().splitlines()[-1])
+    return ExportPeak(
+        sampler.peak.total_bytes, sampler.peak.processes, report["own_high_water_bytes"],
+        report["ops"],
+    )  # fmt: skip
