@@ -323,3 +323,19 @@ def test_harmless_roles_are_verified_and_unknown_fields_are_unverified() -> None
     assert roles_of({"data": {"user": {"roles": []}}}) is True
     assert roles_of({"errors": UNKNOWN_FIELD}) is False  # the only accepted error: not exposed
     assert roles_of({"errors": CANNOT_QUERY}) is False
+
+
+# -- review of #108: masking of the password in a body, thread safety --------------------------
+@pytest.mark.req("EF-SRC-031", "ENF-SEC-005")
+def test_the_twice_escaped_password_of_the_login_body_is_scrubbed() -> None:
+    import json as json_module
+
+    password = 'p"a\\ss-synthetic-Z9'  # noqa: S105 - throwaway value
+    server = ui_login_server()
+    server.accounts[USER].password = password
+    jwt_fetcher(server, password=password)  # registers every form of the password
+    body = json_module.dumps({"query": q.login(USER, password)})  # as a Fetcher puts it in a log
+    assert json_module.dumps(json_module.dumps(password)[1:-1])[1:-1] in body  # escaped twice
+    scrubbed = _scrub_text(body)
+    assert "a\\\\\\\\ss-synthetic-Z9" not in scrubbed and "a\\\\ss-synthetic-Z9" not in scrubbed
+    assert "ss-synthetic-Z9" not in scrubbed

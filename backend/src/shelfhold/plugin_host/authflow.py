@@ -252,8 +252,10 @@ def _register_token(token: str) -> None:
 
 
 def _literal_forms(value: str) -> list[str]:
-    """The password as typed and as it sits inside a GraphQL string literal of a request body."""
-    return [value, json.dumps(value)[1:-1]]
+    """The password as typed, as it sits inside a GraphQL string literal (escaped once), and as it
+    sits in the JSON body that carries that document (escaped twice)."""
+    once = json.dumps(value)[1:-1]
+    return [value, once, json.dumps(once)[1:-1]]
 
 
 class JwtFetcher:
