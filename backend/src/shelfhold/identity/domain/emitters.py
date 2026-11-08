@@ -8,6 +8,9 @@ A site is `<path under src>::<qualified function>`. Its class is one of:
 - `REPLAY`: the crash-recovery replay of the intent journal, which only completes an `rmdir` of an
   empty folder that a classed emitter journaled before the crash;
 - `RESTORE`: the rollback of the database file to its pre-migration copy;
+- `DB_ROWS`: rows of the database, never a file: the ticket and cached handle columns of the
+  connected service, reset under a changed instance fingerprint by `source reconnect` (EF-SRC-036
+  (3)); no Unit, Variant or library file is reachable from it;
 - `OWN_SCRATCH`: a file the process created for its own mechanism (temporary copy, progress
   marker, lease swap), never library data.
 
@@ -21,6 +24,7 @@ from types import MappingProxyType
 PRIMITIVE = "fsops_primitive"
 OWN_SCRATCH = "own_scratch"
 RESTORE = "restore"
+DB_ROWS = "database_rows"
 REPLAY = "intent_replay"
 
 _FSOPS = "shelfhold/infrastructure/fsops"
@@ -67,6 +71,11 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 f"{_FSOPS}/probe.py::_remove_probe_dir",
             }
         ),
+        # Database rows only, no file: the open tickets of the old installation go back to
+        # `requested` and its cached `fetch_handle`s are forgotten. Reached only from
+        # `reconnect`, which runs only when the service is paused for a changed fingerprint
+        # (the admin's `source reconnect`); EF-SRC-036 (3) asks for exactly this purge.
+        DB_ROWS: frozenset({"shelfhold/acquisition/application/instance.py::_purge_orphans"}),
         # Rolls the database file (and its sidecars) back to the copy taken before a migration.
         RESTORE: frozenset({"shelfhold/infrastructure/migrate.py::_restore_database"}),
         # Completes an `rmdir` of an empty folder a classed emitter journaled before a crash.
