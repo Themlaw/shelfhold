@@ -215,9 +215,11 @@ def test_family_shelf_never_shares_a_remote_library_with_another_tier() -> None:
 from hypothesis import given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
-AGES = st.one_of(
-    st.none(), st.builds(AgeRating, st.sampled_from([0, 10, 12, 13, 16, 18]), st.booleans())
-)
+_ratings = st.one_of(
+    st.builds(AgeRating, st.sampled_from([0, 10, 12, 13, 16]), st.just(False)),
+    st.builds(AgeRating, st.just(18), st.booleans()),
+)  # X only exists at 18+
+AGES = st.one_of(st.none(), _ratings)
 
 
 @pytest.mark.req("ENF-QUAL-006", "EF-BIB-055")
@@ -227,9 +229,7 @@ AGES = st.one_of(
     explicit=AGES,
     work=AGES,
     rated=st.booleans(),
-    suggested=st.lists(
-        st.builds(AgeRating, st.sampled_from([0, 10, 13, 16, 18]), st.booleans()), max_size=2
-    ),
+    suggested=st.lists(_ratings, max_size=2),
 )
 def test_no_op_for_an_edition_the_admission_refuses(
     ceiling: int | None,

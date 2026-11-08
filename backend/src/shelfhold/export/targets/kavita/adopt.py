@@ -41,6 +41,12 @@ from shelfhold.export.application.migration_detect import (
     SwitchoverUnconfirmed,
 )
 from shelfhold.export.application.snapshot import DestinationContext, load_context
+from shelfhold.export.domain.bindings import (
+    AdoptionNeedsRatingError,
+    LibraryNotDedicatedError,
+    is_family,
+)
+from shelfhold.export.domain.kavita_instance import library_is_dedicated
 from shelfhold.export.domain.naming import (
     DEFAULT_TEMPLATE_REF,
     FrozenAttrs,
@@ -371,6 +377,10 @@ class Adopter:
     async def _require_adult_only(
         self, client: KavitaClient, ctx: DestinationContext, library_ref: str
     ) -> None:
+        if is_family(ctx.max_age_rating):
+            # the Works found there are rated by nobody: they go to an adult shelf and wait for an
+            # admin to rate them (EF-BIB-055); the per-Work "À classer" of a child library is L11
+            raise AdoptionNeedsRatingError(f"shelf {ctx.shelf_id} is below 18+")
         refused = await self._auditor.refused_names(
             client, shelf_ceiling=ctx.max_age_rating, remote_library_ref=library_ref,
             remote_root=self._remote_root(ctx),
@@ -382,11 +392,30 @@ class Adopter:
         self, client: KavitaClient, destination_id: str, library_ref: str
     ) -> None:
         """Link a destination to a Kavita library: audited first, refused if children read it,
-        audited again once linked (the answer is stored for the daily check)."""
+        audited again once linked (the answer is stored for the daily check). A family shelf takes
+        a dedicated library only."""
         ctx = self._context(destination_id)
-        await self._require_adult_only(client, ctx, library_ref)
+        if is_family(ctx.max_age_rating):
+            await self._require_dedicated(client, ctx, library_ref)
+        else:
+            await self._require_adult_only(client, ctx, library_ref)
         self._ensure_link(ctx, library_ref)
         await self._auditor.audit(client, ctx.target_id)
+
+    async def _require_dedicated(
+        self, client: KavitaClient, ctx: DestinationContext, library_ref: str
+    ) -> None:
+        remote_root = self._remote_root(ctx)
+        libraries = await client.list_libraries()
+        chosen = [lib for lib in libraries if str(lib["id"]) == library_ref]
+        if not chosen or not library_is_dedicated(chosen[0], remote_root):
+            raise LibraryNotDedicatedError(f"library {library_ref} is not the folder of the shelf")
+        refused = await self._auditor.refused_names(
+            client, shelf_ceiling=ctx.max_age_rating, remote_library_ref=library_ref,
+            remote_root=remote_root,
+        )  # fmt: skip
+        if refused:
+            raise AdoptionRefused(refused)
 
     def _ensure_link(self, ctx: DestinationContext, library_ref: str) -> str:
         return ensure_link(self._engine, self._clock, ctx, library_ref)
@@ -690,6 +719,8 @@ class Adopter:
     def _create_edition(
         connection: Connection, ctx: DestinationContext, item: AdoptedSeries
     ) -> str:
+        if is_family(ctx.max_age_rating):  # the last door: whatever reached here, nothing is filed
+            raise AdoptionNeedsRatingError(f"shelf {ctx.shelf_id} is below 18+")
         work_id, edition_id = new_ulid(), new_ulid()
         connection.execute(
             sa.insert(catalog.work).values(

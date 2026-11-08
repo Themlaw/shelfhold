@@ -19,9 +19,12 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.intents import within_any
 from shelfhold.export.application.rendering import comicinfo_sha256
+from shelfhold.export.domain.bindings import PARTITIONED, effective_partitioning, is_family
+from shelfhold.export.domain.kavita_compat import blocks_family_shelf
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute
 from shelfhold.export.domain.planner import (
@@ -38,6 +41,8 @@ from shelfhold.library.public import ExportSource, export_sources
 __all__ = [
     "DestinationContext",
     "LoadedRequest",
+    "admissions_of",
+    "barrier_holds",
     "inputs_version_of",
     "load_context",
     "load_request",
@@ -60,12 +65,16 @@ class DestinationContext:
     root_local: str | None  # where the tree starts on this machine
     remote_library_id: str | None
     path_map: PathMap
+    partitioning: str = "library"  # how the target keeps accounts apart (EF-EXP-047)
+    access_control_known_bad: bool = False  # a family shelf is blocked on it (ENF-COMP-001)
 
     def facts(self) -> DestinationFacts:
         return DestinationFacts(
             shelf_destination_id=self.destination_id, shelf_id=self.shelf_id,
             transport=self.transport, egress=self.egress, remote_library_id=self.remote_library_id,
             template=self.template, max_age_rating=self.max_age_rating,
+            partitioning=self.partitioning,
+            access_control_known_bad=self.access_control_known_bad,
         )  # fmt: skip
 
     def local(self, rel_path: str) -> str:
@@ -92,7 +101,16 @@ def _path_map(entries: list[dict[str, str]]) -> PathMap:
 def load_context(connection: Connection, destination_id: str) -> DestinationContext:
     d, s, t = export.shelf_destination, export.shelf, export.export_target
     row = connection.execute(
-        sa.select(d, s.c.max_age_rating, s.c.retention_mode, t.c.path_map)
+        sa.select(
+            d,
+            s.c.max_age_rating,
+            s.c.retention_mode,
+            t.c.path_map,
+            t.c.kind,
+            t.c.access_partitioning,
+            t.c.access_partitioning_attested_at,
+            t.c.version_seen,
+        )
         .select_from(d.join(s, s.c.id == d.c.shelf_id).join(t, t.c.id == d.c.target_id))
         .where(d.c.id == destination_id)
     ).one()
@@ -113,6 +131,11 @@ def load_context(connection: Connection, destination_id: str) -> DestinationCont
         template=NamingTemplate.loads(row.template), max_age_rating=row.max_age_rating,
         retention_mode=row.retention_mode, root_local=root, remote_library_id=library,
         path_map=path_map,
+        partitioning=effective_partitioning(
+            row.kind, row.access_partitioning,
+            attested=row.access_partitioning_attested_at is not None,
+        ),
+        access_control_known_bad=blocks_family_shelf(row.version_seen),
     )  # fmt: skip
 
 
@@ -125,6 +148,7 @@ def load_request(
     segment_policy_confirmed: bool,
 ) -> LoadedRequest:
     editions, unit_rows, sources = _inputs(connection, ctx)
+    admissions = admissions_of(connection, ctx, editions)
     records = _records(connection, ctx.destination_id)
     units = []
     for u in unit_rows:
@@ -153,11 +177,42 @@ def load_request(
         library_ceilings=ceilings, segment_policy_confirmed=segment_policy_confirmed,
         paused_series=paused_series(connection, ctx.destination_id),
         foreign_names=load_foreign_names(connection, ctx.destination_id),
+        admissions=admissions,
     )  # fmt: skip
     return LoadedRequest(
         request,
-        _version(ctx, editions, unit_rows, sources, _world(records, series, edition_series)),
+        _version(
+            ctx, editions, unit_rows, sources, _world(records, series, edition_series), admissions
+        ),
     )
+
+
+def barrier_holds(connection: Connection, destination_id: str, edition_id: str) -> bool:
+    """The last look before a write: read again now, not from the plan, whether the shelf below
+    18+ (the destination partitions, Kavita has no known flaw) takes this Edition. An adult shelf
+    has nothing to ask. A plan that waited, a record put back to `planned`, a rating that moved:
+    none of them gets a file into the library of the children."""
+    ctx = load_context(connection, destination_id)
+    if not is_family(ctx.max_age_rating):
+        return True
+    if ctx.partitioning not in PARTITIONED or ctx.access_control_known_bad:
+        return False
+    verdict = RatingService().admission_of(connection, edition_id, shelf_id=ctx.shelf_id)
+    return verdict is Admission.ALLOWED
+
+
+def admissions_of(
+    connection: Connection, ctx: DestinationContext, editions: tuple[EditionFacts, ...]
+) -> dict[str, str]:
+    """Who may enter a shelf below 18+, Edition by Edition: the verdict of `RatingService`, the one
+    rule `relink` and `rate` use. Empty for an adult shelf, which has nothing to ask."""
+    if not is_family(ctx.max_age_rating):
+        return {}
+    rating = RatingService()
+    return {
+        e.edition_id: rating.admission_of(connection, e.edition_id, shelf_id=ctx.shelf_id).value
+        for e in editions
+    }
 
 
 def paused_series(connection: Connection, destination_id: str) -> frozenset[str]:
@@ -225,13 +280,18 @@ def version_of(connection: Connection, ctx: DestinationContext) -> str:
     editions, unit_rows, sources = _inputs(connection, ctx)
     records = _records(connection, ctx.destination_id)
     series, edition_series, _ = _series(connection, ctx, {e.edition_id for e in editions})
-    return _version(ctx, editions, unit_rows, sources, _world(records, series, edition_series))
+    return _version(
+        ctx, editions, unit_rows, sources, _world(records, series, edition_series),
+        admissions_of(connection, ctx, editions),
+    )  # fmt: skip
 
 
 def inputs_version_of(connection: Connection, ctx: DestinationContext) -> str:
     """The inputs alone: what must not move while a plan is being applied."""
     editions, unit_rows, sources = _inputs(connection, ctx)
-    return _version(ctx, editions, unit_rows, sources, None)
+    return _version(
+        ctx, editions, unit_rows, sources, None, admissions_of(connection, ctx, editions)
+    )
 
 
 def _world(
@@ -253,6 +313,7 @@ def _world(
                 s.frozen_series,
                 s.series_dir,
                 s.series_key,
+                s.shelf_destination_id,
             ]
             for s in series
         ),
@@ -309,7 +370,7 @@ def _series(
             frozenset(works[r.id]), frozenset(editions[r.id]),
             r.frozen_series if r.frozen_at is not None else None,
             r.series_dir if r.frozen_at is not None else None,
-            (r.proposal_key or {}).get("series"),
+            (r.proposal_key or {}).get("series"), r.shelf_destination_id,
         )
         for r in connection.execute(
             sa.select(s).where(s.c.remote_library_id == library).order_by(s.c.id)
@@ -336,6 +397,7 @@ def _version(
     unit_rows: list[sa.Row[Any]],
     sources: dict[str, ExportSource],
     world: dict[str, object] | None,
+    admissions: dict[str, str],
 ) -> str:
     def unit_material(u: sa.Row[Any]) -> list[object]:
         source = sources.get(u.id)
@@ -351,6 +413,7 @@ def _version(
         "root": ctx.root_local,
         "editions": [asdict(e) for e in editions],
         "units": [unit_material(u) for u in unit_rows],
+        "admissions": sorted(admissions.items()),  # a rating that moves stales the plan
     }
     if world is not None:
         material["world"] = world

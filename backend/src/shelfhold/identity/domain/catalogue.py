@@ -54,6 +54,8 @@ _DECLARED = (
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),
     _action("profile.kavita_mapping", Effect.PARENTAL_CONTROL),  # EF-USR-017
     _action("target.recheck_child_exposure", Effect.PARENTAL_CONTROL),
+    _action("shelf.choose_family", Effect.PARENTAL_CONTROL),  # EF-BIB-036: file on a family shelf
+    _action("shelf.withdraw", Effect.PARENTAL_CONTROL),  # EF-BIB-037: apply a removal plan
     # Without freshness by default (P3), still refused to every key and token
     _action("rate", Effect.RATES_CONTENT),
     _action("request.unmask", Effect.UNMASKS_REQUEST),

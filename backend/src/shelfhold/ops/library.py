@@ -73,6 +73,11 @@ from shelfhold.export.application.repatriate_kavita import (
 )
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
+from shelfhold.export.application.withdrawal import (
+    WithdrawalPlan,
+    WithdrawalRefusedError,
+    WithdrawalService,
+)
 from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.errors import TargetError
@@ -163,6 +168,21 @@ def _relinked(r: RelinkResult) -> dict[str, Any]:
         "missing": [m.raw_number if m.raw_number is not None else "" for m in r.missing],
         "to_rate": r.to_rate,
         "carried_teams": list(r.carried_teams),
+    }
+
+
+def _withdrawal_plan(plan: WithdrawalPlan) -> dict[str, Any]:
+    return {
+        "version": plan.version,
+        "items": [
+            {
+                "edition_id": i.edition_id,
+                "shelf_id": i.shelf_id,
+                "reason": i.reason,
+                "files": [f.rel_path for f in i.files],
+            }
+            for i in plan.items
+        ],
     }
 
 
@@ -791,6 +811,58 @@ class LibraryOps:
             "alerts": list(report.alerts),
             "out_of_reach": list(report.out_of_reach),
         }
+
+    # -- the removal plan of the family shelves (L10, EF-BIB-037) --------------------------------
+
+    @_refused
+    def withdraw_plan(self, shelf_id: str | None = None) -> dict[str, Any]:
+        fsops, _loaded, _tombstones = self._comp.read_context()
+        plan = WithdrawalService(self._comp.engine, fsops, clock=self._comp.clock).plan(shelf_id)
+        return _withdrawal_plan(plan)
+
+    @_refused
+    def withdraw_apply(
+        self, *, if_match: str, principal: Principal, shelf_id: str | None = None
+    ) -> dict[str, Any]:
+        """Take out of the library of the children what the plan read lists, then ask Kavita to scan
+        the folders the files left. The reserved check is the service's own."""
+        asked: list[str] = []
+        with self._comp.write_context() as w:
+            service = WithdrawalService(
+                self._comp.engine, w.fsops, clock=self._comp.clock, request_scan=asked.append,
+                fresh_auth_s=self._comp.settings.fresh_auth_s,
+            )  # fmt: skip
+            try:
+                report = service.apply(
+                    if_match=if_match, principal=principal, now=self._comp.clock.now(),
+                    shelf_id=shelf_id,
+                )  # fmt: skip
+            except WithdrawalRefusedError as error:
+                raise CodedRefusal("forbidden", str(error)) from None
+        self._scan_everywhere(asked)
+        return {
+            "withdrawn": list(report.withdrawn),
+            "files": report.files,
+            "pending": list(report.pending),
+        }
+
+    def _scan_everywhere(self, remote_paths: list[str]) -> None:
+        """Kavita forgets a series by scanning the folder: every Kavita target is asked (a scan of
+        a folder a library does not watch is a no-op there)."""
+        if not remote_paths:
+            return
+        table = export.export_target
+        with self._comp.engine.connect() as connection:
+            targets = list(
+                connection.execute(sa.select(table.c.id).where(table.c.kind == "kavita")).scalars()
+            )
+        for target_id in targets:
+            try:
+                client = self._comp.kavita_client(str(target_id))
+                for path in remote_paths:
+                    asyncio.run(client.scan_folder(path))
+            except _KAVITA_UNAVAILABLE:
+                _log.warning("withdraw.scan_unavailable", target_id=str(target_id))
 
     # -- the write probe (L37, EF-UX-002) ------------------------------------------------------
 

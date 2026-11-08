@@ -33,6 +33,7 @@ from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import (
     DestinationContext,
     LoadedRequest,
+    barrier_holds,
     inputs_version_of,
     load_context,
     load_request,
@@ -547,6 +548,9 @@ class ExportPipeline:
     ) -> str | None:
         folder = planned.rel_path.split("/", 1)[0] if planned.rel_path else ""
         with self._engine.connect() as connection:
+            if not barrier_holds(connection, ctx.destination_id, planned.series.edition_id):
+                log.warning("export.family_barrier", edition_id=planned.series.edition_id)
+                return None  # the shelf below 18+ no longer takes it: nothing is written
             if planned.series.export_series_id in paused_series(connection, ctx.destination_id):
                 log.debug("export.series_paused", export_series_id=planned.series.export_series_id)
                 return None  # paused since the plan was stored: nothing is written into it

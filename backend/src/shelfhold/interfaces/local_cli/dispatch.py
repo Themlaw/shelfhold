@@ -269,6 +269,7 @@ def _shelf_create(admin: HeadlessAdmin, params: Params) -> object:
         target=str(_text(params, "target")),
         subpath=_subpath(params),
         phrase=_text(params, "phrase", required=False),
+        actor=_actor(params),
     )
     return {"shelf_id": created.shelf_id, "destination_id": created.destination_id,
             "created": created.created}  # fmt: skip

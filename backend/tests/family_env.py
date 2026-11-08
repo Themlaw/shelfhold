@@ -65,11 +65,11 @@ def suggest(env: ExportEnv, edition_id: str, age: int, *, x: bool = False) -> No
 
 
 def add_edition_to(env: ExportEnv, series: Series, lang: str = "en") -> str:
-    """A later Edition of the same Work, filed on the shelf and never rated."""
+    """A later Edition of the same Work, never rated and filed nowhere yet."""
     from tests.integration.test_schema_catalog import add_edition
 
     with env.engine.begin() as connection:
-        return add_edition(connection, series.work_id, lang=lang, shelf_id=env.shelf_id)
+        return add_edition(connection, series.work_id, lang=lang)
 
 
 def second_edition(env: ExportEnv, series: Series, lang: str = "en") -> Series:
@@ -96,7 +96,7 @@ def add_adult_shelf(env: ExportEnv, *, subpath: str = "Adultes") -> tuple[str, s
     with env.engine.begin() as connection:
         connection.execute(
             sa.insert(export.shelf).values(
-                id=shelf_id, name="Adultes", phrase="Adultes", max_age_rating=99
+                id=shelf_id, name=f"Adultes {subpath}", phrase="Adultes", max_age_rating=99
             )
         )
         connection.execute(

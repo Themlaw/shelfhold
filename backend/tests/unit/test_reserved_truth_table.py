@@ -270,6 +270,8 @@ FRESHNESS_LINE = {
         (
             "shelf.max_age_rating",
             "shelf.allowed_profiles",
+            "shelf.choose_family",
+            "shelf.withdraw",
             "profile.kavita_mapping",
             "target.recheck_child_exposure",
         ),

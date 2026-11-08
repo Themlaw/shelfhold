@@ -538,6 +538,7 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("purge.now")  # L41: reserved, but not the exit of a waiting state
     declared.add("intents.resolve")  # L51: reserved; the drift it settles is no waiting state
     declared.add("normalize.migrate")  # L55: reserved; no waiting state either
+    declared.add("shelf.withdraw")  # M1b L10: applying the removal plan of a family shelf
     on_socket = {action for _impl, action in OPS_METHODS.values() if action}
     assert on_socket == declared
     for action in on_socket:  # and every name is a real action of the registry

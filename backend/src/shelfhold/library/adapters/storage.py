@@ -27,7 +27,7 @@ from shelfhold.infrastructure.archives import DEFAULT_LIMITS, ArchiveLimits, saf
 from shelfhold.infrastructure.content_trust import check_cbz_entries
 from shelfhold.infrastructure.fsops import CopyVerificationError, Fsops, FsopsError
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export, storage
+from shelfhold.infrastructure.schema import catalog, export, storage
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY, content_hash
 from shelfhold.library.domain.copies import CopyFacts, is_independent
@@ -220,13 +220,17 @@ def keep_rel(unit_id: str, content_id: str) -> str:
 
 
 def keep_candidates(engine: Engine) -> list[Candidate]:
-    """Units still in passthrough that a shelf in `keep` mode asks to keep, oldest content first.
+    """Units still in passthrough that a copy in /store is owed for, oldest content first:
 
-    Switching a shelf to `keep` proposes this catch-up (GAP-5-22); new Units of a keep shelf take
-    the same road once they are exported, so one query serves both."""
+    - those a shelf in `keep` mode asks to keep once they are exported (GAP-5-22); switching a shelf
+      to `keep` proposes this catch-up and new Units of a keep shelf take the same road;
+    - those of an Edition with **no shelf** (EF-EXP-046, "À ranger" and "À classer"): nothing is
+      exported, so the archive received is the only copy and /store keeps it in the format received.
+    """
     content, item, record = storage.content, export.export_item, export.export_record
     destination, shelf = export.shelf_destination, export.shelf
-    query = (
+    unit, edition = catalog.unit, catalog.edition
+    shelved = (
         sa.select(content.c.unit_id, sa.func.max(content.c.size).label("size"), content.c.id)
         .select_from(
             content.join(item, item.c.content_id == content.c.id)
@@ -242,8 +246,26 @@ def keep_candidates(engine: Engine) -> list[Candidate]:
         .group_by(content.c.id)
         .order_by(content.c.id)
     )
+    unshelved = (
+        sa.select(content.c.unit_id, content.c.size, content.c.id)
+        .select_from(
+            content.join(unit, unit.c.id == content.c.unit_id).join(
+                edition, edition.c.id == unit.c.edition_id
+            )
+        )
+        .where(
+            content.c.retention == "passthrough",
+            edition.c.shelf_id.is_(None),
+            ~sa.exists().where(item.c.edition_id == edition.c.id),  # never exported: nothing else
+        )
+        .order_by(content.c.id)
+    )
+    found: dict[str, Candidate] = {}
     with engine.connect() as connection:
-        return [Candidate(r.unit_id, int(r.size)) for r in connection.execute(query)]
+        for query in (shelved, unshelved):
+            for r in connection.execute(query):
+                found.setdefault(r.id, Candidate(r.unit_id, int(r.size)))
+    return list(found.values())
 
 
 class KeepCopier:

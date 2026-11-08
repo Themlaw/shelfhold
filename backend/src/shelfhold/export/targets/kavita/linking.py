@@ -5,6 +5,8 @@ The spec says *link*, and the audit comes first, so the order here is:
 1. read the libraries of the server; one that already covers the shelf's folder is **linked**,
    after the read-only audit has named nobody who must not read it (children): else refused,
    nothing written in Kavita;
+   A shelf below 18+ takes only a **dedicated** library (every folder of it is the shelf's own,
+   EF-EXP-047): one that also watches another folder is refused, with nothing written in Kavita;
 2. none covers the folder: one is **created** (only then: the headless install of EF-INT-024
    goes from an empty Kavita to the first chapter without another step). A library that does
    not exist yet cannot be read by any account, so the audit before it is vacuous; the whole
@@ -18,7 +20,8 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
 from shelfhold.export.application.snapshot import load_context
-from shelfhold.export.domain.kavita_instance import covering_libraries
+from shelfhold.export.domain.bindings import LibraryNotDedicatedError, is_family
+from shelfhold.export.domain.kavita_instance import covering_libraries, library_is_dedicated
 from shelfhold.export.targets.kavita.adopt import AdoptionRefused, NoFolderError, ensure_link
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
@@ -43,7 +46,19 @@ class ShelfLinker:
         if ctx.root_local is None:
             raise NoFolderError(destination_id)
         remote_root = ctx.remote_folder(ctx.root_local)
-        covering = covering_libraries(await client.list_libraries(), remote_root)
+        libraries = await client.list_libraries()
+        covering = covering_libraries(libraries, remote_root)
+        if is_family(ctx.max_age_rating):
+            # a family library reads its own folder and nothing else: otherwise the children would
+            # read what is shelved beside it, or the adults' library would hold the family's files
+            shared = [
+                lib["id"] for lib in libraries
+                if int(lib["id"]) in covering and not library_is_dedicated(lib, remote_root)
+            ]  # fmt: skip
+            if shared:
+                raise LibraryNotDedicatedError(
+                    f"libraries {sorted(shared)} also watch other folders than {remote_root}"
+                )
         if covering:
             ref = str(covering[0])
             refused = await self._auditor.refused_names(

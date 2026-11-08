@@ -172,18 +172,34 @@ class RatingService:
         )  # fmt: skip
 
     def _withdrawals(self, connection: Connection, work_id: str) -> tuple[Withdrawal, ...]:
+        return self.withdrawals(connection, work_id=work_id)
+
+    def withdrawals(
+        self,
+        connection: Connection,
+        *,
+        work_id: str | None = None,
+        shelf_id: str | None = None,
+    ) -> tuple[Withdrawal, ...]:
+        """The Editions filed on a shelf below 18+ that the admission now refuses (EF-BIB-037,
+        EF-BIB-055): whatever made it so, a rating, a new Edition, a suggested age, a lowered
+        shelf. Nothing is withdrawn here: it is the plan the admin reads before applying it."""
         edition, shelf = catalog.edition, export.shelf
-        filed = connection.execute(
+        query = (
             sa.select(edition.c.id, edition.c.shelf_id, shelf.c.max_age_rating)
             .join(shelf, shelf.c.id == edition.c.shelf_id)
-            .where(edition.c.work_id == work_id)
+            .where(shelf.c.max_age_rating.is_not(None))
             .order_by(edition.c.id)
-        ).all()
+        )
+        if work_id is not None:
+            query = query.where(edition.c.work_id == work_id)
+        if shelf_id is not None:
+            query = query.where(edition.c.shelf_id == shelf_id)
         plan = []
-        for edition_id, shelf_id, ceiling in filed:
+        for edition_id, filed_on, ceiling in connection.execute(query).all():
             verdict = admission(self._facts(connection, edition_id), ceiling_of(ceiling))
             if verdict is not Admission.ALLOWED:
-                plan.append(Withdrawal(edition_id, shelf_id, verdict))
+                plan.append(Withdrawal(edition_id, filed_on, verdict))
         return tuple(plan)
 
     def _facts(self, connection: Connection, edition_id: str) -> EditionAge:

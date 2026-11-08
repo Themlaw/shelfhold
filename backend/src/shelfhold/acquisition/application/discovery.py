@@ -50,7 +50,7 @@ log = structlog.get_logger(__name__)
 WORK_KIND = "manga"
 UNKNOWN_LANGUAGE = "x-unknown"  # `edition set-lang` leaves it (language_unknown)
 TITLE_MAX = 200
-ADULT_FROM = 18  # a ceiling of 18 or more, or none, is an adult shelf (M1a has no other)
+ADULT_FROM = 18  # a ceiling of 18 or more, or none, is an adult shelf; below is a family shelf
 
 Emit = Callable[[sa.Connection, str, dict[str, object]], None]
 ListUnits = Callable[[SeriesRef], Awaitable[list[UnitInfo]]]
@@ -172,6 +172,8 @@ class SeriesDiscovery:
             declined = Notices.declined(connection)
             twins = pending_pairing(connection, fresh, declined=declined) if fresh else {}
             shelf_id = self._adult_shelf(connection)
+            hold = self._family_hold(connection)
+        held_sources = {s.source_key for s in subs if hold and s.content_warning == "safe"}
         todo: list[SeriesRef] = []
         buried: dict[str, str] = {}
         for ref in fresh:
@@ -187,7 +189,10 @@ class SeriesDiscovery:
         waiting = {
             self._digest(ref): twins[self._key(ref)] for ref in fresh if self._key(ref) in twins
         }
-        self._sync(buried, waiting, awaiting=bool(todo) and shelf_id is None)
+        # without an adult shelf only a held Work can be created: it waits unshelved, in "À classer"
+        unplaced = [r for r in todo if shelf_id is None and r.source_key not in held_sources]
+        todo = [r for r in todo if r not in unplaced]
+        self._sync(buried, waiting, awaiting=bool(unplaced))
         log.debug(
             "discovery.listed",
             library=len(library),
@@ -196,9 +201,8 @@ class SeriesDiscovery:
             known=len(known),
             has_shelf=shelf_id is not None,
         )
-        if shelf_id is None:
-            found.awaiting_shelf = len(todo)
-        if not todo or shelf_id is None:
+        found.awaiting_shelf = len(unplaced)
+        if not todo:
             return found
         langs = {s.source_key: s.lang for s in subs}
         warned = {s.source_key: content_warning_age(s.content_warning) for s in subs}
@@ -214,9 +218,11 @@ class SeriesDiscovery:
                     raise  # the service cannot be driven: the whole cycle pauses
                 log.warning("follow.discovery_skipped", failure_class=failure_class)
                 continue  # that series' problem: found again at the next cycle
+            held = ref.source_key in held_sources
             binding_id = self._create(
-                ref, lang, shelf_id, _watermark(units), suggested=warned.get(ref.source_key)
-            )
+                ref, lang, None if held else shelf_id, _watermark(units),
+                suggested=warned.get(ref.source_key),
+            )  # fmt: skip
             log.debug(
                 "discovery.series_created",
                 binding_id=binding_id,
@@ -263,6 +269,24 @@ class SeriesDiscovery:
         return {(r.source_key, r.remote_id) for r in rows}
 
     @staticmethod
+    def _family_hold(connection: sa.Connection) -> bool:
+        """ "Retenir tant que non classé" (EF-EXP-050): some shelf below 18+ asks it. A Work from a
+        sub-source that flags nothing is then filed nowhere until an admin rates it, so that it is
+        not shelved with the adults and moved afterwards (the reading position would be lost)."""
+        shelf, destination = export.shelf, export.shelf_destination
+        return bool(
+            connection.execute(
+                sa.select(sa.func.count())
+                .select_from(shelf.join(destination, destination.c.shelf_id == shelf.c.id))
+                .where(
+                    destination.c.enabled,
+                    shelf.c.hold_until_rated,
+                    shelf.c.max_age_rating < ADULT_FROM,
+                )
+            ).scalar_one()
+        )
+
+    @staticmethod
     def _adult_shelf(connection: sa.Connection) -> str | None:
         """The adult shelf that has an enabled destination: the first one created."""
         shelf, destination = export.shelf, export.shelf_destination
@@ -307,7 +331,7 @@ class SeriesDiscovery:
 
     # -- the five rows, in one transaction ------------------------------------------------------
     def _create(
-        self, ref: SeriesRef, lang: str | None, shelf_id: str, mark: Watermark | None,
+        self, ref: SeriesRef, lang: str | None, shelf_id: str | None, mark: Watermark | None,
         *, suggested: AgeRating | None = None,
     ) -> str | None:  # fmt: skip
         """Work, Edition, `source_item`, binding and follow, all or none. Read again under the

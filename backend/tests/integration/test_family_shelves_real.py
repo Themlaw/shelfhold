@@ -12,11 +12,11 @@ from shelfhold.config import Settings
 from shelfhold.export.domain.bindings import LibraryNotDedicatedError
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.linking import ShelfLinker
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
+from shelfhold.library.public import keep_candidates
 from shelfhold.ops.events import BusTargetEvents
-from shelfhold.store_jobs import KEEP_CATCHUP_KIND, keep_catchup_handler
 from tests.fakes.kavita.server import default_libraries, member
-from tests.l41_env import context
 from tests.l50_env import Seeded, seeded
 from tests.l54_env import bench54
 
@@ -198,20 +198,22 @@ def test_unshelved_edition_not_exported_kept_native_in_store(
         b.follow()
         b.export()
         assert b.env.exported_files() == [] and b.rows("SELECT * FROM export_record") == []
-        job = context(KEEP_CATCHUP_KIND)
-        keep_catchup_handler(b.env.inst.comp)(job)
-        assert job.counters.get("kept", 0) >= 1
-        with b.engine.connect() as connection:
-            kept = connection.execute(
-                sa.select(storage.content.c.retention, storage.content.c.path)
-                .select_from(
-                    storage.content.join(
-                        catalog.unit, catalog.unit.c.id == storage.content.c.unit_id
-                    ).join(catalog.edition, catalog.edition.c.id == catalog.unit.c.edition_id)
+        unit_id = b.rows("SELECT id FROM unit ORDER BY id")[0]["id"]
+        with b.engine.begin() as connection:  # what a download leaves: received, not yet kept
+            variant = connection.execute(
+                sa.select(catalog.unit_variant.c.id).where(
+                    catalog.unit_variant.c.unit_id == unit_id
                 )
-                .where(catalog.edition.c.shelf_id.is_(None))
-            ).all()
-        assert kept and all(r.retention == "keep" and r.path for r in kept)  # native, in /store
+            ).scalar_one()
+            connection.execute(
+                sa.insert(storage.content).values(
+                    id=new_ulid(), unit_id=unit_id, variant_id=variant, kind="images",
+                    media_type="application/vnd.comicbook+zip", format="cbz",
+                    retention="passthrough", path=None, original_sha256="sha256:" + "0" * 64,
+                    store_provenance="received", size=1234,
+                )
+            )  # fmt: skip
+        assert [c.unit_id for c in keep_candidates(b.engine)] == [unit_id]  # owed a native copy
         assert b.env.exported_files() == []  # still nowhere
 
 

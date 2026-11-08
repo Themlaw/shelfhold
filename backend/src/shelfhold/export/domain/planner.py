@@ -7,6 +7,12 @@ and why, and which checks the transport asks for. It touches neither the disk no
 fills the request. Collisions of series names are found here, across shelves that share a remote
 library (EF-EXP-062); a watermarked file never goes to an external egress (EF-EXP-058).
 
+The barrier of a family shelf (ADR-0027) is here too, on the one road every write takes: for a
+shelf below 18+, an Edition is planned only when its admission is `allowed` (rated by an admin, not
+over the ceiling, no suggested age above its rating), the destination partitions access, the Kavita
+release has no known access-control flaw, the remote library is not shared with another tier and the
+exported series belongs to this shelf alone. Anything the loader did not say is refused.
+
 Idempotence (EF-EXP-007): a Unit whose record is written and whose `content_hash` and sidecar
 hash are those of today yields no operation at all.
 """
@@ -16,6 +22,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Final, Literal
 
+from shelfhold.export.domain.bindings import is_family
 from shelfhold.export.domain.export_series import EditionNaming, propose_series_name
 from shelfhold.export.domain.naming import (
     DEFAULT_TEMPLATE,
@@ -58,6 +65,16 @@ class DestinationFacts:
     remote_library_id: str | None = None
     template: NamingTemplate = DEFAULT_TEMPLATE
     max_age_rating: int | None = None
+    partitioning: str = "library"  # how the destination keeps accounts apart (EF-EXP-047)
+    access_control_known_bad: bool = False  # Kavita release with the flaw, or none read (K4)
+
+
+# The refusal of each admission verdict, as a catalog code (EF-BIB-055)
+ADMISSION_CODES: Final = {
+    "unrated_edition": "shelf.rating_required",
+    "above_ceiling": "shelf.above_ceiling",
+    "suggestion_above": "shelf.suggestion_above",
+}
 
 
 @dataclass(frozen=True)
@@ -101,6 +118,7 @@ class SeriesFacts:
     frozen_series: str | None = None  # an adopted series: the `Series` its files carry
     series_dir: str | None = None  # ... and the folder they are in (EF-EXP-052)
     series_key: str | None = None  # the catalog Series it was proposed from (EF-BIB-025)
+    shelf_destination_id: str | None = None  # the shelf that made it: a series has one (EF-BIB-037)
 
 
 @dataclass(frozen=True)
@@ -115,6 +133,8 @@ class PlanRequest:
     occupied: Callable[[str], bool] = lambda rel: False
     covered: Callable[[str], bool] = lambda rel: False
     library_ceilings: frozenset[int | None] = frozenset()  # shelves sharing the remote library
+    # edition -> `Admission` value for a shelf below 18+; an Edition missing from it is refused
+    admissions: Mapping[str, str] = field(default_factory=dict)
     paused_series: frozenset[str] = frozenset()  # paused by a foreign writer (EF-EXP-043)
     foreign_names: frozenset[str] = frozenset()  # normalized names Kavita shows, from any source
     segment_policy_confirmed: bool = False
@@ -185,7 +205,14 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
     if dest.transport == "tree" and dest.remote_library_id is None:
         blocked = [Blocked(u.unit_id, "export.no_remote_library") for u in ready]
         return Plan(blocked=tuple(blocked), checks=TREE_CHECKS)
-    if len(request.library_ceilings | {dest.max_age_rating}) > 1:
+    family = is_family(dest.max_age_rating)
+    if family:
+        refusal = _family_refusal(request)
+        if refusal is not None:
+            return Plan(
+                blocked=tuple(Blocked(u.unit_id, refusal) for u in ready), checks=TREE_CHECKS
+            )
+    elif len(request.library_ceilings | {dest.max_age_rating}) > 1:
         warnings.append(PlanWarning("age_tier_mix"))  # tiers mixed in one remote library
     records = {r.unit_id: r for r in request.records}
     editions = {e.edition_id: e for e in request.editions}
@@ -208,6 +235,12 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
             elif unit.sidecar_sha256 not in (None, record.sidecar_sha256):
                 warnings.append(PlanWarning("sidecar_changed", unit.unit_id))
             continue  # otherwise nothing changed since the last export: no operation
+        if family:
+            verdict = request.admissions.get(unit.edition_id, "unrated_edition")  # closed
+            if verdict != "allowed":
+                code = ADMISSION_CODES.get(verdict, "shelf.rating_required")
+                blocked.append(Blocked(unit.unit_id, code, verdict))
+                continue
         if unit.watermarked and dest.egress == "externe":
             blocked.append(Blocked(unit.unit_id, "export.watermarked_external_egress"))
             continue
@@ -219,6 +252,14 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
                 )
             )
             continue
+        if (
+            family
+            and resolution.export_series_id is not None
+            and known[resolution.export_series_id].shelf_destination_id
+            not in (None, dest.shelf_destination_id)
+        ):
+            blocked.append(Blocked(unit.unit_id, "export.series_other_shelf"))
+            continue  # one Kavita series, one shelf (EF-BIB-037)
         if resolution.export_series_id in request.paused_series:
             blocked.append(Blocked(unit.unit_id, "target.foreign_writer_detected"))
             continue
@@ -257,6 +298,18 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
     ops.sort(key=lambda o: (o.rel_path or "", o.unit_id))
     checks = TREE_CHECKS if dest.transport == "tree" else ()
     return Plan(tuple(ops), tuple(blocked), tuple(warnings), checks)
+
+
+def _family_refusal(request: PlanRequest) -> str | None:
+    """Why nothing at all may be planned for a shelf below 18+, or None."""
+    dest = request.destination
+    if dest.partitioning not in ("library", "user"):
+        return "shelf.destination_not_partitioned"
+    if dest.access_control_known_bad:
+        return "target.child_exposure"
+    if len(request.library_ceilings | {dest.max_age_rating}) > 1:
+        return "export.age_tier_mix"  # a family library holds family shelves only
+    return None
 
 
 def _frozen(unit: UnitFacts, series_name: str, dest: DestinationFacts) -> FrozenAttrs:

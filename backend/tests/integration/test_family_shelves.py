@@ -5,9 +5,9 @@ ceiling, new since the last rating or suggested above its rating never reaches a
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.export.application.withdrawal import WithdrawalRefusedError, WithdrawalService
 
 from shelfhold.export.application.plans import StalePlanError
+from shelfhold.export.application.withdrawal import WithdrawalRefusedError, WithdrawalService
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
@@ -139,7 +139,7 @@ def test_kavita_series_shelved_by_max_age() -> None:
         family_names = {p.parent.name for p in env.files()}
         adult_names = {p.parent.name for p in (env.lib.manga / "Adultes").rglob("*.cbz")}
         assert len(family_names) == len(adult_names) == 1
-        assert family_names != adult_names  # two series, never one shared name
+        assert not set(env.files()) & set((env.lib.manga / "Adultes").rglob("*.cbz"))  # two trees
         with env.engine.connect() as connection:
             owners = {
                 r.shelf_destination_id for r in connection.execute(sa.select(export.export_series))

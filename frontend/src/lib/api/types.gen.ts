@@ -73,6 +73,16 @@ export type BackfillIn = {
 };
 
 /**
+ * CeilingIn
+ */
+export type CeilingIn = {
+    /**
+     * Max Age Rating
+     */
+    max_age_rating?: number | null;
+};
+
+/**
  * ConfigOut
  */
 export type ConfigOut = {
@@ -209,6 +219,16 @@ export type Done = {
 };
 
 /**
+ * EditionShelfIn
+ */
+export type EditionShelfIn = {
+    /**
+     * Shelf Id
+     */
+    shelf_id: string;
+};
+
+/**
  * EstimateOut
  */
 export type EstimateOut = {
@@ -232,6 +252,20 @@ export type EstimateOut = {
      * Units
      */
     units: number;
+};
+
+/**
+ * FiledOut
+ */
+export type FiledOut = {
+    /**
+     * Filed
+     */
+    filed: boolean;
+    /**
+     * Reason
+     */
+    reason?: string | null;
 };
 
 /**
@@ -849,6 +883,26 @@ export type Problem = {
 };
 
 /**
+ * ProfilesIn
+ */
+export type ProfilesIn = {
+    /**
+     * Profiles
+     */
+    profiles: Array<string>;
+};
+
+/**
+ * ProfilesOut
+ */
+export type ProfilesOut = {
+    /**
+     * Profiles
+     */
+    profiles: Array<string>;
+};
+
+/**
  * PurgeIn
  */
 export type PurgeIn = {
@@ -1148,6 +1202,14 @@ export type SetAsideOut = {
  */
 export type ShelfIn = {
     /**
+     * Allowed Profiles
+     */
+    allowed_profiles?: Array<string>;
+    /**
+     * Hold Until Rated
+     */
+    hold_until_rated?: boolean | null;
+    /**
      * Max Age Rating
      */
     max_age_rating?: number | null;
@@ -1309,6 +1371,20 @@ export type WaitingOut = {
      * Subject
      */
     subject: string;
+};
+
+/**
+ * WithdrawIn
+ */
+export type WithdrawIn = {
+    /**
+     * If Match
+     */
+    if_match: string;
+    /**
+     * Shelf Id
+     */
+    shelf_id?: string | null;
 };
 
 /**
@@ -2343,6 +2419,86 @@ export type EditionSetSeriesNameResponses = {
 
 export type EditionSetSeriesNameResponse = EditionSetSeriesNameResponses[keyof EditionSetSeriesNameResponses];
 
+export type FileEditionData = {
+    body: EditionShelfIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/shelf';
+};
+
+export type FileEditionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type FileEditionError = FileEditionErrors[keyof FileEditionErrors];
+
+export type FileEditionResponses = {
+    /**
+     * Successful Response
+     */
+    200: FiledOut;
+};
+
+export type FileEditionResponse = FileEditionResponses[keyof FileEditionResponses];
+
+export type ShelfProposalData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/shelf-proposal';
+};
+
+export type ShelfProposalErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ShelfProposalError = ShelfProposalErrors[keyof ShelfProposalErrors];
+
+export type ShelfProposalResponses = {
+    /**
+     * Response Shelf Proposal
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: string | null;
+    };
+};
+
+export type ShelfProposalResponse = ShelfProposalResponses[keyof ShelfProposalResponses];
+
 export type IntentsListData = {
     body?: never;
     path?: never;
@@ -2823,6 +2979,123 @@ export type CreateShelfResponses = {
 
 export type CreateShelfResponse = CreateShelfResponses[keyof CreateShelfResponses];
 
+export type WithdrawalPlanData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Shelf Id
+         */
+        shelf_id?: string | null;
+    };
+    url: '/api/v1/shelves/withdrawals';
+};
+
+export type WithdrawalPlanErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WithdrawalPlanError = WithdrawalPlanErrors[keyof WithdrawalPlanErrors];
+
+export type WithdrawalPlanResponses = {
+    /**
+     * Response Withdrawal Plan
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type WithdrawalPlanResponse = WithdrawalPlanResponses[keyof WithdrawalPlanResponses];
+
+export type WithdrawalApplyData = {
+    body: WithdrawIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/shelves/withdrawals';
+};
+
+export type WithdrawalApplyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WithdrawalApplyError = WithdrawalApplyErrors[keyof WithdrawalApplyErrors];
+
+export type WithdrawalApplyResponses = {
+    /**
+     * Response Withdrawal Apply
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type WithdrawalApplyResponse = WithdrawalApplyResponses[keyof WithdrawalApplyResponses];
+
+export type SetProfilesData = {
+    body: ProfilesIn;
+    path: {
+        /**
+         * Shelf Id
+         */
+        shelf_id: string;
+    };
+    query?: never;
+    url: '/api/v1/shelves/{shelf_id}/allowed-profiles';
+};
+
+export type SetProfilesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetProfilesError = SetProfilesErrors[keyof SetProfilesErrors];
+
+export type SetProfilesResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProfilesOut;
+};
+
+export type SetProfilesResponse = SetProfilesResponses[keyof SetProfilesResponses];
+
 export type BindDestinationData = {
     body: DestinationIn;
     path: {
@@ -2860,6 +3133,48 @@ export type BindDestinationResponses = {
 };
 
 export type BindDestinationResponse = BindDestinationResponses[keyof BindDestinationResponses];
+
+export type SetMaxAgeData = {
+    body: CeilingIn;
+    path: {
+        /**
+         * Shelf Id
+         */
+        shelf_id: string;
+    };
+    query?: never;
+    url: '/api/v1/shelves/{shelf_id}/max-age';
+};
+
+export type SetMaxAgeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetMaxAgeError = SetMaxAgeErrors[keyof SetMaxAgeErrors];
+
+export type SetMaxAgeResponses = {
+    /**
+     * Response Set Max Age
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type SetMaxAgeResponse = SetMaxAgeResponses[keyof SetMaxAgeResponses];
 
 export type AddSourceData = {
     body: SourceIn;

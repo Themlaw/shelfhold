@@ -51,6 +51,7 @@ class DiskPort(Protocol):
 
     def rename(self, src: str, dst: str, *, replace: bool = False) -> None: ...
     def rmdir(self, local: str) -> None: ...
+    def recycle(self, local: str) -> str: ...
     def observe(self, local: str) -> tuple[Kind, FileIdentity] | None: ...
     def sha256_of(self, local: str) -> str: ...
 
@@ -346,6 +347,8 @@ class IntentJournal:
                 self._resolve_rename(intent, report, on_done)
             elif intent.op == "rmdir" and intent.src:
                 self._resolve_rmdir(intent, report, on_done)
+            elif intent.op == "recycle" and intent.src:
+                self._resolve_recycle(intent, report, on_done)
             elif intent.op == "write" and intent.dst:
                 self._resolve_write(intent, report, on_done)
             elif intent.op == "copy_cross_root" and intent.src and intent.dst:
@@ -393,6 +396,26 @@ class IntentJournal:
             report.completed.append(intent.id)
         else:
             self._drift(intent, report, "neither one source-only nor one target-only state")
+
+    def _resolve_recycle(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """A file taken out of a shelf into the bin of its root (EF-BIB-037). The rows were
+        committed first, so the file is either still there (the very file: it goes now) or gone
+        (it went before the crash: nothing more to do). Another file at that path is never
+        touched."""
+        if intent.src is None:
+            return self._drift(intent, report, "a recycle needs its file")
+        found = self._disk.observe(intent.src)
+        if found is None:
+            self._finish(intent, on_done)
+            report.completed.append(intent.id)
+        elif found[0] == "file" and self._is_expected(intent, intent.src, found[1]):
+            self._disk.recycle(intent.src)
+            self._finish(intent, on_done)
+            report.replayed.append(intent.id)
+        else:
+            self._drift(intent, report, "the file in the shelf is not the one to be recycled")
 
     def _resolve_write(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

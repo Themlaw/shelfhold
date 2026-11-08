@@ -318,6 +318,16 @@ def _relink(ops: OpsServices, by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _withdraw_plan(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.library.withdraw_plan(_optional(p, "shelf_id"))
+
+
+def _withdraw_apply(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.library.withdraw_apply(
+        if_match=_text(p, "if_match"), shelf_id=_optional(p, "shelf_id"), principal=by
+    )
+
+
 def _probe(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.library.probe(_text(p, "folder"))
 
@@ -357,6 +367,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.detach_restore_upstream": (_give_back, None),
     "ops.purge": (_purge, "purge.now"),
     "ops.probe": (_probe, None),
+    "ops.withdraw_plan": (_withdraw_plan, None),
+    "ops.withdraw_apply": (_withdraw_apply, "shelf.withdraw"),
     "ops.relink": (_relink, None),
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
@@ -375,7 +387,7 @@ READS_AND_RESTORE_EXITS = frozenset(
     {
         "ops.status", "ops.missing_list", "ops.jobs_list", "ops.pair_propose",
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
-        "ops.intents_list", "ops.backfill_estimate", "ops.meta_check",
+        "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
         "ops.restore_adopt", "ops.tombstone_set_aside_journal", "ops.secrets_import",
         "ops.tombstone_accept_lost_keyring",
     }

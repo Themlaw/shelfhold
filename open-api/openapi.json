@@ -119,6 +119,25 @@
         "title": "BackfillIn",
         "type": "object"
       },
+      "CeilingIn": {
+        "properties": {
+          "max_age_rating": {
+            "anyOf": [
+              {
+                "maximum": 99.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Rating"
+          }
+        },
+        "title": "CeilingIn",
+        "type": "object"
+      },
       "ConfigOut": {
         "properties": {
           "items": {
@@ -337,6 +356,19 @@
         "title": "Done",
         "type": "object"
       },
+      "EditionShelfIn": {
+        "properties": {
+          "shelf_id": {
+            "title": "Shelf Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "shelf_id"
+        ],
+        "title": "EditionShelfIn",
+        "type": "object"
+      },
       "EstimateOut": {
         "properties": {
           "free_bytes": {
@@ -372,6 +404,30 @@
           "needs_confirmation"
         ],
         "title": "EstimateOut",
+        "type": "object"
+      },
+      "FiledOut": {
+        "properties": {
+          "filed": {
+            "title": "Filed",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "filed"
+        ],
+        "title": "FiledOut",
         "type": "object"
       },
       "FlushOut": {
@@ -1377,6 +1433,38 @@
         "title": "Problem",
         "type": "object"
       },
+      "ProfilesIn": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Profiles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "profiles"
+        ],
+        "title": "ProfilesIn",
+        "type": "object"
+      },
+      "ProfilesOut": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Profiles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "profiles"
+        ],
+        "title": "ProfilesOut",
+        "type": "object"
+      },
       "PurgeIn": {
         "properties": {
           "typed": {
@@ -1826,6 +1914,24 @@
       },
       "ShelfIn": {
         "properties": {
+          "allowed_profiles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Profiles",
+            "type": "array"
+          },
+          "hold_until_rated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Until Rated"
+          },
           "max_age_rating": {
             "anyOf": [
               {
@@ -2096,6 +2202,30 @@
           "reserved"
         ],
         "title": "WaitingOut",
+        "type": "object"
+      },
+      "WithdrawIn": {
+        "properties": {
+          "if_match": {
+            "title": "If Match",
+            "type": "string"
+          },
+          "shelf_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shelf Id"
+          }
+        },
+        "required": [
+          "if_match"
+        ],
+        "title": "WithdrawIn",
         "type": "object"
       },
       "shelfhold__interfaces__http_api__intents__ResolveIn": {
@@ -3804,6 +3934,153 @@
         ]
       }
     },
+    "/api/v1/editions/{edition_id}/shelf": {
+      "post": {
+        "description": "File an Edition on a shelf; a shelf below 18+ takes it only through the admission.",
+        "operationId": "file_edition",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditionShelfIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FiledOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "File Edition",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/shelf-proposal": {
+      "get": {
+        "description": "The shelf the kind of the Work proposes, unless a shelf below 18+ would refuse it.",
+        "operationId": "shelf_proposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "title": "Response Shelf Proposal",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Shelf Proposal",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
     "/api/v1/intents": {
       "get": {
         "operationId": "intents_list",
@@ -4660,6 +4937,211 @@
         ]
       }
     },
+    "/api/v1/shelves/withdrawals": {
+      "get": {
+        "description": "What the admission refuses on the shelves below 18+; nothing moves.",
+        "operationId": "withdrawal_plan",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "shelf_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shelf Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Withdrawal Plan",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Withdrawal Plan",
+        "tags": [
+          "shelves"
+        ]
+      },
+      "post": {
+        "operationId": "withdrawal_apply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Withdrawal Apply",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Withdrawal Apply",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
+    "/api/v1/shelves/{shelf_id}/allowed-profiles": {
+      "post": {
+        "operationId": "set_profiles",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shelf_id",
+            "required": true,
+            "schema": {
+              "title": "Shelf Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfilesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfilesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Set Profiles",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
     "/api/v1/shelves/{shelf_id}/destinations": {
       "post": {
         "operationId": "bind_destination",
@@ -4727,6 +5209,80 @@
           }
         },
         "summary": "Bind Destination",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
+    "/api/v1/shelves/{shelf_id}/max-age": {
+      "post": {
+        "operationId": "set_max_age",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shelf_id",
+            "required": true,
+            "schema": {
+              "title": "Shelf Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CeilingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Max Age",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Set Max Age",
         "tags": [
           "shelves"
         ]
@@ -5713,6 +6269,10 @@
       "code": "disk.low",
       "status": 503
     },
+    "/api/v1/problems/export.age-tier-mix": {
+      "code": "export.age_tier_mix",
+      "status": 409
+    },
     "/api/v1/problems/export.destination-occupied": {
       "code": "export.destination_occupied",
       "status": 409
@@ -5736,6 +6296,10 @@
     "/api/v1/problems/export.series-name-yields-volume": {
       "code": "export.series_name_yields_volume",
       "status": 422
+    },
+    "/api/v1/problems/export.series-other-shelf": {
+      "code": "export.series_other_shelf",
+      "status": 409
     },
     "/api/v1/problems/export.source-missing": {
       "code": "export.source_missing",
@@ -6017,6 +6581,18 @@
       "code": "series.tombstoned_upstream",
       "status": 409
     },
+    "/api/v1/problems/shelf.above-ceiling": {
+      "code": "shelf.above_ceiling",
+      "status": 422
+    },
+    "/api/v1/problems/shelf.adoption-needs-rating": {
+      "code": "shelf.adoption_needs_rating",
+      "status": 409
+    },
+    "/api/v1/problems/shelf.ceiling-invalid": {
+      "code": "shelf.ceiling_invalid",
+      "status": 422
+    },
     "/api/v1/problems/shelf.conflict": {
       "code": "shelf.conflict",
       "status": 409
@@ -6025,8 +6601,20 @@
       "code": "shelf.destination_exists",
       "status": 409
     },
-    "/api/v1/problems/shelf.parental-control-unavailable": {
-      "code": "shelf.parental_control_unavailable",
+    "/api/v1/problems/shelf.destination-not-partitioned": {
+      "code": "shelf.destination_not_partitioned",
+      "status": 409
+    },
+    "/api/v1/problems/shelf.library-not-dedicated": {
+      "code": "shelf.library_not_dedicated",
+      "status": 409
+    },
+    "/api/v1/problems/shelf.rating-required": {
+      "code": "shelf.rating_required",
+      "status": 422
+    },
+    "/api/v1/problems/shelf.suggestion-above": {
+      "code": "shelf.suggestion_above",
       "status": 422
     },
     "/api/v1/problems/source.auth-expired": {
@@ -6143,6 +6731,10 @@
     },
     "/api/v1/problems/target.pull-needs-readable-copy": {
       "code": "target.pull_needs_readable_copy",
+      "status": 409
+    },
+    "/api/v1/problems/target.remote-folder-shared": {
+      "code": "target.remote_folder_shared",
       "status": 409
     },
     "/api/v1/problems/target.route-missing": {

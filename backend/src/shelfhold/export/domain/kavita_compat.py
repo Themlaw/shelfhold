@@ -102,3 +102,13 @@ def assess_version(
     warnings = tuple(k for k in known_bad if version is not None and k.affects(version))
     mode = TargetMode.FULL if in_range else TargetMode.DEGRADED_READONLY
     return Assessment(raw or "", version, mode, warnings)
+
+
+def blocks_family_shelf(raw_version: str | None) -> bool:
+    """A shelf below 18+ is blocked (`target.child_exposure`) on a release classed `access_control`
+    (<= 0.9.0.2), and when nobody read the version: the barrier is the library access, which only a
+    release without the flaw enforces (EF-EXP-055, ENF-COMP-001). The adult shelves only warn."""
+    version = KavitaVersion.parse(raw_version)
+    if version is None:
+        return True
+    return any(k.category == "access_control" and k.affects(version) for k in KNOWN_BAD_VERSIONS)
