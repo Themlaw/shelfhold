@@ -55,6 +55,8 @@ from shelfhold.infrastructure.observability.shutdown import (
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
+from shelfhold.jobs.maintenance import MaintenanceGate, register_sqlite_maintenance
+from shelfhold.jobs.window import MaintenanceWindow
 from shelfhold.library.public import (
     MetaProjection,
     complete_interrupted_keep,
@@ -236,6 +238,11 @@ class InstanceRuntime:
             engine=engine,
             clock=clock,
             seed=instance_id or "unregistered",
+            window=MaintenanceWindow.from_text(
+                self.settings.maintenance_window_start,
+                self.settings.maintenance_window_end,
+                self.settings.timezone,
+            ),
             bus=bus,
             freeze=self.freeze_state,
         )
@@ -256,6 +263,10 @@ class InstanceRuntime:
             watcher.check()
             composition.flush_owed_tombstones()  # a root that came back pays what it owes
 
+        self.maintenance_gate = MaintenanceGate()  # the backup (L23) holds it; VACUUM waits for it
+        register_sqlite_maintenance(
+            self.pools, engine, space=guard, gate=self.maintenance_gate, freeze=self.freeze_state
+        )
         register_ops_jobs(
             self.pools, self.settings, disk_check=disk_check, audit=access_audit(composition)
         )

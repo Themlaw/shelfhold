@@ -41,6 +41,11 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_WAKE_KAVITA` | `wake_kavita` | liste de str | aucun |  | `SHELFHOLD_WAKE_KAVITA_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_WAKE_TIMEOUT_S` | `wake_timeout_s` | int | `60` | >= 5, <= 600 | `SHELFHOLD_WAKE_TIMEOUT_S_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_WAKE_SESSION_S` | `wake_session_s` | int | `300` | >= 30, <= 3600 | `SHELFHOLD_WAKE_SESSION_S_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_MAINTENANCE_WINDOW_START` | `maintenance_window_start` | str | `03:00` |  | `SHELFHOLD_MAINTENANCE_WINDOW_START_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_MAINTENANCE_WINDOW_END` | `maintenance_window_end` | str | `07:00` |  | `SHELFHOLD_MAINTENANCE_WINDOW_END_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_TIMEZONE` | `timezone` | str | `Europe/Paris` |  | `SHELFHOLD_TIMEZONE_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_RETENTION_EVENTS_DAYS` | `retention_events_days` | int | `90` | >= 7, <= 3650 | `SHELFHOLD_RETENTION_EVENTS_DAYS_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_RETENTION_AUDIT_DAYS` | `retention_audit_days` | int | `365` | >= 90, <= 3650 | `SHELFHOLD_RETENTION_AUDIT_DAYS_FILE` en lit la valeur dans un fichier |
 
 ## Clés de `config get|set|apply`
 

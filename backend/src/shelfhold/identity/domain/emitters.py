@@ -109,6 +109,9 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         f"{_EXPORT_APP}/restore.py::DeletionExecutor.purge": "reconcile.confirm_deletion",
         f"{_EXPORT_APP}/restore_purge.py::RestoreDeletion._erase": "reconcile.confirm_deletion",
         f"{_EXPORT_APP}/restore_purge.py::RestoreDeletion.purge": "reconcile.confirm_deletion",
+        # The recycle bins past 30 days (ENF-OPS-009): the daily sweep, under an intention; fsops
+        # reads the age of the entry from the file system and refuses a younger one.
+        f"{_EXPORT_APP}/recycle_sweep.py::RecycleSweeper.sweep": "trash_retention_purge",
         # The probe file of the permission preflight (EF-EXP-054): a name the probe drew itself.
         f"{_FSOPS}/probe.py::_remove_probe_file": ("probe_file_cleanup"),
         # The files of the capability probe of a root (EF-EXP-059): names it drew, in the staging

@@ -53,10 +53,11 @@ services:
       fake-kavita: { condition: service_started }
       fake-suwayomi: { condition: service_started }
     environment:
-      PYTHONPATH: /open-window  # the maintenance window open all day: no journey depends on the hour
+      # the maintenance window open all day: no journey depends on the hour (ENF-OPS-014)
+      SHELFHOLD_MAINTENANCE_WINDOW_START: "00:00"
+      SHELFHOLD_MAINTENANCE_WINDOW_END: "23:59"
     volumes:
       - library:/library
-      - ./fakes/open_window:/open-window:ro
     stop_grace_period: 30s
 
 volumes:
