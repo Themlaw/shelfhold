@@ -110,7 +110,7 @@ def test_every_command_through_the_running_server(
         assert "mise à jour" in out().out
         assert _run(monkeypatch, settings, "source", "add", "suwayomi", "--url", SUWAYOMI_URL,
                     "--secret-file", str(tmp_path / "missing")) == 1  # fmt: skip
-        env.suwayomi.mode = "ui_login"
+        env.suwayomi.mode = "saml"  # a mode no release drives (ui_login is driven since M1b)
         assert _run(monkeypatch, settings, "source", "add", "suwayomi", "--url", SUWAYOMI_URL) == 1
         assert "source.auth_mode_unsupported" in out().err
 
@@ -410,7 +410,7 @@ def test_http_routes_cover_config_and_sources(
         source = {"kind": "suwayomi", "url": SUWAYOMI_URL, "secret": f"a:{SUWAYOMI_PASSWORD}"}
         made = api.post("/api/v1/sources", json=source)
         assert made.status_code == 201 and made.headers["Location"].startswith("https://shelf")
-        env.suwayomi.mode = "ui_login"
+        env.suwayomi.mode = "saml"  # a mode no release drives (ui_login is driven since M1b)
         refused = api.post("/api/v1/sources", json={**source, "url": "http://s2.internal:1"})
         assert refused.json()["code"] == "source.auth_mode_unsupported"
         other = api.post("/api/v1/sources", json={**source, "kind": "komga"})

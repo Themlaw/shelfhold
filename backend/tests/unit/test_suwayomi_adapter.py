@@ -10,18 +10,19 @@ import io
 from collections.abc import Awaitable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine
 
-from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.archives.safe_open import safe_open_archive
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.schema import metadata
 from shelfhold.jobs.slots import DomainSlots
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
-from shelfhold.plugin_host.authflow import AuthInjectingFetcher
+from shelfhold.plugin_host.authflow import AuthInjectingFetcher, SuwayomiJwtFetcher
 from shelfhold.plugin_host.errors import (
+    AuthExpired,
     AuthModeUnsupported,
     ServiceVersionMismatch,
     failure_class_of,
@@ -155,29 +156,30 @@ def test_csrf_mismatch_classified_version_not_auth() -> None:
     assert failure_class_of(unauthorised.value) == "auth"
 
 
-# --- EF-SRC-031: ui_login detected and refused in M1a -----------------------------------------
+# --- EF-SRC-031: ui_login detected; refused in M1a, driven by the JWT AuthFlow since M1b ------
 @pytest.mark.req("EF-SRC-031", "EF-SRC-008")
-def test_ui_login_mode_detected_and_refused_m1a() -> None:
+@pytest.mark.parametrize("m1b", [False, True], ids=["m1a_basic_credentials", "m1b_jwt_accepted"])
+def test_ui_login_mode_detected_and_refused_m1a(m1b: bool) -> None:
+    """M1a: `ui_login` was refused outright. M1b: it is accepted with the JWT AuthFlow; a Basic
+    credential, which `ui_login` never takes, still gets nowhere (no silent partial follow)."""
     server = FakeSuwayomi(auth_mode="ui_login")
     service = SuwayomiService(BASE_URL)
-    f = AuthInjectingFetcher(
-        FakeSuwayomiFetcher(server),
-        AuthBasic(),
-        {"username": USER, "password": PASSWORD},
-        origin=BASE_URL,
-    )
+    secret = {"username": USER, "password": PASSWORD}
+    f: Any
+    if m1b:
+        f = SuwayomiJwtFetcher(FakeSuwayomiFetcher(server), secret, origin=BASE_URL)
+    else:
+        f = AuthInjectingFetcher(FakeSuwayomiFetcher(server), AuthBasic(), secret, origin=BASE_URL)
     assert run(service.auth_mode(f)) == "ui_login"
+    if m1b:
+        assert len(run(service.followed_series(f))) == 2
+        assert run(service.semantic_health(f)).ok
+        return
     for attempt in (service.followed_series(f), service.search(f, "", {}, None)):
-        with pytest.raises(AuthModeUnsupported) as raised:
+        with pytest.raises(AuthExpired):
             run(attempt)
-        assert raised.value.code == "source.auth_mode_unsupported"
-        assert raised.value.waiting_state is WaitingState.AUTH_MODE_UNSUPPORTED
-        assert "multi-comptes" in str(raised.value)
-    health = run(service.semantic_health(f))
-    assert not health.ok and health.detail == "source.auth_mode_unsupported"
-    # never a silent partial follow: only the mode probe went out, no library or chapter query
     sent = set().union(*(r.fields for r in server.requests))
-    assert sent <= {"aboutServer", "settings"}
+    assert sent <= {"aboutServer", "settings", "user", "mangas"}  # no account data came back
 
 
 @pytest.mark.req("EF-SRC-031")
