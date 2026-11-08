@@ -88,8 +88,9 @@ def _show(report: AdoptionReport) -> None:
         else:
             print(t("adopt.series_line", name=series.name, files=len(series.files)))
     if report.child_library:
-        named = f" ({', '.join(report.exposed_accounts)})" if report.exposed_accounts else ""
-        print(t("adopt.child_library", accounts=named, count=len(report.suspended)))
+        print(t("adopt.child_library", count=len(report.suspended)))
+        if report.exposed_accounts:
+            print(t("adopt.child_accounts", accounts=",".join(report.exposed_accounts)))
         for name in report.suspended:
             print(t("adopt.to_rate_line", name=name))
         print(t("adopt.child_library_files"))

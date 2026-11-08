@@ -20,7 +20,7 @@ def test_parse_age(text: str, expected: AgeRating) -> None:
     assert parse_age(text) == expected
 
 
-@pytest.mark.parametrize("text", ["", "+", "treize", "-3", "1.5", "１３", "13++"])
+@pytest.mark.parametrize("text", ["", "+", "treize", "-3", "1.5", "\uff11\uff13", "13++"])
 def test_parse_age_refuses_what_is_not_an_age(text: str) -> None:
     with pytest.raises(ValueError, match="not an age"):
         parse_age(text)
