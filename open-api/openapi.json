@@ -6397,6 +6397,10 @@
       "code": "invalid_cursor",
       "status": 400
     },
+    "/api/v1/problems/job.busy": {
+      "code": "job.busy",
+      "status": 409
+    },
     "/api/v1/problems/job.dead-lettered": {
       "code": "job.dead_lettered",
       "status": 500

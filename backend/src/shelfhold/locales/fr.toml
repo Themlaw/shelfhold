@@ -30,7 +30,17 @@ source_add_suwayomi_help = "Ajoute Suwayomi : lit son mode d'authentification (n
 source_url_help = "Adresse du serveur Suwayomi (http(s)://hôte[:port])."
 source_secret_file_help = "Fichier contenant « utilisateur:mot_de_passe » ; « - » pour l'entrée standard."
 shelf_help = "Étagères."
-shelf_create_help = "Crée une étagère adulte et la lie à une destination."
+shelf_withdraw_help = "Montre (puis, avec --apply --confirm, applique) le retrait des Éditions que l'étagère famille n'admet plus."
+shelf_withdraw_shelf_help = "Limite le plan à cette étagère (identifiant)."
+shelf_withdraw_apply_help = "Applique le plan : les fichiers sortent de la bibliothèque des enfants (corbeille de la racine)."
+shelf_withdraw_confirm_help = "Version du plan lu, donnée par la commande sans --apply."
+shelf_withdraw_item = "Édition {edition} (étagère {shelf}) : {reason}, {files} fichier(s)."
+shelf_withdraw_nothing = "Aucune Édition à retirer."
+shelf_withdraw_next = "Pour appliquer : shelfhold shelf withdraw --apply --confirm {version}"
+shelf_withdraw_needs_confirm = "Donnez la version du plan lu : --confirm {version} (le plan a peut-être changé)."
+shelf_withdraw_done = "{editions} Édition(s) retirée(s), {files} fichier(s) mis à la corbeille ; Kavita est invité à analyser."
+shelf_withdraw_pending = "{count} fichier(s) restent à déplacer : l'intention reste ouverte jusqu'au prochain démarrage."
+shelf_create_help = "Crée une étagère (famille si le plafond est sous 18+) et la lie à une destination."
 shelf_name_help = "Nom de l'étagère."
 shelf_max_age_help = "Plafond d'âge : 18+ ou X (toute valeur plus basse arrive avec M1b)."
 shelf_target_help = "Nom de la destination."
@@ -673,6 +683,10 @@ action = "Adoptez dans une étagère adulte, puis classez les Œuvres avant de l
 [errors."target.remote_folder_shared"]
 title = "Deux étagères écriraient dans le même dossier du serveur."
 action = "Donnez à chaque étagère son dossier."
+
+[errors."job.busy"]
+title = "Un export de cette Œuvre est en cours."
+action = "Réessayez dans un instant : rien n'a été modifié."
 
 [errors."export.series_other_shelf"]
 title = "Cette série de la bibliothèque distante appartient à une autre étagère."

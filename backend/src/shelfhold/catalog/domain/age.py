@@ -24,8 +24,11 @@ def effective_age(work: AgeRating | None, editions: Iterable[AgeRating | None]) 
 
 
 def content_warning_age(warning: str) -> AgeRating | None:
-    """The age a sub-source's `content_warning` suggests: only `nsfw` says something (X)."""
-    return AgeRating(X_MIN_AGE, x=True) if warning == "nsfw" else None
+    """The age a sub-source's `content_warning` suggests, never a rating: `nsfw` says X, `mixed`
+    says 18+ (it may hold adult Works, so a shelf below 18+ waits for an admin), `safe` nothing."""
+    if warning == "nsfw":
+        return AgeRating(X_MIN_AGE, x=True)
+    return AgeRating(X_MIN_AGE) if warning == "mixed" else None
 
 
 def ceiling_of(max_age_rating: int | None) -> AgeRating | None:
