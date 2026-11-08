@@ -58,6 +58,33 @@ class ReleaseResult(SdkModel):
     still_present: bool | None = None
 
 
+class WakeError(Exception):
+    """The tool could not be woken (the hook failed or Sablier is down)."""
+
+
+class WakeTimeout(WakeError):
+    """The tool was not ready within the wake delay. The wake delay is its own: it is never the
+    delay of a request to the tool."""
+
+
+class WakeHook(Protocol):
+    """Starts a tool that sleeps and keeps its session open (EF-INT-022, ADR-0025).
+
+    Optional: a host without a hook never wakes anything. It can be attached to any dependency,
+    source or destination, named by a short label (`target`) the host chose. Nothing secret
+    crosses this port: the label is all a connected service or a destination ever hands over, and
+    the hook holds its own address and credentials, if any.
+    """
+
+    async def wake(self, target: str) -> None:
+        """Return once `target` is ready; raise `WakeTimeout` or `WakeError` otherwise."""
+        ...
+
+    async def renew(self, target: str) -> None:
+        """Extend the session of `target` while a long job runs."""
+        ...
+
+
 class ConnectedService(Source, Protocol):
     """Methods exist only when the matching capability is declared in `connected`."""
 

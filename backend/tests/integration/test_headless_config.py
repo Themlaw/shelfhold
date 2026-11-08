@@ -443,23 +443,19 @@ def test_ui_login_mode_detected_and_accepted_m1b(
 
 
 @pytest.mark.req("EF-SRC-025")
-def test_config_set_piloted_warns_inactive_until_m1b(
+def test_config_set_piloted_is_accepted_without_a_warning(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     settings: Settings,
 ) -> None:
+    """M1b L21: the piloted check acts, so the value is no longer reported as inactive."""
     with headless(settings) as env:
         monkeypatch.setattr(wiring, "open_headless", lambda _settings: env.admin)
-        assert (
-            run_cli(monkeypatch, settings, "config", "set", "source.check_mode", "always_on") == 0
-        )
-        assert "M1b" not in capsys.readouterr().err  # the supported mode needs no warning
         assert run_cli(monkeypatch, settings, "config", "set", "source.check_mode", "piloted") == 0
-        err = capsys.readouterr().err
-        assert "inactif" in err and "M1b" in err  # accepted, and said not to act yet
-        assert env.admin.get("source.check_mode").value == "piloted"  # still stored: M1b reads it
+        assert "M1b" not in capsys.readouterr().err
+        assert env.admin.get("source.check_mode").value == "piloted"
         assert run_cli(monkeypatch, settings, "config", "get", "source.check_mode") == 0
-        assert "M1b" in capsys.readouterr().err  # the warning stays where the value is read
+        assert "M1b" not in capsys.readouterr().err
 
 
 @pytest.mark.req("EF-EXP-029")

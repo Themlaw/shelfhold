@@ -157,6 +157,7 @@ class FakeKavita:
     never_indexed: set[str] = field(default_factory=set)  # folders Kavita ignores (excluded)
     next_series_id: int = 100
     reinstalls: int = 0
+    asleep: bool = False  # stopped by Sablier: the connection is refused until `wake_up`
     manga_parse_only: bool = True  # the replica of plugin/parse is the Manga one: refuse others
 
     # -- scenario helpers -------------------------------------------------------------------
@@ -261,7 +262,12 @@ class FakeKavita:
         return httpx2.MockTransport(self.handle)
 
     # -- HTTP -------------------------------------------------------------------------------
+    def wake_up(self) -> None:
+        self.asleep = False
+
     def handle(self, request: httpx2.Request) -> httpx2.Response:
+        if self.asleep:
+            raise httpx2.ConnectError("connection refused", request=request)
         url = request.url
         recorded = RecordedRequest(
             request.method,

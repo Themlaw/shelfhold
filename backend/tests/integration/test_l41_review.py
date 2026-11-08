@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +23,7 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import platform
+from shelfhold.infrastructure.wake import Wakes
 from tests.auth_env import auth_env, run_cli
 from tests.headless_env import KAVITA_URL, headless
 
@@ -173,6 +175,14 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
         engine=None,
         clock=None,
         bus=None,
+        wakes=lambda: Wakes(
+            None,
+            frozenset(),
+            engine=None,
+            bus=None,
+            clock=None,  # type: ignore[arg-type]
+            session_duration=timedelta(minutes=5),
+        ),
         settings=SimpleNamespace(naming_segment_policy_confirmed=False),
     )
     asyncio.run(

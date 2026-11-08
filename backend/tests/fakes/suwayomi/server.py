@@ -46,12 +46,12 @@ ALLOWED_FIELDS = frozenset({
     "aboutServer", "settings", "sources", "mangas", "manga", "chapters", "chapter",
     "enqueueChapterDownload", "dequeueChapterDownload", "updateManga",
     "categories", "updateMangaCategories", "createCategory", "updateCategory",
-    "deleteDownloadedChapter",
+    "deleteDownloadedChapter", "fetchChapters",
     "login", "refreshToken",  # M1b L20: the JWT pair of `ui_login`, in the exact S5 forms
     "user",  # M1b L20: the roles of the logged-in account (D1), when the server exposes them
 })  # fmt: skip
 FORBIDDEN_FIELDS = frozenset({
-    "fetchChapterPages", "fetchChapters", "fetchManga", "fetchSourceManga", "updateLibrary",
+    "fetchChapterPages", "fetchManga", "fetchSourceManga", "updateLibrary",
     "updateCategoryManga", "deleteDownloadedChapters", "deleteCategory",
     "clearDownloader", "startDownloader", "restoreBackup",
     "installExternalExtension", "updateExtension", "addExtensionStore", "setSettings",
@@ -130,6 +130,10 @@ class FakeSuwayomi:
     def __post_init__(self) -> None:
         if self.auth_mode == "ui_login" and USER not in self.accounts:
             self.accounts[USER] = FakeAccount(PASSWORD)
+
+    asleep: bool = False  # stopped by Sablier: nothing answers until `wake_up`
+    hidden: list[tuple[int, dict[str, Any]]] = field(default_factory=list)  # (manga id, chapter)
+    refreshed: list[int] = field(default_factory=list)  # manga ids of `fetchChapters`, in order
 
     # -- scenario helpers -------------------------------------------------------------------
     def add_account(
@@ -232,6 +236,15 @@ class FakeSuwayomi:
         self.updated_by_schedule.extend(seen)
         return seen
 
+    def wake_up(self) -> None:
+        self.asleep = False
+
+    def publish_upstream(self, chapter: dict[str, Any], manga_id: int | None = None) -> None:
+        """A chapter published upstream that Suwayomi does not know until it refreshes the series
+        (it slept through its own schedule): `fetchChapters` makes it visible."""
+        manga_id = manga_id if manga_id is not None else self.state["mangas"][0]["id"]
+        self.hidden.append((manga_id, chapter))
+
     def add_source(self, source_id: str, name: str, lang: str = "en") -> None:
         self.state["sources"].append(
             {"id": source_id, "displayName": name, "lang": lang, "isNsfw": False}
@@ -263,6 +276,8 @@ class FakeSuwayomi:
     def handle(
         self, method: str, target: str, headers: dict[str, str] | None = None, body: bytes = b""
     ) -> Response:
+        if self.asleep:
+            raise OSError("connection refused: the container is stopped")
         lowered = {k.lower(): v for k, v in (headers or {}).items()}
         split = urlsplit(target)
         recorded = RecordedRequest(method, split.path, lowered, body)
@@ -514,6 +529,19 @@ class FakeSuwayomi:
         chapters = manga["chapters"] if manga else []
         return {"nodes": [self._chapter_node(c) for c in chapters]}
 
+    def _q_fetchChapters(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        """`fetchChapters(input: {mangaId})`: the server asks the source and learns the news."""
+        wanted = self._wanted_id(query, variables, "mangaId")
+        self.refreshed.append(wanted)  # type: ignore[arg-type]
+        for manga in self.state["mangas"]:
+            if manga["id"] == wanted:
+                for hidden_id, chapter in list(self.hidden):
+                    if hidden_id == wanted:
+                        manga["chapters"].append(chapter)
+                        self.hidden.remove((hidden_id, chapter))
+                return {"chapters": [{"id": c["id"]} for c in manga["chapters"]]}
+        return {"chapters": []}
+
     def _q_chapter(self, query: str, variables: dict[str, Any]) -> dict[str, Any] | None:
         wanted = self._wanted_id(query, variables, "id")
         chapter = self._chapter(wanted) if wanted is not None else None
@@ -591,6 +619,8 @@ class FakeSuwayomi:
 
     # -- as a transport, to exercise the real IntegrationFetcher ----------------------------
     def transport_handler(self, request: httpx2.Request) -> httpx2.Response:
+        if self.asleep:
+            raise httpx2.ConnectError("connection refused", request=request)
         reply = self.handle(
             request.method, str(request.url), dict(request.headers), request.content or b""
         )

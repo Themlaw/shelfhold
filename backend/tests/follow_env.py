@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import sqlalchemy as sa
 
@@ -22,8 +22,10 @@ from shelfhold.infrastructure.fetcher.client import IntegrationFetcher
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
+from shelfhold.infrastructure.wake import Wakes
 from shelfhold.library.public import PassthroughStore
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
+from shelfhold.sdk.connected import ConnectedCapability
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
 from tests.fakes_clock import ManualClock
 from tests.fakes_fetcher import FakeResolver
@@ -189,9 +191,12 @@ def follow_bench(
     tombstones: Callable[[LibEnv], Any] | None = None,
     seeded: bool = True,
     adult_shelf: bool = False,
+    wakes: Callable[[sa.Engine, ManualClock, EventBus], Wakes] | None = None,
+    check_mode: Literal["always_on", "piloted"] = "always_on",
 ) -> Iterator[Bench]:
     """`seeded=False`: a fresh installation, no Work and no binding (the cycle discovers them);
-    `adult_shelf`: an adult shelf with a destination exists."""
+    `adult_shelf`: an adult shelf with a destination exists. `wakes`: builds the coordinator of the
+    WakeHook (the tool is then reachable through it: `suwayomi`); `check_mode`: EF-SRC-025."""
     server = server or FakeSuwayomi(auth_mode="none")
     with lib_env() as lib:
         work_id = edition_id = binding_id = ""
@@ -226,8 +231,15 @@ def follow_bench(
         guarded = IntegrationFetcher(dns, lan_targets=lan, transport=server.transport)
         fetcher = FakeSuwayomiFetcher(server)
         fetcher.has_credentials = has_credentials  # type: ignore[attr-defined]
-        service = service or SuwayomiService(BASE_URL, now=clock.now)
+        service = service or SuwayomiService(
+            BASE_URL, now=clock.now,
+            refresh_mode="driven" if check_mode == "piloted" else "always_on",
+        )  # fmt: skip
         bus = EventBus(clock)
+        coordinator = wakes(lib.engine, clock, bus) if wakes is not None else None
+        if coordinator is not None:
+            service.wake_target = "suwayomi"
+            service.connected |= ConnectedCapability.WAKE
         sleeps: list[float] = []
 
         async def sleep(seconds: float) -> None:
@@ -244,7 +256,7 @@ def follow_bench(
                 ),
                 receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
                 place=_placement(lib), sleep=sleep, stale_k=stale_k, max_attempts=max_attempts,
-                tombstones=guard,
+                tombstones=guard, wakes=coordinator, check_mode=check_mode,
             )  # fmt: skip
 
         cycle = new_cycle()

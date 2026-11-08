@@ -46,7 +46,7 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
 | Clé | Défaut | Rôle |
 | --- | --- | --- |
 | `public_url` | (aucun) | Adresse publique ; toute URL absolue en est tirée, jamais de l'en-tête `Host` (ENF-SEC-016). |
-| `source.check_mode` | `always_on` | `always_on` ou `piloted` (EF-SRC-025). `piloted` est enregistré mais **inactif avant M1b** : la commande le dit, et le suivi se comporte comme `always_on`. |
+| `source.check_mode` | `always_on` | `always_on` ou `piloted` (EF-SRC-025). `piloted` : Shelfhold réveille Suwayomi (si un réveil est configuré) puis lui demande de rafraîchir les séries suivies avant de lire les nouveautés. Sans valeur enregistrée, le défaut est `piloted` quand un réveil Sablier est configuré, `always_on` sinon ([reveil-sablier.md](reveil-sablier.md)). |
 | `export.missing_floor` | `10` | Sentinelle (EF-EXP-029) : nombre minimal de fichiers manquants dans une destination d'étagère pour que la part compte. |
 | `export.missing_ratio` | `0.05` | Sentinelle : part de fichiers manquants (avec le plancher) à partir de laquelle vérification, suppressions et scans sont bloqués. |
 | `export.missing_ceiling` | `50` | Sentinelle : au-delà de ce nombre de fichiers manquants, blocage quelle que soit la part. Bornes : part dans ]0 ; 0,5], plafond au plus 1000, plancher entre 1 et le plafond (sinon le garde-fou ne pourrait plus se déclencher) ; une ligne modifiée à la main hors bornes est ignorée avec un WARNING. Lus à chaque passe, sans redémarrage. |

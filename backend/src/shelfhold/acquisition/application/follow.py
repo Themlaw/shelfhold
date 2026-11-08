@@ -1,22 +1,30 @@
-"""The always-on follow cycle (EF-SRC-009, 025, 026 c, 027, 028).
+"""The follow cycle (EF-SRC-009, 025, 026 c, 027, 028; EF-INT-022).
 
-Suwayomi follows its own schedule; Shelfhold only reads it. Each cycle: probe the service, read
-its library, stop following what left it, ingest the chapters of each followed series (a new one
-gets a download ticket), advance the open tickets, then check freshness. No refresh mutation is
-ever sent in this mode: the piloted mode that sends one belongs to M1b.
+Each cycle: wake the service if it sleeps behind a WakeHook, probe it, read its library, stop
+following what left it, ingest the chapters of each followed series (a new one gets a download
+ticket), advance the open tickets, then check freshness.
+
+Two modes (EF-SRC-025). `always_on`: Suwayomi follows its own schedule, Shelfhold only reads it
+and no refresh mutation is ever sent. `piloted`: Shelfhold asks Suwayomi to refresh the followed
+series, at a polite pace with a jitter, before it reads the news.
+
+A wake that fails puts the cycle off (`report.deferred`): the service is not at fault, so nothing
+is counted (no content error, no outage) and `wake.deferred` follows after three deferred batches.
 
 An error that says the service itself cannot be driven (authentication, version, schema) pauses
 the whole service and counts against nothing; the pause ends with `resume`.
 """
 
 import asyncio
+import contextlib
+import random
 import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import sqlalchemy as sa
 import structlog
@@ -87,6 +95,7 @@ from shelfhold.infrastructure.content_trust import sanitize_upstream_text
 from shelfhold.infrastructure.follow_suspended import suspended_work_ids
 from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
+from shelfhold.infrastructure.wake import WakeDeferred, Wakes
 from shelfhold.jobs.ledger import Created
 from shelfhold.jobs.public import DomainSlots, JobContext, JobPools
 from shelfhold.library.public import (
@@ -133,6 +142,22 @@ def submit_follow(pools: JobPools, plugin_id: str) -> Created:
 
 MISSING_CYCLES = 2  # consecutive cycles of absence before a series is deemed removed
 OUTAGE_CYCLES = 3  # cycles in a row without an answer before the service is "unavailable"
+REFRESH_SPACING = 2.0  # seconds between two refreshes asked of the same upstream source
+REFRESH_JITTER = 1.0  # plus up to this much, drawn at random
+
+
+def refresh_delays(
+    keys: list[str], *, spacing: float = REFRESH_SPACING, jitter: float = REFRESH_JITTER,
+    draw: Callable[[float, float], float] = random.uniform,
+) -> list[float]:  # fmt: skip
+    """Seconds to wait before each refresh: none for the first of an upstream source (`limit_key`),
+    `spacing` plus a jitter before the next ones, so one source is never hit in a burst."""
+    seen: set[str] = set()
+    delays = []
+    for key in keys:
+        delays.append(spacing + draw(0.0, jitter) if key in seen else 0.0)
+        seen.add(key)
+    return delays
 
 
 @dataclass
@@ -150,6 +175,8 @@ class FollowReport:
     stale: int = 0
     paused: str | None = None  # the waiting state (or failure class) the service is paused in
     unavailable: bool = False  # the service has not answered for OUTAGE_CYCLES cycles in a row
+    deferred: bool = False  # the service sleeps and was not woken: the cycle is put off
+    refreshed: int = 0  # series Suwayomi was asked to refresh (piloted mode)
     tickets: TicketReport = field(default_factory=TicketReport)
 
     def counters(self) -> dict[str, object]:
@@ -160,11 +187,12 @@ class FollowReport:
             "reactivated": self.reactivated, "created": self.created,
             "awaiting_shelf": self.awaiting_shelf, "stale": self.stale,
             "paused": self.paused, "unavailable": self.unavailable,
+            "deferred": self.deferred, "refreshed": self.refreshed,
         }  # fmt: skip
 
     def has_news(self) -> bool:
         """Something changed or moved: the summary of the cycle is then worth an INFO line."""
-        quiet = {"paused", "unavailable", "stale"}
+        quiet = {"paused", "unavailable", "stale", "deferred"}
         return any(
             bool(value) for name, value in self.counters().items() if name not in quiet
         ) or bool(self.paused or self.unavailable)
@@ -219,6 +247,9 @@ class FollowCycle:
         inactive_months: int = DEFAULT_INACTIVE_MONTHS,
         tombstones: TombstoneGate,
         keep_range: Keeper | None = None,
+        wakes: Wakes | None = None,
+        check_mode: Literal["always_on", "piloted"] = "always_on",
+        refresh_delay: Callable[[list[str]], list[float]] = refresh_delays,
     ) -> None:
         self._engine = engine
         self._bus = bus
@@ -249,6 +280,10 @@ class FollowCycle:
         self._notices = Notices(clock)
         self._buried: dict[str, str] = {}  # tombstoned series of this cycle, by notice key
         self._buried_ids: dict[str, dict[str, object]] = {}
+        self._wakes = wakes  # EF-INT-022: the service may sleep behind a WakeHook
+        self._piloted = check_mode == "piloted"  # EF-SRC-025 (a)
+        self._refresh_delay = refresh_delay
+        self._sleep = sleep
 
     # -- the cycle ---------------------------------------------------------------------------
     async def run(self) -> FollowReport:
@@ -261,12 +296,19 @@ class FollowCycle:
             log.debug("follow.cycle_paused", state=paused.label, service=self._plugin_id)
             return report
         try:
-            await self._cycle(report)
+            async with self._awake():
+                await self._cycle(report)
             self._end_outage()
             # INFO only when the cycle changed something: a quiet cycle is one DEBUG line
             (log.info if report.has_news() else log.debug)(
                 "follow.cycle_summary", duration_ms=elapsed_ms(started), **report.counters()
             )
+        except WakeDeferred:
+            # asleep and not woken in time: neither a failure of the source (L15 counts nothing)
+            # nor an outage; the next cycle wakes it again, and `wake.deferred` follows
+            log.info("follow.cycle_deferred", service=self._plugin_id)
+            report.deferred = True
+            return report
         except CycleAbandoned as error:
             log.warning("follow.cycle_abandoned", reason=str(error))
             return report  # no failure, no outage, no retry: the next cycle starts again
@@ -281,6 +323,18 @@ class FollowCycle:
         finally:
             self._flush()
         return report
+
+    def _awake(self) -> contextlib.AbstractAsyncContextManager[None]:
+        """The service awake for the whole cycle (before the batch and before the check), its
+        session renewed while the cycle runs long; nothing at all without a WakeHook."""
+        target = getattr(self._service, "wake_target", None)
+        if (
+            self._wakes is None
+            or ConnectedCapability.WAKE not in self._service.connected
+            or not target
+        ):
+            return contextlib.nullcontext()
+        return self._wakes.session(target)
 
     def _note_outage(self, report: FollowReport) -> None:
         """A cycle that could not reach the service. A blip is nothing; `OUTAGE_CYCLES` in a row
@@ -351,6 +405,8 @@ class FollowCycle:
         ]
         self._remember_buried()
         log.debug("follow.followed", followed=len(followed), in_library=len(present))
+        if self._piloted:
+            await self._refresh(followed, report)
         for binding in followed:
             await self._discover_isolated(binding, report, budget)
         self._fill(followed, budget, report)
@@ -365,6 +421,27 @@ class FollowCycle:
                     connection, "source.downloads_dropped", {"count": report.tickets.dropped}
                 )
         report.stale = len(self.check_freshness())
+
+    async def _refresh(self, followed: list[_Binding], report: FollowReport) -> None:
+        """Piloted mode: Suwayomi is asked to look at each followed series upstream, one source at
+        a time with a spacing and a jitter, and the cycle reads the news once each has answered.
+        A refresh that fails is that series' problem and counts nothing: it is not a content error,
+        and what Suwayomi already knows is read anyway. An error that says the whole service
+        cannot be driven goes up and pauses."""
+        delays = self._refresh_delay([b.source_key for b in followed])
+        for binding, delay in zip(followed, delays, strict=True):
+            if delay:
+                await self._sleep(delay)
+            ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
+            try:
+                await from_service(self._service.request_refresh(self._fetcher, [ref]))
+                report.refreshed += 1
+            except Exception as error:
+                failure_class = classify(error)
+                if disposition_of(failure_class) is Disposition.PAUSE:
+                    raise
+                log.warning("follow.refresh_skipped", binding_id=binding.id,
+                            failure_class=failure_class)  # fmt: skip
 
     def _is_ranged(self) -> bool:
         return (

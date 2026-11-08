@@ -30,6 +30,7 @@ CONFIG_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
 SUPPORTED_CONFIG_MAJOR = 1
 
 # Fields that locate the other layers: they can only come from the environment.
+GROUP_PREFIX = "group:"
 ENV_ONLY_FIELDS = frozenset({"data_dir", "secret_key_file"})
 
 Source = Literal["env", "toml", "db", "default"]
@@ -93,6 +94,17 @@ class Settings(BaseModel):
     disk_pause_gib: float = Field(default=10.0, ge=0)
     disk_resume_percent: float = Field(default=8.0, ge=0, le=60)
     disk_resume_gib: float = Field(default=15.0, ge=0)
+    # EF-INT-022 (ADR-0025): the WakeHook, optional. `wake_url` is the API of Sablier (a declared
+    # LAN address of the owner, like Suwayomi and Kavita); `wake_suwayomi` and `wake_kavita` name
+    # the containers to start for each tool, or `group:<name>` alone. Without them nothing is woken.
+    # `wake_token` is sent as a bearer token to a Sablier behind an authenticating proxy; it is
+    # never logged. The wake delay is its own, apart from every request delay.
+    wake_url: str | None = None
+    wake_token: SecretStr | None = None
+    wake_suwayomi: tuple[str, ...] = ()
+    wake_kavita: tuple[str, ...] = ()
+    wake_timeout_s: int = Field(default=60, ge=5, le=600)
+    wake_session_s: int = Field(default=300, ge=30, le=3600)
 
     @field_validator("umask", mode="before")
     @classmethod
@@ -118,12 +130,40 @@ class Settings(BaseModel):
     def _cidrs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         return tuple(str(ipaddress.ip_network(cidr, strict=False)) for cidr in value)
 
-    @field_validator("plugin_repos", "active_sources", "forward_auth_trusted_cidrs", mode="before")
+    @field_validator(
+        "plugin_repos", "active_sources", "forward_auth_trusted_cidrs", "wake_suwayomi",
+        "wake_kavita", mode="before",
+    )  # fmt: skip
     @classmethod
     def _split_list(cls, value: object) -> object:
         if isinstance(value, str):
             return tuple(part.strip() for part in value.split(",") if part.strip())
         return value
+
+    @field_validator("wake_suwayomi", "wake_kavita")
+    @classmethod
+    def _wake_names(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        groups = [v for v in value if v.startswith(GROUP_PREFIX)]
+        if groups and (len(value) > 1 or not value[0][len(GROUP_PREFIX) :]):
+            raise ValueError("a Sablier group is given alone, as group:<name>")
+        return value
+
+    def wake_targets(self) -> dict[str, tuple[tuple[str, ...], str | None]]:
+        """Label -> (container names, group) of every tool a WakeHook is attached to."""
+        found: dict[str, tuple[tuple[str, ...], str | None]] = {}
+        for label, entries in (("suwayomi", self.wake_suwayomi), ("kavita", self.wake_kavita)):
+            if not entries:
+                continue
+            if entries[0].startswith(GROUP_PREFIX):
+                found[label] = ((), entries[0][len(GROUP_PREFIX) :])
+            else:
+                found[label] = (entries, None)
+        return found
+
+    @property
+    def wake_configured(self) -> bool:
+        """A WakeHook is configured: an address and at least one tool behind it (D8)."""
+        return bool(self.wake_url) and bool(self.wake_targets())
 
     @property
     def database_path(self) -> Path:

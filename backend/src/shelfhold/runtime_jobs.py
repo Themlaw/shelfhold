@@ -42,6 +42,7 @@ from shelfhold.acquisition.public import (
     bounded_receiver,
 )
 from shelfhold.composition import (
+    KAVITA_WAKE,
     Composition,
     KeyringUnavailableError,
     NoLibraryError,
@@ -83,6 +84,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.schema import coherence, export
+from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.library.public import PassthroughStore, RangedKeeper
@@ -217,6 +219,8 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                     place=place, slots=pools.slots,
                     keep_range=keeper,  # EF-SRC-034
                     tombstones=cast("Any", _LazyTombstones(comp)),
+                    wakes=comp.wakes(),
+                    check_mode="piloted" if comp.check_mode() == "piloted" else "always_on",
                 )  # fmt: skip
 
                 async def once() -> None:
@@ -374,7 +378,16 @@ async def _export_one(
     Returns the number of operations applied (for the counters of `job.finished`)."""
 
     with bound_contextvars(target_id=destination.target_id, destination_id=destination.id):
-        return await _export_bound(comp, disks, client, destination, scans, context, apply)
+        try:
+            # a Kavita behind Sablier is woken first and its session kept open for the whole run
+            async with comp.wakes().session(KAVITA_WAKE):
+                return await _export_bound(comp, disks, client, destination, scans, context, apply)
+        except WakeDeferred:  # not woken in time: the batch is put off, nothing is written
+            if apply is not None:
+                raise JobFailedError("wake.deferred") from None
+            log.info("export.destination_waits", destination_id=destination.id,
+                     reason="wake_deferred")  # fmt: skip
+            return 0
 
 
 async def _export_bound(

@@ -39,9 +39,9 @@ la destination.
    `shelfhold adopt --confirm-migration --destination <id> --confirm <empreinte>` les atteste d'un
    coup, pour le rapport que vous avez lu : il n'y a pas de confirmation partielle. Si le rapport de
    détection change ensuite (une série nouvelle), la confirmation est refusée et à refaire.
-7. **Choisir le mode de vérification** des sources : `always_on` (défaut, le seul actif en M1a) ;
-   `piloted` est accepté mais **inactif avant M1b** et la commande le signale
-   ([headless.md](headless.md), clé `source.check_mode`).
+7. **Choisir le mode de vérification** des sources : `always_on` (défaut) ou `piloted`, où
+   Shelfhold réveille et rafraîchit Suwayomi lui-même ([reveil-sablier.md](reveil-sablier.md),
+   [headless.md](headless.md), clé `source.check_mode`).
 8. **Planifier hors de l'hôte** : les redéploiements passent par votre outil d'orchestration
    habituel, sans cron ni timer sur l'hôte pour Shelfhold ([redeploiement.md](redeploiement.md)).
 

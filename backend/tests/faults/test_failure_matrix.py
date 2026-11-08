@@ -275,3 +275,23 @@ def test_suwayomi_reinstalled_row_is_closed_by_its_real_test() -> None:
         "source reconnect",
         "pause_service",
     )
+
+
+@pytest.mark.req("EF-INT-022", "ENF-OPS-011")
+def test_sablier_rows_are_closed_by_their_real_tests() -> None:
+    """M1b L21: `sablier_slow` and `kavita_asleep_sablier` name the test that plays them."""
+    slow = next(r for r in FAILURE_MATRIX if r.key == "sablier_slow")
+    asleep = next(r for r in FAILURE_MATRIX if r.key == "kavita_asleep_sablier")
+    assert slow.proof == (
+        "tests/integration/test_wake_follow.py::test_wake_deferred_event_after_3_batches"
+    )
+    assert asleep.proof == (
+        "tests/integration/test_wake_kavita.py"
+        "::test_kavita_asleep_wake_timeout_defers_without_unreachable_or_write"
+    )
+    for row in (slow, asleep):
+        assert (row.event, row.behaviour, row.exit_command) == (
+            "wake.deferred",
+            "notify_only",
+            None,
+        )

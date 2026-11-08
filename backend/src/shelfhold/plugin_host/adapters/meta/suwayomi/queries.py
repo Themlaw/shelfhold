@@ -2,11 +2,12 @@
 
 The mutations are the ones the spike S5 verified, in the shapes it verified (`spikes/s5`):
 `enqueueChapterDownload`, `dequeueChapterDownload`, `updateManga(inLibrary | updateStrategy)`,
-`createCategory`, `updateMangaCategories` and `deleteDownloadedChapter`. Nothing here refreshes,
-pages chapters or reaches an extension: those operations do not exist in this module, and a test
-refuses any request outside these root fields. `DELETE_DOWNLOADED_CHAPTER` is an erasure upstream:
-only the `release_claim` capability sends it (L16 gives it its guards). `login` and `refreshToken`
-(EF-SRC-031, `ui_login`) are the token mutations, sent by the host's JWT wrapper alone.
+`createCategory`, `updateMangaCategories`, `deleteDownloadedChapter` and `fetchChapters` (the
+refresh of the piloted mode, EF-SRC-025, M1b L21). Nothing here pages chapters or reaches an
+extension: those operations do not exist in this module, and a test refuses any request outside
+these root fields. `DELETE_DOWNLOADED_CHAPTER` is an erasure upstream: only the `release_claim`
+capability sends it (L16 gives it its guards). `login` and `refreshToken` (EF-SRC-031,
+`ui_login`) are the token mutations, sent by the host's JWT wrapper alone.
 """
 
 import json
@@ -28,6 +29,9 @@ CHAPTER = (
 ENQUEUE = (
     "mutation ($id: Int!) { enqueueChapterDownload(input: {id: $id}) { downloadStatus { state } } }"
 )
+# The piloted refresh of one series: Suwayomi asks the source and answers once it has learned
+# the chapters (the call waits, so its return is the end of the refresh).
+FETCH_CHAPTERS = "mutation ($id: Int!) { fetchChapters(input: {mangaId: $id}) { chapters { id } } }"
 DEQUEUE = (
     "mutation ($id: Int!) { dequeueChapterDownload(input: {id: $id}) { downloadStatus { state } } }"
 )

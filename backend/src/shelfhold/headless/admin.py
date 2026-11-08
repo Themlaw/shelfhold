@@ -67,7 +67,7 @@ from shelfhold.headless.errors import (
     UnknownConfigKey,
     UnknownTarget,
 )
-from shelfhold.headless.keys import KEYS, PATH_MAP_PREFIX, warning_of
+from shelfhold.headless.keys import KEYS, PATH_MAP_PREFIX, effective_check_mode, warning_of
 from shelfhold.headless.ports import (
     ChannelValidator,
     KavitaKeyExchange,
@@ -361,7 +361,18 @@ class HeadlessAdmin:
         if stored is not None:
             overridden = self._overridden_by(key)
             return ConfigValue(key, stored, "db", spec.default, overridden, warning_of(key, stored))
-        return ConfigValue(key, spec.default, "default", spec.default, self._overridden_by(key))
+        return ConfigValue(
+            key, self._effective_default(key, spec.default), "default", spec.default,
+            self._overridden_by(key),
+        )  # fmt: skip
+
+    def _effective_default(self, key: str, default: object) -> object:
+        """`source.check_mode` is `piloted` by default when a WakeHook is configured (D8)."""
+        if key == "source.check_mode" and self._resolve is not None:
+            return effective_check_mode(
+                None, wake_configured=self._resolve().values.wake_configured
+            )
+        return default
 
     def list(self) -> ConfigValues:
         rows = [self.get(name) for name in KEYS]
