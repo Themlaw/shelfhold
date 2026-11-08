@@ -28,6 +28,7 @@ ACQUISITION_TABLES = {
     "source_item", "sub_source", "source_alias", "source_binding", "series_follow", "gap_ack",
     "download_request", "download_request_unit", "source_failure", "source_config",
     "source_account", "upstream_snapshot", "plugin_install", "plugin_state", "revision_pending",
+    "follow_request",
 }  # fmt: skip
 
 

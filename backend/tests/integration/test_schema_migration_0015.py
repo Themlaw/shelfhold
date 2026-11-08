@@ -44,7 +44,7 @@ def test_upgrade_from_0014_keeps_data(settings: Settings) -> None:
     seed_0014(settings)
     url = "https://Shelf.Example.org:8443/path"
     result = migrate(settings.model_copy(update={"public_url": url}))
-    assert result.applied == ("0015",)
+    assert result.applied == ("0015", "0016")
     with closing(sqlite3.connect(settings.database_path)) as db:
         assert db.execute("SELECT name, rp_id FROM webauthn_credential").fetchall() == [
             ("phone", "shelf.example.org")  # what the rows were registered under
