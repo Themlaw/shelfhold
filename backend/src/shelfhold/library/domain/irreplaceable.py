@@ -14,6 +14,16 @@ from typing import ClassVar, Final
 
 CONFIRMATION_CODE: Final = "unit.confirmation_required"
 
+# EF-BIB-042 (3): this many content errors in a row on a binding make its Units candidates.
+CANDIDATE_AFTER: Final = 2
+
+
+def is_candidate(consecutive_content_errors: int) -> bool:
+    """Only the counter of content errors asks this (the caller never feeds it an auth, version,
+    network or 5xx failure: those are not counted). A candidate is a name on a list; the safeguard
+    that acts on it is a later step."""
+    return consecutive_content_errors >= CANDIDATE_AFTER
+
 
 class ConfirmationRequiredError(Exception):
     code: ClassVar[str] = CONFIRMATION_CODE

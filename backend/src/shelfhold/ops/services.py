@@ -62,6 +62,7 @@ from shelfhold.ops.ports import (
 from shelfhold.ops.rating import RatingOps
 from shelfhold.ops.status import (
     UNKNOWN_LANGUAGE,
+    candidate_report,
     collect,
     dress,
     known_bad_report,
@@ -96,6 +97,7 @@ class StatusReport:
     known_bad: dict[str, object] = field(default_factory=dict)
     service_urls: list[dict[str, object]] = field(default_factory=list)
     unverifiable_dirs: list[dict[str, object]] = field(default_factory=list)
+    content_error_candidates: list[dict[str, object]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -107,6 +109,7 @@ class StatusReport:
             "known_bad": self.known_bad,
             "service_urls": self.service_urls,
             "unverifiable_dirs": self.unverifiable_dirs,
+            "content_error_candidates": self.content_error_candidates,
         }
 
 
@@ -199,7 +202,7 @@ class OpsServices:
                 tombstoned_report(connection),
                 [c.as_dict() for c in root_capabilities.read_all(connection)],
                 known_bad_report(connection, now.date()), service_url_report(connection),
-                unverifiable_download_dirs(connection),
+                unverifiable_download_dirs(connection), candidate_report(connection),
             )  # fmt: skip
 
     def restored_behind(self) -> bool:
