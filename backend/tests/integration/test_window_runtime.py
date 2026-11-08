@@ -14,7 +14,7 @@ from sqlalchemy import Engine
 import shelfhold.runtime_jobs as rj
 from shelfhold.config import Settings
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.schema import metadata, platform
+from shelfhold.infrastructure.schema import export, metadata, platform
 from shelfhold.jobs.huey_app import JobPools
 from shelfhold.jobs.window import MaintenanceWindow
 from shelfhold.store_jobs import KEEP_CATCHUP_KIND, STORE_INDEX_KIND, register_store_jobs
@@ -142,3 +142,57 @@ def test_event_driven_export_allowed_outside_window(settings: Settings, tmp_path
         assert rj.EXPORT_JOB_KIND not in windowed_kinds(inst.engine)
         ensure_store_access(StoreOrigin.EVENT, now=clock.now(), window=pools.window)
         ensure_store_access(StoreOrigin.USER_REQUEST, now=clock.now(), window=pools.window)
+
+
+@pytest.mark.req("ENF-OPS-014", "EF-INT-023", "EF-EXP-043")
+def test_foreign_writer_is_detected_outside_the_window(settings: Settings, tmp_path: Path) -> None:
+    """The detection of another writer is a safety job: it never waits for the night. At noon,
+    the export job (not a window job) pauses the series, and `status` would list it."""
+    from tests.l50_env import seeded
+
+    with seeded(settings, tmp_path) as env:
+        series = env.new_series()
+        env.add_chapter(series, "2")
+        env.export()
+        folder = env.exported_files()[0].parent
+        (folder / "foreign-file.txt").write_text("not ours")
+        env.add_chapter(series, "3")  # something to write: the detector looks at the tree first
+        clock = ManualClock(utc(2026, 11, 4, 11))  # noon in Paris, far from 03:00-07:00
+        pools = JobPools(settings.data_dir, engine=env.inst.engine, clock=clock, seed="d")
+        rj.register_runtime_jobs(pools, env.inst.comp)
+        assert rj.EXPORT_JOB_KIND not in windowed_kinds(env.inst.engine)
+        pools.submit(rj.EXPORT_JOB_KIND, dedupe_key="detect")
+        run_all(pools, "io")
+        paused = [
+            r.paused_reason for r in env.rows(export.export_series) if r.paused_reason is not None
+        ]
+        assert paused == ["foreign_writer"]
+
+
+@pytest.mark.req("ENF-OPS-014")
+def test_only_heavy_disk_work_is_a_window_job(settings: Settings, tmp_path: Path) -> None:
+    """The explicit list of what waits for the window (ENF-OPS-014: the heavy work on /store and
+    /library, and the upkeep of the databases). A safety or detection job (the probe of a root,
+    the lease, the foreign writer, the exposure audit, the health, the removal of the parental
+    barrier) is not here, and a new window job must be added here on purpose."""
+    from shelfhold.jobs.maintenance import MaintenanceGate, register_sqlite_maintenance
+
+    class Room:
+        def has_room_for_vacuum(self, *, database_bytes: int, volume: str) -> bool:
+            return True
+
+    with instance(settings, tmp_path) as inst:
+        pools = JobPools(
+            settings.data_dir, engine=inst.engine, clock=ManualClock(utc(2026, 11, 4, 11)), seed="w"
+        )
+        rj.register_runtime_jobs(pools, inst.comp)
+        register_sqlite_maintenance(pools, inst.engine, space=Room(), gate=MaintenanceGate())
+        assert windowed_kinds(inst.engine) == {
+            "reconcile.cycle",  # verification of the tree
+            "reconcile.hash",  # hashing of files
+            "store.keep_catchup",  # catch-up copies into /store
+            "store.index",  # INDEX.jsonl of /store
+            "retention.recycle",  # the bins of /library
+            "wal_checkpoint",
+            "vacuum_monthly",
+        }
