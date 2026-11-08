@@ -23,7 +23,7 @@ def test_series_stale_m1a_default_k3() -> None:
 
         bench.clock.advance(days=2)  # 22 > 21: stale
         assert bench.cycle.check_freshness() == [bench.edition_id]
-        assert [e["edition_id"] for e in bench.events("series.stale")] == [bench.edition_id]
+        assert [e["edition_ids"] for e in bench.events("series.stale")] == [[bench.edition_id]]
         assert any(e.type == "series.stale" for e in bench.delivered)
 
         assert bench.cycle.check_freshness() == []  # announced once per episode

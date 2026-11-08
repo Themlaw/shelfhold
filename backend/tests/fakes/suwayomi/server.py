@@ -49,6 +49,7 @@ ALLOWED_FIELDS = frozenset({
     "deleteDownloadedChapter", "fetchChapters",
     "login", "refreshToken",  # M1b L20: the JWT pair of `ui_login`, in the exact S5 forms
     "user",  # M1b L20: the roles of the logged-in account (D1), when the server exposes them
+    "downloadStatus",  # M1b L22: the download queue, read before a chapter is asked again
 })  # fmt: skip
 FORBIDDEN_FIELDS = frozenset({
     "fetchChapterPages", "fetchManga", "fetchSourceManga", "updateLibrary",
@@ -134,6 +135,8 @@ class FakeSuwayomi:
     asleep: bool = False  # stopped by Sablier: nothing answers until `wake_up`
     hidden: list[tuple[int, dict[str, Any]]] = field(default_factory=list)  # (manga id, chapter)
     refreshed: list[int] = field(default_factory=list)  # manga ids of `fetchChapters`, in order
+    exclude_unread: bool = False  # global update filter "exclude unread" (M1b L22)
+    exclude_not_started: bool = False  # global update filter "exclude not started" (M1b L22)
 
     # -- scenario helpers -------------------------------------------------------------------
     def add_account(
@@ -365,6 +368,8 @@ class FakeSuwayomi:
             return self._violation("GraphQL body is not a JSON object with a query")
         variables = payload.get("variables") or {}
         found = frozenset(_TOKEN.findall(query)) & (ALLOWED_FIELDS | FORBIDDEN_FIELDS)
+        if query.lstrip().startswith("mutation"):
+            found = found - {"downloadStatus"}  # the sub-selection of the download mutations
         recorded.fields = found
         bad = found & FORBIDDEN_FIELDS
         if bad or not found:
@@ -442,7 +447,13 @@ class FakeSuwayomi:
         return {
             "authMode": self.auth_mode.upper(),
             "downloadsPath": self.state.get("downloads_path", "/downloads"),
+            "excludeUnreadChapters": self.exclude_unread,
+            "excludeNotStarted": self.exclude_not_started,
         }
+
+    def _q_downloadStatus(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        waiting = sorted(self._enqueued - self._downloaded)
+        return {"state": "STARTED", "queue": [{"chapter": {"id": i}} for i in waiting]}
 
     def _q_user(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         return {"roles": list(self.accounts[self._account].roles)}

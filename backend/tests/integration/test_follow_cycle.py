@@ -447,6 +447,7 @@ def test_a_chapter_still_not_downloaded_after_six_hours_is_asked_again(
         bench.add_chapter(3)
         bench.run()
         _stuck(bench, monkeypatch, "downloading")
+        bench.server._enqueued.clear()  # type: ignore[attr-defined]  # the queue is empty (L22)
         bench.clock.advance(hours=5, minutes=50)
         bench.run()
         assert bench.rows("SELECT attempts FROM download_request")[0]["attempts"] == 0
