@@ -4,6 +4,7 @@ Nothing here reaches the network. The time is the median of several runs, so one
 shared runner does not fail a bench, while a start that is really slow does.
 """
 
+import json
 import os
 import socket
 import statistics
@@ -12,7 +13,11 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, cast
 
 import sqlalchemy as sa
 
@@ -87,15 +92,24 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
-def time_process_start_to_ready(settings: Settings) -> float:
-    """Seconds from spawning `shelfhold serve` to its first `/readyz` 200 (loopback only). The
-    database is already migrated; each sample is a new process (import, boot and lock included)."""
+@dataclass(frozen=True, slots=True)
+class Server:
+    pid: int
+    port: int
+    ready_after_s: float  # from the spawn to the first `/readyz` 200
+
+
+@contextmanager
+def running_server(settings: Settings, *, settle_s: float = 0.0) -> Iterator[Server]:
+    """A real `shelfhold serve` on a free loopback port, ready (`/readyz` 200), then left alone
+    for `settle_s` seconds. The database is already migrated. Only this process is ever stopped."""
     port = _free_port()
     env = {
         **os.environ,
         "SHELFHOLD_DATA_DIR": str(settings.data_dir),
         "SHELFHOLD_STORE_DIR": str(settings.store_dir),
         "SHELFHOLD_PORT": str(port),
+        "MALLOC_ARENA_MAX": "2",  # as in the image (ENF-PERF-001)
     }
     started = time.perf_counter()
     process = subprocess.Popen(  # noqa: S603
@@ -107,7 +121,7 @@ def time_process_start_to_ready(settings: Settings) -> float:
             try:
                 with urllib.request.urlopen(f"http://127.0.0.1:{port}/readyz", timeout=2) as reply:
                     if reply.status == 200:
-                        return time.perf_counter() - started
+                        break
             except (urllib.error.URLError, OSError):
                 pass  # not listening yet, or 503 while not ready
             if process.poll() is not None:
@@ -117,6 +131,9 @@ def time_process_start_to_ready(settings: Settings) -> float:
             if time.perf_counter() - started > GIVE_UP_S:
                 raise AssertionError(f"/readyz still not ready after {GIVE_UP_S:.0f}s")
             time.sleep(POLL_INTERVAL_S)
+        ready_after = time.perf_counter() - started
+        time.sleep(settle_s)
+        yield Server(process.pid, port, ready_after)
     finally:
         process.terminate()
         try:
@@ -124,3 +141,18 @@ def time_process_start_to_ready(settings: Settings) -> float:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+
+def time_process_start_to_ready(settings: Settings) -> float:
+    """Seconds from spawning `shelfhold serve` to its first `/readyz` 200 (loopback only); each
+    sample is a new process (import, boot and lock included)."""
+    with running_server(settings) as server:
+        return server.ready_after_s
+
+
+REFERENCE = Path(__file__).resolve().parents[3] / ".github" / "bench-reference.json"
+
+
+def load_reference() -> dict[str, Any]:
+    """The versioned reference of the benches: thresholds of the spec and the profile's manifest."""
+    return cast("dict[str, Any]", json.loads(REFERENCE.read_text(encoding="utf-8")))
