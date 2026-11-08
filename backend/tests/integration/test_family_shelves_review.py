@@ -317,3 +317,25 @@ def test_pause_set_while_the_export_renders_stops_the_write() -> None:
         env.pipeline.run(env.destination_id, job_id=new_ulid())
         assert fired and env.files() == []
         assert env.rows(export.export_record) == []
+
+
+@pytest.mark.req("EF-INT-023", "EF-BIB-037")
+def test_a_refused_file_waits_in_status_with_its_exit_command() -> None:
+    from shelfhold.ops.status import collect
+
+    with family_env(13) as env:
+        series = env.new_series()
+        env.add_chapter(series, "1")
+        rate(env, series, 10)
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        with env.engine.connect() as connection:
+            assert [i for i in collect(connection) if i.state == "withdrawal_pending"] == []
+        rate(env, series, 16)
+        with env.engine.connect() as connection:
+            (waiting,) = [i for i in collect(connection) if i.state == "withdrawal_pending"]
+        assert waiting.subject == series.edition_id
+        assert waiting.command == "shelfhold shelf withdraw" and waiting.reserved
+        service = _withdrawal(env)
+        service.apply(if_match=service.plan().version, principal=admin(), now=NOW)
+        with env.engine.connect() as connection:
+            assert [i for i in collect(connection) if i.state == "withdrawal_pending"] == []

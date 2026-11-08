@@ -133,6 +133,7 @@ EXIT_ROUTES: tuple[ExitRoute, ...] = (
     _exit("root restored", "root_behind"),
     _exit("store reinit", "store_lost", "store.reinit"),
     _exit("source reconnect", "source_instance_changed"),
+    _exit("shelf withdraw", "withdrawal_pending", "shelf.withdraw"),
 )
 
 # States whose exit command is not specified yet (M3): the test fails when one gets routes.

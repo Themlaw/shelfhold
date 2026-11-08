@@ -22,6 +22,7 @@ SPEC_WAITING_STATES = {
     "auth_expired",
     "adoption_refused",
     "rating_pending",
+    "withdrawal_pending",
     "follow_suspended",
     "safeguard_backlog",
     "permission_denied",
