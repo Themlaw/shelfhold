@@ -78,7 +78,7 @@ from shelfhold.export.targets.kavita.errors import (
     TargetForbidden,
     TargetUnreachable,
 )
-from shelfhold.export.targets.kavita.series import refresh_foreign_names, refresh_names
+from shelfhold.export.targets.kavita.series import SeriesAges, refresh_foreign_names, refresh_names
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
@@ -480,9 +480,10 @@ async def settle_arrival(
     *,
     fsops: Callable[[], Fsops] | None = None,
 ) -> None:
-    """After an export: confirm what Kavita indexed (EF-EXP-034), then post the covers of the
-    series it now knows (EF-EXP-045). Both are read from the database first, so with nothing
-    pending neither the network nor a disk is touched beyond that."""
+    """After an export: confirm what Kavita indexed (EF-EXP-034), post the covers of the
+    series it now knows (EF-EXP-045), then push their classes (EF-EXP-040). All are read from
+    the database first, so with nothing pending neither the network nor a disk is touched beyond
+    that."""
     events = BusTargetEvents(comp.engine, comp.bus)
 
     def disks() -> Fsops:
@@ -500,6 +501,8 @@ async def settle_arrival(
         await covers.publish(client, destination_id)
     except (NoLibraryError, KeyringUnavailableError) as error:
         log.info("export.cover_skipped", reason=type(error).__name__)
+    # the class of the series, locked, by the API: never a rewrite of a file (EF-EXP-040)
+    await SeriesAges(comp.engine, comp.clock, events).push(client, destination_id)
 
 
 # -- export.apply ---------------------------------------------------------------

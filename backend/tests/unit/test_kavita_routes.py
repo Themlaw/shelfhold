@@ -72,7 +72,7 @@ def test_kavita_adapter_calls_only_allowlisted_routes() -> None:
         await client.series_of_library(7)
         await client.series_by_ids([series])
         await client.series_files(series)
-        await client.series_age(series)
+        await client.set_series_age(await client.series_age(series), 8)
 
     run(session())
     seen = {(r.method, r.path) for r in h.fake.requests}

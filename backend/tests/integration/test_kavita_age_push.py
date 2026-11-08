@@ -126,7 +126,7 @@ def test_metadata_change_does_not_rewrite_exported_file() -> None:
             )  # fmt: skip
         rate(env, series, 13)
         report = env.pipeline.run(env.destination_id, job_id=new_ulid())
-        assert report.ops == []  # no file operation is planned for a metadata change
+        assert not report.ops  # no file operation is planned for a metadata change
         assert push(w) == [sid]  # the one thing that moves is the age, by the API
         assert hashes(env) == before and env.files() == files
         assert [(f, f.stat().st_mtime_ns, f.read_bytes()) for f in files] == stat

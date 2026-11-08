@@ -46,14 +46,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l13"
-reason = "effective_age decides which age Kavita receives and who owns the locked field: the Kavita age push of L13 is its first production caller."
-until = "M1b L13"
-symbols = [
-  "shelfhold.export.domain.field_owner:effective_age",
-]
-
-[[allow]]
 category = "unwired-m1b-l15"
 reason = "Deletion of the copies of a Unit needs the irreplaceable candidates and their typed confirmation (EF-BIB-031, EF-BIB-042): M1a has no path that deletes the copies of a Unit (the deletions that exist go through the purge gate and the typed replay confirmation, proved on their real routes)."
 until = "M1b L15"
@@ -163,7 +155,6 @@ symbols = [
   "shelfhold.export.targets.kavita.client:KavitaClient.collision_check_available",
   "shelfhold.export.targets.kavita.client:KavitaClient.parse_name",
   "shelfhold.export.targets.kavita.client:KavitaClient.preview_verified",
-  "shelfhold.export.targets.kavita.client:KavitaClient.series_age",
   "shelfhold.export.targets.kavita.destination:KavitaDestination.parse_name_call",
   "shelfhold.export.targets.kavita.series:Resolution.found",
   "shelfhold.export.targets.kavita.series:Resolution.renamed",

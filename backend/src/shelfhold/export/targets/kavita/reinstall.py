@@ -5,7 +5,8 @@ cache, read again. The fingerprint of the instance (URL and installation id) is 
 connection: if it changes, `target.instance_changed` is emitted and the exports wait. `reconnect`
 (CLI `shelfhold target reconnect`) then re-resolves each library by its folder, creates none that
 exists, applies the settings again, forgets the old ids and invalidates the `field_owner` registry
-(the rated ages are pushed again by M1b). No file is written and no manifest line is rewritten.
+(the rated ages are pushed again, locked, at the end, EF-EXP-040). No file is written and no
+manifest line is rewritten.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from shelfhold.export.targets.kavita import dto
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import ProtocolError
+from shelfhold.export.targets.kavita.series import SeriesAges
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import export
 
@@ -58,6 +60,7 @@ class ReconnectReport:
     settings_applied: list[str] = field(default_factory=list)
     skipped_adopted: list[str] = field(default_factory=list)  # never touched unconfirmed
     invalidated_fields: int = 0
+    ages_pushed: list[int] = field(default_factory=list)  # Kavita series whose age came back
     audit_failed: bool = False
     paused_shelves: list[str] = field(default_factory=list)  # held by the audit that follows
 
@@ -152,7 +155,22 @@ class InstanceService:
             client.health.instance_changed = False
             client.health.refresh_waiting()
             save_health(connection, target_id, client.health)
+        # the rated ages come back, locked, once the shelves may be written again (a shelf the
+        # audit paused is skipped): only for the fields the registry says are Shelfhold's, or free
+        ages = SeriesAges(self._engine, self._clock, self._events)
+        for destination_id in self._destinations(target_id):
+            report.ages_pushed += await ages.push(client, destination_id, find_by_folder=True)
         return report
+
+    def _destinations(self, target_id: str) -> list[str]:
+        with self._engine.connect() as connection:
+            return list(
+                connection.execute(
+                    sa.select(export.shelf_destination.c.id)
+                    .where(export.shelf_destination.c.target_id == target_id)
+                    .order_by(export.shelf_destination.c.id)
+                ).scalars()
+            )
 
     # -- the database -------------------------------------------------------------------------
 

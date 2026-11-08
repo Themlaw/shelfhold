@@ -38,6 +38,7 @@ SERIES_OF_LIBRARY: Final = Route("POST", "/api/Series/all-v2", write=False)  # a
 SERIES_BY_IDS: Final = Route("POST", "/api/Series/series-by-ids", write=False)  # idem
 SERIES_DETAIL: Final = Route("GET", "/api/Series/series-detail", write=False)
 SERIES_METADATA: Final = Route("GET", "/api/Series/metadata", write=False)
+SERIES_METADATA_UPDATE: Final = Route("POST", "/api/Series/metadata", write=True)
 
 # Setup routes (EF-INT-024): used once by `target add kavita` to exchange the dedicated account for
 # a named, expiring key. Not in ALLOWED_ROUTES: a destination can never describe a call to them
@@ -51,7 +52,7 @@ SETUP_ROUTES: Final = (LOGIN, CREATE_AUTH_KEY, LIST_AUTH_KEYS, DELETE_AUTH_KEY)
 ALLOWED_ROUTES: Final = (
     SERVER_INFO, KEY_EXPIRES, PARSE, PARSE_BULK, LIBRARIES, LIBRARY_TYPE, LIBRARY_CREATE,
     LIBRARY_UPDATE, SCAN_FOLDER, UPLOAD_SERIES_COVER, USERS, SERIES_OF_LIBRARY, SERIES_BY_IDS,
-    SERIES_DETAIL, SERIES_METADATA,
+    SERIES_DETAIL, SERIES_METADATA, SERIES_METADATA_UPDATE,
 )  # fmt: skip
 _BY_KEY: Final = {(r.method, r.path.lower()): r for r in ALLOWED_ROUTES}
 # Routes that need an administrator, so that a 403 means "the account was demoted".

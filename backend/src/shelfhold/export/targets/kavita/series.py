@@ -13,18 +13,35 @@ import posixpath
 from dataclasses import dataclass
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
 
+from shelfhold.export.application.field_guard import FieldGuard
 from shelfhold.export.application.foreign_names import save_foreign_names
+from shelfhold.export.application.ports import TargetEvents
+from shelfhold.export.application.series_age import SeriesAgeTask, due_ages
 from shelfhold.export.application.snapshot import load_context
+from shelfhold.export.application.target_state import DestinationPausedError, FieldRegistry
+from shelfhold.export.domain.field_owner import AGE_RATING, effective_age, should_push
+from shelfhold.export.domain.kavita_access import rating_for_age
 from shelfhold.export.domain.naming import normalize_series_name
 from shelfhold.export.targets.kavita import dto
 from shelfhold.export.targets.kavita.client import KavitaClient
-from shelfhold.export.targets.kavita.errors import ListingIncomplete, TargetError
+from shelfhold.export.targets.kavita.errors import ListingIncomplete, ProtocolError, TargetError
+from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import export
 
-__all__ = ["Resolution", "SeriesResolver", "folded", "refresh_foreign_names", "refresh_names"]
+__all__ = [
+    "Resolution",
+    "SeriesAges",
+    "SeriesResolver",
+    "folded",
+    "refresh_foreign_names",
+    "refresh_names",
+]
+
+log = structlog.get_logger(__name__)
 
 
 def folded(name: str) -> str:
@@ -165,3 +182,110 @@ async def refresh_foreign_names(engine: Engine, client: KavitaClient, destinatio
     names = {normalize_series_name(s.name) for s in listed}
     save_foreign_names(engine, destination_id, sorted(n for n in names if n))
     return len(names)
+
+
+class SeriesAges:
+    """Push the class of each series by the API, locked, for the fields Shelfhold owns (EF-EXP-040).
+
+    Run by the export job once Kavita has indexed the series, and again by `target reconnect`
+    (EF-EXP-039). For each series, `FieldGuard.decide` answers from the `field_owner` registry
+    (EF-EXP-057): a lock Shelfhold does not hold is a third party's and is never rewritten; a lock
+    it holds whose value Kavita changed is drift, announced and pushed again; a lock it holds with
+    the value it last pushed is rewritten only if the class moved since. The registry row is
+    written before the request (ownership is never lost to a crash) and put back if it fails.
+    """
+
+    def __init__(self, engine: Engine, clock: Clock, events: TargetEvents) -> None:
+        self._engine = engine
+        self._clock = clock
+        self._events = events
+
+    async def push(
+        self, client: KavitaClient, destination_id: str, *, find_by_folder: bool = False
+    ) -> list[int]:
+        """The Kavita series ids whose age was pushed. `find_by_folder` looks a series up by its
+        folder when no id is cached (a reinstalled Kavita), at the price of listing the library."""
+        with self._engine.connect() as connection:
+            tasks = due_ages(connection, destination_id)
+            library = connection.execute(
+                sa.select(export.remote_library.c.remote_ref)
+                .select_from(
+                    export.remote_library.join(
+                        export.shelf_destination_remote_library,
+                        export.shelf_destination_remote_library.c.remote_library_id
+                        == export.remote_library.c.id,
+                    )
+                )
+                .where(
+                    export.shelf_destination_remote_library.c.shelf_destination_id == destination_id
+                )
+            ).scalar()
+        if not tasks:
+            return []
+        listed: list[dto.SeriesInfo] = []
+        try:
+            lookup = find_by_folder and library is not None and str(library).isdigit()
+            if lookup and any(t.kavita_series_id is None for t in tasks):
+                listed = list(await client.series_of_library(int(str(library))))
+            return await self._push_all(client, destination_id, tasks, listed)
+        except (TargetError, ListingIncomplete, DestinationPausedError) as error:
+            log.info("export.age_push_failed", destination_id=destination_id,
+                     reason=type(error).__name__)  # fmt: skip
+            return []
+
+    async def _push_all(
+        self,
+        client: KavitaClient,
+        destination_id: str,
+        tasks: list[SeriesAgeTask],
+        listed: list[dto.SeriesInfo],
+    ) -> list[int]:
+        pushed: list[int] = []
+        for task in tasks:
+            kavita_id = task.kavita_series_id
+            if kavita_id is None:
+                found = next((s for s in listed if s.lives_in(task.folder)), None)
+                if found is None:
+                    continue  # not indexed yet: the next run of the job pushes it
+                kavita_id = found.id
+            try:
+                current = await client.series_age(kavita_id)
+            except ProtocolError:
+                continue  # Kavita does not know this series (any more)
+            if await self._push_one(client, destination_id, task, kavita_id, current):
+                pushed.append(kavita_id)
+        return pushed
+
+    async def _push_one(
+        self,
+        client: KavitaClient,
+        destination_id: str,
+        task: SeriesAgeTask,
+        kavita_id: int,
+        current: dto.SeriesAge,
+    ) -> bool:
+        series = task.export_series_id
+        with self._engine.begin() as connection:
+            registry = FieldRegistry(connection)
+            owned = registry.get(destination_id, series, AGE_RATING)
+            ours = owned is not None and owned.pushed
+            # the age Kavita derived from the tags is read only while nobody set it
+            tag = None if current.locked or ours else current.age_rating
+            age = effective_age(task.wanted, tag)
+            if age is None:
+                return False
+            wanted = rating_for_age(age.min_age, x=age.x)
+            action = FieldGuard(registry, self._events).decide(
+                destination_id, series, AGE_RATING,
+                locked_in_kavita=current.locked, kavita_value=current.age_rating,
+            )  # fmt: skip
+            if not should_push(action, wanted=wanted, owned=owned):
+                return False
+            registry.record_push(destination_id, series, AGE_RATING, wanted, self._clock.now())
+        try:
+            await client.set_series_age(current, wanted)
+        except (TargetError, DestinationPausedError):
+            with self._engine.begin() as connection:
+                FieldRegistry(connection).restore(destination_id, series, AGE_RATING, owned)
+            raise
+        return True

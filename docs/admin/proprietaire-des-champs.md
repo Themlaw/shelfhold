@@ -35,7 +35,7 @@ que Shelfhold a prévu.
 
 `shelfhold target reconnect` retrouve chaque bibliothèque par son dossier (aucune n'est recréée
 en double), réapplique les réglages, oublie les identifiants de l'ancienne instance et **invalide
-le registre `field_owner`** : les âges classés sont repoussés (à partir de M1b).
+le registre `field_owner`** : les âges classés sont repoussés.
 
 ## Limites de la détection d'une réinstallation
 
