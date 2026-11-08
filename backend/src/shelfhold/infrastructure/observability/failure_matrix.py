@@ -67,7 +67,7 @@ _ROWS: tuple[FailureRow, ...] = (
     _row("suwayomi_mute", "suwayomi", "source.not_loaded", "degrade", None, "M1b"),
     _row("suwayomi_downloads_dropped", "suwayomi", "source.downloads_dropped", "degrade", None, "M1b"),
     _row("suwayomi_stale_series", "suwayomi", "series.stale", "notify_only", None, "M1b"),
-    _row("suwayomi_reinstalled", "suwayomi", "source.instance_changed", "pause_service", "source reconnect", "M1b"),
+    _row("suwayomi_reinstalled", "suwayomi", "source.instance_changed", "pause_service", "source reconnect", "M1b"),  # closed: see _CLOSED
     _row("sablier_slow", "sablier", "wake.deferred", "notify_only", None, "M1b"),
     _row("notifier_failing", "notifications", "notify.failed", "notify_only"),
     _row("metadata_api_down", "metadata", "metadata.provider_down", "notify_only", None, "M1b"),
@@ -133,9 +133,17 @@ _REAL_TESTS = {
 }
 
 
+# The M1b rows whose emitter has shipped: the real test that plays them (L18).
+_CLOSED = {
+    "suwayomi_reinstalled": "tests/integration/test_suwayomi_reinstall.py::test_connected_service_reinstall_pauses_without_cascade",
+}
+
+
 def _proved(row: FailureRow) -> FailureRow:
     if row.key in SIMULATED:
         return replace(row, simulated=True)
+    if row.key in _CLOSED:
+        return replace(row, proof=_CLOSED[row.key])
     if row.milestone != "M1a":
         return replace(row, proof=f"lot {row.milestone}: the emitter ships with it")
     return replace(row, proof=_REAL_TESTS[row.key])  # a missing key is a row without proof

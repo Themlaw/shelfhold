@@ -66,7 +66,9 @@ def test_reconnect_leaves_the_pause_and_follows_by_stable_identity() -> None:
         assert bench.run().paused == "source_instance_changed"
         before = bench.rows(COUNTS)[0]
 
-        server.assign("/series-alpha", server.add_category("Shelfhold", include_in_update="EXCLUDE"))
+        server.assign(
+            "/series-alpha", server.add_category("Shelfhold", include_in_update="EXCLUDE")
+        )
         bench.alpha()["inLibrary"] = True  # the admin put the series back in the new Suwayomi
         with bench.lib.engine.begin() as connection:
             assert reconnect(connection, "suwayomi") is True

@@ -31,6 +31,9 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     secret.set_defaults(handler=run_set_secret, configure_logging=False)
     recheck = actions.add_parser("recheck", help=t("ops.help_source_recheck"), allow_abbrev=False)
     recheck.set_defaults(handler=run_recheck, configure_logging=False)
+    reconnect = actions.add_parser("reconnect", help=t("ops.help_source_reconnect"),
+                                   allow_abbrev=False)  # fmt: skip
+    reconnect.set_defaults(handler=run_reconnect, configure_logging=False)
 
 
 @headless_command
@@ -63,5 +66,12 @@ def run_set_secret(args: argparse.Namespace, channel: OpsChannel) -> int:
 @ops_command
 def run_recheck(_args: argparse.Namespace, channel: OpsChannel) -> int:
     channel.call("ops.source_recheck")
+    print(t("ops.done"))
+    return 0
+
+
+@ops_command
+def run_reconnect(_args: argparse.Namespace, channel: OpsChannel) -> int:
+    channel.call("ops.source_reconnect")
     print(t("ops.done"))
     return 0

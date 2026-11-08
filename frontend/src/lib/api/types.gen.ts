@@ -3433,6 +3433,39 @@ export type SourceRecheckResponses = {
 
 export type SourceRecheckResponse = SourceRecheckResponses[keyof SourceRecheckResponses];
 
+export type SourceReconnectData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/sources/suwayomi/reconnect';
+};
+
+export type SourceReconnectErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SourceReconnectError = SourceReconnectErrors[keyof SourceReconnectErrors];
+
+export type SourceReconnectResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type SourceReconnectResponse = SourceReconnectResponses[keyof SourceReconnectResponses];
+
 export type SourceSetSecretData = {
     body: SecretIn;
     path?: never;

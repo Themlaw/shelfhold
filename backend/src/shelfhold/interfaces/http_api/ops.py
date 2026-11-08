@@ -269,6 +269,12 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             get_ops().source_recheck()
         return Done()
 
+    @router.post(_path("source", "reconnect"))
+    def source_reconnect(_admin: Admin) -> Done:
+        with refusals():
+            get_ops().source_reconnect()
+        return Done()
+
     @router.post(_path("edition", "set-lang"), response_model=LanguageOut)
     def edition_set_lang(edition_id: str, body: LanguageIn, _admin: Admin) -> LanguageOut:
         with refusals():

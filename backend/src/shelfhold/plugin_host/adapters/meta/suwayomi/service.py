@@ -28,6 +28,7 @@ from shelfhold.plugin_host.errors import (
 )
 from shelfhold.sdk.connected import (
     ConnectedCapability,
+    ReleaseResult,
     ServiceHealth,
     Ticket,
     TicketState,
@@ -135,6 +136,8 @@ class SuwayomiService:
             | ConnectedCapability.UPSTREAM_RESTORE
             | ConnectedCapability.HEALTH_PROBE
             | ConnectedCapability.AUTH_MODE
+            | ConnectedCapability.RELEASE_CLAIM
+            | ConnectedCapability.INSTANCE_FINGERPRINT
         )
         self._mode_verified = False
         self._handles: dict[str, int] = {}  # ticket token -> last known local chapter id
@@ -361,9 +364,73 @@ class SuwayomiService:
     async def followed_series(self, f: Fetcher) -> list[SeriesRef]:
         return list((await self.search(f, "", {}, None)).items)
 
-    async def set_follow(self, f: Fetcher, ref: SeriesRef, on: bool) -> None:
+    async def set_follow(
+        self, f: Fetcher, ref: SeriesRef, on: bool, *, remove_upstream: bool = False
+    ) -> None:
+        """Follow or unfollow, both idempotent (EF-SRC-029).
+
+        A series Suwayomi already holds in its library is linked as it is: nothing is written, the
+        user's own categories are not touched. One that is known but not in the library enters it,
+        in the `Shelfhold` category, which Suwayomi's own schedule leaves out. Unfollowing lets go
+        of the category and keeps the series in Suwayomi, unless `remove_upstream` is asked for."""
         node = await self._manga(f, ref)
-        await self._query(f, q.SET_LIBRARY, {"id": node["id"], "inLibrary": on})
+        manga_id = int(node["id"])
+        state = (await self._query(f, q.MANGA_LIBRARY_STATE, {"id": manga_id})).get("manga") or {}
+        in_library = bool(state.get("inLibrary"))
+        held = {int(c["id"]) for c in (state.get("categories") or {}).get("nodes") or []}
+        try:
+            if on:
+                if in_library:
+                    return  # attached to what is there: never added twice
+                category = await self._shelfhold_category(f, create=True)
+                await self._query(f, q.SET_LIBRARY, {"id": manga_id, "inLibrary": True})
+                if category is not None and category not in held:
+                    await self._query(
+                        f, q.SET_MANGA_CATEGORIES, {"id": manga_id, "add": [category], "remove": []}
+                    )
+            elif remove_upstream:
+                if in_library:
+                    await self._query(f, q.SET_LIBRARY, {"id": manga_id, "inLibrary": False})
+            else:
+                category = await self._shelfhold_category(f, create=False)
+                if category is not None and category in held:
+                    await self._query(
+                        f, q.SET_MANGA_CATEGORIES, {"id": manga_id, "add": [], "remove": [category]}
+                    )
+        finally:
+            self._mangas = None  # the library moved: the next read is fresh
+
+    async def _shelfhold_category(self, f: Fetcher, *, create: bool) -> int | None:
+        """The id of the `Shelfhold` category, created once if `create` and missing. It must be
+        excluded from the scheduled updates: one that is not is refused, never changed."""
+        for attempt in (0, 1):
+            found = await self._find_category(f)
+            if found is not None:
+                if str(found.get("includeInUpdate", "")).upper() != "EXCLUDE":
+                    raise SourceChanged("the Shelfhold category is not excluded from the updates")
+                return int(found["id"])
+            if not create or attempt:
+                break
+            await self._query(f, q.CREATE_SHELFHOLD_CATEGORY)
+        if create:
+            raise SourceChanged("the Shelfhold category could not be created")
+        return None
+
+    async def _find_category(self, f: Fetcher) -> dict[str, Any] | None:
+        """The category named `Shelfhold` (the lowest id if two): a read, nothing is written."""
+        nodes = (await self._query(f, q.CATEGORIES))["categories"]["nodes"]
+        named = sorted((c for c in nodes if str(c.get("name")) == MARK), key=lambda c: c["id"])
+        return dict(named[0]) if named else None
+
+    # -- INSTANCE_FINGERPRINT (EF-SRC-036) ---------------------------------------------------
+    async def instance_fingerprint(self, f: Fetcher) -> str:
+        """What tells this installation from another: the identity of the category Shelfhold made
+        in it. Following moves nothing; a new database does not have it. `""` while there is none
+        (nothing has been followed yet)."""
+        found = await self._find_category(f)
+        if found is None:
+            return ""
+        return hashlib.sha256(f"{KEY}|{MARK}|{int(found['id'])}".encode()).hexdigest()[:32]
 
     # -- UPSTREAM_RESTORE (EF-EXP-056) -------------------------------------------------------
     async def snapshot_upstream(self, f: Fetcher, ref: SeriesRef) -> dict[str, object]:
@@ -600,6 +667,17 @@ class SuwayomiService:
         found = await self._ticket_node(f, t)
         if found is not None:
             await self._query(f, q.DEQUEUE, {"id": found[0]})
+
+    # -- RELEASE_CLAIM -----------------------------------------------------------------------
+    async def release(self, f: Fetcher, t: Ticket) -> ReleaseResult:
+        """Erase the downloaded chapter of this ticket on the Suwayomi side (EF-BIB-038): an
+        erasure upstream, irreversible. The only caller is the purge of L16, after its guards (a
+        kept copy that still counts). A chapter that is not downloaded, or gone, erases nothing."""
+        found = await self._ticket_node(f, t)
+        if found is None or not found[1].get("isDownloaded"):
+            return ReleaseResult(released=False)
+        await self._query(f, q.DELETE_DOWNLOADED_CHAPTER, {"id": found[0]})
+        return ReleaseResult(released=True)
 
 
 def _chapter_url(unit: UnitInfo) -> str:

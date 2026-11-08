@@ -46,6 +46,7 @@ moins de 15 minutes, ou la ligne de commande locale ; une clé d'API est refusé
 | `key_expiring` | La clé nommée de Kavita expire dans 14 jours ou moins | `shelfhold target rotate-key <cible> --password-file <fichier>` | oui |
 | `not_indexed` | Le fichier écrit n'apparaît pas dans Kavita | corrigez l'exclusion, le type ou la surveillance de dossier de Kavita, puis `jobs retry <tâche>` | non |
 | `auth_expired` | Suwayomi refuse les identifiants | `shelfhold source set-secret --secret-file <fichier>` | oui |
+| `source_instance_changed` | Suwayomi a une autre empreinte : il a été réinstallé. Le suivi est en pause ; rien n'est supprimé ni redemandé | remettez vos séries dans le nouveau Suwayomi si besoin, puis `shelfhold source reconnect` (API : `POST /api/v1/sources/suwayomi/reconnect`) : la nouvelle installation devient la référence et les séries sont retrouvées par leur identité amont | non |
 | `auth_mode_unsupported` | Suwayomi est en mode `ui_login` | passez-le en `none` ou `basic_auth`, puis `shelfhold source recheck` | non |
 | `adoption_refused` | Bascule non confirmée | `shelfhold adopt --confirm-migration`, après [migration-depuis-scripts.md](migration-depuis-scripts.md) | non |
 | `coverage_unknown` | Série en volumes seuls : point de départ du suivi inconnu | `shelfhold adopt set-follow-from` | non |

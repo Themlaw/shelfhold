@@ -470,9 +470,7 @@ def source_instance_changed(settings: Settings) -> None:
                 sa.text("UPDATE source_config SET instance_fingerprint = 'old' "
                         "WHERE plugin_id = 'suwayomi'")
             )  # fmt: skip
-        pause_follow(
-            h.engine, failure_class="instance", state="source_instance_changed"
-        )
+        pause_follow(h.engine, failure_class="instance", state="source_instance_changed")
         ops = OpsServices(h.engine, clock=h.clock, bus=_bus(h), headless=h.admin)
         (item,) = _waiting(ops, "source_instance_changed")
         assert item.command == "shelfhold source reconnect"  # type: ignore[attr-defined]

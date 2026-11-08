@@ -135,6 +135,11 @@ def _source_recheck(ops: OpsServices, _by: Principal, _p: Params) -> object:
     return {"ok": True}
 
 
+def _source_reconnect(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    ops.source_reconnect()
+    return {"ok": True}
+
+
 def _edition_set_lang(ops: OpsServices, _by: Principal, p: Params) -> object:
     return {"lang": ops.edition_set_lang(_text(p, "edition_id"), _text(p, "lang"))}
 
@@ -363,6 +368,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.target_rotate_key": (_target_rotate_key, "target.rotate_key"),
     "ops.source_set_secret": (_source_set_secret, "source.set_secret"),
     "ops.source_recheck": (_source_recheck, None),
+    "ops.source_reconnect": (_source_reconnect, None),
     "ops.edition_set_lang": (_edition_set_lang, None),
     "ops.edition_set_series_name": (_edition_set_series_name, None),
     "ops.restore_adopt": (_restore_adopt, "reconcile.confirm_deletion"),

@@ -24,6 +24,7 @@ _PAUSE_EVENTS = {
     "auth": "source.auth_expired",
     "version": "source.version_unsupported",
     "schema": "source.version_unsupported",  # the upstream schema moved: a version problem
+    "instance": "source.instance_changed",  # the tool was installed again (EF-SRC-036)
 }
 
 

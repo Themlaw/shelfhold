@@ -42,6 +42,17 @@ class AuthModeUnsupported(SourceError):
         super().__init__(message)
 
 
+class ServiceInstanceChanged(SourceError):
+    """The tool answers with another fingerprint: it was installed again (EF-SRC-036). The
+    service pauses until `source reconnect`; nothing is deactivated, deleted or asked again."""
+
+    code = "source.instance_changed"
+    waiting_state = WaitingState.SOURCE_INSTANCE_CHANGED
+
+    def __init__(self, message: str = "the connected service is another installation") -> None:
+        super().__init__(message)
+
+
 class UnsupportedAuthFlow(ValueError):
     """An AuthFlow reserved for a later milestone (V1 injects Basic and ApiKey only)."""
 
@@ -50,13 +61,15 @@ UNTRUSTED_CLASS = "untrusted"  # not a `source_failure` value: it is never count
 
 
 def failure_class_of(error: BaseException) -> str:
-    """`content`, `auth`, `version`, `schema` or `infra` (the values of `source_failure`), or
-    `untrusted` for an archive the host refused (EF-BIB-051 (6)), which `source_failure` never
-    sees."""
+    """`content`, `auth`, `version`, `schema`, `instance` or `infra` (the values of
+    `source_failure`), or `untrusted` for an archive the host refused (EF-BIB-051 (6)), which
+    `source_failure` never sees."""
     if isinstance(error, UntrustedEntryError):
         return UNTRUSTED_CLASS
     if isinstance(error, ServiceVersionMismatch):
         return "version"
+    if isinstance(error, ServiceInstanceChanged):
+        return "instance"
     if isinstance(error, AuthRequired | AuthModeUnsupported):
         return "auth"
     if isinstance(error, SourceChanged):

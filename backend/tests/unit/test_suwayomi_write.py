@@ -110,7 +110,7 @@ def test_only_mutations_verified_by_s5_are_allow_listed() -> None:
         "enqueueChapterDownload", "dequeueChapterDownload", "updateManga", "createCategory",
         "updateMangaCategories", "deleteDownloadedChapter",
     }  # fmt: skip
-    service, f, server = make()
+    _service, f, server = make()
     # any other mutation is refused by the referee, and recorded
     run(f.post(f"{BASE_URL}/api/graphql", json={"query": "mutation { updateLibrary { x } }"}))
     run(f.post(f"{BASE_URL}/api/graphql", json={"query": "mutation { deleteCategory { x } }"}))
@@ -177,3 +177,26 @@ def test_instance_fingerprint_follows_the_shelfhold_category_not_the_library() -
     server.reinstall(wipe=True)  # a new database
     assert run(SuwayomiService(BASE_URL).instance_fingerprint(f)) == ""
     assert server.violations == []
+
+
+@pytest.mark.req("EF-SRC-033")
+def test_the_upstream_erasure_has_a_single_sender() -> None:
+    """The name-based reachability analysis cannot tell `release` of a service from any other
+    `release`, so this pins the guarantee: the erasure document is used by `release` and nowhere
+    else in production (L16 reaches it only through the capability, after its guards)."""
+    from pathlib import Path
+
+    import shelfhold
+
+    root = Path(shelfhold.__file__).parent
+    users = [
+        p.relative_to(root).as_posix()
+        for p in root.rglob("*.py")
+        if "DELETE_DOWNLOADED_CHAPTER" in p.read_text("utf-8")
+    ]
+    assert sorted(users) == [
+        "plugin_host/adapters/meta/suwayomi/queries.py",
+        "plugin_host/adapters/meta/suwayomi/service.py",
+    ]
+    service = (root / "plugin_host/adapters/meta/suwayomi/service.py").read_text("utf-8")
+    assert service.count("q.DELETE_DOWNLOADED_CHAPTER") == 1

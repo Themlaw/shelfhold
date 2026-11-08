@@ -271,5 +271,7 @@ def test_suwayomi_reinstalled_row_is_closed_by_its_real_test() -> None:
         "::test_connected_service_reinstall_pauses_without_cascade"
     )
     assert (row.event, row.exit_command, row.behaviour) == (
-        "source.instance_changed", "source reconnect", "pause_service"
+        "source.instance_changed",
+        "source reconnect",
+        "pause_service",
     )
