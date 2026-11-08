@@ -193,6 +193,8 @@ def follow_bench(
     adult_shelf: bool = False,
     wakes: Callable[[sa.Engine, ManualClock, EventBus], Wakes] | None = None,
     check_mode: Literal["always_on", "piloted"] = "always_on",
+    stall_after: timedelta | None = None,
+    requeue_cap: int | None = None,
 ) -> Iterator[Bench]:
     """`seeded=False`: a fresh installation, no Work and no binding (the cycle discovers them);
     `adult_shelf`: an adult shelf with a destination exists. `wakes`: builds the coordinator of the
@@ -248,6 +250,12 @@ def follow_bench(
 
         guard = tombstones(lib) if tombstones is not None else NONE_PURGED
 
+        knobs: dict[str, Any] = {}
+        if stall_after is not None:
+            knobs["stall_after"] = stall_after
+        if requeue_cap is not None:
+            knobs["requeue_cap"] = requeue_cap
+
         def new_cycle() -> FollowCycle:
             return FollowCycle(
                 lib.engine, bus, clock, service, fetcher,
@@ -256,7 +264,7 @@ def follow_bench(
                 ),
                 receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
                 place=_placement(lib), sleep=sleep, stale_k=stale_k, max_attempts=max_attempts,
-                tombstones=guard, wakes=coordinator, check_mode=check_mode,
+                tombstones=guard, wakes=coordinator, check_mode=check_mode, **knobs,
             )  # fmt: skip
 
         cycle = new_cycle()

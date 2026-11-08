@@ -55,9 +55,11 @@ from shelfhold.acquisition.application.ranges import Keeper, RangeTickets, Range
 from shelfhold.acquisition.application.staleness import stale_series
 from shelfhold.acquisition.application.tickets import (
     MAX_ATTEMPTS,
+    MAX_REQUEUE,
     STALL_AFTER,
     CycleAbandoned,
     DownloadTickets,
+    OpenRequest,
     Placement,
     Receiver,
     Sleep,
@@ -94,7 +96,7 @@ from shelfhold.infrastructure.clock import Clock, FutureDateError, reject_future
 from shelfhold.infrastructure.content_trust import sanitize_upstream_text
 from shelfhold.infrastructure.follow_suspended import suspended_work_ids
 from shelfhold.infrastructure.logging import elapsed_ms
-from shelfhold.infrastructure.schema import acquisition, catalog, platform
+from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.infrastructure.wake import WakeDeferred, Wakes
 from shelfhold.jobs.ledger import Created
 from shelfhold.jobs.public import DomainSlots, JobContext, JobPools
@@ -177,6 +179,7 @@ class FollowReport:
     unavailable: bool = False  # the service has not answered for OUTAGE_CYCLES cycles in a row
     deferred: bool = False  # the service sleeps and was not woken: the cycle is put off
     refreshed: int = 0  # series Suwayomi was asked to refresh (piloted mode)
+    not_loaded: int = 0  # upstream sources the probe found unusable (EF-SRC-026 a)
     tickets: TicketReport = field(default_factory=TicketReport)
 
     def counters(self) -> dict[str, object]:
@@ -188,6 +191,7 @@ class FollowReport:
             "awaiting_shelf": self.awaiting_shelf, "stale": self.stale,
             "paused": self.paused, "unavailable": self.unavailable,
             "deferred": self.deferred, "refreshed": self.refreshed,
+            "not_loaded": self.not_loaded,
         }  # fmt: skip
 
     def has_news(self) -> bool:
@@ -242,6 +246,7 @@ class FollowCycle:
         stale_k: int = DEFAULT_K,
         max_attempts: int = MAX_ATTEMPTS,
         stall_after: timedelta = STALL_AFTER,
+        requeue_cap: int = MAX_REQUEUE,
         service_cap: int = DEFAULT_SERVICE_CAP,
         key_cap: int = DEFAULT_KEY_CAP,
         inactive_months: int = DEFAULT_INACTIVE_MONTHS,
@@ -262,7 +267,8 @@ class FollowCycle:
         self._tickets = DownloadTickets(
             engine, clock, service, fetcher, self._ledger, store, receive, place,
             plugin_id=self._plugin_id, sleep=sleep, slots=slots, max_attempts=max_attempts,
-            stall_after=stall_after, announce=self._emit,
+            stall_after=stall_after, announce=self._emit, requeue_cap=requeue_cap,
+            queue_empty=self._server_queue_empty, blocked=self._request_blocked,
         )  # fmt: skip
         self._pending: list[PublishedEvent] = []
         self._caps = (service_cap, key_cap)
@@ -386,7 +392,10 @@ class FollowCycle:
             await self._check_instance()
         library = await from_service(self._service.followed_series(self._fetcher))
         log.debug("follow.library_listed", series=len(library), service=self._plugin_id)
-        await self._discover_series(library, report)
+        unloaded = await self._probe_sources(library, report)
+        await self._discover_series(
+            [ref for ref in library if ref.source_key not in unloaded], report
+        )
         in_library = {(ref.source_key, ref.remote_id) for ref in library}
         present = self._reconcile_library(in_library, report)
         budget = RequestBudget(*self._caps)
@@ -400,6 +409,7 @@ class FollowCycle:
             if binding.active
             and binding.work_id not in suspended  # adopted child library, unrated (EF-EXP-048)
             and binding.check_override != "paused"
+            and binding.source_key not in unloaded  # degraded: asked nothing until it is back
             and (binding.source_key, binding.remote_id) in present
             and not self._series_tombstoned(binding, report)
         ]
@@ -421,6 +431,52 @@ class FollowCycle:
                     connection, "source.downloads_dropped", {"count": report.tickets.dropped}
                 )
         report.stale = len(self.check_freshness())
+
+    async def _probe_sources(
+        self, library: list[SeriesRef], report: FollowReport
+    ) -> frozenset[str]:
+        """EF-SRC-026 (a), read only: the upstream sources of the followed series that the service
+        cannot use (missing, replaced by a stub, half updated). Each is told once per episode
+        (`source.not_loaded`); its series are left alone (no listing, no request, no requeue)
+        until it is loaded again, and what was given up meanwhile is then asked once more. It is
+        never a content error (EF-BIB-042): nothing is counted against the source."""
+        if ConnectedCapability.HEALTH_PROBE not in self._service.connected:
+            return frozenset()
+        keys = {ref.source_key for ref in library}
+        keys |= {b.source_key for b in self._bindings() if b.active}
+        found = await from_service(self._service.unloaded_sources(self._fetcher, sorted(keys)))
+        unloaded = frozenset(found) & keys
+        with self._engine.begin() as connection:
+            known = self._ledger.not_loaded(connection)
+            told = 0
+            for key in sorted(unloaded - known):
+                if self._ledger.mark_not_loaded(connection, key):
+                    told += 1
+            if told:  # one event for the cycle: the sources are named by `status`, not by an event
+                self._emit(connection, "source.not_loaded", {"count": told})
+            back = (known - unloaded) & keys
+            for key in sorted(back):
+                self._ledger.clear_not_loaded(connection, key)
+        if back:
+            self._tickets.reopen_abandoned(back)
+        self._tickets.unloaded = unloaded
+        report.not_loaded = len(unloaded)
+        return unloaded
+
+    async def _server_queue_empty(self) -> bool:
+        """EF-SRC-026 (b): the service's download queue holds nothing (a service that cannot say
+        is never taken for empty)."""
+        if ConnectedCapability.HEALTH_PROBE not in self._service.connected:
+            return False
+        return await from_service(self._service.download_queue_size(self._fetcher)) == 0
+
+    def _request_blocked(self, request: OpenRequest) -> bool:
+        """A chapter, or the series it belongs to, was purged for good: never asked again."""
+        refs = (
+            VariantRef(self._plugin_id, request.source_key, request.remote_unit_id),
+            SeriesBindingRef(self._plugin_id, request.source_key, request.remote_id),
+        )
+        return any(self._tombstones.check(ref, root_id=None).blocked for ref in refs)
 
     async def _refresh(self, followed: list[_Binding], report: FollowReport) -> None:
         """Piloted mode: Suwayomi is asked to look at each followed series upstream, one source at
@@ -973,29 +1029,16 @@ class FollowCycle:
             self._flush()
 
     def _check_freshness(self) -> list[str]:
+        """One `series.stale` for the cycle, however many series went silent: it carries their
+        number (an event holds no title). The ones announced stay in the ledger until they speak
+        again, so a series is told once per episode; `shelfhold status` lists them all."""
         now = self._clock.now()
-        announced: list[str] = []
         with self._engine.begin() as connection:
-            for silent in stale_series(connection, now, k=self._k, plugin_id=self._plugin_id):
-                if self._already_announced(connection, silent.edition_id, silent.last_discovery):
-                    continue
-                self._emit(connection, "series.stale", {"edition_id": silent.edition_id})
-                announced.append(str(silent.edition_id))
-        return announced
-
-    @staticmethod
-    def _already_announced(connection: sa.Connection, edition_id: str, since: datetime) -> bool:
-        event = platform.event
-        return (
-            connection.execute(
-                sa.select(event.c.id).where(
-                    event.c.type == "series.stale",
-                    sa.func.json_extract(event.c.payload, "$.edition_id") == edition_id,
-                    event.c.occurred_at >= since,
-                )
-            ).first()
-            is not None
-        )
+            silent = stale_series(connection, now, k=self._k, plugin_id=self._plugin_id)
+            fresh = self._ledger.sync_stale(connection, [str(s.edition_id) for s in silent])
+            if fresh:
+                self._emit(connection, "series.stale", {"count": len(fresh)})
+        return fresh
 
     # -- pause and events --------------------------------------------------------------------
     def _pause(self, failure_class: str, error: Exception, report: FollowReport) -> None:

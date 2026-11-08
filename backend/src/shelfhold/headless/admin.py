@@ -62,6 +62,7 @@ from shelfhold.headless.errors import (
     ShelfConflict,
     SourceAuthModeUnsupported,
     SourceUnreachable,
+    SourceUpdateFiltersBlocking,
     TargetConflict,
     TargetExchangeFailed,
     UnknownConfigKey,
@@ -717,6 +718,13 @@ class HeadlessAdmin:
             raise SourceAuthModeUnsupported(t("headless.auth_mode_unsupported", mode=mode))
         if mode in ("basic_auth", "ui_login") and not (username and password):
             raise InvalidConfigValue("this server needs a user:password secret")
+        if self._suwayomi.blocking_filters:  # EF-SRC-026 (d): blocks the wizard, with the fix
+            raise SourceUpdateFiltersBlocking(
+                t(
+                    "headless.update_filters_blocking",
+                    settings=", ".join(self._suwayomi.blocking_filters),
+                )
+            )
         keep = mode in ("basic_auth", "ui_login")
         settings: dict[str, Any] = {"base_url": clean_url, "auth_mode": mode}
         unverified = mode == "ui_login" and not self._suwayomi.roles_verified

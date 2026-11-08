@@ -44,7 +44,12 @@ _REQUIRED_BY_CONNECTED: dict[ConnectedCapability, tuple[str, ...]] = {
     ConnectedCapability.SERVER_QUEUE: ("request", "poll", "fetch", "cancel"),
     ConnectedCapability.RELEASE_CLAIM: ("release",),
     ConnectedCapability.UPSTREAM_RESTORE: ("snapshot_upstream", "restore_upstream"),
-    ConnectedCapability.HEALTH_PROBE: ("semantic_health",),
+    ConnectedCapability.HEALTH_PROBE: (
+        "semantic_health",
+        "unloaded_sources",
+        "download_queue_size",
+        "blocking_update_filters",
+    ),
     ConnectedCapability.AUTH_MODE: ("auth_mode",),
     ConnectedCapability.INSTANCE_FINGERPRINT: ("instance_fingerprint",),
 }

@@ -15,6 +15,10 @@ import json
 ABOUT = "query { aboutServer { name version buildType } }"
 AUTH_MODE = "query { settings { authMode } }"
 DOWNLOADS_PATH = "query { settings { downloadsPath } }"
+# EF-SRC-026 (b): what the server is downloading now. The requeue waits until it is empty.
+DOWNLOAD_QUEUE = "query { downloadStatus { state queue { chapter { id } } } }"
+# EF-SRC-026 (d): the global update filters that leave out the series the user has not read
+UPDATE_FILTERS = "query { settings { excludeUnreadChapters excludeNotStarted } }"
 SOURCES = "query { sources { nodes { id displayName lang isNsfw } } }"
 _MANGA_FIELDS = "id sourceId url title description author artist"
 LIBRARY = f"query {{ mangas(condition: {{inLibrary: true}}) {{ nodes {{ {_MANGA_FIELDS} }} }} }}"

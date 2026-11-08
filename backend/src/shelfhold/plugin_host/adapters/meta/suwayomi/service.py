@@ -318,6 +318,42 @@ class SuwayomiService:
             return ServiceHealth(ok=False, version=version, detail="source.auth_mode_unsupported")
         return ServiceHealth(ok=True, version=version)
 
+    async def unloaded_sources(self, f: Fetcher, source_keys: list[str]) -> list[str]:
+        """EF-SRC-026 (a), read only: the upstream sources among `source_keys` that the server
+        cannot use now. Absent (the extension is gone), a stub the server put in its place
+        (`Source not installed: <id>`), or an incomplete record (an extension caught between two
+        versions: no name or no language). Nothing is installed, nothing is written."""
+        listed = (await self._query(f, q.SOURCES))["sources"]["nodes"]
+        nodes = {str(n["id"]): n for n in listed}
+        return [key for key in source_keys if _unusable(nodes.get(key.partition(":")[2]))]
+
+    async def download_queue_size(self, f: Fetcher) -> int:
+        """EF-SRC-026 (b): how many chapters the server's download queue holds."""
+        status = (await self._query(f, q.DOWNLOAD_QUEUE))["downloadStatus"]
+        return len(status.get("queue") or [])
+
+    async def blocking_update_filters(self, f: Fetcher) -> list[str]:
+        """EF-SRC-026 (d): the global update settings that exclude the series that are unread or
+        not started, by name. They would keep Suwayomi from ever refreshing a followed series.
+        Empty when the server does not expose them."""
+        payload = await self._post(f, q.UPDATE_FILTERS)
+        errors = payload.get("errors")
+        if (
+            isinstance(errors, list)
+            and errors
+            and all(
+                isinstance(e, dict) and _UNKNOWN_FIELD.search(str(e.get("message", "")))
+                for e in errors
+            )
+        ):
+            return []  # a schema without these settings: nothing to warn about
+        if errors:
+            raise SourceChanged("GraphQL error: " + str(errors)[:200])
+        settings = (payload.get("data") or {}).get("settings") or {}
+        return [
+            name for name in ("excludeNotStarted", "excludeUnreadChapters") if settings.get(name)
+        ]
+
     async def request_refresh(self, f: Fetcher, refs: list[SeriesRef]) -> None:
         """Always-on: Suwayomi follows its own schedule and nothing is sent. Driven (piloted,
         EF-SRC-025 a): `fetchChapters` for each series, which returns once Suwayomi has asked the
@@ -786,6 +822,16 @@ class SuwayomiService:
         """The size of the file as the server serves it, before it is erased."""
         url = self.base_url + q.DOWNLOAD_PATH.format(id=chapter_id)
         return (await f.download(ImageRequest(url=url))).size
+
+
+def _unusable(node: dict[str, Any] | None) -> bool:
+    """A source record the server cannot serve from: missing, a stub, or half there."""
+    if node is None:
+        return True
+    name, lang = node.get("displayName"), node.get("lang")
+    if not isinstance(name, str) or not name.strip() or not isinstance(lang, str) or not lang:
+        return True
+    return name.lower().startswith("source not installed")
 
 
 def _installs_extensions(role: str) -> bool:

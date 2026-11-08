@@ -262,3 +262,12 @@ class FakeRangedConnectedService:
 
     async def request_refresh(self, f: Any, refs: list[SeriesRef]) -> None:
         return None
+
+    async def unloaded_sources(self, f: Any, source_keys: list[str]) -> list[str]:
+        return []
+
+    async def download_queue_size(self, f: Any) -> int:
+        return 0
+
+    async def blocking_update_filters(self, f: Any) -> list[str]:
+        return []

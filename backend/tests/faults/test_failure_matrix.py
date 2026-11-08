@@ -295,3 +295,22 @@ def test_sablier_rows_are_closed_by_their_real_tests() -> None:
             "notify_only",
             None,
         )
+
+
+@pytest.mark.req("EF-SRC-026", "ENF-OPS-011")
+def test_suwayomi_health_rows_are_closed_by_their_real_tests() -> None:
+    """M1b L22: `suwayomi_mute`, `suwayomi_downloads_dropped` and `suwayomi_stale_series` name the
+    test that plays them."""
+    health = "tests/integration/test_health_requeue.py"
+    expected = {
+        "suwayomi_mute": ("source.not_loaded", "test_semantic_health_detects_unloaded_source"),
+        "suwayomi_downloads_dropped": (
+            "source.downloads_dropped",
+            "test_dropped_chapters_requeued_with_cap",
+        ),
+        "suwayomi_stale_series": ("series.stale", "test_series_stale_aggregated"),
+    }
+    for key, (event, name) in expected.items():
+        row = next(r for r in FAILURE_MATRIX if r.key == key)
+        assert row.proof == f"{health}::{name}"
+        assert row.event == event and row.behaviour in {"degrade", "notify_only"}

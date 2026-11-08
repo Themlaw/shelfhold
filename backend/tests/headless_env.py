@@ -57,6 +57,7 @@ class FakeSuwayomiProbe:
 
     mode: str = "basic_auth"
     roles_verified: bool = True
+    blocking_filters: list[str] = field(default_factory=list)  # global update filters (L22)
     calls: list[dict[str, object]] = field(default_factory=list)
 
     def auth_mode(self, *, url: str, username: str | None, password: str | None) -> str:

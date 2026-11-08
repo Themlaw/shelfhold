@@ -37,6 +37,7 @@ class KavitaKeyExchange(Protocol):
 
 class SuwayomiProbe(Protocol):
     roles_verified: bool  # `ui_login`: the roles of the account were read (False: not exposed)
+    blocking_filters: list[str]  # the global update settings that leave out unread series
 
     def auth_mode(self, *, url: str, username: str | None, password: str | None) -> str: ...
 
