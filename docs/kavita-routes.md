@@ -34,6 +34,7 @@ transmise à un plugin de destination ; seule `scan-folder` la reçoit aussi dan
 | POST | `/api/Series/series-by-ids` | Relire le nom courant des séries mises en cache avant de conclure à une collision (EF-EXP-057) ; une lecture malgré le `POST` | M1a |
 | GET | `/api/Series/series-detail` | Lister les fichiers indexés d'une série (confirmation d'arrivée du chapitre, EF-EXP-034) | M1a |
 | GET | `/api/Series/metadata` | Lire l'âge de la série et son verrou (registre `field_owner`, âge dérivé des tags, EF-EXP-057) | M1a |
+| POST | `/api/Series/metadata` | Pousser l'âge de série **verrouillé** (`ageRating`, `ageRatingLocked`) : le document lu est renvoyé tel quel avec ces deux seuls champs changés, car Kavita applique le document entier ; seulement pour un champ du registre `field_owner` ou libre, jamais pour un verrou d'un tiers (EF-EXP-040, EF-EXP-057) ; exige un compte administrateur | M1b |
 
 ## Routes de mise en place (hors du client d'exploitation)
 
