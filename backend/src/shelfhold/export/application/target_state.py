@@ -201,7 +201,11 @@ class FieldRegistry:
 
     def get(self, destination_id: str, series_id: str, field: str) -> OwnedField | None:
         row = self.connection.execute(self._where(destination_id, series_id, field)).first()
-        return None if row is None else OwnedField(row.last_value, row.pushed_at is not None)
+        return (
+            None
+            if row is None
+            else OwnedField(row.last_value, row.pushed_at is not None, row.pushed_at)
+        )
 
     def record_push(
         self, destination_id: str, series_id: str, field: str, value: Any, now: datetime
@@ -219,6 +223,20 @@ class FieldRegistry:
                     last_value=value, pushed_at=now,
                 )
             )  # fmt: skip
+
+    def restore(
+        self, destination_id: str, series_id: str, field: str, previous: OwnedField | None
+    ) -> None:
+        """Put a row back as it was before a push that Kavita did not take."""
+        t, keys = export.field_owner, self._keys(destination_id, series_id, field)
+        if previous is None:
+            self.connection.execute(sa.delete(t).where(*keys))
+        else:
+            self.connection.execute(
+                sa.update(t)
+                .where(*keys)
+                .values(last_value=previous.last_value, pushed_at=previous.at)
+            )
 
     @staticmethod
     def _keys(destination_id: str, series_id: str, field: str) -> tuple[Any, ...]:

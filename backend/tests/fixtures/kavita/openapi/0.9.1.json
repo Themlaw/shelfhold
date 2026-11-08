@@ -2223,6 +2223,15 @@
     ],
     "type": "object"
    },
+   "UpdateSeriesMetadataDto": {
+    "additionalProperties": false,
+    "properties": {
+     "seriesMetadata": {
+      "$ref": "#/components/schemas/SeriesMetadataDto"
+     }
+    },
+    "type": "object"
+   },
    "UploadCoverFileDto": {
     "additionalProperties": false,
     "properties": {
@@ -3277,6 +3286,37 @@
      }
     },
     "summary": "Returns metadata for a given series",
+    "tags": [
+     "Series"
+    ]
+   },
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateSeriesMetadataDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateSeriesMetadataDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateSeriesMetadataDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Update series metadata",
     "tags": [
      "Series"
     ]

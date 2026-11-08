@@ -10,10 +10,12 @@ and is never touched. If Kavita shows another value for a field of the registry,
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
 from shelfhold.export.domain.kavita_access import age_of_rating
+from shelfhold.sdk.age import X_MIN_AGE, AgeRating, max_rating
 
 
 class FieldAction(StrEnum):
@@ -30,8 +32,10 @@ class OwnedField:
 
     last_value: Any
     pushed: bool
+    at: datetime | None = None
 
 
+_X_AGE = 99  # what `age_of_rating` says for X18+
 AGE_RATING = "age_rating"  # the one field a reinstall makes Shelfhold push again (N3)
 
 
@@ -59,13 +63,31 @@ def is_drift(action: FieldAction) -> bool:
     return action is FieldAction.REPUSH
 
 
-def effective_age(shelfhold_age: int | None, tag_rating: int | None) -> int | None:
+def should_push(action: FieldAction, *, wanted: Any, owned: OwnedField | None) -> bool:
+    """Whether the value Shelfhold wants has to be sent, once the registry has spoken.
+
+    A third party's lock is never rewritten. Shelfhold's own lock with the value it last pushed
+    is left alone unless the wanted value moved since (a reclassification).
+    """
+    if action is FieldAction.LEAVE:
+        return False
+    if action is FieldAction.NOTHING:
+        return owned is None or owned.last_value != wanted
+    return True
+
+
+def effective_age(shelfhold: AgeRating | None, tag_rating: int | None) -> AgeRating | None:
     """The class to keep for a series: Kavita's tag-derived age is a complement, never a source.
 
-    It can only raise what Shelfhold classed (a tag that says "adults only" on a 15+ series is
-    heeded), never lower it. `tag_rating` is a Kavita `AgeRating`; "unknown", "pending" and "not
-    applicable" say nothing. Without a class of its own, the tag-derived age is all there is.
+    `shelfhold` is the class of the catalog (`catalog.public.effective_age`: the most restrictive
+    of the Work and its Editions); this only adds what Kavita derived from the tags, through the
+    same `max_rating` rule. The tags can raise what Shelfhold classed (a tag that says "adults
+    only" on a 15+ series is heeded), never lower it. `tag_rating` is a Kavita `AgeRating`;
+    "unknown", "pending" and "not applicable" say nothing. Without a class of its own, the
+    tag-derived age is all there is.
     """
     from_tags = None if tag_rating is None else age_of_rating(tag_rating)
-    known = [a for a in (shelfhold_age, from_tags) if a is not None]
-    return max(known) if known else None
+    tags = None
+    if from_tags is not None:
+        tags = AgeRating(X_MIN_AGE, x=True) if from_tags >= _X_AGE else AgeRating(from_tags)
+    return max_rating(a for a in (shelfhold, tags) if a is not None)

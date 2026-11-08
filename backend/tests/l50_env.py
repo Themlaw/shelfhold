@@ -59,15 +59,21 @@ class Seeded:
             binding = add_binding(connection, work, edition, item)
         return Series(work, edition, binding)
 
-    def add_chapter(self, series: Series, number: str) -> str:
-        """A Unit received through the production store, into the inbox of the first root."""
+    def add_chapter(
+        self, series: Series, number: str, *, page: tuple[str, bytes] | None = None
+    ) -> str:
+        """A Unit received through the production store, into the inbox of the first root.
+        `page` replaces the single page (name, bytes) of the archive."""
         with self.inst.engine.begin() as connection:
             unit = add_unit(connection, series.edition_id, number)
             variant = add_variant(connection, unit, series.binding_id, f"ch-{new_ulid()}")
-        page = b"\x89PNG\r\n\x1a\n" + number.encode() + b"\x00" * 16
+        name, data = page or (
+            f"{number}-001.png",
+            b"\x89PNG\r\n\x1a\n" + number.encode() + b"\x00" * 16,
+        )
         staged = self.tmp / "staging" / f"{unit}.cbz"
         staged.parent.mkdir(parents=True, exist_ok=True)
-        staged.write_bytes(cbz_bytes(((f"{number}-001.png", page),)))
+        staged.write_bytes(cbz_bytes(((name, data),)))
         with self.inst.comp.write_context() as w:
             PassthroughStore(
                 self.inst.engine, w.fsops, w.loaded.locate, self.inst.settings.data_dir,

@@ -11,11 +11,13 @@ from shelfhold.export.domain.field_owner import (
     decide,
     effective_age,
     is_drift,
+    should_push,
 )
 from shelfhold.export.domain.kavita_access import (
     Account,
     check_link,
     exposed_accounts,
+    rating_for_age,
     restricted_accounts,
 )
 from shelfhold.export.domain.kavita_arrival import Step, next_step, probable_causes
@@ -24,6 +26,7 @@ from shelfhold.export.domain.kavita_instance import (
     instance_fingerprint,
     match_library,
 )
+from shelfhold.sdk.age import AgeRating
 from tests.kavita_env import NOW
 
 X18, TEEN, EVERYONE, UNKNOWN, NOT_APPLICABLE = 14, 8, 3, 0, -1
@@ -86,18 +89,41 @@ def test_field_is_rewritten_only_if_the_registry_owns_it() -> None:
 @pytest.mark.parametrize(
     ("shelfhold", "tags", "kept"),
     [
-        (18, EVERYONE, 18),  # a tag never lowers the class
-        (18, UNKNOWN, 18),
-        (18, NOT_APPLICABLE, 18),
-        (15, X18, 99),  # but it can raise it
-        (None, TEEN, 13),  # without a class of its own, it is all there is
+        (AgeRating(18), EVERYONE, AgeRating(18)),  # a tag never lowers the class
+        (AgeRating(18), UNKNOWN, AgeRating(18)),
+        (AgeRating(18), NOT_APPLICABLE, AgeRating(18)),
+        (AgeRating(16), X18, AgeRating(18, x=True)),  # but it can raise it
+        (None, TEEN, AgeRating(13)),  # without a class of its own, it is all there is
         (None, UNKNOWN, None),
     ],
 )
 def test_effective_age_tags_complement_never_lower(
-    shelfhold: int | None, tags: int, kept: int | None
+    shelfhold: AgeRating | None, tags: int, kept: AgeRating | None
 ) -> None:
     assert effective_age(shelfhold, tags) == kept
+
+
+@pytest.mark.req("EF-EXP-040")
+@pytest.mark.parametrize(
+    ("age", "x", "rating"),
+    [(0, False, 3), (10, False, 5), (12, False, 8), (13, False, 8), (16, False, 10),
+     (18, False, 13), (18, True, 14)],
+)  # fmt: skip
+def test_rating_for_age_is_the_nearest_kavita_rating_at_or_above(
+    age: int, x: bool, rating: int
+) -> None:
+    assert rating_for_age(age, x=x) == rating
+
+
+@pytest.mark.req("EF-EXP-057")
+def test_should_push_never_rewrites_a_lock_of_a_third_party() -> None:
+    mine = OwnedField(5, True)
+    assert not should_push(FieldAction.LEAVE, wanted=8, owned=None)
+    assert not should_push(FieldAction.NOTHING, wanted=5, owned=mine)  # nothing moved
+    assert should_push(FieldAction.NOTHING, wanted=8, owned=mine)  # reclassified
+    assert should_push(FieldAction.REPUSH, wanted=5, owned=mine)  # drift
+    assert should_push(FieldAction.WRITE, wanted=5, owned=None)
+    assert should_push(FieldAction.PUSH_AGAIN, wanted=5, owned=OwnedField(5, False))
 
 
 def _account(name: str, **kw: Any) -> Account:

@@ -380,6 +380,10 @@ class KavitaClient:
 
     # -- writes --------------------------------------------------------------------------------
 
+    async def set_series_age(self, current: dto.SeriesAge, age_rating: int) -> None:
+        """Push the age of a series, locked, as a faithful update of the document just read."""
+        await self._send(routes.SERIES_METADATA_UPDATE, body=current.age_update(age_rating))
+
     async def create_library(
         self,
         name: str,

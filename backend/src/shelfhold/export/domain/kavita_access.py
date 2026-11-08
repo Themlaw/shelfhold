@@ -67,6 +67,19 @@ def age_of_rating(rating: int) -> int | None:
     return _AGE_OF_RATING.get(rating) if rating > 1 else None
 
 
+# The Kavita `AgeRating` a class is pushed as: the same table as the ComicInfo mapping (B4, the
+# nearest value above), so that a pushed age and the age Kavita reads from a file agree.
+_RATING_CEILINGS = ((0, 3), (10, 5), (13, 8), (16, 10), (18, 13))  # Everyone ... Adults Only 18+
+_RATING_X = 14  # X18+
+
+
+def rating_for_age(min_age: int, *, x: bool = False) -> int:
+    """The Kavita `AgeRating` of a class: the nearest one at or above it, X18+ for X."""
+    if x:
+        return _RATING_X
+    return next((rating for ceiling, rating in _RATING_CEILINGS if min_age <= ceiling), _RATING_X)
+
+
 def tier(account: Account) -> int:
     """The highest class this account may read. A restriction without usable tier (only the
     unknowns switched off) counts as the lowest: it is what a child account looks like."""

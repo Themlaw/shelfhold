@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Final
 
@@ -227,6 +227,8 @@ class SeriesAge:
     series_id: int
     age_rating: int
     locked: bool
+    document: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    """The metadata as Kavita gave it: an update sends it back whole (see `age_update`)."""
 
     @classmethod
     def from_json(cls, data: object) -> SeriesAge:
@@ -236,7 +238,15 @@ class SeriesAge:
             series_id=int(data.get("seriesId") or 0),
             age_rating=int(data.get("ageRating", AGE_UNKNOWN)),
             locked=bool(data.get("ageRatingLocked", False)),
+            document=dict(data),
         )
+
+    def age_update(self, age_rating: int) -> dict[str, Any]:
+        """`UpdateSeriesMetadataDto`: the document as read, with the age and its lock changed and
+        nothing else (Kavita applies the whole document: a field left out would be emptied)."""
+        document = {**self.document, "seriesId": self.series_id}
+        document.update(ageRating=int(age_rating), ageRatingLocked=True)
+        return {"seriesMetadata": document}
 
 
 SERIES_FILTER_LIBRARIES: Final = (

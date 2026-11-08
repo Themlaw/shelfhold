@@ -53,6 +53,7 @@ ALLOWED: dict[tuple[str, str], bool] = {
     ("POST", "/api/series/series-by-ids"): False,
     ("GET", "/api/series/series-detail"): False,
     ("GET", "/api/series/metadata"): False,
+    ("POST", "/api/series/metadata"): True,
 }
 LIBRARY_TYPES = {"Manga": 0, "Comic": 1, "Book": 2, "Image": 3, "LightNovel": 4, "ComicVine": 5}
 
@@ -185,7 +186,11 @@ class FakeKavita:
             }
         )  # fmt: skip
         self.files[sid] = list(files)
-        self.ages[sid] = {"seriesId": sid, "ageRating": age_rating, "ageRatingLocked": age_locked}
+        self.ages[sid] = {
+            "seriesId": sid, "ageRating": age_rating, "ageRatingLocked": age_locked,
+            "summary": "", "genres": [], "genresLocked": False, "summaryLocked": False,
+            "writers": [], "writerLocked": False,
+        }  # fmt: skip
         return sid
 
     def set_user_cover(self, series_id: int, image: bytes) -> None:
@@ -476,10 +481,28 @@ class FakeKavita:
         return self._json({"specials": [], "chapters": [], "volumes": [{"chapters": chapters}]})
 
     def _metadata(self, recorded: RecordedRequest) -> httpx2.Response:
+        if recorded.method == "POST":
+            return self._update_metadata(recorded)
         sid = recorded.query.get("seriesId", "")
         if not sid.isdigit() or int(sid) not in self.ages:
             return self._json({"title": "Not Found", "status": 404}, 404)
         return self._json(copy.deepcopy(self.ages[int(sid)]))
+
+    def _update_metadata(self, recorded: RecordedRequest) -> httpx2.Response:
+        """`UpdateSeriesMetadataDto`: the document replaces the stored one, as Kavita applies it
+        (a field the document leaves out is not kept: a faithful update sends them all)."""
+        body = self._body(recorded, "UpdateSeriesMetadataDto")
+        if isinstance(body, httpx2.Response):
+            return body
+        document = body.get("seriesMetadata")
+        if not isinstance(document, dict):
+            return self._violation("metadata update without seriesMetadata")
+        unknown = set(document) - set(_schema("SeriesMetadataDto")["properties"])
+        sid = document.get("seriesId")
+        if unknown or sid not in self.ages:
+            return self._violation(f"metadata update: unknown={sorted(unknown)} series={sid!r}")
+        self.ages[sid] = copy.deepcopy(document)
+        return self._text(200, "")
 
     def _series(self, recorded: RecordedRequest) -> httpx2.Response:
         body = self._body(recorded, "UploadCoverFileDto")

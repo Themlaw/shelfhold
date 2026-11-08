@@ -25,6 +25,7 @@ from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.export.targets.kavita.series import SeriesResolver
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
+from shelfhold.sdk.age import AgeRating
 from tests.export_env import ExportEnv, export_env, state_of
 from tests.fakes.kavita import default_libraries, member
 from tests.kavita_env import run
@@ -345,8 +346,12 @@ def test_kavita_age_from_tags_is_complement_only() -> None:
         adults = w.fake.add_series("B", "/manga/Kavita/b", [], age_rating=14, age_locked=False)
         low = run(w.client.series_age(everyone))
         high = run(w.client.series_age(adults))
-        assert effective_age(18, low.age_rating) == 18  # the tags never lower a class
-        assert effective_age(15, high.age_rating) == 99  # they may raise it
+        assert effective_age(AgeRating(18), low.age_rating) == AgeRating(
+            18
+        )  # the tags never lower a class
+        assert effective_age(AgeRating(16), high.age_rating) == AgeRating(
+            18, x=True
+        )  # they may raise it
         with env.engine.begin() as connection:
             guard = FieldGuard(FieldRegistry(connection), w.events)
             third = w.fake.add_series("C", "/manga/Kavita/c", [], age_rating=8, age_locked=True)
