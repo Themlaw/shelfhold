@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy import Engine
 
 from shelfhold.composition import open_fsops
 from shelfhold.config import ResolvedSettings
@@ -27,7 +28,7 @@ from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.observability.network_fs import REFUSED_KINDS, filesystem_kind
-from shelfhold.infrastructure.schema import platform
+from shelfhold.infrastructure.schema import acquisition, platform
 from shelfhold.infrastructure.secrets.diagnostics import collect_warnings
 from shelfhold.infrastructure.secrets.errors import KeyringError
 from shelfhold.infrastructure.volumes import data_dir_writable_by_others
@@ -124,6 +125,15 @@ def _keyring_warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
     return [{"code": f"keyring.{w.code}", "message": warning_text(w)} for w in found]
 
 
+def _roles_unverified(engine: Engine) -> bool:
+    table = acquisition.source_config
+    with engine.connect() as connection:
+        settings = connection.execute(
+            sa.select(table.c.settings).where(table.c.plugin_id == "suwayomi")
+        ).scalar_one_or_none()
+    return bool(isinstance(settings, dict) and settings.get("roles_unverified"))
+
+
 def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
     settings = resolved.values
     database = settings.database_path
@@ -139,6 +149,7 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         headers = auth.recent_audit_targets(IDENTITY_HEADER_AUDIT)
         applied = applied_public_url(engine)
         current = relying_party(settings.public_url)
+        unverified = _roles_unverified(engine)
         stale_rps = auth.stale_passkey_rp_ids(
             current.id if isinstance(current, RelyingParty) else None
         )
@@ -154,6 +165,8 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
                 "message": t("status.passkey_rp_changed", old=rp_id),
             }
         )
+    if unverified:  # D1: the roles of the Suwayomi service account could not be read
+        pending.append({"code": "roles_unverified", "message": t("status.roles_unverified")})
     restore = _restore_status(resolved)
     behind = restored_behind_warning(restore) if restore is not None else None
     mismatched = mismatch_warnings(restore) if restore is not None else []

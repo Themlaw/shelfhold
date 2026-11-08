@@ -56,6 +56,7 @@ class FakeSuwayomiProbe:
     """The `SuwayomiProbe` port: answers the authentication mode it was told to."""
 
     mode: str = "basic_auth"
+    roles_verified: bool = True
     calls: list[dict[str, object]] = field(default_factory=list)
 
     def auth_mode(self, *, url: str, username: str | None, password: str | None) -> str:

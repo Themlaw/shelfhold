@@ -650,3 +650,26 @@ def test_path_map_change_pauses_the_linked_family_shelf_until_recheck(settings: 
                 sa.text("SELECT paused_reason FROM shelf WHERE id = :s"), {"s": made.shelf_id}
             ).scalar_one()
         assert reason == "child_exposure"
+
+
+@pytest.mark.req("EF-SRC-031")
+def test_unverified_roles_leave_a_durable_warning_and_an_audit_until_confirmed(
+    settings: Settings,
+) -> None:
+    from shelfhold.interfaces.cli.status import _roles_unverified
+
+    with headless(settings) as env:
+        env.suwayomi.mode = "ui_login"
+        env.suwayomi.roles_verified = False  # the server exposes no role (v2.4.2366)
+        env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"svc:{SUWAYOMI_PASSWORD}")
+        assert _roles_unverified(env.engine) is True
+        actions = [r[0] for r in env.engine.connect().execute(sa.text("SELECT action FROM audit"))]
+        assert actions.count("source.roles_unverified") == 1
+        assert env.admin.source_confirm_roles() is True  # explicit confirmation of the admin
+        assert _roles_unverified(env.engine) is False
+        actions = [r[0] for r in env.engine.connect().execute(sa.text("SELECT action FROM audit"))]
+        assert actions.count("source.roles_confirmed") == 1
+        assert env.admin.source_confirm_roles() is False  # nothing left to confirm
+        env.suwayomi.roles_verified = True  # roles read and harmless: no warning at all
+        env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"svc:{SUWAYOMI_PASSWORD}")
+        assert _roles_unverified(env.engine) is False

@@ -121,7 +121,10 @@ def test_review_health_tolerates_null_data() -> None:
     [
         ("NONE", True),
         ("BASIC_AUTH", True),
-        ("UI_LOGIN", True),  # since M1b L20: driven by the JWT AuthFlow
+        (
+            "UI_LOGIN",
+            False,
+        ),  # driven since M1b L20, but this answer holds no readable roles: paused
         ("SIMPLE_LOGIN", False),
         ("X", False),
     ],

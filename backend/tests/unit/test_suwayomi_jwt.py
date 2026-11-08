@@ -261,3 +261,65 @@ def test_login_and_refresh_documents_are_the_forms_measured_by_s5() -> None:
     f = jwt_fetcher(server, password='pa"ss\\word-synthetic')  # noqa: S106 - throwaway synthetic value
     library_titles(SuwayomiService(BASE_URL), f)
     assert server.logins == 1 and server.violations == []
+
+
+# -- review of #108: the roles check is closed by default --------------------------------------
+UNKNOWN_FIELD = [
+    {"message": "Validation error (FieldUndefined@[user]) : Field 'user' is undefined"}
+]
+CANNOT_QUERY = [{"message": 'Cannot query field "roles" on type "UserType".'}]
+
+
+def roles_of(payload: dict[str, object]) -> bool:
+    """True/False as `ensure_least_privilege` answers; the exception when the service pauses."""
+    server = ui_login_server(roles_payload=payload)
+    return run(SuwayomiService(BASE_URL).ensure_least_privilege(jwt_fetcher(server)))  # type: ignore[arg-type]
+
+
+@pytest.mark.req("EF-SRC-031")
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"data": {"user": None}},
+        {"data": None, "errors": [{"message": "Forbidden"}]},
+        {"errors": [{"message": "Internal server error"}]},
+        {"data": {"user": {"roles": "ADMIN"}}},
+        {"data": {"user": {"roles": [3, 4]}}},
+        {"data": {"user": {"roles": [{"label": "x"}]}}},
+        {"data": {"user": {}}},
+        {"errors": [*UNKNOWN_FIELD, {"message": "Internal server error"}]},
+        {"errors": [{"message": "Cannot query field 'colour' on type 'Query'."}]},
+        {"errors": []},
+        {},
+    ],
+    ids=lambda p: str(p)[:50],
+)
+def test_roles_answer_that_is_not_a_clean_validation_error_pauses(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(AuthModeUnsupported):
+        roles_of(payload)
+
+
+@pytest.mark.req("EF-SRC-031")
+@pytest.mark.parametrize(
+    "roles",
+    [
+        ["ADMIN"], ["admin"], ["SuperUser"], ["owner"], ["SUPER_USER"], ["Server_Admin"],
+        ["USER", "install_extensions"], ["manage-extension"],
+        [{"name": "ADMIN"}], [{"role": "superuser"}], [{"value": "Owner"}],
+        {"nodes": [{"name": "ADMIN"}]},
+    ],
+)  # fmt: skip
+def test_admin_or_extension_roles_are_refused_as_strings_or_objects(roles: object) -> None:
+    with pytest.raises(AuthModeUnsupported) as refused:
+        roles_of({"data": {"user": {"roles": roles}}})
+    assert "extension" in str(refused.value)
+
+
+@pytest.mark.req("EF-SRC-031")
+def test_harmless_roles_are_verified_and_unknown_fields_are_unverified() -> None:
+    assert roles_of({"data": {"user": {"roles": ["USER", {"name": "viewer"}]}}}) is True
+    assert roles_of({"data": {"user": {"roles": []}}}) is True
+    assert roles_of({"errors": UNKNOWN_FIELD}) is False  # the only accepted error: not exposed
+    assert roles_of({"errors": CANNOT_QUERY}) is False

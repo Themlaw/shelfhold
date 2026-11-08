@@ -25,10 +25,14 @@ FetcherFactory = Callable[[str], GuardedFetcher]
 class HttpSuwayomiProbe:
     def __init__(self, fetchers: FetcherFactory) -> None:
         self._fetchers = fetchers
+        # `ui_login`: were the roles of the account read and found harmless? False when the
+        # server does not expose them (the admin is warned, D1). Set by each `auth_mode` call.
+        self.roles_verified = True
 
     def auth_mode(self, *, url: str, username: str | None, password: str | None) -> str:
         try:
             fetcher = self._fetchers(url)
+            self.roles_verified = True
             return asyncio.run(self._mode(fetcher, url, username, password))
         except FetchError:
             raise ConnectionError("unreachable") from None  # the port's way to say so
@@ -55,9 +59,8 @@ class HttpSuwayomiProbe:
         finally:
             await inner.aclose()
 
-    @staticmethod
     async def _check_service_account(
-        inner: GuardedFetcher, url: str, username: str, password: str
+        self, inner: GuardedFetcher, url: str, username: str, password: str
     ) -> None:
         """`ui_login` (EF-SRC-031): the account logs in, and, when the server shows the roles, is
         not one that may install extensions (D1). `PermissionError`: the server refuses the
@@ -66,7 +69,9 @@ class HttpSuwayomiProbe:
             cast("Any", inner), {"username": username, "password": password}, origin=url
         )
         try:
-            await SuwayomiService(url).ensure_least_privilege(cast("Any", jwt))
+            self.roles_verified = await SuwayomiService(url).ensure_least_privilege(
+                cast("Any", jwt)
+            )
         except AuthExpired:
             raise PermissionError("the server refuses this account") from None
         except AuthModeUnsupported as too_powerful:

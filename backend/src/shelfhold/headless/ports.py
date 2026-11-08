@@ -36,6 +36,8 @@ class KavitaKeyExchange(Protocol):
 
 
 class SuwayomiProbe(Protocol):
+    roles_verified: bool  # `ui_login`: the roles of the account were read (False: not exposed)
+
     def auth_mode(self, *, url: str, username: str | None, password: str | None) -> str: ...
 
 

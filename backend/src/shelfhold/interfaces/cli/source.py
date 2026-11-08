@@ -24,6 +24,9 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     suwayomi.add_argument("--url", required=True, help=t("cli.source_url_help"))
     suwayomi.add_argument("--secret-file", help=t("cli.source_secret_file_help"))
     suwayomi.set_defaults(handler=run_add_suwayomi, configure_logging=False)
+    confirm = actions.add_parser("confirm-roles", help=t("cli.source_confirm_roles_help"),
+                                 allow_abbrev=False)  # fmt: skip
+    confirm.set_defaults(handler=run_confirm_roles, configure_logging=False)
     # the exits of EF-INT-023
     secret = actions.add_parser("set-secret", help=t("ops.help_source_set_secret"),
                                 allow_abbrev=False)  # fmt: skip
@@ -49,6 +52,15 @@ def run_add_suwayomi(args: argparse.Namespace, commands: HeadlessCommands) -> in
         print(t("headless.source_added", mode=added.auth_mode))
     else:
         print(t("headless.source_updated", mode=added.auth_mode))
+    return 0
+
+
+@headless_command
+def run_confirm_roles(_args: argparse.Namespace, commands: HeadlessCommands) -> int:
+    if commands.source_confirm_roles():
+        print(t("headless.roles_confirmed"))
+    else:
+        print(t("headless.roles_nothing_to_confirm"))
     return 0
 
 

@@ -183,6 +183,7 @@ class HeadlessCommands(Protocol):
         path_map: PathMapSpec | None = None,
     ) -> TargetAdded: ...  # fmt: skip
     def source_add_suwayomi(self, *, url: str, secret: str | None) -> SourceAdded: ...
+    def source_confirm_roles(self) -> bool: ...
     def shelf_create(
         self, *, name: str, max_age: str, target: str, subpath: str = "", phrase: str | None = None
     ) -> ShelfCreated: ...  # fmt: skip
@@ -247,6 +248,9 @@ class SocketHeadless:
         if not isinstance(raw, dict):
             raise ValueError("malformed_reply")
         return TargetAdded(raw["id"], raw["name"], raw["created"], _when(raw["key_expires_at"]))
+
+    def source_confirm_roles(self) -> bool:
+        return bool(self._call("source.confirm_roles"))
 
     def source_add_suwayomi(self, *, url: str, secret: str | None) -> SourceAdded:
         raw = self._call("source.add", kind="suwayomi", url=url, secret=secret)

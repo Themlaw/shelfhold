@@ -70,7 +70,15 @@ KEY = "suwayomi"
 CBZ_MIME = "application/vnd.comicbook+zip"
 SUPPORTED_MODES = frozenset({"none", "basic_auth", "ui_login"})  # every other mode is refused
 # D1: a role that lets an account install extensions. The service account never has one.
-_INSTALL_ROLES = frozenset({"ADMIN", "ADMINISTRATOR"})
+_PRIVILEGED_WORDS = ("ADMIN", "SUPERUSER", "SUPER_USER", "OWNER", "ROOT", "EXTENSION")
+_ROLES_UNREADABLE = (
+    "les rôles du compte de service n'ont pas pu être lus de façon sûre : "
+    "le service est mis en pause jusqu'à un compte aux droits minimaux"
+)
+_UNKNOWN_FIELD = re.compile(
+    r"(cannot query field|fieldundefined|is undefined|unknown field|not defined)", re.IGNORECASE
+)
+_ROLE_KEYS = ("name", "role", "value", "id", "type")
 MARK = "Shelfhold"  # the category that holds a series out of updates (= EXCLUSION_MARK)
 UPDATE_STRATEGIES = frozenset({"ALWAYS_UPDATE", "ONLY_FETCH_ONCE"})
 PROBE_VALID_SECONDS = 600.0  # a follow needs a fingerprint read this lately (one cycle)
@@ -259,29 +267,46 @@ class SuwayomiService:
             await self.ensure_least_privilege(f)
         self._mode_verified = True
 
-    async def ensure_least_privilege(self, f: Fetcher) -> None:
-        """D1: the account Shelfhold logs in with must not be able to install extensions. Suwayomi
-        v2.4.2366 exposes no role (S5), so then there is nothing to check and the account is
-        accepted; the documentation asks for a dedicated account as soon as Suwayomi allows one. A
-        server that does expose the roles has an account that may install refused here."""
+    async def ensure_least_privilege(self, f: Fetcher) -> bool:
+        """D1: the account Shelfhold logs in with must not be able to administer Suwayomi nor
+        install extensions. True: the roles were read and are harmless. False: the server does not
+        expose them at all (v2.4.2366, S5): nothing can be checked, the admin is told (the caller
+        records `roles_unverified`). Anything else, a role that is too strong or an answer that
+        cannot be understood, pauses the service: an unreadable answer is never an acceptance."""
         roles = await self.account_roles(f)
-        if roles and any(_installs_extensions(role) for role in roles):
-            raise AuthModeUnsupported(
-                "le compte de service peut installer des extensions Suwayomi : "
-                "utilisez un compte aux droits minimaux"
-            )
+        if roles is None:
+            return False
+        for role in roles:
+            if _installs_extensions(role):
+                raise AuthModeUnsupported(
+                    "le compte de service est administrateur ou peut installer des extensions "
+                    f"Suwayomi (rôle {role[:40]!r}) : utilisez un compte aux droits minimaux"
+                )
+        return True
 
     async def account_roles(self, f: Fetcher) -> list[str] | None:
-        """The roles of the logged-in account, or None when the server does not expose them."""
+        """The role names of the logged-in account, or None when the server does not expose them.
+
+        None only for a GraphQL *validation* error on the `user` / `roles` fields (HTTP 200, the
+        field is unknown). A null `user`, any other error, or a shape that is not a list of names
+        or of objects carrying one is `AuthModeUnsupported`: the check could not be done."""
         payload = await self._post(f, q.ACCOUNT_ROLES)
         if self._unauthorized(payload):
             raise self._refused(f)
+        errors = payload.get("errors")
+        if errors:
+            if _only_unknown_field_errors(errors):
+                return None  # the schema has no such field: the roles are not exposed
+            raise AuthModeUnsupported(_ROLES_UNREADABLE)
         data = payload.get("data")
         user = data.get("user") if isinstance(data, dict) else None
         roles = user.get("roles") if isinstance(user, dict) else None
-        if not isinstance(roles, list):
-            return None  # a schema without the field (a GraphQL validation error): not exposed
-        return [str(role) for role in roles]
+        if isinstance(roles, dict) and isinstance(roles.get("nodes"), list):
+            roles = roles["nodes"]
+        names = [_role_name(role) for role in roles] if isinstance(roles, list) else None
+        if names is None or None in names:
+            raise AuthModeUnsupported(_ROLES_UNREADABLE)
+        return [n for n in names if n is not None]
 
     # -- HEALTH_PROBE ------------------------------------------------------------------------
     async def semantic_health(self, f: Fetcher) -> ServiceHealth:
@@ -759,8 +784,32 @@ class SuwayomiService:
 
 
 def _installs_extensions(role: str) -> bool:
+    """An administrator or equivalent, or any right over extensions (case-insensitive)."""
     name = role.strip().upper()
-    return name in _INSTALL_ROLES or "EXTENSION" in name
+    return any(word in name for word in _PRIVILEGED_WORDS)
+
+
+def _role_name(role: object) -> str | None:
+    """A role given as a string, or as an object carrying its name; None when it is neither."""
+    if isinstance(role, str):
+        return role
+    if isinstance(role, dict):
+        for key in _ROLE_KEYS:
+            if isinstance(role.get(key), str):
+                return str(role[key])
+    return None
+
+
+def _only_unknown_field_errors(errors: object) -> bool:
+    """Every error is a validation error about the `user` or `roles` field being unknown."""
+    if not isinstance(errors, list) or not errors:
+        return False
+    for error in errors:
+        message = str(error.get("message", "")) if isinstance(error, dict) else ""
+        mentions = re.search(r"['\"\s@\[]\b(user|roles)\b", message, re.IGNORECASE)
+        if not (_UNKNOWN_FIELD.search(message) and mentions):
+            return False
+    return True
 
 
 def _chapter_url(unit: UnitInfo) -> str:

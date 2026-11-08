@@ -111,6 +111,7 @@ class FakeSuwayomi:
     deleted: list[int] = field(default_factory=list)  # chapter ids of `deleteDownloadedChapter`
     # -- ui_login (M1b L20): accounts, shared downloads with references, the JWT pair -------
     accounts: dict[str, FakeAccount] = field(default_factory=dict)
+    roles_payload: dict[str, Any] | None = None  # a raw answer to the roles query (hostile cases)
     expose_roles: bool = False  # v2.4.2366 exposes none (S5): the roles query is a GraphQL error
     claims: dict[int, set[str]] = field(default_factory=dict)  # chapter id -> accounts holding it
     files_removed: list[int] = field(default_factory=list)  # chapters whose file really went
@@ -357,6 +358,8 @@ class FakeSuwayomi:
             return self._token_mutation(query)
         if not authenticated and found != {"aboutServer"}:
             return self._json({"data": None, "errors": [{"message": "Unauthorized"}]})
+        if "user" in found and self.roles_payload is not None:
+            return self._json(self.roles_payload)
         if "user" in found and not self.expose_roles:  # a schema without that field (S5)
             message = "Validation error: Field 'user' in type 'Query' is undefined"
             return self._json({"errors": [{"message": message}]})

@@ -37,7 +37,7 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
   **compte de service** de Shelfhold : créez-lui un compte dédié aux droits minimaux dès que votre
   Suwayomi le permet (jamais l'installation d'extensions ; un compte que le serveur dit pouvoir en
   installer est refusé). Shelfhold ne lit que la bibliothèque de ce compte, jamais celle des autres :
-  la famille demande ses séries par Shelfhold. Les jetons de connexion ne sont gardés qu'en mémoire.
+  la famille demande ses séries par Shelfhold. Si le serveur n'expose pas les rôles du compte (c'est le cas de Suwayomi v2.4.2366), Shelfhold ne peut pas vérifier ses droits : `shelfhold status` affiche `roles_unverified` jusqu'à `shelfhold source confirm-roles` (audité). Les jetons de connexion ne sont gardés qu'en mémoire.
 - `shelf create` : seules les étagères **18+** ou **X** existent en M1a. Si Shelfhold ne peut pas écrire dans le dossier de l'étagère, la commande s'arrête (rien n'est créé) et donne la cause (`EACCES`, propriétaire, mode, uid d'exécution), la commande `setfacl` à lancer sur l'hôte et le bloc `compose` exact (`user:` ou `group_add:`) à coller (EF-UX-002).
 - Les commandes sont idempotentes : les relancer ne change rien.
 
