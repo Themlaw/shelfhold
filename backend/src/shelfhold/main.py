@@ -46,7 +46,7 @@ from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
-from shelfhold.interfaces.http_api.shelves import build_shelves_router
+from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
@@ -162,7 +162,8 @@ def create_app(
         return PlanService(composition, pipeline, lambda: runtime.pools)
 
     export_routers = (
-        build_shelves_router(lambda: ShelfService(engine)),
+        build_shelves_router(lambda: ShelfService(engine, clock=clock), ops_services),
+        build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
         build_plans_router(plans),
         build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202

@@ -102,3 +102,15 @@ def assess_version(
     warnings = tuple(k for k in known_bad if version is not None and k.affects(version))
     mode = TargetMode.FULL if in_range else TargetMode.DEGRADED_READONLY
     return Assessment(raw or "", version, mode, warnings)
+
+
+def blocks_family_shelf(raw_version: str | None) -> bool:
+    """A shelf below 18+ is blocked (`target.child_exposure`) on a release classed `access_control`
+    (<= 0.9.0.2), below the minimum 0.9.1 that fixes it (so 0.9.0.3 is blocked too: ENF-COMP-001
+    makes 0.9.1 the floor of the family shelves), out of the range, and when nobody read the
+    version: the barrier is the library access, which only a release without the flaw enforces
+    (EF-EXP-055). The adult shelves only warn."""
+    assessment = assess_version(raw_version)
+    if assessment.version is None or assessment.mode is TargetMode.DEGRADED_READONLY:
+        return True
+    return any(k.category == "access_control" for k in assessment.known_bad)

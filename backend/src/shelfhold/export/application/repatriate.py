@@ -29,7 +29,7 @@ from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks, path_resource
 from shelfhold.export.application.repatriate_kavita import KavitaVerdict
 from shelfhold.export.application.restore import RestoredBehindError
-from shelfhold.export.application.snapshot import load_context
+from shelfhold.export.application.snapshot import barrier_holds, load_context
 from shelfhold.export.domain.path_map import PathMode, clean_absolute
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import (
@@ -74,6 +74,13 @@ class RepatriationStaleError(Exception):
     def __init__(self, plan: "RepatriationPlan") -> None:
         super().__init__("the files changed since the dry-run")
         self.plan = plan
+
+
+class RepatriationBarrierError(Exception):
+    """The destination is a shelf below 18+ and one of the Editions no longer belongs there:
+    nothing is copied into the library of the children."""
+
+    code = "repatriate.blocked"
 
 
 class RepatriationBlockedError(Exception):
@@ -302,6 +309,21 @@ class Repatriator:
             for r in rows
         ]  # fmt: skip
 
+    def _require_barrier(self, destination_id: str) -> None:
+        """Defence in depth: the adoption of a family shelf is refused, but whatever the manifest
+        holds is looked at again with the admission before any file is copied home."""
+        item, record = export.export_item, export.export_record
+        with self._engine.connect() as connection:
+            editions = connection.execute(
+                sa.select(item.c.edition_id)
+                .select_from(record.join(item, item.c.id == record.c.export_item_id))
+                .where(record.c.shelf_destination_id == destination_id)
+                .distinct()
+            ).scalars()
+            for edition_id in editions:
+                if not barrier_holds(connection, destination_id, str(edition_id)):
+                    raise RepatriationBarrierError(str(edition_id))
+
     # -- the copy ---------------------------------------------------------------------------
 
     @log_outcome(
@@ -335,6 +357,7 @@ class Repatriator:
             raise RepatriationStaleError(plan)
         if plan.problems:
             raise RepatriationBlockedError(plan.problems)
+        self._require_barrier(destination_id)
         if plan.free_bytes < plan.required_bytes:
             raise NotEnoughSpaceError(plan.required_bytes, plan.free_bytes)
         by_folder: dict[str, list[FileAction]] = defaultdict(list)

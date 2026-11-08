@@ -20,7 +20,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("export.name_misread_number", 422, "user"),
     ErrorCode("export.segment_policy_unconfirmed", 409, "admin"),
     # L27: planner and bindings (EF-EXP-002, EF-EXP-032, EF-EXP-058, EF-EXP-062)
-    ErrorCode("shelf.parental_control_unavailable", 422, "user"),
+    ErrorCode("shelf.ceiling_invalid", 422, "user"),
     ErrorCode("target.tree_overlap", 409, "admin"),
     ErrorCode("shelf.destination_exists", 409, "admin"),
     ErrorCode("target.pull_needs_readable_copy", 409, "admin"),
@@ -30,6 +30,17 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("export.transport_unsupported", 409, "admin"),
     ErrorCode("export.destination_occupied", 409, "admin"),
     ErrorCode("export.source_missing", 409, "admin"),
+    # L10: family shelves (EF-USR-015, EF-EXP-047, EF-BIB-037, EF-BIB-055)
+    ErrorCode("shelf.rating_required", 422, "user"),
+    ErrorCode("shelf.above_ceiling", 422, "user"),
+    ErrorCode("shelf.suggestion_above", 422, "user"),
+    ErrorCode("shelf.destination_not_partitioned", 409, "admin"),
+    ErrorCode("shelf.library_not_dedicated", 409, "admin"),
+    ErrorCode("shelf.adoption_needs_rating", 409, "admin"),
+    ErrorCode("target.remote_folder_shared", 409, "admin"),
+    ErrorCode("export.series_other_shelf", 409, "admin"),
+    ErrorCode("job.busy", 409, "user"),
+    ErrorCode("export.age_tier_mix", 409, "admin"),
     # L30: pairing with the Suwayomi follow, switchover (EF-EXP-038, EF-EXP-044, EF-EXP-054)
     ErrorCode("pairing.switchover_unconfirmed", 409, "admin"),
     ErrorCode("pairing.not_writable", 409, "admin"),

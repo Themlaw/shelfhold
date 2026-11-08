@@ -6,10 +6,8 @@ from shelfhold.export.domain.bindings import (
     BindingFacts,
     PullNeedsReadableCopyError,
     ShelfAlreadyBoundError,
-    ShelfBelowEighteenError,
     TreeOverlapError,
     check_binding,
-    check_shelf_ceiling,
     resolve_egress,
 )
 from shelfhold.export.domain.planner import (
@@ -59,17 +57,6 @@ def request(**extra: object) -> PlanRequest:
         "units": (unit(),),
     }
     return PlanRequest(**{**values, **extra})  # type: ignore[arg-type]
-
-
-@pytest.mark.req("EF-EXP-002")
-def test_m1a_shelf_below_18_refused() -> None:
-    """D1: only a shelf whose ceiling is 18+ (or X, or none) exists in M1a."""
-    for ceiling in (None, 18, 99):
-        check_shelf_ceiling(ceiling)
-    for ceiling in (0, 10, 12, 16, 17):
-        with pytest.raises(ShelfBelowEighteenError) as raised:
-            check_shelf_ceiling(ceiling)
-        assert raised.value.code == "shelf.parental_control_unavailable"
 
 
 @pytest.mark.req("EF-EXP-058")

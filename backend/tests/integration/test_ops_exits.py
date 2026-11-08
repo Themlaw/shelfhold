@@ -75,6 +75,7 @@ M1B_STATES = frozenset(
         WaitingState.ROOT_BEHIND,
         WaitingState.STORE_LOST,
         WaitingState.SOURCE_INSTANCE_CHANGED,
+        WaitingState.WITHDRAWAL_PENDING,
     }
 )
 M3_STATES = frozenset({s for s in WaitingState if s.value in EXIT_STATES_LATER})

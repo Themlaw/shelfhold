@@ -39,5 +39,6 @@ class WaitingState(StrEnum):
     ROOT_BEHIND = "root_behind"
     STORE_LOST = "store_lost"
     SOURCE_INSTANCE_CHANGED = "source_instance_changed"
+    WITHDRAWAL_PENDING = "withdrawal_pending"  # a file waits to leave a family shelf (EF-BIB-037)
     # M3
     LIBRARY_TYPE_CHANGED = "library_type_changed"

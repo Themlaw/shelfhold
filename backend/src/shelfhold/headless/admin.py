@@ -33,7 +33,7 @@ from shelfhold.export.application.root_bootstrap import (
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import load_health, save_health
-from shelfhold.export.domain.bindings import check_shelf_ceiling
+from shelfhold.export.domain.bindings import BindingError, check_ceiling
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMapError, PathMode, within
 from shelfhold.export.domain.reconcile import (
@@ -242,7 +242,7 @@ def _ceiling(text: str) -> int:
         return X_CEILING
     if value.isdigit():
         return int(value)
-    raise InvalidConfigValue("max age is 18+ or X in M1a")
+    raise InvalidConfigValue("max age is a number of years such as 13+, or X")
 
 
 WAKE_KINDS = ("follow.cycle", "export.run")
@@ -440,6 +440,10 @@ class HeadlessAdmin:
         with self._engine.connect() as connection:
             own = self._target_row(connection, key.removeprefix(PATH_MAP_PREFIX)).id
         self._check_roots(entries, except_target=own)
+        try:
+            self._shelves.check_path_map(own, entries)  # bindings that would overlap or share
+        except BindingError as error:
+            raise InvalidConfigValue(f"{error.code}: {error}") from None
         with self._engine.begin() as connection:
             row = self._target_row(connection, key.removeprefix(PATH_MAP_PREFIX))
             before = list(row.path_map)
@@ -451,6 +455,7 @@ class HeadlessAdmin:
             with self._engine.begin() as connection:
                 records.set_path_map(connection, row.id, before, self._clock.now())
             raise
+        self._shelves.pause_family_of_target(own)  # audited again before anything is written
         return self.get(key)
 
     def _set_channel(self, value: str) -> None:
@@ -672,10 +677,17 @@ class HeadlessAdmin:
     # -- shelf create -------------------------------------------------------------------------
 
     def shelf_create(
-        self, *, name: str, max_age: str, target: str, subpath: str = "", phrase: str | None = None
+        self,
+        *,
+        name: str,
+        max_age: str,
+        target: str,
+        subpath: str = "",
+        phrase: str | None = None,
+        actor: Actor | None = None,
     ) -> ShelfCreated:
         ceiling = _ceiling(max_age)
-        check_shelf_ceiling(ceiling)  # a ceiling below 18+ is refused before anything is stored
+        check_ceiling(ceiling)  # a ceiling off the scale is refused before anything is stored
         with self._engine.connect() as connection:
             target_row = self._target_row(connection, target)
             shelf = records.shelf_named(connection, name)
@@ -692,7 +704,7 @@ class HeadlessAdmin:
             shelf.id
             if shelf is not None
             else self._shelves.create_shelf(
-                name=name, phrase=phrase or name, max_age_rating=ceiling
+                name=name, phrase=phrase or name, max_age_rating=ceiling, actor=actor
             )
         )
         destination_id = self._shelves.bind_destination(
@@ -868,7 +880,7 @@ class HeadlessAdmin:
 
     def _plan_shelf(self, shelf: DesiredShelf, desired: DesiredConfig) -> PlanChange:
         ceiling = _ceiling(shelf.max_age)
-        check_shelf_ceiling(ceiling)
+        check_ceiling(ceiling)
         if shelf.target not in {t.name for t in desired.targets}:
             with self._engine.connect() as connection:
                 self._target_row(connection, shelf.target)
@@ -906,4 +918,4 @@ class HeadlessAdmin:
         elif change.kind == "shelf":
             shelf = next(s for s in desired.shelves if s.name == change.subject)
             self.shelf_create(name=shelf.name, max_age=shelf.max_age, target=shelf.target,
-                              subpath=shelf.subpath, phrase=shelf.phrase)  # fmt: skip
+                              subpath=shelf.subpath, phrase=shelf.phrase, actor=actor)  # fmt: skip

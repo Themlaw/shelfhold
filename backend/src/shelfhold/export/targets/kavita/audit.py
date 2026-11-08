@@ -23,6 +23,7 @@ from shelfhold.export.application.target_state import (
     resume_shelf,
     save_health,
 )
+from shelfhold.export.domain.bindings import is_family
 from shelfhold.export.domain.kavita_access import (
     Account,
     check_link,
@@ -30,7 +31,7 @@ from shelfhold.export.domain.kavita_access import (
     restricted_accounts,
     tier,
 )
-from shelfhold.export.domain.kavita_instance import covering_libraries
+from shelfhold.export.domain.kavita_instance import covering_libraries, library_is_dedicated
 from shelfhold.export.targets.kavita import dto
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.infrastructure.clock import Clock
@@ -132,6 +133,8 @@ class AccessAuditor:
             report.known_bad_restricted = restricted
         pause_all = bad and bool(restricted)
         shelves: list[tuple[str, bool]] = []  # (shelf, must be paused)
+        family_blocked = False  # a shelf below 18+ on a release with the access-control flaw
+        shared_library = False  # a family library that holds more than its own folder
         now = self._clock.now()
         with self._engine.begin() as connection:
             for row in self._links(connection, target_id):
@@ -146,11 +149,26 @@ class AccessAuditor:
                     names.update({a.username: a for a in exposed_accounts(accounts, library_id)})
                 exposed = tuple(sorted(names.values(), key=lambda a: a.username))
                 self._store(connection, row.remote_library_id, exposed, client.health.version, now)
-                if exposed:
-                    report.exposed[row.remote_ref] = tuple(a.username for a in exposed)
+                refusing = check_link(ctx.max_age_rating, exposed)
+                if refusing:
+                    report.exposed[row.remote_ref] = refusing
                 if mismatch:
                     report.mismatched.append(row.remote_ref)
-                shelves.append((row.shelf_id, bool(exposed) or pause_all or mismatch))
+                family = is_family(ctx.max_age_rating)
+                blocked_by_version = family and bad  # no restricted account needed (ENF-COMP-001)
+                shared = family and any(
+                    not library_is_dedicated(lib, root)
+                    for lib in libraries
+                    if root and int(lib["id"]) in covering
+                )
+                family_blocked |= blocked_by_version
+                shared_library |= shared
+                # a child account of the right tier is what a family shelf is for: only an account
+                # below the ceiling, or any restricted one for an adult shelf, exposes it
+                shelves.append(
+                    (row.shelf_id, bool(refusing) or pause_all or mismatch or blocked_by_version
+                     or shared)
+                )  # fmt: skip
             wanted = {shelf for shelf, must in shelves if must}
             for shelf_id in sorted(wanted):
                 if pause_shelf(connection, shelf_id, CHILD_EXPOSURE):
@@ -172,7 +190,8 @@ class AccessAuditor:
         if report.paused_shelves:
             accounts_named = sorted({n for names in report.exposed.values() for n in names})
             cause = (
-                "access_control_known_bad" if pause_all
+                "access_control_known_bad" if pause_all or family_blocked
+                else "library_not_dedicated" if shared_library and not accounts_named
                 else "library_mismatch" if report.mismatched and not accounts_named
                 else "exposed_library"
             )  # fmt: skip

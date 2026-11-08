@@ -17,6 +17,7 @@ Paths under an open intent are invisible to reconciliation and planning (I9, `sk
 
 import contextlib
 from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -51,6 +52,7 @@ class DiskPort(Protocol):
 
     def rename(self, src: str, dst: str, *, replace: bool = False) -> None: ...
     def rmdir(self, local: str) -> None: ...
+    def recycle(self, local: str) -> str: ...
     def observe(self, local: str) -> tuple[Kind, FileIdentity] | None: ...
     def sha256_of(self, local: str) -> str: ...
 
@@ -151,10 +153,12 @@ class IntentJournal:
         expected_sha256: str | None = None,
         expected_file_id: FileIdentity | None = None,
         plan_id: str | None = None,
+        within: Connection | None = None,
     ) -> str:
-        """Step 1: the intent, `pending`, committed before anything touches the disk."""
+        """Step 1: the intent, `pending`, committed before anything touches the disk. `within`:
+        the transaction of the rows it goes with (a withdrawal), so that both exist or neither."""
         intent_id = new_ulid()
-        with self._engine.begin() as conn:
+        with nullcontext(within) if within is not None else self._engine.begin() as conn:
             epoch = conn.execute(sa.select(platform.instance.c.restore_epoch)).scalar_one()
             conn.execute(
                 sa.insert(coherence.fs_intent).values(
@@ -346,6 +350,8 @@ class IntentJournal:
                 self._resolve_rename(intent, report, on_done)
             elif intent.op == "rmdir" and intent.src:
                 self._resolve_rmdir(intent, report, on_done)
+            elif intent.op == "recycle" and intent.src:
+                self._resolve_recycle(intent, report, on_done)
             elif intent.op == "write" and intent.dst:
                 self._resolve_write(intent, report, on_done)
             elif intent.op == "copy_cross_root" and intent.src and intent.dst:
@@ -393,6 +399,26 @@ class IntentJournal:
             report.completed.append(intent.id)
         else:
             self._drift(intent, report, "neither one source-only nor one target-only state")
+
+    def _resolve_recycle(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """A file taken out of a shelf into the bin of its root (EF-BIB-037). The rows were
+        committed first, so the file is either still there (the very file: it goes now) or gone
+        (it went before the crash: nothing more to do). Another file at that path is never
+        touched."""
+        if intent.src is None:
+            return self._drift(intent, report, "a recycle needs its file")
+        found = self._disk.observe(intent.src)
+        if found is None:
+            self._finish(intent, on_done)
+            report.completed.append(intent.id)
+        elif found[0] == "file" and self._is_expected(intent, intent.src, found[1]):
+            self._disk.recycle(intent.src)
+            self._finish(intent, on_done)
+            report.replayed.append(intent.id)
+        else:
+            self._drift(intent, report, "the file in the shelf is not the one to be recycled")
 
     def _resolve_write(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

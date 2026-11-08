@@ -1,8 +1,12 @@
 """Rules about shelves and their destination bindings, before anything is planned.
 
-- EF-EXP-002 (D1): in M1a only a shelf whose ceiling is 18+ (or X, or none) can exist;
+- EF-EXP-002: a ceiling is a tier of the scale (or X, or none); a shelf below 18+ is a family
+  shelf (ADR-0027);
+- EF-EXP-047: a family shelf is linked only to a destination that partitions access by library or
+  by user; what a third-party plugin declares is a default the admin attests;
 - EF-EXP-058: `egress` is attested per instance, two `tree` bindings may not overlap, a shelf kept
-  in passthrough is linked to a `pull` destination only if a readable copy exists.
+  in passthrough is linked to a `pull` destination only if a readable copy exists;
+- EF-BIB-037: two shelves never share a remote folder of the same server.
 """
 
 from collections.abc import Iterable
@@ -10,8 +14,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from shelfhold.export.domain.path_map import clean_absolute, within
+from shelfhold.sdk.age import AGE_TIERS
 
 ADULT_MIN_AGE = 18
+X_CEILING = 99  # `shelf.max_age_rating` stores X as 99
+PARTITIONED = ("library", "user")
 Egress = Literal["foyer", "externe"]
 
 
@@ -24,10 +31,34 @@ class BindingError(ValueError):
         super().__init__(f"{self.code}: {message}")
 
 
-class ShelfBelowEighteenError(BindingError):
-    """The parental control arrives in M1b: no shelf below 18+ before then."""
+class ShelfCeilingError(BindingError):
+    """A ceiling that is no tier of the scale (nor X, nor none)."""
 
-    code = "shelf.parental_control_unavailable"
+    code = "shelf.ceiling_invalid"
+
+
+class UnpartitionedDestinationError(BindingError):
+    """A shelf below 18+ needs a destination that keeps children out of the rest (EF-EXP-047)."""
+
+    code = "shelf.destination_not_partitioned"
+
+
+class LibraryNotDedicatedError(BindingError):
+    """The Kavita library a family shelf would use also holds files of something else."""
+
+    code = "shelf.library_not_dedicated"
+
+
+class AdoptionNeedsRatingError(BindingError):
+    """Adopting a library files Works nobody rated: not into a shelf below 18+ (EF-BIB-055)."""
+
+    code = "shelf.adoption_needs_rating"
+
+
+class RemoteFolderSharedError(BindingError):
+    """Two shelves would write the same folder of the same server."""
+
+    code = "target.remote_folder_shared"
 
 
 class TreeOverlapError(BindingError):
@@ -49,10 +80,32 @@ class PullNeedsReadableCopyError(BindingError):
     code = "target.pull_needs_readable_copy"
 
 
-def check_shelf_ceiling(max_age_rating: int | None) -> None:
-    """`None` is a shelf without ceiling (adult); X is stored above every age."""
-    if max_age_rating is not None and max_age_rating < ADULT_MIN_AGE:
-        raise ShelfBelowEighteenError(f"ceiling {max_age_rating}: available with M1b")
+def is_family(max_age_rating: int | None) -> bool:
+    """A shelf below 18+: the barrier of the parental control applies to it."""
+    return max_age_rating is not None and max_age_rating < ADULT_MIN_AGE
+
+
+def check_ceiling(max_age_rating: int | None) -> None:
+    """`None` is a shelf without ceiling; 99 is X; any other value is a tier of the scale."""
+    if max_age_rating is None or max_age_rating == X_CEILING or max_age_rating in AGE_TIERS:
+        return
+    raise ShelfCeilingError(f"ceiling {max_age_rating} is no tier of {AGE_TIERS}")
+
+
+def effective_partitioning(kind: str, stored: str, *, attested: bool) -> str:
+    """How a destination keeps accounts apart. Kavita does it by library (it is the adapter that
+    knows); the value a third-party plugin declares is a default proposal and counts only once
+    the admin attested it (K9, GAP-10-08); an unattested one is `none`."""
+    if kind == "kavita":
+        return "library"
+    return stored if attested else "none"
+
+
+def check_partitioning(max_age_rating: int | None, partitioning: str) -> None:
+    if is_family(max_age_rating) and partitioning not in PARTITIONED:
+        raise UnpartitionedDestinationError(
+            f"a shelf below 18+ needs a destination with access partitioning, not {partitioning!r}"
+        )
 
 
 def resolve_egress(*, plugin_default: Egress, attested: Egress | None) -> Egress:
@@ -72,6 +125,7 @@ class BindingFacts:
     egress: str
     local_root: str | None  # the folder written (real path), for the transports that have one
     identity: tuple[int, int] | None = None  # (st_dev, st_ino) of that folder when it exists
+    remote_root: str | None = None  # the same folder as the server sees it
 
 
 def check_binding(
@@ -93,6 +147,14 @@ def check_binding(
             same_folder = new.identity is not None and new.identity == other.identity
             if same_folder or within(mine, theirs) is not None or within(theirs, mine) is not None:
                 raise TreeOverlapError(f"{mine} and {theirs} overlap")
+    if new.remote_root is not None:
+        mine = clean_absolute(new.remote_root)
+        for other in others:
+            if other.target_id != new.target_id or other.remote_root is None:
+                continue
+            theirs = clean_absolute(other.remote_root)
+            if within(mine, theirs) is not None or within(theirs, mine) is not None:
+                raise RemoteFolderSharedError(f"{mine} and {theirs} are one folder of the server")
     if new.transport == "pull" and retention_mode == "passthrough":
         colinked_tree = any(b.shelf_id == new.shelf_id and b.transport == "tree" for b in others)
         if not colinked_tree:

@@ -30,7 +30,17 @@ source_add_suwayomi_help = "Ajoute Suwayomi : lit son mode d'authentification (n
 source_url_help = "Adresse du serveur Suwayomi (http(s)://hôte[:port])."
 source_secret_file_help = "Fichier contenant « utilisateur:mot_de_passe » ; « - » pour l'entrée standard."
 shelf_help = "Étagères."
-shelf_create_help = "Crée une étagère adulte et la lie à une destination."
+shelf_withdraw_help = "Montre (puis, avec --apply --confirm, applique) le retrait des Éditions que l'étagère famille n'admet plus."
+shelf_withdraw_shelf_help = "Limite le plan à cette étagère (identifiant)."
+shelf_withdraw_apply_help = "Applique le plan : les fichiers sortent de la bibliothèque des enfants (corbeille de la racine)."
+shelf_withdraw_confirm_help = "Version du plan lu, donnée par la commande sans --apply."
+shelf_withdraw_item = "Édition {edition} (étagère {shelf}) : {reason}, {files} fichier(s)."
+shelf_withdraw_nothing = "Aucune Édition à retirer."
+shelf_withdraw_next = "Pour appliquer : shelfhold shelf withdraw --apply --confirm {version}"
+shelf_withdraw_needs_confirm = "Donnez la version du plan lu : --confirm {version} (le plan a peut-être changé)."
+shelf_withdraw_done = "{editions} Édition(s) retirée(s), {files} fichier(s) mis à la corbeille ; Kavita est invité à analyser."
+shelf_withdraw_pending = "{count} fichier(s) restent à déplacer : l'intention reste ouverte jusqu'au prochain démarrage."
+shelf_create_help = "Crée une étagère (famille si le plafond est sous 18+) et la lie à une destination."
 shelf_name_help = "Nom de l'étagère."
 shelf_max_age_help = "Plafond d'âge : 18+ ou X (toute valeur plus basse arrive avec M1b)."
 shelf_target_help = "Nom de la destination."
@@ -642,9 +652,49 @@ action = "Décidez de la conserver ou de la retirer de la bibliothèque."
 title = "Une série purgée est encore dans la bibliothèque Suwayomi : elle est ignorée."
 action = "Retirez-la manuellement de la bibliothèque Suwayomi."
 
-[errors."shelf.parental_control_unavailable"]
-title = "Le contrôle parental n'est pas encore disponible."
-action = "En M1a seule une étagère 18+ ou X peut être créée ; les étagères famille arrivent avec M1b."
+[errors."shelf.ceiling_invalid"]
+title = "Ce plafond d'âge n'est pas un palier de l'échelle."
+action = "Choisissez 0+, 10+, 12+, 13+, 16+, 18+, X, ou aucun plafond."
+
+[errors."shelf.rating_required"]
+title = "Cette Édition n'est pas classée : elle ne peut pas entrer dans une étagère famille."
+action = "Classez l'Œuvre (shelfhold rate) : seul un administrateur approuve un contenu pour les enfants."
+
+[errors."shelf.above_ceiling"]
+title = "L'âge de cette Édition dépasse le maximum de l'étagère."
+action = "Choisissez une étagère adaptée, ou classez une Édition jeunesse à un âge sous le maximum."
+
+[errors."shelf.suggestion_above"]
+title = "Un âge suggéré par un fichier, une source ou un fournisseur dépasse le classement."
+action = "Classez de nouveau l'Œuvre : l'administrateur tranche, en connaissance de cause."
+
+[errors."shelf.destination_not_partitioned"]
+title = "Une étagère sous 18+ exige une destination qui cloisonne l'accès."
+action = "Liez-la à une bibliothèque Kavita dédiée, ou à une destination déclarée et attestée comme cloisonnée."
+
+[errors."shelf.library_not_dedicated"]
+title = "La bibliothèque Kavita de cette étagère famille contient aussi d'autres dossiers."
+action = "Créez dans Kavita une bibliothèque qui ne regarde que le dossier de l'étagère famille."
+
+[errors."shelf.adoption_needs_rating"]
+title = "Adopter une bibliothèque dans une étagère famille ferait entrer des Œuvres non classées."
+action = "Adoptez dans une étagère adulte, puis classez les Œuvres avant de les ranger."
+
+[errors."target.remote_folder_shared"]
+title = "Deux étagères écriraient dans le même dossier du serveur."
+action = "Donnez à chaque étagère son dossier."
+
+[errors."job.busy"]
+title = "Un export de cette Œuvre est en cours."
+action = "Réessayez dans un instant : rien n'a été modifié."
+
+[errors."export.series_other_shelf"]
+title = "Cette série de la bibliothèque distante appartient à une autre étagère."
+action = "Une série Kavita n'a qu'une étagère : retirez l'Édition de l'autre étagère ou renommez la série."
+
+[errors."export.age_tier_mix"]
+title = "Plusieurs paliers d'âge partagent cette bibliothèque distante."
+action = "Une bibliothèque famille ne sert qu'une étagère famille : liez chaque étagère à sa bibliothèque."
 
 [errors."source.auth_expired"]
 title = "La connexion à la source a expiré."
@@ -887,6 +937,7 @@ pending_exit = "L'instance reste en lecture seule tant que ces fichiers existent
 done = "{files} fichier(s) réadopté(s), {pending} suppression(s) en attente de votre confirmation, {deleted} supprimé(s)."
 
 [adopt]
+shelf_refused = "Adoption refusée ({code}) : une étagère sous 18+ ne reçoit que des Œuvres classées par un admin."
 help = "Adopte une bibliothèque Kavita existante : aperçu, puis inscription après confirmation."
 dry_run_help = "Affiche ce que l'adoption ferait, sans rien écrire (ni base, ni disque, ni Kavita)."
 confirm_help = "Empreinte donnée par --dry-run : confirme l'adoption de ce qui a été montré, inscrit les fichiers existants, sans les modifier ni les déplacer."

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, EditionSetSeriesNameData, EditionSetSeriesNameErrors, EditionSetSeriesNameResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, JobStatusData, JobStatusErrors, JobStatusResponses, ListActivityData, ListActivityErrors, ListActivityResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PasskeyLoginData, PasskeyLoginErrors, PasskeyLoginOptionsData, PasskeyLoginOptionsErrors, PasskeyLoginOptionsResponses, PasskeyLoginResponses, PasskeyReauthOptionsData, PasskeyReauthOptionsErrors, PasskeyReauthOptionsResponses, PasskeyRegisterData, PasskeyRegisterErrors, PasskeyRegisterResponses, PasskeyRegistrationOptionsData, PasskeyRegistrationOptionsErrors, PasskeyRegistrationOptionsResponses, PasskeyRevokeData, PasskeyRevokeErrors, PasskeyRevokeResponses, PasskeysListData, PasskeysListErrors, PasskeysListResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, SecretsImportData, SecretsImportErrors, SecretsImportResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses, UnmaskData, UnmaskErrors, UnmaskResponses } from './types.gen';
+import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, EditionSetSeriesNameData, EditionSetSeriesNameErrors, EditionSetSeriesNameResponses, FileEditionData, FileEditionErrors, FileEditionResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, JobStatusData, JobStatusErrors, JobStatusResponses, ListActivityData, ListActivityErrors, ListActivityResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PasskeyLoginData, PasskeyLoginErrors, PasskeyLoginOptionsData, PasskeyLoginOptionsErrors, PasskeyLoginOptionsResponses, PasskeyLoginResponses, PasskeyReauthOptionsData, PasskeyReauthOptionsErrors, PasskeyReauthOptionsResponses, PasskeyRegisterData, PasskeyRegisterErrors, PasskeyRegisterResponses, PasskeyRegistrationOptionsData, PasskeyRegistrationOptionsErrors, PasskeyRegistrationOptionsResponses, PasskeyRevokeData, PasskeyRevokeErrors, PasskeyRevokeResponses, PasskeysListData, PasskeysListErrors, PasskeysListResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, SecretsImportData, SecretsImportErrors, SecretsImportResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SetMaxAgeData, SetMaxAgeErrors, SetMaxAgeResponses, SetProfilesData, SetProfilesErrors, SetProfilesResponses, ShelfProposalData, ShelfProposalErrors, ShelfProposalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses, UnmaskData, UnmaskErrors, UnmaskResponses, WithdrawalApplyData, WithdrawalApplyErrors, WithdrawalApplyResponses, WithdrawalPlanData, WithdrawalPlanErrors, WithdrawalPlanResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -259,6 +259,27 @@ export const editionSetSeriesName = <ThrowOnError extends boolean = false>(optio
 });
 
 /**
+ * File Edition
+ *
+ * File an Edition on a shelf; a shelf below 18+ takes it only through the admission.
+ */
+export const fileEdition = <ThrowOnError extends boolean = false>(options: Options<FileEditionData, ThrowOnError>): RequestResult<FileEditionResponses, FileEditionErrors, ThrowOnError> => (options.client ?? client).post<FileEditionResponses, FileEditionErrors, ThrowOnError>({
+    url: '/api/v1/editions/{edition_id}/shelf',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Shelf Proposal
+ *
+ * The shelf the kind of the Work proposes, unless a shelf below 18+ would refuse it.
+ */
+export const shelfProposal = <ThrowOnError extends boolean = false>(options: Options<ShelfProposalData, ThrowOnError>): RequestResult<ShelfProposalResponses, ShelfProposalErrors, ThrowOnError> => (options.client ?? client).get<ShelfProposalResponses, ShelfProposalErrors, ThrowOnError>({ url: '/api/v1/editions/{edition_id}/shelf-proposal', ...options });
+
+/**
  * Intents List
  */
 export const intentsList = <ThrowOnError extends boolean = false>(options?: Options<IntentsListData, ThrowOnError>): RequestResult<IntentsListResponses, IntentsListErrors, ThrowOnError> => (options?.client ?? client).get<IntentsListResponses, IntentsListErrors, ThrowOnError>({ url: '/api/v1/intents', ...options });
@@ -373,10 +394,53 @@ export const createShelf = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 /**
+ * Withdrawal Plan
+ *
+ * What the admission refuses on the shelves below 18+; nothing moves.
+ */
+export const withdrawalPlan = <ThrowOnError extends boolean = false>(options?: Options<WithdrawalPlanData, ThrowOnError>): RequestResult<WithdrawalPlanResponses, WithdrawalPlanErrors, ThrowOnError> => (options?.client ?? client).get<WithdrawalPlanResponses, WithdrawalPlanErrors, ThrowOnError>({ url: '/api/v1/shelves/withdrawals', ...options });
+
+/**
+ * Withdrawal Apply
+ */
+export const withdrawalApply = <ThrowOnError extends boolean = false>(options: Options<WithdrawalApplyData, ThrowOnError>): RequestResult<WithdrawalApplyResponses, WithdrawalApplyErrors, ThrowOnError> => (options.client ?? client).post<WithdrawalApplyResponses, WithdrawalApplyErrors, ThrowOnError>({
+    url: '/api/v1/shelves/withdrawals',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Set Profiles
+ */
+export const setProfiles = <ThrowOnError extends boolean = false>(options: Options<SetProfilesData, ThrowOnError>): RequestResult<SetProfilesResponses, SetProfilesErrors, ThrowOnError> => (options.client ?? client).post<SetProfilesResponses, SetProfilesErrors, ThrowOnError>({
+    url: '/api/v1/shelves/{shelf_id}/allowed-profiles',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Bind Destination
  */
 export const bindDestination = <ThrowOnError extends boolean = false>(options: Options<BindDestinationData, ThrowOnError>): RequestResult<BindDestinationResponses, BindDestinationErrors, ThrowOnError> => (options.client ?? client).post<BindDestinationResponses, BindDestinationErrors, ThrowOnError>({
     url: '/api/v1/shelves/{shelf_id}/destinations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Set Max Age
+ */
+export const setMaxAge = <ThrowOnError extends boolean = false>(options: Options<SetMaxAgeData, ThrowOnError>): RequestResult<SetMaxAgeResponses, SetMaxAgeErrors, ThrowOnError> => (options.client ?? client).post<SetMaxAgeResponses, SetMaxAgeErrors, ThrowOnError>({
+    url: '/api/v1/shelves/{shelf_id}/max-age',
     ...options,
     headers: {
         'Content-Type': 'application/json',

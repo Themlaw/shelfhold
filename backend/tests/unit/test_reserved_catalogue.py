@@ -22,6 +22,7 @@ RESERVED = {
     ("root reinit", "root_behind"),
     ("store reinit", "store_lost"),
     ("target recheck [child_exposure]", "child_exposure"),
+    ("shelf withdraw", "withdrawal_pending"),  # M1b L10: EF-BIB-037
     ("reconcile --adopt-after-restore [confirm-deletion]", "restored_behind"),
 }
 NOT_RESERVED = {

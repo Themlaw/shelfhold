@@ -31,7 +31,7 @@ def test_effective_age_is_max_over_editions() -> None:
 @pytest.mark.req("EF-BIB-036")
 def test_default_age_from_sub_source_content_warning() -> None:
     assert content_warning_age("nsfw") == X
-    assert content_warning_age("mixed") is None
+    assert content_warning_age("mixed") == AgeRating(18)  # a suggestion, never a rating
     assert content_warning_age("safe") is None
 
 

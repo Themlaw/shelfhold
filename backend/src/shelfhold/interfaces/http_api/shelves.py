@@ -1,31 +1,73 @@
-"""`/api/v1/shelves`: create a shelf, bind it to a destination (EF-EXP-002, EF-EXP-058, EF-INT-024).
+"""`/api/v1/shelves`: create, bind, set the ceiling and the profiles of a shelf (EF-EXP-047).
 
-Setting a ceiling is the reserved action `shelf.max_age_rating` (admin session, fresh). In M1a the
-ceiling must be 18+ (or X, or none): a lower one is refused, nothing is stored.
+Every change of what a shelf below 18+ may hold is a reserved action (admin session, fresh, never
+a key): the ceiling (`shelf.max_age_rating`, which answers with the removal plan of what no longer
+fits), the allowed profiles (`shelf.allowed_profiles`), choosing a family shelf for an Edition
+(`shelf.choose_family`) and applying a removal plan (`shelf.withdraw`). The audit entry is written
+in the transaction of the change.
 """
 
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.domain.bindings import BindingError
-from shelfhold.identity.public import RESERVED_ACTIONS, Principal
+from shelfhold.headless.actor import Actor
+from shelfhold.identity.public import RESERVED_ACTIONS, Principal, audit_actor
 from shelfhold.interfaces.http_api.auth import reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
+from shelfhold.ops.errors import OpsError
 
-__all__ = ["build_shelves_router"]
+__all__ = ["build_edition_shelf_router", "build_shelves_router"]
 
 _CEILING = RESERVED_ACTIONS["shelf.max_age_rating"]
+_PROFILES = RESERVED_ACTIONS["shelf.allowed_profiles"]
+_FAMILY = RESERVED_ACTIONS["shelf.choose_family"]
+_WITHDRAW = RESERVED_ACTIONS["shelf.withdraw"]
+
+
+def _actor(principal: Principal) -> Actor:
+    return Actor(audit_actor(principal), principal.session_id, principal.auth_time)
 
 
 class ShelfIn(BaseModel):
     name: str = Field(min_length=1)
     phrase: str = Field(min_length=1)
-    max_age_rating: int | None = Field(default=None, ge=0, le=99)  # 99: X
+    max_age_rating: int | None = Field(default=None, ge=0, le=99)  # 99: X; the tiers: 422 below
     retention_mode: Literal["passthrough", "keep"] = "passthrough"
+    hold_until_rated: bool | None = None  # on by default below 18+ (EF-EXP-050)
+    allowed_profiles: list[str] = Field(default_factory=list)
+
+
+class CeilingIn(BaseModel):
+    max_age_rating: int | None = Field(default=None, ge=0, le=99)
+
+
+class ProfilesIn(BaseModel):
+    profiles: list[str]
+
+
+class ProfilesOut(BaseModel):
+    profiles: list[str]
+
+
+class EditionShelfIn(BaseModel):
+    shelf_id: str
+
+
+class FiledOut(BaseModel):
+    filed: bool
+    reason: str | None = None
+
+
+class WithdrawIn(BaseModel):
+    if_match: str
+    shelf_id: str | None = None
 
 
 class ShelfOut(BaseModel):
@@ -44,18 +86,21 @@ class DestinationOut(BaseModel):
     id: str
 
 
-def build_shelves_router(get_service: Callable[[], ShelfService]) -> APIRouter:
+def build_shelves_router(
+    get_service: Callable[[], ShelfService], get_ops: Callable[[], Any]
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1/shelves", tags=["shelves"])
 
     @router.post("", status_code=201)
     def create_shelf(
         body: ShelfIn,
-        _principal: Principal = Depends(reserved_action(_CEILING)),  # noqa: B008
+        principal: Principal = Depends(reserved_action(_CEILING)),  # noqa: B008
     ) -> ShelfOut:
         try:
             shelf_id = get_service().create_shelf(
                 name=body.name, phrase=body.phrase, max_age_rating=body.max_age_rating,
-                retention_mode=body.retention_mode,
+                retention_mode=body.retention_mode, hold_until_rated=body.hold_until_rated,
+                allowed_profiles=tuple(body.allowed_profiles), actor=_actor(principal),
             )  # fmt: skip
         except BindingError as error:
             raise ProblemError(error.code) from None
@@ -76,5 +121,94 @@ def build_shelves_router(get_service: Callable[[], ShelfService]) -> APIRouter:
         except BindingError as error:
             raise ProblemError(error.code) from None
         return DestinationOut(id=destination_id)
+
+    @router.post("/{shelf_id}/max-age")
+    def set_max_age(
+        shelf_id: str,
+        body: CeilingIn,
+        principal: Principal = Depends(reserved_action(_CEILING)),  # noqa: B008
+    ) -> dict[str, Any]:
+        try:
+            change = get_service().set_max_age(
+                shelf_id, body.max_age_rating, actor=_actor(principal)
+            )
+        except BindingError as error:
+            raise ProblemError(error.code) from None
+        except sa.exc.NoResultFound:
+            raise ProblemError("not_found") from None
+        return {
+            "shelf_id": shelf_id,
+            "previous": change.previous,
+            "max_age_rating": change.new,
+            "withdrawals": [
+                {"edition_id": i.edition_id, "reason": i.reason} for i in change.withdrawals.items
+            ],
+            "withdrawals_version": change.withdrawals.version,
+        }
+
+    @router.post("/{shelf_id}/allowed-profiles")
+    def set_profiles(
+        shelf_id: str,
+        body: ProfilesIn,
+        principal: Principal = Depends(reserved_action(_PROFILES)),  # noqa: B008
+    ) -> ProfilesOut:
+        try:
+            profiles = get_service().set_allowed_profiles(
+                shelf_id, body.profiles, actor=_actor(principal)
+            )
+        except LookupError:
+            raise ProblemError("not_found") from None
+        return ProfilesOut(profiles=profiles)
+
+    @router.get("/withdrawals")
+    def withdrawal_plan(
+        shelf_id: str | None = None,
+        _principal: Principal = Depends(reserved_action(_WITHDRAW)),  # noqa: B008
+    ) -> dict[str, Any]:
+        """What the admission refuses on the shelves below 18+; nothing moves."""
+        try:
+            plan: dict[str, Any] = get_ops().library.withdraw_plan(shelf_id)
+        except OpsError as error:
+            raise ProblemError(error.code) from None
+        return plan
+
+    @router.post("/withdrawals")
+    def withdrawal_apply(
+        body: WithdrawIn,
+        principal: Principal = Depends(reserved_action(_WITHDRAW)),  # noqa: B008
+    ) -> dict[str, Any]:
+        try:
+            done: dict[str, Any] = get_ops().library.withdraw_apply(
+                if_match=body.if_match, shelf_id=body.shelf_id, principal=principal
+            )
+        except OpsError as error:
+            raise ProblemError(error.code) from None
+        except StalePlanError:
+            raise ProblemError("plan.stale") from None
+        return done
+
+    return router
+
+
+def build_edition_shelf_router(get_service: Callable[[], ShelfService]) -> APIRouter:
+    router = APIRouter(prefix="/api/v1/editions", tags=["shelves"])
+
+    @router.get("/{edition_id}/shelf-proposal")
+    def shelf_proposal(
+        edition_id: str,
+        _principal: Principal = Depends(reserved_action(_FAMILY)),  # noqa: B008
+    ) -> dict[str, str | None]:
+        """The shelf the kind of the Work proposes, unless a shelf below 18+ would refuse it."""
+        return {"shelf_id": get_service().proposed_shelf(edition_id)}
+
+    @router.post("/{edition_id}/shelf")
+    def file_edition(
+        edition_id: str,
+        body: EditionShelfIn,
+        principal: Principal = Depends(reserved_action(_FAMILY)),  # noqa: B008
+    ) -> FiledOut:
+        """File an Edition on a shelf; a shelf below 18+ takes it only through the admission."""
+        result = get_service().file_edition(edition_id, body.shelf_id, actor=_actor(principal))
+        return FiledOut(filed=result.filed, reason=result.reason)
 
     return router

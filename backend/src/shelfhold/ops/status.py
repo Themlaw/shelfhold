@@ -14,7 +14,9 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.acquisition.public import stale_series
+from shelfhold.catalog.public import RatingService
 from shelfhold.export.application.target_health import TargetHealth
+from shelfhold.export.application.withdrawal import build_plan
 from shelfhold.export.domain.kavita_compat import (
     KNOWN_BAD_LISTED_ON,
     KNOWN_BAD_OUTDATED_AFTER,
@@ -55,6 +57,7 @@ _TEMPLATES = {
     "language_unknown": "shelfhold edition set-lang {subject} <lang>",
     "mount_sentinel_missing": "shelfhold target recheck {extra}",
     "series_name_collision": 'shelfhold edition set-series-name {subject} "<name>"',
+    "withdrawal_pending": "shelfhold shelf withdraw",
     "restored_behind": "shelfhold reconcile --adopt-after-restore",
     "tombstone_key_unknown": "shelfhold secrets import --passphrase-file <file> --in <file>",
     "tombstone_lines_owed": "shelfhold tombstone flush",
@@ -104,7 +107,24 @@ def collect(connection: Connection) -> list[WaitingItem]:
     found += _follow(connection)
     found += _languages(connection)
     found += _discovery(connection)
+    found += _withdrawals(connection)
     return found
+
+
+def _withdrawals(connection: Connection) -> list[WaitingItem]:
+    """Files that a shelf below 18+ must not hold and that nobody has taken out yet: the plan of
+    the withdrawal is not empty. Its only exit is `shelf withdraw`, a reserved action, so a file
+    that was refused (a rating raised, a ceiling lowered) shows here until an admin applies it."""
+    family = connection.execute(
+        sa.select(export.shelf.c.id).where(export.shelf.c.max_age_rating < 18).limit(1)
+    ).first()
+    if family is None:
+        return []
+    plan = build_plan(connection, RatingService())
+    return [
+        _item("withdrawal_pending", "export", i.edition_id, f"{i.reason}: {len(i.files)} file(s)")
+        for i in plan.items
+    ]
 
 
 def _series(connection: Connection) -> list[WaitingItem]:

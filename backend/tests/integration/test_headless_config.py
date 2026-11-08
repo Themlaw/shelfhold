@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.export.application.root_bootstrap import RootPolicy
-from shelfhold.export.domain.bindings import ShelfBelowEighteenError
+from shelfhold.export.domain.bindings import ShelfCeilingError
 from shelfhold.export.domain.reconcile import Thresholds, thresholds_from
 from shelfhold.export.targets.kavita import load_admin_key
 from shelfhold.headless import (
@@ -239,15 +239,17 @@ def test_source_add_suwayomi_reads_auth_mode_and_refuses_ui_login(settings: Sett
             env.admin.source_add_suwayomi(url="ftp://suwayomi", secret=None)
 
 
-def test_shelf_create_adult_only_binds_to_the_target(settings: Settings) -> None:
+def test_shelf_create_binds_to_the_target_and_refuses_an_age_off_the_scale(
+    settings: Settings,
+) -> None:
     with headless(settings) as env:
         env.admin.target_add_kavita(
             name="kavita", url=KAVITA_URL, username="u", password="p" * 12,
             accept_admin_risk=True,
         )  # fmt: skip
         env.admin.set("path_map.kavita", '[{"local": "/library/manga", "remote": "/manga"}]')
-        with pytest.raises(ShelfBelowEighteenError):
-            env.admin.shelf_create(name="Kids", max_age="12", target="kavita", subpath="kids")
+        with pytest.raises(ShelfCeilingError):
+            env.admin.shelf_create(name="Kids", max_age="11", target="kavita", subpath="kids")
         assert env.count("shelf") == 0
         created = env.admin.shelf_create(name="Manga", max_age="X", target="kavita", subpath="m")
         assert created.shelf_id and created.destination_id
@@ -613,3 +615,25 @@ def test_an_empty_path_map_is_kept_empty_not_defaulted(settings: Settings, tmp_p
             accept_admin_risk=True, path_map=[],
         )  # fmt: skip
         assert env.admin.get("path_map.kavita").value == []
+
+
+def test_path_map_change_pauses_the_linked_family_shelf_until_recheck(settings: Settings) -> None:
+    from tests.integration.test_schema_storage_export import add_library, link_library
+
+    with headless(settings) as env:
+        env.admin.target_add_kavita(
+            name="kavita", url=KAVITA_URL, username="u", password="p" * 12,
+            accept_admin_risk=True,
+        )  # fmt: skip
+        env.admin.set("path_map.kavita", '[{"local": "/library/manga", "remote": "/manga"}]')
+        made = env.admin.shelf_create(name="Kids", max_age="13", target="kavita", subpath="kids")
+        with env.engine.begin() as connection:
+            target = connection.execute(sa.text("SELECT id FROM export_target")).scalar_one()
+            library = add_library(connection, target)
+            link_library(connection, made.destination_id, target, library)
+        env.admin.set("path_map.kavita", '[{"local": "/library/manga", "remote": "/mnt/manga"}]')
+        with env.engine.connect() as connection:
+            reason = connection.execute(
+                sa.text("SELECT paused_reason FROM shelf WHERE id = :s"), {"s": made.shelf_id}
+            ).scalar_one()
+        assert reason == "child_exposure"

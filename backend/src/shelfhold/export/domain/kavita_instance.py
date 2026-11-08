@@ -80,3 +80,16 @@ def covering_libraries(libraries: Sequence[Mapping[str, Any]], remote_root: str)
                 found.append(int(library["id"]))
                 break
     return found
+
+
+def library_is_dedicated(library: Mapping[str, Any], remote_root: str) -> bool:
+    """Every folder of the library is the root of the shelf or lies inside it: reading the library
+    is reading that shelf and nothing else (a family library, ADR-0027, EF-EXP-047)."""
+    root = _norm(remote_root)
+    folders = library.get("folders")
+    if not isinstance(folders, list) or not folders:
+        return False
+    return all(
+        (base := _norm(str(folder))) == root or base.startswith(root.rstrip("/") + "/")
+        for folder in folders
+    )

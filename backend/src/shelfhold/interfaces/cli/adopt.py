@@ -101,6 +101,7 @@ def _show(report: AdoptionReport) -> None:
 
 
 def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    from shelfhold.export.domain.bindings import BindingError
     from shelfhold.export.targets.kavita.adopt import AdoptionRefused
 
     if args.repatriate:
@@ -124,6 +125,9 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     except PreviewStale:
         print(t("adopt.preview_stale"), file=sys.stderr)
         return STALE
+    except BindingError as refused_binding:  # a shelf below 18+: nothing is filed unrated
+        print(t("adopt.shelf_refused", code=refused_binding.code), file=sys.stderr)
+        return REFUSED
     except AdoptionRefused as refused:
         print(t("adopt.refused", accounts=",".join(refused.accounts)), file=sys.stderr)
         return REFUSED
