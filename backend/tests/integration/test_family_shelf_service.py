@@ -17,6 +17,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from tests.auth_env import AuthEnv, auth_env, db_rows
 from tests.family_env import NOW, family_env, rate
+from tests.integration.test_auth_keys_reserved import _bearer, _create_key
 
 ACTOR = Actor("01HZZZZZZZZZZZZZZZZZZZZZZA", "01HZZZZZZZZZZZZZZZZZZZZZZS", NOW)
 
@@ -159,7 +160,7 @@ def test_choosing_a_family_shelf_for_an_edition_goes_through_the_admission() -> 
 
 @pytest.mark.req("EF-USR-015", "ENF-SEC-010")
 def test_family_shelf_routes_are_reserved_audited_and_refuse_keys(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
 ) -> None:
     with auth_env(monkeypatch, settings) as api:
         assert api.login().status_code == 200
@@ -183,6 +184,22 @@ def test_family_shelf_routes_are_reserved_audited_and_refuse_keys(
         assert profiles.status_code == 200 and profiles.json()["profiles"] == ["kid"]
         # P3: once a restricted profile exists, these need a fresh proof
         assert _fresh_required_once_restricted(api)
+        # and an API key, even an admin one, is refused on every one of them (EF-USR-024)
+        key = _create_key(monkeypatch, capsys, api.settings)
+        before = len(db_rows(settings, "SELECT 1 FROM audit WHERE action LIKE 'shelf.%'"))
+        for method, path, body in (
+            ("post", "/api/v1/shelves", {"name": "K", "phrase": "k", "max_age_rating": 99}),
+            ("post", f"/api/v1/shelves/{shelf_id}/max-age", {"max_age_rating": 99}),
+            ("post", f"/api/v1/shelves/{shelf_id}/allowed-profiles", {"profiles": []}),
+            ("post", "/api/v1/editions/E/shelf", {"shelf_id": shelf_id}),
+            ("get", "/api/v1/shelves/withdrawals", None),
+            ("post", "/api/v1/shelves/withdrawals", {"if_match": "x"}),
+        ):
+            other = api.other_client("10.0.0.9")  # no session cookie: only the key speaks
+            kwargs = {"json": body} if body is not None else {}
+            answer = getattr(other, method)(path, headers=_bearer(key), **kwargs)
+            assert answer.status_code in (401, 403), (path, answer.status_code)
+        assert len(db_rows(settings, "SELECT 1 FROM audit WHERE action LIKE 'shelf.%'")) == before
 
 
 def _fresh_required_once_restricted(api: AuthEnv) -> bool:
