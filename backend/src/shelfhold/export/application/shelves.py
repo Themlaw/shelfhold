@@ -21,6 +21,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.application.snapshot import load_context
+from shelfhold.export.application.target_state import CHILD_EXPOSURE, pause_shelf
 from shelfhold.export.application.withdrawal import WithdrawalPlan, build_plan
 from shelfhold.export.domain.bindings import (
     WRITING_TRANSPORTS,
@@ -142,6 +143,10 @@ class ShelfService:
                 .where(export.shelf.c.id == shelf_id)
                 .values(max_age_rating=max_age_rating)
             )
+            if previous != max_age_rating and self._is_linked(connection, shelf_id):
+                # who may read the library depends on the ceiling: the shelf waits for a
+                # `target recheck` whose audit uses the new one, whichever way it moved
+                pause_shelf(connection, shelf_id, CHILD_EXPOSURE)
             self._audit(
                 connection,
                 actor,
@@ -214,6 +219,20 @@ class ShelfService:
                 return None
             verdict = self._rating.admission_of(connection, edition_id, shelf_id=shelf_id)
         return str(shelf_id) if verdict is Admission.ALLOWED else None
+
+    @staticmethod
+    def _is_linked(connection: Connection, shelf_id: str) -> bool:
+        link, destination = export.shelf_destination_remote_library, export.shelf_destination
+        return (
+            connection.execute(
+                sa.select(link.c.shelf_destination_id)
+                .select_from(
+                    link.join(destination, destination.c.id == link.c.shelf_destination_id)
+                )
+                .where(destination.c.shelf_id == shelf_id)
+            ).first()
+            is not None
+        )
 
     @staticmethod
     def _partitionings(connection: Connection, shelf_id: str) -> list[str]:
@@ -304,6 +323,48 @@ class ShelfService:
                 )
             )  # fmt: skip
         return destination_id
+
+    def check_path_map(self, target_id: str, entries: list[dict[str, str]]) -> None:
+        """A new path map of a target moves the folders of its bindings: they must still not
+        overlap another binding's, nor share a remote folder (the same rules as binding)."""
+        path_map = PathMap(
+            tuple(
+                PathEntry(e["local"], e["remote"], PathMode(e.get("mode", "rw"))) for e in entries
+            )
+        )
+        writable = path_map.writable()
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(
+                    export.shelf_destination.c.id,
+                    export.shelf_destination.c.shelf_id,
+                    export.shelf_destination.c.transport,
+                    export.shelf_destination.c.egress,
+                    export.shelf_destination.c.root_subpath,
+                    export.shelf.c.retention_mode,
+                )
+                .select_from(
+                    export.shelf_destination.join(
+                        export.shelf, export.shelf.c.id == export.shelf_destination.c.shelf_id
+                    )
+                )
+                .where(export.shelf_destination.c.target_id == target_id)
+            ).all()
+            others = [f for f in self._existing(connection) if f.target_id != target_id]
+            for row in rows:
+                root = None
+                if row.transport in WRITING_TRANSPORTS and writable:
+                    base = writable[0].local
+                    root = clean_absolute(
+                        f"{base}/{row.root_subpath}" if row.root_subpath else base
+                    )
+                real, identity = resolve_folder(root)
+                facts = BindingFacts(
+                    row.id, row.shelf_id, target_id, row.transport, row.egress, real, identity,
+                    _remote(path_map, root),
+                )  # fmt: skip
+                check_binding(facts, others, retention_mode=row.retention_mode)
+                others.append(facts)
 
     def _existing(self, connection: sa.Connection) -> list[BindingFacts]:
         found = []
