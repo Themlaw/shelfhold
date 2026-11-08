@@ -101,7 +101,7 @@ def test_review_ui_login_is_detected_through_the_fallback_as_in_s5() -> None:
     service = SuwayomiService(BASE_URL)
     canned = Canned({"data": None, "errors": [{"message": "Unauthorized"}]})
     assert run(service.auth_mode(canned)) == "ui_login"  # type: ignore[arg-type]
-    with pytest.raises(AuthModeUnsupported):
+    with pytest.raises(AuthRequired):  # since M1b `ui_login` is driven: no credentials, no data
         run(service.search(canned, "", {}, None))  # type: ignore[arg-type]
 
 
@@ -121,7 +121,10 @@ def test_review_health_tolerates_null_data() -> None:
     [
         ("NONE", True),
         ("BASIC_AUTH", True),
-        ("UI_LOGIN", False),
+        (
+            "UI_LOGIN",
+            False,
+        ),  # driven since M1b L20, but this answer holds no readable roles: paused
         ("SIMPLE_LOGIN", False),
         ("X", False),
     ],

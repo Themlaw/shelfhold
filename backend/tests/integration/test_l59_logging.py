@@ -36,7 +36,7 @@ from shelfhold.infrastructure.logging import (
 )
 from shelfhold.jobs.huey_app import JobPools
 from tests.fakes.kavita import API_KEY
-from tests.fakes.suwayomi.server import PASSWORD, USER
+from tests.fakes.suwayomi.server import PASSWORD, USER, FakeAccount
 from tests.fakes_clock import ManualClock
 from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.follow_env import new_chapter
@@ -302,6 +302,40 @@ def test_no_known_secret_in_a_debug_cycle_and_export(
     for label, secret in KNOWN.items():
         assert secret not in text, label
     assert named(records, "job.failure_detail")  # the traceback line exists and is clean
+
+
+@pytest.mark.req("EF-SRC-031", "ENF-SEC-005", "ENF-SEC-013", "ENF-OBS-001")
+def test_no_suwayomi_jwt_token_in_the_logs_at_any_level(
+    settings: Settings, tmp_path: Path, logs: Logs
+) -> None:
+    """M1b L20: the access and refresh tokens of a `ui_login` Suwayomi, through a whole cycle at
+    DEBUG, several logins, and the failure path of a refused account (its traceback)."""
+    with seeded(settings, tmp_path) as env:
+        server = env.inst.suwayomi
+        server.auth_mode = "ui_login"
+        server.accounts[USER] = FakeAccount(PASSWORD)
+        env.inst.admin._suwayomi.mode = "ui_login"  # type: ignore[attr-defined]
+        records = lifecycle(env, logs, level="DEBUG")
+        pools = JobPools(
+            env.inst.settings.data_dir, engine=env.inst.engine, clock=env.inst.comp.clock,
+            seed="l59-jwt",
+        )  # fmt: skip
+        rj.register_runtime_jobs(pools, env.inst.comp)
+        run_job(pools, "follow.cycle")
+        server.expire_all_tokens()  # and the refresh token too: a new login...
+        run_job(pools, "follow.cycle")
+        server.accounts[USER].password = "changed-on-the-server-3"  # ...which the server refuses  # noqa: S105 - throwaway synthetic value
+        server.expire_all_tokens()
+        run_job(pools, "follow.cycle")
+        records += logs.drain()
+    text = logs.everything() + json.dumps(records)
+    pairs = server.issued_tokens()
+    assert server.logins >= 3 and len(pairs) >= 3  # the paths ran
+    assert text.count("http.call") > 5
+    for access, refresh in pairs:
+        assert access not in text and refresh not in text
+        assert f"Bearer {access}" not in text
+    assert "changed-on-the-server-3" not in text and PASSWORD not in text
 
 
 @pytest.mark.req("ENF-SEC-005", "ENF-OBS-001")

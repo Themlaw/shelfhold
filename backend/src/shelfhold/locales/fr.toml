@@ -26,7 +26,8 @@ target_path_map_help = "Table de chemins en JSON : [{{\"local\": \"/library/mang
 target_accept_risk_help = "Reconnaît que la clé est celle d'un compte administrateur de Kavita."
 source_help = "Sources connectées (Suwayomi)."
 source_add_help = "Ajoute une source."
-source_add_suwayomi_help = "Ajoute Suwayomi : lit son mode d'authentification (none ou basic_auth)."
+source_add_suwayomi_help = "Ajoute Suwayomi : lit son mode d'authentification (none, basic_auth ou ui_login)."
+source_confirm_roles_help = "Confirme que le compte de service Suwayomi (ui_login) a des droits minimaux, quand le serveur n'expose pas ses rôles."
 source_url_help = "Adresse du serveur Suwayomi (http(s)://hôte[:port])."
 source_secret_file_help = "Fichier contenant « utilisateur:mot_de_passe » ; « - » pour l'entrée standard."
 shelf_help = "Étagères."
@@ -198,6 +199,7 @@ ip_host = "Une clé d'accès est liée à un nom de domaine, pas à une adresse 
 
 [status]
 public_url_restart = "public_url a changé depuis le démarrage du serveur : redémarrez-le pour qu'il en tienne compte."
+roles_unverified = "Le compte de service Suwayomi (ui_login) n'a pas pu être vérifié : le serveur n'expose pas ses rôles, Shelfhold ne peut pas s'assurer qu'il ne peut ni administrer Suwayomi ni installer d'extensions. Utilisez un compte aux droits minimaux, puis confirmez avec « shelfhold source confirm-roles »."
 passkey_rp_changed = "Des clés d'accès sont liées à {old}, qui n'est plus le domaine de public_url : elles ne fonctionnent plus. Le mot de passe reste en repli ; révoquez-les puis enregistrez-en de nouvelles."
 waiting_line = "En attente ({state}) : {reason}. Commande : {command}"
 no_warning = "Aucun avertissement."
@@ -996,9 +998,11 @@ coverage_last_help = "Dernier chapitre du tome."
 coverage_set = "Tome {volume} : chapitres {first} à {last} couverts ({added} ajoutés)."
 
 [headless]
+roles_confirmed = "Compte de service confirmé : l'avertissement roles_unverified est levé."
+roles_nothing_to_confirm = "Rien à confirmer."
 refused = "Refusé ({code}) : {detail}"
 admin_risk_warning = "ATTENTION : la clé Kavita est celle d'un compte administrateur ; elle donne tout pouvoir sur Kavita (comptes, bibliothèques, fichiers lus). Relancez avec --accept-admin-risk pour confirmer."
-auth_mode_unsupported = "Suwayomi utilise le mode d'authentification « {mode} » : mode multi-comptes indisponible dans cette version (M1a). Passez Suwayomi en « basic_auth » ou sans authentification, puis relancez la commande."
+auth_mode_unsupported = "Suwayomi utilise le mode d'authentification « {mode} » : mode non pris en charge dans cette version. Passez Suwayomi en « basic_auth », en « ui_login » (compte de service) ou sans authentification, puis relancez la commande."
 piloted_inactive = "Réglage enregistré mais inactif avant M1b : la vérification pilotée par Shelfhold n'existe pas encore, Suwayomi doit rester toujours actif (planificateur de Suwayomi) et le suivi se comporte comme en mode always_on."
 secret_unreadable = "Impossible de lire le secret : {detail}."
 secret_file_world_readable = "Le fichier {path} est lisible par tous : restreignez-le (chmod 600)."

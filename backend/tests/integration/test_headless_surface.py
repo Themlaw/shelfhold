@@ -82,6 +82,7 @@ def test_headless_methods_are_whitelisted_with_their_reserved_actions() -> None:
     expected = {
         "config.get": None, "config.list": None, "config.set": None, "config.apply": None,
         "target.add": "admin_risk.accept", "source.add": "source.set_secret",
+        "source.confirm_roles": "source.set_secret",
         "shelf.create": "shelf.max_age_rating",
     }  # fmt: skip
     assert {name: reserved for name, (_impl, reserved) in HEADLESS_METHODS.items()} == expected

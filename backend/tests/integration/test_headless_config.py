@@ -32,7 +32,7 @@ from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.plugin_host.adapters.meta.suwayomi.probe import HttpSuwayomiProbe
 from tests.auth_env import run_cli
 from tests.export_env import export_env
-from tests.fakes.suwayomi.server import FakeSuwayomi, FakeSuwayomiFetcher
+from tests.fakes.suwayomi.server import PASSWORD, USER, FakeSuwayomi, FakeSuwayomiFetcher
 from tests.headless_env import (
     KAVITA_KEY,
     KAVITA_PASSWORD,
@@ -219,13 +219,19 @@ def test_config_path_map_and_notify_urls_are_settable(settings: Settings, tmp_pa
 
 
 @pytest.mark.req("EF-INT-024", "EF-SRC-031")
-def test_source_add_suwayomi_reads_auth_mode_and_refuses_ui_login(settings: Settings) -> None:
+def test_source_add_suwayomi_reads_auth_mode_and_accepts_ui_login(settings: Settings) -> None:
     with headless(settings) as env:
         env.suwayomi.mode = "ui_login"
-        with pytest.raises(SourceAuthModeUnsupported) as refused:
+        with pytest.raises(InvalidConfigValue):  # the service account is needed (M1b)
             env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None)
-        assert refused.value.code == "source.auth_mode_unsupported"
         assert env.count("source_config") == 0
+        added = env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"svc:{SUWAYOMI_PASSWORD}")
+        assert added.auth_mode == "ui_login"
+        assert SUWAYOMI_PASSWORD not in env.dump()  # sealed, as for basic_auth
+        with env.engine.connect() as connection:
+            assert SUWAYOMI_PASSWORD.encode() in env.vault.open_row(
+                connection, "source_config", "suwayomi"
+            )
 
         env.suwayomi.mode = "basic_auth"
         added = env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"admin:{SUWAYOMI_PASSWORD}")
@@ -407,7 +413,7 @@ def test_shelf_create_on_0500_folder_reports_cause_and_compose_block(
 
 
 @pytest.mark.req("EF-SRC-031")
-def test_ui_login_mode_detected_and_refused_m1a(
+def test_ui_login_mode_detected_and_accepted_m1b(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     settings: Settings,
@@ -415,18 +421,25 @@ def test_ui_login_mode_detected_and_refused_m1a(
     server = FakeSuwayomi(auth_mode="ui_login")
     probe = HttpSuwayomiProbe(lambda _url: FakeSuwayomiFetcher(server, SUWAYOMI_URL))  # type: ignore[arg-type,return-value]
     with headless(settings, suwayomi=probe) as env:
-        with pytest.raises(SourceAuthModeUnsupported) as refused:
+        with pytest.raises(InvalidConfigValue):  # no account given: nothing is stored
             env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None)
-        assert refused.value.code == "source.auth_mode_unsupported"
-        assert "multi-comptes" in str(refused.value)  # the dedicated message, not a generic one
-        assert "ui_login" in str(refused.value)
+        with pytest.raises(InvalidConfigValue):  # the server refuses the account: nothing stored
+            env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="shelfhold:wrong-synthetic-pw")  # noqa: S106 - throwaway synthetic value
         assert env.count("source_config") == 0
+        server.expose_roles = True
+        server.accounts[USER].roles = ["ADMIN"]  # an account that may install extensions
+        with pytest.raises(SourceAuthModeUnsupported) as refused:
+            env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"{USER}:{PASSWORD}")
+        assert "extension" in str(refused.value) and env.count("source_config") == 0
+        server.accounts[USER].roles = ["USER"]
+        added = env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"{USER}:{PASSWORD}")
+        assert added.auth_mode == "ui_login" and env.count("source_config") == 1
+        assert PASSWORD not in env.dump()
         monkeypatch.setattr(wiring, "open_headless", lambda _settings: env.admin)
         assert (
             run_cli(monkeypatch, settings, "source", "add", "suwayomi", "--url", SUWAYOMI_URL) == 1
         )
-        err = capsys.readouterr().err
-        assert "multi-comptes" in err and "source.auth_mode_unsupported" in err
+        assert "config.invalid_value" in capsys.readouterr().err
 
 
 @pytest.mark.req("EF-SRC-025")
@@ -637,3 +650,39 @@ def test_path_map_change_pauses_the_linked_family_shelf_until_recheck(settings: 
                 sa.text("SELECT paused_reason FROM shelf WHERE id = :s"), {"s": made.shelf_id}
             ).scalar_one()
         assert reason == "child_exposure"
+
+
+@pytest.mark.req("EF-SRC-031")
+def test_unverified_roles_leave_a_durable_warning_and_an_audit_until_confirmed(
+    settings: Settings,
+) -> None:
+    from shelfhold.interfaces.cli.status import _roles_unverified
+
+    with headless(settings) as env:
+        env.suwayomi.mode = "ui_login"
+        env.suwayomi.roles_verified = False  # the server exposes no role (v2.4.2366)
+        env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"svc:{SUWAYOMI_PASSWORD}")
+        assert _roles_unverified(env.engine) is True
+        actions = [r[0] for r in env.engine.connect().execute(sa.text("SELECT action FROM audit"))]
+        assert actions.count("source.roles_unverified") == 1
+        assert env.admin.source_confirm_roles() is True  # explicit confirmation of the admin
+        assert _roles_unverified(env.engine) is False
+        actions = [r[0] for r in env.engine.connect().execute(sa.text("SELECT action FROM audit"))]
+        assert actions.count("source.roles_confirmed") == 1
+        assert env.admin.source_confirm_roles() is False  # nothing left to confirm
+        env.suwayomi.roles_verified = True  # roles read and harmless: no warning at all
+        env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"svc:{SUWAYOMI_PASSWORD}")
+        assert _roles_unverified(env.engine) is False
+
+
+@pytest.mark.req("EF-SRC-031", "ENF-SEC-005")
+def test_source_add_refuses_a_password_the_log_scrubber_could_not_mask(
+    settings: Settings,
+) -> None:
+    with headless(settings) as env:
+        for mode in ("basic_auth", "ui_login"):
+            env.suwayomi.mode = mode
+            with pytest.raises(InvalidConfigValue) as refused:
+                env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="svc:pw-1234")  # noqa: S106 - throwaway value
+            assert "8" in str(refused.value) and "pw-1234" not in str(refused.value)
+        assert env.count("source_config") == 0

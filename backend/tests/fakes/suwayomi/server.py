@@ -17,6 +17,7 @@ import copy
 import hashlib
 import json
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -46,14 +47,25 @@ ALLOWED_FIELDS = frozenset({
     "enqueueChapterDownload", "dequeueChapterDownload", "updateManga",
     "categories", "updateMangaCategories", "createCategory", "updateCategory",
     "deleteDownloadedChapter",
+    "login", "refreshToken",  # M1b L20: the JWT pair of `ui_login`, in the exact S5 forms
+    "user",  # M1b L20: the roles of the logged-in account (D1), when the server exposes them
 })  # fmt: skip
 FORBIDDEN_FIELDS = frozenset({
     "fetchChapterPages", "fetchChapters", "fetchManga", "fetchSourceManga", "updateLibrary",
     "updateCategoryManga", "deleteDownloadedChapters", "deleteCategory",
-    "clearDownloader", "startDownloader", "login", "refreshToken", "restoreBackup",
+    "clearDownloader", "startDownloader", "restoreBackup",
     "installExternalExtension", "updateExtension", "addExtensionStore", "setSettings",
 })  # fmt: skip
 _TOKEN = re.compile(r"[A-Za-z_]\w*")
+# The S5 forms (`spikes/s5`, `harness.login` and the contract test), nothing looser:
+_LOGIN = re.compile(
+    r'^\s*mutation\s*\{\s*login\(input:\s*\{username:\s*(?P<u>"(?:[^"\\]|\\.)*"),\s*'
+    r'password:\s*(?P<p>"(?:[^"\\]|\\.)*")\}\)\s*\{\s*accessToken\s+refreshToken\s*\}\s*\}\s*$'
+)
+_REFRESH = re.compile(
+    r'^\s*mutation\s*\{\s*refreshToken\(input:\s*\{refreshToken:\s*(?P<t>"(?:[^"\\]|\\.)*")\}\)'
+    r"\s*\{\s*accessToken\s*\}\s*\}\s*$"
+)
 
 
 @dataclass
@@ -73,6 +85,15 @@ class RecordedRequest:
 
 
 @dataclass
+class FakeAccount:
+    """One account of a `ui_login` server: its own password, roles and library (series urls)."""
+
+    password: str
+    roles: list[str] = field(default_factory=lambda: ["USER"])
+    library: set[str] | None = None  # None: the series flagged `inLibrary` in the state
+
+
+@dataclass
 class FakeSuwayomi:
     """The server and its state; `handle` is the whole HTTP surface."""
 
@@ -88,8 +109,70 @@ class FakeSuwayomi:
     categories: list[dict[str, Any]] = field(default_factory=list)  # id, name, includeInUpdate
     updated_by_schedule: list[int] = field(default_factory=list)  # manga ids, in order
     deleted: list[int] = field(default_factory=list)  # chapter ids of `deleteDownloadedChapter`
+    # -- ui_login (M1b L20): accounts, shared downloads with references, the JWT pair -------
+    accounts: dict[str, FakeAccount] = field(default_factory=dict)
+    roles_payload: dict[str, Any] | None = None  # a raw answer to the roles query (hostile cases)
+    expose_roles: bool = False  # v2.4.2366 exposes none (S5): the roles query is a GraphQL error
+    claims: dict[int, set[str]] = field(default_factory=dict)  # chapter id -> accounts holding it
+    files_removed: list[int] = field(default_factory=list)  # chapters whose file really went
+    logins: int = 0
+    login_users: list[str] = field(default_factory=list)
+    refreshes: int = 0
+    refresh_delay: Callable[[], Awaitable[None]] | None = None  # to overlap two refreshes
+    rotate_refresh_token: bool = False  # a server that also answers a new refresh token
+    reads_by_account: list[tuple[str, str]] = field(default_factory=list)  # (account, root field)
+    _access: dict[str, str] = field(default_factory=dict)  # access token -> account
+    _refresh: dict[str, str] = field(default_factory=dict)  # refresh token -> account
+    _issued: int = 0
+    _pairs: list[tuple[str, str]] = field(default_factory=list)
+    _account: str = ""  # the account of the request being answered
+
+    def __post_init__(self) -> None:
+        if self.auth_mode == "ui_login" and USER not in self.accounts:
+            self.accounts[USER] = FakeAccount(PASSWORD)
 
     # -- scenario helpers -------------------------------------------------------------------
+    def add_account(
+        self,
+        name: str,
+        password: str,
+        *,
+        roles: list[str] | None = None,
+        library: set[str] | None = None,
+    ) -> None:
+        """Another account of the server: it has a library the adapter must never read."""
+        self.accounts[name] = FakeAccount(password, roles or ["USER"], library or set())
+
+    def hold(self, account: str, chapter_url: str) -> int:
+        """`account` keeps this chapter downloaded (a reference on the shared file)."""
+        chapter_id = self.local_chapter_ids()[chapter_url]
+        self.claims.setdefault(chapter_id, set()).add(account)
+        self._downloaded.add(chapter_id)
+        return chapter_id
+
+    def is_downloaded(self, chapter_url: str) -> bool:
+        return self.local_chapter_ids()[chapter_url] in self._downloaded
+
+    def issued_tokens(self) -> list[tuple[str, str]]:
+        """Every (access, refresh) pair ever issued, oldest first."""
+        return list(self._pairs)
+
+    def expire_access_tokens(self) -> None:
+        """The 5-minute JWT ran out: every access token is refused, refresh tokens still live."""
+        self._access.clear()
+
+    def expire_all_tokens(self) -> None:
+        self._access.clear()
+        self._refresh.clear()
+
+    def account_library(self, account: str) -> set[str]:
+        held = self.accounts[account].library
+        if held is None:
+            held = {m["url"] for m in self.state["mangas"] if m["inLibrary"]}
+            self.accounts[account].library = held
+        return held
+
+    # -- (scenario helpers continue) --------------------------------------------------------
     def reinstall(self, *, wipe: bool = False) -> None:
         """Same tool, same upstream sources, but every local integer id is new (EF-SRC-036).
 
@@ -220,7 +303,11 @@ class FakeSuwayomi:
         if self.auth_mode == "basic_auth":
             pair = base64.b64encode(f"{USER}:{PASSWORD}".encode()).decode()
             return headers.get("authorization") == f"Basic {pair}"
-        return headers.get("authorization", "").startswith("Bearer ")  # ui_login: JWT only
+        auth = headers.get("authorization", "")  # ui_login: JWT only
+        token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else None
+        account = self._access.get(token) if token else None
+        self._account = account or ""
+        return account is not None
 
     def _denied(self, headers: dict[str, str], path: str) -> Response | None:
         if self._authorized(headers):
@@ -267,12 +354,60 @@ class FakeSuwayomi:
         bad = found & FORBIDDEN_FIELDS
         if bad or not found:
             return self._violation(f"GraphQL fields not allow-listed: {sorted(bad) or 'none'}")
+        if found & {"login", "refreshToken"}:
+            return self._token_mutation(query)
         if not authenticated and found != {"aboutServer"}:
             return self._json({"data": None, "errors": [{"message": "Unauthorized"}]})
+        if "user" in found and self.roles_payload is not None:
+            return self._json(self.roles_payload)
+        if "user" in found and not self.expose_roles:  # a schema without that field (S5)
+            message = "Validation error: Field 'user' in type 'Query' is undefined"
+            return self._json({"errors": [{"message": message}]})
+        if self.auth_mode == "ui_login":
+            self.reads_by_account.extend((self._account, n) for n in sorted(found))
         data: dict[str, Any] = {}
         for name in sorted(found):
             data[name] = getattr(self, f"_q_{name}")(query, variables)
         return self._json({"data": data})
+
+    def _issue(self, account: str) -> tuple[str, str]:
+        self._issued += 1
+        access, refresh = f"acc.{self._issued}.{account}", f"ref.{self._issued}.{account}"
+        self._access[access] = account
+        self._refresh[refresh] = account
+        self._pairs.append((access, refresh))
+        return access, refresh
+
+    def _token_mutation(self, query: str) -> Response:
+        """`login` and `refreshToken`, accepted only in the S5 forms and only in `ui_login`."""
+        login, refresh = _LOGIN.match(query), _REFRESH.match(query)
+        if self.auth_mode != "ui_login" or not (login or refresh):
+            return self._violation("login/refreshToken outside ui_login or not in the S5 forms")
+        if login:
+            self.logins += 1
+            user, password = json.loads(login["u"]), json.loads(login["p"])
+            self.login_users.append(user)
+            account = self.accounts.get(user)
+            if account is None or account.password != password:
+                return self._json({"data": None, "errors": [{"message": "Invalid credentials"}]})
+            access, refresh_token = self._issue(user)
+            return self._json(
+                {"data": {"login": {"accessToken": access, "refreshToken": refresh_token}}}
+            )
+        if refresh:
+            self.refreshes += 1
+            holder = self._refresh.get(json.loads(refresh["t"]))
+            if holder is None:
+                return self._json({"data": None, "errors": [{"message": "Invalid token"}]})
+            access, new_refresh = self._issue(holder)
+            payload = {"accessToken": access}
+            if self.rotate_refresh_token:
+                del self._refresh[json.loads(refresh["t"])]
+                payload["refreshToken"] = new_refresh
+            else:
+                self._refresh.pop(new_refresh)
+            return self._json({"data": {"refreshToken": payload}})
+        raise AssertionError("unreachable")
 
     @staticmethod
     def _wanted_id(query: str, variables: dict[str, Any], key: str) -> int | None:
@@ -294,21 +429,35 @@ class FakeSuwayomi:
             "downloadsPath": self.state.get("downloads_path", "/downloads"),
         }
 
+    def _q_user(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        return {"roles": list(self.accounts[self._account].roles)}
+
     def _q_sources(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         return {"nodes": copy.deepcopy(self.state["sources"])}
 
+    def _in_library(self, manga: dict[str, Any]) -> bool:
+        """The flag of the account that asks: libraries are per account in `ui_login`."""
+        if self.auth_mode == "ui_login" and self._account:
+            return bool(manga["url"] in self.account_library(self._account))
+        return bool(manga["inLibrary"])
+
     @staticmethod
-    def _manga_node(manga: dict[str, Any]) -> dict[str, Any]:
-        return {
+    def _manga_node(manga: dict[str, Any], *, library: bool | None = None) -> dict[str, Any]:
+        node = {
             k: v for k, v in manga.items() if k not in ("chapters", "categoryIds", "updateStrategy")
         }
+        if library is not None:
+            node["inLibrary"] = library
+        return node
 
     def _q_mangas(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         only_library = bool(re.search(r"inLibrary\s*:\s*true", query)) or (
             variables.get("inLibrary") is True
         )
         nodes = [
-            self._manga_node(m) for m in self.state["mangas"] if m["inLibrary"] or not only_library
+            self._manga_node(m, library=self._in_library(m))
+            for m in self.state["mangas"]
+            if self._in_library(m) or not only_library
         ]
         return {"nodes": nodes}
 
@@ -317,7 +466,7 @@ class FakeSuwayomi:
         found = [m for m in self.state["mangas"] if m["id"] == wanted]
         if not found:
             return None
-        node = self._manga_node(found[0])
+        node = self._manga_node(found[0], library=self._in_library(found[0]))
         node["updateStrategy"] = found[0].get("updateStrategy", "ALWAYS_UPDATE")
         node["categories"] = {
             "nodes": [
@@ -380,6 +529,7 @@ class FakeSuwayomi:
         if wanted is not None and self._chapter(wanted) is not None:
             self._enqueued.add(wanted)
             self._polls[wanted] = 0
+            self.claims.setdefault(wanted, set()).add(self._account)
         return {"downloadStatus": {"state": "STARTED"}}
 
     def _q_dequeueChapterDownload(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -414,9 +564,13 @@ class FakeSuwayomi:
     def _q_deleteDownloadedChapter(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         """Removes the downloaded file only (the chapter stays known): upstream erasure."""
         wanted = self._wanted_id(query, variables, "id")
-        self._downloaded.discard(wanted)  # type: ignore[arg-type]
         self._enqueued.discard(wanted)  # type: ignore[arg-type]
         self.deleted.append(wanted)  # type: ignore[arg-type]
+        holders = self.claims.get(wanted, set())  # type: ignore[arg-type]
+        holders.discard(self._account)  # the reference of the account that asks, only
+        if not holders and wanted in self._downloaded:
+            self._downloaded.discard(wanted)  # type: ignore[arg-type]
+            self.files_removed.append(wanted)  # type: ignore[arg-type]
         return {"chapters": {"id": wanted}}
 
     def _q_updateManga(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -428,6 +582,9 @@ class FakeSuwayomi:
             if manga["id"] == wanted:
                 if "strategy" in variables:
                     manga["updateStrategy"] = str(variables["strategy"])
+                elif self.auth_mode == "ui_login" and self._account:
+                    held = self.account_library(self._account)
+                    (held.add if variables.get("inLibrary", True) else held.discard)(manga["url"])
                 else:
                     manga["inLibrary"] = bool(variables.get("inLibrary", True))
         return {"manga": {"id": wanted}}
@@ -500,6 +657,8 @@ class FakeSuwayomiFetcher:
         elif data is not None:
             merged.setdefault("Content-Type", "application/x-www-form-urlencoded")
             body = "&".join(f"{k}={v}" for k, v in data.items()).encode()
+        if self.server.refresh_delay is not None and b"refreshToken(" in body:
+            await self.server.refresh_delay()  # lets a second caller reach the same refresh
         return self.server.handle("POST", self._target(url), merged, body)
 
     async def download(self, req: ImageRequest) -> DownloadedFile:

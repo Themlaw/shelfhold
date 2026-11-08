@@ -118,7 +118,7 @@ _REAL_TESTS = {
     "suwayomi_auth_refused": f"{FOLLOW}::test_suwayomi_401_pauses_service_auth_expired_no_failure_counted",
     "suwayomi_schema_changed": f"{FOLLOW}::test_suwayomi_schema_mismatch_pauses_without_counting",
     "suwayomi_version_unsupported": f"{SUWAYOMI}::test_suwayomi_version_out_of_range_reported",
-    "suwayomi_multi_account": f"{SUWAYOMI}::test_ui_login_mode_detected_and_refused_m1a",
+    "suwayomi_multi_account": f"{SUWAYOMI}::test_unsupported_auth_mode_pauses_with_auth_mode_unsupported",
     "notifier_failing": "tests/integration/test_notifications_outbox.py::test_failed_send_is_retried_then_reported_as_notify_failed",
     "root_missing": f"{FOREIGN}::test_a_blocked_state_is_announced_once",
     "master_key_unreadable": f"{OPS_EVENTS}::test_unreadable_keyring_stops_the_start_and_publishes_secret_undecryptable",

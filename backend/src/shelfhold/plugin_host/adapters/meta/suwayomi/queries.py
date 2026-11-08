@@ -5,8 +5,11 @@ The mutations are the ones the spike S5 verified, in the shapes it verified (`sp
 `createCategory`, `updateMangaCategories` and `deleteDownloadedChapter`. Nothing here refreshes,
 pages chapters or reaches an extension: those operations do not exist in this module, and a test
 refuses any request outside these root fields. `DELETE_DOWNLOADED_CHAPTER` is an erasure upstream:
-only the `release_claim` capability sends it (L16 gives it its guards).
+only the `release_claim` capability sends it (L16 gives it its guards). `login` and `refreshToken`
+(EF-SRC-031, `ui_login`) are the token mutations, sent by the host's JWT wrapper alone.
 """
+
+import json
 
 ABOUT = "query { aboutServer { name version buildType } }"
 AUTH_MODE = "query { settings { authMode } }"
@@ -72,6 +75,31 @@ CATEGORY_DOWNLOAD = "query { categories { nodes { id name includeInDownload } } 
 DELETE_DOWNLOADED_CHAPTER = (
     "mutation ($id: Int!) { deleteDownloadedChapter(input: {id: $id}) { chapters { id } } }"
 )
+
+
+# EF-SRC-031 `ui_login`: the two token mutations, in the exact forms spike S5 ran against the
+# pinned v2.4.2366 (`harness.login`, `test_ui_login_token_flow`). The secrets are string literals
+# of the document (JSON escaping is GraphQL escaping), so a quote or a backslash stays inside.
+# `refreshToken` is asked for its `accessToken` alone, as S5 did: whether the server also rotates
+# the refresh token is not measured, and `JwtFetcher` keeps the one it holds in that case.
+def login(username: str, password: str) -> str:
+    return (
+        f"mutation {{ login(input: {{username: {json.dumps(username)}, "
+        f"password: {json.dumps(password)}}}) {{ accessToken refreshToken }} }}"
+    )
+
+
+def refresh_token(token: str) -> str:
+    return (
+        f"mutation {{ refreshToken(input: {{refreshToken: {json.dumps(token)}}}) "
+        "{ accessToken } }"
+    )
+
+
+# D1: the roles of the logged-in account, read only when the server exposes them. v2.4.2366 does
+# not (S5): the answer is then a GraphQL validation error and the account is accepted unchecked.
+# This form is NOT confirmed against a real server (see docs/decisions/M1b.md, L20).
+ACCOUNT_ROLES = "query { user { roles } }"
 
 GRAPHQL_PATH = "/api/graphql"
 DOWNLOAD_PATH = "/api/v1/chapter/{id}/download"

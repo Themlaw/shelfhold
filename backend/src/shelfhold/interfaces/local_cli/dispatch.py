@@ -255,6 +255,10 @@ def _source_add(admin: HeadlessAdmin, params: Params) -> object:
     return {"id": added.plugin_id, "auth_mode": added.auth_mode, "created": added.created}
 
 
+def _source_confirm_roles(admin: HeadlessAdmin, params: Params) -> object:
+    return admin.source_confirm_roles()
+
+
 def _subpath(params: Params) -> str:
     value = params.get("subpath", "")
     if not isinstance(value, str):
@@ -284,6 +288,7 @@ HEADLESS_METHODS: Mapping[str, tuple[HeadlessMethod, str | None]] = {
     "config.apply": (_config_apply, None),
     "target.add": (_target_add, "admin_risk.accept"),
     "source.add": (_source_add, "source.set_secret"),
+    "source.confirm_roles": (_source_confirm_roles, "source.set_secret"),
     "shelf.create": (_shelf_create, "shelf.max_age_rating"),
 }
 

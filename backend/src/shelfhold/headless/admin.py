@@ -88,7 +88,10 @@ __all__ = ["ConfigValue", "HeadlessAdmin", "Plan", "PlanChange"]
 KEY_NAME = "shelfhold"
 KEY_DAYS = 90  # the Kavita key expires; `target.key_expiring` warns at 14 and 1 days
 ADMIN_RISK_ACTION = "target.admin_risk_accepted"  # ENF-SEC-013
-SUPPORTED_AUTH_MODES = frozenset({"none", "basic_auth"})
+MIN_PASSWORD_LENGTH = 8  # the log scrubber ignores shorter secrets (`_MIN_KNOWN_SECRET`)
+ROLES_UNVERIFIED_ACTION = "source.roles_unverified"  # EF-SRC-031, D1: the roles cannot be read
+ROLES_CONFIRMED_ACTION = "source.roles_confirmed"  # the admin vouches for the account
+SUPPORTED_AUTH_MODES = frozenset({"none", "basic_auth", "ui_login"})
 X_CEILING = 99
 Action = Literal["create", "update", "unchanged"]
 _log = structlog.get_logger()
@@ -650,6 +653,32 @@ class HeadlessAdmin:
         with self._engine.begin() as connection:
             return reconnect(connection, "suwayomi", self._clock.now())
 
+    def _audit_source(self, connection: Connection, action: str) -> None:
+        """One row in the transaction of the change: no unverified account without its trace."""
+        records.insert_audit(
+            connection,
+            audit_id=new_ulid(),
+            actor_id=None,
+            action=action,
+            target=f"suwayomi uid={os.getuid()}",
+            at=self._clock.now(),
+            session_id=None,
+            auth_time=None,
+        )
+
+    def source_confirm_roles(self) -> bool:
+        """`source confirm-roles`: the admin vouches that the service account of a `ui_login`
+        Suwayomi has minimal rights (the server exposes no role to check). Clears the
+        `roles_unverified` warning of `status`; audited. False when nothing was to confirm."""
+        with self._engine.begin() as connection:
+            row = records.source_row(connection)
+            if row is None or not row.settings.get("roles_unverified"):
+                return False
+            settings = {k: v for k, v in row.settings.items() if k != "roles_unverified"}
+            records.update_source(connection, settings, self._clock.now())
+            self._audit_source(connection, ROLES_CONFIRMED_ACTION)
+        return True
+
     # -- source add suwayomi ------------------------------------------------------------------
 
     def source_add_suwayomi(self, *, url: str, secret: str | None) -> SourceAdded:
@@ -660,17 +689,31 @@ class HeadlessAdmin:
             username, separator, password = secret.partition(":")
             if not separator or not username or not password:
                 raise InvalidConfigValue("the secret is user:password")
+            if len(password) < MIN_PASSWORD_LENGTH:  # shorter values cannot be masked in the logs
+                raise InvalidConfigValue(
+                    f"the Suwayomi password must have at least {MIN_PASSWORD_LENGTH} characters: "
+                    "the log scrubber cannot mask a shorter secret"
+                )
         try:
             mode = self._suwayomi.auth_mode(url=clean_url, username=username, password=password)
         except ConnectionError:
             raise SourceUnreachable("Suwayomi cannot be reached at this address") from None
+        except PermissionError:  # `ui_login`: the server refuses the account (nothing is stored)
+            raise InvalidConfigValue("Suwayomi refuses this user:password account") from None
+        except ValueError as too_powerful:  # `ui_login`: an account that may install extensions
+            raise SourceAuthModeUnsupported(str(too_powerful)) from None
         if mode not in SUPPORTED_AUTH_MODES:
             raise SourceAuthModeUnsupported(t("headless.auth_mode_unsupported", mode=mode))
-        if mode == "basic_auth" and not (username and password):
+        if mode in ("basic_auth", "ui_login") and not (username and password):
             raise InvalidConfigValue("this server needs a user:password secret")
-        keep = mode == "basic_auth"
-        settings = {"base_url": clean_url, "auth_mode": mode}
+        keep = mode in ("basic_auth", "ui_login")
+        settings: dict[str, Any] = {"base_url": clean_url, "auth_mode": mode}
+        unverified = mode == "ui_login" and not self._suwayomi.roles_verified
+        if unverified:  # a durable warning in `status` until the admin confirms (D1)
+            settings["roles_unverified"] = True
         with self._engine.begin() as connection:
+            if unverified:
+                self._audit_source(connection, ROLES_UNVERIFIED_ACTION)
             created = records.source_row(connection) is None
             if created:
                 records.insert_source(connection, settings)
@@ -876,7 +919,7 @@ class HeadlessAdmin:
         self, connection: Connection, row: Any, source: DesiredSource, read: SecretReader
     ) -> bool:
         """Does the secret file say something else than what is sealed? Only the fact is kept."""
-        if row.settings.get("auth_mode") != "basic_auth":
+        if row.settings.get("auth_mode") not in ("basic_auth", "ui_login"):
             return False  # nothing is stored, and a server without login ignores a secret
         wanted = _secret(read, source.secret_file, "secret")
         if wanted is None:

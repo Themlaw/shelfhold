@@ -464,7 +464,7 @@ def source_instance_changed(settings: Settings) -> None:
     """M1b L18: Suwayomi was reinstalled; `source reconnect` takes the pause off and the next
     cycle takes the fingerprint of the new installation as its reference."""
     with headless(settings) as h:
-        h.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="admin:s3cret")
+        h.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="admin:s3cret-synthetic")
         with h.engine.begin() as connection:
             connection.execute(
                 sa.text("UPDATE source_config SET instance_fingerprint = 'old' "
@@ -484,7 +484,7 @@ def source_instance_changed(settings: Settings) -> None:
 
 def auth_mode_unsupported(settings: Settings) -> None:
     with headless(settings) as h:
-        h.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="admin:s3cret")
+        h.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="admin:s3cret-synthetic")
         pause_follow(h.engine, failure_class="auth_mode", state="auth_mode_unsupported")
         h.suwayomi.mode = "basic_auth"  # the server was set back to a supported mode
         ops = OpsServices(h.engine, clock=h.clock, bus=_bus(h), headless=h.admin)

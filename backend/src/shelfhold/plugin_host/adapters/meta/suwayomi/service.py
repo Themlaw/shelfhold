@@ -68,7 +68,17 @@ from shelfhold.sdk.source import (
 
 KEY = "suwayomi"
 CBZ_MIME = "application/vnd.comicbook+zip"
-SUPPORTED_MODES = frozenset({"none", "basic_auth"})  # every other mode is refused (EF-SRC-031)
+SUPPORTED_MODES = frozenset({"none", "basic_auth", "ui_login"})  # every other mode is refused
+# D1: a role that lets an account install extensions. The service account never has one.
+_PRIVILEGED_WORDS = ("ADMIN", "SUPERUSER", "SUPER_USER", "OWNER", "ROOT", "EXTENSION")
+_ROLES_UNREADABLE = (
+    "les rôles du compte de service n'ont pas pu être lus de façon sûre : "
+    "le service attend, en pause, jusqu'à un compte aux droits minimaux"
+)
+_UNKNOWN_FIELD = re.compile(
+    r"(cannot query field|fieldundefined|is undefined|unknown field|not defined)", re.IGNORECASE
+)
+_ROLE_KEYS = ("name", "role", "value", "id", "type")
 MARK = "Shelfhold"  # the category that holds a series out of updates (= EXCLUSION_MARK)
 UPDATE_STRATEGIES = frozenset({"ALWAYS_UPDATE", "ONLY_FETCH_ONCE"})
 PROBE_VALID_SECONDS = 600.0  # a follow needs a fingerprint read this lately (one cycle)
@@ -141,6 +151,7 @@ class SuwayomiService:
             | ConnectedCapability.INSTANCE_FINGERPRINT
         )
         self._mode_verified = False
+        self._mode = ""  # the authentication mode last read from the server
         self._handles: dict[str, int] = {}  # ticket token -> last known local chapter id
         self._mangas: tuple[float, list[dict[str, Any]]] | None = None
         self._probed_at: float | None = None  # monotonic time of the last fingerprint read
@@ -231,9 +242,11 @@ class SuwayomiService:
         settings = (data.get("settings") if isinstance(data, dict) else None) or {}
         reported = settings.get("authMode")
         if isinstance(reported, str) and reported:
-            return reported.lower()
+            self._mode = reported.lower()
+            return self._mode
         if self._unauthorized(payload):
-            return "ui_login"
+            self._mode = "ui_login"
+            return self._mode
         raise SourceChanged("the server did not report its authentication mode")
 
     async def download_dir(self, f: Fetcher) -> str | None:
@@ -247,9 +260,53 @@ class SuwayomiService:
     async def _ensure_supported_mode(self, f: Fetcher) -> None:
         if self._mode_verified:
             return
-        if await self.auth_mode(f) not in SUPPORTED_MODES:
+        mode = await self.auth_mode(f)
+        if mode not in SUPPORTED_MODES:
             raise AuthModeUnsupported()
+        if mode == "ui_login":
+            await self.ensure_least_privilege(f)
         self._mode_verified = True
+
+    async def ensure_least_privilege(self, f: Fetcher) -> bool:
+        """D1: the account Shelfhold logs in with must not be able to administer Suwayomi nor
+        install extensions. True: the roles were read and are harmless. False: the server does not
+        expose them at all (v2.4.2366, S5): nothing can be checked, the admin is told (the caller
+        records `roles_unverified`). Anything else, a role that is too strong or an answer that
+        cannot be understood, pauses the service: an unreadable answer is never an acceptance."""
+        roles = await self.account_roles(f)
+        if roles is None:
+            return False
+        for role in roles:
+            if _installs_extensions(role):
+                raise AuthModeUnsupported(
+                    "le compte de service est administrateur ou peut installer des extensions "
+                    f"Suwayomi (rôle {role[:40]!r}) : utilisez un compte aux droits minimaux"
+                )
+        return True
+
+    async def account_roles(self, f: Fetcher) -> list[str] | None:
+        """The role names of the logged-in account, or None when the server does not expose them.
+
+        None only for a GraphQL *validation* error on the `user` / `roles` fields (HTTP 200, the
+        field is unknown). A null `user`, any other error, or a shape that is not a list of names
+        or of objects carrying one is `AuthModeUnsupported`: the check could not be done."""
+        payload = await self._post(f, q.ACCOUNT_ROLES)
+        if self._unauthorized(payload):
+            raise self._refused(f)
+        errors = payload.get("errors")
+        if errors:
+            if _only_unknown_field_errors(errors):
+                return None  # the schema has no such field: the roles are not exposed
+            raise AuthModeUnsupported(_ROLES_UNREADABLE)
+        data = payload.get("data")
+        user = data.get("user") if isinstance(data, dict) else None
+        roles = user.get("roles") if isinstance(user, dict) else None
+        if isinstance(roles, dict) and isinstance(roles.get("nodes"), list):
+            roles = roles["nodes"]
+        names = [_role_name(role) for role in roles] if isinstance(roles, list) else None
+        if names is None or None in names:
+            raise AuthModeUnsupported(_ROLES_UNREADABLE)
+        return [n for n in names if n is not None]
 
     # -- HEALTH_PROBE ------------------------------------------------------------------------
     async def semantic_health(self, f: Fetcher) -> ServiceHealth:
@@ -700,12 +757,59 @@ class SuwayomiService:
     async def release(self, f: Fetcher, t: Ticket) -> ReleaseResult:
         """Erase the downloaded chapter of this ticket on the Suwayomi side (EF-BIB-038): an
         erasure upstream, irreversible. The only caller is the purge of L16, after its guards (a
-        kept copy that still counts). A chapter that is not downloaded, or gone, erases nothing."""
+        kept copy that still counts). A chapter that is not downloaded, or gone, erases nothing.
+
+        In `ui_login` the downloads are shared between accounts, each holding a reference: the
+        erasure only withdraws the claim of the service account and the file stays while another
+        account keeps it. What it freed is then measured, size before and presence after, never
+        supposed (EF-SRC-031); the library of another account is not looked at."""
         found = await self._ticket_node(f, t)
         if found is None or not found[1].get("isDownloaded"):
             return ReleaseResult(released=False)
+        shared = self._mode == "ui_login"
+        size = await self._archive_size(f, found[0]) if shared else None
         await self._query(f, q.DELETE_DOWNLOADED_CHAPTER, {"id": found[0]})
-        return ReleaseResult(released=True)
+        if not shared:
+            return ReleaseResult(released=True)
+        after = await self._ticket_node(f, t)
+        present = after is not None and bool(after[1].get("isDownloaded"))
+        return ReleaseResult(
+            released=True, freed_bytes=0 if present else (size or 0), still_present=present
+        )
+
+    async def _archive_size(self, f: Fetcher, chapter_id: int) -> int:
+        """The size of the file as the server serves it, before it is erased."""
+        url = self.base_url + q.DOWNLOAD_PATH.format(id=chapter_id)
+        return (await f.download(ImageRequest(url=url))).size
+
+
+def _installs_extensions(role: str) -> bool:
+    """An administrator or equivalent, or any right over extensions (case-insensitive)."""
+    name = role.strip().upper()
+    return any(word in name for word in _PRIVILEGED_WORDS)
+
+
+def _role_name(role: object) -> str | None:
+    """A role given as a string, or as an object carrying its name; None when it is neither."""
+    if isinstance(role, str):
+        return role
+    if isinstance(role, dict):
+        for key in _ROLE_KEYS:
+            if isinstance(role.get(key), str):
+                return str(role[key])
+    return None
+
+
+def _only_unknown_field_errors(errors: object) -> bool:
+    """Every error is a validation error about the `user` or `roles` field being unknown."""
+    if not isinstance(errors, list) or not errors:
+        return False
+    for error in errors:
+        message = str(error.get("message", "")) if isinstance(error, dict) else ""
+        mentions = re.search(r"['\"\s@\[]\b(user|roles)\b", message, re.IGNORECASE)
+        if not (_UNKNOWN_FIELD.search(message) and mentions):
+            return False
+    return True
 
 
 def _chapter_url(unit: UnitInfo) -> str:
