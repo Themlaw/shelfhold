@@ -254,9 +254,22 @@ def test_failure_matrix_proof_nodeids_exist_and_event_matches() -> None:
     for row in FAILURE_MATRIX:
         if row.simulated:
             continue
-        if row.milestone != "M1a":
-            assert row.proof.startswith("lot "), f"{row.key}: names the lot that ships it"
-            continue
+        if row.proof.startswith("lot "):
+            assert row.milestone != "M1a", f"{row.key}: a row of M1a is proved by a real test"
+            continue  # an M1b row whose emitter ships with its lot
         source = _test_source(row.proof)
         assert source is not None, f"{row.key}: {row.proof!r} is not a test that exists"
         assert f'"{row.event}"' in source, f"{row.key}: {row.proof} never names {row.event}"
+
+
+@pytest.mark.req("EF-SRC-036", "ENF-OPS-011")
+def test_suwayomi_reinstalled_row_is_closed_by_its_real_test() -> None:
+    """M1b L18: the row no longer waits for a lot, it names the test that plays it."""
+    row = next(r for r in FAILURE_MATRIX if r.key == "suwayomi_reinstalled")
+    assert row.proof == (
+        "tests/integration/test_suwayomi_reinstall.py"
+        "::test_connected_service_reinstall_pauses_without_cascade"
+    )
+    assert (row.event, row.exit_command, row.behaviour) == (
+        "source.instance_changed", "source reconnect", "pause_service"
+    )
