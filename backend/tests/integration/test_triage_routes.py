@@ -13,6 +13,7 @@ import pytest
 from shelfhold.config import Settings
 from tests.auth_env import CSRF_HEADER, AuthEnv, auth_env
 
+TOKEN = "1-abcd1234"  # noqa: S105 (test fixture)
 ITEMS = [
     {"work_id": "01JWORK0000000000000000001", "title": "<b>Un titre</b>",
      "state": "rating_pending", "reason": "waits"},
@@ -24,7 +25,7 @@ class _Rating:
         self.batches: list[tuple[str, str, str]] = []
 
     def listing(self, age: str | None) -> dict[str, Any]:
-        return {"age": age, "items": ITEMS, "token": "1-abcd1234" if age else None}
+        return {"age": age, "items": ITEMS, "token": TOKEN if age else None}
 
     def unshelved(self) -> list[dict[str, str]]:
         return [
@@ -39,7 +40,8 @@ class _Rating:
             "rated": [
                 {"work_id": ITEMS[0]["work_id"], "target": "work:1", "label": "age.min.13",
                  "effective": 13, "effective_x": False,
-                 "withdrawals": [{"edition_id": "E1", "shelf_id": "S1", "reason": "above_ceiling"}]},
+                 "withdrawals": [{"edition_id": "E1", "shelf_id": "S1",
+                                 "reason": "above_ceiling"}]},
             ],
         }  # fmt: skip
 
@@ -86,7 +88,7 @@ def test_to_rate_list_carries_the_token_only_for_an_age(api: AuthEnv) -> None:
     plain = api.client.get("/api/v1/to-rate").json()
     assert plain["token"] is None and plain["items"][0]["state"] == "rating_pending"
     aged = api.client.get("/api/v1/to-rate", params={"age": "13+"}).json()
-    assert aged["token"] == "1-abcd1234"
+    assert aged["token"] == TOKEN
 
 
 @pytest.mark.req("EF-EXP-046")
