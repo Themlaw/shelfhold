@@ -33,6 +33,30 @@ test('test_spa_loads_no_third_party_resource', async ({ page, baseURL }) => {
   expect(cspViolations).toEqual([]);
 });
 
+// The two M1b screens, without a session: the API answers 401, the page says so, and not one
+// request leaves the instance origin nor breaks the CSP (no inline script, no third-party font).
+for (const [path, heading] of [
+  ['/a-classer', 'À classer'],
+  ['/a-ranger', 'À ranger']
+] as const) {
+  // req: ENF-PRIV-001, EF-USR-015, EF-EXP-046
+  test(`test_spa_loads_no_third_party_resource ${path}`, async ({ page, baseURL }) => {
+    const attempted = await refuseThirdParties(page, new URL(baseURL ?? '').origin);
+    const cspViolations: string[] = [];
+    page.on('console', (msg) => {
+      if (/content security policy/i.test(msg.text())) cspViolations.push(msg.text());
+    });
+
+    await page.goto(path);
+    await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText('Connexion requise');
+    await page.waitForLoadState('networkidle');
+
+    expect(attempted, `third-party requests attempted: ${attempted.join(', ')}`).toEqual([]);
+    expect(cspViolations).toEqual([]);
+  });
+}
+
 test('the SPA fallback serves client routes', async ({ page }) => {
   const response = await page.goto('/une/route/cliente');
   expect(response?.status()).toBe(200);
