@@ -55,6 +55,7 @@ from shelfhold.infrastructure.observability.shutdown import (
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
+from shelfhold.jobs.window import MaintenanceWindow
 from shelfhold.library.public import (
     MetaProjection,
     complete_interrupted_keep,
@@ -236,6 +237,11 @@ class InstanceRuntime:
             engine=engine,
             clock=clock,
             seed=instance_id or "unregistered",
+            window=MaintenanceWindow.from_text(
+                self.settings.maintenance_window_start,
+                self.settings.maintenance_window_end,
+                self.settings.timezone,
+            ),
             bus=bus,
             freeze=self.freeze_state,
         )

@@ -87,7 +87,7 @@ def test_backfill_waiting_too_long_is_promoted_not_starved(
         )
     assert classes["old-backfill"] == "request"  # served at the class above, from then on
     assert classes["young-backfill"] == "backfill"
-    assert BACKFILL_MAX_WAIT <= timedelta(hours=24)
+    assert timedelta(hours=24) >= BACKFILL_MAX_WAIT
 
 
 @pytest.mark.req("EF-INT-017")

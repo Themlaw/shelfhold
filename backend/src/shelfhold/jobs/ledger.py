@@ -315,6 +315,32 @@ class JobLedger:
             ).all()
         return [self._pending(r) for r in rows]
 
+    def aged_backfill(self, cutoff: datetime) -> list[PendingJob]:
+        """Queued `backfill` jobs created at or before `cutoff` and already sent to Huey."""
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(job_view)
+                .where(
+                    job_view.c.status == "queued",
+                    job_view.c.priority_class == "backfill",
+                    job_view.c.created_at <= cutoff,
+                    job_view.c.huey_task_id.is_not(None),
+                )
+                .order_by(job_view.c.created_at)
+            ).all()
+        return [self._pending(r) for r in rows]
+
+    def promote(self, job_id: str, priority_class: str) -> bool:
+        """Move a still-queued job to a higher class; False if it started in the meantime."""
+        with self._engine.begin() as conn:
+            return bool(
+                conn.execute(
+                    sa.update(job_view)
+                    .where(job_view.c.id == job_id, job_view.c.status == "queued")
+                    .values(priority_class=priority_class)
+                ).rowcount
+            )
+
     def forget_dispatches_not_in(self, present: set[str]) -> int:
         """Queued rows whose Huey task is no longer anywhere: a worker took it out of the queue
         and was killed before it claimed the job. They are `undispatched` again."""

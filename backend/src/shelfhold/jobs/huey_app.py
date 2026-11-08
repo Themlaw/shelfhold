@@ -7,7 +7,9 @@ periodic Huey knows is `tick`, every minute, which calls `Scheduler.scan`; every
 a row of `schedule`.
 
 Priorities: a Huey task carries the numeric priority of its class, `new` > `request` > `backfill`,
-so a backlog (catch-up in batches) never delays a new chapter.
+so a backlog (catch-up in batches) never delays a new chapter. Nothing starves: a `backfill` job
+that has waited `BACKFILL_MAX_WAIT` is moved to the `request` class by the next tick, so the
+delay of a catch-up is bounded by that wait plus the requests ahead of it.
 """
 
 import os
@@ -41,7 +43,14 @@ from shelfhold.jobs.ledger import (
 )
 from shelfhold.jobs.scheduler import ScanReport, Scheduler
 from shelfhold.jobs.slots import RETRY_DELAY_S, DomainSlots
-from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow, WindowRun, run_until
+from shelfhold.jobs.window import (
+    DEFAULT_WINDOW,
+    MaintenanceWindow,
+    StoreOrigin,
+    WindowRun,
+    ensure_store_access,
+    run_until,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -49,6 +58,7 @@ POOLS = ("io", "cpu", "maint")
 # Worker threads each pool's consumer is started with (`huey_consumer -w N -k thread`).
 POOL_WORKERS = {"io": 4, "cpu": 1, "maint": 1}
 CLASS_PRIORITY = {"new": 30, "request": 20, "backfill": 10}
+BACKFILL_MAX_WAIT = timedelta(hours=6)  # EF-INT-017: the longest a catch-up batch waits as such
 TICK_POOL = "io"
 TICK_PRIORITY = 100  # above every class: queued downloads never delay the scan (a task already
 # running is not preempted, so `io` keeps a spare worker thread)
@@ -208,13 +218,6 @@ class JobPools:
             for task in huey._registry.periodic_tasks
         ]
 
-    def tick_matches(self, instant: datetime) -> bool:
-        return all(
-            task.validate_datetime(instant)
-            for huey in self._hueys.values()
-            for task in huey._registry.periodic_tasks
-        )
-
     # -- registration and submission --------------------------------------------------------
 
     def register(
@@ -231,6 +234,19 @@ class JobPools:
         if pool not in self._hueys:
             raise KeyError(pool)
         self._handlers[kind] = (pool, handler, windowed, writes)
+
+    def promote_aged_backfill(self) -> int:
+        """Send again, one class up, the `backfill` jobs that waited the bound (EF-INT-017). The
+        first task stays in its queue: whichever reaches a worker first claims the job, the other
+        finds it taken."""
+        promoted = 0
+        for job in self.ledger.aged_backfill(self.clock.now() - BACKFILL_MAX_WAIT):
+            if self.ledger.promote(job.job_id, "request"):
+                self.ledger.mark_dispatched(job.job_id, self.dispatch(self.ledger.get(job.job_id)))
+                promoted += 1
+        if promoted:
+            log.info("jobs.backfill_promoted", count=promoted)
+        return promoted
 
     # -- queue-wide pause (ENF-OPS-006) -------------------------------------------------------
 
@@ -339,6 +355,7 @@ class JobPools:
         if self._stopping:
             return ScanReport(())
         report = self.scheduler.scan()
+        self.promote_aged_backfill()
         log.debug("scheduler.scanned", queued=len(report.queued))
         return report
 
@@ -388,6 +405,8 @@ class JobPools:
             start = self.window.next_span(end - timedelta(seconds=1)).start
             if now < start:
                 raise RetryTask(eta=start.replace(tzinfo=None))
+            # the one door of the periodic work to /store and /library: inside the window only
+            ensure_store_access(StoreOrigin.PERIODIC, now=now, window=self.window)
             window_end = end
         if not self.ledger.claim_running(job_id):
             log.debug("job.skipped", job_id=job_id, job_kind=job.kind, reason="already_claimed")

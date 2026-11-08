@@ -127,6 +127,7 @@ class Scheduler:
                 and existing.jitter_s == jitter_s
                 and (existing.window is not None) == windowed
                 and existing.next_due_at is not None
+                and self._window_unchanged(existing.window)
             ):
                 conn.execute(
                     sa.update(schedule).where(schedule.c.id == existing.id).values(enabled=enabled)
@@ -159,11 +160,16 @@ class Scheduler:
                 )
             )
 
+    def _window_unchanged(self, stored: dict[str, str] | None) -> bool:
+        """The occurrence a window job is planned for is one of the window as configured now:
+        after the owner moved the window (or the time zone), the job is planned afresh."""
+        return stored is None or self._window.is_occurrence(_span_of(stored))
+
     def _plan(
         self, kind: str, scope_key: str, cron: str, jitter_s: int, windowed: bool, after: datetime
     ) -> tuple[datetime, dict[str, str] | None]:
         """The next due instant after `after`, and the window it falls in if the job has one."""
-        base = CronSpec.parse(cron).next_after(after)
+        base = CronSpec.parse(cron).next_after(after, self._window.tz)
         if not windowed:
             return base + timedelta(
                 seconds=jitter_for(self._seed, kind, scope_key, base, jitter_s)

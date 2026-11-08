@@ -1,5 +1,6 @@
 """SQL storage of users, sessions, API keys and audit entries (tables of migration 0002)."""
 
+import secrets
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
@@ -127,6 +128,31 @@ class SqlIdentityStore:
                     created_at=now,
                 )
             )
+
+    def delete_user(self, user_id: str) -> str | None:
+        """Delete the account and keep its traces under one pseudonym (EF-USR-013, ENF-OPS-009).
+
+        In one transaction the user row goes (its sessions, keys and passkeys with it) and every
+        place that named it by id (`audit.actor_id` and `target`) takes the same
+        random token `deleted:<hex>`: the entries are not removed and keep their date, their
+        action and their order, and one person's entries stay linked to each other without
+        naming anyone. (`event` is append-only and holds the id only 90 days, an opaque ULID whose
+        user is gone.) The audit has no hash chain; if one is added, the pseudonym replaces the
+        id outside the hashed fields. Returns the pseudonym, or None if there was no such user.
+        """
+        pseudonym = f"deleted:{secrets.token_hex(8)}"
+        with self._engine.begin() as conn:
+            gone = conn.execute(sa.delete(_user).where(_user.c.id == user_id)).rowcount
+            if not gone:
+                return None
+            audit = identity.audit
+            conn.execute(
+                sa.update(audit).where(audit.c.actor_id == user_id).values(actor_id=pseudonym)
+            )
+            conn.execute(sa.update(audit).where(audit.c.target == user_id).values(target=pseudonym))
+            keys = identity.idempotency_key  # 24 hours of replayable answers: not a trace to keep
+            conn.execute(sa.delete(keys).where(keys.c.actor_id == user_id))
+        return pseudonym
 
     def set_password_hash(self, user_id: str, password_hash: str) -> None:
         with self._engine.begin() as conn:

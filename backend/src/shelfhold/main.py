@@ -100,6 +100,10 @@ LOGGED_SETTINGS: dict[str, str] = {
     "fresh_auth_s": "recent_login_window_s",  # a duration
     "secret_key_file": "trousseau_path",  # where the keyring is: a path, not the keyring
     "forward_auth_trusted_cidrs": "proxy_trusted_cidrs",  # networks, not credentials
+    "maintenance_window_start": "maintenance_window_start",
+    "maintenance_window_end": "maintenance_window_end", "timezone": "timezone",
+    "retention_events_days": "retention_events_days",
+    "retention_audit_days": "retention_audit_days",
 }  # fmt: skip
 SECRET_SETTINGS = frozenset({"api_token", "wake_token"})  # never logged, whatever its value
 

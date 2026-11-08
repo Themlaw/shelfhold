@@ -90,6 +90,7 @@ from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.library.public import PassthroughStore, RangedKeeper
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
+from shelfhold.retention_jobs import register_retention_jobs
 from shelfhold.store_jobs import register_store_jobs
 
 __all__ = [
@@ -757,3 +758,4 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.scheduler.add(INTENT_PRUNE_KIND, INTENT_PRUNE_CRON, jitter_s=300)
     register_notification_job(pools, LazyDispatcher(comp))  # type: ignore[arg-type]
     register_store_jobs(pools, comp)  # the window jobs of /store (L14)
+    register_retention_jobs(pools, comp)  # technical retention (ENF-OPS-009)

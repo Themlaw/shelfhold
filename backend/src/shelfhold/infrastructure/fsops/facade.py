@@ -538,10 +538,10 @@ class Fsops:
             kind = root.lstat_kind(located.rel)
         return (kind, identity_of(observed)) if kind is not None else None
 
-    def list_dir(self, local: str) -> dict[str, Kind]:
+    def list_dir(self, local: str, *, host: bool = False) -> dict[str, Kind]:
         """The entries of a folder with what each is (a link is described, never followed).
-        An entry that vanishes while it is read is left out."""
-        located = self._locate(local)
+        An entry that vanishes while it is read is left out. `host`: the reserved area (a bin)."""
+        located = self._locate(local, host=host)
         with self._root(located.root_path) as root:
             found: dict[str, Kind] = {}
             for name in root.listdir(located.rel):
@@ -810,6 +810,19 @@ class Fsops:
         with self._gated(located) as root:
             self._require_condition(emitter, root, located.rel, is_tree=False)
             root.unlink(located.rel)
+
+    def trash_expired(self, local: str) -> bool:
+        """The bin entry holding `local` is old enough for `trash_retention_purge` (30 days). A
+        question, not a deletion: the sweep asks before it records an intention."""
+        located = self._locate(local, host=True)
+        require_inside("trash_retention_purge", located.rel)
+        with self._root(located.root_path) as root:
+            try:
+                return bool(
+                    self._now() - root.stat(trash_entry(located.rel)).st_mtime >= TRASH_RETENTION_S
+                )
+            except FileNotFoundError:
+                return False
 
     def system_remove_tree(self, emitter: str, local: str) -> None:
         """A system emitter deletes a folder and what it holds, same rules as `system_unlink`;

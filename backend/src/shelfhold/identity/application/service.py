@@ -105,6 +105,11 @@ class AdminExistsError(AuthError):
         super().__init__("admin_exists")
 
 
+class LastAdminError(AuthError):
+    def __init__(self) -> None:
+        super().__init__("last_admin")
+
+
 class UnknownUserError(AuthError):
     def __init__(self) -> None:
         super().__init__("unknown_user")
@@ -298,6 +303,20 @@ class LocalAuth:
         )
         self._audit("user.created", by, target=user_id)
         return user_id
+
+    def delete_user(self, username: str, *, by: Principal | None = None) -> str:
+        """Delete an account; its audit entries are kept under a pseudonym (EF-USR-013). The
+        last admin cannot go: nobody could open the instance again. Returns the pseudonym."""
+        user = self._store.user_by_name(username)
+        if user is None:
+            raise UnknownUserError
+        if user.role == ADMIN_ROLE and len(self._store.admins()) <= 1:
+            raise LastAdminError
+        pseudonym = self._store.delete_user(user.id)
+        if pseudonym is None:
+            raise UnknownUserError
+        self._audit("user.deleted", by, target=pseudonym)
+        return pseudonym
 
     def reset_password(self, username: str, password: str, *, by: Principal | None = None) -> int:
         """New password, and every session of the account closed. Returns the closed count."""

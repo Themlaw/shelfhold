@@ -25,6 +25,7 @@ from typing import Protocol
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
+from shelfhold.export.domain.physical_roots import RECYCLE_DIR
 from shelfhold.export.domain.provenance_mirror import MIRROR_DIR
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.fsops import FileIdentity, FsopsError
@@ -350,6 +351,8 @@ class IntentJournal:
                 self._resolve_rename(intent, report, on_done)
             elif intent.op == "rmdir" and intent.src:
                 self._resolve_rmdir(intent, report, on_done)
+            elif intent.op == "delete" and intent.src and f"/{RECYCLE_DIR}/" in intent.src:
+                self._resolve_expired_bin_entry(intent, report, on_done)
             elif intent.op == "recycle" and intent.src:
                 self._resolve_recycle(intent, report, on_done)
             elif intent.op == "write" and intent.dst:
@@ -419,6 +422,21 @@ class IntentJournal:
             report.replayed.append(intent.id)
         else:
             self._drift(intent, report, "the file in the shelf is not the one to be recycled")
+
+    def _resolve_expired_bin_entry(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """The retention sweep of a recycle bin (ENF-OPS-009) went down before it finished. Gone:
+        it did its job. Still there: nothing is deleted here (the age is judged by fsops, not by
+        a replay); the intention is closed and the next night's sweep decides again."""
+        if intent.src is None:
+            return self._drift(intent, report, "a bin sweep needs its entry")
+        if self._disk.observe(intent.src) is None:
+            self._finish(intent, on_done)
+            report.completed.append(intent.id)
+        else:
+            self._close(intent.id, "cancelled")
+            report.abandoned.append(intent.id)
 
     def _resolve_write(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

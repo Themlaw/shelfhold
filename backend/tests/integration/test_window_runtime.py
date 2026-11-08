@@ -52,23 +52,27 @@ def test_window_job_runs_in_a_window_across_midnight(tmp_path: Path, engine: Eng
     window = MaintenanceWindow.from_text("23:00", "02:00", "Europe/Paris")
     pools = make_pools(tmp_path, engine, clock, window)
     seen: list[datetime] = []
-    pools.register("night", pool="maint", handler=lambda c: seen.append(c.clock.now()), windowed=True)
-    pools.scheduler.add("night", "30 3 * * *", windowed=True)  # 03:30 is outside: clamped
+    pools.register(
+        "night", pool="maint", handler=lambda c: seen.append(c.clock.now()), windowed=True
+    )
+    pools.scheduler.add("night", "0 12 * * *", windowed=True)  # midday is outside: clamped
     with engine.connect() as conn:
         row = conn.execute(sa.select(platform.schedule)).one()
-    assert row.next_due_at == utc(2026, 11, 4, 22)  # opens at 23:00 Paris
-    clock.set(utc(2026, 11, 4, 22, 1))
+    assert row.next_due_at == utc(2026, 11, 5, 22)  # opens at 23:00 Paris
+    clock.set(utc(2026, 11, 5, 22, 1))
     pools.tick()
     run_all(pools, "maint")
-    assert seen == [utc(2026, 11, 4, 22, 1)]
-    clock.set(utc(2026, 11, 5, 0, 30))  # past midnight, still the same occurrence
+    assert seen == [utc(2026, 11, 5, 22, 1)]
+    clock.set(utc(2026, 11, 5, 23, 30))  # past midnight in Paris, still the same occurrence
     assert window.span_containing(clock.now()) is not None
 
 
 @pytest.mark.req("ENF-OPS-014")
 def test_a_changed_window_replans_the_window_jobs(tmp_path: Path, engine: Engine) -> None:
     clock = ManualClock(utc(2026, 11, 4, 12))
-    first = make_pools(tmp_path, engine, clock, MaintenanceWindow.from_text("03:00", "07:00", "UTC"))
+    first = make_pools(
+        tmp_path, engine, clock, MaintenanceWindow.from_text("03:00", "07:00", "UTC")
+    )
     first.scheduler.add("night", "0 3 * * *", windowed=True)
     # the owner moves the window and restarts: the stored occurrence is the old one
     moved = JobPools(
@@ -101,14 +105,20 @@ def test_no_store_or_library_access_outside_window_unless_user_request(
                 clock.set(utc(2026, 11, 4, 11, minute))
                 pools.tick()
                 run_all(pools, "maint")
-        windowed = {
-            kind for kind in (KEEP_CATCHUP_KIND, STORE_INDEX_KIND, rj.RECONCILE_KIND,
-                              rj.RECONCILE_HASH_KIND) if pools.is_windowed(kind)
-        }  # fmt: skip
-        assert len(windowed) == 4  # the jobs that read the disks are all window jobs
+        windowed = windowed_kinds(inst.engine)
+        # the jobs that read the disks are all window jobs
+        assert {KEEP_CATCHUP_KIND, STORE_INDEX_KIND, rj.RECONCILE_KIND, rj.RECONCILE_HASH_KIND} <= (
+            windowed
+        )
         ran = _ran_kinds(inst.engine)
         assert windowed.isdisjoint(ran)
         assert not [a for a in spy.accesses if "/store" in a or "/library" in a or "manga" in a]
+
+
+def windowed_kinds(engine: Engine) -> set[str]:
+    with engine.connect() as conn:
+        rows = conn.execute(sa.select(platform.schedule.c.job_kind, platform.schedule.c.window))
+        return {r.job_kind for r in rows if r.window is not None}
 
 
 def _ran_kinds(engine: Engine) -> set[str]:
@@ -120,14 +130,15 @@ def _ran_kinds(engine: Engine) -> set[str]:
 
 
 @pytest.mark.req("ENF-OPS-014")
-def test_event_driven_export_allowed_outside_window(tmp_path: Path, engine: Engine) -> None:
+def test_event_driven_export_allowed_outside_window(settings: Settings, tmp_path: Path) -> None:
     """Non-regression: `export.run` (a new chapter, an approved request) is not a window job,
     and the guard of the window lets an event or a user through at any hour."""
     from shelfhold.jobs.window import StoreOrigin, ensure_store_access
 
-    clock = ManualClock(utc(2026, 11, 4, 11))
-    pools = make_pools(tmp_path, engine, clock, MaintenanceWindow.from_text("03:00", "07:00", "UTC"))
-    pools.register(rj.EXPORT_JOB_KIND, pool="io", handler=lambda c: None)
-    assert not pools.is_windowed(rj.EXPORT_JOB_KIND)
-    ensure_store_access(StoreOrigin.EVENT, now=clock.now(), window=pools.window)
-    ensure_store_access(StoreOrigin.USER_REQUEST, now=clock.now(), window=pools.window)
+    with instance(settings, tmp_path) as inst:
+        clock = ManualClock(utc(2026, 11, 4, 11))
+        pools = JobPools(settings.data_dir, engine=inst.engine, clock=clock, seed="e")
+        rj.register_runtime_jobs(pools, inst.comp)
+        assert rj.EXPORT_JOB_KIND not in windowed_kinds(inst.engine)
+        ensure_store_access(StoreOrigin.EVENT, now=clock.now(), window=pools.window)
+        ensure_store_access(StoreOrigin.USER_REQUEST, now=clock.now(), window=pools.window)

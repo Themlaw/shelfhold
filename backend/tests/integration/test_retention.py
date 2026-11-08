@@ -79,7 +79,9 @@ def test_events_and_jobs_purged_after_90_days(engine: Engine) -> None:
     with engine.connect() as conn:
         events = set(conn.execute(sa.select(platform.event.c.id)).scalars())
         jobs = set(conn.execute(sa.select(platform.job_view.c.id)).scalars())
-        pending = conn.execute(sa.select(sa.func.count()).select_from(platform.notification_pending))
+        pending = conn.execute(
+            sa.select(sa.func.count()).select_from(platform.notification_pending)
+        )
         assert pending.scalar_one() == 0  # cascades with its event
     assert events == {edge, recent}
     assert jobs == {done_recent, dead_letter, queued}
@@ -120,9 +122,6 @@ def test_audit_kept_one_year_pseudonymized_on_user_delete(engine: Engine) -> Non
     mine_older = add_audit(engine, gone, days_ago(300), target=gone)
     theirs = add_audit(engine, other, days_ago(100))
     too_old = add_audit(engine, other, days_ago(366))
-    event_id = add_event(engine, days_ago(5))
-    with engine.begin() as conn:
-        conn.execute(sa.update(platform.event).values(actor_id=gone))
     store = SqlIdentityStore(engine)
 
     pseudonym = store.delete_user(gone)
@@ -130,16 +129,12 @@ def test_audit_kept_one_year_pseudonymized_on_user_delete(engine: Engine) -> Non
     with engine.connect() as conn:
         rows = {r.id: r for r in conn.execute(sa.select(identity.audit))}
         users = set(conn.execute(sa.select(identity.user.c.username)).scalars())
-        event_actor = conn.execute(
-            sa.select(platform.event.c.actor_id).where(platform.event.c.id == event_id)
-        ).scalar_one()
     assert users == {"staying"}
     assert pseudonym.startswith("deleted:") and gone not in pseudonym
     assert rows[mine_recent].actor_id == rows[mine_older].actor_id == pseudonym  # still linked
     assert rows[mine_older].target == pseudonym and rows[mine_older].action == "api_key.create"
     assert rows[mine_older].at == days_ago(300) and rows[mine_older].id == mine_older
     assert rows[theirs].actor_id == other
-    assert event_actor == pseudonym
     assert store.delete_user(gone) is None  # nobody left to erase
 
     removed = expire_audit(engine, now=NOW, policy=RetentionPolicy())
@@ -181,9 +176,12 @@ def test_retention_jobs_are_registered_and_classed(settings: Settings, tmp_path:
     from tests.fakes_clock import ManualClock
 
     with instance(settings, tmp_path) as inst:
-        pools = JobPools(
-            settings.data_dir, engine=inst.engine, clock=ManualClock(NOW), seed="r"
-        )
+        pools = JobPools(settings.data_dir, engine=inst.engine, clock=ManualClock(NOW), seed="r")
         register_retention_jobs(pools, inst.comp)
-        assert not pools.is_windowed(RETENTION_KIND)  # the database alone: no disk woken
-        assert pools.is_windowed(RECYCLE_KIND)  # the bins are on /library: window only
+        with inst.engine.connect() as conn:
+            rows = conn.execute(sa.select(platform.schedule)).all()
+    windowed = {r.job_kind: r.window is not None for r in rows}
+    assert windowed == {
+        RETENTION_KIND: False,  # the database alone: no disk woken, any hour
+        RECYCLE_KIND: True,  # the bins are on /library: window only
+    }

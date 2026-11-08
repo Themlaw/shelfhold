@@ -23,6 +23,8 @@ from pydantic import (
     model_validator,
 )
 
+from shelfhold.jobs.window import parse_clock, parse_zone
+
 ENV_PREFIX = "SHELFHOLD_"
 FILE_SUFFIX = "_FILE"
 CONFIG_FILE_NAME = "config.toml"
@@ -105,6 +107,18 @@ class Settings(BaseModel):
     wake_kavita: tuple[str, ...] = ()
     wake_timeout_s: int = Field(default=60, ge=5, le=600)
     wake_session_s: int = Field(default=300, ge=30, le=3600)
+    # ENF-OPS-014 (settable from M1b): the window in which the jobs that touch `/store` or
+    # `/library` run, so that the hard disks can sleep the rest of the day. `HH:MM` in the
+    # instance's time zone; an end before the start crosses midnight ("23:00" to "02:00").
+    # `timezone` is also the zone of every cron expression of the schedule.
+    maintenance_window_start: str = "03:00"
+    maintenance_window_end: str = "07:00"
+    timezone: str = "Europe/Paris"
+    # ENF-OPS-009: how long the technical history is kept. Events and finished jobs 90 days, the
+    # audit one year (never shortened below 90 days: it is the trace of who did what). The
+    # recycle bins of the library keep 30 days, a floor that fsops enforces whatever is set here.
+    retention_events_days: int = Field(default=90, ge=7, le=3650)
+    retention_audit_days: int = Field(default=365, ge=90, le=3650)
 
     @field_validator("umask", mode="before")
     @classmethod
@@ -139,6 +153,24 @@ class Settings(BaseModel):
         if isinstance(value, str):
             return tuple(part.strip() for part in value.split(",") if part.strip())
         return value
+
+    @field_validator("maintenance_window_start", "maintenance_window_end")
+    @classmethod
+    def _window_clock(cls, value: str) -> str:
+        parse_clock(value)
+        return value.strip()
+
+    @field_validator("timezone")
+    @classmethod
+    def _zone(cls, value: str) -> str:
+        parse_zone(value)
+        return value
+
+    @model_validator(mode="after")
+    def _window_not_empty(self) -> Self:
+        if parse_clock(self.maintenance_window_start) == parse_clock(self.maintenance_window_end):
+            raise ValueError("the maintenance window must not be empty or last all day")
+        return self
 
     @field_validator("wake_suwayomi", "wake_kavita")
     @classmethod
