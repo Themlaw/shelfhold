@@ -673,3 +673,16 @@ def test_unverified_roles_leave_a_durable_warning_and_an_audit_until_confirmed(
         env.suwayomi.roles_verified = True  # roles read and harmless: no warning at all
         env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"svc:{SUWAYOMI_PASSWORD}")
         assert _roles_unverified(env.engine) is False
+
+
+@pytest.mark.req("EF-SRC-031", "ENF-SEC-005")
+def test_source_add_refuses_a_password_the_log_scrubber_could_not_mask(
+    settings: Settings,
+) -> None:
+    with headless(settings) as env:
+        for mode in ("basic_auth", "ui_login"):
+            env.suwayomi.mode = mode
+            with pytest.raises(InvalidConfigValue) as refused:
+                env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="svc:pw-1234")  # noqa: S106 - throwaway value
+            assert "8" in str(refused.value) and "pw-1234" not in str(refused.value)
+        assert env.count("source_config") == 0

@@ -88,6 +88,7 @@ __all__ = ["ConfigValue", "HeadlessAdmin", "Plan", "PlanChange"]
 KEY_NAME = "shelfhold"
 KEY_DAYS = 90  # the Kavita key expires; `target.key_expiring` warns at 14 and 1 days
 ADMIN_RISK_ACTION = "target.admin_risk_accepted"  # ENF-SEC-013
+MIN_PASSWORD_LENGTH = 8  # the log scrubber ignores shorter secrets (`_MIN_KNOWN_SECRET`)
 ROLES_UNVERIFIED_ACTION = "source.roles_unverified"  # EF-SRC-031, D1: the roles cannot be read
 ROLES_CONFIRMED_ACTION = "source.roles_confirmed"  # the admin vouches for the account
 SUPPORTED_AUTH_MODES = frozenset({"none", "basic_auth", "ui_login"})
@@ -688,6 +689,11 @@ class HeadlessAdmin:
             username, separator, password = secret.partition(":")
             if not separator or not username or not password:
                 raise InvalidConfigValue("the secret is user:password")
+            if len(password) < MIN_PASSWORD_LENGTH:  # shorter values cannot be masked in the logs
+                raise InvalidConfigValue(
+                    f"the Suwayomi password must have at least {MIN_PASSWORD_LENGTH} characters: "
+                    "the log scrubber cannot mask a shorter secret"
+                )
         try:
             mode = self._suwayomi.auth_mode(url=clean_url, username=username, password=password)
         except ConnectionError:
