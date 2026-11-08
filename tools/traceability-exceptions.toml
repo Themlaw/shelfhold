@@ -76,6 +76,11 @@ path = "backend/tests/nightly/test_suwayomi_synthetic_extension.py"
 workflow = "nightly.yml"
 reason = "Suwayomi réel épinglé avec l'extension synthétique construite dans le job, réseau sortant coupé : planifié et manuel, jamais requis pour fusionner (ENF-LEG-013, L40)"
 
+[[out_of_required_ci]]
+path = "backend/tests/nightly/test_bench_rss_heavy.py"
+workflow = "nightly.yml"
+reason = "pic de RSS pendant l'export de 500 chapitres sur le profil de référence complet (ENF-PERF-009) : trop long et trop sensible à un runner chargé pour une PR, qui garde la variante de 50 chapitres (tests/bench) ; planifié et manuel, jamais requis pour fusionner"
+
 [[exception]]
 path = "backend/tests/unit/test_production_reachability.py"
 reason = "garde de joignabilité des tests `req` (L58) : contrôle les tests, pas une exigence du produit"
