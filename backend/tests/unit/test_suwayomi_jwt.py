@@ -339,3 +339,32 @@ def test_the_twice_escaped_password_of_the_login_body_is_scrubbed() -> None:
     scrubbed = _scrub_text(body)
     assert "a\\\\\\\\ss-synthetic-Z9" not in scrubbed and "a\\\\ss-synthetic-Z9" not in scrubbed
     assert "ss-synthetic-Z9" not in scrubbed
+
+
+@pytest.mark.req("EF-SRC-031")
+def test_threads_with_their_own_event_loops_do_a_single_refresh() -> None:
+    import threading
+
+    server = ui_login_server()
+    f = jwt_fetcher(server)
+    library_titles(SuwayomiService(BASE_URL), f)  # logged in once
+    server.expire_access_tokens()
+
+    async def slow() -> None:
+        await asyncio.sleep(0.05)
+
+    server.refresh_delay = slow
+    barrier, found = threading.Barrier(4), []
+
+    def work() -> None:
+        service = SuwayomiService(BASE_URL)
+        barrier.wait()
+        found.append(len(run(service.followed_series(f))))  # type: ignore[arg-type]
+
+    threads = [threading.Thread(target=work) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    assert found == [2, 2, 2, 2]
+    assert server.refreshes == 1 and server.logins == 1

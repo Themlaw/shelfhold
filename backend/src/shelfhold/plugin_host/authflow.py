@@ -9,7 +9,9 @@ import asyncio
 import base64
 import json
 import secrets
+import threading
 import time
+import weakref
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -290,7 +292,13 @@ class JwtFetcher:
         self._base = origin.rstrip("/")
         self._now = now
         self._pair: _Pair | None = None
-        self._lock: tuple[asyncio.AbstractEventLoop, asyncio.Lock] | None = None
+        # One renewal at a time, whatever the number of event loops (threads) sharing this wrapper:
+        # `_loop_locks` serialises the callers of one loop, `_renewing` those of all the loops.
+        self._loop_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+            weakref.WeakKeyDictionary()
+        )
+        self._map_guard = threading.Lock()
+        self._renewing = threading.Lock()
         # the account, sealed under an ephemeral in-process key like the Basic wrapper does
         self._key = secrets.token_bytes(32)
         self._row = secrets.token_hex(8)
@@ -355,29 +363,37 @@ class JwtFetcher:
 
     async def _renew(self, seen: int) -> _Pair:
         """Replace the pair, once per expiry. `seen`: the generation the caller was refused with."""
-        lock = self._lock_for_this_loop()
-        async with lock:
-            current = self._pair
-            if current is not None and current.generation != seen:
-                return current  # another caller already rotated it while this one waited
-            granted = None
-            if current is not None and current.refresh:
-                document = self._dialect.refresh(current.refresh)
-                granted = await self._token_call(document, self._dialect.refresh_field)
-            if granted is None:  # no refresh token, or it is dead: the account logs in again
-                account = self._account()
-                document = self._dialect.login(account["username"], account["password"])
-                granted = await self._token_call(document, self._dialect.login_field)
-            if granted is None:
-                raise AuthExpired("the service refused the account")
-            self._pair = self._new_pair(granted, current)  # the one place a pair is replaced
-            return self._pair
+        async with self._lock_for_this_loop():
+            # The thread lock is held across the network calls on purpose: a second thread (its
+            # own event loop) waits here and, finding a newer pair, does not refresh again. It
+            # blocks only a loop whose caller is refused with an out-of-date pair.
+            with self._renewing:
+                return await self._renew_locked(seen)
+
+    async def _renew_locked(self, seen: int) -> _Pair:
+        current = self._pair
+        if current is not None and current.generation != seen:
+            return current  # another caller already rotated it while this one waited
+        granted = None
+        if current is not None and current.refresh:
+            document = self._dialect.refresh(current.refresh)
+            granted = await self._token_call(document, self._dialect.refresh_field)
+        if granted is None:  # no refresh token, or it is dead: the account logs in again
+            account = self._account()
+            document = self._dialect.login(account["username"], account["password"])
+            granted = await self._token_call(document, self._dialect.login_field)
+        if granted is None:
+            raise AuthExpired("the service refused the account")
+        self._pair = self._new_pair(granted, current)  # the one place a pair is replaced
+        return self._pair
 
     def _lock_for_this_loop(self) -> asyncio.Lock:
         loop = asyncio.get_running_loop()
-        if self._lock is None or self._lock[0] is not loop:
-            self._lock = (loop, asyncio.Lock())  # a lock belongs to the loop that uses it
-        return self._lock[1]
+        with self._map_guard:  # an asyncio lock belongs to the loop that uses it
+            lock = self._loop_locks.get(loop)
+            if lock is None:
+                lock = self._loop_locks[loop] = asyncio.Lock()
+            return lock
 
     async def _fresh(self) -> _Pair:
         pair = self._pair
