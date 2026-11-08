@@ -328,6 +328,23 @@ def _withdraw_apply(ops: OpsServices, by: Principal, p: Params) -> object:
     )
 
 
+def _rate(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.rating.rate(
+        _text(p, "age"),
+        work_id=_optional(p, "work_id"),
+        edition_id=_optional(p, "edition_id"),
+        principal=by,
+    )
+
+
+def _rate_pending(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.rating.pending(_text(p, "age"))
+
+
+def _rate_batch(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.rating.rate_batch(_text(p, "age"), confirm=_text(p, "confirm"), principal=by)
+
+
 def _probe(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.library.probe(_text(p, "folder"))
 
@@ -370,6 +387,9 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.withdraw_plan": (_withdraw_plan, None),
     "ops.withdraw_apply": (_withdraw_apply, "shelf.withdraw"),
     "ops.relink": (_relink, None),
+    "ops.rate": (_rate, "rate"),
+    "ops.rate_pending": (_rate_pending, None),
+    "ops.rate_batch": (_rate_batch, "rate"),
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
     "ops.normalize_migrate": (_normalize_migrate, "normalize.migrate"),
@@ -388,6 +408,7 @@ READS_AND_RESTORE_EXITS = frozenset(
         "ops.status", "ops.missing_list", "ops.jobs_list", "ops.pair_propose",
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
         "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
+        "ops.rate_pending",
         "ops.restore_adopt", "ops.tombstone_set_aside_journal", "ops.secrets_import",
         "ops.tombstone_accept_lost_keyring",
     }

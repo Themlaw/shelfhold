@@ -80,3 +80,14 @@ def admission(edition: EditionAge, ceiling: AgeRating | None) -> Admission:
     if guarded and any(age < s for s in edition.suggested):
         return Admission.SUGGESTION_ABOVE
     return Admission.ALLOWED
+
+
+def parse_age(text: str) -> AgeRating:
+    """`13+`, `13`, `0` (all audiences) or `X` as an age; `ValueError` for anything else. The tier
+    itself is checked by `RatingService` (the scale of tiers is the service's)."""
+    value = text.strip().upper().removesuffix("+")
+    if value == "X":
+        return AgeRating(X_MIN_AGE, x=True)
+    if value.isascii() and value.isdigit():
+        return AgeRating(int(value))
+    raise ValueError(f"not an age: {text!r} (a tier such as 13+, or X)")

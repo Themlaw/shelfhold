@@ -55,6 +55,7 @@ from shelfhold.catalog.domain.age import (
     ceiling_of,
     content_warning_age,
     effective_age,
+    parse_age,
 )
 from shelfhold.catalog.domain.dates import parse_partial_date
 from shelfhold.catalog.domain.identity import (
@@ -201,6 +202,7 @@ __all__ = [
     "ingest_isolated",
     "join_people",
     "numbered_mark",
+    "parse_age",
     "parse_number",
     "parse_partial_date",
     "period_start",

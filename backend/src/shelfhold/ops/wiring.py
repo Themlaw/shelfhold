@@ -35,6 +35,7 @@ from shelfhold.ops.keyring import TombstoneKeyringExit
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
+from shelfhold.ops.rating import RatingOps
 from shelfhold.ops.restore import RestoreGuardExit
 from shelfhold.ops.services import OpsServices
 
@@ -123,4 +124,5 @@ def open_ops(
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), backfill=BackfillOps(composition),
         normalize=NormalizeOps(composition), meta=MetaOps(composition),
+        rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),
     )  # fmt: skip

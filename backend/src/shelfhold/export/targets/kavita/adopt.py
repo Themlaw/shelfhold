@@ -4,7 +4,14 @@ Untouchable: adoption reads and records, it never rewrites, moves or deletes an 
 Adopted files are *referenced* where they are (a `content` of retention `adopted_ref`, a replica
 in the destination, a manifest line in state `adopted`), never copied. Renames the naming rules
 would suggest stay a preview. Nothing is entered, and nothing is changed in Kavita, before the
-admin confirms; a library that children can read is refused (M1b), with the list of accounts.
+admin confirms.
+
+A library the children can read (an account with an age restriction is exposed to it, or the shelf
+is below 18+) is adopted too (EF-EXP-048): nothing moves, nothing is written or hidden, but every
+Work nobody rated is put in "À classer" with its following suspended, one Work at a time, and the
+rest of the shelf goes on. The files already there stay where they are: that they are readable
+until the admin rates (`rate`) or withdraws (`shelf withdraw`) is said, not decided for him. An age
+read from a ComicInfo stays a suggestion.
 
 Every name is read through `plugin/parse` in bulk (`parse-bulk`, M9): the same answer decides the
 number of an adopted file here and the collision checks of the planner afterwards.
@@ -19,7 +26,7 @@ import json
 import posixpath
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Final
@@ -41,11 +48,7 @@ from shelfhold.export.application.migration_detect import (
     SwitchoverUnconfirmed,
 )
 from shelfhold.export.application.snapshot import DestinationContext, load_context
-from shelfhold.export.domain.bindings import (
-    AdoptionNeedsRatingError,
-    LibraryNotDedicatedError,
-    is_family,
-)
+from shelfhold.export.domain.bindings import LibraryNotDedicatedError, is_family
 from shelfhold.export.domain.kavita_instance import library_is_dedicated
 from shelfhold.export.domain.naming import (
     DEFAULT_TEMPLATE_REF,
@@ -60,6 +63,7 @@ from shelfhold.export.targets.kavita.dto import HIDDEN_DIR_PATTERNS, LibraryType
 from shelfhold.export.targets.kavita.errors import ConfirmationRequired
 from shelfhold.infrastructure.archives.safe_open import UnsafeArchiveError, safe_open_archive
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.follow_suspended import suspend as suspend_follow
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import log_outcome
@@ -95,7 +99,7 @@ Number = tuple[str, str]  # (kind, number): ("chapter", "3") or ("volume", "1")
 
 
 class AdoptionRefused(Exception):
-    """A library the children can read is not adopted before M1b (EF-EXP-028, EF-EXP-055)."""
+    """Accounts below the ceiling of a family shelf can read the library (EF-EXP-055): the list."""
 
     code = "target.child_exposure"
 
@@ -162,6 +166,7 @@ class AdoptedSeries:
     volume_only: bool
     age: tuple[int, bool] | None
     edition_id: str | None  # an Edition of the shelf already carries this series
+    unrated: bool = True  # nobody rated its Work: in a child library it waits in "À classer"
 
 
 @dataclass(frozen=True)
@@ -176,6 +181,15 @@ class AdoptionReport:
     adopted_files: int = 0  # filled once applied
     already_adopted: int = 0
     warnings: tuple[str, ...] = field(default=())
+    child_library: bool = False  # children can read it: the unrated Works are suspended
+    exposed_accounts: tuple[str, ...] = ()  # the restricted accounts that can read it
+
+    @property
+    def suspended(self) -> tuple[str, ...]:
+        """The series whose Work is put in "À classer" with its following suspended."""
+        if not self.child_library:
+            return ()
+        return tuple(s.frozen_series for s in self.series if s.unrated and s.files)
 
     @property
     def tombstoned(self) -> tuple[str, ...]:
@@ -374,19 +388,24 @@ class Adopter:
             raise NoFolderError(ctx.destination_id)
         return ctx.remote_folder(ctx.root_local)
 
-    async def _require_adult_only(
+    async def _screen(
         self, client: KavitaClient, ctx: DestinationContext, library_ref: str
-    ) -> None:
-        if is_family(ctx.max_age_rating):
-            # the Works found there are rated by nobody: they go to an adult shelf and wait for an
-            # admin to rate them (EF-BIB-055); the per-Work "À classer" of a child library is L11
-            raise AdoptionNeedsRatingError(f"shelf {ctx.shelf_id} is below 18+")
+    ) -> tuple[bool, tuple[str, ...]]:
+        """`(child library, accounts exposed)`: whether children can read what is adopted.
+
+        A shelf below 18+ takes the library its admin linked (dedicated, EF-EXP-047); an account
+        that sits below its ceiling still refuses it. An adult shelf is no longer refused for the
+        restricted accounts that read the library: they make it a child library (EF-EXP-048)."""
+        family = is_family(ctx.max_age_rating)
+        if family and library_ref != self._linked_ref(ctx):
+            await self._require_dedicated(client, ctx, library_ref)  # also refuses the accounts
         refused = await self._auditor.refused_names(
             client, shelf_ceiling=ctx.max_age_rating, remote_library_ref=library_ref,
             remote_root=self._remote_root(ctx),
         )  # fmt: skip
-        if refused:
+        if refused and family:
             raise AdoptionRefused(refused)
+        return family or bool(refused), refused
 
     async def link_library(
         self, client: KavitaClient, destination_id: str, library_ref: str
@@ -398,7 +417,12 @@ class Adopter:
         if is_family(ctx.max_age_rating):
             await self._require_dedicated(client, ctx, library_ref)
         else:
-            await self._require_adult_only(client, ctx, library_ref)
+            refused = await self._auditor.refused_names(
+                client, shelf_ceiling=ctx.max_age_rating, remote_library_ref=library_ref,
+                remote_root=self._remote_root(ctx),
+            )  # fmt: skip
+            if refused:  # a shelf is linked to a library of adults only; adopting is another door
+                raise AdoptionRefused(refused)
         self._ensure_link(ctx, library_ref)
         await self._auditor.audit(client, ctx.target_id)
 
@@ -446,7 +470,7 @@ class Adopter:
         if ref is None:
             raise NoFolderError("the destination is not linked to a Kavita library")
         await client.probe()
-        await self._require_adult_only(client, ctx, ref)
+        child_library, exposed = await self._screen(client, ctx, ref)
         remote_root = self._remote_root(ctx)
         libraries = await client.list_libraries()
         library = next((lib for lib in libraries if str(lib.get("id")) == ref), None)
@@ -468,6 +492,8 @@ class Adopter:
         known = self._known_editions(ctx)
         survey = [self._series(ctx, s, files[s.id], parsed, remote_root, known) for s in listed]
         renames, duplicates = self._proposals(survey)
+        rated = self._rated_editions(ctx)
+        survey = [replace(s, unrated=s.edition_id not in rated) for s in survey]
         return AdoptionReport(
             ctx.destination_id,
             ref,
@@ -476,6 +502,8 @@ class Adopter:
             tuple(duplicates),
             settings,
             fingerprint=_fingerprint(ref, survey),
+            child_library=child_library,
+            exposed_accounts=exposed,
         )
 
     def _known_editions(self, ctx: DestinationContext) -> dict[str, str]:
@@ -492,6 +520,22 @@ class Adopter:
             for row in rows:
                 found.setdefault(normalize_series_name(row.title), row.id)
         return found
+
+    def _rated_editions(self, ctx: DestinationContext) -> set[str]:
+        """The Editions of the shelf whose Work an admin rated (the others wait to be)."""
+        edition, work = catalog.edition, catalog.work
+        with self._engine.connect() as connection:
+            return set(
+                connection.execute(
+                    sa.select(edition.c.id)
+                    .select_from(edition.join(work, work.c.id == edition.c.work_id))
+                    .where(
+                        edition.c.shelf_id == ctx.shelf_id,
+                        edition.c.rated_at.is_not(None),
+                        work.c.rated_at.is_not(None),
+                    )
+                ).scalars()
+            )
 
     def _series(
         self,
@@ -620,7 +664,9 @@ class Adopter:
         with self._engine.begin() as connection:
             self._mark_adopted(connection, ctx, report.pre_adoption_settings)
             for item in report.series:
-                added, existing = self._inscribe(connection, ctx, item, now)
+                added, existing = self._inscribe(
+                    connection, ctx, item, now, suspend=report.child_library
+                )
                 done, skipped = done + added, skipped + existing
             self._flag_waiting(connection, ctx)
         # Kavita is touched last, and only to keep our reserved folder out of its scans
@@ -638,7 +684,8 @@ class Adopter:
         return AdoptionReport(
             report.destination_id, report.library_ref, report.series, report.renames,
             report.duplicates, report.pre_adoption_settings, adopted_files=done,
-            already_adopted=skipped,
+            already_adopted=skipped, child_library=report.child_library,
+            exposed_accounts=report.exposed_accounts,
         )  # fmt: skip
 
     @staticmethod
@@ -691,8 +738,9 @@ class Adopter:
     # -- recording one series ---------------------------------------------------------------------
 
     def _inscribe(
-        self, connection: Connection, ctx: DestinationContext, item: AdoptedSeries, now: datetime
-    ) -> tuple[int, int]:
+        self, connection: Connection, ctx: DestinationContext, item: AdoptedSeries, now: datetime,
+        *, suspend: bool = False,
+    ) -> tuple[int, int]:  # fmt: skip
         record = export.export_record
         taken = set(
             connection.execute(
@@ -707,6 +755,8 @@ class Adopter:
         if not fresh:
             return 0, len([f for f in item.files if not f.tombstoned])
         edition_id = item.edition_id or self._create_edition(connection, ctx, item)
+        if suspend and item.unrated:  # this Work alone, never the shelf (EF-EXP-048)
+            suspend_follow(connection, ctx.shelf_id, [self._work_of(connection, edition_id)])
         self._freeze_series(connection, ctx, item, edition_id, now)
         self._suggest_age(connection, item, edition_id, now)
         order = _next_order(connection, edition_id)
@@ -716,11 +766,17 @@ class Adopter:
         return len(fresh), len([f for f in item.files if not f.tombstoned]) - len(fresh)
 
     @staticmethod
+    def _work_of(connection: Connection, edition_id: str) -> str:
+        return str(
+            connection.execute(
+                sa.select(catalog.edition.c.work_id).where(catalog.edition.c.id == edition_id)
+            ).scalar_one()
+        )
+
+    @staticmethod
     def _create_edition(
         connection: Connection, ctx: DestinationContext, item: AdoptedSeries
     ) -> str:
-        if is_family(ctx.max_age_rating):  # the last door: whatever reached here, nothing is filed
-            raise AdoptionNeedsRatingError(f"shelf {ctx.shelf_id} is below 18+")
         work_id, edition_id = new_ulid(), new_ulid()
         connection.execute(
             sa.insert(catalog.work).values(
