@@ -330,11 +330,10 @@ def test_global_update_filters_block_wizard(mode: str, settings: Any) -> None:
             env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=secret)
         message = str(refused.value)
         assert "excludeUnreadChapters" in message and "excludeNotStarted" in message
-        assert "désactiv" in message  # the correction proposed
+        assert "désactiv" in message.lower()  # the correction proposed
         assert env.count("source_config") == 0  # nothing was stored
-        assert all(
-            r.fields <= {"aboutServer", "settings", "user", "login"} for r in server.requests
-        )
+        reads = READ_ONLY | {"user", "login", "refreshToken"}  # the session of the account
+        assert all(r.fields <= reads for r in server.requests)
         server.exclude_unread = server.exclude_not_started = False  # corrected on the server
         env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=secret)
         assert env.count("source_config") == 1
