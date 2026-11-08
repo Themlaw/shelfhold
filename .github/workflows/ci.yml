@@ -130,18 +130,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: uv run --locked zizmor --format=plain ../.github/workflows
+      - name: Restore hadolint (cache keyed by version and sha256; the sum is checked again below)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/shelfhold-tools/hadolint
+          key: tool-hadolint-${{ env.HADOLINT_VERSION }}-${{ env.HADOLINT_SHA256 }}
       - name: hadolint
         run: |
-          curl -sSfL --retry 6 --retry-all-errors --retry-delay 20 -o hadolint "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
-          echo "${HADOLINT_SHA256}  hadolint" | sha256sum --check --strict
-          chmod +x hadolint
-          ./hadolint docker/Dockerfile
+          .github/scripts/fetch-tool.sh "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64" "$HADOLINT_SHA256" ~/.cache/shelfhold-tools/hadolint/hadolint
+          chmod +x ~/.cache/shelfhold-tools/hadolint/hadolint
+          ~/.cache/shelfhold-tools/hadolint/hadolint docker/Dockerfile
+      - name: Restore gitleaks (cache keyed by version and sha256; the sum is checked again below)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/shelfhold-tools/gitleaks
+          key: tool-gitleaks-${{ env.GITLEAKS_VERSION }}-${{ env.GITLEAKS_SHA256 }}
       - name: gitleaks
         run: |
-          curl -sSfL --retry 6 --retry-all-errors --retry-delay 20 -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum --check --strict
-          tar -xzf gitleaks.tgz gitleaks
-          ./gitleaks git --redact --no-banner --verbose --log-opts="HEAD" .
+          .github/scripts/fetch-tool.sh "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" "$GITLEAKS_SHA256" ~/.cache/shelfhold-tools/gitleaks/gitleaks.tgz
+          tar -xzf ~/.cache/shelfhold-tools/gitleaks/gitleaks.tgz -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose --log-opts="HEAD" .
 
   denylist:
     runs-on: ubuntu-24.04

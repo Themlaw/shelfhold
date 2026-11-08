@@ -242,17 +242,21 @@ def test_tool_download_is_cached_by_version_and_sha256(tool: str) -> None:
     key = str(cache["with"]["key"])
     assert f"{tool.upper()}_VERSION" in key and f"{tool.upper()}_SHA256" in key
     # the fetch step comes after the restore and always checks the sum, hit or miss
-    fetch = [i for i, s in enumerate(steps) if "fetch-tool.sh" in str(s.get("run", "")) and tool in str(s["run"])]
+    runs = [str(s.get("run", "")) for s in steps]
+    fetch = [i for i, r in enumerate(runs) if "fetch-tool.sh" in r and tool in r]
     assert fetch and steps.index(cache) < fetch[0]
     script = (ROOT / ".github" / "scripts" / "fetch-tool.sh").read_text(encoding="utf-8")
     assert "sha256sum --check --strict" in script
-    assert script.index("sha256sum --check --strict") > script.index("curl")  # checked after both
+    assert script.rindex("sha256sum --check --strict") > script.index("curl -")  # after the fetch
 
 
 @pytest.mark.req("ENF-QUAL-007")
 def test_fetch_tool_rejects_a_poisoned_cache(tmp_path: Path) -> None:
     import hashlib
+    import shutil
     import subprocess
+
+    BASH = shutil.which("bash") or "/bin/bash"
 
     script = ROOT / ".github" / "scripts" / "fetch-tool.sh"
     good = b"tool"
@@ -262,12 +266,12 @@ def test_fetch_tool_rejects_a_poisoned_cache(tmp_path: Path) -> None:
     src = tmp_path / "src"
     src.write_bytes(good)
     ok = subprocess.run(  # noqa: S603
-        ["bash", str(script), src.as_uri(), digest, str(dest)], capture_output=True, text=True
+        [BASH, str(script), src.as_uri(), digest, str(dest)], capture_output=True, text=True
     )
     assert ok.returncode == 0 and dest.read_bytes() == good  # bad cache replaced by a fresh fetch
     dest.write_bytes(b"poisoned")
     bad = subprocess.run(  # noqa: S603
-        ["bash", str(script), src.as_uri(), "0" * 64, str(dest)], capture_output=True, text=True
+        [BASH, str(script), src.as_uri(), "0" * 64, str(dest)], capture_output=True, text=True
     )
     assert bad.returncode != 0
 
