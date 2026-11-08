@@ -716,6 +716,10 @@ action = "Renouvelez les identifiants avec « shelfhold source set-secret »."
 title = "Le mode d'authentification de la source n'est pas pris en charge."
 action = "Changez le mode d'authentification du service, puis lancez « shelfhold source recheck »."
 
+[errors."source.update_filters_blocking"]
+title = "La mise à jour globale de Suwayomi exclut des séries suivies."
+action = "Désactivez l'exclusion des séries non lues ou non commencées dans Suwayomi, puis relancez la commande."
+
 [errors."source.auth_required"]
 title = "La source demande une connexion."
 action = "Enregistrez les identifiants de la source avec « shelfhold source set-secret »."
@@ -1003,6 +1007,7 @@ roles_nothing_to_confirm = "Rien à confirmer."
 refused = "Refusé ({code}) : {detail}"
 admin_risk_warning = "ATTENTION : la clé Kavita est celle d'un compte administrateur ; elle donne tout pouvoir sur Kavita (comptes, bibliothèques, fichiers lus). Relancez avec --accept-admin-risk pour confirmer."
 auth_mode_unsupported = "Suwayomi utilise le mode d'authentification « {mode} » : mode non pris en charge dans cette version. Passez Suwayomi en « basic_auth », en « ui_login » (compte de service) ou sans authentification, puis relancez la commande."
+update_filters_blocking = "Les réglages de mise à jour globale de Suwayomi ({settings}) excluent les séries non lues ou non commencées : Suwayomi ne rafraîchirait jamais les séries suivies. Désactivez-les dans Suwayomi (Paramètres, Bibliothèque, mise à jour globale), puis relancez la commande."
 secret_unreadable = "Impossible de lire le secret : {detail}."
 secret_file_world_readable = "Le fichier {path} est lisible par tous : restreignez-le (chmod 600)."
 secret_key_needs_file = "{name} est un secret : fournissez-le avec --value-file (fichier ou « - »), jamais en argument."

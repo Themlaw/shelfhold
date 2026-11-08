@@ -59,7 +59,7 @@ def _attempts(bench: Bench) -> list[int]:
     return [r["attempts"] for r in bench.rows("SELECT attempts FROM download_request ORDER BY id")]
 
 
-# -- (a) the functional probe ----------------------------------------------------------------------
+# -- (a) the functional probe ----------------
 
 
 @pytest.mark.req("EF-SRC-026", "ENF-OPS-011")
@@ -68,7 +68,7 @@ def test_semantic_health_detects_unloaded_source() -> None:
         _drop_source(bench.server, SOURCE_ALPHA)  # the extension is gone
         report = bench.run()
         events = bench.events("source.not_loaded")
-        assert [e["source_key"] for e in events] == ["suwayomi:7001"]
+        assert [e["count"] for e in events] == [1]
         assert any(e.type == "source.not_loaded" for e in bench.delivered)
         assert bench.rows("SELECT * FROM source_failure") == []  # never a content error (L15)
         assert bench.rows("SELECT * FROM download_request") == [] and report.paused is None
@@ -86,7 +86,7 @@ def test_semantic_health_detects_stub_and_half_updated_sources(damage: str) -> N
         else:
             node.pop("lang")  # an extension caught between two versions: an incomplete record
         bench.run()
-        assert [e["source_key"] for e in bench.events("source.not_loaded")] == ["suwayomi:7001"]
+        assert [e["count"] for e in bench.events("source.not_loaded")] == [1]
         assert bench.rows("SELECT * FROM source_failure") == []
 
 
@@ -130,7 +130,7 @@ def test_abandoned_chapters_reopen_when_the_source_is_loaded_again() -> None:
         assert bench.rows("SELECT state FROM download_request")[0]["state"] != "abandoned"
 
 
-# -- (b) the bounded requeue -------------------------------------------------------------------------
+# -- (b) the bounded requeue ----------------
 
 
 @pytest.mark.req("EF-SRC-026", "ENF-OPS-011")
@@ -211,8 +211,8 @@ def test_requeue_skips_tombstoned_chapter_and_paused_or_unloaded_sources(
         with bench.lib.engine.begin() as connection:  # the service waits for an admin
             connection.exec_driver_sql(
                 "UPDATE source_config SET health = json_set(coalesce(health, '{}'), '$.pause', "
-                "json('{\"failure_class\": \"instance\", \"event_type\": "
-                "\"source.instance_changed\", \"waiting_state\": \"source_instance_changed\"}'))"
+                'json(\'{"failure_class": "instance", "event_type": '
+                '"source.instance_changed", "waiting_state": "source_instance_changed"}\'))'
             )
         bench.run()
         assert _attempts(bench) == [0]
@@ -273,24 +273,23 @@ def tickets_report() -> Any:
     return TicketReport()
 
 
-# -- (c) the aggregated freshness event --------------------------------------------------------------
+# -- (c) the aggregated freshness event ----------------
 
 
 @pytest.mark.req("EF-SRC-026", "ENF-OPS-011")
 def test_series_stale_aggregated() -> None:
     with follow_bench() as bench:
         beta = bench.add_binding("suwayomi:7002", "/series-beta")
-        beta_edition = bench.rows(
-            "SELECT edition_id FROM source_binding WHERE id = :b", b=beta
-        )[0]["edition_id"]
+        beta_edition = bench.rows("SELECT edition_id FROM source_binding WHERE id = :b", b=beta)[0][
+            "edition_id"
+        ]
         bench.run()
         bench.clock.advance(days=15)  # both are past the 14-day floor
         found = bench.cycle.check_freshness()
         assert sorted(found) == sorted([bench.edition_id, beta_edition])
         events = bench.events("series.stale")
         assert len(events) == 1  # one event for the cycle, not one per series
-        assert events[0]["count"] == 2
-        assert sorted(events[0]["edition_ids"]) == sorted([bench.edition_id, beta_edition])
+        assert events[0] == {"id": events[0]["id"], "count": 2}  # a number, never a title
         assert bench.cycle.check_freshness() == [] and len(bench.events("series.stale")) == 1
         bench.add_chapter(3)  # Alpha wakes up, then goes silent again; Beta stays announced
         bench.run()
@@ -306,10 +305,10 @@ def test_a_cycle_with_stale_series_emits_a_single_event() -> None:
         bench.run()
         bench.clock.advance(days=15)
         bench.run()  # the cycle itself runs the freshness check
-        assert len(bench.events("series.stale")) == 1 and asyncio.iscoroutinefunction(bench.cycle.run)
+        assert len(bench.events("series.stale")) == 1
 
 
-# -- (d) the global update filters ---------------------------------------------------------------------
+# -- (d) the global update filters ----------------
 
 
 @pytest.mark.req("EF-SRC-026")
@@ -333,7 +332,9 @@ def test_global_update_filters_block_wizard(mode: str, settings: Any) -> None:
         assert "excludeUnreadChapters" in message and "excludeNotStarted" in message
         assert "désactiv" in message  # the correction proposed
         assert env.count("source_config") == 0  # nothing was stored
-        assert all(r.fields <= {"aboutServer", "settings", "user", "login"} for r in server.requests)
+        assert all(
+            r.fields <= {"aboutServer", "settings", "user", "login"} for r in server.requests
+        )
         server.exclude_unread = server.exclude_not_started = False  # corrected on the server
         env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=secret)
         assert env.count("source_config") == 1

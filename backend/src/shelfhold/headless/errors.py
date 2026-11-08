@@ -77,6 +77,13 @@ class SourceAuthModeUnsupported(HeadlessError):
     code = "source.auth_mode_unsupported"
 
 
+class SourceUpdateFiltersBlocking(HeadlessError):
+    """Suwayomi's global update excludes unread or not started series: it would never refresh the
+    series Shelfhold follows (EF-SRC-026 d). The source is not added until it is corrected."""
+
+    code = "source.update_filters_blocking"
+
+
 class ShelfConflict(HeadlessError):
     code = "shelf.conflict"
 

@@ -7486,6 +7486,10 @@
       "code": "source.unreachable",
       "status": 502
     },
+    "/api/v1/problems/source.update-filters-blocking": {
+      "code": "source.update_filters_blocking",
+      "status": 409
+    },
     "/api/v1/problems/source.version-unsupported": {
       "code": "source.version_unsupported",
       "status": 503

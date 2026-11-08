@@ -231,6 +231,27 @@ class FailureLedger:
     def clear_mass_alert(self, connection: Connection) -> None:
         self._unset(connection, "$.mass_absence")
 
+    # -- unloaded upstream sources (EF-SRC-026 a): told once per episode ---
+    def not_loaded(self, connection: Connection) -> frozenset[str]:
+        raw = self._read(connection).get("not_loaded")
+        return frozenset(raw) if isinstance(raw, dict) else frozenset()
+
+    def mark_not_loaded(self, connection: Connection, source_key: str) -> bool:
+        """True the first time of an episode: the one `source.not_loaded` is due."""
+        return self._set(connection, f"$.not_loaded.{json.dumps(source_key)}", True, if_unset=True)
+
+    def clear_not_loaded(self, connection: Connection, source_key: str) -> None:
+        self._unset(connection, f"$.not_loaded.{json.dumps(source_key)}")
+
+    # -- series silent for too long (EF-SRC-026 c): the episode of each ---
+    def sync_stale(self, connection: Connection, current: list[str]) -> list[str]:
+        """Remember which editions are stale now; the ones that were not before (a new episode:
+        the series spoke again in between, or was never announced), in the order given."""
+        held = self._read(connection).get("stale")
+        known = set(held) if isinstance(held, list) else set()
+        self._set(connection, "$.stale", sorted(current))
+        return [edition for edition in current if edition not in known]
+
     # -- pace (per upstream source, survives a cycle) -------------------------------------------
     def next_at(self, connection: Connection) -> dict[str, float]:
         raw = self._read(connection).get("next_at")

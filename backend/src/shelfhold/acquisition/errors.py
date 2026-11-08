@@ -16,6 +16,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source.downloads_dropped", 503, "admin", event=True),
     ErrorCode("source.auth_mode_unsupported", 503, "admin", event=True),
     ErrorCode("source.instance_changed", 409, "admin", event=True),
+    # EF-SRC-026 (d): the global update settings of the tool leave out the series that are followed
+    ErrorCode("source.update_filters_blocking", 409, "admin"),
     ErrorCode("source.dns_blocked", 502, "admin", event=True),
     ErrorCode("ssrf.blocked", 403, "admin"),
     ErrorCode("fetch.error", 502, "admin"),
