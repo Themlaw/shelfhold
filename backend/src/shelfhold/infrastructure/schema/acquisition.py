@@ -37,6 +37,7 @@ DOWNLOAD_STATES = (
     "closed_by_purge",
 )
 DOWNLOAD_UNIT_STATES = ("requested", "covered", "missing")
+FOLLOW_REQUEST_STATES = ("approved", "following", "followed", "unfollowed")
 FAILURE_CLASSES = ("content", "auth", "version", "schema", "infra")
 ACCOUNT_KINDS = ("admin", "service")
 PLUGIN_ORIGINS = ("builtin", "local")  # `repo` joins in M6
@@ -285,6 +286,29 @@ sa.Index(
     download_request.c.variant_id,
     unique=True,
     sqlite_where=sa.text("\"state\" IN ('requested', 'downloaded')"),
+)
+
+# A request to follow a series of the connected service from Shelfhold (EF-SRC-029), approved. One
+# row per upstream series: the unique key is what makes the entry in the service's library unique
+# whatever the writers (a replay, a double click, two workers). `following` is the claim of the one
+# that is calling the service (`claimed_at` lets another take over after a crash; the call itself
+# is idempotent). Same visibility rules as `download_request` (D19, EF-USR-016).
+follow_request = sa.Table(
+    "follow_request",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("source_key", sa.String(), nullable=False),  # `suwayomi:<sourceId>`
+    sa.Column("remote_id", sa.String(), nullable=False),  # the upstream series (relative url or id)
+    sa.Column("state", sa.String(), nullable=False, server_default="approved"),
+    sa.Column("visibility", sa.String(), nullable=False, server_default="ops"),
+    sa.Column("requester_user_id", sa.String(26), nullable=True),  # `user.id`; null: the host CLI
+    sa.Column("claimed_at", UtcDateTime(), nullable=True),
+    now_column(),
+    sa.Column("updated_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    in_check("state", FOLLOW_REQUEST_STATES),
+    in_check("visibility", ("private", "household", "ops")),
+    sa.UniqueConstraint("source_key", "remote_id"),
 )
 
 # The Units a ticket covers; the per-cycle cap of EF-EXP-053 counts these.

@@ -777,6 +777,15 @@ requested_at = "When the request was made (UTC)."
 visibility = "Who may see the request: `private`, `household` or `ops`; null: an operation, for the administrator."
 requester_user_id = "User who asked (`user.id`), null when no one did or before accounts exist."
 
+[tables.follow_request]
+description = "Approved request to follow a series of the connected service; one per series, which keeps its library entry unique."
+[tables.follow_request.columns]
+id = "Request identifier (ULID)."
+state = "`approved`, `following` (a worker is calling the service), `followed` or `unfollowed`."
+visibility = "Who may see the request: `private`, `household` or `ops`."
+requester_user_id = "User who asked (`user.id`), null for the host command line."
+claimed_at = "When a worker took the request to call the service (UTC); an old claim is taken over."
+
 [tables.revision_pending]
 description = "Revisions seen before M2, never applied in bulk."
 [tables.revision_pending.columns]

@@ -316,6 +316,19 @@ def _backfill_start(ops: OpsServices, _by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _follow(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.follows.follow(
+        _text(p, "source_key"), _text(p, "remote_id"), requester_user_id=user_of(by)
+    )
+
+
+def _unfollow(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.follows.unfollow(
+        _text(p, "source_key"), _text(p, "remote_id"),
+        remove_upstream=_flag(p, "remove_upstream"), confirm=_flag(p, "confirm"),
+    )  # fmt: skip
+
+
 def _relink(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.library.relink(
         _text(p, "work_id"), source_key=_text(p, "source_key"), remote_id=_text(p, "remote_id"),
@@ -403,6 +416,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.meta_check": (_meta_check, None),
     "ops.backfill_estimate": (_backfill_estimate, None),
     "ops.backfill_start": (_backfill_start, None),
+    "ops.follow": (_follow, None),
+    "ops.unfollow": (_unfollow, None),
 }
 
 

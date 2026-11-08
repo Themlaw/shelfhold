@@ -514,6 +514,47 @@
         "title": "FollowFromIn",
         "type": "object"
       },
+      "FollowIn": {
+        "properties": {
+          "remote_id": {
+            "title": "Remote Id",
+            "type": "string"
+          },
+          "source_key": {
+            "title": "Source Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_key",
+          "remote_id"
+        ],
+        "title": "FollowIn",
+        "type": "object"
+      },
+      "FollowOut": {
+        "properties": {
+          "sent": {
+            "title": "Sent",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "followed",
+              "unfollowed",
+              "in_progress"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "sent"
+        ],
+        "title": "FollowOut",
+        "type": "object"
+      },
       "GuardsTriggered": {
         "properties": {
           "foreign_writer": {
@@ -2416,6 +2457,34 @@
           "items"
         ],
         "title": "ToShelveOut",
+        "type": "object"
+      },
+      "UnfollowIn": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "remote_id": {
+            "title": "Remote Id",
+            "type": "string"
+          },
+          "remove_upstream": {
+            "default": false,
+            "title": "Remove Upstream",
+            "type": "boolean"
+          },
+          "source_key": {
+            "title": "Source Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_key",
+          "remote_id"
+        ],
+        "title": "UnfollowIn",
         "type": "object"
       },
       "UnmaskedOut": {
@@ -4378,6 +4447,126 @@
         "summary": "Shelf Proposal",
         "tags": [
           "shelves"
+        ]
+      }
+    },
+    "/api/v1/follows": {
+      "delete": {
+        "operationId": "unfollow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnfollowIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Unfollow",
+        "tags": [
+          "follows"
+        ]
+      },
+      "post": {
+        "operationId": "follow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Follow",
+        "tags": [
+          "follows"
         ]
       }
     },
@@ -6952,6 +7141,14 @@
     "/api/v1/problems/fetch.unsafe-redirect": {
       "code": "fetch.unsafe_redirect",
       "status": 502
+    },
+    "/api/v1/problems/follow.confirmation-required": {
+      "code": "follow.confirmation_required",
+      "status": 409
+    },
+    "/api/v1/problems/follow.service-paused": {
+      "code": "follow.service_paused",
+      "status": 409
     },
     "/api/v1/problems/forbidden": {
       "code": "forbidden",

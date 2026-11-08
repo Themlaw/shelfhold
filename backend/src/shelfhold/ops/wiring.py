@@ -29,6 +29,7 @@ from shelfhold.infrastructure.schema import platform
 from shelfhold.ops.adoption import LibraryAdoptionExit
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.events import BusTargetEvents
+from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
@@ -128,4 +129,5 @@ def open_ops(
         intents=IntentOps(composition), backfill=BackfillOps(composition),
         normalize=NormalizeOps(composition), meta=MetaOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),
+        follows=FollowOps(composition),
     )  # fmt: skip
