@@ -1,10 +1,29 @@
 {
   "schema": 1,
-  "_comment": "Benchmark reference of the release, versioned here because workflow artifacts expire (ENF-QUAL-007); attached as bench-reference.json to every release (release.yml). Thresholds are the spec's (ENF-PERF-001, ENF-PERF-009) and are never loosened by a bench.",
+  "_comment": "Benchmark reference of the release, versioned here because workflow artifacts expire (ENF-QUAL-007); attached as bench-reference.json to every release (release.yml). Thresholds are the spec's (ENF-PERF-001, -008, -009) and are never loosened by a bench. `manifest` is what backend/tests/bench/generator.py writes for the profile (regenerate: uv run python -m tests.bench.generator --reference).",
   "profile": "ci",
   "status": "reference",
   "budgets": {
     "idle_rss_mb": 250,
-    "peak_rss_mb": 500
+    "peak_rss_mb": 500,
+    "window_s": 14400,
+    "jobs_s": {
+      "store_verify": 1800,
+      "hash_compare": 3600,
+      "integrity_rolling": 7200
+    },
+    "new_chapters_check_s": 1200,
+    "regression_tolerance_pct": 20
+  },
+  "manifest": {
+    "profile": "ci",
+    "seed": 20261108,
+    "works": 2000,
+    "units": 60000,
+    "pages": 3000000,
+    "total_bytes": 2949120000,
+    "followed": 500,
+    "users": 6,
+    "digest": "f213584d437e00ca671e321c179e84a7056aeeeac8194b6761a236e82cdfc65e"
   }
 }
