@@ -22,13 +22,14 @@ CATALOG_TABLES = {
     "contributor_name", "contribution", "external_id", "edition", "volume", "unit",
     "unit_variant", "variant_revision", "team", "team_alias", "team_priority",
     "merge_suggestion", "age_suggestion", "normalizer", "work_relation", "work_relation_kind",
+    "metadata_field",
 }  # fmt: skip
 ACQUISITION_TABLES = {
     "follow_notice",
     "source_item", "sub_source", "source_alias", "source_binding", "series_follow", "gap_ack",
     "download_request", "download_request_unit", "source_failure", "source_config",
     "source_account", "upstream_snapshot", "plugin_install", "plugin_state", "revision_pending",
-    "follow_request",
+    "follow_request", "plugin_attestation", "series_gap", "binding_release_sample",
 }  # fmt: skip
 
 

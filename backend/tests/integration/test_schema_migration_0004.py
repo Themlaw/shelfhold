@@ -33,9 +33,8 @@ EXPORT_TABLES = {
 }  # fmt: skip
 READING_TABLES = {"reading_position"}
 M1B_TABLES = {"webauthn_credential", "backup_run"}  # migration 0013
-M2_TABLES = {  # migration 0020
-    "metadata_field", "metadata_cache", "provider_quota", "http_cache",
-    "plugin_attestation", "series_gap", "binding_release_sample",
+M2_TABLES = {  # migration 0020, the tables of the other modules included
+    "provider_quota", "metadata_cache", "http_cache",
 }  # fmt: skip
 ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 OTHER = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
