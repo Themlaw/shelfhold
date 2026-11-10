@@ -345,3 +345,28 @@ def test_only_root_lost_is_released_by_the_disk_coming_back(env: RestoreEnv) -> 
     (env.library / SENTINEL).write_bytes(good)
     states(watcher2)
     assert rid not in marks(env)
+
+
+@pytest.mark.req("EF-EXP-064")
+def test_restored_distrusts_the_copies_of_the_root_like_reinit(env: RestoreEnv) -> None:
+    """Review: a root put back from an older copy is not known to hold what the registry says."""
+    ex, watcher = exits(env)
+    rid = root_id(env)
+    with env.engine.begin() as connection:
+        connection.execute(sa.update(platform.physical_root).values(generation=5))
+        connection.execute(
+            sa.text("UPDATE replica SET independent = 1, verified_at = '2026-01-01T00:00:00'")
+        )
+    write_sentinel(env.library, generation=1)
+    assert states(watcher)[rid] == "root_behind"
+    report = ex.restored(rid, principal=ADMIN)
+    with env.engine.connect() as connection:
+        left = connection.execute(
+            sa.text("SELECT COUNT(*) FROM replica WHERE physical_root_id = :r AND independent = 1"),
+            {"r": rid},
+        ).scalar_one()
+        total = connection.execute(
+            sa.text("SELECT COUNT(*) FROM replica WHERE physical_root_id = :r"), {"r": rid}
+        ).scalar_one()
+    assert left == 0 and total > 0
+    assert report.distrusted_copies == total

@@ -381,13 +381,14 @@ class RootExits:
         self._require_state(target, {"root_behind"})
         if target.row is None:
             raise RootNotWaitingError("no such root")
-        counts = {"planned": 0}
+        counts = {"planned": 0, "copies": 0}
         epoch = self._epoch()
         with self._locked(target):
             with self._engine.begin() as connection:
                 counts["planned"] = self._mark_records(
                     connection, target, "planned", only_absent=True, fsops=fsops
                 )
+                counts["copies"] = distrust_root_copies(connection, target.row.root_id)
                 self._lift(connection, target.row.root_id)
                 self._audit(connection, None, "root.restored", target.row.root_id)
             try:
@@ -400,7 +401,14 @@ class RootExits:
             self._owe_lines(target.row.root_id)
             self._follow(target.row.root_id)
         plan = _Plan(target.row.root_id, target.row.predecessors, [], True, ())
-        return self._report("root restored", target, plan, "restamped", planned=counts["planned"])
+        return self._report(
+            "root restored",
+            target,
+            plan,
+            "restamped",
+            planned=counts["planned"],
+            distrusted=counts["copies"],
+        )
 
     def store_reinit(self, *, principal: Principal) -> ExitReport:
         """`/store` is not what the database remembers: stamp it; the Units whose kept copy was
