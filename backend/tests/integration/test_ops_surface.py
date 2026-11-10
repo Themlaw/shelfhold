@@ -569,6 +569,9 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("shelf.purge_upstream")  # M1b L16: turning on the erasure of the upstream copy
     declared.add("rate")  # M1b L11: the exit of rating_pending and follow_suspended
     declared |= {"root.takeover", "root.reinit", "store.reinit"}  # M1b L25: the root exits
+    declared.add(
+        "tombstone.rekey"
+    )  # M1b L26: reserved; the rewrite after a key leak, no waiting state
     on_socket = {action for _impl, action in OPS_METHODS.values() if action}
     assert on_socket == declared
     for action in on_socket:  # and every name is a real action of the registry

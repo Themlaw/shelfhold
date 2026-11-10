@@ -48,3 +48,21 @@ la clé.
 - Hors gel, la phrase est `the keyring is lost`.
 - Pendant `restored_behind` (sauvegarde antérieure à une rotation, sans export), la commande est permise parce qu'elle est la seule sortie de `key_unknown`, qui bloque `reconcile --adopt-after-restore`. La phrase énonce alors la conséquence : `the keyring is lost, its tombstones become inert and purged content may come back`. Les journaux sont lus, aucun n'est écrit ; l'ordre est cette commande, puis `reconcile --adopt-after-restore`.
 - `shelfhold status` et `shelfhold secrets status` gardent un avertissement durable (`clé(s) de pierres tombales déclarées perdues`) : retrouver le trousseau plus tard n'annule pas la déclaration.
+
+## Clé fuitée : `tombstone rekey`
+
+Si la clé qui scelle les pierres tombales a fuité (une copie du trousseau ou de `/data` est sortie du foyer), un tiers qui lit un journal peut déchiffrer les références purgées. Deux commandes, dans cet ordre :
+
+1. `shelfhold secrets rotate` émet une nouvelle clé active (la clé qui a fuité cesse de sceller quoi que ce soit).
+2. `shelfhold tombstone rekey --kid <clé fuitée>` (répétable ; action réservée : hôte ou session récente, jamais une clé d'API ; audité) marque cette clé **compromise** puis scelle de nouveau, sous la clé active, chaque ligne de la base, chaque ligne due à une racine absente et chaque journal. La clé active ne peut pas être désignée.
+
+Ce que la commande garantit :
+
+- **Aucune pierre tombale perdue.** Le journal d'une racine est remplacé par un nouveau fichier, écrit et `fsync`é, puis par un seul `rename` atomique : à chaque instant le journal est l'ancien ou le nouveau, entier. Un arrêt brutal (SIGKILL, coupure) ne laisse jamais un journal vide ou à moitié écrit ; relancer la commande termine le travail. Une pierre tombale posée pendant la réécriture est dans le nouveau fichier.
+- **Racine démontée.** Sa réécriture est due : `status` la liste (`tombstone_lines_owed`), aucune autre écriture n'y est acceptée, et elle est faite avant toute autre au remontage (ou par `shelfhold tombstone flush`).
+- **L'ancienne clé n'ouvre plus le nouveau journal.** Elle reste au trousseau et au registre (pour lire d'anciennes sauvegardes), marquée compromise ; `shelfhold status` le rappelle. Une sauvegarde faite avant n'est pas rechiffrée : elle reste lisible par qui détient la clé qui a fuité.
+- **Un journal tronqué n'est pas réécrit.** Une racine en `tombstone_journal_truncated` garde sa dette de réécriture ; sa sortie est `tombstone set-aside-journal`, qui réécrit le journal depuis la base, déjà rechiffrée.
+
+## Journal tronqué : `tombstone_journal_truncated`
+
+Chaque racine garde, en base et dans sa sentinelle (authentifiée sous le trousseau), le dernier numéro de ligne de son journal et une étiquette chaînée sur toutes les lignes (`H(précédente ‖ numéro ‖ étiquette AEAD)`). Un journal qui ne l'atteint plus, dont on a supprimé les lignes de fin, est détecté au démarrage, après une restauration et à chaque `shelfhold status`, même si la sentinelle a été réécrite pour lui correspondre : la base fait foi, et une sentinelle sans MAC valide n'est pas crue. Réordonner ou dupliquer des lignes ne change rien. Le rapprochement et la réacquisition sont bloqués sur cette racine seulement, jusqu'à `shelfhold tombstone set-aside-journal --root <racine>` (le fichier est gardé sous `tombstones.aside-<date>`, aucune ligne n'est perdue).

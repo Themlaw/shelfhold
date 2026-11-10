@@ -277,6 +277,20 @@ def test_suwayomi_reinstalled_row_is_closed_by_its_real_test() -> None:
     )
 
 
+@pytest.mark.req("EF-BIB-054", "EF-INT-023", "ENF-OPS-011")
+def test_tombstone_journal_truncated_row_is_closed_by_its_real_test() -> None:
+    """M1b L26 (D12): the row names its exit and the test that plays the truncation."""
+    row = next(r for r in FAILURE_MATRIX if r.key == "tombstone_journal_truncated")
+    assert row.proof == (
+        "tests/property/test_tombstone_chain.py::test_tombstone_journal_truncation_detected"
+    )
+    assert (row.event, row.exit_command, row.behaviour) == (
+        "tombstone.journal_truncated",
+        "tombstone set-aside-journal",
+        "block_writes",
+    )
+
+
 @pytest.mark.req("EF-INT-022", "ENF-OPS-011")
 def test_sablier_rows_are_closed_by_their_real_tests() -> None:
     """M1b L21: `sablier_slow` and `kavita_asleep_sablier` name the test that plays them."""

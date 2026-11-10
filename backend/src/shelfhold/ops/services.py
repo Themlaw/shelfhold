@@ -11,7 +11,7 @@ classification is theirs (the route or the socket decides before calling).
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -551,6 +551,13 @@ class OpsServices:
         if self._keyring is None:
             raise ExitUnavailableError("the tombstone service is not connected")
         return self._keyring.set_aside_journal(principal=principal, root_id=root_id)
+
+    def tombstone_rekey(self, *, principal: Principal, kids: Sequence[str]) -> dict[str, Any]:
+        """After a key leak (reserved, host CLI): the keys named are marked compromised and the
+        tombstones sealed again under the active key (EF-BIB-054 (10))."""
+        if self._keyring is None:
+            raise ExitUnavailableError("the tombstone service is not connected")
+        return self._keyring.rekey(principal=principal, kids=kids)
 
     def tombstone_flush(self) -> list[str]:
         """Write the lines the mounted roots owe; the roots that still owe some."""

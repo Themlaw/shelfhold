@@ -1,7 +1,8 @@
-"""``shelfhold tombstone accept-lost-keyring|set-aside-journal|flush`` (R62, EF-BIB-053).
+"""``shelfhold tombstone accept-lost-keyring|set-aside-journal|rekey|flush`` (R62, EF-BIB-053).
 
-`accept-lost-keyring` (the keyring is gone for good) and `set-aside-journal` (a journal that
-cannot be read is put aside, never deleted) are reserved actions: the host CLI only, audited.
+`accept-lost-keyring` (the keyring is gone for good), `set-aside-journal` (a journal that cannot
+be read, or that was cut short, is put aside, never deleted, and written again from the table)
+and `rekey` (after a key leak, EF-BIB-054 (10)) are reserved actions: the host CLI only, audited.
 `flush` writes the lines a root owed while it was away.
 """
 
@@ -27,6 +28,11 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     )
     aside.add_argument("--root", dest="root_id", default="", help=t("ops.help_aside_root"))
     aside.set_defaults(handler=run_set_aside, configure_logging=False)
+    rekey = actions.add_parser("rekey", help=t("ops.help_tombstone_rekey"), allow_abbrev=False)
+    rekey.add_argument(
+        "--kid", dest="kids", action="append", required=True, help=t("ops.help_rekey_kid")
+    )
+    rekey.set_defaults(handler=run_rekey, configure_logging=False)
     flush = actions.add_parser("flush", help=t("ops.help_tombstone_flush"), allow_abbrev=False)
     flush.set_defaults(handler=run_flush, configure_logging=False)
 
@@ -40,11 +46,21 @@ def run_accept(args: argparse.Namespace, channel: OpsChannel) -> int:
 
 @ops_command
 def run_set_aside(args: argparse.Namespace, channel: OpsChannel) -> int:
-    aside = channel.call("ops.tombstone_set_aside_journal", root_id=args.root_id)["aside"]
+    wanted = {"root_id": args.root_id} if args.root_id else {}  # an empty id is no id
+    aside = channel.call("ops.tombstone_set_aside_journal", **wanted)["aside"]
     for root_id, name in sorted(aside.items()):
         print(t("ops.journal_set_aside", root=root_id, name=name))
     if not aside:
         print(t("ops.journal_nothing_to_set_aside"))
+    return 0
+
+
+@ops_command
+def run_rekey(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.tombstone_rekey", kids=",".join(args.kids))
+    print(t("ops.tombstone_rekeyed", rows=done["table_rows"], roots=len(done["rewritten"])))
+    for root_id in done["owed"]:
+        print(t("ops.tombstone_rekey_owed", root=root_id))
     return 0
 
 

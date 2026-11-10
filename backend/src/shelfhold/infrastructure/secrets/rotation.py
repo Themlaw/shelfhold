@@ -10,7 +10,8 @@ Only secrets are re-sealed. The tombstone table and journal are append-only and 
 by a rotation (ADR-0048).
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -21,7 +22,7 @@ from shelfhold.infrastructure.fsops.tombstone_journal import sentinel_kid_names
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.errors import KeyRetirementRefusedError, SecretsError
-from shelfhold.infrastructure.secrets.keyring import KeyringStore
+from shelfhold.infrastructure.secrets.keyring import Keyring, KeyringStore
 from shelfhold.infrastructure.secrets.vault import SecretVault
 
 RowCallback = Callable[[str, str], None]
@@ -122,6 +123,27 @@ def rotate(
             raise RotationIncompleteError(remaining)
         store.write(store.load().rotation_completed(now))
         return RotationReport(keyring.active.kid, resumed, moved)
+
+
+def mark_compromised(
+    store: KeyringStore,
+    engine: Engine,
+    kids: Sequence[str],
+    *,
+    now: datetime | None = None,
+    locked: bool = False,
+) -> Keyring:
+    """`tombstone rekey` (step one): the keys that leaked are marked `compromised` in the keyring
+    and the registry, one way. Kept, never dropped. The active key cannot be marked (rotate
+    first: a leaked key must not go on sealing). Idempotent. Returns the keyring written.
+    `locked`: the caller already excludes every other writer of the keyring (the operating
+    channels hold the instance lock, which is the file of `store.lock()`)."""
+    with nullcontext() if locked else store.lock():
+        keyring = store.load().compromised(kids, now)
+        store.write(keyring)
+        with engine.begin() as connection:
+            registry.sync_registry(connection, keyring)
+        return keyring
 
 
 def _remaining(engine: Engine, active_kid: str) -> int:

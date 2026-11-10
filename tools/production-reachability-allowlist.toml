@@ -152,7 +152,6 @@ symbols = [
   "shelfhold.jobs.huey_app:JobPools.stopping",
   "shelfhold.jobs.slots:DomainSlots.slot",
   "shelfhold.jobs.slots:SlotBusyError",
-  "shelfhold.library.tombstones.service:TombstoneService.use_keyring",
   "shelfhold.sdk.export_target:ExportTarget",
 ]
 

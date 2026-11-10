@@ -176,6 +176,7 @@ def warning_text(warning: diagnostics.KeyringWarning) -> str:
         "never_exported": t("secrets.warning_never_exported"),
         "export_older_than_rotation": t("secrets.warning_export_older_than_rotation"),
         "tombstones_not_exported": t("secrets.warning_tombstones_not_exported"),
+        "key_compromised": t("secrets.warning_key_compromised", detail=detail),
         "tombstone_kids_lost": t("secrets.warning_tombstone_kids_lost", detail=detail),
         "tombstone_kid_missing": t("secrets.warning_tombstone_kid_missing", detail=detail),
     }

@@ -545,6 +545,14 @@ def test_replay_tries_known_root_ids_and_reports_root_mismatch() -> None:
             env.tombstones().record(values, [TombstoneRoot(old_root_id, library.path)])
         env.restore(backup)
         env.guard().enter_restored_behind()
+        # The chain the sentinel holds was sealed for an identity this root does not carry: L26
+        # reads that as a stripped chain and blocks. This test is about the lines (inert, then
+        # root_mismatch), so the sentinel is the one of a root that never carried a chain.
+        sentinel = Path(library.path) / ".shelfhold-mount-id"
+        document = json.loads(sentinel.read_text("utf-8"))
+        document.pop("tombstone_chain", None)
+        document["schema_version"] = "1.1"
+        sentinel.write_text(json.dumps(document), "utf-8")
 
         service = env.tombstones()
         env.adopter(service=service).preview()

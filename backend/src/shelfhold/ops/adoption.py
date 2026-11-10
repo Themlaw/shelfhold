@@ -40,6 +40,11 @@ class LibraryAdoptionExit:
             if m.state == "mount_sentinel_missing":  # its exit is the recheck of the target
                 command, reserved = command_for(m.state, m.subject, targets.get(m.subject, ""))
                 items.append(WaitingItem(m.state, "export", m.subject, m.reason, command, reserved))
+            elif m.state == "tombstone_journal_truncated":  # the root is the subject
+                command, reserved = command_for(m.state, m.subject)
+                items.append(
+                    WaitingItem(m.state, "tombstones", m.subject, m.reason, command, reserved)
+                )
             else:
                 items.append(WaitingItem(m.state, "export", m.subject, m.reason))
         return items

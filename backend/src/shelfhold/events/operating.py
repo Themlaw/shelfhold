@@ -83,6 +83,7 @@ WAITING_STATE_EVENT: dict[WaitingState, str] = {
     WaitingState.AUTH_MODE_UNSUPPORTED: "source.auth_mode_unsupported",
     WaitingState.RESTORED_BEHIND: "instance.restored_behind",
     WaitingState.TOMBSTONE_KEY_UNKNOWN: "tombstone.key_unknown",
+    WaitingState.TOMBSTONE_JOURNAL_TRUNCATED: "tombstone.journal_truncated",
     WaitingState.ROUTE_MISSING: "target.route_missing",
     WaitingState.SAFEGUARD_BACKLOG: "unit.safeguard_backlog",
     WaitingState.SOURCE_INSTANCE_CHANGED: "source.instance_changed",

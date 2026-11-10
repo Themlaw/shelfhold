@@ -59,6 +59,7 @@ from shelfhold.identity.domain.emitters import (
 from shelfhold.identity.domain.passkeys import CHALLENGE_TTL, RelyingParty, relying_party
 from shelfhold.identity.domain.passkeys import MAX_NAME as PASSKEY_NAME_MAX
 from shelfhold.identity.domain.reserved import (
+    DEFAULT_FRESH_AUTH_S,
     DEFAULT_RESERVED_ROLES,
     NO_REAUTH_EFFECTS,
     SYSTEM_EMITTERS,
@@ -87,6 +88,7 @@ __all__ = [
     "CHALLENGE_TTL",
     "CLOSED_SITES",
     "CREDENTIAL_AXIS",
+    "DEFAULT_FRESH_AUTH_S",
     "DEFAULT_RESERVED_ROLES",
     "DELETION_SITES",
     "EXIT_ROUTES",
