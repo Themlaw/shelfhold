@@ -75,6 +75,10 @@ a été vérifiée explicitement :
 Retrait possible le 2026-11-15, quand les deux versions ont plus de 14 jours : supprimer la ligne
 `exclude-newer-package` et relancer `uv lock`. Aucun autre paquet n'est concerné.
 
+> **Note pour M1b L32** (M2 L00, 2026-11-10) : la date de levée (2026-11-15) n'est pas encore atteinte,
+> la ligne est donc conservée. M1b L32 la retire à partir du 2026-11-15 (suppression de la ligne, puis
+> `uv lock`) ; à défaut, le premier lot M2 qui touche à `backend/pyproject.toml` le fait.
+
 - **tzdata** : base des fuseaux horaires (`Europe/Paris` pour la fenêtre de maintenance, ENF-OPS-014) ;
   l'image `python:slim` n'en contient pas et `zoneinfo` échouerait.
 - **uvicorn**, **SQLAlchemy**, **Alembic**, **structlog**, **pydantic** : socle du squelette,
