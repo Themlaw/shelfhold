@@ -181,6 +181,9 @@ class TombstoneKeyringExit:
         if freeze:
             fsops.freeze()
         service = TombstoneService(self._engine, keyring, fsops, operating_bus(self._clock))
+        service.use_reserved_policy(
+            fresh_auth_s=self._settings.fresh_auth_s, hardened=self._settings.auth_hardened
+        )
         roots = [
             TombstoneRoot(
                 r.root_id, r.path,
@@ -217,14 +220,23 @@ class TombstoneKeyringExit:
         if not names:
             raise InvalidChoiceError("name the compromised key (--kid)")
         store = diagnostics.store_for(self._settings)
+        with self._engine.begin() as connection:  # the debt first: a kill after the mark keeps it
+            state = TombstoneState(self._engine)
+            for (owed_root,) in connection.execute(
+                sa.select(platform.physical_root.c.root_id).where(
+                    platform.physical_root.c.mode == "rw"
+                )
+            ):
+                state.owe_rekey(owed_root, connection)
         try:
             with _IMPORT:  # the channel holds the instance lock, which is the keyring's
                 keyring = registry_mark(
                     store, self._engine, names, now=self._clock.now(), locked=True
                 )
-        except KeyError as error:
-            raise InvalidChoiceError(f"unknown key {error.args[0]}") from None
-        except ValueError as error:
+        except (KeyError, ValueError) as error:
+            self._forget_rekey_debt()  # nothing was marked: no rewrite is owed
+            if isinstance(error, KeyError):
+                raise InvalidChoiceError(f"unknown key {error.args[0]}") from None
             raise InvalidChoiceError(str(error)) from None
         service, roots = self._service()
         service.use_keyring(keyring)
@@ -235,6 +247,16 @@ class TombstoneKeyringExit:
             "compromised": names, "table_rows": report.table_rows,
             "rewritten": report.rewritten, "owed": list(report.owed),
         }  # fmt: skip
+
+    def _forget_rekey_debt(self) -> None:
+        """Back out the debt written ahead of a refused `rekey`, unless a key was already marked
+        compromised (an earlier `rekey` that a kill interrupted: that debt is real)."""
+        keyring = diagnostics.store_for(self._settings).load()
+        if any(key.state == "compromised" for key in keyring.keys):
+            return
+        state = TombstoneState(self._engine)
+        for root_id in state.rekey_owed_roots():
+            state.clear_rekey_owed(root_id)
 
     def _frozen(self) -> bool:
         with self._engine.connect() as connection:

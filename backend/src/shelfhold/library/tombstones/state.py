@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Final
 
 import sqlalchemy as sa
-from sqlalchemy import Engine
+from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.freeze import WAITING_PREFIX
@@ -49,24 +49,24 @@ class TombstoneState:
                 sa.select(_setting.c.value).where(_setting.c.key == key)
             ).scalar()
 
-    def _put(self, key: str, value: str) -> bool:
-        """True when the row is new."""
-        with self._engine.begin() as connection:
-            known = connection.execute(
-                sa.select(_setting.c.key).where(_setting.c.key == key)
-            ).first()
-            connection.execute(
-                sqlite_insert(_setting)
-                .values(key=key, value=value)
-                .on_conflict_do_update(index_elements=["key"], set_={"value": value})
-            )
+    def _put(self, key: str, value: str, connection: Connection | None = None) -> bool:
+        """True when the row is new. In the transaction of `connection` when one is given."""
+        if connection is None:
+            with self._engine.begin() as own:
+                return self._put(key, value, own)
+        known = connection.execute(sa.select(_setting.c.key).where(_setting.c.key == key)).first()
+        connection.execute(
+            sqlite_insert(_setting)
+            .values(key=key, value=value)
+            .on_conflict_do_update(index_elements=["key"], set_={"value": value})
+        )
         return known is None
 
-    def _delete(self, key: str) -> bool:
-        with self._engine.begin() as connection:
-            return bool(
-                connection.execute(sa.delete(_setting).where(_setting.c.key == key)).rowcount
-            )
+    def _delete(self, key: str, connection: Connection | None = None) -> bool:
+        if connection is None:
+            with self._engine.begin() as own:
+                return self._delete(key, own)
+        return bool(connection.execute(sa.delete(_setting).where(_setting.c.key == key)).rowcount)
 
     def _subjects(self, prefix: str) -> set[str]:
         with self._engine.connect() as connection:
@@ -88,13 +88,17 @@ class TombstoneState:
         except ValueError:
             return None
 
-    def set_chain(self, root_id: str, state: ChainState | None) -> None:
+    def set_chain(
+        self, root_id: str, state: ChainState | None, connection: Connection | None = None
+    ) -> None:
         """None forgets it: the next replay takes the journal as it is (a root stamped again, a
         journal put aside)."""
         if state is None:
-            self._delete(_CHAIN + root_id)
+            self._delete(_CHAIN + root_id, connection)
         else:
-            self._put(_CHAIN + root_id, json.dumps(state.to_json(), separators=(",", ":")))
+            self._put(
+                _CHAIN + root_id, json.dumps(state.to_json(), separators=(",", ":")), connection
+            )
 
     # -- the waiting mark of a truncated journal --------------------------------------------
 
@@ -128,8 +132,8 @@ class TombstoneState:
 
     # -- the rewrite still owed to a root ---------------------------------------------------
 
-    def owe_rekey(self, root_id: str) -> None:
-        self._put(_REKEY_OWED + root_id, "{}")
+    def owe_rekey(self, root_id: str, connection: Connection | None = None) -> None:
+        self._put(_REKEY_OWED + root_id, "{}", connection)
 
     def rekey_owed(self, root_id: str) -> bool:
         return self._get(_REKEY_OWED + root_id) is not None
@@ -137,8 +141,8 @@ class TombstoneState:
     def rekey_owed_roots(self) -> set[str]:
         return self._subjects(_REKEY_OWED)
 
-    def clear_rekey_owed(self, root_id: str) -> None:
-        self._delete(_REKEY_OWED + root_id)
+    def clear_rekey_owed(self, root_id: str, connection: Connection | None = None) -> None:
+        self._delete(_REKEY_OWED + root_id, connection)
 
     # -- the intent of a rewrite ------------------------------------------------------------
 

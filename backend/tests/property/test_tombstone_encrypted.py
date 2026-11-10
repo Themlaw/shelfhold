@@ -24,6 +24,7 @@ from shelfhold.library.tombstones import (
     ContentHash,
     SeriesBindingRef,
     VariantRef,
+    Verdict,
 )
 from tests.fsops_env import INSTANCE_ID
 from tests.intents_env import NOW
@@ -155,6 +156,7 @@ def test_tombstone_line_bound_to_root_and_scope(mutation: tuple[str, int]) -> No
             sentinel = Path(root.path) / ".shelfhold-mount-id"
             document = json.loads(sentinel.read_text("utf-8"))
             document.pop("tombstone_chain", None)
+            document["schema_version"] = "1.1"  # a sentinel of before the chain
             sentinel.write_text(json.dumps(document), "utf-8")
 
         report = env.service().replay(env.roots)
@@ -166,6 +168,34 @@ def test_tombstone_line_bound_to_root_and_scope(mutation: tuple[str, int]) -> No
         fresh = env.services[-1]
         assert not fresh.check(SERIES, root_id=target.root_id).blocked
         assert env.events("tombstone.unverified")[-1]["reason"] == "authentication_failed"
+
+
+@pytest.mark.parametrize("kind", ["flip_ct", "change_seq", "change_scope"])
+def test_forged_journal_in_place_of_a_tracked_one_is_a_truncation(
+    tmp_path: Path, kind: str
+) -> None:
+    """The counterpart of the test above (L26): when the instance tracks the journal, swapping it
+    for lines that do not open is not inert noise, it is a cut: blocked, `journal_truncated`."""
+    env = make_tomb_env(tmp_path)
+    service = env.service()
+    service.replay(env.roots)
+    service.record(SERIES, [env.library])
+    line = json.loads(env.journal(env.library).splitlines()[1])
+    if kind == "flip_ct":
+        line["ct"] = _flip(line["ct"], 0)
+    elif kind == "change_seq":
+        line["seq"] += 1
+    else:
+        line["scope"] = "work"
+    tampered = json.dumps(line, separators=(",", ":")).encode() + b"\n"
+    env.journal_path(env.library).unlink()
+    header = b'{"kind":"shelfhold.tombstones","schema_version":"2.0"}\n'
+    env.fs.fsops.append_tombstone_line(env.library.path, tampered, header=header)
+
+    env.service().replay(env.roots)
+
+    fresh = env.services[-1]
+    assert fresh.check(SERIES, root_id=env.library.root_id) == Verdict(True, "journal_truncated")
 
 
 def test_tombstone_and_audit_hold_no_title(tmp_path: Path) -> None:

@@ -83,6 +83,7 @@ from shelfhold.infrastructure.fsops.tombstone_journal import (
     read_journal,
     replace_journal,
     sentinel_chain,
+    sentinel_chain_written,
     sentinel_kids,
     set_aside,
     set_sentinel_chain,
@@ -819,6 +820,15 @@ class Fsops:
                 return sentinel_chain(read_sentinel(root))
             except (SentinelFormatError, OSError):
                 return None
+
+    def tombstone_chain_written(self, root_path: str) -> bool:
+        """True when the root's sentinel has carried a chain (field or minor version): without a
+        valid one it is then suspect, not new."""
+        with self._root(self._host_root(root_path).root_path) as root:
+            try:
+                return sentinel_chain_written(read_sentinel(root))
+            except (SentinelFormatError, OSError):
+                return False
 
     def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None:
         """Add `kid` and its tags to the registry of the root's sentinel, before any line."""

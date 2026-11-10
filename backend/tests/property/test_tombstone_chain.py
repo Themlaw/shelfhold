@@ -38,6 +38,7 @@ from shelfhold.library.tombstones import (
     TombstoneService,
 )
 from shelfhold.library.tombstones.journal import parse_journal
+from shelfhold.library.tombstones.service import LOST_KEYRING_PHRASE
 from shelfhold.library.tombstones.state import INTENT_SCHEMA_VERSION as STATE_INTENT_VERSION
 from shelfhold.library.tombstones.values import TombstoneValues, decode_plaintext
 from tests.intents_env import NOW
@@ -162,7 +163,12 @@ def test_legacy_journal_without_chain_is_baselined_not_flagged(tmp_path: Path) -
     env = make_tomb_env(tmp_path)
     _purged(env)
     _forget_database_chain(env)
-    _edit_sentinel(env, env.library, lambda doc: doc.pop(CHAIN_FIELD, None))
+
+    def as_m1a(doc: dict[str, Any]) -> None:
+        doc.pop(CHAIN_FIELD, None)
+        doc["schema_version"] = "1.1"  # the minor version before the chain
+
+    _edit_sentinel(env, env.library, as_m1a)
     assert env.service().replay(env.roots).truncated_roots == set()
 
     _cut_last_line(env, env.library)  # now it is tracked
@@ -486,3 +492,86 @@ def test_rekey_is_refused_to_a_key(tmp_path: Path) -> None:
         service.rekey(env.roots, principal=api_key, now=NOW)
 
     assert {r["kid"] for r in env.table_rows()} == {old}  # nothing was touched
+
+
+# -- review of #121 -----------------------------------------------------------------------
+
+
+def _chain_rows(env: TombEnv) -> dict[str, str]:
+    with env.engine.connect() as connection:
+        return dict(
+            connection.execute(
+                sa.select(platform.app_setting.c.key, platform.app_setting.c.value).where(
+                    platform.app_setting.c.key.like("tombstone.chain.%")
+                )
+            ).all()
+        )
+
+
+@pytest.mark.parametrize("strip", ["field removed", "mac replaced by noise", "version lowered too"])
+def test_cut_after_a_restore_is_seen_even_if_the_sentinel_chain_is_stripped(
+    tmp_path: Path, strip: str
+) -> None:
+    """/data is restored to before the last purge, the journal is cut back to it, and the
+    sentinel's chain is removed or broken (no MAC to forge): the database tracks the journal and
+    the sentinel has carried a chain, so a chain that does not verify is a cut, not a new root."""
+    env = make_tomb_env(tmp_path)
+    service = env.service()
+    service.replay(env.roots)
+    service.record(VARIANT, env.roots)
+    old = _chain_rows(env)  # the backup
+    service.record(PLACE, env.roots)
+    for root in env.roots:
+        _cut_last_line(env, root)
+    with env.engine.begin() as connection:  # the restore: the database as the backup had it
+        for key, value in old.items():
+            connection.execute(
+                sa.update(platform.app_setting)
+                .where(platform.app_setting.c.key == key)
+                .values(value=value)
+            )
+
+    def strip_it(doc: dict[str, Any]) -> None:
+        if strip == "mac replaced by noise":
+            doc[CHAIN_FIELD]["tags"] = {k: "AAAA" for k in doc[CHAIN_FIELD]["tags"]}
+            return
+        doc.pop(CHAIN_FIELD, None)
+        if strip == "version lowered too":
+            doc["schema_version"] = "1.1"
+
+    for root in env.roots:
+        _edit_sentinel(env, root, strip_it)
+
+    report = env.service().replay(env.roots)
+
+    assert report.truncated_roots == {r.root_id for r in env.roots}
+
+
+def test_sentinel_that_has_written_a_chain_and_shows_none_is_suspect(tmp_path: Path) -> None:
+    """The version marks a sentinel that carried a chain: with the database empty-handed too (a
+    reinstalled instance), a stripped field is not a root that is simply new."""
+    env = make_tomb_env(tmp_path)
+    _purged(env)
+    _forget_database_chain(env)
+    _edit_sentinel(env, env.library, lambda doc: doc.pop(CHAIN_FIELD, None))
+
+    assert env.service().replay(env.roots).truncated_roots == {env.library.root_id}
+
+
+def test_lines_of_a_lost_key_still_count_in_the_chain(tmp_path: Path) -> None:
+    """`accept-lost-keyring` waives the lines that cannot be opened, not the journal: their tag
+    needs no key, so the cut of a later line is still seen and an untouched journal is whole."""
+    env = make_tomb_env(tmp_path)
+    _purged(env)
+    env.store.write(Keyring.generate())  # the keyring is lost
+    service = env.service()
+    service.replay(env.roots)
+    service.accept_lost_keyring(
+        env.roots, confirmation=LOST_KEYRING_PHRASE, principal=ADMIN, now=NOW
+    )
+    service.record(VARIANT, env.roots)  # a line under the new key, after the waiver
+    assert env.service().replay(env.roots).truncated_roots == set()
+
+    _cut_last_line(env, env.library)
+
+    assert env.service().replay(env.roots).truncated_roots == {env.library.root_id}

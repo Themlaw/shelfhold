@@ -25,6 +25,7 @@ from shelfhold.infrastructure.fsops.errors import JournalChangedError, SentinelF
 from shelfhold.infrastructure.fsops.sentinel import read_sentinel, write_sentinel
 
 KIDS_MINOR_VERSION = "1.1"  # sentinel minor version that introduced `tombstone_kids`
+CHAIN_MINOR_VERSION = "1.2"  # ... and `tombstone_chain`: a sentinel of it without one is suspect
 REWRITE_NAME = f"{TOMBSTONE_JOURNAL}.rekey"  # the new file of a rewrite, replaced by the journal
 
 
@@ -140,6 +141,22 @@ def sentinel_chain(doc: SentinelDocument | None) -> dict[str, Any] | None:
     return dict(value) if isinstance(value, dict) else None
 
 
+def sentinel_chain_written(doc: SentinelDocument | None) -> bool:
+    """True when this sentinel has been through a chain write: it carries the field (whatever its
+    shape) or its minor version is the one that field came with. Stripping the field then
+    leaves a trace; lowering the version too is the limit documented in `decisions/M1b.md`."""
+    if doc is None:
+        return False
+    if SENTINEL_CHAIN_FIELD in doc.extra:
+        return True
+    major, _, minor = doc.schema_version.partition(".")
+    want_major, _, want_minor = CHAIN_MINOR_VERSION.partition(".")
+    try:
+        return (int(major), int(minor)) >= (int(want_major), int(want_minor))
+    except ValueError:
+        return True  # a version that cannot be read is not evidence of nothing
+
+
 def set_sentinel_chain(root: ConfinedRoot, chain: dict[str, Any]) -> bool:
     """Write the `tombstone_chain` field of the sentinel, every other field kept as it is.
     True when the sentinel was rewritten."""
@@ -156,7 +173,7 @@ def set_sentinel_chain(root: ConfinedRoot, chain: dict[str, Any]) -> bool:
             doc.root_id,
             doc.instance_id,
             doc.generation,
-            _at_least(doc.schema_version, KIDS_MINOR_VERSION),
+            _at_least(doc.schema_version, CHAIN_MINOR_VERSION),
             {**doc.extra, SENTINEL_CHAIN_FIELD: chain},
         ),
     )
