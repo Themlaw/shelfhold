@@ -325,3 +325,17 @@ def test_failure_matrix_m2_rows_labelled_m2() -> None:
         assert not row.simulated
     assert "metadata_api_down" not in {r.key for r in rows_for("M1b")}
     assert "lncrawl_unreachable" not in {r.key for r in rows_for("M1b")}
+
+
+@pytest.mark.req("EF-BIB-042", "ENF-OPS-011")
+def test_safeguard_backlog_row_is_closed_by_its_real_test() -> None:
+    """M1b L16: the backlog of "Mettre à l'abri" is emitted by the cycle, shown by `status` with
+    its exit and played end to end; the row names those tests."""
+    row = next(r for r in FAILURE_MATRIX if r.key == "safeguard_backlog")
+    assert row.proof == (
+        "tests/integration/test_safeguard_cycle.py"
+        "::test_safeguard_budget_caps_batch_and_emits_backlog"
+    )
+    assert (row.event, row.behaviour) == ("unit.safeguard_backlog", "notify_only")
+    played = Path("tests/integration/test_ops_exits.py").read_text()
+    assert "def safeguard_backlog()" in played and "safeguard_backlog," in played
