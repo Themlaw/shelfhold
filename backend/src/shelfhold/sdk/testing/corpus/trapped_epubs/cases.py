@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# ruff: noqa: E501
 """The trapped-EPUB corpus: one case at least per attack vector (EF-BIB-051 (8), ENF-SEC-015).
 
 Every case is an EPUB built by `build.py` around one hostile entry. A case ends in one of two
@@ -10,14 +11,13 @@ vectors (letter case, entity encoding, inserted whitespace) are generated, not w
 from __future__ import annotations
 
 from collections.abc import Iterator
-from functools import cache
 from dataclasses import dataclass
+from functools import cache
 from typing import Final, Literal
 
 from shelfhold.sdk.testing.corpus.trapped_epubs.build import (
     EPUB_NS,
     SVG_NS,
-    TINY_PNG,
     XHTML_NS,
     XLINK_NS,
     Member,
@@ -51,7 +51,9 @@ def _raw_page(name: str, vector: str, document: bytes, outcome: Outcome = "neutr
 
 
 def _svg(inner: str, attrs: str = "") -> str:
-    return f'<svg xmlns="{SVG_NS}" xmlns:xlink="{XLINK_NS}" viewBox="0 0 10 10"{attrs}>{inner}</svg>'
+    return (
+        f'<svg xmlns="{SVG_NS}" xmlns:xlink="{XLINK_NS}" viewBox="0 0 10 10"{attrs}>{inner}</svg>'
+    )
 
 
 _XML: Final = '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -73,7 +75,8 @@ def _scripts() -> list[Trap]:
         _page("script_in_noscript", "script", "<noscript><script>alert(1)</script></noscript>"),
         _page("script_in_template", "script", "<template><script>alert(1)</script></template>"),
         _page("script_in_style_text", "script", "<style>p{color:red}</style><p>x</p>", "<script>1</script>"),
-        _page("script_split_by_comment", "script", "<scr<!-- -->ipt>alert(1)</scr<!-- -->ipt>"),
+        _raw_page("script_split_by_comment", "script", xhtml("<scr<!-- -->ipt>alert(1)</scr<!-- -->ipt>"), "refused", "malformed"),
+        _page("script_in_comment_cdata_mix", "script", "<!-- x --><![CDATA[ > <script>alert(1)</script> ]]><p>a</p>"),
     ]  # fmt: skip
 
 
@@ -105,7 +108,8 @@ def _script_urls() -> list[Trap]:
         _page("url_javascript_newline", "javascript-url", link("java&#10;script:alert(1)")),
         _page("url_javascript_cr", "javascript-url", link("java&#13;script:alert(1)")),
         _page("url_javascript_leading_space", "javascript-url", link("   javascript:alert(1)")),
-        _page("url_javascript_leading_control", "javascript-url", link("&#1;javascript:alert(1)")),
+        _raw_page("url_javascript_leading_control", "javascript-url", xhtml(link("&#1;javascript:alert(1)")), "refused", "malformed"),
+        _page("url_javascript_leading_invisible", "javascript-url", link("&#x200B;&#xA0;javascript:alert(1)")),
         _page("url_vbscript", "javascript-url", link("vbscript:msgbox(1)")),
         _page("url_data_html", "data-url", link("data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==")),
         _page("url_data_html_plain", "data-url", link("data:text/html,<script>alert(1)</script>".replace("<", "&lt;"))),
@@ -163,9 +167,9 @@ def _remote() -> list[Trap]:
 
 def _svg_cases() -> list[Trap]:
     return [
-        _page("svg_foreignobject", "svg", _svg("<foreignObject><p xmlns='%s'>x<script>alert(1)</script></p></foreignObject>" % XHTML_NS)),
-        _page("svg_foreignobject_iframe", "svg", _svg("<foreignObject><iframe xmlns='%s' src='http://evil.example/'/></foreignObject>" % XHTML_NS)),
-        _page("svg_foreignobject_lower", "svg", _svg("<foreignobject><body xmlns='%s' onload='alert(1)'/></foreignobject>" % XHTML_NS)),
+        _page("svg_foreignobject", "svg", _svg(f"<foreignObject><p xmlns='{XHTML_NS}'>x<script>alert(1)</script></p></foreignObject>")),
+        _page("svg_foreignobject_iframe", "svg", _svg(f"<foreignObject><iframe xmlns='{XHTML_NS}' src='http://evil.example/'/></foreignObject>")),
+        _page("svg_foreignobject_lower", "svg", _svg(f"<foreignobject><body xmlns='{XHTML_NS}' onload='alert(1)'/></foreignobject>")),
         _page("svg_use_remote_xlink", "svg", _svg('<use xlink:href="http://evil.example/x.svg#a"/>')),
         _page("svg_use_remote_href", "svg", _svg('<use href="//evil.example/x.svg#a"/>')),
         _page("svg_use_data", "svg", _svg('<use href="data:image/svg+xml;base64,PHN2Zy8+#a"/>')),
@@ -237,7 +241,7 @@ def _entities_and_xml() -> list[Trap]:
                 f"<body>{body}</body></html>").encode()  # fmt: skip
 
     laughs = "".join(
-        f'<!ENTITY l{i} "{"&l%d;" % (i - 1) * 10}">' if i else '<!ENTITY l0 "lol">' for i in range(9)
+        f'<!ENTITY l{i} "{f"&l{i - 1};" * 10}">' if i else '<!ENTITY l0 "lol">' for i in range(9)
     )
     return [
         _raw_page("xxe_file", "xxe", doc('<!DOCTYPE html [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'), "refused", "dtd"),
@@ -251,13 +255,15 @@ def _entities_and_xml() -> list[Trap]:
         _raw_page("doctype_public_plain", "xxe", doc('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">', "<p>a&nbsp;b<script>alert(1)</script></p>")),
         Trap("xxe_in_svg_file", "xxe", epub_bytes(xhtml("<p>x</p>"), extra=[Member(
             "OEBPS/pic.svg", f'{_XML}<!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><svg xmlns="{SVG_NS}"><text>&xxe;</text></svg>'.encode())],
-            opf_extra='<item id="pic" href="pic.svg" media-type="image/svg+xml"/>'), "refused", "dtd", "OEBPS/pic.svg"),
+            opf_extra='<item id="pic" href="pic.svg" media-type="image/svg+xml"/>'), outcome="refused", reason="dtd", entry="OEBPS/pic.svg"),
         Trap("deeply_nested", "entity-bomb", epub_bytes(xhtml("<div>" * 200 + "x" + "</div>" * 200)), "refused", "too_deep"),
     ]  # fmt: skip
 
 
 def _standalone_files() -> list[Trap]:
-    svg_script = f'{_XML}<svg xmlns="{SVG_NS}" onload="alert(1)"><script>alert(1)</script></svg>'.encode()
+    svg_script = (
+        f'{_XML}<svg xmlns="{SVG_NS}" onload="alert(1)"><script>alert(1)</script></svg>'.encode()
+    )
     svg_use = f'{_XML}<svg xmlns="{SVG_NS}" xmlns:xlink="{XLINK_NS}"><use xlink:href="http://evil.example/x.svg#a"/></svg>'.encode()
     html_page = f'{_XML}<html xmlns="{XHTML_NS}"><head><title>T</title></head><body><p onclick="alert(1)">x</p><script>1</script></body></html>'.encode()
     return [
@@ -267,8 +273,8 @@ def _standalone_files() -> list[Trap]:
         Trap("html_extension_page", "script", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/extra.html", html_page)]), entry="OEBPS/extra.html"),
         Trap("htm_extension_page", "script", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/extra.htm", html_page)]), entry="OEBPS/extra.htm"),
         Trap("xhtml_manifest_odd_extension", "script", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/extra.dat", html_page)], opf_extra='<item id="x" href="extra.dat" media-type="application/xhtml+xml"/>'), entry="OEBPS/extra.dat"),
-        Trap("svg_in_jpg", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.jpg", svg_script)]), "refused", "disguised", "OEBPS/p.jpg"),
-        Trap("html_in_png", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.png", b"<!DOCTYPE html><script>alert(1)</script>")]), "refused", "disguised", "OEBPS/p.png"),
+        Trap("svg_in_jpg", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.jpg", svg_script)]), outcome="refused", reason="disguised", entry="OEBPS/p.jpg"),
+        Trap("html_in_png", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.png", b"<!DOCTYPE html><script>alert(1)</script>")]), outcome="refused", reason="disguised", entry="OEBPS/p.png"),
         Trap("html_in_xml", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/data.xml", html_page)]), entry="OEBPS/data.xml"),
     ]  # fmt: skip
 
@@ -298,8 +304,16 @@ def _archives() -> list[Trap]:
 
 def base_traps() -> tuple[Trap, ...]:
     return tuple(
-        _scripts() + _handlers() + _script_urls() + _frames() + _remote() + _svg_cases() + _css()
-        + _entities_and_xml() + _standalone_files() + _archives()
+        _scripts()
+        + _handlers()
+        + _script_urls()
+        + _frames()
+        + _remote()
+        + _svg_cases()
+        + _css()
+        + _entities_and_xml()
+        + _standalone_files()
+        + _archives()
     )
 
 
@@ -326,7 +340,7 @@ def _split_variants(word: str) -> Iterator[str]:
     for filler in ("&#9;", "&#10;", "&#13;", "&#9;&#10;&#13;", " "):
         yield word[:4] + filler + word[4:]
         yield filler + word
-    yield "&#1;&#2;&#3;" + word
+    yield "&#x200B;&#xAD;&#xA0;" + word
     yield "&#x0A;".join(word)
 
 
@@ -347,7 +361,9 @@ def mutation_traps() -> tuple[Trap, ...]:
         for variant in _scheme_variants(scheme):
             n += 1
             out.append(_page(f"mut_scheme_{n}", "mutation", f'<a href="{variant}:alert(1)">x</a>'))
-            out.append(_page(f"mut_scheme_img_{n}", "mutation", f'<img src="{variant}:alert(1)" alt=""/>'))
+            out.append(
+                _page(f"mut_scheme_img_{n}", "mutation", f'<img src="{variant}:alert(1)" alt=""/>')
+            )
     for variant in _scheme_variants("data"):
         n += 1
         out.append(_page(f"mut_data_{n}", "mutation", f'<a href="{variant}:text/html,x">x</a>'))
@@ -360,16 +376,35 @@ def mutation_traps() -> tuple[Trap, ...]:
         for variant in _case_variants(attr):
             n += 1
             out.append(_page(f"mut_handler_{n}", "mutation", f'<p {variant}="alert(1)">x</p>'))
-            out.append(_page(f"mut_handler_svg_{n}", "mutation", _svg(f'<g {variant}="alert(1)"/>')))
+            out.append(
+                _page(f"mut_handler_svg_{n}", "mutation", _svg(f'<g {variant}="alert(1)"/>'))
+            )
     for variant in _scheme_variants("url"):
         n += 1
-        out.append(_page(f"mut_css_{n}", "mutation", f'<p style="background:{variant}(http://evil.example/)">x</p>'))
+        out.append(
+            _page(
+                f"mut_css_{n}",
+                "mutation",
+                f'<p style="background:{variant}(http://evil.example/)">x</p>',
+            )
+        )
     for variant in _entity_variants("http"):
         n += 1
-        out.append(_page(f"mut_remote_{n}", "mutation", f'<img src="{variant}://evil.example/p.png" alt=""/>'))
+        out.append(
+            _page(
+                f"mut_remote_{n}", "mutation", f'<img src="{variant}://evil.example/p.png" alt=""/>'
+            )
+        )
     for variant in _case_variants("@import"):
         n += 1
-        out.append(_page(f"mut_import_{n}", "mutation", "<p>x</p>", f"<style>{variant} url(http://evil.example/x.css);</style>"))
+        out.append(
+            _page(
+                f"mut_import_{n}",
+                "mutation",
+                "<p>x</p>",
+                f"<style>{variant} url(http://evil.example/x.css);</style>",
+            )
+        )
     return tuple(out)
 
 

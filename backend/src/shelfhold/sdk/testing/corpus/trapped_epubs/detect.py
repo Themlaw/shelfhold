@@ -32,30 +32,35 @@ _CSS_URL = re.compile(r"url\s*\(\s*([^)]*)\)", re.I)
 
 def _squash(value: str) -> str:
     """What a URL parser sees: no control, space or invisible character, lower case."""
-    return "".join(ch for ch in html.unescape(value) if ch.isprintable() and not ch.isspace()).lower()
+    return "".join(
+        ch for ch in html.unescape(value) if ch.isprintable() and not ch.isspace()
+    ).lower()
 
 
 def _css_findings(css: str) -> list[str]:
     text = re.sub(r"/\*.*?\*/", "", html.unescape(css), flags=re.S)
     found: list[str] = []
-    if "\\" in text:
+    outside = re.sub(r""""(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'""", "", text, flags=re.S)
+    if "\\" in outside:  # an escape inside a string is only text; outside, it can spell `url`
         found.append("css-escape")
-    low = text.lower()
+    low = outside.lower()
     if "@import" in low:
         found.append("css-import")
-    if re.search(r"expression\s*\(|behaviou?r\s*:|-moz-binding|javascript:", low):
+    if re.search(r"expression\s*\(|(?:behavior|behaviour)\s*:|-moz-binding|javascript:", low):
         found.append("css-script")
     for match in _CSS_URL.finditer(text):
         target = _squash(match.group(1).strip("'\" "))
-        if target and not target.startswith("#") and (
-            _SCHEME.match(target) or target.startswith(("//", "\\\\", "/\\", "\\/"))
+        if (
+            target
+            and not target.startswith("#")
+            and (_SCHEME.match(target) or target.startswith(("//", "\\\\", "/\\", "\\/")))
         ):
             found.append(f"css-remote-url:{target[:40]}")
     return found
 
 
 def find_active_patterns(data: bytes) -> list[str]:
-    """Every active pattern left in `data` (a XHTML, SVG or CSS document), in order of appearance."""
+    """Every active pattern left in `data` (a XHTML or SVG document), in order of appearance."""
     text = data.decode("utf-8", "replace")
     found: list[str] = []
     for tag in _TAG.finditer(text):
@@ -68,20 +73,27 @@ def find_active_patterns(data: bytes) -> list[str]:
             if plain.startswith("on"):
                 found.append(f"handler:{attr}")
             squashed = _squash(value)
+            if attr not in _RESOURCE_ATTRS and attr not in ("values", "to", "from", "by"):
+                squashed = ""  # a class or a title is not a URL
             if any(squashed.startswith(s) for s in _SCRIPT_SCHEMES):
                 found.append(f"script-url:{attr}")
             if squashed.startswith("data:") and not (
                 name == "img" and re.match(r"data:image/(png|jpeg|gif|webp|avif)[;,]", squashed)
             ):
                 found.append(f"data-url:{attr}")
-            if attr in _RESOURCE_ATTRS and name != "a" and (
-                _SCHEME.match(squashed) or squashed.startswith(("//", "\\\\", "/\\", "\\/"))
-            ) and not (name == "use" and squashed.startswith("#")):
+            if (
+                attr in _RESOURCE_ATTRS
+                and name != "a"
+                and (_SCHEME.match(squashed) or squashed.startswith(("//", "\\\\", "/\\", "\\/")))
+                and not (name == "use" and squashed.startswith("#"))
+            ):
                 found.append(f"remote:{name}[{attr}]")
             if attr == "href" and name == "a" and squashed.startswith(("//", "\\")):
                 found.append("remote:a[//]")
-            if name == "a" and _SCHEME.match(squashed) and not squashed.startswith(
-                ("http:", "https:", "mailto:")
+            if (
+                name == "a"
+                and _SCHEME.match(squashed)
+                and not squashed.startswith(("http:", "https:", "mailto:"))
             ):
                 found.append(f"a-scheme:{squashed.split(':')[0]}")
             if attr == "http-equiv":

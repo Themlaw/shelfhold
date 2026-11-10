@@ -72,6 +72,15 @@ symbols = [
 ]
 
 [[allow]]
+category = "unwired-m2-l03"
+reason = "The neutralizer `xhtml-neutralizer@v1` and the EPUB scan that writes the derivative (EF-BIB-051, M2 L02) are proved against the trapped-EPUB corpus; their first production caller is the derivative pipeline of M2 L03 (ingest step \"trust\", `declare_derivative`), which also removes the `unwired-m2-derivative` entry above."
+until = "M2"
+symbols = [
+  "shelfhold.infrastructure.content_trust.epub_scan:*",
+  "shelfhold.infrastructure.content_trust.xhtml_neutralizer:*",
+]
+
+[[allow]]
 category = "unwired-m1b-l20"
 reason = "Suwayomi account secret opened by the SuwayomiJwt AuthFlow and the service account (L20)."
 until = "M1b L20"

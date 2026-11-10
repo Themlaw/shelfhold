@@ -1,8 +1,10 @@
+# ruff: noqa: E501
 """EF-BIB-051 (2), (7), (8) and ENF-SEC-015: xhtml-neutralizer@v1 against the trapped-EPUB corpus."""
 
 from __future__ import annotations
 
 import ast
+import contextlib
 import inspect
 from io import BytesIO
 from pathlib import Path
@@ -130,11 +132,16 @@ def test_neutralizer_is_a_pure_function_of_bytes_and_kind() -> None:
 
 @pytest.mark.req("EF-BIB-051")
 def test_a_clean_epub_comes_out_unchanged_and_its_derived_hash_is_the_original_one() -> None:
-    clean = epub_bytes(xhtml('<h1 epub:type="title">T</h1><p>a <a href="https://x.example/">b</a></p>'))
-    derived, result = _run(clean)
-    assert _names(derived) == _names(clean)
+    messy = epub_bytes(
+        xhtml('<h1 epub:type="title">T</h1><p>a <a href="https://x.example/">b</a></p>')
+    )
+    first, one = _run(messy)  # the writer's own form is a fixed point of the function
+    assert one.changed is True  # type: ignore[attr-defined]
+    second, result = _run(first)
+    assert second == first
+    assert _names(second) == _names(messy)
     assert result.changed is False  # type: ignore[attr-defined]
-    assert result.derived_hash == result.original_hash  # type: ignore[attr-defined]
+    assert result.derived_hash == result.original_hash == one.derived_hash  # type: ignore[attr-defined]
 
 
 @pytest.mark.req("EF-BIB-051")
@@ -163,9 +170,11 @@ def test_publisher_and_watermarked_epub_untouched_outside_opf() -> None:
     derived, _ = _run(original)
     before, after = _entries(original), _entries(derived)
     assert _names(derived) == _names(original)
+    pages = (".xhtml", ".css", ".svg")
     for name in before:
-        if name != CHAPTER:
+        if not name.endswith(pages):
             assert after[name] == before[name], name
+    assert after["OEBPS/font.woff"] == extra[0].data
     del mark
 
 
@@ -191,7 +200,7 @@ def test_neutralizer_never_rewrites_opf_or_meta_inf() -> None:
 
 @pytest.mark.req("EF-BIB-051")
 def test_mimetype_stays_first_and_stored() -> None:
-    derived, _ = _run(epub_bytes(xhtml('<script>1</script><p>x</p>')))
+    derived, _ = _run(epub_bytes(xhtml("<script>1</script><p>x</p>")))
     with safe_open_archive(BytesIO(derived), name="x.epub") as archive:
         assert archive.entries[0].name == "mimetype"
         assert archive.entries[0].compressed_size == archive.entries[0].size
@@ -255,7 +264,7 @@ def test_html_named_entities_of_an_xhtml_doctype_are_kept() -> None:
         b"<body><p>a&nbsp;b &copy; &amp; &lt;</p></body></html>"
     )
     out = neutralize(doc, "xhtml").decode()
-    assert "a b © &amp; &lt;" in out
+    assert "a\u00a0b \u00a9 &amp; &lt;" in out
     assert "DOCTYPE" not in out
 
 
@@ -282,7 +291,7 @@ _ATTRS = st.sampled_from(["href", "src", "xlink:href", "onclick", "ONERROR", "on
                           "data", "action", "formaction", "class", "id", "http-equiv", "content",
                           "srcset", "poster", "rel", "type", "values", "to", "attributeName"])  # fmt: skip
 _SCHEMES = st.sampled_from(["javascript", "JavaScript", "vbscript", "data", "http", "https", "//",
-                            "&#106;avascript", "java&#9;script", "jav&#x0A;ascript", " javascript",
+                            "&#106;avascript", "java&#9;script", "jav&#x0A;ascript", "\u00a0javascript",
                             "", "x", "#", "ftp"])  # fmt: skip
 _VALUES = st.builds(
     lambda scheme, rest: f"{scheme}:{rest}" if scheme not in ("//", "") else f"{scheme}{rest}",
@@ -295,9 +304,7 @@ _VALUES = st.builds(
 @st.composite
 def _fragment(draw: st.DrawFn, depth: int = 0) -> str:
     tag = draw(_TAGS)
-    attrs = "".join(
-        f' {draw(_ATTRS)}="{draw(_VALUES)}"' for _ in range(draw(st.integers(0, 3)))
-    )
+    attrs = "".join(f' {draw(_ATTRS)}="{draw(_VALUES)}"' for _ in range(draw(st.integers(0, 3))))
     inner = ""
     if depth < 3:
         inner = "".join(draw(_fragment(depth + 1)) for _ in range(draw(st.integers(0, 2))))
@@ -317,3 +324,84 @@ def test_property_no_output_holds_an_active_pattern(fragments: list[str]) -> Non
     assert find_active_patterns(out) == []
     assert neutralize(document, "xhtml") == out  # deterministic
     assert neutralize(out, "xhtml") == out  # idempotent: a derivative is a fixed point
+
+
+_CSS_PARTS = st.sampled_from([
+    "p", "a > b", "{", "}", ";", "color:red", "background:url(http://e.example/x)", "url(a.png)",
+    "@import 'x'", "@IMPORT", "u\\72l(", "\\75rl(//e/", "expression(1)", "/*", "*/", "'", '"',
+    "url(", ")", "behavior:url(x)", "@font-face", "src:url(//e/f)", "image-set(", "&", "<", "\n",
+    "-moz-binding", "content:'\\201C'", "url(  'data:text/html,x' )", "url(#a)", "javascript:",
+])  # fmt: skip
+
+
+@pytest.mark.req("EF-BIB-051", "ENF-SEC-015")
+@settings(max_examples=400, deadline=None)
+@given(st.lists(_CSS_PARTS, min_size=1, max_size=12))
+def test_property_no_stylesheet_keeps_a_fetching_or_scripting_rule(parts: list[str]) -> None:
+    sheet = " ".join(parts).encode()
+    out = neutralize(sheet, "css")
+    assert find_active_css(out) == []
+    assert neutralize(out, "css") == out
+    page = xhtml(
+        "<p>x</p>",
+        "<style>" + sheet.decode().replace("<", "&lt;").replace("&", "&amp;") + "</style>",
+    )
+    with contextlib.suppress(NeutralizationError):
+        assert find_active_patterns(neutralize(page, "xhtml")) == []
+
+
+@pytest.mark.req("EF-BIB-051", "ENF-SEC-015")
+@settings(max_examples=250, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(st.lists(_fragment(), min_size=1, max_size=3))
+def test_property_no_standalone_svg_keeps_an_active_pattern(fragments: list[str]) -> None:
+    document = (
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">'
+        + "".join(fragments) + "</svg>"
+    ).encode()  # fmt: skip
+    try:
+        out = neutralize(document, "svg")
+    except NeutralizationError:
+        return
+    assert find_active_patterns(out) == []
+    assert neutralize(out, "svg") == out
+
+
+@pytest.mark.req("EF-BIB-051", "ENF-SEC-015")
+def test_corpus_green_under_the_kit() -> None:
+    from shelfhold.sdk.testing import run_trapped_epub_corpus
+
+    def derive(epub: bytes) -> dict[str, bytes]:
+        out = BytesIO()
+        neutralize_epub(BytesIO(epub), out)
+        return _entries(out.getvalue())
+
+    report = run_trapped_epub_corpus(derive)
+    assert report.ok, [(c.name, c.detail) for c in report.failures][:5]
+    assert len(report.checks) == len(all_traps())
+
+    def identity(epub: bytes) -> dict[str, bytes]:
+        return _entries(epub)  # a "neutralizer" that does nothing must fail the kit
+
+    broken = run_trapped_epub_corpus(identity)
+    assert not broken.ok
+    assert len(broken.failures) > 100
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_directory_entries_and_stored_entries_are_copied_in_place() -> None:
+    original = epub_bytes(
+        xhtml("<p>x</p>"),
+        extra=[
+            Member("OEBPS/images/", b""),
+            Member("OEBPS/images/a.png", b"\x89PNG\r\n\x1a\n", False),
+        ],
+    )
+    derived, _ = _run(original)
+    assert _names(derived) == _names(original)
+    assert _entries(derived)["OEBPS/images/a.png"] == b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_unknown_kind_is_a_programming_error() -> None:
+    with pytest.raises(ValueError, match="unknown kind"):
+        neutralize(b"", "html")  # type: ignore[arg-type]

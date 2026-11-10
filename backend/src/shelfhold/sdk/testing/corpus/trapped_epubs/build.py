@@ -115,9 +115,11 @@ def epub_bytes(
     first: Iterable[Member] | None = None,
 ) -> bytes:
     """A well-formed EPUB around `chapter`. `extra` entries come last, `first` replaces mimetype."""
-    head = list(first) if first is not None else [
-        Member("mimetype", b"application/epub+zip", deflate=False)
-    ]
+    head = (
+        list(first)
+        if first is not None
+        else [Member("mimetype", b"application/epub+zip", deflate=False)]
+    )
     return zip_bytes([
         *head,
         Member("META-INF/container.xml", CONTAINER),
