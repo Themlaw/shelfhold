@@ -11,11 +11,11 @@ import pytest
 import sqlalchemy as sa
 import structlog
 import structlog.testing
-from shelfhold.ops.backup.report import retained_since
 
 from shelfhold.export.application.purge import PurgeReport
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, coherence, platform, storage
+from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.backup.store import archive_name
 from tests.export_env import ExportEnv, export_env
 from tests.purge_env import ADMIN, TITLE, PurgeEnv, spread
@@ -366,10 +366,11 @@ def test_m1b_migration_offers_release_of_m1a_purged_upstream_copies(tmp_path: Pa
         series = env.new_series(TITLE)
         unit, _ = spread(env, series)
         request = fetched_ticket(env, service, unit, "ticket-m1a")
-        gone = fetched_ticket(env, service, env.add_chapter(series, "2"), "ticket-gone")
+        second = env.add_chapter(series, "2")
+        gone = fetched_ticket(env, service, second, "ticket-gone")
         (tmp_path / "held.json").write_text(json.dumps(["ticket-m1a"]))  # the other is gone
         m1a = make_m1b_env(env)  # M1a: no service in reach, the claim is withdrawn on our side
-        assert run(m1a, unit).complete
+        assert run(m1a, unit).complete and run(m1a, second).complete
         with env.engine.connect() as connection:
             left = connection.execute(
                 sa.select(acquisition.download_request.c.ticket).where(

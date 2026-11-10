@@ -21,16 +21,31 @@ leaves a state the same command finishes:
 
 The purge is a reserved action (`purge.now`): a fresh admin session or the host CLI, never a key,
 and it re-checks the rule here, not only at the route. The admin types the identifier. It passes
-over the bin, "Mettre à l'abri" and the retained-backup rule for the managed copies. Nothing is
-ever written to the upstream service: it withdraws Shelfhold's claim and says "delete in
-Suwayomi" (M1a; `release_claim` arrives in M1b). Nothing here carries a title: the audit target and
-the event hold ULIDs, the tombstone reason is an enumeration.
+over the bin, "Mettre à l'abri" and the retained-backup rule for the managed copies. Nothing here
+carries a title: the audit target and the event hold ULIDs, the tombstone reason is an
+enumeration.
+
+M1b (L17) adds, in this order, between the tombstone and the closing:
+
+- **the service**: the download of each Unit is let go of by `release_claim`, through the port
+  (`UpstreamPort`, the road of "Mettre à l'abri": an intent that names the request, one erasure at
+  most, a deed that was begun is never sent again). With no connected service the claim is
+  withdrawn on our side and the admin is told to delete in Suwayomi (M1a);
+- **`/store`**: `INDEX.jsonl` is written again without the Units, under an intent and by atomic
+  replacement, *before* the copies go: a kill leaves an index that cites files that exist, never a
+  dead line (the next window pass would draw the same file);
+- the copies, `/data` and the mirror, as before;
+- for a Work, the series is taken out of the service's library (`unfollow`);
+- the closing erases, besides the Unit rows, the jobs and the events (and their notifications)
+  that cite the purge, and for a Work its metadata rows. The report lists the retained integrated
+  backups that were taken while the rows existed (read only: a backup is never rewritten).
 """
 
 import hashlib
+import json
 import time
-from collections.abc import Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
@@ -43,6 +58,14 @@ from structlog.contextvars import bound_contextvars
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks, path_resource, work_resource
+from shelfhold.export.application.upstream_port import (
+    ALREADY_GONE,
+    CANCELLED,
+    KEPT_BY_OTHER_ACCOUNT,
+    RELEASED,
+    SeriesKey,
+    UpstreamPort,
+)
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR, RootState
 from shelfhold.export.domain.provenance_mirror import (
     MIRROR_DIR,
@@ -80,20 +103,28 @@ from shelfhold.library.public import (
     EDITION_KEY_COLUMNS,
     ContentHash,
     Copy,
+    DownloadTicket,
     MetaProjection,
     PlaceRef,
     PurgeAuthorization,
     PurgeRefusedError,
     SeriesBindingRef,
+    StoreIndex,
     TombstoneRoot,
     TombstoneService,
     VariantRef,
     content_hashes,
     content_ids,
     copies,
+    created_since,
     derived_rels,
+    download_tickets,
+    erase_history,
     erase_units,
+    erase_work_rows,
+    request_ids,
     require_purge_allowed,
+    title_needles,
     unresolved_bin_items,
     upstream_claims,
     withdraw_upstream_claims,
@@ -108,6 +139,7 @@ __all__ = [
     "PurgeService",
     "PurgeUnknownError",
     "Refused",
+    "Retained",
 ]
 
 log = structlog.get_logger(__name__)
@@ -154,6 +186,22 @@ class Refused:
 
 
 @dataclass(frozen=True)
+class Retained:
+    """An integrated backup that was taken while the rows existed and is still kept: said, never
+    touched. A name that is a time, never a title."""
+
+    name: str
+    taken_at: datetime
+
+
+BackupsSince = Callable[[datetime], Sequence[tuple[str, datetime]]]
+EXIT_UPSTREAM = (
+    "run `intents list`, check the download in the service, `intents resolve`, then run "
+    "`purge --now` again"
+)
+
+
+@dataclass(frozen=True)
 class PurgeReport:
     anchor_id: str
     unit_ids: tuple[str, ...]
@@ -164,6 +212,10 @@ class PurgeReport:
     refused: tuple[Refused, ...] = ()
     closed_tickets: int = 0
     upstream_copies: int = 0
+    upstream_released: int = 0  # downloads the service was asked to erase (`release_claim`)
+    upstream_kept_by_others: int = 0  # `ui_login`: another account keeps the file (measured)
+    unfollowed: int = 0  # series taken out of the service's library
+    retained_backups: tuple[Retained, ...] = ()
     alerts: tuple[str, ...] = ()
     out_of_reach: tuple[str, ...] = OUT_OF_REACH
 
@@ -182,6 +234,10 @@ class _Plan:
     payload: list[ContentHash]
     derived: list[ContentHash]
     bindings: list[Any]
+    tickets: list[DownloadTicket] = field(default_factory=list)
+    requests: list[str] = field(default_factory=list)
+    needles: list[str] = field(default_factory=list)
+    since: datetime | None = None
     resources: list[str] = field(default_factory=list)
 
 
@@ -191,6 +247,11 @@ class _Progress:
     refused: list[Refused] = field(default_factory=list)
     unreachable: set[str] = field(default_factory=set)
     done_intents: list[str] = field(default_factory=list)
+    claimed: int = 0  # upstream claims Shelfhold counted before the purge
+    released: int = 0
+    kept_by_others: int = 0
+    unfollowed: int = 0
+    unsettled: set[str] = field(default_factory=set)  # requests whose ticket must stay
 
 
 _REFUSALS: tuple[tuple[type[FsopsError], str], ...] = (
@@ -213,8 +274,14 @@ class PurgeService:
         data_dir: Path,
         bus: EventBus,
         fresh_auth_s: int,
+        store_dir: Path | None = None,
+        upstream: UpstreamPort | None = None,
+        backups: BackupsSince | None = None,
     ) -> None:
         self._fresh_auth_s = fresh_auth_s  # from the settings, never from the caller
+        self._store_dir = store_dir
+        self._upstream = upstream
+        self._backups = backups
         self._engine = engine
         self._fsops = fsops
         self._tombstones = tombstones
@@ -252,8 +319,8 @@ class PurgeService:
         job_id: str | None = None,
     ) -> PurgeReport:
         """Every Unit of the Work, and a `series_binding` tombstone per binding, so that the
-        follow cycle ignores the series upstream (M1a: the series is told, not removed from
-        Suwayomi). The Work's and Editions' own metadata rows stay until M1b (EF-BIB-053 (4))."""
+        follow cycle ignores the series upstream. M1b: the series leaves the service's library
+        (`unfollow`) and the Work's metadata rows go (EF-BIB-053 (2), (4))."""
         allowed = require_purge_allowed(
             work_id, principal=principal, now=now, typed=typed, fresh_auth_s=self._fresh_auth_s
         )
@@ -354,6 +421,10 @@ class PurgeService:
             [ContentHash(h.by, h.value) for h in payload],
             [ContentHash(h.by, h.value) for h in derived], bindings,
         )  # fmt: skip
+        plan.tickets = download_tickets(connection, unit_ids)
+        plan.requests = request_ids(connection, unit_ids)
+        plan.needles = title_needles(connection, unit_ids, work_id if kind == "work" else None)
+        plan.since = created_since(connection, unit_ids, work_id if kind == "work" else None)
         plan.resources = self._resources(connection, work_id, plan.items)
         return plan
 
@@ -419,6 +490,7 @@ class PurgeService:
         started = time.perf_counter()
         with bound_contextvars(series_id=plan.work_id):
             report = self._execute_bound(plan, allowed)
+        report = self._with_backups(report, plan)
         # counts only: no title, no path and never a tombstone value (they are stored sealed)
         log.info(
             "purge.finished",
@@ -442,9 +514,14 @@ class PurgeService:
         # a root that still owes its line gets no deletion: the line is first, on every root
         roots = [r if not self._tombstones.has_pending(r.root_id) else _away(r) for r in roots]
         progress = _Progress()
+        with self._engine.connect() as connection:
+            progress.claimed = upstream_claims(connection, plan.unit_ids)
+        self._release_upstream(plan, progress)  # the service, before the files (L17)
+        self._rewrite_index(plan, progress)  # the index of /store, before its copies go
         self._erase_copies(plan, roots, progress)  # steps 3 and 4
         self._erase_derived(plan, progress)
         self._clean_mirror(plan, roots, progress)
+        self._unfollow(plan, progress)
         return self._close(plan, allowed, recorded, progress)  # step 5
 
     def _roots(self) -> list[TombstoneRoot]:
@@ -607,6 +684,84 @@ class PurgeService:
         else:
             self._fsops.purge_unlink(local)
 
+    # -- the service (L17, EF-SRC-033) ----------------------------------------------------------
+
+    def _release_upstream(self, plan: _Plan, progress: _Progress) -> None:
+        """Let the service go of the downloads of these Units, once each. Nothing is asked when
+        no service is connected (M1a: the claim is withdrawn at the closing and the admin is told
+        to delete in Suwayomi). A request the service did not settle keeps its ticket, so that
+        the same command, run again, reaches it."""
+        if not plan.tickets or self._upstream is None:
+            return
+        for result in self._upstream.release(plan.tickets):
+            if result.outcome in (RELEASED, ALREADY_GONE, CANCELLED):
+                progress.released += result.outcome == RELEASED
+            elif result.outcome == KEPT_BY_OTHER_ACCOUNT:
+                progress.kept_by_others += 1  # the claim is withdrawn, the file is not ours
+            else:
+                progress.unsettled.add(result.request_id)
+                code = {"unresolved": "upstream_unresolved"}.get(result.outcome, result.reason)
+                exit_ = EXIT_UPSTREAM if result.outcome == "unresolved" else ""
+                progress.refused.append(Refused("upstream", code or "service_unavailable", exit_))
+
+    def _unfollow(self, plan: _Plan, progress: _Progress) -> None:
+        """A Work: its series leave the service's library, once the chapters have (a series that
+        is gone could not be asked about its downloads). Idempotent in the service."""
+        if plan.kind != "work" or self._upstream is None or progress.unsettled:
+            return
+        keys: list[SeriesKey] = sorted(
+            {(b.plugin_id, b.source_key, b.remote_id) for b in plan.bindings}
+        )
+        for result in self._upstream.unfollow(keys):
+            if result.done:
+                progress.unfollowed += 1
+            else:
+                progress.refused.append(Refused("upstream", result.reason or "unfollow_failed"))
+
+    def _with_backups(self, report: PurgeReport, plan: _Plan) -> PurgeReport:
+        """The integrated backups taken while these rows existed, read only (EF-BIB-052 (5))."""
+        if self._backups is None or plan.since is None:
+            return report
+        found = tuple(Retained(name, at) for name, at in self._backups(plan.since))
+        return replace(report, retained_backups=found)
+
+    # -- /store: the index (L17, EF-INT-027) ------------------------------------------------------
+
+    def _rewrite_index(self, plan: _Plan, progress: _Progress) -> None:
+        """`store/INDEX.jsonl` without these Units, written under an intent by atomic replacement.
+        It goes before the copies: a kill leaves an index that cites files that exist (the
+        window's own pass draws the same file), never a line that points at nothing."""
+        if self._store_dir is None:
+            return
+        index = StoreIndex(self._engine, self._fsops, str(self._store_dir), self._tombstones)
+        data, _, _ = index.render(without_units=plan.unit_ids)
+        try:
+            current: bytes | None = self._fsops.read_bytes(index.path)
+        except FileNotFoundError:
+            current = None
+        except OutsidePathMapError:
+            return  # /store is not a root of this instance: no index to speak of
+        except FsopsError:
+            progress.refused.append(Refused("store_index", "root_away"))
+            return
+        if current == data or (current is None and not data):
+            return  # already says exactly this (or never was, and would say nothing)
+        intent = self._journal.record(
+            op="write", dst=index.path, expected_sha256=_prefixed_bytes(data)
+        )
+        self._journal.mark_applying(intent)
+        try:
+            self._fsops.write_atomic(index.path, data, replace=True)
+        except (RootBlockedError, TombstonePendingError):
+            self._journal.cancel(intent)
+            progress.refused.append(Refused("store_index", "root_away"))
+            return
+        except FsopsError:
+            self._journal.cancel(intent)
+            progress.refused.append(Refused("store_index", "io_error"))
+            return
+        self._journal.mark_done(intent)
+
     # -- /data and the mirror -----------------------------------------------------------------
 
     def _erase_derived(self, plan: _Plan, progress: _Progress) -> None:
@@ -614,6 +769,8 @@ class PurgeService:
             for rel in derived_rels(unit_id):
                 if self._erase_data(rel):
                     progress.erased += 1
+        if plan.kind == "work" and self._erase_data(work_rel(plan.work_id)):
+            progress.erased += 1  # its `work.json` spells the title: gone before the rows are
 
     def _erase_data(self, rel: str) -> bool:
         try:
@@ -681,12 +838,13 @@ class PurgeService:
         with self._engine.begin() as connection:
             for intent in progress.done_intents:
                 self._journal.mark_done(intent, within=connection)
-            closed = self._close_tickets(connection, plan)
-            upstream = upstream_claims(connection, plan.unit_ids)
+            closed = self._close_tickets(connection, plan, progress.unsettled)
+            upstream = max(progress.claimed, upstream_claims(connection, plan.unit_ids))
             withdraw_upstream_claims(connection, plan.unit_ids)
             if complete:
                 self._erase_rows(connection, plan, allowed)
                 self._scrub_journals(connection, plan)
+                self._erase_metadata(connection, plan)
             events.append(
                 self._bus.publish(
                     connection, "ops.purge_done",
@@ -704,7 +862,11 @@ class PurgeService:
             erased=progress.erased, unreachable_roots=tuple(sorted(progress.unreachable)),
             pending_roots=tuple(sorted(pending)), refused=tuple(progress.refused),
             closed_tickets=closed, upstream_copies=upstream,
-            alerts=(ALERT_DELETE_UPSTREAM,) if upstream else (),
+            upstream_released=progress.released, upstream_kept_by_others=progress.kept_by_others,
+            unfollowed=progress.unfollowed,
+            alerts=(
+                (ALERT_DELETE_UPSTREAM,) if self._delete_by_hand(plan, progress, upstream) else ()
+            ),
         )  # fmt: skip
 
     def _project_work(self, work_id: str) -> None:
@@ -721,31 +883,62 @@ class PurgeService:
         with self._engine.connect() as connection:
             return unresolved_bin_items(connection, plan.unit_ids)
 
+    def _delete_by_hand(self, plan: _Plan, progress: _Progress, upstream: int) -> bool:
+        """The admin is told to delete in Suwayomi when something the purge counted upstream is
+        still there: no service in reach (M1a), a file another account keeps, a service that did
+        not settle, or a claim with no ticket to ask about."""
+        if not upstream:
+            return False
+        return bool(
+            self._upstream is None
+            or not plan.tickets
+            or progress.kept_by_others
+            or progress.unsettled
+        )
+
     @staticmethod
-    def _close_tickets(connection: Connection, plan: _Plan) -> int:
-        """Shelfhold's side only (M1a, N5): nothing is asked of the service. Every ticket of these
-        Variants ends `closed_by_purge`; the check on the table needs it before the Variant goes."""
+    def _close_tickets(connection: Connection, plan: _Plan, keep: set[str]) -> int:
+        """Every ticket of these Variants ends `closed_by_purge`; the check on the table needs it
+        before the Variant goes. A request the service did not settle is left as it is: its
+        ticket is what the same command, run again, asks about (M1b)."""
         table = acquisition.download_request
         variants = [v.id for v in plan.variants]
         if not variants:
             return 0
+        mine = table.c.variant_id.in_(variants), table.c.id.not_in(keep)
         closed = connection.execute(
             sa.select(sa.func.count())
             .select_from(table)
-            .where(table.c.variant_id.in_(variants), table.c.state.in_(OPEN_TICKETS))
+            .where(*mine, table.c.state.in_(OPEN_TICKETS))
         ).scalar_one()
         connection.execute(
             sa.update(table)
-            .where(table.c.variant_id.in_(variants), table.c.state != "closed_by_purge")
+            .where(*mine, table.c.state != "closed_by_purge")
             .values(state="closed_by_purge", updated_at=sa.func.current_timestamp())
         )
         return int(closed)
+
+    def _erase_metadata(self, connection: Connection, plan: _Plan) -> None:
+        """What only the rows say (EF-BIB-053 (4)): the jobs and the events that cite the purge,
+        by identifier or by a title in their text, and for a Work the Work itself."""
+        ids = {
+            *plan.unit_ids, *plan.items, *plan.contents, *plan.requests,
+            *(str(v.id) for v in plan.variants),
+        }  # fmt: skip
+        if plan.kind == "work":
+            ids.add(plan.work_id)
+            ids.update(u.edition_id for u in plan.units)
+            ids.update(b.id for b in plan.bindings if hasattr(b, "id"))
+        jobs, events = erase_history(connection, ids, plan.needles)
+        log.debug("purge.history_erased", jobs=jobs, events=events)
+        if plan.kind == "work":
+            erase_work_rows(connection, plan.work_id)
 
     def _scrub_journals(self, connection: Connection, plan: _Plan) -> None:
         """The intents and plan operations that are over and name a copy of the Unit: their paths
         spell its title (series folder, file name), and the purge leaves no trace (EF-BIB-053)."""
         paths = {self._local(c) for c in plan.copies}
-        if not paths:
+        if not paths and not plan.needles:
             return
         intent, op, plan_table = coherence.fs_intent, coherence.export_op, coherence.export_plan
         connection.execute(
@@ -763,6 +956,18 @@ class PurgeService:
                 sa.or_(op.c.src_path.in_(paths), op.c.dst_path.in_(paths)),
             )
         )
+        # a finished plan keeps its batches as JSON, with the same paths: it is bookkeeping that
+        # is over, and it goes whole (the ones that still wait for their run are not touched)
+        wanted = [*paths, *plan.needles]
+        for row in connection.execute(
+            sa.select(plan_table.c.plan_id, plan_table.c.batches).where(
+                plan_table.c.status.in_(("done", "cancelled", "failed", "stale"))
+            )
+        ).all():
+            text = json.dumps(row.batches, ensure_ascii=False)
+            if any(n in text or n in text.lower() for n in wanted):
+                connection.execute(sa.delete(op).where(op.c.plan_id == row.plan_id))
+                connection.execute(sa.delete(plan_table).where(plan_table.c.plan_id == row.plan_id))
 
     @staticmethod
     def _erase_rows(connection: Connection, plan: _Plan, allowed: PurgeAuthorization) -> None:

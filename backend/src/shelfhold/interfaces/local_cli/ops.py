@@ -278,6 +278,14 @@ def _purge(ops: OpsServices, by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _leftovers_plan(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.library.leftovers_plan()
+
+
+def _leftovers_apply(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.library.leftovers_apply(if_match=_text(p, "if_match"), principal=by)
+
+
 def _intents_list(ops: OpsServices, _by: Principal, _p: Params) -> object:
     return {"items": ops.intents.list_open()}
 
@@ -434,6 +442,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.repatriate_check": (_repatriate_check, None),
     "ops.detach_restore_upstream": (_give_back, None),
     "ops.purge": (_purge, "purge.now"),
+    "ops.leftovers_plan": (_leftovers_plan, None),
+    "ops.leftovers_apply": (_leftovers_apply, "purge.now"),
     "ops.probe": (_probe, None),
     "ops.withdraw_plan": (_withdraw_plan, None),
     "ops.withdraw_apply": (_withdraw_apply, "shelf.withdraw"),

@@ -5,6 +5,7 @@ what it can, the same command is run again. Whatever the step, the index of /sto
 file that is gone, the tombstone is there, the service is asked to erase a download once at most,
 and the second run ends the purge with no readable copy left."""
 
+import inspect
 import os
 import signal
 from collections.abc import Callable
@@ -50,6 +51,16 @@ def before(owner: Any, name: str) -> None:
 
 def after(owner: Any, name: str) -> None:
     real = getattr(owner, name)
+
+    if inspect.iscoroutinefunction(real):  # the service's calls: the kill follows the awaited call
+
+        async def killed_async(*args: Any, **kwargs: Any) -> Any:
+            result = await real(*args, **kwargs)
+            die()
+            return result
+
+        setattr(owner, name, killed_async)
+        return
 
     def killed(*args: Any, **kwargs: Any) -> Any:
         result = real(*args, **kwargs)

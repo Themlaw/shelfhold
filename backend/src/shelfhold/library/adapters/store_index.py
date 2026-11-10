@@ -10,6 +10,7 @@ secret, a path outside /store, a destination's name. The write is atomic and goe
 (a reader sees the old file or the new one, never half of one)."""
 
 import json
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Final
 
@@ -42,8 +43,13 @@ class StoreIndex:
         self._path = f"{store_dir.rstrip('/')}/{INDEX_NAME}"
         self._tombstones = tombstones
 
-    def render(self) -> tuple[bytes, int, int]:
-        """The file as it would be written, its line count and how many contents were left out."""
+    @property
+    def path(self) -> str:
+        return self._path
+
+    def render(self, *, without_units: Collection[str] = ()) -> tuple[bytes, int, int]:
+        """The file as it would be written, its line count and how many contents were left out.
+        `without_units`: Units a purge is erasing, which the file must not cite (EF-BIB-052)."""
         content, unit, edition, work = storage.content, catalog.unit, catalog.edition, catalog.work
         with self._engine.connect() as connection:
             hashes = kept_file_hashes(connection)
@@ -67,7 +73,11 @@ class StoreIndex:
             ).all()
         lines: list[str] = []
         left_out = 0
+        excluded = set(without_units)
         for row in rows:
+            if row.unit_id in excluded:
+                left_out += 1
+                continue
             stored = hashes.get(row.unit_id, row.original_sha256)
             wanted = [ContentHash(FILE_HASH_BY, stored)]
             if row.content_hash is not None:

@@ -3,21 +3,20 @@ the test), `store/INDEX.jsonl` as the window job writes it, jobs and notificatio
 Unit, and the way to look at what is left. Built on `purge_env`: real files, real SQLite, real
 cipher."""
 
-import asyncio
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
-from shelfhold.purge_upstream import ConnectedUpstream
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.purge import PurgeService
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, platform
 from shelfhold.library.public import StoreIndex
+from shelfhold.purge_upstream import ConnectedUpstream
 from shelfhold.safeguard_jobs import service_refusal
 from shelfhold.sdk.connected import ReleaseResult, Ticket
 from tests.export_env import ExportEnv
@@ -75,7 +74,6 @@ def connected(env: PurgeEnv, service: FakeService) -> ConnectedUpstream:
     return ConnectedUpstream(
         env.lib.engine, env.fsops, IntentJournal(env.lib.engine, env.fsops, clock=env.clock),
         service_refusal, service, object(), env.clock, unfollow=service.unfollow,
-        run=asyncio.run,
     )  # fmt: skip
 
 
@@ -169,7 +167,7 @@ def cite(
                     type="unit.ready",
                     schema_version=1,
                     payload=payload,
-                    occurred_at=datetime(2026, 11, 10),
+                    occurred_at=datetime(2026, 11, 10, tzinfo=UTC),
                     visibility="ops",
                 )
             ).inserted_primary_key[0]
@@ -178,7 +176,7 @@ def cite(
                     id=new_ulid(),
                     event_id=event,
                     channel="apprise:1",
-                    next_try_at=datetime(2026, 11, 11),
+                    next_try_at=datetime(2026, 11, 11, tzinfo=UTC),
                 )
             )
             ids[name] = event

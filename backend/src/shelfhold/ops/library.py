@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
@@ -38,6 +40,7 @@ from shelfhold.export.application.coverage import (
     flag_unknown_coverage,
     set_volume_coverage,
 )
+from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.migration_detect import (
     STEPS,
     SwitchoverDetector,
@@ -50,6 +53,7 @@ from shelfhold.export.application.pairing import (
     PairingResult,
     Proposal,
 )
+from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.purge import (
     PurgeCollateralError,
@@ -58,6 +62,7 @@ from shelfhold.export.application.purge import (
     PurgeService,
     PurgeUnknownError,
 )
+from shelfhold.export.application.purge_leftovers import PurgeLeftovers
 from shelfhold.export.application.repatriate import (
     RepatriationBlockedError,
     RepatriationCheck,
@@ -90,7 +95,9 @@ from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, identity
 from shelfhold.library.public import ConfirmationRequiredError
+from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
+from shelfhold.purge_upstream import connected_upstream
 from shelfhold.sdk.refs import SeriesRef
 
 if TYPE_CHECKING:
@@ -791,11 +798,25 @@ class LibraryOps:
     def purge(
         self, *, kind: str, anchor_id: str, typed: str | None, principal: Principal
     ) -> dict[str, Any]:
-        with self._comp.write_context() as w:
+        settings = self._comp.settings
+        backups = None
+        if settings.backup_dir is not None:
+            folder, engine = settings.backup_dir, self._comp.engine
+
+            def backups(since: datetime) -> list[tuple[str, datetime]]:
+                return retained_since(engine, folder, since)
+
+        with (
+            self._comp.write_context() as w,
+            connected_upstream(
+                self._comp, w.fsops,
+                IntentJournal(self._comp.engine, w.fsops, clock=self._comp.clock),
+            ) as upstream,
+        ):  # fmt: skip
             service = PurgeService(
                 self._comp.engine, w.fsops, w.tombstones, clock=self._comp.clock,
-                data_dir=self._comp.settings.data_dir, bus=w.bus,
-                fresh_auth_s=self._comp.settings.fresh_auth_s,
+                data_dir=settings.data_dir, bus=w.bus, fresh_auth_s=settings.fresh_auth_s,
+                store_dir=settings.store_dir, upstream=upstream, backups=backups,
             )  # fmt: skip
             run = service.purge_work if kind == "work" else service.purge_unit
             report: PurgeReport = run(
@@ -810,9 +831,71 @@ class LibraryOps:
             "pending_roots": list(report.pending_roots),
             "refused": [vars(r) if hasattr(r, "__dict__") else str(r) for r in report.refused],
             "closed_tickets": report.closed_tickets,
+            "upstream_released": report.upstream_released,
+            "upstream_kept_by_others": report.upstream_kept_by_others,
+            "unfollowed": report.unfollowed,
+            "retained_backups": [
+                {"name": b.name, "taken_at": b.taken_at.isoformat()}
+                for b in report.retained_backups
+            ],
             "alerts": list(report.alerts),
             "out_of_reach": list(report.out_of_reach),
         }
+
+    # -- what the purges of M1a left in the service (L17): a plan, then a confirmation ------------
+
+    @_refused
+    def leftovers_plan(self) -> dict[str, Any]:
+        """Read only. The migration to M1b offers; it never applies by itself."""
+        with self._leftovers() as leftovers:
+            if leftovers is None:
+                return {"connected": False, "downloads": [], "dead_tickets": [], "unknown": 0,
+                        "version": ""}  # fmt: skip
+            plan = leftovers.plan()
+        return {
+            "connected": True,
+            "downloads": [i.request_id for i in plan.downloads],
+            "dead_tickets": [i.request_id for i in plan.dead_tickets],
+            "unknown": plan.unknown,
+            "version": plan.version,
+        }
+
+    @_refused
+    def leftovers_apply(self, *, if_match: str, principal: Principal) -> dict[str, Any]:
+        with self._leftovers() as leftovers:
+            if leftovers is None:
+                raise CodedRefusal("source.not_connected", "no connected service")
+            try:
+                report = leftovers.apply(
+                    if_match=if_match, principal=principal, now=self._comp.clock.now()
+                )
+            except StalePlanError as error:
+                raise CodedRefusal("plan.stale", str(error)) from None
+            except PermissionError:
+                raise CodedRefusal("forbidden", "a fresh admin session is needed") from None
+        return {
+            "released": report.released,
+            "kept_by_other_account": report.kept_by_other_account,
+            "forgotten": report.forgotten,
+            "unsettled": report.unsettled,
+        }
+
+    @contextmanager
+    def _leftovers(self) -> Iterator[PurgeLeftovers | None]:
+        settings = self._comp.settings
+        with (
+            self._comp.write_context() as w,
+            connected_upstream(
+                self._comp, w.fsops,
+                IntentJournal(self._comp.engine, w.fsops, clock=self._comp.clock),
+            ) as upstream,
+        ):  # fmt: skip
+            yield (
+                None if upstream is None else PurgeLeftovers(
+                    self._comp.engine, upstream, clock=self._comp.clock,
+                    fresh_auth_s=settings.fresh_auth_s,
+                )
+            )  # fmt: skip
 
     # -- the removal plan of the family shelves (L10, EF-BIB-037) --------------------------------
 

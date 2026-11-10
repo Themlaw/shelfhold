@@ -36,6 +36,7 @@ from shelfhold.infrastructure.schema import coherence, platform
 INTENT_SCHEMA_VERSION = "1"  # frozen and versioned: ENF-OPS-019
 KNOWN_SCHEMA_VERSIONS = frozenset({INTENT_SCHEMA_VERSION})
 OPEN_STATES = ("pending", "applying")
+STORE_INDEX = "INDEX.jsonl"  # `library.adapters.store_index.INDEX_NAME` (no import: a cycle)
 
 __all__ = [
     "INTENT_SCHEMA_VERSION",
@@ -469,7 +470,9 @@ class IntentJournal:
         if intent.dst is None:
             return self._drift(intent, report, "a write needs its target")
         found = self._disk.observe(intent.dst)
-        mirror = f"/{MIRROR_DIR}/" in intent.dst  # a projection of the database (EF-EXP-063)
+        # a projection of the database: the provenance mirror (EF-EXP-063) and `store/INDEX.jsonl`
+        # (EF-INT-027), which a purge writes under an intent (L17)
+        mirror = f"/{MIRROR_DIR}/" in intent.dst or intent.dst.endswith(f"/{STORE_INDEX}")
         if found is None:
             self._close(intent.id, "cancelled")
             report.abandoned.append(intent.id)
