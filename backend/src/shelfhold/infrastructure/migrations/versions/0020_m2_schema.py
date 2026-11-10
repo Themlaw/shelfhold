@@ -1,4 +1,4 @@
-"""M2 schema (PLAN-M2 L01): what the sources of M2 need and 0001 to 0016 do not hold.
+"""M2 schema (PLAN-M2 L01): what the sources of M2 need and 0001 to 0017 do not hold.
 
 New tables: `metadata_field`, `metadata_cache`, `provider_quota`, `http_cache`, `import_entry`,
 `plugin_attestation`, `series_gap`, `binding_release_sample`. New columns:
