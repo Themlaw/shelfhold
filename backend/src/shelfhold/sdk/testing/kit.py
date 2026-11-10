@@ -358,3 +358,45 @@ __all__ = [
     "assert_conforms",
     "run_source_conformance",
 ]
+
+
+def run_trapped_epub_corpus(
+    neutralize_epub: Callable[[bytes], dict[str, bytes]],
+) -> ConformanceReport:
+    """Hold an EPUB neutralizer against the trapped-EPUB corpus (EF-BIB-051 (8), ENF-SEC-015).
+
+    `neutralize_epub` takes the bytes of an EPUB and returns the entries of its derivative
+    (`{name: bytes}`), or raises to refuse the EPUB. A trap that must be neutralized has to come
+    out without an active pattern in any entry; a trap that must be refused has to raise.
+    """
+    from shelfhold.sdk.testing.corpus.trapped_epubs import (
+        all_traps,
+        find_active_css,
+        find_active_patterns,
+        find_remote_references,
+    )
+
+    report = ConformanceReport()
+    for trap in all_traps():
+        label = f"trapped_epub:{trap.name}"
+        try:
+            entries = neutralize_epub(trap.epub)
+        except Exception as error:
+            report.add(label, trap.outcome == "refused", f"refused: {type(error).__name__}")
+            continue
+        if trap.outcome == "refused":
+            report.add(label, False, "accepted an EPUB that had to be refused")
+            continue
+        findings = [
+            f"{name}: {found}"
+            for name, content in entries.items()
+            for found in (
+                find_remote_references(content)
+                if name.lower().endswith(".opf")
+                else find_active_css(content)
+                if name.lower().endswith(".css")
+                else find_active_patterns(content)
+            )
+        ]
+        report.add(label, not findings, "; ".join(findings[:3]))
+    return report

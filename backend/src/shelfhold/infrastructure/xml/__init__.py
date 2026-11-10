@@ -2,9 +2,10 @@
 
 from shelfhold.infrastructure.xml.safe_parse import (
     DEFAULT_LIMITS,
+    Element,
     UnsafeXmlError,
     XmlLimits,
     safe_parse_xml,
 )
 
-__all__ = ["DEFAULT_LIMITS", "UnsafeXmlError", "XmlLimits", "safe_parse_xml"]
+__all__ = ["DEFAULT_LIMITS", "Element", "UnsafeXmlError", "XmlLimits", "safe_parse_xml"]

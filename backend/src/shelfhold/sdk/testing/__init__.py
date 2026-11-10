@@ -16,6 +16,7 @@ from shelfhold.sdk.testing.kit import (
     ConformanceReport,
     assert_conforms,
     run_source_conformance,
+    run_trapped_epub_corpus,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "assert_conforms",
     "fake_ranged_fetcher",
     "run_source_conformance",
+    "run_trapped_epub_corpus",
 ]

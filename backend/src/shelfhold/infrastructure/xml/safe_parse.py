@@ -18,6 +18,8 @@ from xml.etree.ElementTree import Element, ParseError
 import defusedxml
 from defusedxml import ElementTree as DefusedET
 
+__all__ = ["DEFAULT_LIMITS", "Element", "UnsafeXmlError", "XmlLimits", "safe_parse_xml"]
+
 
 class UnsafeXmlError(ValueError):
     """The document is refused. `reason` is a stable machine-readable word."""
