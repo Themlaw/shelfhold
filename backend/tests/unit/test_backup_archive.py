@@ -1,0 +1,255 @@
+"""EF-INT-015, ENF-SEC-005 (M1b L23): the archive format and the forged archive.
+
+Nothing here touches a file system but a temporary folder: the point is that no entry of an
+archive can write outside the destination, and that a truncated or altered archive is refused
+with one sentence that says nothing of its content.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from shelfhold.infrastructure.secrets.export import encrypt_export
+from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.ops.backup import BackupArchiveError, DestinationError, restore_archive
+from shelfhold.ops.backup import archive as arc
+from shelfhold.ops.backup.verify import check_archive
+from tests.backup_env import PASSPHRASE, write_passphrase
+
+pytestmark = pytest.mark.req("EF-INT-015", "ENF-SEC-005")
+
+NOW = datetime(2026, 11, 8, 1, 40, tzinfo=UTC)
+OTHER = "another synthetic passphrase 6789"
+
+
+def sqlite_bytes() -> bytes:
+    import sqlite3
+
+    connection = sqlite3.connect(":memory:")
+    connection.execute("CREATE TABLE alembic_version (version_num TEXT)")
+    connection.execute("INSERT INTO alembic_version VALUES ('0099')")
+    connection.commit()
+    try:
+        return connection.serialize()
+    finally:
+        connection.close()
+
+
+def good_members() -> dict[str, bytes]:
+    return {
+        arc.DATABASE_MEMBER: sqlite_bytes(),
+        arc.KEYRING_MEMBER: encrypt_export(Keyring.generate(NOW), PASSPHRASE).encode("ascii"),
+        "config.toml": b'schema_version = "1.0"\n',
+        "meta/units/ab/X.json": b"{}",
+        "docs/schema.sql": b"-- schema\n",
+    }
+
+
+def tar_of(entries: list[tuple[str, bytes, bytes]]) -> bytes:
+    """A hand-made ustar tar: (name, data, typeflag). For names `pack` would refuse."""
+    out = bytearray()
+    for name, data, flag in entries:
+        head = bytearray(512)
+        head[0 : len(name.encode())] = name.encode()
+        head[100:108] = b"0000600\x00"
+        head[124:136] = f"{len(data):011o}".encode() + b"\x00"
+        head[148:156] = b" " * 8
+        head[156:157] = flag
+        head[257:263] = b"ustar\x00"
+        head[263:265] = b"00"
+        head[148:156] = f"{sum(head):06o}".encode() + b"\x00 "
+        out += head + data + bytes(-len(data) % 512)
+    return bytes(out + bytes(1024))
+
+
+def manifest_for(members: dict[str, bytes]) -> bytes:
+    return json.dumps(
+        {
+            "format": arc.FORMAT,
+            "created_at": "2026-11-08T01:40:00Z",
+            "schema_revision": "0099",
+            "members": {
+                n: {"sha256": hashlib.sha256(d).hexdigest(), "size": len(d)}
+                for n, d in members.items()
+            },
+        }
+    ).encode()
+
+
+def forged_tar(extra_name: str, flag: bytes = b"0", data: bytes = b"x") -> bytes:
+    """A tar whose manifest lists the extra entry too: only its name (or type) is wrong."""
+    members = {**good_members(), extra_name: data}
+    entries = [(arc.MANIFEST_MEMBER, manifest_for(members), b"0")]
+    entries += [(n, d, flag if n == extra_name else b"0") for n, d in sorted(members.items())]
+    return tar_of(entries)
+
+
+def forged(extra_name: str, flag: bytes = b"0", data: bytes = b"x") -> bytes:
+    return arc.encrypt_archive(forged_tar(extra_name, flag, data), PASSPHRASE)
+
+
+def write_archive(tmp_path: Path, blob: bytes) -> Path:
+    path = tmp_path / "forged.tar.age"
+    path.write_bytes(blob)
+    return path
+
+
+def snapshot(folder: Path) -> list[str]:
+    return sorted(str(p.relative_to(folder)) for p in folder.rglob("*"))
+
+
+def test_a_packed_archive_round_trips_and_is_a_plain_ustar_tar(tmp_path: Path) -> None:
+    members = good_members()
+    packed = arc.pack(members, created_at=NOW, schema_revision="0099")
+    parsed = arc.unpack(packed)
+    assert dict(parsed.members) == members and parsed.schema_revision == "0099"
+    # readable by any tar: the format is not ours alone
+    path = tmp_path / "set.tar"
+    path.write_bytes(packed)
+    listing = subprocess.run(  # noqa: S603
+        ["tar", "tf", str(path)],  # noqa: S607
+        capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    assert set(listing.stdout.split()) == {arc.MANIFEST_MEMBER, *members}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../escape.txt",
+        "meta/../../escape.txt",
+        "/etc/escape.txt",
+        "meta//x",
+        "./config2.toml",
+        "meta\\x",
+        "unknown/x",
+        "meta",
+        "meta/",
+        "docs/" + "d/" * 200 + "x",
+    ],
+)
+def test_forged_member_names_are_refused(name: str) -> None:
+    with pytest.raises(BackupArchiveError):
+        arc.unpack(forged_tar(name))
+
+
+@pytest.mark.parametrize("name", ["../escape.txt", "/etc/escape.txt", "meta/../../escape.txt"])
+def test_a_forged_archive_restores_nothing_and_writes_nowhere(tmp_path: Path, name: str) -> None:
+    """End to end, through the decryption: the restore of an archive with an escaping name stops
+    before the first file, and nothing exists outside the destination (which is not created)."""
+    folder = tmp_path / "work"
+    folder.mkdir()
+    archive = write_archive(folder, forged(name))
+    destination = folder / "dest"
+    with pytest.raises(BackupArchiveError):
+        restore_archive(archive, destination, write_passphrase(tmp_path / "pass"))
+    assert not destination.exists() and snapshot(folder) == ["forged.tar.age"]
+    assert not (tmp_path / "escape.txt").exists() and not Path("/etc/escape.txt").exists()
+
+
+@pytest.mark.parametrize("flag", [b"1", b"2", b"3", b"4", b"5", b"6", b"x", b"g", b"L", b"K"])
+def test_a_link_a_device_a_folder_or_an_extension_header_is_refused(flag: bytes) -> None:
+    """A symbolic link (flag 2) pointing out of the destination is the classic; every non-regular
+    type is refused alike, before anything is created."""
+    with pytest.raises(BackupArchiveError):
+        arc.unpack(forged_tar("meta/units/link", flag=flag, data=b""))
+
+
+def test_a_forged_symbolic_link_archive_restores_nothing(tmp_path: Path) -> None:
+    folder = tmp_path / "work"
+    folder.mkdir()
+    archive = write_archive(folder, forged("meta/units/link", flag=b"2", data=b""))
+    with pytest.raises(BackupArchiveError):
+        restore_archive(archive, folder / "dest", write_passphrase(tmp_path / "pass"))
+    assert snapshot(folder) == ["forged.tar.age"]
+
+
+def test_a_duplicate_member_and_a_member_the_manifest_does_not_list_are_refused() -> None:
+    members = good_members()
+    manifest = manifest_for(members)
+    twice = [(arc.MANIFEST_MEMBER, manifest, b"0"), *[(n, d, b"0") for n, d in members.items()]]
+    twice.append(("config.toml", b"evil", b"0"))
+    with pytest.raises(BackupArchiveError):
+        arc.unpack(tar_of(twice))
+    unlisted = [(arc.MANIFEST_MEMBER, manifest, b"0"), *[(n, d, b"0") for n, d in members.items()]]
+    unlisted.append(("meta/extra.json", b"{}", b"0"))
+    with pytest.raises(BackupArchiveError):
+        arc.unpack(tar_of(unlisted))
+    swapped = [
+        (arc.MANIFEST_MEMBER, manifest, b"0"),
+        *[(n, d + b"!", b"0") for n, d in members.items()],
+    ]
+    with pytest.raises(BackupArchiveError):  # a member whose bytes are not the manifest's
+        arc.unpack(tar_of(swapped))
+    manifest_last = [(n, d, b"0") for n, d in members.items()] + [
+        (arc.MANIFEST_MEMBER, manifest, b"0")
+    ]
+    with pytest.raises(BackupArchiveError):
+        arc.unpack(tar_of(manifest_last))
+
+
+def test_truncated_altered_and_wrongly_keyed_archives_give_one_message(tmp_path: Path) -> None:
+    good = arc.encrypt_archive(
+        arc.pack(good_members(), created_at=NOW, schema_revision="0099"), PASSPHRASE
+    )
+    assert check_archive(good, PASSPHRASE).member_count == 5
+    flipped = bytearray(good)
+    flipped[len(good) // 2] ^= 0x01
+    bad = {
+        "truncated": good[: len(good) // 2],
+        "cut by one byte": good[:-1],
+        "altered": bytes(flipped),
+        "empty": b"",
+        "not age": b"hello" * 100,
+        "wrong passphrase": good,
+    }
+    messages = set()
+    for label, blob in bad.items():
+        passphrase = OTHER if label == "wrong passphrase" else PASSPHRASE
+        with pytest.raises(BackupArchiveError) as refused:
+            check_archive(blob, passphrase)
+        messages.add(str(refused.value))
+    assert messages == {arc.GENERIC}  # the same sentence, whatever the damage
+    # a tar cut before its end (a cipher text that decrypts to one) is refused too
+    tar_bytes = arc.pack(good_members(), created_at=NOW, schema_revision="0099")
+    for cut in (len(tar_bytes) - 1024, len(tar_bytes) - 1, 700, 512):
+        with pytest.raises(BackupArchiveError):
+            arc.unpack(tar_bytes[:cut])
+
+
+def test_a_database_that_fails_its_integrity_check_is_refused() -> None:
+    members = {**good_members(), arc.DATABASE_MEMBER: b"SQLite format 3\x00" + os.urandom(4096)}
+    blob = arc.encrypt_archive(
+        arc.pack(members, created_at=NOW, schema_revision="0099"), PASSPHRASE
+    )
+    with pytest.raises(BackupArchiveError):
+        check_archive(blob, PASSPHRASE)
+
+
+def test_a_planted_link_in_the_destination_is_not_followed(tmp_path: Path) -> None:
+    """The destination is empty or new; one made by someone else with a link inside (a race) is
+    refused as not empty, and a link planted in a folder the restore made is never followed."""
+    blob = arc.encrypt_archive(
+        arc.pack(good_members(), created_at=NOW, schema_revision="0099"), PASSPHRASE
+    )
+    archive = write_archive(tmp_path, blob)
+    passphrase = write_passphrase(tmp_path / "pass")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = tmp_path / "linked"
+    link.symlink_to(outside)
+    with pytest.raises(DestinationError):
+        restore_archive(archive, link, passphrase)  # a link is not a destination
+    assert list(outside.iterdir()) == []
+    taken = tmp_path / "taken"
+    taken.mkdir()
+    (taken / "x").write_text("x")
+    with pytest.raises(DestinationError):
+        restore_archive(archive, taken, passphrase)
