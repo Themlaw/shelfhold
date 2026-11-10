@@ -17,7 +17,7 @@ Une commande marquée **[M1b]** n'existe pas encore en 0.2 : la page dit ce qu'o
 | Sortir un volume de Suwayomi avant de le démonter | [rapatrier-avant-demontage.md](rapatrier-avant-demontage.md) |
 | Défaire la bascule | [retour-arriere.md](retour-arriere.md) |
 | Savoir ce que Shelfhold attend de moi, et quelle commande répond | [etats-attente-et-sorties.md](etats-attente-et-sorties.md) |
-| Sauvegarder et restaurer | [restauration.md](restauration.md) |
+| Sauvegarder et restaurer | [sauvegarde.md](sauvegarde.md) (sauvegarde intégrée), [restauration.md](restauration.md) |
 | Effacer pour de bon | [purge.md](purge.md) |
 | Garder une copie dans `/store`, ce que compte la page Santé, l'index de `/store` | [copie-conservee.md](copie-conservee.md) |
 | Comprendre la pause « disque presque plein » | [garde-disque.md](garde-disque.md) |

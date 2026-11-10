@@ -21,8 +21,11 @@ record being written only when every file is done):
 
 from __future__ import annotations
 
+import fcntl
+import os
 import sqlite3
 import threading
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -76,16 +79,41 @@ class MaintenanceGate:
 
     Holders are shared among themselves; the VACUUM is exclusive: it starts only if nobody holds
     the gate, and while it runs `hold` waits (up to `wait_s`) then raises `MaintenanceBusyError`.
+
+    With a `lock_path` the gate also reaches other processes: a holder takes a shared `flock` on
+    that file, the VACUUM an exclusive one. That is how `shelfhold backup run`, a separate process
+    that cannot see the server's gate, still excludes (and is excluded by) a VACUUM. The file is
+    never deleted and holds nothing.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, lock_path: Path | None = None) -> None:
         self._cond = threading.Condition()
         self._holders: list[str] = []
         self._exclusive = False
+        self._lock_path = lock_path
 
     def holders(self) -> list[str]:
         with self._cond:
             return list(self._holders)
+
+    def _flock(self, mode: int, wait_s: float) -> int | None:
+        """A descriptor holding the file lock in `mode`, or None if it could not be had within
+        `wait_s` (0: one try). No `lock_path`: a placeholder that holds nothing (-1)."""
+        if self._lock_path is None:
+            return -1
+        descriptor = os.open(
+            self._lock_path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600
+        )
+        deadline = time.monotonic() + wait_s
+        while True:
+            try:
+                fcntl.flock(descriptor, mode | fcntl.LOCK_NB)
+                return descriptor
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    os.close(descriptor)
+                    return None
+                time.sleep(0.2)
 
     @contextmanager
     def hold(self, name: str, *, wait_s: float = 0.0) -> Iterator[None]:
@@ -95,9 +123,15 @@ class MaintenanceGate:
             ):
                 raise MaintenanceBusyError("a VACUUM is running")
             self._holders.append(name)
+        descriptor: int | None = None
         try:
+            descriptor = self._flock(fcntl.LOCK_SH, wait_s)
+            if descriptor is None:
+                raise MaintenanceBusyError("a VACUUM is running in another process")
             yield
         finally:
+            if descriptor is not None and descriptor >= 0:
+                os.close(descriptor)  # closing the descriptor drops the lock
             with self._cond:
                 self._holders.remove(name)
                 self._cond.notify_all()
@@ -105,8 +139,12 @@ class MaintenanceGate:
     @contextmanager
     def exclusive(self) -> Iterator[bool]:
         """True if the gate was free and is now ours; False, and nothing held, otherwise."""
+        descriptor: int | None = None
         with self._cond:
             free = not self._holders and not self._exclusive
+            if free:
+                descriptor = self._flock(fcntl.LOCK_EX, 0.0)
+                free = descriptor is not None
             if free:
                 self._exclusive = True
         try:
@@ -116,6 +154,8 @@ class MaintenanceGate:
                 with self._cond:
                     self._exclusive = False
                     self._cond.notify_all()
+                if descriptor is not None and descriptor >= 0:
+                    os.close(descriptor)
 
 
 class SpaceCheck(Protocol):

@@ -37,15 +37,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l23"
-reason = "`secrets import` (M1b L06) is wired and carries the decrypt of an export; the wire form of a sealed secret (`Envelope.to_wire` / `from_wire`) is not part of it, since an export holds keys and not sealed rows. It has no production caller until the integrated backup of L23 moves a sealed secret outside its table, or is deleted there if the backup copies the database as it is."
-until = "M1b L23"
-symbols = [
-  "shelfhold.infrastructure.secrets.envelope:Envelope.from_wire",
-  "shelfhold.infrastructure.secrets.envelope:Envelope.to_wire",
-]
-
-[[allow]]
 category = "unwired-m3-deletion-of-copies"
 reason = "Deletion of the copies of a Unit needs the typed confirmation (EF-BIB-031): there is still no path that deletes the copies of a Unit (the deletions that exist go through the purge gate and the typed replay confirmation, proved on their real routes). L16 reads the irreplaceable candidates but deletes only the upstream download, after the verification of the copy in /store and of the one Kavita reads, never a copy Shelfhold holds, so nothing in it asks for this confirmation; the deletion of the copies of a Unit by an admin comes with the library screens."
 until = "M3"

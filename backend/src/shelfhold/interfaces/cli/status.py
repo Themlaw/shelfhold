@@ -34,6 +34,7 @@ from shelfhold.infrastructure.secrets.errors import KeyringError
 from shelfhold.infrastructure.volumes import data_dir_writable_by_others
 from shelfhold.integrations.apprise import operating_bus
 from shelfhold.interfaces.cli.secrets import warning_text
+from shelfhold.ops.backup import backup_warnings
 from shelfhold.ops.wiring import open_ops
 
 
@@ -150,6 +151,7 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         applied = applied_public_url(engine)
         current = relying_party(settings.public_url)
         unverified = _roles_unverified(engine)
+        saved = backup_warnings(engine, settings, SystemClock().now())
         stale_rps = auth.stale_passkey_rp_ids(
             current.id if isinstance(current, RelyingParty) else None
         )
@@ -167,6 +169,13 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         )
     if unverified:  # D1: the roles of the Suwayomi service account could not be read
         pending.append({"code": "roles_unverified", "message": t("status.roles_unverified")})
+    for item in saved:  # EF-INT-015: durable, until the cause is gone
+        pending.append(
+            {
+                "code": item["code"],
+                "message": t(f"status.{item['code']}", detail=item["detail"]),
+            }
+        )
     restore = _restore_status(resolved)
     behind = restored_behind_warning(restore) if restore is not None else None
     mismatched = mismatch_warnings(restore) if restore is not None else []

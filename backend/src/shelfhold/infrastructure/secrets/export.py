@@ -151,6 +151,22 @@ def encrypt_export(keyring: Keyring, passphrase: str) -> str:
     return armor(pyrage.passphrase.encrypt(keyring.to_json(), passphrase))
 
 
+def encrypt_blob(clear: bytes, passphrase: str) -> bytes:
+    """Binary age v1 with a scrypt recipient, for the integrated backup (EF-INT-015): the format
+    of `encrypt_export` without the ASCII armor, which a large archive does not want."""
+    return bytes(pyrage.passphrase.encrypt(clear, passphrase))
+
+
+def decrypt_blob(binary: bytes, passphrase: str) -> bytes:
+    """The clear of a binary age file. The scrypt cost of the header is bounded before anything
+    is derived; whatever is wrong is the same `ExportError` as for an export."""
+    check_scrypt_cost(binary)
+    try:
+        return bytes(pyrage.passphrase.decrypt(binary, passphrase))
+    except (pyrage.DecryptError, ValueError):
+        raise ExportError("wrong passphrase or damaged file") from None
+
+
 def decrypt_export(text: str, passphrase: str) -> Keyring:
     """The keyring of an export. Whatever is wrong (not age, wrong passphrase, damaged, not a
     keyring) is one `ExportError` that says nothing of the content: the file is untrusted."""

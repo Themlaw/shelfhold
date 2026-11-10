@@ -400,6 +400,8 @@ WRITERS_ALLOWED = (
     "shelfhold/plugin_host/install.py",  # /data/plugins: staging, site-packages, state file
     "shelfhold/infrastructure/local_socket/server.py",  # the CLI socket (and staging dir), /data
     "shelfhold/docgen/release_assets.py",  # release tooling: two files in a directory it is given
+    "shelfhold/ops/backup/store.py",  # the backup directory (EF-INT-015), outside /data and /store
+    "shelfhold/ops/backup/restore.py",  # a restore's new folder, written from a descriptor on it
 )
 PATH_WRITE_METHODS = {
     "write_text", "write_bytes", "unlink", "rename", "mkdir", "rmdir", "touch",

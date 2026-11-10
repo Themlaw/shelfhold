@@ -57,6 +57,7 @@ from shelfhold.interfaces.local_cli import OpsChannel, OpsRefusal
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
 from shelfhold.library.tombstones import TombstoneService
 from shelfhold.library.tombstones.screen import TombstoneScreenAdapter
+from shelfhold.ops.backup import mark_store_missing
 
 NEEDS_CONFIRMATION = 2
 BLOCKED = 3
@@ -192,6 +193,18 @@ def run_rebaseline(args: argparse.Namespace, channel: OpsChannel) -> int:
             skipped=len(done["skipped"]), demoted=done["demoted"]))  # fmt: skip
     return 0
 
+def _mark_store_missing(resolved: ResolvedSettings) -> int:
+    """After the adoption, the Units whose kept copy is not under `/store` wait as
+    `store_missing` (a restore without `/store`); nothing is deleted. The instance lock was
+    released, but no server can have started in between that the adoption itself would not have
+    refused, and the update is one guarded statement per Unit."""
+    settings = resolved.values
+    engine = create_db_engine(settings.database_path)
+    try:
+        return mark_store_missing(engine, settings.store_dir, operating_bus(SystemClock()))
+    finally:
+        engine.dispose()
+
 
 def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     if args.rebaseline_inodes:
@@ -251,6 +264,9 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     except DeletionUnavailableError:  # the host CLI is always allowed to confirm a deletion
         print(t("reconcile.deletion_refused"), file=sys.stderr)
         return REFUSED
+    marked = _mark_store_missing(resolved)
+    if marked:
+        print(t("reconcile.store_missing", count=marked))
     for candidate in result.pending_deletions:
         print(t("reconcile.pending_line", path=candidate.local_path))
     if result.pending_deletions:

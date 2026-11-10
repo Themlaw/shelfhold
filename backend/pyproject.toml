@@ -148,6 +148,14 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "tests/**" = ["S101", "TID251"]
 "src/shelfhold/infrastructure/secrets/export.py" = ["TID251"]  # the passphrase and export files the operator names
 "src/shelfhold/infrastructure/secrets/atomic.py" = ["TID251"]  # /data and the operator-chosen export file
+# the integrated backup (EF-INT-015): the backup directory (store), the folder of a restore
+# (restore, descriptors with O_NOFOLLOW), the passphrase and archive files the operator names; the
+# maintenance gate's lock file lives in /data. Never a library root.
+"src/shelfhold/ops/backup/store.py" = ["TID251"]
+"src/shelfhold/ops/backup/restore.py" = ["TID251"]
+"src/shelfhold/ops/backup/run.py" = ["TID251"]
+"src/shelfhold/ops/backup/verify.py" = ["TID251"]
+"src/shelfhold/jobs/maintenance.py" = ["TID251"]  # /data/.maintenance.lock
 "tests/unit/test_governance_docs.py" = ["S101", "S603", "S607"]
 "tests/contract/**" = ["S101", "S106", "E501", "TID251"]
 # 0.0.0.0 is the sinkhole answer under test, not a bind address
