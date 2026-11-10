@@ -45,6 +45,7 @@ symbols = [
   "shelfhold.library.adapters.units:require_deletion_allowed",
   "shelfhold.library.domain.irreplaceable:require_typed_confirmation",
 ]
+
 [[allow]]
 category = "unwired-m2-derivative"
 reason = "A canonical derivative is declared by a source that descrambles, a Processor (OCR, upscaling) or the EPUB neutralizer (EF-BIB-006, EF-BIB-051): none exists before M2, so nothing calls `declare_derivative` in M1b. The mechanism (original kept in /store, derivative traced by hash) is proved by its test."
