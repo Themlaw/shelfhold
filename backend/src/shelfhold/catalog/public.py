@@ -1,7 +1,8 @@
 """The catalog facade: the only door other contexts use (import-linter `contexts-independent`)."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
+from typing import Protocol
 
 import sqlalchemy as sa
 
@@ -12,6 +13,7 @@ from shelfhold.catalog.adapters.repo import (
     SqlUnitStore,
     SqlWorkStore,
 )
+from shelfhold.catalog.adapters.rights_store import SqlRightsStore
 from shelfhold.catalog.adapters.tx import run_immediate
 from shelfhold.catalog.application.contributors import ARTIST, WRITER
 from shelfhold.catalog.application.dating import period_start, stored_date
@@ -46,6 +48,7 @@ from shelfhold.catalog.application.relink import (
     RelinkRequest,
     RelinkResult,
 )
+from shelfhold.catalog.application.rights import Rights, RightsReport
 from shelfhold.catalog.application.series import SeriesAlreadyAttachedError
 from shelfhold.catalog.application.service import CatalogService
 from shelfhold.catalog.domain.age import (
@@ -79,6 +82,8 @@ from shelfhold.catalog.domain.normalizers import (
 )
 from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, place_of
+from shelfhold.catalog.domain.public_domain import Verdict
+from shelfhold.catalog.domain.sort_key import sort_key
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.identity.public import Principal
 
@@ -94,6 +99,27 @@ class Catalog(CatalogService):
             SqlUnitStore(connection),
             SqlContributorStore(connection),
         )
+
+
+class _Bus(Protocol):
+    def publish(
+        self, connection: sa.Connection, event_type: str, payload: Mapping[str, object] | None = ...
+    ) -> object: ...
+
+
+class RightsService(Rights):
+    """The rights review over an open connection; `bus` announces the warning in the caller's
+    transaction (EF-SRC-024). The warning never blocks: nothing here raises over what it finds."""
+
+    def __init__(self, connection: sa.Connection, bus: _Bus | None = None) -> None:
+        publish: Callable[[str, Mapping[str, object]], object] | None = None
+        if bus is not None:
+            announcer = bus
+
+            def publish(event_type: str, payload: Mapping[str, object]) -> object:
+                return announcer.publish(connection, event_type, payload)
+
+        super().__init__(SqlRightsStore(connection), publish)
 
 
 class RelinkService(Relinker):
@@ -187,11 +213,14 @@ __all__ = [
     "RelinkRequest",
     "RelinkResult",
     "RelinkService",
+    "RightsReport",
+    "RightsService",
     "SeriesAlreadyAttachedError",
     "TeamRef",
     "TextVersionRef",
     "UnitView",
     "VariantFacts",
+    "Verdict",
     "Withdrawal",
     "admission",
     "ceiling_of",
@@ -212,6 +241,7 @@ __all__ = [
     "relate_works",
     "relations_of",
     "relink_isolated",
+    "sort_key",
     "stored_date",
     "translation_discriminant",
     "translation_type_for",

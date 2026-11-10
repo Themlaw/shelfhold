@@ -161,7 +161,9 @@ def test_jurisdiction_from_locale_unconfirmed_until_config_set(settings) -> None
         # the (still unconfirmed) value is what the calculation uses
         with env.engine.begin() as connection:
             connection.execute(
-                sa.update(platform.instance).values(jurisdiction="FR", jurisdiction_confirmed_at=None)
+                sa.update(platform.instance).values(
+                    jurisdiction="FR", jurisdiction_confirmed_at=None
+                )
             )
         with env.engine.connect() as connection:
             assert RightsService(connection).jurisdiction() == ("FR", False)

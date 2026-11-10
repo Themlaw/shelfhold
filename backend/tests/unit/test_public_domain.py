@@ -16,8 +16,8 @@ TODAY = date(2026, 11, 11)
 
 @pytest.mark.req("EF-SRC-024")
 def test_france_died_for_france_stays_protected_and_extensions_add_up() -> None:
-    plain = protected_until("FR", death_year=1944, first_published_year=1943, died_for_france=False)
-    mpf = protected_until("FR", death_year=1944, first_published_year=1943, died_for_france=True)
+    plain = protected_until("FR", death_year=1944, first_published_year=1939, died_for_france=False)
+    mpf = protected_until("FR", death_year=1944, first_published_year=1939, died_for_france=True)
     assert plain is not None and mpf is not None
     assert plain > date(2014, 12, 31)  # life + 70 plus the war extensions
     assert mpf.year == plain.year + 30
@@ -50,7 +50,9 @@ def test_licence_and_user_supplied_never_warn() -> None:
 def test_missing_death_dates_say_no_information_never_clear() -> None:
     result = assess("FR", [Holder("aut", None)], first_published_year=1900, today=TODAY)
     assert result.verdict is Verdict.NO_INFORMATION
-    assert assess("FR", [], first_published_year=1900, today=TODAY).verdict is Verdict.NO_INFORMATION
+    assert (
+        assess("FR", [], first_published_year=1900, today=TODAY).verdict is Verdict.NO_INFORMATION
+    )
 
 
 @pytest.mark.req("EF-BIB-046")

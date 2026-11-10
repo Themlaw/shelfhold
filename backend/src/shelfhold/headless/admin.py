@@ -402,7 +402,7 @@ class HeadlessAdmin:
         with self._engine.begin() as connection:
             self._write_setting(connection, key, clean)
             if key == "instance.jurisdiction":
-                records.set_jurisdiction(connection, clean)
+                records.set_jurisdiction(connection, clean, self._clock.now())
         _log.info("headless.config_set", key=key)
         self._bootstrap()
         return self.get(key)

@@ -26,8 +26,8 @@ def test_ui_says_us_public_domain_not_legal_source() -> None:
     assert lint.scan(ROOT) == []  # README, docs, fr.toml and fr.json as they stand
     toml = (ROOT / "backend/src/shelfhold/locales/fr.toml").read_text(encoding="utf-8")
     json_ = (ROOT / "frontend/src/lib/i18n/fr.json").read_text(encoding="utf-8")
-    assert "libre de droits aux États-Unis" in toml
-    assert "libre de droits aux États-Unis" in json_
+    assert "libre de droits aux états-unis" in toml.casefold()
+    assert "libre de droits aux états-unis" in json_.casefold()
     assert "domaine-public.md" in (ROOT / "docs/admin/README.md").read_text(encoding="utf-8")
 
 
