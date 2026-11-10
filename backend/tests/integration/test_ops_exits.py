@@ -83,6 +83,7 @@ M1B_STATES = frozenset(
         WaitingState.ROOT_LOST,
         WaitingState.ROOT_BEHIND,
         WaitingState.STORE_LOST,
+        WaitingState.TOMBSTONE_JOURNAL_TRUNCATED,
         WaitingState.SOURCE_INSTANCE_CHANGED,
         WaitingState.WITHDRAWAL_PENDING,
     }
@@ -495,6 +496,39 @@ def tombstone_key_unknown(
         )
 
 
+def tombstone_journal_truncated(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """M1b L26 (EF-BIB-054 (6), D12): two real purges, the last line of the journal cut off. The
+    root waits, `status` names the exit, `tombstone set-aside-journal` writes the journal again
+    from the table (the cut file is kept), and the state is gone."""
+    with seeded(settings, tmp_path) as env:
+        ctx = L53Context(monkeypatch, capsys, settings)
+        series = env.new_series("Purged")
+        for number in ("1", "2"):
+            unit = env.add_chapter(series, number)
+            assert ctx.cli("purge", "--now", "--unit", unit, "--confirm", unit) == 0
+        journal = settings.library_dir / ".shelfhold" / "tombstones"
+        complete = journal.read_bytes()
+        assert ctx.listed("tombstone_journal_truncated") == []
+        rows = complete.splitlines(keepends=True)
+        assert len(rows) == 3  # the header and the two lines
+        journal.write_bytes(b"".join(rows[:-1]))  # the attacker's cut
+        (item,) = ctx.listed("tombstone_journal_truncated")
+        assert item["command"].startswith("shelfhold tombstone set-aside-journal")
+
+        def leave() -> None:
+            assert ctx.cli("tombstone", "set-aside-journal") == 0
+
+        ctx.listed_then_gone("tombstone_journal_truncated", leave)
+        assert len(journal.read_bytes().splitlines()) == 3  # whole again
+        kept = list(journal.parent.glob("tombstones.aside-*"))
+        assert len(kept) == 1 and kept[0].read_bytes() == b"".join(rows[:-1])
+
+
 def key_expiring(settings: Settings) -> None:
     with headless(settings) as h:
         added = h.admin.target_add_kavita(
@@ -654,6 +688,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         series_name_collision, mount_sentinel_missing, rating_pending, follow_suspended,
         source_instance_changed, foreign_root, root_lost, root_behind, store_lost,
         safeguard_backlog,
+        tombstone_journal_truncated,
     )
 }  # fmt: skip
 
