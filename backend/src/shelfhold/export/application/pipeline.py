@@ -57,8 +57,12 @@ from shelfhold.infrastructure.logging import debug_enabled, elapsed_ms, escaped
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.library.public import (
     ExportSource,
+    OriginalNotServableError,
     RootLocator,
     export_sources,
+    has_epub,
+    require_servable_derivative,
+    servable_epub,
 )
 
 __all__ = [
@@ -261,7 +265,8 @@ class ExportPipeline:
         self._sessions = sessions
         self._segment_policy_confirmed = segment_policy_confirmed
         self._parse_verified = parse_verified
-        self._renderer = renderer or CbzRenderer(fsops, staging_dir=data_dir / "tmp")
+        self._staging = data_dir / "tmp"
+        self._renderer = renderer or CbzRenderer(fsops, staging_dir=self._staging)
         self._locks = ResourceLocks(engine, clock=clock)
         self.mirror = mirror or ProvenanceMirror(
             engine, fsops, clock=clock, operating_bus=operating_bus
@@ -602,6 +607,17 @@ class ExportPipeline:
 
     def _source(self, unit_id: str) -> ExportSource:
         with self._engine.connect() as connection:
+            try:  # EF-BIB-051: an untrusted EPUB leaves by its derivative or not at all
+                require_servable_derivative(connection, unit_id)
+                if has_epub(connection, unit_id):
+                    servable_epub(
+                        self._engine,
+                        self._fsops,
+                        unit_id,
+                        staging=self._staging if self._staging.is_dir() else None,
+                    )
+            except OriginalNotServableError as error:
+                raise SourceMissingError(f"{unit_id}: {error.reason}") from None
             source = export_sources(connection, [unit_id]).get(unit_id)
         if source is None or source.local_path is None:
             raise SourceMissingError(unit_id)

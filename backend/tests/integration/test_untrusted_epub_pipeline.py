@@ -31,14 +31,15 @@ from shelfhold.library.public import (
     StalePlanError,
     UntrustedEpubStore,
     independent_copies,
+    servable_epub,
 )
 from shelfhold.sdk.testing.corpus.trapped_epubs.build import (
     Member,
     epub_bytes,
-    opf,
     xhtml,
     zip_bytes,
 )
+from shelfhold.sdk.testing.corpus.trapped_epubs.standard import standard_epub3
 from tests.library_env import LibEnv, lib_env
 from tests.null_tombstones import NONE_PURGED
 
@@ -108,7 +109,7 @@ def has_active_content(data: bytes) -> bool:
 
 
 def test_passthrough_keeps_untrusted_original_in_store() -> None:
-    """The original is the only file of /store in passthrough mode; /library holds the derivative."""
+    """The original is the only file of /store in passthrough mode; /library has the derivative."""
     with lib_env() as env:
         result, library = ingest(env)
         (kept,) = env.files_under(env.store)
@@ -247,7 +248,7 @@ def test_untrusted_original_never_served_to_pull_destination() -> None:
     with lib_env() as env:
         _result, library = ingest(env)
         (kept,) = env.files_under(env.store)
-        served = store(env).servable(env.chain["unit"])
+        served = servable_epub(env.engine, env.fsops, env.chain["unit"])
         assert Path(served.path) == library
         assert Path(served.path) != kept
         assert not has_active_content(Path(served.path).read_bytes())
@@ -260,10 +261,10 @@ def test_original_in_library_is_never_served_whatever_put_it_there() -> None:
         _result, library = ingest(env)
         library.write_bytes(TRAPPED)  # what a restore or an adoption could leave there
         with pytest.raises(OriginalNotServableError):
-            store(env).servable(env.chain["unit"])
+            servable_epub(env.engine, env.fsops, env.chain["unit"])
         repaired = store(env).regenerate(env.chain["unit"])  # repair: from the original
         assert repaired.source == "original"
-        served = store(env).servable(env.chain["unit"])
+        served = servable_epub(env.engine, env.fsops, env.chain["unit"])
         assert not has_active_content(Path(served.path).read_bytes())
 
 
@@ -278,7 +279,7 @@ def test_epub_without_derivative_is_not_servable() -> None:
                 )
             )
         with pytest.raises(OriginalNotServableError):
-            store(env).servable(env.chain["unit"])
+            servable_epub(env.engine, env.fsops, env.chain["unit"])
 
 
 def test_library_file_that_is_not_the_derivative_is_not_servable() -> None:
@@ -286,14 +287,14 @@ def test_library_file_that_is_not_the_derivative_is_not_servable() -> None:
         _result, library = ingest(env)
         library.write_bytes(CLEAN)  # some other EPUB under the same name
         with pytest.raises(OriginalNotServableError):
-            store(env).servable(env.chain["unit"])
+            servable_epub(env.engine, env.fsops, env.chain["unit"])
 
 
 def test_publisher_epub_is_servable_as_filed() -> None:
     with lib_env() as env:
         set_binding_trust(env, "publisher")
         _result, library = ingest(env, CLEAN)
-        assert Path(store(env).servable(env.chain["unit"]).path) == library
+        assert Path(servable_epub(env.engine, env.fsops, env.chain["unit"]).path) == library
 
 
 # -- extracted_derived ----------------------------------------------------------------------------
@@ -341,7 +342,7 @@ def test_restore_from_destination_marks_extracted_derived() -> None:
 
 def test_restore_from_destination_refuses_a_file_that_is_not_the_derivative() -> None:
     with lib_env() as env:
-        original_result, library = ingest(env)
+        original_result, _library = ingest(env)
         wanted = original_result.derived_hash
     with lib_env() as env:
         dest, staged = file_in(env, TRAPPED)  # the destination's file was swapped for the original
@@ -405,10 +406,11 @@ def test_regeneration_without_original_restarts_from_stored_derivative_and_keeps
         assert row.derived_by == V2
         assert [e["derived_by"] for e in row.derived_chain] == [DERIVED_BY]
         assert not has_active_content(library.read_bytes())
+
         # and a second update stacks on the first: the chain keeps every generation
-        v3 = lambda s, o, **kw: replace(
-            neutralize_epub(s, o, **kw), derived_by="xhtml-neutralizer@v3"
-        )  # noqa: E731
+        def v3(s: Any, o: Any, **kw: Any) -> Any:
+            return replace(neutralize_epub(s, o, **kw), derived_by="xhtml-neutralizer@v3")
+
         again = Reneutralizer(
             store(env, with_store=False),
             engine=env.engine,
@@ -434,7 +436,7 @@ def test_regeneration_refuses_a_stored_derivative_that_no_longer_verifies() -> N
 
 def test_reneutralize_plan_then_confirmation() -> None:
     with lib_env() as env:
-        _result, library = ingest(env)
+        _result, _library = ingest(env)
         plan = reneutralizer(env).plan()
         assert content_row(env).derived_by == DERIVED_BY  # a plan changes nothing
         with pytest.raises(StalePlanError):
@@ -479,7 +481,9 @@ def test_adoption_report_flags_active_content_in_untrusted_epub() -> None:
 
     with export_env() as env:
         a = adoption(env)
-        a.add_series("Shelf", {"Book.epub": TRAPPED, "Clean.epub": CLEAN})
+        a.add_series(
+            "Shelf", {"Book.epub": TRAPPED, "Clean.epub": CLEAN, "Std.epub": standard_epub3()}
+        )
         from tests.kavita_env import run
 
         report = run(a.adopter.preview(a.wired.client, env.destination_id))

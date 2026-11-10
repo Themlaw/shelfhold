@@ -22,6 +22,7 @@ symbols = [
   "shelfhold.export.targets.kavita.routes:SETUP_ROUTES",
   "shelfhold.identity.domain.catalogue:EXIT_STATES_LATER",
   "shelfhold.identity.domain.emitters:DELETION_SITES",
+  "shelfhold.identity.domain.emitters:REPLACEMENT_SITES",
   "shelfhold.identity.domain.reserved:SYSTEM_EMITTERS",
   "shelfhold.infrastructure.observability.failure_matrix:FAILURE_MATRIX",
   "shelfhold.infrastructure.observability.failure_matrix:M1A_BEHAVIOURS",
@@ -48,19 +49,10 @@ symbols = [
 
 [[allow]]
 category = "unwired-m2-derivative"
-reason = "A canonical derivative is declared by a source that descrambles, a Processor (OCR, upscaling) or the EPUB neutralizer (EF-BIB-006, EF-BIB-051): none exists before M2, so nothing calls `declare_derivative` in M1b. The mechanism (original kept in /store, derivative traced by hash) is proved by its test."
+reason = "A canonical derivative of a CBZ is declared by a source that descrambles, a Processor (OCR, upscaling) or the SVG rasterizer (EF-BIB-006, M2 L10): none exists yet, so nothing calls `declare_derivative`. The EPUB neutralizer (M2 L03) does not go through it: it never lets the original reach /library, not even for the time of a replacement, so its derivative is written by `UntrustedEpubStore`. The mechanism is proved by its test."
 until = "M2"
 symbols = [
   "shelfhold.library.adapters.storage:KeepCopier.declare_derivative",
-]
-
-[[allow]]
-category = "unwired-m2-l03"
-reason = "The neutralizer `xhtml-neutralizer@v1` and the EPUB scan that writes the derivative (EF-BIB-051, M2 L02) are proved against the trapped-EPUB corpus; their first production caller is the derivative pipeline of M2 L03 (ingest step \"trust\", `declare_derivative`), which also removes the `unwired-m2-derivative` entry above."
-until = "M2"
-symbols = [
-  "shelfhold.infrastructure.content_trust.epub_scan:*",
-  "shelfhold.infrastructure.content_trust.xhtml_neutralizer:*",
 ]
 
 [[allow]]
@@ -145,6 +137,14 @@ symbols = [
   "shelfhold.jobs.slots:DomainSlots.slot",
   "shelfhold.jobs.slots:SlotBusyError",
   "shelfhold.sdk.export_target:ExportTarget",
+]
+
+[[allow]]
+category = "unwired-m2-l25"
+reason = "Taking the derivative of an `untrusted` EPUB back from a destination when the original is lost (`extracted_derived`, EF-BIB-051): the library half is proved here, its caller is the re-adoption after a restore, which reads EPUB files with M2 L25 (`root restored`) and the import pipeline of L19."
+until = "M2"
+symbols = [
+  "shelfhold.library.adapters.epub_derivative:UntrustedEpubStore.restore_from_destination",
 ]
 
 [[allow]]

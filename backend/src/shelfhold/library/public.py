@@ -1,5 +1,16 @@
 """What the interfaces and the composition root may use from the library context."""
 
+from shelfhold.library.adapters.epub_derivative import (
+    EpubIngested,
+    Regenerated,
+    ServableEpub,
+    UntrustedEpubStore,
+    binding_warning,
+    has_active_content,
+    has_epub,
+    require_servable_derivative,
+    servable_epub,
+)
 from shelfhold.library.adapters.export_source import (
     ExportSource,
     export_sources,
@@ -87,6 +98,12 @@ from shelfhold.library.adapters.units import (
     require_purge_allowed,
     safe_to_clean,
 )
+from shelfhold.library.application.reneutralize import (
+    ReneutralizePlan,
+    Reneutralizer,
+    ReneutralizeReport,
+    StalePlanError,
+)
 from shelfhold.library.domain.content_hash import (
     CONTENT_HASH_BY,
     FILE_HASH_BY,
@@ -95,7 +112,10 @@ from shelfhold.library.domain.content_hash import (
 )
 from shelfhold.library.domain.copies import Copy, CopyFacts, Hash, is_independent
 from shelfhold.library.domain.failures import (
+    EpubRefusedError,
+    OriginalNotServableError,
     ReceivedTooLargeError,
+    RegenerationBlockedError,
     SafeguardFailedError,
     TombstonedContentError,
     VariantAlreadyStoredError,
@@ -202,6 +222,8 @@ __all__ = [
     "DeletionRefusedError",
     "Derivative",
     "DownloadTicket",
+    "EpubIngested",
+    "EpubRefusedError",
     "ExportSource",
     "Hash",
     "IndexReport",
@@ -212,6 +234,7 @@ __all__ = [
     "MetaProjection",
     "NewerFormatError",
     "Normalizers",
+    "OriginalNotServableError",
     "PassthroughStore",
     "PinnedCopy",
     "PlaceRef",
@@ -229,6 +252,11 @@ __all__ = [
     "Received",
     "ReceivedTooLargeError",
     "ReleaseOutcome",
+    "Regenerated",
+    "RegenerationBlockedError",
+    "ReneutralizePlan",
+    "ReneutralizeReport",
+    "Reneutralizer",
     "RepairReport",
     "ReplayReport",
     "RootEvidence",
@@ -240,8 +268,10 @@ __all__ = [
     "SafeguardResult",
     "SentinelEvidence",
     "SeriesBindingRef",
+    "ServableEpub",
     "ServiceGate",
     "SetAsideRefusedError",
+    "StalePlanError",
     "StoreBudget",
     "StoreIndex",
     "TombstoneGate",
@@ -251,6 +281,7 @@ __all__ = [
     "UnitGoneError",
     "UnitJson",
     "UnitJsonCorruptError",
+    "UntrustedEpubStore",
     "UpstreamPurge",
     "VariantAlreadyStoredError",
     "VariantRef",
@@ -260,6 +291,7 @@ __all__ = [
     "WorkRef",
     "backlog_row",
     "closed_request_ids",
+    "binding_warning",
     "complete_interrupted_keep",
     "confirmation_phrase",
     "content_error_candidates",
@@ -277,6 +309,8 @@ __all__ = [
     "erase_units",
     "erase_work_rows",
     "export_sources",
+    "has_active_content",
+    "has_epub",
     "has_readable_copy",
     "independent_copies",
     "irreplaceability",
@@ -302,7 +336,9 @@ __all__ = [
     "request_ids",
     "require_deletion_allowed",
     "require_purge_allowed",
+    "require_servable_derivative",
     "safe_to_clean",
+    "servable_epub",
     "store_unit_ids",
     "title_needles",
     "unit_tombstoned",

@@ -95,15 +95,35 @@ def _source_is_alive(unit_id: str) -> sa.ColumnElement[bool]:
     return sa.and_(listed, still_there)
 
 
+def _derived_hashes(connection: Connection, unit_id: str) -> set[str]:
+    content = storage.content
+    return {
+        h
+        for h in connection.execute(
+            sa.select(content.c.derived_hash).where(
+                content.c.unit_id == unit_id, content.c.derived_hash.is_not(None)
+            )
+        ).scalars()
+    }
+
+
 def independent_copies(connection: Connection, unit_id: str) -> int:
     reference = reference_content_hash(connection, unit_id)
-    if reference is None:
+    derived = _derived_hashes(connection, unit_id)
+    if reference is None and not derived:
         return 0
+    # The derivative of an `untrusted` EPUB is a readable copy of its own (EF-BIB-051): its hash
+    # is not the original's, so it is counted by `derived_hash`, and a content whose original is
+    # gone (`extracted_derived`) is evaluated without it.
+    same = replica_table.c.content_hash == reference if reference is not None else sa.false()
+    readable = sa.and_(
+        replica_table.c.fidelity == "derived", replica_table.c.content_hash.in_(derived)
+    )
     rows = connection.execute(
         sa.select(replica_table.c.id, replica_table.c.dev, replica_table.c.ino).where(
             replica_table.c.unit_id == unit_id,
             replica_table.c.independent,
-            replica_table.c.content_hash == reference,
+            sa.or_(same, readable),
             # the origin is a copy only while it still lists the Unit: decided here, at counting
             # time, not by a row someone must remember to update
             sa.or_(replica_table.c.location != "upstream", _source_is_alive(unit_id)),

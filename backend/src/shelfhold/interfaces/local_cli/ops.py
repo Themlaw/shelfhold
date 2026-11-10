@@ -309,6 +309,10 @@ def _normalize_migrate(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.normalize.migrate(_text(p, "name"), confirm=_optional(p, "confirm"), principal=by)
 
 
+def _content_reneutralize(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.content.reneutralize(confirm=_optional(p, "confirm"))
+
+
 def _meta_rebuild(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.meta.rebuild(unit=_optional(p, "unit"))
 
@@ -470,6 +474,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
     "ops.normalize_migrate": (_normalize_migrate, "normalize.migrate"),
+    "ops.content_reneutralize": (_content_reneutralize, None),
     "ops.meta_rebuild": (_meta_rebuild, None),
     "ops.meta_check": (_meta_check, None),
     "ops.backfill_estimate": (_backfill_estimate, None),
