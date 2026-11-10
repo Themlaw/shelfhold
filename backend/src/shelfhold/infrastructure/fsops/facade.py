@@ -211,7 +211,30 @@ class Fsops:
     def _frozen_for(self, root_path: str) -> bool:
         """The freeze, for the root at `root_path`: the instance level or the root's own."""
         expected = self._expected.get(root_path)
-        return self._freeze.frozen_for(expected.root_id) if expected else self._freeze.frozen
+        if expected is None:
+            return self._freeze.frozen
+        if not self._freeze.frozen_for(expected.root_id):
+            return False
+        return self._freeze.frozen or not self._root_is_right_again(root_path, expected.root_id)
+
+    def _root_is_right_again(self, root_path: str, root_id: str) -> bool:
+        """A root-level mark outlives a volume that came back by itself (remounted, sentinel put
+        back by the owner): the sentinel is read again, and a root that is right releases its
+        mark. A root that is still wrong stays blocked until its exit command (EF-EXP-064)."""
+        try:
+            with self._root(root_path) as root:
+                right = not self._verdict(root).blocks_writes
+        except (FsopsError, OSError):
+            return False
+        if right:
+            self._freeze.follow_root(root_id, None)
+            hook = self._blocked_hook
+            if hook is not None:
+                try:
+                    hook(root_path, RootState.OK)  # the record of the state is refreshed
+                except Exception:
+                    log.warning("fsops.blocked_hook_failed", root=root_path)
+        return right
 
     def _freeze_state_of(self, root_path: str) -> RootState:
         """Why `_frozen_for` is true: the instance (`restored_behind`) or the root alone."""

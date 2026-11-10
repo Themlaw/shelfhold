@@ -187,7 +187,10 @@ def test_status_tells_what_to_fix_for_a_mismatched_root() -> None:
         warnings = mismatch_warnings(env.guard().assess())
         assert [w["code"] for w in warnings] == ["root_sentinel_mismatch"]
         assert str(env.library) in warnings[0]["message"]
-        assert ".shelfhold-mount-id" in warnings[0]["message"] and "L36" in warnings[0]["message"]
+        assert (
+            ".shelfhold-mount-id" in warnings[0]["message"]
+            and "root takeover" in warnings[0]["message"]
+        )
 
 
 def test_a_paired_move_is_shown_in_the_preview_and_the_fingerprint() -> None:

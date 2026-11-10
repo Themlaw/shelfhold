@@ -60,7 +60,7 @@ from shelfhold.export.application.locks import LockBusyError, ResourceLocks
 from shelfhold.export.application.root_bootstrap import RootPolicy, RootRefusedError
 from shelfhold.export.application.roots import LoadedRoots, RootRow, load_roots, open_fsops
 from shelfhold.export.application.snapshot import load_context
-from shelfhold.export.domain.path_map import PathMap, PathMode, clean_absolute, within
+from shelfhold.export.domain.path_map import PathMap, PathMapError, PathMode, clean_absolute, within
 from shelfhold.export.domain.physical_roots import (
     SENTINEL_PREDECESSORS_FIELD,
     ExpectedRoot,
@@ -205,7 +205,7 @@ class RootWatcher:
     ) -> None:
         self._engine = engine
         self._umask = umask
-        self._store = clean_absolute(store_path) if store_path else None
+        self._store = _absolute_or_none(store_path)
         self._freeze = freeze
         self._told: dict[str, RootState] = {}
 
@@ -328,7 +328,7 @@ class RootExits:
         self._engine = engine
         self._clock = clock
         self._umask = umask
-        self._store = clean_absolute(store_path) if store_path else None
+        self._store = _absolute_or_none(store_path)
         self._locks = locks
         self._watcher = watcher
         self._evidence = evidence
@@ -743,6 +743,15 @@ class RootExits:
 
 
 _NONE = RootEvidence("", frozenset(), 0, 0)
+
+
+def _absolute_or_none(path: str | None) -> str | None:
+    """A relative `/store` setting is a configuration problem reported elsewhere (L41): it never
+    stops the start, it only means no folder is taken for the store here."""
+    try:
+        return clean_absolute(path) if path else None
+    except PathMapError:
+        return None
 
 
 def _clean(path: str) -> str:

@@ -355,6 +355,29 @@ def _body(command: str) -> dict[str, Any]:
     }.get(command, {})
 
 
+class _Roots:
+    """The root exits: the services behind them are tested with real roots elsewhere (L25)."""
+
+    def _done(self, command: str) -> dict[str, object]:
+        return {
+            "command": command, "root_id": "x", "path": "/x", "previous": "root_lost",
+            "sentinel": "stamped", "predecessors": [], "missing": 0, "planned": 0,
+            "units_store_missing": 0, "distrusted_copies": 0, "ignored_claims": [], "notes": [],
+        }  # fmt: skip
+
+    def takeover(self, *_a: object, **_k: object) -> dict[str, object]:
+        return self._done("root takeover")
+
+    def reinit(self, *_a: object, **_k: object) -> dict[str, object]:
+        return self._done("root reinit")
+
+    def restored(self, *_a: object, **_k: object) -> dict[str, object]:
+        return self._done("root restored")
+
+    def store_reinit(self, *_a: object, **_k: object) -> dict[str, object]:
+        return self._done("store reinit")
+
+
 class _Headless:
     def target_rotate_key(self, *, target: str, password: str) -> None: ...
     def source_set_secret(self, secret: str) -> None: ...
@@ -371,9 +394,11 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
     with export_env() as env:
         w = wire(env)
         keyring, restore = FakeKeyring(), FakeRestore()
-        ops = make_ops(env, w, keyring=keyring, restore=restore, headless=_Headless())
+        ops = make_ops(
+            env, w, keyring=keyring, restore=restore, headless=_Headless(), roots=_Roots()
+        )
         put_health(env, child_exposure=True)
-        ids = {"target_id": env.target_id, "work_id": env.new_series().work_id}
+        ids = {"target_id": env.target_id, "work_id": env.new_series().work_id, "root": "x"}
         reserved = [r for r in EXIT_ROUTES if r.reserved is not None]
         served = [r for r in reserved if r.command in endpoint_table()]
         assert {r.command for r in served} >= {
@@ -542,6 +567,7 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("normalize.migrate")  # L55: reserved; no waiting state either
     declared.add("shelf.withdraw")  # M1b L10: applying the removal plan of a family shelf
     declared.add("rate")  # M1b L11: the exit of rating_pending and follow_suspended
+    declared |= {"root.takeover", "root.reinit", "store.reinit"}  # M1b L25: the root exits
     on_socket = {action for _impl, action in OPS_METHODS.values() if action}
     assert on_socket == declared
     for action in on_socket:  # and every name is a real action of the registry
