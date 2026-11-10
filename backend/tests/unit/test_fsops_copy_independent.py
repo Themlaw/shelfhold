@@ -12,6 +12,7 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
 ALLOWED = {
     "infrastructure/fsops/confined.py": {"_rename_noreplace", "link", "link_to"},
     "infrastructure/secrets/atomic.py": {"write_private"},
+    "ops/backup/store.py": {"write"},  # the archive is linked into place without replacing
 }
 
 

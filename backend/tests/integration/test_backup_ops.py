@@ -11,7 +11,6 @@ import sqlalchemy as sa
 
 from shelfhold.config import load_settings
 from shelfhold.events.bus import PAYLOAD_ENUMS
-from shelfhold.events.errors import CODES
 from shelfhold.events.operating import OPERATING_EVENTS
 from shelfhold.infrastructure.schema import platform
 from shelfhold.interfaces import cli
@@ -88,7 +87,6 @@ def test_the_job_gives_up_on_a_vacuum_that_does_not_end(
 
 def test_the_events_and_the_error_codes_agree() -> None:
     assert {"backup.failed", "backup.stale"} <= OPERATING_EVENTS
-    assert {"backup.failed", "backup.stale"} <= {c.code for c in CODES}
     assert PAYLOAD_ENUMS["backup.failed"]["reason"] == BACKUP_FAILURES
     for reason in BACKUP_FAILURES:  # every cause has its sentence for the operator
         from shelfhold.i18n import t

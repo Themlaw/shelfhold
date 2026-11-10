@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from shelfhold.config import ResolvedSettings
@@ -35,6 +36,32 @@ from shelfhold.ops.backup.run import verify_latest
 from shelfhold.ops.backup.verify import check_archive, read_archive_file
 
 GATE_FILE = ".maintenance.lock"
+
+# One literal `t()` per sentence (the catalog test reads them): a cause maps to its sentence.
+FAILED_TEXT: dict[str, Callable[[], str]] = {
+    "passphrase_missing": lambda: t("backup.failed_passphrase_missing"),
+    "passphrase_invalid": lambda: t("backup.failed_passphrase_invalid"),
+    "passphrase_colocated": lambda: t("backup.failed_passphrase_colocated"),
+    "destination_missing": lambda: t("backup.failed_destination_missing"),
+    "destination_unavailable": lambda: t("backup.failed_destination_unavailable"),
+    "destination_not_distinct": lambda: t("backup.failed_destination_not_distinct"),
+    "no_room": lambda: t("backup.failed_no_room"),
+    "too_large": lambda: t("backup.failed_too_large"),
+    "busy": lambda: t("backup.failed_busy"),
+    "keyring_unavailable": lambda: t("backup.failed_keyring_unavailable"),
+    "database_error": lambda: t("backup.failed_database_error"),
+    "write_failed": lambda: t("backup.failed_write_failed"),
+    "verify_failed": lambda: t("backup.failed_verify_failed"),
+}
+DESTINATION_TEXT: dict[str, Callable[[str], str]] = {
+    "not_empty": lambda path: t("backup.destination_not_empty", path=path),
+    "is_live_data": lambda path: t("backup.destination_is_live_data", path=path),
+    "unusable": lambda path: t("backup.destination_unusable", path=path),
+}
+
+
+def failed_text(reason: str) -> str:
+    return FAILED_TEXT[reason]()
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -83,7 +110,7 @@ def run_backup(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             accept_colocated=args.accept_colocated_passphrase, manifests=args.with_manifests
         )
     except BackupError as error:
-        return _fail(t(f"backup.failed_{error.reason}"))
+        return _fail(failed_text(error.reason))
     finally:
         engine.dispose()
     print(t("backup.done", name=report.name, size=report.size, members=report.members))
@@ -107,7 +134,7 @@ def run_verify(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         else:
             name, checked = verify_latest(settings, passphrase_file=args.passphrase_file)
     except BackupError as error:
-        return _fail(t(f"backup.failed_{error.reason}"))
+        return _fail(failed_text(error.reason))
     except BackupArchiveError as error:
         return _fail(t("backup.damaged", detail=error))
     created, revision = checked.created_at, checked.schema_revision
@@ -130,7 +157,7 @@ def run_restore(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     except BackupArchiveError as error:
         return _fail(t("backup.damaged", detail=error))
     except DestinationError as error:
-        return _fail(t(f"backup.destination_{error.reason}", path=args.destination))
+        return _fail(DESTINATION_TEXT[error.reason](str(args.destination)))
     except OSError as error:
         return _fail(t("backup.restore_incomplete", path=args.destination, detail=error.strerror))
     print(t("backup.restored", path=report.destination, files=report.files))

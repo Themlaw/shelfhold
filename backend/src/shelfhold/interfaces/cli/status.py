@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable
 from typing import Any
 
 import sqlalchemy as sa
@@ -36,6 +37,16 @@ from shelfhold.integrations.apprise import operating_bus
 from shelfhold.interfaces.cli.secrets import warning_text
 from shelfhold.ops.backup import backup_warnings
 from shelfhold.ops.wiring import open_ops
+
+BACKUP_TEXT: dict[str, Callable[[str], str]] = {
+    "backup_not_configured": lambda detail: t("status.backup_not_configured", detail=detail),
+    "backup_incomplete": lambda detail: t("status.backup_incomplete", detail=detail),
+    "backup_passphrase_colocated": lambda detail: t(
+        "status.backup_passphrase_colocated", detail=detail
+    ),
+    "backup_same_device": lambda detail: t("status.backup_same_device", detail=detail),
+    "backup_stale": lambda detail: t("status.backup_stale", detail=detail),
+}
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -173,7 +184,7 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         pending.append(
             {
                 "code": item["code"],
-                "message": t(f"status.{item['code']}", detail=item["detail"]),
+                "message": BACKUP_TEXT[item["code"]](item["detail"]),
             }
         )
     restore = _restore_status(resolved)
