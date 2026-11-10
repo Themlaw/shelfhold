@@ -1,14 +1,16 @@
 """A restore without `/store`: the Units kept there wait as `store_missing`, nothing is deleted.
 
 Run by `reconcile --adopt-after-restore` after the adoption (EF-INT-015, matrix row
-`store_missing_after_restore`). Two cases, told apart by the sentinel of `/store`
-(`.shelfhold-mount-id`, the file every registered root carries):
+`store_missing_after_restore`). Two cases, told apart by the host's own verdict on
+`/store` (`store_is_lost`: `Fsops.status(store).state` and `waiting_state_of(state, store=True)`,
+the sentinel `.shelfhold-mount-id` that every registered root carries, judged as every other root):
 
-- **No sentinel** (the volume is not mounted, or is a different, empty one): `/store` is *lost or
-  absent*, not "some files are missing". Nothing is marked: the state is `store_lost` (the exit of
-  `shelfhold store reinit`, EF-EXP-064), reported through `reconcile.drift` with `kind=store_lost`
-  and the number of Units that depend on it. A mount that comes back is then enough.
-- **Sentinel present** but a kept copy absent: the `stored` Unit becomes `store_missing`
+- **`/store` is not right** (no sentinel: not mounted, or a different, empty volume; or a foreign
+  or stale one): it is *lost or absent*, not "some files are missing". Nothing is marked: the
+  state is `store_lost` (the exit of `shelfhold store reinit`, EF-EXP-064), reported through
+  `reconcile.drift` with `kind=store_lost` and the number of
+  Units that depend on it. A mount that comes back is then enough.
+- **`/store` is right** but a kept copy absent: the `stored` Unit becomes `store_missing`
   (`reconcile.drift`, `kind=store_missing`); the Unit, its contents and every row stay, and no
   file is touched. A `store_missing` Unit whose copy is back with the right digest (the host
   restored `/store` afterwards) becomes `stored` again.
@@ -26,11 +28,11 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.events.bus import EventBus
+from shelfhold.export.domain.physical_roots import RootState, waiting_state_of
+from shelfhold.infrastructure.fsops import Fsops, OutsidePathMapError
 from shelfhold.infrastructure.schema import catalog
 
-__all__ = ["StoreOutcome", "mark_store_missing"]
-
-SENTINEL = ".shelfhold-mount-id"
+__all__ = ["StoreOutcome", "mark_store_missing", "store_is_lost"]
 
 
 @dataclass(frozen=True)
@@ -51,11 +53,14 @@ def _present(store: Path, rel: str) -> bool:
         return False
 
 
-def _sentinel_present(store: Path) -> bool:
+def store_is_lost(fsops: Fsops, store_dir: Path) -> bool:
+    """The host's verdict on `/store`: it waits in `store_lost` unless its sentinel is the right
+    one (a `/store` that is under no registered root is as good as lost)."""
     try:
-        return stat.S_ISREG(os.lstat(store / SENTINEL).st_mode)
-    except OSError:
-        return False
+        state = fsops.status(str(store_dir)).state
+    except OutsidePathMapError:
+        state = RootState.MISSING
+    return waiting_state_of(state, store=True) is not None
 
 
 def _digest(path: Path) -> str | None:
@@ -70,7 +75,9 @@ def _digest(path: Path) -> str | None:
     return f"sha256:{digest.hexdigest()}"
 
 
-def mark_store_missing(engine: Engine, store_dir: Path, bus: EventBus) -> StoreOutcome:
+def mark_store_missing(
+    engine: Engine, store_dir: Path, bus: EventBus, *, store_lost: bool
+) -> StoreOutcome:
     """Only `stored` Units move to `store_missing`; one with a copy elsewhere (`exported`,
     `adopted`) keeps its state."""
     unit = catalog.unit
@@ -90,7 +97,7 @@ def mark_store_missing(engine: Engine, store_dir: Path, bus: EventBus) -> StoreO
             .select_from(unit.join(content, content.c.unit_id == unit.c.id))
             .where(unit.c.state.in_(("stored", "store_missing")), content.c.path.is_not(None))
         ).all()  # fmt: skip
-        if not _sentinel_present(store_dir):
+        if store_lost:
             dependent = len({r.id for r in rows if r.state == "stored"})
             payload = {"kind": "store_lost", "count": dependent}
             published = [bus.publish(connection, "reconcile.drift", payload)] if dependent else []

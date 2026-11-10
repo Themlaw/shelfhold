@@ -8,6 +8,7 @@ from shelfhold.ops.backup.jobs import BACKUP_KIND, register_backup_job
 from shelfhold.ops.backup.restore import (
     DestinationError,
     PassphraseError,
+    RestoreIncompleteError,
     RestoreReport,
     restore_archive,
 )
@@ -18,7 +19,7 @@ from shelfhold.ops.backup.run import (
     BackupService,
     backup_warnings,
 )
-from shelfhold.ops.backup.store_missing import StoreOutcome, mark_store_missing
+from shelfhold.ops.backup.store_missing import StoreOutcome, mark_store_missing, store_is_lost
 
 __all__ = [
     "BACKUP_FAILURES",
@@ -29,10 +30,12 @@ __all__ = [
     "BackupService",
     "DestinationError",
     "PassphraseError",
+    "RestoreIncompleteError",
     "RestoreReport",
     "StoreOutcome",
     "backup_warnings",
     "mark_store_missing",
     "register_backup_job",
     "restore_archive",
+    "store_is_lost",
 ]

@@ -84,6 +84,8 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
                 "write_failed",
                 "verify_failed",
                 "interrupted",
+                "locked",
+                "kdf_cost",
             }
         )
     },

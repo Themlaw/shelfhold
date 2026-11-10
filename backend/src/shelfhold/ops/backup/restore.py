@@ -30,6 +30,7 @@ import sqlite3
 import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import BinaryIO
 
 from shelfhold.infrastructure.secrets.errors import ExportError
 from shelfhold.infrastructure.secrets.export import read_passphrase_file
@@ -41,11 +42,18 @@ from shelfhold.ops.backup.archive import (
     member_name_ok,
     read_archive,
 )
-from shelfhold.ops.backup.verify import check_stream, open_archive_file
+from shelfhold.ops.backup.verify import HashingReader, check_stream, open_archive_file
 
-__all__ = ["DestinationError", "PassphraseError", "RestoreReport", "restore_archive"]
+__all__ = [
+    "DestinationError",
+    "PassphraseError",
+    "RestoreIncompleteError",
+    "RestoreReport",
+    "restore_archive",
+]
 
 KEYRING_FILE = "keyring"
+DATABASE_TEMP = "shelfhold.db.restoring"  # the database lands under this name, and is renamed last
 
 
 class DestinationError(Exception):
@@ -54,6 +62,12 @@ class DestinationError(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+class RestoreIncompleteError(Exception):
+    """The archive was fine when it was checked, but not when it was written (it changed in
+    between, or the restored database fails its check): the destination holds a part of it, and
+    no `shelfhold.db`. Nothing is deleted; the operator empties the folder and starts again."""
 
 
 class PassphraseError(Exception):
@@ -160,7 +174,8 @@ class _Extractor:
             _write_small(self._root, KEYRING_FILE, self._keyring_json)
             self._keyring_json = None
             self.files += 1
-        self._out, self._folder = _open_member(self._root, name)
+        landing = DATABASE_TEMP if name == DATABASE_MEMBER else name
+        self._out, self._folder = _open_member(self._root, landing, fixed=name == DATABASE_MEMBER)
 
     def data(self, chunk: bytes) -> None:
         if self._out is not None:
@@ -218,23 +233,39 @@ def restore_archive(
         raise PassphraseError(str(error)) from None
     try:
         with open_archive_file(archive) as stream:
+            # one descriptor for both passes: replacing the file by path between them changes
+            # nothing for us, and a change in place is caught by the digest of the second pass
             checked = check_stream(stream, passphrase, live_data_dir, database=False)
-    except OSError:
-        raise BackupArchiveError from None
-    resolved = _check_destination(destination, live_data_dir)
-    keyring_json = None if keep_external_keyring else checked.keyring.to_json()
+            resolved = _check_destination(destination, live_data_dir)
+            keyring_json = None if keep_external_keyring else checked.keyring.to_json()
+            stream.seek(0)
+            _write_all_members(stream, passphrase, resolved, keyring_json, checked.file_sha256)
+    finally:
+        del passphrase
+    files = len(checked.members) - 1 + int(keyring_json is not None)  # `keyring.age` -> `keyring`
+    return RestoreReport(
+        resolved, files, checked.schema_revision, checked.created_at,
+        keyring_written=keyring_json is not None,
+    )  # fmt: skip
+
+
+def _write_all_members(
+    stream: BinaryIO, passphrase: str, resolved: Path, keyring_json: bytes | None, sha256: str
+) -> None:
     root_fd = os.open(resolved, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     extractor = _Extractor(root_fd, keyring_json)
+    reader = HashingReader(stream)
     try:
-        with open_archive_file(archive) as stream:
-            read_archive(stream, passphrase, TarParser(extractor))
+        try:
+            read_archive(reader, passphrase, TarParser(extractor))
+            reader.drain()
+        except BackupArchiveError:
+            raise RestoreIncompleteError from None
+        extractor.close()
+        if reader.digest.hexdigest() != sha256 or not _database_ok(resolved / DATABASE_TEMP):
+            raise RestoreIncompleteError
+        os.rename(DATABASE_TEMP, DATABASE_MEMBER, src_dir_fd=root_fd, dst_dir_fd=root_fd)
+        os.fsync(root_fd)
     finally:
         extractor.close()
         os.close(root_fd)
-    del passphrase
-    if not _database_ok(resolved / DATABASE_MEMBER):
-        raise BackupArchiveError
-    return RestoreReport(
-        resolved, extractor.files, checked.schema_revision, checked.created_at,
-        keyring_written=keyring_json is not None,
-    )  # fmt: skip

@@ -41,6 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Final, Protocol
 
+from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.secrets.errors import ExportError
 from shelfhold.infrastructure.secrets.export import (
     ByteSink,
@@ -415,12 +416,18 @@ class _ChunkReader:
 
 
 def write_archive(sink: ByteSink, chunks: Iterator[bytes], passphrase: str) -> None:
-    """The header, the sealed key and the encrypted tar, written to `sink` as they are made."""
+    """The header, the sealed key and the encrypted tar, written to `sink` as they are made. The
+    seal is refused (`WorkFactorError`) when age sized its scrypt above what `read_archive`
+    accepts: an archive that could not be opened is no backup."""
     secret, recipient = new_stream_key()
-    sealed = encrypt_blob(secret.encode("ascii"), passphrase)
-    sink.write(ARCHIVE_MAGIC + str(len(sealed)).encode("ascii") + b"\n")
-    sink.write(sealed)
-    encrypt_stream(_ChunkReader(chunks), sink, recipient)
+    register_secret_value(secret)  # never in a log line, whatever happens next
+    try:
+        sealed = encrypt_blob(secret.encode("ascii"), passphrase)
+        sink.write(ARCHIVE_MAGIC + str(len(sealed)).encode("ascii") + b"\n")
+        sink.write(sealed)
+        encrypt_stream(_ChunkReader(chunks), sink, recipient)
+    finally:
+        del secret
 
 
 def has_archive_magic(head: bytes) -> bool:
@@ -439,14 +446,22 @@ def read_archive(source: ArchiveSource, passphrase: str, parser: TarParser) -> P
         line = source.readline(len(ARCHIVE_MAGIC) + 12)
         if not line.startswith(ARCHIVE_MAGIC) or not line.endswith(b"\n"):
             raise BackupArchiveError
-        size = int(line[len(ARCHIVE_MAGIC) : -1])
-        if not 0 < size <= MAX_KEY_BLOB:
+        digits = line[len(ARCHIVE_MAGIC) : -1]
+        # ASCII digits and nothing else: no sign, no space, no underscore, no leading zero
+        if not (digits.isdigit() and digits.isascii() and digits[:1] != b"0" and len(digits) <= 4):
+            raise BackupArchiveError
+        size = int(digits)
+        if size > MAX_KEY_BLOB:
             raise BackupArchiveError
         sealed = source.read(size)
         if len(sealed) != size:
             raise BackupArchiveError
         secret = decrypt_blob(sealed, passphrase).decode("ascii")
-        decrypt_stream(source, parser, secret)
+        register_secret_value(secret)
+        try:
+            decrypt_stream(source, parser, secret)
+        finally:
+            del secret
     except (ExportError, ValueError, UnicodeDecodeError):
         raise BackupArchiveError from None
     return parser.finish()

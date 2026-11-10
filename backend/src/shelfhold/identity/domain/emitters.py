@@ -16,8 +16,10 @@ A site is `<path under src>::<qualified function>`. Its class is one of:
   instance recorded and that starts like one of ours, never before the new one is written and
   verified) and a `.partial-*` file of a failed write (`ops/backup/store.py`, the one module that
   opens that directory, exact name patterns, regular files only); in `/data/tmp`, the
-  `backup-*` scratch folder of the run's clear snapshot (`ops/backup/scratch.py`, plain files of a
-  folder of that exact name that nobody holds a lock on);
+  `backup-*` scratch folder of the run's clear snapshot (`ops/backup/scratch.py`: removed
+  *recursively* (its files, links and the staged sub-folders, never a link's target), only a
+  folder of that exact name that carries the marker file the module writes first, and that nobody
+  holds a lock on);
 - `OWN_SCRATCH`: a file the process created for its own mechanism (temporary copy, progress
   marker, lease swap), never library data.
 

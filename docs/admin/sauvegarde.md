@@ -39,6 +39,7 @@ publique de cette clé. Chaque sauvegarde a sa propre clé ; la phrase de passe 
 clé protège le contenu. Sans Shelfhold, en deux étapes :
 
 ```sh
+umask 077                                # la clé éphémère ne doit être lisible que de vous
 F=shelfhold-backup-20261108T014000Z.tar.age
 N=$(head -n 1 "$F" | cut -d' ' -f2)        # taille de la clé scellée
 L=$(head -n 1 "$F" | wc -c)                # taille de la première ligne
@@ -49,6 +50,13 @@ shred -u cle-ephemere.txt
 
 Le tar contient `BACKUP.json` (manifeste), `shelfhold.db`, `keyring.age` (relisible par
 `shelfhold secrets import`), `config.toml`, `meta/`, `docs/`.
+
+### Coût de la phrase de passe
+
+age règle le coût de scrypt d'après la vitesse de la machine (environ une seconde) et Shelfhold
+n'accepte de relire que les coûts raisonnables. Si le coût choisi dépasse la borne, le scellement
+est refait, jusqu'à trois essais, puis la sauvegarde échoue avec `backup.failed` (cause
+`kdf_cost`) plutôt que de produire un fichier qu'on ne pourrait plus ouvrir.
 
 ### Mémoire et taille
 
@@ -74,7 +82,7 @@ taille de la base** en espace libre.
 `/store` ni `/library`. Elle tient le verrou de maintenance : un `VACUUM` en cours la fait attendre
 (10 min au plus, puis `backup.failed` cause `busy`), et aucun `VACUUM` ne démarre sous elle, y compris
 quand `shelfhold backup run` est lancé depuis l'hôte (verrou de fichier `/data/.maintenance.lock`).
-Deux sauvegardes ne tournent jamais ensemble (verrou `/data/.backup.lock`). La plus ancienne
+Deux sauvegardes ne tournent jamais ensemble (verrou `/data/.backup.lock` ; la seconde échoue avec la cause `locked`, distincte de `busy`, qui est un `VACUUM` en cours). La plus ancienne
 sauvegarde n'est supprimée **qu'après** qu'une nouvelle a été écrite, relue et vérifiée, et la
 rétention ne supprime que les archives que cette instance a elle-même écrites et vérifiées
 (lignes `backup_run`) : un fichier ou un dossier étranger dans le dossier de sauvegarde n'est

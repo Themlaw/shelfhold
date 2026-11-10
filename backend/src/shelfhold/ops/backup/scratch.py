@@ -7,6 +7,7 @@ mean nothing: FAT, CIFS, NFS). Both live in `/data/tmp/backup-<8 chars>/` instea
 system as the database (which is in clear there anyway), mode 0700, one folder per use, locked
 for as long as its owner is alive.
 
+Each carries a marker file, written first; a folder without it is not ours and is left alone.
 A kill leaves such a folder behind. `sweep_orphans` removes every `backup-*` folder that nobody
 locks: at start-up and at the beginning of each run. Only plain files in a folder of that exact
 name pattern are unlinked; anything else is left alone.
@@ -41,6 +42,9 @@ __all__ = [
 SCRATCH_PARENT: Final = "tmp"
 _NAME: Final = re.compile(r"backup-[A-Za-z0-9_]{8}")
 LOCK_FILE: Final = ".backup.lock"
+# Written first in every scratch folder this module makes: only a folder that carries it, with
+# the exact name pattern, is ever removed (a folder of that name made by someone else is not ours).
+MARKER: Final = ".shelfhold-backup-scratch"
 
 
 class LockBusyError(Exception):
@@ -90,6 +94,7 @@ def scratch_folder(data_dir: Path | None) -> Iterator[Path]:
     descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
         os.fchmod(descriptor, 0o700)
+        stage_file(folder, MARKER, b"shelfhold backup scratch\n")
         with contextlib.suppress(OSError):
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         yield folder
@@ -103,7 +108,7 @@ def scratch_folder(data_dir: Path | None) -> Iterator[Path]:
 def _remove_scratch(folder: Path) -> None:
     """Only a `backup-xxxxxxxx` folder, and what the run put in it: plain files, links (the link
     itself, never its target) and the folders of the staged copies."""
-    if _NAME.fullmatch(folder.name) is None:
+    if _NAME.fullmatch(folder.name) is None or not _marked(folder):
         raise ValueError("not a scratch folder of the backup")
     folders = [folder]
     found: list[Path] = []  # every folder, parents first
@@ -119,6 +124,13 @@ def _remove_scratch(folder: Path) -> None:
                         os.unlink(entry.path)
         for current in reversed(found):
             os.rmdir(current)
+
+
+def _marked(folder: Path) -> bool:
+    try:
+        return stat.S_ISREG(os.lstat(folder / MARKER).st_mode)
+    except OSError:
+        return False
 
 
 def stage_dir(parent: Path, name: str) -> Path:
@@ -148,7 +160,7 @@ def sweep_orphans(data_dir: Path) -> int:
     removed = 0
     for entry in entries:
         try:
-            if not stat.S_ISDIR(os.lstat(entry.path).st_mode):
+            if not stat.S_ISDIR(os.lstat(entry.path).st_mode) or not _marked(Path(entry.path)):
                 continue
             descriptor = os.open(entry.path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
         except OSError:

@@ -57,7 +57,7 @@ from shelfhold.interfaces.local_cli import OpsChannel, OpsRefusal
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
 from shelfhold.library.tombstones import TombstoneService
 from shelfhold.library.tombstones.screen import TombstoneScreenAdapter
-from shelfhold.ops.backup import StoreOutcome, mark_store_missing
+from shelfhold.ops.backup import StoreOutcome, mark_store_missing, store_is_lost
 
 NEEDS_CONFIRMATION = 2
 BLOCKED = 3
@@ -202,7 +202,13 @@ def _mark_store_missing(resolved: ResolvedSettings) -> StoreOutcome:
     settings = resolved.values
     engine = create_db_engine(settings.database_path)
     try:
-        return mark_store_missing(engine, settings.store_dir, operating_bus(SystemClock()))
+        with engine.connect() as connection:
+            paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
+            loaded = load_roots(connection, PathMap.same_path(paths))
+        lost = store_is_lost(open_fsops(loaded, umask=settings.umask), settings.store_dir)
+        return mark_store_missing(
+            engine, settings.store_dir, operating_bus(SystemClock()), store_lost=lost
+        )
     finally:
         engine.dispose()
 

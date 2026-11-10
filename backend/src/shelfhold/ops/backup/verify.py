@@ -30,7 +30,7 @@ from shelfhold.ops.backup.archive import (
 )
 from shelfhold.ops.backup.scratch import scratch_folder
 
-__all__ = ["Checked", "check_file", "check_stream", "open_archive_file"]
+__all__ = ["Checked", "HashingReader", "check_file", "check_stream", "open_archive_file"]
 
 MAX_KEYRING_BYTES = 1024 * 1024
 
@@ -64,7 +64,7 @@ def open_archive_file(path: Path) -> BinaryIO:
     return stream
 
 
-class _HashingReader:
+class HashingReader:
     """The archive file, hashed as it is read (the digest of the file `backup_run` records)."""
 
     def __init__(self, stream: BinaryIO) -> None:
@@ -146,7 +146,7 @@ def check_stream(
 ) -> Checked:
     """`database=False` skips the integrity check of the database (the restore checks the file it
     wrote instead), which also spares the spool."""
-    reader = _HashingReader(stream)
+    reader = HashingReader(stream)
     if database:
         with scratch_folder(data_dir) as folder:
             checker = _Checker(folder / "check.db")

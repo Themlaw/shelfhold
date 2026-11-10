@@ -69,3 +69,11 @@ def test_published_docs_name_no_personal_path_or_host(page: Path) -> None:
     addresses = re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", text)
     # loopback, the "any address" form and Kavita version numbers are the only dotted quads
     assert [a for a in addresses if not a.startswith(("127.", "0."))] == [], page.name
+
+
+@pytest.mark.req("EF-INT-015", "ENF-SEC-005")
+def test_the_backup_recipe_sets_a_private_umask_before_it_writes_the_key() -> None:
+    text = (ROOT / "docs" / "admin" / "sauvegarde.md").read_text(encoding="utf-8")
+    recipe = text[text.index("```sh\numask 077") :]
+    assert recipe.index("umask 077") < recipe.index("cle-ephemere.txt")
+    assert "locked" in text and "kdf_cost" in text

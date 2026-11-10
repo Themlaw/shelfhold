@@ -169,7 +169,7 @@ class BackupDirectory:
         finally:
             os.close(descriptor)
 
-    def _ours(self, name: str, *, partial: bool) -> bool:
+    def _ours(self, name: str) -> bool:
         """A regular file (no link) that starts like one of our archives."""
         try:
             descriptor = os.open(
@@ -181,7 +181,8 @@ class BackupDirectory:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                 return False
             head = stream.read(len(ARCHIVE_MAGIC))
-        return ARCHIVE_MAGIC.startswith(head) if partial else head == ARCHIVE_MAGIC
+        # the whole first line's start, for both: an empty or short file is not ours to remove
+        return head == ARCHIVE_MAGIC
 
     def prune(self, keep: int, protect: str, known: Collection[str]) -> list[str]:
         """Retention: among the archives this instance recorded (`known`: the files of its
@@ -190,7 +191,7 @@ class BackupDirectory:
         verification. A file that is not recorded stays, whatever its name."""
         if keep < 1:
             raise ValueError("a retention below one backup would delete the last one")
-        names = [n for n in self.names() if n in known and self._ours(n, partial=False)]
+        names = [n for n in self.names() if n in known and self._ours(n)]
         excess = [n for n in names[: max(len(names) - keep, 0)] if n != protect]
         for name in excess:
             self._discard(name)
@@ -221,7 +222,7 @@ class BackupDirectory:
                 age = now_s - os.lstat(self.path / name).st_mtime
             except OSError:
                 continue
-            if age >= STALE_AFTER_S and self._ours(name, partial=True):
+            if age >= STALE_AFTER_S and self._ours(name):
                 self._discard(name)
                 removed += 1
         return removed

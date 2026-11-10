@@ -5,22 +5,31 @@ started behind its disk, `reconcile --adopt-after-restore`, and a `/store` that 
 from __future__ import annotations
 
 import hashlib
+import os
+import shutil
 import sqlite3
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from ulid import ULID
 
 from shelfhold.config import Settings
+from shelfhold.export.domain.path_map import PathEntry, PathMap
+from shelfhold.export.domain.physical_roots import ExpectedRoot, SentinelDocument
+from shelfhold.infrastructure.fsops import Fsops, create_sentinel
 from shelfhold.infrastructure.schema import catalog
 from shelfhold.infrastructure.secrets.keyring import KeyringStore
 from shelfhold.ops.backup import (
     BackupService,
     DestinationError,
+    RestoreIncompleteError,
+    StoreOutcome,
     mark_store_missing,
     restore_archive,
+    store_is_lost,
 )
-from shelfhold.ops.backup.store_missing import SENTINEL
+from shelfhold.ops.backup import restore as restore_module
 from tests.backup_env import MARKER, backup_bench, write_passphrase
 from tests.restore_env import RestoreEnv, restore_env
 
@@ -135,6 +144,15 @@ def stored_copy(env: RestoreEnv, number: str, store: Path, *, present: bool) -> 
     return unit
 
 
+def store_host(store: Path) -> Fsops:
+    """The host's view of `/store` as a registered root that carries its own sentinel."""
+    instance, root = str(ULID()), str(ULID())
+    create_sentinel(store, SentinelDocument(root_id=root, instance_id=instance, generation=1))
+    return Fsops.open(
+        PathMap((PathEntry(str(store), "/store"),)), [ExpectedRoot(root, str(store), instance, 1)]
+    )
+
+
 def unit_states(env: RestoreEnv) -> dict[str, str]:
     with env.engine.connect() as connection:
         rows = connection.execute(sa.select(catalog.unit.c.id, catalog.unit.c.state))
@@ -179,35 +197,41 @@ def test_restore_without_store_marks_store_missing_no_deletion(tmp_path: Path) -
         assert len(result.readopted) == 3 and not result.deleted
 
         # `/store` is back with its sentinel (a registered root carries one), a copy still absent
-        (store / SENTINEL).write_text("{}", encoding="utf-8")
+        host = store_host(store)
+
+        def mark(path: Path = store) -> StoreOutcome:
+            return mark_store_missing(
+                env.engine, path, env.bus, store_lost=store_is_lost(host, path)
+            )
+
         before = digest(store)
-        outcome = mark_store_missing(env.engine, store, env.bus)
+        outcome = mark()
         assert (outcome.marked, outcome.restored, outcome.lost) == (1, 0, False)
         assert unit_states(env)[lost] == "store_missing"
         assert unit_states(env)[kept] == "stored"
         assert digest(store) == before  # nothing in /store touched
         assert set(library) <= set(env.files())  # nothing of the library gone
         assert env.events("reconcile.drift")[-1] == {"kind": "store_missing", "count": 1}
-        again = mark_store_missing(env.engine, store, env.bus)
+        again = mark()
         assert (again.marked, again.restored) == (0, 0)  # a second look changes nothing
 
         # the host restores the missing copy: right bytes put it back, other bytes do not
         (store / "keep").mkdir(exist_ok=True)
         (store / "keep/1.cbz").write_bytes(b"some other file")
-        assert mark_store_missing(env.engine, store, env.bus).restored == 0
+        assert mark().restored == 0
         assert unit_states(env)[lost] == "store_missing"
         (store / "keep/1.cbz").write_bytes(kept_bytes("1"))
-        assert mark_store_missing(env.engine, store, env.bus).restored == 1
+        assert mark().restored == 1
         assert unit_states(env)[lost] == "stored"
 
         # a `/store` that is not mounted (no sentinel) is lost, not "a file missing": nothing is
         # marked, nothing deleted, the state is `store_lost` and `store reinit` is the way out
-        (store / SENTINEL).unlink()
-        gone = mark_store_missing(env.engine, store, env.bus)
+        (store / ".shelfhold-mount-id").unlink()
+        gone = mark()
         assert (gone.lost, gone.marked, gone.dependent) == (True, 0, 2)
         assert env.events("reconcile.drift")[-1] == {"kind": "store_lost", "count": 2}
         assert unit_states(env)[kept] == unit_states(env)[lost] == "stored"
-        assert mark_store_missing(env.engine, tmp_path / "no-such-store", env.bus).lost
+        assert mark(tmp_path / "no-such-store").lost
         assert digest(store) == {
             f"keep/{n}.cbz": hashlib.sha256(kept_bytes(n)).hexdigest() for n in ("1", "2")
         }  # every kept copy is where it was, none deleted
@@ -222,3 +246,88 @@ class _Gate:
         import contextlib
 
         return contextlib.nullcontext()
+
+
+def two_archives(bench: object) -> tuple[Path, Path]:
+    """The first archive, and a second one made after the marker of the database changed."""
+    from shelfhold.infrastructure.schema import platform
+
+    first = bench.backups / bench.service.run().name  # type: ignore[attr-defined]
+    with bench.engine.begin() as connection:  # type: ignore[attr-defined]
+        connection.execute(
+            sa.update(platform.app_setting)
+            .where(platform.app_setting.c.key == "test.marker")
+            .values(value="the second archive")
+        )
+    bench.clock.advance(days=1)  # type: ignore[attr-defined]
+    second = bench.backups / bench.service.run().name  # type: ignore[attr-defined]
+    return first, second
+
+
+def restored_marker(folder: Path) -> str:
+    connection = sqlite3.connect(folder / "shelfhold.db")
+    try:
+        return str(
+            connection.execute(
+                "SELECT value FROM app_setting WHERE key = 'test.marker'"
+            ).fetchone()[0]
+        )
+    finally:
+        connection.close()
+
+
+def test_a_file_replaced_between_the_two_passes_is_not_mixed_with_the_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One descriptor serves both passes: swapping the path for another archive after the check
+    changes nothing, and the report speaks of the archive that was checked and written."""
+    with backup_bench(tmp_path) as bench:
+        first, second = two_archives(bench)
+        real = restore_module.check_stream
+        swapped: list[bool] = []
+
+        def check_then_swap(*args: object, **kwargs: object) -> object:
+            checked = real(*args, **kwargs)  # type: ignore[arg-type]
+            os.replace(second, first)  # the path now names the other archive
+            swapped.append(True)
+            return checked
+
+        monkeypatch.setattr(restore_module, "check_stream", check_then_swap)
+        report = restore_archive(first, tmp_path / "out", bench.passphrase)
+        assert swapped and restored_marker(tmp_path / "out") == MARKER  # the first, whole
+        assert report.created_at.startswith("2026-11-08")  # the first one's instant
+
+
+def test_a_change_in_place_between_the_passes_leaves_no_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with backup_bench(tmp_path) as bench:
+        first = bench.backups / bench.service.run().name
+        real = restore_module.check_stream
+
+        def check_then_corrupt(*args: object, **kwargs: object) -> object:
+            checked = real(*args, **kwargs)  # type: ignore[arg-type]
+            with first.open("r+b") as stream:  # the same inode, a byte of the tar body changed
+                stream.seek(first.stat().st_size // 2)
+                byte = stream.read(1)
+                stream.seek(-1, os.SEEK_CUR)
+                stream.write(bytes([byte[0] ^ 1]))
+            return checked
+
+        monkeypatch.setattr(restore_module, "check_stream", check_then_corrupt)
+        with pytest.raises(RestoreIncompleteError):
+            restore_archive(first, tmp_path / "out", bench.passphrase)
+        assert not (tmp_path / "out" / "shelfhold.db").exists()  # never the half of one
+        # truncated in place: the same
+        shutil.rmtree(tmp_path / "out")
+        first.write_bytes(first.read_bytes())  # restore the bytes, then cut the file short
+
+        def check_then_cut(*args: object, **kwargs: object) -> object:
+            checked = real(*args, **kwargs)  # type: ignore[arg-type]
+            os.truncate(first, first.stat().st_size - 100)
+            return checked
+
+        monkeypatch.setattr(restore_module, "check_stream", check_then_cut)
+        with pytest.raises(RestoreIncompleteError):
+            restore_archive(first, tmp_path / "out", bench.passphrase)
+        assert not (tmp_path / "out" / "shelfhold.db").exists()

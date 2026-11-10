@@ -57,7 +57,11 @@ from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import diagnostics
 from shelfhold.infrastructure.secrets.errors import ExportError, KeyringError
-from shelfhold.infrastructure.secrets.export import encrypt_export, read_passphrase_file
+from shelfhold.infrastructure.secrets.export import (
+    WorkFactorError,
+    encrypt_export,
+    read_passphrase_file,
+)
 from shelfhold.infrastructure.volumes import read_data_file
 from shelfhold.jobs.maintenance import MaintenanceBusyError
 from shelfhold.ops.backup.archive import (
@@ -107,6 +111,8 @@ BACKUP_FAILURES: Final = frozenset(
         "no_room",
         "too_large",
         "busy",
+        "locked",
+        "kdf_cost",
         "keyring_unavailable",
         "database_error",
         "write_failed",
@@ -227,7 +233,9 @@ class BackupService:
             rows = connection.execute(sa.select(platform.physical_root.c.path_entry)).scalars()
             return [Path(p).resolve() for p in rows]
 
-    def _passphrase(self, path: Path, destination: Path, *, accept_colocated: bool) -> str:
+    def _passphrase(
+        self, path: Path, destination: Path, *, accept_colocated: bool, manifests: bool
+    ) -> str:
         """The passphrase, unless its file lies in a tree the backup copies or beside the
         archives (then only with `accept_colocated`, which is logged and flagged for `status`).
         The test is by path *and* by identity (device and inode of the open file), so a bind
@@ -237,9 +245,11 @@ class BackupService:
         except ExportError:
             raise BackupError("passphrase_invalid") from None
         register_secret_value(passphrase)
-        trees = [*self._tree(include_manifests=True), destination]
+        # the trees this run copies: the library roots are not touched by a run that does not copy
+        # their manifest folders (ENF-OPS-014)
+        trees = [*self._tree(include_manifests=manifests), destination]
         colocated = any(_inside(path.resolve(), tree) for tree in trees) or _same_file_under(
-            path, [*trees[:-1]], destination
+            path, trees
         )
         if colocated and not accept_colocated:
             raise BackupError("passphrase_colocated")
@@ -289,32 +299,58 @@ class BackupService:
         """One backup. `manifests`: also copy the provenance mirror folders of the library roots;
         a scheduled run leaves them out (it must not wake a library disk outside the window,
         ENF-OPS-014), and they are projections of the database that `meta rebuild` writes again."""
-        run_id = self._begin()
-        try:
-            report = self._run(run_id, accept_colocated=accept_colocated, manifests=manifests)
+        data = self._settings.data_dir
+        try:  # settled before anything is made, and before the lock: pure checks of the setup
+            directory, passphrase = self._prepare(accept_colocated, manifests)
         except BackupError as error:
-            self._finish(run_id, state="failed", cause=error.reason)
-            log.warning("backup.failed", reason=error.reason)
-            self._announce("backup.failed", {"reason": error.reason})
-            self.announce_stale_if_due()
+            self._record_failure(None, error)
             raise
-        except Exception:
-            self._finish(run_id, state="failed", cause="write_failed")
-            self._announce("backup.failed", {"reason": "write_failed"})
-            raise
-        self._finish(
-            run_id, state="ok", file_name=report.name, size=report.size, sha256=report.sha256,
-            schema_revision=report.schema_revision,
-        )  # fmt: skip
-        with self._engine.begin() as connection:
-            connection.execute(sa.delete(_setting).where(_setting.c.key == STALE_KEY))
-        log.info("backup.done", name=report.name, size=report.size, pruned=len(report.pruned))
-        return report
+        lock = BackupLock(data)
+        try:
+            lock.__enter__()
+        except LockBusyError:
+            busy = BackupError("locked")  # another backup (cron, or a CLI run) holds the lock
+            self._record_failure(None, busy)
+            raise busy from None
+        try:
+            # the row is made only now, under the lock: a `running` row with nobody holding the
+            # lock is a dead run, never a live one that has not taken the lock yet
+            self._settle()
+            sweep_orphans(data)
+            run_id = self._begin()
+            try:
+                report = self._write(directory, passphrase, manifests)
+            except BackupError as error:
+                self._record_failure(run_id, error)
+                raise
+            except Exception:
+                self._record_failure(run_id, BackupError("write_failed"))
+                raise
+            self._finish(
+                run_id, state="ok", file_name=report.name, size=report.size, sha256=report.sha256,
+                schema_revision=report.schema_revision,
+            )  # fmt: skip
+            with self._engine.begin() as connection:
+                connection.execute(sa.delete(_setting).where(_setting.c.key == STALE_KEY))
+            log.info("backup.done", name=report.name, size=report.size, pruned=len(report.pruned))
+            return report
+        finally:
+            lock.__exit__(None, None, None)
 
-    def _run(self, run_id: str, *, accept_colocated: bool, manifests: bool) -> BackupReport:
+    def _record_failure(self, run_id: str | None, error: BackupError) -> None:
+        if run_id is None:
+            run_id = self._begin()
+        self._finish(run_id, state="failed", cause=error.reason)
+        log.warning("backup.failed", reason=error.reason)
+        self._announce("backup.failed", {"reason": error.reason})
+        self.announce_stale_if_due()
+
+    def _prepare(self, accept_colocated: bool, manifests: bool) -> tuple[BackupDirectory, str]:
         path = passphrase_path_of(self._settings)  # first: nothing is made without it
         destination = destination_of(self._settings)
-        passphrase = self._passphrase(path, destination, accept_colocated=accept_colocated)
+        passphrase = self._passphrase(
+            path, destination, accept_colocated=accept_colocated, manifests=manifests
+        )
         try:
             directory = BackupDirectory.open(destination)
             directory.sweep_partials(self._clock.now().timestamp())
@@ -323,14 +359,7 @@ class BackupService:
         except OSError:
             raise BackupError("write_failed") from None
         self._flag(SAME_DEVICE_KEY, directory.device() == os.stat(self._settings.data_dir).st_dev)
-        data = self._settings.data_dir
-        try:
-            with BackupLock(data):
-                self._settle(exclude=run_id)
-                sweep_orphans(data)
-                return self._write(directory, passphrase, manifests)
-        except LockBusyError:
-            raise BackupError("busy") from None
+        return directory, passphrase
 
     def _write(self, directory: BackupDirectory, passphrase: str, manifests: bool) -> BackupReport:
         data = self._settings.data_dir
@@ -353,6 +382,8 @@ class BackupService:
 
             try:
                 size, digest = directory.write(name, fill)
+            except WorkFactorError:
+                raise BackupError("kdf_cost") from None
             except (OSError, ValueError, ExportError):
                 raise BackupError("write_failed") from None
             if not self._verified(directory, name, passphrase, digest):
@@ -434,7 +465,10 @@ class BackupService:
             keyring = diagnostics.store_for(self._settings).load()
         except (KeyringError, OSError):
             raise BackupError("keyring_unavailable") from None
-        members[KEYRING_MEMBER] = encrypt_export(keyring, passphrase).encode("ascii")
+        try:
+            members[KEYRING_MEMBER] = encrypt_export(keyring, passphrase).encode("ascii")
+        except WorkFactorError:
+            raise BackupError("kdf_cost") from None
         data = self._settings.data_dir
         with contextlib.suppress(FileNotFoundError):
             members[CONFIG_FILE_NAME] = read_data_file(data / CONFIG_FILE_NAME, MAX_FILE_BYTES)
@@ -583,27 +617,25 @@ def _tree_members(folder: Path, prefix: str, stage: Path) -> dict[str, Source]:
     return found
 
 
-def _same_file_under(path: Path, trees: list[Path], destination: Path) -> bool:
-    """Is the passphrase file *the same file* (device and inode) as one under a tree, whatever
-    path it was reached by (a bind mount, a hard link)? Trees on another device cannot hold it."""
+MAX_INODE_WALK: Final = 5_000_000
+
+
+def _same_file_under(path: Path, trees: list[Path]) -> bool:
+    """Is the passphrase file *the same file* (device and inode of the open file) as an entry
+    anywhere under one of the trees, whatever path it was reached by (a hard link, a bind mount)?
+    Every entry is compared on its own `(st_dev, st_ino)`, whatever device the tree or a folder
+    in it sits on (a mount inside `/data` is another device). A walk too long to finish is
+    answered as "yes": refusing is the safe error, and the owner can accept the risk."""
     try:
         with open(path, "rb") as stream:
             status = os.fstat(stream.fileno())
     except OSError:
         return False
     target = (status.st_dev, status.st_ino)
-    for tree in trees:
-        if _holds_inode(tree, target, deep=True):
-            return True
-    return _holds_inode(destination, target, deep=False)
+    return any(_holds_inode(tree, target) for tree in trees)
 
 
-def _holds_inode(tree: Path, target: tuple[int, int], *, deep: bool) -> bool:
-    try:
-        if os.lstat(tree).st_dev != target[0]:
-            return False
-    except OSError:
-        return False
+def _holds_inode(tree: Path, target: tuple[int, int]) -> bool:
     pending, seen = [tree], 0
     while pending:
         try:
@@ -612,15 +644,15 @@ def _holds_inode(tree: Path, target: tuple[int, int], *, deep: bool) -> bool:
             continue
         for entry in entries:
             seen += 1
-            if seen > MAX_FILES * 20:
-                return False
+            if seen > MAX_INODE_WALK:
+                return True
             try:
                 info = entry.stat(follow_symlinks=False)
             except OSError:
                 continue
             if (info.st_dev, info.st_ino) == target and stat.S_ISREG(info.st_mode):
                 return True
-            if deep and stat.S_ISDIR(info.st_mode) and info.st_dev == target[0]:
+            if stat.S_ISDIR(info.st_mode):
                 pending.append(Path(entry.path))
     return False
 

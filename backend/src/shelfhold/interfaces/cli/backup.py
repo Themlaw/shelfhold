@@ -30,6 +30,7 @@ from shelfhold.ops.backup import (
     BackupService,
     DestinationError,
     PassphraseError,
+    RestoreIncompleteError,
     restore_archive,
 )
 from shelfhold.ops.backup.run import verify_latest
@@ -40,6 +41,8 @@ GATE_FILE = ".maintenance.lock"
 # One literal `t()` per sentence (the catalog test reads them): a cause maps to its sentence.
 FAILED_TEXT: dict[str, Callable[[], str]] = {
     "interrupted": lambda: t("backup.failed_interrupted"),
+    "locked": lambda: t("backup.failed_locked"),
+    "kdf_cost": lambda: t("backup.failed_kdf_cost"),
     "passphrase_missing": lambda: t("backup.failed_passphrase_missing"),
     "passphrase_invalid": lambda: t("backup.failed_passphrase_invalid"),
     "passphrase_colocated": lambda: t("backup.failed_passphrase_colocated"),
@@ -163,7 +166,7 @@ def run_restore(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         return _fail(t("backup.damaged"))
     except DestinationError as error:
         return _fail(DESTINATION_TEXT[error.reason](str(args.destination)))
-    except OSError:
+    except (RestoreIncompleteError, OSError):  # something may be written: the folder is unusable
         return _fail(t("backup.restore_incomplete", path=args.destination))
     print(t("backup.restored", path=report.destination, files=report.files))
     if not report.keyring_written:

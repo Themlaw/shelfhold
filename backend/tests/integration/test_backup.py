@@ -276,7 +276,7 @@ def test_two_backups_do_not_run_together(tmp_path: Path) -> None:
     with backup_bench(tmp_path) as bench, BackupLock(bench.settings.data_dir):
         with pytest.raises(BackupError) as refused:
             bench.service.run()
-        assert refused.value.reason == "busy"
+        assert refused.value.reason == "locked"  # not "busy": that one is a VACUUM
         assert not bench.backups.exists() or not bench.names()
 
 
@@ -577,3 +577,176 @@ def test_a_retention_above_a_month_is_refused_by_the_settings() -> None:
     assert Settings(backup_retention=30).backup_retention == 30
     with pytest.raises(ValidationError):
         Settings(backup_retention=31)
+
+
+def test_the_lock_is_taken_before_the_run_row_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `running` row with nobody holding the lock is a dead run: so no row may exist before the
+    lock is ours (a run waiting for the lock must not be taken for a dead one by the holder)."""
+    from shelfhold.ops.backup.scratch import LockBusyError
+
+    with backup_bench(tmp_path) as bench:
+        real = type(bench.service)._begin
+        seen: list[bool] = []
+
+        def begin(self: object) -> str:
+            try:
+                with BackupLock(bench.settings.data_dir):
+                    seen.append(False)  # we could take the lock: the run does not hold it
+            except LockBusyError:
+                seen.append(True)
+            return real(self)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(type(bench.service), "_begin", begin)
+        bench.service.run()
+        assert seen == [True]
+
+
+def test_a_live_run_is_never_marked_interrupted_by_another_process(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench:
+        with bench.engine.begin() as connection:  # the CLI run that is going on
+            connection.execute(
+                sa.insert(platform.backup_run).values(
+                    id="01J00000000000000000000B03", started_at=bench.clock.now(), state="running"
+                )
+            )
+        with BackupLock(bench.settings.data_dir):  # ... and holds the lock
+            with pytest.raises(BackupError) as refused:  # the scheduled run meets it
+                bench.service.run()
+            assert refused.value.reason == "locked"
+            assert bench.service.settle_interrupted() == 0  # nor does the start-up
+        with bench.engine.connect() as connection:
+            rows = {
+                r.id: (r.state, r.cause) for r in connection.execute(sa.select(platform.backup_run))
+            }
+        assert rows["01J00000000000000000000B03"] == ("running", None)
+        assert [c for s, c in rows.values() if s == "failed"] == ["locked"]
+        assert bench.events("backup.failed") == [{"reason": "locked"}]
+
+
+def test_a_hard_link_deep_in_the_destination_or_across_a_device_change_is_colocated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with backup_bench(tmp_path) as bench:
+        inside = write_passphrase(bench.settings.data_dir / "a" / "p")
+        outside = tmp_path / "elsewhere" / "p"
+        outside.parent.mkdir()
+        os.link(inside, outside)
+        service = bench.service_for(
+            bench.settings.model_copy(update={"backup_passphrase_file": outside})
+        )
+        # the folder of `/data` reports another device (a mount in the tree is another device):
+        # the comparison is by entry, so it still finds the file
+        real = os.lstat
+
+        def lstat(path: object, *a: object, **k: object) -> os.stat_result:
+            info = real(path, *a, **k)  # type: ignore[arg-type]
+            if str(path) == str(bench.settings.data_dir):
+                fields = list(info)
+                fields[2] = info.st_dev + 1
+                return os.stat_result(fields)
+            return info
+
+        monkeypatch.setattr(os, "lstat", lstat)
+        with pytest.raises(BackupError) as refused:
+            service.run()
+        assert refused.value.reason == "passphrase_colocated"
+        monkeypatch.undo()
+        # and one deep in the backup folder, three levels down, is beside the archives too
+        (bench.backups / "x" / "y" / "z").mkdir(parents=True)
+        os.link(write_passphrase(tmp_path / "plain" / "p"), bench.backups / "x" / "y" / "z" / "p")
+        deep = bench.service_for(
+            bench.settings.model_copy(update={"backup_passphrase_file": tmp_path / "plain" / "p"})
+        )
+        with pytest.raises(BackupError) as again:
+            deep.run()
+        assert again.value.reason == "passphrase_colocated"
+
+
+def test_a_run_without_manifests_never_reads_the_library_roots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ENF-OPS-014: the scheduled run does not touch a library disk, not even to resolve a path
+    for the passphrase check."""
+    with backup_bench(tmp_path) as bench:
+
+        def roots(_self: object) -> list[Path]:
+            raise AssertionError("a library root was read by a run that copies no manifest")
+
+        monkeypatch.setattr(type(bench.service), "_roots", roots)
+        bench.service.run()  # no manifests: no root is read
+        assert len(bench.names()) == 1
+        bench.clock.advance(days=1)
+        with pytest.raises(AssertionError):
+            bench.service.run(manifests=True)  # the manual run with manifests does read them
+
+
+def test_only_a_marked_scratch_folder_is_swept(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench:
+        data = bench.settings.data_dir
+        (data / "tmp").mkdir(exist_ok=True)
+        foreign = data / "tmp" / "backup-abcd1234"  # same name, someone else's, no marker
+        foreign.mkdir()
+        (foreign / "precious").write_text("x")
+        ours = data / "tmp" / "backup-wxyz5678"
+        ours.mkdir()
+        (ours / ".shelfhold-backup-scratch").write_text("shelfhold backup scratch\n")
+        (ours / "snapshot.db").write_bytes(b"clear")
+        (ours / "meta").mkdir()
+        (ours / "meta" / "00000000").write_bytes(b"clear")
+        assert sweep_orphans(data) == 1
+        assert not ours.exists()  # removed recursively
+        assert (foreign / "precious").read_text() == "x"
+        with scratch_folder(data) as live:
+            assert (live / ".shelfhold-backup-scratch").is_file()
+
+
+def test_an_empty_or_foreign_partial_name_is_not_swept(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench:
+        bench.backups.mkdir(mode=0o700)
+        old = bench.clock.now().timestamp() - 7200
+        for name, content in (
+            (".partial-0123456789abcdef", b""),
+            (".partial-fedcba9876543210", arc.ARCHIVE_MAGIC[:5]),
+        ):
+            (bench.backups / name).write_bytes(content)
+            os.utime(bench.backups / name, (old, old))
+        bench.service.run()
+        assert {".partial-0123456789abcdef", ".partial-fedcba9876543210"} <= set(
+            os.listdir(bench.backups)
+        )
+
+
+def test_a_work_factor_above_the_bound_is_retried_then_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """age sizes scrypt to a second of this machine; a seal above `MAX_SCRYPT_LOG_N` could never
+    be read back. It is made again, and after three tries the run fails with its own cause."""
+    from shelfhold.infrastructure.secrets import export as export_module
+
+    real = export_module.check_scrypt_cost
+    calls: list[int] = []
+
+    def too_costly(binary: bytes) -> None:
+        calls.append(1)
+        raise ExportError("too costly")
+
+    with backup_bench(tmp_path) as bench:
+        monkeypatch.setattr(export_module, "check_scrypt_cost", too_costly)
+        with pytest.raises(BackupError) as refused:
+            bench.service.run()
+        assert refused.value.reason == "kdf_cost" and len(calls) == 3  # three tries
+        assert bench.events("backup.failed") == [{"reason": "kdf_cost"}]
+        assert not bench.backups.exists() or os.listdir(bench.backups) == []
+        # a calibration that lands above the bound once is simply made again
+        attempts = iter([True, False, False, False])
+
+        def noisy(binary: bytes) -> None:
+            if next(attempts, False):
+                raise ExportError("too costly")
+            real(binary)
+
+        monkeypatch.setattr(export_module, "check_scrypt_cost", noisy)
+        bench.clock.advance(days=1)
+        assert bench.service.run().name in bench.names()

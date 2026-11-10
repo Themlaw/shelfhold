@@ -147,15 +147,37 @@ def check_scrypt_cost(binary: bytes) -> None:
         raise ExportError("wrong passphrase or damaged file")
 
 
+class WorkFactorError(ExportError):
+    """age sized its scrypt above what this program reads back (`MAX_SCRYPT_LOG_N`)."""
+
+
+SEAL_ATTEMPTS = 3
+
+
+def _seal(clear: bytes, passphrase: str) -> bytes:
+    """A scrypt-sealed age file that `decrypt_blob` can read back. age calibrates the work factor
+    to about a second of this machine and pyrage does not let the caller set it: on a fast host
+    the calibration can land above the bound, and a file sealed so could never be opened. The
+    seal is checked, and made again (the calibration is noisy) a few times, then refused."""
+    for _ in range(SEAL_ATTEMPTS):
+        sealed = bytes(pyrage.passphrase.encrypt(clear, passphrase))
+        try:
+            check_scrypt_cost(sealed)
+        except ExportError:
+            continue
+        return sealed
+    raise WorkFactorError("the scrypt work factor of this machine is above what can be read back")
+
+
 def encrypt_export(keyring: Keyring, passphrase: str) -> str:
     """The whole keyring (retired keys included) as an armored age file."""
-    return armor(pyrage.passphrase.encrypt(keyring.to_json(), passphrase))
+    return armor(_seal(keyring.to_json(), passphrase))
 
 
 def encrypt_blob(clear: bytes, passphrase: str) -> bytes:
     """Binary age v1 with a scrypt recipient, for the integrated backup (EF-INT-015): the format
     of `encrypt_export` without the ASCII armor, which a large archive does not want."""
-    return bytes(pyrage.passphrase.encrypt(clear, passphrase))
+    return _seal(clear, passphrase)
 
 
 def decrypt_blob(binary: bytes, passphrase: str) -> bytes:

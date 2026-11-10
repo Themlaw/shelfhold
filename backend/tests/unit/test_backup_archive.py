@@ -298,3 +298,38 @@ def test_the_documented_two_step_opens_the_archive_with_plain_age_and_tar(tmp_pa
         capture_output=True, text=True, check=True,
     )  # fmt: skip
     assert set(listing.stdout.split()) == {arc.MANIFEST_MEMBER, *good_members()}
+
+
+def test_the_length_in_the_header_is_ascii_digits_and_nothing_else(tmp_path: Path) -> None:
+    good = seal(tar_bytes(good_members()))
+    first, rest = good.split(b"\n", 1)
+    size = first[len(arc.ARCHIVE_MAGIC) :]
+    assert check_blob(good, PASSPHRASE, tmp_path).member_count == 5
+    arabic = "".join(chr(0x660 + int(d)) for d in size.decode()).encode()
+    variants = {
+        "a sign": b"+" + size,
+        "a space before": b" " + size,
+        "a space after": size + b" ",
+        "a leading zero": b"0" + size,
+        "an underscore": size[:1] + b"_" + size[1:],
+        "other digits": arabic,
+        "a hex number": b"0x" + size,
+        "no number": b"",
+        "too many digits": b"1" * 9,
+    }
+    for label, variant in variants.items():
+        forged = arc.ARCHIVE_MAGIC + variant + b"\n" + rest
+        with pytest.raises(BackupArchiveError):
+            check_blob(forged, PASSPHRASE, tmp_path)
+        assert label
+
+
+def test_the_ephemeral_key_is_masked_in_logs_while_it_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str] = []
+    monkeypatch.setattr(arc, "register_secret_value", seen.append)
+    blob = seal(tar_bytes(good_members()))
+    check_blob(blob, PASSPHRASE, tmp_path)
+    assert len(seen) == 2 and seen[0] == seen[1]  # the same key, on the way in and on the way out
+    assert seen[0].startswith("AGE-SECRET-KEY-1") and seen[0].encode() not in blob
