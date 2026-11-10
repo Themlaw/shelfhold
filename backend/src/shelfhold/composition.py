@@ -55,6 +55,7 @@ from shelfhold.integrations.apprise import operating_bus
 from shelfhold.library.public import Normalizers, TombstoneRoot, TombstoneService
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
+from shelfhold.plugin_host.refs_guard import screened, values_of
 from shelfhold.sdk.connected import ConnectedCapability
 from shelfhold.sdk.models import AuthBasic
 
@@ -446,7 +447,12 @@ class Composition:
         if self.wakes().attached(SUWAYOMI_WAKE):  # EF-INT-022: it sleeps behind Sablier
             service.wake_target = SUWAYOMI_WAKE
             service.connected |= ConnectedCapability.WAKE
-        return SuwayomiLink(service, fetcher, guarded, url)
+        # every reference the service hands back is screened for secrets, wherever it is read
+        # from (the follow cycle, the adoption listing): EF-SRC-035
+        checked = screened(
+            service, values_of(fetcher), lambda: getattr(fetcher, "ref_template", None)
+        )
+        return SuwayomiLink(checked, fetcher, guarded, url)
 
     def check_mode(self) -> str:
         """`always_on` or `piloted` (EF-SRC-025): the stored `source.check_mode`, else `piloted`

@@ -15,20 +15,13 @@ import pytest
 import structlog
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+
 from shelfhold.infrastructure.fetcher.refs import (
     SECRET_PLACEHOLDER,
     SecretInRef,
     check_ref,
     rewrite_ref,
 )
-from shelfhold.infrastructure.write_guard import (
-    EXEMPT_TABLES,
-    GUARDED_TABLES,
-    SecretInWriteError,
-    check_write,
-)
-from shelfhold.plugin_host.refs_guard import RefsGuard
-
 from shelfhold.infrastructure.logging import (
     configure_logging,
     redact_url,
@@ -37,7 +30,13 @@ from shelfhold.infrastructure.logging import (
     route_of,
 )
 from shelfhold.infrastructure.schema import metadata
+from shelfhold.infrastructure.write_guard import (
+    EXEMPT_TABLES,
+    SecretInWriteError,
+    check_write,
+)
 from shelfhold.plugin_host.errors import RefHasSecret
+from shelfhold.plugin_host.refs_guard import RefsGuard
 from shelfhold.sdk.refs import (
     FileAsset,
     ImageRequest,
@@ -282,22 +281,20 @@ def test_log_lines_hold_no_secret_from_a_url(capsys: pytest.CaptureFixture[str])
 # -- the write guard ---------------------------------------------------------------------------
 
 
-def test_every_table_is_guarded_or_exempt_on_purpose() -> None:
-    """A new table forces a decision: a reference or a journal is guarded, anything else says why
-    it is not."""
-    names = set(metadata.tables)
-    assert GUARDED_TABLES | set(EXEMPT_TABLES) == names
-    assert not GUARDED_TABLES & set(EXEMPT_TABLES)
-    assert all(EXEMPT_TABLES[t] for t in EXEMPT_TABLES)  # each exemption has its reason
+def test_every_table_is_guarded_unless_exempt_on_purpose() -> None:
+    """A table nobody decided about is guarded; an exemption names its reason and a real table;
+    the references, the journals and the payloads are never exempt."""
+    assert set(EXEMPT_TABLES) <= set(metadata.tables), "an exemption names a table that is gone"
+    assert all(EXEMPT_TABLES[t].strip() for t in EXEMPT_TABLES)  # each exemption has its reason
     for table in (
-        "source_item",
-        "unit_variant",
-        "upstream_snapshot",
-        "audit",
-        "event",
-        "fs_intent",
-    ):
-        assert table in GUARDED_TABLES
+        "source_item", "unit_variant", "source_binding", "upstream_snapshot", "download_request",
+        "audit", "event", "notification_pending", "fs_intent", "export_record", "http_cache",
+        "metadata_cache", "kavita_access_audit",
+    ):  # fmt: skip
+        assert table in metadata.tables and table not in EXEMPT_TABLES, table
+    with pytest.raises(SecretInWriteError):  # a table added later is guarded without a line here
+        register_secret_value(KEY)
+        check_write("INSERT INTO a_new_table (c) VALUES (?)", (f"/x/{KEY}",), many=False)
 
 
 @pytest.mark.parametrize("encoding", sorted(_encodings(KEY)))
@@ -339,6 +336,12 @@ def test_property_no_write_carries_a_registered_secret(
     ref = noise + template.replace("{}", form)
     with pytest.raises(SecretInWriteError):
         check_write("UPDATE unit_variant SET remote_unit_id = ?", (ref,), many=False)
+    for ascii_only in (True, False):  # a JSON column arrives serialised and escaped
+        document = json.dumps({"url": ref, "list": [ref]}, ensure_ascii=ascii_only)
+        with pytest.raises(SecretInWriteError):
+            check_write(
+                "INSERT INTO event (type, payload) VALUES (?, ?)", ("t", document), many=False
+            )
     try:
         rewritten = rewrite_ref(ref, (secret,))
     except SecretInRef:
@@ -361,5 +364,32 @@ def test_a_dict_of_parameters_is_scanned_too() -> None:
         check_write(
             "INSERT INTO event (id, payload) VALUES (:a, :b)",
             {"a": "1", "b": {"u": KEY}},
+            many=False,
+        )
+
+
+def test_a_secret_with_json_special_characters_is_found_in_a_serialised_column() -> None:
+    secret = 'q"u\\o\u00e9te\n' + fresh_secret("json")
+    register_secret_value(secret)
+    for document in (json.dumps({"a": secret}), json.dumps([{"b": [secret]}], ensure_ascii=False)):
+        assert secret not in document  # the serialised text hides the raw value
+        with pytest.raises(SecretInWriteError):
+            check_write("UPDATE upstream_snapshot SET payload = ?", (document,), many=False)
+
+
+def test_a_write_hidden_in_a_with_statement_is_guarded() -> None:
+    register_secret_value(KEY)
+    with pytest.raises(SecretInWriteError):
+        check_write(
+            "WITH x AS (SELECT ? AS v) "
+            "INSERT INTO source_item (id, remote_id) SELECT 'a', v FROM x",
+            (f"/o/{KEY}",),
+            many=False,
+        )
+    with pytest.raises(SecretInWriteError):  # the SET of an upsert is not a table
+        check_write(
+            "INSERT INTO source_item (id, remote_id) VALUES (?, ?) "
+            "ON CONFLICT (id) DO UPDATE SET remote_id = ?",
+            ("a", "/ok", f"/o/{KEY}"),
             many=False,
         )

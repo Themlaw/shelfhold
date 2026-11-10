@@ -126,8 +126,8 @@ def screened(
 
 
 class ScreenedService:
-    """A connected service seen by the cycle: each coroutine method returns what the guard let
-    through. The rest (manifest, capabilities, plain methods) is the service's own."""
+    """A connected service as the host sees it: each method returns what the guard let through.
+    The rest (manifest, capabilities) is the service's own."""
 
     def __init__(self, inner: Any, guard: RefsGuard) -> None:
         self.__dict__["_inner"] = inner
@@ -135,15 +135,24 @@ class ScreenedService:
 
     def __getattr__(self, name: str) -> Any:
         attr = getattr(self.__dict__["_inner"], name)
-        if not inspect.iscoroutinefunction(attr):
-            return attr
         guard: RefsGuard = self.__dict__["_guard"]
+        if inspect.iscoroutinefunction(attr):
 
-        @functools.wraps(attr)
-        async def guarded(*args: Any, **kwargs: Any) -> Any:
-            return guard.screen(await attr(*args, **kwargs))
+            @functools.wraps(attr)
+            async def guarded(*args: Any, **kwargs: Any) -> Any:
+                return guard.screen(await attr(*args, **kwargs))
 
-        return guarded
+            return guarded
+        if inspect.ismethod(
+            attr
+        ):  # a plain method (`migrate_ref`...) answers through the guard too
+
+            @functools.wraps(attr)
+            def guarded_sync(*args: Any, **kwargs: Any) -> Any:
+                return guard.screen(attr(*args, **kwargs))
+
+            return guarded_sync
+        return attr
 
     def __setattr__(self, name: str, value: Any) -> None:
         setattr(self.__dict__["_inner"], name, value)

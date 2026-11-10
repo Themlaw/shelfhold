@@ -7,10 +7,14 @@ a space, either case of the hexadecimal digits), the statement is refused with
 `SecretInWriteError`, which names the table and never the value. The registry is the same one the
 log scrubber uses: whatever the Fetcher injected, the vault opened or a passphrase loaded.
 
-Each table of the schema is either guarded or exempt *with a reason*; a test fails when a new
-table is neither, so the decision is taken when the table is created.
+Every table is guarded unless it is listed in `EXEMPT_TABLES` *with a reason*: a table added later
+is guarded until someone decides otherwise. The guarded tables are the references, the journals,
+the events and notices, the payloads of intents, tickets and snapshots, the provenance records and
+the caches keyed by a URL.
 """
 
+import contextlib
+import json
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
@@ -22,7 +26,6 @@ from shelfhold.infrastructure.secret_text import contains_secret
 
 __all__ = [
     "EXEMPT_TABLES",
-    "GUARDED_TABLES",
     "SecretInWriteError",
     "check_write",
     "install_write_guard",
@@ -36,22 +39,6 @@ class SecretInWriteError(ValueError):
         super().__init__(f"refused: a write to {table} holds a registered secret value")
         self.table = table
 
-
-# References (what a source names), the journals of what was done, the events and notices, the
-# payloads of intents, tickets and snapshots, the provenance records, the caches keyed by URL.
-GUARDED_TABLES: Final = frozenset(
-    {
-        "audit", "binding_release_sample", "content", "document_alias",
-        "download_request", "download_request_unit", "event", "export_item", "export_op",
-        "export_plan", "export_record", "fs_intent", "follow_notice", "follow_request",
-        "gap_ack", "http_cache", "import_entry", "job_view", "kavita_access_audit",
-        "metadata_cache",
-        "notification_pending", "replica", "revision_pending", "safeguard_backlog",
-        "series_follow", "series_gap", "source_alias", "source_binding", "source_failure",
-        "source_item", "sub_source", "trash_item", "unit_variant", "upstream_snapshot",
-        "variant_revision",
-    }
-)  # fmt: skip
 
 _SEALED = "its secrets are sealed (ENF-SEC-005) or hashed; the value is not a reference"
 _CATALOG = "catalog metadata (titles, names, numbers): not a reference, and never a credential"
@@ -85,24 +72,52 @@ _WRITE: Final = re.compile(
 )
 
 
+_MAX_JSON: Final = 1 << 20
+
+
 def _strings(value: Any, depth: int = 0) -> list[str]:
+    """Every text a parameter holds. A JSON column reaches the driver already serialised, with its
+    quotes, backslashes and non-ASCII characters escaped: a secret holding one is no longer a
+    substring of that text, so the document is read too and its keys and strings are scanned."""
     if depth > 6:
         return []
     if isinstance(value, str):
-        return [value]
+        found = [value]
+        if value.lstrip()[:1] in ("{", "[") and len(value) <= _MAX_JSON:
+            with contextlib.suppress(ValueError):  # not a document after all: the text is scanned
+                found += _strings(json.loads(value), depth + 1)
+        return found
     if isinstance(value, bytes | bytearray):
         return [bytes(value).decode("utf-8", errors="replace")]
     if isinstance(value, Mapping):
-        return [s for item in value.values() for s in _strings(item, depth + 1)]
+        return [s for item in (*value.keys(), *value.values()) for s in _strings(item, depth + 1)]
     if isinstance(value, Sequence):
         return [s for item in value for s in _strings(item, depth + 1)]
     return []
 
 
+_CTE: Final = re.compile(r"^\s*WITH\b", re.IGNORECASE)
+_WRITE_ANYWHERE: Final = re.compile(
+    r"""\b(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE)\s+["`\[]?(\w+)""", re.IGNORECASE
+)
+
+
+def _written(statement: str) -> list[str]:
+    """The tables a statement writes. A `WITH ... INSERT` is read through its whole text."""
+    match = _WRITE.match(statement)
+    if match is not None:
+        return [match.group(1)]
+    if _CTE.match(statement):
+        return [t for t in _WRITE_ANYWHERE.findall(statement) if t.upper() != "SET"]
+    return []
+
+
 def check_write(statement: str, parameters: Any, *, many: bool) -> None:
     """Raise `SecretInWriteError` when a guarded table is written with a registered secret."""
-    match = _WRITE.match(statement)
-    if match is None or match.group(1) not in GUARDED_TABLES or not parameters:
+    if not parameters:
+        return
+    tables = [t for t in _written(statement) if t not in EXEMPT_TABLES]
+    if not tables:
         return
     known = known_secret_values()
     if not known:
@@ -111,7 +126,7 @@ def check_write(statement: str, parameters: Any, *, many: bool) -> None:
     for row in rows:
         for text in _strings(row):
             if contains_secret(text, known):
-                raise SecretInWriteError(match.group(1))
+                raise SecretInWriteError(tables[0])
 
 
 def install_write_guard(engine: Engine) -> None:
