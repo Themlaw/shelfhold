@@ -304,6 +304,7 @@ def test_a_change_in_place_between_the_passes_leaves_no_database(
     with backup_bench(tmp_path) as bench:
         first = bench.backups / bench.service.run().name
         real = restore_module.check_stream
+        original = first.read_bytes()
 
         def check_then_corrupt(*args: object, **kwargs: object) -> object:
             checked = real(*args, **kwargs)  # type: ignore[arg-type]
@@ -320,7 +321,7 @@ def test_a_change_in_place_between_the_passes_leaves_no_database(
         assert not (tmp_path / "out" / "shelfhold.db").exists()  # never the half of one
         # truncated in place: the same
         shutil.rmtree(tmp_path / "out")
-        first.write_bytes(first.read_bytes())  # restore the bytes, then cut the file short
+        first.write_bytes(original)  # restore the bytes, then cut the file short
 
         def check_then_cut(*args: object, **kwargs: object) -> object:
             checked = real(*args, **kwargs)  # type: ignore[arg-type]
