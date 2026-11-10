@@ -254,3 +254,52 @@ def test_exit_during_an_export_takes_the_existing_locks(env: RestoreEnv) -> None
         assert not (env.library / SENTINEL).exists()  # refused before anything was written
     ex.reinit(rid, principal=ADMIN)  # the lock is free again
     assert (env.library / SENTINEL).exists()
+
+
+@pytest.mark.req("EF-EXP-064", "EF-BIB-054")
+def test_takeover_refuses_a_root_id_registered_under_another_path(env: RestoreEnv) -> None:
+    """Review: the sentinel of one root copied onto another folder (verified kids and all) never
+    lends its `root_id` to that folder."""
+    ex, _ = exits(env, keyring=True)
+    rid = root_id(env)
+    folder = env.library.parent / "copied-sentinel"
+    folder.mkdir()
+    (folder / SENTINEL).write_text(
+        json.dumps({
+            "root_id": rid, "instance_id": FOREIGN_INSTANCE, "generation": 1,
+            "tombstone_kids": authentic_kids(env, rid, "k1"),
+        }),
+        "utf-8",
+    )  # fmt: skip
+    kept = (folder / SENTINEL).read_bytes()
+    with pytest.raises(RootUnauthenticatedError):
+        ex.takeover(str(folder), principal=ADMIN)
+    assert (folder / SENTINEL).read_bytes() == kept
+    with env.engine.connect() as connection:
+        paths = connection.execute(sa.select(platform.physical_root.c.path_entry)).scalars().all()
+    assert str(folder) not in paths
+
+
+@pytest.mark.req("EF-EXP-064", "EF-BIB-054")
+def test_takeover_refuses_verified_kids_when_no_journal_line_opens(env: RestoreEnv) -> None:
+    """Review: verified kids are not enough when the folder's journal holds lines that none of
+    which opens under the kept `root_id`: their purges would be forgotten."""
+    from shelfhold.library.public import RootEvidence
+
+    class Stub:
+        def examine(self, _path: str, candidates: object) -> dict[str, RootEvidence]:
+            return {c: RootEvidence(c, frozenset({"k1"}), 3, 0) for c in candidates}  # type: ignore[attr-defined]
+
+        def tombstone_kids(self, _path: str) -> dict[str, dict[str, str]]:
+            return {}
+
+    ex, _ = exits(env)
+    ex._evidence = lambda _fsops: Stub()
+    folder = env.library.parent / "journal-unreadable"
+    folder.mkdir()
+    (folder / SENTINEL).write_text(
+        json.dumps({"root_id": "z" * 26, "instance_id": FOREIGN_INSTANCE, "generation": 1}),
+        "utf-8",
+    )
+    with pytest.raises(RootUnauthenticatedError):
+        ex.takeover(str(folder), principal=ADMIN)

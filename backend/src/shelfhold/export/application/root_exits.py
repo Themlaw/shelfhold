@@ -528,6 +528,7 @@ class RootExits:
             root_id = target.row.root_id  # the database's: a file never chooses it
         elif found is not None and found.root_id in authentic:
             root_id = found.root_id
+            self._refuse_borrowed_identity(target.path, root_id, evidence[root_id])
         elif found is not None and (
             source is None or evidence.get(found.root_id, _NONE).contradicted
         ):
@@ -556,6 +557,29 @@ class RootExits:
             kids = [{"kid": k, "tags": dict(tags[k])} for k in sorted(verified.kids) if k in tags]
         bounded = tuple(dict.fromkeys(c for c in chain if _plausible(c)))[:_MAX_PREDECESSORS]
         return _Plan(root_id, bounded, kids, trusted, tuple(ignored))
+
+    def _refuse_borrowed_identity(self, path: str, root_id: str, proof: RootEvidence) -> None:
+        """A `root_id` is kept from a file only when it is really this folder's: not the one of
+        another registered root (a sentinel copied from `/store`), and not one under which the
+        journal of this folder cannot be read (its lines would be inert and a purge forgotten)."""
+        with self._engine.connect() as connection:
+            elsewhere = connection.execute(
+                sa.select(platform.physical_root.c.path_entry).where(
+                    platform.physical_root.c.root_id == root_id,
+                    platform.physical_root.c.path_entry != path,
+                )
+            ).first()
+        if elsewhere is not None:
+            raise RootUnauthenticatedError(
+                f"the sentinel carries the root_id of {elsewhere.path_entry}, another root of "
+                "this instance: a sentinel copied from one root to another is never kept"
+            )
+        if proof.lines > 0 and proof.opened == 0:
+            raise RootUnauthenticatedError(
+                "the tombstone journal of this folder holds lines that do not open under the "
+                "root_id of its sentinel: keeping it would forget purges. Import the keyring "
+                "(`shelfhold secrets import`) or put the journal aside, then try again"
+            )
 
     def _document(
         self, target: _Target, plan: _Plan, instance_id: str, epoch: int
