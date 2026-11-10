@@ -210,10 +210,16 @@ def _render_table(
     (table_sql,) = connection.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
     ).fetchone()
-    references = {
-        str(row[3]): f"{row[2]}.{row[4]}"
-        for row in connection.execute(f'PRAGMA foreign_key_list("{table}")')
+    # A column in a composite key as well as in its own: the single-column key names it, whatever
+    # order SQLite lists them in (a table rebuilt by a migration lists them in no fixed order).
+    foreign_keys = connection.execute(f'PRAGMA foreign_key_list("{table}")').fetchall()
+    width = {
+        fk_id: sum(1 for row in foreign_keys if row[0] == fk_id)
+        for fk_id in {r[0] for r in foreign_keys}
     }
+    references: dict[str, str] = {}
+    for row in sorted(foreign_keys, key=lambda r: (width[r[0]], str(r[2]), str(r[4]))):
+        references.setdefault(str(row[3]), f"{row[2]}.{row[4]}")
     lines = [f"### `{table}`", "", description or "", "",
              "| Column | Type | Null | Default | Key | Allowed values | Description |",
              "| --- | --- | --- | --- | --- | --- | --- |"]  # fmt: skip

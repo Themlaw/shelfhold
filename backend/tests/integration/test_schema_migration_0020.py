@@ -46,6 +46,15 @@ def seed(db: sqlite3.Connection) -> None:
         (ID, ID),
     )
     db.execute(
+        "INSERT INTO source_item (id, plugin_id, source_key, remote_id) "
+        "VALUES (?, 'suwayomi', 'suwayomi:1', '/a')",
+        (ID,),
+    )
+    db.execute(
+        "INSERT INTO source_binding (id, work_id, edition_id, source_item_id) VALUES (?, ?, ?, ?)",
+        (ID, ID, ID, ID),
+    )
+    db.execute(
         "INSERT INTO shelf (id, name, phrase) VALUES (?, 'Manga', 'manga')",
         (ID,),
     )
@@ -206,7 +215,6 @@ def test_edition_unit_content_shelf_columns(migrated: sqlite3.Connection) -> Non
         "UPDATE edition SET volume_size = 0",
         "UPDATE edition SET upstream_status = 'dead'",
         "UPDATE shelf SET link_mode = 'symlink'",
-        "UPDATE unit SET filtered_reason = ''",
     ):
         with pytest.raises(sqlite3.IntegrityError):
             migrated.execute(statement)
@@ -244,8 +252,9 @@ def test_variant_revision_quarantine_keeps_the_history_append_only(
     migrated: sqlite3.Connection,
 ) -> None:
     migrated.execute(
-        "INSERT INTO unit_variant (id, unit_id, team_id, remote_unit_id) VALUES (?, ?, NULL, 'r')",
-        (ID, ID),
+        "INSERT INTO unit_variant (id, unit_id, source_binding_id, remote_unit_id) "
+        "VALUES (?, ?, ?, 'r')",
+        (ID, ID, ID),
     )
     migrated.execute(
         "INSERT INTO variant_revision (variant_id, revision, seen_at) VALUES (?, 1, ?)", (ID, NOW)
@@ -277,9 +286,20 @@ def test_series_gap_and_release_samples(migrated: sqlite3.Connection) -> None:
             (ID, NOW),
         )
     migrated.execute("UPDATE series_gap SET notified_at = ?", (NOW,))
+    migrated.execute(
+        "INSERT INTO binding_release_sample (source_binding_id, observed_at) VALUES (?, ?)",
+        (ID, NOW),
+    )
+    with pytest.raises(sqlite3.IntegrityError):  # one sample per binding and instant
+        migrated.execute(
+            "INSERT INTO binding_release_sample (source_binding_id, observed_at) VALUES (?, ?)",
+            (ID, NOW),
+        )
+    migrated.execute("DELETE FROM source_binding")
     migrated.execute("DELETE FROM unit")
     migrated.execute("DELETE FROM edition")
     assert migrated.execute("SELECT count(*) FROM series_gap").fetchone() == (0,)  # cascades
+    assert migrated.execute("SELECT count(*) FROM binding_release_sample").fetchone() == (0,)
 
 
 def test_downgrade_removes_what_0020_added(settings: Settings) -> None:

@@ -28,6 +28,8 @@ STORE_PROVENANCES = ("received", "extracted", "extracted_derived")
 TRASH_KINDS = ("unit", "work", "export_file")
 REPLICA_LOCATIONS = ("upstream", "library", "store", "destination", "adopted_ro")
 REPLICA_FIDELITIES = ("original", "derived")
+WATERMARK_ORIGINS = ("none", "heuristic", "user")
+IMPORT_STATES = ("seen", "stored", "refused", "removed")
 
 
 def processor_check(column: str) -> sa.CheckConstraint:
@@ -51,6 +53,7 @@ content = sa.Table(
     sa.Column("media_type", sa.String(), nullable=False),  # MIME
     sa.Column("format", sa.String(), nullable=False),  # cbz, epub, pdf, m4b...
     bool_column("watermarked", default=False),
+    sa.Column("watermark_origin", sa.String(), nullable=False, server_default="none"),
     sa.Column("retention", sa.String(), nullable=False),
     sa.Column("path", sa.Text(), nullable=True),  # relative to /store, only when kept
     sa.Column("original_sha256", sa.String(), nullable=False),
@@ -70,6 +73,7 @@ content = sa.Table(
     ulid_check("id"),
     in_check("kind", MEDIA),
     in_check("retention", RETENTIONS),
+    in_check("watermark_origin", WATERMARK_ORIGINS),
     in_check("store_provenance", STORE_PROVENANCES),
     sa.CheckConstraint("\"media_type\" GLOB '?*/?*'", name="media_type_mime"),
     sa.CheckConstraint(
@@ -203,4 +207,24 @@ safeguard_backlog = sa.Table(
     sa.CheckConstraint("\"name\" = 'store'", name="name_values"),
     positive_check("units"),
     positive_check("bytes"),
+)
+
+# What the import folder held when last scanned, and what was decided about each file (EF-EXP-065).
+# `rel_path` is relative to the import folder; `sha256` is filled once the file is read.
+import_entry = sa.Table(
+    "import_entry",
+    metadata,
+    sa.Column("rel_path", sa.Text(), primary_key=True),
+    sa.Column("size", sa.BigInteger(), nullable=False),
+    sa.Column("mtime", UtcDateTime(), nullable=False),
+    sa.Column("sha256", sa.String(), nullable=True),
+    sa.Column("state", sa.String(), nullable=False, server_default="seen"),
+    sa.Column("reason", sa.String(), nullable=True),
+    sa.Column("first_seen_at", UtcDateTime(), nullable=False),
+    sa.Column("decided_at", UtcDateTime(), nullable=True),
+    relative_path_check("rel_path"),
+    prefixed_hash_check("sha256"),
+    in_check("state", IMPORT_STATES),
+    positive_check("size"),
+    sa.Index("ix_import_entry_state", "state"),
 )

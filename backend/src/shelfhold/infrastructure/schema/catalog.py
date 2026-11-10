@@ -39,6 +39,9 @@ VOLUME_POLICIES = ("closed_only", "rolling_tail", "whole")
 UNIT_TRACKS = ("main", "annual", "special", "extra", "oneshot", "unnumbered")
 UNIT_KINDS = ("chapter", "episode", "book")
 UNIT_AVAILABILITIES = ("free", "purchased", "expiring", "locked", "stubbed", "removed")
+UPSTREAM_STATUSES = ("ongoing", "finished", "paused", "unknown")
+METADATA_ENTITIES = ("series", "work", "edition", "volume", "contributor")
+METADATA_PROVENANCES = ("provider", "source", "embedded", "import", "manual")
 UNIT_STATES = (
     "known", "wanted", "queued", "stored", "exported", "adopted", "missing", "store_missing",
     "corrupt", "source_removed", "quarantined",
@@ -334,6 +337,12 @@ edition = sa.Table(
     sa.Column("translator", sa.String(), nullable=True),  # derived cache (F11)
     sa.Column("translator_death_year", sa.Integer(), nullable=True),
     sa.Column("volume_policy", sa.String(), nullable=False, server_default="closed_only"),
+    # Chapters per volume when the source declares no volumes (D5, EF-BIB-024); per Edition.
+    sa.Column("volume_size", sa.Integer(), nullable=False, server_default="50"),
+    # What the upstream says of the series (ongoing, finished...), and who said it (EF-SRC-038).
+    sa.Column("upstream_status", sa.String(), nullable=False, server_default="unknown"),
+    sa.Column("upstream_status_by", sa.String(), nullable=True),
+    sa.Column("upstream_status_at", UtcDateTime(), nullable=True),
     # The shelf this Edition is filed on; NULL = unshelved ("À ranger", never exported). The
     # shelf table arrives in 0004; deleting a shelf leaves its Editions unshelved (GAP-12-11).
     _fk("shelf_id", "shelf.id", ondelete="SET NULL", nullable=True),
@@ -345,6 +354,9 @@ edition = sa.Table(
     in_check("date_precision", DATE_PRECISIONS),
     partial_date_check("published_on", "date_precision"),
     in_check("volume_policy", VOLUME_POLICIES),
+    positive_check("volume_size", minimum=1),
+    in_check("upstream_status", UPSTREAM_STATUSES),
+    in_check("upstream_status_by", METADATA_PROVENANCES),
     norm_by_check("text_version_norm_by"),
     norm_by_check("lang_norm_by"),
     sa.CheckConstraint(
@@ -421,6 +433,10 @@ unit = sa.Table(
     sa.Column("date_precision", sa.String(), nullable=True),
     sa.Column("published_at", UtcDateTime(), nullable=True),  # upload time, informative
     sa.Column("availability", sa.String(), nullable=False, server_default="free"),
+    # A value the SDK contract does not know (D20): stored here, treated as `locked`.
+    sa.Column("availability_detail", sa.String(), nullable=True),
+    # Why a follow filter left the Unit out of the download queue (EF-SRC-039); open vocabulary.
+    sa.Column("filtered_reason", sa.String(), nullable=True),
     sa.Column("available_until", UtcDateTime(), nullable=True),
     sa.Column("state", sa.String(), nullable=False, server_default="known"),
     bool_column("follow_suppressed", default=False),  # "stop following", never lifted by itself
@@ -566,15 +582,24 @@ variant_revision = sa.Table(
     sa.Column("page_count", sa.Integer(), nullable=True),
     sa.Column("content_hash", sa.String(), nullable=True),
     sa.Column("revision_hint", sa.String(), nullable=True),
+    # Set once by the suspect-revision guard, never lifted: the Variant row is not rebuilt.
+    sa.Column("quarantined_at", UtcDateTime(), nullable=True),
+    sa.Column("quarantine_reason", sa.String(), nullable=True),
     prefixed_hash_check("content_hash"),
     positive_check("revision", minimum=1),
     positive_check("page_count"),
     sa.UniqueConstraint("variant_id", "revision"),
 )
+# Only the quarantine mark may be written, once: every other column, and a mark already set,
+# stay as they were.
 add_trigger(
     variant_revision,
     "variant_revision_no_update",
     "BEFORE UPDATE ON variant_revision "
+    "WHEN OLD.id IS NOT NEW.id OR OLD.variant_id IS NOT NEW.variant_id "
+    "OR OLD.revision IS NOT NEW.revision OR OLD.seen_at IS NOT NEW.seen_at "
+    "OR OLD.page_count IS NOT NEW.page_count OR OLD.content_hash IS NOT NEW.content_hash "
+    "OR OLD.revision_hint IS NOT NEW.revision_hint OR OLD.quarantined_at IS NOT NULL "
     "BEGIN SELECT RAISE(ABORT, 'variant_revision is append-only'); END",
 )
 # `INSERT OR REPLACE` resolves a conflict by deleting the old row, and SQLite fires no DELETE
@@ -651,4 +676,31 @@ normalizer = sa.Table(
     sa.PrimaryKeyConstraint("id", "version"),
     positive_check("version", minimum=1),
     sa.CheckConstraint("\"id\" <> '' AND \"id\" NOT GLOB '*[^a-z0-9_-]*'", name="id_slug"),
+)
+
+# One value of one field of one entity, with where it comes from (EF-BIB-008, EF-SRC-012). The
+# key is the unit of override: `locked` keeps a hand-edited value from being refreshed.
+metadata_field = sa.Table(
+    "metadata_field",
+    metadata,
+    sa.Column("entity_type", sa.String(), nullable=False),
+    sa.Column("entity_id", sa.String(26), nullable=False),  # polymorphic: no foreign key
+    sa.Column("field", sa.String(), nullable=False),
+    sa.Column("lang", sa.String(), nullable=False, server_default="und"),
+    sa.Column("value", sa.Text(), nullable=False),
+    sa.Column("provider", sa.String(), nullable=False),
+    sa.Column("provenance", sa.String(), nullable=False),
+    sa.Column("confidence", sa.Float(), nullable=True),
+    bool_column("locked", default=False),
+    sa.Column("fetched_at", UtcDateTime(), nullable=False),
+    sa.PrimaryKeyConstraint("entity_type", "entity_id", "field", "lang"),
+    ulid_check("entity_id"),
+    in_check("entity_type", METADATA_ENTITIES),
+    in_check("provenance", METADATA_PROVENANCES),
+    lang_check("lang", allow_wildcards=True),
+    sa.CheckConstraint("\"field\" <> '' AND \"provider\" <> ''", name="field_provider_named"),
+    sa.CheckConstraint(
+        '"confidence" IS NULL OR "confidence" BETWEEN 0 AND 1', name="confidence_range"
+    ),
+    sa.Index("ix_metadata_field_entity", "entity_type", "entity_id"),
 )

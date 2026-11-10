@@ -10,6 +10,7 @@ from shelfhold.infrastructure.schema._base import (
     metadata,
     now_column,
     positive_check,
+    relative_path_check,
     ulid_check,
     ulid_column,
 )
@@ -37,6 +38,8 @@ instance = sa.Table(
     ulid_column("instance_id", primary_key=True),
     sa.Column("singleton", sa.Integer(), nullable=False, server_default="1"),
     sa.Column("jurisdiction", sa.String(8), nullable=False),
+    # NULL while the country is only deduced from the locale (D4); `status` asks until it is set.
+    sa.Column("jurisdiction_confirmed_at", UtcDateTime(), nullable=True),
     sa.Column("refresh_mode", sa.String(), nullable=False, server_default="piloted"),
     sa.Column("lease_heartbeat_at", UtcDateTime(), nullable=True),
     sa.Column("restore_epoch", sa.Integer(), nullable=False, server_default="0"),
@@ -238,3 +241,44 @@ add_trigger(
     "event_append_only",
     "BEFORE UPDATE ON event BEGIN SELECT RAISE(ABORT, 'event is append-only'); END",
 )  # DELETE stays allowed: the 90-day purge (ENF-OPS-009)
+
+# Answers of the metadata providers, kept until `expires_at` so a refresh does not ask twice.
+metadata_cache = sa.Table(
+    "metadata_cache",
+    metadata,
+    sa.Column("provider", sa.String(), nullable=False),
+    sa.Column("key_hash", sa.String(), nullable=False),  # digest of the query, never the query
+    sa.Column("payload", sa.JSON(), nullable=False),
+    sa.Column("fetched_at", UtcDateTime(), nullable=False),
+    sa.Column("expires_at", UtcDateTime(), nullable=False),
+    sa.PrimaryKeyConstraint("provider", "key_hash"),
+    sa.CheckConstraint('json_valid("payload")', name="payload_json"),
+    sa.Index("ix_metadata_cache_expires", "expires_at"),
+)
+
+# Token bucket of a metadata provider: `domain_slot` limits concurrency, not the rate (EF-SRC-024).
+provider_quota = sa.Table(
+    "provider_quota",
+    metadata,
+    sa.Column("provider", sa.String(), primary_key=True),
+    sa.Column("tokens", sa.Float(), nullable=False),
+    sa.Column("refilled_at", UtcDateTime(), nullable=False),
+    sa.CheckConstraint('"tokens" >= 0', name="tokens_min"),
+)
+
+# Validators of a cached HTTP answer (ETag, Last-Modified); the body is a file under
+# `/data/cache/http/`, named by `body_ref` (relative).
+http_cache = sa.Table(
+    "http_cache",
+    metadata,
+    sa.Column("scope", sa.String(), nullable=False),
+    sa.Column("url_hash", sa.String(), nullable=False),
+    sa.Column("etag", sa.String(), nullable=True),
+    sa.Column("last_modified", sa.String(), nullable=True),
+    sa.Column("stored_at", UtcDateTime(), nullable=False),
+    sa.Column("max_age", sa.Integer(), nullable=False),
+    sa.Column("body_ref", sa.Text(), nullable=True),
+    sa.PrimaryKeyConstraint("scope", "url_hash"),
+    positive_check("max_age"),
+    relative_path_check("body_ref"),
+)

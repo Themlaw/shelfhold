@@ -34,6 +34,7 @@ from shelfhold.infrastructure.schema.catalog import lang_check, norm_by_check
 ACCESS_PARTITIONINGS = ("none", "library", "user")
 FORMAT_POLICIES = ("cbz_per_chapter", "per_volume")
 RETENTION_MODES = ("passthrough", "keep")
+LINK_MODES = ("copy", "hardlink")
 TRANSPORTS = ("tree", "dropbox", "push", "pull")
 EGRESSES = ("foyer", "externe")
 IMPORT_MODES = ("copy", "reflink", "hardlink")
@@ -116,6 +117,10 @@ shelf = sa.Table(
     sa.Column("retention_mode", sa.String(), nullable=False, server_default="passthrough"),
     bool_column("purge_upstream_after_export", default=False),
     bool_column("hold_until_rated", default=False),
+    # A chapter already read is not replaced by a better copy (EF-BIB-040).
+    bool_column("skip_read_upgrades", default=True),
+    # How a file reaches the library from the store: copied, or hard-linked (EF-EXP-015).
+    sa.Column("link_mode", sa.String(), nullable=False, server_default="copy"),
     sa.Column("paused_reason", sa.String(), nullable=True),
     sa.Column("follow_suspended", sa.JSON(), nullable=False, server_default="[]"),
     now_column(),
@@ -123,6 +128,7 @@ shelf = sa.Table(
     sa.CheckConstraint("\"name\" <> ''", name="name_not_empty"),
     in_check("format_policy", FORMAT_POLICIES),
     in_check("retention_mode", RETENTION_MODES),
+    in_check("link_mode", LINK_MODES),
     _age_ceiling("max_age_rating"),
     json_shape_check("default_kinds", "array"),
     json_shape_check("allowed_profiles", "array"),
