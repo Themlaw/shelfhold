@@ -24,13 +24,13 @@ the service first: a chapter that is no longer there is only recorded, never era
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.identity.public import AuditEntry, audit_insert
@@ -91,7 +91,7 @@ __all__ = [
     "unit_tombstoned",
 ]
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 PURGE_OP = "purge_upstream"
 Publish = Callable[[Connection, str, dict[str, object]], None]
@@ -271,7 +271,7 @@ class SafeguardCycle:
                 except SafeguardFailedError as error:
                     self._failures[error.reason] = self._failures.get(error.reason, 0) + 1
                     report.failed += 1
-                    log.warning("safeguard.failed unit=%s reason=%s", unit_id, error.reason)
+                    log.warning("safeguard.failed", unit=unit_id, reason=error.reason)
 
             return keep
 
@@ -546,7 +546,7 @@ class UpstreamPurge:
                     report.refuse(refused.reason)
                     continue
                 except Exception as error:  # the service did not answer: asked again next time
-                    log.warning("safeguard.purge_failed type=%s", type(error).__name__)
+                    log.warning("safeguard.purge_failed", error_type=type(error).__name__)
                     report.failed += 1
                     continue
                 if done.already_gone:

@@ -192,6 +192,7 @@ def test_only_heavy_disk_work_is_a_window_job(settings: Settings, tmp_path: Path
             "reconcile.hash",  # hashing of files
             "store.keep_catchup",  # catch-up copies into /store
             "store.index",  # INDEX.jsonl of /store
+            "library.safeguard",  # "Mettre à l'abri" and the optional upstream purge (L16)
             "retention.recycle",  # the bins of /library
             "wal_checkpoint",
             "vacuum_monthly",
