@@ -58,6 +58,10 @@ moins de 15 minutes, ou la ligne de commande locale ; une clé d'API est refusé
 | `mount_sentinel_missing` | La sentinelle `.shelfhold-mount-id` d'une racine manque ou n'est pas la bonne (volume non monté, disque vide) : écritures et scans bloqués | montez le bon volume, puis `shelfhold target recheck <cible>` | non |
 | `restored_behind` | La base est en retard sur les fichiers : lecture seule | `shelfhold reconcile --adopt-after-restore`, voir [restauration.md](restauration.md) | seule la suppression confirmée |
 | `tombstone_key_unknown` | Un journal de pierres tombales est chiffré par une clé absente du trousseau | `shelfhold secrets import --passphrase-file <fichier> --in <export>` (voir [secrets.md](secrets.md)), ou remettre le fichier de trousseau d'origine à sa place ; en dernier recours `shelfhold tombstone accept-lost-keyring --confirm "the keyring is lost"` | oui |
+| `foreign_root` | La sentinelle d'une racine dit une autre instance, ou ne peut pas être crue | `shelfhold root takeover <racine>` (ou `root reinit`) | oui |
+| `root_lost` | Une racine n'a plus de sentinelle : disque remplacé, fichier retiré | `shelfhold root reinit <racine>` (ou `root takeover` si le contenu est intact) | oui |
+| `root_behind` | Une racine est plus ancienne que la base : une vieille copie a été remise | `shelfhold root restored <racine>` | non |
+| `store_lost` | La sentinelle de `/store` manque, est étrangère ou en retard | `shelfhold store reinit` | oui |
 
 Notes :
 
@@ -65,10 +69,11 @@ Notes :
   correction si elle échoue.
 - `tombstone accept-lost-keyring` lève le blocage de réacquisition pour les clés manquantes **d'aujourd'hui**
   seulement ; une clé perdue plus tard n'est pas pardonnée d'avance. La phrase de confirmation se tape à l'identique, en anglais ; pendant `restored_behind` elle est plus longue et énonce le coût (voir [secrets.md](secrets.md)).
-- Les états qui concernent les racines physiques (`foreign_root`, `root_lost`, `root_behind`) et
-  `/store` (`store_lost`), la notation et la mise à l'abri arrivent avec M1b. Leurs commandes
-  (`root takeover|reinit`, `store reinit`) sont décrites dans
-  [topologie-racines-physiques.md](topologie-racines-physiques.md).
+- Les quatre états des racines sont détectés racine par racine, au démarrage et à chaque écriture
+  refusée, et listés par `shelfhold status` (la notation et la mise à l'abri arrivent avec M1b).
+  Aucune de ces commandes ne supprime un fichier, et aucune ne touche à `.shelfhold/` autrement
+  qu'en y ajoutant (voir [sinistre-sans-sauvegarde.md](sinistre-sans-sauvegarde.md) et
+  [topologie-racines-physiques.md](topologie-racines-physiques.md)).
 
 ## Intentions de fichiers restées ouvertes
 

@@ -29,6 +29,7 @@ from sqlalchemy import Engine
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
+from shelfhold.export.application.root_exits import RootWatcher
 from shelfhold.export.application.roots import LoadedRoots, load_roots, open_fsops
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR, RootState
@@ -143,6 +144,7 @@ class Composition:
         self._held_lock = threading.Lock()
         self._held = 0
         self._lease: tuple[ExitStack, WriteSessions, tuple[str, ...]] | None = None
+        self._watcher: RootWatcher | None = None
         self._wakes: Wakes | None = None
         self._wakes_lock = threading.Lock()
 
@@ -182,10 +184,20 @@ class Composition:
         except sa.exc.OperationalError:  # not migrated yet
             return None
 
+    def root_watcher(self) -> RootWatcher:
+        """Finds the four root states and records them (EF-EXP-064); one per process."""
+        with self._lock:
+            if self._watcher is None:
+                self._watcher = RootWatcher(
+                    self.engine, umask=self.settings.umask, store_path=str(self.settings.store_dir)
+                )
+            return self._watcher
+
     def open_fsops(self, loaded: LoadedRoots) -> Fsops:
         return open_fsops(
             loaded, umask=self.settings.umask,
             write_gate=self.gates.write_gate, stop_gate=self.gates.stop_gate,
+            on_blocked=self.root_watcher().note_blocked,
         )  # fmt: skip
 
     def tombstones(self, fsops: Fsops, loaded: LoadedRoots) -> TombstoneService:

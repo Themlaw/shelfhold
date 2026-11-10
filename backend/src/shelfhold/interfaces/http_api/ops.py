@@ -32,6 +32,9 @@ _LOST_KEYRING = reserved_action(RESERVED_ACTIONS["tombstone.accept_lost_keyring"
 _SECRETS_IMPORT = reserved_action(RESERVED_ACTIONS["secrets.import"])
 _SET_ASIDE = reserved_action(RESERVED_ACTIONS["tombstone.set_aside_journal"])
 _RATE = reserved_action(RESERVED_ACTIONS["rate"])
+_ROOT_TAKEOVER = reserved_action(RESERVED_ACTIONS["root.takeover"])
+_ROOT_REINIT = reserved_action(RESERVED_ACTIONS["root.reinit"])
+_STORE_REINIT = reserved_action(RESERVED_ACTIONS["store.reinit"])
 Admin = Annotated[Principal, Depends(require_admin)]
 
 
@@ -144,6 +147,28 @@ class RatedOut(BaseModel):
     withdrawals: list[WithdrawalOut]
 
 
+class RootIn(BaseModel):
+    """`path`: a folder the database does not know yet (`foreign_root` found by the start-up),
+    named by its absolute path instead of the `root_id` of the URL."""
+
+    path: str | None = Field(default=None, min_length=1, max_length=4096)
+
+
+class RootOut(BaseModel):
+    command: str
+    root_id: str
+    path: str
+    previous: str  # the state the root was in
+    sentinel: str  # `stamped` or `restamped`
+    predecessors: list[str]
+    missing: int  # records that went to `missing` (reinit)
+    planned: int  # records planned again for the next export (restored)
+    units_store_missing: int
+    distrusted_copies: int
+    ignored_claims: list[str]  # what an unauthenticated sentinel claimed and was ignored
+    notes: list[str]
+
+
 class SetAsideIn(BaseModel):
     root_id: str | None = None  # default: every root whose journal cannot be read
 
@@ -243,6 +268,35 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
                 body.age, work_id=work_id, edition_id=None, principal=principal
             )
         return RatedOut(**done)
+
+    @router.post(_path("root", "takeover"), response_model=RootOut)
+    def root_takeover(
+        root: str, body: RootIn, principal: Annotated[Principal, Depends(_ROOT_TAKEOVER)]
+    ) -> RootOut:
+        """Stamp a root as ours, keeping its `root_id` and its predecessors (EF-EXP-064).
+        Reserved: a fresh admin session or the host CLI, never a key."""
+        with refusals():
+            return RootOut(**get_ops().root_takeover(body.path or root, principal=principal))
+
+    @router.post(_path("root", "reinit"), response_model=RootOut)
+    def root_reinit(
+        root: str, body: RootIn, principal: Annotated[Principal, Depends(_ROOT_REINIT)]
+    ) -> RootOut:
+        """The disk is not what the database remembers: its records go to `missing`. Reserved."""
+        with refusals():
+            return RootOut(**get_ops().root_reinit(body.path or root, principal=principal))
+
+    @router.post(_path("root", "restored"), response_model=RootOut)
+    def root_restored(root: str, principal: Admin) -> RootOut:
+        """A root put back from an older copy: its missing files are planned for the next export."""
+        with refusals():
+            return RootOut(**get_ops().root_restored(root, principal=principal))
+
+    @router.post(_path("store", "reinit"), response_model=RootOut)
+    def store_reinit(principal: Annotated[Principal, Depends(_STORE_REINIT)]) -> RootOut:
+        """`/store` is not what the database remembers: its Units go to `store_missing`."""
+        with refusals():
+            return RootOut(**get_ops().store_reinit(principal=principal))
 
     @router.post(_path("target", "rotate-key"))
     def target_rotate_key(

@@ -52,6 +52,8 @@ from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import diagnostics
 from shelfhold.integrations.apprise import operating_bus
+from shelfhold.interfaces.cli._ops import ops_command
+from shelfhold.interfaces.local_cli import OpsChannel, OpsRefusal
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
 from shelfhold.library.tombstones import TombstoneService
 from shelfhold.library.tombstones.screen import TombstoneScreenAdapter
@@ -66,6 +68,12 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     reconcile = commands.add_parser("reconcile", help=t("reconcile.help"), allow_abbrev=False)
     reconcile.add_argument(
         "--adopt-after-restore", action="store_true", help=t("reconcile.adopt_after_restore_help")
+    )
+    reconcile.add_argument(
+        "--rebaseline-inodes", action="store_true", help=t("reconcile.rebaseline_help")
+    )
+    reconcile.add_argument(
+        "--destination", metavar="ID", default=None, help=t("reconcile.destination_help")
     )
     reconcile.add_argument("--dry-run", action="store_true", help=t("reconcile.dry_run_help"))
     reconcile.add_argument(
@@ -165,7 +173,32 @@ def _principal(data_dir: Path) -> Principal | None:
     return principal_for_peer(Peer(os.getpid(), uid, os.getgid()))
 
 
+@ops_command
+def run_rebaseline(args: argparse.Namespace, channel: OpsChannel) -> int:
+    """EF-EXP-043: the new `(dev, ino)` of a moved library, confirmed by the provenance mirror.
+    Through the running server's socket when there is one (its locks are the ones that hold)."""
+    try:
+        done = channel.call("ops.rebaseline_inodes", destination_id=args.destination)
+    except OpsRefusal as refusal:
+        if refusal.code != "rebaseline.refused":
+            raise
+        print(t("reconcile.rebaseline_refused", detail=refusal), file=sys.stderr)
+        return BLOCKED
+    for path in done["updated"]:
+        print(t("reconcile.rebaseline_line", path=path))
+    for path, why in sorted(done["skipped"].items()):
+        print(t("reconcile.rebaseline_skipped", path=path, reason=why))
+    print(t("reconcile.rebaseline_done", updated=len(done["updated"]), unchanged=done["unchanged"],
+            skipped=len(done["skipped"]), demoted=done["demoted"]))  # fmt: skip
+    return 0
+
+
 def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    if args.rebaseline_inodes:
+        if args.adopt_after_restore:
+            print(t("reconcile.one_action"), file=sys.stderr)
+            return NEEDS_CONFIRMATION
+        return run_rebaseline(args, resolved)
     if not args.adopt_after_restore:
         print(t("reconcile.needs_flag"), file=sys.stderr)
         return NEEDS_CONFIRMATION

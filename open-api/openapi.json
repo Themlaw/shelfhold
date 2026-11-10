@@ -1923,6 +1923,103 @@
         "title": "RestoreIn",
         "type": "object"
       },
+      "RootIn": {
+        "description": "`path`: a folder the database does not know yet (`foreign_root` found by the start-up),\nnamed by its absolute path instead of the `root_id` of the URL.",
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "title": "RootIn",
+        "type": "object"
+      },
+      "RootOut": {
+        "properties": {
+          "command": {
+            "title": "Command",
+            "type": "string"
+          },
+          "distrusted_copies": {
+            "title": "Distrusted Copies",
+            "type": "integer"
+          },
+          "ignored_claims": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ignored Claims",
+            "type": "array"
+          },
+          "missing": {
+            "title": "Missing",
+            "type": "integer"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "planned": {
+            "title": "Planned",
+            "type": "integer"
+          },
+          "predecessors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Predecessors",
+            "type": "array"
+          },
+          "previous": {
+            "title": "Previous",
+            "type": "string"
+          },
+          "root_id": {
+            "title": "Root Id",
+            "type": "string"
+          },
+          "sentinel": {
+            "title": "Sentinel",
+            "type": "string"
+          },
+          "units_store_missing": {
+            "title": "Units Store Missing",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "command",
+          "root_id",
+          "path",
+          "previous",
+          "sentinel",
+          "predecessors",
+          "missing",
+          "planned",
+          "units_store_missing",
+          "distrusted_copies",
+          "ignored_claims",
+          "notes"
+        ],
+        "title": "RootOut",
+        "type": "object"
+      },
       "RotateIn": {
         "properties": {
           "password": {
@@ -5242,6 +5339,215 @@
         ]
       }
     },
+    "/api/v1/roots/{root}/reinit": {
+      "post": {
+        "description": "The disk is not what the database remembers: its records go to `missing`. Reserved.",
+        "operationId": "root_reinit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "root",
+            "required": true,
+            "schema": {
+              "title": "Root",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RootIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Root Reinit",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/roots/{root}/restored": {
+      "post": {
+        "description": "A root put back from an older copy: its missing files are planned for the next export.",
+        "operationId": "root_restored",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "root",
+            "required": true,
+            "schema": {
+              "title": "Root",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Root Restored",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/roots/{root}/takeover": {
+      "post": {
+        "description": "Stamp a root as ours, keeping its `root_id` and its predecessors (EF-EXP-064).\nReserved: a fresh admin session or the host CLI, never a key.",
+        "operationId": "root_takeover",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "root",
+            "required": true,
+            "schema": {
+              "title": "Root",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RootIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Root Takeover",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/secrets/import": {
       "post": {
         "operationId": "secrets_import",
@@ -6110,6 +6416,58 @@
           }
         },
         "summary": "Status",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/store/reinit": {
+      "post": {
+        "description": "`/store` is not what the database remembers: its Units go to `store_missing`.",
+        "operationId": "store_reinit",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Store Reinit",
         "tags": [
           "operations"
         ]
@@ -7330,6 +7688,10 @@
       },
       "status": 401
     },
+    "/api/v1/problems/rebaseline.refused": {
+      "code": "rebaseline.refused",
+      "status": 409
+    },
     "/api/v1/problems/reconcile.drift": {
       "code": "reconcile.drift",
       "status": 409
@@ -7364,6 +7726,14 @@
     },
     "/api/v1/problems/root.blocked": {
       "code": "root.blocked",
+      "status": 409
+    },
+    "/api/v1/problems/root.busy": {
+      "code": "root.busy",
+      "status": 409
+    },
+    "/api/v1/problems/root.unauthenticated": {
+      "code": "root.unauthenticated",
       "status": 409
     },
     "/api/v1/problems/secret.undecryptable": {

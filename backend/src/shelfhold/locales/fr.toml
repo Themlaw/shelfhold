@@ -208,7 +208,7 @@ database_not_migrated = "base absente ou pas à jour : lancez « shelfhold migra
 data_dir_writable_by_others = "{path} est modifiable par le groupe ou les autres : ils pourraient remplacer la socket de la CLI locale. Faites « chmod 750 » sur ce dossier."
 data_dir_on_network_filesystem = "{path} est sur un système de fichiers réseau ({kind}) et SHELFHOLD_ALLOW_NETWORK_DATA_DIR est activé : la base SQLite et le verrou d'instance peuvent être corrompus ou contournés. Déplacez /data sur un disque local."
 cli_allow_host = "SHELFHOLD_CLI_ALLOW_HOST est activé : un processus de l'hôte (hors de l'espace de PID du conteneur) sous l'utilisateur de Shelfhold ou root vaut un administrateur."
-root_sentinel_mismatch = "la sentinelle de {path} est illisible, étrangère ou hors bornes (époque ou génération au-delà de 2^31) : la racine est laissée telle quelle, sans gel. Corrigez le fichier .shelfhold-mount-id (copiez-le d'abord, puis remettez les valeurs que la base connaît) ; les commandes « root takeover » et « reinit » arrivent avec le lot L36."
+root_sentinel_mismatch = "la sentinelle de {path} est illisible, étrangère ou hors bornes (époque ou génération au-delà de 2^31) : la racine est laissée telle quelle, sans gel. Corrigez le fichier .shelfhold-mount-id (copiez-le d'abord, puis remettez les valeurs que la base connaît) ; la commande « shelfhold root takeover » (ou « root reinit ») estampille de nouveau la racine, sans rien supprimer."
 keyring_unreadable = "le trousseau est illisible ou corrompu : « shelfhold secrets status » dit pourquoi."
 unknown = "inconnu"
 list_separator = ", "
@@ -243,6 +243,19 @@ series_name_set = "Nom de série exporté enregistré : « {name} » (série {se
 series_cleared = "Série {series} : de nouveau inscriptible."
 series_denied = "Série {series} : droits d'écriture toujours refusés (voir la commande de correction)."
 key_rotated = "Nouvelle clé créée et enregistrée ; l'ancienne expire d'elle-même."
+help_root = "Sorties d'une racine physique qui n'est pas la bonne (sentinelle étrangère, disque remplacé, copie plus ancienne)."
+help_root_takeover = "Estampille la racine comme la nôtre en gardant son identifiant et ses prédécesseurs ; ne supprime rien (action réservée)."
+help_root_reinit = "Estampille la racine et passe ses éléments en « missing » ; propose le réexport sans rien appliquer ; ne supprime rien (action réservée)."
+help_root_restored = "Racine remise depuis une copie plus ancienne : replanifie ce qui manque pour le prochain export, par le pipeline."
+help_root_arg = "Identifiant de la racine (celui que montre « shelfhold status ») ou chemin absolu du dossier."
+help_store = "Le dossier /store (copies conservées)."
+help_store_reinit = "Estampille /store ; les chapitres dont la copie conservée y était passent en « store_missing » (action réservée)."
+root_done = "{command} : racine {root} ({path}), état quitté : {previous}. Aucun fichier n'a été supprimé."
+root_predecessors = "{count} identité(s) précédente(s) conservée(s) (les pierres tombales restent lisibles)."
+root_missing = "{count} élément(s) passé(s) en « missing » : « shelfhold missing resolve --reexport » les remet à l'export, « --unfollow » arrête de les suivre."
+root_planned = "{count} élément(s) replanifié(s) : le prochain export les écrit."
+store_units_missing = "{count} chapitre(s) en « store_missing » : leur copie conservée est introuvable."
+root_ignored_claim = "Revendication de la sentinelle ignorée, faute de preuve par le trousseau : {claim}."
 keyring_waived = "Trousseau perdu accepté : {count} identifiant(s) de clé abandonné(s)."
 journal_set_aside = "Racine {root} : journal mis de côté sous « {name} » ; il sera réécrit depuis la base."
 journal_nothing_to_set_aside = "Aucun journal illisible à mettre de côté."
@@ -459,6 +472,18 @@ action = "Un second appariement créerait un doublon : détachez d'abord le prem
 [errors."root.blocked"]
 title = "Une racine physique est absente ou ne porte pas la sentinelle attendue : rien n'y est écrit."
 action = "Vérifiez que le volume est monté, puis lancez « shelfhold status » pour voir la racine et la sortie qui convient."
+
+[errors."root.unauthenticated"]
+title = "La sentinelle de cette racine revendique une identité que le trousseau ne confirme pas : rien n'est repris du fichier."
+action = "Importez le trousseau (« shelfhold secrets import »), puis relancez la commande ; la racine n'a pas été modifiée."
+
+[errors."root.busy"]
+title = "Un export ou un cycle utilise cette racine : la commande n'a rien changé."
+action = "Relancez la commande quand l'export ou le cycle en cours est terminé."
+
+[errors."rebaseline.refused"]
+title = "La remise à jour des identités de fichiers est refusée : rien n'a été modifié."
+action = "Si une empreinte diffère, un fichier a été modifié et non déplacé : vérifiez-le ; si le miroir manque, restaurez le dossier .shelfhold/manifest depuis la copie d'origine."
 
 [errors."purge.collateral"]
 title = "Un fichier de cette Unité porte aussi d'autres Unités : l'effacer les effacerait."
@@ -934,7 +959,14 @@ confirm_unit_help = "Identifiant d'un chapitre irremplaçable que la suppression
 irreplaceable_line = "Chapitre irremplaçable que la suppression effacerait : {unit}"
 irreplaceable_missing = "Identifiant à retaper : {unit}"
 irreplaceable_needs_typing = "La suppression efface des chapitres irremplaçables (aucune source ne peut les rendre) : retapez l'identifiant de chacun avec --confirm-unit <identifiant>, en plus de --confirm-deletion. Rien n'a été modifié."
-needs_flag = "Aucune action demandée : utilisez --adopt-after-restore."
+needs_flag = "Aucune action demandée : utilisez --adopt-after-restore ou --rebaseline-inodes."
+one_action = "Choisissez une seule action : --adopt-after-restore ou --rebaseline-inodes."
+rebaseline_help = "Après un déplacement de disques (rsync, dates conservées) : met à jour (dev, ino) des fichiers dont la taille, la date et l'empreinte concordent, confirmés par le miroir de provenance. Sans pause de série ; refusé si l'empreinte d'un fichier diffère."
+destination_help = "Limite --rebaseline-inodes à une destination."
+rebaseline_line = "Nouvelle identité enregistrée : {path}"
+rebaseline_skipped = "Laissé tel quel ({reason}) : {path}"
+rebaseline_done = "{updated} fichier(s) remis à jour, {unchanged} déjà à jour, {skipped} laissé(s) tel(s) quel(s), {demoted} copie(s) qui ne comptent plus comme indépendantes. Aucune série n'a été mise en pause."
+rebaseline_refused = "Refusé, rien n'a été modifié : {detail}"
 not_behind = "La base n'est pas en retard sur les fichiers : rien à rapprocher."
 needs_confirmation = "Le rapprochement n'est pas confirmé : relisez l'aperçu, puis relancez avec --confirm <empreinte>."
 instance_running = "Shelfhold tourne sur ces volumes : arrêtez-le, lancez cette commande, puis redémarrez-le."

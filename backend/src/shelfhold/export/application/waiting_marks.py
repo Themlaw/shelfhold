@@ -16,6 +16,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.freeze import ROOT_STATES, WAITING_PREFIX
 from shelfhold.infrastructure.schema import platform
 
 __all__ = [
@@ -30,12 +31,13 @@ __all__ = [
     "read_one",
 ]
 
-PREFIX: Final = "waiting."
+PREFIX: Final = WAITING_PREFIX
 MARKED_STATES: Final = (
     "adoption_refused",
     "coverage_unknown",
     "series_name_collision",
     "mount_sentinel_missing",
+    *ROOT_STATES,  # EF-EXP-064: written by `FreezeState.persist_root`, listed like the others
 )
 
 
