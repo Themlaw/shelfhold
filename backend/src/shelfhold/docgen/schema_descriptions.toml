@@ -176,6 +176,7 @@ response_body = "Body of the stored response."
 [tables.instance]
 description = "One row: identity and restore bookkeeping of this instance."
 [tables.instance.columns]
+jurisdiction_confirmed_at = "When the admin confirmed the jurisdiction (UTC); NULL while it is only deduced from the locale."
 instance_id = "Instance identifier (ULID)."
 singleton = "Always 1; makes a second row impossible."
 jurisdiction = "Jurisdiction code chosen at installation."
@@ -272,6 +273,8 @@ issn = "ISSN of a prepublication magazine."
 [tables.shelf]
 description = "A place where a kind of Work goes, with its age ceiling and retention."
 [tables.shelf.columns]
+skip_read_upgrades = "A chapter already read is not replaced by a better copy (default true)."
+link_mode = "How a file reaches the library from the store: `copy` (default) or `hardlink`."
 id = "Shelf identifier (ULID)."
 phrase = "Sentence shown to describe the shelf."
 default_kinds = "JSON list of Work kinds filed here by default."
@@ -490,6 +493,10 @@ locked_fields = "JSON list of fields the admin locked against upstream changes."
 [tables.edition]
 description = "An Edition: a Work in a language, translation, media and packaging. Its key is sextuplet-based."
 [tables.edition.columns]
+volume_size = "Chapters per volume when the source declares no volumes (default 50)."
+upstream_status = "What the upstream says of the series: `ongoing`, `finished`, `paused` or `unknown`."
+upstream_status_by = "Where the upstream status comes from: `provider`, `source`, `embedded`, `import` or `manual`."
+upstream_status_at = "When the upstream status was last set (UTC)."
 id = "Edition identifier (ULID)."
 lang_norm_by = "Version of the `lang` normalizer that produced `lang`."
 translation_type = "How the text was produced: original, official, fan..."
@@ -699,6 +706,8 @@ rank = "Rank; 1 is preferred."
 [tables.unit]
 description = "A place in an Edition (track, segment, number, part). Which file fills it is a Variant."
 [tables.unit.columns]
+availability_detail = "The availability value the contract does not know, kept as received; the Unit is treated as `locked`."
+filtered_reason = "Why a follow filter left the Unit out of the download queue; open vocabulary, NULL when not filtered."
 id = "Unit identifier (ULID)."
 volume_id = "Volume the Unit belongs to."
 number_raw = "Number exactly as received."
@@ -752,6 +761,7 @@ removed_at = "When the Variant disappeared upstream (UTC)."
 [tables.content]
 description = "A file for a Variant, one per media type. Nothing cascades: files are removed first."
 [tables.content.columns]
+watermark_origin = "Who flagged the watermark: `none`, `heuristic` (detected) or `user` (set by the admin)."
 id = "Content identifier (ULID)."
 kind = "Kind of content: images, text, audio..."
 media_type = "MIME type."
@@ -805,6 +815,8 @@ koreader_impact = "Estimated impact on reading positions."
 [tables.variant_revision]
 description = "Append-only history of the revisions of a Variant."
 [tables.variant_revision.columns]
+quarantined_at = "When the suspect-revision guard quarantined this revision (UTC); set once, never lifted."
+quarantine_reason = "Why the revision was quarantined."
 id = "Row identifier (ULID)."
 
 [tables.download_request_unit]
@@ -882,3 +894,78 @@ file_name = "Name of the archive written in the backup directory."
 size = "Size of the archive in bytes."
 sha256 = "SHA-256 of the archive, lower-case hex."
 schema_revision = "Database schema revision the archive holds."
+
+[tables.metadata_field]
+description = "One value of one field of one entity, with its provider and provenance; unique per entity, field and language."
+[tables.metadata_field.columns]
+entity_type = "Kind of entity: `series`, `work`, `edition`, `volume` or `contributor`."
+entity_id = "Identifier of the entity (no foreign key: the target table depends on `entity_type`)."
+field = "Name of the metadata field."
+value = "The value, as text."
+provider = "Metadata provider (or source plugin) the value comes from."
+provenance = "How the value was obtained: `provider`, `source`, `embedded`, `import` or `manual`."
+confidence = "Confidence of the match between 0 and 1; NULL when not known."
+locked = "A hand-edited value that a refresh never overwrites."
+fetched_at = "When the value was fetched (UTC)."
+
+[tables.metadata_cache]
+description = "Answers of the metadata providers, kept until they expire so a refresh does not ask twice."
+[tables.metadata_cache.columns]
+provider = "Metadata provider that answered."
+key_hash = "Digest of the query (never the query itself)."
+payload = "The answer, as a JSON document."
+fetched_at = "When the answer was fetched (UTC)."
+expires_at = "When the answer stops being served (UTC)."
+
+[tables.provider_quota]
+description = "Token bucket of a metadata provider: the rate budget `domain_slot` does not carry."
+[tables.provider_quota.columns]
+provider = "Metadata provider the bucket belongs to."
+tokens = "Tokens left in the bucket."
+refilled_at = "When the bucket was last refilled (UTC)."
+
+[tables.http_cache]
+description = "Validators of a cached HTTP answer; the body is a file under `/data/cache/http/`."
+[tables.http_cache.columns]
+scope = "Who owns the entry (provider or plugin), so the cache is never shared across scopes."
+url_hash = "Digest of the URL (never the URL itself)."
+etag = "`ETag` validator of the answer; NULL when none."
+last_modified = "`Last-Modified` validator of the answer; NULL when none."
+stored_at = "When the body was stored (UTC)."
+max_age = "Seconds the entry is fresh without revalidation."
+body_ref = "Path of the body file, relative to `/data/cache/http/`; NULL when none is kept."
+
+[tables.import_entry]
+description = "What the import folder held when last scanned, and what was decided about each file."
+[tables.import_entry.columns]
+rel_path = "Path of the file, relative to the import folder."
+size = "Size in bytes when last seen."
+mtime = "Modification time when last seen (UTC)."
+sha256 = "`sha256:<hex>` of the content, once the file has been read; NULL before."
+state = "`seen`, `stored`, `refused` or `removed`."
+reason = "Why the file was refused or removed; NULL otherwise."
+first_seen_at = "When the file was first seen (UTC)."
+decided_at = "When the state left `seen` (UTC); NULL while undecided."
+
+[tables.plugin_attestation]
+description = "What the admin attested about a plugin whose manifest cannot say it; one value per plugin and field."
+[tables.plugin_attestation.columns]
+plugin_key = "Key of the plugin the attestation is about."
+field = "What is attested: `content_trust`, `publisher`, `access_partitioning` or `egress`."
+value = "The attested value."
+attested_by = "Admin who attested (`user.id`); NULL once the account is gone."
+attested_at = "When it was attested (UTC)."
+
+[tables.series_gap]
+description = "A hole seen in an Edition's numbering; its row is what keeps the notification to one per gap."
+[tables.series_gap.columns]
+track = "Numbering track of the missing place."
+number_segment = "Segment of the missing place; empty when none."
+number_norm = "Normalized number of the missing place."
+first_seen_at = "When the gap was first seen (UTC)."
+notified_at = "When the admin was told (UTC); NULL until then."
+
+[tables.binding_release_sample]
+description = "Release times observed on a binding; the cadence of the binding is computed from them."
+[tables.binding_release_sample.columns]
+observed_at = "When a new release was observed (UTC)."

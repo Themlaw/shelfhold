@@ -43,6 +43,7 @@ ACCOUNT_KINDS = ("admin", "service")
 PLUGIN_ORIGINS = ("builtin", "local")  # `repo` joins in M6
 REVISION_NATURES = ("metadata_only", "rewrite")
 REVISION_STATES = ("open", "applied", "dismissed")
+ATTESTATION_FIELDS = ("content_trust", "publisher", "access_partitioning", "egress")
 
 
 def _fk(
@@ -440,4 +441,45 @@ revision_pending = sa.Table(
     in_check("state", REVISION_STATES),
     positive_check("revision", minimum=1),
     sa.UniqueConstraint("variant_id", "revision"),
+)
+
+# What the admin attested about a plugin whose manifest cannot say it (EF-SRC-024, ENF-LEG-007):
+# one value per plugin and per field, kept when the admin account goes.
+plugin_attestation = sa.Table(
+    "plugin_attestation",
+    metadata,
+    sa.Column("plugin_key", sa.String(), nullable=False),
+    sa.Column("field", sa.String(), nullable=False),
+    sa.Column("value", sa.String(), nullable=False),
+    sa.Column("attested_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL")),
+    sa.Column("attested_at", UtcDateTime(), nullable=False),
+    sa.PrimaryKeyConstraint("plugin_key", "field"),
+    in_check("field", ATTESTATION_FIELDS),
+    sa.CheckConstraint("\"plugin_key\" <> ''", name="plugin_key_not_empty"),
+)
+
+# A hole seen in an Edition's numbering; the row is what makes the notification one per gap
+# (EF-BIB-056). Same key as `gap_ack`, so the two join without translation.
+series_gap = sa.Table(
+    "series_gap",
+    metadata,
+    _fk("edition_id", "edition.id", ondelete="CASCADE"),
+    sa.Column("track", sa.String(), nullable=False),
+    sa.Column("number_segment", sa.String(), nullable=False, server_default=sa.text("''")),
+    sa.Column("number_norm", sa.String(), nullable=False),
+    sa.Column("first_seen_at", UtcDateTime(), nullable=False),
+    sa.Column("notified_at", UtcDateTime(), nullable=True),
+    sa.PrimaryKeyConstraint("edition_id", "track", "number_segment", "number_norm"),
+    in_check("track", UNIT_TRACKS),
+    sa.CheckConstraint("\"number_norm\" <> ''", name="number_norm_not_empty"),
+)
+
+# The release times observed on a binding: the cadence cache (`check_cron`, `next_expected`) is
+# computed from the latest of them (EF-SRC-038).
+binding_release_sample = sa.Table(
+    "binding_release_sample",
+    metadata,
+    _fk("source_binding_id", "source_binding.id", ondelete="CASCADE"),
+    sa.Column("observed_at", UtcDateTime(), nullable=False),
+    sa.PrimaryKeyConstraint("source_binding_id", "observed_at"),
 )
