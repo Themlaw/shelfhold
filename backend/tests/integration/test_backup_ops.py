@@ -165,6 +165,7 @@ def test_cli_backup_run_verify_restore(
     assert capsys.readouterr().err == first
     assert not (tmp_path / "x").exists()
     assert MARKER not in first and PASSPHRASE not in first
+    assert "abîmé" in first and "damaged" not in first  # French, and no English detail
 
 
 def test_cli_backup_run_without_passphrase_says_so_and_writes_nothing(

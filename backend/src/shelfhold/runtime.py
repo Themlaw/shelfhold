@@ -8,6 +8,7 @@
 Every write under `/library` from then on is refused by `Fsops` without this instance's lease.
 """
 
+import contextlib
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -276,12 +277,12 @@ class InstanceRuntime:
             self.pools, self.settings, disk_check=disk_check, audit=access_audit(composition)
         )
         register_runtime_jobs(self.pools, composition)
-        register_backup_job(
-            self.pools,
-            BackupService(
-                self.settings, engine, clock=clock, bus=composition.bus, gate=self.maintenance_gate
-            ),
+        backups = BackupService(
+            self.settings, engine, clock=clock, bus=composition.bus, gate=self.maintenance_gate
         )
+        register_backup_job(self.pools, backups)
+        with contextlib.suppress(OSError):  # a run a kill cut short, and its clear snapshot
+            backups.settle_interrupted()
         boot_jobs(
             self.pools,
             instance_lock=self.lock,

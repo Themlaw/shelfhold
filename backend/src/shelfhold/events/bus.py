@@ -62,7 +62,9 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     },
     "mount.sentinel_missing": {"reason": frozenset({"sentinel", "missing_ratio"})},
     "reconcile.drift": {
-        "kind": frozenset({"unknown_file", "adopted_missing", "unsettled_intent", "store_missing"})
+        "kind": frozenset(
+            {"unknown_file", "adopted_missing", "unsettled_intent", "store_missing", "store_lost"}
+        )
     },
     # EF-INT-015: why a backup failed (a closed list, never a path or a message)
     "backup.failed": {
@@ -81,6 +83,7 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
                 "database_error",
                 "write_failed",
                 "verify_failed",
+                "interrupted",
             }
         )
     },

@@ -7,18 +7,24 @@ What a run does, in this order, and what each failure leaves:
    even a temporary file, was written. A passphrase file inside `/data`, the backed-up tree, or
    the backup directory is refused (`passphrase_colocated`) unless `accept_colocated` is given;
    that case is logged and leaves a durable warning for `status`.
-2. The maintenance gate is held for the whole run (a monthly `VACUUM` waits, and does not start
-   while a backup holds the gate). `VACUUM INTO` needs twice the size of the database free on the
-   destination's volume (`has_room_for_vacuum`). The copy is a consistent snapshot; it is the one
-   clear thing a run makes, in a 0700 folder of the backup directory, read into memory at once
-   and removed in every case. The keyring is read *after* the snapshot, so it holds every key the
+2. One backup at a time (`BackupLock`, a file lock in `/data`), and the maintenance gate is held
+   while the snapshot is taken (a monthly `VACUUM` waits, and does not start meanwhile).
+   `VACUUM INTO` needs twice the size of the database free on `/data`, where the snapshot lives
+   (`has_room_for_vacuum`): in `/data/tmp/backup-*`, mode 0700, locked while in use and swept
+   when its owner is dead (`scratch`, at start-up and at the start of each run). **No clear byte
+   ever reaches the backup directory**, which is copied off the host and may sit on a file system
+   whose modes mean nothing. The keyring is read *after* the snapshot, so it holds every key the
    snapshot's rows can cite (rotation only adds keys, retirement refuses a key still in use).
-3. The set is one tar (`archive`), encrypted whole with age v1 / scrypt, written to the backup
-   directory under a temporary name and given its own only once complete (`store`).
-4. The written file is read back and fully checked (`verify`). Only then is the retention applied
-   (the 14 newest stay): the oldest archive is never removed for a backup that was not verified.
+3. The set is one tar (`archive`), encrypted as a stream to a throw-away key that the passphrase
+   seals, written to the backup directory under a temporary name and given its own only once
+   complete (`store`). Memory does not depend on the size of the database.
+4. The written file is read back as a stream and fully checked (`verify`), and its digest must be
+   the one written. Only then is the retention applied (the 14 newest *recorded* archives stay):
+   the oldest archive is never removed for a backup that was not verified, and a file this
+   instance did not record is never removed.
 5. Every outcome is a `backup_run` row; a failure is `backup.failed` with a cause from a closed
-   list, and a last good backup older than `backup_stale_hours` is `backup.stale`.
+   list, a run found `running` with nobody holding the lock (a kill) is `interrupted`, and a last
+   good backup older than `backup_stale_hours` is `backup.stale`.
 
 The backup directory is opened for writing by `store` alone (import-linter contract
 `backup-dir-sole-writer`); this module is the one sanctioned user of `store`.
@@ -27,7 +33,6 @@ The backup directory is opened for writing by `store` alone (import-linter contr
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import os
 import sqlite3
 import stat
@@ -58,13 +63,22 @@ from shelfhold.jobs.maintenance import MaintenanceBusyError
 from shelfhold.ops.backup.archive import (
     DATABASE_MEMBER,
     KEYRING_MEMBER,
-    MAX_ARCHIVE_BYTES,
+    MAX_TAR_BYTES,
     BackupArchiveError,
-    encrypt_archive,
-    pack,
+    Source,
+    iter_tar,
+    write_archive,
+)
+from shelfhold.ops.backup.scratch import (
+    BackupLock,
+    LockBusyError,
+    scratch_folder,
+    stage_dir,
+    stage_file,
+    sweep_orphans,
 )
 from shelfhold.ops.backup.store import BackupDirectory, DirectoryError, archive_name
-from shelfhold.ops.backup.verify import ARCHIVE_FILE_LIMIT, Checked, check_archive
+from shelfhold.ops.backup.verify import Checked, check_file
 
 __all__ = [
     "BACKUP_FAILURES",
@@ -97,13 +111,14 @@ BACKUP_FAILURES: Final = frozenset(
         "database_error",
         "write_failed",
         "verify_failed",
+        "interrupted",
     }
 )
 COLOCATED_KEY: Final = "backup.colocated_passphrase"
 SAME_DEVICE_KEY: Final = "backup.same_device"
 STALE_KEY: Final = "backup.stale_announced"
 GATE_WAIT_S: Final = 600.0
-MAX_META_BYTES: Final = 256 * 1024 * 1024
+MAX_META_BYTES: Final = 4 * 1024**3
 MAX_FILE_BYTES: Final = 64 * 1024 * 1024
 MAX_FILES: Final = 200_000
 MANIFEST_FOLDER: Final = Path(".shelfhold") / "manifest"
@@ -131,7 +146,8 @@ class Gate(Protocol):
 
 
 class DiskSpace:
-    """`has_room_for_vacuum` for the volume that takes the copy: twice the database free."""
+    """`has_room_for_vacuum` for the volume that takes the snapshot (`/data`): twice the
+    database free."""
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -213,14 +229,18 @@ class BackupService:
 
     def _passphrase(self, path: Path, destination: Path, *, accept_colocated: bool) -> str:
         """The passphrase, unless its file lies in a tree the backup copies or beside the
-        archives (then only with `accept_colocated`, which is logged and flagged for `status`)."""
+        archives (then only with `accept_colocated`, which is logged and flagged for `status`).
+        The test is by path *and* by identity (device and inode of the open file), so a bind
+        mount or a hard link into `/data` is no way round it."""
         try:
             passphrase = read_passphrase_file(path)
         except ExportError:
             raise BackupError("passphrase_invalid") from None
         register_secret_value(passphrase)
         trees = [*self._tree(include_manifests=True), destination]
-        colocated = any(_inside(path.resolve(), tree) for tree in trees)
+        colocated = any(_inside(path.resolve(), tree) for tree in trees) or _same_file_under(
+            path, [*trees[:-1]], destination
+        )
         if colocated and not accept_colocated:
             raise BackupError("passphrase_colocated")
         self._flag(COLOCATED_KEY, colocated)
@@ -297,69 +317,119 @@ class BackupService:
         passphrase = self._passphrase(path, destination, accept_colocated=accept_colocated)
         try:
             directory = BackupDirectory.open(destination)
-            directory.sweep_stale(self._clock.now().timestamp())
+            directory.sweep_partials(self._clock.now().timestamp())
         except DirectoryError as error:
             raise BackupError(error.reason) from None
         except OSError:
             raise BackupError("write_failed") from None
         self._flag(SAME_DEVICE_KEY, directory.device() == os.stat(self._settings.data_dir).st_dev)
+        data = self._settings.data_dir
         try:
-            with self._gate.hold("backup", wait_s=GATE_WAIT_S):
-                members, revision = self._collect(directory, passphrase, manifests)
-        except MaintenanceBusyError:
+            with BackupLock(data):
+                self._settle(exclude=run_id)
+                sweep_orphans(data)
+                return self._write(directory, passphrase, manifests)
+        except LockBusyError:
             raise BackupError("busy") from None
+
+    def _write(self, directory: BackupDirectory, passphrase: str, manifests: bool) -> BackupReport:
+        data = self._settings.data_dir
+        space = self._space or DiskSpace(data)
+        if not space.has_room_for_vacuum(database_bytes=self._database_bytes(), volume="data"):
+            raise BackupError("no_room")
         now = self._clock.now()
-        count = len(members)
-        try:
-            tar_bytes = pack(members, created_at=now, schema_revision=revision)
-        except ValueError:  # a member name that ustar cannot hold
-            raise BackupError("write_failed") from None
-        del members
-        if len(tar_bytes) >= MAX_ARCHIVE_BYTES:
-            raise BackupError("too_large")
-        blob = encrypt_archive(tar_bytes, passphrase)
-        del tar_bytes
         name = archive_name(now.strftime("%Y%m%dT%H%M%SZ"))
+        with scratch_folder(data) as work:
+            try:
+                with self._gate.hold("backup", wait_s=GATE_WAIT_S):
+                    members, revision = self._collect(work, passphrase, manifests)
+            except MaintenanceBusyError:
+                raise BackupError("busy") from None
+            self._bounded(members)
+
+            def fill(sink: Any) -> None:
+                chunks = iter_tar(members, created_at=now, schema_revision=revision)
+                write_archive(sink, chunks, passphrase)
+
+            try:
+                size, digest = directory.write(name, fill)
+            except (OSError, ValueError, ExportError):
+                raise BackupError("write_failed") from None
+            if not self._verified(directory, name, passphrase, digest):
+                with contextlib.suppress(OSError):
+                    directory.drop(name)  # a file that does not verify is no backup
+                raise BackupError("verify_failed")
+        pruned = directory.prune(self._settings.backup_retention, name, self._recorded() | {name})
+        return BackupReport(name, size, digest, len(members) + 1, tuple(pruned), revision)
+
+    @staticmethod
+    def _bounded(members: Mapping[str, Source]) -> None:
+        total = 0
+        for source in members.values():
+            total += len(source) if isinstance(source, bytes) else source.stat().st_size
+        if total >= MAX_TAR_BYTES:
+            raise BackupError("too_large")
+
+    def _recorded(self) -> set[str]:
+        """The archives this instance wrote and verified: the only ones retention may remove."""
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(_run.c.file_name).where(
+                    _run.c.state == "ok", _run.c.file_name.is_not(None)
+                )
+            ).scalars()
+            return {str(n) for n in rows}
+
+    def _settle(self, *, exclude: str | None = None) -> int:
+        """Runs left `running` while the lock is free (we hold it, or just took it) died: they
+        become `failed` with the cause `interrupted`, and `backup.failed` says so."""
+        with self._engine.begin() as connection:
+            stale = list(
+                connection.execute(
+                    sa.select(_run.c.id).where(_run.c.state == "running", _run.c.id != exclude)
+                ).scalars()
+            )
+            for run_id in stale:
+                connection.execute(
+                    sa.update(_run)
+                    .where(_run.c.id == run_id)
+                    .values(state="failed", cause="interrupted", finished_at=self._clock.now())
+                )
+        for _ in stale:
+            log.warning("backup.failed", reason="interrupted")
+            self._announce("backup.failed", {"reason": "interrupted"})
+        return len(stale)
+
+    def settle_interrupted(self) -> int:
+        """At start-up: the same, when no backup is running (nobody holds the lock), and the
+        scratch folders of dead runs are removed."""
         try:
-            directory.write(name, blob)
-        except OSError:
-            raise BackupError("write_failed") from None
-        if not self._verified(directory, name, passphrase, blob):
-            with contextlib.suppress(OSError):
-                directory.drop(name)  # a file that does not verify is no backup
-            raise BackupError("verify_failed")
-        pruned = directory.prune(self._settings.backup_retention, protect=name)
-        return BackupReport(
-            name, len(blob), hashlib.sha256(blob).hexdigest(), count, tuple(pruned), revision
-        )
+            with BackupLock(self._settings.data_dir):
+                sweep_orphans(self._settings.data_dir)
+                return self._settle()
+        except LockBusyError:
+            return 0
 
     def _verified(
-        self, directory: BackupDirectory, name: str, passphrase: str, blob: bytes
+        self, directory: BackupDirectory, name: str, passphrase: str, digest: str
     ) -> bool:
         try:
-            on_disk = directory.read(name, ARCHIVE_FILE_LIMIT)
-            if on_disk != blob:
-                return False
-            check_archive(on_disk, passphrase)
+            checked = check_file(directory.path / name, passphrase, self._settings.data_dir)
         except (OSError, BackupArchiveError):
             return False
-        return True
+        return checked.file_sha256 == digest
 
     def _database_bytes(self) -> int:
         database = self._settings.database_path
         return sum(p.stat().st_size for p in (database, Path(f"{database}-wal")) if p.exists())
 
     def _collect(
-        self, directory: BackupDirectory, passphrase: str, manifests: bool
-    ) -> tuple[dict[str, bytes], str]:
-        space = self._space or DiskSpace(directory.path)
-        if not space.has_room_for_vacuum(database_bytes=self._database_bytes(), volume="backup"):
-            raise BackupError("no_room")
-        members: dict[str, bytes] = {}
-        with directory.workspace() as work:
-            copy = work / "snapshot.db"
-            revision = self._snapshot(copy)
-            members[DATABASE_MEMBER] = _read_file(copy, MAX_ARCHIVE_BYTES)
+        self, work: Path, passphrase: str, manifests: bool
+    ) -> tuple[dict[str, Source], str]:
+        members: dict[str, Source] = {}
+        copy = work / "snapshot.db"
+        revision = self._snapshot(copy)
+        members[DATABASE_MEMBER] = copy
         try:
             keyring = diagnostics.store_for(self._settings).load()
         except (KeyringError, OSError):
@@ -368,10 +438,12 @@ class BackupService:
         data = self._settings.data_dir
         with contextlib.suppress(FileNotFoundError):
             members[CONFIG_FILE_NAME] = read_data_file(data / CONFIG_FILE_NAME, MAX_FILE_BYTES)
-        members |= _tree_members(data / "meta", "meta")
+        members |= _tree_members(data / "meta", "meta", work / "meta")
         if manifests:
             for index, root in enumerate(self._roots()):
-                members |= _tree_members(root / MANIFEST_FOLDER, f"manifests/{index:03d}")
+                members |= _tree_members(
+                    root / MANIFEST_FOLDER, f"manifests/{index:03d}", work / f"manifests-{index}"
+                )
         schema, dictionary = self._assets()
         members[f"docs/{SCHEMA_FILE}"], members[f"docs/{DICTIONARY_FILE}"] = schema, dictionary
         return members, revision
@@ -451,8 +523,9 @@ def destination_of(settings: Settings) -> Path:
 def verify_latest(
     settings: Settings, *, passphrase_file: Path | None = None, name: str | None = None
 ) -> tuple[str, Checked]:
-    """The newest archive (or `name`) of the backup directory, decrypted and checked. It needs no
-    database and writes nothing, so it also runs on a host where only the backups survive."""
+    """The newest archive (or `name`) of the backup directory, decrypted and checked as a stream.
+    It needs no database and writes nothing to the destination, so it also runs on a host where
+    only the backups survived."""
     path = passphrase_file or passphrase_path_of(settings)
     destination = destination_of(settings)
     try:
@@ -467,30 +540,24 @@ def verify_latest(
     if chosen is None or chosen not in names:
         raise BackupArchiveError
     try:
-        return chosen, check_archive(directory.read(chosen, ARCHIVE_FILE_LIMIT), passphrase)
+        return chosen, check_file(destination / chosen, passphrase, settings.data_dir)
     except OSError:
         raise BackupArchiveError from None
 
 
-def _read_file(path: Path, limit: int) -> bytes:
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    with os.fdopen(descriptor, "rb") as stream:
-        data = stream.read(limit + 1)
-    if len(data) > limit:
-        raise BackupError("too_large")
-    return data
-
-
-def _tree_members(folder: Path, prefix: str) -> dict[str, bytes]:
+def _tree_members(folder: Path, prefix: str, stage: Path) -> dict[str, Source]:
     """The regular files under `folder` (links and special files are skipped, never followed),
-    within a count and a size bound; a folder that is not there gives nothing."""
-    found: dict[str, bytes] = {}
+    copied one by one into `stage` (a folder of the run's private scratch, so that a file that
+    changes while the archive is written cannot spoil it) within a count and a size bound; a
+    folder that is not there gives nothing. The sources are the copies."""
+    found: dict[str, Source] = {}
     total = 0
     try:
         if not stat.S_ISDIR(os.lstat(folder).st_mode):
             return found
     except OSError:
         return found
+    stage = stage_dir(stage.parent, stage.name)
     pending = [folder]
     while pending:
         current = pending.pop()
@@ -504,13 +571,58 @@ def _tree_members(folder: Path, prefix: str) -> dict[str, bytes]:
             if entry.is_dir(follow_symlinks=False):
                 pending.append(Path(entry.path))
             elif entry.is_file(follow_symlinks=False):
+                if len(found) >= MAX_FILES:
+                    raise BackupError("too_large")
                 data = read_data_file(Path(entry.path), MAX_FILE_BYTES + 1)
                 total += len(data)
-                if len(data) > MAX_FILE_BYTES or total > MAX_META_BYTES or len(found) >= MAX_FILES:
+                if len(data) > MAX_FILE_BYTES or total > MAX_META_BYTES:
                     raise BackupError("too_large")
+                copy = stage_file(stage, f"{len(found):08d}", data)
                 rel = Path(entry.path).relative_to(folder).as_posix()
-                found[f"{prefix}/{rel}"] = data
+                found[f"{prefix}/{rel}"] = copy
     return found
+
+
+def _same_file_under(path: Path, trees: list[Path], destination: Path) -> bool:
+    """Is the passphrase file *the same file* (device and inode) as one under a tree, whatever
+    path it was reached by (a bind mount, a hard link)? Trees on another device cannot hold it."""
+    try:
+        with open(path, "rb") as stream:
+            status = os.fstat(stream.fileno())
+    except OSError:
+        return False
+    target = (status.st_dev, status.st_ino)
+    for tree in trees:
+        if _holds_inode(tree, target, deep=True):
+            return True
+    return _holds_inode(destination, target, deep=False)
+
+
+def _holds_inode(tree: Path, target: tuple[int, int], *, deep: bool) -> bool:
+    try:
+        if os.lstat(tree).st_dev != target[0]:
+            return False
+    except OSError:
+        return False
+    pending, seen = [tree], 0
+    while pending:
+        try:
+            entries = list(os.scandir(pending.pop()))
+        except OSError:
+            continue
+        for entry in entries:
+            seen += 1
+            if seen > MAX_FILES * 20:
+                return False
+            try:
+                info = entry.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            if (info.st_dev, info.st_ino) == target and stat.S_ISREG(info.st_mode):
+                return True
+            if deep and stat.S_ISDIR(info.st_mode) and info.st_dev == target[0]:
+                pending.append(Path(entry.path))
+    return False
 
 
 def backup_warnings(engine: Engine, settings: Settings, now: datetime) -> list[dict[str, str]]:

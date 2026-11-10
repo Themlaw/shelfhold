@@ -12,6 +12,7 @@ import os
 import stat
 import textwrap
 from pathlib import Path
+from typing import Protocol
 
 import pyrage
 
@@ -165,6 +166,53 @@ def decrypt_blob(binary: bytes, passphrase: str) -> bytes:
         return bytes(pyrage.passphrase.decrypt(binary, passphrase))
     except (pyrage.DecryptError, ValueError):
         raise ExportError("wrong passphrase or damaged file") from None
+
+
+class ByteSource(Protocol):
+    def read(self, size: int = -1, /) -> bytes: ...
+
+
+class ByteSink(Protocol):
+    def write(self, data: bytes, /) -> object: ...
+
+
+def new_stream_key() -> tuple[str, str]:
+    """A throw-away age key for one backup: `(secret, recipient)`, both text. The body of a backup
+    is encrypted to the recipient as a stream (bounded memory); the secret travels in the header,
+    sealed by the passphrase, and is never stored anywhere else."""
+    identity = pyrage.x25519.Identity.generate()
+    return str(identity), str(identity.to_public())
+
+
+def encrypt_stream(source: ByteSource, sink: ByteSink, recipient: str) -> None:
+    """Binary age v1 to an x25519 recipient, read and written in chunks."""
+    try:
+        pyrage.encrypt_io(source, sink, [pyrage.x25519.Recipient.from_str(recipient)])
+    except (pyrage.EncryptError, pyrage.RecipientError, ValueError):
+        raise ExportError("the stream could not be encrypted") from None
+
+
+def decrypt_stream(source: ByteSource, sink: ByteSink, secret: str) -> None:
+    """The clear of a stream made by `encrypt_stream`, handed to `sink` in chunks. Any failure
+    (truncated, altered, wrong key) is the same `ExportError`; `sink` may already hold a prefix of
+    the clear, which only its owner may trust once this has returned."""
+    caught: list[BaseException] = []
+
+    class Guard:
+        def write(self, data: bytes, /) -> int:
+            try:
+                sink.write(data)
+            except BaseException as error:  # the sink's own failure is not a damaged stream
+                caught.append(error)
+                raise
+            return len(data)
+
+    try:
+        pyrage.decrypt_io(source, Guard(), [pyrage.x25519.Identity.from_str(secret)])
+    except (pyrage.DecryptError, pyrage.IdentityError, ValueError, OSError):
+        if caught:
+            raise caught[0] from None
+        raise ExportError("wrong key or damaged stream") from None
 
 
 def decrypt_export(text: str, passphrase: str) -> Keyring:

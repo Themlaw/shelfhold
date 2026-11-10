@@ -8,7 +8,9 @@ settings.
 from __future__ import annotations
 
 import base64
+import errno
 import os
+import signal
 import sqlite3
 import stat
 import threading
@@ -29,12 +31,16 @@ from shelfhold.ops.backup import (
     BackupError,
     backup_warnings,
 )
+from shelfhold.ops.backup import archive as arc
 from shelfhold.ops.backup import (
     run as backup_run_module,
 )
+from shelfhold.ops.backup import store as store_module
 from shelfhold.ops.backup.archive import KEYRING_MEMBER
 from shelfhold.ops.backup.run import verify_latest
-from tests.backup_env import MARKER, PASSPHRASE, backup_bench, write_passphrase
+from shelfhold.ops.backup.scratch import BackupLock, scratch_folder, sweep_orphans
+from shelfhold.ops.backup.store import BackupDirectory
+from tests.backup_env import MARKER, PASSPHRASE, backup_bench, read_members, write_passphrase
 
 pytestmark = pytest.mark.req("EF-INT-015", "ENF-OPS-001")
 
@@ -92,7 +98,7 @@ def test_the_oldest_backup_stays_unless_the_new_one_verifies(
         def refuse(*_: object) -> None:
             raise BackupArchiveError
 
-        monkeypatch.setattr(backup_run_module, "check_archive", refuse)
+        monkeypatch.setattr(backup_run_module, "check_file", refuse)
         bench.clock.advance(days=1)
         with pytest.raises(BackupError) as refused:
             bench.service.run()
@@ -156,26 +162,173 @@ def test_a_failure_in_the_middle_leaves_no_clear_copy(
 ) -> None:
     with backup_bench(tmp_path) as bench:
 
-        def boom(*_: object) -> bytes:
+        def boom(*_: object) -> None:
             raise RuntimeError("the cipher failed")
 
-        monkeypatch.setattr(backup_run_module, "encrypt_archive", boom)
+        monkeypatch.setattr(backup_run_module, "write_archive", boom)
         with pytest.raises(RuntimeError):
             bench.service.run()
-        assert os.listdir(bench.backups) == []  # the 0700 work folder with the copy is gone
+        assert os.listdir(bench.backups) == []  # no partial file, and no clear copy anywhere
+        assert not scratch_folders(bench)
         assert bench.events("backup.failed") == [{"reason": "write_failed"}]
 
 
-def test_a_killed_run_leaves_a_work_folder_that_the_next_run_sweeps(tmp_path: Path) -> None:
+def scratch_folders(bench: object) -> list[Path]:
+    data = bench.settings.data_dir  # type: ignore[attr-defined]
+    return sorted((data / "tmp").glob("backup-*")) if (data / "tmp").is_dir() else []
+
+
+def test_a_killed_run_leaves_nothing_on_the_destination_and_the_next_run_sweeps_the_snapshot(
+    tmp_path: Path,
+) -> None:
+    """The clear snapshot is in `/data/tmp`, never in the (synchronised, perhaps FAT) backup
+    folder: a SIGKILL right after `VACUUM INTO` leaves the destination with no byte at all."""
+    with backup_bench(tmp_path) as bench:
+        original = bench.service._snapshot
+
+        def killed(copy: Path) -> str:
+            original(copy)
+            os.kill(os.getpid(), signal.SIGKILL)
+            raise AssertionError("not reached")
+
+        pid = os.fork()
+        if pid == 0:  # the child is the run that dies
+            try:
+                bench.engine.dispose(close=False)
+                bench.service._snapshot = killed  # type: ignore[method-assign]
+                bench.service.run()
+            finally:
+                os._exit(1)
+        _, status = os.waitpid(pid, 0)
+        assert os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGKILL
+        assert tree(bench.backups) == [] if bench.backups.exists() else True
+        left = scratch_folders(bench)
+        assert len(left) == 1 and (left[0] / "snapshot.db").is_file()
+        assert stat.S_IMODE(left[0].stat().st_mode) == 0o700
+        # nobody holds it any more: the next run (and the start-up) remove it
+        assert sweep_orphans(bench.settings.data_dir) == 1 and not scratch_folders(bench)
+
+
+def test_a_scratch_folder_whose_owner_is_alive_is_not_swept(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench, scratch_folder(bench.settings.data_dir) as folder:
+        (folder / "snapshot.db").write_bytes(b"SQLite format 3\x00 clear")
+        assert sweep_orphans(bench.settings.data_dir) == 0 and folder.is_dir()
+    assert not folder.exists()
+
+
+def test_nothing_in_clear_reaches_the_destination_even_when_a_run_fails_late(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with backup_bench(tmp_path) as bench:
+        seen: list[bytes] = []
+        real = backup_run_module.write_archive
+
+        def watching(sink: object, chunks: object, passphrase: str) -> None:
+            real(sink, chunks, passphrase)  # type: ignore[arg-type]
+            seen.append(every_byte(bench.backups))
+            raise OSError("the disk went away")
+
+        monkeypatch.setattr(backup_run_module, "write_archive", watching)
+        with pytest.raises(BackupError):
+            bench.service.run()
+        assert seen and all(
+            MARKER.encode() not in raw and b"SQLite format 3" not in raw for raw in seen
+        )
+        assert os.listdir(bench.backups) == []
+
+
+def test_only_known_archives_are_ever_removed(tmp_path: Path) -> None:
+    """Retention takes the archives this instance recorded as written and verified, and that
+    start like one of ours: a foreign file or folder with an archive-like name stays."""
+    with backup_bench(tmp_path, backup_retention=2) as bench:
+        bench.service.run()
+        bench.backups.joinpath("shelfhold-backup-20200101T000000Z.tar.age").write_bytes(b"mine?")
+        (bench.backups / "shelfhold-backup-20200102T000000Z.tar.age").mkdir()
+        (bench.backups / ".work-abcd1234").mkdir()
+        (bench.backups / ".work-abcd1234" / "precious").write_text("x")
+        (bench.backups / ".partial-0123456789abcdef").write_bytes(b"not an archive start")
+        old = bench.clock.now().timestamp() - 86400
+        os.utime(bench.backups / ".partial-0123456789abcdef", (old, old))
+        for _ in range(3):
+            bench.clock.advance(days=1)
+            bench.service.run()
+        kept = os.listdir(bench.backups)
+        assert "shelfhold-backup-20200101T000000Z.tar.age" in kept  # unrecorded
+        assert "shelfhold-backup-20200102T000000Z.tar.age" in kept  # a folder
+        assert (bench.backups / ".work-abcd1234" / "precious").read_text() == "x"
+        assert ".partial-0123456789abcdef" in kept  # does not start like an archive
+        real = [n for n in kept if n.startswith("shelfhold-backup-2026")]
+        assert len(real) == 2  # the retention counted our own
+
+
+def test_a_dead_partial_of_ours_is_swept(tmp_path: Path) -> None:
     with backup_bench(tmp_path) as bench:
         bench.backups.mkdir(mode=0o700)
-        leftover = bench.backups / ".work-abcd1234"
-        leftover.mkdir(mode=0o700)
-        (leftover / "snapshot.db").write_bytes(b"SQLite format 3\x00 clear")
-        stale = bench.clock.now().timestamp() - 7200
-        os.utime(leftover, (stale, stale))
+        partial = bench.backups / ".partial-0123456789abcdef"
+        partial.write_bytes(arc.ARCHIVE_MAGIC + b"12\nhalf an archive")
+        old = bench.clock.now().timestamp() - 7200
+        os.utime(partial, (old, old))
         bench.service.run()
-        assert not leftover.exists()
+        assert not partial.exists()
+
+
+def test_two_backups_do_not_run_together(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench, BackupLock(bench.settings.data_dir):
+        with pytest.raises(BackupError) as refused:
+            bench.service.run()
+        assert refused.value.reason == "busy"
+        assert not bench.backups.exists() or not bench.names()
+
+
+def test_a_run_found_running_with_nobody_holding_the_lock_is_interrupted(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench:
+        with bench.engine.begin() as connection:
+            connection.execute(
+                sa.insert(platform.backup_run).values(
+                    id="01J00000000000000000000B01", started_at=bench.clock.now(), state="running"
+                )
+            )
+        assert bench.service.settle_interrupted() == 1
+        assert bench.events("backup.failed") == [{"reason": "interrupted"}]
+        with bench.engine.connect() as connection:
+            row = connection.execute(sa.select(platform.backup_run)).one()
+        assert (row.state, row.cause) == ("failed", "interrupted") and row.finished_at is not None
+        assert bench.service.settle_interrupted() == 0
+        # a backup that is really running is left alone
+        with bench.engine.begin() as connection:
+            connection.execute(
+                sa.insert(platform.backup_run).values(
+                    id="01J00000000000000000000B02", started_at=bench.clock.now(), state="running"
+                )
+            )
+        with BackupLock(bench.settings.data_dir):
+            assert bench.service.settle_interrupted() == 0
+
+
+def test_the_archive_is_placed_without_renameat2_on_a_file_system_that_lacks_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FAT, exFAT, CIFS: `renameat2(RENAME_NOREPLACE)` answers EPERM, EINVAL or ENOSYS; the
+    archive still lands, an existing one is still never replaced, and no hard link is tried."""
+    for code in (errno.EPERM, errno.EINVAL, errno.ENOSYS):
+
+        def refused(*_a: object, _code: int = code) -> None:
+            raise OSError(_code, os.strerror(_code))
+
+        def no_link(*_a: object, **_k: object) -> None:
+            raise AssertionError("a hard link on a file system that may not have them")
+
+        with backup_bench(tmp_path / str(code)) as bench, monkeypatch.context() as patch:
+            patch.setattr(store_module, "renameat2_noreplace", refused)
+            patch.setattr(os, "link", no_link)
+            report = bench.service.run()
+            assert bench.names() == [report.name]
+            assert os.listdir(bench.backups) == [report.name]
+            directory = BackupDirectory.open(bench.backups)
+            with pytest.raises(FileExistsError):
+                directory.write(report.name, lambda sink: sink.write(arc.ARCHIVE_MAGIC + b"1\n"))
+            assert verify_latest(bench.settings)[0] == report.name  # the first is intact
+            assert os.listdir(bench.backups) == [report.name]  # and the refusal left no partial
 
 
 def test_backup_refuses_passphrase_inside_backed_up_tree(tmp_path: Path) -> None:
@@ -241,8 +394,9 @@ def test_the_passphrase_file_is_the_one_of_secrets_export(tmp_path: Path) -> Non
 def test_master_key_export_encrypted_by_passphrase(tmp_path: Path) -> None:
     with backup_bench(tmp_path) as bench:
         bench.service.run()
-        _name, checked = verify_latest(bench.settings)
-        armored = checked.members[KEYRING_MEMBER].decode("ascii")
+        name, _checked = verify_latest(bench.settings)
+        members = read_members(bench.backups / name)
+        armored = members[KEYRING_MEMBER].decode("ascii")
         assert armored.startswith("-----BEGIN AGE ENCRYPTED FILE-----")
         keyring = diagnostics.store_for(bench.settings).load()
         assert decrypt_export(armored, PASSPHRASE).keys == keyring.keys
@@ -252,7 +406,7 @@ def test_master_key_export_encrypted_by_passphrase(tmp_path: Path) -> None:
         for key in keyring.keys:
             for form in (base64.b64encode(key.material), base64.urlsafe_b64encode(key.material)):
                 assert form not in every_byte(bench.backups)
-                assert all(form not in data for data in checked.members.values())
+                assert all(form not in data for data in members.values())
 
 
 def test_vacuum_into_requires_twice_db_size_free(tmp_path: Path) -> None:
@@ -275,8 +429,8 @@ def test_vacuum_into_requires_twice_db_size_free(tmp_path: Path) -> None:
         with pytest.raises(BackupError) as refused:
             bench.service_for(bench.settings, space=Room(False)).run()
         assert refused.value.reason == "no_room"
-        assert [volume for _, volume in calls] == ["backup"] and calls[0][0] >= size
-        assert os.listdir(bench.backups) == []
+        assert [volume for _, volume in calls] == ["data"] and calls[0][0] >= size
+        assert not bench.backups.exists() or os.listdir(bench.backups) == []
         assert bench.events("backup.failed") == [{"reason": "no_room"}]
         bench.service_for(bench.settings, space=Room(True)).run()  # enough room: it goes ahead
         assert len(bench.names()) == 1
@@ -293,8 +447,8 @@ def test_the_default_space_check_is_twice_the_database(
 
     disk = backup_run_module.DiskSpace(tmp_path)
     monkeypatch.setattr(os, "statvfs", lambda _p: Usage(2000))
-    assert disk.has_room_for_vacuum(database_bytes=1000 * 4096, volume="backup")
-    assert not disk.has_room_for_vacuum(database_bytes=1001 * 4096, volume="backup")
+    assert disk.has_room_for_vacuum(database_bytes=1000 * 4096, volume="data")
+    assert not disk.has_room_for_vacuum(database_bytes=1001 * 4096, volume="data")
 
 
 def test_backup_set_contains_full_keyring_and_schema_assets(tmp_path: Path) -> None:
@@ -304,7 +458,7 @@ def test_backup_set_contains_full_keyring_and_schema_assets(tmp_path: Path) -> N
         diagnostics.store_for(bench.settings).write(rotated)
         bench.service.run()
         name, checked = verify_latest(bench.settings)
-        members = checked.members
+        members = read_members(bench.backups / name)
         assert {
             "shelfhold.db", "config.toml", "keyring.age", "docs/schema.sql",
             "docs/data-dictionary.md", "meta/units/ab/01JTEST0000000000000000AB1.json",
@@ -393,3 +547,33 @@ def test_the_gate_reaches_another_process_through_its_lock_file(tmp_path: Path) 
             pass
     with cli.hold("backup"):  # free again
         pass
+
+
+def test_a_hard_link_into_data_is_the_same_file_and_so_colocated(tmp_path: Path) -> None:
+    """The path of the passphrase file is outside `/data`, but it is the same inode as a file in
+    it (a hard link, as a bind mount would be): the identity of the open file gives it away."""
+    with backup_bench(tmp_path) as bench:
+        inside = write_passphrase(bench.settings.data_dir / "somewhere" / "p")
+        outside = tmp_path / "elsewhere" / "p"
+        outside.parent.mkdir()
+        os.link(inside, outside)
+        service = bench.service_for(
+            bench.settings.model_copy(update={"backup_passphrase_file": outside})
+        )
+        with pytest.raises(BackupError) as refused:
+            service.run()
+        assert refused.value.reason == "passphrase_colocated"
+        assert not bench.backups.exists() or not bench.names()
+        service.run(accept_colocated=True)  # the owner's choice, flagged for `status`
+        codes = {
+            w["code"] for w in backup_warnings(bench.engine, bench.settings, bench.clock.now())
+        }
+        assert "backup_passphrase_colocated" in codes
+
+
+def test_a_retention_above_a_month_is_refused_by_the_settings() -> None:
+    from pydantic import ValidationError
+
+    assert Settings(backup_retention=30).backup_retention == 30
+    with pytest.raises(ValidationError):
+        Settings(backup_retention=31)

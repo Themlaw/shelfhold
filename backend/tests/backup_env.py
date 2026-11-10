@@ -21,6 +21,7 @@ from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import diagnostics
 from shelfhold.jobs.maintenance import MaintenanceGate
 from shelfhold.ops.backup import BackupService
+from shelfhold.ops.backup.archive import TarParser, read_archive
 from tests.fakes_clock import ManualClock
 
 PASSPHRASE = "synthetic backup passphrase 12345"  # noqa: S105
@@ -96,3 +97,29 @@ def backup_bench(root: Path, **overrides: Any) -> Iterator[BackupBench]:
         )  # type: ignore[arg-type]
     finally:
         engine.dispose()
+
+
+class Collect:
+    """A member handler that keeps what it is given, by name."""
+
+    def __init__(self) -> None:
+        self.members: dict[str, bytes] = {}
+        self._name = ""
+
+    def begin(self, name: str, size: int) -> None:
+        self._name = name
+        self.members[name] = b""
+
+    def data(self, chunk: bytes) -> None:
+        self.members[self._name] += chunk
+
+    def end(self, name: str) -> None:
+        pass
+
+
+def read_members(archive: Path, passphrase: str = PASSPHRASE) -> dict[str, bytes]:
+    """Every member of an archive, by name, in memory (a test archive is small)."""
+    handler = Collect()
+    with archive.open("rb") as stream:
+        read_archive(stream, passphrase, TarParser(handler))
+    return handler.members

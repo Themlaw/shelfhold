@@ -1,35 +1,44 @@
 """The backup directory: the single module that opens it for writing (EF-INT-027, D2).
 
-The directory is a mounted folder outside `/data` and `/store` (the caller checks that). Three
-kinds of entry live in it, and only these: the archives `shelfhold-backup-<UTC>.tar.age`, the
-`.partial-*` file an archive is written to before it takes its name, and a `.work-*` folder
-(mode 0700) that holds the one clear thing a backup ever makes, the `VACUUM INTO` copy of the
-database, for as long as it takes to read it into memory. Everything deleted here is one of
-those, matched by an exact pattern, a regular file or a folder this module made itself: a name
-given by anyone else never reaches an `unlink`. That is why the deleting functions are classed
+The directory is a mounted folder outside `/data` and `/store` (the caller checks that), and it
+holds encrypted files only: the archives `shelfhold-backup-<UTC>.tar.age` and the
+`.partial-<16 hex>` file an archive is written to before it takes its name. Nothing in clear ever
+reaches it (the snapshot of the database lives in `/data/tmp`, see `scratch`). What is deleted
+here is one of those two kinds, matched by an exact name pattern, a regular file (never a link
+or a folder), that starts with the archive's own first line, and, for an archive, that a
+`backup_run` row of this instance recorded as written and verified: a file or a folder that
+someone else put there never reaches an `unlink`. That is why the deleting function is classed
 in the register of emitters (`backup_directory`).
+
+An archive is placed under its name with `renameat2(RENAME_NOREPLACE)`; on a file system that
+does not know it (FAT, exFAT, CIFS, some NFS: EPERM, EINVAL, ENOSYS) the placement is an existence
+check followed by a rename, safe because the caller holds the exclusive backup lock.
 """
 
 from __future__ import annotations
 
 import contextlib
+import errno
+import hashlib
 import os
 import re
 import secrets
 import stat
-import tempfile
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import BinaryIO, Final
+
+from shelfhold.infrastructure.fsops.openat2 import renameat2_noreplace
+from shelfhold.infrastructure.secrets.export import ByteSink
+from shelfhold.ops.backup.archive import ARCHIVE_MAGIC
 
 __all__ = ["ARCHIVE_NAME", "BackupDirectory", "DirectoryError", "archive_name"]
 
 ARCHIVE_NAME: Final = re.compile(r"shelfhold-backup-\d{8}T\d{6}Z\.tar\.age")
 _PARTIAL: Final = re.compile(r"\.partial-[0-9a-f]{16}")
-_WORK: Final = re.compile(r"\.work-[A-Za-z0-9_]{8}")
 STALE_AFTER_S: Final = 3600
+_NO_RENAME2: Final = (errno.EPERM, errno.EINVAL, errno.ENOSYS, errno.ENOTSUP)
 
 
 class DirectoryError(Exception):
@@ -98,40 +107,60 @@ class BackupDirectory:
                     found.append(entry.name)
         return sorted(found)
 
-    def read(self, name: str, limit: int) -> bytes:
-        """An archive's bytes; never a link, never more than `limit + 1` bytes."""
+    def open_archive(self, name: str) -> BinaryIO:
+        """An archive for reading: never a link, only a regular file."""
         descriptor = os.open(
             self._file(name), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
         )
-        with os.fdopen(descriptor, "rb") as stream:
-            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                raise OSError("not a regular file")
-            return stream.read(limit + 1)
+        stream = os.fdopen(descriptor, "rb")
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            stream.close()
+            raise OSError("not a regular file")
+        return stream
 
-    def write(self, name: str, data: bytes) -> None:
+    def write(self, name: str, fill: Callable[[ByteSink], None]) -> tuple[int, str]:
         """The archive appears under its name whole or not at all, mode 0600, and never replaces
-        an archive (`FileExistsError`). Whatever fails leaves no partial file behind."""
+        an archive (`FileExistsError`). `fill` writes it to the sink it is given, in chunks.
+        Whatever fails leaves no partial file behind. Returns the size and the sha256 written."""
         final = self._file(name)
         partial_name = f".partial-{secrets.token_hex(8)}"
         partial = self._file(partial_name)
         descriptor = os.open(
             partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600
         )
+        sink = _Sink(descriptor)
         try:
             try:
                 os.fchmod(descriptor, 0o600)
-                view = memoryview(data)
-                while view:
-                    view = view[os.write(descriptor, view) :]
+                fill(sink)
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
-            os.link(partial, final)  # fails instead of replacing
+            self._place(partial, final)
         except BaseException:
             self._discard(partial_name)
             raise
-        self._discard(partial_name)
+        self._discard(partial_name)  # the link-less fallbacks leave nothing; a no-op after rename
         self._sync()
+        return sink.size, sink.digest.hexdigest()
+
+    @staticmethod
+    def _place(partial: Path, final: Path) -> None:
+        folder = os.open(partial.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            renameat2_noreplace(folder, partial.name, folder, final.name)
+        except OSError as error:
+            if error.errno not in _NO_RENAME2:
+                raise
+            # no renameat2 on this file system: look, then rename (the backup lock is held)
+            try:
+                os.lstat(final)
+            except FileNotFoundError:
+                os.rename(partial, final)
+            else:
+                raise FileExistsError(errno.EEXIST, "exists", str(final)) from None
+        finally:
+            os.close(folder)
 
     def _sync(self) -> None:
         descriptor = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY)
@@ -140,12 +169,28 @@ class BackupDirectory:
         finally:
             os.close(descriptor)
 
-    def prune(self, keep: int, protect: str) -> list[str]:
-        """Retention: the oldest archives beyond `keep` leave, never `protect` (the one just
-        written and verified). Called only after that verification."""
+    def _ours(self, name: str, *, partial: bool) -> bool:
+        """A regular file (no link) that starts like one of our archives."""
+        try:
+            descriptor = os.open(
+                self._file(name), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+            )
+        except OSError:
+            return False
+        with os.fdopen(descriptor, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                return False
+            head = stream.read(len(ARCHIVE_MAGIC))
+        return ARCHIVE_MAGIC.startswith(head) if partial else head == ARCHIVE_MAGIC
+
+    def prune(self, keep: int, protect: str, known: Collection[str]) -> list[str]:
+        """Retention: among the archives this instance recorded (`known`: the files of its
+        `backup_run` rows in state `ok`) and that still start like one, the oldest beyond `keep`
+        leave, never `protect` (the one just written and verified). Called only after that
+        verification. A file that is not recorded stays, whatever its name."""
         if keep < 1:
             raise ValueError("a retention below one backup would delete the last one")
-        names = self.names()
+        names = [n for n in self.names() if n in known and self._ours(n, partial=False)]
         excess = [n for n in names[: max(len(names) - keep, 0)] if n != protect]
         for name in excess:
             self._discard(name)
@@ -161,49 +206,39 @@ class BackupDirectory:
         """Remove one archive or partial file of this directory (exact pattern, not a folder)."""
         target = self._file(name)
         with contextlib.suppress(FileNotFoundError):
-            if stat.S_ISDIR(os.lstat(target).st_mode):
+            if not stat.S_ISREG(os.lstat(target).st_mode):
                 return
             os.unlink(target)
 
-    @contextmanager
-    def workspace(self) -> Iterator[Path]:
-        """A private folder (0700) for the clear copy of the database, removed in every case:
-        an exception, a kill of the code path, a normal exit."""
-        folder = Path(tempfile.mkdtemp(prefix=".work-", dir=self.path))
-        try:
-            os.chmod(folder, 0o700)
-            yield folder
-        finally:
-            self._remove_work_dir(folder)
-
-    def _remove_work_dir(self, folder: Path) -> None:
-        """Only a `.work-*` folder of this directory, and only the plain files in it."""
-        if folder.parent != self.path or _WORK.fullmatch(folder.name) is None:
-            raise ValueError("not a work folder of this directory")
-        with contextlib.suppress(FileNotFoundError):
-            with os.scandir(folder) as entries:
-                for entry in entries:
-                    if entry.is_file(follow_symlinks=False) or entry.is_symlink():
-                        os.unlink(entry.path)
-            os.rmdir(folder)
-
-    def sweep_stale(self, now_s: float) -> int:
-        """A killed run leaves a `.work-*` folder (a clear copy!) or a partial file: both older
-        than an hour are removed before the next run."""
+    def sweep_partials(self, now_s: float) -> int:
+        """A killed write leaves a `.partial-*` file (encrypted, so harmless but dead weight):
+        one older than an hour that starts like ours is removed before the next run."""
         removed = 0
         with os.scandir(self.path) as entries:
-            found = [(e.name, e.path) for e in entries]
-        for name, full in found:
+            found = [e.name for e in entries if _PARTIAL.fullmatch(e.name)]
+        for name in found:
             try:
-                age = now_s - os.lstat(full).st_mtime
+                age = now_s - os.lstat(self.path / name).st_mtime
             except OSError:
                 continue
-            if age < STALE_AFTER_S:
-                continue
-            if _WORK.fullmatch(name):
-                self._remove_work_dir(self.path / name)
-                removed += 1
-            elif _PARTIAL.fullmatch(name):
+            if age >= STALE_AFTER_S and self._ours(name, partial=True):
                 self._discard(name)
                 removed += 1
         return removed
+
+
+class _Sink:
+    """The write end of the partial file: counts and hashes what it writes."""
+
+    def __init__(self, descriptor: int) -> None:
+        self._fd = descriptor
+        self.size = 0
+        self.digest = hashlib.sha256()
+
+    def write(self, data: bytes, /) -> int:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(self._fd, view) :]
+        self.size += len(data)
+        self.digest.update(data)
+        return len(data)

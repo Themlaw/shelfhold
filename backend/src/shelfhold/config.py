@@ -126,7 +126,7 @@ class Settings(BaseModel):
     # kept; `backup.stale` follows a last good backup older than `backup_stale_hours`.
     backup_dir: Path | None = None
     backup_passphrase_file: Path | None = None
-    backup_retention: int = Field(default=14, ge=1, le=365)
+    backup_retention: int = Field(default=14, ge=1, le=30)
     backup_stale_hours: int = Field(default=36, ge=25, le=24 * 60)
 
     @field_validator("umask", mode="before")

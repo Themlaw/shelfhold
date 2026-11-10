@@ -11,12 +11,13 @@ A site is `<path under src>::<qualified function>`. Its class is one of:
 - `DB_ROWS`: rows of the database, never a file: the ticket and cached handle columns of the
   connected service, reset under a changed instance fingerprint by `source reconnect` (EF-SRC-036
   (3)); no Unit, Variant or library file is reachable from it;
-- `BACKUP_DIRECTORY`: the retention of the integrated backup and its own scratch, in the backup
-  directory and nowhere else (EF-INT-015, M1b L23): an archive `shelfhold-backup-<UTC>.tar.age`
-  beyond the 14 kept (never before the new one is written and verified), a `.partial-*` file of
-  a failed write, and the clear `VACUUM INTO` copy in a `.work-*` folder that the run made itself.
-  `ops/backup/store.py` is the one module that opens that directory; each name is matched against
-  an exact pattern before it reaches an `unlink`;
+- `BACKUP_DIRECTORY`: the integrated backup's own files (EF-INT-015, M1b L23): in the backup
+  directory, an archive `shelfhold-backup-<UTC>.tar.age` beyond the 14 kept (only one that the
+  instance recorded and that starts like one of ours, never before the new one is written and
+  verified) and a `.partial-*` file of a failed write (`ops/backup/store.py`, the one module that
+  opens that directory, exact name patterns, regular files only); in `/data/tmp`, the
+  `backup-*` scratch folder of the run's clear snapshot (`ops/backup/scratch.py`, plain files of a
+  folder of that exact name that nobody holds a lock on);
 - `OWN_SCRATCH`: a file the process created for its own mechanism (temporary copy, progress
   marker, lease swap), never library data.
 
@@ -90,7 +91,7 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
         BACKUP_DIRECTORY: frozenset(
             {
                 "shelfhold/ops/backup/store.py::BackupDirectory._discard",
-                "shelfhold/ops/backup/store.py::BackupDirectory._remove_work_dir",
+                "shelfhold/ops/backup/scratch.py::_remove_scratch",
             }
         ),
         # Completes an `rmdir` of an empty folder a classed emitter journaled before a crash.

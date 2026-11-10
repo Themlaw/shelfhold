@@ -33,12 +33,13 @@ from shelfhold.ops.backup import (
     restore_archive,
 )
 from shelfhold.ops.backup.run import verify_latest
-from shelfhold.ops.backup.verify import check_archive, read_archive_file
+from shelfhold.ops.backup.verify import check_file
 
 GATE_FILE = ".maintenance.lock"
 
 # One literal `t()` per sentence (the catalog test reads them): a cause maps to its sentence.
 FAILED_TEXT: dict[str, Callable[[], str]] = {
+    "interrupted": lambda: t("backup.failed_interrupted"),
     "passphrase_missing": lambda: t("backup.failed_passphrase_missing"),
     "passphrase_invalid": lambda: t("backup.failed_passphrase_invalid"),
     "passphrase_colocated": lambda: t("backup.failed_passphrase_colocated"),
@@ -130,13 +131,13 @@ def run_verify(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
                 passphrase = read_passphrase_file(path)
             except ExportError:
                 return _fail(t("backup.failed_passphrase_invalid"))
-            name, checked = str(args.file), check_archive(read_archive_file(args.file), passphrase)
+            name, checked = str(args.file), check_file(args.file, passphrase, settings.data_dir)
         else:
             name, checked = verify_latest(settings, passphrase_file=args.passphrase_file)
     except BackupError as error:
         return _fail(failed_text(error.reason))
-    except BackupArchiveError as error:
-        return _fail(t("backup.damaged", detail=error))
+    except BackupArchiveError:
+        return _fail(t("backup.damaged"))
     created, revision = checked.created_at, checked.schema_revision
     print(t("backup.verified", name=name, members=checked.member_count, created=created,
             revision=revision))  # fmt: skip
@@ -150,16 +151,22 @@ def run_restore(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         return _fail(t("backup.failed_passphrase_missing"))
     try:
         report = restore_archive(
-            args.archive, args.destination, path, live_data_dir=settings.data_dir
+            args.archive,
+            args.destination,
+            path,
+            live_data_dir=settings.data_dir,
+            keep_external_keyring=settings.secret_key_file is not None,
         )
-    except PassphraseError as error:
-        return _fail(t("backup.passphrase_refused", detail=error))
-    except BackupArchiveError as error:
-        return _fail(t("backup.damaged", detail=error))
+    except PassphraseError:
+        return _fail(t("backup.passphrase_refused"))
+    except BackupArchiveError:
+        return _fail(t("backup.damaged"))
     except DestinationError as error:
         return _fail(DESTINATION_TEXT[error.reason](str(args.destination)))
-    except OSError as error:
-        return _fail(t("backup.restore_incomplete", path=args.destination, detail=error.strerror))
+    except OSError:
+        return _fail(t("backup.restore_incomplete", path=args.destination))
     print(t("backup.restored", path=report.destination, files=report.files))
+    if not report.keyring_written:
+        print(t("backup.keyring_external"))
     print(t("backup.next_steps", path=report.destination))
     return 0

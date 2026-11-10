@@ -1,69 +1,97 @@
-"""The backup archive: a tar of named members, framed by a manifest, encrypted as one age file.
+"""The backup archive: a tar of named members, framed by a manifest, encrypted as a stream.
 
-The format (D3): one POSIX `ustar` tar (readable with `age -d | tar x` and nothing of ours),
-written and read by the small functions below rather than by `tarfile`: the only entries are
-regular files, so a link, a device, a folder or an extension header is not a thing this reader can
-see, it is refused. The tar holds `BACKUP.json` (the manifest: format, instant, schema revision,
-and the `sha256` and size of every other member) and the members themselves. The whole tar is
-encrypted with age v1 and a scrypt recipient, the format of `secrets export`; a backup holds titles
-and secrets, so nothing of it is readable without the passphrase. The master key travels once more
-inside, as an armored age file of its own (`keyring.age`, `encrypt_export`), so the same bytes that
-`secrets import` reads are the ones in the backup.
+The format (D3, `shelfhold-backup/2`): one file `shelfhold-backup-<UTC>.tar.age` that holds
 
-Nothing here touches a file system: this module turns bytes into members and back, and decides
-which member names are acceptable. An archive is untrusted until it has been decrypted *and*
-parsed *and* every member has matched its digest; any failure is one `BackupArchiveError` that
-says nothing of the content (a generic message, as for a damaged `secrets export`).
+1. a first line `shelfhold-backup/2 <N>` (text, then a newline);
+2. `N` bytes: a binary age file, scrypt-sealed by the passphrase (the format of
+   `secrets export`), whose clear is a throw-away age secret key made for this backup alone;
+3. the rest: the tar, as one binary age file encrypted to the public half of that key.
+
+Why two layers: pyrage streams an x25519 body in constant memory but not a scrypt one with
+all of it at once; the passphrase protects the small key, the key protects the body. The standard
+`age` command opens it in two steps (see `docs/admin/sauvegarde.md`), with nothing of ours.
+
+The tar is a POSIX `ustar`, written and read by the small pieces below rather than by `tarfile`:
+the only entries are regular files, so a link, a device, a folder or an extension header is not a
+thing this reader can see, it is refused. It holds `BACKUP.json` (the manifest: format, instant,
+schema revision, and the `sha256` and size of every other member) and then the members, sorted.
+The master key travels once more inside, as an armored age file of its own (`keyring.age`,
+`encrypt_export`), so the same bytes that `secrets import` reads are in the backup.
+
+Both directions are streams: `iter_tar` yields the tar in chunks (a big member is a path, read
+twice, once to list it and once to write it), `TarParser` is fed the clear in chunks and hands
+each member's bytes to a handler as they come, checking the manifest's digest on the way. The
+memory of a run, a verify or a restore does not depend on the size of the database.
+
+Nothing here touches a file system but the sources it is given to read: this module turns bytes
+into members and back, and decides which member names are acceptable. An archive is untrusted
+until it has been decrypted *and* parsed *and* every member has matched its digest; any failure is
+one `BackupArchiveError` that says nothing of the content.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import struct
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import PurePosixPath
-from typing import Final
+from pathlib import Path, PurePosixPath
+from typing import BinaryIO, Final, Protocol
 
 from shelfhold.infrastructure.secrets.errors import ExportError
-from shelfhold.infrastructure.secrets.export import decrypt_blob, encrypt_blob
+from shelfhold.infrastructure.secrets.export import (
+    ByteSink,
+    decrypt_blob,
+    decrypt_stream,
+    encrypt_blob,
+    encrypt_stream,
+    new_stream_key,
+)
 
 __all__ = [
+    "ARCHIVE_MAGIC",
     "ARCHIVE_SUFFIX",
     "DATABASE_MEMBER",
     "FORMAT",
     "KEYRING_MEMBER",
     "MANIFEST_MEMBER",
-    "MAX_ARCHIVE_BYTES",
+    "MAX_TAR_BYTES",
+    "ArchiveSource",
     "BackupArchiveError",
-    "Members",
+    "MemberHandler",
     "Parsed",
-    "decrypt_archive",
-    "encrypt_archive",
-    "pack",
-    "unpack",
+    "Source",
+    "TarParser",
+    "iter_tar",
+    "member_name_ok",
+    "read_archive",
+    "write_archive",
 ]
 
-FORMAT: Final = "shelfhold-backup/1"
+FORMAT: Final = "shelfhold-backup/2"
+ARCHIVE_MAGIC: Final = b"shelfhold-backup/2 "
 MANIFEST_MEMBER: Final = "BACKUP.json"
 KEYRING_MEMBER: Final = "keyring.age"
 DATABASE_MEMBER: Final = "shelfhold.db"
 ARCHIVE_SUFFIX: Final = ".tar.age"
-# The tar and its encryption are held in memory (pyrage encrypts bytes, not a stream), so the set
-# is bounded: a database above this is refused with its own cause instead of exhausting the host.
-MAX_ARCHIVE_BYTES: Final = 1024 * 1024 * 1024
+# The one upper bound left: the clear tar of one backup, so that a stream with no end (a forged
+# or looping file) is cut off. 32 GiB is far above any database of the supported scale.
+MAX_TAR_BYTES: Final = 32 * 1024**3
+MAX_KEY_BLOB: Final = 4096
 MAX_MEMBERS: Final = 200_000
 MAX_NAME_BYTES: Final = 240
 MAX_MANIFEST_BYTES: Final = 64 * 1024 * 1024
+CHUNK: Final = 1024 * 1024
 # What a member may be called: nothing else is accepted, so an archive cannot place a file
 # anywhere but in the places a restore knows.
 FILES: Final = frozenset({DATABASE_MEMBER, "config.toml", KEYRING_MEMBER})
 FOLDERS: Final = frozenset({"meta", "manifests", "docs"})
 GENERIC = "the backup is damaged, or the passphrase is wrong"
 
-Members = Mapping[str, bytes]
+Source = bytes | Path
 
 
 class BackupArchiveError(Exception):
@@ -75,7 +103,7 @@ class BackupArchiveError(Exception):
 
 @dataclass(frozen=True)
 class Parsed:
-    members: Members
+    members: Mapping[str, int]  # name -> size
     created_at: str
     schema_revision: str
 
@@ -144,13 +172,40 @@ def _number(block: bytes, start: int, end: int) -> int:
     return int(text, 8)
 
 
-def pack(members: Members, *, created_at: datetime, schema_revision: str) -> bytes:
-    """The tar of the members and their manifest. Every name is checked on the way in, too."""
+def _open_source(path: Path) -> BinaryIO:
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    return os.fdopen(descriptor, "rb")
+
+
+def _chunks(source: Source) -> Iterator[bytes]:
+    if isinstance(source, bytes):
+        yield source
+        return
+    with _open_source(source) as stream:
+        while block := stream.read(CHUNK):
+            yield block
+
+
+def _measure(source: Source) -> tuple[str, int]:
+    digest, size = hashlib.sha256(), 0
+    for block in _chunks(source):
+        digest.update(block)
+        size += len(block)
+    return digest.hexdigest(), size
+
+
+def iter_tar(
+    sources: Mapping[str, Source], *, created_at: datetime, schema_revision: str
+) -> Iterator[bytes]:
+    """The tar of the sources and their manifest, in chunks. Every name is checked on the way in;
+    a path source is measured first and must give the same bytes when it is written (a source
+    that changed under us is a `ValueError`, not a silently wrong backup)."""
     listing: dict[str, dict[str, object]] = {}
-    for name, data in members.items():
+    for name, source in sources.items():
         if not member_name_ok(name) or name == MANIFEST_MEMBER:
             raise ValueError("a member name that no restore would accept")
-        listing[name] = {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+        sha, size = _measure(source)
+        listing[name] = {"sha256": sha, "size": size}
     manifest = json.dumps(
         {
             "format": FORMAT,
@@ -161,111 +216,237 @@ def pack(members: Members, *, created_at: datetime, schema_revision: str) -> byt
         sort_keys=True,
     ).encode("utf-8")
     stamp = int(created_at.timestamp())
-    out = bytearray()
-    for name, data in [(MANIFEST_MEMBER, manifest), *sorted(members.items())]:
-        out += _header(name, len(data), stamp)
-        out += data
-        out += bytes(-len(data) % BLOCK)
-    out += _ZERO * 2
-    return bytes(out)
+    for name, source in [(MANIFEST_MEMBER, manifest), *sorted(sources.items())]:
+        size = int(listing[name]["size"]) if name in listing else len(manifest)  # type: ignore[call-overload]
+        yield _header(name, size, stamp)
+        digest, seen = hashlib.sha256(), 0
+        for block in _chunks(source):
+            digest.update(block)
+            seen += len(block)
+            yield block
+        if name in listing and (seen != size or digest.hexdigest() != listing[name]["sha256"]):
+            raise ValueError("a source changed while it was written")
+        yield bytes(-size % BLOCK)
+    yield _ZERO * 2
 
 
-def _read_entries(tar_bytes: bytes) -> dict[str, bytes]:
-    """The regular files of a ustar tar, in order, nothing else: the first entry is the manifest,
-    names are unique and acceptable, every checksum matches, the tar ends with zero blocks."""
-    found: dict[str, bytes] = {}
-    position, total = 0, len(tar_bytes)
-    budget = MAX_ARCHIVE_BYTES
-    while True:
-        block = tar_bytes[position : position + BLOCK]
-        if len(block) < BLOCK:
-            raise BackupArchiveError  # truncated: no end marker
+class MemberHandler(Protocol):
+    """What a reader does with the members as they arrive (the manifest is not one of them)."""
+
+    def begin(self, name: str, size: int) -> None: ...
+    def data(self, chunk: bytes) -> None: ...
+    def end(self, name: str) -> None: ...
+
+
+class TarParser:
+    """A push parser for the tar: feed it the clear (`write`), then `finish()`. Regular files
+    only, plain names, no duplicate, the manifest first, and exactly the members it lists with
+    their size and digest. The handler receives each member's bytes as they come, *before* its
+    digest is known to match: it may write them somewhere private, and may only trust them once
+    `end(name)` has been called (the digest matched) and `finish()` has returned."""
+
+    def __init__(self, handler: MemberHandler) -> None:
+        self._handler = handler
+        self._buffer = bytearray()
+        self._state = "header"  # header | body | pad | tail
+        self._name = ""
+        self._left = 0
+        self._pad = 0
+        self._digest = hashlib.sha256()
+        self._manifest = bytearray()
+        self._listing: dict[str, dict[str, object]] | None = None
+        self._seen: dict[str, int] = {}
+        self._entries = 0
+        self._total = 0
+        self._zeros = 0
+        self._created = ""
+        self._revision = ""
+
+    def write(self, data: bytes) -> int:
+        try:
+            self._feed(memoryview(data))
+        except BackupArchiveError:
+            raise
+        except (ValueError, KeyError, TypeError, struct.error):
+            raise BackupArchiveError from None
+        return len(data)
+
+    def _feed(self, view: memoryview) -> None:
+        position = 0
+        while position < len(view):
+            if self._state == "header":
+                take = min(BLOCK - len(self._buffer), len(view) - position)
+                self._buffer += view[position : position + take]
+                position += take
+                if len(self._buffer) == BLOCK:
+                    block = bytes(self._buffer)
+                    self._buffer.clear()
+                    self._on_header(block)
+            elif self._state == "body":
+                take = min(self._left, len(view) - position)
+                self._on_body(bytes(view[position : position + take]))
+                position += take
+                self._left -= take
+                if self._left == 0:
+                    self._finish_member()
+            elif self._state == "pad":
+                take = min(self._pad, len(view) - position)
+                if any(view[position : position + take]):
+                    raise BackupArchiveError
+                position += take
+                self._pad -= take
+                if self._pad == 0:
+                    self._state = "header"
+            else:  # tail: nothing but zeros may follow the end marker
+                if any(view[position:]):
+                    raise BackupArchiveError
+                self._zeros += len(view) - position
+                position = len(view)
+
+    def _on_header(self, block: bytes) -> None:
         if block == _ZERO:
-            if tar_bytes[position + BLOCK : position + 2 * BLOCK] != _ZERO or any(
-                tar_bytes[position + 2 * BLOCK :]
-            ):
+            if self._entries == 0:
                 raise BackupArchiveError
-            return found
-        if len(found) >= MAX_MEMBERS:
+            self._state, self._zeros = "tail", BLOCK
+            return
+        if self._entries >= MAX_MEMBERS:
             raise BackupArchiveError
-        checksum = _number(block, 148, 156)
-        if checksum != sum(block[:148]) + 32 * 8 + sum(block[156:]):
+        if _number(block, 148, 156) != sum(block[:148]) + 32 * 8 + sum(block[156:]):
             raise BackupArchiveError
         if block[156:157] != b"0" or block[257:263] != b"ustar\x00" or block[263:265] != b"00":
             raise BackupArchiveError  # a link, a folder, a device, an extension header: no
         size = _number(block, 124, 136)
-        if size > budget or position + BLOCK + size > total:
+        self._total += BLOCK + size + (-size % BLOCK)
+        if self._total > MAX_TAR_BYTES:
             raise BackupArchiveError
-        budget -= size
         try:
             name = _field(block, 0, 100).decode("utf-8")
             prefix = _field(block, 345, 500).decode("utf-8")
         except UnicodeDecodeError:
             raise BackupArchiveError from None
         name = f"{prefix}/{name}" if prefix else name
-        if not member_name_ok(name) or name in found:
-            raise BackupArchiveError
-        if not found and name != MANIFEST_MEMBER:
-            raise BackupArchiveError
-        start = position + BLOCK
-        found[name] = tar_bytes[start : start + size]
-        position = start + size + (-size % BLOCK)
-
-
-def unpack(tar_bytes: bytes) -> Parsed:
-    """Parse and check an archive: regular files only, plain names, no duplicate, the manifest
-    first, and exactly the members it lists with their digest and size. No path is joined here,
-    no file is created: the caller receives bytes by name."""
-    try:
-        return _unpack(tar_bytes)
-    except BackupArchiveError:
-        raise
-    except (OSError, ValueError, KeyError, TypeError, struct.error, MemoryError):
-        raise BackupArchiveError from None
-
-
-def _unpack(tar_bytes: bytes) -> Parsed:
-    if len(tar_bytes) > MAX_ARCHIVE_BYTES + 3 * BLOCK:
-        raise BackupArchiveError
-    found = _read_entries(tar_bytes)
-    manifest_raw = found.pop(MANIFEST_MEMBER, b"")
-    if len(manifest_raw) > MAX_MANIFEST_BYTES:
-        raise BackupArchiveError
-    manifest = _manifest(manifest_raw)
-    listing = manifest["members"]
-    if not isinstance(listing, dict) or set(listing) != set(found):
-        raise BackupArchiveError
-    for name, data in found.items():
-        entry = listing[name]
         if (
-            not isinstance(entry, dict)
-            or entry.get("size") != len(data)
-            or entry.get("sha256") != hashlib.sha256(data).hexdigest()
+            not member_name_ok(name)
+            or name in self._seen
+            or (self._entries == 0) != (name == MANIFEST_MEMBER)
         ):
             raise BackupArchiveError
-    revision, created = manifest.get("schema_revision"), manifest.get("created_at")
-    if not (isinstance(revision, str) and isinstance(created, str)) or DATABASE_MEMBER not in found:
-        raise BackupArchiveError
-    return Parsed(found, created, revision)
+        self._entries += 1
+        self._name, self._left, self._pad = name, size, -size % BLOCK
+        self._digest = hashlib.sha256()
+        if name == MANIFEST_MEMBER:
+            if size > MAX_MANIFEST_BYTES:
+                raise BackupArchiveError
+        else:
+            assert self._listing is not None  # noqa: S101 (the manifest came first)
+            entry = self._listing.get(name)
+            if entry is None or entry.get("size") != size:
+                raise BackupArchiveError
+            self._handler.begin(name, size)
+        self._seen[name] = size
+        self._state = "body"
+        if size == 0:
+            self._finish_member()
+
+    def _on_body(self, chunk: bytes) -> None:
+        if self._name == MANIFEST_MEMBER:
+            self._manifest += chunk
+            return
+        self._digest.update(chunk)
+        self._handler.data(chunk)
+
+    def _finish_member(self) -> None:
+        if self._name == MANIFEST_MEMBER:
+            self._read_manifest(bytes(self._manifest))
+            self._manifest = bytearray()
+        else:
+            assert self._listing is not None  # noqa: S101
+            if self._listing[self._name].get("sha256") != self._digest.hexdigest():
+                raise BackupArchiveError
+            self._handler.end(self._name)
+        self._state = "pad" if self._pad else "header"
+
+    def _read_manifest(self, raw: bytes) -> None:
+        try:
+            document = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise BackupArchiveError from None
+        if not isinstance(document, dict) or document.get("format") != FORMAT:
+            raise BackupArchiveError
+        listing = document.get("members")
+        revision, created = document.get("schema_revision"), document.get("created_at")
+        if not (
+            isinstance(listing, dict)
+            and isinstance(revision, str)
+            and isinstance(created, str)
+            and DATABASE_MEMBER in listing
+            and all(member_name_ok(n) and isinstance(e, dict) for n, e in listing.items())
+        ):
+            raise BackupArchiveError
+        self._listing, self._created, self._revision = listing, created, revision
+
+    def finish(self) -> Parsed:
+        """The stream ended: it must have ended where the tar does."""
+        if self._state != "tail" or self._zeros < 2 * BLOCK or self._listing is None:
+            raise BackupArchiveError
+        seen = {n: s for n, s in self._seen.items() if n != MANIFEST_MEMBER}
+        if set(seen) != set(self._listing):
+            raise BackupArchiveError
+        return Parsed(seen, self._created, self._revision)
 
 
-def _manifest(raw: bytes) -> dict[str, object]:
-    document = json.loads(raw.decode("utf-8"))
-    if not isinstance(document, dict) or document.get("format") != FORMAT:
-        raise BackupArchiveError
-    return document
+class _ChunkReader:
+    """A file-like `read` over an iterator of chunks (what `encrypt_stream` pulls from)."""
+
+    def __init__(self, chunks: Iterator[bytes]) -> None:
+        self._chunks = chunks
+        self._rest = b""
+
+    def read(self, size: int = -1, /) -> bytes:
+        if size < 0:
+            size = 1 << 62
+        while len(self._rest) < size:
+            block = next(self._chunks, None)
+            if block is None:
+                break
+            self._rest += block
+        out, self._rest = self._rest[:size], self._rest[size:]
+        return out
 
 
-def encrypt_archive(tar_bytes: bytes, passphrase: str) -> bytes:
-    """Binary age v1 with a scrypt recipient (no ASCII armor: the file is large)."""
-    return encrypt_blob(tar_bytes, passphrase)
+def write_archive(sink: ByteSink, chunks: Iterator[bytes], passphrase: str) -> None:
+    """The header, the sealed key and the encrypted tar, written to `sink` as they are made."""
+    secret, recipient = new_stream_key()
+    sealed = encrypt_blob(secret.encode("ascii"), passphrase)
+    sink.write(ARCHIVE_MAGIC + str(len(sealed)).encode("ascii") + b"\n")
+    sink.write(sealed)
+    encrypt_stream(_ChunkReader(chunks), sink, recipient)
 
 
-def decrypt_archive(blob: bytes, passphrase: str) -> bytes:
-    """Every failure is the same generic error, the scrypt cost of the header bounded first."""
-    if len(blob) > MAX_ARCHIVE_BYTES + 1024 * 1024:
-        raise BackupArchiveError
+def has_archive_magic(head: bytes) -> bool:
+    return head.startswith(ARCHIVE_MAGIC)
+
+
+class ArchiveSource(Protocol):
+    def readline(self, size: int = -1, /) -> bytes: ...
+    def read(self, size: int = -1, /) -> bytes: ...
+
+
+def read_archive(source: ArchiveSource, passphrase: str, parser: TarParser) -> Parsed:
+    """Open the key with the passphrase, then decrypt the body into `parser`. Every failure of
+    the archive itself is the one `BackupArchiveError`; a failure of the handler is its own."""
     try:
-        return decrypt_blob(blob, passphrase)
-    except ExportError:
+        line = source.readline(len(ARCHIVE_MAGIC) + 12)
+        if not line.startswith(ARCHIVE_MAGIC) or not line.endswith(b"\n"):
+            raise BackupArchiveError
+        size = int(line[len(ARCHIVE_MAGIC) : -1])
+        if not 0 < size <= MAX_KEY_BLOB:
+            raise BackupArchiveError
+        sealed = source.read(size)
+        if len(sealed) != size:
+            raise BackupArchiveError
+        secret = decrypt_blob(sealed, passphrase).decode("ascii")
+        decrypt_stream(source, parser, secret)
+    except (ExportError, ValueError, UnicodeDecodeError):
         raise BackupArchiveError from None
+    return parser.finish()

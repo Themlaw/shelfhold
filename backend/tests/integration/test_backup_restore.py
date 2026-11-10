@@ -20,6 +20,7 @@ from shelfhold.ops.backup import (
     mark_store_missing,
     restore_archive,
 )
+from shelfhold.ops.backup.store_missing import SENTINEL
 from tests.backup_env import MARKER, backup_bench, write_passphrase
 from tests.restore_env import RestoreEnv, restore_env
 
@@ -66,6 +67,17 @@ def test_restore_on_other_path(tmp_path: Path) -> None:
         assert digest(bench.settings.data_dir) == live  # the live /data is untouched
 
 
+def test_an_instance_with_an_external_keyring_gets_none_in_the_new_folder(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench:
+        bench.service.run()
+        archive = bench.backups / bench.names()[0]
+        report = restore_archive(
+            archive, tmp_path / "restored", bench.passphrase, keep_external_keyring=True
+        )
+        assert not report.keyring_written and not (tmp_path / "restored" / "keyring").exists()
+        assert (tmp_path / "restored" / "shelfhold.db").is_file()
+
+
 def test_restore_refuses_the_live_data_dir_a_full_folder_and_a_file(tmp_path: Path) -> None:
     with backup_bench(tmp_path) as bench:
         bench.service.run()
@@ -99,19 +111,27 @@ def test_restore_refuses_the_live_data_dir_a_full_folder_and_a_file(tmp_path: Pa
         assert not (tmp_path / "never").exists()
 
 
+def kept_bytes(number: str) -> bytes:
+    return b"kept copy " + number.encode()
+
+
 def stored_copy(env: RestoreEnv, number: str, store: Path, *, present: bool) -> str:
     """The Unit is `stored`: its kept copy is `path` under `/store`, there or not."""
     unit = env.chapters[number]
     path = f"keep/{number}.cbz"
+    digest_ = "sha256:" + hashlib.sha256(kept_bytes(number)).hexdigest()
     with env.engine.begin() as connection:
         connection.execute(sa.text("UPDATE unit SET state = 'stored' WHERE id = :u"), {"u": unit})
         connection.execute(
-            sa.text("UPDATE content SET retention = 'keep', path = :p WHERE unit_id = :u"),
-            {"u": unit, "p": path},
+            sa.text(
+                "UPDATE content SET retention = 'keep', path = :p, original_sha256 = :h,"
+                " derived_hash = NULL WHERE unit_id = :u"
+            ),
+            {"u": unit, "p": path, "h": digest_},
         )
     if present:
         (store / "keep").mkdir(parents=True, exist_ok=True)
-        (store / path).write_bytes(b"kept copy " + number.encode())
+        (store / path).write_bytes(kept_bytes(number))
     return unit
 
 
@@ -158,19 +178,39 @@ def test_restore_without_store_marks_store_missing_no_deletion(tmp_path: Path) -
         result = adopter.adopt(confirm=adopter.preview().fingerprint)
         assert len(result.readopted) == 3 and not result.deleted
 
+        # `/store` is back with its sentinel (a registered root carries one), a copy still absent
+        (store / SENTINEL).write_text("{}", encoding="utf-8")
         before = digest(store)
-        assert mark_store_missing(env.engine, store, env.bus) == 1
+        outcome = mark_store_missing(env.engine, store, env.bus)
+        assert (outcome.marked, outcome.restored, outcome.lost) == (1, 0, False)
         assert unit_states(env)[lost] == "store_missing"
         assert unit_states(env)[kept] == "stored"
         assert digest(store) == before  # nothing in /store touched
         assert set(library) <= set(env.files())  # nothing of the library gone
         assert env.events("reconcile.drift")[-1] == {"kind": "store_missing", "count": 1}
-        assert mark_store_missing(env.engine, store, env.bus) == 0  # a second look changes nothing
+        again = mark_store_missing(env.engine, store, env.bus)
+        assert (again.marked, again.restored) == (0, 0)  # a second look changes nothing
 
-        # and with no /store at all every `stored` Unit waits, and none is deleted
-        stored_copy(env, "2", store, present=False)
-        assert mark_store_missing(env.engine, tmp_path / "no-such-store", env.bus) == 1
-        assert unit_states(env)[kept] == "store_missing"
+        # the host restores the missing copy: right bytes put it back, other bytes do not
+        (store / "keep").mkdir(exist_ok=True)
+        (store / "keep/1.cbz").write_bytes(b"some other file")
+        assert mark_store_missing(env.engine, store, env.bus).restored == 0
+        assert unit_states(env)[lost] == "store_missing"
+        (store / "keep/1.cbz").write_bytes(kept_bytes("1"))
+        assert mark_store_missing(env.engine, store, env.bus).restored == 1
+        assert unit_states(env)[lost] == "stored"
+
+        # a `/store` that is not mounted (no sentinel) is lost, not "a file missing": nothing is
+        # marked, nothing deleted, the state is `store_lost` and `store reinit` is the way out
+        (store / SENTINEL).unlink()
+        gone = mark_store_missing(env.engine, store, env.bus)
+        assert (gone.lost, gone.marked, gone.dependent) == (True, 0, 2)
+        assert env.events("reconcile.drift")[-1] == {"kind": "store_lost", "count": 2}
+        assert unit_states(env)[kept] == unit_states(env)[lost] == "stored"
+        assert mark_store_missing(env.engine, tmp_path / "no-such-store", env.bus).lost
+        assert digest(store) == {
+            f"keep/{n}.cbz": hashlib.sha256(kept_bytes(n)).hexdigest() for n in ("1", "2")
+        }  # every kept copy is where it was, none deleted
         with env.engine.connect() as connection:
             assert connection.execute(sa.text("SELECT count(*) FROM unit")).scalar() == 5
 
