@@ -353,3 +353,14 @@ def test_safeguard_backlog_row_is_closed_by_its_real_test() -> None:
     assert (row.event, row.behaviour) == ("unit.safeguard_backlog", "notify_only")
     played = Path("tests/integration/test_ops_exits.py").read_text()
     assert "def safeguard_backlog()" in played and "safeguard_backlog," in played
+
+
+@pytest.mark.req("EF-INT-015", "ENF-OPS-011")
+def test_store_missing_after_restore_row_is_closed_by_its_real_test() -> None:
+    """M1b L23: the row names the test that restores without `/store` and deletes nothing."""
+    row = next(r for r in FAILURE_MATRIX if r.key == "store_missing_after_restore")
+    assert row.proof == (
+        "tests/integration/test_backup_restore.py"
+        "::test_restore_without_store_marks_store_missing_no_deletion"
+    )
+    assert (row.event, row.behaviour, row.exit_command) == ("reconcile.drift", "notify_only", None)

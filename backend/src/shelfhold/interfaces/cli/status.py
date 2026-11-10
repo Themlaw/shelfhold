@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable
 from typing import Any
 
 import sqlalchemy as sa
@@ -34,7 +35,18 @@ from shelfhold.infrastructure.secrets.errors import KeyringError
 from shelfhold.infrastructure.volumes import data_dir_writable_by_others
 from shelfhold.integrations.apprise import operating_bus
 from shelfhold.interfaces.cli.secrets import warning_text
+from shelfhold.ops.backup import backup_warnings
 from shelfhold.ops.wiring import open_ops
+
+BACKUP_TEXT: dict[str, Callable[[str], str]] = {
+    "backup_not_configured": lambda detail: t("status.backup_not_configured", detail=detail),
+    "backup_incomplete": lambda detail: t("status.backup_incomplete", detail=detail),
+    "backup_passphrase_colocated": lambda detail: t(
+        "status.backup_passphrase_colocated", detail=detail
+    ),
+    "backup_same_device": lambda detail: t("status.backup_same_device", detail=detail),
+    "backup_stale": lambda detail: t("status.backup_stale", detail=detail),
+}
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -150,6 +162,7 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         applied = applied_public_url(engine)
         current = relying_party(settings.public_url)
         unverified = _roles_unverified(engine)
+        saved = backup_warnings(engine, settings, SystemClock().now())
         stale_rps = auth.stale_passkey_rp_ids(
             current.id if isinstance(current, RelyingParty) else None
         )
@@ -167,6 +180,13 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         )
     if unverified:  # D1: the roles of the Suwayomi service account could not be read
         pending.append({"code": "roles_unverified", "message": t("status.roles_unverified")})
+    for item in saved:  # EF-INT-015: durable, until the cause is gone
+        pending.append(
+            {
+                "code": item["code"],
+                "message": BACKUP_TEXT[item["code"]](item["detail"]),
+            }
+        )
     restore = _restore_status(resolved)
     behind = restored_behind_warning(restore) if restore is not None else None
     mismatched = mismatch_warnings(restore) if restore is not None else []

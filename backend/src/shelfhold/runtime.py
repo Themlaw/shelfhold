@@ -8,6 +8,7 @@
 Every write under `/library` from then on is refused by `Fsops` without this instance's lease.
 """
 
+import contextlib
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -62,6 +63,7 @@ from shelfhold.library.public import (
     complete_interrupted_keep,
     migrate_received_dirs,
 )
+from shelfhold.ops.backup import BackupService, register_backup_job
 from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 
@@ -266,7 +268,8 @@ class InstanceRuntime:
             watcher.check()
             composition.flush_owed_tombstones()  # a root that came back pays what it owes
 
-        self.maintenance_gate = MaintenanceGate()  # the backup (L23) holds it; VACUUM waits for it
+        # the backup holds it (`backup.run`, and `shelfhold backup run` through the lock file)
+        self.maintenance_gate = MaintenanceGate(self.settings.data_dir / ".maintenance.lock")
         register_sqlite_maintenance(
             self.pools, engine, space=guard, gate=self.maintenance_gate, freeze=self.freeze_state
         )
@@ -274,6 +277,12 @@ class InstanceRuntime:
             self.pools, self.settings, disk_check=disk_check, audit=access_audit(composition)
         )
         register_runtime_jobs(self.pools, composition)
+        backups = BackupService(
+            self.settings, engine, clock=clock, bus=composition.bus, gate=self.maintenance_gate
+        )
+        register_backup_job(self.pools, backups)
+        with contextlib.suppress(OSError):  # a run a kill cut short, and its clear snapshot
+            backups.settle_interrupted()
         boot_jobs(
             self.pools,
             instance_lock=self.lock,

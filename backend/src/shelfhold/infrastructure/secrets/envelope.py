@@ -8,8 +8,6 @@ The wire form carries `ct` as URL-safe base64 of `nonce || ciphertext`. In the d
 has its own column (`secret_nonce`), see `to_columns`.
 """
 
-import base64
-import binascii
 import struct
 from dataclasses import dataclass
 from typing import Any
@@ -31,7 +29,6 @@ SUPPORTED_VERSIONS = frozenset({FORMAT_VERSION})
 KEY_BYTES = nacl.bindings.crypto_aead_xchacha20poly1305_ietf_KEYBYTES  # 32
 NONCE_BYTES = nacl.bindings.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES  # 24
 TAG_BYTES = nacl.bindings.crypto_aead_xchacha20poly1305_ietf_ABYTES  # 16
-_WIRE_FIELDS = frozenset({"v", "kid", "alg", "ct"})
 _AAD_DOMAIN = b"shelfhold/secret-envelope"
 
 
@@ -54,32 +51,6 @@ class Envelope:
     alg: str
     nonce: bytes
     ct: bytes
-
-    def to_wire(self) -> dict[str, Any]:
-        packed = base64.urlsafe_b64encode(self.nonce + self.ct).decode("ascii")
-        return {"v": self.v, "kid": self.kid, "alg": self.alg, "ct": packed}
-
-    @classmethod
-    def from_wire(cls, wire: dict[str, Any]) -> "Envelope":
-        try:
-            if set(wire) != _WIRE_FIELDS:
-                raise EnvelopeFormatError("envelope fields are not exactly v, kid, alg, ct")
-            version, kid, alg, packed = wire["v"], wire["kid"], wire["alg"], wire["ct"]
-        except (KeyError, TypeError) as exc:
-            raise EnvelopeFormatError("envelope field missing") from exc
-        if not isinstance(version, int) or isinstance(version, bool):
-            raise EnvelopeFormatError("envelope version is not an integer")
-        if not (isinstance(kid, str) and isinstance(alg, str) and isinstance(packed, str)):
-            raise EnvelopeFormatError("envelope field has the wrong type")
-        try:
-            raw = base64.urlsafe_b64decode(packed.encode("ascii"))
-        except (binascii.Error, ValueError) as exc:
-            raise EnvelopeFormatError("envelope ct is not base64url") from exc
-        if base64.urlsafe_b64encode(raw).decode("ascii") != packed:  # padded, canonical, no '+/'
-            raise EnvelopeFormatError("envelope ct is not canonical base64url")
-        if len(raw) < NONCE_BYTES + TAG_BYTES:
-            raise EnvelopeFormatError("envelope ct is too short")
-        return cls(version, kid, alg, raw[:NONCE_BYTES], raw[NONCE_BYTES:])
 
     def to_columns(self, prefix: str = "secret_") -> dict[str, Any]:
         return {

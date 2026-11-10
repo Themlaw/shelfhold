@@ -175,6 +175,10 @@ EXPECTED_CLOSED = {
         "shelfhold/plugin_host/install.py::_undo",
         f"{FSOPS}/probe.py::_remove_probe_dir",
     },
+    "backup_directory": {
+        "shelfhold/ops/backup/store.py::BackupDirectory._discard",
+        "shelfhold/ops/backup/scratch.py::_remove_scratch",
+    },
     "restore": {"shelfhold/infrastructure/migrate.py::_restore_database"},
     "intent_replay": {"shelfhold/export/application/intents.py::IntentJournal._resolve_rmdir"},
 }

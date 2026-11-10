@@ -57,6 +57,7 @@ from shelfhold.interfaces.local_cli import OpsChannel, OpsRefusal
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
 from shelfhold.library.tombstones import TombstoneService
 from shelfhold.library.tombstones.screen import TombstoneScreenAdapter
+from shelfhold.ops.backup import StoreOutcome, mark_store_missing, store_is_lost
 
 NEEDS_CONFIRMATION = 2
 BLOCKED = 3
@@ -193,6 +194,25 @@ def run_rebaseline(args: argparse.Namespace, channel: OpsChannel) -> int:
     return 0
 
 
+def _mark_store_missing(resolved: ResolvedSettings) -> StoreOutcome:
+    """After the adoption, the Units whose kept copy is not under `/store` wait as
+    `store_missing` (a restore without `/store`); nothing is deleted. The instance lock was
+    released, but no server can have started in between that the adoption itself would not have
+    refused, and the update is one guarded statement per Unit."""
+    settings = resolved.values
+    engine = create_db_engine(settings.database_path)
+    try:
+        with engine.connect() as connection:
+            paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
+            loaded = load_roots(connection, PathMap.same_path(paths))
+        lost = store_is_lost(open_fsops(loaded, umask=settings.umask), settings.store_dir)
+        return mark_store_missing(
+            engine, settings.store_dir, operating_bus(SystemClock()), store_lost=lost
+        )
+    finally:
+        engine.dispose()
+
+
 def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     if args.rebaseline_inodes:
         if args.adopt_after_restore:
@@ -251,6 +271,13 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     except DeletionUnavailableError:  # the host CLI is always allowed to confirm a deletion
         print(t("reconcile.deletion_refused"), file=sys.stderr)
         return REFUSED
+    store = _mark_store_missing(resolved)
+    if store.lost and store.dependent:
+        print(t("reconcile.store_lost", count=store.dependent))
+    if store.marked:
+        print(t("reconcile.store_missing", count=store.marked))
+    if store.restored:
+        print(t("reconcile.store_restored", count=store.restored))
     for candidate in result.pending_deletions:
         print(t("reconcile.pending_line", path=candidate.local_path))
     if result.pending_deletions:

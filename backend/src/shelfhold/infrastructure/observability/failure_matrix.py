@@ -133,7 +133,7 @@ _REAL_TESTS = {
 }
 
 
-# The M1b rows whose emitter has shipped: the real test that plays them (L18, L21, L22).
+# The M1b rows whose emitter has shipped: the real test that plays them (L18, L21, L22, L23).
 _CLOSED = {
     "suwayomi_reinstalled": "tests/integration/test_suwayomi_reinstall.py::test_connected_service_reinstall_pauses_without_cascade",
     "sablier_slow": "tests/integration/test_wake_follow.py::test_wake_deferred_event_after_3_batches",
@@ -143,6 +143,7 @@ _CLOSED = {
     "suwayomi_stale_series": "tests/integration/test_health_requeue.py::test_series_stale_aggregated",
     "safeguard_backlog": "tests/integration/test_safeguard_cycle.py::test_safeguard_budget_caps_batch_and_emits_backlog",
     "tombstone_journal_truncated": "tests/property/test_tombstone_chain.py::test_tombstone_journal_truncation_detected",
+    "store_missing_after_restore": "tests/integration/test_backup_restore.py::test_restore_without_store_marks_store_missing_no_deletion",
 }
 
 

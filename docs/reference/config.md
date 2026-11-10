@@ -46,6 +46,10 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_TIMEZONE` | `timezone` | str | `Europe/Paris` |  | `SHELFHOLD_TIMEZONE_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_RETENTION_EVENTS_DAYS` | `retention_events_days` | int | `90` | >= 7, <= 3650 | `SHELFHOLD_RETENTION_EVENTS_DAYS_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_RETENTION_AUDIT_DAYS` | `retention_audit_days` | int | `365` | >= 90, <= 3650 | `SHELFHOLD_RETENTION_AUDIT_DAYS_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_BACKUP_DIR` | `backup_dir` | Path (optionnel) | aucun |  | `SHELFHOLD_BACKUP_DIR_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_BACKUP_PASSPHRASE_FILE` | `backup_passphrase_file` | Path (optionnel) | aucun |  | variable seule, jamais dans `config.toml` |
+| `SHELFHOLD_BACKUP_RETENTION` | `backup_retention` | int | `14` | >= 1, <= 30 | `SHELFHOLD_BACKUP_RETENTION_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_BACKUP_STALE_HOURS` | `backup_stale_hours` | int | `36` | >= 25, <= 1440 | `SHELFHOLD_BACKUP_STALE_HOURS_FILE` en lit la valeur dans un fichier |
 
 ## Clés de `config get|set|apply`
 

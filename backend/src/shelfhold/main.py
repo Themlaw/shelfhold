@@ -85,6 +85,8 @@ def announce_keyring_failure(engine: Engine, bus: EventBus, error: KeyringError)
 # the one in the log: the filter masks any key whose name looks like a secret (`auth`, `key`,
 # `secret`), and these four are not secrets, so they are logged under names that do not match.
 LOGGED_SETTINGS: dict[str, str] = {
+    "backup_dir": "backup_dir", "backup_retention": "backup_retention",
+    "backup_stale_hours": "backup_stale_hours",
     "data_dir": "data_dir", "store_dir": "store_dir", "library_dir": "library_dir",
     "host": "host", "port": "port", "log_level": "log_level", "log_format": "log_format",
     "umask": "umask", "public_url": "public_url", "frontend_dir": "frontend_dir",
@@ -105,7 +107,9 @@ LOGGED_SETTINGS: dict[str, str] = {
     "retention_events_days": "retention_events_days",
     "retention_audit_days": "retention_audit_days",
 }  # fmt: skip
-SECRET_SETTINGS = frozenset({"api_token", "wake_token"})  # never logged, whatever its value
+SECRET_SETTINGS = frozenset(
+    {"api_token", "wake_token", "backup_passphrase_file"}
+)  # never logged, whatever its value
 
 
 def log_effective_config(settings: Settings) -> None:

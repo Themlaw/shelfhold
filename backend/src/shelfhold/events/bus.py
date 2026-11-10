@@ -61,7 +61,33 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
         )
     },
     "mount.sentinel_missing": {"reason": frozenset({"sentinel", "missing_ratio"})},
-    "reconcile.drift": {"kind": frozenset({"unknown_file", "adopted_missing", "unsettled_intent"})},
+    "reconcile.drift": {
+        "kind": frozenset(
+            {"unknown_file", "adopted_missing", "unsettled_intent", "store_missing", "store_lost"}
+        )
+    },
+    # EF-INT-015: why a backup failed (a closed list, never a path or a message)
+    "backup.failed": {
+        "reason": frozenset(
+            {
+                "passphrase_missing",
+                "passphrase_invalid",
+                "passphrase_colocated",
+                "destination_missing",
+                "destination_unavailable",
+                "destination_not_distinct",
+                "no_room",
+                "too_large",
+                "busy",
+                "keyring_unavailable",
+                "database_error",
+                "write_failed",
+                "verify_failed",
+                "interrupted",
+                "locked",
+            }
+        )
+    },
     # a key that does not open: the keyring file itself, never a key or a path
     "secret.undecryptable": {
         "reason": frozenset(

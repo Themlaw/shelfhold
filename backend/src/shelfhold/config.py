@@ -33,7 +33,7 @@ SUPPORTED_CONFIG_MAJOR = 1
 
 # Fields that locate the other layers: they can only come from the environment.
 GROUP_PREFIX = "group:"
-ENV_ONLY_FIELDS = frozenset({"data_dir", "secret_key_file"})
+ENV_ONLY_FIELDS = frozenset({"data_dir", "secret_key_file", "backup_passphrase_file"})
 
 Source = Literal["env", "toml", "db", "default"]
 DbLoader = Callable[[Path], Mapping[str, str]]
@@ -119,6 +119,15 @@ class Settings(BaseModel):
     # recycle bins of the library keep 30 days, a floor that fsops enforces whatever is set here.
     retention_events_days: int = Field(default=90, ge=7, le=3650)
     retention_audit_days: int = Field(default=365, ge=90, le=3650)
+
+    # EF-INT-015 (D2): the integrated backup. `backup_dir` is a mounted folder outside `/data` and
+    # `/store`; `backup_passphrase_file` names the file that holds the passphrase (a path, never
+    # the passphrase; environment only: SHELFHOLD_BACKUP_PASSPHRASE_FILE). 14 daily backups are
+    # kept; `backup.stale` follows a last good backup older than `backup_stale_hours`.
+    backup_dir: Path | None = None
+    backup_passphrase_file: Path | None = None
+    backup_retention: int = Field(default=14, ge=1, le=30)
+    backup_stale_hours: int = Field(default=36, ge=25, le=24 * 60)
 
     @field_validator("umask", mode="before")
     @classmethod

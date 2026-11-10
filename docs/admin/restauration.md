@@ -1,7 +1,7 @@
 # Sauvegarder et restaurer (M1a)
 
-En M1a, Shelfhold ne sauvegarde pas seul : la sauvegarde automatique (destination distincte,
-rétention de 14 jours, alerte d'échec) arrive en M1b. Cette page dit ce qu'il faut sauvegarder
+Depuis M1b, Shelfhold sauvegarde `/data` seul : voir [sauvegarde.md](sauvegarde.md) (destination
+distincte, rétention de 14, alerte d'échec). Cette page dit ce qu'il faut sauvegarder
 vous-même, à quelle fréquence, et comment repartir d'une copie.
 
 ## Objectifs

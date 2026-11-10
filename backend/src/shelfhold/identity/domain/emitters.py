@@ -11,6 +11,15 @@ A site is `<path under src>::<qualified function>`. Its class is one of:
 - `DB_ROWS`: rows of the database, never a file: the ticket and cached handle columns of the
   connected service, reset under a changed instance fingerprint by `source reconnect` (EF-SRC-036
   (3)); no Unit, Variant or library file is reachable from it;
+- `BACKUP_DIRECTORY`: the integrated backup's own files (EF-INT-015, M1b L23): in the backup
+  directory, an archive `shelfhold-backup-<UTC>.tar.age` beyond the 14 kept (only one that the
+  instance recorded and that starts like one of ours, never before the new one is written and
+  verified) and a `.partial-*` file of a failed write (`ops/backup/store.py`, the one module that
+  opens that directory, exact name patterns, regular files only); in `/data/tmp`, the
+  `backup-*` scratch folder of the run's clear snapshot (`ops/backup/scratch.py`: removed
+  *recursively* (its files, links and the staged sub-folders, never a link's target), only a
+  folder of that exact name that carries the marker file the module writes first, and that nobody
+  holds a lock on);
 - `OWN_SCRATCH`: a file the process created for its own mechanism (temporary copy, progress
   marker, lease swap), never library data.
 
@@ -26,6 +35,7 @@ OWN_SCRATCH = "own_scratch"
 RESTORE = "restore"
 DB_ROWS = "database_rows"
 REPLAY = "intent_replay"
+BACKUP_DIRECTORY = "backup_directory"
 
 _FSOPS = "shelfhold/infrastructure/fsops"
 
@@ -78,6 +88,14 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
         DB_ROWS: frozenset({"shelfhold/acquisition/application/instance.py::_purge_orphans"}),
         # Rolls the database file (and its sidecars) back to the copy taken before a migration.
         RESTORE: frozenset({"shelfhold/infrastructure/migrate.py::_restore_database"}),
+        # The integrated backup's own directory: archives past the retention, partial files and
+        # the work folder of the clear snapshot; exact name patterns, never a library path.
+        BACKUP_DIRECTORY: frozenset(
+            {
+                "shelfhold/ops/backup/store.py::BackupDirectory._discard",
+                "shelfhold/ops/backup/scratch.py::_remove_scratch",
+            }
+        ),
         # Completes an `rmdir` of an empty folder a classed emitter journaled before a crash.
         REPLAY: frozenset(
             {"shelfhold/export/application/intents.py::IntentJournal._resolve_rmdir"}
