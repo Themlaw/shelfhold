@@ -1,9 +1,10 @@
 """Keyring export: an age v1 file with a scrypt recipient, ASCII-armored (ENF-SEC-005).
 
-The cryptography is `pyrage` (age) and nothing else: this module only reads the passphrase and
-frames the result. The same function is what the integrated backup of M1b will call, so the
-export and the key in the backup are one format. The passphrase comes from a file, never from
-the command line.
+The scrypt layer is `age_scrypt` (age v1 written and read here, with a fixed work factor, so that
+no timing of the host decides whether a file can be opened); the x25519 stream of the backup body
+is `pyrage`. This module reads the passphrase and frames the result. The same functions are what
+the integrated backup calls, so the export and the key in the backup are one format. The
+passphrase comes from a file, never from the command line.
 """
 
 import base64
@@ -16,6 +17,7 @@ from typing import Protocol
 
 import pyrage
 
+from shelfhold.infrastructure.secrets import age_scrypt
 from shelfhold.infrastructure.secrets.errors import ExportError, KeyringCorruptError
 from shelfhold.infrastructure.secrets.keyring import Keyring
 
@@ -24,8 +26,6 @@ ARMOR_END = "-----END AGE ENCRYPTED FILE-----"
 ARMOR_COLUMNS = 64
 MIN_PASSPHRASE_CHARS = 12
 MAX_PASSPHRASE_FILE_BYTES = 4096
-MAX_SCRYPT_LOG_N = 20  # age writes 18; 2**23 would cost 8 GiB and minutes (a forged header)
-MAX_HEADER_BYTES = 4096
 MAX_EXPORT_BYTES = 1024 * 1024  # a keyring of 1000 keys armored is ~170 KiB
 
 
@@ -130,64 +130,21 @@ def dearmor(text: str) -> bytes:
         raise ExportError("the armor is not valid base64") from None
 
 
-def check_scrypt_cost(binary: bytes) -> None:
-    """Read the `-> scrypt <salt> <log_n>` line of the age header and refuse a cost above
-    `MAX_SCRYPT_LOG_N`, before the library derives anything: the work factor is the file's, so a
-    forged file could otherwise ask for gigabytes. The same generic error as any damaged file;
-    the header is only inspected, it is authenticated later by age itself."""
-    head = binary[:MAX_HEADER_BYTES].split(b"\n---", 1)[0]
-    lines = head.split(b"\n")
-    if lines[0] != b"age-encryption.org/v1":
-        raise ExportError("wrong passphrase or damaged file")
-    stanzas = [line.split(b" ") for line in lines[1:] if line.startswith(b"-> ")]
-    if len(stanzas) != 1 or stanzas[0][1:2] != [b"scrypt"] or len(stanzas[0]) != 4:
-        raise ExportError("wrong passphrase or damaged file")
-    log_n = stanzas[0][3]
-    if not log_n.isdigit() or len(log_n) > 3 or not 1 <= int(log_n) <= MAX_SCRYPT_LOG_N:
-        raise ExportError("wrong passphrase or damaged file")
-
-
-class WorkFactorError(ExportError):
-    """age sized its scrypt above what this program reads back (`MAX_SCRYPT_LOG_N`)."""
-
-
-SEAL_ATTEMPTS = 3
-
-
-def _seal(clear: bytes, passphrase: str) -> bytes:
-    """A scrypt-sealed age file that `decrypt_blob` can read back. age calibrates the work factor
-    to about a second of this machine and pyrage does not let the caller set it: on a fast host
-    the calibration can land above the bound, and a file sealed so could never be opened. The
-    seal is checked, and made again (the calibration is noisy) a few times, then refused."""
-    for _ in range(SEAL_ATTEMPTS):
-        sealed = bytes(pyrage.passphrase.encrypt(clear, passphrase))
-        try:
-            check_scrypt_cost(sealed)
-        except ExportError:
-            continue
-        return sealed
-    raise WorkFactorError("the scrypt work factor of this machine is above what can be read back")
-
-
 def encrypt_export(keyring: Keyring, passphrase: str) -> str:
     """The whole keyring (retired keys included) as an armored age file."""
-    return armor(_seal(keyring.to_json(), passphrase))
+    return armor(age_scrypt.seal(keyring.to_json(), passphrase))
 
 
 def encrypt_blob(clear: bytes, passphrase: str) -> bytes:
     """Binary age v1 with a scrypt recipient, for the integrated backup (EF-INT-015): the format
     of `encrypt_export` without the ASCII armor, which a large archive does not want."""
-    return _seal(clear, passphrase)
+    return age_scrypt.seal(clear, passphrase)
 
 
 def decrypt_blob(binary: bytes, passphrase: str) -> bytes:
-    """The clear of a binary age file. The scrypt cost of the header is bounded before anything
-    is derived; whatever is wrong is the same `ExportError` as for an export."""
-    check_scrypt_cost(binary)
-    try:
-        return bytes(pyrage.passphrase.decrypt(binary, passphrase))
-    except (pyrage.DecryptError, ValueError):
-        raise ExportError("wrong passphrase or damaged file") from None
+    """The clear of a binary age file; whatever is wrong is the same `ExportError` as for an
+    export, and a cost above the bound is the `WorkFactorError` that says so."""
+    return age_scrypt.unseal(binary, passphrase)
 
 
 class ByteSource(Protocol):
@@ -242,12 +199,7 @@ def decrypt_export(text: str, passphrase: str) -> Keyring:
     keyring) is one `ExportError` that says nothing of the content: the file is untrusted."""
     if len(text) > MAX_EXPORT_BYTES:
         raise ExportError("the export file is too large")
-    binary = dearmor(text)
-    check_scrypt_cost(binary)
-    try:
-        clear = pyrage.passphrase.decrypt(binary, passphrase)
-    except (pyrage.DecryptError, ValueError):
-        raise ExportError("wrong passphrase or damaged file") from None
+    clear = age_scrypt.unseal(dearmor(text), passphrase)
     try:
         return Keyring.from_json(clear, source="export")
     except KeyringCorruptError:

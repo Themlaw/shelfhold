@@ -16,8 +16,9 @@ from pathlib import Path
 import pyrage
 import pytest
 
+from shelfhold.infrastructure.secrets import age_scrypt
 from shelfhold.infrastructure.secrets.envelope import KEY_BYTES
-from shelfhold.infrastructure.secrets.errors import ExportError, KeyConflictError
+from shelfhold.infrastructure.secrets.errors import ExportError, KeyConflictError, WorkFactorError
 from shelfhold.infrastructure.secrets.export import (
     MAX_EXPORT_BYTES,
     armor,
@@ -197,14 +198,28 @@ def _with_log_n(log_n: str) -> str:
     return armor(b"\n".join(lines) + b"\n---" + rest)
 
 
-@pytest.mark.parametrize("log_n", ["21", "23", "63", "255", "99999", "0", "-1", "x"])
-def test_a_forged_scrypt_cost_is_refused_before_any_derivation(
+def _no_derivation(monkeypatch: pytest.MonkeyPatch) -> None:
+    def derivation(*_a: object, **_k: object) -> bytes:
+        raise AssertionError("scrypt was run")
+
+    monkeypatch.setattr(age_scrypt, "_wrap_key", derivation)
+
+
+@pytest.mark.parametrize("log_n", ["21", "23", "63", "255"])
+def test_an_excessive_scrypt_cost_is_refused_before_any_derivation_and_says_so(
     log_n: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def derivation(*_a: object, **_k: object) -> bytes:
-        raise AssertionError("the library was called")
+    _no_derivation(monkeypatch)
+    with pytest.raises(WorkFactorError, match="more than the 2\\*\\*20") as refused:
+        decrypt_export(_with_log_n(log_n), PASSPHRASE)
+    assert "passphrase" not in str(refused.value)  # not a wrong passphrase
 
-    monkeypatch.setattr(pyrage.passphrase, "decrypt", derivation)
+
+@pytest.mark.parametrize("log_n", ["99999", "0", "-1", "x", "018", "+18", ""])
+def test_a_malformed_scrypt_cost_is_refused_before_any_derivation(
+    log_n: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_derivation(monkeypatch)
     with pytest.raises(ExportError, match="wrong passphrase or damaged file"):
         decrypt_export(_with_log_n(log_n), PASSPHRASE)
 

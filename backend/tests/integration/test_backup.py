@@ -1,8 +1,8 @@
 """EF-INT-015, ENF-OPS-001, EF-INT-027 (M1b L23): the integrated backup, run and verify.
 
-The cryptography is age (scrypt) from `pyrage`, whose work factor is deliberate: a run costs a
-second or two, so the retention is played with a short one and the default is read from the
-settings.
+The cryptography is age: scrypt (`age_scrypt`, fixed work factor, about a second a run, so the
+retention is played with a short one and the default is read from the settings) and the x25519
+stream of `pyrage`.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import signal
 import sqlite3
 import stat
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -718,35 +719,32 @@ def test_an_empty_or_foreign_partial_name_is_not_swept(tmp_path: Path) -> None:
         )
 
 
-def test_a_work_factor_above_the_bound_is_retried_then_refused(
+def test_a_slow_loaded_host_neither_changes_the_cost_nor_stops_a_restore(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """age sizes scrypt to a second of this machine; a seal above `MAX_SCRYPT_LOG_N` could never
-    be read back. It is made again, and after three tries the run fails with its own cause."""
-    from shelfhold.infrastructure.secrets import export as export_module
+    """The scrypt work factor of the sealed key is fixed (`age_scrypt.LOG_N`), not measured: with
+    every clock of the process made absurdly slow, and `pyrage`'s own passphrase layer (which
+    sizes and refuses by a timing of the host) out of reach, a backup is written, verified and
+    restored, and the cost it carries is the same."""
+    import pyrage
 
-    real = export_module.check_scrypt_cost
-    calls: list[int] = []
+    from shelfhold.infrastructure.secrets import age_scrypt
+    from shelfhold.ops.backup import restore_archive
 
-    def too_costly(binary: bytes) -> None:
-        calls.append(1)
-        raise ExportError("too costly")
+    def refused(*_a: object, **_k: object) -> bytes:
+        raise AssertionError("pyrage's passphrase layer was called")
 
     with backup_bench(tmp_path) as bench:
-        monkeypatch.setattr(export_module, "check_scrypt_cost", too_costly)
-        with pytest.raises(BackupError) as refused:
-            bench.service.run()
-        assert refused.value.reason == "kdf_cost" and len(calls) == 3  # three tries
-        assert bench.events("backup.failed") == [{"reason": "kdf_cost"}]
-        assert not bench.backups.exists() or os.listdir(bench.backups) == []
-        # a calibration that lands above the bound once is simply made again
-        attempts = iter([True, False, False, False])
-
-        def noisy(binary: bytes) -> None:
-            if next(attempts, False):
-                raise ExportError("too costly")
-            real(binary)
-
-        monkeypatch.setattr(export_module, "check_scrypt_cost", noisy)
-        bench.clock.advance(days=1)
-        assert bench.service.run().name in bench.names()
+        monkeypatch.setattr(pyrage.passphrase, "encrypt", refused)
+        monkeypatch.setattr(pyrage.passphrase, "decrypt", refused)
+        ticks = iter(range(0, 10**9, 30))  # every reading of a clock is 30 s after the last
+        for name in ("perf_counter", "monotonic", "process_time"):
+            monkeypatch.setattr(time, name, lambda ticks=ticks: float(next(ticks)))
+        archive = bench.backups / bench.service.run().name
+        head = archive.read_bytes()[:400]
+        sealed = head[head.index(b"\n") + 1 :]
+        assert b" scrypt " in sealed and sealed.split(b"\n")[1].endswith(
+            f" {age_scrypt.LOG_N}".encode()
+        )
+        restore_archive(archive, tmp_path / "restored", bench.passphrase)
+        assert (tmp_path / "restored" / "shelfhold.db").is_file()

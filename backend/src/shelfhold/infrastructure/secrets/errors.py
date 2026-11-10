@@ -102,3 +102,8 @@ class RotationInProgressError(SecretsError):
 
 class ExportError(SecretsError):
     """The passphrase or the export file is unusable."""
+
+
+class WorkFactorError(ExportError):
+    """An age file asks for more scrypt work than this program accepts to do (`MAX_LOG_N`). It is
+    not a wrong passphrase, and the message says so."""

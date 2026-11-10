@@ -53,19 +53,22 @@ Le tar contient `BACKUP.json` (manifeste), `shelfhold.db`, `keyring.age` (relisi
 
 ### Coût de la phrase de passe
 
-age règle le coût de scrypt d'après la vitesse de la machine (environ une seconde) et Shelfhold
-n'accepte de relire que les coûts raisonnables. Si le coût choisi dépasse la borne, le scellement
-est refait, jusqu'à trois essais, puis la sauvegarde échoue avec `backup.failed` (cause
-`kdf_cost`) plutôt que de produire un fichier qu'on ne pourrait plus ouvrir.
+Shelfhold écrit lui-même l'enveloppe age de la phrase de passe (la clé éphémère de la sauvegarde et
+`keyring.age`) avec un facteur scrypt **fixe**, `log_n = 18` : 256 Mio de mémoire un court instant
+(128 x 8 x 2^18 octets, le réglage par défaut d'age), ce qui tient dans le budget de 500 Mo. Aucune
+mesure de la machine n'y entre : une sauvegarde faite sur un hôte au repos s'ouvre sur un hôte
+chargé ou plus lent, ce qui est la situation d'une restauration après sinistre. À la lecture, la
+borne est `log_n <= 20` (le `age` standard ouvre toujours le fichier) ; au-delà, la commande dit que
+le coût est excessif (`backup.too_costly`), pas que la phrase de passe est fausse. Les sauvegardes
+et exports faits avant ce réglage (coût calibré par age) restent lisibles.
 
 ### Mémoire et taille
 
 Tout est traité **en flux** : l'écriture, `verify` et `restore` n'ont pas besoin de place en
 mémoire pour la base, quelle que soit sa taille (mesuré : moins de 5 Mio de plus que le socle pour
 64 Mio de base ; le banc nocturne le refait sur 320 Mio). Le seul plafond est celui d'un tar de
-32 Gio, qui coupe un flux sans fin. Reste le coût des couches « phrase de passe » (scrypt d'age) :
-quelques centaines de Mio, un court instant, dimensionnés par age d'après la vitesse de la machine,
-indépendants de la taille de la sauvegarde.
+32 Gio, qui coupe un flux sans fin. Reste le coût des couches « phrase de passe » (scrypt) :
+256 Mio un court instant, fixes, indépendants de la taille de la sauvegarde.
 
 ### Où est le seul clair
 

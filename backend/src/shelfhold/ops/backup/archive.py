@@ -42,7 +42,7 @@ from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Final, Protocol
 
 from shelfhold.infrastructure.logging import register_secret_value
-from shelfhold.infrastructure.secrets.errors import ExportError
+from shelfhold.infrastructure.secrets.errors import ExportError, WorkFactorError
 from shelfhold.infrastructure.secrets.export import (
     ByteSink,
     decrypt_blob,
@@ -62,6 +62,7 @@ __all__ = [
     "MAX_TAR_BYTES",
     "ArchiveSource",
     "BackupArchiveError",
+    "BackupCostError",
     "MemberHandler",
     "Parsed",
     "Source",
@@ -91,6 +92,7 @@ CHUNK: Final = 1024 * 1024
 FILES: Final = frozenset({DATABASE_MEMBER, "config.toml", KEYRING_MEMBER})
 FOLDERS: Final = frozenset({"meta", "manifests", "docs"})
 GENERIC = "the backup is damaged, or the passphrase is wrong"
+COST = "the backup asks for more scrypt work than this program accepts; it was not opened"
 
 Source = bytes | Path
 
@@ -100,6 +102,13 @@ class BackupArchiveError(Exception):
 
     def __init__(self) -> None:
         super().__init__(GENERIC)
+
+
+class BackupCostError(BackupArchiveError):
+    """The sealed key asks for more scrypt work than accepted: not a wrong passphrase."""
+
+    def __init__(self) -> None:
+        Exception.__init__(self, COST)
 
 
 @dataclass(frozen=True)
@@ -417,8 +426,8 @@ class _ChunkReader:
 
 def write_archive(sink: ByteSink, chunks: Iterator[bytes], passphrase: str) -> None:
     """The header, the sealed key and the encrypted tar, written to `sink` as they are made. The
-    seal is refused (`WorkFactorError`) when age sized its scrypt above what `read_archive`
-    accepts: an archive that could not be opened is no backup."""
+    key is sealed with the fixed work factor of `age_scrypt`, so that no timing of the host decides
+    whether the archive can be opened later."""
     secret, recipient = new_stream_key()
     register_secret_value(secret)  # never in a log line, whatever happens next
     try:
@@ -462,6 +471,8 @@ def read_archive(source: ArchiveSource, passphrase: str, parser: TarParser) -> P
             decrypt_stream(source, parser, secret)
         finally:
             del secret
+    except WorkFactorError:
+        raise BackupCostError from None
     except (ExportError, ValueError, UnicodeDecodeError):
         raise BackupArchiveError from None
     return parser.finish()

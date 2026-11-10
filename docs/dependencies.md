@@ -40,7 +40,11 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
   `domain-pure`).
 - **argon2-cffi** (MIT) : hachage `argon2id` des mots de passe. **pynacl** (Apache-2.0) :
   XChaCha20-Poly1305 pour les secrets et les pierres tombales. **pyrage** (MIT/Apache-2.0) :
-  age/scrypt pour l'export du trousseau par phrase secrète. Repli commun : `cryptography`.
+  flux age x25519 du corps d'une sauvegarde. L'enveloppe age/scrypt de la phrase secrète (export du
+  trousseau, clé éphémère d'une sauvegarde) est écrite et lue par `secrets/age_scrypt.py` avec
+  pynacl (ChaCha20-Poly1305) et la bibliothèque standard (scrypt, HKDF, HMAC) : aucune dépendance
+  ajoutée, et un facteur scrypt fixe (pyrage le règle d'après une mesure de la machine, ce qui rend
+  un fichier parfois illisible sous charge). Repli commun : `cryptography`.
 - **defusedxml** (PSF-2.0) : seule porte d'entrée XML (`infrastructure/xml`, ENF-SEC-014) ; repli :
   lxml durci. **nh3** (MIT) : assainissement du HTML amont, derrière `sanitize_upstream_text`
   (ENF-SEC-015) ; repli : `bleach`. Les contrats `xml-single-entry` et `sanitize-single-entry`

@@ -58,7 +58,6 @@ from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import diagnostics
 from shelfhold.infrastructure.secrets.errors import ExportError, KeyringError
 from shelfhold.infrastructure.secrets.export import (
-    WorkFactorError,
     encrypt_export,
     read_passphrase_file,
 )
@@ -112,7 +111,6 @@ BACKUP_FAILURES: Final = frozenset(
         "too_large",
         "busy",
         "locked",
-        "kdf_cost",
         "keyring_unavailable",
         "database_error",
         "write_failed",
@@ -382,8 +380,6 @@ class BackupService:
 
             try:
                 size, digest = directory.write(name, fill)
-            except WorkFactorError:
-                raise BackupError("kdf_cost") from None
             except (OSError, ValueError, ExportError):
                 raise BackupError("write_failed") from None
             if not self._verified(directory, name, passphrase, digest):
@@ -465,10 +461,7 @@ class BackupService:
             keyring = diagnostics.store_for(self._settings).load()
         except (KeyringError, OSError):
             raise BackupError("keyring_unavailable") from None
-        try:
-            members[KEYRING_MEMBER] = encrypt_export(keyring, passphrase).encode("ascii")
-        except WorkFactorError:
-            raise BackupError("kdf_cost") from None
+        members[KEYRING_MEMBER] = encrypt_export(keyring, passphrase).encode("ascii")
         data = self._settings.data_dir
         with contextlib.suppress(FileNotFoundError):
             members[CONFIG_FILE_NAME] = read_data_file(data / CONFIG_FILE_NAME, MAX_FILE_BYTES)

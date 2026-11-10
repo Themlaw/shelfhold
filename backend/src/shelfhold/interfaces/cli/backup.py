@@ -26,6 +26,7 @@ from shelfhold.integrations.apprise import operating_bus
 from shelfhold.jobs.maintenance import MaintenanceGate
 from shelfhold.ops.backup import (
     BackupArchiveError,
+    BackupCostError,
     BackupError,
     BackupService,
     DestinationError,
@@ -42,7 +43,6 @@ GATE_FILE = ".maintenance.lock"
 FAILED_TEXT: dict[str, Callable[[], str]] = {
     "interrupted": lambda: t("backup.failed_interrupted"),
     "locked": lambda: t("backup.failed_locked"),
-    "kdf_cost": lambda: t("backup.failed_kdf_cost"),
     "passphrase_missing": lambda: t("backup.failed_passphrase_missing"),
     "passphrase_invalid": lambda: t("backup.failed_passphrase_invalid"),
     "passphrase_colocated": lambda: t("backup.failed_passphrase_colocated"),
@@ -139,6 +139,8 @@ def run_verify(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             name, checked = verify_latest(settings, passphrase_file=args.passphrase_file)
     except BackupError as error:
         return _fail(failed_text(error.reason))
+    except BackupCostError:
+        return _fail(t("backup.too_costly"))
     except BackupArchiveError:
         return _fail(t("backup.damaged"))
     created, revision = checked.created_at, checked.schema_revision
@@ -162,6 +164,8 @@ def run_restore(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         )
     except PassphraseError:
         return _fail(t("backup.passphrase_refused"))
+    except BackupCostError:
+        return _fail(t("backup.too_costly"))
     except BackupArchiveError:
         return _fail(t("backup.damaged"))
     except DestinationError as error:

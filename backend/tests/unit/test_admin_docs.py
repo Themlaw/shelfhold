@@ -76,4 +76,4 @@ def test_the_backup_recipe_sets_a_private_umask_before_it_writes_the_key() -> No
     text = (ROOT / "docs" / "admin" / "sauvegarde.md").read_text(encoding="utf-8")
     recipe = text[text.index("```sh\numask 077") :]
     assert recipe.index("umask 077") < recipe.index("cle-ephemere.txt")
-    assert "locked" in text and "kdf_cost" in text
+    assert "locked" in text and "log_n = 18" in text
