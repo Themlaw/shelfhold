@@ -141,6 +141,7 @@ _CLOSED = {
     "suwayomi_mute": "tests/integration/test_health_requeue.py::test_semantic_health_detects_unloaded_source",
     "suwayomi_downloads_dropped": "tests/integration/test_health_requeue.py::test_dropped_chapters_requeued_with_cap",
     "suwayomi_stale_series": "tests/integration/test_health_requeue.py::test_series_stale_aggregated",
+    "safeguard_backlog": "tests/integration/test_safeguard_cycle.py::test_safeguard_budget_caps_batch_and_emits_backlog",
 }
 
 

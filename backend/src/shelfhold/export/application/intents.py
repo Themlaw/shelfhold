@@ -20,7 +20,7 @@ from collections.abc import Callable, Iterable
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
@@ -177,14 +177,20 @@ class IntentJournal:
             )
         return intent_id
 
-    def mark_applying(self, intent_id: str) -> None:
+    def mark_applying(self, intent_id: str, *, within: Connection | None = None) -> None:
+        """Step 2. `within`: the transaction that has just looked at the facts the deed relies on,
+        so that nothing can change between that look and the mark."""
+        statement = (
+            sa.update(coherence.fs_intent)
+            .where(coherence.fs_intent.c.id == intent_id)
+            .where(coherence.fs_intent.c.state == "pending")
+            .values(state="applying")
+        )
+        if within is not None:
+            within.execute(statement)
+            return
         with self._engine.begin() as conn:
-            conn.execute(
-                sa.update(coherence.fs_intent)
-                .where(coherence.fs_intent.c.id == intent_id)
-                .where(coherence.fs_intent.c.state == "pending")
-                .values(state="applying")
-            )
+            conn.execute(statement)
 
     def mark_done(self, intent_id: str, *, within: Connection | None = None) -> None:
         """Step 4. Pass the connection of the manifest update to share its transaction."""
@@ -203,6 +209,18 @@ class IntentJournal:
     def cancel(self, intent_id: str) -> None:
         """The operation failed before it touched the disk: nothing is left to settle."""
         self._close_open(intent_id, "cancelled")
+
+    def open_payloads(self, op: str) -> list[tuple[str, str, dict[str, Any]]]:
+        """`(id, state, the raw JSON of expected_file_id)` of the open intents of `op`: what the
+        operation wrote about itself, for the caller that owns the meaning of it."""
+        table = coherence.fs_intent
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(table.c.id, table.c.state, table.c.expected_file_id)
+                .where(table.c.op == op, table.c.state.in_(OPEN_STATES))
+                .order_by(table.c.created_at, table.c.id)
+            ).all()
+        return [(r.id, r.state, dict(r.expected_file_id or {})) for r in rows]
 
     def apply_rename(self, step: RenameStep, *, on_done: ManifestHook | None = None) -> None:
         observed = self._disk.observe(step.src)
@@ -359,6 +377,8 @@ class IntentJournal:
                 self._resolve_write(intent, report, on_done)
             elif intent.op == "copy_cross_root" and intent.src and intent.dst:
                 self._resolve_copy(intent, report, on_done)
+            elif intent.op == "purge_upstream":
+                self._resolve_purge_upstream(intent, report)
             else:
                 self._drift(intent, report, f"no replay rule for op {intent.op!r}")
         except (FsopsError, OSError, LookupError) as error:
@@ -482,6 +502,19 @@ class IntentJournal:
             report.completed.append(intent.id)
         else:
             self._drift(intent, report, "the target is not the file that was copied")
+
+    def _resolve_purge_upstream(self, intent: OpenIntent, report: ResolveReport) -> None:
+        """The erasure of a download in the connected service (EF-SRC-009, EF-EXP-064). One that
+        never began (`pending`) touched nothing: it is closed. One that `applying` may have
+        reached the service, which nothing on this side can tell and the boot cannot ask: it is
+        never replayed (a second erasure would touch the download another account keeps, a service
+        in `ui_login`). It stays open and is drift, for the next sweep of `library.safeguard` to
+        settle after it has asked the service, or for the admin (`intents resolve`)."""
+        if intent.state == "pending":
+            self._close(intent.id, "cancelled")
+            report.abandoned.append(intent.id)
+            return
+        self._drift(intent, report, "an upstream purge may have reached the service")
 
     def _resolve_rmdir(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

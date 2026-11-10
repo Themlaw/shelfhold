@@ -46,23 +46,14 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l16"
-reason = "Deletion of the copies of a Unit needs the typed confirmation (EF-BIB-031): there is still no path that deletes the copies of a Unit (the deletions that exist go through the purge gate and the typed replay confirmation, proved on their real routes). The irreplaceable candidates now exist (L15, listed by `status`); the first deletion that reads them is the upstream purge of L16."
-until = "M1b L16"
+category = "unwired-m3-deletion-of-copies"
+reason = "Deletion of the copies of a Unit needs the typed confirmation (EF-BIB-031): there is still no path that deletes the copies of a Unit (the deletions that exist go through the purge gate and the typed replay confirmation, proved on their real routes). L16 reads the irreplaceable candidates but deletes only the upstream download, after the verification of the copy in /store and of the one Kavita reads, never a copy Shelfhold holds, so nothing in it asks for this confirmation; the deletion of the copies of a Unit by an admin comes with the library screens."
+until = "M3"
 symbols = [
   "shelfhold.library.adapters.units:DeletionRefusedError",
   "shelfhold.library.adapters.units:require_deletion_allowed",
   "shelfhold.library.domain.irreplaceable:require_typed_confirmation",
 ]
-
-[[allow]]
-category = "unwired-m1b-l16"
-reason = "The check that a kept copy still counts (distinct inode, hash read again) is what \"Mettre à l'abri\" (L16) re-runs before any upstream purge, with the (dev, ino) and content_hash it puts in the intent; the nightly catch-up of L14 decides the verdict once, when it makes the copy. The same job shares the store budget with L14 (EF-BIB-042 (4))."
-until = "M1b L16"
-symbols = [
-  "shelfhold.library.adapters.storage:verify_kept",
-]
-
 [[allow]]
 category = "unwired-m2-derivative"
 reason = "A canonical derivative is declared by a source that descrambles, a Processor (OCR, upscaling) or the EPUB neutralizer (EF-BIB-006, EF-BIB-051): none exists before M2, so nothing calls `declare_derivative` in M1b. The mechanism (original kept in /store, derivative traced by hash) is proved by its test."

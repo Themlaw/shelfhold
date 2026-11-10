@@ -184,6 +184,41 @@ class ShelfService:
                 raise LookupError(f"no such shelf: {shelf_id}")
             self._audit(connection, actor, "shelf.set_hold", f"shelf:{shelf_id};{hold}")
 
+    def set_purge_upstream(
+        self, shelf_id: str, enabled: bool, *, actor: Actor | None = None
+    ) -> None:
+        """Let (or no longer let) the connected service go of the downloads this shelf has filed
+        and exported (EF-SRC-009, B6). Off by default. This is the **only** writer of
+        `purge_upstream_after_export`, and the caller holds the reserved action
+        `shelf.purge_upstream`: the nightly deed that erases upstream acts only where an admin,
+        fresh or on the host, said so. Even then it is subject to "Mettre à l'abri" (EF-BIB-038)."""
+        with self._engine.begin() as connection:
+            done = connection.execute(
+                sa.update(export.shelf)
+                .where(export.shelf.c.id == shelf_id)
+                .values(purge_upstream_after_export=enabled)
+            )
+            if done.rowcount != 1:
+                raise LookupError(f"no such shelf: {shelf_id}")
+            self._audit(
+                connection, actor, "shelf.set_purge_upstream", f"shelf:{shelf_id};{enabled}"
+            )
+
+    def shelf_id_of(self, name_or_id: str) -> str:
+        """A shelf by its identifier or its name; `LookupError` when there is no such one or the
+        name is ambiguous."""
+        with self._engine.connect() as connection:
+            found = list(
+                connection.execute(
+                    sa.select(export.shelf.c.id).where(
+                        sa.or_(export.shelf.c.id == name_or_id, export.shelf.c.name == name_or_id)
+                    )
+                ).scalars()
+            )
+        if len(found) != 1:
+            raise LookupError(f"no single shelf is called {name_or_id!r}")
+        return str(found[0])
+
     def file_edition(
         self, edition_id: str, shelf_id: str, *, actor: Actor | None = None
     ) -> FileResult:

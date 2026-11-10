@@ -566,6 +566,7 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("intents.resolve")  # L51: reserved; the drift it settles is no waiting state
     declared.add("normalize.migrate")  # L55: reserved; no waiting state either
     declared.add("shelf.withdraw")  # M1b L10: applying the removal plan of a family shelf
+    declared.add("shelf.purge_upstream")  # M1b L16: turning on the erasure of the upstream copy
     declared.add("rate")  # M1b L11: the exit of rating_pending and follow_suspended
     declared |= {"root.takeover", "root.reinit", "store.reinit"}  # M1b L25: the root exits
     on_socket = {action for _impl, action in OPS_METHODS.values() if action}

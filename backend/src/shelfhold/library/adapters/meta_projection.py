@@ -23,6 +23,7 @@ from sqlalchemy import Connection, Engine
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import catalog, storage
 from shelfhold.infrastructure.volumes import read_data_file, write_data_file
+from shelfhold.library.adapters.origin_comicinfo import origin_reference
 from shelfhold.library.domain.unit_json import (
     MAX_BYTES,
     NewerFormatError,
@@ -161,6 +162,8 @@ class MetaProjection:
             known = unit_fields(connection, unit_id)
         if known is None:
             return "missing_unit"
+        if (origin := origin_reference(self._data_dir, unit_id)) is not None:
+            known["origin_comicinfo"] = origin  # the ComicInfo the service sent (EF-BIB-048)
         path = meta_path(self._data_dir, unit_id)
         wanted: UnitJson
         try:

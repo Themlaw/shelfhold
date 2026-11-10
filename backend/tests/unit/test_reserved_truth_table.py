@@ -263,6 +263,7 @@ FRESHNESS_LINE = {
             "intents.resolve",
             "normalize.migrate",
             "admin_risk.accept",
+            "shelf.purge_upstream",
         ),
         "p3",
     ),

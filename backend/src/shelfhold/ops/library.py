@@ -72,6 +72,7 @@ from shelfhold.export.application.repatriate_kavita import (
     verify,
 )
 from shelfhold.export.application.restore import RestoredBehindError
+from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.withdrawal import (
     WithdrawalBusyError,
@@ -83,7 +84,7 @@ from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.series import refresh_names
-from shelfhold.identity.public import Principal
+from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.ids import new_ulid
@@ -849,6 +850,30 @@ class LibraryOps:
             "files": report.files,
             "pending": list(report.pending),
         }
+
+    # -- the erasure of the upstream download, per shelf (L16, EF-SRC-009) ------------------------
+
+    @_refused
+    def shelf_purge_upstream(
+        self, *, shelf: str, enabled: bool, principal: Principal
+    ) -> dict[str, Any]:
+        """Turn on (or off) the erasure of the downloads of a shelf after a verified export. A
+        reserved action, as it ends in a deletion nobody can bring back: a fresh admin session or
+        the host's console, never a key."""
+        verdict = authorize_reserved(
+            principal, RESERVED_ACTIONS["shelf.purge_upstream"], now=self._comp.clock.now(),
+            fresh_auth_s=self._comp.settings.fresh_auth_s,
+            restricted_profile_exists=self._restricted_profile_exists(),
+        )  # fmt: skip
+        if not isinstance(verdict, Allowed):
+            raise CodedRefusal("forbidden", type(verdict).__name__)
+        service = ShelfService(self._comp.engine, clock=self._comp.clock)
+        try:
+            shelf_id = service.shelf_id_of(shelf)
+        except LookupError as error:
+            raise UnknownSubjectError(str(error)) from None
+        service.set_purge_upstream(shelf_id, enabled, actor=principal)
+        return {"shelf_id": shelf_id, "enabled": enabled}
 
     def _restricted_profile_exists(self) -> bool:
         """P3: a parental change asks a fresh password once a child profile exists."""

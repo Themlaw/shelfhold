@@ -20,6 +20,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
+from shelfhold.events.bus import EventBus
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.target_state import load_health
@@ -30,6 +31,7 @@ from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.secrets.diagnostics import store_for
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.interfaces.cli.registry import build_parser
+from shelfhold.library.public import StoreBudget
 from shelfhold.library.tombstones import LOST_KEYRING_PHRASE
 from shelfhold.ops import (
     CLI_PENDING,
@@ -53,6 +55,7 @@ from tests.kavita_export_env import wire
 from tests.l50_env import seeded
 from tests.l53_env import status_json, waiting_states
 from tests.l54_env import SERIES, bench54, comic
+from tests.library_env import lib_env
 from tests.ops_env import (
     NOW,
     FakeKeyring,
@@ -64,6 +67,7 @@ from tests.ops_env import (
     put_health,
 )
 from tests.restore_env import RestoreEnv, restore_env
+from tests.safeguard_env import World
 
 pytestmark = pytest.mark.req("EF-INT-023")
 
@@ -544,6 +548,28 @@ def source_instance_changed(settings: Settings) -> None:
         assert stored is None  # the reference is read again by the next cycle
 
 
+def safeguard_backlog() -> None:
+    """M1b L16: Units owed a copy in /store that a cycle could not take wait for the next window.
+    `status` lists them with `jobs list`; the nightly job (the real cycle, with the budget of one
+    Unit) takes them in order and the state leaves when the last one is kept."""
+    one_at_a_time = StoreBudget(free_bytes=10**12, reserve_bytes=0, max_units=1)
+    with lib_env() as env:
+        world = World(env)
+        for _ in range(3):
+            world.add(owed=True)
+        world.run_cycle(one_at_a_time)
+        assert len(world.store_files()) == 1
+        ops = OpsServices(env.engine, clock=world.clock, bus=EventBus(world.clock))
+        (item,) = _waiting(ops, "safeguard_backlog")
+        assert item.command == "shelfhold jobs list"  # type: ignore[attr-defined]
+        assert "2 unit(s)" in item.reason  # type: ignore[attr-defined]
+        _listed_then_gone(
+            ops, "safeguard_backlog",
+            lambda: [world.run_cycle(one_at_a_time) for _ in range(2)],
+        )  # fmt: skip
+        assert len(world.store_files()) == 3
+
+
 def auth_mode_unsupported(settings: Settings) -> None:
     with headless(settings) as h:
         h.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret="admin:s3cret-synthetic")
@@ -627,6 +653,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         restored_behind, tombstone_key_unknown, tombstone_lines_owed, route_missing,
         series_name_collision, mount_sentinel_missing, rating_pending, follow_suspended,
         source_instance_changed, foreign_root, root_lost, root_behind, store_lost,
+        safeguard_backlog,
     )
 }  # fmt: skip
 

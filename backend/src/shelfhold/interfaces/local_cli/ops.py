@@ -346,6 +346,12 @@ def _withdraw_apply(ops: OpsServices, by: Principal, p: Params) -> object:
     )
 
 
+def _shelf_purge_upstream(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.library.shelf_purge_upstream(
+        shelf=_text(p, "shelf"), enabled=bool(p.get("enabled")), principal=by
+    )
+
+
 def _rate(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.rating.rate(
         _text(p, "age"),
@@ -425,6 +431,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.probe": (_probe, None),
     "ops.withdraw_plan": (_withdraw_plan, None),
     "ops.withdraw_apply": (_withdraw_apply, "shelf.withdraw"),
+    "ops.shelf_purge_upstream": (_shelf_purge_upstream, "shelf.purge_upstream"),
     "ops.relink": (_relink, None),
     "ops.rate": (_rate, "rate"),
     "ops.rate_pending": (_rate_pending, None),
