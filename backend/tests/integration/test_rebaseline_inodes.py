@@ -85,3 +85,46 @@ def test_rebaseline_needs_the_mirror(env: RestoreEnv) -> None:
         run(env)
     assert refusal.value.reason == "mirror_unconfirmed"
     assert identities(env) == registry
+
+
+@pytest.mark.req("EF-EXP-043")
+def test_rebaseline_skips_records_without_a_hash(env: RestoreEnv) -> None:
+    """Review: a record without `file_hash` is not confirmed by the mirror alone."""
+    files = env.managed()
+    move_disks(files)
+    with env.engine.begin() as connection:
+        connection.execute(
+            sa.text("UPDATE export_record SET file_hash = NULL WHERE rel_path LIKE :p"),
+            {"p": f"%{files[0].name}"},
+        )
+    registry = identities(env)
+    report = run(env)
+    assert any(why == "no_hash" for why in report.skipped.values())  # type: ignore[attr-defined]
+    assert len(report.updated) == len(files) - 1  # type: ignore[attr-defined]
+    moved = {k for k, v in identities(env).items() if v != registry[k]}
+    assert not any(k.endswith(files[0].name) for k in moved)
+
+
+@pytest.mark.req("EF-EXP-043")
+def test_rebaseline_takes_the_locks_before_it_reads(env: RestoreEnv) -> None:
+    """Review: an export holding a series folder makes the command refuse, changing nothing."""
+    from shelfhold.export.application.locks import ResourceLocks
+    from shelfhold.infrastructure.ids import new_ulid
+
+    files = env.managed()
+    move_disks(files)
+    with env.engine.connect() as connection:
+        rel, destination = connection.execute(
+            sa.text("SELECT rel_path, shelf_destination_id FROM export_record LIMIT 1")
+        ).one()
+    folder = rel.split("/", 1)[0]
+    registry = identities(env)
+    holder = ResourceLocks(env.engine, clock=env.ex.clock)
+    with (
+        holder.hold_resources(new_ulid(), [f"path:{destination}/{folder}"]),
+        pytest.raises(RebaselineRefusedError) as refusal,
+    ):
+        run(env)
+    assert refusal.value.reason == "busy"
+    assert identities(env) == registry
+    assert run(env).updated  # type: ignore[attr-defined]  # free again

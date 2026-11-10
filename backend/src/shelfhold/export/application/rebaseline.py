@@ -23,6 +23,7 @@ folders it reads and answers `RebaselineRefusedError` if an export holds one.
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 
 import sqlalchemy as sa
@@ -109,28 +110,36 @@ class Rebaseliner:
             )  # fmt: skip
             contexts = [load_context(connection, d) for d in ids]
         usable = [c for c in contexts if c.transport == "tree" and c.root_local is not None]
-        plans = [(c, self._plan(c)) for c in usable]
-        wrong = sorted({p for _c, plan in plans for p in plan.differs})
-        if wrong:
-            raise RebaselineRefusedError("hash_differs", tuple(wrong))
-        updated: list[str] = []
-        unchanged = 0
-        skipped: dict[str, str] = {}
-        demoted = 0
-        for context, plan in plans:
-            folders = sorted({f.rel_path.split("/", 1)[0] for f in plan.updates})
-            resources = [f"path:{context.destination_id}/{folder}" for folder in folders]
-            try:
-                with self._locks.hold_resources(
-                    new_ulid(), [f"work:rebaseline-{context.destination_id}", *resources]
-                ):
-                    demoted += self._apply(context, plan)
-            except LockBusyError as busy:
-                raise RebaselineRefusedError("busy", (busy.resource,)) from None
-            updated += [f"{context.destination_id}/{f.rel_path}" for f in plan.updates]
-            unchanged += plan.unchanged
-            skipped.update({f"{context.destination_id}/{k}": v for k, v in plan.skipped.items()})
+        with ExitStack() as held:  # the locks come first: nothing is read that an export writes
+            for context in usable:
+                resources = [f"work:rebaseline-{context.destination_id}", *self._paths(context)]
+                try:
+                    held.enter_context(self._locks.hold_resources(new_ulid(), resources))
+                except LockBusyError as busy:
+                    raise RebaselineRefusedError("busy", (busy.resource,)) from None
+            plans = [(c, self._plan(c)) for c in usable]
+            wrong = sorted({p for _c, plan in plans for p in plan.differs})
+            if wrong:
+                raise RebaselineRefusedError("hash_differs", tuple(wrong))
+            updated: list[str] = []
+            unchanged = 0
+            skipped: dict[str, str] = {}
+            demoted = 0
+            for context, plan in plans:
+                demoted += self._apply(context, plan)
+                updated += [f"{context.destination_id}/{f.rel_path}" for f in plan.updates]
+                unchanged += plan.unchanged
+                skipped.update(
+                    {f"{context.destination_id}/{k}": v for k, v in plan.skipped.items()}
+                )
         return RebaselineReport(tuple(updated), unchanged, skipped, demoted)
+
+    def _paths(self, context: DestinationContext) -> list[str]:
+        """`path:` resources of every series folder the destination has records in."""
+        with self._engine.connect() as connection:
+            managed = Reconciler._managed(connection, context.destination_id)
+        folders = sorted({m.rel_path.split("/", 1)[0] for m in managed})
+        return [f"path:{context.destination_id}/{folder}" for folder in folders]
 
     # -- planning: reads only --------------------------------------------------------------------
 
@@ -146,24 +155,22 @@ class Rebaseliner:
         for item in managed:
             if item.state not in LIVE_STATES:
                 continue
+            if item.file_hash is None:
+                plan.skipped[item.rel_path] = "no_hash"  # nothing to confirm the bytes against
+                continue
             local = f"{root}/{item.rel_path}"
             try:
-                seen = self._fsops.observe(local)
+                read = self._fsops.hash_and_identity(local)
             except FsopsError:
                 plan.skipped[item.rel_path] = "unreadable"
                 continue
-            if seen is None:
-                plan.skipped[item.rel_path] = "missing"
+            if read is None:
+                plan.skipped[item.rel_path] = (
+                    "missing" if self._fsops.observe(local) is None else "not_a_file"
+                )
                 continue
-            kind, identity = seen
-            if kind != "file":
-                plan.skipped[item.rel_path] = "not_a_file"
-                continue
-            digest = self._fsops.sha256_of(local)
-            if item.file_hash is not None and digest != item.file_hash:
-                plan.differs.append(f"{context.destination_id}/{item.rel_path}")
-                continue
-            if item.size is not None and identity.size != item.size:
+            digest, identity, dev = read  # one descriptor: these describe the same bytes
+            if digest != item.file_hash or (item.size is not None and identity.size != item.size):
                 plan.differs.append(f"{context.destination_id}/{item.rel_path}")
                 continue
             if mirror.get(item.rel_path) != digest:
@@ -172,7 +179,6 @@ class Rebaseliner:
             if item.mtime_ns is not None and identity.mtime_ns != item.mtime_ns:
                 plan.skipped[item.rel_path] = "mtime_differs"
                 continue
-            dev = self._fsops.device_of(local)
             if (dev, identity.ino) == (item.dev, item.ino):
                 plan.unchanged += 1
                 continue

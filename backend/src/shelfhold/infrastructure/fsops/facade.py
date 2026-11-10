@@ -10,6 +10,7 @@ Nothing here ever reads a path that was checked by a separate call.
 import contextlib
 import hashlib
 import os
+import stat
 import time
 import uuid
 from collections.abc import Callable, Iterator, Sequence
@@ -672,6 +673,25 @@ class Fsops:
                 while chunk := stream.read(1 << 20):
                     digest.update(chunk)
         return "sha256:" + digest.hexdigest()
+
+    def hash_and_identity(self, local: str) -> tuple[str, FileIdentity, int] | None:
+        """`(sha256, identity, st_dev)` of a regular file, all from the one descriptor that was
+        opened: the digest and the identity describe the same bytes (no swap in between). None
+        when it is not a regular file."""
+        located = self._locate(local, read_mirror=True)
+        with self._root(located.root_path) as root:
+            try:
+                fd = root.open_file(located.rel, os.O_RDONLY)
+            except (FileNotFoundError, NotADirectoryError):
+                return None
+            with os.fdopen(fd, "rb") as stream:
+                observed = os.fstat(stream.fileno())
+                if not stat.S_ISREG(observed.st_mode):
+                    return None
+                digest = hashlib.sha256()
+                while chunk := stream.read(1 << 20):
+                    digest.update(chunk)
+        return "sha256:" + digest.hexdigest(), identity_of(observed), observed.st_dev
 
     # -- the per-root lease (ENF-OPS-015) ------------------------------------------------------
 
