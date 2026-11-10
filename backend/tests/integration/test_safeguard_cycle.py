@@ -215,6 +215,8 @@ def test_upstream_purge_refuses_a_modified_store_copy() -> None:
 
 
 def test_upstream_purge_refuses_a_replaced_inode() -> None:
+    """The freed inode number may be handed out again (ext4, overlay): the guard does not rest on
+    it, it also compares the times the disk keeps, so the test holds with or without reuse."""
     with lib_env() as env:
         world = World(env)
         item = owed_and_kept(world)

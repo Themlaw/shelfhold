@@ -271,3 +271,24 @@ def test_a_consent_withdrawn_before_the_lock_stops_the_deed() -> None:
             asyncio.run(purge.execute(plan))
         assert getattr(refused.value, "reason", "") == "option_off"
         assert world.upstream.released == [] and world.ticket_of(item) == item.ticket
+
+
+def test_a_reused_inode_number_with_the_same_bytes_is_still_another_file() -> None:
+    """What a runner may do (ext4, overlay): the inode number comes back with the same bytes.
+    Rewriting in place gives exactly that: same `(dev, ino)`, same hashes, new times."""
+    with lib_env() as env:
+        world = World(env)
+        item = owed_and_kept(world)
+        purge = world.purge()
+        (candidate,) = world.candidates()
+        plan = purge.plan(candidate)
+        (stored,) = world.store_files()
+        before = os.stat(stored).st_ino
+        data = stored.read_bytes()
+        os.utime(stored, ns=(1, 1))  # an older, other file with the number and the bytes
+        stored.write_bytes(data)
+        assert os.stat(stored).st_ino == before
+        with pytest.raises(Exception) as refused:
+            asyncio.run(purge.execute(plan))
+        assert getattr(refused.value, "reason", "") == "store_copy_changed"
+        assert world.upstream.released == [] and world.ticket_of(item) == item.ticket

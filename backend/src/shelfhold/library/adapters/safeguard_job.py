@@ -313,6 +313,7 @@ class PurgeRefused(Exception):
 class PurgePlan:
     candidate: PurgeCandidate
     pinned: StoreProof | None  # the /store copy the plan relied on; None: the live source
+    seen: tuple[int, int] | None = None  # its (mtime_ns, ctime_ns) when the plan looked
 
 
 @dataclass(frozen=True)
@@ -416,6 +417,14 @@ class UpstreamPurge:
         except (FileNotFoundError, FsopsError):
             return False
 
+    def _stamps(self, proof: StoreProof) -> tuple[int, int] | None:
+        """When the file was last written and last changed, as the disk says now. A replacement
+        gets new ones even if the system hands the freed inode number out again."""
+        try:
+            return self._fsops.link_stat(proof.local)[3:5]
+        except (FileNotFoundError, FsopsError):
+            return None
+
     def _usable_proof(
         self, candidate: PurgeCandidate, content_hash: str | None
     ) -> StoreProof | None:
@@ -451,7 +460,7 @@ class UpstreamPurge:
         verdict = upstream_verdict(replace(facts, kavita_copy=kavita, store_copy=proof is not None))
         if not verdict.allowed:
             raise PurgeRefused(verdict.reason or STORE_COPY_MISSING)
-        return PurgePlan(candidate, proof)
+        return PurgePlan(candidate, proof, self._stamps(proof) if proof else None)
 
     # -- the deed ---------------------------------------------------------------------------
 
@@ -510,7 +519,7 @@ class UpstreamPurge:
         """The disks as they are now: the pinned /store copy, and the file Kavita reads."""
         candidate, pinned = plan.candidate, plan.pinned
         if pinned is not None:
-            self._check_pinned(candidate.unit_id, pinned)
+            self._check_pinned(candidate.unit_id, pinned, plan.seen)
         with self._engine.connect() as connection:
             content_hash = content_hash_of(connection, candidate.content_id)
         return self._kavita_on_disk(candidate, content_hash)
@@ -535,14 +544,16 @@ class UpstreamPurge:
                 raise PurgeRefused(verdict.reason or STORE_COPY_MISSING)
             self._journal.mark_applying(intent_id, within=connection)
 
-    def _check_pinned(self, unit_id: str, pinned: StoreProof) -> None:
+    def _check_pinned(
+        self, unit_id: str, pinned: StoreProof, seen: tuple[int, int] | None = None
+    ) -> None:
         """The copy in /store is the one that was proved, and no other name of the Unit is the
         same file: read from the disk (`lstat`), never from the registry."""
         found = self._fsops.observe(pinned.local)
         if found is None or found[0] != "file":
             raise PurgeRefused(STORE_COPY_MISSING)
         try:
-            dev, ino, links = self._fsops.link_stat(pinned.local)
+            dev, ino, links, mtime, ctime = self._fsops.link_stat(pinned.local)
             same_bytes = self._fsops.sha256_of(pinned.local) == pinned.file_hash
             same_payload = payload_hash_at(self._fsops, pinned.local) == pinned.content_hash
         except (FileNotFoundError, FsopsError, UnsafeArchiveError, UntrustedEntryError):
@@ -550,6 +561,7 @@ class UpstreamPurge:
         if (
             (dev, ino) != (pinned.dev, pinned.ino)
             or links != 1
+            or (seen is not None and (mtime, ctime) != seen)  # same number, another file
             or not (same_bytes and same_payload)
         ):
             raise PurgeRefused(STORE_COPY_CHANGED)
