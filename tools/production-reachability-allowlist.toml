@@ -225,3 +225,18 @@ until = "M3"
 tests = [
   "backend/tests/integration/test_ops_surface.py::test_healthz_reasons_are_for_administrators_and_never_carry_a_title",
 ]
+
+[[allow]]
+category = "unwired-m2-l11"
+reason = "MetadataProvider contract (SDK 1.2, EF-BIB-013, M2 L11): the proposal types and the SDK version check are proved by the conformance kit and the fake provider; their first host caller is the OpenLibrary provider and the enrichment pipeline (M2 L13)."
+until = "M2"
+symbols = [
+  "shelfhold.sdk.metadata:EntityRef",
+  "shelfhold.sdk.metadata:FieldProposal",
+  "shelfhold.sdk.metadata:IdentifyResult",
+  "shelfhold.sdk.metadata:MetadataManifest",
+  "shelfhold.sdk.metadata:Provenance",
+  "shelfhold.sdk.metadata:RelationProposal",
+  "shelfhold.sdk.models:SDK_VERSION",
+  "shelfhold.sdk.models:sdk_supports",
+]

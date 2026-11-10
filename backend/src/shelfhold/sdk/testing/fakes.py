@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,28 @@ from shelfhold.sdk.connected import (
 )
 from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
 from shelfhold.sdk.lang import LanguageTag
-from shelfhold.sdk.models import API_VERSION, Cursor, FilterSpec, Page, PluginKind, RateLimit
+from shelfhold.sdk.metadata import (
+    EntityRef,
+    EntityType,
+    FieldProposal,
+    IdentifyResult,
+    MatchHints,
+    MetadataManifest,
+    Provenance,
+    ProviderCapability,
+    ProviderQuota,
+    RelationProposal,
+)
+from shelfhold.sdk.models import (
+    API_VERSION,
+    AuthFlow,
+    Cursor,
+    FilterSpec,
+    Page,
+    PluginKind,
+    RateLimit,
+    SessionState,
+)
 from shelfhold.sdk.refs import (
     FileAsset,
     ImageRequest,
@@ -271,3 +293,140 @@ class FakeRangedConnectedService:
 
     async def blocking_update_filters(self, f: Any) -> list[str]:
         return []
+
+
+# --- a fake metadata provider (EF-BIB-013) ----------------------------------------------------
+FAKE_META_KEY = "fake-meta"
+FAKE_ISBN = "9780306406157"  # the well-known sample ISBN-13 (synthetic, no real book)
+_META_BASE = "https://fake-metadata.invalid"
+_FETCHED_AT = datetime(2026, 1, 1, tzinfo=UTC)
+_UNSET: Any = object()
+
+
+def fake_metadata_fetcher() -> FakeFetcher:
+    """Fetcher scripted for FakeMetadataProvider, with nothing else reachable."""
+    body = json.dumps({"title": "Fake Book", "authors": ["Nobody"], "publisher": "Nowhere Press"})
+    return FakeFetcher(
+        responses={
+            ("GET", f"{_META_BASE}/isbn/{FAKE_ISBN}.json"): Response(status=200, body=body.encode())
+        }
+    )
+
+
+class FakeMetadataProvider:
+    """Fake provider answering an ISBN target on the Edition and carrying the Work in a relation.
+
+    The keyword arguments break one rule each, so that the kit's checks can be shown to bite.
+    """
+
+    def __init__(
+        self,
+        *,
+        answer_entity_type: EntityType = "edition",
+        extra_field: str | None = None,
+        provenance_key: str = FAKE_META_KEY,
+        terms_url: str | None = _UNSET,
+        requests_per_second: float = 1.0,
+        break_url_mapping: bool = False,
+        leak_to: str | None = None,
+        auth: AuthFlow | None = None,
+        with_login: bool = True,
+        min_sdk: str = "1.2",
+    ) -> None:
+        self._answer = answer_entity_type
+        self._extra_field = extra_field
+        self._provenance_key = provenance_key
+        self._break_url = break_url_mapping
+        self._leak_to = leak_to
+        if not with_login:
+            self.login = None  # type: ignore[assignment,method-assign]
+            self.refresh = None  # type: ignore[assignment,method-assign]
+        self.manifest = MetadataManifest(
+            key=FAKE_META_KEY,
+            version="1.0.0",
+            api=API_VERSION,
+            name="Fake metadata provider",
+            min_sdk=min_sdk,
+            terms_url=f"{_META_BASE}/terms" if terms_url is _UNSET else terms_url,
+            attribution="Fake metadata (synthetic)",
+            capabilities=ProviderCapability.IDENTIFY | ProviderCapability.COVER,
+            touched_fields={"title", "contributors", "publisher"},
+            entity_types={"edition", "volume"},
+            langs=[LanguageTag("en")],
+            quota=ProviderQuota(requests_per_second=requests_per_second, daily_cap=1000),
+            auth=auth,
+        )
+
+    def _provenance(self, isbn: str) -> Provenance:
+        return Provenance(
+            provider=self._provenance_key,
+            fetched_at=_FETCHED_AT,
+            source_url=f"{_META_BASE}/isbn/{isbn}",
+            attribution="Fake metadata (synthetic)",
+        )
+
+    async def identify(self, f: Any, target: EntityRef, hints: MatchHints) -> IdentifyResult:
+        isbn = target.ids.get("isbn13")
+        if isbn is None:
+            return IdentifyResult()
+        if self._leak_to:
+            await f.get(self._leak_to)
+        record = json.loads((await f.get(f"{_META_BASE}/isbn/{isbn}.json")).body)
+        provenance = self._provenance(isbn)
+
+        def proposal(field: str, value: Any) -> FieldProposal:
+            return FieldProposal(
+                entity_type=self._answer,
+                field=field,
+                lang=LanguageTag("en"),
+                value=value,
+                confidence=0.9,
+                provenance=provenance,
+            )
+
+        proposals = [
+            proposal("title", record["title"]),
+            proposal("contributors", record["authors"]),
+            proposal("publisher", record["publisher"]),
+        ]
+        if self._extra_field:
+            proposals.append(proposal(self._extra_field, "x"))
+        work = EntityRef(entity_type="work", ids={"fake-meta-work": "W1"})
+        relations = [
+            RelationProposal(
+                kind="work_relation",
+                subject=target,
+                object=work,
+                data={"relation": "edition_of"},
+                confidence=0.8,
+                provenance=provenance,
+            ),
+            RelationProposal(
+                kind="official_link",
+                subject=target,
+                data={"url": f"{_META_BASE}/isbn/{isbn}"},
+                confidence=1.0,
+                provenance=provenance,
+            ),
+        ]
+        return IdentifyResult(proposals=proposals, relations=relations)
+
+    async def get_cover(self, f: Any, target: EntityRef) -> ImageRequest | None:
+        isbn = target.ids.get("isbn13")
+        return ImageRequest(url=f"{_META_BASE}/cover/{isbn}.jpg") if isbn else None
+
+    def url_for(self, ids: dict[str, str]) -> str | None:
+        isbn = ids.get("isbn13")
+        return f"{_META_BASE}/isbn/{isbn}" if isbn else None
+
+    def ids_from_url(self, url: str) -> dict[str, str] | None:
+        prefix = f"{_META_BASE}/isbn/"
+        if self._break_url or not url.startswith(prefix):
+            return None
+        return {"isbn13": url.removeprefix(prefix)}
+
+    async def login(self, f: Any, flow: AuthFlow, creds: dict[str, Any]) -> SessionState:
+        return SessionState()
+
+    async def refresh(self, f: Any, s: SessionState) -> SessionState:
+        return s

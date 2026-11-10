@@ -30,7 +30,7 @@
     }
   },
   "content_warning": "mixed",
-  "terms_url": null,
+  "terms_url": "https://github.com/Suwayomi/Suwayomi-Server/blob/master/LICENSE",
   "respects_robots": true,
   "attribution": null,
   "homepage": "https://github.com/Suwayomi/Suwayomi-Server",
