@@ -93,7 +93,8 @@ class TombstoneKeyringExit:
         known |= cited
         owed = coherence.tombstone_pending_root
         with self._engine.connect() as connection:
-            owing = sorted(set(connection.execute(sa.select(owed.c.root_id)).scalars()))
+            pending = set(connection.execute(sa.select(owed.c.root_id)).scalars())
+        owing = sorted(pending | TombstoneState(self._engine).rekey_owed_roots())  # a `rekey` too
         frozen = self._frozen()
         # while the instance is `restored_behind` no line can be written: the way out is the
         # restore's, not a flush
@@ -204,12 +205,21 @@ class TombstoneKeyringExit:
         """`tombstone rekey` (reserved): the keys named are marked compromised (one way), then the
         database and every journal are sealed again under the active key. The active key is never
         one of them (rotate first). Running it again finishes what a kill interrupted."""
+        verdict = authorize_reserved(
+            principal, RESERVED_ACTIONS["tombstone.rekey"], now=self._clock.now(),
+            fresh_auth_s=self._settings.fresh_auth_s, hardened=self._settings.auth_hardened,
+        )  # fmt: skip
+        if not isinstance(verdict, Allowed):  # before the keyring is touched
+            raise CodedRefusal("forbidden", type(verdict).__name__)
         names = sorted({kid for kid in kids if kid})
         if not names:
             raise InvalidChoiceError("name the compromised key (--kid)")
         store = diagnostics.store_for(self._settings)
         try:
-            keyring = registry_mark(store, self._engine, names, now=self._clock.now())
+            with _IMPORT:  # the channel holds the instance lock, which is the keyring's
+                keyring = registry_mark(
+                    store, self._engine, names, now=self._clock.now(), locked=True
+                )
         except KeyError as error:
             raise InvalidChoiceError(f"unknown key {error.args[0]}") from None
         except ValueError as error:

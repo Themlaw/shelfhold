@@ -11,6 +11,7 @@ by a rotation (ADR-0048).
 """
 
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -125,12 +126,19 @@ def rotate(
 
 
 def mark_compromised(
-    store: KeyringStore, engine: Engine, kids: Sequence[str], *, now: datetime | None = None
+    store: KeyringStore,
+    engine: Engine,
+    kids: Sequence[str],
+    *,
+    now: datetime | None = None,
+    locked: bool = False,
 ) -> Keyring:
     """`tombstone rekey` (step one): the keys that leaked are marked `compromised` in the keyring
     and the registry, one way. Kept, never dropped. The active key cannot be marked (rotate
-    first: a leaked key must not go on sealing). Idempotent. Returns the keyring written."""
-    with store.lock():
+    first: a leaked key must not go on sealing). Idempotent. Returns the keyring written.
+    `locked`: the caller already excludes every other writer of the keyring (the operating
+    channels hold the instance lock, which is the file of `store.lock()`)."""
+    with nullcontext() if locked else store.lock():
         keyring = store.load().compromised(kids, now)
         store.write(keyring)
         with engine.begin() as connection:
