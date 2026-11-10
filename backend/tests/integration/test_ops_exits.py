@@ -9,6 +9,7 @@ enumeration is partitioned (M1a / later): a new `WaitingState` fails here until 
 
 import argparse
 import inspect
+import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -46,6 +47,7 @@ from tests.fakes.kavita import member
 from tests.headless_env import KAVITA_KEY, KAVITA_URL, SUWAYOMI_URL, Headless, headless
 from tests.integration.test_cli_rate import held_work, with_family_shelf
 from tests.integration.test_restore_epoch import restored
+from tests.integration.test_restore_review import edit_sentinel
 from tests.integration.test_restore_review2 import production
 from tests.kavita_export_env import wire
 from tests.l50_env import seeded
@@ -61,7 +63,7 @@ from tests.ops_env import (
     pause_follow,
     put_health,
 )
-from tests.restore_env import restore_env
+from tests.restore_env import RestoreEnv, restore_env
 
 pytestmark = pytest.mark.req("EF-INT-023")
 
@@ -409,6 +411,66 @@ def restored_behind(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixtu
             ctx.listed_then_gone("restored_behind", leave)
 
 
+def _root_scenario(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+    damage: Callable[[RestoreEnv, Settings], None],
+    command: Callable[[RestoreEnv], tuple[str, ...]],
+) -> None:
+    """M1b L25: one of the four root states, found by `status` over the real roots, left by its
+    reserved command from the host CLI; nothing is deleted on the way."""
+    with restore_env() as env:
+        with env.engine.connect() as connection:  # the copy of the file must hold everything
+            connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+        with production(env) as own:
+            damage(env, own)
+            ctx = L53Context(monkeypatch, capsys, own)
+            before = {p: p.read_bytes() for p in env.ex.lib.library.rglob("*") if p.is_file()}
+            ctx.listed_then_gone(state, lambda: ctx.cli(*command(env)) == 0 or pytest.fail(state))
+            for path, data in before.items():
+                if path.name not in (".shelfhold-mount-id", "lease"):
+                    assert path.read_bytes() == data, f"{path} changed"
+
+
+def foreign_root(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def damage(env: RestoreEnv, _own: Settings) -> None:
+        edit_sentinel(env.ex.lib.library, instance_id="01J0000000000000000FOREIGN")
+
+    _root_scenario(
+        monkeypatch, capsys, "foreign_root", damage,
+        lambda env: ("root", "takeover", str(env.ex.lib.library)),
+    )  # fmt: skip
+
+
+def root_lost(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def damage(env: RestoreEnv, _own: Settings) -> None:
+        (env.ex.lib.library / ".shelfhold-mount-id").unlink()
+
+    _root_scenario(
+        monkeypatch, capsys, "root_lost", damage,
+        lambda env: ("root", "reinit", str(env.ex.lib.library)),
+    )  # fmt: skip
+
+
+def root_behind(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def damage(env: RestoreEnv, own: Settings) -> None:
+        with sqlite3.connect(own.database_path) as conn:
+            conn.execute("UPDATE physical_root SET generation = generation + 5")
+
+    _root_scenario(
+        monkeypatch, capsys, "root_behind", damage,
+        lambda env: ("root", "restored", str(env.ex.lib.library)),
+    )  # fmt: skip
+
+
+def store_lost(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def damage(env: RestoreEnv, _own: Settings) -> None:
+        (env.ex.lib.store / ".shelfhold-mount-id").unlink()
+
+    _root_scenario(monkeypatch, capsys, "store_lost", damage, lambda _env: ("store", "reinit"))
+
+
 def tombstone_key_unknown(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -564,7 +626,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         child_exposure, auth_mode_unsupported, coverage_unknown, language_unknown,
         restored_behind, tombstone_key_unknown, tombstone_lines_owed, route_missing,
         series_name_collision, mount_sentinel_missing, rating_pending, follow_suspended,
-        source_instance_changed,
+        source_instance_changed, foreign_root, root_lost, root_behind, store_lost,
     )
 }  # fmt: skip
 

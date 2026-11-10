@@ -31,6 +31,9 @@ BODIES: dict[str, dict[str, object]] = {
     "tombstone set-aside-journal": {},
     "secrets import": {"passphrase_file": "p", "in_file": "export.age"},
     "rate": {"age": "13+"},
+    "root takeover": {},
+    "root reinit": {},
+    "store reinit": {},
 }
 
 
@@ -66,6 +69,23 @@ class _Ops:
     def secrets_import(self, **_: object) -> dict[str, object]:
         self.calls.append("secrets_import")
         return {"added": [], "present": 0, "replayed": 0}
+
+    def _root(self, name: str) -> dict[str, object]:
+        self.calls.append(name)
+        return {
+            "command": name, "root_id": "x", "path": "/x", "previous": "foreign_root",
+            "sentinel": "restamped", "predecessors": [], "missing": 0, "planned": 0,
+            "units_store_missing": 0, "distrusted_copies": 0, "ignored_claims": [], "notes": [],
+        }  # fmt: skip
+
+    def root_takeover(self, *_a: object, **_k: object) -> dict[str, object]:
+        return self._root("root_takeover")
+
+    def root_reinit(self, *_a: object, **_k: object) -> dict[str, object]:
+        return self._root("root_reinit")
+
+    def store_reinit(self, *_a: object, **_k: object) -> dict[str, object]:
+        return self._root("store_reinit")
 
     def tombstone_set_aside_journal(self, **_: object) -> dict[str, str]:
         self.calls.append("tombstone_set_aside_journal")

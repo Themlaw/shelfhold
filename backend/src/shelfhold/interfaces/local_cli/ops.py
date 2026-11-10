@@ -363,6 +363,26 @@ def _rate_batch(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.rating.rate_batch(_text(p, "age"), confirm=_text(p, "confirm"), principal=by)
 
 
+def _root_takeover(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.root_takeover(_text(p, "root"), principal=by)
+
+
+def _root_reinit(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.root_reinit(_text(p, "root"), principal=by)
+
+
+def _root_restored(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.root_restored(_text(p, "root"), principal=by)
+
+
+def _store_reinit(ops: OpsServices, by: Principal, _p: Params) -> object:
+    return ops.store_reinit(principal=by)
+
+
+def _rebaseline_inodes(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.reconcile_rebaseline_inodes(_optional(p, "destination_id"))
+
+
 def _probe(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.library.probe(_text(p, "folder"))
 
@@ -409,6 +429,11 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.rate": (_rate, "rate"),
     "ops.rate_pending": (_rate_pending, None),
     "ops.rate_batch": (_rate_batch, "rate"),
+    "ops.root_takeover": (_root_takeover, "root.takeover"),
+    "ops.root_reinit": (_root_reinit, "root.reinit"),
+    "ops.root_restored": (_root_restored, None),
+    "ops.store_reinit": (_store_reinit, "store.reinit"),
+    "ops.rebaseline_inodes": (_rebaseline_inodes, None),
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
     "ops.normalize_migrate": (_normalize_migrate, "normalize.migrate"),

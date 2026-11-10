@@ -7,6 +7,7 @@ from shelfhold.library.tombstones.cited import (
     missing_citable,
     normalizers_of,
 )
+from shelfhold.library.tombstones.evidence import RootEvidence, SentinelEvidence
 from shelfhold.library.tombstones.index import (
     CitedVersionMissingError,
     MembershipIndex,
@@ -57,6 +58,8 @@ __all__ = [
     "PlaceRef",
     "Recorded",
     "ReplayReport",
+    "RootEvidence",
+    "SentinelEvidence",
     "SeriesBindingRef",
     "SetAsideRefusedError",
     "TombstoneGate",

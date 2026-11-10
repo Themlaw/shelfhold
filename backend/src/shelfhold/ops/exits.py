@@ -50,6 +50,10 @@ ENDPOINTS: Final = MappingProxyType(
         "tombstone set-aside-journal": ("POST", "/api/v1/tombstones/set-aside-journal"),
         "tombstone flush": ("POST", "/api/v1/tombstones/flush"),
         "rate": ("POST", "/api/v1/works/{work_id}/rating"),
+        "root takeover": ("POST", "/api/v1/roots/{root}/takeover"),
+        "root reinit": ("POST", "/api/v1/roots/{root}/reinit"),
+        "root restored": ("POST", "/api/v1/roots/{root}/restored"),
+        "store reinit": ("POST", "/api/v1/store/reinit"),
     }
 )  # fmt: skip
 
@@ -88,6 +92,10 @@ M1B_SERVED_STATES: Final = frozenset(
         WaitingState.RATING_PENDING,
         WaitingState.FOLLOW_SUSPENDED,
         WaitingState.SOURCE_INSTANCE_CHANGED,  # `source reconnect` (L18)
+        WaitingState.FOREIGN_ROOT,  # `root takeover|reinit` (L25, EF-EXP-064)
+        WaitingState.ROOT_LOST,
+        WaitingState.ROOT_BEHIND,  # `root restored`
+        WaitingState.STORE_LOST,  # `store reinit`
     }
 )
 

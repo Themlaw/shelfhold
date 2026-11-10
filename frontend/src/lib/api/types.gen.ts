@@ -1192,6 +1192,73 @@ export type RestoreIn = {
 };
 
 /**
+ * RootIn
+ *
+ * `path`: a folder the database does not know yet (`foreign_root` found by the start-up),
+ * named by its absolute path instead of the `root_id` of the URL.
+ */
+export type RootIn = {
+    /**
+     * Path
+     */
+    path?: string | null;
+};
+
+/**
+ * RootOut
+ */
+export type RootOut = {
+    /**
+     * Command
+     */
+    command: string;
+    /**
+     * Distrusted Copies
+     */
+    distrusted_copies: number;
+    /**
+     * Ignored Claims
+     */
+    ignored_claims: Array<string>;
+    /**
+     * Missing
+     */
+    missing: number;
+    /**
+     * Notes
+     */
+    notes: Array<string>;
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Planned
+     */
+    planned: number;
+    /**
+     * Predecessors
+     */
+    predecessors: Array<string>;
+    /**
+     * Previous
+     */
+    previous: string;
+    /**
+     * Root Id
+     */
+    root_id: string;
+    /**
+     * Sentinel
+     */
+    sentinel: string;
+    /**
+     * Units Store Missing
+     */
+    units_store_missing: number;
+};
+
+/**
  * RotateIn
  */
 export type RotateIn = {
@@ -3182,6 +3249,120 @@ export type RestoreAdoptResponses = {
 
 export type RestoreAdoptResponse = RestoreAdoptResponses[keyof RestoreAdoptResponses];
 
+export type RootReinitData = {
+    body: RootIn;
+    path: {
+        /**
+         * Root
+         */
+        root: string;
+    };
+    query?: never;
+    url: '/api/v1/roots/{root}/reinit';
+};
+
+export type RootReinitErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RootReinitError = RootReinitErrors[keyof RootReinitErrors];
+
+export type RootReinitResponses = {
+    /**
+     * Successful Response
+     */
+    200: RootOut;
+};
+
+export type RootReinitResponse = RootReinitResponses[keyof RootReinitResponses];
+
+export type RootRestoredData = {
+    body?: never;
+    path: {
+        /**
+         * Root
+         */
+        root: string;
+    };
+    query?: never;
+    url: '/api/v1/roots/{root}/restored';
+};
+
+export type RootRestoredErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RootRestoredError = RootRestoredErrors[keyof RootRestoredErrors];
+
+export type RootRestoredResponses = {
+    /**
+     * Successful Response
+     */
+    200: RootOut;
+};
+
+export type RootRestoredResponse = RootRestoredResponses[keyof RootRestoredResponses];
+
+export type RootTakeoverData = {
+    body: RootIn;
+    path: {
+        /**
+         * Root
+         */
+        root: string;
+    };
+    query?: never;
+    url: '/api/v1/roots/{root}/takeover';
+};
+
+export type RootTakeoverErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RootTakeoverError = RootTakeoverErrors[keyof RootTakeoverErrors];
+
+export type RootTakeoverResponses = {
+    /**
+     * Successful Response
+     */
+    200: RootOut;
+};
+
+export type RootTakeoverResponse = RootTakeoverResponses[keyof RootTakeoverResponses];
+
 export type SecretsImportData = {
     body: SecretsImportIn;
     path?: never;
@@ -3685,6 +3866,39 @@ export type StatusResponses = {
 };
 
 export type StatusResponse = StatusResponses[keyof StatusResponses];
+
+export type StoreReinitData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/store/reinit';
+};
+
+export type StoreReinitErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type StoreReinitError = StoreReinitErrors[keyof StoreReinitErrors];
+
+export type StoreReinitResponses = {
+    /**
+     * Successful Response
+     */
+    200: RootOut;
+};
+
+export type StoreReinitResponse = StoreReinitResponses[keyof StoreReinitResponses];
 
 export type AddTargetData = {
     body: TargetIn;

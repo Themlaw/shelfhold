@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, EditionSetSeriesNameData, EditionSetSeriesNameErrors, EditionSetSeriesNameResponses, FileEditionData, FileEditionErrors, FileEditionResponses, FollowData, FollowErrors, FollowResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, JobStatusData, JobStatusErrors, JobStatusResponses, ListActivityData, ListActivityErrors, ListActivityResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PasskeyLoginData, PasskeyLoginErrors, PasskeyLoginOptionsData, PasskeyLoginOptionsErrors, PasskeyLoginOptionsResponses, PasskeyLoginResponses, PasskeyReauthOptionsData, PasskeyReauthOptionsErrors, PasskeyReauthOptionsResponses, PasskeyRegisterData, PasskeyRegisterErrors, PasskeyRegisterResponses, PasskeyRegistrationOptionsData, PasskeyRegistrationOptionsErrors, PasskeyRegistrationOptionsResponses, PasskeyRevokeData, PasskeyRevokeErrors, PasskeyRevokeResponses, PasskeysListData, PasskeysListErrors, PasskeysListResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, RateBatchData, RateBatchErrors, RateBatchResponses, RateWorkData, RateWorkErrors, RateWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, SecretsImportData, SecretsImportErrors, SecretsImportResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SetMaxAgeData, SetMaxAgeErrors, SetMaxAgeResponses, SetProfilesData, SetProfilesErrors, SetProfilesResponses, ShelfProposalData, ShelfProposalErrors, ShelfProposalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceReconnectData, SourceReconnectErrors, SourceReconnectResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses, ToRateListData, ToRateListErrors, ToRateListResponses, ToShelveListData, ToShelveListErrors, ToShelveListResponses, UnfollowData, UnfollowErrors, UnfollowResponses, UnmaskData, UnmaskErrors, UnmaskResponses, WithdrawalApplyData, WithdrawalApplyErrors, WithdrawalApplyResponses, WithdrawalPlanData, WithdrawalPlanErrors, WithdrawalPlanResponses } from './types.gen';
+import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, EditionSetSeriesNameData, EditionSetSeriesNameErrors, EditionSetSeriesNameResponses, FileEditionData, FileEditionErrors, FileEditionResponses, FollowData, FollowErrors, FollowResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, JobStatusData, JobStatusErrors, JobStatusResponses, ListActivityData, ListActivityErrors, ListActivityResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PasskeyLoginData, PasskeyLoginErrors, PasskeyLoginOptionsData, PasskeyLoginOptionsErrors, PasskeyLoginOptionsResponses, PasskeyLoginResponses, PasskeyReauthOptionsData, PasskeyReauthOptionsErrors, PasskeyReauthOptionsResponses, PasskeyRegisterData, PasskeyRegisterErrors, PasskeyRegisterResponses, PasskeyRegistrationOptionsData, PasskeyRegistrationOptionsErrors, PasskeyRegistrationOptionsResponses, PasskeyRevokeData, PasskeyRevokeErrors, PasskeyRevokeResponses, PasskeysListData, PasskeysListErrors, PasskeysListResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, RateBatchData, RateBatchErrors, RateBatchResponses, RateWorkData, RateWorkErrors, RateWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, RootReinitData, RootReinitErrors, RootReinitResponses, RootRestoredData, RootRestoredErrors, RootRestoredResponses, RootTakeoverData, RootTakeoverErrors, RootTakeoverResponses, SecretsImportData, SecretsImportErrors, SecretsImportResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SetMaxAgeData, SetMaxAgeErrors, SetMaxAgeResponses, SetProfilesData, SetProfilesErrors, SetProfilesResponses, ShelfProposalData, ShelfProposalErrors, ShelfProposalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceReconnectData, SourceReconnectErrors, SourceReconnectResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, StoreReinitData, StoreReinitErrors, StoreReinitResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses, ToRateListData, ToRateListErrors, ToRateListResponses, ToShelveListData, ToShelveListErrors, ToShelveListResponses, UnfollowData, UnfollowErrors, UnfollowResponses, UnmaskData, UnmaskErrors, UnmaskResponses, WithdrawalApplyData, WithdrawalApplyErrors, WithdrawalApplyResponses, WithdrawalPlanData, WithdrawalPlanErrors, WithdrawalPlanResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -389,6 +389,42 @@ export const restoreAdopt = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 /**
+ * Root Reinit
+ *
+ * The disk is not what the database remembers: its records go to `missing`. Reserved.
+ */
+export const rootReinit = <ThrowOnError extends boolean = false>(options: Options<RootReinitData, ThrowOnError>): RequestResult<RootReinitResponses, RootReinitErrors, ThrowOnError> => (options.client ?? client).post<RootReinitResponses, RootReinitErrors, ThrowOnError>({
+    url: '/api/v1/roots/{root}/reinit',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Root Restored
+ *
+ * A root put back from an older copy: its missing files are planned for the next export.
+ */
+export const rootRestored = <ThrowOnError extends boolean = false>(options: Options<RootRestoredData, ThrowOnError>): RequestResult<RootRestoredResponses, RootRestoredErrors, ThrowOnError> => (options.client ?? client).post<RootRestoredResponses, RootRestoredErrors, ThrowOnError>({ url: '/api/v1/roots/{root}/restored', ...options });
+
+/**
+ * Root Takeover
+ *
+ * Stamp a root as ours, keeping its `root_id` and its predecessors (EF-EXP-064).
+ * Reserved: a fresh admin session or the host CLI, never a key.
+ */
+export const rootTakeover = <ThrowOnError extends boolean = false>(options: Options<RootTakeoverData, ThrowOnError>): RequestResult<RootTakeoverResponses, RootTakeoverErrors, ThrowOnError> => (options.client ?? client).post<RootTakeoverResponses, RootTakeoverErrors, ThrowOnError>({
+    url: '/api/v1/roots/{root}/takeover',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Secrets Import
  */
 export const secretsImport = <ThrowOnError extends boolean = false>(options: Options<SecretsImportData, ThrowOnError>): RequestResult<SecretsImportResponses, SecretsImportErrors, ThrowOnError> => (options.client ?? client).post<SecretsImportResponses, SecretsImportErrors, ThrowOnError>({
@@ -515,6 +551,13 @@ export const stats = <ThrowOnError extends boolean = false>(options?: Options<St
  * Status
  */
 export const status = <ThrowOnError extends boolean = false>(options?: Options<StatusData, ThrowOnError>): RequestResult<StatusResponses, StatusErrors, ThrowOnError> => (options?.client ?? client).get<StatusResponses, StatusErrors, ThrowOnError>({ url: '/api/v1/status', ...options });
+
+/**
+ * Store Reinit
+ *
+ * `/store` is not what the database remembers: its Units go to `store_missing`.
+ */
+export const storeReinit = <ThrowOnError extends boolean = false>(options?: Options<StoreReinitData, ThrowOnError>): RequestResult<StoreReinitResponses, StoreReinitErrors, ThrowOnError> => (options?.client ?? client).post<StoreReinitResponses, StoreReinitErrors, ThrowOnError>({ url: '/api/v1/store/reinit', ...options });
 
 /**
  * Add Target

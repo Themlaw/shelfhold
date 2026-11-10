@@ -27,6 +27,8 @@ from shelfhold.library.domain.copies import Copy
 __all__ = [
     "LibraryCopy",
     "StoreCopy",
+    "demote_shared_inodes",
+    "distrust_root_copies",
     "erase_replicas",
     "has_readable_copy",
     "independent_copies",
@@ -47,6 +49,7 @@ __all__ = [
     "replica_hashes",
     "sibling_inodes",
     "store_copies",
+    "store_unit_ids",
     "update_observation",
     "upstream_claims",
     "withdraw_upstream_claims",
@@ -607,3 +610,69 @@ def erase_replicas(
     connection: Connection, unit_ids: Collection[str], export_item_ids: Collection[str]
 ) -> None:
     connection.execute(sa.delete(replica_table).where(_owned(unit_ids, export_item_ids)))
+
+
+def distrust_root_copies(connection: Connection, root_id: str) -> int:
+    """The files of a physical root that was replaced, lost or put back from an older copy
+    (`root reinit`, `store reinit`, EF-EXP-064) are not known to be there any more: no copy of the
+    root counts as independent until it has been looked at again. Only the registry changes; no
+    file and no row is removed."""
+    return connection.execute(
+        sa.update(replica_table)
+        .where(
+            replica_table.c.physical_root_id == root_id,
+            replica_table.c.location.in_(("library", "destination", "store")),
+        )
+        .values(independent=False, verified_at=None)
+    ).rowcount
+
+
+def store_unit_ids(connection: Connection, root_id: str) -> set[str]:
+    """The Units that have a copy in the `/store` root `root_id`."""
+    return set(
+        connection.execute(
+            sa.select(replica_table.c.unit_id)
+            .where(
+                replica_table.c.physical_root_id == root_id,
+                replica_table.c.location == "store",
+                replica_table.c.unit_id.is_not(None),
+            )
+            .distinct()
+        ).scalars()
+    )
+
+
+def demote_shared_inodes(connection: Connection, unit_ids: Collection[str]) -> int:
+    """After `(dev, ino)` were rebaselined (`reconcile --rebaseline-inodes`, EF-EXP-043): a copy
+    that now shares its inode with another file of the same Unit is one file under two names, not
+    a copy of its own (EF-BIB-027). Only ever demotes: promoting a copy needs the hash read again,
+    which the safeguard does."""
+    changed = 0
+    for unit_id in unit_ids:
+        rows = connection.execute(
+            sa.select(
+                replica_table.c.id,
+                replica_table.c.dev,
+                replica_table.c.ino,
+                replica_table.c.independent,
+            ).where(
+                replica_table.c.unit_id == unit_id,
+                replica_table.c.location.in_(("library", "destination", "store", "adopted_ro")),
+                replica_table.c.dev.is_not(None),
+                replica_table.c.ino.is_not(None),
+            )
+        ).all()
+        owners: dict[tuple[int, int], list[Any]] = {}
+        for row in rows:
+            owners.setdefault((row.dev, row.ino), []).append(row)
+        for sharing in owners.values():
+            if len(sharing) > 1:
+                for row in sharing:
+                    if row.independent:
+                        connection.execute(
+                            sa.update(replica_table)
+                            .where(replica_table.c.id == row.id)
+                            .values(independent=False)
+                        )
+                        changed += 1
+    return changed

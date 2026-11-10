@@ -10,6 +10,7 @@ Nothing here ever reads a path that was checked by a separate call.
 import contextlib
 import hashlib
 import os
+import stat
 import time
 import uuid
 from collections.abc import Callable, Iterator, Sequence
@@ -96,6 +97,15 @@ __all__ = ["BootReport", "Fsops", "IndependentCopy", "RootStatus"]
 
 
 log = structlog.get_logger(__name__)
+
+
+# The state of a root frozen alone (`FreezeState.state_of`) as the sentinel verdict it stands for.
+ROOT_FREEZE_STATES: dict[str, RootState] = {
+    "foreign_root": RootState.MISMATCH,
+    "root_lost": RootState.MISSING,
+    "store_lost": RootState.MISSING,
+    "root_behind": RootState.STALE,
+}
 
 
 @dataclass(frozen=True)
@@ -189,6 +199,7 @@ class Fsops:
         self._tombstones_owed: Callable[[str], bool] | None = None
         self._freeze = freeze if freeze is not None else FreezeState(process=frozen)
         self._behind_hook: Callable[[], None] | None = None
+        self._blocked_hook: Callable[[str, RootState], None] | None = None
 
     @property
     def frozen(self) -> bool:
@@ -201,7 +212,49 @@ class Fsops:
     def _frozen_for(self, root_path: str) -> bool:
         """The freeze, for the root at `root_path`: the instance level or the root's own."""
         expected = self._expected.get(root_path)
-        return self._freeze.frozen_for(expected.root_id) if expected else self._freeze.frozen
+        if expected is None:
+            return self._freeze.frozen
+        if not self._freeze.frozen_for(expected.root_id):
+            return False
+        if self._freeze.frozen or self._freeze.state_of(expected.root_id) != "root_lost":
+            return True  # only a vanished sentinel comes back by itself: the rest needs its exit
+        return not self._root_is_right_again(root_path, expected.root_id)
+
+    def _root_is_right_again(self, root_path: str, root_id: str) -> bool:
+        """`root_lost` only: the mark outlives a volume that came back by itself (remounted,
+        sentinel put back by the owner), so the sentinel is read again and a root that is right
+        releases it. `foreign_root`, `root_behind` and `store_lost` are never released by what the
+        disk says now (a current sentinel copied onto an old copy would lift them): they wait for
+        their reserved exit command (EF-EXP-064)."""
+        try:
+            with self._root(root_path) as root:
+                right = not self._verdict(root).blocks_writes
+        except (FsopsError, OSError):
+            return False
+        if right:
+            self._freeze.follow_root(root_id, None)
+            hook = self._blocked_hook
+            if hook is not None:
+                try:
+                    hook(root_path, RootState.OK)  # the record of the state is refreshed
+                except Exception:
+                    log.warning("fsops.blocked_hook_failed", root=root_path)
+        return right
+
+    def _freeze_state_of(self, root_path: str) -> RootState:
+        """Why `_frozen_for` is true: the instance (`restored_behind`) or the root alone."""
+        if self._freeze.frozen:
+            return RootState.RESTORED_BEHIND
+        expected = self._expected.get(root_path)
+        named = self._freeze.state_of(expected.root_id) if expected else None
+        return ROOT_FREEZE_STATES.get(named or "", RootState.MISMATCH)
+
+    def on_root_blocked(self, hook: Callable[[str, RootState], None] | None) -> None:
+        """Called when a write finds a root whose sentinel is missing, another's or behind the
+        database: the composition root records the state of that root (`foreign_root`,
+        `root_lost`, `root_behind`, `store_lost`, EF-EXP-064). The hook never raises into a
+        write."""
+        self._blocked_hook = hook
 
     def on_restored_behind(self, hook: Callable[[], None] | None) -> None:
         """Called when a write finds a root whose sentinel is ahead of the database (a root that
@@ -323,7 +376,7 @@ class Fsops:
             if located.read_only:
                 raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
             if self._frozen_for(located.root_path):
-                raise RootBlockedError(located.root_path, RootState.RESTORED_BEHIND)
+                raise RootBlockedError(located.root_path, self._freeze_state_of(located.root_path))
             owed = self._tombstones_owed
             if lease and not tombstone and owed is not None and owed(located.root_path):
                 raise TombstonePendingError(located.root_path)
@@ -332,6 +385,7 @@ class Fsops:
                 if verdict.blocks_writes:
                     if verdict.state is RootState.RESTORED_BEHIND and self._behind_hook is not None:
                         self._behind_hook()
+                    self._tell_blocked(located.root_path, verdict.state)
                     raise RootBlockedError(located.root_path, verdict.state)
                 if lease and self._lease_verifier is not None:
                     self._lease_verifier(located.root_path, _read_lease(root))
@@ -376,10 +430,11 @@ class Fsops:
             except OSError as error:  # the volume is not there: Kavita would read an empty folder
                 raise RootBlockedError(located.root_path, RootState.MISSING) from error
         if self._frozen_for(located.root_path):
-            raise RootBlockedError(located.root_path, RootState.RESTORED_BEHIND)
+            raise RootBlockedError(located.root_path, self._freeze_state_of(located.root_path))
         with self._root(located.root_path) as root:
             verdict = self._verdict(root)
             if verdict.blocks_scans_and_deletions:
+                self._tell_blocked(located.root_path, verdict.state)
                 raise RootBlockedError(located.root_path, verdict.state)
 
     def require_delete_allowed(self, local: str) -> None:
@@ -397,7 +452,7 @@ class Fsops:
         report = BootReport()
         for root_path in sorted(self._expected):
             if self._frozen_for(root_path):
-                report.blocked[root_path] = RootState.RESTORED_BEHIND
+                report.blocked[root_path] = self._freeze_state_of(root_path)
                 continue
             try:
                 with self._root(root_path) as root:
@@ -428,14 +483,16 @@ class Fsops:
         tombstone line owed). Raises what `stamp_sentinel` would, so nothing drifts (I39)."""
         key = clean_absolute(root_path)
         if self._frozen_for(key):
-            raise RootBlockedError(key, RootState.RESTORED_BEHIND)
+            raise RootBlockedError(key, self._freeze_state_of(key))
         if self._owes(key):
             raise TombstonePendingError(key)
 
     def stamp_sentinel(self, root_path: str, *, generation: int) -> None:
         """After the database commit: rewrite the sentinel with the new generation (I39)."""
         if self._frozen_for(clean_absolute(root_path)):
-            raise RootBlockedError(clean_absolute(root_path), RootState.RESTORED_BEHIND)
+            raise RootBlockedError(
+                clean_absolute(root_path), self._freeze_state_of(clean_absolute(root_path))
+            )
         key = clean_absolute(root_path)
         expected = self._expected[key]
         if self._owes(key):
@@ -489,6 +546,62 @@ class Fsops:
                 raise RootBlockedError(key, RootState.RESTORED_BEHIND)
             write_sentinel(root, current.restamped(generation, restore_epoch=restore_epoch))
         self._expected[key] = replace(expected, generation=generation, restore_epoch=restore_epoch)
+
+    def root_frozen(self, root_path: str) -> RootState | None:
+        """Why this root alone is frozen (`foreign_root`, `root_lost`, `root_behind`,
+        `store_lost`), None when it is not. The instance level is `frozen`."""
+        key = clean_absolute(root_path)
+        expected = self._expected.get(key)
+        if expected is None or self._freeze.state_of(expected.root_id) is None:
+            return None
+        return self._freeze_state_of(key)
+
+    def _tell_blocked(self, root_path: str, state: RootState) -> None:
+        hook = self._blocked_hook
+        if hook is None or state is RootState.OK:
+            return
+        try:
+            hook(root_path, state)
+        except Exception:  # a record of the state must never turn a refusal into another error
+            log.warning("fsops.blocked_hook_failed", root=root_path)
+
+    def takeover_sentinel(
+        self,
+        root_path: str,
+        build: Callable[[SentinelDocument | None, bool], SentinelDocument],
+    ) -> SentinelDocument:
+        """The one write that stamps a root whose sentinel is not ours (`root takeover|reinit`,
+        `store reinit`, EF-EXP-064). `build(found, damaged)` makes the document from what is
+        there (None: nothing; `damaged`: a file that could not be read, replaced as it is) and
+        decides the ids: the caller owns that rule, this method only writes. It never deletes:
+        the sentinel is replaced atomically, `.shelfhold/` is created when missing and nothing
+        under it is touched. A sentinel of a newer major format is never rewritten. The freeze of
+        the root is the very thing this leaves; the stop barrier still applies."""
+        key = clean_absolute(root_path)
+        if self._stop_gate is not None:
+            self._stop_gate()
+        if key in self._read_only:
+            raise ReadOnlyRootError(f"{key} is an adoption root: never written")
+        with self._root(key) as root:
+            damaged = False
+            try:
+                found = read_sentinel(root)
+            except SentinelFormatError:
+                found, damaged = None, True
+            if found is not None and found.read_only:
+                raise SentinelFormatError(
+                    f"sentinel is format {found.schema_version}, newer than this build: read only"
+                )
+            doc = build(found, damaged)
+            write_sentinel(root, doc)
+            ensure_host_dirs(root)
+        expected = self._expected.get(key)
+        if expected is not None:
+            self._expected[key] = replace(
+                expected, root_id=doc.root_id, instance_id=doc.instance_id,
+                generation=doc.generation, restore_epoch=doc.restore_epoch,
+            )  # fmt: skip
+        return doc
 
     # -- reads ------------------------------------------------------------------------------
 
@@ -560,6 +673,25 @@ class Fsops:
                 while chunk := stream.read(1 << 20):
                     digest.update(chunk)
         return "sha256:" + digest.hexdigest()
+
+    def hash_and_identity(self, local: str) -> tuple[str, FileIdentity, int] | None:
+        """`(sha256, identity, st_dev)` of a regular file, all from the one descriptor that was
+        opened: the digest and the identity describe the same bytes (no swap in between). None
+        when it is not a regular file."""
+        located = self._locate(local, read_mirror=True)
+        with self._root(located.root_path) as root:
+            try:
+                fd = root.open_file(located.rel, os.O_RDONLY)
+            except (FileNotFoundError, NotADirectoryError):
+                return None
+            with os.fdopen(fd, "rb") as stream:
+                observed = os.fstat(stream.fileno())
+                if not stat.S_ISREG(observed.st_mode):
+                    return None
+                digest = hashlib.sha256()
+                while chunk := stream.read(1 << 20):
+                    digest.update(chunk)
+        return "sha256:" + digest.hexdigest(), identity_of(observed), observed.st_dev
 
     # -- the per-root lease (ENF-OPS-015) ------------------------------------------------------
 

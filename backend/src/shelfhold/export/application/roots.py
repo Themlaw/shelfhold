@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute, within
-from shelfhold.export.domain.physical_roots import ExpectedRoot
+from shelfhold.export.domain.physical_roots import ExpectedRoot, RootState
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
@@ -101,11 +101,15 @@ def open_fsops(
     write_gate: Callable[[], None] | None = None,
     stop_gate: Callable[[], None] | None = None,
     freeze: FreezeState | None = None,
+    on_blocked: Callable[[str, RootState], None] | None = None,
 ) -> Fsops:
     """The one way to open the library's `Fsops`: the gates a caller has (disk, stop barrier), the
     restore freeze (`FreezeState`, one copy per writer) and the library umask
     (`SHELFHOLD_UMASK`, EF-EXP-006), which no assembly may forget: `umask` has no default."""
-    return Fsops.open(
+    fsops = Fsops.open(
         loaded.path_map, loaded.expected, umask=umask, write_gate=write_gate, stop_gate=stop_gate,
         freeze=freeze if freeze is not None else loaded.freeze.fork(),
     )  # fmt: skip
+    if on_blocked is not None:  # a refused write records the state of its root (EF-EXP-064)
+        fsops.on_root_blocked(on_blocked)
+    return fsops

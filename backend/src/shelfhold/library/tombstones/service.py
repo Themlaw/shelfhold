@@ -739,6 +739,11 @@ class TombstoneService:
                     .prefix_with("OR IGNORE")
                 )
 
+    def owe_lines(self, root_id: str) -> None:
+        """Every row of the table becomes a line owed to this root (a root stamped again after a
+        takeover or a reinit has a journal that lacks them): they are written by the next flush."""
+        self._owe_every_line(root_id)
+
     def accept_lost_keyring(
         self,
         roots: Sequence[TombstoneRoot],

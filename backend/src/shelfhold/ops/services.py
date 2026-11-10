@@ -61,6 +61,7 @@ from shelfhold.ops.ports import (
     WaitingItem,
 )
 from shelfhold.ops.rating import RatingOps
+from shelfhold.ops.roots import RootOps
 from shelfhold.ops.status import (
     UNKNOWN_LANGUAGE,
     candidate_report,
@@ -161,6 +162,7 @@ class OpsServices:
         meta: MetaOps | None = None,
         rating: RatingOps | None = None,
         follows: FollowOps | None = None,
+        roots: RootOps | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -178,6 +180,7 @@ class OpsServices:
         self._meta = meta
         self._rating = rating
         self._follows = follows
+        self._roots = roots
 
     @property
     def _fsops(self) -> Fsops | None:
@@ -192,9 +195,11 @@ class OpsServices:
     def status(self, *, full: bool = True) -> StatusReport:
         """What waits and which queues are paused; with `full`, also the sections of `shelfhold
         status` that are not waits (they cost a few reads per followed series)."""
+        if self._roots is not None:
+            self._roots.refresh()  # before the rest reads the marks: one view of the roots
         with self._engine.connect() as connection:
             items = collect(connection)
-            for port in (self._restore, self._keyring, self._adoption):
+            for port in (self._restore, self._keyring, self._adoption, self._roots):
                 if port is not None:
                     items += [dress(item) for item in port.waiting()]
             if not full:
@@ -552,6 +557,28 @@ class OpsServices:
         if self._keyring is None:
             raise ExitUnavailableError("the tombstone service is not connected")
         return self._keyring.flush_owed()
+
+    @property
+    def roots(self) -> RootOps:
+        """`root takeover|reinit|restored`, `store reinit`, `--rebaseline-inodes` (EF-EXP-064)."""
+        if self._roots is None:
+            raise ExitUnavailableError("the roots are not connected")
+        return self._roots
+
+    def root_takeover(self, subject: str, *, principal: Principal) -> dict[str, Any]:
+        return self.roots.takeover(subject, principal=principal)
+
+    def root_reinit(self, subject: str, *, principal: Principal) -> dict[str, Any]:
+        return self.roots.reinit(subject, principal=principal)
+
+    def root_restored(self, subject: str, *, principal: Principal) -> dict[str, Any]:
+        return self.roots.restored(subject, principal=principal)
+
+    def store_reinit(self, *, principal: Principal) -> dict[str, Any]:
+        return self.roots.store_reinit(principal=principal)
+
+    def reconcile_rebaseline_inodes(self, destination_id: str | None = None) -> dict[str, Any]:
+        return self.roots.rebaseline_inodes(destination_id)
 
     @property
     def library(self) -> LibraryOps:

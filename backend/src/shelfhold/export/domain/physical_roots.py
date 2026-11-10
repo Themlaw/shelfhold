@@ -9,7 +9,7 @@ database tells an intact root from an emptied mount point or an old copy of the 
 import json
 import posixpath
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Self
@@ -25,6 +25,7 @@ __all__ = [
     "SENTINEL_EPOCH_FIELD",
     "SENTINEL_FILE",
     "SENTINEL_KIDS_FIELD",
+    "SENTINEL_PREDECESSORS_FIELD",
     "SENTINEL_SCHEMA_VERSION",
     "STAGING_DIR",
     "TOMBSTONE_JOURNAL",
@@ -38,6 +39,8 @@ __all__ = [
     "is_received_rel",
     "is_reserved",
     "judge_sentinel",
+    "takeover_document",
+    "waiting_state_of",
 ]
 
 SENTINEL_FILE = ".shelfhold-mount-id"
@@ -49,6 +52,7 @@ RECEIVED_DIR = f"{RESERVED_DIR}/received"  # archives received, before export: n
 LEGACY_RECEIVED_DIR = ".received"  # before 0.2.1: it sat in the library, Kavita could scan it
 TOMBSTONE_JOURNAL = f"{RESERVED_DIR}/tombstones"  # append-only journal 2.0 (EF-BIB-053)
 SENTINEL_KIDS_FIELD = "tombstone_kids"  # registry of issued kids, copied per root (GAP-13-01)
+SENTINEL_PREDECESSORS_FIELD = "predecessor_instance_ids"  # kept by `root takeover` (EF-EXP-064)
 SENTINEL_EPOCH_FIELD = "restore_epoch"  # the restore counter the database had when last stamped
 MAX_RESTORE_EPOCH = 2**31  # above this (or unreadable) a sentinel is not trusted: MISMATCH
 SENTINEL_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
@@ -265,3 +269,54 @@ def discover_physical_roots(
 
 def _common_parent(entries: Iterable[PathEntry]) -> str:
     return posixpath.commonpath([entry.local for entry in entries])
+
+
+def waiting_state_of(state: RootState, *, store: bool = False) -> str | None:
+    """The state a root that is not right waits in (EF-EXP-064): a sentinel of another instance
+    (or an unreadable, forged one) is `foreign_root`, no sentinel on an empty or replaced disk is
+    `root_lost`, a root older than the database is `root_behind`; the same three on `/store` are
+    `store_lost`. `RESTORED_BEHIND` (the database is older than the disk) is the instance's own
+    state (EF-INT-026) and `OK` waits for nothing."""
+    if state in (RootState.OK, RootState.RESTORED_BEHIND):
+        return None
+    if store:
+        return "store_lost"
+    return {
+        RootState.MISMATCH: "foreign_root",
+        RootState.MISSING: "root_lost",
+        RootState.STALE: "root_behind",
+    }[state]
+
+
+def takeover_document(
+    found: SentinelDocument | None,
+    *,
+    root_id: str,
+    instance_id: str,
+    generation: int,
+    restore_epoch: int,
+    predecessors: Iterable[str],
+    kids: Sequence[Mapping[str, Any]] = (),
+) -> SentinelDocument:
+    """The sentinel `root takeover|reinit` stamps (EF-EXP-064, EF-BIB-054 (8)).
+
+    A found sentinel is a claim, never an input: `root_id`, `instance_id`, `generation` and the
+    list of predecessors come from the caller (the database, and the evidence it gathered), and
+    the only thing taken from the file's extra fields is `kids` (entries `{kid, tags}`), which the
+    caller has already authenticated under `root_id`. Every other unknown field of a foreign file
+    is dropped, so a forged sentinel
+    cannot carry a field into ours. The previous `instance_id` joins the predecessors when it
+    differs; the list has no duplicate and keeps its order."""
+    chain: list[str] = []
+    for value in (*predecessors, found.instance_id if found else None):
+        if isinstance(value, str) and value and value != instance_id and value not in chain:
+            chain.append(value)
+    extra: dict[str, Any] = {
+        SENTINEL_EPOCH_FIELD: restore_epoch,
+        SENTINEL_PREDECESSORS_FIELD: chain,
+    }
+    version = SENTINEL_SCHEMA_VERSION
+    if kids:
+        extra[SENTINEL_KIDS_FIELD] = [dict(item) for item in kids]
+        version = "1.1"  # the minor that introduced `tombstone_kids`
+    return SentinelDocument(root_id, instance_id, generation, version, extra)

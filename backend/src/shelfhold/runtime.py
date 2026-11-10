@@ -168,10 +168,11 @@ class InstanceRuntime:
             if loaded is None or instance_id is None:
                 return ResolveReport()  # no instance row yet: nothing was ever written
             self.freeze_state.follow(loaded.freeze.generation)  # one state for fsops and jobs
+            watcher = composition.root_watcher()
             fsops = open_fsops(
                 loaded, umask=self.settings.umask,
                 write_gate=guard.require_space, stop_gate=self.barrier.require_open,
-                freeze=self.freeze_state,
+                freeze=self.freeze_state, on_blocked=watcher.note_blocked,
             )  # fmt: skip
             journal = IntentJournal(engine, fsops, clock=clock)
             # Before anything else: a database older than the disk is read only (EF-INT-026).
@@ -193,6 +194,8 @@ class InstanceRuntime:
                 result = journal.resolve_open()
                 report.append(result)
                 return result
+            watcher.bind(self.freeze_state)
+            watcher.refresh()  # foreign_root, root_lost, root_behind, store_lost (EF-EXP-064)
             ready = self._probed(fsops, loaded, engine, clock, bus, instance_id)
             sessions = WriteSessions(
                 fsops, instance_id=instance_id, clock=clock, lock_path=self.lock.path,
