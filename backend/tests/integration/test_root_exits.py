@@ -303,3 +303,45 @@ def test_takeover_refuses_verified_kids_when_no_journal_line_opens(env: RestoreE
     )
     with pytest.raises(RootUnauthenticatedError):
         ex.takeover(str(folder), principal=ADMIN)
+
+
+def marks(env: RestoreEnv) -> dict[str, str]:
+    from shelfhold.infrastructure.freeze import FreezeState
+
+    with env.engine.connect() as connection:
+        return dict(FreezeState.stored_roots(connection))
+
+
+@pytest.mark.req("EF-EXP-064", "EF-INT-023")
+def test_only_root_lost_is_released_by_the_disk_coming_back(env: RestoreEnv) -> None:
+    """Review: a current sentinel copied onto an old copy, or a foreign one put back to the
+    expected value, must not lift `root_behind` or `foreign_root`; a vanished sentinel that comes
+    back does lift `root_lost`."""
+    _ex, watcher = exits(env)
+    rid = root_id(env)
+    good = (env.library / SENTINEL).read_bytes()
+    with env.engine.begin() as connection:
+        connection.execute(sa.update(platform.physical_root).values(generation=5))
+    write_sentinel(env.library, generation=1)
+    assert states(watcher)[rid] == "root_behind"
+    (env.library / SENTINEL).write_text(
+        json.dumps({**json.loads(good), "generation": 5}), "utf-8"
+    )  # the current sentinel, copied onto the old copy
+    states(watcher)
+    assert marks(env).get(rid) == "root_behind"
+    # same for a foreign instance whose sentinel is put back to the expected one
+    write_sentinel(env.library, instance_id=FOREIGN_INSTANCE)
+    states(watcher)
+    assert marks(env).get(rid) == "foreign_root"
+    (env.library / SENTINEL).write_bytes(good)
+    states(watcher)
+    assert marks(env).get(rid) == "foreign_root"  # still waiting for its reserved command
+    # a vanished sentinel that comes back by itself is released
+    ex, watcher2 = exits(env)
+    del ex
+    (env.library / SENTINEL).unlink()
+    states(watcher2)
+    assert marks(env).get(rid) == "root_lost"
+    (env.library / SENTINEL).write_bytes(good)
+    states(watcher2)
+    assert rid not in marks(env)

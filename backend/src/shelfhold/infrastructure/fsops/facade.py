@@ -215,12 +215,16 @@ class Fsops:
             return self._freeze.frozen
         if not self._freeze.frozen_for(expected.root_id):
             return False
-        return self._freeze.frozen or not self._root_is_right_again(root_path, expected.root_id)
+        if self._freeze.frozen or self._freeze.state_of(expected.root_id) != "root_lost":
+            return True  # only a vanished sentinel comes back by itself: the rest needs its exit
+        return not self._root_is_right_again(root_path, expected.root_id)
 
     def _root_is_right_again(self, root_path: str, root_id: str) -> bool:
-        """A root-level mark outlives a volume that came back by itself (remounted, sentinel put
-        back by the owner): the sentinel is read again, and a root that is right releases its
-        mark. A root that is still wrong stays blocked until its exit command (EF-EXP-064)."""
+        """`root_lost` only: the mark outlives a volume that came back by itself (remounted,
+        sentinel put back by the owner), so the sentinel is read again and a root that is right
+        releases it. `foreign_root`, `root_behind` and `store_lost` are never released by what the
+        disk says now (a current sentinel copied onto an old copy would lift them): they wait for
+        their reserved exit command (EF-EXP-064)."""
         try:
             with self._root(root_path) as root:
                 right = not self._verdict(root).blocks_writes

@@ -252,9 +252,9 @@ class RootWatcher:
                 if verdict.state is RootState.RESTORED_BEHIND:
                     continue  # the instance's own state (EF-INT-026): not a root mark
                 if verdict.waiting is None:
-                    if current is not None:
+                    if current == "root_lost":  # a vanished sentinel that came back
                         FreezeState().lift_root(connection, verdict.subject)
-                    continue
+                    continue  # the other marks wait for their exit command
                 if current != verdict.waiting:
                     FreezeState().persist_root(
                         connection, verdict.subject, verdict.waiting,

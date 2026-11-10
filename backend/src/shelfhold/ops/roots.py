@@ -9,6 +9,7 @@ sentinels, records the states in the `FreezeState` and lists them with their com
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
@@ -83,12 +84,9 @@ class RootOps:
 
     def waiting(self) -> list[WaitingItem]:
         """Judge the roots now, and list the four states with the command that leaves each."""
-        try:
-            found = [(v.waiting, v.subject) for v in self._watcher.refresh() if v.waiting]
-        except sa.exc.OperationalError:
-            # not migrated yet, or the database is busy with the server's write: what was
-            # recorded last is the best we can say
-            found = self._recorded()
+        with contextlib.suppress(sa.exc.OperationalError):  # not migrated, or the server writes
+            self._watcher.refresh()  # failing that, the last marks stand
+        found = self._recorded()
         return [
             WaitingItem(
                 state,
