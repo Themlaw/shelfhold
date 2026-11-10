@@ -749,8 +749,27 @@ class RootExits:
                         if rel
                     }
                     resources += [f"path:{destination_id}/{folder}" for folder in sorted(folders)]
-                    resources.append(f"path:{destination_id}/")  # a series about to be created
                     del local
+                # what an export really takes: the `work` of each series it writes (a series about
+                # to be created has a Work too) and the `path` of its folder
+                works = connection.execute(
+                    sa.select(catalog.edition.c.work_id)
+                    .select_from(
+                        export.export_record.join(
+                            export.export_item,
+                            export.export_item.c.id == export.export_record.c.export_item_id,
+                        ).join(
+                            catalog.edition, catalog.edition.c.id == export.export_item.c.edition_id
+                        )
+                    )
+                    .where(
+                        export.export_record.c.shelf_destination_id.in_(
+                            [d for d, _l in self._destinations(connection, target.path)]
+                        )
+                    )
+                    .distinct()
+                ).scalars()
+                resources += [f"work:{w}" for w in sorted(works)]
         job_id = new_ulid()
         if not resources:
             yield

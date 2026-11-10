@@ -82,10 +82,13 @@ class RootOps:
     def watcher(self) -> RootWatcher:
         return self._watcher
 
-    def waiting(self) -> list[WaitingItem]:
-        """Judge the roots now, and list the four states with the command that leaves each."""
+    def refresh(self) -> None:
+        """Judge the roots now and record what waits (before anything else reads the marks)."""
         with contextlib.suppress(sa.exc.OperationalError):  # not migrated, or the server writes
             self._watcher.refresh()  # failing that, the last marks stand
+
+    def waiting(self) -> list[WaitingItem]:
+        """The four states with the command that leaves each, as recorded by `refresh`."""
         found = self._recorded()
         return [
             WaitingItem(

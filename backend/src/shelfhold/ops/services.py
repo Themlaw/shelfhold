@@ -195,6 +195,8 @@ class OpsServices:
     def status(self, *, full: bool = True) -> StatusReport:
         """What waits and which queues are paused; with `full`, also the sections of `shelfhold
         status` that are not waits (they cost a few reads per followed series)."""
+        if self._roots is not None:
+            self._roots.refresh()  # before the rest reads the marks: one view of the roots
         with self._engine.connect() as connection:
             items = collect(connection)
             for port in (self._restore, self._keyring, self._adoption, self._roots):

@@ -370,3 +370,52 @@ def test_restored_distrusts_the_copies_of_the_root_like_reinit(env: RestoreEnv) 
         ).scalar_one()
     assert left == 0 and total > 0
     assert report.distrusted_copies == total
+
+
+@pytest.mark.req("EF-EXP-064")
+def test_exit_waits_for_the_work_lock_an_export_really_takes(env: RestoreEnv) -> None:
+    """Review: the exit takes the `work:` locks the export takes (and no lock nobody takes)."""
+    from shelfhold.export.application.locks import ResourceLocks
+    from shelfhold.export.application.root_exits import RootBusyError
+    from shelfhold.infrastructure.ids import new_ulid
+
+    ex, watcher = exits(env)
+    rid = root_id(env)
+    with env.engine.connect() as connection:
+        work = connection.execute(sa.text("SELECT work_id FROM edition LIMIT 1")).scalar_one()
+    (env.library / SENTINEL).unlink()
+    watcher.refresh()
+    other = ResourceLocks(env.engine, clock=env.ex.clock)
+    with (
+        other.hold_resources(new_ulid(), [f"work:{work}"]),
+        pytest.raises(RootBusyError),
+    ):
+        ex.reinit(rid, principal=ADMIN)
+    assert not (env.library / SENTINEL).exists()
+    ex.reinit(rid, principal=ADMIN)
+
+
+@pytest.mark.req("EF-INT-023")
+def test_status_refreshes_the_roots_before_it_reads_anything(env: RestoreEnv) -> None:
+    """Review: `status` judges the roots first, then lists; the marks it lists are fresh."""
+    from shelfhold.events.bus import EventBus
+    from shelfhold.ops import OpsServices
+
+    order: list[str] = []
+
+    class Roots:
+        def refresh(self) -> None:
+            order.append("refresh")
+
+        def waiting(self) -> list[object]:
+            order.append("waiting")
+            return []
+
+    ops = OpsServices(
+        env.engine,
+        clock=env.ex.clock,
+        bus=EventBus(env.ex.clock),
+        roots=Roots(),  # type: ignore[arg-type]
+    )
+    ops.status(full=False)
+    assert order == ["refresh", "waiting"]
