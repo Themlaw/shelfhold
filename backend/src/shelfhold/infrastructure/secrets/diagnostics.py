@@ -103,6 +103,9 @@ def collect_warnings(settings: Settings) -> list[KeyringWarning]:
         warnings.append(KeyringWarning("never_exported"))
     elif keyring.rotated_at is not None and keyring.exported_at < keyring.rotated_at:
         warnings.append(KeyringWarning("export_older_than_rotation"))
+    leaked = [key.kid for key in keyring.keys if key.state == "compromised"]
+    if leaked:  # kept to read old backups, never trusted again (EF-BIB-054 (10))
+        warnings.append(KeyringWarning("key_compromised", ",".join(leaked)))
     warnings.extend(_tombstone_warnings(settings, keyring))
     return warnings
 

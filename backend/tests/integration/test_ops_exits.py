@@ -511,11 +511,14 @@ def tombstone_journal_truncated(
         for number in ("1", "2"):
             unit = env.add_chapter(series, number)
             assert ctx.cli("purge", "--now", "--unit", unit, "--confirm", unit) == 0
-        journal = settings.library_dir / ".shelfhold" / "tombstones"
+        (journal,) = [  # the journal of the library root (the store has its own)
+            p for p in tmp_path.rglob("tombstones")
+            if p.parent.name == ".shelfhold" and p.parts[len(tmp_path.parts)] == "library"
+        ]  # fmt: skip
         complete = journal.read_bytes()
         assert ctx.listed("tombstone_journal_truncated") == []
         rows = complete.splitlines(keepends=True)
-        assert len(rows) == 3  # the header and the two lines
+        assert len(rows) >= 3  # the header and a few lines (a purge seals several scopes)
         journal.write_bytes(b"".join(rows[:-1]))  # the attacker's cut
         (item,) = ctx.listed("tombstone_journal_truncated")
         assert item["command"].startswith("shelfhold tombstone set-aside-journal")
@@ -524,7 +527,7 @@ def tombstone_journal_truncated(
             assert ctx.cli("tombstone", "set-aside-journal") == 0
 
         ctx.listed_then_gone("tombstone_journal_truncated", leave)
-        assert len(journal.read_bytes().splitlines()) == 3  # whole again
+        assert len(journal.read_bytes().splitlines()) == len(rows)  # whole again
         kept = list(journal.parent.glob("tombstones.aside-*"))
         assert len(kept) == 1 and kept[0].read_bytes() == b"".join(rows[:-1])
 

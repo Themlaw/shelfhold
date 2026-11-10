@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -42,11 +43,14 @@ from shelfhold.infrastructure.secrets.export import (
     read_passphrase_file,
 )
 from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.infrastructure.secrets.rotation import mark_compromised as registry_mark
 from shelfhold.infrastructure.secrets.tombstone_aead import verify_kid_tag
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.integrations.apprise import operating_bus
 from shelfhold.library.public import SetAsideRefusedError, TombstoneRoot, TombstoneService
 from shelfhold.library.tombstones.journal import MAX_JOURNAL_BYTES
+from shelfhold.library.tombstones.service import JOURNAL_PATH
+from shelfhold.library.tombstones.state import TombstoneState
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, InvalidChoiceError
 from shelfhold.ops.ports import WaitingItem
 
@@ -73,6 +77,7 @@ class TombstoneKeyringExit:
         self._engine = engine
         self._clock = clock
         self._composition = composition
+        self._scanned: list[object] | None = None
 
     def waiting(self) -> list[WaitingItem]:
         try:
@@ -83,6 +88,7 @@ class TombstoneKeyringExit:
         with self._engine.connect() as connection:
             known = set(connection.execute(sa.select(kid.c.kid)).scalars())
             waived = set(connection.execute(sa.select(lost.c.kid)).scalars())
+        self._scan_chains()  # before the adoption port lists the marks it writes
         cited = self._cited_by_journals(keyring, waived)
         known |= cited
         owed = coherence.tombstone_pending_root
@@ -102,6 +108,37 @@ class TombstoneKeyringExit:
             )
             for root_id in owing
         ]
+
+    def _scan_chains(self) -> None:
+        """EF-BIB-054 (6): judge the journals against their chained label, so that `status` shows
+        a truncation made while the server runs. Skipped while the files are as they were last
+        time (the state of each journal and the label the database holds): `waiting` is cheap
+        and `/healthz` reads it."""
+        before = self._chain_key()
+        if before == self._scanned:
+            return
+        service, mounted = self._service()
+        service.scan_chains(mounted)
+        self._scanned = self._chain_key()
+
+    def _chain_key(self) -> list[object]:
+        with self._engine.connect() as connection:
+            roots = connection.execute(
+                sa.select(
+                    platform.physical_root.c.root_id, platform.physical_root.c.path_entry
+                ).where(platform.physical_root.c.mode == "rw")
+            ).all()
+        state = TombstoneState(self._engine)
+        key: list[object] = []
+        for root_id, path in roots:
+            try:
+                seen = os.stat(f"{path}/{JOURNAL_PATH}")
+                key.append((root_id, seen.st_size, seen.st_mtime_ns, seen.st_ino))
+            except OSError:
+                key.append((root_id, None))
+            key.append(repr(state.chain(root_id)))
+        key.append(tuple(sorted(state.truncated())))
+        return key
 
     def _cited_by_journals(self, keyring: Keyring, waived: set[str]) -> set[str]:
         """The kids the journal of a root cites and the keyring lacks, as replay would block on
@@ -162,6 +199,30 @@ class TombstoneKeyringExit:
             )
         except SetAsideRefusedError as error:
             raise ExitUnavailableError(str(error)) from error
+
+    def rekey(self, *, principal: Principal, kids: Sequence[str]) -> dict[str, Any]:
+        """`tombstone rekey` (reserved): the keys named are marked compromised (one way), then the
+        database and every journal are sealed again under the active key. The active key is never
+        one of them (rotate first). Running it again finishes what a kill interrupted."""
+        names = sorted({kid for kid in kids if kid})
+        if not names:
+            raise InvalidChoiceError("name the compromised key (--kid)")
+        store = diagnostics.store_for(self._settings)
+        try:
+            keyring = registry_mark(store, self._engine, names, now=self._clock.now())
+        except KeyError as error:
+            raise InvalidChoiceError(f"unknown key {error.args[0]}") from None
+        except ValueError as error:
+            raise InvalidChoiceError(str(error)) from None
+        service, roots = self._service()
+        service.use_keyring(keyring)
+        report = service.rekey(roots, principal=principal, now=self._clock.now())
+        if self._composition is not None:
+            self._composition.keyring_changed()
+        return {
+            "compromised": names, "table_rows": report.table_rows,
+            "rewritten": report.rewritten, "owed": list(report.owed),
+        }  # fmt: skip
 
     def _frozen(self) -> bool:
         with self._engine.connect() as connection:

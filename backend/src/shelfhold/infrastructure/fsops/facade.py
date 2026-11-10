@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import BinaryIO, Literal, Self
+from typing import Any, BinaryIO, Literal, Self
 
 import structlog
 
@@ -59,6 +59,7 @@ from shelfhold.infrastructure.fsops.errors import (
     EmitterConditionError,
     EmitterPerimeterError,
     FsopsError,
+    JournalChangedError,
     LeaseRaceError,
     NotRegularFileError,
     OutsidePathMapError,
@@ -80,8 +81,11 @@ from shelfhold.infrastructure.fsops.tombstone_journal import (
     add_sentinel_kid,
     append_line,
     read_journal,
+    replace_journal,
+    sentinel_chain,
     sentinel_kids,
     set_aside,
+    set_sentinel_chain,
 )
 from shelfhold.infrastructure.fsops.writer import (
     HashingReader,
@@ -785,10 +789,36 @@ class Fsops:
             raise OutsidePathMapError(f"{root_path!r} is not a writable physical root")
         return _Located(key, ".", False)
 
-    def append_tombstone_line(self, root_path: str, line: bytes, *, header: bytes) -> None:
-        """Append one line to the root's journal: a write like any other (sentinel, lease)."""
+    def append_tombstone_line(self, root_path: str, line: bytes, *, header: bytes) -> bool:
+        """Append one line to the root's journal: a write like any other (sentinel, lease).
+        True when this line created the file."""
         with self._gated(self._host_root(root_path), tombstone=True) as root:
-            append_line(root, line, header=header)
+            return append_line(root, line, header=header)
+
+    def replace_tombstone_journal(self, root_path: str, new: bytes, expected: bytes) -> bool:
+        """`tombstone rekey`: `new` takes the place of the journal, which must still be
+        `expected`; False, nothing replaced, when it is not (written meanwhile). A write like any
+        other (sentinel, lease); the only one that rewrites the journal."""
+        with self._gated(self._host_root(root_path), tombstone=True) as root:
+            try:
+                replace_journal(root, new, expected)
+            except JournalChangedError:
+                return False
+        return True
+
+    def record_tombstone_chain(self, root_path: str, chain: dict[str, Any]) -> bool:
+        """The chained label of the journal, copied into the root's sentinel (authenticated)."""
+        with self._gated(self._host_root(root_path), tombstone=True) as root:
+            return set_sentinel_chain(root, chain)
+
+    def tombstone_chain(self, root_path: str) -> dict[str, Any] | None:
+        """The `tombstone_chain` field of the root's sentinel, unverified (the caller holds the
+        keys); None when the sentinel is absent, unreadable or has none."""
+        with self._root(self._host_root(root_path).root_path) as root:
+            try:
+                return sentinel_chain(read_sentinel(root))
+            except (SentinelFormatError, OSError):
+                return None
 
     def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None:
         """Add `kid` and its tags to the registry of the root's sentinel, before any line."""

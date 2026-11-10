@@ -7,6 +7,7 @@ are not listed. Nothing here imports another lot's module.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -66,6 +67,7 @@ class KeyringExit(Protocol):
         self, *, principal: Principal, root_id: str | None = None
     ) -> dict[str, str]: ...
     def flush_owed(self) -> list[str]: ...
+    def rekey(self, *, principal: Principal, kids: Sequence[str]) -> dict[str, Any]: ...
     def import_keyring(
         self,
         *,

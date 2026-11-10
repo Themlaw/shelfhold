@@ -38,6 +38,7 @@ class WaitingState(StrEnum):
     ROOT_LOST = "root_lost"
     ROOT_BEHIND = "root_behind"
     STORE_LOST = "store_lost"
+    TOMBSTONE_JOURNAL_TRUNCATED = "tombstone_journal_truncated"  # D12: `set-aside-journal`
     SOURCE_INSTANCE_CHANGED = "source_instance_changed"
     WITHDRAWAL_PENDING = "withdrawal_pending"  # a file waits to leave a family shelf (EF-BIB-037)
     # M3

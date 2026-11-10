@@ -379,6 +379,8 @@ class IntentJournal:
                 self._resolve_copy(intent, report, on_done)
             elif intent.op == "purge_upstream":
                 self._resolve_purge_upstream(intent, report)
+            elif intent.op == "tombstone_rekey":
+                self._resolve_rekey(intent, report)
             else:
                 self._drift(intent, report, f"no replay rule for op {intent.op!r}")
         except (FsopsError, OSError, LookupError) as error:
@@ -481,6 +483,15 @@ class IntentJournal:
             report.abandoned.append(intent.id)
         else:
             self._drift(intent, report, "the target is not the file that was being written")
+
+    def _resolve_rekey(self, intent: OpenIntent, report: ResolveReport) -> None:
+        """A rewrite of a tombstone journal (`tombstone rekey`, EF-BIB-054 (10)): a new file next
+        to the journal, then one atomic `rename`. Whatever the instant of the kill, the journal is
+        the old file or the new one, whole, and the chain accepts both. Nothing is redone here
+        and no path is looked at (the host area is not a plan's): the root still owes its
+        rewrite, which `rekey` or the next replay of that root finishes. The intent is closed."""
+        self._finish(intent, None)
+        report.completed.append(intent.id)
 
     def _resolve_copy(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

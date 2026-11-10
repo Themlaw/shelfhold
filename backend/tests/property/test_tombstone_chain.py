@@ -23,9 +23,10 @@ import sqlalchemy as sa
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from shelfhold.export.application.intents import INTENT_SCHEMA_VERSION, IntentJournal
 from shelfhold.identity.public import RESERVED_ACTIONS, Credential
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot
-from shelfhold.infrastructure.schema import identity, platform
+from shelfhold.infrastructure.schema import coherence, identity, platform
 from shelfhold.infrastructure.secrets import rotation
 from shelfhold.infrastructure.secrets.errors import DecryptionError
 from shelfhold.infrastructure.secrets.keyring import Keyring
@@ -37,6 +38,7 @@ from shelfhold.library.tombstones import (
     TombstoneService,
 )
 from shelfhold.library.tombstones.journal import parse_journal
+from shelfhold.library.tombstones.state import INTENT_SCHEMA_VERSION as STATE_INTENT_VERSION
 from shelfhold.library.tombstones.values import TombstoneValues, decode_plaintext
 from tests.intents_env import NOW
 from tests.tombstone_env import ADMIN, PLACE, SERIES, VARIANT, TombEnv, make_tomb_env
@@ -281,7 +283,7 @@ def test_tombstone_rekey_after_leak_rewrites_journal_atomically(tmp_path: Path) 
     assert keyring.find(old) is not None and keyring.find(old).state == "compromised"  # type: ignore[union-attr]
     with env.engine.connect() as connection:
         state = connection.execute(
-            sa.select(platform.secret_key.c.state).where(platform.secret_key.c.kid == old)
+            sa.select(coherence.secret_key.c.state).where(coherence.secret_key.c.kid == old)
         ).scalar()
         actions = connection.execute(sa.select(identity.audit.c.action)).scalars().all()
     assert state == "compromised"
@@ -304,6 +306,10 @@ def test_tombstone_rekey_after_leak_rewrites_journal_atomically(tmp_path: Path) 
     assert service.check(SERIES, root_id=env.library.root_id).cause == "tombstoned"
     after = env.service(keyring).replay(env.roots)  # nothing looks truncated or forged
     assert after.truncated_roots == set() and after.inert == []
+
+
+def test_the_intent_version_written_by_rekey_is_the_journal_one() -> None:
+    assert STATE_INTENT_VERSION == INTENT_SCHEMA_VERSION
 
 
 def test_rekey_is_declared_as_a_reserved_action() -> None:
@@ -348,6 +354,10 @@ def test_rekey_killed_midway_never_loses_the_journal(tmp_path: Path, point: str)
             os._exit(0)
     _, status = os.waitpid(child, 0)
     assert os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGKILL
+    recovery = IntentJournal(env.engine, env.fs.fsops)  # the start-up that follows the kill
+    assert [i.op for i in recovery.open_intents()] == ["tombstone_rekey"]
+    resolved = recovery.resolve_open()
+    assert resolved.still_open == [] and len(resolved.completed) == 1
 
     for root in env.roots[:1]:
         raw = env.journal_path(root).read_bytes()

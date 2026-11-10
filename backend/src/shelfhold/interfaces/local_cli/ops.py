@@ -170,6 +170,11 @@ def _set_aside_journal(ops: OpsServices, by: Principal, p: Params) -> object:
     return {"aside": ops.tombstone_set_aside_journal(principal=by, root_id=root)}
 
 
+def _tombstone_rekey(ops: OpsServices, by: Principal, p: Params) -> object:
+    kids = [k for k in _text(p, "kids").split(",") if k]
+    return ops.tombstone_rekey(principal=by, kids=kids)
+
+
 def _tombstone_flush(ops: OpsServices, _by: Principal, _p: Params) -> object:
     return {"still_owed": ops.tombstone_flush()}
 
@@ -414,6 +419,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.tombstone_accept_lost_keyring": (_accept_lost_keyring, "tombstone.accept_lost_keyring"),
     "ops.secrets_import": (_secrets_import, "secrets.import"),
     "ops.tombstone_set_aside_journal": (_set_aside_journal, "tombstone.set_aside_journal"),
+    "ops.tombstone_rekey": (_tombstone_rekey, "tombstone.rekey"),
     "ops.tombstone_flush": (_tombstone_flush, None),
     "ops.adopt_set_follow_from": (_set_follow_from, None),
     "ops.adopt_set_coverage": (_set_coverage, None),

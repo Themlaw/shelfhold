@@ -37,6 +37,7 @@ MARKED_STATES: Final = (
     "coverage_unknown",
     "series_name_collision",
     "mount_sentinel_missing",
+    "tombstone_journal_truncated",  # written by the tombstone service (L26, D12)
     *ROOT_STATES,  # EF-EXP-064: written by `FreezeState.persist_root`, listed like the others
 )
 

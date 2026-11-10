@@ -43,6 +43,7 @@ _DECLARED = (
     _action("tombstone.list", Effect.TOUCHES_TOMBSTONES),
     _action("tombstone.accept_lost_keyring", Effect.TOUCHES_TOMBSTONES),
     _action("tombstone.set_aside_journal", Effect.TOUCHES_TOMBSTONES),
+    _action("tombstone.rekey", Effect.TOUCHES_TOMBSTONES),  # EF-BIB-054 (10): after a key leak
     _action("root.takeover", Effect.REINITS_STORAGE),
     _action("root.reinit", Effect.REINITS_STORAGE),
     _action("store.takeover", Effect.REINITS_STORAGE),
@@ -134,6 +135,9 @@ EXIT_ROUTES: tuple[ExitRoute, ...] = (
     _exit("root takeover", "root_behind", "root.takeover"),
     _exit("root reinit", "root_behind", "root.reinit"),
     _exit("root restored", "root_behind"),
+    _exit(
+        "tombstone set-aside-journal", "tombstone_journal_truncated", "tombstone.set_aside_journal"
+    ),  # D12: the journal is written again from the table
     _exit("store reinit", "store_lost", "store.reinit"),
     _exit("source reconnect", "source_instance_changed"),
     _exit("shelf withdraw", "withdrawal_pending", "shelf.withdraw"),

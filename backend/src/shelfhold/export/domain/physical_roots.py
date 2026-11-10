@@ -22,6 +22,7 @@ __all__ = [
     "RECEIVED_DIR",
     "RECYCLE_DIR",
     "RESERVED_DIR",
+    "SENTINEL_CHAIN_FIELD",
     "SENTINEL_EPOCH_FIELD",
     "SENTINEL_FILE",
     "SENTINEL_KIDS_FIELD",
@@ -52,6 +53,7 @@ RECEIVED_DIR = f"{RESERVED_DIR}/received"  # archives received, before export: n
 LEGACY_RECEIVED_DIR = ".received"  # before 0.2.1: it sat in the library, Kavita could scan it
 TOMBSTONE_JOURNAL = f"{RESERVED_DIR}/tombstones"  # append-only journal 2.0 (EF-BIB-053)
 SENTINEL_KIDS_FIELD = "tombstone_kids"  # registry of issued kids, copied per root (GAP-13-01)
+SENTINEL_CHAIN_FIELD = "tombstone_chain"  # last seq, count and chained label of the journal (L26)
 SENTINEL_PREDECESSORS_FIELD = "predecessor_instance_ids"  # kept by `root takeover` (EF-EXP-064)
 SENTINEL_EPOCH_FIELD = "restore_epoch"  # the restore counter the database had when last stamped
 MAX_RESTORE_EPOCH = 2**31  # above this (or unreadable) a sentinel is not trusted: MISMATCH

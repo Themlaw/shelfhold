@@ -15,7 +15,7 @@ import json
 import os
 import re
 import stat
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -141,6 +141,27 @@ class Keyring:
             keys=(*kept, fresh),
             rotation=Rotation(fresh.kid, moment),
             rotated_at=moment,
+        )
+
+    def compromised(self, kids: Iterable[str], now: datetime | None = None) -> "Keyring":
+        """The keys `kids` marked compromised (one way): kept, to read old backups, but never
+        trusted again to vouch for anything. The active key cannot be one of them."""
+        moment = _utc(now)
+        wanted = set(kids)
+        for kid in wanted:
+            key = self.find(kid)
+            if key is None:
+                raise KeyError(kid)
+            if key.state == "active":
+                raise ValueError(f"{kid} is the active key: rotate first")
+        return dataclasses.replace(
+            self,
+            keys=tuple(
+                dataclasses.replace(key, state="compromised", retired_at=key.retired_at or moment)
+                if key.kid in wanted
+                else key
+                for key in self.keys
+            ),
         )
 
     def rotation_completed(self, now: datetime | None = None) -> "Keyring":

@@ -2,25 +2,30 @@
 
 Both live in the host area of the root (`.shelfhold/tombstones`, `.shelfhold-mount-id`), which no
 destination plan can name (I37). The journal is append only: a line is added with one `write` on
-an `O_APPEND` descriptor, then `fsync`; nothing here can rewrite or shorten it (a key rotation
-never touches it, ENF-SEC-005). The file is created owner-only (0600) with its header line. The
-registry of kids (`tombstone_kids` in the sentinel) only grows and keeps every unknown field.
+an `O_APPEND` descriptor, then `fsync`. A key rotation never touches it (ENF-SEC-005); the one
+rewrite is `tombstone rekey` (`replace_journal`: a new file, `fsync`, an atomic `rename`). The file
+is created owner-only (0600) with its header line. The registry of kids (`tombstone_kids` in the
+sentinel) only grows and keeps every unknown field, and so does the chained label of the journal
+(`tombstone_chain`, EF-BIB-054 (6)).
 """
 
 import json
 import os
 import stat
+from typing import Any
 
 from shelfhold.export.domain.physical_roots import (
+    SENTINEL_CHAIN_FIELD,
     SENTINEL_KIDS_FIELD,
     TOMBSTONE_JOURNAL,
     SentinelDocument,
 )
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot
-from shelfhold.infrastructure.fsops.errors import SentinelFormatError
+from shelfhold.infrastructure.fsops.errors import JournalChangedError, SentinelFormatError
 from shelfhold.infrastructure.fsops.sentinel import read_sentinel, write_sentinel
 
 KIDS_MINOR_VERSION = "1.1"  # sentinel minor version that introduced `tombstone_kids`
+REWRITE_NAME = f"{TOMBSTONE_JOURNAL}.rekey"  # the new file of a rewrite, replaced by the journal
 
 
 def _write_all(fd: int, data: bytes) -> None:
@@ -30,8 +35,9 @@ def _write_all(fd: int, data: bytes) -> None:
         view = view[written:]
 
 
-def append_line(root: ConfinedRoot, line: bytes, *, header: bytes) -> None:
-    """Append one line (ending in a newline); the header first if the file is new."""
+def append_line(root: ConfinedRoot, line: bytes, *, header: bytes) -> bool:
+    """Append one line (ending in a newline); the header first if the file is new. True when the
+    file was created by this call."""
     if not line.endswith(b"\n") or b"\n" in line[:-1]:
         raise ValueError("a journal line is one line")
     root.mkdir(TOMBSTONE_JOURNAL.rpartition("/")[0], parents=True, exist_ok=True)
@@ -47,6 +53,7 @@ def append_line(root: ConfinedRoot, line: bytes, *, header: bytes) -> None:
         os.close(fd)
     if created:
         root.fsync_dir(TOMBSTONE_JOURNAL.rpartition("/")[0])
+    return created
 
 
 def read_journal(root: ConfinedRoot, max_bytes: int) -> bytes | None:
@@ -64,6 +71,29 @@ def read_journal(root: ConfinedRoot, max_bytes: int) -> bytes | None:
         return b"".join(chunks)
     finally:
         os.close(fd)
+
+
+def replace_journal(root: ConfinedRoot, new: bytes, expected: bytes) -> None:
+    """Put `new` in place of the journal, which must still be exactly `expected` (the bytes the
+    rewrite was built from, else `JournalChangedError`: nothing is replaced).
+
+    A new file, `fsync`, then one atomic `rename` over the journal, then the folder is flushed: at
+    every instant the journal is the old file or the new one, whole. A kill leaves at worst the
+    new file beside the journal; the next rewrite truncates and reuses it, nothing is deleted."""
+    if not new.startswith(expected.split(b"\n", 1)[0] + b"\n"):
+        raise ValueError("a rewrite keeps the header of the journal")
+    current = read_journal(root, len(expected))
+    if current != expected:
+        raise JournalChangedError("the journal changed while it was being rewritten")
+    fd = root.open_file(REWRITE_NAME, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        if stat.S_IMODE(os.fstat(fd).st_mode) != 0o600:
+            os.fchmod(fd, 0o600)
+        _write_all(fd, new)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    root.rename(REWRITE_NAME, TOMBSTONE_JOURNAL, replace=True)  # durable: both folders flushed
 
 
 def set_aside(root: ConfinedRoot, stamp: str) -> str | None:
@@ -99,6 +129,38 @@ def sentinel_kids(doc: SentinelDocument | None) -> dict[str, dict[str, str]]:
             )
             entries.setdefault(item["kid"], {}).update(clean)
     return entries
+
+
+def sentinel_chain(doc: SentinelDocument | None) -> dict[str, Any] | None:
+    """The `tombstone_chain` field of the sentinel as it is written (unverified: the caller holds
+    the keys), or None when there is none or it is not an object."""
+    if doc is None:
+        return None
+    value = doc.extra.get(SENTINEL_CHAIN_FIELD)
+    return dict(value) if isinstance(value, dict) else None
+
+
+def set_sentinel_chain(root: ConfinedRoot, chain: dict[str, Any]) -> bool:
+    """Write the `tombstone_chain` field of the sentinel, every other field kept as it is.
+    True when the sentinel was rewritten."""
+    doc = read_sentinel(root)
+    if doc is None:
+        raise SentinelFormatError("the root has no sentinel")
+    if doc.read_only:
+        raise SentinelFormatError("sentinel of a newer major format: read only")
+    if doc.extra.get(SENTINEL_CHAIN_FIELD) == chain:
+        return False
+    write_sentinel(
+        root,
+        SentinelDocument(
+            doc.root_id,
+            doc.instance_id,
+            doc.generation,
+            _at_least(doc.schema_version, KIDS_MINOR_VERSION),
+            {**doc.extra, SENTINEL_CHAIN_FIELD: chain},
+        ),
+    )
+    return True
 
 
 def _at_least(version: str, floor: str) -> str:

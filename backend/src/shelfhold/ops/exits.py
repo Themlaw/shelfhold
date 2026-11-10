@@ -97,6 +97,7 @@ M1B_SERVED_STATES: Final = frozenset(
         WaitingState.ROOT_BEHIND,  # `root restored`
         WaitingState.STORE_LOST,  # `store reinit`
         WaitingState.SAFEGUARD_BACKLOG,  # `jobs list`: the window job plays it (L16)
+        WaitingState.TOMBSTONE_JOURNAL_TRUNCATED,  # `tombstone set-aside-journal` (L26, D12)
     }
 )
 

@@ -10,6 +10,7 @@ __all__ = [
     "EmitterConditionError",
     "EmitterPerimeterError",
     "FsopsError",
+    "JournalChangedError",
     "NotRegularFileError",
     "OutsidePathMapError",
     "PathEscapeError",
@@ -92,3 +93,8 @@ class EmitterPerimeterError(FsopsError):
 class EmitterConditionError(FsopsError):
     """A system emitter is inside its perimeter but its condition does not hold (30-day trash,
     disk guard actually triggered): nothing was deleted."""
+
+
+class JournalChangedError(FsopsError):
+    """The journal is not the file the rewrite was built from: somebody wrote it meanwhile, so
+    nothing is replaced (the caller reads it again)."""

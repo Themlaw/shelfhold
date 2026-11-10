@@ -25,13 +25,25 @@ pending lines first, then the table and every mounted journal, line by line:
 An inert line never blocks and never deletes. Nothing here deletes anything: a deletion that a
 replay asks for is the purge's, after the admin confirmed it (EF-INT-026, L34/L35).
 
+**Chain** (M1b L26, EF-BIB-054 (6)): each line written moves the root's chained label
+(`chain.ChainState`, kept in the database and, authenticated, in the sentinel). A replay that finds
+the journal short of it (a line cut off the end, or one removed) marks the root
+`tombstone_journal_truncated`: `tombstone.journal_truncated`, no reconcile and no reacquisition on
+that root until `tombstone set-aside-journal` writes the journal again from the table (D12).
+Reordering and repeating lines change nothing. **Rekey** (`tombstone rekey`, after a key leak):
+the table, the owed lines and every journal are resealed under the active key; a journal is
+replaced through a new file and one atomic `rename`, under the lock that serializes every append,
+so a line recorded meanwhile is in the new file.
+
 **Membership** (`check`): against the in-memory index only; it fails closed until a replay ran.
 """
 
+import hashlib
+import threading
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Final, Protocol
+from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
 import structlog
@@ -43,15 +55,18 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, identity, platform
 from shelfhold.infrastructure.secrets import registry as key_registry
 from shelfhold.infrastructure.secrets.errors import EnvelopeError
-from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.infrastructure.secrets.keyring import Key, Keyring
 from shelfhold.infrastructure.secrets.tombstone_aead import (
     ALG,
     DB_ROOT,
+    chain_mac,
     kid_tag,
     open_values,
     seal_values,
+    verify_chain_mac,
     verify_kid_tag,
 )
+from shelfhold.library.tombstones.chain import EMPTY, ChainState, judge, tag_of, tip_of
 from shelfhold.library.tombstones.cited import default_normalizers
 from shelfhold.library.tombstones.index import (
     NORMALIZED_FIELDS,
@@ -69,6 +84,7 @@ from shelfhold.library.tombstones.journal import (
     parse_line,
     parse_lines_ignoring_header,
 )
+from shelfhold.library.tombstones.state import TombstoneState
 from shelfhold.library.tombstones.values import (
     ContentHash,
     Scope,
@@ -94,6 +110,13 @@ INERT_REASONS: Final = frozenset(
 REASONS: Final = frozenset({"purge_unit", "purge_work", "replayed"})
 _LOST_KEYRING_ACTION = RESERVED_ACTIONS["tombstone.accept_lost_keyring"]
 _SET_ASIDE_ACTION = RESERVED_ACTIONS["tombstone.set_aside_journal"]
+_REKEY_ACTION = RESERVED_ACTIONS["tombstone.rekey"]
+# One lock for every write of a journal and of the label that follows it: an append never
+# interleaves with a rewrite (`tombstone rekey`), whichever service object makes it.
+_WRITE_LOCK = threading.RLock()
+_REWRITE_ATTEMPTS = 3
+JOURNAL_PATH: Final = ".shelfhold/tombstones"  # `physical_roots.TOMBSTONE_JOURNAL`
+REWRITE_PATH: Final = ".shelfhold/tombstones.rekey"  # the new file of a rewrite
 
 _tomb, _kid, _lost = (
     coherence.content_tombstone,
@@ -114,7 +137,17 @@ class TombstoneGate(Protocol):
 class JournalDisk(Protocol):
     """The part of `Fsops` the tombstones use (fsops stays the only writer)."""
 
-    def append_tombstone_line(self, root_path: str, line: bytes, *, header: bytes) -> None: ...
+    def append_tombstone_line(self, root_path: str, line: bytes, *, header: bytes) -> bool | None:
+        """True when the line created the file."""
+        ...
+
+    def replace_tombstone_journal(self, root_path: str, new: bytes, expected: bytes) -> bool:
+        """False, nothing replaced, when the journal is no longer `expected`."""
+        ...
+
+    def record_tombstone_chain(self, root_path: str, chain: dict[str, Any]) -> bool: ...
+
+    def tombstone_chain(self, root_path: str) -> dict[str, Any] | None: ...
 
     def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None: ...
 
@@ -160,17 +193,27 @@ class ReplayReport:
     key_unknown: set[tuple[str, str]] = field(default_factory=set)  # (root_id or db, scope)
     unreadable_roots: set[str] = field(default_factory=set)
     root_mismatch: set[str] = field(default_factory=set)
+    truncated_roots: set[str] = field(default_factory=set)  # the journal stops short of its chain
+    truncated_new: set[str] = field(default_factory=set)  # ... and nobody was told yet
+    chain_ok: set[str] = field(default_factory=set)  # roots whose journal was judged, and is whole
 
 
 @dataclass(frozen=True)
 class Verdict:
     blocked: bool
-    cause: str | None = None  # tombstoned | key_unknown | journal_unreadable
+    cause: str | None = None  # tombstoned | key_unknown | journal_unreadable | journal_truncated
 
 
 class SetAsideRefusedError(RuntimeError):
     """The damaged journal holds lines that cannot be authenticated with the keyring at hand:
     setting it aside could let purged content come back. Restore the keyring first."""
+
+
+@dataclass(frozen=True)
+class RekeyReport:
+    rewritten: dict[str, int]  # root id -> lines resealed in its journal
+    owed: tuple[str, ...]  # roots whose journal is rewritten when they are replayed
+    table_rows: int  # rows of the database resealed (the owed lines included)
 
 
 class NotReplayedError(RuntimeError):
@@ -211,6 +254,7 @@ class TombstoneService:
         self._index: MembershipIndex | None = None
         self._report = ReplayReport()
         self._sentinel_kids: dict[str, frozenset[str]] = {}  # authenticated entries only
+        self._state = TombstoneState(engine)
 
     def __repr__(self) -> str:
         return f"TombstoneService(index={self._index!r})"
@@ -318,22 +362,134 @@ class TombstoneService:
         return Recorded(seq, kid, tuple(written), pending)
 
     def _write_line(self, root: TombstoneRoot, seq: int, kid: str, line: bytes) -> bool:
-        """Registry of the sentinel first, then the line, then the pending row goes."""
+        """Registry of the sentinel first, then the line, then the label that follows it, then the
+        pending row goes. Lines of a root are written in `seq` order: one that has an older line
+        still owed waits for it."""
+        with _WRITE_LOCK:
+            with self._engine.connect() as connection:
+                older = connection.execute(
+                    sa.select(_pending.c.seq)
+                    .where(_pending.c.root_id == root.root_id, _pending.c.seq < seq)
+                    .limit(1)
+                ).first()
+            if older is not None:
+                return False
+            try:
+                self._disk.record_tombstone_kid(root.path, kid, self._kid_tags(root.root_id, kid))
+                created = bool(
+                    self._disk.append_tombstone_line(root.path, line, header=header_bytes())
+                )
+            except (OSError, ValueError, RuntimeError) as error:
+                log.warning("tombstone.line_pending", root_id=root.root_id,
+                            reason=type(error).__name__)  # fmt: skip
+                return False  # stays pending: written at the next replay of this root
+            self._advance_chain(root, seq, line, created=created)
+            with self._engine.begin() as connection:
+                connection.execute(
+                    sa.delete(_pending).where(
+                        _pending.c.root_id == root.root_id, _pending.c.seq == seq
+                    )
+                )
+        return True
+
+    # -- the chained label (EF-BIB-054 (6)) -------------------------------------------------
+
+    def _advance_chain(self, root: TombstoneRoot, seq: int, line: bytes, *, created: bool) -> None:
+        """The label after the line just appended (under the write lock). A journal that this
+        call created starts from nothing; one that was not tracked stays untracked (the next
+        replay takes it as it is); a line that is not above the last `seq` is one written again
+        (a root stamped again), and the label is then rebuilt by the next replay."""
+        previous = self._state.chain(root.root_id)
+        if previous is None:
+            if not created:
+                return
+            previous = EMPTY
+        if seq <= previous.seq:
+            self._state.set_chain(root.root_id, None)
+            return
+        current = previous.advanced(seq, tag_of(parse_line(line[:-1]).ct))
+        self._state.set_chain(root.root_id, current)
+        self._copy_chain(root, current)
+
+    def _signers(self) -> list[Key]:
+        """The keys that may vouch for a label: every key we hold that did not leak."""
+        return [key for key in self._keyring.keys if key.state != "compromised"]
+
+    def _copy_chain(self, root: TombstoneRoot, state: ChainState) -> None:
+        """The label, authenticated under every sound key, in the sentinel of the root. Best
+        effort: the database is the authority, a replay completes the copy."""
+        tags = {
+            key.kid: chain_mac(key.material, root.root_id, state.seq, state.count, state.label)
+            for key in self._signers()
+        }
+        chain = {**{k: v for k, v in state.to_json().items() if k != "pending"}, "tags": tags}
         try:
-            self._disk.record_tombstone_kid(root.path, kid, self._kid_tags(root.root_id, kid))
-            self._disk.append_tombstone_line(root.path, line, header=header_bytes())
+            self._disk.record_tombstone_chain(root.path, chain)
         except (OSError, ValueError, RuntimeError) as error:
-            log.warning("tombstone.line_pending", root_id=root.root_id, reason=type(error).__name__)
-            return False  # stays pending: written at the next replay of this root
-        with self._engine.begin() as connection:
-            connection.execute(
-                sa.delete(_pending).where(_pending.c.root_id == root.root_id, _pending.c.seq == seq)
-            )
+            log.debug("tombstone.chain_copy_deferred", root_id=root.root_id,
+                      reason=type(error).__name__)  # fmt: skip
+
+    def _sentinel_chain(self, root: TombstoneRoot) -> ChainState | None:
+        """The label the sentinel carries, if its MAC verifies under a sound key we hold."""
+        raw = self._disk.tombstone_chain(root.path)
+        state = ChainState.from_json(raw)
+        if state is None or raw is None or not isinstance(raw.get("tags"), dict):
+            return None
+        for signer, mac in raw["tags"].items():
+            key = self._keyring.find(signer) if isinstance(signer, str) else None
+            if (
+                key is not None
+                and key.state != "compromised"
+                and verify_chain_mac(
+                    key.material, root.root_id, state.seq, state.count, state.label, mac
+                )
+            ):
+                return ChainState(state.seq, state.count, state.label)
+        return None
+
+    def _judge_chain(
+        self,
+        root: TombstoneRoot,
+        tags: Mapping[int, bytes],
+        report: ReplayReport,
+        *,
+        write: bool = True,
+    ) -> bool:
+        """The journal of `root`, whose authentic lines carry `tags` (seq -> AEAD tag), against
+        the label the database and the sentinel hold. True when whole; a truncated one is
+        reported. A whole one brings both records up to its tip (`write`)."""
+        database = self._state.chain(root.root_id)
+        sentinel = self._sentinel_chain(root)
+        if judge(tags, database, sentinel):
+            report.truncated_roots.add(root.root_id)
+            return False
+        report.chain_ok.add(root.root_id)
+        if not write:
+            return True
+        tip = tip_of(tags)
+        if not tags and database is None:
+            return True  # no journal and none tracked: the first line starts the chain
+        with _WRITE_LOCK:
+            if (
+                database is None
+                or database.pending is not None
+                or (database.seq, database.count, database.label) != (tip.seq, tip.count, tip.label)
+            ):
+                self._state.set_chain(root.root_id, tip)
+            if sentinel is None or (sentinel.seq, sentinel.count, sentinel.label) != (
+                tip.seq,
+                tip.count,
+                tip.label,
+            ):
+                self._copy_chain(root, tip)
         return True
 
     def has_pending(self, root_id: str) -> bool:
-        """Lines still owed to this root (a purge ran while it was away): fsops refuses every
-        other write to it until a replay has written them (EF-BIB-052, GAP-12-14)."""
+        """Lines still owed to this root (a purge ran while it was away), or a rewrite under a new
+        key: fsops refuses every other write to it until a replay has written them (EF-BIB-052,
+        GAP-12-14, EF-BIB-054 (10))."""
+        if self._state.rekey_owed(root_id):
+            return True
         with self._engine.connect() as connection:
             return (
                 connection.execute(
@@ -343,9 +499,11 @@ class TombstoneService:
             )
 
     def flush_pending(self, root: TombstoneRoot) -> bool:
-        """Write the lines a mounted root still owes (a transient error, or a root that was away).
-        True when nothing is owed any more. A root that is not mounted flushes nothing."""
+        """Write the lines a mounted root still owes (a transient error, or a root that was away),
+        after the rewrite it owes if a `rekey` ran while it was away. True when nothing is owed
+        any more. A root that is not mounted flushes nothing."""
         if root.mounted:
+            self._rekey_if_owed(root)
             self._flush_pending(root)
         return not self.has_pending(root.root_id)
 
@@ -389,6 +547,7 @@ class TombstoneService:
         report = ReplayReport()
         for root in roots:
             if root.mounted:
+                self._rekey_if_owed(root)  # before any other write to this root
                 report.flushed += self._flush_pending(root)
         with self._engine.connect() as connection:
             db_kids = set(connection.execute(sa.select(_kid.c.kid)).scalars())
@@ -417,6 +576,11 @@ class TombstoneService:
             if root.mounted:
                 self._replay_root(root, db_kids, lost, report, entries, in_table, to_merge, heal)
         report.verified = len(entries)
+        for root_id in sorted(report.chain_ok):  # judged whole: nothing waits any more
+            self._state.clear_truncated(root_id)
+        for root_id in sorted(report.truncated_roots):
+            if self._state.mark_truncated(root_id, announce=True):
+                report.truncated_new.add(root_id)
         with self._engine.begin() as connection:
             for kid, seq in sorted(heal):
                 self._register_kid(connection, kid, seq)
@@ -461,15 +625,20 @@ class TombstoneService:
             report.unreadable_roots.add(root.root_id)  # fail closed on this root
             return
         if journal is None:
+            self._judge_chain(root, {}, report)  # a journal that is gone is a journal cut short
             return
         report.inert.extend(
             InertLine(root.root_id, None, "malformed", line=bad.number) for bad in journal.malformed
         )
         registered = db_kids | sentinel
+        tags: dict[int, bytes] = {}  # the lines that open: seq -> AEAD tag (the smallest, if many)
+        judgeable = True
         for line in journal.lines:
             if self._keyring.find(line.kid) is None:
                 self._classify_unknown(root.root_id, line.scope, line.kid, line.seq,
                                        registered=registered, lost=lost, report=report)  # fmt: skip
+                if line.kid in registered or line.kid in lost:
+                    judgeable = False  # a line of a key we do not hold: the chain cannot be read
                 continue
             opened = None
             for candidate in (root.root_id, *root.predecessor_root_ids):
@@ -487,11 +656,57 @@ class TombstoneService:
                 continue
             if line.kid not in db_kids:
                 heal.add((line.kid, line.seq))
+            tag = tag_of(line.ct)
+            tags[line.seq] = min(tag, tags.get(line.seq, tag))
             identity_ = _identity(*opened)
             if identity_ not in in_table:
                 in_table.add(identity_)
                 entries.append(opened)
                 to_merge.append(opened)
+        if (
+            judgeable
+        ):  # else the root is blocked by `key_unknown`; it is judged once the key is back
+            self._judge_chain(root, tags, report)
+
+    def scan_chains(self, roots: Sequence[TombstoneRoot]) -> set[str]:
+        """Judge the journals now, read only (`status` runs it: a cut made while the server runs
+        is seen without a restart): the waiting marks follow, nothing is logged or published (the
+        replay sends the alert, once). The roots found truncated."""
+        report = ReplayReport()
+        with self._engine.connect() as connection:
+            db_kids = set(connection.execute(sa.select(_kid.c.kid)).scalars())
+            lost = set(connection.execute(sa.select(_lost.c.kid)).scalars())
+        for root in roots:
+            if not root.mounted:
+                continue
+            try:
+                raw = self._disk.read_tombstone_journal(root.path, max_bytes=MAX_JOURNAL_BYTES)
+                journal = None if not raw else parse_journal(raw)
+            except (OSError, JournalFormatError):
+                continue  # unreadable: `set-aside-journal` is its exit, not this one's
+            tags: dict[int, bytes] = {}
+            registered = db_kids | self._authenticated(
+                root.root_id, self._disk.tombstone_kids(root.path)
+            )
+            judgeable = True
+            for line in journal.lines if journal is not None else ():
+                if self._keyring.find(line.kid) is None:
+                    judgeable = judgeable and line.kid not in registered | lost
+                    continue
+                for candidate in (root.root_id, *root.predecessor_root_ids):
+                    try:
+                        self._open(line.scope, line.kid, line.nonce, line.ct, candidate, line.seq)
+                    except (EnvelopeError, TombstoneValueError):
+                        continue
+                    tags[line.seq] = min(tag_of(line.ct), tags.get(line.seq, tag_of(line.ct)))
+                    break
+            if judgeable:
+                self._judge_chain(root, tags, report, write=False)
+        for root_id in sorted(report.chain_ok):
+            self._state.clear_truncated(root_id)
+        for root_id in sorted(report.truncated_roots):
+            self._state.mark_truncated(root_id, announce=False)  # the replay tells, once
+        return report.truncated_roots
 
     def _announce(self, connection: Connection, report: ReplayReport) -> list[PublishedEvent]:
         published: list[PublishedEvent] = []
@@ -528,6 +743,10 @@ class TombstoneService:
             published.append(
                 self._bus.publish(connection, "tombstone.root_mismatch", {"root_id": root_id})
             )
+        for root_id in sorted(report.truncated_new):
+            published.append(
+                self._bus.publish(connection, "tombstone.journal_truncated", {"root_id": root_id})
+            )
         return published
 
     # -- membership -------------------------------------------------------------------------
@@ -543,6 +762,8 @@ class TombstoneService:
         # the database's own rows count (the root is checked again when the destination is).
         if root_id is not None and root_id in report.unreadable_roots:
             return Verdict(True, "journal_unreadable")
+        if root_id is not None and self._truncated(root_id):
+            return Verdict(True, "journal_truncated")
         for where, scope in report.key_unknown:
             if scope == candidate.scope and where in (DB_ROOT, root_id):
                 return Verdict(True, "key_unknown")
@@ -572,9 +793,14 @@ class TombstoneService:
         if self._index is None:
             return False
         report = self._report
-        if root_id in report.unreadable_roots:
+        if root_id in report.unreadable_roots or self._truncated(root_id):
             return False
         return not any(where in (DB_ROOT, root_id) for where, _ in report.key_unknown)
+
+    def _truncated(self, root_id: str) -> bool:
+        """The journal of this root is short of its chain: found by a replay of this process, or
+        recorded by another (`status`, a restart) in the waiting mark."""
+        return root_id in self._report.truncated_roots or self._state.is_truncated(root_id)
 
     def screen_migration(
         self, rows: Iterable[tuple[str, TombstoneValues]], *, root_id: str | None = None
@@ -602,7 +828,8 @@ class TombstoneService:
     def owed_roots(self) -> list[str]:
         """The roots that still owe tombstone lines (a purge ran while they were away)."""
         with self._engine.connect() as connection:
-            return sorted(set(connection.execute(sa.select(_pending.c.root_id)).scalars()))
+            owed = set(connection.execute(sa.select(_pending.c.root_id)).scalars())
+        return sorted(owed | self._state.rekey_owed_roots())
 
     def set_aside_journal(
         self,
@@ -613,25 +840,27 @@ class TombstoneService:
         root_id: str | None = None,
     ) -> dict[str, str]:
         """Reserved action: a journal that cannot be read (a truncated header, a newer major
-        format) is put aside under a time-stamped name, never deleted. Before that, the file is
+        format), or that was cut short of its chain (`tombstone_journal_truncated`, D12), is put
+        aside under a time-stamped name, never deleted. Before that, the file is
         read again ignoring its header: every line that opens with a key of the keyring (AEAD,
         known `kid`, this root or a predecessor) and is not in the table yet is merged into the
         table, so a purge that only this journal knew (the database being older, after a restore)
         stays in force. A line whose key is registered but absent from the keyring cannot be
         checked: the action is refused, naming the way out (restore the keyring, or accept its
         loss). The root's journal is then written again from the table, every row sealed for
-        that root and owed to it; the sentinel's registry of kids is not rebuilt here, it is
-        completed when the first line is written. Returns `root id -> aside name`."""
+        that root and owed to it, and its chained label starts again with the first line; the
+        sentinel's registry of kids is not rebuilt here, it is completed when the first line is
+        written. A truncated journal that is gone altogether has nothing to put aside, and is
+        written again all the same. Returns `root id -> aside name`."""
         verdict = authorize_reserved(principal, _SET_ASIDE_ACTION, now=now)
         if not isinstance(verdict, Allowed):
             raise LostKeyringRefusedError(verdict)
         self.replay(roots)
+        waiting = self._report.unreadable_roots | self._report.truncated_roots
         chosen = [
             r
             for r in roots
-            if r.mounted
-            and r.root_id in self._report.unreadable_roots
-            and (root_id is None or r.root_id == root_id)
+            if r.mounted and r.root_id in waiting and (root_id is None or r.root_id == root_id)
         ]
         found: dict[str, list[tuple[TombstoneValues, dict[str, str]]]] = {}
         for root in chosen:  # all checked before the first one is touched
@@ -639,12 +868,19 @@ class TombstoneService:
         stamp = now.strftime("%Y%m%dT%H%M%SZ")
         done: dict[str, str] = {}
         for root in chosen:
-            aside = self._disk.set_aside_tombstone_journal(root.path, stamp)
-            if aside is None:
-                continue
-            self._merge_into_table(found[root.root_id])
-            self._owe_every_line(root.root_id)
-            done[root.root_id] = aside
+            truncated = root.root_id in self._report.truncated_roots
+            with _WRITE_LOCK:
+                aside = self._disk.set_aside_tombstone_journal(root.path, stamp)
+                if aside is None and not truncated:
+                    continue
+                self._merge_into_table(found[root.root_id])
+                self._owe_every_line(root.root_id)
+                self._state.set_chain(root.root_id, None)  # the new journal starts a new chain
+                self._state.clear_rekey_owed(
+                    root.root_id
+                )  # rewritten from the table, under the active key
+            if aside is not None:
+                done[root.root_id] = aside
             with self._engine.begin() as connection:
                 connection.execute(
                     sa.insert(identity.audit).values(
@@ -741,8 +977,230 @@ class TombstoneService:
 
     def owe_lines(self, root_id: str) -> None:
         """Every row of the table becomes a line owed to this root (a root stamped again after a
-        takeover or a reinit has a journal that lacks them): they are written by the next flush."""
-        self._owe_every_line(root_id)
+        takeover or a reinit has a journal that lacks them): they are written by the next flush.
+        Its chained label is taken again from the journal as it will be."""
+        with _WRITE_LOCK:
+            self._owe_every_line(root_id)
+            self._state.set_chain(root_id, None)
+
+    # -- `tombstone rekey` (EF-BIB-054 (10)) ------------------------------------------------
+
+    def _compromised(self) -> set[str]:
+        return {key.kid for key in self._keyring.keys if key.state == "compromised"}
+
+    def rekey(
+        self, roots: Sequence[TombstoneRoot], *, principal: Principal, now: datetime
+    ) -> RekeyReport:
+        """Reserved action, after a key leak: every table row, every line owed to a root and every
+        journal line sealed under a key marked `compromised` is sealed again under the active key
+        (the keyring says which: `rotation.mark_compromised`, after a rotation). The old key stays
+        in the keyring and the registry, to read old backups, and `status` warns of it.
+
+        The database goes first, in one transaction that also writes the rewrite each root owes:
+        from then on a kill, a root that is away, a root that fails, all end the same way, the
+        journal is rewritten when the root is replayed, before any other write to it. A mounted
+        root is rewritten here: a new file, `fsync`, one atomic `rename`; the file is the old one
+        or the new one, never half of either. A root whose journal is unreadable or truncated is
+        left as it is and still owes the rewrite: `tombstone set-aside-journal` is its way out."""
+        verdict = authorize_reserved(principal, _REKEY_ACTION, now=now)
+        if not isinstance(verdict, Allowed):
+            raise LostKeyringRefusedError(verdict)
+        compromised = self._compromised()
+        if not compromised:
+            raise ValueError("no key is marked compromised: nothing to rekey")
+        table_rows = self._rekey_database(compromised, roots)
+        rewritten: dict[str, int] = {}
+        for root in roots:
+            if root.mounted:
+                count = self._rekey_if_owed(root, now=now)
+                if count is not None:
+                    rewritten[root.root_id] = count
+        owed = tuple(r.root_id for r in roots if self._state.rekey_owed(r.root_id))
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.insert(identity.audit).values(
+                    id=new_ulid(),
+                    actor_id=principal.actor_id,
+                    action="tombstone.rekey",
+                    target="kids:" + ",".join(sorted(compromised)),
+                    session_id=principal.session_id,
+                    auth_time=principal.auth_time,
+                )
+            )
+        log.info("tombstone.rekeyed", table_rows=table_rows, roots=len(rewritten), owed=len(owed))
+        return RekeyReport(rewritten, owed, table_rows)
+
+    def _rekey_database(self, compromised: set[str], roots: Sequence[TombstoneRoot]) -> int:
+        """The table and the lines owed, sealed again; every root marked as owing its journal."""
+        key = self._keyring.active
+        resealed = 0
+        with _WRITE_LOCK, self._engine.begin() as connection:
+            key_registry.register_active_key(connection, self._keyring)
+            self._register_kid(connection, key.kid, self._next_seq(connection))
+            rows = connection.execute(
+                sa.select(_tomb.c.id, _tomb.c.scope, _tomb.c.seq, _tomb.c.kid, _tomb.c.nonce,
+                          _tomb.c.ct).where(_tomb.c.kid.in_(compromised))
+            ).all()  # fmt: skip
+            for row_id, scope, seq, kid, nonce, ct in rows:
+                if self._keyring.find(kid) is None:
+                    continue
+                try:
+                    values, cited = self._open(scope, kid, bytes(nonce), bytes(ct), DB_ROOT, seq)
+                except (EnvelopeError, TombstoneValueError):
+                    continue  # inert (it never opened): left as it is
+                new_nonce, new_ct = seal_values(
+                    key.material, encode_plaintext(values, cited), scope=scope, root=DB_ROOT,
+                    seq=seq,
+                )  # fmt: skip
+                connection.execute(
+                    sa.update(_tomb).where(_tomb.c.id == row_id)
+                    .values(kid=key.kid, nonce=new_nonce, ct=new_ct)
+                )  # fmt: skip
+                resealed += 1
+            for root_id, seq, text in connection.execute(
+                sa.select(_pending.c.root_id, _pending.c.seq, _pending.c.line)
+            ).all():
+                owed_line = parse_line(text.encode("ascii")[:-1])
+                if owed_line.kid not in compromised or self._keyring.find(owed_line.kid) is None:
+                    continue
+                try:
+                    values, cited = self._open(
+                        owed_line.scope,
+                        owed_line.kid,
+                        owed_line.nonce,
+                        owed_line.ct,
+                        root_id,
+                        owed_line.seq,
+                    )
+                except (EnvelopeError, TombstoneValueError):
+                    continue
+                fresh = self._line(encode_plaintext(values, cited), owed_line.scope, root_id, seq)
+                connection.execute(
+                    sa.update(_pending)
+                    .where(_pending.c.root_id == root_id, _pending.c.seq == seq)
+                    .values(line=fresh.decode("ascii"))
+                )
+                resealed += 1
+        for root in roots:
+            self._state.owe_rekey(root.root_id)  # until its journal says otherwise
+        return resealed
+
+    def _rekey_if_owed(self, root: TombstoneRoot, *, now: datetime | None = None) -> int | None:
+        """Rewrite the journal of a mounted root that owes it. The lines resealed, or None when
+        the journal cannot be rewritten (unreadable, truncated, keys missing): the root keeps
+        owing it. Nothing owed: 0."""
+        if not self._state.rekey_owed(root.root_id):
+            return 0
+        compromised = self._compromised()
+        if not compromised:
+            self._state.clear_rekey_owed(root.root_id)  # nothing is compromised any more
+            return 0
+        with _WRITE_LOCK:
+            count = self._rekey_journal(root, compromised, now or datetime.now().astimezone())
+            if count is not None:
+                self._state.clear_rekey_owed(root.root_id)
+            return count
+
+    def _reseal_row(
+        self, row: bytes, root: TombstoneRoot, compromised: set[str]
+    ) -> tuple[bytes, JournalLine | None, JournalLine | None]:
+        """A row of the journal as it will be written, with the line it was and the line it is
+        when that line opens (else None for both: the row is kept verbatim)."""
+        try:
+            line = parse_line(row)
+        except (UnicodeDecodeError, ValueError):
+            return row, None, None
+        if self._keyring.find(line.kid) is None:
+            return row, None, None
+        opened = None
+        for candidate in (root.root_id, *root.predecessor_root_ids):
+            try:
+                opened = self._open(line.scope, line.kid, line.nonce, line.ct, candidate, line.seq)
+            except (EnvelopeError, TombstoneValueError):
+                continue
+            break
+        if opened is None:
+            return row, None, None  # inert: it stays, nothing is lost
+        if line.kid not in compromised:
+            return row, line, line
+        fresh = self._line(encode_plaintext(*opened), line.scope, root.root_id, line.seq)
+        return fresh[:-1], line, parse_line(fresh[:-1])
+
+    def _rekey_journal(
+        self, root: TombstoneRoot, compromised: set[str], now: datetime
+    ) -> int | None:
+        for _attempt in range(_REWRITE_ATTEMPTS):
+            try:
+                raw = self._disk.read_tombstone_journal(root.path, max_bytes=MAX_JOURNAL_BYTES)
+                if not raw:
+                    return 0
+                parse_journal(raw)  # a journal that cannot be read is not rewritten
+            except (OSError, JournalFormatError):
+                return None
+            rows = raw.split(b"\n")
+            if rows[-1] == b"":
+                rows.pop()
+            out = [rows[0]]
+            before: dict[int, bytes] = {}
+            after: dict[int, bytes] = {}
+            count = 0
+            judgeable = True
+            for row in rows[1:]:
+                if not row:
+                    continue
+                kept, old, new = self._reseal_row(row, root, compromised)
+                out.append(kept)
+                if old is None or new is None:
+                    if self._unverifiable(row):
+                        judgeable = False
+                    continue
+                before[old.seq] = min(tag_of(old.ct), before.get(old.seq, tag_of(old.ct)))
+                after[new.seq] = min(tag_of(new.ct), after.get(new.seq, tag_of(new.ct)))
+                count += new is not old
+            if not judgeable:
+                return None
+            report = ReplayReport()
+            if not self._judge_chain(root, before, report, write=False):
+                return None  # truncated: rewriting it would make the cut permanent
+            if count == 0:
+                return 0
+            new_bytes = b"\n".join(out) + b"\n"
+            old_tip, new_tip = tip_of(before), tip_of(after)
+            self._state.set_chain(
+                root.root_id,
+                ChainState(old_tip.seq, old_tip.count, old_tip.label, pending=new_tip.label),
+            )
+            local = root.path.rstrip("/")
+            intent = self._state.record_intent(
+                src=f"{local}/{REWRITE_PATH}", dst=f"{local}/{JOURNAL_PATH}",
+                sha256=hashlib.sha256(new_bytes).hexdigest(),
+            )  # fmt: skip
+            try:
+                replaced = self._disk.replace_tombstone_journal(root.path, new_bytes, raw)
+            except BaseException:
+                self._state.close_intent(intent, "cancelled", now)
+                raise
+            if not replaced:
+                self._state.close_intent(intent, "cancelled", now)
+                continue  # written meanwhile: read it again
+            self._state.set_chain(root.root_id, new_tip)
+            self._copy_chain(root, new_tip)
+            self._state.close_intent(intent, "done", now)
+            return count
+        return None
+
+    def _unverifiable(self, row: bytes) -> bool:
+        """A line that opens under no key we hold, of a kid the registries know: the chain of its
+        journal cannot be read until the key is back."""
+        try:
+            line = parse_line(row)
+        except (UnicodeDecodeError, ValueError):
+            return False
+        if self._keyring.find(line.kid) is not None:
+            return False
+        with self._engine.connect() as connection:
+            known = set(connection.execute(sa.select(_kid.c.kid)).scalars())
+        return line.kid in known
 
     def accept_lost_keyring(
         self,

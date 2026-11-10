@@ -84,7 +84,7 @@ _ROWS: tuple[FailureRow, ...] = (
     _row("foreign_writer", "library", "target.foreign_writer_detected", "pause_shelf", "series resume"),
     _row("job_dead_lettered", "jobs", "job.dead_lettered", "notify_only", "jobs retry"),
     _row("tombstone_key_unknown", "secrets", "tombstone.key_unknown", "block_writes", "secrets import"),
-    _row("tombstone_journal_truncated", "store", "tombstone.journal_truncated", "block_writes", None, "M1b"),
+    _row("tombstone_journal_truncated", "store", "tombstone.journal_truncated", "block_writes", "tombstone set-aside-journal", "M1b"),  # closed: see _CLOSED
     _row("tombstone_root_pending", "mount", "tombstone.root_mismatch", "block_writes"),
     _row("tombstone_sentinel_forged", "store", "tombstone.unverified", "notify_only"),
     _row("dns_blocked", "network", "source.dns_blocked", "pause_service", "source recheck"),
@@ -142,6 +142,7 @@ _CLOSED = {
     "suwayomi_downloads_dropped": "tests/integration/test_health_requeue.py::test_dropped_chapters_requeued_with_cap",
     "suwayomi_stale_series": "tests/integration/test_health_requeue.py::test_series_stale_aggregated",
     "safeguard_backlog": "tests/integration/test_safeguard_cycle.py::test_safeguard_budget_caps_batch_and_emits_backlog",
+    "tombstone_journal_truncated": "tests/property/test_tombstone_chain.py::test_tombstone_journal_truncation_detected",
 }
 
 
