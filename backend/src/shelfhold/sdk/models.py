@@ -154,6 +154,9 @@ class AuthApiKey(SdkModel):
     kind: Literal["api_key"] = "api_key"
     location: Literal["header", "query", "path"]
     name: str
+    # The template the adapter declares for the references it hands back: the host rewrites the
+    # key segment of a reference to this placeholder instead of refusing it (EF-SRC-035).
+    ref_template: Literal["{secret}"] | None = None
 
 
 class AuthCookieImport(SdkModel):

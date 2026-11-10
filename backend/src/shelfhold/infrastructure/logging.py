@@ -16,10 +16,12 @@ import traceback
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal, cast
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import structlog
 from structlog.typing import EventDict, Processor, WrappedLogger
+
+from shelfhold.infrastructure.secret_text import contains_secret, decoded_views, secret_forms
 
 _WORDS = (
     r"kavita[-_]?key|komga|secret|token|passw?o?r?d?|passphrase|pwd|pass|key|auth|cookie|session"
@@ -53,6 +55,16 @@ _LINE_VALUE = re.compile(
 )
 _URL_USERINFO = re.compile(r"(?P<head>//[^/\s:@]*:)[^/\s@]+(?P<tail>@)")
 _OPDS_KEY = re.compile(r"(?P<head>/api/opds/)[^/\s?#]+")
+# `/token/<value>`, `/apikey/<value>`...: the segment after a word that names a credential. A path
+# segment that is shaped like one (a JWT, a long hexadecimal digest) is masked wherever it sits.
+_PATH_KEYWORD = r"(?:api[-_]?key|apikey|key|token|access[-_]?token|secret|auth|bearer|session)"
+_PATH_KEY = re.compile(rf"(?P<head>/{_PATH_KEYWORD}/)[^/\s?#]+", re.IGNORECASE)
+_TOKEN_SEGMENT = re.compile(
+    r"eyJ[\w-]+\.[\w-]+\.[\w-]*|[0-9a-fA-F]{32,}|[A-Za-z0-9_-]{20,}={0,2}(?=[A-Za-z0-9_-]*\d)"
+    r"(?=[A-Za-z0-9_-]*[a-z])(?=[A-Za-z0-9_-]*[A-Z])"
+)
+_URL_SENSITIVE = re.compile(rf"{_WORDS}|signature|^sig$|^sas$|jsessionid|^sid$", re.IGNORECASE)
+_URL_IN_TEXT = re.compile(r"""\b[a-z][a-z0-9+.-]*://[^\s'"<>)\]}]+""", re.IGNORECASE)
 _SOURCE_URL = re.compile(r"""\b[a-z][a-z0-9+.-]*://[^\s'"<>)\]}]+""", re.IGNORECASE)
 _known_values: set[str] = set()
 
@@ -86,14 +98,95 @@ def elapsed_ms(started: float) -> int:
 
 def route_of(url: str) -> str:
     """`host/path` of a URL: no scheme credentials, no query string and no fragment, whatever the
-    query carried (an API key travels there). The path is scrubbed like any other text."""
+    query carried (an API key travels there). The path is scrubbed like any other text, and each
+    segment that holds a known secret, or is shaped like one, is masked whole."""
     try:
         parts = urlsplit(url)
         host = parts.hostname or ""
         port = f":{parts.port}" if parts.port else ""
     except ValueError:
         return "?"
-    return _scrub_text(f"{host}{port}{parts.path}")
+    return _scrub_text(f"{host}{port}{_redact_path(parts.path)}")
+
+
+def _mask_known(text: str) -> str:
+    for known in sorted(_known_values, key=len, reverse=True):
+        text = text.replace(known, REDACTED)
+    return text
+
+
+def _redact_path(path: str) -> str:
+    """The path of a URL with every segment that holds a credential masked: a registered secret
+    (as written, or once or twice percent-encoded), the segment that follows a word naming a
+    credential (`/token/<x>`, `/api/opds/<x>`), a JWT, a long digest."""
+    segments = path.split("/")
+    previous = ""
+    for index, segment in enumerate(segments):
+        decoded = unquote(segment)
+        named = bool(_PATH_KEYWORD_ONLY.fullmatch(previous)) or (
+            previous.lower() == "opds" and index >= 2 and segments[index - 2].lower() == "api"
+        )
+        if segment and (
+            contains_secret(segment, _known_values)
+            or (named and segment != _PLACEHOLDER)
+            or _TOKEN_SEGMENT.fullmatch(decoded)
+        ):
+            segments[index] = REDACTED
+        previous = decoded
+    return "/".join(segments)
+
+
+_PATH_KEYWORD_ONLY = re.compile(_PATH_KEYWORD, re.IGNORECASE)
+_PLACEHOLDER = "{secret}"  # the template slot of a reference (shelfhold.sdk.refs)
+
+
+def _redact_pairs(text: str, separators: str = "&;") -> str:
+    """`name=value` pairs of a query or a fragment: the value goes when the name is sensitive or
+    the value holds a known secret. A piece without `=` is kept unless it holds one."""
+    pieces = re.split(f"([{re.escape(separators)}])", text)
+    for index, piece in enumerate(pieces):
+        if piece in tuple(separators):
+            continue
+        name, equals, value = piece.partition("=")
+        if equals and (
+            _URL_SENSITIVE.search(unquote(name))
+            or contains_secret(value, _known_values)
+            or _TOKEN_SEGMENT.fullmatch(unquote(value))
+        ):
+            pieces[index] = f"{name}={REDACTED}"
+        elif contains_secret(piece, _known_values):
+            pieces[index] = REDACTED
+    return "".join(pieces)
+
+
+def redact_url(url: str) -> str:
+    """A URL for a log line or an error: the host and the shape of the path stay, the secrets go.
+
+    The userinfo is masked whole; each path segment that holds a credential is masked (see
+    `_redact_path`); in the query and in the fragment, the value of every sensitive parameter and
+    of any parameter that holds a registered secret. A relative reference is handled the same way.
+    """
+    url = _mask_known(url)  # a key holding `/`, `&` or `=` would be cut apart by the split below
+    rest, hash_mark, fragment = url.partition("#")
+    rest, question, query = rest.partition("?")
+    prefix = ""
+    scheme_end = rest.find("//")
+    if scheme_end != -1 and re.fullmatch(r"(?:[A-Za-z][A-Za-z0-9+.-]*:)?", rest[:scheme_end]):
+        after = rest[scheme_end + 2 :]
+        authority, slash, tail = after.partition("/")
+        host = authority.rpartition("@")[2]
+        masked = f"{REDACTED}@{host}" if "@" in authority else authority
+        prefix = f"{rest[: scheme_end + 2]}{masked}"
+        rest = f"{slash}{tail}"
+    elif re.match(r"[^/\s?#]*:[^/\s?#@]*@", rest):  # `user:secret@host/...` without a scheme
+        authority, slash, tail = rest.partition("/")
+        prefix, rest = f"{REDACTED}@{authority.rpartition('@')[2]}", f"{slash}{tail}"
+    out = prefix + _redact_path(rest)
+    if question:
+        out += "?" + _redact_pairs(query)
+    if hash_mark:
+        out += "#" + _redact_pairs(fragment)
+    return out
 
 
 def escaped(value: object, *, limit: int = 500) -> str:
@@ -155,13 +248,21 @@ def log_outcome[F: Callable[..., Any]](
 
 
 def register_secret_value(value: str) -> None:
-    """Scrub this exact value (and its base64 forms) wherever it shows up later."""
+    """Scrub this exact value (and its base64 forms, and the forms a URL carries it in: percent
+    encoded once or twice, `+` for a space) wherever it shows up later."""
     if len(value) < _MIN_KNOWN_SECRET:
         return
     raw = value.encode("utf-8", errors="replace")
     _known_values.update(
         {value, base64.b64encode(raw).decode(), base64.urlsafe_b64encode(raw).decode()}
     )
+    _known_values.update(secret_forms(value))
+
+
+def known_secret_values() -> frozenset[str]:
+    """Every value registered so far, with its encoded forms: what the guards check references,
+    snapshots and database writes against (EF-SRC-035)."""
+    return frozenset(_known_values)
 
 
 def redact_source_urls(text: str) -> str:
@@ -171,10 +272,18 @@ def redact_source_urls(text: str) -> str:
 
 
 def _scrub_text(text: str) -> str:
-    for known in sorted(_known_values, key=len, reverse=True):
-        text = text.replace(known, REDACTED)
+    text = _mask_known(text)
+    if "%" in text and _known_values:
+        # a secret written in a form nobody registered (one character in percent form, the rest as
+        # is) shows once decoded; the line is then written decoded and masked
+        for view in decoded_views(text)[1:]:
+            if contains_secret(view, _known_values):
+                text = _mask_known(view)
+                break
+    text = _URL_IN_TEXT.sub(lambda m: redact_url(m.group()), text)
     text = _URL_USERINFO.sub(lambda m: m.group("head") + REDACTED + m.group("tail"), text)
     text = _OPDS_KEY.sub(lambda m: m.group("head") + REDACTED, text)
+    text = _PATH_KEY.sub(lambda m: m.group("head") + REDACTED, text)
     text = _LINE_VALUE.sub(lambda m: m.group("head") + REDACTED, text)
     return _FREE_TEXT.sub(lambda m: m.group("head") + REDACTED, text)
 

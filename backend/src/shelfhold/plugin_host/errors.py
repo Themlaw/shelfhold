@@ -32,6 +32,14 @@ class ServiceVersionMismatch(SourceChanged):
     code = "source.version_unsupported"
 
 
+class RefHasSecret(SourceChanged):
+    """A reference handed back by a source holds a secret or a `user:password@` part (EF-SRC-035):
+    a contract error, the plugin is not conforming. A schema problem for the cycle: the service
+    pauses, nothing is stored. The message names the field and a closed reason, never the value."""
+
+    code = "source.ref_has_secret"
+
+
 class AuthModeUnsupported(SourceError):
     """The tool runs in an authentication mode this release does not drive (EF-SRC-031)."""
 

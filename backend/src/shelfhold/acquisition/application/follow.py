@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, cast
 
 import sqlalchemy as sa
 import structlog
@@ -114,6 +114,7 @@ from shelfhold.plugin_host.errors import (
     ServiceInstanceChanged,
     ServiceVersionMismatch,
 )
+from shelfhold.plugin_host.refs_guard import screened, values_of
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
@@ -259,9 +260,15 @@ class FollowCycle:
         self._engine = engine
         self._bus = bus
         self._clock = clock
+        self._plugin_id = service.manifest.key
+        # every reference the service hands back goes through the guard (EF-SRC-035): refused or
+        # rewritten to the template the adapter declared, before the cycle stores any of it
+        service = cast(
+            "ConnectedService",
+            screened(service, values_of(fetcher), lambda: getattr(fetcher, "ref_template", None)),
+        )
         self._service = service
         self._fetcher = fetcher
-        self._plugin_id = service.manifest.key
         self._k = stale_k
         self._ledger = FailureLedger(self._plugin_id)
         self._tickets = DownloadTickets(

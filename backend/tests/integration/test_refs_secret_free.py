@@ -16,7 +16,6 @@ from urllib.parse import quote
 import pytest
 import sqlalchemy as sa
 import structlog
-from shelfhold.infrastructure.write_guard import SecretInWriteError
 
 from shelfhold.acquisition.application.upstream import (
     SnapshotRefusedError,
@@ -29,6 +28,7 @@ from shelfhold.infrastructure.logging import configure_logging, register_secret_
 from shelfhold.infrastructure.schema import acquisition, platform
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.vault import SecretVault
+from shelfhold.infrastructure.write_guard import SecretInWriteError
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.sdk.connected import ConnectedCapability
 from shelfhold.sdk.refs import SeriesRef
@@ -88,7 +88,11 @@ def _carry_key(bench: Bench, key: str) -> None:
 
 
 def _remote_ids(bench: Bench) -> list[str]:
-    return [r["remote_unit_id"] for r in bench.rows("SELECT remote_unit_id FROM unit_variant")]
+    """The identifiers of the followed series (the bench's library also holds an unrelated one)."""
+    rows = bench.rows(
+        "SELECT remote_unit_id FROM unit_variant WHERE remote_unit_id LIKE 'suwayomi:%'"
+    )
+    return [r["remote_unit_id"] for r in rows]
 
 
 @pytest.mark.req("EF-SRC-035", "EF-SRC-023")
@@ -153,8 +157,7 @@ def test_remote_refs_never_contain_secret_values_in_a_backup(tmp_path: Path) -> 
                     remote_id=f"/api/opds/{PLACEHOLDER}/s",
                 )
             )  # fmt: skip
-        archive = bench.service.run()
-        members = read_members(archive)
+        members = read_members(bench.backups / bench.service.run().name)
     assert members, "an empty backup proves nothing"
     for name, data in members.items():
         text = data.decode("latin-1")
@@ -176,7 +179,7 @@ def test_api_key_rotation_keeps_remote_ids() -> None:
         again = bench.run()
         assert again.discovered == 0 and again.paused is None
         assert sorted(_remote_ids(bench)) == before
-        assert len(bench.rows("SELECT id FROM unit_variant")) == 2
+        assert len(_remote_ids(bench)) == 2
         assert _leaks(_dump(bench.lib.engine), KEY_A) == []
         assert _leaks(_dump(bench.lib.engine), KEY_B) == []
 
@@ -190,7 +193,7 @@ def test_a_reference_with_the_key_and_no_template_pauses_the_service(captured: A
         _carry_key(bench, KEY_A)
         report = bench.run()
         assert report.paused is not None and report.discovered == 0
-        assert bench.rows("SELECT id FROM unit_variant") == []
+        assert _remote_ids(bench) == []
         assert _leaks(_dump(bench.lib.engine), KEY_A) == []
         assert _leaks(captured(), KEY_A) == []  # the refusal does not quote the reference
 
@@ -210,8 +213,8 @@ def test_the_database_itself_refuses_a_secret_in_a_reference_or_a_journal() -> N
             ),
             sa.update(acquisition.source_item).values(remote_id=f"/x?token={KEY_A}"),
             sa.insert(platform.event).values(
-                id=new_ulid(), type="t", payload={"url": f"https://h.example/{KEY_A}"},
-                created_at=datetime.now(UTC),
+                id=1, type="t", schema_version=1, visibility="ops",
+                payload={"url": f"https://h.example/{KEY_A}"}, occurred_at=datetime.now(UTC),
             ),
         ):  # fmt: skip
             with pytest.raises(SecretInWriteError), lib.engine.begin() as connection:

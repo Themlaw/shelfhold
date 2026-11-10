@@ -7848,6 +7848,10 @@
       "code": "source.rate_limited",
       "status": 503
     },
+    "/api/v1/problems/source.ref-has-secret": {
+      "code": "source.ref_has_secret",
+      "status": 502
+    },
     "/api/v1/problems/source.temporarily-unavailable": {
       "code": "source.temporarily_unavailable",
       "status": 503
