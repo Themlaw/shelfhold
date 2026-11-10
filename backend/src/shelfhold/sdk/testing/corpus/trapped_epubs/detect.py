@@ -90,12 +90,8 @@ def find_active_patterns(data: bytes) -> list[str]:
                 found.append(f"remote:{name}[{attr}]")
             if attr == "href" and name == "a" and squashed.startswith(("//", "\\")):
                 found.append("remote:a[//]")
-            if (
-                name == "a"
-                and _SCHEME.match(squashed)
-                and not squashed.startswith(("http:", "https:", "mailto:"))
-            ):
-                found.append(f"a-scheme:{squashed.split(':')[0]}")
+            if name == "a" and attr == "href" and _SCHEME.match(squashed):
+                found.append(f"a-scheme:{squashed.split(':')[0]}")  # an outbound link, too
             if attr == "http-equiv":
                 found.append("meta-http-equiv")
             if attr == "style":
@@ -110,3 +106,16 @@ def find_active_patterns(data: bytes) -> list[str]:
 def find_active_css(data: bytes) -> list[str]:
     """The same for a bare stylesheet."""
     return _css_findings(data.decode("utf-8", "replace"))
+
+
+def find_remote_references(opf: bytes) -> list[str]:
+    """Manifest and guide references of an OPF that are not relative (the OPF is never cut)."""
+    text = opf.decode("utf-8", "replace")
+    found: list[str] = []
+    for tag in re.finditer(r"<\s*(?:\w+:)?(item|reference)\b([^>]*)>", text, re.S):
+        for m in _ATTR.finditer(tag.group(2)):
+            if m.group(1).lower() == "href":
+                value = _squash(m.group(2).strip("'\""))
+                if value and (_SCHEME.match(value) or value.startswith(("/", "\\"))):
+                    found.append(f"opf-remote:{tag.group(1)}:{value[:40]}")
+    return found

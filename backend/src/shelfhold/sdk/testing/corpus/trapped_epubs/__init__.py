@@ -11,7 +11,11 @@ from shelfhold.sdk.testing.corpus.trapped_epubs.cases import (
     base_traps,
     mutation_traps,
 )
-from shelfhold.sdk.testing.corpus.trapped_epubs.detect import find_active_css, find_active_patterns
+from shelfhold.sdk.testing.corpus.trapped_epubs.detect import (
+    find_active_css,
+    find_active_patterns,
+    find_remote_references,
+)
 
 __all__ = [
     "CHAPTER",
@@ -24,6 +28,7 @@ __all__ = [
     "epub_bytes",
     "find_active_css",
     "find_active_patterns",
+    "find_remote_references",
     "mutation_traps",
     "xhtml",
     "zip_bytes",

@@ -32,6 +32,7 @@ from shelfhold.sdk.testing.corpus.trapped_epubs import (
     epub_bytes,
     find_active_css,
     find_active_patterns,
+    find_remote_references,
     mutation_traps,
     xhtml,
 )
@@ -57,11 +58,12 @@ def _names(data: bytes) -> list[str]:
 
 
 def _scan(name: str, content: bytes) -> list[str]:
-    if name.endswith(".css"):
+    """Every entry is looked at, whatever its name; the OPF is looked at for remote references."""
+    if name.lower().endswith(".opf"):
+        return find_remote_references(content)
+    if name.lower().endswith(".css"):
         return find_active_css(content)
-    if name.lower().endswith((".xhtml", ".html", ".htm", ".svg", ".xml", ".dat")):
-        return find_active_patterns(content)
-    return []
+    return find_active_patterns(content)
 
 
 @pytest.mark.req("EF-BIB-051", "ENF-SEC-015")
@@ -76,7 +78,7 @@ def test_untrusted_epub_scripts_and_handlers_neutralized_before_export(trap: Tra
         return
     derived, _ = _run(trap.epub)
     entries = _entries(derived)
-    findings = {n: _scan(n, c) for n, c in entries.items() if n not in ("OEBPS/content.opf",)}
+    findings = {n: _scan(n, c) for n, c in entries.items()}
     assert not {n: f for n, f in findings.items() if f}, findings
     assert trap.entry in entries
 
@@ -232,14 +234,14 @@ def test_benign_markup_survives() -> None:
         '<div id="d" class="k" xml:lang="fr"><h2>H</h2><ul><li>a</li></ul>'
         '<img src="images/p.png" alt="p" width="3" height="3"/><br/>'
         '<table><tr><td colspan="2">c</td></tr></table>'
-        '<a href="ch2.xhtml#x">in</a> <a href="mailto:a@b.example">m</a>'
+        '<a href="ch2.xhtml#x">in</a>'
         '<svg:svg viewBox="0 0 4 4"><svg:path d="M0 0L4 4" fill="red"/><svg:use href="#a"/></svg:svg>'
         '<p style="color: red; margin: 0">s</p></div>',
         '<link rel="stylesheet" type="text/css" href="style.css"/>'
         "<style>p { background: url(images/p.png) }</style>",
     )
     body = _entries(_run(epub_bytes(page))[0])[CHAPTER].decode()
-    for kept in ("<h2>H</h2>", 'src="images/p.png"', 'href="ch2.xhtml#x"', 'href="mailto:a@b.example"',
+    for kept in ("<h2>H</h2>", 'src="images/p.png"', 'href="ch2.xhtml#x"',
                  'd="M0 0L4 4"', 'href="style.css"', "url(images/p.png)", "color: red"):  # fmt: skip
         assert kept in body, kept
     assert not find_active_patterns(body.encode())
@@ -405,3 +407,73 @@ def test_directory_entries_and_stored_entries_are_copied_in_place() -> None:
 def test_unknown_kind_is_a_programming_error() -> None:
     with pytest.raises(ValueError, match="unknown kind"):
         neutralize(b"", "html")  # type: ignore[arg-type]
+
+
+@pytest.mark.req("EF-BIB-051", "ENF-SEC-015")
+@pytest.mark.parametrize(
+    ("name", "media", "head", "expected"),
+    [
+        ("OEBPS/a.xhtml", "", b"", "xhtml"),
+        ("OEBPS/a.svg", "", b"", "svg"),
+        ("OEBPS/a.css", "", b"", "css"),
+        ("OEBPS/a.dat", "text/html", b"<p>x</p>", "xhtml"),
+        ("OEBPS/a", "text/html", b"<p>x</p>", "xhtml"),
+        ("OEBPS/a", "text/xml", b"<html><script/></html>", "xhtml"),
+        ("OEBPS/a.bin", "application/xml", b"<svg onload='1'/>", "svg"),
+        ("OEBPS/a.bin", "text/xml", b"<notes/>", None),
+        ("OEBPS/a.xml", "", b"<html/>", "xhtml"),
+        ("OEBPS/a.ncx", "", b"<ncx/>", None),
+        ("OEBPS/a.png", "", b"\x89PNG", None),
+        ("OEBPS/a.txt", "", b"plain", None),
+        ("OEBPS/a.js", "", b"var x = 1;", None),
+        ("OEBPS/a", "", b"  <!DOCTYPE html><script>1</script>", "disguised"),
+        ("OEBPS/a.jpg", "", b"<svg/>", "disguised"),
+        ("OEBPS/a.bin", "", b"<script>1</script>", "disguised"),
+        ("OEBPS/a.svgz", "", b"\x1f\x8b", "disguised"),
+    ],
+)
+def test_entry_routing_decides_by_extension_then_media_type_then_the_bytes(
+    name: str, media: str, head: bytes, expected: str | None
+) -> None:
+    from shelfhold.infrastructure.content_trust.epub_scan import _kind_of
+
+    items = f'<item id="x" href="{name.rsplit("/", 1)[-1]}" media-type="{media}"/>' if media else ""
+    epub = epub_bytes(xhtml("<p>x</p>"), extra=[Member(name, head)], opf_extra=items)
+    from shelfhold.infrastructure.content_trust.epub_scan import _manifest_kinds
+
+    with safe_open_archive(BytesIO(epub), name="x.epub") as archive:
+        _, manifest = _manifest_kinds(archive)
+        if expected == "disguised":
+            with pytest.raises(NeutralizationError) as caught:
+                _kind_of(archive, name, manifest)
+            assert caught.value.reason == "disguised"
+        else:
+            assert _kind_of(archive, name, manifest) == expected
+
+
+@pytest.mark.req("EF-BIB-051", "ENF-SEC-015")
+def test_outbound_links_lose_their_href_and_keep_their_text() -> None:
+    page = xhtml(
+        '<p><a href="http://e.example/x">one</a> <a href="https://e.example/">two</a> '
+        '<a href="mailto:a@b.example">three</a> <a href="ch2.xhtml#n">four</a></p>'
+    )
+    out = neutralize(page, "xhtml").decode()
+    for text in ("one", "two", "three", "four"):
+        assert text in out
+    assert 'href="ch2.xhtml#n"' in out
+    assert "http" not in out.split("<body>")[1]
+    assert "mailto" not in out
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_the_opf_is_refused_not_rewritten_when_it_loads_a_remote_resource() -> None:
+    bad = epub_bytes(
+        xhtml("<p>x</p>"),
+        opf_extra='<item id="c" href="https://e.example/c.png" media-type="image/png"/>',
+    )
+    with pytest.raises(NeutralizationError) as caught:
+        _run(bad)
+    assert caught.value.reason == "remote_reference"
+    assert find_remote_references(
+        b'<package><manifest><item href="https://e.example/c.png"/></manifest></package>'
+    )

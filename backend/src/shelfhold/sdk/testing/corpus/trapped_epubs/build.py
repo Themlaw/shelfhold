@@ -81,7 +81,7 @@ NAV: Final = (
 STYLE: Final = b"body { margin: 1em; }\np { text-indent: 1em; }\n"
 
 
-def opf(extra_items: str = "") -> bytes:
+def opf(extra_items: str = "", guide: str = "") -> bytes:
     """A minimal EPUB 3 package document. The neutralizer must never rewrite it."""
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -93,7 +93,7 @@ def opf(extra_items: str = "") -> bytes:
         '<item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>'
         '<item id="css" href="style.css" media-type="text/css"/>'
         '<item id="cover" href="cover.png" media-type="image/png"/>'
-        f'{extra_items}</manifest><spine><itemref idref="ch1"/></spine></package>'
+        f'{extra_items}</manifest><spine><itemref idref="ch1"/></spine>{guide}</package>'
     ).encode()
 
 
@@ -112,6 +112,7 @@ def epub_bytes(
     css: bytes = STYLE,
     extra: Iterable[Member] = (),
     opf_extra: str = "",
+    guide: str = "",
     first: Iterable[Member] | None = None,
 ) -> bytes:
     """A well-formed EPUB around `chapter`. `extra` entries come last, `first` replaces mimetype."""
@@ -123,7 +124,7 @@ def epub_bytes(
     return zip_bytes([
         *head,
         Member("META-INF/container.xml", CONTAINER),
-        Member("OEBPS/content.opf", opf(opf_extra)),
+        Member("OEBPS/content.opf", opf(opf_extra, guide)),
         Member("OEBPS/nav.xhtml", NAV),
         Member("OEBPS/ch1.xhtml", chapter),
         Member("OEBPS/style.css", css),

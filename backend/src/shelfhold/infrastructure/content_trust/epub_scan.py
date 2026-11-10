@@ -42,6 +42,7 @@ from shelfhold.infrastructure.archives import (
 from shelfhold.infrastructure.content_trust.xhtml_neutralizer import (
     DERIVED_BY,
     NeutralizationError,
+    is_relative_reference,
     neutralize,
 )
 from shelfhold.infrastructure.xml import UnsafeXmlError, XmlLimits, safe_parse_xml
@@ -52,11 +53,12 @@ DERIVED_HASH_BY: Final = f"content-hash@{DERIVED_HASH_VERSION}"
 _MIMETYPE: Final = b"application/epub+zip"
 _XML_LIMITS: Final = XmlLimits(max_bytes=4 * 1024 * 1024)
 _PAGE_BYTES: Final = 32 * 1024 * 1024
-_SNIFF: Final = 1024
+_SNIFF: Final = 8192
 _CHUNK: Final = 1 << 20
 _XHTML_EXT: Final = frozenset({".xhtml", ".xht", ".html", ".htm"})
 _MEDIA_KIND: Final = {
-    "application/xhtml+xml": "xhtml", "image/svg+xml": "svg", "text/css": "css",
+    "application/xhtml+xml": "xhtml", "text/html": "xhtml", "image/svg+xml": "svg",
+    "text/css": "css", "text/xml": "sniff", "application/xml": "sniff",
 }  # fmt: skip
 _EXT_KIND: Final = {".xhtml": "xhtml", ".xht": "xhtml", ".html": "xhtml", ".htm": "xhtml",
                     ".svg": "svg", ".css": "css"}  # fmt: skip
@@ -156,28 +158,43 @@ def _manifest_kinds(archive: SafeArchive) -> tuple[set[str], dict[str, str]]:
         base = posixpath.dirname(opf)
         package = _xml(archive, opf, "opf")
         for item in package.iter():  # type: ignore[attr-defined]
+            if _local(item.tag) not in ("item", "reference"):
+                continue
+            href = unquote(item.attrib.get("href", ""))
+            # The OPF is never rewritten, so a reference it holds to the outside cannot be cut:
+            # the EPUB is refused (a cover-image or a guide entry that points at a remote host).
+            if href and not is_relative_reference(href):
+                raise NeutralizationError("remote_reference", opf)
             if _local(item.tag) != "item":
                 continue
             kind = _MEDIA_KIND.get(item.attrib.get("media-type", "").strip().lower())
-            href = unquote(item.attrib.get("href", "")).split("#", 1)[0]
+            href = href.split("#", 1)[0]
             if kind and href:
                 kinds[posixpath.normpath(posixpath.join(base, href))] = kind
     return set(opfs), kinds
 
 
 def _kind_of(archive: SafeArchive, name: str, manifest: dict[str, str]) -> str | None:
+    """How an entry is handled: a page kind, or None for a byte-for-byte copy.
+
+    Every entry whose kind is not settled by its extension or its declared media type is sniffed:
+    a page, an SVG or a script in a file called anything else is a document in disguise, and the
+    EPUB is refused unless the file is declared as XML (then it is a page like any other).
+    """
     ext = _ext(name)
     if ext in _EXT_KIND:
         return _EXT_KIND[ext]
-    if name in manifest:
-        return manifest[name]
-    if ext in _STORED_EXT - {".zip", ".gz", ".epub", ".pdf"} or ext in _XML_LIKE_EXT:
-        head = archive.read_head(name, _SNIFF)
-        if _PAGE_MARK.search(head):
-            if ext in _BINARY_EXT:
-                raise NeutralizationError("disguised", name)
-            return "svg" if _SVG_MARK.search(head) else "xhtml"
-    return None
+    declared = manifest.get(name)
+    if declared in ("xhtml", "svg", "css"):
+        return declared
+    if ext == ".svgz":  # a compressed SVG cannot be read, so it cannot be cut
+        raise NeutralizationError("disguised", name)
+    head = archive.read_head(name, _SNIFF).replace(b"\x00", b"")  # UTF-16 pages too
+    if not _PAGE_MARK.search(head):
+        return None
+    if ext not in _BINARY_EXT and (declared == "sniff" or ext in _XML_LIKE_EXT):
+        return "svg" if _SVG_MARK.search(head) else "xhtml"
+    raise NeutralizationError("disguised", name)
 
 
 def _check_mimetype(archive: SafeArchive) -> None:

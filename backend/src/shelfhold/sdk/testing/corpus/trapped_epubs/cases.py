@@ -302,6 +302,70 @@ def _archives() -> list[Trap]:
     ]  # fmt: skip
 
 
+def _review_cases() -> list[Trap]:
+    """Cases the first review of the neutralizer found (entries of any name, the OPF, XSL, links)."""
+    page = xhtml("<p>hi</p><script>alert(document.cookie)</script>")
+    svg = f'{_XML}<svg xmlns="{SVG_NS}" onload="alert(1)"><script>alert(1)</script></svg>'.encode()
+
+    def declared(name: str, media: str, data: bytes = page) -> Trap:
+        item = f'<item id="x" href="{name.rsplit("/", 1)[-1]}" media-type="{media}"/>'
+        return Trap(
+            f"declared_{media.replace('/', '_')}_{name.rsplit('/', 1)[-1] or 'x'}", "disguise",
+            epub_bytes(xhtml("<p>x</p>"), extra=[Member(name, data)], opf_extra=item), entry=name,
+        )  # fmt: skip
+
+    def stray(name: str, data: bytes = page, reason: str = "disguised") -> Trap:
+        return Trap(
+            f"undeclared_{name.rsplit('/', 1)[-1]}", "disguise",
+            epub_bytes(xhtml("<p>x</p>"), extra=[Member(name, data)]), "refused", name, reason,
+        )  # fmt: skip
+
+    def remote(label: str, items: str = "", guide: str = "") -> Trap:
+        return Trap(
+            f"opf_remote_{label}", "opf-remote",
+            epub_bytes(xhtml("<p>x</p>"), opf_extra=items, guide=guide),
+            "refused", "OEBPS/content.opf", "remote_reference",
+        )  # fmt: skip
+
+    def pi(label: str, document: bytes, entry: str = CHAPTER, extra: list[Member] | None = None,
+           opf_extra: str = "") -> Trap:  # fmt: skip
+        return Trap(f"xsl_pi_{label}", "xsl-pi",
+                    epub_bytes(document, extra=extra or [], opf_extra=opf_extra),
+                    "refused", entry, "xml_stylesheet")  # fmt: skip
+
+    xsl = b'<?xml-stylesheet type="text/xsl" href="http://evil.example/x.xsl"?>\n'
+    _, _, tail = xhtml("<p>x</p>").partition(b"\n")
+    utf16 = ("<?xml version='1.0' encoding='utf-16'?>\n" + xsl.decode() + tail.decode()).encode(
+        "utf-16"
+    )
+    link = '<p>Read <a href="{}">the source</a> and <a href="ch2.xhtml#n">a note</a>.</p>'
+    return [
+        declared("OEBPS/page.dat", "text/html"),
+        declared("OEBPS/page", "text/html"),
+        declared("OEBPS/page", "text/xml"),
+        declared("OEBPS/data.bin", "application/xml"),
+        declared("OEBPS/pic", "text/xml", svg),
+        stray("OEBPS/page"),
+        stray("OEBPS/page.bin"),
+        stray("OEBPS/notes.js", b"<html><body><script>alert(1)</script></body></html>"),
+        stray("OEBPS/pic.svgz", b"\x1f\x8b\x08\x00compressed-svg"),
+        stray("OEBPS/late.bin", "   \n\ufeff<!DOCTYPE html><script>1</script>".encode()),
+        remote("cover_https", '<item id="c" href="https://evil.example/c.png" media-type="image/png" properties="cover-image"/>'),
+        remote("cover_protocol_relative", '<item id="c" href="//evil.example/c.png" media-type="image/png"/>'),
+        remote("item_javascript", '<item id="c" href="java&#9;script:alert(1)" media-type="image/png"/>'),
+        remote("item_rooted", '<item id="c" href="/api/x" media-type="image/png"/>'),
+        remote("guide", guide='<guide><reference type="cover" title="c" href="http://evil.example/c.xhtml"/></guide>'),
+        pi("xhtml", xhtml("<p>x</p>").replace(b"\n", b"\n" + xsl, 1)),
+        pi("xhtml_utf16", utf16),
+        Trap("xsl_pi_svg_file", "xsl-pi", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/pic.svg", f'{_XML}'.encode() + xsl + f'<svg xmlns="{SVG_NS}"/>'.encode())]), "refused", "OEBPS/pic.svg", "xml_stylesheet"),
+        _page("link_http", "outbound-link", link.format("http://evil.example/x")),
+        _page("link_https", "outbound-link", link.format("https://evil.example/x")),
+        _page("link_mailto", "outbound-link", link.format("mailto:a@b.example")),
+        _page("link_protocol_relative_text", "outbound-link", link.format("//evil.example/x")),
+        _page("link_http_upper_entities", "outbound-link", link.format("&#72;TTP://evil.example/x")),
+    ]  # fmt: skip
+
+
 def base_traps() -> tuple[Trap, ...]:
     return tuple(
         _scripts()
@@ -314,6 +378,7 @@ def base_traps() -> tuple[Trap, ...]:
         + _entities_and_xml()
         + _standalone_files()
         + _archives()
+        + _review_cases()
     )
 
 
@@ -416,5 +481,5 @@ def all_traps() -> tuple[Trap, ...]:
 VECTOR_FAMILIES: Final = (
     "script", "handler", "javascript-url", "data-url", "iframe", "object", "embed", "form", "base",
     "meta-refresh", "link-remote", "svg", "css", "remote-resource", "xxe", "entity-bomb", "archive",
-    "disguise", "mutation",
+    "disguise", "opf-remote", "xsl-pi", "outbound-link", "mutation",
 )  # fmt: skip

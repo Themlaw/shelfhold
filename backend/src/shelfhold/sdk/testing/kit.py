@@ -373,6 +373,7 @@ def run_trapped_epub_corpus(
         all_traps,
         find_active_css,
         find_active_patterns,
+        find_remote_references,
     )
 
     report = ConformanceReport()
@@ -389,13 +390,12 @@ def run_trapped_epub_corpus(
         findings = [
             f"{name}: {found}"
             for name, content in entries.items()
-            if not name.lower().endswith(".opf")
             for found in (
-                find_active_css(content)
+                find_remote_references(content)
+                if name.lower().endswith(".opf")
+                else find_active_css(content)
                 if name.lower().endswith(".css")
                 else find_active_patterns(content)
-                if name.lower().endswith((".xhtml", ".html", ".htm", ".svg", ".xml", ".dat"))
-                else []
             )
         ]
         report.add(label, not findings, "; ".join(findings[:3]))

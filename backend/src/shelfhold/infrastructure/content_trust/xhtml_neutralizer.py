@@ -18,9 +18,9 @@ How it works, and why it is shaped this way.
   attribute names are compared in lower case too, since the reader's HTML parser does.
 * URLs are checked on a squashed copy (no control, space or invisible character, lower case, `\\`
   read as `/`), the way a browser's parser would, whatever entities wrote them. Only relative
-  references pass, plus `http`, `https` and `mailto` on `a href` (a link is a navigation, not a
-  resource) and small raster `data:image` URLs on images. Anything with another scheme, a leading
-  `//` or `/` is dropped.
+  references pass, plus small raster `data:image` URLs on images. Anything with a scheme (a link to
+  `http`, `https` or `mailto` loses its `href` and keeps its text: the reader may be a child), a
+  leading `//` or `/` is dropped. A `xml-stylesheet` processing instruction refuses the page.
 * Style sheets (`<style>`, `style=` and `.css` files) are cut rule by rule: a rule survives only
   without `@import`, escapes, `expression()`, `behavior`, `-moz-binding`, `image-set()` and any
   `url()` that is not a relative reference.
@@ -141,7 +141,6 @@ _URL_PAINT: Final = re.compile(r"^\s*(?:none|currentcolor|[#\w(),.\s%-]*)$", re.
 
 _SCHEME: Final = re.compile(r"^[a-z][a-z0-9+.\-]*:")
 _DATA_IMAGE: Final = re.compile(r"^data:image/(?:png|jpeg|gif|webp|avif);base64,[a-z0-9+/=]*$")
-_LINK_SCHEMES: Final = frozenset({"http", "https", "mailto"})
 _INVISIBLE: Final = frozenset({"Cc", "Cf", "Zs", "Zl", "Zp", "Co", "Cn", "Cs"})
 
 
@@ -160,18 +159,13 @@ def _is_relative(value: str) -> bool:
     return bool(s) and not s.startswith("/") and not _SCHEME.match(s)
 
 
+def is_relative_reference(value: str) -> bool:
+    """True for a reference inside the package (what the EPUB scan accepts in an OPF)."""
+    return _is_relative(value)
+
+
 def _is_fragment(value: str) -> bool:
     return _squash(value).startswith("#")
-
-
-def _link_ok(value: str) -> bool:
-    s = _squash(value)
-    if not s or s.startswith("//"):
-        return False
-    found = _SCHEME.match(s)
-    if found:
-        return s[: found.end() - 1] in _LINK_SCHEMES
-    return not s.startswith("/")
 
 
 def _image_ok(value: str) -> bool:
@@ -352,7 +346,7 @@ class _Writer:
     def _url_attr(local: str, name: str, value: str, context: str) -> bool:
         if context == "xhtml":
             if local == "a":
-                return _link_ok(value)
+                return _is_relative(value)
             if local == "img":
                 return _image_ok(value)
             if local == "link":
@@ -530,7 +524,14 @@ def _without_simple_doctype(data: bytes) -> bytes:
     return _NAMED_ENTITY.sub(number, data)
 
 
+_XML_STYLESHEET: Final = re.compile(rb"<\?xml-stylesheet", re.I)
+
+
 def _parse(data: bytes) -> Element:
+    # An XSL processing instruction can run a transform and fetch from the network, and the XML
+    # parser drops it silently: look for it in the bytes (UTF-16 included) and refuse.
+    if _XML_STYLESHEET.search(data.replace(b"\x00", b"")):
+        raise NeutralizationError("xml_stylesheet")
     try:
         return safe_parse_xml(_without_simple_doctype(bytes(data)), limits=XML_LIMITS)
     except UnsafeXmlError as error:
