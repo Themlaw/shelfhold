@@ -118,6 +118,9 @@ def seal(clear: bytes, passphrase: str) -> bytes:
         [_VERSION, b"-> scrypt " + _b64(salt) + b" " + str(LOG_N).encode(), _b64(wrapped)]
     )
     header += b"\n---"
+    # The header MAC of age.md (HMAC-SHA256 under a key HKDF-derived from the file key). The
+    # passphrase never reaches a plain hash: it goes through scrypt first (`_wrap_key`), and this
+    # is the MAC of the format, not a password hash.
     mac = hmac.new(_hkdf(file_key, b"", b"header"), header, hashlib.sha256).digest()
     nonce = os.urandom(NONCE_BYTES)
     payload_key = _hkdf(file_key, nonce, b"payload")
@@ -168,6 +171,7 @@ def unseal(binary: bytes, passphrase: str) -> bytes:
         file_key = nacl.bindings.crypto_aead_chacha20poly1305_ietf_decrypt(
             wrapped, None, _ZERO_NONCE, _wrap_key(passphrase, salt, log_n)
         )
+        # the header MAC of age.md, keyed by the file key that scrypt unlocked (see `seal`)
         expected = hmac.new(_hkdf(file_key, b"", b"header"), header, hashlib.sha256).digest()
         if not hmac.compare_digest(mac, expected):
             raise ExportError(_DAMAGED)
@@ -181,8 +185,10 @@ def unseal(binary: bytes, passphrase: str) -> bytes:
         for index in range(count):
             last = index == count - 1
             piece = body[index * size : (index + 1) * size]
-            if last and index > 0 and len(piece) == TAG:
-                raise ExportError(_DAMAGED)  # an empty last chunk after others
+            if len(piece) < TAG or (last and index > 0 and len(piece) == TAG):
+                raise ExportError(
+                    _DAMAGED
+                )  # no room for a tag, or an empty last chunk after others
             out.append(
                 nacl.bindings.crypto_aead_chacha20poly1305_ietf_decrypt(
                     piece, None, _chunk_nonce(index, last), payload_key

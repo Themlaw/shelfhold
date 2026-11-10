@@ -3,18 +3,23 @@
 Interoperability in both directions: what `seal` writes is opened by `pyrage` (and by the `age`
 1.2.1 command when it is installed, which CI does not require), what `pyrage` writes is opened by
 `unseal`, and the scrypt vectors of C2SP/CCTV (the official age test suite, copied in
-`tests/unit/vectors/age/`) give the verdict the reference implementation gives.
+`tests/unit/vectors/age/`) give the verdict the reference implementation gives. The `identity:`
+lines of the vectors (x25519 secret keys, public test data this code never reads) and the vector
+`scrypt_and_x25519` are left out, so that no secret scanner has to be told otherwise.
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import pty
 import shutil
 import sys
+import zlib
 from pathlib import Path
 
+import nacl.bindings
 import pyrage
 import pytest
 
@@ -64,6 +69,8 @@ def test_the_cost_is_fixed_and_the_file_is_the_standard_shape() -> None:
 def _vector(path: Path) -> tuple[dict[str, str], bytes]:
     raw = path.read_bytes()
     head, _blank, body = raw.partition(b"\n\n")
+    if b"compressed: zlib" in head:
+        body = zlib.decompress(body)
     fields: dict[str, str] = {}
     for line in head.decode().splitlines():
         key, _sep, value = line.partition(": ")
@@ -85,6 +92,43 @@ def test_the_official_scrypt_vectors_get_the_reference_verdict(path: Path) -> No
         assert isinstance(refused.value, WorkFactorError)
     else:
         assert not isinstance(refused.value, WorkFactorError)
+
+
+def _scrypt_header_for(file_key: bytes, passphrase: str) -> bytes:
+    """A valid scrypt header (a low cost, to keep the test quick) around a given file key."""
+    salt, log_n = os.urandom(16), 10
+    wrapped = nacl.bindings.crypto_aead_chacha20poly1305_ietf_encrypt(
+        file_key, None, bytes(12), age_scrypt._wrap_key(passphrase, salt, log_n)
+    )
+    lines = [b"age-encryption.org/v1", b"-> scrypt %s %d" % (age_scrypt._b64(salt), log_n)]
+    header = b"\n".join([*lines, age_scrypt._b64(wrapped)]) + b"\n---"
+    mac = hmac.new(age_scrypt._hkdf(file_key, b"", b"header"), header, hashlib.sha256).digest()
+    return header + b" " + age_scrypt._b64(mac) + b"\n"
+
+
+@pytest.mark.req("ENF-SEC-005")
+@pytest.mark.parametrize("path", sorted(VECTORS.glob("stream_*")), ids=lambda p: p.name)
+def test_the_official_stream_vectors_give_the_reference_verdict_under_a_scrypt_header(
+    path: Path,
+) -> None:
+    """The STREAM payload of each vector (chunking, final flag, tags) with the vector's file key,
+    in a scrypt header: success with the same payload, or a refusal, never a crash."""
+    fields, binary = _vector(path)
+    end = binary.index(b"\n", binary.index(b"\n--- ") + 1)
+    sealed = _scrypt_header_for(bytes.fromhex(fields["file key"]), "pw") + binary[end + 1 :]
+    if fields["expect"] == "success":
+        assert hashlib.sha256(age_scrypt.unseal(sealed, "pw")).hexdigest() == fields["payload"]
+    else:
+        with pytest.raises(ExportError):
+            age_scrypt.unseal(sealed, "pw")
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_a_file_cut_inside_the_last_segment_tag_is_refused_not_a_crash() -> None:
+    sealed = age_scrypt.seal(clear_of(age_scrypt.CHUNK + 4), PASSPHRASE)
+    for cut in range(1, 21):  # the last segment is 4 bytes + 16 of tag: shorter than a tag too
+        with pytest.raises(ExportError, match="wrong passphrase or damaged file"):
+            age_scrypt.unseal(sealed[:-cut], PASSPHRASE)
 
 
 # -- damage -------------------------------------------------------------------------------------
