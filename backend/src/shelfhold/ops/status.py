@@ -27,7 +27,7 @@ from shelfhold.export.domain.kavita_compat import (
 )
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
-from shelfhold.library.public import content_error_candidates
+from shelfhold.library.public import backlog_row, content_error_candidates
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 
 __all__ = [
@@ -48,6 +48,7 @@ _TEMPLATES = {
     "missing": "shelfhold missing resolve {extra} {subject} (--reexport | --unfollow)",
     "paused_foreign_writer": "shelfhold series resume {subject}",
     "dead_letter": "shelfhold jobs retry {subject}",
+    "safeguard_backlog": "shelfhold jobs list",
     "not_indexed": "shelfhold jobs retry {subject}",
     "instance_changed": "shelfhold target reconnect {subject}",
     "target_forbidden": "shelfhold target reconnect {subject}",
@@ -115,7 +116,18 @@ def collect(connection: Connection) -> list[WaitingItem]:
     found += _discovery(connection)
     found += _withdrawals(connection)
     found += _to_rate(connection)
+    found += _safeguard_backlog(connection)
     return found
+
+
+def _safeguard_backlog(connection: Connection) -> list[WaitingItem]:
+    """Units owed a copy in /store that the last cycle could not take (200 Units, 5 GiB or the
+    room of the volume): they wait for the next window; `jobs list` shows the job (EF-BIB-042)."""
+    left = backlog_row(connection)
+    if left is None:
+        return []
+    units, size = left
+    return [_item("safeguard_backlog", "store", "store", f"{units} unit(s), {size} byte(s)")]
 
 
 def _to_rate(connection: Connection) -> list[WaitingItem]:

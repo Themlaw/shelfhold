@@ -32,6 +32,16 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     withdraw.add_argument("--apply", action="store_true", help=t("cli.shelf_withdraw_apply_help"))
     withdraw.add_argument("--confirm", default=None, help=t("cli.shelf_withdraw_confirm_help"))
     withdraw.set_defaults(handler=run_withdraw, configure_logging=False)
+    purge = actions.add_parser(
+        "purge-upstream", help=t("cli.shelf_purge_upstream_help"), allow_abbrev=False
+    )
+    purge.add_argument("shelf", help=t("cli.shelf_purge_upstream_shelf_help"))
+    switch = purge.add_mutually_exclusive_group(required=True)
+    switch.add_argument("--on", dest="enabled", action="store_true", default=None,
+                        help=t("cli.shelf_purge_upstream_on_help"))  # fmt: skip
+    switch.add_argument("--off", dest="enabled", action="store_false",
+                        help=t("cli.shelf_purge_upstream_off_help"))  # fmt: skip
+    purge.set_defaults(handler=run_purge_upstream, configure_logging=False)
 
 
 @headless_command
@@ -44,6 +54,16 @@ def run_create(args: argparse.Namespace, commands: HeadlessCommands) -> int:
         print(t("headless.shelf_created", name=args.name))
     else:
         print(t("headless.shelf_exists", name=args.name))
+    return 0
+
+
+@ops_command
+def run_purge_upstream(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.shelf_purge_upstream", shelf=args.shelf, enabled=args.enabled)
+    if done["enabled"]:
+        print(t("cli.shelf_purge_upstream_on", shelf=args.shelf))
+    else:
+        print(t("cli.shelf_purge_upstream_off", shelf=args.shelf))
     return 0
 
 

@@ -109,6 +109,13 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         f"{_EXPORT_APP}/restore.py::DeletionExecutor.purge": "reconcile.confirm_deletion",
         f"{_EXPORT_APP}/restore_purge.py::RestoreDeletion._erase": "reconcile.confirm_deletion",
         f"{_EXPORT_APP}/restore_purge.py::RestoreDeletion.purge": "reconcile.confirm_deletion",
+        # The erasure of a download in the connected service after a verified export (L16,
+        # EF-SRC-009): a deed of the window job, reached only on a shelf where an admin turned the
+        # option on with this reserved action (the sole writer of the column), and only when the
+        # rule of EF-BIB-038 holds again at the moment of the deed (EF-EXP-064).
+        "shelfhold/library/adapters/safeguard_job.py::UpstreamPurge.execute": (
+            "shelf.purge_upstream"
+        ),
         # The recycle bins past 30 days (ENF-OPS-009): the daily sweep, under an intention; fsops
         # reads the age of the entry from the file system and refuses a younger one.
         f"{_EXPORT_APP}/recycle_sweep.py::RecycleSweeper.sweep": "trash_retention_purge",

@@ -26,6 +26,9 @@ _DECLARED = (
     _action("trash.empty", Effect.DELETES_PERMANENTLY),  # EF-BIB-030
     _action("unit.delete", Effect.DELETES_PERMANENTLY),  # EF-BIB-031: every managed copy
     _action("detach.full", Effect.DELETES_PERMANENTLY),  # EF-EXP-031
+    # EF-SRC-009: turning on the erasure of the upstream download after a verified export. The
+    # nightly deed acts only on a shelf where this was said, and still obeys EF-BIB-038.
+    _action("shelf.purge_upstream", Effect.DELETES_PERMANENTLY),
     _action("destination.remove_all", Effect.DELETES_PERMANENTLY),
     _action("reserved_dir.erase", Effect.ERASES_RESERVED_DIR),
     _action("reconcile.confirm_deletion", Effect.CONFIRMS_RESTORE_DELETION),  # EF-BIB-053
