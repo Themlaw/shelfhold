@@ -16,12 +16,15 @@ from functools import cache
 from typing import Final, Literal
 
 from shelfhold.sdk.testing.corpus.trapped_epubs.build import (
+    CONTAINER,
     EPUB_NS,
     SVG_NS,
+    TINY_PNG,
     XHTML_NS,
     XLINK_NS,
     Member,
     epub_bytes,
+    opf,
     xhtml,
     zip_bytes,
 )
@@ -273,9 +276,9 @@ def _standalone_files() -> list[Trap]:
         Trap("html_extension_page", "script", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/extra.html", html_page)]), entry="OEBPS/extra.html"),
         Trap("htm_extension_page", "script", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/extra.htm", html_page)]), entry="OEBPS/extra.htm"),
         Trap("xhtml_manifest_odd_extension", "script", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/extra.dat", html_page)], opf_extra='<item id="x" href="extra.dat" media-type="application/xhtml+xml"/>'), entry="OEBPS/extra.dat"),
-        Trap("svg_in_jpg", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.jpg", svg_script)]), outcome="refused", reason="disguised", entry="OEBPS/p.jpg"),
-        Trap("html_in_png", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.png", b"<!DOCTYPE html><script>alert(1)</script>")]), outcome="refused", reason="disguised", entry="OEBPS/p.png"),
-        Trap("html_in_xml", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/data.xml", html_page)]), entry="OEBPS/data.xml"),
+        Trap("svg_in_jpg", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.jpg", svg_script)]), outcome="refused", reason="magic_mismatch", entry="OEBPS/p.jpg"),
+        Trap("html_in_png", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/p.png", b"<!DOCTYPE html><script>alert(1)</script>")]), outcome="refused", reason="magic_mismatch", entry="OEBPS/p.png"),
+        Trap("html_in_xml", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member("OEBPS/data.xml", html_page)]), "refused", "OEBPS/data.xml", "page_in_xml"),
     ]  # fmt: skip
 
 
@@ -307,14 +310,15 @@ def _review_cases() -> list[Trap]:
     page = xhtml("<p>hi</p><script>alert(document.cookie)</script>")
     svg = f'{_XML}<svg xmlns="{SVG_NS}" onload="alert(1)"><script>alert(1)</script></svg>'.encode()
 
-    def declared(name: str, media: str, data: bytes = page) -> Trap:
+    def declared(name: str, media: str, data: bytes = page, reason: str = "") -> Trap:
         item = f'<item id="x" href="{name.rsplit("/", 1)[-1]}" media-type="{media}"/>'
         return Trap(
             f"declared_{media.replace('/', '_')}_{name.rsplit('/', 1)[-1] or 'x'}", "disguise",
-            epub_bytes(xhtml("<p>x</p>"), extra=[Member(name, data)], opf_extra=item), entry=name,
+            epub_bytes(xhtml("<p>x</p>"), extra=[Member(name, data)], opf_extra=item),
+            "refused" if reason else "neutralized", name, reason,
         )  # fmt: skip
 
-    def stray(name: str, data: bytes = page, reason: str = "disguised") -> Trap:
+    def stray(name: str, data: bytes = page, reason: str = "unexpected_entry") -> Trap:
         return Trap(
             f"undeclared_{name.rsplit('/', 1)[-1]}", "disguise",
             epub_bytes(xhtml("<p>x</p>"), extra=[Member(name, data)]), "refused", name, reason,
@@ -342,13 +346,14 @@ def _review_cases() -> list[Trap]:
     return [
         declared("OEBPS/page.dat", "text/html"),
         declared("OEBPS/page", "text/html"),
-        declared("OEBPS/page", "text/xml"),
-        declared("OEBPS/data.bin", "application/xml"),
-        declared("OEBPS/pic", "text/xml", svg),
+        declared("OEBPS/page", "text/xml", reason="page_in_xml"),
+        declared("OEBPS/data.bin", "application/xml", reason="unexpected_entry"),
+        declared("OEBPS/pic", "text/xml", svg, "page_in_xml"),
         stray("OEBPS/page"),
         stray("OEBPS/page.bin"),
         stray("OEBPS/notes.js", b"<html><body><script>alert(1)</script></body></html>"),
         stray("OEBPS/pic.svgz", b"\x1f\x8b\x08\x00compressed-svg"),
+        stray("OEBPS/style.xsl", b"<xsl:stylesheet xmlns:xsl='http://www.w3.org/1999/XSL/Transform'/>"),
         stray("OEBPS/late.bin", "   \n\ufeff<!DOCTYPE html><script>1</script>".encode()),
         remote("cover_https", '<item id="c" href="https://evil.example/c.png" media-type="image/png" properties="cover-image"/>'),
         remote("cover_protocol_relative", '<item id="c" href="//evil.example/c.png" media-type="image/png"/>'),
@@ -366,6 +371,217 @@ def _review_cases() -> list[Trap]:
     ]  # fmt: skip
 
 
+def _whitelist_cases() -> list[Trap]:
+    """The bypasses of the first sniffing (second review): padding, prefixes, charset, OPF, XSL."""
+    evil = f'<html xmlns="{XHTML_NS}"><body><script>alert(1)</script></body></html>'
+    pad_spaces = (_XML + " " * 10240 + evil).encode()
+    pad_comment = (_XML + "<!--" + "x" * 10240 + "-->" + evil).encode()
+    u16 = (_XML.replace("utf-8", "utf-16") + evil).encode("utf-16")
+    u32 = (_XML.replace("utf-8", "utf-32") + evil).encode("utf-32")
+    prefixed = f'{_XML}<h:html xmlns:h="{XHTML_NS}"><h:body><h:script>alert(1)</h:script></h:body></h:html>'.encode()
+    data_h = f'{_XML}<data xmlns:h="{XHTML_NS}"><h:script>alert(1)</h:script></data>'.encode()
+    svg_p = f'{_XML}<s:svg xmlns:s="{SVG_NS}"><s:script>alert(1)</s:script></s:svg>'.encode()
+    xsl = (
+        f'{_XML}<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"><!--{"x" * 10240}-->'
+        f'<xsl:template match="/"><h:html xmlns:h="{XHTML_NS}"><h:script>alert(1)</h:script></h:html></xsl:template></xsl:stylesheet>'
+    ).encode()
+    pi = '<?xml-stylesheet type="text/xsl" href="e.xsl"?>'
+
+    def entry(label: str, name: str, data: bytes, reason: str, media: str = "") -> Trap:
+        items = (
+            f'<item id="e" href="{name.rsplit("/", 1)[-1]}" media-type="{media}"/>' if media else ""
+        )
+        return Trap(f"wl_{label}", "disguise", epub_bytes(xhtml("<p>x</p>"), extra=[Member(name, data)], opf_extra=items),
+                    "refused" if reason else "neutralized", name, reason)  # fmt: skip
+
+    def package(label: str, mutate: str, reason: str = "remote_reference") -> Trap:
+        document = (
+            opf()
+            .decode()
+            .replace("<dc:language>en</dc:language>", "<dc:language>en</dc:language>" + mutate)
+        )
+        return Trap(f"wl_opf_{label}", "opf-remote", epub_bytes(xhtml("<p>x</p>"), opf_bytes=document.encode()),
+                    "refused", "OEBPS/content.opf", reason)  # fmt: skip
+
+    def hostile_item(label: str, href: str) -> Trap:
+        return Trap(f"wl_item_{label}", "opf-remote",
+                    epub_bytes(xhtml("<p>x</p>"), opf_extra=f'<item id="r" href="{href}" media-type="image/png"/>'),
+                    "refused", "OEBPS/content.opf", "remote_reference")  # fmt: skip
+
+    cases = [
+        entry("pad_spaces_dat", "OEBPS/e.dat", pad_spaces, "unexpected_entry"),
+        entry("pad_comment_dat", "OEBPS/e.dat", pad_comment, "unexpected_entry"),
+        entry("pad_comment_xml", "OEBPS/e.xml", pad_comment, "page_in_xml"),
+        entry("pad_comment_ncx", "OEBPS/toc.ncx", pad_comment, "page_in_xml"),
+        entry(
+            "pad_comment_text_xml_bin", "OEBPS/e.bin", pad_comment, "unexpected_entry", "text/xml"
+        ),
+        entry("pad_comment_png", "OEBPS/e.png", pad_comment, "magic_mismatch"),
+        entry(
+            "pad_comment_charset",
+            "OEBPS/e.dat",
+            pad_comment,
+            "",
+            "application/xhtml+xml; charset=utf-8",
+        ),
+        entry(
+            "charset_upper",
+            "OEBPS/e.dat",
+            (_XML + evil).encode(),
+            "",
+            "Application/XHTML+XML ; Charset=UTF-8",
+        ),
+        entry("utf16_dat", "OEBPS/e.dat", u16, "unexpected_entry"),
+        entry("utf32_dat", "OEBPS/e.dat", u32, "unexpected_entry"),
+        entry("gzip_dat", "OEBPS/e.dat", b"\x1f\x8b\x08\x00" + b"x" * 64, "unexpected_entry"),
+        entry(
+            "upper_svg_dat",
+            "OEBPS/e.dat",
+            f'{_XML}<SVG xmlns="{SVG_NS}"><script>1</script></SVG>'.encode(),
+            "unexpected_entry",
+        ),
+        entry("prefixed_html_xml", "OEBPS/e.xml", prefixed, "page_in_xml"),
+        entry("prefixed_html_dat", "OEBPS/e.dat", prefixed, "unexpected_entry"),
+        entry("prefixed_script_xml", "OEBPS/e.xml", data_h, "page_in_xml"),
+        entry("prefixed_script_ncx", "OEBPS/toc.ncx", data_h, "page_in_xml"),
+        entry("prefixed_svg_xml", "OEBPS/e.xml", svg_p, "page_in_xml"),
+        entry(
+            "pi_in_xml", "OEBPS/d.xml", (_XML + pi + "<data/>").encode(), "processing_instruction"
+        ),
+        entry(
+            "pi_in_ncx",
+            "OEBPS/toc.ncx",
+            (_XML + pi + '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"/>').encode(),
+            "processing_instruction",
+        ),
+        entry(
+            "pi_in_xml_utf16",
+            "OEBPS/d.xml",
+            (_XML.replace("utf-8", "utf-16") + pi + "<data/>").encode("utf-16"),
+            "processing_instruction",
+        ),
+        entry(
+            "pi_after_doctype_page",
+            "OEBPS/p.xhtml",
+            (
+                _XML
+                + "<!DOCTYPE html>\n"
+                + pi
+                + f'<html xmlns="{XHTML_NS}"><body><p>x</p></body></html>'
+            ).encode(),
+            "xml_stylesheet",
+        ),
+        entry("xsl_undeclared", "OEBPS/e.xsl", xsl, "unexpected_entry"),
+        entry("xsl_declared_xml", "OEBPS/e.xsl", xsl, "unexpected_entry", "application/xml"),
+        entry("xsl_declared_xml_xml_ext", "OEBPS/e.xml", xsl, "page_in_xml", "application/xml"),
+        entry(
+            "type_mismatch_png_as_xhtml",
+            "OEBPS/e.png",
+            TINY_PNG,
+            "type_mismatch",
+            "application/xhtml+xml",
+        ),
+        entry(
+            "type_mismatch_xhtml_as_image",
+            "OEBPS/e.xhtml",
+            xhtml("<p>x</p>"),
+            "type_mismatch",
+            "image/png",
+        ),
+        Trap(
+            "wl_dotdot_declaration",
+            "opf-remote",
+            epub_bytes(
+                xhtml("<p>x</p>"),
+                extra=[Member("OEBPS/e.dat", pad_comment)],
+                opf_extra='<item id="e" href="../../OEBPS/e.dat" media-type="application/xhtml+xml"/>',
+            ),
+            "refused",
+            "OEBPS/content.opf",
+            "remote_reference",
+        ),
+        entry(
+            "font_with_svg_table_is_fine",
+            "OEBPS/f.otf",
+            b"OTTO\x00\x0c" + b"x" * 2000 + f'<svg xmlns="{SVG_NS}"><g/></svg>'.encode(),
+            "",
+            "font/otf",
+        ),
+        entry(
+            "font_bad_magic", "OEBPS/f.woff", b"<html><script>1</script></html>", "magic_mismatch"
+        ),
+        package("metadata_link", '<link rel="cover" href="https://evil.example/c.png"/>'),
+        package(
+            "refines_remote", '<meta refines="https://evil.example/x" property="role">aut</meta>'
+        ),
+        package("xml_base", '<meta xml:base="//evil.example/" property="x">a</meta>'),
+        package(
+            "page_element", f'<h:script xmlns:h="{XHTML_NS}">alert(1)</h:script>', "page_in_xml"
+        ),
+        Trap(
+            "wl_opf_pi",
+            "xsl-pi",
+            epub_bytes(
+                xhtml("<p>x</p>"),
+                opf_bytes=opf().replace(b"<package", pi.encode() + b"<package", 1),
+            ),
+            "refused",
+            "OEBPS/content.opf",
+            "processing_instruction",
+        ),
+        Trap(
+            "wl_container_pi",
+            "xsl-pi",
+            zip_bytes(
+                [
+                    Member("mimetype", b"application/epub+zip", False),
+                    Member("META-INF/container.xml", pi.encode() + CONTAINER),
+                    Member("OEBPS/content.opf", opf()),
+                ]
+            ),
+            "refused",
+            "META-INF/container.xml",
+            "processing_instruction",
+        ),
+        Trap(
+            "wl_opf_outside_root",
+            "opf-remote",
+            epub_bytes(
+                xhtml("<p>x</p>"),
+                opf_extra='<item id="r" href="../../x.png" media-type="image/png"/>',
+            ),
+            "refused",
+            "OEBPS/content.opf",
+            "remote_reference",
+        ),
+        Trap(
+            "wl_item_conflicting_types",
+            "disguise",
+            epub_bytes(
+                xhtml("<p>x</p>"),
+                opf_extra='<item id="a" href="e.dat" media-type="image/png"/><item id="b" href="e.dat" media-type="text/html"/>',
+            ),
+            "refused",
+            "OEBPS/content.opf",
+            "type_mismatch",
+        ),
+    ]
+    for label, href in {
+        "protocol_relative": "//evil/x.png",
+        "upper_scheme": "HTTPS://evil/x.png",
+        "unc": "\\\\host\\share\\x.png",
+        "entity_scheme": "&#x68;ttps://evil/x.png",
+        "split_entity": "h&#x74;tps://evil/x",
+        "encoded_scheme": "https%3A//evil/x",
+        "leading_space": " https://evil/x",
+        "file": "file:///etc/passwd",
+        "rooted": "/api/x",
+        "dotdot": "../../x.png",
+    }.items():
+        cases.append(hostile_item(label, href))
+    return cases
+
+
 def base_traps() -> tuple[Trap, ...]:
     return tuple(
         _scripts()
@@ -379,6 +595,7 @@ def base_traps() -> tuple[Trap, ...]:
         + _standalone_files()
         + _archives()
         + _review_cases()
+        + _whitelist_cases()
     )
 
 

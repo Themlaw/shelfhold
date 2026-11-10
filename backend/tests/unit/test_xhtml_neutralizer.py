@@ -165,7 +165,7 @@ def test_publisher_and_watermarked_epub_untouched_outside_opf() -> None:
     mark = b'<?xml version="1.0"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0"/>'
     extra = [
         Member("OEBPS/font.woff", b"wOFF" + bytes(range(256)) * 4, deflate=False),
-        Member("OEBPS/notes.txt", b"plain notes\r\n", deflate=True),
+        Member("OEBPS/notes.xml", b"<notes>plain\r\n</notes>", deflate=True),
         Member("OEBPS/images/a.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 64),
     ]
     original = epub_bytes(xhtml('<p onclick="1">x</p>'), extra=extra)
@@ -418,37 +418,57 @@ def test_unknown_kind_is_a_programming_error() -> None:
         ("OEBPS/a.css", "", b"", "css"),
         ("OEBPS/a.dat", "text/html", b"<p>x</p>", "xhtml"),
         ("OEBPS/a", "text/html", b"<p>x</p>", "xhtml"),
-        ("OEBPS/a", "text/xml", b"<html><script/></html>", "xhtml"),
-        ("OEBPS/a.bin", "application/xml", b"<svg onload='1'/>", "svg"),
-        ("OEBPS/a.bin", "text/xml", b"<notes/>", None),
-        ("OEBPS/a.xml", "", b"<html/>", "xhtml"),
-        ("OEBPS/a.ncx", "", b"<ncx/>", None),
-        ("OEBPS/a.png", "", b"\x89PNG", None),
-        ("OEBPS/a.txt", "", b"plain", None),
-        ("OEBPS/a.js", "", b"var x = 1;", None),
-        ("OEBPS/a", "", b"  <!DOCTYPE html><script>1</script>", "disguised"),
-        ("OEBPS/a.jpg", "", b"<svg/>", "disguised"),
-        ("OEBPS/a.bin", "", b"<script>1</script>", "disguised"),
-        ("OEBPS/a.svgz", "", b"\x1f\x8b", "disguised"),
+        ("OEBPS/a.dat", "application/xhtml+xml; charset=UTF-8", b"x", "xhtml"),
+        ("OEBPS/a", "text/xml", b"<html><script/></html>", "page_in_xml"),
+        ("OEBPS/a.bin", "application/xml", b"<notes/>", "unexpected_entry"),
+        ("OEBPS/a.xml", "", b"<html/>", "page_in_xml"),
+        ("OEBPS/a.xml", "", b"<notes/>", "copy"),
+        ("OEBPS/a.ncx", "", b"<ncx/>", "copy"),
+        ("OEBPS/a.png", "", b"\x89PNG\r\n\x1a\n", "copy"),
+        ("OEBPS/a.png", "", b"<svg/>", "magic_mismatch"),
+        ("OEBPS/a.woff2", "font/woff2", b"wOF2", "copy"),
+        ("OEBPS/a.png", "text/html", b"\x89PNG\r\n\x1a\n", "type_mismatch"),
+        ("OEBPS/a.xhtml", "image/png", b"x", "type_mismatch"),
+        ("OEBPS/a.txt", "", b"plain", "unexpected_entry"),
+        ("OEBPS/a.js", "", b"var x = 1;", "unexpected_entry"),
+        ("OEBPS/a.dat", "", b"x", "unexpected_entry"),
+        ("OEBPS/a", "", b"  <!DOCTYPE html><script>1</script>", "unexpected_entry"),
+        ("OEBPS/a.svgz", "", b"\x1f\x8b", "unexpected_entry"),
+        ("OEBPS/a.mp3", "audio/mpeg", b"ID3", "unexpected_entry"),
     ],
 )
-def test_entry_routing_decides_by_extension_then_media_type_then_the_bytes(
-    name: str, media: str, head: bytes, expected: str | None
+def test_entry_routing_is_a_closed_list_of_categories(
+    name: str, media: str, head: bytes, expected: str
 ) -> None:
-    from shelfhold.infrastructure.content_trust.epub_scan import _kind_of
+    from shelfhold.infrastructure.content_trust.epub_scan import _classify, _manifest
 
     items = f'<item id="x" href="{name.rsplit("/", 1)[-1]}" media-type="{media}"/>' if media else ""
     epub = epub_bytes(xhtml("<p>x</p>"), extra=[Member(name, head)], opf_extra=items)
-    from shelfhold.infrastructure.content_trust.epub_scan import _manifest_kinds
-
     with safe_open_archive(BytesIO(epub), name="x.epub") as archive:
-        _, manifest = _manifest_kinds(archive)
-        if expected == "disguised":
-            with pytest.raises(NeutralizationError) as caught:
-                _kind_of(archive, name, manifest)
-            assert caught.value.reason == "disguised"
+        opfs, declared = _manifest(archive)
+        if expected in ("xhtml", "svg", "css", "copy"):
+            assert _classify(archive, name, opfs, declared) == expected
         else:
-            assert _kind_of(archive, name, manifest) == expected
+            with pytest.raises(NeutralizationError) as caught:
+                _classify(archive, name, opfs, declared)
+            assert caught.value.reason == expected
+
+
+@pytest.mark.req("EF-BIB-051", "ENF-SEC-015")
+@pytest.mark.parametrize("chapter", ["Text/ch1.xhtml", "Part%201%3A%20Intro.xhtml", "a%20b.xhtml"])
+def test_a_standard_epub3_still_passes(chapter: str) -> None:
+    """Non-regression (counter-review): nav, NCX, cover SVG, fonts, css urls, encoded names."""
+    from shelfhold.sdk.testing.corpus.trapped_epubs import standard_epub3
+
+    derived, result = _run(standard_epub3(chapter))
+    entries = _entries(derived)
+    original = _entries(standard_epub3(chapter))
+    for name in ("OEBPS/Fonts/Body.otf", "OEBPS/Fonts/Body.woff2", "OEBPS/Fonts/Old.ttf",
+                 "OEBPS/Images/cover.jpg", "OEBPS/toc.ncx", "OEBPS/content.opf"):  # fmt: skip
+        assert entries[name] == original[name], name
+    assert entries["OEBPS/Styles/style.css"].count(b"url(") == 3
+    assert b"cover.jpg" in entries["OEBPS/Text/cover.xhtml"]
+    assert not result.derived_hash.endswith("0" * 8)
 
 
 @pytest.mark.req("EF-BIB-051", "ENF-SEC-015")

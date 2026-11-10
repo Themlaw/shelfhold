@@ -113,6 +113,7 @@ def epub_bytes(
     extra: Iterable[Member] = (),
     opf_extra: str = "",
     guide: str = "",
+    opf_bytes: bytes | None = None,
     first: Iterable[Member] | None = None,
 ) -> bytes:
     """A well-formed EPUB around `chapter`. `extra` entries come last, `first` replaces mimetype."""
@@ -124,7 +125,7 @@ def epub_bytes(
     return zip_bytes([
         *head,
         Member("META-INF/container.xml", CONTAINER),
-        Member("OEBPS/content.opf", opf(opf_extra, guide)),
+        Member("OEBPS/content.opf", opf_bytes or opf(opf_extra, guide)),
         Member("OEBPS/nav.xhtml", NAV),
         Member("OEBPS/ch1.xhtml", chapter),
         Member("OEBPS/style.css", css),

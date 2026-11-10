@@ -26,9 +26,13 @@ Frontière de confiance du **corps** des fichiers (EF-BIB-051, ENF-SEC-015, ADR-
 ## Ce qu'elle ne touche pas
 
 - L'**OPF** (tout `.opf`) et **`META-INF/`** ne sont jamais réécrits ; le module ne peut d'ailleurs pas atteindre l'écrivain d'OPF (contrat `opf-sole-writer`). `mimetype` reste en tête et non compressé.
-- Toute autre entrée (images, polices, NCX, médias…) est recopiée **octet pour octet**, dans le même ordre. Le type d'une entrée se décide par l'extension, puis par le type déclaré au manifeste (`text/html` est une page ; `text/xml` et `application/xml` sont reniflés), puis par ses octets : **toute** entrée dont le type reste indéterminé est reniflée (8 Kio, UTF-16 compris). Une page, un SVG ou un script trouvé dans un fichier de tout autre nom est un document déguisé : l'EPUB est refusé (`disguised`), sauf s'il est déclaré XML, auquel cas il est neutralisé comme une page. Un `.svgz` est refusé (illisible donc impossible à couper).
-- Comme l'OPF n'est jamais réécrit, un `href` d'`item` du manifeste ou de `reference` du guide qui n'est pas relatif (`https://`, `//`, `/…`, schéma) **refuse l'EPUB** (`remote_reference`). Les liens `<link>` des métadonnées ne chargent rien et sont laissés.
-- Une instruction de traitement `xml-stylesheet` dans une page ou un SVG refuse l'EPUB (`xml_stylesheet`) : l'analyseur la perd sans bruit et un lecteur pourrait exécuter la transformation.
+- **Liste blanche positive.** Aucune entrée n'est reconnue en cherchant des balises dans ses octets (un remplissage de 10 Kio, un préfixe d'espace de noms, l'UTF-16 ou un `media-type` avec `; charset=` suffisent à tromper un reniflage). Chaque entrée de l'archive doit tomber dans **exactement une** catégorie, sinon l'EPUB est refusé (`unexpected_entry`) :
+  1. `mimetype`, `META-INF/*` et l'OPF : recopiés tels quels, jamais réécrits ; mais `container.xml` et chaque OPF sont **lus en entier** : toute instruction de traitement autre que la déclaration XML, tout `href`, `src`, `refines` ou `xml:base` non relatif (schéma lu sur la valeur brute, racine et `..` sur la valeur décodée : `Part%201%3A%20Intro.xhtml` passe) ou qui sort de la racine du paquet, tout élément XHTML ou SVG, refusent l'EPUB (`remote_reference`, `processing_instruction`, `page_in_xml`). Le `media-type` est coupé au `;` et mis en minuscules ; deux items qui déclarent des types différents pour un même chemin refusent l'EPUB.
+  2. XHTML, SVG et CSS : toujours neutralisés, que l'extension (`.xhtml`, `.xht`, `.html`, `.htm`, `.svg`, `.css`) ou le type déclaré les désigne. Si les deux disent des choses différentes (`.png` déclaré `text/html`), l'EPUB est refusé (`type_mismatch`).
+  3. NCX et XML (déclarés XML, ou nommés `.xml` ou `.ncx`) : lus en entier par `safe_parse_xml` ; le premier élément d'un espace de noms XHTML ou SVG (ou `html`, `svg`, `script`…), ou toute instruction de traitement, refuse l'EPUB ; sinon recopiés tels quels.
+  4. Binaires : images png, jpeg, gif, webp et polices ttf, otf, woff, woff2, recopiés **si et seulement si** leurs premiers octets sont les octets magiques de leur extension (`magic_mismatch` sinon). Aucun reniflage de balises dans une police : une police OpenType-SVG est acceptée, un lecteur ne l'exécute pas comme une page.
+  5. Tout le reste est refusé : `.xsl`, `.xslt`, `.js`, `.dat`, `.svgz`, audio et vidéo (refusés tant qu'aucune destination audio n'existe, EF-SRC-012), entrées sans extension connue et sans type de page déclaré. Une entrée absente du manifeste est classée par son extension, avec les mêmes règles.
+- Une instruction de traitement `xml-stylesheet` dans une page ou un SVG refuse l'EPUB (`xml_stylesheet`, cherchée dans les octets, UTF-16 et UTF-32 compris) : l'analyseur la perd sans bruit et un lecteur pourrait exécuter la transformation.
 - L'archive est lue par `safe_open_archive` (`../`, chemins absolus, liens symboliques, doublons, bombes de décompression, plafonds) et tout XML par `safe_parse_xml`. Un refus porte le code stable `content.untrusted_entry`.
 
 ## Corpus d'EPUB piégés
@@ -38,6 +42,7 @@ Frontière de confiance du **corps** des fichiers (EF-BIB-051, ENF-SEC-015, ADR-
 ## Limites connues, à relire
 
 - Un fichier XHTML mal formé refuse tout l'EPUB (échec fermé, pas de réparation).
+- Un EPUB réel avec des fichiers hors liste (`.txt`, `.plist`, `.DS_Store`, audio) est refusé en entier : c'est le prix de la liste blanche positive.
 - Une référence relative qui remonte au-delà de la racine du paquet (`../../…`) n'est pas bornée ici : la fonction ne connaît pas le chemin de l'entrée.
 - Le MathML est supprimé ; l'audio et la vidéo aussi.
 - `content-hash@2` (hash d'un EPUB sans son OPF) est défini dans `epub_scan.py` ; le lot qui fournit le hash du contenu EPUB (L09) doit l'adopter tel quel ou changer la version.

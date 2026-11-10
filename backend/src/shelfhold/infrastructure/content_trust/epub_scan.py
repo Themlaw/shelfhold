@@ -2,15 +2,28 @@
 
 The archive is opened only by `safe_open_archive` (traversal, absolute and duplicate names, links,
 bombs, entry caps) and every XML document it holds is read by `safe_parse_xml`. The EPUB is then
-copied entry by entry, in the same order, to the stream the caller owns:
+copied entry by entry, in the same order, to the stream the caller owns. **Every entry must fall
+in exactly one category, and an entry that falls in none refuses the EPUB** (`unexpected_entry`);
+nothing is recognised by looking for markup in bytes, which any padding defeats.
 
-* `mimetype` (first, stored, `application/epub+zip`), the OPF (any `.opf`) and `META-INF/` are
-  copied byte for byte and never rewritten: this module cannot even reach the OPF writer
-  (contract `opf-sole-writer`);
-* a XHTML page, a SVG image or a style sheet goes through `neutralize` (the manifest media type or
-  the extension decides; a `.xml` or `.ncx` that is really a page is a page);
-* every other entry is copied byte for byte. An image, font or media entry whose first bytes are a
-  page or an SVG is a document in disguise and refuses the EPUB.
+1. `mimetype`, `META-INF/*` and the OPF are copied byte for byte and never rewritten (this module
+   cannot even reach the OPF writer, contract `opf-sole-writer`). `container.xml` and every OPF
+   are first **read in full**: a processing instruction other than the XML declaration, an
+   `href`, `src`, `refines` or `xml:base` that is not relative (tested on the raw value, then on
+   the decoded one), a reference that leaves the package root, or any XHTML or SVG element refuses
+   the EPUB.
+2. XHTML, SVG and style sheets are always neutralized, whether the manifest media type or the
+   extension says what they are. If both say something and disagree, the EPUB is refused.
+3. NCX and XML (declared as XML, or named `.xml` or `.ncx`) are read in full: an element of the
+   XHTML or SVG namespace, or any processing instruction, refuses the EPUB; otherwise they are
+   copied.
+4. Images (png, jpeg, gif, webp) and fonts (ttf, otf, woff, woff2) are copied if and only if their
+   first bytes are the magic bytes of their extension. No markup is searched for in a font: an
+   OpenType-SVG font is accepted, since a reader does not run it as a page.
+5. Anything else (`.xsl`, `.js`, `.dat`, `.svgz`, audio, an entry with no known extension) is
+   refused.
+
+Paths are resolved against the OPF; a `href` that leaves the package root is refused.
 
 There is no parameter that says how far the source is trusted: this function is only called for an
 `untrusted` EPUB, and a watermark found by a heuristic never changes what it does.
@@ -41,11 +54,13 @@ from shelfhold.infrastructure.archives import (
 )
 from shelfhold.infrastructure.content_trust.xhtml_neutralizer import (
     DERIVED_BY,
+    XML_LIMITS_INSPECT,
     NeutralizationError,
     is_relative_reference,
     neutralize,
+    parse_xml_document,
 )
-from shelfhold.infrastructure.xml import UnsafeXmlError, XmlLimits, safe_parse_xml
+from shelfhold.infrastructure.xml import Element, XmlLimits
 
 DERIVED_HASH_VERSION: Final = 2
 DERIVED_HASH_BY: Final = f"content-hash@{DERIVED_HASH_VERSION}"
@@ -53,24 +68,33 @@ DERIVED_HASH_BY: Final = f"content-hash@{DERIVED_HASH_VERSION}"
 _MIMETYPE: Final = b"application/epub+zip"
 _XML_LIMITS: Final = XmlLimits(max_bytes=4 * 1024 * 1024)
 _PAGE_BYTES: Final = 32 * 1024 * 1024
-_SNIFF: Final = 8192
 _CHUNK: Final = 1 << 20
-_XHTML_EXT: Final = frozenset({".xhtml", ".xht", ".html", ".htm"})
-_MEDIA_KIND: Final = {
-    "application/xhtml+xml": "xhtml", "text/html": "xhtml", "image/svg+xml": "svg",
-    "text/css": "css", "text/xml": "sniff", "application/xml": "sniff",
+_PAGE_FAMILIES: Final = frozenset({"xhtml", "svg", "css"})
+_EXT_FAMILY: Final = {
+    ".xhtml": "xhtml", ".xht": "xhtml", ".html": "xhtml", ".htm": "xhtml", ".svg": "svg",
+    ".css": "css", ".xml": "xml", ".ncx": "xml", ".opf": "opf",
+    ".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image",
+    ".ttf": "font", ".otf": "font", ".woff": "font", ".woff2": "font",
 }  # fmt: skip
-_EXT_KIND: Final = {".xhtml": "xhtml", ".xht": "xhtml", ".html": "xhtml", ".htm": "xhtml",
-                    ".svg": "svg", ".css": "css"}  # fmt: skip
-_XML_LIKE_EXT: Final = frozenset({".xml", ".ncx"})
-_BINARY_EXT: Final = frozenset(
-    {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".jxl", ".bmp", ".ico", ".tif", ".tiff",
-     ".woff", ".woff2", ".ttf", ".otf", ".eot", ".mp3", ".mp4", ".m4a", ".m4v", ".ogg", ".oga",
-     ".ogv", ".wav", ".webm", ".opus", ".aac", ".jp2", ".heic"}
-)  # fmt: skip
-_STORED_EXT: Final = _BINARY_EXT | {".zip", ".gz", ".epub", ".pdf"}
-_PAGE_MARK: Final = re.compile(rb"<\s*(?:svg|html|script)\b|<!doctype\s+html", re.I)
-_SVG_MARK: Final = re.compile(rb"<\s*svg\b", re.I)
+_MEDIA_FAMILY: Final = {
+    "application/xhtml+xml": "xhtml", "text/html": "xhtml", "image/svg+xml": "svg",
+    "text/css": "css", "text/xml": "xml", "application/xml": "xml",
+    "application/x-dtbncx+xml": "xml", "image/png": "image", "image/jpeg": "image",
+    "image/gif": "image", "image/webp": "image", "application/oebps-package+xml": "opf",
+}  # fmt: skip
+_XML_EXTS: Final = frozenset({"", ".xml", ".ncx"})
+_STORED_EXT: Final = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".woff", ".woff2"})
+_DECODED_REMOTE: Final = re.compile(r"[a-z][a-z0-9+.\-]*://|//")
+_PI: Final = re.compile(rb"<\?(?!xml[\s?])", re.I)
+_BAD_ELEMENTS: Final = frozenset({"html", "svg", "script", "body", "iframe", "object", "embed"})
+_PAGE_NAMESPACES: Final = ("http://www.w3.org/1999/xhtml", "http://www.w3.org/2000/svg")
+_URL_ATTRS: Final = frozenset({"href", "src", "refines", "base"})
+_MAGIC: Final = {
+    ".png": (b"\x89PNG\r\n\x1a\n",), ".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",),
+    ".gif": (b"GIF87a", b"GIF89a"), ".woff": (b"wOFF",), ".woff2": (b"wOF2",),
+    ".ttf": (b"\x00\x01\x00\x00", b"true", b"ttcf", b"OTTO"),
+    ".otf": (b"OTTO", b"\x00\x01\x00\x00", b"ttcf"),
+}  # fmt: skip
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,76 +149,119 @@ def _ext(name: str) -> str:
     return "." + base.rsplit(".", 1)[-1].lower() if "." in base else ""
 
 
-def _xml(archive: SafeArchive, name: str, reason: str) -> object:
-    try:
-        return safe_parse_xml(
-            archive.read(name, max_bytes=_XML_LIMITS.max_bytes), limits=_XML_LIMITS
-        )
-    except UnsafeXmlError as error:
-        raise NeutralizationError(f"{reason}_{error.reason}", name) from None
-    except KeyError:
-        raise NeutralizationError(reason, name) from None
-
-
 def _local(tag: object) -> str:
     return str(tag).rsplit("}", 1)[-1]
 
 
-def _manifest_kinds(archive: SafeArchive) -> tuple[set[str], dict[str, str]]:
-    """The OPF paths named by container.xml and the kind of every manifest item (read only)."""
+def _read_xml(archive: SafeArchive, name: str, reason: str) -> Element:
+    """Read an XML entry in full: size and shape by `safe_parse_xml`, no PI, no page element."""
+    try:
+        data = bytes(archive.read(name, max_bytes=_XML_LIMITS.max_bytes))
+    except KeyError:
+        raise NeutralizationError(reason, name) from None
+    if _PI.search(data.replace(b"\x00", b"")):  # UTF-16 and UTF-32 too
+        raise NeutralizationError("processing_instruction", name)
+    try:
+        root = parse_xml_document(data, XML_LIMITS_INSPECT)
+    except NeutralizationError as error:
+        raise NeutralizationError(error.reason, name) from None
+    for element in root.iter():
+        tag = str(element.tag)
+        if tag.startswith("{") and tag[1:].partition("}")[0] in _PAGE_NAMESPACES:
+            raise NeutralizationError("page_in_xml", name)
+        if _local(tag).lower() in _BAD_ELEMENTS:
+            raise NeutralizationError("page_in_xml", name)
+    return root
+
+
+def _checked_reference(raw: str, base: str, owner: str) -> str:
+    """The package path a reference names, or a refusal if it is not inside the package.
+
+    The scheme is read on the raw value (a `%3A` is not a colon to a URL parser, so a chapter
+    called `Part 1: Intro` is fine), the root and the parent directories on the decoded one.
+    """
+    decoded = unquote(raw).replace("\\", "/")
+    if (
+        not raw
+        or not is_relative_reference(raw)
+        or decoded.startswith("/")
+        or _DECODED_REMOTE.match(decoded.strip().lower())
+    ):
+        raise NeutralizationError("remote_reference", owner)
+    path = posixpath.normpath(posixpath.join(base, decoded.split("#", 1)[0] or "."))
+    if path == ".." or path.startswith("../") or path.startswith("/"):
+        raise NeutralizationError("remote_reference", owner)
+    return path
+
+
+def _media_type(value: str | None) -> str | None:
+    return value.split(";", 1)[0].strip().lower() if value else None
+
+
+def _read_package(archive: SafeArchive, opf: str, declared: dict[str, str | None]) -> None:
+    base = posixpath.dirname(opf)
+    root = _read_xml(archive, opf, "opf")
+    for element in root.iter():
+        for key, value in element.attrib.items():
+            if _local(key) not in _URL_ATTRS:
+                continue
+            # `refines` is a fragment (`#id`); `xml:base` and every href or src is a path
+            path = _checked_reference(value, base, opf)
+            if _local(element.tag) == "item" and _local(key) == "href":
+                media = _media_type(element.attrib.get("media-type"))
+                family = _MEDIA_FAMILY.get(media or "")
+                if path in declared and declared[path] != family:
+                    raise NeutralizationError("type_mismatch", opf)
+                declared[path] = family
+
+
+def _manifest(archive: SafeArchive) -> tuple[set[str], dict[str, str | None]]:
+    """The OPF paths and the family each manifest item declares (everything is read first)."""
     names = {e.name for e in archive.entries}
-    container = _xml(archive, "META-INF/container.xml", "container")
-    opfs = [
-        e.attrib["full-path"]
-        for e in container.iter()  # type: ignore[attr-defined]
-        if _local(e.tag) == "rootfile" and e.attrib.get("full-path")
-    ]
+    container = _read_xml(archive, "META-INF/container.xml", "container")
+    opfs: list[str] = []
+    for element in container.iter():
+        if _local(element.tag) == "rootfile" and element.attrib.get("full-path"):
+            opfs.append(
+                _checked_reference(element.attrib["full-path"], "", "META-INF/container.xml")
+            )
     if not opfs:
         raise NeutralizationError("container")
-    kinds: dict[str, str] = {}
+    declared: dict[str, str | None] = {}
     for opf in opfs:
         if opf not in names:
             raise NeutralizationError("container", opf)
-        base = posixpath.dirname(opf)
-        package = _xml(archive, opf, "opf")
-        for item in package.iter():  # type: ignore[attr-defined]
-            if _local(item.tag) not in ("item", "reference"):
-                continue
-            href = unquote(item.attrib.get("href", ""))
-            # The OPF is never rewritten, so a reference it holds to the outside cannot be cut:
-            # the EPUB is refused (a cover-image or a guide entry that points at a remote host).
-            if href and not is_relative_reference(href):
-                raise NeutralizationError("remote_reference", opf)
-            if _local(item.tag) != "item":
-                continue
-            kind = _MEDIA_KIND.get(item.attrib.get("media-type", "").strip().lower())
-            href = href.split("#", 1)[0]
-            if kind and href:
-                kinds[posixpath.normpath(posixpath.join(base, href))] = kind
-    return set(opfs), kinds
+        _read_package(archive, opf, declared)
+    for name in names:  # an OPF the container does not name is read like the others
+        if _ext(name) == ".opf" and name not in opfs:
+            _read_package(archive, name, declared)
+            opfs.append(name)
+    return set(opfs), declared
 
 
-def _kind_of(archive: SafeArchive, name: str, manifest: dict[str, str]) -> str | None:
-    """How an entry is handled: a page kind, or None for a byte-for-byte copy.
-
-    Every entry whose kind is not settled by its extension or its declared media type is sniffed:
-    a page, an SVG or a script in a file called anything else is a document in disguise, and the
-    EPUB is refused unless the file is declared as XML (then it is a page like any other).
-    """
+def _classify(
+    archive: SafeArchive, name: str, opfs: set[str], declared: dict[str, str | None]
+) -> str:
+    """`copy`, or the page kind to neutralize; a refusal if the entry is in no category."""
+    if name == "mimetype" or name.startswith("META-INF/") or name in opfs:
+        return "copy"
     ext = _ext(name)
-    if ext in _EXT_KIND:
-        return _EXT_KIND[ext]
-    declared = manifest.get(name)
-    if declared in ("xhtml", "svg", "css"):
-        return declared
-    if ext == ".svgz":  # a compressed SVG cannot be read, so it cannot be cut
-        raise NeutralizationError("disguised", name)
-    head = archive.read_head(name, _SNIFF).replace(b"\x00", b"")  # UTF-16 pages too
-    if not _PAGE_MARK.search(head):
-        return None
-    if ext not in _BINARY_EXT and (declared == "sniff" or ext in _XML_LIKE_EXT):
-        return "svg" if _SVG_MARK.search(head) else "xhtml"
-    raise NeutralizationError("disguised", name)
+    by_ext = _EXT_FAMILY.get(ext)
+    by_type = declared.get(name)
+    if by_ext and by_type and by_ext != by_type:
+        raise NeutralizationError("type_mismatch", name)
+    family = by_ext or by_type
+    if family in _PAGE_FAMILIES:
+        return family
+    if family == "xml" and ext in _XML_EXTS:
+        _read_xml(archive, name, "xml")
+        return "copy"
+    if family in ("image", "font") and by_ext:
+        head = archive.read_head(name, 8)
+        if not head.startswith(_MAGIC[ext]):
+            raise NeutralizationError("magic_mismatch", name)
+        return "copy"
+    raise NeutralizationError("unexpected_entry", name)
 
 
 def _check_mimetype(archive: SafeArchive) -> None:
@@ -239,7 +306,7 @@ def neutralize_epub(
 
 def _derive(archive: SafeArchive, out: BinaryIO) -> Derivative:
     _check_mimetype(archive)
-    opfs, manifest = _manifest_kinds(archive)
+    opfs, declared = _manifest(archive)
     original, derived = _PayloadHash(), _PayloadHash()
     changed: list[str] = []
     with ArchiveWriter(out) as writer:
@@ -248,10 +315,8 @@ def _derive(archive: SafeArchive, out: BinaryIO) -> Derivative:
             if entry.is_dir:
                 writer.add(entry_name, b"")
                 continue
-            kind = None
-            if entry_name != "mimetype" and not entry_name.startswith("META-INF/"):
-                kind = None if entry_name in opfs else _kind_of(archive, entry_name, manifest)
-            if kind is None:
+            kind = _classify(archive, entry_name, opfs, declared)
+            if kind == "copy":
                 before = hashlib.sha256()
                 stored = _ext(entry_name) in _STORED_EXT or entry_name == "mimetype"
                 with archive.open(entry_name) as stream:

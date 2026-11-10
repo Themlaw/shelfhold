@@ -16,6 +16,7 @@ from shelfhold.sdk.testing.corpus.trapped_epubs.detect import (
     find_active_patterns,
     find_remote_references,
 )
+from shelfhold.sdk.testing.corpus.trapped_epubs.standard import standard_epub3
 
 __all__ = [
     "CHAPTER",
@@ -30,6 +31,7 @@ __all__ = [
     "find_active_patterns",
     "find_remote_references",
     "mutation_traps",
+    "standard_epub3",
     "xhtml",
     "zip_bytes",
 ]

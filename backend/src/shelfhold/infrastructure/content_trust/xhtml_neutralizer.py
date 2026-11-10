@@ -554,6 +554,17 @@ def _head(writer: _Writer, root: Element) -> str:
     return "".join(parts)
 
 
+XML_LIMITS_INSPECT: Final = XmlLimits(max_bytes=4 * 1024 * 1024)
+
+
+def parse_xml_document(data: bytes, limits: XmlLimits = XML_LIMITS) -> Element:
+    """Read an XML document the way a page is read (a simple DOCTYPE tolerated, nothing else)."""
+    try:
+        return safe_parse_xml(_without_simple_doctype(bytes(data)), limits=limits)
+    except UnsafeXmlError as error:
+        raise NeutralizationError(f"xml_{error.reason}") from None
+
+
 def _xhtml(data: bytes) -> bytes:
     root = _parse(data)
     ns, local = _split(root.tag)
