@@ -161,7 +161,6 @@ La migration est la **0013** : la 0012 existe depuis la remédiation M1a L46. Le
 6. **Concurrence.** Les sorties prennent `work:root-<id>`, les `path:` des dossiers de séries existants et les `work:` des Œuvres exportées sur la racine (les verrous que l'export prend réellement), avec `timeout=0` : refus `root.busy` pendant un export ou un cycle. Une série encore jamais créée est arrêtée par la barrière de la marque (`Fsops` refuse l'écriture).
 7. **`--rebaseline-inodes`.** Lit le miroir de provenance de la racine physique ; refuse tout si une empreinte diffère ou si le miroir est illisible ; recalcule `replica.independent` dans le seul sens sûr (déclassement).
 8. **Pas de nouvel événement** : les charges utiles restreintes n'ont pas de place pour un chemin ou un identifiant de racine ; l'audit et `status` portent l'information.
-
 9. **Revue (Opus).** Seule `root_lost` se lève d'elle-même (sentinelle revenue) ; `foreign_root`, `root_behind` et `store_lost` attendent leur commande réservée. `takeover` refuse un `root_id` déjà enregistré sous un autre chemin et un journal dont aucune ligne ne s'ouvre, même avec des `kid` vérifiés. `restored` méfie des copies de la racine comme `reinit`. `--rebaseline-inodes` verrouille avant de lire, hache le descripteur observé et ignore les enregistrements sans empreinte.
 
 ## L16 : « Mettre à l'abri » avec quota et arriéré, purge amont optionnelle (EF-BIB-038, EF-BIB-042 (4), EF-BIB-048, EF-SRC-009, EF-EXP-064, EF-INT-023, ENF-OPS-011) — lot coupable
