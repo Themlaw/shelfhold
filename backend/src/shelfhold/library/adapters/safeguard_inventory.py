@@ -28,6 +28,7 @@ __all__ = [
     "PurgeCandidate",
     "SafeguardInventory",
     "backlog_row",
+    "content_hash_of",
     "gone_units",
     "owed_unit_ids",
     "record_backlog",
@@ -127,9 +128,10 @@ class SafeguardInventory:
             found.setdefault(r.unit_id, Candidate(r.unit_id, int(r.size)))
         return list(found.values())
 
-    def upstream_candidates(self) -> list[PurgeCandidate]:
+    def upstream_candidates(self, *, request_id: str | None = None) -> list[PurgeCandidate]:
         """Downloads fetched and not yet let go of, whose content was exported to a shelf that
-        asked for the upstream copy to go. Oldest first."""
+        asked for the upstream copy to go. Oldest first. `request_id`: that one request, whatever
+        the option says now (an erasure already begun is settled, not decided again)."""
         r, v, b, si = (
             acquisition.download_request, catalog.unit_variant, acquisition.source_binding,
             acquisition.source_item,
@@ -149,13 +151,18 @@ class SafeguardInventory:
             )
             .where(
                 r.c.state == "fetched", r.c.target_kind == "unit", r.c.ticket.is_not(None),
-                sa.exists()
-                .where(
-                    item.c.content_id == c.c.id,
-                    rec.c.export_item_id == item.c.id,
-                    dest.c.id == rec.c.shelf_destination_id,
-                    shelf.c.id == dest.c.shelf_id,
-                    shelf.c.purge_upstream_after_export,
+                *(
+                    [r.c.id == request_id]
+                    if request_id is not None
+                    else [
+                        sa.exists().where(
+                            item.c.content_id == c.c.id,
+                            rec.c.export_item_id == item.c.id,
+                            dest.c.id == rec.c.shelf_destination_id,
+                            shelf.c.id == dest.c.shelf_id,
+                            shelf.c.purge_upstream_after_export,
+                        )
+                    ]
                 ),
             )
             .order_by(r.c.requested_at, r.c.id)
@@ -204,3 +211,11 @@ class SafeguardInventory:
             ).first()
             is not None
         )
+
+
+def content_hash_of(connection: Connection, content_id: str) -> str | None:
+    """The payload hash of one content: what a copy must have to be a copy of it (a Unit may hold
+    several contents, one per Variant)."""
+    return connection.execute(
+        sa.select(storage.content.c.content_hash).where(storage.content.c.id == content_id)
+    ).scalar_one_or_none()

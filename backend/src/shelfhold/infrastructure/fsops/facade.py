@@ -639,6 +639,15 @@ class Fsops:
         with self._root(located.root_path) as root:
             return root.stat(located.rel).st_dev
 
+    def link_stat(self, local: str) -> tuple[int, int, int]:
+        """`(st_dev, st_ino, st_nlink)` of what is at `local`, a link not followed. Read from the
+        disk each time: a caller that must know whether two names are one file asks this, never
+        the registry (EF-BIB-038)."""
+        located = self._locate(local, read_mirror=True)
+        with self._root(located.root_path) as root:
+            found = root.stat(located.rel)
+        return found.st_dev, found.st_ino, found.st_nlink
+
     def observe(self, local: str, *, host: bool = False) -> tuple[Kind, FileIdentity] | None:
         """What is at `local` (a link is described, never followed), or None when nothing is.
         `host` lets the purge look at an entry of a root's bin (a reserved folder)."""

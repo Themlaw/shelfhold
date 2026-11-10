@@ -43,6 +43,7 @@ from shelfhold.library.adapters.safeguard import payload_hash_at
 from shelfhold.library.adapters.safeguard_inventory import (
     PurgeCandidate,
     SafeguardInventory,
+    content_hash_of,
     owed_unit_ids,
     record_backlog,
 )
@@ -58,7 +59,6 @@ from shelfhold.library.domain.safeguard_rules import (
     STORE_COPY_CHANGED,
     STORE_COPY_MISSING,
     PurgeFacts,
-    PurgeVerdict,
     upstream_verdict,
 )
 from shelfhold.library.domain.store_budget import (
@@ -130,13 +130,13 @@ class IntentLog(Protocol):
         expected_file_id: FileIdentity | None = None,
     ) -> str: ...
 
-    def mark_applying(self, intent_id: str) -> None: ...
+    def mark_applying(self, intent_id: str, *, within: Connection | None = None) -> None: ...
+
+    def open_payloads(self, op: str) -> list[tuple[str, str, dict[str, Any]]]: ...
 
     def mark_done(self, intent_id: str, *, within: Connection | None = None) -> None: ...
 
     def cancel(self, intent_id: str) -> None: ...
-
-    def supersede(self, op: str) -> int: ...
 
 
 class UpstreamService(Protocol):
@@ -147,14 +147,22 @@ class UpstreamService(Protocol):
 
 @dataclass(frozen=True)
 class PinnedCopy(FileIdentity):
-    """What the intent pins of the /store copy the deed relies on: the inode (`ino`, `dev`), the
-    size and time it had, and the payload hash. The file hash is the intent's `expected_sha256`."""
+    """What the intent writes of the deed: the request it is for (so that a deed that was begun
+    is found again, whatever happens next), and, when a /store copy was what the plan relied on,
+    its inode (`ino`, `dev`), size and time, and payload hash. The file hash is the intent's
+    `expected_sha256`. `dev = 0` and no `content_hash`: the plan relied on a live source."""
 
     dev: int = 0
     content_hash: str = ""
+    request_id: str = ""
 
     def to_json(self) -> dict[str, Any]:
-        return {**super().to_json(), "dev": self.dev, "content_hash": self.content_hash}
+        return {
+            **super().to_json(),
+            "dev": self.dev,
+            "content_hash": self.content_hash,
+            "request_id": self.request_id,
+        }
 
 
 # -- tombstones ------------------------------------------------------------------------------
@@ -322,6 +330,7 @@ class PurgeReport:
     already_gone: int = 0
     refused: dict[str, int] = field(default_factory=dict)
     failed: int = 0
+    handed_to_admin: int = 0  # begun deeds whose outcome is ambiguous (`intents list`)
     freed_bytes: int = 0
 
     def refuse(self, reason: str) -> None:
@@ -360,48 +369,44 @@ class UpstreamPurge:
 
     # -- the facts, read from the database and the disks, never carried over -------------------
 
-    def _assess(
-        self, candidate: PurgeCandidate, *, store: bool | None, owed: set[str]
-    ) -> tuple[PurgeVerdict, list[StoreProof]]:
-        """The verdict on the facts as they are now. `store` None: look at /store and count the
-        copies that verify; True: the caller pinned a copy and checked it itself."""
-        with self._engine.connect() as connection:
-            option_on, exports_verified = self._inventory.export_facts(
-                connection, candidate.content_id
+    def _facts(
+        self, connection: Connection, candidate: PurgeCandidate, owed: set[str]
+    ) -> tuple[PurgeFacts, bool, str | None]:
+        """What the database says now: the rule's facts (copies granted), whether every export of
+        this content was seen in Kavita, and the payload hash of this very content."""
+        option_on, exports_verified = self._inventory.export_facts(connection, candidate.content_id)
+        refusal = self._service_gate(connection, candidate.plugin_id, candidate.source_key)
+        request_open = connection.execute(
+            sa.select(acquisition.download_request.c.id).where(
+                acquisition.download_request.c.id == candidate.request_id,
+                acquisition.download_request.c.state == "fetched",
+                acquisition.download_request.c.ticket == candidate.ticket,
             )
-            tombstoned = unit_tombstoned(connection, self._gate, candidate.unit_id)
-            refusal = self._service_gate(connection, candidate.plugin_id, candidate.source_key)
-            alive = self._inventory.source_alive(connection, candidate.unit_id)
-            copies = list(library_copies(connection, candidate.unit_id))
-            request_open = connection.execute(
-                sa.select(acquisition.download_request.c.id).where(
-                    acquisition.download_request.c.id == candidate.request_id,
-                    acquisition.download_request.c.state == "fetched",
-                    acquisition.download_request.c.ticket == candidate.ticket,
-                )
-            ).first()
-        base = PurgeFacts(
+        ).first()
+        facts = PurgeFacts(
             option_on=option_on and request_open is not None,
-            tombstoned=tombstoned,
+            tombstoned=unit_tombstoned(connection, self._gate, candidate.unit_id),
             service_paused=refusal == SERVICE_PAUSED,
             roles_unverified=refusal == ROLES_UNVERIFIED,
             source_loaded=refusal != SOURCE_NOT_LOADED,
             kavita_copy=True,
             store_copy=True,
-            source_alive=alive,
+            source_alive=self._inventory.source_alive(connection, candidate.unit_id),
             owed=candidate.unit_id in owed,
         )
-        early = upstream_verdict(base)  # with both copies granted, only the database can refuse
-        if not early.allowed:
-            return early, []
-        kavita = exports_verified and any(self._holds(c.local, c.file_hash) for c in copies)
-        proofs: list[StoreProof] = []
-        if store is None:
-            verify_kept(self._engine, self._fsops, candidate.unit_id)  # a fresh look at the disk
-            with self._engine.connect() as connection:
-                proofs = store_proofs(connection, candidate.unit_id)
-        held = bool(proofs) if store is None else store
-        return upstream_verdict(replace(base, kavita_copy=kavita, store_copy=held)), proofs
+        return facts, exports_verified, content_hash_of(connection, candidate.content_id)
+
+    def _kavita_on_disk(self, candidate: PurgeCandidate, content_hash: str | None) -> bool:
+        """The file Kavita reads, **of this content**, is there and is what was exported."""
+        if not content_hash:
+            return False
+        with self._engine.connect() as connection:
+            copies = [
+                c
+                for c in library_copies(connection, candidate.unit_id)
+                if c.content_hash == content_hash
+            ]
+        return any(self._holds(c.local, c.file_hash) for c in copies)
 
     def _holds(self, local: str, file_hash: str | None) -> bool:
         if not file_hash:
@@ -411,42 +416,72 @@ class UpstreamPurge:
         except (FileNotFoundError, FsopsError):
             return False
 
+    def _usable_proof(
+        self, candidate: PurgeCandidate, content_hash: str | None
+    ) -> StoreProof | None:
+        """The first /store copy **of this content** that is one of its own on the disk now."""
+        if not content_hash:
+            return None
+        verify_kept(self._engine, self._fsops, candidate.unit_id)  # a fresh look at the disk
+        with self._engine.connect() as connection:
+            proofs = [
+                p
+                for p in store_proofs(connection, candidate.unit_id)
+                if p.content_hash == content_hash
+            ]
+        for proof in proofs:
+            try:
+                self._check_pinned(candidate.unit_id, proof)
+            except PurgeRefused:
+                continue
+            return proof
+        return None
+
     def plan(self, candidate: PurgeCandidate, *, owed: set[str] | None = None) -> PurgePlan:
         """Decide from the facts now. Raises `PurgeRefused` with the reason; writes nothing."""
-        if owed is None:
-            with self._engine.connect() as connection:
+        with self._engine.connect() as connection:
+            if owed is None:
                 owed = owed_unit_ids(connection)
-        verdict, proofs = self._assess(candidate, store=None, owed=owed)
+            facts, exports_verified, content_hash = self._facts(connection, candidate, owed)
+        early = upstream_verdict(facts)  # with both copies granted, only the database can refuse
+        if not early.allowed:
+            raise PurgeRefused(early.reason or STORE_COPY_MISSING)
+        kavita = exports_verified and self._kavita_on_disk(candidate, content_hash)
+        proof = self._usable_proof(candidate, content_hash)
+        verdict = upstream_verdict(replace(facts, kavita_copy=kavita, store_copy=proof is not None))
         if not verdict.allowed:
             raise PurgeRefused(verdict.reason or STORE_COPY_MISSING)
-        return PurgePlan(candidate, proofs[0] if proofs else None)
+        return PurgePlan(candidate, proof)
 
     # -- the deed ---------------------------------------------------------------------------
 
     async def execute(self, plan: PurgePlan) -> PurgeDone:
-        """The intent first (it pins what the plan relied on), then the look at that very copy,
-        then the service, then the database. The look is the point: the plan may be old."""
+        """The intent first (it names the request and pins what the plan relied on), then the
+        look at that very copy and at the facts, then the mark `applying` in the transaction that
+        looked, then the service, then the database. The look is the point: the plan may be old,
+        and a consent withdrawn a moment ago must stop the deed (the transaction holds the write
+        lock, so nothing changes between the look and the mark)."""
         candidate, pinned = plan.candidate, plan.pinned
         intent_id = self._journal.record(
             op="purge_upstream",
             src=pinned.local if pinned else None,
             expected_sha256=pinned.file_hash if pinned else None,
-            expected_file_id=self._pin(pinned) if pinned else None,
+            expected_file_id=self._pin(plan),
         )  # fmt: skip
         ticket = self._ticket(candidate.ticket)
         try:
-            if not await self._still_held(ticket):  # gone already: a crash after the deed
-                done = PurgeDone(candidate.unit_id, True, None, None)
+            if not await self._still_held(ticket):  # gone already: a deed that did land
                 self._settle(candidate, intent_id)
-                return done
-            self._reverify(plan)
+                return PurgeDone(candidate.unit_id, True, None, None)
+            kavita_disk = self._look_at_disks(plan)
+            self._decide_and_mark(plan, intent_id, kavita_disk)
         except BaseException:
             self._journal.cancel(intent_id)  # nothing was erased: nothing is left to settle
             raise
-        self._journal.mark_applying(intent_id)
+        # From here an unknown outcome (a kill, an exception) leaves the intent `applying`, and
+        # the next sweep never sends the erasure again: it asks the service, then settles or
+        # hands the Unit to the admin.
         result = await self._service.release(self._fetcher, ticket)
-        # an unknown outcome (an exception above) leaves the intent `applying`: the next sweep
-        # cancels it and asks the service before it does anything
         if not (getattr(result, "released", False) or getattr(result, "still_present", None)):
             self._journal.cancel(intent_id)
             raise PurgeRefused(NOT_DOWNLOADED)
@@ -456,41 +491,80 @@ class UpstreamPurge:
             getattr(result, "still_present", None),
         )  # fmt: skip
 
-    def _pin(self, pinned: StoreProof) -> FileIdentity:
+    def _pin(self, plan: PurgePlan) -> FileIdentity:
+        pinned = plan.pinned
+        request = plan.candidate.request_id
+        if pinned is None:
+            return PinnedCopy(0, 0, 0, request_id=request)
         found = self._fsops.observe(pinned.local)
         size, mtime = (found[1].size, found[1].mtime_ns) if found else (0, 0)
-        return PinnedCopy(pinned.ino, size, mtime, dev=pinned.dev, content_hash=pinned.content_hash)
+        return PinnedCopy(
+            pinned.ino, size, mtime, dev=pinned.dev, content_hash=pinned.content_hash,
+            request_id=request,
+        )  # fmt: skip
 
     async def _still_held(self, ticket: Any) -> bool:
         return str(await self._service.poll(self._fetcher, ticket)) == "ready"
 
-    def _reverify(self, plan: PurgePlan) -> None:
-        """The facts again, and the pinned copy as it is on the disk now (EF-EXP-064)."""
+    def _look_at_disks(self, plan: PurgePlan) -> bool:
+        """The disks as they are now: the pinned /store copy, and the file Kavita reads."""
         candidate, pinned = plan.candidate, plan.pinned
-        with self._engine.connect() as connection:
-            owed = owed_unit_ids(connection)
         if pinned is not None:
             self._check_pinned(candidate.unit_id, pinned)
-        verdict, _ = self._assess(candidate, store=pinned is not None, owed=owed)
-        if not verdict.allowed:
-            raise PurgeRefused(verdict.reason or STORE_COPY_MISSING)
+        with self._engine.connect() as connection:
+            content_hash = content_hash_of(connection, candidate.content_id)
+        return self._kavita_on_disk(candidate, content_hash)
+
+    def _decide_and_mark(self, plan: PurgePlan, intent_id: str, kavita_disk: bool) -> None:
+        """The facts of the database once more and `mark_applying`, in one `BEGIN IMMEDIATE`."""
+        candidate, pinned = plan.candidate, plan.pinned
+        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with immediate.begin() as connection:
+            owed = owed_unit_ids(connection)
+            facts, exports_verified, content_hash = self._facts(connection, candidate, owed)
+            if pinned is not None and pinned.content_hash != content_hash:
+                raise PurgeRefused(STORE_COPY_CHANGED)  # not a copy of this content
+            verdict = upstream_verdict(
+                replace(
+                    facts,
+                    kavita_copy=exports_verified and kavita_disk,
+                    store_copy=pinned is not None,
+                )
+            )
+            if not verdict.allowed:
+                raise PurgeRefused(verdict.reason or STORE_COPY_MISSING)
+            self._journal.mark_applying(intent_id, within=connection)
 
     def _check_pinned(self, unit_id: str, pinned: StoreProof) -> None:
+        """The copy in /store is the one that was proved, and no other name of the Unit is the
+        same file: read from the disk (`lstat`), never from the registry."""
         found = self._fsops.observe(pinned.local)
         if found is None or found[0] != "file":
             raise PurgeRefused(STORE_COPY_MISSING)
         try:
-            same_inode = (
-                found[1].ino == pinned.ino and self._fsops.device_of(pinned.local) == pinned.dev
-            )
+            dev, ino, links = self._fsops.link_stat(pinned.local)
             same_bytes = self._fsops.sha256_of(pinned.local) == pinned.file_hash
             same_payload = payload_hash_at(self._fsops, pinned.local) == pinned.content_hash
         except (FileNotFoundError, FsopsError, UnsafeArchiveError, UntrustedEntryError):
             raise PurgeRefused(STORE_COPY_CHANGED) from None
-        with self._engine.connect() as connection:
-            linked = (pinned.dev, pinned.ino) in sibling_inodes(connection, unit_id)
-        if not (same_inode and same_bytes and same_payload) or linked:
+        if (
+            (dev, ino) != (pinned.dev, pinned.ino)
+            or links != 1
+            or not (same_bytes and same_payload)
+        ):
             raise PurgeRefused(STORE_COPY_CHANGED)
+        with self._engine.connect() as connection:
+            names = [c.local for c in library_copies(connection, unit_id)]
+            recorded = sibling_inodes(connection, unit_id)
+        if (dev, ino) in recorded:
+            raise PurgeRefused(STORE_COPY_CHANGED)
+        for name in names:
+            try:
+                other = self._fsops.link_stat(name)[:2]
+            except (FileNotFoundError, FsopsError):
+                continue  # a name that is not there is not the same file
+            if other == (dev, ino):
+                raise PurgeRefused(STORE_COPY_CHANGED)
 
     def _settle(self, candidate: PurgeCandidate, intent_id: str) -> None:
         """The database learns it, in one transaction with the end of the intent: the ticket is
@@ -517,6 +591,26 @@ class UpstreamPurge:
             )  # fmt: skip
             self._journal.mark_done(intent_id, within=connection)
 
+    # -- a deed that was begun: asked of the service, never sent again --------------------------
+
+    async def _reconcile(self, intent_id: str, request_id: str, report: PurgeReport) -> None:
+        """An intent left `applying` (a kill, an unanswered call). The erasure is **not** sent
+        again: in `ui_login` the service would take it for the download another account keeps.
+        The service is asked what is there. Gone: the deed landed, the database is told (this
+        needs no /store copy, which may be lost since). Still there: the outcome is ambiguous
+        (not sent, or another account holds it), so the intent stays open for the admin
+        (`intents list`, `intents resolve`) and the Unit is left alone."""
+        found = self._inventory.upstream_candidates(request_id=request_id) if request_id else []
+        if not found:  # the ticket is already let go of, or no request is named: nothing to ask
+            report.handed_to_admin += 1
+            return
+        if await self._still_held(self._ticket(found[0].ticket)):
+            log.warning("safeguard.purge_ambiguous", intent=intent_id)
+            report.handed_to_admin += 1
+            return
+        self._settle(found[0], intent_id)
+        report.already_gone += 1
+
     async def sweep(
         self,
         *,
@@ -524,21 +618,35 @@ class UpstreamPurge:
         limit: int = DEFAULT_BATCH_UNITS,
     ) -> PurgeReport:
         report = PurgeReport()
-        self._journal.supersede(PURGE_OP)  # an intent left `applying`: this sweep asks again
+        begun: list[tuple[str, str]] = []  # (intent, request) of the deeds left `applying`
+        for intent_id, state, payload in self._journal.open_payloads(PURGE_OP):
+            if state == "pending":
+                self._journal.cancel(intent_id)  # recorded, never begun: nothing was touched
+            else:
+                begun.append((intent_id, str(payload.get("request_id") or "")))
         with self._engine.connect() as connection:
             owed = owed_unit_ids(connection)
+        skip = {request for _, request in begun}
         plans: list[PurgePlan] = []
         for candidate in self._inventory.upstream_candidates():
             if len(plans) >= limit:
                 break
+            if candidate.request_id in skip:
+                continue  # a deed on it is open: settled or handed over, never decided anew
             try:
                 plans.append(self.plan(candidate, owed=owed))
             except PurgeRefused as refused:
                 report.refuse(refused.reason)
         report.planned = len(plans)
-        if not plans:
+        if not plans and not begun:
             return report
         async with awake() if awake is not None else nullcontext():
+            for intent_id, request in begun:
+                try:
+                    await self._reconcile(intent_id, request, report)
+                except Exception as error:  # the service did not answer: asked again next time
+                    log.warning("safeguard.purge_failed", error_type=type(error).__name__)
+                    report.failed += 1
             for plan in plans:
                 try:
                     done = await self.execute(plan)

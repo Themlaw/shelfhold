@@ -16,6 +16,7 @@ from shelfhold.infrastructure.schema import acquisition, identity, storage
 from shelfhold.library.adapters.meta_projection import meta_path
 from shelfhold.library.adapters.origin_comicinfo import origin_rel
 from shelfhold.library.public import (
+    PinnedCopy,
     PurgeRefused,
     StoreBudget,
     independent_copies,
@@ -325,25 +326,33 @@ def test_crash_between_purge_and_database_never_purges_twice() -> None:
         item = owed_and_kept(world)
         # the service did erase, the database was never told, an intent was left applying
         world.upstream.held.discard(item.ticket)
-        intent = world.journal.record(op="purge_upstream")
+        intent = world.journal.record(
+            op="purge_upstream", expected_file_id=PinnedCopy(0, 0, 0, request_id=item.request_id)
+        )
         world.journal.mark_applying(intent)
         report = sweep(world)
         assert (report.purged, report.already_gone) == (0, 1)
         assert world.upstream.released == [] and world.ticket_of(item) is None
-        assert {i.state for i in world.intents()} == {"cancelled", "done"}
+        assert [i.state for i in world.intents()] == ["done"]
         assert len(world.store_files()) == 1  # the copy is still there: nothing lost
         assert sweep(world).planned == 0
 
 
-def test_boot_closes_an_open_purge_intent_for_the_next_sweep_to_replan() -> None:
+def test_boot_never_replays_an_applying_purge_and_closes_a_pending_one() -> None:
     with lib_env() as env:
         world = World(env)
-        world.add()
-        intent = world.journal.record(op="purge_upstream")
-        world.journal.mark_applying(intent)
+        item = world.add()
+        begun = world.journal.record(
+            op="purge_upstream", expected_file_id=PinnedCopy(0, 0, 0, request_id=item.request_id)
+        )
+        world.journal.mark_applying(begun)
+        never_begun = world.journal.record(op="purge_upstream")
         report = IntentJournal(env.engine, env.fsops, clock=world.clock).resolve_open()
-        assert intent in report.abandoned
-        assert [i.state for i in world.intents()] == ["cancelled"]
+        assert never_begun in report.abandoned and begun in report.drifted
+        assert {i.id: i.state for i in world.intents()} == {
+            never_begun: "cancelled",
+            begun: "applying",
+        }
         assert world.upstream.released == []  # the boot never reaches the service
 
 
