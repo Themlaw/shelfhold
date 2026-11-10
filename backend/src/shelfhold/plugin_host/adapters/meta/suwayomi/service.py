@@ -105,6 +105,7 @@ def build_manifest() -> SourceManifest:
             },
         },
         content_warning="mixed",
+        terms_url="https://github.com/Suwayomi/Suwayomi-Server/blob/master/LICENSE",
         respects_robots=True,
         homepage="https://github.com/Suwayomi/Suwayomi-Server",
         langs=[],

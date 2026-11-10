@@ -16,7 +16,16 @@ from pydantic import BaseModel
 
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.models import API_VERSION
+from shelfhold.sdk.metadata import (
+    ISBN_SCHEMES,
+    EntityRef,
+    IdentifyResult,
+    MatchHints,
+    MetadataManifest,
+    MetadataProvider,
+    ProviderCapability,
+)
+from shelfhold.sdk.models import API_VERSION, sdk_supports
 from shelfhold.sdk.refs import (
     RangedPayload,
     RangeRef,
@@ -351,11 +360,127 @@ def assert_conforms(
     return report
 
 
+async def run_metadata_conformance(
+    provider: MetadataProvider,
+    fetcher: Fetcher,
+    *,
+    targets: list[EntityRef],
+    hints: MatchHints,
+) -> ConformanceReport:
+    """Run every check against a metadata provider on a scripted `fetcher` (EF-BIB-013).
+
+    `targets` are synthetic questions; give at least one ISBN target (an Edition) to exercise the
+    typing rule. A target whose type the manifest does not declare is reported and not asked.
+    """
+    report = ConformanceReport()
+    manifest = provider.manifest
+    valid = isinstance(manifest, MetadataManifest) and bool(manifest.key) and _roundtrips(manifest)
+    report.add("manifest", valid, "" if valid else "manifest is not a valid MetadataManifest")
+    api_ok = manifest.api in (API_VERSION, API_VERSION - 1)
+    report.add("api_compatible", api_ok, "" if api_ok else f"api {manifest.api} is not N or N-1")
+    sdk_ok = sdk_supports(manifest.min_sdk)
+    report.add("sdk_compatible", sdk_ok, "" if sdk_ok else f"needs SDK {manifest.min_sdk}")
+    terms_ok = bool(manifest.terms_url) and str(manifest.terms_url).startswith("https://")
+    report.add("terms_url", terms_ok, "" if terms_ok else "terms_url must be an https URL")
+    quota = manifest.quota
+    quota_ok = quota.requests_per_second > 0 and quota.burst >= 1
+    report.add("quota", quota_ok, "" if quota_ok else "quota needs a positive rate and a burst")
+
+    missing = [n for n in ("identify", "url_for", "ids_from_url") if not _has(provider, n)]
+    if ProviderCapability.COVER in manifest.capabilities and not _has(provider, "get_cover"):
+        missing.append("get_cover")
+    if manifest.auth is not None:
+        missing += [n for n in ("login", "refresh") if not _has(provider, n)]
+    report.add(
+        "capabilities_implemented", not missing, f"missing: {', '.join(missing)}" if missing else ""
+    )
+
+    undeclared = [t.entity_type for t in targets if t.entity_type not in manifest.entity_types]
+    report.add(
+        "entity_types_declared",
+        not undeclared,
+        f"targets of undeclared types: {undeclared}" if undeclared else "",
+    )
+    asked = [t for t in targets if t.entity_type in manifest.entity_types]
+
+    results: list[tuple[EntityRef, IdentifyResult]] = []
+    for target in asked:
+        try:
+            results.append((target, await provider.identify(fetcher, target, hints)))
+        except NetworkForbidden as exc:
+            report.add("identify", False, f"network access outside the script: {exc}")
+        except Exception as exc:  # any failure of the plugin is a finding
+            report.add("identify", False, f"{type(exc).__name__}: {exc}")
+
+    problems: list[str] = []
+    leaks: list[str] = []
+    wrong_level: list[str] = []
+    for target, result in results:
+        for p in result.proposals:
+            if p.field not in manifest.touched_fields:
+                problems.append(f"{p.field} is not in touched_fields")
+            if p.entity_type not in manifest.entity_types:
+                problems.append(f"{p.entity_type} is not a declared entity type")
+            if ISBN_SCHEMES & target.ids.keys() and p.entity_type != target.entity_type:
+                wrong_level.append(f"{p.field}@{p.entity_type}")
+        provenances = [p.provenance for p in result.proposals]
+        provenances += [r.provenance for r in result.relations]
+        for prov in provenances:
+            if prov.provider != manifest.key:
+                problems.append(f"provenance names {prov.provider!r}, not {manifest.key!r}")
+            if prov.source_url and _leaks_secret(prov.source_url):
+                leaks.append(prov.source_url)
+    report.add("proposals_typed", not problems, "; ".join(sorted(set(problems))))
+    report.add("provenance_opaque", not leaks, f"secret in provenance: {leaks}" if leaks else "")
+    report.add(
+        "isbn_targets_edition",
+        not wrong_level,
+        "an ISBN designates an edition or a volume: " + ", ".join(sorted(set(wrong_level)))
+        if wrong_level
+        else "",
+    )
+
+    covers: list[str] = []
+    if ProviderCapability.COVER in manifest.capabilities and _has(provider, "get_cover"):
+        for target in asked:
+            try:
+                cover = await provider.get_cover(fetcher, target)
+            except Exception as exc:
+                report.add("cover", False, f"{type(exc).__name__}: {exc}")
+                continue
+            if cover is not None and _leaks_secret(cover.url):
+                covers.append(cover.url)
+    report.add("cover_opaque", not covers, f"secret in cover reference: {covers}" if covers else "")
+
+    broken: list[str] = []
+    for target in targets:
+        url = provider.url_for(target.ids)
+        if url is not None and provider.ids_from_url(url) != target.ids:
+            broken.append(url)
+    report.add("url_roundtrip", not broken, f"ids_from_url(url_for(ids)) differs: {broken}")
+
+    bad = [
+        type(m).__name__ for m in [*targets, hints, *(r for _, r in results)] if not _roundtrips(m)
+    ]
+    report.add("json_roundtrip", not bad, f"not serialisable: {bad}" if bad else "")
+
+    unscripted = list(getattr(fetcher, "unscripted", []))
+    report.add(
+        "offline", not unscripted, f"unscripted requests: {unscripted}" if unscripted else ""
+    )
+    return report
+
+
+def _has(obj: object, name: str) -> bool:
+    return callable(getattr(obj, name, None))
+
+
 __all__ = [
     "CheckResult",
     "ConformanceReport",
     "ConnectedService",
     "assert_conforms",
+    "run_metadata_conformance",
     "run_source_conformance",
 ]
 

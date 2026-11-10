@@ -20,6 +20,20 @@ from shelfhold.sdk.lang import LanguageTag
 API_VERSION = 1
 """Major of the plugin data contract. The host accepts API_VERSION and API_VERSION - 1 (shim)."""
 
+SDK_VERSION = "1.2"
+"""Major.minor of the SDK. 1.2 adds MetadataProvider (EF-BIB-013, D16). A minor only adds optional
+fields and new contracts, so a plugin written for 1.1 keeps loading (ADR-0024)."""
+
+
+def sdk_supports(min_sdk: str, host: str = SDK_VERSION) -> bool:
+    """True when a plugin asking for SDK `min_sdk` can run on `host` (same major, minor >=)."""
+    try:
+        need_major, need_minor = (int(part) for part in min_sdk.split("."))
+        have_major, have_minor = (int(part) for part in host.split("."))
+    except ValueError:
+        return False
+    return need_major == have_major and need_minor <= have_minor
+
 
 class SdkModel(BaseModel):
     """Base of the SDK types read from a plugin or a manifest.
@@ -172,6 +186,7 @@ class SessionState(SdkModel):
 
 __all__ = [
     "API_VERSION",
+    "SDK_VERSION",
     "AuthApiKey",
     "AuthBasic",
     "AuthCookieImport",
@@ -196,4 +211,5 @@ __all__ = [
     "StrictSdkModel",
     "flag_names",
     "flag_parser",
+    "sdk_supports",
 ]

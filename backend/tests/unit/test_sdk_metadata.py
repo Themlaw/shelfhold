@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
+
 from shelfhold.sdk.metadata import (
     EntityRef,
     FieldProposal,
@@ -14,7 +15,6 @@ from shelfhold.sdk.metadata import (
     Provenance,
     RelationProposal,
 )
-
 from shelfhold.sdk.models import SDK_VERSION, PluginKind, sdk_supports
 from shelfhold.sdk.testing.fakes import (
     FAKE_ISBN,
