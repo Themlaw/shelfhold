@@ -274,6 +274,22 @@ VIOLATIONS = [
     ("third-party-plugins-single-loader", "identity/other.py", "import importlib.metadata\n",
      "plugin_host/loader.py"),
     ("third-party-plugins-single-loader", "export/other.py", "import pkgutil\n", None),
+    # M2 L00: the modules the contracts guard do not all exist yet; each violation fabricates its own
+    ("epub-derivative-single-producer", "infrastructure/content_trust/xhtml_neutralizer.py",
+     "import shelfhold.infrastructure.content_trust.sanitize\n", None),
+    ("epub-derivative-single-producer", "infrastructure/packaging/epub/writer.py",
+     "import shelfhold.infrastructure.content_trust.sanitize\n",
+     "infrastructure/packaging/comicinfo/other.py"),
+    ("opf-sole-writer", "infrastructure/content_trust/epub_scan.py",
+     "import shelfhold.infrastructure.packaging.epub\n", None),
+    ("opf-sole-writer", "infrastructure/packaging/cbz/other.py",
+     "import shelfhold.infrastructure.packaging.epub\n", "export/other.py"),
+    ("native-adapters-sdk-only", "plugin_host/adapters/native/demo/client.py",
+     "import shelfhold.infrastructure.fetcher\n", None),
+    ("native-adapters-sdk-only", "plugin_host/adapters/native/demo/other.py",
+     "from shelfhold.plugin_host import registry\n", None),
+    ("metadata-not-export", "catalog/application/metadata.py",
+     "X,
 ]  # fmt: skip
 
 
@@ -301,6 +317,50 @@ def test_each_contract_breaks_on_a_violation_and_allows_its_sanctioned_module(
         ok = _run_in_copy(tmp_path / "ok", {sanctioned: code})
         assert f"{_contract_name(contract)} BROKEN" not in ok.stdout, ok.stdout
         assert ok.returncode == 0, ok.stdout
+
+
+@pytest.mark.req("ENF-QUAL-002", "EF-SRC-033")
+def test_native_adapter_may_import_the_sdk(tmp_path: Path) -> None:
+    code = "from shelfhold.sdk import models\n"
+    result = _run_in_copy(tmp_path, {"plugin_host/adapters/native/demo/client.py": code})
+    assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_contracts_on_later_modules_name_only_modules_that_exist() -> None:
+    """import-linter fails on an absent module: the guarded packages exist, empty and documented."""
+    for rel in ("infrastructure/packaging/epub", "plugin_host/adapters/native"):
+        init = SRC / "shelfhold" / rel / "__init__.py"
+        assert init.is_file(), rel
+        assert ast.get_docstring(ast.parse(init.read_text("utf-8"))), f"{rel}: undocumented"
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_every_contract_is_an_error_contract() -> None:
+    parser = _config()
+    assert "unmatched_ignore_imports_alerting" not in parser["importlinter:contract:opf-sole-writer"]
+    quiet = [
+        s for s in parser.sections()
+        if s.startswith("importlinter:contract:")
+        and parser[s].get("unmatched_ignore_imports_alerting", "error") != "error"
+    ]
+    assert quiet == ["importlinter:contract:critical-comicbox"]
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_no_partial_names_a_closed_milestone() -> None:
+    import importlib.util
+
+    tool = BACKEND.parent / "tools" / "traceability.py"
+    spec = importlib.util.spec_from_file_location("traceability_l00_partial", tool)
+    assert spec is not None
+    assert spec.loader is not None
+    tr = importlib.util.module_from_spec(spec)
+    sys.modules["traceability_l00_partial"] = tr
+    spec.loader.exec_module(tr)
+    closed = {"M0", "M1a"}
+    stale = [p["requirement"] for p in tr.load_partial(BACKEND.parent) if p["milestone"] in closed]
+    assert not stale, f"[[partial]] entries that wait for a closed milestone: {stale}"
 
 
 @pytest.mark.req("ENF-QUAL-002")

@@ -314,3 +314,14 @@ def test_suwayomi_health_rows_are_closed_by_their_real_tests() -> None:
         row = next(r for r in FAILURE_MATRIX if r.key == key)
         assert row.proof == f"{health}::{name}"
         assert row.event == event and row.behaviour in {"degrade", "notify_only"}
+
+
+@pytest.mark.req("ENF-OPS-011")
+def test_failure_matrix_m2_rows_labelled_m2() -> None:
+    """M2 L00 (D18 of M1b): the metadata and lncrawl rows wait for their M2 emitters (L13, L25)."""
+    assert {r.key for r in rows_for("M2")} == {"metadata_api_down", "lncrawl_unreachable"}
+    for row in rows_for("M2"):
+        assert row.proof == "lot M2: the emitter ships with it", row.key
+        assert not row.simulated
+    assert "metadata_api_down" not in {r.key for r in rows_for("M1b")}
+    assert "lncrawl_unreachable" not in {r.key for r in rows_for("M1b")}
