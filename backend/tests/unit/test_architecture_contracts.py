@@ -274,7 +274,7 @@ VIOLATIONS = [
     ("third-party-plugins-single-loader", "identity/other.py", "import importlib.metadata\n",
      "plugin_host/loader.py"),
     ("third-party-plugins-single-loader", "export/other.py", "import pkgutil\n", None),
-    # M2 L00: the modules the contracts guard do not all exist yet; each violation fabricates its own
+    # M2 L00: some guarded modules do not exist yet; each violation fabricates its own
     ("epub-derivative-single-producer", "infrastructure/content_trust/xhtml_neutralizer.py",
      "import shelfhold.infrastructure.content_trust.sanitize\n", None),
     ("epub-derivative-single-producer", "infrastructure/packaging/epub/writer.py",
@@ -287,9 +287,9 @@ VIOLATIONS = [
     ("native-adapters-sdk-only", "plugin_host/adapters/native/demo/client.py",
      "import shelfhold.infrastructure.fetcher\n", None),
     ("native-adapters-sdk-only", "plugin_host/adapters/native/demo/other.py",
-     "from shelfhold.plugin_host import registry\n", None),
+     "import shelfhold.plugin_host.registry\n", None),
     ("metadata-not-export", "catalog/application/metadata.py",
-     "X,
+     "from shelfhold.export import public\n", "interfaces/other.py"),
 ]  # fmt: skip
 
 
@@ -338,9 +338,9 @@ def test_contracts_on_later_modules_name_only_modules_that_exist() -> None:
 @pytest.mark.req("ENF-QUAL-002")
 def test_every_contract_is_an_error_contract() -> None:
     parser = _config()
-    assert "unmatched_ignore_imports_alerting" not in parser["importlinter:contract:opf-sole-writer"]
     quiet = [
-        s for s in parser.sections()
+        s
+        for s in parser.sections()
         if s.startswith("importlinter:contract:")
         and parser[s].get("unmatched_ignore_imports_alerting", "error") != "error"
     ]

@@ -56,8 +56,8 @@ reason = "contrôle du texte de la matrice du nightly (trois lignes, image épin
 # yet verifiable. Each entry names the milestone that completes it.
 [[partial]]
 requirement = "ENF-GOV-006"
-milestone = "M1a"
-reason = "porte P0 et règles d'arrêt documentées (portes.md) et relevé de départ documentaire générique (docs/recherche/releve-depart.md) ; les entretiens utilisateurs dépendent du porteur et sont reportés (décision M0 9)"
+milestone = "M3"
+reason = "porte P0 et règles d'arrêt documentées (portes.md) et relevé de départ documentaire générique (docs/recherche/releve-depart.md) ; les entretiens utilisateurs dépendent du porteur et sont reportés (décision M0 9) ; la porte P2 (test concierge, prototype cliquable) tombe avant M3, qui complète l'exigence"
 
 # Tests that do not run in the required CI (`ci-success`): accepted for M0 only when the
 # workflow that runs them is named and justified.
