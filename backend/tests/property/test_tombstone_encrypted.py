@@ -142,6 +142,21 @@ def test_tombstone_line_bound_to_root_and_scope(mutation: tuple[str, int]) -> No
         header = b'{"kind":"shelfhold.tombstones","schema_version":"2.0"}\n'
         env.fs.fsops.append_tombstone_line(target.path, tampered, header=header)
 
+        # The journal was swapped for a forged one (the chain of L26 would call that a truncation
+        # and block the root): here the lines themselves are what is under test, so the instance
+        # is made to know nothing of the journal, as with a journal of M1a.
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.delete(platform.app_setting).where(
+                    platform.app_setting.c.key.like("tombstone.chain.%")
+                )
+            )
+        for root in env.roots:
+            sentinel = Path(root.path) / ".shelfhold-mount-id"
+            document = json.loads(sentinel.read_text("utf-8"))
+            document.pop("tombstone_chain", None)
+            sentinel.write_text(json.dumps(document), "utf-8")
+
         report = env.service().replay(env.roots)
 
         assert report.verified == 0

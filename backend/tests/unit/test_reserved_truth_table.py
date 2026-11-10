@@ -255,6 +255,7 @@ FRESHNESS_LINE = {
             "tombstone.list",
             "tombstone.accept_lost_keyring",
             "tombstone.set_aside_journal",
+            "tombstone.rekey",
             "root.takeover",
             "root.reinit",
             "store.takeover",

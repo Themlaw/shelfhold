@@ -12,6 +12,7 @@ RESERVED = {
     ("secrets import", "tombstone_key_unknown"),
     ("tombstone accept-lost-keyring", "tombstone_key_unknown"),
     ("tombstone set-aside-journal", "restored_behind"),  # contradictor review, blocker 2
+    ("tombstone set-aside-journal", "tombstone_journal_truncated"),  # M1b L26 (D12)
     ("rate", "rating_pending"),
     ("rate", "follow_suspended"),
     ("root takeover", "foreign_root"),

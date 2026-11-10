@@ -116,7 +116,7 @@ class TombstoneKeyringExit:
         time (the state of each journal and the label the database holds): `waiting` is cheap
         and `/healthz` reads it."""
         before = self._chain_key()
-        if before == self._scanned:
+        if before == self._scanned or not before:  # no root yet: nothing to judge
             return
         service, mounted = self._service()
         service.scan_chains(mounted)
@@ -129,6 +129,8 @@ class TombstoneKeyringExit:
                     platform.physical_root.c.root_id, platform.physical_root.c.path_entry
                 ).where(platform.physical_root.c.mode == "rw")
             ).all()
+        if not roots:
+            return []
         state = TombstoneState(self._engine)
         key: list[object] = []
         for root_id, path in roots:

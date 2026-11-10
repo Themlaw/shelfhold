@@ -35,6 +35,7 @@ SPEC_WAITING_STATES = {
     "foreign_root",
     "root_lost",
     "root_behind",
+    "tombstone_journal_truncated",
     "store_lost",
     "source_instance_changed",
     "tombstone_key_unknown",
