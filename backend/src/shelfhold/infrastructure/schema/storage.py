@@ -185,3 +185,22 @@ sa.Index(
     unique=True,
     sqlite_where=sa.text("\"location\" = 'store'"),
 )
+
+# What "Mettre à l'abri" could not take in its last cycle (EF-BIB-042 (4), EF-INT-023): one row, the
+# Units and bytes that stayed behind the per-cycle cap or the room of /store. `units = 0` means the
+# queue is empty. The Units themselves are not listed here: they are the ones owed a copy and
+# without one (a read of the database), so a lost row can only be rebuilt by the next cycle.
+safeguard_backlog = sa.Table(
+    "safeguard_backlog",
+    metadata,
+    sa.Column("name", sa.String(), primary_key=True),
+    sa.Column("units", sa.Integer(), nullable=False, server_default="0"),
+    sa.Column("bytes", sa.BigInteger(), nullable=False, server_default="0"),
+    sa.Column("since", UtcDateTime(), nullable=True),
+    sa.Column(
+        "updated_at", UtcDateTime(), nullable=False, server_default=sa.func.current_timestamp()
+    ),
+    sa.CheckConstraint("\"name\" = 'store'", name="name_values"),
+    positive_check("units"),
+    positive_check("bytes"),
+)

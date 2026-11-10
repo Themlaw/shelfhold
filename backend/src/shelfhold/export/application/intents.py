@@ -204,6 +204,17 @@ class IntentJournal:
         """The operation failed before it touched the disk: nothing is left to settle."""
         self._close_open(intent_id, "cancelled")
 
+    def supersede(self, op: str) -> int:
+        """Close, as `cancelled`, the open intents of `op` that a new run is about to plan again
+        (an upstream purge whose outcome was never known). Returns how many."""
+        table = coherence.fs_intent
+        with self._engine.begin() as conn:
+            return conn.execute(
+                sa.update(table)
+                .where(table.c.op == op, table.c.state.in_(OPEN_STATES))
+                .values(state="cancelled", resolved_at=self._clock.now())
+            ).rowcount
+
     def apply_rename(self, step: RenameStep, *, on_done: ManifestHook | None = None) -> None:
         observed = self._disk.observe(step.src)
         if observed is None or observed[0] != "file":
@@ -359,6 +370,8 @@ class IntentJournal:
                 self._resolve_write(intent, report, on_done)
             elif intent.op == "copy_cross_root" and intent.src and intent.dst:
                 self._resolve_copy(intent, report, on_done)
+            elif intent.op == "purge_upstream":
+                self._resolve_purge_upstream(intent, report)
             else:
                 self._drift(intent, report, f"no replay rule for op {intent.op!r}")
         except (FsopsError, OSError, LookupError) as error:
@@ -482,6 +495,15 @@ class IntentJournal:
             report.completed.append(intent.id)
         else:
             self._drift(intent, report, "the target is not the file that was copied")
+
+    def _resolve_purge_upstream(self, intent: OpenIntent, report: ResolveReport) -> None:
+        """The erasure of a download in the connected service (EF-SRC-009, EF-EXP-064). Nothing on
+        this side's disks was touched, and the boot cannot ask the service: the intent is closed
+        and the next sweep of `library.safeguard` plans from the facts again. It asks the service
+        first and verifies the /store copy anew, so a deed that did land is recorded and never
+        repeated, and one that did not is decided by what is true then, not by what was true."""
+        self._close(intent.id, "cancelled")
+        report.abandoned.append(intent.id)
 
     def _resolve_rmdir(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

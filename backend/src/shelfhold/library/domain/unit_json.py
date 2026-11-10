@@ -17,7 +17,9 @@ from typing import Any, Final
 
 UNIT_JSON_VERSION: Final = "1.1"
 _CURRENT = (1, 1)
-_OWNED: Final = ("schema_version", "unit_id", "edition_id", "contents", "file_hashes")
+_OWNED: Final = (
+    "schema_version", "unit_id", "edition_id", "contents", "file_hashes", "origin_comicinfo",
+)  # fmt: skip
 _VERSION = re.compile(r"(\d+)(?:\.(\d+))?")
 _HASH = re.compile(r"sha256:[0-9a-f]{64}")
 _HASH_FIELDS: Final = ("original_sha256", "content_hash", "derived_hash", "file_hash")

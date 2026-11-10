@@ -25,10 +25,12 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.infrastructure.archives import DEFAULT_LIMITS, ArchiveLimits, safe_open_archive
 from shelfhold.infrastructure.content_trust import check_cbz_entries
+from shelfhold.infrastructure.content_trust.cbz_entries import COMICINFO_MAX_BYTES
 from shelfhold.infrastructure.fsops import CopyVerificationError, Fsops, FsopsError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
 from shelfhold.library.adapters.meta_projection import MetaProjection
+from shelfhold.library.adapters.origin_comicinfo import keep_origin_comicinfo
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY, content_hash
 from shelfhold.library.domain.copies import CopyFacts, is_independent
 from shelfhold.library.domain.failures import (
@@ -101,6 +103,7 @@ class PassthroughStore:
         self._fsops = fsops
         self._locate = locate
         self._projection = MetaProjection(engine, data_dir)
+        self._data_dir = data_dir
         self._max = max_received_bytes
         self._limits = limits
         self._tombstones = tombstones
@@ -122,6 +125,11 @@ class PassthroughStore:
         with safe_open_archive(staged, name=PurePath(dest).name, limits=self._limits) as archive:
             listing = check_cbz_entries(archive)
             payload_hash = content_hash(archive)
+            origin_xml = (
+                archive.read(listing.comicinfo, max_bytes=COMICINFO_MAX_BYTES)
+                if listing.comicinfo
+                else None
+            )
         original = sha256_file(staged)
         if self._tombstones.check_content(
             [ContentHash(CONTENT_HASH_BY, payload_hash), ContentHash(FILE_HASH_BY, original)]
@@ -171,6 +179,9 @@ class PassthroughStore:
                     file_hash=original, independent=True, mutable_by_third_party=True,
                     remote_ref=upstream_ref, size=identity.size, verified_at=now,
                 )  # fmt: skip
+        if origin_xml:  # EF-BIB-048: the exporter will replace it; a safeguard needs it later
+            with suppress(OSError, ValueError):
+                keep_origin_comicinfo(self._data_dir, unit_id, bytes(origin_xml))
         self._projection.project(unit_id)  # after the commit: the database is the authority
         return Ingested(
             content_id, replica_id, original, payload_hash, identity.size, len(listing.images)

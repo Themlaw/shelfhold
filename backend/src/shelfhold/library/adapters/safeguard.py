@@ -77,6 +77,12 @@ def _payload_hash(path_or_stream: Path | BinaryIO, name: str) -> str:
         return content_hash(archive)
 
 
+def payload_hash_at(fsops: Fsops, local: str) -> str:
+    """The `content_hash` of the archive at `local`, read now (audited as any archive is)."""
+    with fsops.open_read(local) as stream:
+        return _payload_hash(stream, "x.cbz")
+
+
 class Safeguard:
     def __init__(
         self,

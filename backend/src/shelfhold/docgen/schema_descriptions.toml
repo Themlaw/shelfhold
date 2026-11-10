@@ -786,6 +786,15 @@ visibility = "Who may see the request: `private`, `household` or `ops`."
 requester_user_id = "User who asked (`user.id`), null for the host command line."
 claimed_at = "When a worker took the request to call the service (UTC); an old claim is taken over."
 
+[tables.safeguard_backlog]
+description = "What \"Mettre à l'abri\" left behind at its last cycle: one row, the Units and bytes beyond the cycle cap or the room of /store."
+[tables.safeguard_backlog.columns]
+name = "Always `store`: there is one queue."
+units = "Units still owed a copy in /store after the last cycle; zero when the queue is empty."
+bytes = "Estimated bytes of those Units."
+since = "When the queue became non-empty (UTC), null when it is empty."
+updated_at = "When the last cycle wrote the row (UTC)."
+
 [tables.revision_pending]
 description = "Revisions seen before M2, never applied in bulk."
 [tables.revision_pending.columns]

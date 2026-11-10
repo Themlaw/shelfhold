@@ -15,6 +15,7 @@ from sqlalchemy import Connection
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import platform, storage
 from shelfhold.library.adapters.meta_projection import meta_rel
+from shelfhold.library.adapters.origin_comicinfo import origin_rel
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY
 from shelfhold.library.domain.copies import Copy, Hash
 from shelfhold.library.replica import erase_replicas, replica_copies, replica_hashes
@@ -134,9 +135,14 @@ DERIVED_CACHES = ("cache/thumbnails", "cache/content")  # under /data, keyed by 
 
 
 def derived_rels(unit_id: str) -> list[str]:
-    """Paths under /data that hold something derived from a Unit: its `unit.json`, its thumbnails
+    """Paths under /data that hold something derived from a Unit: its `unit.json`, the ComicInfo
+    the service sent, its thumbnails
     and its `/content` cache (`cache/<kind>/<id[:2]>/<id>`, like `meta/units`). A purge erases
     them; the writers of those caches follow the same layout."""
     if not is_ulid(unit_id):
         raise ValueError(f"not an identifier: {unit_id!r}")
-    return [meta_rel(unit_id), *(f"{base}/{unit_id[:2]}/{unit_id}" for base in DERIVED_CACHES)]
+    return [
+        meta_rel(unit_id),
+        origin_rel(unit_id),  # the ComicInfo as the service sent it (EF-BIB-048)
+        *(f"{base}/{unit_id[:2]}/{unit_id}" for base in DERIVED_CACHES),
+    ]

@@ -29,6 +29,7 @@ __all__ = [
     "StoreCopy",
     "demote_shared_inodes",
     "distrust_root_copies",
+    "StoreProof",
     "erase_replicas",
     "has_readable_copy",
     "independent_copies",
@@ -50,6 +51,7 @@ __all__ = [
     "sibling_inodes",
     "store_copies",
     "store_unit_ids",
+    "store_proofs",
     "update_observation",
     "upstream_claims",
     "withdraw_upstream_claims",
@@ -281,6 +283,57 @@ def store_copies(connection: Connection, unit_id: str) -> Sequence[StoreCopy]:
         .order_by(replica_table.c.id)
     )
     return [StoreCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash) for r in rows]
+
+
+@dataclass(frozen=True)
+class StoreProof:
+    """What a verified copy in /store looks like: the identity and the hashes a later deed pins."""
+
+    replica_id: str
+    local: str
+    file_hash: str  # the bytes that were put in /store
+    content_hash: str  # the payload they carry
+    dev: int
+    ino: int
+
+
+def store_proofs(connection: Connection, unit_id: str) -> list[StoreProof]:
+    """The Unit's /store copies that count as independent, with their identity. Read from the
+    registry as the last look (`verify_kept`) left it: a caller about to act on it looks again."""
+    root = platform.physical_root
+    rows = connection.execute(
+        sa.select(
+            replica_table.c.id,
+            replica_table.c.rel_path,
+            replica_table.c.file_hash,
+            replica_table.c.content_hash,
+            replica_table.c.dev,
+            replica_table.c.ino,
+            root.c.path_entry,
+        )
+        .join(root, root.c.root_id == replica_table.c.physical_root_id)
+        .where(
+            replica_table.c.unit_id == unit_id,
+            replica_table.c.location == "store",
+            replica_table.c.independent,
+            replica_table.c.file_hash.is_not(None),
+            replica_table.c.content_hash.is_not(None),
+            replica_table.c.dev.is_not(None),
+            replica_table.c.ino.is_not(None),
+        )
+        .order_by(replica_table.c.id)
+    )
+    return [
+        StoreProof(
+            r.id,
+            f"{r.path_entry.rstrip('/')}/{r.rel_path}",
+            r.file_hash,
+            r.content_hash,
+            int(r.dev),
+            int(r.ino),
+        )
+        for r in rows
+    ]
 
 
 def kept_file_hashes(connection: Connection) -> dict[str, str]:
