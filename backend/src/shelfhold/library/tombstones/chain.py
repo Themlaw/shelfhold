@@ -38,11 +38,17 @@ class ChainState:
     # the `rename` and the end of the rewrite leaves the file under the new label, which is then
     # as good as the old one.
     pending: str | None = None
+    # The sentinel of the root has been given this label at some time: a sentinel that then shows
+    # none that verifies was stripped. Not set while the root cannot be written (frozen, away):
+    # a sentinel that never got a copy is behind, not stripped.
+    mirrored: bool = False
 
     def to_json(self) -> dict[str, object]:
         body: dict[str, object] = {"seq": self.seq, "count": self.count, "label": self.label}
         if self.pending is not None:
             body["pending"] = self.pending
+        if self.mirrored:
+            body["mirrored"] = True
         return body
 
     @classmethod
@@ -58,7 +64,7 @@ class ChainState:
             return None
         if pending is not None and (not isinstance(pending, str) or not 0 < len(pending) <= 64):
             return None
-        return cls(int(seq), int(count), label, pending)  # type: ignore[arg-type]
+        return cls(int(seq), int(count), label, pending, mirrored=raw.get("mirrored") is True)  # type: ignore[arg-type]
 
     def advanced(self, seq: int, tag: bytes) -> "ChainState":
         """One more line, with a `seq` above every one so far."""

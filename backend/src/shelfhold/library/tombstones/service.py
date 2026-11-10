@@ -433,25 +433,38 @@ class TombstoneService:
             return
         current = previous.advanced(seq, tag_of(parse_line(line[:-1]).ct))
         self._state.set_chain(root.root_id, current)
-        self._copy_chain(root, current)
+        self._mirror(root, current)
 
     def _signers(self) -> list[Key]:
         """The keys that may vouch for a label: every key we hold that did not leak."""
         return [key for key in self._keyring.keys if key.state != "compromised"]
 
-    def _copy_chain(self, root: TombstoneRoot, state: ChainState) -> None:
+    def _mirror(self, root: TombstoneRoot, state: ChainState) -> None:
+        """Copy the label to the sentinel and, when that was made, remember it in the database
+        (`mirrored`): from then on a sentinel that shows no valid chain was stripped."""
+        if self._copy_chain(root, state):
+            self._state.set_chain(
+                root.root_id, ChainState(state.seq, state.count, state.label, mirrored=True)
+            )
+
+    def _copy_chain(self, root: TombstoneRoot, state: ChainState) -> bool:
         """The label, authenticated under every sound key, in the sentinel of the root. Best
-        effort: the database is the authority, a replay completes the copy."""
+        effort: the database is the authority, a replay completes the copy. True when copied."""
         tags = {
             key.kid: chain_mac(key.material, root.root_id, state.seq, state.count, state.label)
             for key in self._signers()
         }
-        chain = {**{k: v for k, v in state.to_json().items() if k != "pending"}, "tags": tags}
+        chain = {
+            **{k: v for k, v in state.to_json().items() if k not in ("pending", "mirrored")},
+            "tags": tags,
+        }
         try:
             self._disk.record_tombstone_chain(root.path, chain)
         except (OSError, ValueError, RuntimeError) as error:
             log.debug("tombstone.chain_copy_deferred", root_id=root.root_id,
                       reason=type(error).__name__)  # fmt: skip
+            return False
+        return True
 
     def _sentinel_chain(self, root: TombstoneRoot) -> tuple[ChainState | None, bool]:
         """The label the sentinel carries, if its MAC verifies under a key we hold, and whether
@@ -465,8 +478,11 @@ class TombstoneService:
         found: ChainState | None = None
         for signer, mac in raw["tags"].items():
             key = self._keyring.find(signer) if isinstance(signer, str) else None
-            if key is not None and verify_chain_mac(
-                key.material, root.root_id, state.seq, state.count, state.label, mac
+            # the label was signed for the root id the sentinel had then: a root that took over
+            # a predecessor's place (restore, takeover) carries the old one
+            if key is not None and any(
+                verify_chain_mac(key.material, rid, state.seq, state.count, state.label, mac)
+                for rid in (root.root_id, *root.predecessor_root_ids)
             ):
                 found = ChainState(state.seq, state.count, state.label)
                 if key.state != "compromised":
@@ -509,7 +525,10 @@ class TombstoneService:
         unverified = (
             shown is None
             and not self._signed_by_absent_keys(root)
-            and (database is not None or self._disk.tombstone_chain_written(root.path))
+            and (
+                (database is not None and database.mirrored)
+                or self._disk.tombstone_chain_written(root.path)
+            )
         )
         if unverified or judge(tags, database, sentinel):
             report.truncated_roots.add(root.root_id)
@@ -532,7 +551,9 @@ class TombstoneService:
                 tip.count,
                 tip.label,
             ):
-                self._copy_chain(root, tip)
+                self._mirror(root, tip)
+            elif database is None or not database.mirrored:
+                self._mirror(root, tip)  # the copy that could not be made then
         return True
 
     def has_pending(self, root_id: str) -> bool:
@@ -1230,7 +1251,7 @@ class TombstoneService:
                 self._state.close_intent(intent, "cancelled", now)
                 continue  # written meanwhile: read it again
             self._state.set_chain(root.root_id, new_tip)
-            self._copy_chain(root, new_tip)
+            self._mirror(root, new_tip)
             self._state.close_intent(intent, "done", now)
             return count
         return None
