@@ -15,6 +15,7 @@ import sqlite3
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import sqlalchemy as sa
@@ -181,7 +182,7 @@ def test_the_notice_and_the_revocation_commit_or_fail_together(tmp_path: Path) -
     with backup_bench(tmp_path) as bench:
         key, _kept, _token = _seed(bench)
         counter = IdentityCounter(bench.settings.data_dir)
-        before = counter.file_value()
+        before = counter.file_value() or 0
         with pytest.raises(RuntimeError), bench.engine.begin() as connection:
             revoke_all_credentials(connection, now=bench.clock.now(), counter=counter)
             raise RuntimeError("crash before the commit")
@@ -523,20 +524,131 @@ def test_a_passkey_only_account_keeps_no_hash_not_the_text_none(tmp_path: Path) 
             assert row.fetchone() == (None,)
 
 
-def test_the_file_is_written_before_the_commit_so_a_kill_leaves_it_ahead(tmp_path: Path) -> None:
+def _kill_after_file_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The process dies right after the file got `pending`, before the database commits."""
+    real = IdentityCounter._write
+
+    def killed(self: IdentityCounter, committed: int, pending: int | None) -> None:
+        real(self, committed, pending)
+        raise SystemExit("SIGKILL")
+
+    monkeypatch.setattr(IdentityCounter, "_write", killed)
+
+
+def test_a_crash_before_the_commit_of_a_password_change_is_not_a_restore(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No restore at all: the write never committed. Nothing is revoked at the next start."""
     with backup_bench(tmp_path) as bench:
         key, _kept, token = _seed(bench)
+        auth = local_auth(bench.engine, bench.settings, bench.clock)
+        session = SimpleNamespace(token=token)
         counter = IdentityCounter(bench.settings.data_dir)
+        before = counter.file_value() or 0
+        _kill_after_file_write(monkeypatch)
+        with pytest.raises(SystemExit):
+            auth.reset_password("admin", NEW_PASSWORD)
+        monkeypatch.undo()
+        committed, pending = counter.state()
+        assert committed == before and pending == before + 1  # the two phases
+        assert reconcile_identity_counter(bench.engine, counter, now=bench.clock.now()) is None
+        again = local_auth(bench.engine, bench.settings, bench.clock)
+        assert again.authenticate_session(session.token) is not None
+        assert again.authenticate_api_key(key.value) is not None
+        again.login("admin", PASSWORD, ip="10.0.0.1")  # the old password still stands
+        with bench.engine.connect() as connection:
+            assert not notice_active(connection)
+        assert counter.state() == (before, None)  # the pending is dropped
+
+
+def test_a_failed_commit_leaves_the_database_number_and_drops_the_pending(
+    tmp_path: Path,
+) -> None:
+    with backup_bench(tmp_path) as bench:
+        _seed(bench)
+        counter = IdentityCounter(bench.settings.data_dir)
+        with bench.engine.connect() as connection:
+            number = IdentityCounter.db_value(connection)
         with pytest.raises(RuntimeError), bench.engine.begin() as connection:
             counter.bump(connection)
-            raise RuntimeError("killed before the commit")
+            raise RuntimeError("the commit failed: disk full")
         with bench.engine.connect() as connection:
-            assert (counter.file_value() or 0) > IdentityCounter.db_value(connection)
-        acted = reconcile_identity_counter(bench.engine, counter, now=bench.clock.now())
-        assert acted is not None  # the safe side: revoked, never missed
+            assert IdentityCounter.db_value(connection) == number  # D stays at N
+        assert reconcile_identity_counter(bench.engine, counter, now=bench.clock.now()) is None
+        assert counter.state() == (number, None)
+
+
+def test_a_crash_after_the_commit_is_adopted_not_revoked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    with backup_bench(tmp_path) as bench:
+        key, _kept, _token = _seed(bench)
         auth = local_auth(bench.engine, bench.settings, bench.clock)
+        counter = IdentityCounter(bench.settings.data_dir)
+
+        def killed(_self: IdentityCounter, _value: int) -> None:
+            raise SystemExit("SIGKILL after the commit")
+
+        monkeypatch.setattr(IdentityCounter, "publish", killed)
+        with pytest.raises(SystemExit):
+            auth.reset_password("admin", NEW_PASSWORD)
+        monkeypatch.undo()
+        with bench.engine.connect() as connection:
+            number = IdentityCounter.db_value(connection)
+        committed, pending = counter.state()
+        assert pending == number and (committed or 0) < number  # the database did commit
+        assert reconcile_identity_counter(bench.engine, counter, now=bench.clock.now()) is None
+        assert counter.state() == (number, None)  # adopted
+        assert (
+            local_auth(bench.engine, bench.settings, bench.clock).authenticate_api_key(key.value)
+            is not None
+        )
+
+
+def test_an_older_database_put_back_while_a_pending_exists_still_revokes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    with backup_bench(tmp_path) as bench:
+        key, _kept, token = _seed(bench)
+        auth = local_auth(bench.engine, bench.settings, bench.clock)
+        copy = _hand_copy(bench, tmp_path)
+        auth.revoke_api_key(auth.create_api_key(name="x").prefix)  # the counter moves on
+        _kill_after_file_write(monkeypatch)
+        with pytest.raises(SystemExit):
+            auth.reset_password("admin", NEW_PASSWORD)  # and a pending is left
+        monkeypatch.undo()
+        assert IdentityCounter(bench.settings.data_dir).state()[1] is not None
+        _put_back(bench, copy)
+        engine = create_db_engine(bench.settings.database_path)
+        try:
+            acted = reconcile_identity_counter(
+                engine, IdentityCounter(bench.settings.data_dir), now=bench.clock.now()
+            )
+            assert acted is not None  # committed is above the old database: a restore
+            restored = local_auth(engine, bench.settings, bench.clock)
+            assert restored.authenticate_api_key(key.value) is None
+            assert restored.authenticate_session(token) is None
+        finally:
+            engine.dispose()
+
+
+def test_the_old_counter_file_format_is_migrated_without_a_revocation(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench:
+        key, _kept, token = _seed(bench)
+        auth = local_auth(bench.engine, bench.settings, bench.clock)
+        counter = IdentityCounter(bench.settings.data_dir)
+        with bench.engine.connect() as connection:
+            number = IdentityCounter.db_value(connection)
+        counter.path.write_bytes(str(number).encode())  # what the first version wrote
+        assert counter.state() == (number, None)
+        assert reconcile_identity_counter(bench.engine, counter, now=bench.clock.now()) is None
+        counter.path.write_bytes(str(number + 5).encode())  # an old file ahead: a restore
+        assert reconcile_identity_counter(bench.engine, counter, now=bench.clock.now()) is not None
         assert auth.authenticate_api_key(key.value) is None
         assert auth.authenticate_session(token) is None
+        committed, pending = counter.state()
+        assert pending is None and (committed or 0) > number + 5  # rewritten in the new format
+        assert counter.path.read_text().startswith("committed=")
 
 
 def test_a_database_error_at_start_is_retried_then_stops_the_start(

@@ -148,7 +148,7 @@ sur la machine hôte, avec la CLI locale (socket ops locale),
 ```sh
 shelfhold admin reset-password <compte>   # pour chaque compte, si les mots de passe n'ont pas été reportés
 shelfhold status                          # liste `restored_credentials`, les passkeys et comptes concernés
-shelfhold restore acknowledge             # CLI de l'hôte uniquement : ni session, ni clé, jamais via HTTP
+shelfhold restore acknowledge             # CLI de l'hôte uniquement ; après `restore adopt` si la restauration a aussi gelé des racines : ni session, ni clé, jamais via HTTP
 ```
 
 `restore acknowledge` liste les passkeys créées ou révoquées depuis la sauvegarde, rétablit les
@@ -162,8 +162,11 @@ Une base remise à la main n'est pas toujours « en retard » sur des fichiers (
 bibliothèque, ou sentinelles identiques). Shelfhold tient donc un **compteur d'identité monotone**
 dans `/data/.identity-counter` (écrit de façon atomique, droits `0600`, **jamais sauvegardé**),
 copié dans la base dans la même transaction. Chaque révocation (session, clé d'API, passkey) et
-chaque changement de mot de passe l'augmente ; le fichier est écrit **avant** la validation de la
-transaction (un arrêt brutal le laisse en avance, jamais en retard). Avant toute écriture d'identité
+chaque changement de mot de passe l'augmente ; le fichier est écrit **en deux temps** : avant la validation
+`committed=N` et `pending=N+1`, après la validation `committed=N+1`. Au démarrage, `committed` au-dessus
+de la base = restauration (révocation) ; `committed` égal à la base avec un `pending` = écriture
+interrompue (aucune révocation : le `pending` est effacé, ou adopté si la base l'a validé). Un ancien
+fichier (un nombre seul) est lu comme `committed`. Avant toute écriture d'identité
 et au démarrage, avant toute requête : si le fichier est au-dessus de la base, la base est plus
 ancienne que l'état connu, toutes les sessions et clés d'API sont révoquées et l'avertissement est
 posé (une commande lancée sur la copie avant le démarrage ne masque donc pas l'écart). Un fichier

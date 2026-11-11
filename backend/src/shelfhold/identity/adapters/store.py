@@ -141,9 +141,13 @@ def reconcile_identity_counter(
             if attempt == _LOCKED_RETRIES:
                 raise
             time.sleep(0.5 * (attempt + 1))
-    current = counter.file_value()
-    if acted is None and (current is None or current < value):  # a missing or lagging file
-        counter.publish(value)
+    if acted is None:
+        if counter.file_value() is None:
+            counter.publish(value)
+        else:
+            counter.settle(value)
+    else:
+        counter.publish(value)  # the revocation committed: the file follows
     return acted
 
 
@@ -197,12 +201,15 @@ class SqlIdentityStore:
             if immediate
             else self._engine
         )
+        value: int | None = None
         with engine.begin() as conn:
             if self._counter is not None:
                 revoke_if_behind(conn, self._counter, now=datetime.now(UTC))
             yield conn
             if self._counter is not None:
-                self._counter.bump(conn)
+                value = self._counter.bump(conn)
+        if self._counter is not None and value is not None:
+            self._counter.publish(value)  # committed
 
     def restore_notice_active(self) -> bool:
         with self._engine.connect() as conn:

@@ -37,25 +37,37 @@ class IdentityCounter:
     def __init__(self, data_dir: Path) -> None:
         self.path = data_dir / COUNTER_FILE
 
-    def file_value(self) -> int | None:
-        """None: no file. `DAMAGED`: a file that is empty, unreadable or not a number (it counts
-        as ahead of any database: the revocation runs once and the file is written again).
-        A directory in its place raises `IdentityCounterError`."""
+    def state(self) -> tuple[int | None, int | None]:
+        """`(committed, pending)` of the file. `committed` is None without a file and `DAMAGED`
+        for a file that is empty, unreadable or not understood (it counts as ahead of any database:
+        the revocation runs once and the file is written again). A directory in its place raises
+        `IdentityCounterError`. The old format, a bare number, reads as `committed`, no pending."""
         try:
             with self.path.open("rb") as handle:
                 raw = handle.read(_MAX_BYTES)
         except FileNotFoundError:
-            return None
+            return None, None
         except IsADirectoryError:
             raise IdentityCounterError(
                 f"{self.path} is a directory: remove it so the identity counter can be a file"
             ) from None
         except OSError:
-            return DAMAGED
+            return DAMAGED, None
         try:
-            return max(int(raw.strip()), 0)
-        except ValueError:
-            return DAMAGED  # empty included: an empty file is a torn write, not a zero
+            text = raw.decode("ascii").strip()
+            if text.isdigit():  # the old format
+                return int(text), None
+            fields = dict(line.split("=", 1) for line in text.splitlines())
+            if set(fields) - {"committed", "pending"} or "committed" not in fields:
+                return DAMAGED, None
+            pending = fields.get("pending")
+            return int(fields["committed"]), None if pending is None else int(pending)
+        except ValueError:  # empty included: an empty file is a torn write, not a zero
+            return DAMAGED, None
+
+    def file_value(self) -> int | None:
+        """The committed number (see `state`)."""
+        return self.state()[0]
 
     @staticmethod
     def db_value(connection: Connection) -> int:
@@ -69,14 +81,13 @@ class IdentityCounter:
 
     def bump(self, connection: Connection, *, at_least: int = 0) -> int:
         """Inside the caller's transaction: one more than the file and the database hold (and
-        `at_least`), stored in the database, then written to the file. The file comes first on
-        purpose: if the commit never happens the file is ahead of the database, and the next
-        start revokes everything (the safe side); the other order could leave it behind."""
+        `at_least`), stored in the database. The file is written first, in two phases: now
+        `committed=N, pending=N+1`, and `publish(N+1)` after the commit. A write that never
+        commits leaves a pending the next start recognises and drops (no restore to suspect); a
+        database put back from older state shows as `committed` above its own number."""
         known = max(self.db_value(connection), self.file_value() or 0, at_least)
         value = self.store(connection, known + 1)
-        self.publish(
-            value
-        )  # before the commit: a kill in between leaves the file ahead, never behind
+        self._write(known, value)
         return value
 
     @staticmethod
@@ -89,8 +100,22 @@ class IdentityCounter:
             connection.execute(sa.insert(table).values(key=COUNTER_KEY, value=str(value)))
         return value
 
+    def _write(self, committed: int, pending: int | None) -> None:
+        text = f"committed={committed}\n" + (f"pending={pending}\n" if pending is not None else "")
+        write_private(self.path, text.encode("ascii"), overwrite=True)
+
     def publish(self, value: int) -> None:
-        """A number lower than the file's never replaces it; a damaged file is written again."""
+        """After the commit: `committed=value`, no pending. A number lower than the file's never
+        replaces it; a damaged file is written again."""
         current = self.file_value()
-        if current is None or current == DAMAGED or value > current:
-            write_private(self.path, str(value).encode("ascii"), overwrite=True)
+        if current is None or current == DAMAGED or value >= current:
+            self._write(value, None)
+
+    def settle(self, database: int) -> None:
+        """The file is not ahead of the database (`committed <= database`): an interrupted write
+        is dropped, or adopted if the database did commit it. Never a restore."""
+        committed, pending = self.state()
+        if committed is None or committed == DAMAGED or committed > database:
+            return
+        if committed < database or pending is not None:
+            self._write(database, None)
