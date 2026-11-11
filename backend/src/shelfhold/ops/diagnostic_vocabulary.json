@@ -432,6 +432,7 @@
   "discovery.translation_nature_unknown",
   "event.published",
   "event.subscriber_failed",
+  "export.accounts_reread_failed",
   "export.age_gate_closed",
   "export.age_push_failed",
   "export.age_reread_failed",
