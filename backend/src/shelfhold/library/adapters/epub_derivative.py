@@ -600,13 +600,8 @@ class UntrustedEpubStore:
                 record_library_rewrite(
                     connection, into.replica_id, file_hash=digest,
                     dev=self._fsops.device_of(into.local), ino=written.ino, size=written.size,
-                    mtime_ns=written.mtime_ns, verified_at=now,
+                    mtime_ns=written.mtime_ns, verified_at=now, content_hash=made.derived_hash,
                 )  # fmt: skip
-                connection.execute(
-                    sa.update(storage.replica)
-                    .where(storage.replica.c.id == into.replica_id)
-                    .values(content_hash=made.derived_hash, fidelity="derived")
-                )
                 connection.execute(
                     sa.update(storage.content)
                     .where(storage.content.c.id == content.id)

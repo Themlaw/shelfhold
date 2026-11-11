@@ -395,6 +395,7 @@ def record_library_rewrite(
     size: int,
     mtime_ns: int,
     verified_at: datetime,
+    content_hash: str | None = None,
 ) -> None:
     """A /library file replaced in place (an atomic write makes a new inode): the manifest's hash
     and the identity of what is there now, so a stale inode is never counted as a copy."""
@@ -408,6 +409,7 @@ def record_library_rewrite(
             size=size,
             mtime_ns=mtime_ns,
             verified_at=verified_at,
+            **({} if content_hash is None else {"content_hash": content_hash}),
         )
     )
 
