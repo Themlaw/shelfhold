@@ -321,6 +321,10 @@ def _meta_check(ops: OpsServices, _by: Principal, _p: Params) -> object:
     return ops.meta.check()
 
 
+def _meta_enrich(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.meta.enrich(_text(p, "target"))
+
+
 def _count(params: Params, name: str) -> int | None:
     value = params.get(name)
     if value is None:
@@ -528,6 +532,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.content_reneutralize": (_content_reneutralize, None),
     "ops.meta_rebuild": (_meta_rebuild, None),
     "ops.meta_check": (_meta_check, None),
+    "ops.meta_enrich": (_meta_enrich, None),
     "ops.backfill_estimate": (_backfill_estimate, None),
     "ops.backfill_start": (_backfill_start, None),
     "ops.follow": (_follow, None),

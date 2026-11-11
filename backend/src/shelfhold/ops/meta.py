@@ -11,21 +11,41 @@ journal. `check` writes nothing.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 
+from shelfhold.catalog.public import EnrichReport, EnrichService, UnknownTargetError
 from shelfhold.export.application.mirror import ProvenanceMirror
+from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import MetaProjection
 from shelfhold.ops.errors import UnknownSubjectError
 from shelfhold.ops.library import refusal_of
+from shelfhold.plugin_host import provider_fetcher
+from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition
 
 __all__ = ["MetaOps"]
+
+
+def _report(report: EnrichReport) -> dict[str, Any]:
+    def named(keys: Any) -> list[str]:
+        return [k.field for k in keys]
+
+    return {
+        "outcome": report.outcome, "reason": report.reason, "edition_id": report.edition_id,
+        "written": named(report.written), "kept_locked": named(report.kept_locked),
+        "kept_manual": named(report.kept_manual),
+        "ages": [{"age": a.min_age, "x": a.x} for a in report.age_suggested],
+        "withdrawals": len(report.withdrawals),
+        "cover": report.cover, "cover_rejected": report.cover_rejected,
+        "attribution": report.attribution, "source_url": report.source_url,
+    }  # fmt: skip
 
 
 class MetaOps:
@@ -59,6 +79,37 @@ class MetaOps:
         mirror = self._mirror(fsops)
         found = {d: names for d in destinations if (names := mirror.drifted(d))}
         return found, list(mirror.skipped)
+
+    def enrich(self, target: str) -> dict[str, Any]:
+        """`meta enrich <isbn|edition>`: ask OpenLibrary about one Edition (EF-BIB-013).
+
+        The proposals are stored with their provenance and the age only as a suggestion; a
+        provider that is down is a notification and a refusal of this command, nothing else."""
+        settings = self._comp.settings
+        service = EnrichService(
+            self._comp.engine, self._comp.clock, self._comp.bus, data_dir=settings.data_dir
+        )
+        try:
+            with self._comp.engine.connect() as connection:
+                edition_id = service.resolve(connection, target)
+            report = asyncio.run(self._enrich(service, edition_id))
+        except (UnknownTargetError, LookupError) as error:
+            raise UnknownSubjectError(str(error)) from None
+        return _report(report)
+
+    async def _enrich(self, service: EnrichService, edition_id: str) -> EnrichReport:
+        provider = OpenLibraryProvider()
+        network = self._comp.network
+        runtime = provider_fetcher.default_runtime()
+        runtime.buckets.use_store(SqlBucketStore(self._comp.engine))  # the balance outlives us
+        fetcher = provider_fetcher.open_provider(
+            provider.manifest, network.resolver, contact=self._comp.settings.metadata_contact,
+            runtime=runtime, transport=network.transport,
+        )  # fmt: skip
+        try:
+            return await service.enrich(provider, fetcher, edition_id=edition_id)
+        finally:
+            await fetcher.aclose()
 
     def check(self) -> dict[str, Any]:
         """What `rebuild` would write; nothing is."""

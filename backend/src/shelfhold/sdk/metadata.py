@@ -64,6 +64,16 @@ class ProviderQuota(SdkModel):
     requests_per_second: float
     burst: int = 1
     daily_cap: int | None = None
+    # The higher rate a provider grants to an agent that gives a contact (OpenLibrary: 3 instead
+    # of 1); the host uses it only when the instance configured one, and `None` means no such tier.
+    requests_per_second_with_contact: float | None = None
+
+    def effective(self, with_contact: bool) -> "ProviderQuota":
+        """The quota the host applies: the contact tier only for an instance that gave a contact."""
+        rate = self.requests_per_second
+        if with_contact and self.requests_per_second_with_contact is not None:
+            rate = max(rate, self.requests_per_second_with_contact)
+        return ProviderQuota(requests_per_second=rate, burst=self.burst, daily_cap=self.daily_cap)
 
 
 class MetadataManifest(PluginManifest):
@@ -145,6 +155,17 @@ class IdentifyResult(SdkModel):
     relations: list[RelationProposal] = Field(default_factory=list)
 
 
+class ProviderUnavailable(Exception):
+    """The provider's service is down or refuses to answer (a 5xx, a 429, an answer that is not
+    what it documents). The host tells the admin and never counts it as a failure of the content.
+
+    `reason` is a closed word: `unreachable`, `timeout`, `http_503`, `schema_mismatch`."""
+
+    def __init__(self, reason: str = "unreachable") -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class MetadataProvider(Protocol):
     """A metadata provider. `get_cover` exists when COVER is declared, `login` and `refresh` when
     `manifest.auth` is."""
@@ -179,6 +200,7 @@ __all__ = [
     "Provenance",
     "ProviderCapability",
     "ProviderQuota",
+    "ProviderUnavailable",
     "RelationKind",
     "RelationProposal",
 ]

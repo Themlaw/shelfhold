@@ -1,0 +1,59 @@
+{
+  "key": "openlibrary",
+  "kind": "metadata",
+  "version": "0.1.0",
+  "api": 1,
+  "name": "Open Library",
+  "permissions": {
+    "domains": [
+      {
+        "pattern": "openlibrary.org",
+        "purpose": "api",
+        "base_url_setting": null
+      },
+      {
+        "pattern": "covers.openlibrary.org",
+        "purpose": "covers",
+        "base_url_setting": null
+      },
+      {
+        "pattern": "*.archive.org",
+        "purpose": "covers",
+        "base_url_setting": null
+      }
+    ],
+    "lan_targets": [],
+    "needs_browser": false,
+    "needs_solver": false
+  },
+  "settings_schema": {},
+  "content_warning": "safe",
+  "terms_url": "https://openlibrary.org/developers/api",
+  "respects_robots": true,
+  "attribution": "Data from Open Library (openlibrary.org), CC0 1.0",
+  "homepage": "https://openlibrary.org",
+  "min_sdk": "1.2",
+  "capabilities": [
+    "COVER",
+    "IDENTIFY"
+  ],
+  "touched_fields": [
+    "contributors",
+    "published_on",
+    "publisher",
+    "subjects",
+    "title"
+  ],
+  "entity_types": [
+    "edition",
+    "volume"
+  ],
+  "langs": [],
+  "quota": {
+    "requests_per_second": 1.0,
+    "burst": 1,
+    "daily_cap": 5000,
+    "requests_per_second_with_contact": 3.0
+  },
+  "auth": null
+}

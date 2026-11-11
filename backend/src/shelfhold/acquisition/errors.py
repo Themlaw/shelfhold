@@ -48,6 +48,9 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("fetch.unsafe_redirect", 502, "admin"),
     ErrorCode("fetch.too_large", 502, "admin"),
     ErrorCode("fetch.robots_disallowed", 403, "admin"),  # ENF-LEG-003
+    ErrorCode("fetch.robots_unavailable", 503, "admin"),  # ENF-LEG-003
+    ErrorCode("fetch.quota_exceeded", 429, "admin"),  # ENF-LEG-005
+    ErrorCode("fetch.user_agent_not_identifiable", 500, "admin"),  # ENF-LEG-005
     ErrorCode("fetch.timeout", 504, "admin"),
     ErrorCode("fetch.unreachable", 502, "admin"),
     ErrorCode("source.fallback", 409, "admin", event=True),

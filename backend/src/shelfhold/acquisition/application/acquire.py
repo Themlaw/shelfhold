@@ -494,7 +494,9 @@ class NativeAcquirer:
             return self._close(row, "abandoned", error)
         except ValueError as error:  # `received_hash_mismatch`: not the bytes that were counted
             return self._close(row, "abandoned", error)
-        except FetchError as error:  # asleep, unreachable, too slow: asked again, nothing lost
+        # asleep, unreachable, too slow, robots.txt unreadable (an outage, not a refusal): the
+        # request is kept and asked again, nothing lost
+        except FetchError as error:
             self._bump(row.id)
             log.info("acquire.waiting", request_id=row.id, error=type(error).__name__)
             return AcquireOutcome("waiting", row.id, type(error).__name__)

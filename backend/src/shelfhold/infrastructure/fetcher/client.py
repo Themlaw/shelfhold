@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import http.cookiejar
 import ipaddress
+import re
 import ssl
 import time
 from collections.abc import Mapping
@@ -56,7 +57,33 @@ from shelfhold.infrastructure.secret_text import contains_secret, sensitive_name
 from shelfhold.sdk.fetcher import Response
 
 # ENF-LEG-007: who is calling, and where to reach its maintainers.
-USER_AGENT: Final = f"Shelfhold/{__version__} (+https://github.com/Themlaw/shelfhold)"
+REPOSITORY_URL: Final = "https://github.com/Themlaw/shelfhold"
+USER_AGENT: Final = f"Shelfhold/{__version__} (+{REPOSITORY_URL})"
+# What an instance may give as a contact: an address or an https URL, one word, nothing that could
+# close the parenthesis of the agent or open another header.
+_CONTACT: Final = re.compile(
+    r"^(?:[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,120}\.[A-Za-z]{2,24}|https://[A-Za-z0-9._~:/?#@!$&*+=%-]{4,200})$"
+)
+_IDENTIFIABLE: Final = re.compile(r"^Shelfhold/\S+ \(\+https://[^\s()]+(?:; [^\s();]+)?\)$")
+
+
+def identifiable_user_agent(contact: str | None = None) -> str:
+    """The agent of a metadata provider's requests (ENF-LEG-005, ENF-LEG-007): the product, its
+    version and where to reach its maintainers; with the instance's own contact when it
+    configured one (`metadata_contact`). Never an address of the maintainer: the default carries
+    the repository only."""
+    if contact is None:
+        return USER_AGENT
+    if not _CONTACT.fullmatch(contact):
+        raise ValueError("contact must be an e-mail address or an https URL, without spaces")
+    return f"Shelfhold/{__version__} (+{REPOSITORY_URL}; {contact})"
+
+
+def is_identifiable(user_agent: str) -> bool:
+    """True for the agents `identifiable_user_agent` builds: nothing else says who is asking."""
+    return bool(_IDENTIFIABLE.fullmatch(user_agent))
+
+
 _REDIRECTS: Final = frozenset({301, 302, 303, 307, 308})
 # Off origin, only these request headers travel: an allow-list cannot miss a new credential name.
 _CROSS_ORIGIN_HEADERS: Final = frozenset(
@@ -72,6 +99,12 @@ class FetchLimits:
     connect_timeout: float = 10.0
     read_timeout: float = 30.0  # between two chunks
     max_redirects: int = 5
+
+
+class RequestLimiter(Protocol):
+    """Takes a token before each request that really leaves (the provider's token bucket)."""
+
+    async def acquire(self) -> None: ...
 
 
 class Sink(Protocol):
@@ -117,8 +150,10 @@ class GuardedFetcher:
         domains: DomainAllowlist | None = None,
         cache: HttpCache | None = None,
         robots: RobotsPolicy | None = None,
+        limiter: RequestLimiter | None = None,
     ) -> None:
         self._resolver = resolver
+        self._limiter = limiter  # None: no quota (the owner's own services)
         self._cache = cache  # None: off (config, or per source)
         self._robots = robots  # None: the source does not respect robots (or is not native)
         self._domains = domains  # a plugin's Fetcher: its DomainRules, checked at every hop
@@ -147,6 +182,10 @@ class GuardedFetcher:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    @property
+    def user_agent(self) -> str:
+        return self._user_agent
 
     def secret_values(self) -> frozenset[str]:
         """The values this Fetcher may put in a request (and every other registered secret), with
@@ -291,6 +330,8 @@ class GuardedFetcher:
                     return self._cache.serve(entry)
             addresses = await self._pin(url, allow_lan=on_lan)
             sent = {**headers, **entry.validators} if entry is not None else headers
+            if self._limiter is not None:
+                await self._limiter.acquire()  # robots.txt and every hop count, a cache hit not
             response = await self._send(method, url, addresses, sent, body, cap, tally)
             if self._cache is not None and hop == 0:
                 settled = self._settle(cache_key, entry, method, url, headers, response)

@@ -68,3 +68,23 @@ class RobotsDisallowed(FetchError):
     """The site's robots.txt does not allow this path to a native source (ENF-LEG-003)."""
 
     code: ClassVar[str] = "fetch.robots_disallowed"
+
+
+class RobotsUnavailable(FetchError):
+    """robots.txt could not be read (5xx, network error): nothing is read until it can be, but
+    this is an outage of the site, not a refusal of it (not a `RobotsDisallowed`)."""
+
+    code: ClassVar[str] = "fetch.robots_unavailable"
+
+
+class ProviderQuotaExceeded(FetchError):
+    """The provider's daily ceiling is reached: nothing more is sent today (ENF-LEG-005)."""
+
+    code: ClassVar[str] = "fetch.quota_exceeded"
+
+
+class UserAgentNotIdentifiable(FetchError):
+    """A metadata provider is never called with an agent that does not say who is asking
+    (ENF-LEG-005, ENF-LEG-007)."""
+
+    code: ClassVar[str] = "fetch.user_agent_not_identifiable"

@@ -114,7 +114,7 @@ _AS_IS = (
 )  # fmt: skip
 _PRESENCE = (
     "public_url", "api_token", "secret_key_file", "frontend_dir", "source_url", "wake_url",
-    "wake_token", "backup_dir", "backup_passphrase_file",
+    "wake_token", "backup_dir", "backup_passphrase_file", "metadata_contact",
 )  # fmt: skip
 _VOLUMES = ("data_dir", "store_dir", "library_dir")
 _COUNTS = ("plugin_repos", "active_sources", "forward_auth_trusted_cidrs", "wake_suwayomi",

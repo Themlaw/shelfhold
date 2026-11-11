@@ -23,6 +23,9 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     rebuild = actions.add_parser("rebuild", help=t("cli.meta_rebuild_help"), allow_abbrev=False)
     rebuild.add_argument("--unit", help=t("cli.meta_unit_help"))
     rebuild.set_defaults(handler=run_rebuild)
+    enrich = actions.add_parser("enrich", help=t("cli.meta_enrich_help"), allow_abbrev=False)
+    enrich.add_argument("target", help=t("cli.meta_target_help"))
+    enrich.set_defaults(handler=run_enrich)
     check = actions.add_parser("check", help=t("cli.meta_check_help"), allow_abbrev=False)
     check.set_defaults(handler=run_check)
 
@@ -64,3 +67,35 @@ def run_check(args: argparse.Namespace, channel: OpsChannel) -> int:
     if drift:
         print(t("meta.run_rebuild"), file=sys.stderr)
     return 1 if drift else 0
+
+
+@ops_command
+def run_enrich(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.meta_enrich", target=args.target)
+    outcome = done["outcome"]
+    if outcome != "enriched":
+        reason = done["reason"] or ""
+        if outcome == "provider_down":
+            message = t("meta.enrich_provider_down", reason=reason)
+        elif outcome == "robots_disallowed":
+            message = t("meta.enrich_robots_disallowed")
+        elif outcome == "quota":
+            message = t("meta.enrich_quota")
+        else:
+            message = t("meta.enrich_not_found")
+        print(message, file=sys.stderr)
+        return 1
+    print(t("meta.enriched", edition=done["edition_id"], count=len(done["written"])))
+    for name in done["written"]:
+        print(t("meta.enrich_field", field=name))
+    for name in done["kept_locked"] + done["kept_manual"]:
+        print(t("meta.enrich_kept", field=name))
+    for age in done["ages"]:
+        label = t("meta.enrich_age_x") if age["x"] else f"{age['age']}+"
+        print(t("meta.enrich_age_suggested", age=label))
+    if done["cover_rejected"]:
+        print(t("meta.enrich_cover_rejected", code=done["cover_rejected"]))
+    print(
+        t("meta.enrich_attribution", text=done["attribution"] or "", url=done["source_url"] or "")
+    )
+    return 0

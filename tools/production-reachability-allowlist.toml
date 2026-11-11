@@ -69,7 +69,6 @@ symbols = [
   "shelfhold.catalog.domain.identity:TextVersionRef",
   "shelfhold.catalog.domain.identity:translation_discriminant",
   "shelfhold.catalog.domain.dates:opf_date",
-  "shelfhold.infrastructure.imaging.client:*",
   "shelfhold.infrastructure.packaging.cbz.packager:write_cbz",
   "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.limit_key_for",
   "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.limit_slots",
@@ -142,34 +141,24 @@ tests = [
 
 [[allow]]
 category = "unwired-m2-l11"
-reason = "MetadataProvider contract (SDK 1.2, EF-BIB-013, M2 L11): the proposal types and the SDK version check are proved by the conformance kit and the fake provider; their first host caller is the OpenLibrary provider and the enrichment pipeline (M2 L13)."
+reason = "MetadataProvider contract (SDK 1.2, EF-BIB-013, M2 L11): the SDK version check is proved by the conformance kit and the fake provider; its first host caller is the plugin installer of the metadata plugins (M2 L11 follow-up); the proposal types are wired since the OpenLibrary enrichment (M2 L13)."
 until = "M2"
 symbols = [
-  "shelfhold.sdk.metadata:EntityRef",
-  "shelfhold.sdk.metadata:IdentifyResult",
-  "shelfhold.sdk.metadata:MetadataManifest",
-  "shelfhold.sdk.metadata:Provenance",
-  "shelfhold.sdk.metadata:RelationProposal",
   "shelfhold.sdk.models:SDK_VERSION",
   "shelfhold.sdk.models:sdk_supports",
 ]
 
 [[allow]]
 category = "unwired-m2-l12"
-reason = "The arrival of an Edition with its external identifiers and field proposals (`AutoAttachService.arrive`, EF-BIB-003, EF-BIB-008, EF-BIB-055, M2 L12), the append-only identifier store, the field locks and the suggested ages are proved by their tests; their first production callers are the ingest pipeline of the M2 sources (L19) and the OpenLibrary enrichment (L13). The undo, the confirmation and the list of attaches are already wired (`shelfhold edition detach|attach-confirm|attach-decline|attachments`)."
+reason = "The arrival of an Edition with its external identifiers and field proposals (`AutoAttachService.arrive`, EF-BIB-003, EF-BIB-008, EF-BIB-055, M2 L12), the append-only identifier store, the field locks and the suggested ages are proved by their tests; their first production callers are the ingest pipeline of the M2 sources (L19); the OpenLibrary enrichment (M2 L13) already reads the identifiers and stores the proposals and suggested ages. The undo, the confirmation and the list of attaches are already wired (`shelfhold edition detach|attach-confirm|attach-decline|attachments`)."
 until = "M2"
 symbols = [
   "shelfhold.catalog.application.auto_attach:IncomingEdition",
   "shelfhold.catalog.application.external_ids:ExternalIdConflictError",
   "shelfhold.catalog.application.external_ids:add_external_id",
-  "shelfhold.catalog.application.external_ids:external_ids_of",
-  "shelfhold.catalog.application.external_ids:holder_of",
   "shelfhold.catalog.application.external_ids:renumber_external_id",
   "shelfhold.catalog.application.fields:lock_field",
-  "shelfhold.catalog.application.fields:suggest_age",
   "shelfhold.catalog.application.fields:unlock_field",
-  "shelfhold.catalog.domain.external_ids:ExternalIdError",
-  "shelfhold.catalog.domain.external_ids:normalize_external_id",
 ]
 
 [[allow]]
@@ -240,4 +229,15 @@ reason = "ExportTarget is the destination contract published under MIT (SDK 1.1:
 until = "M4"
 symbols = [
   "shelfhold.sdk.export_target:ExportTarget",
+]
+
+[[allow]]
+category = "unwired-m2-l13"
+reason = "`probe_image` and `diagnose_worker` of the decode worker client (ENF-SEC-003) have no production caller yet: the cover of the OpenLibrary enrichment (M2 L13) is the first one to run the worker (`make_thumbnail`, wired); the probe of an arriving page belongs to the CBZ writer from pages and the Source download (M2 L19), the sandbox report to `status`. The URL <-> identifier mapping of the OpenLibrary provider is proved by the conformance kit; its first host caller is the resolution of a pasted URL to a provider (M2 L19)."
+until = "M2"
+symbols = [
+  "shelfhold.infrastructure.imaging.client:diagnose_worker",
+  "shelfhold.infrastructure.imaging.client:probe_image",
+  "shelfhold.plugin_host.adapters.native.openlibrary.provider:OpenLibraryProvider.ids_from_url",
+  "shelfhold.plugin_host.adapters.native.openlibrary.provider:OpenLibraryProvider.url_for",
 ]

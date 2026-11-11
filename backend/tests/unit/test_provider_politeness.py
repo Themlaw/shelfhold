@@ -1,0 +1,413 @@
+"""L13 (ENF-LEG-005, ENF-LEG-007): what the host does around a metadata provider.
+
+The identifying `User-Agent` (with a contact only when the instance configured one), the token
+bucket of each provider (the host's, never the plugin's), the cache a provider cannot do without
+and the robots.txt it respects. A fake OpenLibrary answers; nothing leaves the machine.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import itertools
+from collections.abc import Awaitable
+from pathlib import Path
+
+import pytest
+
+from shelfhold import __version__
+from shelfhold.config import Settings
+from shelfhold.infrastructure.fetcher import GuardedFetcher, RobotsDisallowed
+from shelfhold.infrastructure.fetcher.client import (
+    USER_AGENT,
+    identifiable_user_agent,
+    is_identifiable,
+)
+from shelfhold.infrastructure.fetcher.errors import ProviderQuotaExceeded, UserAgentNotIdentifiable
+from shelfhold.infrastructure.fetcher.limiter import ProviderBuckets, TokenBucket
+from shelfhold.plugin_host.adapters.native.openlibrary import build_manifest
+from shelfhold.plugin_host.provider_fetcher import ProviderFetcher, ProviderRuntime, open_provider
+from shelfhold.sdk.metadata import ProviderQuota
+from tests.fakes.openlibrary.server import API_HOST, ISBN, FakeOpenLibrary
+
+CONTACT = "owner@example.org"
+BOOKS = f"https://{API_HOST}/api/books?bibkeys=ISBN:{ISBN}&format=json&jscmd=data"
+
+
+def quota(contact: str | None) -> ProviderQuota:
+    return build_manifest().quota.effective(contact is not None)
+
+
+def run[T](coro: Awaitable[T]) -> T:
+    async def go() -> T:
+        return await coro
+
+    return asyncio.run(go())
+
+
+class FakeTime:
+    """The bucket's clock and sleep: waiting moves the clock, nobody really waits."""
+
+    def __init__(self) -> None:
+        self.t = 1_000.0
+        self.slept: list[float] = []
+
+    def now(self) -> float:
+        return self.t
+
+    async def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.t += seconds
+
+
+def provider_fetcher(
+    fake: FakeOpenLibrary, *, contact: str | None = None, time: FakeTime | None = None,
+    runtime: ProviderRuntime | None = None,
+) -> ProviderFetcher:  # fmt: skip
+    time = time or FakeTime()
+    fake.clock = time.now
+    runtime = runtime or ProviderRuntime(clock=time.now, sleep=time.sleep)
+    return open_provider(
+        build_manifest(), fake.resolver, contact=contact, runtime=runtime, transport=fake.transport
+    )
+
+
+# -- the identifying agent ---------------------------------------------------------------------
+
+
+@pytest.mark.req("ENF-LEG-005", "ENF-LEG-007")
+def test_openlibrary_user_agent_with_contact() -> None:
+    fake = FakeOpenLibrary()
+    run(provider_fetcher(fake, contact=CONTACT).get(BOOKS))
+    (seen,) = fake.api_calls()
+    assert seen.user_agent == identifiable_user_agent(CONTACT)
+    assert seen.user_agent is not None and CONTACT in seen.user_agent
+    assert seen.user_agent.startswith(f"Shelfhold/{__version__} (+https://")
+    assert fake.requests_to(API_HOST, "/robots.txt")[0].user_agent == seen.user_agent
+
+
+@pytest.mark.req("ENF-LEG-005", "ENF-LEG-007")
+def test_default_user_agent_has_the_repository_and_never_an_address() -> None:
+    assert identifiable_user_agent(None) == USER_AGENT
+    assert "@" not in USER_AGENT and "https://github.com/Themlaw/shelfhold" in USER_AGENT
+    fake = FakeOpenLibrary()
+    run(provider_fetcher(fake).get(BOOKS))
+    assert fake.api_calls()[0].user_agent == USER_AGENT
+
+
+@pytest.mark.req("ENF-LEG-005")
+@pytest.mark.parametrize(
+    "contact",
+    [
+        "a b@example.org",
+        "x@y)",
+        "(x@example.org",
+        "x@y;z",
+        "",
+        "http://example.org/contact",
+        "no-at-no-url",
+        "a@b\r\nX: 1",
+    ],
+)
+def test_a_contact_that_could_break_the_agent_is_refused(contact: str) -> None:
+    with pytest.raises(ValueError, match="contact"):
+        identifiable_user_agent(contact)
+    with pytest.raises(ValueError):
+        Settings(metadata_contact=contact)
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_a_provider_is_never_called_with_an_anonymous_user_agent() -> None:
+    """A Fetcher whose agent identifies nobody (the library's own, a browser's) is refused before
+    any request leaves."""
+    fake = FakeOpenLibrary()
+    for agent in ("python-httpx/0.27", "Mozilla/5.0 (X11; Linux x86_64)", "", "Shelfhold"):
+        assert not is_identifiable(agent)
+        inner = GuardedFetcher(fake.resolver, transport=fake.transport, user_agent=agent)
+        with pytest.raises(UserAgentNotIdentifiable):
+            ProviderFetcher(inner, build_manifest())
+    assert fake.seen == []
+    assert is_identifiable(USER_AGENT) and is_identifiable(identifiable_user_agent(CONTACT))
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_a_plugin_cannot_replace_the_user_agent() -> None:
+    fake = FakeOpenLibrary()
+    f = provider_fetcher(fake, contact=CONTACT)
+    run(f.get(BOOKS, headers={"User-Agent": "python-requests/2", "user-agent": "evil"}))
+    assert {s.user_agent for s in fake.seen} == {identifiable_user_agent(CONTACT)}
+
+
+# -- the token bucket --------------------------------------------------------------------------
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_metadata_token_bucket_per_provider() -> None:
+    """One request per second without a contact: ten calls in a loop reach the server one second
+    apart, however fast the plugin asks."""
+    fake = FakeOpenLibrary()
+    time = FakeTime()
+    f = provider_fetcher(fake, time=time)
+    for _ in range(6):
+        run(f.get(BOOKS, headers={"X-Nonce": str(len(fake.seen))}))  # not the same cache key
+    at = [s.at for s in fake.api_calls()]
+    assert len(at) == 6
+    assert all(b - a >= 1.0 - 1e-9 for a, b in itertools.pairwise(at))
+    assert quota(None).requests_per_second == 1.0
+    assert build_manifest().quota.requests_per_second == 1.0
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_contact_opens_three_requests_per_second_and_no_more() -> None:
+    assert quota(CONTACT).requests_per_second == 3.0
+    fake = FakeOpenLibrary()
+    time = FakeTime()
+    f = provider_fetcher(fake, contact=CONTACT, time=time)
+    for n in range(9):
+        run(f.get(BOOKS, headers={"X-Nonce": str(n)}))
+    api = [s.at for s in fake.api_calls()]
+    assert max(b - a for a, b in itertools.pairwise(api)) <= 1 / 3 + 1e-6
+    assert all(b - a >= 1 / 3 - 1e-9 for a, b in itertools.pairwise(api))
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_the_bucket_counts_every_request_even_robots_and_redirect_hops() -> None:
+    """robots.txt and the books call are two requests: the second one waits."""
+    fake = FakeOpenLibrary()
+    time = FakeTime()
+    run(provider_fetcher(fake, time=time).get(BOOKS))
+    assert len(fake.seen) == 2  # robots.txt, then the call
+    assert fake.seen[1].at - fake.seen[0].at >= 1.0 - 1e-9
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_the_bucket_is_the_hosts_and_shared_by_every_fetcher_of_the_provider() -> None:
+    """A plugin that opens many Fetchers (or many calls at once) still shares one bucket."""
+    fake = FakeOpenLibrary()
+    time = FakeTime()
+    runtime = ProviderRuntime(clock=time.now, sleep=time.sleep)
+    first = provider_fetcher(fake, time=time, runtime=runtime)
+    second = provider_fetcher(fake, time=time, runtime=runtime)
+
+    async def both() -> None:
+        await asyncio.gather(
+            first.get(BOOKS, headers={"X-Nonce": "1"}),
+            second.get(BOOKS, headers={"X-Nonce": "2"}),
+            first.get(BOOKS, headers={"X-Nonce": "3"}),
+        )
+
+    run(both())
+    at = sorted(s.at for s in fake.api_calls())
+    assert len(at) == 3 and all(b - a >= 1.0 - 1e-9 for a, b in itertools.pairwise(at))
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_a_burst_above_the_bucket_waits_and_a_daily_cap_refuses() -> None:
+    time = FakeTime()
+    bucket = TokenBucket(rate=2.0, burst=2, daily_cap=3, clock=time.now, sleep=time.sleep,
+                         wall=time.now)  # fmt: skip
+
+    async def go() -> None:
+        for _ in range(3):
+            await bucket.acquire()
+        assert time.slept == [pytest.approx(0.5)]  # two at once, the third waited
+        with pytest.raises(ProviderQuotaExceeded):
+            await bucket.acquire()  # the 4th of the day: refused, not delayed
+        time.t += 86_400
+        await bucket.acquire()  # the next day
+
+    run(go())
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_a_refused_request_does_not_leave_the_host() -> None:
+    fake = FakeOpenLibrary()
+    time = FakeTime()
+    manifest = build_manifest().model_copy(
+        update={"quota": ProviderQuota(requests_per_second=100.0, burst=100, daily_cap=2)}
+    )
+    runtime = ProviderRuntime(clock=time.now, sleep=time.sleep)
+    fake.clock = time.now
+    f = open_provider(manifest, fake.resolver, contact=None, runtime=runtime,
+                      transport=fake.transport)  # fmt: skip
+    run(f.get(f"https://{API_HOST}/api/books?bibkeys=ISBN:1"))  # robots.txt and the call: 2
+    # a new URL is not in the cache: it is refused before it is sent
+    sent = len(fake.seen)
+    with pytest.raises(ProviderQuotaExceeded):
+        run(f.get(f"https://{API_HOST}/api/books?bibkeys=ISBN:2"))
+    assert len(fake.seen) == sent
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_the_buckets_change_when_a_contact_is_configured() -> None:
+    buckets = ProviderBuckets()
+    slow = buckets.bucket_for("openlibrary", quota(None))
+    assert buckets.bucket_for("openlibrary", quota(None)) is slow  # one per provider
+    fast = buckets.bucket_for("openlibrary", quota(CONTACT))
+    assert fast is not slow and fast.rate == 3.0
+    assert buckets.bucket_for("another", quota(None)) is not slow
+
+
+# -- the cache and robots ----------------------------------------------------------------------
+
+
+@pytest.mark.req("ENF-LEG-007", "EF-BIB-013")
+def test_metadata_cache_hit() -> None:
+    fake = FakeOpenLibrary(cache_control="max-age=3600")
+    time = FakeTime()
+    f = provider_fetcher(fake, time=time)
+    first, second = run(f.get(BOOKS)), run(f.get(BOOKS))
+    assert first.body == second.body and len(fake.api_calls()) == 1
+    assert time.slept == [1.0]  # robots.txt + the call, the first time; the cache costs no token
+
+
+@pytest.mark.req("ENF-LEG-007")
+def test_a_stale_answer_is_revalidated_and_the_304_costs_a_request_not_a_body() -> None:
+    fake = FakeOpenLibrary(etag='"v1"')
+    f = provider_fetcher(fake)
+    run(f.get(BOOKS))
+    again = run(f.get(BOOKS))
+    assert again.status == 200 and again.body  # the 304 became the stored 200
+    calls = fake.api_calls()
+    assert len(calls) == 2 and calls[1].headers["if-none-match"] == '"v1"'
+
+
+@pytest.mark.req("ENF-LEG-007")
+def test_the_cache_stays_on_when_the_instance_turns_it_off() -> None:
+    """`fetcher_cache = false` is for the sources: a metadata provider keeps its cache (it is the
+    provider's condition), and so does a provider listed in `fetcher_cache_off_sources`."""
+    settings = Settings(fetcher_cache=False, fetcher_cache_off_sources=("openlibrary",))
+    assert settings.fetcher_cache is False
+    fake = FakeOpenLibrary(cache_control="max-age=3600")
+    f = provider_fetcher(fake)
+    run(f.get(BOOKS))
+    run(f.get(BOOKS))
+    assert len(fake.api_calls()) == 1
+
+
+@pytest.mark.req("ENF-LEG-007")
+def test_an_authenticated_request_is_never_cached() -> None:
+    fake = FakeOpenLibrary(cache_control="max-age=3600")
+    f = provider_fetcher(fake)
+    run(f.get(BOOKS, headers={"Authorization": "Bearer synthetic"}))
+    run(f.get(BOOKS, headers={"Authorization": "Bearer synthetic"}))
+    assert len(fake.api_calls()) == 2
+
+
+@pytest.mark.req("ENF-LEG-007", "ENF-LEG-003")
+def test_robots_respected() -> None:
+    fake = FakeOpenLibrary(robots={API_HOST: "User-agent: *\nDisallow: /api/\n"})
+    f = provider_fetcher(fake)
+    with pytest.raises(RobotsDisallowed):
+        run(f.get(BOOKS))
+    assert fake.api_calls() == []  # the disallowed path was never requested
+    assert build_manifest().respects_robots is True
+
+
+@pytest.mark.req("ENF-LEG-007", "ENF-LEG-003")
+def test_robots_that_name_shelfhold_apply_and_a_missing_file_allows_everything() -> None:
+    fake = FakeOpenLibrary(robots={API_HOST: "User-agent: Shelfhold\nDisallow: /\n"})
+    with pytest.raises(RobotsDisallowed):
+        run(provider_fetcher(fake).get(BOOKS))
+    open_fake = FakeOpenLibrary()  # no robots.txt: 404
+    assert run(provider_fetcher(open_fake).get(BOOKS)).status == 200
+
+
+@pytest.mark.req("ENF-SEC-001")
+def test_a_provider_reaches_only_its_declared_domains() -> None:
+    from shelfhold.infrastructure.fetcher import DomainNotAllowed
+
+    fake = FakeOpenLibrary()
+    f = provider_fetcher(fake)
+    with pytest.raises(DomainNotAllowed):
+        run(f.get("https://elsewhere.example.net/x"))
+    assert fake.seen == []
+
+
+# -- the balance outlives the process, the host-side download ----------------------------------
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_the_balance_of_a_bucket_survives_the_process(tmp_path: Path) -> None:
+    """A command run by itself does not start with a full bucket: the debt is in the database."""
+    from shelfhold.infrastructure.db import create_db_engine
+    from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
+    from shelfhold.infrastructure.schema import metadata
+
+    engine = create_db_engine(tmp_path / "quota.db")
+    metadata.create_all(engine)
+    store = SqlBucketStore(engine)
+    time = FakeTime()
+    first = TokenBucket(1.0, 1, clock=time.now, sleep=time.sleep, wall=time.now, store=store,
+                        name="openlibrary")  # fmt: skip
+    run(first.acquire())  # the token of the burst
+    run(first.acquire())  # a second at once: it waits a second, and the database knows
+    assert time.slept == [pytest.approx(1.0)]
+    # a new process, 1.25 s after the first call: the debt ended at 1.0, it has 0.25 token
+    later = FakeTime()
+    later.t = time.t + 0.25
+    second = TokenBucket(1.0, 1, clock=later.now, sleep=later.sleep, wall=later.now, store=store,
+                         name="openlibrary")  # fmt: skip
+    run(second.acquire())
+    assert later.slept == [pytest.approx(0.75, abs=0.01)]  # the 1 s debt was paid by 0.25 s
+    other = TokenBucket(1.0, 1, clock=later.now, sleep=later.sleep, wall=later.now, store=store,
+                        name="another")  # fmt: skip
+    run(other.acquire())
+    assert len(later.slept) == 1  # a provider's debt is its own
+    engine.dispose()
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_a_bucket_needs_a_positive_rate() -> None:
+    with pytest.raises(ValueError, match="positive rate"):
+        TokenBucket(0.0)
+    assert ProviderQuota(requests_per_second=1.0).effective(True).requests_per_second == 1.0
+    tiered = ProviderQuota(requests_per_second=1.0, requests_per_second_with_contact=3.0)
+    assert tiered.effective(False).requests_per_second == 1.0
+    assert tiered.effective(True).requests_per_second == 3.0
+
+
+@pytest.mark.req("ENF-SEC-003")
+def test_the_host_downloads_a_cover_bounded_and_only_by_get() -> None:
+    from shelfhold.infrastructure.fetcher import FetchTooLarge
+    from shelfhold.sdk.refs import ImageRequest
+
+    fake = FakeOpenLibrary()
+    f = provider_fetcher(fake, contact=CONTACT)
+    cover = ImageRequest(url=f"https://covers.openlibrary.org/b/isbn/{ISBN}-L.jpg?default=false")
+    got = run(f.fetch_image(cover, max_bytes=1_000_000))
+    assert got is not None and got[:4] == b"\x89PNG"
+    assert {s.user_agent for s in fake.seen} == {identifiable_user_agent(CONTACT)}
+    assert run(f.fetch_image(cover.model_copy(update={"method": "POST", "body": b"x"}),
+                             max_bytes=1_000_000)) is None  # never a POST  # fmt: skip
+    missing = cover.model_copy(update={"url": "https://covers.openlibrary.org/b/isbn/1-L.jpg"})
+    assert run(f.fetch_image(missing, max_bytes=1_000_000)) is None  # a 404 is no cover
+    with pytest.raises(FetchTooLarge):
+        run(f.fetch_image(cover, max_bytes=10))  # above the cap: refused, not truncated
+    done = run(f.download(cover))
+    assert done.size == len(got) and len(done.sha256) == 64
+    assert run(f.download(missing)).size == 0
+    assert f.cookies().cookies == {}
+    assert run(f.post(f"https://{API_HOST}/api/books", json={"a": 1})).status == 200
+    run(f.aclose())
+
+
+@pytest.mark.req("ENF-LEG-003", "ENF-LEG-007")
+def test_an_unreadable_robots_is_an_outage_not_a_refusal() -> None:
+    from shelfhold.infrastructure.fetcher import RobotsUnavailable
+
+    assert not issubclass(RobotsUnavailable, RobotsDisallowed)
+    assert not issubclass(RobotsDisallowed, RobotsUnavailable)
+    fake = FakeOpenLibrary(robots={API_HOST: "x"})
+    original = fake._handle
+
+    def down(request):  # type: ignore[no-untyped-def]
+        if request.url.path == "/robots.txt":
+            import httpx2
+
+            return httpx2.Response(503)
+        return original(request)
+
+    fake._handle = down  # type: ignore[method-assign]
+    with pytest.raises(RobotsUnavailable):
+        run(provider_fetcher(fake).get(BOOKS))
+    assert fake.api_calls() == []

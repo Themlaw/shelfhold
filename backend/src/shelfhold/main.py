@@ -133,7 +133,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "retention_audit_days": "retention_audit_days",
 }  # fmt: skip
 SECRET_SETTINGS = frozenset(
-    {"api_token", "wake_token", "backup_passphrase_file"}
+    {"api_token", "wake_token", "backup_passphrase_file", "metadata_contact"}
 )  # never logged, whatever its value
 
 
