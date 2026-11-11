@@ -63,6 +63,10 @@ class SeriesInfo(SdkModel):
     external_ids: dict[str, str] = Field(default_factory=dict)
     series_hint: str | None = None
     age_rating: AgeRating | None = None  # suggested by the source; the host decides (EF-EXP-011)
+    publisher: str | None = None  # who published this text, as the source says (Edition key)
+    translators: list[str] = Field(default_factory=list)  # credited, one text version each
+    author_death_years: dict[str, int] = Field(default_factory=dict)  # name as in `authors`
+    work_key: str | None = None  # the source's own key for "the same work": groups its books
 
 
 class UnitInfo(SdkModel):

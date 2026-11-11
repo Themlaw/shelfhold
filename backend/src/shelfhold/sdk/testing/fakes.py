@@ -65,7 +65,9 @@ class FakeFetcher:
         self,
         responses: dict[tuple[str, str], Response] | None = None,
         downloads: dict[str, bytes] | None = None,
+        settings: dict[str, Any] | None = None,
     ) -> None:
+        self._settings = dict(settings or {})
         self._responses = dict(responses or {})
         self._downloads = dict(downloads or {})
         self.unscripted: list[str] = []
@@ -123,6 +125,9 @@ class FakeFetcher:
 
     def cookies(self) -> CookieJarView:
         return CookieJarView()
+
+    def settings(self) -> dict[str, Any]:
+        return dict(self._settings)
 
 
 FAKE_KEY = "fake-ranged"

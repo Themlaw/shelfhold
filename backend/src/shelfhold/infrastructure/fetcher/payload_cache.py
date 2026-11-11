@@ -126,3 +126,6 @@ class CachingFetcher:
 
     def cookies(self) -> CookieJarView:
         return CookieJarView()
+
+    def settings(self) -> dict[str, Any]:
+        return {}  # a provider's Fetcher carries no per-source settings

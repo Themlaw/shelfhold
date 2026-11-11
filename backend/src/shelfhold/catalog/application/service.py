@@ -56,6 +56,17 @@ class CatalogService:
         """Credit the Work with the people a source names (EF-BIB-046); returns the new credits."""
         return contributors.record_credits(self._contributors_store(), work_id, role, names)
 
+    def contributor(self, name: str) -> str | None:
+        """The person a source names (made if new), for a text version or a death year."""
+        return contributors.contributor_of(self._contributors_store(), name)
+
+    def credit_edition(self, edition_id: str, contributor_id: str, role: str) -> bool:
+        """Credit one Edition (a translator is the credit of a text version, not of the Work)."""
+        return self._contributors_store().credit_edition(edition_id, contributor_id, role, 0)
+
+    def set_death_year(self, contributor_id: str, year: int) -> bool:
+        return self._contributors_store().set_death_year(contributor_id, year)
+
     def _contributors_store(self) -> ContributorStore:
         if self._contributors is None:
             raise RuntimeError("this catalog was built without a contributor store")

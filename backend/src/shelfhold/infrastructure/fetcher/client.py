@@ -151,9 +151,12 @@ class GuardedFetcher:
         cache: HttpCache | None = None,
         robots: RobotsPolicy | None = None,
         limiter: RequestLimiter | None = None,
+        settings: Mapping[str, Any] | None = None,
     ) -> None:
         self._resolver = resolver
-        self._limiter = limiter  # None: no quota (the owner's own services)
+        # None: no quota (the owner's own services). A source's rhythm (`Pacer`) is one too.
+        self._limiter = limiter
+        self._settings = dict(settings or {})  # plain values only, never a secret
         self._cache = cache  # None: off (config, or per source)
         self._robots = robots  # None: the source does not respect robots (or is not native)
         self._domains = domains  # a plugin's Fetcher: its DomainRules, checked at every hop
@@ -186,6 +189,10 @@ class GuardedFetcher:
     @property
     def user_agent(self) -> str:
         return self._user_agent
+
+    def settings(self) -> dict[str, Any]:
+        """The plain settings the admin gave the source this Fetcher belongs to (a copy)."""
+        return dict(self._settings)
 
     def secret_values(self) -> frozenset[str]:
         """The values this Fetcher may put in a request (and every other registered secret), with
@@ -317,7 +324,10 @@ class GuardedFetcher:
         first = _origin(url)
         for hop in range(self._limits.max_redirects + 1):
             if self._domains is not None:  # by name, before any resolution (EF-SRC-003)
-                self._domains.check(url.raw_host.decode("ascii"), route_of(str(url)))
+                self._domains.check(
+                    url.raw_host.decode("ascii"), route_of(str(url)),
+                    path=url.raw_path.split(b"?", 1)[0].decode("ascii", "replace"),
+                )  # fmt: skip
             # a LAN target is reachable only as the origin the caller asked for, never by redirect
             on_lan = _origin(url) == first and self._lan.addresses(url.host, _port(url)) is not None
             if polite and self._robots is not None:

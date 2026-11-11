@@ -14,7 +14,9 @@ from dataclasses import dataclass
 import structlog
 
 from shelfhold.config import Settings
+from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
 from shelfhold.plugin_host.attestation import InstalledVersion, publisher_attested
+from shelfhold.plugin_host.gutenberg_rdf import read_rdf
 from shelfhold.plugin_host.install import Layout, read_state, verdicts
 from shelfhold.plugin_host.registry import (
     InstalledPlugin,
@@ -34,6 +36,7 @@ __all__ = [
     "PluginRegistry",
     "PluginState",
     "PluginStatus",
+    "first_party_candidates",
     "installed_versions",
     "load_plugin_state",
     "publisher_attested",
@@ -58,6 +61,17 @@ def load_plugin_state(settings: Settings) -> PluginState:
     )
 
 
+def first_party_candidates() -> list[PluginCandidate]:
+    """The native sources the host ships: loaded at start, switched on only by the admin
+    (`active_sources`). Their code is the host's own and is imported here, not discovered. A source
+    that reads XML is given the host's reader: a native adapter has no door to it of its own."""
+
+    def gutenberg() -> GutenbergSource:
+        return GutenbergSource(rdf=read_rdf)
+
+    return [PluginCandidate(key="gutenberg", origin=PluginOrigin.FIRST_PARTY, load=gutenberg)]
+
+
 def start_plugins(
     settings: Settings, environ: Mapping[str, str] | None = None
 ) -> tuple[PluginRegistry, list[PluginRecord]]:
@@ -77,7 +91,12 @@ def start_plugins(
     registry = PluginRegistry(
         active_keys=plugin_state.active_sources, granted_distributions=granted
     )
-    records = registry.load_all(third_party_candidates(layout.site, installed, blocked=blocked))
+    records = registry.load_all(
+        [
+            *first_party_candidates(),
+            *third_party_candidates(layout.site, installed, blocked=blocked),
+        ]
+    )
     log = structlog.get_logger()
     for record in records:
         log.info(

@@ -48,3 +48,32 @@ native qui en aura besoin, toujours derrière la même garde contre les requête
 Le proxy par source sert au **routage réseau du foyer** (passer par la sortie réseau choisie pour
 la maison), rien d'autre. Shelfhold ne le présente jamais comme un moyen de joindre un site qui ne
 répond pas chez vous, et la documentation est vérifiée en continu sur ce point.
+
+## Project Gutenberg, libre de droits aux États-Unis (catalogue officiel et miroir)
+
+Gutenberg publie des œuvres **libres de droits aux États-Unis**. Ce n'est pas forcément le cas dans
+votre pays : voir [domaine-public.md](domaine-public.md). Shelfhold garde la mention « domaine public
+aux États-Unis » telle quelle sur l'Édition, calcule l'avertissement pour le pays de l'instance et
+n'en fait jamais une affirmation sur votre pays.
+
+La source ne lit **jamais les pages du site**. Elle prend :
+
+- **le catalogue officiel** (un fichier CSV ou RDF des flux officiels, chemin `/cache/epub/feeds/`),
+  à l'adresse du réglage `catalog_url`. Il est lu au plus une fois par semaine, avec une requête
+  conditionnelle (`ETag` / `If-Modified-Since`) ;
+- **les fichiers d'un miroir** de la liste officielle, que vous choisissez : réglage `mirror_url`,
+  obligatoire. Un miroir n'est jamais le site lui-même.
+
+Aucun hôte n'est écrit dans le code : sans ces deux réglages, la source n'est pas configurée
+(`source.not_configured`) et n'envoie rien. Les règles de domaine ne laissent passer que ces deux
+adresses ; si le catalogue est servi par le site, seul le chemin des flux officiels est ouvert sur cet
+hôte, et un miroir qui redirige vers une page du site est refusé à ce saut.
+
+Le rythme est lent et tenu par Shelfhold pour toute la source : une requête toutes les 5 secondes
+au plus, quel que soit le nombre de demandes en cours (les lectures de `robots.txt` et chaque saut de
+redirection comptent). Les EPUB du miroir sont toujours **non fiables** : ils passent par le
+neutralisateur avant tout export, et l'original reste dans `/store`.
+
+Pour l'activer : réglez `catalog_url` et `mirror_url` avec `shelfhold plugin set` sur la clé de la
+source, puis ajoutez cette clé aux sources actives. La liste des cibles de canari
+(`tools/canary_targets.toml`) est vide et ne vise jamais le site du projet.

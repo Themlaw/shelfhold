@@ -1024,6 +1024,10 @@ action = "L'accès est refusé et journalisé. La source ne respecte pas le cont
 title = "Le service de la source semble avoir été réinstallé."
 action = "Confirmez avec « shelfhold source reconnect » ; rien n'est supprimé en attendant."
 
+[errors."source.not_configured"]
+title = "Cette source n'est pas configurée : un réglage obligatoire manque ou est refusé."
+action = "Renseignez ses réglages (par exemple l'adresse du catalogue et celle du miroir) avec « shelfhold plugin set », puis relancez la demande."
+
 [errors."source.filter_invalid"]
 title = "Cette source ne propose pas ce filtre."
 action = "Retirez le filtre, ou demandez la liste de ceux que la source déclare."

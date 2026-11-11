@@ -284,18 +284,18 @@ class DomainAllowlist:
     ) -> None:
         self.plugin_id = plugin_id
         values = settings or {}
-        patterns: list[DomainPattern] = []
+        entries: list[tuple[DomainPattern, str | None]] = []
         for rule in rules:
             declared = compile_domain_pattern(rule.pattern)
             if rule.base_url_setting is None:
-                patterns.append(declared)
+                entries.append((declared, rule.path_prefix))
                 continue
             override = self._override(rule, values.get(rule.base_url_setting))
             if override is not None:
-                patterns.extend(override)
+                entries.extend((p, rule.path_prefix) for p in override)
             else:
-                patterns.append(declared)
-        self._patterns = tuple(patterns)
+                entries.append((declared, rule.path_prefix))
+        self._entries = tuple(entries)
 
     def _override(self, rule: DomainRule, value: object) -> tuple[DomainPattern, ...] | None:
         """None: no override, the declared pattern stands; () refuses; else the override."""
@@ -326,13 +326,32 @@ class DomainAllowlist:
                         purpose=rule.purpose, url=shown)  # fmt: skip
 
     def allows(self, host: str) -> bool:
-        return any(p.matches(host) for p in self._patterns)
+        """By name only: some rule names this host (a rule limited to a path counts)."""
+        return any(p.matches(host) for p, _prefix in self._entries)
 
-    def check(self, host: str, route: str) -> None:
-        """Raise DomainNotAllowed (logged with the plugin id) unless `host` is allowed."""
-        if not self.allows(host):
-            log.warning("plugin.domain_not_allowed", plugin_id=self.plugin_id, route=route)
-            raise DomainNotAllowed(f"{host} is not among the domains of plugin {self.plugin_id}")
+    def check(self, host: str, route: str, path: str | None = None) -> None:
+        """Raise DomainNotAllowed (logged with the plugin id) unless `host` is allowed, and, when
+        the request path is given, unless some rule that names the host takes that path (a rule
+        without a `path_prefix` takes every path)."""
+        matching = [prefix for p, prefix in self._entries if p.matches(host)]
+        if matching and (path is None or any(_in_prefix(path, prefix) for prefix in matching)):
+            return
+        log.warning("plugin.domain_not_allowed", plugin_id=self.plugin_id, route=route)
+        raise DomainNotAllowed(f"{host} is not among the domains of plugin {self.plugin_id}")
+
+
+_DOT_SEGMENT = re.compile(r"(?:^|/)(?:\.|\.\.)(?:/|$)")
+
+
+def _in_prefix(path: str, prefix: str | None) -> bool:
+    """`path` (as sent, not decoded) is under `prefix`. Whatever could move it out of the prefix
+    after the server decodes it (a dot segment, an escaped dot, slash or backslash) is refused
+    outright: nothing legitimate under a prefix needs one."""
+    if prefix is None or path == "/robots.txt":  # politeness: the rules of the site are read
+        return True
+    if "\\" in path or ";" in path or "%" in path or _DOT_SEGMENT.search(path):
+        return False
+    return path.startswith(prefix)
 
 
 def _override_host(value: object) -> str | None:

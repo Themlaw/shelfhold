@@ -124,6 +124,38 @@ class SqlContributorStore:
         )  # fmt: skip
         return True
 
+    def credit_edition(
+        self, edition_id: str, contributor_id: str, role: str, position: int
+    ) -> bool:
+        n = catalog.contribution
+        known = self._c.execute(
+            sa.select(sa.literal(1)).where(
+                n.c.contributor_id == contributor_id,
+                n.c.entity_type == "edition",
+                n.c.entity_id == edition_id,
+                n.c.role == role,
+            )
+        ).first()
+        if known is not None:
+            return False
+        self._c.execute(
+            sa.insert(n).values(
+                contributor_id=contributor_id, entity_type="edition", entity_id=edition_id,
+                role=role, position=position,
+            )
+        )  # fmt: skip
+        return True
+
+    def set_death_year(self, contributor_id: str, year: int) -> bool:
+        """Only a death the catalog does not know yet: what is written is never rewritten."""
+        c = catalog.contributor
+        done = self._c.execute(
+            sa.update(c)
+            .where(c.c.id == contributor_id, c.c.death_date.is_(None))
+            .values(death_date=f"{year:04d}", death_precision="year")
+        )
+        return bool(done.rowcount)
+
     def next_position(self, work_id: str) -> int:
         n = catalog.contribution.c
         top = self._c.execute(
