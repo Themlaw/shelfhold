@@ -9285,6 +9285,10 @@
       "code": "import.original_not_kept",
       "status": 409
     },
+    "/api/v1/problems/import.pdf-refused": {
+      "code": "import.pdf_refused",
+      "status": 422
+    },
     "/api/v1/problems/import.protected": {
       "code": "import.protected",
       "status": 422

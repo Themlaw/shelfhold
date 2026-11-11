@@ -36,6 +36,11 @@ déverrouillé.
 | Nom piégé (`..`, caractère de contrôle ou de direction, espace ou point final, nom trop long) | Renommez le fichier. |
 | Deux noms identiques une fois normalisés (accents, majuscules) | Les deux sont refusés : renommez l'un d'eux. |
 
+Un PDF n'est rangé que s'il est **prouvé simple** : il est relu en mode strict dans un processus
+isolé (mémoire et temps bornés) et doit s'ouvrir sans erreur, sans chiffrement, sans fichier joint
+ni enveloppe d'un fichier protégé. Sinon (PDF abîmé, délai dépassé, doute), il est refusé avec un
+message et reste en place : réexportez-le en PDF simple.
+
 L'obfuscation de polices d'un EPUB n'est pas une protection : elle n'est pas refusée comme telle.
 
 ## Le retrait d'un fichier rangé
@@ -43,8 +48,8 @@ L'obfuscation de polices d'un EPUB n'est pas une protection : elle n'est pas ref
 Le fichier n'est pas supprimé sous son nom (un nom peut être repris par une autre version entre
 deux instants) : il est d'abord déplacé dans `.shelfhold-removing/`, comparé au fichier qui a été lu
 (même disque, même inode), et supprimé seulement s'il est identique. Sinon il est remis en place.
-Ce sous-dossier est ignoré par le passage ; ce qu'un arrêt brutal y laisse est remis dans le
-dossier au passage suivant, puis relu comme un fichier ordinaire.
+Ce sous-dossier est ignoré par le passage (et verrouillé : deux passages ne se croisent pas) ; ce
+qu'un arrêt brutal y laisse est remis dans son sous-dossier d'origine au passage suivant, puis relu comme un fichier ordinaire.
 
 ## Un fichier encore en cours d'écriture attend
 

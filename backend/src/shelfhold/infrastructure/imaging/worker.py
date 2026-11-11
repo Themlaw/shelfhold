@@ -355,6 +355,28 @@ def _thumbnail(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes
     return {"format": fmt, "width": image.width, "height": image.height}, out.getvalue()
 
 
+def _pdf_check(data: bytes) -> tuple[dict[str, Any], bytes]:
+    """Closed by default: `clean` only for a PDF the strict reader opens whole, with no encryption,
+    no embedded file, no file attachment. Whatever it throws is a refusal, never a crash."""
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(io.BytesIO(data), strict=True)
+        if reader.is_encrypted or "/Encrypt" in reader.trailer:
+            return {"verdict": "protected", "reason": "pdf_encrypted"}, b""
+        root: Any = reader.trailer["/Root"]
+        names = root.get("/Names")
+        if "/Collection" in root or (names is not None and "/EmbeddedFiles" in names.get_object()):
+            return {"verdict": "refused", "reason": "embedded_file"}, b""
+        for page in reader.pages:
+            for annotation in page.get("/Annots") or []:
+                if annotation.get_object().get("/Subtype") == "/FileAttachment":
+                    return {"verdict": "refused", "reason": "file_attachment"}, b""
+    except (Exception, RecursionError) as exc:
+        return {"verdict": "refused", "reason": type(exc).__name__}, b""
+    return {"verdict": "clean", "reason": "ok"}, b""
+
+
 def _handle(
     op: str, args: dict[str, Any], data: bytes, state: dict[str, Any]
 ) -> tuple[dict[str, Any], bytes]:
@@ -362,6 +384,8 @@ def _handle(
         return _probe(data, args)
     if op == "thumbnail":
         return _thumbnail(data, args)
+    if op == "pdf_check":
+        return _pdf_check(data)
     return _diagnose(op, args, state), b""
 
 

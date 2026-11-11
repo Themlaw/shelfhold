@@ -267,3 +267,18 @@ __all__ = [
     "probe_image",
     "run_worker",
 ]
+
+
+def check_pdf(data: bytes, *, limits: WorkerLimits | None = None) -> tuple[str, str]:
+    """`(verdict, reason)` of an untrusted PDF, read by the strict reader inside the worker:
+    `clean`, `protected` or `refused`. A worker that fails, runs out of time or memory, or answers
+    anything else gives `refused`: nothing here is clean unless the worker said so."""
+    limits = limits or WorkerLimits(memory_bytes=_BASE_MEMORY + 8 * len(data))
+    try:
+        result, _ = run_worker("pdf_check", {}, data, limits=limits)
+    except ImageRejected as error:
+        return "refused", f"worker_{error.reason}"[:40]
+    verdict, reason = result.get("verdict"), str(result.get("reason", ""))[:40]
+    if verdict in ("clean", "protected") and isinstance(verdict, str):
+        return verdict, reason
+    return "refused", reason or "unknown"

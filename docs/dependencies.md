@@ -52,6 +52,10 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
 - **apprise** (BSD-2-Clause) : notifications ; planchers de sécurité ENF-SEC-016.
   **Pillow** (MIT-CMU) et **python-multipart** (Apache-2.0) : planchers ENF-SEC-016, vérifiés dans
   le verrou par `test_dependency_floors_enforced_in_lockfile`.
+- **pypdf** (BSD-3-Clause) : lecture stricte d'un PDF du dossier d'import (EF-SRC-012), version
+  exacte `6.21.4` (publiée le 2026-10-28, plus de 14 jours). Importée par le seul worker de décodage
+  (contrat `pypdf-confined`), donc dans un sous-processus borné en mémoire et en temps ; un PDF
+  n'est rangé que si elle l'ouvre sans erreur, sans chiffrement, sans fichier joint.
 - **webauthn** (py_webauthn, BSD-3-Clause) : passkeys (P8), plancher `>=3.0.1,<4` (3.0.1 publiée le
   2026-09-25) ; dépendances transitives verrouillées : cbor2 (MIT), cryptography (Apache-2.0 ou
   BSD-3-Clause), pyOpenSSL (Apache-2.0), pyasn1 et pyasn1-modules (BSD). Importée par le seul

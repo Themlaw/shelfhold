@@ -29,6 +29,7 @@ message, never with silence:
 
 import contextlib
 import errno
+import fcntl
 import hashlib
 import os
 import stat
@@ -90,6 +91,7 @@ log = structlog.get_logger(__name__)
 # The codes the folder answers with; each has its text in `locales/fr.toml` (`errors.<code>`).
 PROTECTED_FILE: Final = "import.protected"
 PROTECTED_LICENCE: Final = "import.protected_licence"
+PDF_REFUSED: Final = "import.pdf_refused"
 AUDIO: Final = "import.audio_unsupported"
 UNSUPPORTED: Final = "import.unsupported_file"
 TOO_LARGE: Final = "import.too_large"
@@ -100,6 +102,7 @@ NAME_COLLISION: Final = "import.name_collision"
 NOT_READY: Final = "import.not_ready"
 PURCHASE_PENDING: Final = "import.purchase_pending"
 PURCHASE_DIR: Final = "achats"  # what the admin declares a purchase, by the command only
+COMPANION: Final = ".from"  # beside a held entry: the path it came from
 QUARANTINE: Final = ".shelfhold-removing"  # the step between "verified" and "gone"
 CHANGED: Final = "import.changed_while_reading"
 HASH_MISMATCH: Final = "import.hash_mismatch"
@@ -109,7 +112,8 @@ TOMBSTONED: Final = "import.tombstoned"
 ORIGINAL_NOT_KEPT: Final = "import.original_not_kept"
 UNTRUSTED_PDF: Final = "content.untrusted_pdf"  # a note on a stored PDF, not a refusal (D9)
 REFUSED_CODES: Final = (
-    PROTECTED_FILE, PROTECTED_LICENCE, AUDIO, UNSUPPORTED, TOO_LARGE, ARCHIVE, LINK, UNSAFE_NAME,
+    PROTECTED_FILE, PROTECTED_LICENCE, PDF_REFUSED, AUDIO, UNSUPPORTED, TOO_LARGE, ARCHIVE, LINK,
+    UNSAFE_NAME,
     NAME_COLLISION, NOT_READY, CHANGED, HASH_MISMATCH, DISK_FULL, NOT_STORED, TOMBSTONED,
     ORIGINAL_NOT_KEPT,
 )  # fmt: skip
@@ -476,7 +480,37 @@ class ImportFolder:
         """Scan, then take in each file that is ready. A file already refused and unchanged is not
         read again. Only what lies under `achats/` can be a declared purchase, and only when the
         command says so; everything else is untrusted."""
-        self._restore_quarantine()
+        try:
+            lock = self._lock()
+        except BlockingIOError:
+            return Scan((), (), ()), []  # another scan is running: two never cross
+        except OSError:  # the quarantine is not a plain folder of ours: nothing is removed then
+            log.warning("import.quarantine_unusable")
+            return Scan((), (), ()), []
+        try:
+            return self._run(declared_purchase)
+        finally:
+            os.close(lock)
+
+    def _lock(self) -> int:
+        root_fd = os.open(self._root, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            fd = self._quarantine_dir(root_fd)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+        finally:
+            os.close(root_fd)
+
+    def _run(self, declared_purchase: bool) -> tuple[Scan, list[ImportOutcome]]:
+        root_fd = os.open(self._root, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            self._restore_quarantine(root_fd)
+        finally:
+            os.close(root_fd)
         scan = self.scan()
         for verdict in scan.refused:
             self._record(verdict.rel, 0, 0, None, "refused", verdict.code)
@@ -704,7 +738,7 @@ class ImportFolder:
                 return False
             if self._rehash(fd) != sha:
                 return False  # replaced since it was read: it is somebody's other file
-            return self._quarantine_and_drop(root_fd, parent, parts[-1], now)
+            return self._quarantine_and_drop(root_fd, parent, item.rel, now)
         except OSError:
             return False
         finally:
@@ -728,60 +762,113 @@ class ImportFolder:
         )
 
     def _quarantine_and_drop(
-        self, root_fd: int, parent: int, name: str, verified: os.stat_result
+        self, root_fd: int, parent: int, rel: str, verified: os.stat_result
     ) -> bool:
+        name = rel.rsplit("/", 1)[-1]
         quarantine = self._quarantine_dir(root_fd)
         try:
-            held = f"{new_ulid()}~{name.encode()[:150].decode(errors='ignore')}"
+            held = new_ulid()
+            self._write_companion(quarantine, held, rel)
             os.rename(name, held, src_dir_fd=parent, dst_dir_fd=quarantine)
             moved = os.stat(held, dir_fd=quarantine, follow_symlinks=False)
-            if (moved.st_dev, moved.st_ino) == (verified.st_dev, verified.st_ino):
+            if stat.S_ISREG(moved.st_mode) and (moved.st_dev, moved.st_ino) == (
+                verified.st_dev, verified.st_ino,
+            ):  # fmt: skip
                 os.unlink(held, dir_fd=quarantine)
+                os.unlink(held + COMPANION, dir_fd=quarantine)
                 return True
-            try:  # another file took the name meanwhile: give it back untouched
-                os.link(held, name, src_dir_fd=quarantine, dst_dir_fd=parent, follow_symlinks=False)
-                os.unlink(held, dir_fd=quarantine)
-            except OSError:
-                log.warning("import.removal_conflict")  # it stays in the quarantine, to restore
+            self._put_back(
+                quarantine, held, parent, name
+            )  # another file, or a folder, took the name
             return False
         finally:
             os.close(quarantine)
 
-    def _restore_quarantine(self) -> None:
-        """What a crash left in the quarantine was not verified (a verified file is deleted at
-        once): it goes back into the folder, where the next scan reads it again."""
+    @staticmethod
+    def _write_companion(quarantine: int, held: str, rel: str) -> None:
+        """Where the entry came from, kept beside it: a restore goes back to the same folder."""
+        fd = os.open(
+            held + COMPANION, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
+            0o600, dir_fd=quarantine,
+        )  # fmt: skip
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(rel.encode())
+
+    @staticmethod
+    def _put_back(quarantine: int, held: str, parent: int, name: str) -> bool:
+        """Return what is held to `name` without ever replacing anything: a link for a file (it
+        fails if the name is taken), a rename for a folder (it fails if the folder is not empty)."""
         try:
-            root_fd = os.open(self._root, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+            kind = os.stat(held, dir_fd=quarantine, follow_symlinks=False).st_mode
+            if stat.S_ISDIR(kind):
+                os.rename(held, name, src_dir_fd=quarantine, dst_dir_fd=parent)
+            else:
+                os.link(held, name, src_dir_fd=quarantine, dst_dir_fd=parent, follow_symlinks=False)
+                os.unlink(held, dir_fd=quarantine)
+            with contextlib.suppress(OSError):
+                os.unlink(held + COMPANION, dir_fd=quarantine)
+        except OSError:
+            log.warning("import.removal_conflict")  # it stays in the quarantine, to restore
+            return False
+        return True
+
+    def _restore_quarantine(self, root_fd: int) -> None:
+        """What a crash left in the quarantine was not verified (a verified file is deleted at
+        once): it goes back to the folder it came from, where the next scan reads it again."""
+        try:
+            quarantine = self._quarantine_dir(root_fd)
         except OSError:
             return
         try:
-            try:
-                quarantine = os.open(
-                    QUARANTINE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
-                    dir_fd=root_fd,
-                )  # fmt: skip
-            except OSError:
-                return
-            try:
-                with os.scandir(quarantine) as entries:
-                    held = sorted(e.name for e in entries)
-                for entry in held:
-                    base = entry.split("~", 1)[-1] or entry
-                    for target in (base, entry):
-                        try:
-                            os.link(entry, target, src_dir_fd=quarantine, dst_dir_fd=root_fd,
-                                    follow_symlinks=False)  # fmt: skip
-                        except FileExistsError:
-                            continue
-                        except OSError:
-                            break
-                        os.unlink(entry, dir_fd=quarantine)
-                        log.warning("import.quarantine_restored")
-                        break
-            finally:
-                os.close(quarantine)
+            with os.scandir(quarantine) as entries:
+                held = sorted(e.name for e in entries if not e.name.endswith(COMPANION))
+            for entry in held:
+                parts = self._origin(quarantine, entry)
+                try:
+                    parent = self._ensure_parent(root_fd, parts)
+                except OSError:
+                    continue
+                try:
+                    if not self._put_back(quarantine, entry, parent, parts[-1]):
+                        # the name is taken: keep both, the held one under a name of its own
+                        self._put_back(quarantine, entry, parent, f"{entry}~{parts[-1]}"[:200])
+                finally:
+                    os.close(parent)
+                log.warning("import.quarantine_restored")
         finally:
-            os.close(root_fd)
+            os.close(quarantine)
+
+    @staticmethod
+    def _origin(quarantine: int, entry: str) -> list[str]:
+        try:
+            fd = os.open(
+                entry + COMPANION, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=quarantine
+            )
+            with os.fdopen(fd, "rb") as stream:
+                parts = stream.read(4096).decode().split("/")
+        except (OSError, UnicodeDecodeError):
+            return [entry]
+        if not parts or any(p in ("", ".", "..") or "\0" in p for p in parts):
+            return [entry]
+        return parts
+
+    @staticmethod
+    def _ensure_parent(root_fd: int, parts: list[str]) -> int:
+        current = os.dup(root_fd)
+        try:
+            for part in parts[:-1]:
+                with contextlib.suppress(FileExistsError):
+                    os.mkdir(part, 0o755, dir_fd=current)
+                step = os.open(
+                    part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    dir_fd=current,
+                )  # fmt: skip
+                os.close(current)
+                current = step
+        except OSError:
+            os.close(current)
+            raise
+        return current
 
     @staticmethod
     def _parent_fd(root_fd: int, parts: list[str]) -> int:

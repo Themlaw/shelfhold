@@ -1622,6 +1622,10 @@ action = "Renommez l'un d'eux. Les deux restent dans le dossier d'import."
 title = "Fichier pas encore prêt : il est encore en cours d'écriture ou vient d'être déposé."
 action = "Rien à faire : Shelfhold le relira quand sa taille et sa date n'auront plus bougé."
 
+[errors."import.pdf_refused"]
+title = "PDF non pris : il n'a pas pu être vérifié, ou il contient des fichiers joints ou une enveloppe."
+action = "Il reste dans le dossier d'import, intact. Réexportez-le en PDF simple, sans pièce jointe."
+
 [errors."import.purchase_pending"]
 title = "Fichier du dossier « achats » : il n'est pris que si vous déclarez un achat."
 action = "Lancez « shelfhold import scan --purchase » ; sinon il reste où il est."

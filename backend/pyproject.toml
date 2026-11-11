@@ -28,6 +28,7 @@ dependencies = [
     "tzdata>=2026.1",  # Europe/Paris for the maintenance window; python-slim ships no zoneinfo
     # M1b (L00). Floor is ENF-SEC-016; rationale in docs/dependencies.md.
     "webauthn>=3.0.1,<4",  # passkeys (py_webauthn, P8), imported only by shelfhold.identity.webauthn
+    "pypdf==6.21.4",  # PDF check in the decode worker only (EF-SRC-012); pinned exact, published 2026-10-28
 ]
 
 [dependency-groups]

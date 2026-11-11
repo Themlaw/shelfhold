@@ -33,9 +33,11 @@ from shelfhold.infrastructure.content_trust.xhtml_neutralizer import (
     NeutralizationError,
     parse_xml_document,
 )
+from shelfhold.infrastructure.imaging import check_pdf
 
 PROTECTED: Final = "import.protected"
 PROTECTED_LICENCE: Final = "import.protected_licence"
+PDF_REFUSED: Final = "import.pdf_refused"  # not proven plain: the file stays where it is
 
 # The font obfuscations of the EPUB standard: a mangling of the first bytes of a font, no secret.
 FONT_OBFUSCATION: Final = frozenset(
@@ -58,7 +60,7 @@ def _pdf_name(word: str) -> bytes:
 
 _GAP = rb"(?:[\x00\t\n\f\r ]|%[^\r\n]*[\r\n])"  # white space and comments
 _PDF_ENCRYPT = re.compile(
-    b"/" + _pdf_name("Encrypt") + _GAP + b"*(?:\\d+" + _GAP + b"+\\d+" + _GAP + b"+R|<<)"
+    b"/" + _pdf_name("Encrypt") + _GAP + b"*[+-]?(?:\\d+" + _GAP + b"+\\d+" + _GAP + b"+R|<<)"
 )
 
 
@@ -132,19 +134,24 @@ def zip_protection(
 
 
 def pdf_protection(path: Path) -> Protection | None:
-    """An `/Encrypt` entry anywhere in the file (the trailer, or the dictionary of a cross-reference
-    stream). The whole file is searched as one, so no padding can push it out of a window; a name
-    written with `#xx` escapes and a comment between the key and its value are read as a reader
-    reads them. A file that cannot be read raises, and stays where it is."""
+    """A PDF is filed only if it is proven plain. The first filter is a search for an `/Encrypt`
+    entry over the whole file (escaped names, comments, any run of blanks). The decision is the
+    strict reader's, run in the decode worker (bounded memory and time): it must open the file
+    whole, find no encryption, no embedded file, no file attachment. Anything else, a worker
+    that fails or runs out of its limits included, is a refusal and the file stays."""
     with path.open("rb") as stream:
         try:
             view = mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ)
-        except ValueError:  # empty: there is nothing in it
-            return None
+        except ValueError:  # empty: not a PDF
+            return Protection(PDF_REFUSED, "empty")
         with view:
             if _PDF_ENCRYPT.search(view):
                 return Protection(PROTECTED, "pdf_encrypted")
-    return None
+            data = bytes(view)
+    verdict, reason = check_pdf(data)
+    if verdict == "clean":
+        return None
+    return Protection(PROTECTED if verdict == "protected" else PDF_REFUSED, reason)
 
 
 def detect_protection(

@@ -1,5 +1,6 @@
 """A real import folder over the library bench: real files, a real database, the real stores."""
 
+import io
 import os
 import time
 from collections.abc import Iterator
@@ -25,7 +26,20 @@ OLD = 3_600  # seconds: well past the settling time
 
 CLEAN_EPUB = epub_bytes(xhtml("<p>chapter</p>"))
 SCRIPT_EPUB = epub_bytes(xhtml("<p>chapter</p><script>alert(1)</script>"))
-PDF = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"
+
+
+def _plain_pdf() -> bytes:
+    """A well-formed one-page PDF: the strict reader proves it plain."""
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(100, 100)
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+PDF = _plain_pdf()
 MP3 = b"ID3\x04\x00\x00\x00\x00\x00\x00" + b"\x00" * 64
 
 ENCRYPTION_NS = (

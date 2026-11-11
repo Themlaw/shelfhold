@@ -20,6 +20,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("import.not_configured", 409, "admin"),  # no `import_dir`
     ErrorCode("import.protected", 422, "user"),
     ErrorCode("import.protected_licence", 422, "user"),
+    ErrorCode("import.pdf_refused", 422, "user"),
     ErrorCode("import.audio_unsupported", 422, "user"),
     ErrorCode("import.unsupported_file", 422, "user"),
     ErrorCode("import.too_large", 422, "user"),

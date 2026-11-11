@@ -6,6 +6,7 @@ decrypts, strips or asks anyone for a key.
 
 import ast
 import hashlib
+import os
 import tomllib
 from pathlib import Path
 
@@ -329,6 +330,65 @@ def test_pdf_protection_padded_across_blocks_is_found(tmp_path: Path) -> None:
     assert detect_protection(at(tmp_path, body, "x.pdf"), "pdf") is not None
 
 
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+def test_pdf_reference_with_a_sign_is_found(tmp_path: Path) -> None:
+    body = _pdf_with(b"<< /Root 1 0 R /Encrypt +2 0 R >>")
+    found = detect_protection(at(tmp_path, body, "x.pdf"), "pdf")
+    assert found is not None and found.code == PROTECTED
+
+
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+def test_pdf_encrypt_in_a_cross_reference_stream_is_found(tmp_path: Path) -> None:
+    data = (
+        PDF_HEAD
+        + b"trailer\n<</Root 1 0 R>>\n%%EOF\n"
+        + b"9 0 obj\n<</Type/XRef/Encrypt 2 0 R/W[1 2 1]>>stream\nx\nendstream\nendobj\n%%EOF\n"
+    )
+    assert detect_protection(at(tmp_path, data, "x.pdf"), "pdf") is not None
+
+
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+def test_an_unreadable_pdf_is_not_proven_plain(tmp_path: Path) -> None:
+    found = detect_protection(at(tmp_path, b"%PDF-1.7\n" + os.urandom(4096), "x.pdf"), "pdf")
+    assert found is not None and found.code == "import.pdf_refused"
+
+
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+def test_a_pdf_with_an_embedded_file_or_an_attachment_is_not_filed(tmp_path: Path) -> None:
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(100, 100)
+    writer.add_attachment("inner.bin", b"payload")
+    out = tmp_path / "x.pdf"
+    with out.open("wb") as stream:
+        writer.write(stream)
+    found = detect_protection(out, "pdf")
+    assert found is not None and found.code == "import.pdf_refused"
+
+
 @pytest.mark.req("EF-SRC-012")
-def test_pdf_without_encrypt_is_clean(tmp_path: Path) -> None:
-    assert detect_protection(at(tmp_path, _pdf_with(b"<< /Root 1 0 R >>"), "x.pdf"), "pdf") is None
+def test_a_plain_pdf_is_filed(tmp_path: Path) -> None:
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(100, 100)
+    out = tmp_path / "x.pdf"
+    with out.open("wb") as stream:
+        writer.write(stream)
+    assert detect_protection(out, "pdf") is None
+
+
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+def test_a_pdf_the_worker_cannot_judge_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shelfhold.infrastructure.imaging import ImageRejected
+
+    def timeout(*_a: object, **_k: object) -> tuple[dict[str, object], bytes]:
+        raise ImageRejected("image.worker_failed", "timeout", "worker")
+
+    monkeypatch.setattr("shelfhold.infrastructure.imaging.client.run_worker", timeout)
+    from shelfhold.infrastructure.imaging import check_pdf
+
+    assert check_pdf(b"%PDF-1.7\n")[0] == "refused"

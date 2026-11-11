@@ -1014,3 +1014,117 @@ def test_only_the_purchase_folder_is_a_declared_purchase_and_only_by_command() -
         _, commanded = env.folder.run(declared_purchase=True)
         assert commanded[0].rel == "achats/bought.cbz" and commanded[0].state == "stored"
         assert commanded[0].watermark == "user"
+
+
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+def test_an_unreadable_pdf_stays_in_the_folder() -> None:
+    with import_env() as env:
+        env.drop("g.pdf", b"%PDF-1.7\n" + os.urandom(4096))
+        _, outcomes = env.folder.run()
+        assert (env.incoming / "g.pdf").exists(), outcomes
+        assert outcomes[0].code == "import.pdf_refused"
+
+
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+def test_a_pdf_wrapping_a_protected_file_stays_in_the_folder() -> None:
+    import zlib
+
+    head = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n"
+    inner = zlib.compress(head + b"trailer\n<< /Root 1 0 R /Encrypt 2 0 R >>\n%%EOF\n")
+    outer = (
+        head
+        + b"3 0 obj\n<</Type/EmbeddedFile/Filter/FlateDecode/Length %d>>stream\n" % len(inner)
+        + inner
+        + b"\nendstream\nendobj\n5 0 obj\n<</Type/EncryptedPayload>>\nendobj\n"
+        + b"trailer\n<</Root 1 0 R>>\n%%EOF\n"
+    )
+    with import_env() as env:
+        env.drop("w.pdf", outer)
+        _, outcomes = env.folder.run()
+        assert (env.incoming / "w.pdf").exists(), outcomes
+
+
+def _swap_before_the_move(env: ImportEnv, make: Any) -> None:
+    real = os.rename
+
+    def rename(src: str, dst: str, *a: Any, **k: Any) -> None:
+        if k.get("dst_dir_fd") is not None and "." not in dst and len(dst) == 26:
+            os.rename = real  # type: ignore[assignment]
+            make()
+        real(src, dst, *a, **k)
+
+    os.rename = rename  # type: ignore[assignment]
+    try:
+        env.folder.run()
+    finally:
+        os.rename = real  # type: ignore[assignment]
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_a_folder_put_in_place_of_the_file_is_never_stuck_in_the_quarantine() -> None:
+    with import_env() as env:
+        env.drop("a.cbz", CBZ)
+
+        def make() -> None:
+            (env.incoming / "a.cbz").unlink()
+            (env.incoming / "a.cbz").mkdir()
+            (env.incoming / "a.cbz" / "k").write_bytes(b"k")
+
+        _swap_before_the_move(env, make)
+        assert (env.incoming / "a.cbz" / "k").read_bytes() == b"k"
+        assert not [p for p in (env.incoming / import_scan.QUARANTINE).iterdir()]
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_a_crash_before_the_end_restores_the_file_to_its_own_subfolder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with import_env() as env:
+        env.drop("series/t1.cbz", CBZ)
+        real = os.unlink
+
+        def crash(path: str, *a: Any, **k: Any) -> None:
+            if k.get("dir_fd") is not None and len(path) == 26:
+                raise KeyboardInterrupt
+            real(path, *a, **k)
+
+        monkeypatch.setattr(os, "unlink", crash)
+        with pytest.raises(KeyboardInterrupt):
+            env.folder.run()
+        monkeypatch.setattr(os, "unlink", real)
+        held = env.incoming / import_scan.QUARANTINE
+        assert not (env.incoming / "series" / "t1.cbz").exists() and list(held.iterdir())
+        root_fd = os.open(env.incoming, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            env.folder._restore_quarantine(root_fd)
+        finally:
+            os.close(root_fd)
+        assert (env.incoming / "series" / "t1.cbz").read_bytes() == CBZ
+        assert not list(held.iterdir())
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_two_scans_never_cross() -> None:
+    import fcntl
+
+    with import_env() as env:
+        env.drop("a.cbz", CBZ)
+        other = env.folder._lock()
+        try:
+            assert env.folder.run() == (import_scan.Scan((), (), ()), [])
+            assert (env.incoming / "a.cbz").exists()
+        finally:
+            fcntl.flock(other, fcntl.LOCK_UN)
+            os.close(other)
+        assert env.folder.run()[1][0].state == "stored"
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_a_quarantine_that_is_a_link_is_never_followed() -> None:
+    with import_env() as env:
+        elsewhere = env.lib.tmp / "victim"
+        elsewhere.mkdir()
+        os.symlink(elsewhere, env.incoming / import_scan.QUARANTINE)
+        env.drop("a.cbz", CBZ)
+        env.folder.run()
+        assert not list(elsewhere.iterdir()) and (env.incoming / "a.cbz").exists()
