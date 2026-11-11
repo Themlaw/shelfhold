@@ -117,3 +117,37 @@ def test_a_killed_migrator_does_not_leave_the_state_stuck(
         slow_migrator.kill()
         slow_migrator.wait()
         assert client.get("/healthz").json()["state"] == "ok"
+
+
+@pytest.mark.req("ENF-OPS-015", "ENF-OPS-002")
+def test_a_start_behind_a_migration_says_so_and_takes_the_lock_when_it_is_free(
+    settings: Settings,
+    slow_migrator: subprocess.Popen[bytes],
+    release: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import structlog
+
+    from shelfhold import runtime
+    from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
+
+    monkeypatch.setattr(runtime, "RETAKE_INTERVAL_S", 0.05)
+    monkeypatch.setattr("shelfhold.main.RETAKE_INTERVAL_S", 0.05)
+    # the slow revision of this fixture is not one of the package's: its schema looks "newer"
+    monkeypatch.setattr("shelfhold.main.check_schema_not_newer", lambda _settings: None)
+    with structlog.testing.capture_logs() as logs, TestClient(create_app(settings)) as client:
+
+        def said(event: str) -> bool:
+            return any(entry["event"] == event for entry in logs)
+
+        wait_for_state(client, "migrating")
+        assert said("instance.waiting_for_lock")  # not mute: the wait is logged
+        release.touch()
+        assert slow_migrator.wait(timeout=60) == 0
+        deadline = time.monotonic() + 30
+        while not said("instance.lock_taken") and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert said("instance.lock_taken")
+        other = InstanceLock(settings.data_dir)  # the service holds it again, and says no
+        with pytest.raises(InstanceLockHeldError):
+            other.acquire()
