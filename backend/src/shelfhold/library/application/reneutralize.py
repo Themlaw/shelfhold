@@ -119,16 +119,21 @@ class Reneutralizer:
                 .where(
                     content.c.format == "epub",
                     content.c.derived_hash.is_not(None),
-                    content.c.derived_by != self._target,
                     content.c.unit_id.is_not(None),
                 )
                 .order_by(content.c.id)
             ).all()
         items: list[PlanItem] = []
         for row in rows:
-            source, why = self._store.source_of(row.unit_id)
             with self._engine.connect() as connection:
                 copies = library_copies(connection, row.unit_id)
+            # an older generation, or a library copy whose rows do not describe the current one
+            # (a crash between the rows and the file): both are repaired by the same run
+            behind = row.derived_by != self._target
+            torn = any(c.content_hash != row.derived_hash for c in copies)
+            if not (behind or torn):
+                continue
+            source, why = self._store.source_of(row.unit_id)
             library = f"{copies[0].local}#{copies[0].file_hash}" if copies else ""
             items.append(
                 PlanItem(

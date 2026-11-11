@@ -132,3 +132,17 @@ def test_an_epub_refusal_is_announced_by_the_ticket_like_a_cbz_one() -> None:
     error = EpubRefusedError("meta_inf_item", "META-INF/secret-name.xhtml")
     assert disposition_of(classify(error)) is Disposition.REFUSE
     assert "secret-name" not in error.kind
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_store_copies_has_an_allowlist_of_callers() -> None:
+    callers = {
+        path.relative_to(SRC.parent).as_posix()
+        for path in sorted(SRC.rglob("*.py"))
+        if "store_copies" in path.read_text(encoding="utf-8")
+    }
+    assert callers == {
+        "shelfhold/library/replica.py",
+        "shelfhold/library/adapters/storage.py",
+        "shelfhold/library/adapters/epub_derivative.py",
+    }

@@ -200,6 +200,13 @@ def _is_clean(
     return not made.changed
 
 
+def _generations(content: Any) -> set[str | None]:
+    """The derivative on record and the generation it replaced last: a crash between the rows and
+    the file leaves the file one generation behind, still a verified derivative."""
+    chain = list(content.derived_chain or ())
+    return {content.derived_hash, chain[-1].get("derived_hash") if chain else None} - {None}
+
+
 def has_epub(connection: Connection, unit_id: str) -> bool:
     return _unit_content(connection, unit_id) is not None
 
@@ -226,7 +233,7 @@ def servable_epub(
         try:
             with fsops.open_read(copy.local) as stream:
                 if published or (
-                    _payload_of(stream) == content.derived_hash
+                    _payload_of(stream) in _generations(content)
                     and _is_clean(stream, staging=staging)
                 ):
                     return ServableEpub(
@@ -355,8 +362,12 @@ class UntrustedEpubStore:
         content_id = new_ulid()
         kept_local: str | None = None
         rel = original_rel(unit_id, content_id)
-        if self._fsops.observe(dest) is not None:  # before the original: no orphan in /store
-            raise FileExistsError(dest)
+        present = self._fsops.observe(dest)
+        orphan = False
+        if present is not None:  # before the original: no orphan in /store
+            if present[0] != "file" or self._fsops.sha256_of(dest) != derived_sha:
+                raise FileExistsError(dest)
+            orphan = True  # our own derivative of a filing that was killed before its rows
         if self._store is not None:  # the original first: nothing is shown before it is safe
             kept_local = f"{self._store}/{rel}"
             with staged.open("rb") as stream:
@@ -365,11 +376,14 @@ class UntrustedEpubStore:
                     verify_digest=lambda: original.removeprefix("sha256:"),
                 )  # fmt: skip
         root_id, library_rel = self._locate(dest)
-        with derived_path.open("rb") as stream:
-            identity = self._fsops.write_atomic(
-                dest, stream, parents=True, replace=False,
-                verify_digest=lambda: derived_sha.removeprefix("sha256:"),
-            )  # fmt: skip
+        if orphan and present is not None:
+            identity = present[1]
+        else:
+            with derived_path.open("rb") as stream:
+                identity = self._fsops.write_atomic(
+                    dest, stream, parents=True, replace=False,
+                    verify_digest=lambda: derived_sha.removeprefix("sha256:"),
+                )  # fmt: skip
         device, now = self._fsops.device_of(dest), datetime.now(UTC)
         kept = kept_local is not None
         with self._engine.begin() as connection:
@@ -604,7 +618,7 @@ class UntrustedEpubStore:
         """Where a regeneration would restart from, and why not when it cannot."""
         with self._engine.connect() as connection:
             content = _unit_content(connection, unit_id)
-            stores = list(store_copies(connection, unit_id))
+            stores = list(store_copies(connection, unit_id, include_untrusted=True))
             copies = list(library_copies(connection, unit_id))
         if content is None or content.derived_hash is None:
             return "blocked", "no_derivative"
@@ -621,23 +635,21 @@ class UntrustedEpubStore:
                 suppress(FileNotFoundError, FsopsError, UnsafeArchiveError),
                 self._fsops.open_read(copy.local) as stream,
             ):
-                if _payload_of(stream) == content.derived_hash:
+                if _payload_of(stream) in _generations(content):
                     return "derived", copy.local
         return "blocked", "neither_original_nor_derivative_verifies"
 
     def _ours(self, copy: Any, content: Any) -> bool:
-        """The file in /library is one Shelfhold wrote: the recorded bytes, or a generation of the
-        derivative (the current one or one of `derived_chain`: a crash between the file and its
-        rows leaves either). A file the user put there since is theirs, and never replaced."""
-        generations = {content.derived_hash} | {
-            e.get("derived_hash") for e in content.derived_chain or ()
-        }
-        with suppress(FileNotFoundError, FsopsError, UnsafeArchiveError):
-            seen = self._fsops.sha256_of(copy.local)
-            if seen in (copy.file_hash, content.original_sha256):
-                return True  # what was written, or the original a restore put back (repair)
-            with self._fsops.open_read(copy.local) as stream:
-                return _payload_of(stream) in generations
+        """The file in /library is exactly one Shelfhold wrote: the recorded bytes, the file a
+        regeneration was about to put (a crash between the rename and the rows), or the original
+        a restore put back (repair). Any other file is the user's, whatever its payload."""
+        expected = {copy.file_hash, content.original_sha256}
+        chain = list(content.derived_chain or ())
+        if chain:
+            expected.add(chain[-1].get("successor_file_hash"))
+        expected.discard(None)
+        with suppress(FileNotFoundError, FsopsError):
+            return self._fsops.sha256_of(copy.local) in expected
         return False
 
     @_under_work
@@ -655,7 +667,8 @@ class UntrustedEpubStore:
         if content is None or not copies:
             raise RegenerationBlockedError("no_library_copy")
         into = copies[0]
-        if not self._ours(into, content):
+        first = self._fsops.observe(into.local)
+        if first is None or not self._ours(into, content):
             raise RegenerationBlockedError("library_file_was_replaced")
         with tempfile.NamedTemporaryFile(
             dir=self._staging(), suffix=".epub", prefix="regen-"
@@ -669,16 +682,21 @@ class UntrustedEpubStore:
             self._verify_derivative(staged, made.derived_hash)  # verified before it replaces
             digest = sha256_file(staged)
             now = datetime.now(UTC)
-            chain = extend_chain(
-                content.derived_chain,
-                chain_entry(content.derived_by, content.derived_hash, content.derived_hash_by, now),
+            entry = chain_entry(
+                content.derived_by, content.derived_hash, content.derived_hash_by, now
             )
+            entry["file_hash"] = into.file_hash  # what the replaced generation was on disk
+            entry["successor_file_hash"] = digest  # what is about to replace it
+            chain = extend_chain(content.derived_chain, entry)
             # the rows first: a crash after the file lands leaves rows that describe it, one
             # before leaves the old file, whose hash is in `derived_chain` (`_ours`): never blocked
             self._set_generation(
                 content.id, made.derived_hash, made.derived_by, made.derived_hash_by, chain, None
             )
             try:
+                seen = self._fsops.observe(into.local)  # the user does not take the Work lock:
+                if seen is None or seen[1].ino != first[1].ino or not self._ours(into, content):
+                    raise RegenerationBlockedError("library_file_was_replaced")
                 with staged.open("rb") as stream:
                     written = self._fsops.write_atomic(
                         into.local, stream, replace=True,

@@ -172,6 +172,8 @@ def _read_xml(archive: SafeArchive, name: str, reason: str) -> Element:
         tag = str(element.tag)
         if tag.startswith("{") and tag[1:].partition("}")[0] in _PAGE_NAMESPACES:
             raise NeutralizationError("page_in_xml", name)
+        if any(_local(k).lower().startswith("on") for k in element.attrib):
+            raise NeutralizationError("page_in_xml", name)  # an event handler is not metadata
         if _local(tag).lower() in _BAD_ELEMENTS:
             raise NeutralizationError("page_in_xml", name)
     return root
@@ -232,6 +234,9 @@ def _manifest(archive: SafeArchive) -> tuple[set[str], dict[str, str | None]]:
             )
     if not opfs:
         raise NeutralizationError("container")
+    for opf in opfs:
+        if _ext(opf) != ".opf":  # a rootfile that is not a package is a page in disguise
+            raise NeutralizationError("container", opf)
     declared: dict[str, str | None] = {}
     for opf in opfs:
         if opf not in names:
@@ -241,6 +246,9 @@ def _manifest(archive: SafeArchive) -> tuple[set[str], dict[str, str | None]]:
         if _ext(name) == ".opf" and name not in opfs:
             _read_package(archive, name, declared)
             opfs.append(name)
+    for opf in opfs:  # a package the manifest also lists as a page would be copied unread
+        if declared.get(opf) in _PAGE_FAMILIES:
+            raise NeutralizationError("type_mismatch", opf)
     return set(opfs), declared
 
 

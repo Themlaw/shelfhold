@@ -288,8 +288,13 @@ class StoreCopy:
     file_hash: str | None  # the bytes that were put in /store
 
 
-def store_copies(connection: Connection, unit_id: str) -> Sequence[StoreCopy]:
-    """The Unit's copies in /store, oldest first (the kept originals, EF-BIB-027)."""
+def store_copies(
+    connection: Connection, unit_id: str, *, include_untrusted: bool = False
+) -> Sequence[StoreCopy]:
+    """The Unit's copies in /store, oldest first (the kept originals, EF-BIB-027).
+
+    The originals of `untrusted` EPUBs (`untrusted/`) are left out unless asked for: only the
+    derivative pipeline has a use for them, and nothing else may be handed one (EF-BIB-051)."""
     root = platform.physical_root
     rows = connection.execute(
         sa.select(
@@ -302,7 +307,11 @@ def store_copies(connection: Connection, unit_id: str) -> Sequence[StoreCopy]:
         .where(replica_table.c.unit_id == unit_id, replica_table.c.location == "store")
         .order_by(replica_table.c.id)
     )
-    return [StoreCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash) for r in rows]
+    return [
+        StoreCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash)
+        for r in rows
+        if include_untrusted or not r.rel_path.startswith("untrusted/")
+    ]
 
 
 @dataclass(frozen=True)
