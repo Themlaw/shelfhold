@@ -174,3 +174,37 @@ def test_repatriate_keeps_kavita_progress_nightly(kavita: RealKavita) -> None:
     (same,) = kavita.chapters(after.id)
     assert same["id"] == chapter["id"]
     assert kavita.progress(same["id"]) == 3
+
+
+@pytest.mark.req("EF-EXP-055", "EF-BIB-034", "EF-EXP-046", "ENF-COMP-001")
+def test_nightly_real_kavita_family_library_age_restriction(kavita: RealKavita) -> None:
+    """A family library read by restricted accounts, on the real server (to confirm at the
+    nightly, M1b): the age Shelfhold pushes is what the restriction is compared with (the ceiling
+    included), a series left without an age is shown only to an account that includes unknowns,
+    and the audit reads each account's restriction as Kavita holds it."""
+    ages = {"Family Kids": 5, "Family Teen": 8, "Family Adult": 13}  # AgeRating: 10+, Teen, 18+
+    for name in (*ages, "Family Unrated"):
+        kavita.write(f"family/{name}/{name} - Ch.1.cbz", cbz(comicinfo(name, "1")))
+    library = kavita.create_library("Family", [kavita.remote("family")])
+    kavita.scan(kavita.remote("family"))
+    found = kavita.wait_series(library, lambda s: len(s) == 4, "the four series")
+    for series in found:  # what Shelfhold does after the export: the owned, locked age
+        if series.name in ages:
+            current = run(kavita.client.series_age(series.id))  # type: ignore[union-attr]
+            run(kavita.client.set_series_age(current, ages[series.name]))  # type: ignore[union-attr]
+    everything = {s.name for s in found}
+
+    teen = kavita.restricted_account("teen", [library], age_rating=8, include_unknowns=False)
+    assert kavita.visible_to(teen) == {"Family Kids", "Family Teen"}  # the ceiling is included
+    tolerant = kavita.restricted_account("tolerant", [library], age_rating=8, include_unknowns=True)
+    assert kavita.visible_to(tolerant) == {"Family Kids", "Family Teen", "Family Unrated"}
+    small = kavita.restricted_account("small", [library], age_rating=5, include_unknowns=False)
+    assert kavita.visible_to(small) == {"Family Kids"}
+    free = kavita.restricted_account("free", [library], age_rating=-1, include_unknowns=True)
+    assert kavita.visible_to(free) == everything  # no restriction: the adult series is read
+
+    audited = {m.username: m for m in run(kavita.client.list_users())}  # type: ignore[union-attr]
+    assert (audited["teen"].age_rating, audited["teen"].include_unknowns) == (8, False)
+    assert (audited["tolerant"].age_rating, audited["tolerant"].include_unknowns) == (8, True)
+    assert audited["free"].age_rating == -1 and audited["free"].include_unknowns
+    assert all(audited[name].library_ids == {library} for name in ("teen", "tolerant", "small"))

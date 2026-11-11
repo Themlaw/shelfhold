@@ -89,9 +89,28 @@ def wait_for(predicate: Callable[[], bool], seconds: float = 20.0) -> bool:
     return False
 
 
+M1B_FILES = ["compose.yaml", "journey.yaml", "m1b.yaml"]
+
+
 @pytest.fixture
 def journey() -> Iterator["Journey"]:
     """A fresh journey stack per test: image under test + simulated Kavita and Suwayomi."""
+    yield from _journey(["compose.yaml", "journey.yaml"])
+
+
+@pytest.fixture
+def journey_m1b() -> Iterator["Journey"]:
+    """The journey stack with the simulated Sablier, the backup folder and its passphrase file."""
+    yield from _journey(M1B_FILES)
+
+
+@pytest.fixture
+def journey_ui_login() -> Iterator["Journey"]:
+    """The M1b stack with the simulated Suwayomi in `ui_login` (JWT pair, per-account libraries)."""
+    yield from _journey([*M1B_FILES, "ui-login.yaml"])
+
+
+def _journey(files: list[str]) -> Iterator["Journey"]:
     from journey import Journey
 
     if not os.environ.get("SHELFHOLD_IMAGE"):
@@ -100,10 +119,11 @@ def journey() -> Iterator["Journey"]:
         )
     if shutil.which("docker") is None:
         pytest.skip("docker is not available")
-    stack = Journey()
+    stack = Journey(files=files)
     stack.compose("down", "-v", "-t", "1", check=False)
     try:
         stack.compose("up", "--wait", "-d")
+        stack.put("/tmp/backup.pass", "synthetic-backup-passphrase\n")  # not in /data or /store
         yield stack
     finally:
         print(stack.compose("logs", "--no-color", check=False).stdout)

@@ -280,3 +280,49 @@ def test_shelf_create_makes_the_folder_of_the_destination(settings: Settings, tm
         (inst.library / "Kavita").rmdir()
         inst.configure()
         assert (inst.library / "Kavita").is_dir()
+
+
+@pytest.mark.req("ENF-OPS-014")
+def test_run_now_takes_the_window_open_now_for_a_window_job(settings: Settings, tmp_path) -> None:
+    """`jobs run` on a night job: it was planned for the next night, and the worker would wait
+    for that one; asked for now, it takes the window that is open now (else the next one to open,
+    the disks stay asleep by day), and a job without a window stays without."""
+    from datetime import UTC, datetime
+
+    from shelfhold.infrastructure.ids import new_ulid
+    from shelfhold.jobs.window import DEFAULT_WINDOW
+    from tests.l41_env import instance
+
+    planned = {"start_utc": "2999-01-01T23:00:00Z", "end_utc": "2999-01-02T04:00:00Z"}
+    with instance(settings, tmp_path) as inst:
+        from shelfhold.ops.wiring import open_ops
+
+        ops = open_ops(settings, engine=inst.engine, composition=inst.comp)
+        with inst.engine.begin() as c:
+            c.execute(sa.delete(platform.schedule))
+            for ident, kind, window in (
+                (new_ulid(), "library.safeguard", planned),
+                (new_ulid(), "follow.cycle", None),
+            ):
+                c.execute(
+                    sa.insert(platform.schedule).values(
+                        id=ident,
+                        job_kind=kind,
+                        scope_key="",
+                        cron="40 3 * * *",
+                        jitter_s=0,
+                        window=window,
+                        enabled=True,
+                    )
+                )
+        ops.jobs_run_now("library.safeguard")
+        ops.jobs_run_now("follow.cycle")
+        with inst.engine.connect() as c:
+            rows = {r.job_kind: r for r in c.execute(sa.select(platform.schedule))}
+    opened = rows["library.safeguard"].window
+    start = datetime.strptime(opened["start_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    end = datetime.strptime(opened["end_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    now = datetime.now(UTC)
+    assert end > now and start < datetime(2998, 1, 1, tzinfo=UTC)  # not the far night it had
+    assert start <= DEFAULT_WINDOW.next_span(now).start  # the window open now, or the next one
+    assert rows["follow.cycle"].window is None

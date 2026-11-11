@@ -171,12 +171,20 @@ class Bench:
             return Response(err.code, dict(err.headers), err.read())
 
     def graphql(
-        self, query: str, *, authenticated: bool = True, password: str | None = None
+        self,
+        query: str,
+        *,
+        authenticated: bool = True,
+        password: str | None = None,
+        variables: dict[str, Any] | None = None,
     ) -> Response:
+        payload: dict[str, Any] = {"query": query}
+        if variables is not None:
+            payload["variables"] = variables
         return self.request(
             "POST",
             "/api/graphql",
-            body=json.dumps({"query": query}).encode(),
+            body=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"},
             authenticated=authenticated,
             password=password,

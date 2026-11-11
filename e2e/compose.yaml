@@ -2,6 +2,9 @@
 # leaves the network namespace (ENF-PRIV-001). An `internal: true` network would only make
 # attempts fail silently (ENETUNREACH, no packet), so the stack observes instead: the sidecar
 # owns the namespace, which also covers start-up. SHELFHOLD_IMAGE is set by the workflow (image of the run) or by the developer.
+# SHELFHOLD_APP_IMAGE, when set, is the image of the `shelfhold` and `shelfhold-migrate` services alone
+# (the rollback journey runs the previous release on the volumes of this one); the simulated servers
+# stay on SHELFHOLD_IMAGE.
 name: shelfhold-e2e
 
 x-hardened: &hardened
@@ -31,7 +34,7 @@ services:
 
   shelfhold-migrate:
     <<: *hardened
-    image: ${SHELFHOLD_IMAGE:?}
+    image: ${SHELFHOLD_APP_IMAGE:-${SHELFHOLD_IMAGE:?}}
     command: ["shelfhold", "migrate"]
     restart: "no"
     depends_on:
@@ -43,7 +46,7 @@ services:
 
   shelfhold:
     <<: *hardened
-    image: ${SHELFHOLD_IMAGE:?}
+    image: ${SHELFHOLD_APP_IMAGE:-${SHELFHOLD_IMAGE:?}}
     init: true
     depends_on:
       shelfhold-migrate: { condition: service_completed_successfully }

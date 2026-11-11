@@ -260,3 +260,44 @@ class RealKavita:
         )  # fmt: skip
         assert status == 200, body
         return int(body["pageNum"])
+
+    def restricted_account(
+        self, username: str, libraries: list[int], *, age_rating: int, include_unknowns: bool
+    ) -> str:
+        """A member as a child of the household is made: invited by the administrator with an age
+        restriction and the "include unknowns" switch, then confirmed. Returns its session token
+        (a throwaway password of the job's own)."""
+        import urllib.parse
+
+        admin = {"Authorization": f"Bearer {self.token}"}
+        status, invite = self.request(
+            "POST", "/api/Account/invite",
+            body={"email": f"{username}@example.org", "roles": ["Login"], "libraries": libraries,
+                  "ageRestriction": {"ageRating": age_rating, "includeUnknowns": include_unknowns}},
+            headers=admin,
+        )  # fmt: skip
+        assert status == 200, invite
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(invite["emailLink"]).query)
+        status, member = self.request(
+            "POST", "/api/Account/confirm-email",
+            body={"email": f"{username}@example.org", "username": username,
+                  "password": "Synthetic-pass-1!", "token": query["token"][0]},
+        )  # fmt: skip
+        assert status == 200, member
+        status, login = self.request(
+            "POST", "/api/Account/login",
+            body={"username": username, "password": "Synthetic-pass-1!"},
+        )  # fmt: skip
+        assert status == 200, login
+        return str(login["token"])
+
+    def visible_to(self, token: str) -> set[str]:
+        """The series names a session can read, as Kavita itself decides (its own restriction)."""
+        status, found = self.request(
+            "POST", "/api/Series/all-v2?PageNumber=1&PageSize=100",
+            body={"statements": [], "combination": 1, "limitTo": 0,
+                  "sortOptions": {"sortField": 1, "isAscending": True}},
+            headers={"Authorization": f"Bearer {token}"},
+        )  # fmt: skip
+        assert status == 200, found
+        return {str(s["name"]) for s in found}

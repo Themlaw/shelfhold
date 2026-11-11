@@ -1,0 +1,7 @@
+# Suwayomi in `ui_login` (JWT pair, per-account libraries): the service account of M1b L20, EF-SRC-008.
+name: shelfhold-e2e-ui-login
+
+services:
+  fake-suwayomi:
+    environment:
+      FAKE_SUWAYOMI_AUTH: ui_login

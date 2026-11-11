@@ -159,3 +159,38 @@ def test_contract_synthetic_extension_plays_download_queue(bench: ExtensionBench
         assert archive.testzip() is None
         pages = [n for n in archive.namelist() if n.lower().endswith(".png")]
         assert len(pages) == 3  # the three generated pages, nothing else came from anywhere
+
+
+@pytest.mark.req("EF-SRC-026", "ENF-LEG-013")
+def test_nightly_source_stub_shape_when_the_extension_is_gone(bench: ExtensionBench) -> None:
+    """To confirm at the nightly (M1b L22): once its extension is uninstalled, a source that a
+    followed series still points to is either absent from `sources` or a stub named
+    `Source not installed: <id>`; in both cases the adapter reads it as not loaded, and nothing is
+    written by that reading. The shape seen is printed for the job log (the record is asserted
+    only through the adapter's own reading, so a third shape fails the test)."""
+    from shelfhold.plugin_host.adapters.meta.suwayomi.service import _unusable
+
+    listing = "{ sources { nodes { id displayName lang isNsfw } } }"
+    sources = bench.gql(listing)["sources"]["nodes"]
+    synthetic = next((s for s in sources if s["displayName"] == "Synthetic"), None)
+    if synthetic is None:  # the extension of the previous test is not installed: do it here
+        bench.install_extension(APK.read_bytes())
+        sources = bench.gql(listing)["sources"]["nodes"]
+        synthetic = next(s for s in sources if s["displayName"] == "Synthetic")
+    assert not _unusable(synthetic)  # installed: usable
+    package = next(
+        e["pkgName"]
+        for e in bench.gql("{ extensions { nodes { pkgName isInstalled } } }")["extensions"][
+            "nodes"
+        ]
+        if e["isInstalled"] and e["pkgName"].endswith(".synthetic")
+    )
+    bench.gql(
+        f'mutation {{ updateExtension(input: {{id: "{package}", patch: {{uninstall: true}}}}) '
+        "{ extension { pkgName isInstalled } } }"
+    )
+    after = bench.gql(listing)["sources"]["nodes"]
+    node = next((s for s in after if s["id"] == synthetic["id"]), None)
+    print("source after uninstall:", node)
+    assert _unusable(node), node
+    assert node is None or node["displayName"].lower().startswith("source not installed"), node

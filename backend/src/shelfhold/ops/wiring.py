@@ -26,6 +26,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
+from shelfhold.jobs.window import MaintenanceWindow
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.adoption import LibraryAdoptionExit
 from shelfhold.ops.attach import AttachOps
@@ -145,4 +146,7 @@ def open_ops(
         ),
         edition_merge=EditionMergeOps(composition),
         follows=FollowOps(composition), acquire=AcquireOps(composition), roots=RootOps(composition),
+        window=MaintenanceWindow.from_text(
+            settings.maintenance_window_start, settings.maintenance_window_end, settings.timezone
+        ),
     )  # fmt: skip

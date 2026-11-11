@@ -24,4 +24,16 @@ SHARDS: dict[str, tuple[str, ...]] = {
     ),
     "name-collision": ("test_two_series_with_one_title_wait_for_a_name_then_export",),
     "name-foreign": ("test_name_taken_by_a_series_of_another_source_in_kavita_waits_for_a_name",),
+    # M1b (L30): one journey per runner, each under 10 minutes
+    "m1b-family": ("test_m1b_family_shelf_journey",),
+    "m1b-safeguard": ("test_m1b_safeguard_journey",),
+    "m1b-wake": ("test_m1b_piloted_wake_journey",),
+    "m1b-backup": ("test_m1b_backup_restore_other_path_journey",),
+    "m1b-ui-login": ("test_m1b_ui_login_service_account_journey",),
+    "m1b-purge": ("test_m1b_purge_journey",),
+    "m1b-rollback": (
+        "test_rollback_after_lazy_format_migration_no_loss",
+        "test_rollback_reads_m1b_sentinel_without_field_loss",
+        "test_rollback_adoption_clears_restored_behind",
+    ),
 }
