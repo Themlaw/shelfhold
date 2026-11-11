@@ -160,12 +160,13 @@ def test_a_release_that_was_sent_is_never_sent_again_after_a_lost_answer() -> No
         first = sweep(world)
         assert first.failed == 1 and world.upstream.calls == [item.ticket]
         assert [i.state for i in world.intents()] == ["applying"]
-        for _ in range(2):  # the next sweeps, with the same answer: ambiguous, left to the admin
-            again = sweep(world)
-            assert again.handed_to_admin == 1 and again.purged == 0
+        again = sweep(world)  # ambiguous (not sent, or another account keeps the file)
+        assert again.handed_to_admin == 1 and again.purged == 0
+        assert world.ticket_of(item) is None  # the claim goes with the intent: nothing asks again
+        assert [i.state for i in world.intents()] == ["done"]
+        for _ in range(2):
+            assert sweep(world).handed_to_admin == 0
         assert world.upstream.calls == [item.ticket]  # one DELETE, ever
-        assert world.ticket_of(item) == item.ticket
-        assert [i.state for i in world.intents()] == ["applying"]  # `intents list` shows it
 
 
 def test_a_release_that_landed_is_settled_by_asking_even_without_the_store_copy() -> None:

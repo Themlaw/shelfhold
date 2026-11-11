@@ -14,9 +14,14 @@ import sqlalchemy as sa
 
 from shelfhold.acquisition.public import FollowRequests
 from shelfhold.export.application.intents import IntentJournal
-from shelfhold.export.application.purge import PurgeService
+from shelfhold.export.application.purge import (
+    ALERT_DELETE_UPSTREAM,
+    PurgeService,
+    PurgeUnknownError,
+)
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition
+from shelfhold.library.public import PinnedCopy
 from shelfhold.purge_upstream import ConnectedUpstream
 from shelfhold.safeguard_jobs import service_refusal
 from shelfhold.sdk.refs import SeriesRef
@@ -162,3 +167,57 @@ def test_purge_work_erases_the_follow_request_and_the_series_url(tmp_path: Path)
                 found = connection.execute(sa.text(f'SELECT * FROM "{name}"'))  # noqa: S608
                 blob = json.dumps([[str(c) for c in r] for r in found])
                 assert "dr-stone" not in blob, name
+
+
+# -- a deed that was begun is never sent again, by any door ---------------------------------------
+
+
+def test_ui_login_deed_killed_after_the_release_is_never_sent_twice(tmp_path: Path) -> None:
+    """P4: another account keeps the file, so the chapter is still there after our `release`.
+    Killed right after it: the intent stays `applying` and nothing tells whether it landed. The
+    purge settles it as `kept_by_other_account` (alert: delete in Suwayomi); no later run, and not
+    `intents resolve --abandon`, sends a second DELETE."""
+    from tests.integration.test_purge_m1b_kill import killed_run, restart
+
+    with export_env() as env:
+        service = FakeService(tmp_path, shared={"ticket-1"})
+        series = env.new_series(TITLE)
+        unit, _ = spread(env, series)
+        fetched_ticket(env, service, unit, "ticket-1")
+        purge = make_m1b_env(env, service)
+        write_index(purge)
+        killed_run(purge, unit, "release_sent")
+        assert service.released() == ["ticket-1"]
+        again = restart(env, service)
+        report = again.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=again.clock.now())
+        assert report.complete and report.upstream_kept_by_others == 1
+        assert ALERT_DELETE_UPSTREAM in report.alerts
+        journal = IntentJournal(env.engine, env.lib.fsops, clock=again.clock)
+        # the intent is closed with the claim: nothing is left for `intents resolve --abandon`
+        assert journal.open_payloads("purge_upstream") == []
+        with pytest.raises(PurgeUnknownError):  # the Unit is gone: nothing runs a second time
+            again.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=again.clock.now())
+        assert service.released() == ["ticket-1"]  # one DELETE, ever
+
+
+def test_abandoning_a_begun_deed_withdraws_the_ticket(tmp_path: Path) -> None:
+    """P4: the admin's door (`intents resolve --abandon`) on an `applying` erasure closes the
+    request's ticket in the same transaction, so that nothing asks the service again."""
+    with export_env() as env:
+        service = FakeService(tmp_path, shared={"ticket-1"})
+        unit, _ = spread(env, env.new_series(TITLE))
+        request = fetched_ticket(env, service, unit, "ticket-1")
+        purge = make_m1b_env(env, service)
+        journal = IntentJournal(env.engine, env.lib.fsops, clock=purge.clock)
+        begun = journal.record(
+            op="purge_upstream", expected_file_id=PinnedCopy(0, 0, 0, request_id=request)
+        )
+        journal.mark_applying(begun)
+        assert journal.abandon(begun)
+        with env.engine.connect() as connection:
+            ticket = connection.execute(
+                sa.select(acquisition.download_request.c.ticket).where(
+                    acquisition.download_request.c.id == request
+                )
+            ).scalar_one()
+        assert ticket is None

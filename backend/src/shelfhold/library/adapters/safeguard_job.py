@@ -602,10 +602,13 @@ class UpstreamPurge:
             if state == "pending":
                 self._journal.cancel(intent_id)  # recorded, never begun
                 continue
-            if await self._still_held(ticket):  # begun: not sent again, whoever began it
-                raise PurgeUnresolvedError(target.request_id)
+            held = await self._still_held(ticket)
+            # begun: never sent again, whoever began it. Gone: it landed. Still there: not sent,
+            # or (`ui_login`) another account keeps the file; nothing tells which, so the claim
+            # is let go of and the admin is told to delete in the service. The ticket goes with
+            # the intent: no door (`intents resolve`, `--abandon`) leads to a second erasure.
             self._settle(target, intent_id)
-            return ReleaseOutcome("gone")
+            return ReleaseOutcome("kept_by_other_account" if held else "gone")
         if target.state == "requested":
             await cast("QueueService", self._service).cancel(self._fetcher, ticket)
         if not await self._still_held(ticket):
@@ -726,7 +729,11 @@ class UpstreamPurge:
             report.handed_to_admin += 1
             return
         if await self._still_held(self._ticket(found[0].ticket)):
+            # not sent, or another account keeps the file: nothing tells which. The claim is let
+            # go of with the intent (a second DELETE would take it for the other account's), and
+            # the download is left in the service for the admin to delete there.
             log.warning("safeguard.purge_ambiguous", intent=intent_id)
+            self._settle(found[0], intent_id)
             report.handed_to_admin += 1
             return
         self._settle(found[0], intent_id)

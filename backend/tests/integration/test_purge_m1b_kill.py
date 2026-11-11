@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks
-from shelfhold.export.application.purge import PurgeService
+from shelfhold.export.application.purge import ALERT_DELETE_UPSTREAM, PurgeService
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, coherence
 from tests.export_env import ExportEnv, export_env
@@ -170,19 +170,13 @@ def test_purge_killed_at_each_step_never_leaves_a_dead_index_or_erases_twice(
         report = again.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=again.clock.now())
         if point == "release_not_sent":
             # the deed was begun and nothing says whether it landed (in `ui_login` another account
-            # may hold the file): never sent again, handed to the admin
-            assert not report.complete and service.released() == []
-            assert [r.reason for r in report.refused if r.location == "upstream"] == [
-                "upstream_unresolved"
-            ]
-            journal = IntentJournal(export.engine, export.lib.fsops, clock=again.clock)
-            for intent_id, _state, _payload in journal.open_payloads("purge_upstream"):
-                journal.cancel(intent_id)  # `intents resolve`, the admin's door
-            report = again.purge.purge_unit(
-                unit, principal=ADMIN, typed=unit, now=again.clock.now()
-            )
+            # may hold the file): never sent again; the claim is let go of and the admin told to
+            # delete in the service
+            assert report.upstream_kept_by_others == 1 and service.released() == []
+            assert ALERT_DELETE_UPSTREAM in report.alerts
         assert report.complete
-        assert service.released() == ["ticket-1"]  # one erasure, whatever the step
+        # one erasure whatever the step, none when the deed was begun and never reached the service
+        assert service.released() == ([] if point == "release_not_sent" else ["ticket-1"])
         assert unit not in index_units(again) and other in index_units(again)
         assert index_is_coherent(again)
         stored = [p.name for p in export.lib.files_under(export.lib.store)]
@@ -201,7 +195,8 @@ def test_purge_killed_at_each_step_never_leaves_a_dead_index_or_erases_twice(
 
 def test_a_deed_open_for_the_same_request_is_never_sent_twice(tmp_path: Path) -> None:
     """The window job of L16 and `purge --now` can meet: a deed another one has begun on the same
-    download stops this one (the service takes a second erasure for a second account's)."""
+    download is not repeated by this one (the service takes a second erasure for a second
+    account's): the claim is let go of, the file is left to the admin to delete in the service."""
     with export_env() as export:
         service = FakeService(tmp_path)
         unit, _ = spread(export, export.new_series(TITLE))
@@ -215,7 +210,5 @@ def test_a_deed_open_for_the_same_request_is_never_sent_twice(tmp_path: Path) ->
         )
         journal.mark_applying(begun)  # the other deed: sent, or about to be
         report = purge.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=purge.clock.now())
-        assert not report.complete and service.released() == []
-        assert [r.reason for r in report.refused if r.location == "upstream"] == [
-            "upstream_unresolved"
-        ]
+        assert report.complete and service.released() == []
+        assert report.upstream_kept_by_others == 1 and ALERT_DELETE_UPSTREAM in report.alerts
