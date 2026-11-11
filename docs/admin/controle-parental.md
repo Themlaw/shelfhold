@@ -86,6 +86,8 @@ toute façon ; une étagère adulte l'exporte sans attendre.
 
 ### Reclasser
 
+Classer ou reclasser une Œuvre (`POST /api/v1/works/{id}/rating`, écran « À classer ») exige une session administrateur confirmée il y a moins de 900 s, dans tous les profils ; l'écran redemande le mot de passe sur place puis rejoue le choix. Le classement en lot suit la même règle ; la ligne de commande locale (`shelfhold rate`) n'est pas concernée, et une clé d'API est toujours refusée ([durcir.md](durcir.md)).
+
 Chaque reclassement repousse l'âge, verrouillé, **au début** du passage d'export suivant, avant
 toute écriture. Une série reclassée vers le haut ne reçoit aucun nouveau livre tant que le nouvel
 âge n'a pas été relu verrouillé. Tant que Kavita affiche un âge inférieur au classement (poussée

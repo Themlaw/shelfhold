@@ -435,6 +435,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
             assert key
             bearer = {"Authorization": f"Bearer {key.group(0)}"}
             api.login()
+            env.clock.set(api.clock.now())  # `rate` judges the session again, on the service clock
             for route in served:
                 method, path = _url(route.command, **ids)
                 refused = api.client.request(
@@ -455,6 +456,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
             assert keyring.waived and restore.calls == [True]
             # a session older than 15 minutes must prove itself again where the property says so
             api.clock.advance(timedelta(minutes=20))
+            env.clock.set(api.clock.now())
             for route in served:
                 assert route.reserved is not None
                 if route.command == "restore acknowledge":

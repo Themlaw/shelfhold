@@ -842,14 +842,48 @@ def test_passkey_register_and_revoke_need_fresh_auth_in_the_hardened_profile(
         assert all(r[1] and r[2] for r in rows)  # session_id and auth_time on each
 
 
-def test_passkey_register_and_revoke_have_no_freshness_by_default(api: AuthEnv) -> None:
+def test_passkey_enrolment_needs_a_fresh_session_by_default_but_revocation_does_not(
+    api: AuthEnv,
+) -> None:
+    """Porteur, 2026-11-11: a stolen 30-day session must not add a passkey that outlives it."""
     registered(api)
+    [(item_id,)] = db_rows(api.settings, "SELECT id FROM webauthn_credential")
     api.clock.advance(timedelta(hours=3))  # the default session lasts 30 days
-    assert register(api, name="Later")[1].status_code == 201
+    stale = api.post(f"{PASSKEYS}/options", json={})
+    assert stale.status_code == 401
+    assert stale.json()["type"].endswith("/reauth-required")
+    assert db_rows(api.settings, "SELECT count(*) FROM webauthn_credential") == [(1,)]
+    # revoking stays as before: no freshness by default (it is not a way in)
+    other = SoftPasskey()
+    api.post(REAUTH, json={"method": "password", "password": PASSWORD})
+    assert register(api, other, name="Later")[1].status_code == 201
+    api.clock.advance(timedelta(hours=3))
+    gone = api.client.delete(f"{PASSKEYS}/{item_id}", headers={CSRF_HEADER: api.csrf()})
+    assert gone.status_code in (204, 409)
     rows = db_rows(
         api.settings, "SELECT session_id, auth_time FROM audit WHERE action = 'passkey.register'"
     )
     assert len(rows) >= 2 and all(r[0] and r[1] for r in rows)  # audited either way
+
+
+def test_the_end_of_a_registration_started_fresh_is_refused_once_stale(api: AuthEnv) -> None:
+    """The finishing call is gated too: options obtained fresh cannot be redeemed hours later."""
+    api.login()
+    passkey = SoftPasskey()
+    body = api.post(f"{PASSKEYS}/options", json={}).json()
+    credential = passkey.create(body["options"])
+    api.clock.advance(timedelta(minutes=20))
+    done = api.post(PASSKEYS, json={"flow": body["flow"], "name": "Late", "credential": credential})
+    assert done.status_code == 401 and done.json()["type"].endswith("/reauth-required")
+    assert db_rows(api.settings, "SELECT count(*) FROM webauthn_credential") == [(0,)]
+
+
+def test_reauthenticating_reopens_passkey_enrolment(api: AuthEnv) -> None:
+    api.login()
+    api.clock.advance(timedelta(hours=3))
+    assert api.post(f"{PASSKEYS}/options", json={}).status_code == 401
+    assert api.post(REAUTH, json={"method": "password", "password": PASSWORD}).status_code == 200
+    assert register(api)[1].status_code == 201
 
 
 def test_a_key_can_neither_register_nor_revoke_a_passkey(

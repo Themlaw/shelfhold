@@ -117,3 +117,14 @@ def test_batch_rating_refused_to_every_api_key(
     )
     assert refused.status_code == 403
     assert ops.rating.batches == []
+
+
+@pytest.mark.req("EF-USR-022", "EF-BIB-036")
+def test_batch_rating_needs_a_fresh_session_in_the_default_profile(api: AuthEnv, ops: _Ops) -> None:
+    from datetime import timedelta
+
+    api.login()
+    api.clock.advance(timedelta(minutes=20))
+    stale = api.post("/api/v1/works/rating-batch", json={"age": "0+", "confirm": TOKEN})
+    assert stale.status_code == 401 and stale.json()["type"].endswith("/reauth-required")
+    assert ops.rating.batches == []  # nothing was rated

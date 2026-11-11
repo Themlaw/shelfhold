@@ -7,8 +7,10 @@
     passkeysList
   } from '#lib/api/index.ts';
   import type { PasskeyItem } from '#lib/api/types.gen.ts';
+  import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { createPasskey, csrfToken, passkeysSupported } from '#lib/passkeys.ts';
+  import { needsReauth, problemOf } from '#lib/triage.ts';
 
   let items = $state<PasskeyItem[]>([]);
   let available = $state(false);
@@ -17,6 +19,8 @@
   let message = $state('');
   let failed = $state(false);
   let busy = $state(false);
+  let reauthMethods = $state<string[] | null>(null);
+  let retry: (() => Promise<void>) | null = null;
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
 
@@ -34,8 +38,34 @@
 
   onMount(load);
 
-  async function register(event: SubmitEvent): Promise<void> {
+  /** A stale password asks for it in place (EF-USR-022), then runs the same action again. */
+  function askReauth(error: unknown, again: () => Promise<void>): boolean {
+    if (!needsReauth(error)) return false;
+    retry = again;
+    reauthMethods = problemOf(error).reauth_methods ?? ['password'];
+    failed = false;
+    message = '';
+    return true;
+  }
+
+  async function afterReauth(): Promise<void> {
+    const again = retry;
+    retry = null;
+    reauthMethods = null;
+    if (again) await again();
+  }
+
+  function cancelReauth(): void {
+    retry = null;
+    reauthMethods = null;
+  }
+
+  function register(event: SubmitEvent): Promise<void> {
     event.preventDefault();
+    return enrol();
+  }
+
+  async function enrol(): Promise<void> {
     busy = true;
     failed = false;
     message = '';
@@ -53,9 +83,11 @@
       name = '';
       message = t('passkeys.added');
       await load();
-    } catch {
-      failed = true;
-      message = t('passkeys.error');
+    } catch (error) {
+      if (!askReauth(error, enrol)) {
+        failed = true;
+        message = t('passkeys.error');
+      }
     } finally {
       busy = false;
     }
@@ -73,6 +105,7 @@
       message = t('passkeys.revoked');
       await load();
     } catch (error) {
+      if (askReauth(error, () => revoke(item))) return;
       failed = true;
       const problem = (error ?? {}) as { code?: string };
       message = problem.code === 'last_login_factor' ? t('passkeys.last_factor') : t('passkeys.error');
@@ -108,6 +141,10 @@
     </form>
   {:else if reason}
     <p class="muted">{reason}</p>
+  {/if}
+
+  {#if reauthMethods}
+    <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
   {/if}
 
   {#if message}

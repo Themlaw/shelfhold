@@ -205,7 +205,7 @@ def test_service_audits_session_and_auth_time_on_every_reserved_action(
 
 
 @pytest.mark.req("EF-USR-022", "EF-BIB-036")
-def test_rate_fresh_auth_only_in_hardened_profile(
+def test_rate_fresh_auth_in_every_profile(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     rate = RESERVED_ACTIONS["rate"]
@@ -214,7 +214,8 @@ def test_rate_fresh_auth_only_in_hardened_profile(
         principal = plain.login(ADMIN, PASSWORD, ip=IP).principal
         plain_env.clock.advance(timedelta(minutes=20))
         verdict = plain.authorize(principal, rate, restricted_profile_exists=False)
-        assert type(verdict).__name__ == "Allowed"
+        assert type(verdict).__name__ == "ReauthRequired"
+        assert (verdict.auth_age_s, verdict.max_age_s) == (1200, 900)
     with auth_env(monkeypatch, settings, hardened=True, with_admin=False) as strict_env:
         strict = _service(strict_env)
         principal = strict.login(ADMIN, PASSWORD, ip=IP, remember=False).principal
@@ -264,7 +265,10 @@ def test_cli_prints_the_generated_table_under_the_instance_settings(
         product(RESERVED_ACTIONS, TABLE_ROLES, CREDENTIAL_AXIS)
     )
     rate = {(r["role"], r["credential"]): r["fresh_auth_s"] for r in rows if r["action"] == "rate"}
-    assert set(rate.values()) == {None}  # no freshness for classifying by default
+    assert set(rate.values()) == {900}  # fresh session for classifying, in every profile
+    enrol = {r["fresh_auth_s"] for r in rows if r["action"] == "passkey.register"}
+    revoke = {r["fresh_auth_s"] for r in rows if r["action"] == "passkey.revoke"}
+    assert enrol == {900} and revoke == {None}  # only the enrolment changed, not the retirement
     hardened = settings.model_copy(update={"auth_hardened": True})
     assert run_cli(monkeypatch, hardened, "access-table", "--json") == 0
     rows = json.loads(capsys.readouterr().out)
