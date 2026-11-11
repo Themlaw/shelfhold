@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.catalog.public import Bound
 from shelfhold.export.application.ranged_export import (
     PreparedRange,
     RangedExporter,
@@ -129,7 +130,14 @@ def test_rolling_tail_replaced_same_path_with_warning(lib: LibEnv) -> None:
     with lib.engine.begin() as connection:
         from tests.integration.test_schema_catalog import add_unit
 
-        unit = add_unit(connection, bench.edition, "9")
+        last = connection.execute(
+            sa.text(
+                "SELECT max(number_sort) FROM unit u JOIN unit_coverage c ON c.unit_id = u.id "
+                "WHERE c.carrier_id = :i"
+            ),
+            {"i": bench.item_id},
+        ).scalar_one()
+        unit = add_unit(connection, bench.edition, str(int(last) + 1))
         connection.execute(
             sa.insert(export.unit_coverage).values(
                 carrier_type="export_item", carrier_id=bench.item_id, unit_id=unit, position=2,
@@ -454,3 +462,170 @@ def test_served_copy_reads_the_manifest_and_the_shelf_option() -> None:
         with env.engine.begin() as connection:  # a record that is not written is not served
             connection.execute(sa.update(export.export_record).values(state="planned"))
         assert exporter_.served_copy(env.destination_id, bench.item_id) is None
+
+
+# -- regressions of the review of #153 -------------------------------------------------------
+
+
+@pytest.mark.req("EF-LEC-014")
+def test_toc_out_of_reading_order_never_complete(lib: LibEnv) -> None:
+    from shelfhold.catalog.public import bounds_from_toc, check_coverage
+
+    # chapter 3 of the table points back at the cover, the first item of the reading order
+    toc = _toc_of(
+        lib,
+        volume_epub(
+            3, cover=True,
+            nav=[
+                ("Chapter 1", "ch1.xhtml"), ("Chapter 2", "ch2.xhtml"),
+                ("Chapter 3", "cover.xhtml"),
+            ],
+        ),
+    )  # fmt: skip
+    report = check_coverage(toc, bounds_from_toc(toc, [new_ulid() for _ in range(3)]))
+    assert not report.complete and "Chapter 3" in report.disordered
+    # Units declared in an order that goes back in the file
+    toc = _toc_of(lib, volume_epub(3))
+    ids = [new_ulid() for _ in range(3)]
+    paths = [f"OEBPS/ch{n}.xhtml" for n in (1, 3, 2)]
+    bounds = [Bound(i, p, p) for i, p in zip(ids, paths, strict=True)]
+    swapped = check_coverage(toc, bounds)
+    assert not swapped.complete and swapped.disordered == (ids[2],)
+
+
+@pytest.mark.req("EF-LEC-014")
+def test_toc_chapter_copied_under_another_name_or_title_never_complete(lib: LibEnv) -> None:
+    from shelfhold.catalog.public import bounds_from_toc, check_coverage
+
+    # chapter 3 is a byte copy of chapter 2 under another file name and another title
+    toc = _toc_of(
+        lib,
+        volume_epub(
+            3, copy_of={3: 2},
+            nav=[("Prologue", "ch1.xhtml"), ("Interlude", "ch2.xhtml"), ("Epilogue", "ch3.xhtml")],
+        ),
+    )  # fmt: skip
+    report = check_coverage(toc, bounds_from_toc(toc, [new_ulid() for _ in range(3)]))
+    assert not report.complete and report.copies == ("Epilogue",)
+    # the titles of the table must follow the numbers of the Units, whatever the offset
+    bench = ranged_bench(
+        lib, 3,
+        data=volume_epub(3, nav=[("Chapter 1", "ch1.xhtml"), ("Chapter 2", "ch2.xhtml"),
+                                 ("Chapter 2", "ch3.xhtml")]),
+    )  # fmt: skip
+    with pytest.raises(RangedExportError) as refused:
+        run(lib, bench, Doors())
+    assert refused.value.code == "ranged.coverage_incomplete" and "mislabeled" in str(refused.value)
+    fine = ranged_bench(lib, 3)  # numbers 1..3 under units 4xx: a constant offset is no fault
+    assert run(lib, fine, Doors())[0] == "placed"
+
+
+@pytest.mark.req("EF-BIB-024", "EF-BIB-040")
+def test_suspect_guard_live_for_rolling_tail_from_the_manifest() -> None:
+    from tests.export_env import export_env
+    from tests.integration.test_schema_storage_export import add_record
+
+    with export_env() as env:
+        bench = ranged_bench(env.lib, 2, closed=False, policy="rolling_tail")
+        ex = RangedExporter(env.engine, env.lib.data)
+        with env.engine.begin() as connection:
+            add_record(
+                connection, env.destination_id, bench.item_id, file_hash="sha256:" + "f" * 64
+            )
+        with ex.prepare(bench.item_id) as stub_prepared:
+            ex.note_placed(env.destination_id, bench.item_id, stub_prepared)
+        served = ex.served_copy(env.destination_id, bench.item_id)
+        assert served is not None and served.spine_count == 2  # written down at placement
+        # the tail served had 40 chapters: the replacement of 2 is a stub, refused
+        with env.engine.begin() as connection:
+            connection.execute(sa.update(export.export_record).values(spine_count=40))
+        served = ex.served_copy(env.destination_id, bench.item_id)
+        doors = Doors()
+        with pytest.raises(RangedExportError) as refused:
+            ex.export(bench.item_id, served=served, place=doors.place, replace=doors.replace)
+        assert refused.value.code == "ranged.suspect_revision" and doors.replaced == []
+        # a Unit the source stubbed refuses it as well, whatever the counts say
+        with env.engine.begin() as connection:
+            connection.execute(sa.update(export.export_record).values(spine_count=2))
+            connection.execute(
+                sa.text("UPDATE unit SET availability = 'stubbed' WHERE id = :u"),
+                {"u": bench.unit_ids[0]},
+            )
+        served = ex.served_copy(env.destination_id, bench.item_id)
+        with pytest.raises(RangedExportError) as stubbed:
+            ex.export(bench.item_id, served=served, place=doors.place, replace=doors.replace)
+        assert stubbed.value.code == "ranged.suspect_revision" and doors.replaced == []
+
+
+@pytest.mark.req("EF-SRC-032", "ENF-SEC-002")
+def test_ranged_folder_swapped_for_a_link_after_the_check_reads_nothing_outside(
+    lib: LibEnv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import shelfhold.export.application.ranged_export as module
+
+    bench = ranged_bench(lib, 3)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / f"{bench.item_id}.epub").write_bytes(volume_epub(1))  # a valid book, not ours
+    kept_before = bench.kept().read_bytes()
+    seen: list[bytes] = []
+    real = module.neutralize_epub
+
+    def swap_then_neutralize(source, out, **kw):  # type: ignore[no-untyped-def]
+        seen.append(source.getvalue())
+        return real(source, out, **kw)
+
+    monkeypatch.setattr(module, "neutralize_epub", swap_then_neutralize)
+    real_open = module.open_data_folder
+    folder = lib.data / "ranged"
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def swapping(data_dir, name):  # type: ignore[no-untyped-def]
+        with real_open(data_dir, name) as handle:
+            folder.rename(lib.data / "ranged.old")  # the swap, once the folder is open
+            folder.symlink_to(outside)
+            yield handle
+
+    monkeypatch.setattr(module, "open_data_folder", swapping)
+    run(lib, bench, Doors())
+    assert seen and kept_before in [seen[0]]  # what was read is the kept file, not the outside one
+    assert seen[0] != (outside / f"{bench.item_id}.epub").read_bytes()
+
+
+@pytest.mark.req("EF-BIB-040", "EF-LEC-014")
+def test_read_state_counts_the_children_of_a_re_cut_chapter(lib: LibEnv) -> None:
+    from shelfhold.catalog.public import apply_resplit, propose_resplit
+    from tests.integration.test_schema_catalog import add_unit as unit_of
+
+    bench = ranged_bench(lib, 2, closed=False, policy="rolling_tail")
+    parent = bench.unit_ids[0]
+    with lib.engine.begin() as connection:
+        number = connection.execute(
+            sa.text("SELECT number_norm FROM unit WHERE id = :u"), {"u": parent}
+        ).scalar_one()
+        child = unit_of(connection, bench.edition, f"{number}.1")
+        proposal = propose_resplit(connection, parent, [child])
+        apply_resplit(connection, proposal, confirmation=proposal.token)
+    # a reader finished the child on the file of its own (another carrier covers it)
+    other = new_ulid()
+    with lib.engine.begin() as connection:
+        connection.execute(
+            sa.insert(export.export_item).values(id=other, edition_id=bench.edition, kind="unit")
+        )
+        connection.execute(
+            sa.insert(export.unit_coverage).values(
+                carrier_type="export_item",
+                carrier_id=other,
+                unit_id=child,
+                position=0,
+                extent="full",
+                origin="provider",
+            )
+        )
+    read_by_a_reader(lib, other)
+    doors = Doors()
+    served = ServedCopy("sha256:" + "c" * 64, skip_read=True)
+    assert run(lib, bench, doors, served) == ("kept", "keep_read", None)
+    assert doors.replaced == []

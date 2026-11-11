@@ -21,9 +21,14 @@ is not touched here: the new Units are exported through the same age barrier as 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
-from collections.abc import Sequence
+import re
+import secrets
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
+from itertools import pairwise
 from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
@@ -67,6 +72,8 @@ class Toc(Protocol):
     def spine(self) -> Sequence[str]: ...
     @property
     def unresolved(self) -> Sequence[str]: ...
+    @property
+    def spine_hashes(self) -> Sequence[str]: ...
 
 
 @dataclass(frozen=True)
@@ -86,18 +93,24 @@ class CoverageReport:
     unresolved: tuple[str, ...] = ()  # Units whose bounds point at no spine item (or back to front)
     unbounded: tuple[str, ...] = ()  # Units with no start: nothing to verify against
     empty: tuple[str, ...] = ()  # Units whose bounds hold no chapter of the table
+    disordered: tuple[str, ...] = ()  # entries or Units that go back in the reading order
+    copies: tuple[str, ...] = ()  # chapters whose file has the content of another chapter
+    mislabeled: tuple[str, ...] = ()  # titles whose numbers do not follow the Units' numbers
     chapters: int = 0  # entries of the table that were checked
 
     @property
     def complete(self) -> bool:
         return self.chapters > 0 and not (
             self.gaps or self.overlaps or self.duplicates or self.unresolved or self.unbounded
-            or self.empty
+            or self.empty or self.disordered or self.copies or self.mislabeled
         )  # fmt: skip
 
     @property
     def problems(self) -> tuple[str, ...]:
-        names = ("gaps", "overlaps", "duplicates", "unresolved", "unbounded", "empty")
+        names = (
+            "gaps", "overlaps", "duplicates", "unresolved", "unbounded", "empty", "disordered",
+            "copies", "mislabeled",
+        )  # fmt: skip
         found = [n for n in names if getattr(self, n)]
         return tuple(found) if self.chapters else ("no_chapters", *found)
 
@@ -110,8 +123,20 @@ def _path(locator: str) -> str:
     return locator.split("#", 1)[0]
 
 
-def check_coverage(toc: Toc, bounds: Sequence[Bound]) -> CoverageReport:
-    """Compare the Units a file is declared to carry with the chapters its table lists."""
+_NUMBER: Final = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _title_number(title: str) -> Decimal | None:
+    found = _NUMBER.findall(title)
+    return Decimal(found[-1]) if found else None
+
+
+def check_coverage(
+    toc: Toc, bounds: Sequence[Bound], numbers: Mapping[str, Decimal | None] | None = None
+) -> CoverageReport:
+    """Compare the Units a file is declared to carry (`bounds`, in file order) with the chapters
+    its table lists. `numbers` (unit id -> number) lets the titles of the table be compared
+    with the Units: they must follow the same numbering, whatever its offset."""
     place: dict[str, int] = {}
     for index, path in enumerate(toc.spine):
         place.setdefault(path, index)
@@ -129,6 +154,7 @@ def check_coverage(toc: Toc, bounds: Sequence[Bound]) -> CoverageReport:
     unresolved: list[str] = []
     unbounded: list[str] = []
     spans: list[tuple[int, int, str]] = []
+    placed: list[tuple[int, int, str]] = []  # the same, in the order given (positions)
     for bound in bounds:
         if bound.unit_id in declared:
             dup_units.append(bound.unit_id)
@@ -143,6 +169,7 @@ def check_coverage(toc: Toc, bounds: Sequence[Bound]) -> CoverageReport:
             unresolved.append(bound.unit_id)
             continue
         spans.append((first, last, bound.unit_id))
+        placed.append((first, last, bound.unit_id))
     spans.sort()
     overlaps: list[tuple[str, str]] = []
     reach, holder = -1, ""
@@ -163,9 +190,41 @@ def check_coverage(toc: Toc, bounds: Sequence[Bound]) -> CoverageReport:
         for first, last, unit_id in spans
         if not any(first <= c.spine_index <= last for c in chapters)
     ]
+    disordered = [
+        later.title or later.target
+        for earlier, later in pairwise(chapters)
+        if later.spine_index < earlier.spine_index  # the table must follow the reading order
+    ]
+    disordered.extend(
+        later[2]
+        for earlier, later in pairwise(placed)
+        if later[0] < earlier[0]  # the Units must follow it too, in the order of their positions
+    )
+    copies: list[str] = []
+    if len(toc.spine_hashes) == len(toc.spine):
+        owner: dict[str, str] = {}
+        for chapter in chapters:
+            digest = toc.spine_hashes[chapter.spine_index]
+            if not digest:
+                continue
+            if digest in owner and owner[digest] != chapter.path:
+                copies.append(chapter.title or chapter.target)
+            owner.setdefault(digest, chapter.path)
+    mislabeled: list[str] = []
+    if numbers is not None and len(chapters) == len(bounds):
+        pairs = [
+            (_title_number(c.title), numbers.get(b.unit_id))
+            for c, b in zip(chapters, bounds, strict=True)
+        ]
+        if all(t is not None and u is not None for t, u in pairs):
+            offsets = {u - t for t, u in pairs if t is not None and u is not None}
+            if len(offsets) > 1:
+                mislabeled = [c.title for c in chapters]
     return CoverageReport(
-        tuple(gaps), tuple(overlaps), (*dup_units, *dup_chapters), tuple(unresolved),
-        tuple(unbounded), tuple(empty), len(chapters),
+        gaps=tuple(gaps), overlaps=tuple(overlaps), duplicates=(*dup_units, *dup_chapters),
+        unresolved=tuple(unresolved), unbounded=tuple(unbounded), empty=tuple(empty),
+        disordered=tuple(disordered), copies=tuple(copies), mislabeled=tuple(mislabeled),
+        chapters=len(chapters),
     )  # fmt: skip
 
 
@@ -224,7 +283,16 @@ def verify_item(connection: Connection, item_id: str, toc: Toc) -> CoverageRepor
             return CoverageReport(
                 unbounded=tuple(b.unit_id for b in bounds), chapters=len(toc.chapters)
             )
-    return check_coverage(toc, bounds)
+    unit = catalog.unit
+    numbers = {
+        r.id: None if r.number_sort is None else Decimal(str(r.number_sort))
+        for r in connection.execute(
+            sa.select(unit.c.id, unit.c.number_sort).where(
+                unit.c.id.in_([b.unit_id for b in bounds])
+            )
+        )
+    }
+    return check_coverage(toc, bounds, numbers)
 
 
 # -- re-cut chapters -----------------------------------------------------------------------------
@@ -238,26 +306,49 @@ class ConfirmationRequiredError(PermissionError):
     """A proposal is applied only with its token, which an admin read and confirmed."""
 
 
+_KEY: Final = secrets.token_bytes(32)  # per process: a token cannot be computed by a caller
+
+
+def _sign(*parts: object) -> str:
+    document = json.dumps(parts, separators=(",", ":"), default=str)
+    return hmac.new(_KEY, document.encode(), hashlib.sha256).hexdigest()[:32]
+
+
 @dataclass(frozen=True)
 class ResplitProposal:
     edition_id: str
     parent_unit_id: str
     child_unit_ids: tuple[str, ...]
+    snapshot: str  # the coverage of the parent and the children when it was proposed
+    nonce: str
+    token: str  # what the admin confirms: it binds the chapters, the snapshot and the nonce
 
-    @property
-    def token(self) -> str:
-        document = json.dumps(
-            [self.edition_id, self.parent_unit_id, list(self.child_unit_ids)],
-            separators=(",", ":"),
+
+def _snapshot(connection: Connection, parent: str, children: Sequence[str]) -> str:
+    cov = export.unit_coverage
+    rows = connection.execute(
+        sa.select(cov.c.carrier_type, cov.c.carrier_id, cov.c.unit_id, cov.c.position).where(
+            sa.or_(
+                cov.c.unit_id.in_([parent, *children]),
+                sa.and_(cov.c.carrier_type == "unit", cov.c.carrier_id == parent),
+            )
         )
-        return hashlib.sha256(document.encode()).hexdigest()[:24]
+    ).all()
+    document = json.dumps(sorted(tuple(r) for r in rows), separators=(",", ":"))
+    return hashlib.sha256(document.encode()).hexdigest()
+
+
+def _sub_number(parent: str, child: str) -> bool:
+    """`10.1` is a sub-number of `10`; nothing else is."""
+    return child.startswith(parent + ".") and child[len(parent) + 1 :].isdigit()
 
 
 def propose_resplit(
     connection: Connection, parent_unit_id: str, child_unit_ids: Sequence[str]
 ) -> ResplitProposal:
     """The old Unit `parent_unit_id` is cut again into `child_unit_ids` (10 into 10.1 and 10.2):
-    the proposal says the children are covered by the parent. Nothing is written."""
+    the proposal says the children are covered by the parent. Only the sub-numbers of the parent,
+    not yet carried by any file, can be its children. Nothing is written."""
     children = tuple(dict.fromkeys(child_unit_ids))
     if not children or len(children) > MAX_PROPOSED:
         raise ResplitError(f"a chapter is cut into 1 to {MAX_PROPOSED} chapters")
@@ -265,19 +356,35 @@ def propose_resplit(
         raise ResplitError("a chapter cannot cover itself")
     unit = catalog.unit
     rows = {
-        r.id: r.edition_id
+        r.id: r
         for r in connection.execute(
-            sa.select(unit.c.id, unit.c.edition_id).where(
+            sa.select(unit.c.id, unit.c.edition_id, unit.c.number_norm, unit.c.track).where(
                 unit.c.id.in_([parent_unit_id, *children])
             )
         )
     }
     if parent_unit_id not in rows or any(c not in rows for c in children):
         raise ResplitError("an unknown chapter")
-    edition = rows[parent_unit_id]
-    if any(rows[c] != edition for c in children):
+    parent = rows[parent_unit_id]
+    if any(rows[c].edition_id != parent.edition_id for c in children):
         raise ResplitError("the chapters belong to different Editions")
-    return ResplitProposal(edition, parent_unit_id, children)
+    if any(
+        rows[c].track != parent.track or not _sub_number(parent.number_norm, rows[c].number_norm)
+        for c in children
+    ):
+        raise ResplitError("a re-cut chapter is cut into sub-numbers of its own (10 into 10.1)")
+    cov = export.unit_coverage
+    carried = connection.execute(
+        sa.select(cov.c.unit_id)
+        .where(cov.c.carrier_type == "export_item", cov.c.unit_id.in_(children))
+        .limit(1)
+    ).first()
+    if carried is not None:
+        raise ResplitError("a chapter is already carried by a file")
+    snapshot = _snapshot(connection, parent_unit_id, children)
+    nonce = secrets.token_hex(8)
+    token = _sign(parent.edition_id, parent_unit_id, children, snapshot, nonce)
+    return ResplitProposal(str(parent.edition_id), parent_unit_id, children, snapshot, nonce, token)
 
 
 def apply_resplit(
@@ -285,15 +392,14 @@ def apply_resplit(
 ) -> int:
     """Write the coverage `carrier_type = unit` of a proposal the admin confirmed (the token it
     carries). The old Unit and its coverage by its file stay as they are. Returns the number of
-    children newly covered."""
-    if confirmation is None or confirmation != proposal.token:
+    children newly covered. A proposal built by hand, or made stale by a change of the coverage
+    since, is refused."""
+    genuine = proposal.token == _sign(
+        proposal.edition_id, proposal.parent_unit_id, proposal.child_unit_ids,
+        proposal.snapshot, proposal.nonce,
+    )  # fmt: skip
+    if confirmation is None or not genuine or not hmac.compare_digest(confirmation, proposal.token):
         raise ConfirmationRequiredError("a re-cut chapter is applied only once confirmed")
-    try:
-        again = propose_resplit(connection, proposal.parent_unit_id, proposal.child_unit_ids)
-    except ResplitError:
-        raise ResplitError("the proposal does not hold any more") from None
-    if again != proposal:
-        raise ResplitError("the proposal does not hold any more")
     cov = export.unit_coverage
     held = set(
         connection.execute(
@@ -302,6 +408,14 @@ def apply_resplit(
             )
         ).scalars()
     )
+    if held == set(proposal.child_unit_ids):  # already applied: nothing changes
+        return 0
+    try:
+        again = propose_resplit(connection, proposal.parent_unit_id, proposal.child_unit_ids)
+    except ResplitError:
+        raise ResplitError("the proposal does not hold any more") from None
+    if again.snapshot != proposal.snapshot or again.edition_id != proposal.edition_id:
+        raise ResplitError("the proposal does not hold any more")
     top = connection.execute(
         sa.select(sa.func.max(cov.c.position)).where(
             cov.c.carrier_type == "unit", cov.c.carrier_id == proposal.parent_unit_id

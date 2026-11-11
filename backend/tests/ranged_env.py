@@ -42,6 +42,8 @@ def volume_epub(
     ncx: bool = False,
     extra_items: Sequence[int] = (),
     nav_extra: str = "",
+    cover: bool = False,
+    copy_of: dict[int, int] | None = None,
 ) -> bytes:
     """A volume of `count` chapters. `nav` replaces the entries of the table (title, href);
     `ncx` makes an EPUB 2 (no nav document); `extra_items` are chapter numbers followed by one
@@ -51,7 +53,7 @@ def volume_epub(
         if nav is not None
         else [(f"Chapter {n}", f"ch{n}.xhtml") for n in range(1, count + 1)]
     )
-    spine_files: list[str] = []
+    spine_files: list[str] = ["cover.xhtml"] if cover else []
     for n in range(1, count + 1):
         spine_files.append(f"ch{n}.xhtml")
         if n in extra_items:
@@ -104,9 +106,11 @@ def volume_epub(
         members = {"META-INF/container.xml": CONTAINER, "OEBPS/content.opf": opf,
                    f"OEBPS/{toc_name}": toc_doc}  # fmt: skip
         for name in spine_files:
+            number = int(name[2:-6]) if name.startswith("ch") and name[2:-6].isdigit() else 0
+            shown = f"ch{(copy_of or {}).get(number, number)}.xhtml" if number else name
             members[f"OEBPS/{name}"] = (
                 '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body>'
-                f"<p>text of {name}</p></body></html>"
+                f"<p>text of {shown}</p></body></html>"
             )
         for name, text in members.items():
             info = zipfile.ZipInfo(name, (2020, 1, 1, 0, 0, 0))

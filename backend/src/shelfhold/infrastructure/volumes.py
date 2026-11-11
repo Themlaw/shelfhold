@@ -2,6 +2,8 @@
 
 import os
 import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 import structlog
@@ -126,3 +128,61 @@ def _remove_tree_at(parent: int, name: str) -> None:
     finally:
         os.close(fd)
     os.rmdir(name, dir_fd=parent)
+
+
+class DataFolder:
+    """A folder of /data held open by its descriptor: what is read through it is read *there*,
+    whatever is swapped for the path afterwards (no check-then-open window)."""
+
+    def __init__(self, fd: int) -> None:
+        self._fd = fd
+
+    def names(self) -> list[str]:
+        return os.listdir(self._fd)
+
+    def read(self, name: str, limit: int) -> bytes:
+        """The regular file `name` of the folder, never through a link, at most `limit` bytes.
+        `ValueError` for a link, a special file or a name that is not plain."""
+        if not name or "/" in name or name in (".", ".."):
+            raise ValueError(f"not a plain name: {name!r}")
+        try:
+            fd = os.open(
+                name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=self._fd
+            )
+        except FileNotFoundError:
+            raise
+        except OSError as error:  # ELOOP: a link
+            raise ValueError(f"{name!r} is a link or unreadable") from error
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ValueError(f"{name!r} is not a regular file")
+            with os.fdopen(os.dup(fd), "rb") as stream:
+                return stream.read(limit)
+        finally:
+            os.close(fd)
+
+
+@contextmanager
+def open_data_folder(data_dir: Path, folder: str) -> Iterator[DataFolder]:
+    """Open `<data_dir>/<folder>` without following a link on the way (`ValueError`), or
+    `FileNotFoundError`."""
+    parts = _plain_parts(folder)
+    fds = [os.open(data_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)]
+    try:
+        for part in parts:
+            try:
+                fds.append(
+                    os.open(
+                        part,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                        dir_fd=fds[-1],
+                    )
+                )
+            except FileNotFoundError:
+                raise
+            except OSError as error:
+                raise ValueError(f"{part!r} is not a plain folder") from error
+        yield DataFolder(fds[-1])
+    finally:
+        for fd in reversed(fds):
+            os.close(fd)

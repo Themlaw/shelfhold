@@ -49,15 +49,22 @@ def counts(lib: LibEnv) -> dict[str, int]:
         }
 
 
-def new_children(lib: LibEnv, n: int = 2) -> list[str]:
+def new_children(lib: LibEnv, parent: str, n: int = 2) -> list[str]:
+    """Chapters the source cut `parent` into: its sub-numbers (10 into 10.1 and 10.2)."""
     with lib.engine.begin() as connection:
-        return [add_unit(connection, lib.chain["edition"], f"10.{k}") for k in range(1, n + 1)]
+        number = connection.execute(
+            sa.select(catalog.unit.c.number_norm).where(catalog.unit.c.id == parent)
+        ).scalar_one()
+        return [
+            add_unit(connection, lib.chain["edition"], f"{number}.{k}") for k in range(1, n + 1)
+        ]
 
 
 @pytest.mark.req("EF-BIB-044")
 def test_resplit_chapter_proposes_coverage_never_removes(lib: LibEnv) -> None:
     bench = ranged_bench(lib, 3)
-    parent, children = bench.unit_ids[1], new_children(lib)
+    parent = bench.unit_ids[1]
+    children = new_children(lib, parent)
     before = counts(lib)
     with lib.engine.begin() as connection:
         proposal = propose_resplit(connection, parent, children)
@@ -90,12 +97,12 @@ def test_resplit_chapter_proposes_coverage_never_removes(lib: LibEnv) -> None:
 @pytest.mark.req("EF-BIB-044")
 def test_resplit_proposal_applied_only_when_confirmed(lib: LibEnv) -> None:
     bench = ranged_bench(lib, 2)
-    children = new_children(lib)
+    children = new_children(lib, bench.unit_ids[0])
     with lib.engine.begin() as connection:
         proposal = propose_resplit(connection, bench.unit_ids[0], children)
+        again = propose_resplit(connection, bench.unit_ids[0], children)  # another nonce
     before = counts(lib)
-    other = propose_resplit(lib.engine.connect(), bench.unit_ids[1], children)
-    for wrong in (None, "", "yes", "x" * 24, other.token):
+    for wrong in (None, "", "yes", "x" * 24, again.token):
         with lib.engine.begin() as connection, pytest.raises(ConfirmationRequiredError):
             apply_resplit(connection, proposal, confirmation=wrong)
     assert counts(lib) == before
@@ -105,7 +112,7 @@ def test_resplit_proposal_applied_only_when_confirmed(lib: LibEnv) -> None:
 def test_resplit_proposal_refuses_what_is_not_one(lib: LibEnv) -> None:
     bench = ranged_bench(lib, 2)
     parent = bench.unit_ids[0]
-    children = new_children(lib)
+    children = new_children(lib, parent)
     with lib.engine.begin() as connection:
         for bad_children in ([], [parent], [new_ulid()], [children[0], new_ulid()]):
             with pytest.raises(ResplitError):
@@ -114,8 +121,15 @@ def test_resplit_proposal_refuses_what_is_not_one(lib: LibEnv) -> None:
             propose_resplit(connection, new_ulid(), children)
         work = add_work(connection)
         foreign = add_unit(connection, add_edition(connection, work), "77")
+        unrelated = add_unit(connection, lib.chain["edition"], "99")  # no sub-number of the parent
         with pytest.raises(ResplitError, match="different Editions"):
             propose_resplit(connection, parent, [children[0], foreign])
+        with pytest.raises(ResplitError, match="sub-numbers"):
+            propose_resplit(connection, parent, [children[0], unrelated])
+        with pytest.raises(ResplitError, match="sub-numbers"):  # a sibling is no re-cut
+            propose_resplit(connection, parent, [bench.unit_ids[1]])
+        with pytest.raises(ResplitError, match="already carried"):  # held by a file already
+            propose_resplit(connection, parent, [unrelated_carried(lib, connection, parent)])
         with pytest.raises(ResplitError):
             propose_resplit(connection, parent, [new_ulid() for _ in range(201)])
         proposal = propose_resplit(connection, parent, children)
@@ -278,3 +292,59 @@ def test_resplit_never_loses_series_age_and_new_units_wait_for_the_barrier() -> 
         assert len(export_round(w)) >= 1  # the barrier opens: the age first, then the files
         assert w.fake.ages[sid]["ageRating"] == TEEN and w.fake.ages[sid]["ageRatingLocked"]
         assert w.fake.violations == []
+
+
+def unrelated_carried(lib: LibEnv, connection: sa.Connection, parent: str) -> str:
+    """A sub-number of the parent that another file carries already."""
+    number = connection.execute(
+        sa.select(catalog.unit.c.number_norm).where(catalog.unit.c.id == parent)
+    ).scalar_one()
+    child = add_unit(connection, lib.chain["edition"], f"{number}.9")
+    connection.execute(
+        sa.insert(export.unit_coverage).values(
+            carrier_type="export_item", carrier_id=connection.execute(
+                sa.select(export.export_item.c.id).limit(1)
+            ).scalar_one(), unit_id=child, position=50, extent="full", origin="provider",
+        )
+    )  # fmt: skip
+    return child
+
+
+@pytest.mark.req("EF-BIB-044")
+def test_resplit_token_is_not_forgeable_and_binds_the_coverage_it_saw(lib: LibEnv) -> None:
+    import hashlib
+    import json
+    from dataclasses import replace
+
+    bench = ranged_bench(lib, 3)
+    parent = bench.unit_ids[0]
+    children = new_children(lib, parent)
+    with lib.engine.begin() as connection:
+        missing = add_unit(connection, lib.chain["edition"], "99")  # never delivered
+    forged_children = (missing, bench.unit_ids[2])  # a chapter no file holds, one already carried
+    edition = lib.chain["edition"]
+    bare = hashlib.sha256(
+        json.dumps([edition, parent, list(forged_children)], separators=(",", ":")).encode()
+    ).hexdigest()[:24]
+    from shelfhold.catalog.public import ResplitProposal
+
+    before = counts(lib)
+    for token in (bare, "0" * 32):
+        forged = ResplitProposal(edition, parent, forged_children, "s", "n", token)
+        with lib.engine.begin() as connection, pytest.raises(ConfirmationRequiredError):
+            apply_resplit(connection, forged, confirmation=token)
+    with lib.engine.begin() as connection:
+        proposal = propose_resplit(connection, parent, children)
+    swapped = replace(proposal, child_unit_ids=(*proposal.child_unit_ids, missing))
+    with lib.engine.begin() as connection, pytest.raises(ConfirmationRequiredError):
+        apply_resplit(connection, swapped, confirmation=proposal.token)  # the token binds them
+    assert counts(lib) == before
+    with lib.engine.begin() as connection:  # the coverage moved since the proposal: stale
+        connection.execute(
+            sa.insert(export.unit_coverage).values(
+                carrier_type="export_item", carrier_id=bench.item_id, unit_id=children[0],
+                position=60, extent="full", origin="manual",
+            )
+        )  # fmt: skip
+    with lib.engine.begin() as connection, pytest.raises(ResplitError):
+        apply_resplit(connection, proposal, confirmation=proposal.token)

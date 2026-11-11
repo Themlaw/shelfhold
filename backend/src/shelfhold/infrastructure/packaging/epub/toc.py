@@ -12,6 +12,7 @@ The EPUB is untrusted: the archive is opened by `safe_open_archive`, every XML d
 
 from __future__ import annotations
 
+import hashlib
 import posixpath
 import urllib.parse
 from dataclasses import dataclass, field
@@ -59,6 +60,9 @@ class Toc:
     chapters: tuple[TocChapter, ...]
     spine: tuple[str, ...]  # archive paths in reading order
     unresolved: tuple[str, ...] = field(default=())  # entries that point at no spine item
+    # sha256 of each spine item, in reading order ("" when it cannot be read): two chapters with
+    # the same content under two names are one chapter copied
+    spine_hashes: tuple[str, ...] = field(default=())
 
 
 def _local(tag: object) -> str:
@@ -184,7 +188,13 @@ def _read(archive: SafeArchive) -> Toc:
             unresolved.append(href)
             continue
         chapters.append(TocChapter(title, resolved[0], resolved[1], index[resolved[0]]))
-    return Toc(tuple(chapters), spine, tuple(unresolved))
+    hashes = []
+    for path in spine:
+        try:
+            hashes.append(hashlib.sha256(archive.read(path, max_bytes=_MAX_DOC)).hexdigest())
+        except (UnsafeArchiveError, KeyError, ValueError):
+            hashes.append("")
+    return Toc(tuple(chapters), spine, tuple(unresolved), tuple(hashes))
 
 
 def read_toc(source: Path | BinaryIO, limits: ArchiveLimits = DEFAULT_LIMITS) -> Toc:

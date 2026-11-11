@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import os
 import re
 import tempfile
 from collections.abc import Callable, Iterator
@@ -47,7 +46,7 @@ from shelfhold.infrastructure.archives import DEFAULT_LIMITS
 from shelfhold.infrastructure.content_trust import NeutralizationError, neutralize_epub
 from shelfhold.infrastructure.packaging.epub import TocError, read_toc
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.infrastructure.volumes import read_data_file
+from shelfhold.infrastructure.volumes import open_data_folder
 from shelfhold.library.public import (
     ExportVerdict,
     ReplaceVerdict,
@@ -77,37 +76,38 @@ class RangedExportError(Exception):
         self.code = code
 
 
-def locate_ranged(data_dir: Path, item_id: str) -> Path:
-    """The kept file of an export item, or a refusal. Nothing of the path comes from the caller
-    but the id, which must be a ULID; links are never followed."""
+def _kept(data_dir: Path, item_id: str, *, read: bool) -> tuple[str, bytes]:
+    """(name, bytes) of the kept file of an export item, or a refusal. Nothing of the path comes
+    from the caller but the id, which must be a ULID. The folder is opened without following a
+    link and the file is read through that descriptor: a swap after the check reads nothing
+    outside (no window between the check and the read)."""
     if not _ULID.fullmatch(item_id):
         raise RangedExportError("ranged.bad_id")
-    folder = Path(data_dir) / RANGED_DIR
     try:
-        if folder.is_symlink() or not folder.is_dir():
-            raise RangedExportError("ranged.folder_unsafe")
-        names = [e.name for e in os.scandir(folder) if e.name.startswith(item_id)]
+        with open_data_folder(Path(data_dir), RANGED_DIR) as folder:
+            names = [n for n in folder.names() if n.startswith(item_id)]
+            name = f"{item_id}.epub"
+            if name not in names:
+                raise RangedExportError("ranged.missing" if not names else "ranged.not_epub")
+            if not read:
+                return name, b""
+            data = folder.read(name, DEFAULT_LIMITS.max_total_bytes)
+    except FileNotFoundError:
+        raise RangedExportError("ranged.missing") from None
+    except ValueError as error:
+        code = "ranged.folder_unsafe" if "folder" in str(error) else "ranged.outside_root"
+        raise RangedExportError(code, "a link or a special file") from None
     except OSError:
         raise RangedExportError("ranged.folder_unsafe") from None
-    found = [n for n in names if n == f"{item_id}.epub"]
-    if not found:
-        raise RangedExportError("ranged.missing" if not names else "ranged.not_epub")
-    path = folder / found[0]
-    if path.resolve().parent != folder.resolve():
-        raise RangedExportError("ranged.outside_root")
-    return path
-
-
-def _read_regular(path: Path) -> bytes:
-    """The bytes of the file, never through a link, never more than an archive may hold; a link,
-    a special file or an empty one comes back as a refusal."""
-    try:
-        data = read_data_file(path, DEFAULT_LIMITS.max_total_bytes)
-    except OSError:
-        raise RangedExportError("ranged.missing") from None
     if not data:
-        raise RangedExportError("ranged.outside_root", "a link, a special file or an empty one")
-    return data
+        raise RangedExportError("ranged.outside_root", "an empty file")
+    return name, data
+
+
+def locate_ranged(data_dir: Path, item_id: str) -> Path:
+    """Where the kept file of an export item is (for display); nothing is read."""
+    name, _ = _kept(data_dir, item_id, read=False)
+    return Path(data_dir) / RANGED_DIR / name
 
 
 @dataclass(frozen=True)
@@ -157,7 +157,6 @@ class RangedExporter:
     def prepare(self, item_id: str) -> Iterator[PreparedRange]:
         """The derivative of the kept file, with the verdict of its coverage. Raises
         `RangedExportError` when the file is unsafe or its coverage is not complete."""
-        path = locate_ranged(self._data_dir, item_id)
         with self._engine.connect() as connection:
             item = connection.execute(
                 sa.select(export.export_item.c.edition_id, export.export_item.c.closed).where(
@@ -166,14 +165,14 @@ class RangedExporter:
             ).one_or_none()
             if item is None:
                 raise RangedExportError("ranged.unknown_item")
-        raw = _read_regular(path)
+        name, raw = _kept(self._data_dir, item_id, read=True)
         with (
             tempfile.NamedTemporaryFile(
                 dir=self._staging if self._staging.is_dir() else None, suffix=".epub", delete=True
             ) as out,
         ):
             try:
-                neutralize_epub(io.BytesIO(raw), cast(BinaryIO, out), name=path.name)
+                neutralize_epub(io.BytesIO(raw), cast(BinaryIO, out), name=name)
             except NeutralizationError as error:
                 raise RangedExportError("ranged.untrusted_entry", error.reason) from None
             out.flush()
@@ -200,7 +199,7 @@ class RangedExporter:
         record, shelf, dest = export.export_record, export.shelf, export.shelf_destination
         with self._engine.connect() as connection:
             row = connection.execute(
-                sa.select(record.c.file_hash, shelf.c.skip_read_upgrades)
+                sa.select(record.c.file_hash, record.c.spine_count, shelf.c.skip_read_upgrades)
                 .select_from(
                     record.join(dest, dest.c.id == record.c.shelf_destination_id).join(
                         shelf, shelf.c.id == dest.c.shelf_id
@@ -215,7 +214,38 @@ class RangedExporter:
             ).one_or_none()
         if row is None:
             return None
-        return ServedCopy(str(row.file_hash), bool(row.skip_read_upgrades))
+        return ServedCopy(
+            str(row.file_hash), bool(row.skip_read_upgrades),
+            None if row.spine_count is None else int(row.spine_count),
+        )  # fmt: skip
+
+    def note_placed(self, destination_id: str, item_id: str, prepared: PreparedRange) -> None:
+        """Write down the length of the file placed: what the guard of the next replacement
+        compares with. The two doors call it once the file is on the destination."""
+        record = export.export_record
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(record)
+                .where(
+                    record.c.shelf_destination_id == destination_id,
+                    record.c.export_item_id == item_id,
+                )
+                .values(spine_count=prepared.spine_count)
+            )
+
+    def _stubbed(self, connection: Connection, item_id: str) -> bool:
+        """A Unit the item carries is only a stub upstream (EF-BIB-024)."""
+        return (
+            connection.execute(
+                sa.text(
+                    "SELECT 1 FROM unit_coverage c JOIN unit u ON u.id = c.unit_id "
+                    "WHERE c.carrier_type = 'export_item' AND c.carrier_id = :i "
+                    "AND u.availability = 'stubbed' LIMIT 1"
+                ),
+                {"i": item_id},
+            ).first()
+            is not None
+        )
 
     def _facts(
         self, connection: Connection, edition_id: str, item_id: str
@@ -228,9 +258,13 @@ class RangedExporter:
         ).one()
         read = connection.execute(
             sa.text(
-                "SELECT 1 FROM reading_progress p JOIN unit_coverage c ON c.unit_id = p.unit_id "
-                "WHERE c.carrier_type = 'export_item' AND c.carrier_id = :i "
-                "AND p.state = 'read' LIMIT 1"
+                "SELECT 1 FROM reading_progress p WHERE p.state = 'read' AND p.unit_id IN ("
+                "SELECT unit_id FROM unit_coverage "
+                "WHERE carrier_type = 'export_item' AND carrier_id = :i "
+                "UNION "  # the chapters a re-cut chapter of the volume became count too
+                "SELECT c2.unit_id FROM unit_coverage c1 JOIN unit_coverage c2 "
+                "ON c2.carrier_type = 'unit' AND c2.carrier_id = c1.unit_id "
+                "WHERE c1.carrier_type = 'export_item' AND c1.carrier_id = :i) LIMIT 1"
             ),
             {"i": item_id},
         ).first()
@@ -255,6 +289,7 @@ class RangedExporter:
             if edition_id is None:
                 raise RangedExportError("ranged.unknown_item")
             raw_policy, finished, read = self._facts(connection, str(edition_id), item_id)
+            stubbed = self._stubbed(connection, item_id)
             closed = bool(
                 connection.execute(
                     sa.select(export.export_item.c.closed).where(export.export_item.c.id == item_id)
@@ -283,7 +318,7 @@ class RangedExporter:
             suspect = (
                 suspect_reason(
                     stored_pages=served.spine_count, new_pages=prepared.spine_count,
-                    availability="free", min_ratio=self._min_ratio,
+                    availability="stubbed" if stubbed else "free", min_ratio=self._min_ratio,
                 )
                 is not None
             )  # fmt: skip
