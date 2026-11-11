@@ -181,6 +181,7 @@ EXPECTED_CLOSED = {
         "shelfhold/ops/backup/scratch.py::_remove_scratch",
     },
     "import_folder": {
+        "shelfhold/library/adapters/import_scan.py::ImportFolder._put_back",
         "shelfhold/library/adapters/import_scan.py::ImportFolder._quarantine_and_drop",
         "shelfhold/library/adapters/import_scan.py::ImportFolder._restore_quarantine",
     },
