@@ -190,3 +190,47 @@ def test_no_translation_call_in_exporters() -> None:
                 if call and isinstance(node.func, ast.Name) and node.func.id == "t":
                     offenders.append(f"{path.name}:{node.lineno}")
     assert offenders == []
+
+
+@pytest.mark.req("EF-EXP-033")
+def test_epub2_gets_calibre_series_and_no_collection() -> None:
+    root = safe_parse_xml(rewrite_opf(opf(version="2.0"), EDIT).opf)
+    props = [m.get("property") for m in root.iter(META)]
+    assert "belongs-to-collection" not in props
+    assert any(m.get("name") == "calibre:series" for m in root.iter(META))
+
+
+@pytest.mark.req("EF-EXP-033")
+def test_collection_of_type_set_is_the_books_own_and_kept() -> None:
+    own = (
+        '    <meta property="belongs-to-collection" id="s1">Anthologie</meta>\n'
+        '    <meta refines="#s1" property="collection-type">set</meta>\n'
+    )
+    root = safe_parse_xml(rewrite_opf(opf(extra_metadata=own), EDIT).opf)
+    collections = [m.text for m in root.iter(META) if m.get("property") == "belongs-to-collection"]
+    assert sorted(c or "" for c in collections) == ["Anthologie", "Série synthétique"]
+
+
+@pytest.mark.req("EF-EXP-033")
+def test_crlf_and_prefixed_package_are_edited_in_place() -> None:
+    text = opf().decode().replace("\n", "\r\n")
+    out = rewrite_opf(text.encode(), EDIT).opf.decode()
+    assert "\r\n" in out and "\n" not in out.replace("\r\n", "")
+    prefixed = (
+        '<opf:package xmlns:opf="http://www.idpf.org/2007/opf" version="2.0">'
+        '<opf:metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>T</dc:title>'
+        "</opf:metadata></opf:package>"
+    )
+    root = safe_parse_xml(rewrite_opf(prefixed.encode(), EDIT).opf)
+    assert any(m.get("name") == "calibre:series" for m in root.iter(META))
+
+
+@pytest.mark.req("EF-EXP-033")
+def test_unsafe_or_non_utf8_opf_is_refused() -> None:
+    from shelfhold.infrastructure.packaging.epub import OpfError
+    from shelfhold.infrastructure.xml import UnsafeXmlError
+
+    with pytest.raises(UnsafeXmlError):
+        rewrite_opf(b'<!DOCTYPE x [<!ENTITY a "b">]><package xmlns="x"/>', EDIT)
+    with pytest.raises(OpfError):
+        rewrite_opf(opf().replace(b"utf-8", b"latin-1").replace("é".encode(), b"\xe9"), EDIT)

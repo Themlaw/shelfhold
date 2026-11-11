@@ -250,3 +250,14 @@ symbols = [
   "shelfhold.catalog.application.rights:Rights.review",
   "shelfhold.catalog.domain.sort_key:sort_key",
 ]
+
+[[allow]]
+category = "unwired-m2-epub-passthrough"
+reason = "The EPUB passthrough (M2 L08) is the writer and the renderer; the export pipeline places an EPUB only with L09 (Kavita Books library, series age pushed first), which calls them with the file `servable_epub` names (L03) and keeps the original OPF with `keep_origin_opf`."
+until = "M2"
+symbols = [
+  "shelfhold.infrastructure.packaging.epub.opf:OpfEdit",
+  "shelfhold.infrastructure.packaging.epub.opf:OpfError",
+  "shelfhold.infrastructure.packaging.epub.opf:rewrite_opf",
+  "shelfhold.library.adapters.origin_opf:keep_origin_opf",
+]

@@ -4,16 +4,17 @@ and referenced by `unit.json` (EF-EXP-033 / Z3-a, EF-BIB-048)."""
 import io
 import json
 import os
+import re
 import zipfile
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.library.adapters.origin_opf import keep_origin_opf, origin_opf_rel
 
 from shelfhold.export.application.rendering import EpubRenderer, RenderedEpub, epub_opf_edit
 from shelfhold.infrastructure.schema import catalog
 from shelfhold.library.adapters.meta_projection import MetaProjection, meta_path
+from shelfhold.library.adapters.origin_opf import keep_origin_opf, origin_opf_rel
 from tests.epub_env import epub, opf
 from tests.export_env import ExportEnv, export_env
 from tests.integration.test_schema_catalog import add_unit
@@ -52,8 +53,9 @@ def test_epub_export_writes_no_age_subject_nor_tool_meta(tmp_path: Path) -> None
             everything = b"".join(archive.read(n) for n in archive.namelist())
     text = written.decode().lower()
     assert "shelfhold" not in everything.decode("latin-1").lower()
-    for needle in ("16+", "mature", "agerating", "age_rating", "shelfhold:age", ">16<", "age"):
-        assert needle not in text.replace("page-progression", "").replace("package", "")
+    for needle in ("16+", "mature", "agerating", "age_rating", "shelfhold:age", ">16<"):
+        assert needle not in text
+    assert re.search(r"\bage\b", text) is None
     before = [x for x in opf().decode().splitlines() if "dc:subject" in x]
     after = [x for x in written.decode().splitlines() if "dc:subject" in x]
     assert after == before  # still the book's own subject, no age added

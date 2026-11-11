@@ -1,4 +1,6 @@
-"""The CBZ written for a destination: the pages as received, a ComicInfo made for it (EF-EXP-011).
+"""The files written for a destination: a CBZ (below) and an EPUB (`EpubRenderer`, end of file).
+
+The CBZ is the pages as received, with a ComicInfo made for it (EF-EXP-011).
 
 The ComicInfo is built from the database (never from the upstream document), the pages are copied
 from the audited received archive, and the payload is checked again on the way out: the rendered
@@ -8,6 +10,7 @@ archive must have the `content_hash` of the original, so that only the sidecar d
 import hashlib
 import re
 import tempfile
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import Any, BinaryIO
@@ -17,7 +20,7 @@ import structlog
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import ContributorName, NameKind, effective_age, parse_partial_date
-from shelfhold.infrastructure.archives import safe_open_archive
+from shelfhold.infrastructure.archives import SafeArchive, safe_open_archive
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.packaging.cbz import repackage_cbz
 from shelfhold.infrastructure.packaging.comicinfo import (
@@ -25,6 +28,7 @@ from shelfhold.infrastructure.packaging.comicinfo import (
     ComicInfoPerson,
     render_comicinfo,
 )
+from shelfhold.infrastructure.packaging.epub import OpfEdit, repackage_epub
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import content_hash
 from shelfhold.sdk.age import AgeRating
@@ -33,10 +37,13 @@ _ADULT_FROM = 18  # M1a has adult shelves only (a ceiling of 18 or more, or none
 
 __all__ = [
     "CbzRenderer",
+    "EpubRenderer",
     "RenderedCbz",
+    "RenderedEpub",
     "comicinfo_data",
     "comicinfo_sha256",
     "comicinfo_xml",
+    "epub_opf_edit",
 ]
 
 log = structlog.get_logger(__name__)
@@ -289,3 +296,90 @@ class CbzRenderer:
             out, size, "sha256:" + digest.hexdigest(), payload,
             "sha256:" + hashlib.sha256(comicinfo).hexdigest(),
         )  # fmt: skip
+
+
+@dataclass
+class RenderedEpub:
+    file: BinaryIO  # positioned at 0, closed by the caller
+    size: int
+    file_hash: str  # `sha256:` of the rendered archive
+    original_opf: bytes  # for `keep_origin_opf` (/data/meta), never written to the file
+    opf_changed: bool
+
+
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def epub_opf_edit(connection: Connection, unit_id: str, series: str) -> OpfEdit:
+    """What may be written into the OPF of a Unit's EPUB (EF-EXP-033): the series, its index, and
+    the rights of the Edition (text and origin URL) for the OPF that has none. The age is not here
+    and cannot be: it lives in the database and reaches Kavita through its API (D1, L09)."""
+    unit = catalog.unit
+    row = connection.execute(
+        sa.select(unit.c.number_norm, unit.c.track, unit.c.edition_id).where(unit.c.id == unit_id)
+    ).one()
+    number = (
+        row.number_norm
+        if row.track == "main" and _NUMBER.fullmatch(row.number_norm or "")
+        else None
+    )
+    notes, web = _rights(connection, row.edition_id)
+    return OpfEdit(series=series, series_index=number, rights=notes or None, source=web or None)
+
+
+class EpubRenderer:
+    """The EPUB written for a destination: the file as the library holds it, its OPF edited.
+
+    `source` must be the file `servable_epub` names (M2 L03): the verified derivative of an
+    `untrusted` EPUB, or the file as filed for a `publisher` one. This class never chooses: it
+    does not know what trust is, and an original from /store must never reach it. The caller that
+    places the file also calls `keep_origin_opf` with `RenderedEpub.original_opf`.
+    """
+
+    def __init__(self, fsops: Fsops | None = None, *, staging_dir: Path) -> None:
+        self._fsops = fsops
+        self._staging = staging_dir
+
+    def render(self, source: str, edit: OpfEdit) -> RenderedEpub:
+        out = tempfile.TemporaryFile(dir=self._staging)  # noqa: SIM115 (closed by the caller)
+        try:
+            name = PurePath(source).name
+            with ExitStack() as stack:
+                stream = stack.enter_context(
+                    self._fsops.open_read(source) if self._fsops else open(source, "rb")  # noqa: SIM115
+                )
+                archive = stack.enter_context(safe_open_archive(stream, name=name))
+                before = _entry_digests(archive)
+                done = repackage_epub(archive, edit, out)
+            out.flush()
+            out.seek(0)
+            with safe_open_archive(out, name="rendered.epub") as rendered:
+                after = _entry_digests(rendered)
+            if {k: v for k, v in before.items() if k != done.opf_path} != {
+                k: v for k, v in after.items() if k != done.opf_path
+            }:
+                raise RenderMismatchError("an entry other than the OPF differs from the source")
+            out.seek(0)
+            digest = hashlib.sha256()
+            while chunk := out.read(1 << 20):
+                digest.update(chunk)
+            size = out.tell()
+            out.seek(0)
+        except BaseException:
+            out.close()
+            raise
+        return RenderedEpub(
+            out, size, "sha256:" + digest.hexdigest(), done.original_opf, done.changed
+        )
+
+
+def _entry_digests(archive: SafeArchive) -> dict[str, str]:
+    found: dict[str, str] = {}
+    for entry in archive.entries:
+        digest = hashlib.sha256()
+        if not entry.is_dir:
+            with archive.open(entry.name) as data:
+                while chunk := data.read(1 << 20):
+                    digest.update(chunk)
+        found[entry.name] = digest.hexdigest()
+    return found

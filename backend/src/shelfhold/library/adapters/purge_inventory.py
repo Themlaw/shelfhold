@@ -16,6 +16,7 @@ from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import platform, storage
 from shelfhold.library.adapters.meta_projection import meta_rel
 from shelfhold.library.adapters.origin_comicinfo import origin_rel
+from shelfhold.library.adapters.origin_opf import origin_opf_rel
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY
 from shelfhold.library.domain.copies import Copy, Hash
 from shelfhold.library.replica import erase_replicas, replica_copies, replica_hashes
@@ -144,5 +145,6 @@ def derived_rels(unit_id: str) -> list[str]:
     return [
         meta_rel(unit_id),
         origin_rel(unit_id),  # the ComicInfo as the service sent it (EF-BIB-048)
+        origin_opf_rel(unit_id),  # the OPF before the exporter's edit (EF-BIB-048)
         *(f"{base}/{unit_id[:2]}/{unit_id}" for base in DERIVED_CACHES),
     ]
