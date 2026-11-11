@@ -67,6 +67,9 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
         OWN_SCRATCH: frozenset(
             {
                 f"{_FSOPS}/facade.py::_claim_lease",
+                # EF-EXP-016: the staged new version of a same-path upgrade given up before its
+                # swap, at the token's own path (`.shelfhold/upgrade/<intent>`); never served
+                f"{_FSOPS}/facade.py::Fsops.same_path_discard",
                 "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",
                 "shelfhold/infrastructure/secrets/atomic.py::write_private",
                 # the CLI socket this process bound (and its staging directory), in /data

@@ -174,6 +174,7 @@ EXPECTED_CLOSED = {
         "shelfhold/plugin_host/install.py::remove_plugin",
         "shelfhold/plugin_host/install.py::_undo",
         f"{FSOPS}/probe.py::_remove_probe_dir",
+        f"{FSOPS}/facade.py::Fsops.same_path_discard",  # L16: the staged copy, never served
     },
     "backup_directory": {
         "shelfhold/ops/backup/store.py::BackupDirectory._discard",
