@@ -4,7 +4,6 @@ structlog renders through the standard library (`ProcessorFormatter` on a root h
 uvicorn and every other library also emit one JSON line, with the request context merged in.
 """
 
-import base64
 import functools
 import inspect
 import json
@@ -282,10 +281,6 @@ def register_secret_value(value: str) -> None:
     encoded once or twice, `+` for a space) wherever it shows up later."""
     if len(value) < _MIN_KNOWN_SECRET:
         return
-    raw = value.encode("utf-8", errors="replace")
-    _known_values.update(
-        {value, base64.b64encode(raw).decode(), base64.urlsafe_b64encode(raw).decode()}
-    )
     _known_values.update(secret_forms(value))
 
 

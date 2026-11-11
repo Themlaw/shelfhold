@@ -8,6 +8,8 @@ refuse in a stored reference.
 Nothing here logs, and nothing quotes the value it was given.
 """
 
+import base64
+import binascii
 import math
 import re
 from collections import Counter
@@ -44,7 +46,42 @@ def secret_forms(value: str) -> frozenset[str]:
         quote(once, safe=""),
         quote(quote(once, safe=""), safe=""),
     }
-    return frozenset(forms | {_lower_hex(f) for f in forms})
+    forms |= {_lower_hex(f) for f in forms}
+    for form in (value, once):  # base64 of the value, padded or not, standard or URL-safe
+        raw = form.encode("utf-8", errors="replace")
+        for encoder in (base64.b64encode, base64.urlsafe_b64encode):
+            text = encoder(raw).decode()
+            forms |= {
+                text,
+                text.rstrip("="),
+                quote(text, safe=""),
+                quote(text.rstrip("="), safe=""),
+            }
+    return frozenset(forms)
+
+
+_B64_RUN = re.compile(r"[A-Za-z0-9+_-]{12,}={0,2}")  # `/` splits the path: a segment per run
+
+
+def _base64_views(text: str) -> Iterator[str]:
+    """What the base64-looking runs of `text` decode to (twice at most: a base64 JSON that holds a
+    base64 value). A run that is not base64, or not text, is skipped."""
+    pending = [text]
+    for _ in range(2):
+        found: list[str] = []
+        for chunk in pending:
+            for match in _B64_RUN.finditer(chunk):
+                run = match.group().rstrip("=")
+                padded = run + "=" * (-len(run) % 4)
+                try:
+                    raw = base64.b64decode(padded, altchars=b"-_", validate=False)
+                except (binascii.Error, ValueError):
+                    continue
+                decoded = raw.decode("utf-8", errors="ignore")
+                if decoded:
+                    found.append(decoded)
+                    yield decoded
+        pending = found
 
 
 def decoded_views(text: str) -> tuple[str, ...]:
@@ -103,7 +140,9 @@ def contains_secret(text: str, known: "Iterable[str] | SecretIndex") -> bool:
     index = known if isinstance(known, SecretIndex) else SecretIndex(known)
     if not index or not text:
         return False
-    return any(index.find(view) for view in decoded_views(text))
+    return any(
+        index.find(inner) for view in decoded_views(text) for inner in (view, *_base64_views(view))
+    )
 
 
 # -- what a credential looks like when nobody registered it ------------------------------------

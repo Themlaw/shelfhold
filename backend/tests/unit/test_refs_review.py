@@ -87,3 +87,28 @@ def test_names_are_read_word_by_word() -> None:
 def test_values_need_the_shape_of_a_credential() -> None:
     assert credentialish(TOK) and not credentialish("2024") and not credentialish("fr")
     assert not credentialish("chapters") and has_userinfo("https:/a:b@h")
+
+
+def test_every_base64_and_encoded_form_of_a_registered_key_is_found() -> None:
+    import base64
+    import json
+    from urllib.parse import quote
+
+    from shelfhold.infrastructure.logging import known_secret_values, register_secret_value
+    from shelfhold.infrastructure.secret_text import contains_secret
+
+    key = synthetic_text("review-c")[:16]
+    register_secret_value(key)
+    known = known_secret_values()
+    raw = key.encode()
+    blobs = [
+        base64.b64encode(raw).decode(),
+        base64.b64encode(raw).decode().rstrip("="),
+        base64.urlsafe_b64encode(raw).decode().rstrip("="),
+        quote(base64.b64encode(raw).decode(), safe=""),
+        base64.urlsafe_b64encode(json.dumps({"k": key, "n": 1}).encode()).decode(),
+        base64.urlsafe_b64encode(base64.b64encode(json.dumps({"k": key}).encode())).decode(),
+    ]
+    for blob in blobs:
+        assert contains_secret(f"/dl/{blob}/ch-1", known), blob
+    assert not contains_secret("/dl/" + base64.b64encode(b"nothing here at all").decode(), known)
