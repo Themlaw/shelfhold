@@ -136,29 +136,6 @@ def own_export_of(
     return None
 
 
-def _already_received(
-    connection: Connection, binding_id: str | None, file_hash: str, payload: str | None
-) -> bool:
-    """These bytes were already received from this very binding (a `content` of one of its
-    Variants holds them): the source is giving back what it gave, not what we exported. Only
-    that excuses a match; the export probes themselves are never narrowed."""
-    if binding_id is None:
-        return False
-    content, variant = storage.content, catalog.unit_variant
-    same = [content.c.original_sha256 == file_hash]
-    if payload:
-        same.append(content.c.content_hash == payload)
-    return (
-        connection.execute(
-            sa.select(content.c.id)
-            .join(variant, variant.c.id == content.c.variant_id)
-            .where(variant.c.source_binding_id == binding_id, sa.or_(*same))
-            .limit(1)
-        ).first()
-        is not None
-    )
-
-
 def absorb_echo(
     engine: Engine,
     *,
@@ -186,11 +163,8 @@ def absorb_echo(
     with engine.connect() as connection:
         connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
         with connection.begin():
-            binding_id = connection.execute(
-                sa.select(request.c.source_binding_id).where(request.c.id == request_id)
-            ).scalar()
             own = own_export_of(connection, file_hash=file_hash, content_hash=payload)
-            if own is None or _already_received(connection, binding_id, file_hash, payload):
+            if own is None:
                 return None
             replica_id = upstream_echo_of(connection, own.export_item_id, remote_ref, file_hash)
             if replica_id is None:

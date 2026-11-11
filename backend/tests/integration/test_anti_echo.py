@@ -278,10 +278,10 @@ def test_anti_echo_holds_for_a_connected_service_too() -> None:
 
 
 @pytest.mark.req("EF-SRC-006")
-def test_anti_echo_ignores_bytes_already_received_from_the_same_binding() -> None:
-    """Another chapter of the same source with identical bytes is not an echo: those bytes came
-    from that source (a content of one of its Variants holds them)."""
-    from tests.follow_env import follow_bench
+def test_anti_echo_beats_a_file_already_received_from_the_same_binding() -> None:
+    """A passthrough export is the file received earlier, byte for byte. The binding offers it
+    again under a new chapter: no exemption, the rule wins; a replica, and no Variant."""
+    from tests.follow_env import follow_bench, new_chapter
 
     with follow_bench() as bench:
         bench.run()
@@ -289,11 +289,29 @@ def test_anti_echo_ignores_bytes_already_received_from_the_same_binding() -> Non
         for _ in range(3):
             bench.run()
         held = bench.rows("SELECT original_sha256 AS h FROM content LIMIT 1")[0]["h"]
-        seed_own_export(bench.lib, file_hash=held)
-        bench.add_chapter(4)
+        own = seed_own_export(bench.lib, file_hash=held)
+        mine = "SELECT count(*) n FROM unit_variant WHERE source_binding_id = :b"
+        variants = bench.rows(mine, b=bench.binding_id)[0]["n"]
+        contents = bench.rows("SELECT count(*) n FROM content")[0]["n"]
+        again = new_chapter(5040, 4)
+        again["same_as"] = "/series-alpha/ch-003"
+        bench.alpha()["chapters"].append(again)
         for _ in range(3):
             bench.run()
-        assert bench.rows("SELECT id FROM replica WHERE export_item_id IS NOT NULL") == []
+        (replica,) = bench.rows(
+            "SELECT export_item_id FROM replica WHERE export_item_id IS NOT NULL"
+        )
+        assert replica["export_item_id"] == own.export_item_id
+        assert bench.rows("SELECT count(*) n FROM content")[0]["n"] == contents
+        (request,) = bench.rows(
+            "SELECT state FROM download_request WHERE state = 'abandoned' ORDER BY id DESC LIMIT 1"
+        )
+        assert request["state"] == "abandoned"
+        # the follow cycle announces the Unit once and leaves no empty Variant behind
+        assert bench.rows(mine, b=bench.binding_id)[0]["n"] == variants + 1
+        for _ in range(3):
+            bench.run()
+        assert bench.rows(mine, b=bench.binding_id)[0]["n"] == variants + 1
 
 
 @pytest.mark.req("EF-SRC-006")
@@ -301,14 +319,14 @@ def test_anti_echo_catches_our_export_offered_back_by_the_same_binding() -> None
     """Kavita is source and destination: the file we rendered comes back as a new entry of the
     same binding, with bytes that source never gave us: a replica, whether or not the export
     covers a Unit of that binding."""
-    from tests.fakes.suwayomi.server import SYNTHETIC
     from tests.follow_env import follow_bench, new_chapter
 
     for cover in (False, True):
         with follow_bench() as bench:
             bench.run()
-            rendered_bytes = (SYNTHETIC / "comic_a_001.cbz").read_bytes()
-            rendered = "sha256:" + hashlib.sha256(rendered_bytes).hexdigest()
+            chapter = new_chapter(5030, 3)
+            bench.alpha()["chapters"].append(chapter)
+            rendered = "sha256:" + bench.server.cbz_sha256(chapter["url"])
             assert bench.rows("SELECT id FROM content WHERE original_sha256 = :h", h=rendered) == []
             own = seed_own_export(bench.lib, file_hash=rendered)
             if cover:
@@ -328,9 +346,6 @@ def test_anti_echo_catches_our_export_offered_back_by_the_same_binding() -> None
                         {"i": own.export_item_id, "u": unit},
                     )
             before = bench.rows("SELECT count(*) n FROM content")[0]["n"]
-            chapter = new_chapter(5030, 3)
-            chapter["cbz"] = "comic_a_001.cbz"
-            bench.alpha()["chapters"].append(chapter)
             for _ in range(3):
                 bench.run()
             after = bench.rows("SELECT count(*) n FROM content")[0]["n"]

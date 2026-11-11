@@ -15,8 +15,10 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import io
 import json
 import re
+import zipfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -262,7 +264,9 @@ class FakeSuwayomi:
         for manga in self.state["mangas"]:
             for chapter in manga["chapters"]:
                 if chapter["url"] == chapter_url:
-                    return (SYNTHETIC / chapter["cbz"]).read_bytes()
+                    if chapter.get("same_as"):  # a source that re-offers a file under a new chapter
+                        return self.cbz_bytes(chapter["same_as"])
+                    return _distinct((SYNTHETIC / chapter["cbz"]).read_bytes(), chapter_url)
         raise KeyError(chapter_url)
 
     def cbz_sha256(self, chapter_url: str) -> str:
@@ -271,7 +275,7 @@ class FakeSuwayomi:
     def cbz_sha256_of_id(self, chapter_id: int) -> str:
         chapter = self._chapter(chapter_id)
         assert chapter is not None
-        return hashlib.sha256((SYNTHETIC / chapter["cbz"]).read_bytes()).hexdigest()
+        return hashlib.sha256(self.cbz_bytes(str(chapter["url"]))).hexdigest()
 
     def requests_to(self, fragment: str) -> list[RecordedRequest]:
         return [r for r in self.requests if fragment in r.path]
@@ -357,7 +361,7 @@ class FakeSuwayomi:
                 "content-type": "application/vnd.comicbook+zip",
                 "content-disposition": f'attachment; filename="Series - {shown}.cbz"',
             },
-            body=(SYNTHETIC / chapter["cbz"]).read_bytes(),
+            body=self.cbz_bytes(str(chapter["url"])),
         )
 
     # -- GraphQL ----------------------------------------------------------------------------
@@ -719,3 +723,17 @@ class FakeSuwayomiFetcher:
 
 def _dumps(value: Any) -> bytes:
     return json.dumps(value).encode()
+
+
+_PAGE = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
+
+
+def _distinct(data: bytes, chapter_url: str) -> bytes:
+    """The same synthetic archive, with one more page named after the chapter: two chapters of a
+    real source never share their bytes, and a test must not take them for one file."""
+    buffer = io.BytesIO(data)
+    with zipfile.ZipFile(buffer, "a") as archive:
+        info = zipfile.ZipInfo(f"zz-{hashlib.sha256(chapter_url.encode()).hexdigest()[:12]}.png")
+        info.date_time = (2026, 1, 1, 0, 0, 0)
+        archive.writestr(info, _PAGE)
+    return buffer.getvalue()
