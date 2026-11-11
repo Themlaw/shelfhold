@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
@@ -274,3 +275,31 @@ def test_anti_echo_holds_for_a_connected_service_too() -> None:
             bench.rows("SELECT count(*) n FROM replica WHERE export_item_id IS NOT NULL")[0]["n"]
             == 1
         )
+
+
+@pytest.mark.req("EF-SRC-006")
+def test_anti_echo_ignores_an_export_made_from_the_same_binding() -> None:
+    """Another Unit of the same source with the same bytes is that source's own file, not an echo:
+    the source is where the export came from."""
+    from tests.follow_env import follow_bench
+
+    with follow_bench() as bench:
+        bench.run()
+        bench.add_chapter(3)
+        url = "/series-alpha/ch-003"
+        own = seed_own_export(bench.lib, file_hash="sha256:" + bench.server.cbz_sha256(url))
+        with bench.lib.engine.begin() as connection:
+            unit = connection.execute(
+                sa.text("SELECT id FROM unit WHERE edition_id = :e LIMIT 1"),
+                {"e": bench.edition_id},
+            ).scalar()
+            connection.execute(
+                sa.text(
+                    "INSERT INTO unit_coverage (carrier_type, carrier_id, unit_id, position, origin)"
+                    " VALUES ('export_item', :i, :u, 1, 'manual')"
+                ),
+                {"i": own.export_item_id, "u": unit},
+            )
+        for _ in range(3):
+            bench.run()
+        assert bench.rows("SELECT id FROM replica WHERE export_item_id IS NOT NULL") == []
