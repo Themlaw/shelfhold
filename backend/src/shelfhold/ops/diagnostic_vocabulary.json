@@ -1885,7 +1885,6 @@
   "notify",
   "notify.dispatch",
   "notify.failed",
-  "notify:dispatch",
   "notify_only",
   "novel",
   "nsfw",
