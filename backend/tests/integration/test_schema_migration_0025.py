@@ -36,10 +36,10 @@ def test_rejected_edition_suggestions_above_the_work_are_reopened(settings: Sett
                 (edition, WORK, "en" if edition == UNRATED else "fr", age),
             )
         rows = [
-            ("S1", UNRATED, 18, 1, "rejected"),  # X above the Work: reopened
-            ("S2", UNRATED, 10, 0, "rejected"),  # not above: stays as it was
+            ("S1", UNRATED, 18, 1, "rejected"),  # rejected by the old rate(work): reopened
+            ("S2", UNRATED, 10, 0, "rejected"),  # idem, whatever the age of the Work
             ("S3", RATED, 18, 1, "rejected"),  # the Edition was rated: a decision, stays
-            ("S4", UNRATED, 16, 0, "accepted"),  # not rejected: untouched
+            ("S4", UNRATED, 16, 0, "accepted"),  # accepted by the old rate(work): reopened
         ]
         for i, (_name, entity, value, x, state) in enumerate(rows):
             db.execute(
@@ -54,4 +54,4 @@ def test_rejected_edition_suggestions_above_the_work_are_reopened(settings: Sett
 
     with closing(sqlite3.connect(database)) as db:
         got = [r[0] for r in db.execute("SELECT state FROM age_suggestion ORDER BY id")]
-    assert got == ["open", "rejected", "rejected", "accepted"]  # S1 to S4
+    assert got == ["open", "open", "rejected", "open"]  # S1 to S4: S3 is the rated Edition

@@ -3,11 +3,13 @@
 Until this fix `RatingService.rate(work)` rejected every open age suggestion above the rated age,
 Editions' included, without any surface showing them: an Edition a sub-source flagged X could enter
 the library of the children. The code now leaves them open (only `rate_edition` rules on them).
-This data migration puts back, as `open`, the rejected suggestions of Editions that nobody rated
-on their own (`edition.age_rating` is null: `rate_edition` always sets it, so a rejection there
-was a decision) and that are above the current rating of their Work. The Edition is blocked again
-below 18+ until an admin rates it. No other row is touched, and nothing can be undone: a
-downgrade keeps the rows open (they cannot be told apart from the ones that always were).
+This data migration puts back, as `open`, the `rejected` and the `accepted` suggestions of Editions
+that nobody rated on their own (`edition.age_rating` is null: `rate_edition` always sets it, so a
+ruling there was a decision), without comparing them with the Work's age: the old code accepted an
+X suggestion when the Work was rated X, and the Work lowered later would let the Edition in. A
+suggestion that does not exceed the age blocks nothing (the admission ignores it). No other row is
+touched, and nothing can be undone: a downgrade keeps the rows open (they cannot be told apart from
+the ones that always were).
 """
 
 import sqlalchemy as sa
@@ -24,14 +26,10 @@ def upgrade() -> None:
         sa.text(
             """
             UPDATE age_suggestion SET state = 'open'
-            WHERE state = 'rejected' AND entity_type = 'edition'
+            WHERE state IN ('rejected', 'accepted') AND entity_type = 'edition'
               AND EXISTS (
-                SELECT 1 FROM edition e JOIN work w ON w.id = e.work_id
-                WHERE e.id = age_suggestion.entity_id
-                  AND e.age_rating IS NULL AND e.age_x = 0
-                  AND w.age_rating IS NOT NULL
-                  AND (CASE WHEN age_suggestion.x = 1 THEN 99 ELSE age_suggestion.value END)
-                      > (CASE WHEN w.age_x = 1 THEN 99 ELSE w.age_rating END)
+                SELECT 1 FROM edition e
+                WHERE e.id = age_suggestion.entity_id AND e.age_rating IS NULL
               )
             """
         )
