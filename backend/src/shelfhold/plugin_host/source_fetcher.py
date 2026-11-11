@@ -28,18 +28,21 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable, Collection, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from shelfhold.infrastructure.fetcher import FetchLimits, GuardedFetcher, Network
 from shelfhold.infrastructure.fetcher.cache import HttpCache, cache_for
 from shelfhold.infrastructure.fetcher.guard import DomainAllowlist
 from shelfhold.infrastructure.fetcher.pacer import Pacer
 from shelfhold.infrastructure.fetcher.robots import RobotsPolicy
+from shelfhold.plugin_host.authflow import AuthInjectingFetcher
+from shelfhold.sdk.models import AuthApiKey, AuthBasic, AuthFlow
+from shelfhold.sdk.source import AuthRequired, NotConfigured
 
 if TYPE_CHECKING:
     from shelfhold.plugin_host.registry import PluginRecord
 
-__all__ = ["SourceFetchers"]
+__all__ = ["AUTH_CHOICES", "SourceFetchers", "authenticated"]
 
 
 def _is_connected_service(instance: Any) -> bool:
@@ -117,3 +120,54 @@ class SourceFetchers:
             limiter=self.pacer_of(record),
             settings=settings,
         )
+
+
+# What the admin's `auth` setting names, among the flows the manifest declares.
+AUTH_CHOICES: Final = {
+    "basic": ("basic", None),
+    "api_key_header": ("api_key", "header"),
+    "api_key_query": ("api_key", "query"),
+    "api_key_path": ("api_key", "path"),
+}
+
+
+def _chosen(flows: Collection[AuthFlow], choice: str) -> AuthFlow | None:
+    wanted = AUTH_CHOICES.get(choice)
+    if wanted is None:
+        return None
+    kind, location = wanted
+    for flow in flows:
+        if isinstance(flow, AuthBasic) and kind == "basic":
+            return flow
+        if isinstance(flow, AuthApiKey) and kind == "api_key" and flow.location == location:
+            return flow
+    return None
+
+
+def authenticated(
+    fetcher: Any,
+    manifest: Any,
+    settings: Mapping[str, object],
+    secrets: Mapping[str, str] | None,
+) -> Any:
+    """The Fetcher a plugin is handed: the guarded one, wrapped to inject the credential the admin
+    chose (EF-SRC-023), only towards the origin of `base_url`. The credential is the source's own
+    sealed secrets (L07): the plugin never reads it, and a source with no credential chosen gets
+    the guarded Fetcher as it is (and every request that carries none may be cached)."""
+    choice = settings.get("auth")
+    if not isinstance(choice, str) or choice in ("", "none"):
+        return fetcher
+    flow = _chosen(manifest.auth if manifest is not None else (), choice)
+    base = settings.get("base_url")
+    if flow is None:
+        raise AuthRequired("the chosen authentication is not one this source declares")
+    if not isinstance(base, str) or not base.strip():
+        raise NotConfigured("the catalogue address is not set")
+    held: dict[str, str] = dict(secrets or {})
+    username = settings.get("username")
+    if isinstance(username, str) and "username" not in held:
+        held["username"] = username
+    needed = ("username", "password") if isinstance(flow, AuthBasic) else ("api_key",)
+    if any(not held.get(name) for name in needed):
+        raise AuthRequired("the credentials of this source are not set")
+    return AuthInjectingFetcher(fetcher, flow, held, origin=base)

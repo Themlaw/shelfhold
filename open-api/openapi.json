@@ -2668,6 +2668,13 @@
             "additionalProperties": true,
             "title": "Values",
             "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -9548,6 +9555,10 @@
     "/api/v1/problems/source.content-removed": {
       "code": "source.content_removed",
       "status": 410
+    },
+    "/api/v1/problems/source.credential-origin": {
+      "code": "source.credential_origin",
+      "status": 502
     },
     "/api/v1/problems/source.dns-blocked": {
       "code": "source.dns_blocked",

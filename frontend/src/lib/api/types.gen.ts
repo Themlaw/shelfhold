@@ -1691,6 +1691,10 @@ export type SettingsOut = {
     values: {
         [key: string]: unknown;
     };
+    /**
+     * Warnings
+     */
+    warnings?: Array<string>;
 };
 
 /**

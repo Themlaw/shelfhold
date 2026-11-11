@@ -54,6 +54,7 @@ __all__ = [
     "store_unit_ids",
     "update_observation",
     "upstream_claims",
+    "upstream_echo_of",
     "withdraw_upstream_claims",
 ]
 
@@ -138,7 +139,7 @@ def independent_copies(connection: Connection, unit_id: str) -> int:
 def record_replica(
     connection: Connection,
     *,
-    unit_id: str,
+    unit_id: str | None,
     location: str,
     content_hash: str | None,
     file_hash: str | None = None,
@@ -178,6 +179,21 @@ def record_replica(
         )
     )
     return replica_id
+
+
+def upstream_echo_of(
+    connection: Connection, export_item_id: str, remote_ref: str, file_hash: str
+) -> str | None:
+    """The replica already recorded for this echo (same export, same source reference, same
+    bytes), so that a replay records nothing twice (I50)."""
+    return connection.execute(
+        sa.select(replica_table.c.id).where(
+            replica_table.c.export_item_id == export_item_id,
+            replica_table.c.location == "upstream",
+            replica_table.c.remote_ref == remote_ref,
+            replica_table.c.file_hash == file_hash,
+        )
+    ).scalar()
 
 
 def paths_under(

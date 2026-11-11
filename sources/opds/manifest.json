@@ -1,0 +1,103 @@
+{
+  "key": "opds",
+  "kind": "source",
+  "version": "0.1.0",
+  "api": 1,
+  "name": "OPDS catalogue (Kavita, Komga, Calibre-web, ...)",
+  "permissions": {
+    "domains": [
+      {
+        "pattern": "opds.invalid",
+        "purpose": "api",
+        "base_url_setting": "base_url"
+      }
+    ],
+    "lan_targets": [],
+    "needs_browser": false,
+    "needs_solver": false
+  },
+  "settings_schema": {
+    "type": "object",
+    "required": [
+      "base_url"
+    ],
+    "properties": {
+      "base_url": {
+        "type": "string",
+        "title": "Catalogue address (the OPDS root)"
+      },
+      "auth": {
+        "type": "string",
+        "title": "Authentication",
+        "enum": [
+          "none",
+          "basic",
+          "api_key_header",
+          "api_key_query",
+          "api_key_path"
+        ],
+        "default": "none"
+      },
+      "username": {
+        "type": "string",
+        "title": "User name (basic)"
+      },
+      "password": {
+        "type": "string",
+        "format": "password",
+        "title": "Password (basic)"
+      },
+      "api_key": {
+        "type": "string",
+        "format": "password",
+        "title": "API key"
+      }
+    }
+  },
+  "content_warning": "mixed",
+  "terms_url": "https://github.com/Themlaw/shelfhold/blob/main/docs/admin/sources.md",
+  "respects_robots": true,
+  "attribution": null,
+  "homepage": null,
+  "langs": [],
+  "content_kinds": [
+    "file"
+  ],
+  "url_patterns": [],
+  "capabilities": [
+    "SEARCH"
+  ],
+  "rate_limit": {
+    "requests_per_second": 2.0,
+    "concurrency": 1
+  },
+  "auth": [
+    {
+      "kind": "basic"
+    },
+    {
+      "kind": "api_key",
+      "location": "header",
+      "name": "X-API-Key",
+      "ref_template": null
+    },
+    {
+      "kind": "api_key",
+      "location": "query",
+      "name": "apikey",
+      "ref_template": null
+    },
+    {
+      "kind": "api_key",
+      "location": "path",
+      "name": "apiKey",
+      "ref_template": "{secret}"
+    }
+  ],
+  "id_scheme": "v1",
+  "rights_basis": "user_supplied",
+  "rights_jurisdiction": null,
+  "translation_nature": "unknown",
+  "content_trust": "untrusted",
+  "tests": []
+}

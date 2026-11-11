@@ -18,6 +18,7 @@ from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
 from shelfhold.plugin_host.attestation import InstalledVersion, publisher_attested
 from shelfhold.plugin_host.gutenberg_rdf import read_rdf
 from shelfhold.plugin_host.install import Layout, read_state, verdicts
+from shelfhold.plugin_host.native_sources import first_party_native_candidates
 from shelfhold.plugin_host.registry import (
     InstalledPlugin,
     PluginCandidate,
@@ -94,6 +95,7 @@ def start_plugins(
     records = registry.load_all(
         [
             *first_party_candidates(),
+            *first_party_native_candidates(),  # shipped with the host, off until enabled
             *third_party_candidates(layout.site, installed, blocked=blocked),
         ]
     )

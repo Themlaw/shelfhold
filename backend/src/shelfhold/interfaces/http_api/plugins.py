@@ -51,6 +51,7 @@ class SettingsOut(BaseModel):
     values: dict[str, Any]
     secrets: dict[str, SecretStateOut]
     cookies: SecretStateOut
+    warnings: list[str] = Field(default_factory=list)  # closed codes, e.g. `source.use_readback`
 
 
 class SettingsPatch(BaseModel):
@@ -91,6 +92,7 @@ def _settings(view: SettingsView) -> SettingsOut:
         values=view.values,
         secrets={name: _state(s) for name, s in view.secrets.items()},
         cookies=_state(view.cookies),
+        warnings=list(view.warnings),
     )
 
 

@@ -143,6 +143,7 @@ row = "{name} = {value} [{source}]"
 row_readonly = "{name} = {value} [{source}] (lecture seule, définie par l'environnement)"
 
 [plugin]
+use_readback = "Attention : cette adresse est celle d'une destination active. Utilisez « readback » : Shelfhold ne réimporte pas ses propres exports."
 no_database = "La base n'existe pas : lancez d'abord « shelfhold migrate »."
 audit_failed = "Le journal d'audit n'est pas écrit ({detail}) : rien n'est modifié."
 install_refused = "Installation refusée ({code}) : {detail}"
@@ -1035,7 +1036,7 @@ title = "Le service de la source semble avoir été réinstallé."
 action = "Confirmez avec « shelfhold source reconnect » ; rien n'est supprimé en attendant."
 
 [errors."source.not_configured"]
-title = "Cette source n'est pas configurée : un réglage obligatoire manque ou est refusé."
+title = "Cette source n'est pas configurée : un réglage obligatoire manque, ou l'adresse du catalogue est absente ou refusée."
 action = "Renseignez ses réglages (par exemple l'adresse du catalogue et celle du miroir) avec « shelfhold plugin set », puis relancez la demande."
 
 [errors."source.filter_invalid"]
@@ -1045,6 +1046,10 @@ action = "Retirez le filtre, ou demandez la liste de ceux que la source déclare
 [errors."acquire.unsupported_file"]
 title = "La source ne fournit pas un fichier que Shelfhold range."
 action = "Seuls les livres EPUB et les archives d'images (CBZ) sont rangés ; un PDF passe par le dossier d'import."
+
+[errors."source.credential_origin"]
+title = "Un lien pointait ailleurs que le catalogue : les identifiants ne sont pas envoyés."
+action = "Aucune action : le fichier n'a pas été demandé. Vérifiez l'adresse du catalogue si cela se répète."
 
 [errors."acquire.unit_required"]
 title = "La source propose plusieurs éléments : dites lequel prendre."
