@@ -96,3 +96,39 @@ def test_the_only_place_that_may_delete_a_unit_is_behind_require_deletion_allowe
     assert set(unit_delete_sites()) <= allowed
     units = (SRC / "library" / "adapters" / "units.py").read_text(encoding="utf-8")
     assert "def require_deletion_allowed" in units
+
+
+UNTRUSTED_PLACE = {
+    "shelfhold/library/domain/untrusted.py",
+    "shelfhold/library/adapters/epub_derivative.py",
+}
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_nothing_reads_the_untrusted_originals_of_the_store_towards_an_output() -> None:
+    """EF-BIB-051: the original of an `untrusted` EPUB (`/store/untrusted/`) is never served. Only
+    the module of `servable_epub` names that place (to keep, verify and regenerate from it); no
+    other module knows its path, and the export reads `/library` copies, never `store_copies`."""
+    named = []
+    for path in sorted(SRC.rglob("*.py")):
+        rel = path.relative_to(SRC.parent).as_posix()
+        text = path.read_text(encoding="utf-8")
+        if rel not in UNTRUSTED_PLACE and ("/untrusted/" in text or "original_rel" in text):
+            named.append(rel)
+    assert not named, f"modules that name the untrusted originals of /store: {named}"
+    for path in sorted((SRC / "export").rglob("*.py")):
+        assert "store_copies" not in path.read_text(encoding="utf-8"), path.name
+    export_source = (SRC / "library/adapters/export_source.py").read_text(encoding="utf-8")
+    assert "store_copies" not in export_source
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_an_epub_refusal_is_announced_by_the_ticket_like_a_cbz_one() -> None:
+    """`EpubRefusedError` is an `UntrustedEntryError`: the ticket closes for good and announces
+    `content.untrusted_entry` with a closed reason, never an entry name."""
+    from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
+    from shelfhold.library.public import EpubRefusedError
+
+    error = EpubRefusedError("meta_inf_item", "META-INF/secret-name.xhtml")
+    assert disposition_of(classify(error)) is Disposition.REFUSE
+    assert "secret-name" not in error.kind
