@@ -37,6 +37,7 @@ from shelfhold.plugin_host.attestation import (
 )
 from shelfhold.plugin_host.public import installed_versions, start_plugins
 from shelfhold.plugin_host.settings import (
+    USE_READBACK,
     SettingsSchema,
     SettingValueError,
     SourceSettings,
@@ -315,6 +316,8 @@ def _show(store: SourceSettings, key: str, schema: SettingsSchema) -> None:
             else t("plugin.secret_unset")
         )
         print(t("plugin.setting_row", name=name, value=shown))
+    if USE_READBACK in view.warnings:
+        print(t("plugin.use_readback"), file=sys.stderr)
 
 
 def _with_store(

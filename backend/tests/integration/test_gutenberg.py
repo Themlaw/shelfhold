@@ -5,6 +5,7 @@ test that tries to break it; nothing here reaches a network."""
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import socket
 import zipfile
@@ -329,6 +330,23 @@ def test_an_epub_from_the_mirror_is_neutralized_whatever_the_manifest_or_the_nam
         (library,) = b.lib.files_under(b.lib.manga)
         assert not has_active_content(library) and b.lib.files_under(b.lib.store)
         assert Path(servable_epub(b.lib.engine, b.lib.fsops, prepared.unit_id).path) == library
+
+
+@pytest.mark.req("EF-SRC-006", "EF-SRC-007")
+def test_a_mirror_file_that_is_an_export_of_ours_is_a_replica_never_a_variant() -> None:
+    """The anti-echo rule holds on the Gutenberg path too: whatever the source, a file that is one
+    of our exports is a replica of it."""
+    from tests.anti_echo_env import seed_own_export
+
+    with gutenberg_bench(files={epub_path(1001): CLEAN}) as b:
+        digest = "sha256:" + hashlib.sha256(CLEAN).hexdigest()
+        own = seed_own_export(b.lib, file_hash=digest)
+        _prepared, outcome = b.acquire(1001)
+        assert outcome.state == "replica"
+        (replica,) = b.rows("SELECT export_item_id FROM replica WHERE export_item_id IS NOT NULL")
+        assert replica["export_item_id"] == own.export_item_id
+        assert b.rows("SELECT id FROM content") == []
+        assert b.rows("SELECT id FROM unit_variant WHERE source_binding_id IS NOT NULL") == []
 
 
 @pytest.mark.req("EF-BIB-051", "EF-SRC-007")

@@ -30,6 +30,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final, Protocol
+from urllib.parse import urlsplit
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
@@ -37,13 +38,14 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import MIN_KNOWN_SECRET, register_secret_value
-from shelfhold.infrastructure.schema import acquisition, identity
+from shelfhold.infrastructure.schema import acquisition, export, identity
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.vault import SecretVault
 
 __all__ = [
     "COOKIES_FIELD",
     "RESERVED_SETTINGS",
+    "USE_READBACK",
     "Actor",
     "LoadedSecrets",
     "SecretState",
@@ -54,6 +56,7 @@ __all__ = [
     "SettingsView",
     "SourceSettings",
     "parse_settings_schema",
+    "readback_warnings",
     "secret_row_id",
 ]
 
@@ -276,6 +279,41 @@ def parse_settings_schema(raw: Mapping[str, Any] | None) -> SettingsSchema:
     return SettingsSchema(tuple(fields))
 
 
+USE_READBACK: Final = "source.use_readback"
+_PORTS: Final = {"http": 80, "https": 443}
+
+
+def _origin(url: object) -> tuple[str, str, int] | None:
+    if not isinstance(url, str):
+        return None
+    try:
+        parts = urlsplit(url.strip())
+        host, port = (parts.hostname or "").lower(), parts.port
+    except ValueError:
+        return None
+    if parts.scheme not in _PORTS or not host:
+        return None
+    return parts.scheme, host, port or _PORTS[parts.scheme]
+
+
+def readback_warnings(connection: Connection, values: Mapping[str, Any]) -> tuple[str, ...]:
+    """A source whose address is the instance of an active destination would import Shelfhold's
+    own output (I50): it is told to use the readback of that destination instead. The comparison
+    is of the origin (scheme, host, port); the answer is a closed code, never the address."""
+    origin = _origin(values.get("base_url"))
+    if origin is None:
+        return ()
+    target, destination = export.export_target, export.shelf_destination
+    configs = connection.execute(
+        sa.select(target.c.config)
+        .select_from(destination.join(target, target.c.id == destination.c.target_id))
+        .where(destination.c.enabled.is_(True))
+    ).scalars()
+    if any(_origin((config or {}).get("url")) == origin for config in configs):
+        return (USE_READBACK,)
+    return ()
+
+
 def secret_row_id(plugin_id: str, kind: str, field_name: str, generation: int = 1) -> str:
     """The row id, which is also the row coordinate of the envelope's associated data. The
     generation grows on every write, so an older envelope put back under the row does not open."""
@@ -295,6 +333,9 @@ class SettingsView:
     values: dict[str, Any]
     secrets: dict[str, SecretState]
     cookies: SecretState
+    # closed codes, never a value: `source.use_readback` (the address is the instance of an active
+    # destination: its own exports would come back; use the readback of that destination)
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -388,7 +429,9 @@ class SourceSettings:
             if f.secret
         }
         jar = rows.get(("cookies", _JAR))
-        return SettingsView(values, secrets, SecretState(jar is not None, jar))
+        with self.engine.connect() as connection:
+            warnings = readback_warnings(connection, values)
+        return SettingsView(values, secrets, SecretState(jar is not None, jar), warnings)
 
     def load(self, plugin_id: str) -> LoadedSecrets:
         """Open every secret and the cookie jar of a source; each value is registered for

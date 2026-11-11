@@ -67,26 +67,37 @@ from shelfhold.infrastructure.fetcher import (
     FetchTooLarge,
     RobotsDisallowed,
 )
+from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.library.public import (
     SeriesBindingRef,
     VariantAlreadyStoredError,
+    absorb_echo,
     receive_cbz,
     sniff_kind,
 )
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
 from shelfhold.plugin_host.refs_guard import RefsGuard, screened, secret_of, values_of
-from shelfhold.plugin_host.source_fetcher import SourceFetchers
+from shelfhold.plugin_host.source_fetcher import SourceFetchers, authenticated
 from shelfhold.sdk.models import Cursor, FilterSpec, Page
 from shelfhold.sdk.refs import FileAsset, SeriesInfo, SeriesRef, UnitInfo
-from shelfhold.sdk.source import Capability, ContentRemoved, NotConfigured, SourceManifest
+from shelfhold.sdk.source import (
+    Capability,
+    ContentRemoved,
+    NotConfigured,
+    RateLimited,
+    SourceError,
+    SourceManifest,
+    TemporarilyUnavailable,
+)
 
 __all__ = [
     "ACQUIRE_JOB_KIND",
     "AcquireOutcome",
     "AcquireRefused",
     "NativeAcquirer",
+    "OwnExportEcho",
     "Prepared",
     "SourceDirectory",
     "acquire_dedupe_key",
@@ -107,6 +118,15 @@ TAKEN_FILE_KEY = "file"
 
 def acquire_dedupe_key(request_id: str) -> str:
     return f"{ACQUIRE_JOB_KIND}:{request_id}"
+
+
+class OwnExportEcho(Exception):
+    """The file is an export of Shelfhold's own: it was recorded as a replica of
+    `export_item_id` and the request that asked for it is gone (I50)."""
+
+    def __init__(self, export_item_id: str) -> None:
+        super().__init__(export_item_id)
+        self.export_item_id = export_item_id
 
 
 class AcquireRefused(Exception):
@@ -148,7 +168,7 @@ class Prepared:
 
 @dataclass(frozen=True)
 class AcquireOutcome:
-    state: str  # fetched | abandoned | waiting | stored
+    state: str  # fetched | abandoned | waiting | stored | replica
     request_id: str
     reason: str | None = None
     sha256: str | None = None
@@ -158,15 +178,21 @@ class AcquireOutcome:
 
 class _Handle:
     def __init__(
-        self, service: Any, fetcher: Any, record: Any, guard: RefsGuard | None = None
+        self,
+        service: Any,
+        fetcher: Any,
+        record: Any,
+        guard: RefsGuard | None = None,
+        guarded: Any = None,
     ) -> None:
         self.guard = guard or RefsGuard(values_of(fetcher))
         self.service = service
-        self.fetcher = fetcher
+        self.fetcher = fetcher  # what the plugin is handed (the guarded one, or the wrapper)
+        self.guarded = guarded if guarded is not None else fetcher  # streams, and is closed
         self.record = record
 
     async def aclose(self) -> None:
-        close = getattr(self.fetcher, "aclose", None)
+        close = getattr(self.guarded, "aclose", None)
         if close is not None:
             await close()
 
@@ -191,6 +217,7 @@ class NativeAcquirer:
         staging_dir: Path,
         max_bytes: int,
         source_settings: Callable[[str], Mapping[str, object]] | None = None,
+        source_secrets: Callable[[str], Mapping[str, str]] | None = None,
         connected: Callable[[str], Any] | None = None,
     ) -> None:
         self._engine = engine
@@ -201,6 +228,7 @@ class NativeAcquirer:
         self._staging = staging_dir
         self._max = max_bytes
         self._settings = source_settings or (lambda _key: {})
+        self._secrets = source_secrets or (lambda _key: {})  # the sealed secrets of a source (L07)
         self._connected = connected  # the connected service (Suwayomi): search only
 
     # -- opening a source ---------------------------------------------------------------------
@@ -223,24 +251,34 @@ class NativeAcquirer:
         if missing:
             raise AcquireRefused("source.not_configured", "a required setting is not set")
 
-    def _open(self, record: Any) -> _Handle:
-        fetcher = self._fetchers.for_record(record, self._settings(record.key))
+    async def _open(self, record: Any) -> _Handle:
+        settings = self._settings(record.key)
+        guarded = self._fetchers.for_record(record, settings)
+        try:
+            fetcher = authenticated(guarded, record.manifest, settings, self._secrets(record.key))
+            instance = record.instance
+            configure = getattr(instance, "configured", None)
+            if configure is not None:  # a source bound to an address the admin gave (plain values)
+                instance = configure(settings)
+        except BaseException:
+            await guarded.aclose()
+            raise
         service = screened(
-            record.instance,
+            instance,
             values_of(fetcher),
             lambda: getattr(fetcher, "ref_template", None),
             secret_of(fetcher),
         )
         guard = RefsGuard(values_of(fetcher), secret=secret_of(fetcher))
-        return _Handle(service, fetcher, record, guard)
+        return _Handle(service, fetcher, record, guard, guarded)
 
-    def _search_handle(self, source_key: str) -> tuple[_Handle, str | None]:
+    async def _search_handle(self, source_key: str) -> tuple[_Handle, str | None]:
         key, _, sub = source_key.partition(":")
         if self._connected is not None:
             link = self._connected(key)
             if link is not None:
                 return _Handle(link.service, link.guarded, None), sub or None
-        return self._open(self._record(source_key)), None
+        return await self._open(self._record(source_key)), None
 
     # -- reading ------------------------------------------------------------------------------
 
@@ -264,7 +302,7 @@ class NativeAcquirer:
         wanted = dict(filters or {})
         if wanted and not set(wanted) <= _flat(self.filters(source_key)):
             raise AcquireRefused("source.filter_invalid", "a filter the source does not declare")
-        handle, sub = self._search_handle(source_key)
+        handle, sub = await self._search_handle(source_key)
         record = handle.record
         if record is not None and Capability.SEARCH not in record.manifest.capabilities:
             raise AcquireRefused("plugin.unknown", "that source does not search")
@@ -324,7 +362,7 @@ class NativeAcquirer:
             SeriesBindingRef(record.key, ref.source_key, ref.remote_id)
         ):
             raise AcquireRefused("acquire.series_tombstoned", "the series was deleted on purpose")
-        handle = self._open(record)
+        handle = await self._open(record)
         try:
             # a reference given by the caller is screened like the ones a source hands back: the
             # route and the command take it from a person, and it is stored (EF-SRC-035)
@@ -548,7 +586,7 @@ class NativeAcquirer:
         handle: _Handle | None = None
         try:
             record = self._record(row.source_key)
-            handle = self._open(record)
+            handle = await self._open(record)
             ref = SeriesRef(
                 source_key=row.source_key, remote_id=row.remote_id, title="",
                 memo=row.memo or {}, memo_version=row.memo_version,
@@ -560,6 +598,12 @@ class NativeAcquirer:
             payload = await handle.service.fetch_unit(handle.fetcher, ref, unit)
             asset = _taken(payload)
             sha, kind = await self._receive(handle, asset, row, filer, place)
+        except OwnExportEcho:
+            return AcquireOutcome("replica", row.id, "own_export")
+        except (RateLimited, TemporarilyUnavailable) as error:  # asked again, nothing lost
+            self._bump(row.id)
+            log.info("acquire.waiting", request_id=row.id, error=type(error).__name__)
+            return AcquireOutcome("waiting", row.id, type(error).__name__)
         except (
             AcquireRefused,
             DomainNotAllowed,
@@ -570,6 +614,8 @@ class NativeAcquirer:
             ContentRemoved,
             NotConfigured,
             FetchTooLarge,
+            InvalidFetchUrl,
+            SourceError,  # the source's own refusals (auth, changed, not configured, removed)
         ) as error:
             return self._close(row, "abandoned", error)
         except ValueError as error:  # `received_hash_mismatch`: not the bytes that were counted
@@ -595,11 +641,23 @@ class NativeAcquirer:
         headers = {
             k: v for k, v in request.headers.items() if k.lower() not in ("user-agent", "host")
         }
+        url = request.url
+        authorize = getattr(handle.fetcher, "authorize", None)
+        if authorize is not None:
+            # the credential of the source, towards the origin it was declared for and no other
+            url, headers = authorize(url, headers)
         async with receive_cbz(
-            handle.fetcher, request.url, staging_dir=self._staging, max_bytes=self._max,
+            handle.guarded, url, staging_dir=self._staging, max_bytes=self._max,
             headers=headers,
         ) as received:  # fmt: skip
             kind = sniff_kind(received.path)  # the bytes decide, not the name or the MIME type
+            # I50: what Shelfhold exported comes back as a replica, never as a Variant
+            echo = absorb_echo(
+                self._engine, request_id=row.id, staged=received.path, kind=kind,
+                file_hash=received.sha256, size=received.size, remote_ref=row.remote_unit_id,
+            )  # fmt: skip
+            if echo is not None:
+                raise OwnExportEcho(echo.own.export_item_id)
             with suppress(VariantAlreadyStoredError):  # a replay after a crash: already there
                 filer.ingest(
                     unit_id=row.unit_id, variant_id=row.variant_id, staged=received.path,
@@ -712,6 +770,10 @@ def _reason(error: Exception) -> str:
         return "source.content_removed"
     if isinstance(error, FetchTooLarge):
         return "fetch.too_large"
+    if isinstance(error, InvalidFetchUrl):
+        return "source.credential_origin"  # the credential would have left its origin
+    if isinstance(error, SourceError):
+        return str(error.code)
     return "received_hash_mismatch" if "received_hash_mismatch" in str(error) else "refused"
 
 

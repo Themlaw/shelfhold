@@ -371,8 +371,17 @@ def run_rollback(j: Journey) -> dict[str, object]:
     backup = backups.stdout.split()[0]
     j.create_admin()
     beta_work = ids_of(j, "Series Beta")[1]
+    # B3: the Work carries an external identifier, so its purge also lays a `work` tombstone, which
+    # cites the normalizer `work_id@1` that the previous image does not have
+    j.compose(
+        "exec", "-T", "shelfhold", "python", "-c",
+        "import sqlite3; c = sqlite3.connect('/data/shelfhold.db'); "
+        "c.execute(\"insert into external_id (entity_type, entity_id, provider, value, origin) "
+        f"values ('work', '{beta_work}', 'anilist', '30013', 'provider')\"); c.commit()",
+    )  # fmt: skip
     purged = j.shelfhold("purge", "--work", beta_work, "--confirm", beta_work, "--now")
     assert purged.code == 0, purged.err  # a Work of no file: M1b writes its tombstone chain
+    assert j.sql("select count(*) from content_tombstone where scope = 'work'") == [(1,)]
     sentinels_m1b = sentinels(j)
     assert {s["schema_version"] for s in sentinels_m1b} == {"1.2"}
     assert all("tombstone_chain" in s for s in sentinels_m1b)
@@ -406,7 +415,10 @@ def run_rollback(j: Journey) -> dict[str, object]:
     assert adopted.returncode == 0, adopted.stderr
     j.compose("up", "-d", "--no-deps", "shelfhold")  # the simulated servers are already up
     assert wait_for(lambda: j.shelfhold("status").code == 0, 120)
+    # B3: the previous image replays the journal, work tombstone included, and still serves
+    work_tombstones = j.sql("select count(*) from content_tombstone where scope = 'work'")
     return {
+        "work_tombstones_after": work_tombstones,
         "preview": preview.stdout,
         "roots": j.sql("select path_entry, generation from physical_root"),
         "waiting_after_adoption": j.shelfhold("status").out,
@@ -416,6 +428,17 @@ def run_rollback(j: Journey) -> dict[str, object]:
         "sentinels_after": sentinels(j),
         "meta_check": j.shelfhold("meta", "check").code,
     }
+
+
+@needs_previous
+@pytest.mark.e2e_timeout(900)
+@pytest.mark.req("ENF-OPS-008", "EF-BIB-054")
+def test_rollback_with_a_work_tombstone_starts_the_previous_release(
+    rollback_world: dict[str, object],
+) -> None:
+    """B3: a `work` tombstone laid by the purge of a Work with an external identifier cites
+    `work_id@1`; the previous release does not know it, and must still build its index."""
+    assert rollback_world["work_tombstones_after"] == [(1,)]
 
 
 @needs_previous

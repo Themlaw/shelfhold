@@ -77,3 +77,13 @@ neutralisateur avant tout export, et l'original reste dans `/store`.
 Pour l'activer : réglez `catalog_url` et `mirror_url` avec `shelfhold plugin set` sur la clé de la
 source, puis ajoutez cette clé aux sources actives. La liste des cibles de canari
 (`tools/canary_targets.toml`) est vide et ne vise jamais le site du projet.
+
+## Source OPDS (Kavita, Komga, Calibre-web…)
+
+La source `opds` lit un catalogue OPDS 1.2 (Atom) ou 2.0 (JSON), avec la recherche OpenSearch du catalogue.
+
+- `base_url` : la racine du catalogue, en `http(s)://hôte/…`. Pas d'identifiants dans l'adresse : ils vont dans les secrets. Pour Kavita, la clé fait partie du chemin : `https://kavita.example/api/opds/{apiKey}` avec `auth = api_key_path`.
+- `auth` : `none`, `basic` (`username` et le secret `password`), `api_key_header`, `api_key_query` ou `api_key_path` (le secret `api_key`). Les identifiants ne partent que vers l'origine de `base_url`, jamais en suivant un lien ou une redirection vers un autre hôte.
+- Seul l'hôte de `base_url` est joignable ; un lien de téléchargement ailleurs n'est pas proposé.
+- Les EPUB reçus sont **non fiables** : ils passent par le neutralisateur avant tout export.
+- **Si le catalogue est l'instance d'une destination active** (le Kavita où Shelfhold écrit), les réglages affichent « utilisez readback » : Shelfhold ne réimporte jamais ses propres exports. Un fichier qui en est un est rangé comme réplique de l'export, jamais comme nouvelle Variante.

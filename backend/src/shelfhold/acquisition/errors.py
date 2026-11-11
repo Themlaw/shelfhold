@@ -24,6 +24,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source.no_match", 422, "user"),
     # EF-SRC-015 (M2 L19): one-shot acquisition from a native source
     ErrorCode("source.not_configured", 409, "admin"),  # a required setting is missing or refused
+    # EF-SRC-006 (M2 L22): the generic OPDS source
+    ErrorCode("source.credential_origin", 502, "admin"),  # the credential would leave its origin
     ErrorCode("source.filter_invalid", 422, "user"),  # a search filter the source does not declare
     ErrorCode("acquire.unsupported_file", 422, "user"),  # a PDF, audio, or no file at all
     ErrorCode("acquire.unit_required", 422, "user"),  # several Units offered, none chosen

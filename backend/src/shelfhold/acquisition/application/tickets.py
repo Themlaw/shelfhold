@@ -37,6 +37,7 @@ from shelfhold.library.public import (
     PassthroughStore,
     Received,
     VariantAlreadyStoredError,
+    absorb_echo,
     receive_cbz,
     sniff_kind,
 )
@@ -164,6 +165,7 @@ class TicketReport:
     )
     deferred: int = 0  # held back by the pace or by a busy slot, tried again next cycle
     refused: int = 0  # archives with an entry off the allowlist: closed, announced, not counted
+    echoed: int = 0  # our own export handed back: a replica, no Variant (I50)
 
 
 @dataclass(frozen=True)
@@ -412,6 +414,14 @@ class DownloadTickets:
             # what the bytes are, not what the service called them (EF-BIB-051): an EPUB goes to
             # the trust sort and the neutralizer, whatever its file name says
             oriented = oriented_name(payload.filename, received.path)
+            echo = absorb_echo(  # I50: our own export, handed back, is a replica and no Variant
+                self._engine, request_id=request.id, staged=received.path,
+                kind=sniff_kind(received.path), file_hash=received.sha256, size=received.size,
+                remote_ref=request.remote_unit_id, keep_shell=True,
+            )  # fmt: skip
+            if echo is not None:
+                report.echoed += 1
+                return
             with suppress(VariantAlreadyStoredError):  # a replay after a crash: already there
                 self._store.ingest(
                     unit_id=request.unit_id, variant_id=request.variant_id,
