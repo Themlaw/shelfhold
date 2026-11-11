@@ -201,6 +201,16 @@ def _rights(connection: Connection, edition_id: str) -> tuple[str, str]:
     return text.strip(), found.group(0).rstrip(".,;)") if found else ""
 
 
+_LICENCE = re.compile(r"\bCC[ -]BY(?:[ -][A-Z]{2})*\b")
+
+
+def licence_of(rights: str) -> str | None:
+    """The Creative Commons licence a rights text names, normalised for a comparison (`ccbysa`),
+    or None. A text under such a licence asks to be attributed wherever the file goes."""
+    found = _LICENCE.search(rights or "")
+    return re.sub(r"[^a-z0-9]", "", found[0].casefold()) if found else None
+
+
 def comicinfo_data(connection: Connection, unit_id: str, series: str) -> ComicInfoData:
     unit, edition, work, team = catalog.unit, catalog.edition, catalog.work, catalog.team
     variant = catalog.unit_variant
@@ -324,7 +334,10 @@ def epub_opf_edit(connection: Connection, unit_id: str, series: str) -> OpfEdit:
         else None
     )
     notes, web = _rights(connection, row.edition_id)
-    return OpfEdit(series=series, series_index=number, rights=notes or None, source=web or None)
+    return OpfEdit(
+        series=series, series_index=number, rights=notes or None, source=web or None,
+        licence=licence_of(notes),
+    )  # fmt: skip
 
 
 class EpubRenderer:

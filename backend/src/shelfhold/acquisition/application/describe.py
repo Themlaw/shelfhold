@@ -17,6 +17,7 @@ Every text is made safe by the caller's `clean` before it is stored (ENF-SEC-015
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 
 import sqlalchemy as sa
 import structlog
@@ -29,8 +30,10 @@ from shelfhold.catalog.public import (
     TextVersionRef,
     add_external_id,
     holder_of,
+    propose_fields,
 )
 from shelfhold.infrastructure.schema import catalog
+from shelfhold.sdk.metadata import FieldProposal, Provenance
 from shelfhold.sdk.refs import SeriesInfo
 
 __all__ = ["credit_authors", "known_work", "remember_work", "text_version_for", "write_rights"]
@@ -102,13 +105,42 @@ def write_rights(
     *,
     basis: str | None,
     jurisdiction: str | None,
+    attribution: str | None = None,
+    plugin_key: str = "",
+    now: datetime | None = None,
 ) -> None:
-    """What the manifest declares, once, on a new Edition: never rewritten after."""
-    if basis is None and jurisdiction is None:
-        return
+    """What the manifest declares, once, on a new Edition: never rewritten after.
+
+    The attribution a source gives (`SeriesInfo.rights`) is written the same way: into
+    `edition.rights` when it is empty, with its provenance (the source that said it), so that the
+    export can copy it into the file and the card can show it (EF-BIB-033)."""
     table = catalog.edition
-    connection.execute(
+    if basis is not None or jurisdiction is not None:
+        connection.execute(
+            sa.update(table)
+            .where(table.c.id == edition_id, table.c.rights_basis.is_(None))
+            .values(rights_basis=basis, rights_jurisdiction=jurisdiction)
+        )
+    if not attribution:
+        return
+    written = connection.execute(
         sa.update(table)
-        .where(table.c.id == edition_id, table.c.rights_basis.is_(None))
-        .values(rights_basis=basis, rights_jurisdiction=jurisdiction)
+        .where(table.c.id == edition_id, table.c.rights.is_(None))
+        .values(rights=attribution)
     )
+    if written.rowcount and now is not None:
+        propose_fields(
+            connection,
+            {"edition": edition_id},
+            [
+                FieldProposal(
+                    entity_type="edition",
+                    field="rights",
+                    value=attribution,
+                    confidence=1.0,
+                    provenance=Provenance(provider=plugin_key, fetched_at=now),
+                )
+            ],
+            now=now,
+            origin="source",
+        )

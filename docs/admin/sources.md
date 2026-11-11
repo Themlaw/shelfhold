@@ -87,3 +87,51 @@ La source `opds` lit un catalogue OPDS 1.2 (Atom) ou 2.0 (JSON), avec la recherc
 - Seul l'hôte de `base_url` est joignable ; un lien de téléchargement ailleurs n'est pas proposé.
 - Les EPUB reçus sont **non fiables** : ils passent par le neutralisateur avant tout export.
 - **Si le catalogue est l'instance d'une destination active** (le Kavita où Shelfhold écrit), les réglages affichent « utilisez readback » : Shelfhold ne réimporte jamais ses propres exports. Un fichier qui en est un est rangé comme réplique de l'export, jamais comme nouvelle Variante.
+
+## Wikisource, un EPUB par livre avec son attribution CC BY-SA
+
+La source `wikisource` prend **un livre** (une page de l'espace principal d'un Wikisource) et en
+récupère l'EPUB auprès de l'outil d'export du wiki. Elle ne lit jamais une page du wiki : les règles
+de domaine ne laissent passer que l'API (`/w/` d'un hôte `*.wikisource.org`) et l'outil d'export,
+et toute autre adresse est refusée avant d'envoyer quoi que ce soit.
+
+- Chercher : par titre, dans la langue du réglage `language` (par défaut `fr`) ou du filtre
+  « Langue ». Un code qui ne ressemble pas à un code de langue est refusé.
+- Coller l'adresse d'un livre (`https://fr.wikisource.org/wiki/Titre`) donne le livre, sans requête.
+- Rythme : une requête par seconde au plus pour toute la source, quel que soit le nombre de
+  demandes en cours.
+- Les EPUB sont toujours **non fiables** : le neutraliseur passe avant tout export, l'original est
+  gardé dans `/store`.
+
+Le texte de Wikisource est partagé sous **CC BY-SA** : la licence demande que les contributeurs, la
+licence et un lien vers l'origine accompagnent le texte. Shelfhold construit cette attribution
+(le lien de la page, la licence, les contributeurs de la page, en nombre borné), la range sur
+l'Édition avec sa provenance (la source qui l'a dite) et l'affiche sur la fiche. À l'export, elle est
+copiée dans l'EPUB (`dc:rights` et `dc:source`) quand le fichier n'a pas de `dc:rights` ; s'il en a un
+qui ne nomme pas la licence, la ligne du livre reste telle quelle et l'attribution est écrite à côté.
+Un nom de contributeur qui contient du balisage, un lien ou un saut de ligne n'est pas recopié.
+
+## Standard Ebooks, libre de droits aux États-Unis (une adresse par livre, flux patron)
+
+Standard Ebooks publie des éditions soignées d'œuvres **libres de droits aux États-Unis**, ce qui
+n'est pas forcément le cas dans votre pays : voir [domaine-public.md](domaine-public.md). La
+production est versée au domaine public (CC0) ; Shelfhold garde la mention « libre de droits aux
+États-Unis » telle quelle sur l'Édition et n'en fait jamais une affirmation sur votre pays.
+
+Deux entrées, et pas de troisième :
+
+- **Une adresse par livre.** Coller l'adresse d'un livre (`…/ebooks/auteur/titre`)
+  donne le livre, sans requête ; le fichier est le téléchargement de ce livre, une seule requête. Le
+  titre vient de l'adresse. Shelfhold ne lit **jamais** une page du site, une liste d'auteurs ou de
+  sujets : il ne moissonne pas.
+- **Le flux OPDS des patrons.** Le flux complet est réservé aux patrons du projet. Il n'est
+  lu que si vous avez réglé `auth` sur `basic` avec votre identifiant de patron (`username`, et le
+  mot de passe comme secret : [secrets.md](secrets.md)). Sans cela, aucune requête ne part vers le
+  flux, quoi qu'on demande. Le flux est lu par la source OPDS générique ; une recherche lit une page
+  de résultats et rend un curseur, elle ne suit jamais la page suivante d'elle-même.
+
+L'identifiant est injecté par l'hôte, vers `standardebooks.org` seulement (aucun réglage ne change
+cette origine), et masqué des journaux, du cache, des références et du paquet de diagnostic. Le
+rythme est lent (une requête toutes les 5 secondes au plus pour toute la source) et les EPUB sont
+toujours **non fiables** : le neutraliseur passe avant tout export, l'original est gardé dans
+`/store`. Pour l'activer, ajoutez la clé `standardebooks` aux sources actives.

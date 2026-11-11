@@ -108,6 +108,7 @@ log = structlog.get_logger(__name__)
 ACQUIRE_JOB_KIND = "acquire.run"
 WORK_KIND = "novel"
 TITLE_MAX = 200
+RIGHTS_MAX = 2000
 UNKNOWN_LANGUAGE = "x-unknown"
 ADULT_FROM = 18
 OPEN_STATES = ("requested", "downloaded")
@@ -519,8 +520,11 @@ class NativeAcquirer:
                     text_version=version,
                 )
             ).id
-        write_rights(connection, edition_id, basis=manifest.rights_basis,
-                     jurisdiction=manifest.rights_jurisdiction)  # fmt: skip
+        write_rights(
+            connection, edition_id, basis=manifest.rights_basis,
+            jurisdiction=manifest.rights_jurisdiction, attribution=_attribution(info.rights),
+            plugin_key=record.key, now=now,
+        )  # fmt: skip
         remember_work(connection, work_id, record.key, info)
         credit_authors(connection, work_id, info, _clean)
         if translator is not None:
@@ -781,6 +785,14 @@ def _clean(text: str | None) -> str | None:
     if text is None:
         return None
     clean = sanitize_upstream_text(text, destination=Destination.PLAIN, max_length=TITLE_MAX)
+    return clean.strip() or None
+
+
+def _attribution(text: str | None) -> str | None:
+    """The attribution a source gave, as plain bounded text (it is copied into a file)."""
+    if text is None:
+        return None
+    clean = sanitize_upstream_text(text, destination=Destination.PLAIN, max_length=RIGHTS_MAX)
     return clean.strip() or None
 
 

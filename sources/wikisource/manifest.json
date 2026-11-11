@@ -1,0 +1,63 @@
+{
+  "key": "wikisource",
+  "kind": "source",
+  "version": "0.1.0",
+  "api": 1,
+  "name": "Wikisource (one EPUB per book, with its attribution)",
+  "permissions": {
+    "domains": [
+      {
+        "pattern": "*.wikisource.org",
+        "purpose": "api",
+        "base_url_setting": null,
+        "path_prefix": "/w/"
+      },
+      {
+        "pattern": "ws-export.wmcloud.org",
+        "purpose": "other",
+        "base_url_setting": null,
+        "path_prefix": null
+      }
+    ],
+    "lan_targets": [],
+    "needs_browser": false,
+    "needs_solver": false
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "language": {
+        "type": "string",
+        "title": "Language of the Wikisource searched by default (code, e.g. fr)",
+        "default": "fr"
+      }
+    }
+  },
+  "content_warning": "mixed",
+  "terms_url": "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use",
+  "respects_robots": true,
+  "attribution": "Texts from Wikisource, shared under CC BY-SA 4.0: the contributors of the Wikisource page, the licence and a link to the page go with the file.",
+  "homepage": null,
+  "langs": [],
+  "content_kinds": [
+    "file"
+  ],
+  "url_patterns": [
+    "https://*.wikisource.org/wiki/**"
+  ],
+  "capabilities": [
+    "SEARCH",
+    "URL_RESOLVE"
+  ],
+  "rate_limit": {
+    "requests_per_second": 1.0,
+    "concurrency": 1
+  },
+  "auth": [],
+  "id_scheme": "v1",
+  "rights_basis": "licence",
+  "rights_jurisdiction": null,
+  "translation_nature": "unknown",
+  "content_trust": "untrusted",
+  "tests": []
+}
