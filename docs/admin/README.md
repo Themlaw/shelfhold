@@ -38,6 +38,7 @@ l'installation.
 | Règles du contrôle parental, âge dans Kavita, retrait, livres EPUB (âge de série poussé verrouillé, omnibus) | [controle-parental.md](controle-parental.md) |
 | Classer les œuvres (« À classer », « À ranger », `shelfhold rate`) | [a-classer.md](a-classer.md) |
 | Qui peut faire quoi : rôles, actions réservées, fraîcheur du mot de passe | [roles.md](roles.md) |
+| Brancher votre propre instance lncrawl (romans web en EPUB, sans crawler fourni) | [lncrawl.md](lncrawl.md) |
 | Secrets, notifications, qui possède quel champ | [secrets.md](secrets.md), [notifications.md](notifications.md), [proprietaire-des-champs.md](proprietaire-des-champs.md) |
 | Lire les journaux, régler leur niveau | [journaux.md](journaux.md) |
 | Joindre un paquet de diagnostic à une demande d'aide | [diagnostic.md](diagnostic.md) |

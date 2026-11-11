@@ -12,9 +12,11 @@ The bytes themselves are the host store's business (`keep`): in M1a this lot fix
 and the persistence of tickets and coverage, the real range source arrives in M2.
 """
 
+import contextlib
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
+from datetime import datetime
 from itertools import groupby
 from typing import Any
 
@@ -22,6 +24,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.application.failures import from_service
+from shelfhold.acquisition.application.lncrawl_ranges import ticket_expired, verify_range_answer
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.infrastructure.clock import Clock
@@ -60,6 +63,7 @@ class RangeReport:
     fetched: int = 0
     retried: int = 0
     abandoned: int = 0
+    expired: int = 0  # tickets let go after waiting longer than the bound
 
 
 class RangeTickets:
@@ -75,7 +79,9 @@ class RangeTickets:
         edition_id: str,
         binding_id: str,
         series: SeriesRef,
+        origin: str | None = None,
     ) -> None:
+        self._origin = origin  # the origin a file of this service may come from (EF-SRC-034)
         self._engine = engine
         self._clock = clock
         self._service = service
@@ -101,6 +107,7 @@ class RangeTickets:
         with self._engine.connect() as connection:
             closed, rolling = self._covered_by(connection)
             asked = self._asked(connection)
+            given_up = self._given_up(connection)
             readable = readable_unit_ids(connection, self._edition_id)
             suppressed = set(
                 connection.execute(
@@ -120,7 +127,9 @@ class RangeTickets:
                 and u.unit_id not in suppressed
                 and (u.unit_id in rolling or u.unit_id not in readable)
             ]
-            if any(u.unit_id not in rolling for u in group):
+            # a range given up (a queue that never ends, a refused file) is not asked again until
+            # a Unit that was never asked joins it: a service that fails is not hammered
+            if any(u.unit_id not in rolling and u.unit_id not in given_up for u in group):
                 plan.append(group)
         return plan
 
@@ -159,6 +168,16 @@ class RangeTickets:
                 sa.select(ru.c.unit_id)
                 .join(r, r.c.id == ru.c.download_request_id)
                 .where(r.c.state.in_(OPEN), ru.c.state == "requested")
+            ).scalars()
+        )
+
+    def _given_up(self, connection: Connection) -> set[str]:
+        r, ru = acquisition.download_request, acquisition.download_request_unit
+        return set(
+            connection.execute(
+                sa.select(ru.c.unit_id)
+                .join(r, r.c.id == ru.c.download_request_id)
+                .where(r.c.state == "abandoned", ru.c.state == "requested")
             ).scalars()
         )
 
@@ -216,7 +235,10 @@ class RangeTickets:
         r = acquisition.download_request
         with self._engine.connect() as connection:
             rows = connection.execute(
-                sa.select(r.c.id, r.c.ticket, r.c.attempts, r.c.range_ref)
+                sa.select(
+                    r.c.id, r.c.ticket, r.c.attempts, r.c.range_ref, r.c.requested_at,
+                    r.c.updated_at,
+                )
                 .where(
                     r.c.target_kind == "range", r.c.state.in_(OPEN),
                     r.c.source_binding_id == self._binding_id,
@@ -225,7 +247,8 @@ class RangeTickets:
             ).all()  # fmt: skip
         for row in rows:
             try:
-                await self._advance_one(row.id, row.ticket, row.range_ref, report)
+                since = row.updated_at or row.requested_at
+                await self._advance_one(row.id, row.ticket, row.range_ref, report, since)
             except Exception as error:
                 failure_class = classify(error)
                 if disposition_of(failure_class) is Disposition.PAUSE:
@@ -234,11 +257,17 @@ class RangeTickets:
         return report
 
     async def _advance_one(
-        self, request_id: str, token: str | None, range_ref: dict[str, Any], report: RangeReport
+        self,
+        request_id: str,
+        token: str | None,
+        range_ref: dict[str, Any],
+        report: RangeReport,
+        since: datetime,
     ) -> None:
         units = [
             RangeUnit(u["unit_id"], UnitInfo.model_validate(u["info"])) for u in range_ref["units"]
         ]
+        token_was_held = token is not None
         if token is None:
             target = RangeRef(
                 series=self._series,
@@ -250,6 +279,14 @@ class RangeTickets:
             self._update(request_id, ticket=token)
             report.submitted += 1
         ticket = Ticket(token=token, target_kind="range")
+        if token_was_held and ticket_expired(self._clock.now(), since):
+            # a queue that never ends: the instance is told to drop it and the range is asked
+            # again, a bounded number of times (`MAX_ATTEMPTS`)
+            with contextlib.suppress(Exception):
+                await self._service.cancel(self._fetcher, ticket)
+            report.expired += 1
+            self._retry(request_id, None, report)
+            return
         state = await from_service(self._service.poll(self._fetcher, ticket))
         if state in ("queued", "downloading"):
             report.waiting += 1
@@ -260,6 +297,7 @@ class RangeTickets:
         payload = await from_service(self._service.fetch(self._fetcher, ticket))
         if not isinstance(payload, RangedPayload):
             raise SourceChanged("a ranged ticket must be answered with a ranged payload")
+        verify_range_answer(units, payload, origin=self._origin)  # before a byte is received
         async with self._receive(payload.asset) as received:
             with self._engine.begin() as connection:
                 item_id = self._record(connection, request_id, units, payload)

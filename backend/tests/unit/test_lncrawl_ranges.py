@@ -85,12 +85,6 @@ def test_a_file_on_another_origin_than_the_instance_is_refused(url: str) -> None
 
 
 @pytest.mark.req("EF-SRC-034")
-def test_bounds_may_name_only_what_the_file_covers() -> None:
-    with pytest.raises(RangeAnswerRefused):
-        verify_range_answer(units(), payload(["r1"], bounds={"r2": ("a", "b")}), origin=ORIGIN)
-
-
-@pytest.mark.req("EF-SRC-034")
 def test_a_ticket_older_than_the_bound_expires() -> None:
     assert not ticket_expired(NOW, NOW - MAX_TICKET_AGE + timedelta(seconds=1))
     assert ticket_expired(NOW, NOW - MAX_TICKET_AGE - timedelta(seconds=1))

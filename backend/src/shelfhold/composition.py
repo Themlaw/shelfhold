@@ -59,10 +59,11 @@ from shelfhold.ops.events import BusTargetEvents
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
 from shelfhold.plugin_host.refs_guard import screened, secret_of, values_of
 from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.models import AuthBasic
+from shelfhold.sdk.models import AuthApiKey, AuthBasic
 
 __all__ = [
     "Composition",
+    "ConnectedLink",
     "Gates",
     "KeyringUnavailableError",
     "Network",
@@ -78,11 +79,14 @@ log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
-class SuwayomiLink:
+class ConnectedLink:
     service: Any  # the `ConnectedService`
     fetcher: Any  # the SDK Fetcher the service uses: the credential is injected by the host
     guarded: GuardedFetcher  # the same transport, for the bounded download of the archives
     url: str
+
+
+SuwayomiLink = ConnectedLink  # the first connected service; the shape is the same for every one
 
 
 KAVITA_WAKE = "kavita"  # the labels of the WakeHook (`Settings.wake_targets`)
@@ -530,6 +534,47 @@ class Composition:
             secret_of(fetcher),
         )
         return SuwayomiLink(checked, fetcher, guarded, url)
+
+    # -- lncrawl -----------------------------------------------------------------------------
+
+    def lncrawl(self) -> ConnectedLink | None:
+        """The instance the admin pointed to (L07 settings: `base_url`, sealed `api_key`), or None
+        when there is none or its address is refused. Nothing is configured by default: Shelfhold
+        activates, lists and suggests no crawler, and the address is the admin's own."""
+        from shelfhold.infrastructure.fetcher.guard import DomainAllowlist
+        from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService
+        from shelfhold.plugin_host.settings import SourceSettings
+
+        with self.engine.connect() as connection:
+            settings = connection.execute(
+                sa.select(acquisition.source_config.c.settings).where(
+                    acquisition.source_config.c.plugin_id == "lncrawl"
+                )
+            ).scalar_one_or_none()
+        url = (settings or {}).get("base_url")
+        if not url or service_url_problem(str(url)) is not None:  # checked at every use
+            return None
+        service = LncrawlService(str(url))
+        if service.origin is None:  # a `user:password@` address, or not http(s)
+            return None
+        rules = DomainAllowlist(
+            "lncrawl", service.manifest.permissions.domains, {"base_url": str(url)}
+        )  # the DomainRule of the instance: its host, and no other, at every hop
+        guarded = self.network.integration_fetcher(str(url), domains=rules)
+        fetcher: Any = guarded
+        key = SourceSettings(self.engine, self.vault).load("lncrawl").values.get("api_key")
+        if key:  # injected by the host, towards the origin of the instance only
+            fetcher = AuthInjectingFetcher(
+                cast("Any", guarded), AuthApiKey(location="header", name="X-API-Key"),
+                {"api_key": key}, origin=str(url),
+            )  # fmt: skip
+        checked = screened(
+            service,
+            values_of(fetcher),
+            lambda: getattr(fetcher, "ref_template", None),
+            secret_of(fetcher),
+        )  # every reference the instance hands back is screened for secrets (EF-SRC-035)
+        return ConnectedLink(checked, fetcher, guarded, str(url))
 
     def check_mode(self) -> str:
         """`always_on` or `piloted` (EF-SRC-025): the stored `source.check_mode`, else `piloted`

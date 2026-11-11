@@ -106,10 +106,27 @@ def test_no_crawler_enabled_or_listed_by_default() -> None:
     assert not [r for r in server.requests if "crawler" in r.path or "source" in r.path]
     names = {n.lower() for n in dir(service)}
     assert not {n for n in names if "crawler" in n}  # no method lists, picks or switches one
-    manifest = MANIFEST.read_text("utf-8").lower()
-    assert "crawler" not in manifest and "sources" not in json.loads(manifest)
+    declared = json.loads(MANIFEST.read_text("utf-8"))
+    assert "sources" not in declared and "crawlers" not in declared  # nothing is listed
+    for link in ("homepage", "terms_url"):  # the tool's own repository is the one name allowed
+        declared.pop(link)
+    assert "crawler" not in json.dumps(declared).lower()
     compose = [p for p in REPO.glob("**/*compose*.y*ml") if "node_modules" not in p.parts]
     assert not [p for p in compose if "lncrawl" in p.read_text("utf-8").lower()]  # no profile
+
+
+@pytest.mark.req("EF-SRC-010", "ENF-LEG-001")
+def test_the_host_ships_lncrawl_loaded_but_switched_off_with_settings_of_its_own() -> None:
+    from shelfhold.plugin_host.public import first_party_candidates
+    from shelfhold.plugin_host.registry import PluginStatus
+    from shelfhold.plugin_host.settings import parse_settings_schema
+
+    registry = PluginRegistry(active_keys=())
+    records = {r.key: r for r in registry.load_all(first_party_candidates())}
+    assert records["lncrawl"].status is PluginStatus.LOADED and registry.active() == []
+    schema = parse_settings_schema(records["lncrawl"].manifest.settings_schema)
+    assert [f.name for f in schema.fields if f.secret] == ["api_key"]
+    assert records["lncrawl"].instance.base_url == ""  # no address until the admin gives one
 
 
 @pytest.mark.req("EF-SRC-010", "EF-SRC-033")
@@ -124,7 +141,7 @@ def test_lncrawl_manifest_and_declared_capabilities() -> None:
     assert ConnectedCapability.RELEASE_CLAIM not in service.connected  # nothing erased upstream
     raw = json.loads(MANIFEST.read_text("utf-8"))
     assert raw["permissions"]["lan_targets"] == []  # declared by the admin, never baked in
-    assert raw["settings_schema"]["properties"]["api_key"]["secret"] is True
+    assert raw["settings_schema"]["properties"]["api_key"]["writeOnly"] is True
 
 
 # --- EF-SRC-034: two steps, one ticket ---------------------------------------------------------
@@ -134,8 +151,8 @@ def test_lncrawl_range_request_two_step_one_ticket() -> None:
     ref, units = alpha(service, f)
     ticket = run(service.request(f, volume_target(ref, units, "Vol.2")))
     assert len(server.jobs) == 1  # one job for the whole range, never one per chapter
-    assert [p["json"] for p in f.posts][0]["first"] == "ch-7"
-    assert [p["json"] for p in f.posts][0]["last"] == "ch-10"
+    asked = f.posts[0]["json"]
+    assert (asked["first"], asked["last"]) == ("ch-7", "ch-10")
     states = [run(service.poll(f, ticket)) for _ in range(3)]
     assert states == ["queued", "downloading", "ready"]
     payload = run(service.fetch(f, ticket))
@@ -241,8 +258,8 @@ def test_lncrawl_second_step_for_another_range_than_announced_is_refused(
     _tamper(server, **changes)
     ref, units = alpha(service, f)
     ticket = run(service.request(f, volume_target(ref, units, "Vol.1")))
-    ready(service, f, ticket)
-    with pytest.raises(SourceChanged):
+    with pytest.raises(SourceChanged):  # at the poll for another novel, at the file otherwise
+        ready(service, f, ticket)
         run(service.fetch(f, ticket))
     assert f.downloads == []
 
@@ -320,7 +337,7 @@ def test_lncrawl_endless_listing_is_cut_at_a_bound() -> None:
 # --- attack: a secret that leaks ---------------------------------------------------------------
 @pytest.mark.req("EF-SRC-035", "ENF-SEC-009")
 def test_lncrawl_api_key_never_reaches_a_ticket_a_reference_a_log_or_an_error() -> None:
-    service, f, server = make()
+    service, f, _ = make()
     with structlog.testing.capture_logs() as logs:
         ref, units = alpha(service, f)
         ticket = run(service.request(f, volume_target(ref, units, "Vol.1")))
@@ -379,7 +396,7 @@ def test_lncrawl_crawler_name_in_a_reply_is_never_logged_raised_or_shown(
     assert f.unscripted == [] and server.violations == []
 
 
-# --- an instance outside the DomainRules -----------------------------------------------------------
+# --- an instance outside the DomainRules ------------------------------------
 @pytest.mark.req("EF-SRC-003", "EF-SRC-010")
 def test_lncrawl_instance_outside_the_domain_rules_is_refused() -> None:
     from shelfhold.infrastructure.fetcher.guard import DomainAllowlist, DomainNotAllowed
@@ -405,7 +422,7 @@ def test_lncrawl_without_an_instance_does_nothing() -> None:
     assert f.server.requests == []
 
 
-# --- listing, identities, health -------------------------------------------------------------------
+# --- listing, identities, health ------------------------------------
 @pytest.mark.req("EF-SRC-036", "EF-SRC-033")
 def test_lncrawl_identities_follow_the_instance_and_the_fingerprint_its_installation() -> None:
     service, f, server = make()

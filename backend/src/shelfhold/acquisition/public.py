@@ -29,6 +29,14 @@ from shelfhold.acquisition.application.follow_request import (
     ServiceNotConnectedError,
 )
 from shelfhold.acquisition.application.import_target import IMPORT_PLUGIN, ImportTargets
+from shelfhold.acquisition.application.lncrawl_ranges import (
+    MAX_COVERED,
+    MAX_TICKET_AGE,
+    RangeAnswerRefused,
+    epub_only,
+    ticket_expired,
+    verify_range_answer,
+)
 from shelfhold.acquisition.application.planning import pending
 from shelfhold.acquisition.application.preference import TeamPreference
 from shelfhold.acquisition.application.presence import present_for_acquisition, present_in
@@ -70,6 +78,8 @@ __all__ = [
     "DEFAULT_K",
     "FOLLOW_JOB_KIND",
     "IMPORT_PLUGIN",
+    "MAX_COVERED",
+    "MAX_TICKET_AGE",
     "AcquireOutcome",
     "AcquireRefused",
     "Backfill",
@@ -94,6 +104,7 @@ __all__ = [
     "Pause",
     "Placement",
     "Prepared",
+    "RangeAnswerRefused",
     "RangeReport",
     "RangeRequest",
     "RangeTickets",
@@ -119,6 +130,7 @@ __all__ = [
     "classify",
     "decline_pairing",
     "disposition_of",
+    "epub_only",
     "follow_dedupe_key",
     "follow_job",
     "is_stale",
@@ -130,4 +142,6 @@ __all__ = [
     "stale_threshold",
     "submit_follow",
     "suppress_follow",
+    "ticket_expired",
+    "verify_range_answer",
 ]

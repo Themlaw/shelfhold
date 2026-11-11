@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import structlog
 
 from shelfhold.config import Settings
+from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService
 from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
 from shelfhold.plugin_host.adapters.native.wikisource import WikisourceSource
 from shelfhold.plugin_host.attestation import InstalledVersion, publisher_attested
@@ -64,7 +65,8 @@ def load_plugin_state(settings: Settings) -> PluginState:
 
 
 def first_party_candidates() -> list[PluginCandidate]:
-    """The native sources the host ships: loaded at start, switched on only by the admin
+    """The sources the host ships (native, and the connected service of the user's own lncrawl):
+    loaded at start, switched on only by the admin
     (`active_sources`). Their code is the host's own and is imported here, not discovered. A source
     that reads XML is given the host's reader: a native adapter has no door to it of its own."""
 
@@ -74,9 +76,13 @@ def first_party_candidates() -> list[PluginCandidate]:
     def wikisource() -> WikisourceSource:
         return WikisourceSource()
 
+    def lncrawl() -> LncrawlService:
+        return LncrawlService()  # the address is the admin's own, from the settings of the source
+
     return [
         PluginCandidate(key="gutenberg", origin=PluginOrigin.FIRST_PARTY, load=gutenberg),
         PluginCandidate(key="wikisource", origin=PluginOrigin.FIRST_PARTY, load=wikisource),
+        PluginCandidate(key="lncrawl", origin=PluginOrigin.FIRST_PARTY, load=lncrawl),
     ]
 
 

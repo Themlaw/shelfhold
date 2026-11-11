@@ -1,4 +1,4 @@
-"""Synthetic stand-in for a user's lncrawl instance (M2 L25): nothing here comes from a third party."""
+"""Synthetic stand-in for a user's lncrawl instance (M2 L25): nothing is from a third party."""
 
 from tests.fakes.lncrawl.server import (
     API_KEY,

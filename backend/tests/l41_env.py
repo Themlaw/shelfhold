@@ -25,9 +25,9 @@ from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.jobs.huey_app import JobContext
 from tests.fakes.kavita import API_KEY, FakeKavita
-from tests.fakes.lncrawl import FakeLncrawl
 from tests.fakes.kavita import BASE_URL as KAVITA_URL
 from tests.fakes.kavita.server import LAN_ADDRESS
+from tests.fakes.lncrawl import FakeLncrawl
 from tests.fakes.suwayomi import FakeSuwayomi
 from tests.fakes.suwayomi.server import BASE_URL as SUWAYOMI_URL
 from tests.fakes.suwayomi.server import PASSWORD, USER

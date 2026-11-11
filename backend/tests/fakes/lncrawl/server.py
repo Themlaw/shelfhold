@@ -28,7 +28,7 @@ from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
 from shelfhold.sdk.refs import ImageRequest
 
 BASE_URL = "http://lncrawl.lan:8080"
-API_KEY = "synthetic-test-key-not-a-real-one"  # noqa: S105 - throwaway value of the simulated server
+API_KEY = "synthetic-test-key-not-a-real-one"
 CANARY = "synthetic-canary-name-7f3a"  # a name the instance may repeat and Shelfhold must not
 PAGE_SIZE = 4
 

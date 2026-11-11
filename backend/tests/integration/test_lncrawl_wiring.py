@@ -19,17 +19,9 @@ pytestmark = pytest.mark.req("EF-SRC-010", "EF-SRC-033")
 
 
 class _Admin:
-    @staticmethod
-    def actor_id() -> str | None:
-        return None
-
-    @staticmethod
-    def session_id() -> str | None:
-        return None
-
-    @staticmethod
-    def auth_time() -> None:
-        return None
+    actor_id = None
+    session_id = None
+    auth_time = None
 
 
 class _Pools:

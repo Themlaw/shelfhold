@@ -57,7 +57,7 @@ class Bench:
             return [dict(r._mapping) for r in connection.execute(sa.text(sql), params)]
 
     def events(self, event_type: str) -> list[dict[str, Any]]:
-        return [dict(e.payload) for e in self.delivered if e.event_type == event_type]
+        return [dict(e.payload) for e in self.delivered if e.type == event_type]
 
     def kept_files(self) -> list[Path]:
         folder = self.lib.data / "ranged"
