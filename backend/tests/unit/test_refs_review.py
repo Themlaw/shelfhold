@@ -3,7 +3,14 @@
 Tokens are built at run time (`synthetic_text`); none is a literal.
 """
 
+import base64
+import json
+import random
+from urllib.parse import quote, quote_plus
+
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from shelfhold.infrastructure.fetcher.refs import SecretInRef, check_ref, has_userinfo
 from shelfhold.infrastructure.secret_text import credentialish, sensitive_name, tokenlike
@@ -186,3 +193,85 @@ def test_redact_url_masks_short_names_and_bare_tokens_but_keeps_an_author() -> N
     assert route_of(f"https://h.example/s/{b36}/ch-1") == "h.example/s/***/ch-1"
     kept = "https://h.example/search?author=Hugo&q=Miserables&keyword=a#top"
     assert redact_url(kept) == kept
+
+
+# -- property tests with adversarial inputs (review) ------------------------------------------
+
+
+_ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+_NAMES = [
+    "key", "t", "token", "accessToken", "apiToken", "authToken", "sessionId", "hmac", "Policy",
+    "Signature", "code", "sig", "secret", "password", "X-Amz-Security-Token",
+]  # fmt: skip
+
+
+def _mixed_case(name: str, seed: int) -> str:
+    rng = random.Random(seed)  # noqa: S311 - a test shuffle
+    return "".join(c.upper() if rng.random() < 0.5 else c.lower() for c in name)
+
+
+@settings(max_examples=150, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(
+    name=st.sampled_from(_NAMES),
+    seed=st.integers(0, 10_000),
+    value=st.text(_ALNUM, min_size=16, max_size=40).filter(
+        lambda v: any(c.isdigit() for c in v) and any(c.isalpha() for c in v)
+    ),
+    shape=st.sampled_from(["?{n}={v}", "?a=1&{n}={v}", "?{n}[]={v}", "#{n}={v}", ";{n}={v}"]),
+)
+def test_property_a_never_registered_credential_is_refused_whatever_the_case_of_its_name(
+    name: str, seed: int, value: str, shape: str
+) -> None:
+    forget_secret_values()
+    ref = "/series/1" + shape.format(n=_mixed_case(name, seed), v=value)
+    with pytest.raises(SecretInRef):
+        check_ref(ref, ())
+
+
+@settings(max_examples=120, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(
+    seed=st.text(_ALNUM, min_size=1, max_size=12),
+    encoding=st.sampled_from(
+        ["raw", "percent", "plus", "double", "b64", "b64_unpadded", "b64url", "b64_json", "b64_pct"]
+    ),
+    where=st.sampled_from(["/dl/{}/ch-1", "/ch-1?x={}", "/ch-1#{}", "/a/{}"]),
+)
+def test_property_a_registered_key_is_refused_in_every_encoding(
+    seed: str, encoding: str, where: str
+) -> None:
+    from shelfhold.infrastructure.logging import known_secret_values, register_secret_value
+    from shelfhold.infrastructure.secret_text import contains_secret
+
+    forget_secret_values()
+    key = synthetic_text("prop-" + seed, specials=True)
+    register_secret_value(key)
+    raw = key.encode()
+    forms = {
+        "raw": key,
+        "percent": quote(key, safe=""),
+        "plus": quote_plus(key),
+        "double": quote(quote(key, safe=""), safe=""),
+        "b64": base64.b64encode(raw).decode(),
+        "b64_unpadded": base64.b64encode(raw).decode().rstrip("="),
+        "b64url": base64.urlsafe_b64encode(raw).decode(),
+        "b64_json": base64.urlsafe_b64encode(json.dumps({"k": key}).encode()).decode(),
+        "b64_pct": quote(base64.b64encode(raw).decode(), safe=""),
+    }
+    text = where.format(forms[encoding])
+    assert contains_secret(text, known_secret_values()), (encoding, text)
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    segments=st.lists(st.text(_ALNUM, min_size=1, max_size=9), min_size=1, max_size=5),
+    names=st.lists(st.sampled_from(["page", "ch", "lang", "order", "q", "n"]), max_size=3),
+    numbers=st.lists(st.integers(0, 99_999), max_size=3),
+)
+def test_property_a_clean_reference_over_the_full_alphabet_is_never_refused(
+    segments: list[str], names: list[str], numbers: list[int]
+) -> None:
+    forget_secret_values()
+    ref = "/" + "/".join(segments)
+    if names:
+        ref += "?" + "&".join(f"{n}={v}" for n, v in zip(names, numbers, strict=False))
+    assert check_ref(ref, ()) == ref

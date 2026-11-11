@@ -8,6 +8,7 @@ each test.
 import json
 import logging
 import re
+import string
 from collections.abc import Iterator
 from urllib.parse import quote, quote_plus, unquote
 
@@ -351,7 +352,11 @@ def test_property_no_write_carries_a_registered_secret(
 
 
 @settings(max_examples=100, deadline=None)
-@given(ref=st.text(st.sampled_from("abcdefgh012345/-_.:?&=#"), max_size=40))
+@given(
+    ref=st.text(
+        st.sampled_from(string.ascii_letters + string.digits + "/-_.:?&=#%+~@ "), max_size=60
+    )
+)
 def test_property_a_clean_reference_is_never_refused_by_the_guard(ref: str) -> None:
     forget_secret_values()
     register_secret_value(KEY)
