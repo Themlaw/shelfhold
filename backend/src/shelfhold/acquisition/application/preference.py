@@ -18,6 +18,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection
 
+from shelfhold.acquisition.application.filtering import refusals, set_filtered_reason
 from shelfhold.acquisition.domain.selection import Candidate, select
 from shelfhold.acquisition.domain.team_policy import (
     DEFAULT_INACTIVE_MONTHS,
@@ -54,6 +55,14 @@ def record_release(connection: Connection, team_id: str | None, at: datetime) ->
         )
         .values(last_release_at=at)
     )
+
+
+def _reason_shown(candidates: list[Candidate]) -> str | None:
+    """Why the Unit is left out: only when a filter refused every offer a binding could make."""
+    usable = [c for c in candidates if c.active and c.same_work and not c.tombstoned]
+    if not usable or any(c.filtered is None for c in usable):
+        return None
+    return min(usable, key=lambda c: (c.rank, c.age)).filtered
 
 
 class TeamPreference:
@@ -93,7 +102,11 @@ class TeamPreference:
                 teams, stats, priority=priority, now=now, inactive_months=self._months
             )
 
-        selected = select(self._candidates(connection, unit.edition_id, live, allowed), team)
+        refused = refusals(connection, unit.edition_id, unit_id, {f.id for f in live})
+        candidates = self._candidates(connection, unit.edition_id, live, allowed, refused)
+        selected = select(candidates, team)
+        # Told on the Unit, so that the series' page says why nothing was asked (EF-SRC-039)
+        set_filtered_reason(connection, unit_id, _reason_shown(candidates))
         if selected is None:
             return None
         choice = selected.choice
@@ -118,6 +131,7 @@ class TeamPreference:
         edition_id: str,
         live: list[VariantFacts],
         allowed: Collection[str] | None,
+        refused: dict[str, str],
     ) -> list[Candidate]:
         b, e = acquisition.source_binding, catalog.edition
         work_id = connection.execute(sa.select(e.c.work_id).where(e.c.id == edition_id)).scalar()
@@ -143,6 +157,7 @@ class TeamPreference:
                     f.age,
                     active=bool(binding.active) and (allowed is None or f.binding_id in allowed),
                     same_work=binding.edition_id == edition_id and binding.work_id == work_id,
+                    filtered=refused.get(f.id),
                 )
             )
         return out

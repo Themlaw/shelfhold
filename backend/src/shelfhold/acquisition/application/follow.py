@@ -43,6 +43,8 @@ from shelfhold.acquisition.application.discovery import (
 )
 from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
 from shelfhold.acquisition.application.fallback import Fallback
+from shelfhold.acquisition.application.filtering import refusals
+from shelfhold.acquisition.application.gap_watch import GapWatch
 from shelfhold.acquisition.application.instance import check_instance
 from shelfhold.acquisition.application.late_upgrade import (
     Upgrader,
@@ -74,6 +76,7 @@ from shelfhold.acquisition.application.tickets import (
 )
 from shelfhold.acquisition.domain.backfill import BackfillMode
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
+from shelfhold.acquisition.domain.filters import DEFAULT_NEWS_CAP, parse_filters
 from shelfhold.acquisition.domain.freshness import DEFAULT_K
 from shelfhold.acquisition.domain.requests import (
     DEFAULT_KEY_CAP,
@@ -192,6 +195,8 @@ class FollowReport:
     not_loaded: int = 0  # upstream sources the probe found unusable (EF-SRC-026 a)
     fell_back: int = 0  # bindings that fell back to the next rank (EF-SRC-037)
     upgraded: int = 0  # Units upgraded at their path to a better-ranked copy (EF-SRC-037)
+    spilled: int = 0  # Units over a series' per-cycle cap, asked as catch-up (EF-SRC-039)
+    gaps: int = 0  # numbering gaps told in this cycle (EF-BIB-056)
     tickets: TicketReport = field(default_factory=TicketReport)
 
     def counters(self) -> dict[str, object]:
@@ -204,7 +209,7 @@ class FollowReport:
             "paused": self.paused, "unavailable": self.unavailable,
             "deferred": self.deferred, "refreshed": self.refreshed,
             "not_loaded": self.not_loaded, "fell_back": self.fell_back,
-            "upgraded": self.upgraded,
+            "upgraded": self.upgraded, "spilled": self.spilled, "gaps": self.gaps,
         }  # fmt: skip
 
     def has_news(self) -> bool:
@@ -226,7 +231,7 @@ class _Binding(NamedTuple):
     check_override: str | None
     source_key: str
     remote_id: str
-    cap: int | None  # per-cycle cap of this series, in Units (None: only the shared caps)
+    cap: int  # news a series may ask per cycle, in Units; the surplus is asked as catch-up
 
 
 @dataclass
@@ -310,6 +315,9 @@ class FollowCycle:
         self._unloaded: frozenset[str] = frozenset()
         self._slots = slots
         self._series_taken: dict[str, int] = {}
+        self._capped: set[str] = set()  # series that hit their news cap in this cycle
+        self._looked: set[str] = set()  # bindings whose listing was read in this cycle
+        self._gaps = GapWatch(self._emit)
         self._tombstones = tombstones  # EF-BIB-053: required, a cycle never runs without it
         self._discovery = SeriesDiscovery(
             engine, clock, self._plugin_id, tombstones, self._emit,
@@ -440,6 +448,8 @@ class FollowCycle:
         budget = RequestBudget(*self._caps)
         self._series_taken = {}
         self._asked_units = set()
+        self._capped = set()
+        self._looked = set()
         self._buried = {}
         self._buried_ids = {}
         suspended = self._suspended()
@@ -462,6 +472,7 @@ class FollowCycle:
             await self._discover_isolated(binding, report, budget)
         self._fill(followed, budget, report)
         await self._ranges(followed, budget, report)
+        self._watch_gaps(followed, report)
         started = self._clock.now()
         report.tickets = await self._tickets.advance()
         report.fetched += report.tickets.fetched
@@ -566,18 +577,21 @@ class FollowCycle:
                 continue
             with self._engine.connect() as connection:
                 by_remote = {
-                    r.remote_unit_id: r.unit_id
+                    r.remote_unit_id: (r.unit_id, r.id)
                     for r in connection.execute(
-                        sa.select(v.c.remote_unit_id, v.c.unit_id).where(
+                        sa.select(v.c.remote_unit_id, v.c.unit_id, v.c.id).where(
                             v.c.source_binding_id == binding.id
                         )
                     )
                 }
-            units = [
-                RangeUnit(by_remote[i.remote_unit_id], i)
-                for i in infos
-                if i.remote_unit_id in by_remote
-            ]
+                units = []
+                for i in infos:
+                    held = by_remote.get(i.remote_unit_id)
+                    if held is None:
+                        continue
+                    if refusals(connection, binding.edition_id, held[0], {held[1]}):
+                        continue  # filtered: a range never carries it (EF-SRC-039)
+                    units.append(RangeUnit(held[0], i))
             ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
             tickets = RangeTickets(
                 self._engine, self._clock, self._service, self._fetcher, self._receive_files,
@@ -743,7 +757,7 @@ class FollowCycle:
             sa.select(
                 b.c.id, b.c.edition_id, b.c.work_id, b.c.active, b.c.disabled_reason,
                 b.c.priority, b.c.last_checked, f.c.check_override, si.c.source_key,
-                si.c.remote_id, f.c.cap,
+                si.c.remote_id, f.c.cap, f.c.filters,
             )
             .select_from(
                 b.join(si, si.c.id == b.c.source_item_id).join(
@@ -757,7 +771,23 @@ class FollowCycle:
             .order_by(b.c.edition_id, b.c.priority)
         )  # fmt: skip
         with self._engine.connect() as connection:
-            return [_Binding._make(row) for row in connection.execute(query)]
+            rows = connection.execute(query).all()
+        return [
+            _Binding(
+                row.id,
+                row.edition_id,
+                row.work_id,
+                row.active,
+                row.disabled_reason,
+                row.priority,
+                row.last_checked,
+                row.check_override,
+                row.source_key,
+                row.remote_id,
+                row.cap or parse_filters(row.filters).cap or DEFAULT_NEWS_CAP,
+            )
+            for row in rows
+        ]
 
     def _stop_following(self, binding: _Binding) -> bool:
         """EF-SRC-027: the series left the Suwayomi library. The binding goes inactive, so its
@@ -894,6 +924,7 @@ class FollowCycle:
             connection.execute(
                 sa.update(table).where(table.c.id == binding.id).values(last_checked=look.now)
             )
+        self._looked.add(binding.id)
 
     def _take_quarantined(self) -> list[str]:
         taken = getattr(self._service, "take_quarantined", None)
@@ -1006,10 +1037,27 @@ class FollowCycle:
         ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
         return str(key_for(ref))
 
-    def _take(self, binding: _Binding, budget: RequestBudget) -> bool:
+    def _watch_gaps(self, followed: list[_Binding], report: FollowReport) -> None:
+        """EF-BIB-056: once every binding of an Edition has been read in this cycle, what is
+        still missing beyond the watermark is told once. An Edition with a binding that was not
+        read (it failed, its source is down) waits: the place may be listed there."""
+        by_edition: dict[str, list[_Binding]] = {}
+        for binding in followed:
+            by_edition.setdefault(binding.edition_id, []).append(binding)
+        now = self._clock.now()
+        for edition_id, bindings in by_edition.items():
+            if not all(b.id in self._looked for b in bindings):
+                continue
+            with self._engine.begin() as connection:
+                report.gaps += self._gaps.scan(connection, edition_id, bindings[0].work_id, now)
+
+    def _take(self, binding: _Binding, budget: RequestBudget, *, catch_up: bool = False) -> bool:
+        """One request of the caps. News stop at the series' own cap; the surplus is asked after
+        every series' news, as catch-up, within the shared caps only (EF-SRC-039)."""
         taken = self._series_taken.get(binding.id, 0)
-        room = None if binding.cap is None else binding.cap - taken
+        room = None if catch_up else binding.cap - taken
         if room is not None and room <= 0:
+            self._capped.add(binding.edition_id)
             return False
         if budget.take(self._limit_key(binding), 1, series_cap=room) == 0:
             log.debug("follow.budget_exhausted", binding_id=binding.id)
@@ -1023,6 +1071,9 @@ class FollowCycle:
         by_id = {binding.id: binding for binding in followed}
         editions = list({b.edition_id: b for b in followed}.values())
         report.requested += self._round_robin(editions, "follow", by_id, budget)
+        over = [e for e in editions if e.edition_id in self._capped]
+        report.spilled = self._round_robin(over, "follow", by_id, budget, catch_up=True)
+        report.requested += report.spilled
         with self._engine.connect() as connection:
             modes = {
                 row.edition_id: row.backfill_mode
@@ -1093,6 +1144,10 @@ class FollowCycle:
             if binding is None or candidate.unit_id in self._asked_units:
                 continue
             with self._engine.begin() as connection:
+                if refusals(
+                    connection, binding.edition_id, candidate.unit_id, {candidate.variant_id}
+                ):
+                    continue  # the filters bind an upgrade as they bind a first request
                 if not self._take(binding, budget):
                     break
                 if DownloadTickets.open(
@@ -1149,6 +1204,8 @@ class FollowCycle:
         mode: Mode,
         by_id: dict[str, _Binding],
         budget: RequestBudget,
+        *,
+        catch_up: bool = False,
     ) -> int:
         queues: dict[str, deque[str]] = {}
         with self._engine.connect() as connection:
@@ -1162,15 +1219,16 @@ class FollowCycle:
                     del queues[edition_id]
                     continue
                 unit_id = queues[edition_id].popleft()
-                outcome = self._open_for_unit(unit_id, by_id, budget)
+                outcome = self._open_for_unit(unit_id, by_id, budget, catch_up=catch_up)
                 if outcome == "exhausted":
                     del queues[edition_id]
                 opened += outcome == "opened"
         return opened
 
     def _open_for_unit(
-        self, unit_id: str, by_id: dict[str, _Binding], budget: RequestBudget
-    ) -> str:
+        self, unit_id: str, by_id: dict[str, _Binding], budget: RequestBudget, *,
+        catch_up: bool = False,
+    ) -> str:  # fmt: skip
         if unit_id in self._asked_units:
             return "skipped"  # I52: this Unit was asked of a binding already in this cycle
         now = self._clock.now()
@@ -1179,7 +1237,7 @@ class FollowCycle:
             binding = by_id.get(election.binding_id) if election else None
             if election is None or binding is None:
                 return "skipped"  # no Variant that a followed, active binding can be asked for
-            if not self._take(binding, budget):
+            if not self._take(binding, budget, catch_up=catch_up):
                 return "exhausted"
             opened = DownloadTickets.open(
                 connection, binding_id=binding.id, variant_id=election.variant_id,

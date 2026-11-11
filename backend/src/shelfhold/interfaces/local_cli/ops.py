@@ -369,6 +369,14 @@ def _follow(ops: OpsServices, by: Principal, p: Params) -> object:
     )
 
 
+def _gap_ack(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.follows.gap_ack(
+        _text(p, "edition_id"), _text(p, "number"),
+        track=_text(p, "track"), segment=str(p.get("segment") or ""),
+        undo=p.get("undo") is True, actor_id=user_of(by),
+    )  # fmt: skip
+
+
 def _unfollow(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.follows.unfollow(
         _text(p, "source_key"), _text(p, "remote_id"),
@@ -570,6 +578,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.backfill_start": (_backfill_start, None),
     "ops.follow": (_follow, None),
     "ops.unfollow": (_unfollow, None),
+    "ops.follow_gap_ack": (_gap_ack, None),
     "ops.source_search": (_source_search, None),
     "ops.source_filters": (_source_filters, None),
     "ops.acquire": (_acquire, None),

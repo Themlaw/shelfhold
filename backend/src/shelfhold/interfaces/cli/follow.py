@@ -1,9 +1,12 @@
-"""``shelfhold follow`` and ``shelfhold unfollow`` (EF-SRC-029, EF-INT-014).
+"""``shelfhold follow``, ``shelfhold follow gap-ack`` and ``shelfhold unfollow`` (EF-SRC-029,
+EF-INT-014, EF-BIB-056).
 
 `follow` makes one entry in the connected service's library, in the `Shelfhold` category, without
 automatic download; asking twice changes nothing. `unfollow` keeps the series in the service; with
 `--remove-upstream` it leaves the library too, and that needs `--confirm` (exit code 3 otherwise,
 with the exact command). The route and this command go through the same service.
+`follow gap-ack <edition> <number>` says that a number the series shows as missing does not exist:
+the gap is no longer told. `--undo` takes it back.
 """
 
 from __future__ import annotations
@@ -16,11 +19,16 @@ from shelfhold.interfaces.cli._ops import ops_command
 from shelfhold.interfaces.local_cli import OpsChannel
 
 NEEDS_CONFIRMATION = 3
+GAP_ACK = "gap-ack"
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     follow = commands.add_parser("follow", help=t("ops.help_follow_series"), allow_abbrev=False)
     _series(follow)
+    follow.add_argument("number", nargs="?", help=t("ops.help_gap_ack_number"))
+    follow.add_argument("--track", default="main", help=t("ops.help_gap_ack_track"))
+    follow.add_argument("--segment", default="", help=t("ops.help_gap_ack_segment"))
+    follow.add_argument("--undo", action="store_true", help=t("ops.help_gap_ack_undo"))
     follow.set_defaults(handler=run_follow, configure_logging=False)
     unfollow = commands.add_parser(
         "unfollow", help=t("ops.help_unfollow_series"), allow_abbrev=False
@@ -39,13 +47,40 @@ def _series(parser: argparse.ArgumentParser) -> None:
 
 
 @ops_command
-def run_follow(args: argparse.Namespace, channel: OpsChannel) -> int:
+def _gap_ack(args: argparse.Namespace, channel: OpsChannel) -> int:
+    answer = channel.call(
+        "ops.follow_gap_ack", edition_id=args.remote_id, number=args.number, track=args.track,
+        segment=args.segment, undo=args.undo,
+    )  # fmt: skip
+    if args.undo:
+        print(t("ops.gap_ack_undone") if answer["changed"] else t("ops.gap_ack_nothing_to_undo"))
+    else:
+        print(t("ops.gap_ack_done") if answer["changed"] else t("ops.gap_ack_already"))
+    return 0
+
+
+@ops_command
+def _follow(args: argparse.Namespace, channel: OpsChannel) -> int:
     answer = channel.call("ops.follow", source_key=args.source_key, remote_id=args.remote_id)
     if answer["state"] == "in_progress":
         print(t("ops.follow_in_progress"))
     else:
         print(t("ops.follow_done") if answer["sent"] else t("ops.follow_already"))
     return 0
+
+
+def run_follow(args: argparse.Namespace, resolved: object) -> int:
+    """`follow gap-ack <edition> <number>` shares the command with `follow <source> <series>`:
+    no source key is called `gap-ack`."""
+    if args.source_key == GAP_ACK:
+        if args.number is None:
+            print(t("ops.gap_ack_needs_number"), file=sys.stderr)
+            return 2
+        return _gap_ack(args, resolved)  # type: ignore[arg-type]
+    if args.number is not None:
+        print(t("ops.follow_extra_argument"), file=sys.stderr)
+        return 2
+    return _follow(args, resolved)  # type: ignore[arg-type]
 
 
 @ops_command

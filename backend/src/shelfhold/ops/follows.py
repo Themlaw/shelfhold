@@ -8,9 +8,13 @@ Every refusal of the service or of the pause is a problem of the catalog, never 
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+import sqlalchemy as sa
+
+from shelfhold.acquisition.application.gap_watch import acknowledge, unacknowledge
 from shelfhold.acquisition.public import (
     FollowConfirmationRequired,
     FollowOutcome,
@@ -18,7 +22,13 @@ from shelfhold.acquisition.public import (
     FollowRequests,
     ServiceNotConnectedError,
 )
-from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
+from shelfhold.infrastructure.schema import acquisition
+from shelfhold.ops.errors import (
+    CodedRefusal,
+    ExitUnavailableError,
+    InvalidChoiceError,
+    UnknownSubjectError,
+)
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.source import SourceError
 
@@ -28,9 +38,50 @@ if TYPE_CHECKING:
 __all__ = ["FollowOps"]
 
 
+_NUMBER = re.compile(r"-?\d{1,9}\Z")
+GAP_TRACKS = ("main", "annual", "special", "extra", "oneshot")
+
+
 class FollowOps:
     def __init__(self, comp: Composition) -> None:
         self._comp = comp
+
+    def gap_ack(
+        self, edition_id: str, number: str, *, track: str, segment: str, undo: bool,
+        actor_id: str | None,
+    ) -> dict[str, Any]:  # fmt: skip
+        """`follow gap-ack`: "this number does not exist" (EF-BIB-056). Only a gap the series
+        shows can be acknowledged; `undo` takes the acknowledgement back."""
+        if track not in GAP_TRACKS or not _NUMBER.fullmatch(number):
+            raise InvalidChoiceError("a whole number, on one of the numbered tracks")
+        number = str(int(number))
+        gap = acquisition.series_gap
+        with self._comp.engine.begin() as connection:
+            if undo:
+                return {"changed": unacknowledge(
+                    connection, edition_id, track=track, segment=segment, number=number
+                ), "undone": True}  # fmt: skip
+            ack = acquisition.gap_ack
+            if connection.execute(
+                sa.select(ack.c.edition_id).where(
+                    ack.c.edition_id == edition_id, ack.c.track == track,
+                    ack.c.number_segment == segment, ack.c.number_norm == number,
+                )
+            ).first():  # fmt: skip
+                return {"changed": False, "undone": False}  # a replay changes nothing
+            shown = connection.execute(
+                sa.select(gap.c.edition_id).where(
+                    gap.c.edition_id == edition_id, gap.c.track == track,
+                    gap.c.number_segment == segment, gap.c.number_norm == number,
+                )
+            ).first()  # fmt: skip
+            if shown is None:
+                raise UnknownSubjectError("this series shows no such gap")
+            changed = acknowledge(
+                connection, edition_id, track=track, segment=segment, number=number,
+                actor_id=actor_id, now=self._comp.clock.now(),
+            )  # fmt: skip
+        return {"changed": changed, "undone": False}
 
     def follow(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None
