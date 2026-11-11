@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
+from shelfhold.sdk.io_guard import ForbiddenIOError, GuardedPlugin, IoViolation, unwrap
 from shelfhold.sdk.metadata import (
     ISBN_SCHEMES,
     EntityRef,
@@ -74,6 +75,7 @@ class CheckResult:
 @dataclass
 class ConformanceReport:
     checks: list[CheckResult] = field(default_factory=list)
+    io_violations: list[IoViolation] = field(default_factory=list)  # EF-SRC-002
 
     @property
     def failures(self) -> list[CheckResult]:
@@ -87,6 +89,10 @@ class ConformanceReport:
         self.checks.append(CheckResult(name, ok, detail))
 
     def assert_ok(self) -> None:
+        """AssertionError on any failure; ForbiddenIOError first when the plugin did direct I/O."""
+        if self.io_violations:
+            first = self.io_violations[0]
+            raise ForbiddenIOError(first.plugin_id, first.event, first.detail)
         if not self.ok:
             lines = [f"{c.name}: {c.detail}" for c in self.failures]
             raise AssertionError("conformance failures:\n" + "\n".join(lines))
@@ -142,6 +148,15 @@ def _missing_methods(source: Source) -> list[str]:
     return missing
 
 
+def _audited(
+    factory: Callable[[], Source], plugin_id: str, report: ConformanceReport
+) -> Callable[[], Source]:
+    def fresh() -> Source:
+        return cast(Source, GuardedPlugin(factory(), plugin_id, report=report.io_violations.append))
+
+    return fresh
+
+
 async def run_source_conformance(
     source: Source,
     fetcher: Fetcher,
@@ -149,8 +164,16 @@ async def run_source_conformance(
     reinstall: Callable[[], Source] | None = None,
     series_ref: SeriesRef | None = None,
 ) -> ConformanceReport:
-    """Run every check against `source`; `fetcher` must be scripted (no network is possible)."""
+    """Run every check against `source`; `fetcher` must be scripted (no network is possible).
+
+    Every call into the plugin runs under the direct-I/O detector (EF-SRC-002): a socket, a
+    process or a file the plugin opens itself raises `ForbiddenIOError` and fails `no_direct_io`,
+    even if the plugin catches the error.
+    """
     report = ConformanceReport()
+    plugin_id = str(getattr(getattr(source, "manifest", None), "key", "") or "plugin")
+    source = cast(Source, GuardedPlugin(source, plugin_id, report=report.io_violations.append))
+    guarded_reinstall = None if reinstall is None else _audited(reinstall, plugin_id, report)
 
     async def guarded(name: str, step: Callable[[], Awaitable[None]]) -> None:
         try:
@@ -207,11 +230,17 @@ async def run_source_conformance(
 
         await guarded("list_units_idempotent", idempotent)
         await _check_payloads(source, fetcher, d, report, guarded)
-        await _check_reinstall(source, fetcher, d, reinstall, series_ref, report, guarded)
+        await _check_reinstall(source, fetcher, d, guarded_reinstall, series_ref, report, guarded)
 
     unscripted: list[str] = getattr(fetcher, "unscripted", [])
     report.add(
         "offline", not unscripted, f"unscripted requests: {unscripted}" if unscripted else ""
+    )
+    seen = report.io_violations
+    report.add(
+        "no_direct_io",
+        not seen,
+        "; ".join(f"ForbiddenIOError: {v.event} ({v.detail})" for v in seen),
     )
     return report
 
@@ -325,7 +354,7 @@ async def _check_reinstall(
 
     async def replay() -> None:
         fresh = reinstall()
-        if fresh is source:
+        if unwrap(fresh) is unwrap(source):
             report.add("simulated_reinstall", False, "the factory must return a new instance")
             return
         again = await _discover(fresh, f, series_ref)

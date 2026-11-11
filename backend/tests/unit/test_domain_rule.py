@@ -190,7 +190,7 @@ def test_base_url_override_is_logged() -> None:
         DomainAllowlist("plugin-o", _override_rule(), {})  # back to the declared host
     forget_secret_values()
     changes = [e for e in logs if e["event"] == "plugin.base_url_override"]
-    assert [("other.example.net" in e["url"]) for e in changes] == [True, False]
+    assert [("other.example.net" in (e["url"] or "")) for e in changes] == [True, False]
     assert changes[1]["url"] is None
 
 

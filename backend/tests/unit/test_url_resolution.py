@@ -142,7 +142,14 @@ def test_url_pattern_matching(pattern: str, url: str, expected: bool) -> None:
 
 @pytest.mark.parametrize(
     "pattern",
-    ["example.org/x", "ftp://example.org/x", "https://*.com/x", "https://example.org?q=*", ""],
+    [
+        "example.org/x",
+        "ftp://example.org/x",
+        "https://*.com/x",
+        "https://example.org?q=*",
+        "https://example.org/*/*/*/**/*",  # a pattern built to make matching slow
+        "",
+    ],
 )
 def test_invalid_url_patterns_are_refused(pattern: str) -> None:
     with pytest.raises(UrlPatternError):

@@ -76,6 +76,64 @@ d'audit (`plugin.install`, `plugin.enable`, `plugin.enable_refused`...). Si l'é
 - `shelfhold plugin list --load` : fait le chargement du démarrage et montre le résultat de chacun.
 - `shelfhold plugin disable <nom>` retire la confirmation ; `shelfhold plugin remove <nom>` désinstalle.
 
+## Entrées-sorties directes : un détecteur, pas une isolation
+
+Un plugin ne fait jamais d'entrée-sortie lui-même : il reçoit le `Fetcher` de l'hôte (EF-SRC-002).
+Pendant que son code tourne, un crochet d'audit Python (`sys.addaudithook`) **refuse avant qu'elle
+n'ait lieu** toute tentative d'ouvrir une socket ou de résoudre un nom, de lancer un processus, un
+thread ou une bibliothèque native (`ctypes`), d'envoyer un signal, ou d'ouvrir, lister, écrire ou
+supprimer un fichier hors du dossier de travail du plugin (aucun dossier par défaut : aucun fichier).
+Le plugin peut seulement relire le code qu'il importe. Le refus lève `ForbiddenIOError` et est
+journalisé (`plugin.forbidden_io`, avec `plugin_id` et l'événement), même si le plugin intercepte
+l'erreur. Si le détecteur ne sait pas juger un événement, il refuse. Le kit de conformité du SDK
+applique le même crochet : un plugin qui ouvre une socket échoue au contrôle `no_direct_io`.
+
+C'est un **détecteur, pas une isolation**. Du code Python qui tourne dans le processus de Shelfhold
+peut le contourner : un thread qui existait avant l'appel (le crochet suit le plugin dans les tâches
+qu'il crée, pas dans un thread déjà ouvert de l'hôte), un objet de l'hôte qui fait des entrées-sorties
+pour lui, un descripteur de fichier ou une socket que l'hôte a déjà ouverts, la mémoire du
+processus, le détecteur lui-même (son état est un objet Python), et le code exécuté à l'import du
+plugin, qui n'est pas surveillé. Il attrape un plugin
+négligent ou une dépendance bavarde ; il n'arrête pas un plugin écrit pour nuire. L'isolation réelle
+est le bac à sable du jalon M6. Les conditions d'activation ci-dessus restent donc entières.
+
+## Domaines autorisés et adresse surchargée
+
+Le `Fetcher` d'un plugin ne joint que les domaines de ses `DomainRule` (EF-SRC-003), à chaque saut, redirections
+comprises, et avant toute résolution DNS. Une demande hors liste lève `DomainNotAllowed`, journalisée
+(`plugin.domain_not_allowed`) avec `plugin_id` et l'adresse sans sa requête.
+
+| Motif | Couvre | Ne couvre pas |
+|---|---|---|
+| `example.org` | `example.org` | `www.example.org`, `evilexample.org` |
+| `.example.org` | `example.org` et tous les noms en dessous | `evilexample.org`, `example.org.evil` |
+| `*.example.org` | tous les noms sous `example.org` | `example.org` lui-même, `example.org.evil` |
+
+Le joker est toujours l'étiquette entière la plus à gauche, suivie d'au moins deux étiquettes :
+`*.org`, `a*.example.org` ou `foo.*.example.org` sont refusés et le plugin n'est pas chargé.
+Shelfhold n'a pas de liste des suffixes publics : `*.co.uk` est accepté, à vous de juger. Les noms
+se comparent sous leur forme ASCII (punycode, IDNA 2008), sans tenir compte de la casse ni d'un
+point final. Un caractère qui ressemble à un point, ou un punycode invalide, rend le motif invalide.
+Une adresse IP ne se déclare qu'exactement.
+
+Une règle qui porte `base_url_setting` peut être pointée ailleurs par ce réglage (votre propre
+serveur, par exemple). L'adresse réglée **remplace** le domaine déclaré, par son nom exact, sans
+joker. Chaque changement est journalisé (`plugin.base_url_override`, avertissement, adresse
+masquée comme dans les autres journaux) ; le retour au domaine déclaré aussi. Une valeur qui n'est
+pas une adresse `http` ou `https` simple (identifiants `user:mot-de-passe@` compris) est refusée
+(`plugin.base_url_override_refused`) et la règle ne joint plus rien. La garde contre les requêtes
+internes s'applique toujours : une adresse surchargée ne rend pas joignable un service du réseau
+local.
+
+## Coller une adresse
+
+Une adresse collée est confiée au premier plugin actif qui déclare `URL_RESOLVE` et dont un motif
+`url_patterns` correspond (EF-SRC-004). Un motif s'écrit `<schéma>://<hôte>[<chemin>]` : schéma
+`http`, `https` ou `*` ; hôte selon la grammaire des domaines ci-dessus ; dans le chemin, `*` vaut un
+segment et `**` un nombre quelconque. Une adresse avec identifiants ou sur un port inhabituel ne
+correspond à rien. Sans plugin qui correspond, ou si celui qui correspond ne trouve rien, la
+réponse est 422 `source.no_match` (« aucune source »).
+
 ## Licence
 
 Un plugin chargé en processus relève de l'exception de plugin provisoire (ENF-LEG-010). Tant qu'elle
