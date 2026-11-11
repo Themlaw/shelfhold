@@ -1,0 +1,21 @@
+[
+  {
+    "name": "Le Livre (fr)",
+    "folder": "Le Livre (fr)",
+    "proposal_key": {
+      "lang": "fr",
+      "text_version": ""
+    },
+    "age_rating": 8
+  },
+  {
+    "name": "Le Livre (fr, omnibus)",
+    "folder": "Le Livre (fr, omnibus)",
+    "proposal_key": {
+      "lang": "fr",
+      "text_version": "",
+      "packaging": "omnibus"
+    },
+    "age_rating": 5
+  }
+]

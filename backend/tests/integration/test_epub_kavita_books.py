@@ -67,7 +67,7 @@ def test_epub_series_age_pushed_locked_visible_to_restricted_child() -> None:
         books_library(env)
         w = wire(env)
         book = env.new_series("Le Livre")
-        add_book(env, book, "1")
+        unit = add_book(env, book, "1")
         rate(env, book, 10)
 
         assert len(export_round(w)) == 1
@@ -94,7 +94,6 @@ def test_epub_series_age_pushed_locked_visible_to_restricted_child() -> None:
         assert "shelfhold" not in text and "agerating" not in text and "10+" not in text
         (record,) = env.rows(export.export_record)
         assert record.format == "epub" and path.suffix == ".epub"
-        unit = env.rows(export.export_item)[0].unit_id
         assert (env.lib.data / origin_opf_rel(unit)).is_file()
 
         rate(env, book, 13)  # reclassified in the same shelf: pushed again, locked
@@ -133,6 +132,7 @@ def test_first_epub_export_waits_for_age_push() -> None:
         w.fake.remove_route("POST", "/api/Series/metadata")
         assert export_round(w) == [] and len(written(env)) == 1
         w.fake.missing.clear()
+        w.rebuild_client()  # Kavita upgraded and restarted: the route is back
 
         # Kavita takes the push but drops the lock: read back unlocked, nothing more leaves
         w.fake.drops_age_lock = True
@@ -156,6 +156,7 @@ def test_first_epub_export_waits_for_age_push() -> None:
         assert export_round(w) == [] and len(written(env)) == 2
         assert w.fake.ages[sid]["ageRating"] == EVERYONE_10
         w.fake.missing.clear()
+        w.rebuild_client()
         (third,) = export_round(w)
         assert w.fake.ages[sid]["ageRating"] == TEEN
         assert len(written(env)) == 3 and third in written(env)

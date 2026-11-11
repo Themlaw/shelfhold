@@ -33,8 +33,13 @@ class ExportSource:
     derived_by: str | None = None
 
 
-def export_sources(connection: Connection, unit_ids: Sequence[str]) -> dict[str, ExportSource]:
-    """The archive to export for each Unit: the preferred Variant's, else the first received."""
+def export_sources(
+    connection: Connection, unit_ids: Sequence[str], *, formats: Sequence[str] = ("cbz",)
+) -> dict[str, ExportSource]:
+    """The archive to export for each Unit: the preferred Variant's, else the first received.
+
+    A CBZ by default; the export pipeline also asks for an EPUB (M2 L09), whose file to read is
+    then the one `servable_epub` names, never the `local_path` given here."""
     if not unit_ids:
         return {}
     content, variant = storage.content, catalog.unit_variant
@@ -52,7 +57,7 @@ def export_sources(connection: Connection, unit_ids: Sequence[str]) -> dict[str,
             content.c.derived_by,
         )
         .select_from(content.outerjoin(variant, variant.c.id == content.c.variant_id))
-        .where(content.c.unit_id.in_(unit_ids), content.c.format == "cbz")
+        .where(content.c.unit_id.in_(unit_ids), content.c.format.in_(tuple(formats)))
         .order_by(
             content.c.unit_id, sa.func.coalesce(variant.c.preferred, False).desc(), content.c.id
         )

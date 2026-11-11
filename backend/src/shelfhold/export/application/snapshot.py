@@ -19,7 +19,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
-from shelfhold.catalog.public import Admission, RatingService
+from shelfhold.catalog.public import BOOK_KINDS, Admission, RatingService
 from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.intents import within_any
 from shelfhold.export.application.rendering import comicinfo_sha256
@@ -33,6 +33,8 @@ from shelfhold.export.domain.kavita_compat import TargetMode, blocks_family_shel
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute
 from shelfhold.export.domain.planner import (
+    GATE_CLOSED,
+    AgeGateFacts,
     DestinationFacts,
     EditionFacts,
     PlanRequest,
@@ -41,13 +43,17 @@ from shelfhold.export.domain.planner import (
     UnitFacts,
 )
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.library.public import ExportSource, export_sources
+from shelfhold.library.public import ExportSource, epub_units, export_sources
+from shelfhold.sdk.age import X_MIN_AGE, AgeRating
+
+_HOLDING = ("written", "scanned", "resolved")  # a record whose file is in the library
 
 __all__ = [
     "DestinationContext",
     "LoadedRequest",
     "admissions_of",
     "barrier_holds",
+    "edition_age",
     "inputs_version_of",
     "load_context",
     "load_request",
@@ -72,6 +78,7 @@ class DestinationContext:
     path_map: PathMap
     partitioning: str = "library"  # how the target keeps accounts apart (EF-EXP-047)
     access_control_known_bad: bool = False  # a family shelf is blocked on it (ENF-COMP-001)
+    library_type: str | None = None  # `kavita_library_type`, declared by the admin (D19)
 
     def facts(self) -> DestinationFacts:
         return DestinationFacts(
@@ -80,6 +87,7 @@ class DestinationContext:
             template=self.template, max_age_rating=self.max_age_rating,
             partitioning=self.partitioning,
             access_control_known_bad=self.access_control_known_bad,
+            library_type=self.library_type,
         )  # fmt: skip
 
     def local(self, rel_path: str) -> str:
@@ -141,6 +149,7 @@ def load_context(connection: Connection, destination_id: str) -> DestinationCont
             attested=row.access_partitioning_attested_at is not None,
         ),
         access_control_known_bad=blocks_family_shelf(row.version_seen),
+        library_type=row.kavita_library_type,
     )  # fmt: skip
 
 
@@ -151,17 +160,23 @@ def load_request(
     exists: Callable[[str], bool],
     covered_locals: frozenset[str],
     segment_policy_confirmed: bool,
+    age_gate: AgeGateFacts = GATE_CLOSED,
 ) -> LoadedRequest:
+    """`age_gate`: what Kavita said of the series ages just before (the export job reads it);
+    a preview, which asks Kavita nothing, plans every gated EPUB as waiting."""
     editions, unit_rows, sources = _inputs(connection, ctx)
     admissions = admissions_of(connection, ctx, editions)
     records = _records(connection, ctx.destination_id)
+    epubs = epub_units(connection, [u.id for u in unit_rows])
     units = []
     for u in unit_rows:
         source = sources.get(u.id)
         record = records.get(u.id)
         ready = source is not None and source.local_path is not None
-        sidecar = (
-            comicinfo_sha256(connection, u.id, record.frozen.series) if record and ready else None
+        sidecar = (  # an EPUB has no ComicInfo: its OPF edit is what the record keeps
+            comicinfo_sha256(connection, u.id, record.frozen.series)
+            if record and ready and u.id not in epubs
+            else None
         )
         units.append(
             UnitFacts(
@@ -170,8 +185,10 @@ def load_request(
                 segment=u.number_segment, source_order=u.source_order,
                 content_hash=source.content_hash if source and ready else None,
                 sidecar_sha256=sidecar, watermarked=bool(source and source.watermarked),
+                format="epub" if u.id in epubs else "cbz",
             )
         )  # fmt: skip
+    gated = sorted({u.edition_id for u in unit_rows if u.id in epubs})
     series, edition_series, ceilings = _series(connection, ctx, {e.edition_id for e in editions})
     root = ctx.root_local
     request = PlanRequest(
@@ -182,7 +199,10 @@ def load_request(
         library_ceilings=ceilings, segment_policy_confirmed=segment_policy_confirmed,
         paused_series=paused_series(connection, ctx.destination_id),
         foreign_names=load_foreign_names(connection, ctx.destination_id),
-        admissions=admissions,
+        admissions=admissions, holds_books=_holds_books(connection, ctx, editions),
+        age_wanted=wanted_editions(connection, gated),
+        age_seeded=seeded_series(connection, ctx.destination_id) if gated else frozenset(),
+        age_gate=age_gate,
     )  # fmt: skip
     return LoadedRequest(
         request,
@@ -190,6 +210,76 @@ def load_request(
             ctx, editions, unit_rows, sources, _world(records, series, edition_series), admissions
         ),
     )
+
+
+def edition_age(
+    connection: Connection, edition_id: str, *, rating: RatingService | None = None
+) -> AgeRating | None:
+    """The age an admin fixed for the Edition, else the class of its Work; None if nobody rated."""
+    edition = catalog.edition
+    row = connection.execute(
+        sa.select(edition.c.work_id, edition.c.age_rating, edition.c.age_x).where(
+            edition.c.id == edition_id
+        )
+    ).one()
+    if row.age_rating is not None or row.age_x:
+        return AgeRating(X_MIN_AGE, x=True) if row.age_x else AgeRating(int(row.age_rating))
+    return (rating or RatingService()).effective_age_of(connection, row.work_id)
+
+
+def wanted_editions(connection: Connection, edition_ids: list[str]) -> frozenset[str]:
+    """The Editions whose series has an age to push: rated, by themselves or by their Work."""
+    rating = RatingService()
+    return frozenset(
+        e for e in edition_ids if edition_age(connection, e, rating=rating) is not None
+    )
+
+
+def seeded_series(connection: Connection, destination_id: str) -> frozenset[str]:
+    """The export series of the destination that hold a file already (written or further on)."""
+    record, item, link = export.export_record, export.export_item, export.edition_export_series
+    ctx = load_context(connection, destination_id)
+    if ctx.remote_library_id is None:
+        return frozenset()
+    return frozenset(
+        connection.execute(
+            sa.select(link.c.export_series_id)
+            .select_from(
+                record.join(item, item.c.id == record.c.export_item_id).join(
+                    link,
+                    sa.and_(
+                        link.c.edition_id == item.c.edition_id,
+                        link.c.remote_library_id == ctx.remote_library_id,
+                    ),
+                )
+            )
+            .where(
+                record.c.shelf_destination_id == destination_id,
+                record.c.state.in_(_HOLDING),
+            )
+            .distinct()
+        ).scalars()
+    )
+
+
+def _holds_books(
+    connection: Connection, ctx: DestinationContext, editions: tuple[EditionFacts, ...]
+) -> bool:
+    """Does the shelf take book Works (D19)? By its default kinds, or by a Work filed on it."""
+    kinds = connection.execute(
+        sa.select(export.shelf.c.default_kinds).where(export.shelf.c.id == ctx.shelf_id)
+    ).scalar()
+    if any(k in BOOK_KINDS for k in kinds or ()):
+        return True
+    works = sorted({e.work_id for e in editions})
+    if not works:
+        return False
+    found = connection.execute(
+        sa.select(catalog.work.c.id)
+        .where(catalog.work.c.id.in_(works), catalog.work.c.kind.in_(sorted(BOOK_KINDS)))
+        .limit(1)
+    ).first()
+    return found is not None
 
 
 def barrier_holds(connection: Connection, destination_id: str, edition_id: str) -> bool:
@@ -257,7 +347,11 @@ def _inputs(
             .order_by(unit.c.id)
         )
     )
-    return editions, unit_rows, export_sources(connection, [u.id for u in unit_rows])
+    return (
+        editions,
+        unit_rows,
+        export_sources(connection, [u.id for u in unit_rows], formats=("cbz", "epub")),
+    )
 
 
 def edition_facts(connection: Connection, shelf_id: str) -> tuple[EditionFacts, ...]:
@@ -272,6 +366,7 @@ def edition_facts(connection: Connection, shelf_id: str) -> tuple[EditionFacts, 
             edition.c.work_id,
             edition.c.lang,
             edition.c.text_version,
+            edition.c.packaging,
             work.c.title,
             series.c.id.label("series_id"),
             series.c.title.label("series_title"),
@@ -287,7 +382,14 @@ def edition_facts(connection: Connection, shelf_id: str) -> tuple[EditionFacts, 
         found.setdefault(
             r.id,
             EditionFacts(
-                r.id, r.work_id, r.title, r.lang, r.text_version, r.series_id, r.series_title
+                r.id,
+                r.work_id,
+                r.title,
+                r.lang,
+                r.text_version,
+                r.series_id,
+                r.series_title,
+                r.packaging,
             ),
         )
     return tuple(found.values())

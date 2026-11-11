@@ -864,6 +864,14 @@ action = "Une série Kavita n'a qu'une étagère : retirez l'Édition de l'autre
 title = "Plusieurs paliers d'âge partagent cette bibliothèque distante."
 action = "Une bibliothèque famille ne sert qu'une étagère famille : liez chaque étagère à sa bibliothèque."
 
+[errors."export.awaiting_series_age"]
+title = "Ce livre attend que Kavita affiche l'âge de sa série, verrouillé."
+action = "Rien n'est perdu : l'export reprend dès que Kavita répond et garde le verrou. Vérifiez « shelfhold target status »."
+
+[errors."target.library_type_mismatch"]
+title = "Cette étagère de livres vise une bibliothèque Kavita qui n'est pas de type Livres."
+action = "Liez l'étagère à une bibliothèque Kavita de type « Book » ; Shelfhold ne change jamais le type d'une bibliothèque."
+
 [errors."source.auth_expired"]
 title = "La connexion à la source a expiré."
 action = "Renouvelez les identifiants avec « shelfhold source set-secret »."

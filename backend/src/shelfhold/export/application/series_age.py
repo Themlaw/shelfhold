@@ -7,6 +7,12 @@ counted only for the Editions that are in the library at this moment, that is, f
 shelf of the destination and admitted by the same last look the exporter takes before a write
 (`barrier_holds`). An Edition filed elsewhere, or that the admission now refuses, is not an age to
 push: its change of shelf is the business of the removal plan (L10), never of a metadata push.
+
+The age of an Edition is the one its admission reads (`EditionAge.age`): the age an admin fixed for
+it, else the class of its Work. So a repackaged Edition (an `omnibus`, a Kavita series of its own)
+pushes its own age (EF-BIB-001). An EPUB series is gated on it (M2 L09): `wanted_editions` lists
+the Editions whose series has an age to push, `seeded_series` the series that already hold a file,
+and `verified_age` tells whether what Kavita shows is the lock Shelfhold wants now.
 """
 
 from __future__ import annotations
@@ -19,11 +25,13 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import RatingService
-from shelfhold.export.application.snapshot import barrier_holds, load_context
+from shelfhold.export.application.snapshot import barrier_holds, edition_age, load_context
+from shelfhold.export.domain.field_owner import OwnedField
+from shelfhold.export.domain.kavita_access import age_of_rating, rating_for_age
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.sdk.age import AgeRating, max_rating
 
-__all__ = ["SeriesAgeTask", "due_ages"]
+__all__ = ["SeriesAgeTask", "due_ages", "verified_age"]
 
 _WRITTEN = ("written", "scanned", "resolved")
 
@@ -90,7 +98,7 @@ def due_ages(connection: Connection, destination_id: str) -> list[SeriesAgeTask]
                     connection, destination_id, edition_id
                 )
             if in_place[edition_id]:
-                age = rating.effective_age_of(connection, editions[edition_id].work_id)
+                age = edition_age(connection, edition_id, rating=rating)
                 if age is not None:
                     classes.append(age)
         wanted = max_rating(classes)
@@ -104,3 +112,18 @@ def due_ages(connection: Connection, destination_id: str) -> list[SeriesAgeTask]
         folder = posixpath.dirname(posixpath.join(root, series_rows[0].rel_path))
         tasks.append(SeriesAgeTask(series_id, resolved[0] if resolved else None, folder, wanted))
     return tasks
+
+
+def verified_age(
+    wanted: AgeRating, owned: OwnedField | None, *, locked: bool, kavita_value: int
+) -> bool:
+    """Is what Kavita shows the age Shelfhold wants now, locked by Shelfhold itself?
+
+    The lock must be in Kavita, the value the one the `field_owner` registry says Shelfhold
+    pushed, and that value at least the class wanted now (a tag may have raised it, never
+    lowered): a reclassification upwards is not verified until the new age is pushed."""
+    if not locked or owned is None or not owned.pushed or owned.last_value != kavita_value:
+        return False
+    shown = age_of_rating(kavita_value)
+    needed = age_of_rating(rating_for_age(wanted.min_age, x=wanted.x))
+    return shown is not None and needed is not None and shown >= needed

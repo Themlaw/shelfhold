@@ -7655,6 +7655,10 @@
       "code": "export.age_tier_mix",
       "status": 409
     },
+    "/api/v1/problems/export.awaiting-series-age": {
+      "code": "export.awaiting_series_age",
+      "status": 409
+    },
     "/api/v1/problems/export.destination-occupied": {
       "code": "export.destination_occupied",
       "status": 409
@@ -8161,6 +8165,10 @@
     },
     "/api/v1/problems/target.key-expiring": {
       "code": "target.key_expiring",
+      "status": 409
+    },
+    "/api/v1/problems/target.library-type-mismatch": {
+      "code": "target.library_type_mismatch",
       "status": 409
     },
     "/api/v1/problems/target.not-indexed": {

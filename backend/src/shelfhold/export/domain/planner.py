@@ -15,6 +15,14 @@ exported series belongs to this shelf alone. Anything the loader did not say is 
 
 Idempotence (EF-EXP-007): a Unit whose record is written and whose `content_hash` and sidecar
 hash are those of today yields no operation at all.
+
+An EPUB carries no age (D1): the age of its series reaches Kavita by the API, locked (EF-EXP-040).
+So an EPUB of a Work with an age to push is planned only through the age gate (`AgeGateFacts`,
+read from Kavita by the export job just before planning): the first EPUB of a series goes alone,
+and only while Kavita answers on a release at the floor of ENF-COMP-001; the rest of the series
+waits (`export.awaiting_series_age`) until its age has been read back locked at the value wanted
+now, after the scan. Anything the gate did not say keeps it closed. A shelf of book Works aims at a
+Kavita Books library (D19): another type is announced, never changed.
 """
 
 from collections import defaultdict
@@ -34,6 +42,9 @@ from shelfhold.export.domain.naming import (
 )
 
 __all__ = [
+    "AGE_WAIT",
+    "GATE_CLOSED",
+    "AgeGateFacts",
     "Blocked",
     "DestinationFacts",
     "EditionFacts",
@@ -46,6 +57,7 @@ __all__ = [
     "SeriesRef",
     "UnitFacts",
     "plan_destination",
+    "series_key",
 ]
 
 EditionFacts = EditionNaming
@@ -54,6 +66,8 @@ PATH_TRANSPORTS: Final = frozenset({"tree", "dropbox"})
 DONE_STATES: Final = frozenset({"written", "scanned", "resolved", "adopted"})
 GONE_STATES: Final = frozenset({"missing", "recycled"})
 SUPPORTED_TRANSPORTS: Final = PATH_TRANSPORTS | {"pull"}  # `push` arrives in M4
+AGE_WAIT: Final = "export.awaiting_series_age"
+EXTENSIONS: Final = {"cbz": ".cbz", "epub": ".epub"}
 
 
 @dataclass(frozen=True)
@@ -67,6 +81,7 @@ class DestinationFacts:
     max_age_rating: int | None = None
     partitioning: str = "library"  # how the destination keeps accounts apart (EF-EXP-047)
     access_control_known_bad: bool = False  # Kavita release with the flaw, or none read (K4)
+    library_type: str | None = None  # the Kavita library type the admin declared (D19)
 
 
 # The refusal of each admission verdict, as a catalog code (EF-BIB-055)
@@ -92,6 +107,23 @@ class UnitFacts:
         None  # the ComicInfo as it would be written, known for exported Units
     )
     watermarked: bool = False
+    format: str = "cbz"  # "epub": the file carries no age, its series goes through the age gate
+
+
+@dataclass(frozen=True)
+class AgeGateFacts:
+    """What Kavita said of the series ages just before planning (EF-EXP-040).
+
+    `open`: Kavita answered on a release at the floor (ENF-COMP-001), so a first EPUB may go.
+    `verified`: the export series whose age Kavita shows locked, by Shelfhold, at the value wanted
+    now. The default says nothing, so nothing goes.
+    """
+
+    open: bool = False
+    verified: frozenset[str] = frozenset()
+
+
+GATE_CLOSED: Final = AgeGateFacts()
 
 
 @dataclass(frozen=True)
@@ -138,6 +170,10 @@ class PlanRequest:
     paused_series: frozenset[str] = frozenset()  # paused by a foreign writer (EF-EXP-043)
     foreign_names: frozenset[str] = frozenset()  # normalized names Kavita shows, from any source
     segment_policy_confirmed: bool = False
+    holds_books: bool = False  # the shelf takes book Works (`novel`, `light_novel`, `ebook`)
+    age_wanted: frozenset[str] = frozenset()  # Editions whose series has an age to push
+    age_seeded: frozenset[str] = frozenset()  # export series that already hold an exported file
+    age_gate: AgeGateFacts = GATE_CLOSED
 
 
 @dataclass(frozen=True)
@@ -214,6 +250,8 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
             )
     elif len(request.library_ceilings | {dest.max_age_rating}) > 1:
         warnings.append(PlanWarning("age_tier_mix"))  # tiers mixed in one remote library
+    if request.holds_books and (dest.library_type or "").casefold() != "book":
+        warnings.append(PlanWarning("target.library_type_mismatch"))  # D19: announced, not fixed
     records = {r.unit_id: r for r in request.records}
     editions = {e.edition_id: e for e in request.editions}
     known = {s.export_series_id: s for s in request.series}
@@ -221,6 +259,7 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
 
     ops: list[PlannedOp] = []
     seen: set[str] = set()
+    seeds: set[str] = set()  # the series whose first EPUB this plan already sends
     for unit in ready:
         record = records.get(unit.unit_id)
         if record is not None and record.state in GONE_STATES:
@@ -263,6 +302,9 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
         if resolution.export_series_id in request.paused_series:
             blocked.append(Blocked(unit.unit_id, "target.foreign_writer_detected"))
             continue
+        if not _age_gate_lets(request, unit, resolution, seeds):
+            blocked.append(Blocked(unit.unit_id, AGE_WAIT))
+            continue
         # an adopted series is written under the name and in the folder it already has
         frozen = (
             record.frozen
@@ -274,7 +316,7 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
             continue
         try:
             path = checked_export_path(
-                frozen, parse, dest.template,
+                frozen, parse, dest.template, EXTENSIONS.get(unit.format, ".cbz"),
                 segment_policy_confirmed=request.segment_policy_confirmed,
             )  # fmt: skip
         except NamingGuardError as error:
@@ -298,6 +340,35 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
     ops.sort(key=lambda o: (o.rel_path or "", o.unit_id))
     checks = TREE_CHECKS if dest.transport == "tree" else ()
     return Plan(tuple(ops), tuple(blocked), tuple(warnings), checks)
+
+
+def series_key(ref: SeriesRef) -> str:
+    """The series an operation writes into, before it exists: its id, else its proposed name."""
+    return ref.export_series_id or f"new:{ref.normalized_name}"
+
+
+def _age_gate_lets(request: PlanRequest, unit: UnitFacts, ref: SeriesRef, seeds: set[str]) -> bool:
+    """May this Unit be planned as far as the age of its series goes (EF-EXP-040)?
+
+    Only an EPUB of an Edition with an age to push is gated (a CBZ carries its age in ComicInfo;
+    an unrated Edition has none to push, and a shelf below 18+ already refuses it). A `pull`
+    destination has no Kavita series. A series whose age is verified takes everything; a series
+    that holds no file yet takes one first EPUB, while Kavita answers; any other waits.
+    """
+    if unit.format != "epub" or unit.edition_id not in request.age_wanted:
+        return True
+    if request.destination.transport == "pull":
+        return True
+    gate = request.age_gate
+    if ref.export_series_id is not None and ref.export_series_id in gate.verified:
+        return True
+    key = series_key(ref)
+    if not gate.open or key in seeds:
+        return False
+    if ref.export_series_id is not None and ref.export_series_id in request.age_seeded:
+        return False  # it holds files whose age is not read back locked yet
+    seeds.add(key)
+    return True
 
 
 def _family_refusal(request: PlanRequest) -> str | None:

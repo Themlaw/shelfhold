@@ -20,12 +20,14 @@ from sqlalchemy.exc import IntegrityError
 from shelfhold.export.application.field_guard import FieldGuard
 from shelfhold.export.application.foreign_names import save_foreign_names
 from shelfhold.export.application.ports import TargetEvents
-from shelfhold.export.application.series_age import SeriesAgeTask, due_ages
+from shelfhold.export.application.series_age import SeriesAgeTask, due_ages, verified_age
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import DestinationPausedError, FieldRegistry
 from shelfhold.export.domain.field_owner import AGE_RATING, effective_age, should_push
 from shelfhold.export.domain.kavita_access import rating_for_age
+from shelfhold.export.domain.kavita_compat import blocks_family_shelf
 from shelfhold.export.domain.naming import normalize_series_name
+from shelfhold.export.domain.planner import GATE_CLOSED, AgeGateFacts
 from shelfhold.export.targets.kavita import dto
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import ListingIncomplete, ProtocolError, TargetError
@@ -34,6 +36,7 @@ from shelfhold.infrastructure.schema import export
 
 __all__ = [
     "Resolution",
+    "SeriesAgeGate",
     "SeriesAges",
     "SeriesResolver",
     "folded",
@@ -218,16 +221,32 @@ class SeriesAges:
             ).scalar()
         if not tasks:
             return []
-        listed: list[dto.SeriesInfo] = []
         try:
-            lookup = find_by_folder and library is not None and str(library).isdigit()
-            if lookup and any(t.kavita_series_id is None for t in tasks):
-                listed = list(await client.series_of_library(int(str(library))))
-            return await self._push_all(client, destination_id, tasks, listed)
+            return await self._push_tasks(client, destination_id, tasks, library, find_by_folder)
         except (TargetError, ListingIncomplete, DestinationPausedError) as error:
             log.info("export.age_push_failed", destination_id=destination_id,
                      reason=type(error).__name__)  # fmt: skip
             return []
+
+    async def push_or_raise(self, client: KavitaClient, destination_id: str) -> list[int]:
+        """`push`, but a Kavita that fails says so: the age gate closes on it (M2 L09)."""
+        with self._engine.connect() as connection:
+            tasks = due_ages(connection, destination_id)
+        return await self._push_tasks(client, destination_id, tasks, None, False) if tasks else []
+
+    async def _push_tasks(
+        self,
+        client: KavitaClient,
+        destination_id: str,
+        tasks: list[SeriesAgeTask],
+        library: object,
+        find_by_folder: bool,
+    ) -> list[int]:
+        listed: list[dto.SeriesInfo] = []
+        lookup = find_by_folder and library is not None and str(library).isdigit()
+        if lookup and any(t.kavita_series_id is None for t in tasks):
+            listed = list(await client.series_of_library(int(str(library))))
+        return await self._push_all(client, destination_id, tasks, listed)
 
     async def _push_all(
         self,
@@ -285,3 +304,77 @@ class SeriesAges:
                 FieldRegistry(connection).restore(destination_id, series, AGE_RATING, owned)
             raise
         return True
+
+
+class SeriesAgeGate:
+    """The gate of the EPUB series (EF-EXP-040, EF-EXP-033, M2 L09), read by the export job just
+    before it plans.
+
+    An EPUB carries no age (D1): until Kavita holds the age of its series, locked, Kavita shows
+    it "unknown". So, before anything is planned: Kavita must answer on a release at the floor of
+    ENF-COMP-001 (0.9.1), the ages due are pushed (a reclassification is pushed here, before any
+    new file of the series is exposed), then every EPUB series is read back. A series is
+    `verified` when Kavita shows the lock Shelfhold holds (`field_owner`) at the value wanted
+    now; only then does it take more files. Kavita that does not answer, refuses a push, or
+    drops the lock keeps the gate closed (nothing is exported): fail closed.
+    """
+
+    def __init__(self, engine: Engine, clock: Clock, events: TargetEvents) -> None:
+        self._engine = engine
+        self._ages = SeriesAges(engine, clock, events)
+
+    async def open(self, client: KavitaClient, destination_id: str) -> AgeGateFacts:
+        try:
+            await client.probe()
+            if blocks_family_shelf(client.health.version):
+                log.info("export.age_gate_closed", destination_id=destination_id,
+                         reason="version_below_floor")  # fmt: skip
+                return GATE_CLOSED
+            await self._ages.push_or_raise(client, destination_id)
+            verified = await self._verified(client, destination_id)
+        except (TargetError, ListingIncomplete, DestinationPausedError) as error:
+            log.info("export.age_gate_closed", destination_id=destination_id,
+                     reason=type(error).__name__)  # fmt: skip
+            return GATE_CLOSED
+        return AgeGateFacts(open=True, verified=frozenset(verified))
+
+    async def _verified(self, client: KavitaClient, destination_id: str) -> list[str]:
+        with self._engine.connect() as connection:
+            tasks = due_ages(connection, destination_id)
+            books = _epub_series(connection, destination_id)
+        found: list[str] = []
+        for task in tasks:
+            if task.export_series_id not in books or task.kavita_series_id is None:
+                continue  # a CBZ carries its age; a series not indexed yet is not verified
+            try:
+                current = await client.series_age(task.kavita_series_id)
+            except ProtocolError:
+                continue
+            with self._engine.connect() as connection:
+                owned = FieldRegistry(connection).get(
+                    destination_id, task.export_series_id, AGE_RATING
+                )
+            if verified_age(
+                task.wanted, owned, locked=current.locked, kavita_value=current.age_rating
+            ):
+                found.append(task.export_series_id)
+            else:
+                log.info("export.age_unverified", export_series_id=task.export_series_id)
+        return found
+
+
+def _epub_series(connection: sa.Connection, destination_id: str) -> frozenset[str]:
+    """The export series of the destination that hold an EPUB."""
+    record, item, link = export.export_record, export.export_item, export.edition_export_series
+    return frozenset(
+        connection.execute(
+            sa.select(link.c.export_series_id)
+            .select_from(
+                record.join(item, item.c.id == record.c.export_item_id).join(
+                    link, link.c.edition_id == item.c.edition_id
+                )
+            )
+            .where(record.c.shelf_destination_id == destination_id, record.c.format == "epub")
+            .distinct()
+        ).scalars()
+    )
