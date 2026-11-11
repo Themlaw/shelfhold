@@ -321,6 +321,7 @@ class RootExits:
         watcher: RootWatcher,
         evidence: Callable[[Fsops], EvidenceSource | None] = lambda _fsops: None,
         tombstones: Callable[[], TombstoneOwing | None] = lambda: None,
+        roots_changed: Callable[[], None] = lambda: None,
         policy: RootPolicy | None = None,
         fresh_auth_s: int = 900,
         freeze: FreezeState | None = None,
@@ -333,6 +334,7 @@ class RootExits:
         self._watcher = watcher
         self._evidence = evidence
         self._tombstones = tombstones
+        self._roots_changed = roots_changed
         self._policy = policy
         self._fresh_auth_s = fresh_auth_s
         self._freeze = freeze
@@ -651,6 +653,7 @@ class RootExits:
             self._follow(target.path)
 
     def _follow(self, subject: str) -> None:
+        self._roots_changed()  # every exit ends here: the tombstone index is replayed again
         if self._freeze is not None:
             self._freeze.follow_root(subject, None)
 

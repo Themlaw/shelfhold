@@ -203,9 +203,17 @@ class Composition:
 
     def tombstones(self, fsops: Fsops, loaded: LoadedRoots) -> TombstoneService:
         """The tombstone service, replayed (a purged file is never acquired again). One per
-        process while the roots stay the same; the flush gate is posed on the `fsops` given."""
+        process while the roots stay the same; the flush gate is posed on the `fsops` given.
+
+        "The same" includes whether each root is mounted and who its predecessors are: a root that
+        comes back (remount, `takeover`, `reinit`, `restored`, `store reinit`) is replayed before
+        the index answers, whatever the process did while it was away."""
         signature = tuple(
-            sorted((r.root_id, r.path) for r in loaded.roots if r.mode is PathMode.RW)
+            sorted(
+                (r.root_id, r.path, fsops.root_state(r.path) is RootState.OK, r.predecessors)
+                for r in loaded.roots
+                if r.mode is PathMode.RW
+            )
         )
         with self._lock:
             if self._tombstones is None or self._tombstones[0] != signature:
@@ -220,6 +228,12 @@ class Composition:
             )
         )
         return service
+
+    def roots_changed(self) -> None:
+        """A root exit (`takeover`, `reinit`, `restored`, `store reinit`) changed what a root is:
+        the next look rebuilds the index from the table and the journals."""
+        with self._lock:
+            self._tombstones = None
 
     def fresh_tombstones(
         self, fsops: Fsops, loaded: LoadedRoots, normalizers: Normalizers
@@ -260,7 +274,9 @@ class Composition:
     def _replay(service: TombstoneService, fsops: Fsops, loaded: LoadedRoots) -> None:
         service.replay(
             [
-                TombstoneRoot(r.root_id, r.path, mounted=fsops.root_state(r.path) is RootState.OK)
+                TombstoneRoot(
+                    r.root_id, r.path, fsops.root_state(r.path) is RootState.OK, r.predecessors
+                )
                 for r in loaded.roots
                 if r.mode is PathMode.RW
             ]
