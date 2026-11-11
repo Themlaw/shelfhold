@@ -30,11 +30,13 @@ NOT_DOWNLOADED: Final = "not_downloaded"
 SAFEGUARD_PENDING: Final = "safeguard_pending"
 STORE_COPY_MISSING: Final = "store_copy_missing"
 STORE_COPY_CHANGED: Final = "store_copy_changed"
+DEED_OPEN: Final = "deed_open"  # another erasure of this very download is begun (L17)
 
 REFUSALS: Final = frozenset(
     {
         OPTION_OFF, TOMBSTONED, SERVICE_PAUSED, ROLES_UNVERIFIED, SOURCE_NOT_LOADED,
         NO_KAVITA_COPY, NOT_DOWNLOADED, SAFEGUARD_PENDING, STORE_COPY_MISSING, STORE_COPY_CHANGED,
+        DEED_OPEN,
     }
 )  # fmt: skip
 

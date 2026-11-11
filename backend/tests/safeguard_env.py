@@ -28,6 +28,7 @@ from shelfhold.safeguard_jobs import service_refusal
 from shelfhold.sdk.connected import ReleaseResult, Ticket
 from tests.fakes_clock import ManualClock
 from tests.library_env import JPEG, PNG, LibEnv, cbz_bytes
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 
 NOW = datetime(2026, 11, 10, 3, 40, tzinfo=UTC)
@@ -113,7 +114,12 @@ class World:
         data = cbz_bytes((("001.png", PNG + str(n).encode()), ("002.jpg", JPEG)))
         dest = env.manga / "Dr Stone" / f"Dr Stone - {n}.cbz"
         PassthroughStore(
-            env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED
+            env.engine,
+            env.fsops,
+            env.locate,
+            env.data,
+            tombstones=NONE_PURGED,
+            hold_work=work_lock(env.engine),
         ).ingest(unit_id=unit_id, variant_id=variant_id, staged=env.stage(data), dest=str(dest))
         ticket, request_id = f"ticket-{n}", new_ulid()
         with env.engine.begin() as c:
@@ -160,6 +166,7 @@ class World:
         return KeepCopier(
             env.engine, env.fsops, env.locate, str(env.store), env.data, self.journal,
             extract=safeguard.run,
+hold_work=work_lock(env.engine),
         )  # fmt: skip
 
     def cycle(self, budget: StoreBudget = ROOMY, gate: Any = NONE_PURGED) -> SafeguardCycle:

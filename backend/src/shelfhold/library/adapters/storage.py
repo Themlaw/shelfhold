@@ -14,7 +14,7 @@ payload they carry.
 import hashlib
 import re
 from collections.abc import Callable, Iterable
-from contextlib import suppress
+from contextlib import AbstractContextManager, nullcontext, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
@@ -52,6 +52,29 @@ from shelfhold.library.tombstones.values import ContentHash
 
 CBZ_MEDIA_TYPE: Final = "application/vnd.comicbook+zip"
 DEFAULT_MAX_RECEIVED_BYTES: Final = 512 * 1024 * 1024
+
+
+class WorkBusyError(Exception):
+    """A purge (or another writer of the Work) holds the Work: try again later, nothing changed."""
+
+
+class UnitGoneError(Exception):
+    """The Unit the file was for is gone (a purge ran meanwhile): nothing is filed."""
+
+
+# The lock of a Work, as the purge holds it (`work_resource`): the composition root builds it.
+# It raises `WorkBusyError` when the Work stays held past its timeout.
+WorkHolder = Callable[[str], AbstractContextManager[Any]]
+
+
+def work_of_unit(connection: Connection, unit_id: str) -> str | None:
+    return connection.execute(
+        sa.select(catalog.edition.c.work_id)
+        .select_from(
+            catalog.unit.join(catalog.edition, catalog.edition.c.id == catalog.unit.c.edition_id)
+        )
+        .where(catalog.unit.c.id == unit_id)
+    ).scalar_one_or_none()
 
 
 class ContentTombstones(Protocol):
@@ -98,7 +121,9 @@ class PassthroughStore:
         max_received_bytes: int = DEFAULT_MAX_RECEIVED_BYTES,
         limits: ArchiveLimits = DEFAULT_LIMITS,
         tombstones: ContentTombstones,
+        hold_work: WorkHolder,
     ) -> None:
+        self._hold_work = hold_work
         self._engine = engine
         self._fsops = fsops
         self._locate = locate
@@ -131,6 +156,39 @@ class PassthroughStore:
                 else None
             )
         original = sha256_file(staged)
+        with self._held(unit_id):  # a purge of the Work and this write never interleave
+            ingested = self._file(
+                unit_id, variant_id, staged, dest, expected_sha256, upstream_ref,
+                original=original, payload_hash=payload_hash, images=len(listing.images),
+            )  # fmt: skip
+        if origin_xml:  # EF-BIB-048: the exporter will replace it; a safeguard needs it later
+            with suppress(OSError, ValueError):
+                keep_origin_comicinfo(self._data_dir, unit_id, bytes(origin_xml))
+        self._projection.project(unit_id)  # after the commit: the database is the authority
+        return ingested
+
+    def _held(self, unit_id: str) -> AbstractContextManager[Any]:
+        with self._engine.connect() as connection:
+            work_id = work_of_unit(connection, unit_id)
+        # a Unit with no Work row is gone: `_file` refuses it (UnitGoneError) under no lock
+        return nullcontext() if work_id is None else self._hold_work(work_id)
+
+    def _file(
+        self,
+        unit_id: str,
+        variant_id: str,
+        staged: Path,
+        dest: str,
+        expected_sha256: str | None,
+        upstream_ref: str | None,
+        *,
+        original: str,
+        payload_hash: str,
+        images: int,
+    ) -> Ingested:
+        """Under the lock of the Work: the tombstone and the Unit are looked at again, then the
+        file is written and recorded. A file that landed for rows that are no longer there (a
+        purge ran between) is taken away again, never left readable with nothing that knows it."""
         if self._tombstones.check_content(
             [ContentHash(CONTENT_HASH_BY, payload_hash), ContentHash(FILE_HASH_BY, original)]
         ):
@@ -146,6 +204,10 @@ class PassthroughStore:
             ).first()
         if taken is not None:
             raise VariantAlreadyStoredError(f"the Variant {variant_id} already has its archive")
+        with self._engine.connect() as connection:
+            gone = work_of_unit(connection, unit_id) is None
+        if gone:
+            raise UnitGoneError(unit_id)  # purged meanwhile: nothing is written for it
 
         root_id, rel = self._locate(dest)
         with staged.open("rb") as stream:
@@ -154,6 +216,30 @@ class PassthroughStore:
                 # read back before it is put in place: the copy is the file that was audited
                 verify_digest=lambda: original.removeprefix("sha256:"),
             )  # fmt: skip
+        try:
+            return self._record(
+                unit_id, variant_id, dest, upstream_ref, identity,
+                original=original, payload_hash=payload_hash, images=images, root=(root_id, rel),
+            )  # fmt: skip
+        except BaseException:
+            with suppress(FileNotFoundError, FsopsError):
+                self._fsops.purge_unlink(dest)  # the rows did not take it: no readable orphan
+            raise
+
+    def _record(
+        self,
+        unit_id: str,
+        variant_id: str,
+        dest: str,
+        upstream_ref: str | None,
+        identity: Any,
+        *,
+        original: str,
+        payload_hash: str,
+        images: int,
+        root: tuple[str, str],
+    ) -> Ingested:
+        root_id, rel = root
         device = self._fsops.device_of(dest)
         now = datetime.now(UTC)
         content_id = new_ulid()
@@ -164,7 +250,7 @@ class PassthroughStore:
                     media_type=CBZ_MEDIA_TYPE, format="cbz", retention="passthrough",
                     original_sha256=original, content_hash=payload_hash,
                     content_hash_by=CONTENT_HASH_BY, store_provenance="received",
-                    size=identity.size, page_count=len(listing.images),
+                    size=identity.size, page_count=images,
                 )
             )  # fmt: skip
             replica_id = record_replica(
@@ -179,13 +265,7 @@ class PassthroughStore:
                     file_hash=original, independent=True, mutable_by_third_party=True,
                     remote_ref=upstream_ref, size=identity.size, verified_at=now,
                 )  # fmt: skip
-        if origin_xml:  # EF-BIB-048: the exporter will replace it; a safeguard needs it later
-            with suppress(OSError, ValueError):
-                keep_origin_comicinfo(self._data_dir, unit_id, bytes(origin_xml))
-        self._projection.project(unit_id)  # after the commit: the database is the authority
-        return Ingested(
-            content_id, replica_id, original, payload_hash, identity.size, len(listing.images)
-        )
+        return Ingested(content_id, replica_id, original, payload_hash, identity.size, images)
 
 
 # -- keeping a copy (EF-BIB-027) ---------------------------------------------------------------
@@ -299,8 +379,10 @@ class KeepCopier:
         data_dir: Path,
         journal: IntentLog,
         *,
+        hold_work: WorkHolder,
         extract: Callable[[str], Any] | None = None,
     ) -> None:
+        self._hold_work = hold_work
         self._engine = engine
         self._fsops = fsops
         self._locate = locate
@@ -310,6 +392,20 @@ class KeepCopier:
         self._projection = MetaProjection(engine, data_dir)
 
     def keep(self, unit_id: str) -> Kept:
+        """Under the lock of the Work, the one a purge holds: a keep that was checking the
+        tombstone while a purge ran would leave a readable copy in /store with no row that knows
+        it (EF-BIB-052). A Work that stays held is `work_busy`: the next cycle takes it again."""
+        with self._engine.connect() as connection:
+            work_id = work_of_unit(connection, unit_id)
+        if work_id is None:
+            raise SafeguardFailedError("no_content", "the Unit is gone")
+        try:
+            with self._hold_work(work_id):
+                return self._keep(unit_id)
+        except WorkBusyError as busy:
+            raise SafeguardFailedError("work_busy", "the Work is held by another job") from busy
+
+    def _keep(self, unit_id: str) -> Kept:
         with self._engine.connect() as connection:
             content = connection.execute(
                 sa.select(storage.content)
@@ -338,7 +434,21 @@ class KeepCopier:
         The original is copied to /store first (an independent copy, under its intent); only then
         is the derivative written over the /library file, atomically and read back. A crash in
         between leaves the original kept and /library unchanged: the same call, repeated, goes on
-        from there. The derivative is audited as any archive is before it replaces anything."""
+        from there. The derivative is audited as any archive is before it replaces anything.
+
+        Under the lock of the Work, as `keep`: a purge that ran in between would find the copy in
+        /store and the rewritten file in /library with no row that knows them (EF-BIB-052)."""
+        with self._engine.connect() as connection:
+            work_id = work_of_unit(connection, unit_id)
+        if work_id is None:
+            raise SafeguardFailedError("no_content", "the Unit is gone")
+        try:
+            with self._hold_work(work_id):
+                return self._declare(unit_id, derived, derived_by)
+        except WorkBusyError as busy:
+            raise SafeguardFailedError("work_busy", "the Work is held by another job") from busy
+
+    def _declare(self, unit_id: str, derived: Path, derived_by: str) -> Derivative:
         with self._engine.connect() as connection:
             content = connection.execute(
                 sa.select(storage.content)
@@ -356,7 +466,7 @@ class KeepCopier:
             check_cbz_entries(archive)
         derived_hash = sha256_file(derived)
         if content.retention == "passthrough":
-            self.keep(unit_id)  # the original first, byte for byte
+            self._keep(unit_id)  # the original first, byte for byte
         target = next(
             (c for c in copies if self._fsops.sha256_of(c.local) == content.original_sha256), None
         )
@@ -431,8 +541,20 @@ def complete_keep(
             storage.content.c.id == content_id, storage.content.c.retention == "passthrough"
         )
     ).first()
-    if row is None:  # already completed: a replayed intent changes nothing
-        return True
+    if row is None:
+        vanished = (
+            connection.execute(
+                sa.select(storage.content.c.id).where(storage.content.c.id == content_id)
+            ).first()
+            is None
+        )
+        if vanished:
+            # the rows are gone (a purge ran between the copy and its bookkeeping): the copy would
+            # be readable with nothing that knows it, so it goes, never closed as if it counted
+            with suppress(FileNotFoundError, FsopsError):
+                fsops.purge_unlink(target)
+            return False
+        return True  # already completed: a replayed intent changes nothing
     found = fsops.observe(target)
     if found is None:
         raise FileNotFoundError(target)

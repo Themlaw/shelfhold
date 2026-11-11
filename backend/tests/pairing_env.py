@@ -31,6 +31,7 @@ from tests.export_env import ExportEnv, export_env
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
 from tests.fakes_fetcher import FakeResolver
 from tests.follow_env import LAN_IP, new_chapter
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 
 SERIES = "Series Alpha"  # the series of the simulated Suwayomi, and the folder of the adopted one
@@ -130,7 +131,8 @@ def paired_env(*, tombstones: Any = NONE_PURGED) -> Iterator[Paired]:
         cycle = FollowCycle(
             lib.engine, bus, env.clock, service, fetcher,
             store=PassthroughStore(
-                lib.engine, lib.fsops, lib.locate, lib.data, tombstones=tombstones
+                lib.engine, lib.fsops, lib.locate, lib.data, tombstones=tombstones,
+hold_work=work_lock(lib.engine),
             ),
             receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
             place=place, sleep=no_sleep, tombstones=tombstones,

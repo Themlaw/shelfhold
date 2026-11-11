@@ -1,5 +1,6 @@
 """Trust boundaries for content from outside (EF-BIB-051, ENF-SEC-015); see importlinter.ini."""
 
+from shelfhold.infrastructure.content_trust.active_content import find_active_content
 from shelfhold.infrastructure.content_trust.cbz_entries import (
     REASON_KINDS,
     UNTRUSTED_ENTRY_CODE,
@@ -42,6 +43,7 @@ __all__ = [
     "UntrustedEntryError",
     "check_cbz_entries",
     "epub_payload_hash",
+    "find_active_content",
     "neutralize",
     "neutralize_epub",
     "sanitize_upstream_text",

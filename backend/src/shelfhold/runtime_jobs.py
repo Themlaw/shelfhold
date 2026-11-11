@@ -50,6 +50,7 @@ from shelfhold.composition import (
 )
 from shelfhold.export.application import blocked_memo
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
 from shelfhold.export.application.pipeline import (
     ExportPipeline,
@@ -87,12 +88,13 @@ from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
-from shelfhold.library.public import PassthroughStore, RangedKeeper
+from shelfhold.library.public import PassthroughStore, RangedKeeper, UntrustedEpubStore
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.retention_jobs import register_retention_jobs
 from shelfhold.safeguard_jobs import register_safeguard_job
 from shelfhold.store_jobs import register_store_jobs
+from shelfhold.work_locks import work_holder
 
 __all__ = [
     "APPLY_JOB_KIND",
@@ -183,9 +185,18 @@ class _LazyStore:
 
     def ingest(self, **arguments: Any) -> Any:
         w = self._lazy.get()
+        if str(arguments.get("dest", "")).lower().endswith(".epub"):  # EF-BIB-051: neutralized
+            store_dir = str(self._comp.settings.store_dir)
+            mounted = any(e.path == store_dir for e in w.loaded.expected)
+            epubs = UntrustedEpubStore(
+                self._comp.engine, w.fsops, w.loaded.locate, self._comp.settings.data_dir,
+                store_dir=store_dir if mounted else None, tombstones=w.tombstones,
+                hold_work=work_lock_for(self._comp.engine, clock=self._comp.clock),
+            )  # fmt: skip
+            return epubs.ingest(**arguments)
         store = PassthroughStore(
             self._comp.engine, w.fsops, w.loaded.locate, self._comp.settings.data_dir,
-            tombstones=w.tombstones,
+            tombstones=w.tombstones, hold_work=work_holder(self._comp),
         )  # fmt: skip
         return store.ingest(**arguments)
 

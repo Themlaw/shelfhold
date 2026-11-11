@@ -151,6 +151,11 @@ def test_status_lists_tombstoned_upstream_series(
         # the purge of the Work is the real command: the tombstone is sealed, the files go
         purge = ("purge", "--now", "--work", work, "--confirm", work)
         assert run_cli(monkeypatch, settings, *purge) == 0
+        # M1b: the purge itself takes the series out of the service's library (L17); what the
+        # status lists is a series that came back there afterwards (put back by hand)
+        suwayomi = b.env.inst.suwayomi.state["mangas"][0]
+        assert suwayomi["inLibrary"] is False
+        suwayomi["inLibrary"] = True
         # the server restarts after the purge (the CLI ran on its own): a fresh composition
         # replays the tombstones, and its follow cycle meets the series again in Suwayomi
         cycle = _restart(b)

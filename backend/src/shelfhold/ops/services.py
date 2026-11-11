@@ -37,6 +37,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export, platform
 from shelfhold.ops.backfill import BackfillOps
+from shelfhold.ops.content import ContentOps
 from shelfhold.ops.errors import (
     CodedRefusal,
     ExitUnavailableError,
@@ -69,6 +70,7 @@ from shelfhold.ops.status import (
     collect,
     dress,
     jurisdiction_report,
+    kept_in_service_report,
     known_bad_report,
     queues_of,
     rights_report,
@@ -76,6 +78,7 @@ from shelfhold.ops.status import (
     stale_report,
     tombstoned_report,
     unverifiable_download_dirs,
+    wal_pending_report,
 )
 
 __all__ = ["JobRow", "OpsServices", "RecheckOutcome", "StatusReport", "user_of"]
@@ -105,6 +108,8 @@ class StatusReport:
     content_error_candidates: list[dict[str, object]] = field(default_factory=list)
     jurisdiction: dict[str, object] | None = None  # EF-SRC-024: the country, confirmed or not
     rights_warnings: list[dict[str, object]] = field(default_factory=list)
+    kept_in_service: list[dict[str, object]] = field(default_factory=list)
+    wal_pending: list[dict[str, object]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -119,6 +124,8 @@ class StatusReport:
             "content_error_candidates": self.content_error_candidates,
             "jurisdiction": self.jurisdiction,
             "rights_warnings": self.rights_warnings,
+            "kept_in_service": self.kept_in_service,
+            "wal_pending": self.wal_pending,
         }
 
 
@@ -168,6 +175,7 @@ class OpsServices:
         backfill: BackfillOps | None = None,
         normalize: NormalizeOps | None = None,
         meta: MetaOps | None = None,
+        content: ContentOps | None = None,
         rating: RatingOps | None = None,
         follows: FollowOps | None = None,
         roots: RootOps | None = None,
@@ -187,6 +195,7 @@ class OpsServices:
         self._backfill = backfill
         self._normalize = normalize
         self._meta = meta
+        self._content = content
         self._rating = rating
         self._follows = follows
         self._roots = roots
@@ -227,6 +236,7 @@ class OpsServices:
                 known_bad_report(connection, now.date()), service_url_report(connection),
                 unverifiable_download_dirs(connection), candidate_report(connection),
                 jurisdiction_report(connection), rights_report(connection, now.date()),
+                kept_in_service_report(connection), wal_pending_report(connection),
             )  # fmt: skip
 
     def restored_behind(self) -> bool:
@@ -657,6 +667,13 @@ class OpsServices:
         if self._meta is None:
             raise ExitUnavailableError("the projections are not connected")
         return self._meta
+
+    @property
+    def content(self) -> ContentOps:
+        """`content reneutralize` (EF-BIB-051)."""
+        if self._content is None:
+            raise ExitUnavailableError("the content pipeline is not connected")
+        return self._content
 
     def adopt_set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
         if self._adoption is not None:

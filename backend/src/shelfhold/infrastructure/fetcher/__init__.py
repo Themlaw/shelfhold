@@ -10,6 +10,7 @@ from shelfhold.infrastructure.fetcher.client import (
 from shelfhold.infrastructure.fetcher.errors import (
     DnsBlocked,
     DnsResolutionError,
+    DomainNotAllowed,
     FetchError,
     FetchTimeout,
     FetchTooLarge,
@@ -28,6 +29,7 @@ from shelfhold.infrastructure.fetcher.resolver import Resolver, SystemResolver
 __all__ = [
     "DnsBlocked",
     "DnsResolutionError",
+    "DomainNotAllowed",
     "Download",
     "FetchError",
     "FetchLimits",

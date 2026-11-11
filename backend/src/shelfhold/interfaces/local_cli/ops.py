@@ -278,6 +278,22 @@ def _purge(ops: OpsServices, by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _kept_ack(ops: OpsServices, by: Principal, _p: Params) -> object:
+    return ops.library.kept_ack(principal=by)
+
+
+def _settle_log(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.library.settle_log()
+
+
+def _leftovers_plan(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.library.leftovers_plan()
+
+
+def _leftovers_apply(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.library.leftovers_apply(if_match=_text(p, "if_match"), principal=by)
+
+
 def _intents_list(ops: OpsServices, _by: Principal, _p: Params) -> object:
     return {"items": ops.intents.list_open()}
 
@@ -291,6 +307,10 @@ def _intents_resolve(ops: OpsServices, by: Principal, p: Params) -> object:
 
 def _normalize_migrate(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.normalize.migrate(_text(p, "name"), confirm=_optional(p, "confirm"), principal=by)
+
+
+def _content_reneutralize(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.content.reneutralize(confirm=_optional(p, "confirm"))
 
 
 def _meta_rebuild(ops: OpsServices, _by: Principal, p: Params) -> object:
@@ -438,6 +458,10 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.repatriate_check": (_repatriate_check, None),
     "ops.detach_restore_upstream": (_give_back, None),
     "ops.purge": (_purge, "purge.now"),
+    "ops.kept_ack": (_kept_ack, "purge.now"),
+    "ops.purge_checkpoint": (_settle_log, None),
+    "ops.leftovers_plan": (_leftovers_plan, None),
+    "ops.leftovers_apply": (_leftovers_apply, "purge.now"),
     "ops.probe": (_probe, None),
     "ops.withdraw_plan": (_withdraw_plan, None),
     "ops.withdraw_apply": (_withdraw_apply, "shelf.withdraw"),
@@ -455,6 +479,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
     "ops.normalize_migrate": (_normalize_migrate, "normalize.migrate"),
+    "ops.content_reneutralize": (_content_reneutralize, None),
     "ops.meta_rebuild": (_meta_rebuild, None),
     "ops.meta_check": (_meta_check, None),
     "ops.backfill_estimate": (_backfill_estimate, None),

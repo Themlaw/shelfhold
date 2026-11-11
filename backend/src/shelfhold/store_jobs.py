@@ -21,6 +21,7 @@ import structlog
 
 from shelfhold.composition import Composition, KeyringUnavailableError, NoLibraryError
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.locks import LockBusyError
 from shelfhold.infrastructure.observability.disk_guard import disk_usage
 from shelfhold.infrastructure.observability.wiring import thresholds_of
 from shelfhold.jobs.public import JobContext, JobPools
@@ -33,6 +34,7 @@ from shelfhold.library.public import (
     keep_candidates,
     plan_batch,
 )
+from shelfhold.work_locks import index_holder, work_holder
 
 __all__ = ["KEEP_CATCHUP_KIND", "STORE_INDEX_KIND", "register_store_jobs", "store_budget"]
 
@@ -72,7 +74,7 @@ def keep_catchup_handler(comp: Composition) -> Callable[[JobContext], None]:
                 keeper = KeepCopier(
                     comp.engine, w.fsops, w.loaded.locate, store_dir, comp.settings.data_dir,
                     IntentJournal(comp.engine, w.fsops, clock=comp.clock),
-                    extract=safeguard.run,
+                    extract=safeguard.run, hold_work=work_holder(comp),
                 )  # fmt: skip
 
                 def step(unit_id: str) -> Callable[[], None]:
@@ -98,10 +100,13 @@ def store_index_handler(comp: Composition) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
         try:
             with comp.write_context() as w:
-                index = StoreIndex(comp.engine, w.fsops, str(comp.settings.store_dir), w.tombstones)
+                index = StoreIndex(
+                    comp.engine, w.fsops, str(comp.settings.store_dir), w.tombstones,
+                    hold=index_holder(comp),
+                )  # fmt: skip
                 report = index.rewrite()
-        except (NoLibraryError, KeyringUnavailableError) as error:
-            context.record(skipped=type(error).__name__)
+        except (NoLibraryError, KeyringUnavailableError, LockBusyError) as error:
+            context.record(skipped=type(error).__name__)  # a purge holds the index: next night
             return
         context.record(lines=report.lines, tombstoned=report.tombstoned, rewritten=report.rewritten)
 

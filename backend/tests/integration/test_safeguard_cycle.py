@@ -23,6 +23,7 @@ from shelfhold.library.public import (
     verify_kept,
 )
 from tests.library_env import JPEG, PNG, cbz_bytes, lib_env
+from tests.locks_env import work_lock
 from tests.safeguard_env import ROOMY, World
 
 pytestmark = pytest.mark.req("EF-BIB-038", "EF-SRC-009", "EF-EXP-064", "EF-BIB-042")
@@ -391,7 +392,8 @@ def test_original_comicinfo_kept_for_irreplaceable_candidates() -> None:
 
         data = cbz_bytes((("001.png", PNG), ("002.jpg", JPEG)), comicinfo=xml)
         PassthroughStore(
-            env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED
+            env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED,
+hold_work=work_lock(env.engine),
         ).ingest(
             unit_id=unit_id, variant_id=variant_id, staged=env.stage(data),
             dest=str(env.manga / "Dr Stone" / "Dr Stone - 1.cbz"),

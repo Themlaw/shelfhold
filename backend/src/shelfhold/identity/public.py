@@ -58,6 +58,7 @@ from shelfhold.identity.domain.emitters import (
     DELETION_SITES,
     OWN_SCRATCH,
     PRIMITIVE,
+    REPLACEMENT_SITES,
     REPLAY,
     RESTORE,
 )
@@ -107,6 +108,7 @@ __all__ = [
     "PASSKEY_NAME_MAX",
     "PRIMITIVE",
     "RATE_ROLES",
+    "REPLACEMENT_SITES",
     "REPLAY",
     "RESERVED_ACTIONS",
     "RESTORE",

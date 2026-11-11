@@ -18,6 +18,12 @@ class SsrfBlocked(FetchError):
     code: ClassVar[str] = "ssrf.blocked"
 
 
+class DomainNotAllowed(FetchError):
+    """The host is not among the DomainRules of the plugin the Fetcher serves (EF-SRC-003)."""
+
+    code: ClassVar[str] = "source.domain_not_allowed"
+
+
 class DnsBlocked(FetchError):
     """The household resolver answered 0.0.0.0 or :: : a block list, not an attack nor an outage."""
 

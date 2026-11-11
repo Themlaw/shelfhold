@@ -32,6 +32,7 @@ from tests.integration.test_schema_catalog import (
 )
 from tests.intents_env import NOW
 from tests.library_env import LibEnv, cbz_bytes, lib_env
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 
 ROOT_SUBPATH = "Kavita"
@@ -111,7 +112,12 @@ class ExportEnv:
         )
         received = self.lib.manga / RECEIVED_DIR / f"{unit}.cbz"
         PassthroughStore(
-            self.engine, self.lib.fsops, self.lib.locate, self.lib.data, tombstones=NONE_PURGED
+            self.engine,
+            self.lib.fsops,
+            self.lib.locate,
+            self.lib.data,
+            tombstones=NONE_PURGED,
+            hold_work=work_lock(self.engine),
         ).ingest(
             unit_id=unit,
             variant_id=variant,

@@ -4,6 +4,7 @@ import pytest
 
 from shelfhold.library.public import PassthroughStore
 from tests.library_env import cbz_bytes, lib_env
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 
 
@@ -14,7 +15,12 @@ def test_passthrough_store_refuses_a_cbz_of_2500_entries() -> None:
         unit_id, variant_id = lib.new_unit()
         dest = lib.manga / "Series Alpha" / "ch-2500.cbz"
         store = PassthroughStore(
-            lib.engine, lib.fsops, lib.locate, lib.data, tombstones=NONE_PURGED
+            lib.engine,
+            lib.fsops,
+            lib.locate,
+            lib.data,
+            tombstones=NONE_PURGED,
+            hold_work=work_lock(lib.engine),
         )
         with pytest.raises(Exception, match="entries"):
             store.ingest(

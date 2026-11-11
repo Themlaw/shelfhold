@@ -134,6 +134,13 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/library/adapters/safeguard_job.py::UpstreamPurge.execute": (
             "shelf.purge_upstream"
         ),
+        # `purge --now` (L17): the download of a purged Unit in the connected service, by the deed
+        # of "Mettre à l'abri" (an intent that names the request, one erasure at most, never again
+        # for a deed that was begun). Reached from the purge and from the M1b leftovers plan,
+        # both behind the reserved action `purge.now`.
+        "shelfhold/library/adapters/safeguard_job.py::UpstreamPurge.release_for_purge": (
+            "purge.now"
+        ),
         # The recycle bins past 30 days (ENF-OPS-009): the daily sweep, under an intention; fsops
         # reads the age of the entry from the file system and refuses a younger one.
         f"{_EXPORT_APP}/recycle_sweep.py::RecycleSweeper.sweep": "trash_retention_purge",
@@ -147,4 +154,33 @@ _OTHER: Mapping[str, str] = MappingProxyType(
 
 DELETION_SITES: Mapping[str, str] = MappingProxyType(
     {**{site: name for name, sites in CLOSED_SITES.items() for site in sites}, **_OTHER}
+)
+
+
+# Every code site that **replaces a file in place** (`replace=True` on an atomic write, a copy or a
+# rename), the way a deletion is classed above: the old bytes are gone once it has run, so a new one
+# is a security decision, reviewed as such. The value says what makes it legitimate. Each of them
+# writes a staged file, reads it back against a hash and swaps it in; none unlinks first.
+REPLACEMENT_SITES: Mapping[str, str] = MappingProxyType(
+    {
+        "shelfhold/library/adapters/storage.py::KeepCopier._declare": (
+            "a declared derivative replaces the received file, the original having been kept first"
+        ),
+        "shelfhold/export/application/purge.py::PurgeService._write_index": (
+            "the index of /store rewritten without the purged Units, under its lock, never a copy"
+        ),
+        "shelfhold/library/adapters/storage.py::KeepCopier._copy": (
+            "the copy to /store of a file read back against its hash, the target of its own intent"
+        ),
+        "shelfhold/library/adapters/safeguard.py::Safeguard._verify_and_write": (
+            "the safeguard writes into /store, never /library, once the payload verifies"
+        ),
+        "shelfhold/library/adapters/store_index.py::StoreIndex.rewrite": (
+            "store/INDEX.jsonl, a projection rewritten whole"
+        ),
+        "shelfhold/library/adapters/epub_derivative.py::UntrustedEpubStore.regenerate": (
+            "a security update of the neutralizer replaces the derivative of an untrusted EPUB, "
+            "verified first, from the original or the stored derivative (EF-BIB-051)"
+        ),
+    }
 )

@@ -24,6 +24,7 @@ from shelfhold.library.public import (
     safe_to_clean,
 )
 from tests.library_env import OLD_COMICINFO, PNG, LibEnv, cbz_bytes, lib_env
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 
 NOW = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
@@ -42,7 +43,13 @@ def sha(data: bytes) -> str:
 
 def store_for(env: LibEnv, **kwargs: int) -> PassthroughStore:
     return PassthroughStore(
-        env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED, **kwargs
+        env.engine,
+        env.fsops,
+        env.locate,
+        env.data,
+        tombstones=NONE_PURGED,
+        **kwargs,
+        hold_work=work_lock(env.engine),
     )
 
 
@@ -188,6 +195,7 @@ def test_received_cbz_above_the_bound_is_refused_before_it_is_opened() -> None:
             env.data,
             max_received_bytes=1000,
             tombstones=NONE_PURGED,
+            hold_work=work_lock(env.engine),
         )
         with pytest.raises(ReceivedTooLargeError):
             small.ingest(

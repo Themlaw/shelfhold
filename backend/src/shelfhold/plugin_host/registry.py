@@ -17,6 +17,11 @@ plugins that were granted, from source files only, so the host's own modules alw
 Compatibility (EF-SRC-001): the host accepts ``api == N`` natively and ``api == N-1`` through a shim
 that rewrites the old manifest into the current shape; any other value is refused with a reason and
 the remaining plugins still load.
+
+Every loaded plugin is handed out behind the direct-I/O detector (``plugin_host.audit_hook``,
+EF-SRC-002), and a manifest whose DomainRules or ``url_patterns`` do not parse is refused: a
+pattern that cannot be read is never guessed at (EF-SRC-003). ``resolve_url`` gives a pasted URL
+to the first active plugin whose ``url_patterns`` match it (EF-SRC-004).
 """
 
 import importlib.abc
@@ -33,12 +38,24 @@ from importlib import metadata
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import CodeType
-from typing import Any
+from typing import Any, Final
+from urllib.parse import urlsplit
 
+import structlog
+
+from shelfhold.infrastructure.fetcher.guard import (
+    DomainPattern,
+    DomainPatternError,
+    compile_domain_pattern,
+)
+from shelfhold.plugin_host.audit_hook import allow_code_root, audited, host_io, importing
+from shelfhold.plugin_host.errors import NoSourceForUrl
 from shelfhold.sdk.models import API_VERSION, PluginKind, PluginManifest
-from shelfhold.sdk.source import SourceManifest
+from shelfhold.sdk.refs import SeriesRef, UnitInfo
+from shelfhold.sdk.source import Capability, SourceManifest
 
 ENTRY_POINT_GROUP = "shelfhold.plugins"
+log = structlog.get_logger(__name__)
 FIRST_PARTY_DISTRIBUTIONS = frozenset({"shelfhold"})
 
 _LOADED = frozenset({"loaded", "loaded_shim"})
@@ -231,6 +248,7 @@ def finder_for(site: Path) -> ThirdPartyFinder:
     if key not in _FINDERS:
         _FINDERS[key] = ThirdPartyFinder(key)
     finder = _FINDERS[key]
+    allow_code_root(key)  # a granted plugin's own modules may be imported by its code (EF-SRC-002)
     if finder not in sys.meta_path:
         sys.meta_path.append(finder)
     return finder
@@ -244,16 +262,102 @@ def _third_party_loader(site_dir: Path, ep: Any, top_levels: Iterable[str]) -> C
         Only now, for a granted plugin, are its own top-level modules made importable. The
         process environment is the one channel left; names that look like secrets are taken
         out of it while the plugin's code is imported."""
-        finder_for(site_dir).grant(granted)
-        hidden = {k: v for k, v in os.environ.items() if SECRET_ENV.search(k)}
-        for k in hidden:
-            del os.environ[k]
+        with host_io():  # the registry may run this under the plugin's import scope
+            finder_for(site_dir).grant(granted)
+            hidden = {k: v for k, v in os.environ.items() if SECRET_ENV.search(k)}
+            for k in hidden:
+                del os.environ[k]
         try:
             return ep.load()
         finally:
-            os.environ.update(hidden)
+            with host_io():
+                os.environ.update(hidden)
 
     return load
+
+
+def _pattern_problem(manifest: PluginManifest) -> str | None:
+    for rule in manifest.permissions.domains:
+        try:
+            compile_domain_pattern(rule.pattern)
+        except DomainPatternError as exc:
+            return f"invalid domain rule: {exc}"
+    if isinstance(manifest, SourceManifest):
+        for pattern in manifest.url_patterns:
+            try:
+                compile_url_pattern(pattern)
+            except UrlPatternError as exc:
+                return f"invalid url_patterns: {exc}"
+    return None
+
+
+# -- url_patterns (EF-SRC-004) ---------------------------------------------------------------------
+#
+# `<scheme>://<host pattern>[<path pattern>]`. The scheme is `http`, `https` or `*` (both). The
+# host pattern has the DomainRule grammar (`example.org`, `.example.org`, `*.example.org`) and the
+# same canonical comparison. In the path, `*` stands for one segment (no `/`) and `**` for any
+# run; everything else is literal; no path means any path. The query and the fragment of the URL
+# are not looked at; a URL with a userinfo part or a non-default port matches nothing.
+
+_URL_PATTERN: Final = re.compile(r"(?P<scheme>https?|\*)://(?P<host>[^/?#]+)(?P<path>/[^?#]*)?")
+_DEFAULT_PORTS: Final = {"http": 80, "https": 443}
+_MAX_JOKERS: Final = 4  # path jokers per pattern: bounds the matching time of a hostile pattern
+_MAX_URL: Final = 4096
+
+
+class UrlPatternError(ValueError):
+    """A url_patterns entry that does not follow the grammar."""
+
+
+@dataclass(frozen=True)
+class UrlPattern:
+    schemes: frozenset[str]
+    host: DomainPattern
+    path: re.Pattern[str] | None
+
+    def matches(self, url: str) -> bool:
+        if not isinstance(url, str) or len(url) > _MAX_URL:
+            return False
+        try:
+            parts = urlsplit(url)
+            port = parts.port
+        except (ValueError, TypeError):
+            return False
+        scheme = parts.scheme.lower()
+        if scheme not in self.schemes or "@" in parts.netloc or not parts.hostname:
+            return False
+        if port is not None and port != _DEFAULT_PORTS[scheme]:
+            return False
+        if not self.host.matches(parts.hostname):
+            return False
+        return self.path is None or self.path.fullmatch(parts.path or "/") is not None
+
+
+def compile_url_pattern(pattern: str) -> UrlPattern:
+    found = _URL_PATTERN.fullmatch(pattern) if isinstance(pattern, str) else None
+    if found is None:
+        raise UrlPatternError(f"{pattern!r} is not <scheme>://<host>[/<path>]")
+    scheme = found["scheme"]
+    try:
+        host = compile_domain_pattern(found["host"])
+    except DomainPatternError as exc:
+        raise UrlPatternError(f"{pattern!r}: {exc}") from exc
+    path = found["path"]
+    regex = None
+    if path is not None:
+        pieces = re.split(r"(\*\*|\*)", path)
+        if sum(p in ("*", "**") for p in pieces) > _MAX_JOKERS:
+            raise UrlPatternError(f"{pattern!r}: more than {_MAX_JOKERS} jokers in the path")
+        body = "".join(".*" if p == "**" else "[^/]*" if p == "*" else re.escape(p) for p in pieces)
+        regex = re.compile(body)
+    schemes = frozenset(_DEFAULT_PORTS) if scheme == "*" else frozenset({scheme})
+    return UrlPattern(schemes, host, regex)
+
+
+@dataclass(frozen=True)
+class UrlResolution:
+    key: str  # the plugin that recognised the URL
+    ref: SeriesRef | UnitInfo
 
 
 class PluginRegistry:
@@ -329,7 +433,8 @@ class PluginRegistry:
             reason = candidate.blocked or "third-party plugins are disabled by default"
             return PluginRecord(key, origin, PluginStatus.DISABLED, reason)
         try:
-            instance = candidate.load()
+            with importing(key):  # import-time I/O is logged too (report mode, never blocked)
+                instance = candidate.load()
             manifest, status = self._manifest(getattr(instance, "manifest", None))
         except Exception as exc:  # a broken plugin is reported, never raised
             return PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, f"load failed: {exc}")
@@ -338,7 +443,33 @@ class PluginRegistry:
         if manifest.key != key:
             reason = f"manifest key {manifest.key!r} differs from entry point {key!r}"
             return PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, reason)
-        return PluginRecord(key, origin, status.status, None, manifest, instance)
+        problem = _pattern_problem(manifest)
+        if problem is not None:
+            return PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, problem)
+        return PluginRecord(key, origin, status.status, None, manifest, audited(instance, key))
+
+    async def resolve_url(
+        self, url: str, fetcher_for: Callable[[PluginRecord], Any]
+    ) -> "UrlResolution":
+        """The reference behind a pasted URL (EF-SRC-004), from the first active plugin that
+        declares URL_RESOLVE and whose ``url_patterns`` match; NoSourceForUrl (422) otherwise,
+        also when that plugin resolves the URL to nothing. The plugin runs under the detector."""
+        for record in self.active():
+            manifest = record.manifest
+            if not isinstance(manifest, SourceManifest):
+                continue
+            if Capability.URL_RESOLVE not in manifest.capabilities:
+                continue
+            if not any(compile_url_pattern(p).matches(url) for p in manifest.url_patterns):
+                continue
+            ref = await record.instance.resolve_url(fetcher_for(record), url)
+            if not isinstance(ref, SeriesRef | UnitInfo):
+                # the plugin's key is for the admin's log, never for the user's 422
+                log.warning("source.no_match", plugin_id=record.key, reason="resolved_to_nothing")
+                raise NoSourceForUrl()
+            return UrlResolution(record.key, ref)
+        log.info("source.no_match", plugin_id=None, reason="no_pattern_matched")
+        raise NoSourceForUrl()
 
     def _manifest(self, raw: Any) -> tuple[PluginManifest | None, ApiVerdict]:
         data = raw.model_dump(mode="json") if isinstance(raw, PluginManifest) else raw

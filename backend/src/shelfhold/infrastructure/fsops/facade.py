@@ -949,7 +949,9 @@ class Fsops:
         recorded the tombstone and has written the intent; this is the primitive, and it adds
         what only fsops can check: the path is under a writable root, never through a link, never
         a directory, never the host's own files (sentinel, lease, tombstone journal, mirror)."""
-        log.debug("fsops.purge_unlink", path=escaped(local))
+        log.debug(
+            "fsops.purge_unlink"
+        )  # no path: it spells the series folder and the file name (EF-BIB-053)
         located = self._locate(local, host=True)
         self._require_purgeable(located.rel)
         with self._gated(located) as root:

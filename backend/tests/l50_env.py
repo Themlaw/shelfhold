@@ -32,6 +32,7 @@ from tests.integration.test_schema_catalog import (
 )
 from tests.l41_env import Instance, instance
 from tests.library_env import cbz_bytes
+from tests.locks_env import work_lock
 
 REMOTE_ROOT = "/manga/Kavita"
 
@@ -78,6 +79,7 @@ class Seeded:
             PassthroughStore(
                 self.inst.engine, w.fsops, w.loaded.locate, self.inst.settings.data_dir,
                 tombstones=w.tombstones,
+hold_work=work_lock(self.inst.engine),
             ).ingest(
                 unit_id=unit, variant_id=variant, staged=staged, dest=w.received_path(variant)
             )  # fmt: skip

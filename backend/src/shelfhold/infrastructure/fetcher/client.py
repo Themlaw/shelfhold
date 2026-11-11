@@ -34,6 +34,7 @@ from shelfhold.infrastructure.fetcher.errors import (
     UnsafeRedirect,
 )
 from shelfhold.infrastructure.fetcher.guard import (
+    DomainAllowlist,
     IPAddress,
     block_reason,
     is_sinkhole,
@@ -102,8 +103,10 @@ class GuardedFetcher:
         transport: httpx2.AsyncBaseTransport | None = None,
         tls_context: ssl.SSLContext | None = None,
         user_agent: str = f"Shelfhold/{__version__}",
+        domains: DomainAllowlist | None = None,
     ) -> None:
         self._resolver = resolver
+        self._domains = domains  # a plugin's Fetcher: its DomainRules, checked at every hop
         self._lan = LanTargets.empty()  # the default fetcher, used for upstream URLs, has none
         self._limits = limits or FetchLimits()
         self._user_agent = user_agent
@@ -254,6 +257,8 @@ class GuardedFetcher:
         cap = self._limits.max_bytes if max_bytes is None else max_bytes
         first = _origin(url)
         for _ in range(self._limits.max_redirects + 1):
+            if self._domains is not None:  # by name, before any resolution (EF-SRC-003)
+                self._domains.check(url.raw_host.decode("ascii"), route_of(str(url)))
             # a LAN target is reachable only as the origin the caller asked for, never by redirect
             on_lan = _origin(url) == first and self._lan.addresses(url.host, _port(url)) is not None
             addresses = await self._pin(url, allow_lan=on_lan)

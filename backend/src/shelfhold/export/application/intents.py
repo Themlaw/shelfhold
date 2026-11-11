@@ -31,11 +31,12 @@ from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.fsops import FileIdentity, FsopsError
 from shelfhold.infrastructure.fsops.confined import Kind
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import coherence, platform
+from shelfhold.infrastructure.schema import acquisition, coherence, platform
 
 INTENT_SCHEMA_VERSION = "1"  # frozen and versioned: ENF-OPS-019
 KNOWN_SCHEMA_VERSIONS = frozenset({INTENT_SCHEMA_VERSION})
 OPEN_STATES = ("pending", "applying")
+STORE_INDEX = "INDEX.jsonl"  # `library.adapters.store_index.INDEX_NAME` (no import: a cycle)
 
 __all__ = [
     "INTENT_SCHEMA_VERSION",
@@ -312,6 +313,8 @@ class IntentJournal:
             return False
         table = coherence.fs_intent
         with self._engine.begin() as conn:
+            if found[0].op == "purge_upstream":
+                self._let_go_of_deed(conn, found[0])
             closed = conn.execute(
                 sa.update(table)
                 .where(table.c.id == intent_id, table.c.state.in_(OPEN_STATES))
@@ -324,6 +327,25 @@ class IntentJournal:
             if self._settled is not None:
                 self._settled(conn, intent_id)
         return True
+
+    @staticmethod
+    def _let_go_of_deed(conn: Connection, intent: OpenIntent) -> None:
+        """An erasure in the connected service that was begun and is given up: its request loses
+        the ticket in the same transaction. The deed may have reached the service (nothing on this
+        side can tell), and a second `release` in `ui_login` would take the claim for another
+        account's: abandoning it must never open the door to one."""
+        payload = conn.execute(
+            sa.select(coherence.fs_intent.c.expected_file_id).where(
+                coherence.fs_intent.c.id == intent.id
+            )
+        ).scalar_one_or_none()
+        request_id = str((payload or {}).get("request_id") or "")
+        if request_id and intent.state == "applying":
+            conn.execute(
+                sa.update(acquisition.download_request)
+                .where(acquisition.download_request.c.id == request_id)
+                .values(ticket=None)
+            )
 
     def _settle(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
@@ -469,7 +491,9 @@ class IntentJournal:
         if intent.dst is None:
             return self._drift(intent, report, "a write needs its target")
         found = self._disk.observe(intent.dst)
-        mirror = f"/{MIRROR_DIR}/" in intent.dst  # a projection of the database (EF-EXP-063)
+        # a projection of the database: the provenance mirror (EF-EXP-063) and `store/INDEX.jsonl`
+        # (EF-INT-027), which a purge writes under an intent (L17)
+        mirror = f"/{MIRROR_DIR}/" in intent.dst or intent.dst.endswith(f"/{STORE_INDEX}")
         if found is None:
             self._close(intent.id, "cancelled")
             report.abandoned.append(intent.id)

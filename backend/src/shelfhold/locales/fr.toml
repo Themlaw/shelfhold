@@ -57,6 +57,9 @@ json_help = "Sortie au format JSON."
 export_help = "Calcule les exportations vers une destination (aperçu, sans écriture)."
 export_dry_run_help = "Affiche le plan sans rien écrire."
 export_destination_help = "Identifiant de la destination (étagère x serveur)."
+content_help = "Contenu des fichiers reçus : régénère les dérivés neutralisés des EPUB de sources non fiables."
+content_reneutralize_help = "Aperçu, puis régénération des dérivés après une mise à jour de sécurité du neutraliseur (repart de l'original, sinon du dérivé rangé)."
+content_confirm_help = "Empreinte donnée par l'aperçu : régénère exactement ce qui a été montré, sans rien supprimer."
 meta_help = "Projections de la base (unit.json, work.json, miroir de provenance) : régénère ou vérifie."
 meta_rebuild_help = "Réécrit les projections divergentes, manquantes ou illisibles à partir de la base ; les lignes inexpliquées du miroir restent « unresolved »."
 meta_check_help = "Liste les projections qui divergent de la base, sans rien écrire (code 1 s'il y en a)."
@@ -271,6 +274,8 @@ yes = "oui"
 no = "non"
 stale_series_line = "Série silencieuse : « {title} » n'a reçu aucun chapitre depuis {silent_days} jours (seuil : {threshold_days} jours). Vérifiez la source ou mettez le suivi en pause."
 irreplaceable_candidate_line = "Candidate irremplaçable : l'unité {unit_id} (source « {source_key} », {errors} erreurs de contenu de suite, copies indépendantes : {independent_copies}). Rien n'est copié ni supprimé pour l'instant."
+wal_pending_line = "Effacement à finaliser depuis {since} : le journal de la base est encore tenu par un lecteur. Lancez « shelfhold purge --checkpoint » (ou arrêtez le serveur)."
+kept_in_service_line = "Téléchargement laissé dans Suwayomi par une purge (demande {request}, depuis {since}) : supprimez-le dans Suwayomi, puis « shelfhold purge --kept-ack »."
 tombstoned_upstream_line = "Série purgée encore présente dans Suwayomi : « {title} ». Shelfhold l'ignore ; retirez-la manuellement dans Suwayomi."
 capabilities_line = "Racine {root} ({filesystem}) : reflink {reflink} ; lien dur vers /store {link} ; inodes stables {inodes}{fallback}"
 capabilities_unprobed = "Racine {root} : capacités non sondées au démarrage ({why}). Elles le seront au prochain démarrage, une fois la racine prête à l'écriture."
@@ -467,6 +472,14 @@ arrivals_pending = "Arrivées en attente dans Kavita : {count}"
 median_delay = "Délai médian entre détection et visibilité dans Kavita (secondes) : {value}"
 guards = "Gardes déclenchées : sentinelle {sentinel}, autre écrivain {writer}"
 
+[content]
+preview_stale = "Ce n'est pas le plan qui a été montré : relancez l'aperçu (aucun fichier n'a été touché)."
+up_to_date = "Tous les dérivés sont déjà produits par {target} : rien à régénérer."
+header = "{count} dérivé(s) à régénérer avec {target}."
+row = "Unité {unit} (produit par {old}) : repart de {source} ({reason})."
+fingerprint = "Empreinte du plan : {fingerprint} (relancez avec --confirm)."
+applied = "{regenerated} dérivé(s) régénéré(s), {blocked} bloqué(s), {failed} en échec ; l'ancien fichier est gardé là où la régénération a échoué."
+
 [meta]
 rebuilt = "{written} fichier(s) unit.json, {works} work.json et {mirror} fichier(s) du miroir de provenance réécrit(s) à partir de la base."
 drift = "unit.json diverge de la base : {unit}"
@@ -554,6 +567,14 @@ action = "Si une empreinte diffère, un fichier a été modifié et non déplac�
 [errors."purge.collateral"]
 title = "Un fichier de cette Unité porte aussi d'autres Unités : l'effacer les effacerait."
 action = "Effacez toutes les Unités du fichier ensemble, ou gardez-le."
+
+[errors."purge.busy"]
+title = "Un fichier ou une Œuvre à effacer est tenu par un autre travail : rien n'a été effacé."
+action = "Relancez la commande dans un instant, quand le travail en cours (copie, import) sera fini."
+
+[errors."purge.wal_busy"]
+title = "L'effacement est fait, mais le serveur tient encore le journal de la base : il peut garder un titre jusqu'à son prochain vidage."
+action = "Lancez « shelfhold purge --checkpoint » quand le serveur est inactif (ou arrêtez-le) : il ne refait que le vidage du journal. Il l'est aussi chaque nuit et au démarrage."
 
 [errors."pairing.batch_stale"]
 title = "Le lot d'appariements confirmé n'est plus celui qui a été proposé."
@@ -839,6 +860,10 @@ action = "Aucune action : la copie déjà conservée est gardée."
 title = "Le résolveur DNS du foyer bloque cette source."
 action = "Autorisez le domaine de la source dans le bloqueur DNS (liste blanche), puis relancez."
 
+[errors."source.domain_not_allowed"]
+title = "Une source a demandé un domaine qu'elle n'a pas déclaré."
+action = "La requête est refusée. Vérifiez l'adresse réglée pour la source ; si elle est juste, mettez la source à jour ou désactivez-la."
+
 [errors."source.downloads_dropped"]
 title = "La source a abandonné des téléchargements."
 action = "Relancez les téléchargements abandonnés depuis l'Activité."
@@ -847,9 +872,17 @@ action = "Relancez les téléchargements abandonnés depuis l'Activité."
 title = "La source a signalé une erreur."
 action = "Consultez l'état de la source dans la page Sources."
 
+[errors."source.forbidden_io"]
+title = "Une source a tenté d'accéder seule au réseau, au disque ou à un programme."
+action = "L'accès est refusé et journalisé. La source ne respecte pas le contrat : désactivez-la ou mettez-la à jour."
+
 [errors."source.instance_changed"]
 title = "Le service de la source semble avoir été réinstallé."
 action = "Confirmez avec « shelfhold source reconnect » ; rien n'est supprimé en attendant."
+
+[errors."source.no_match"]
+title = "Aucune source ne reconnaît cette adresse."
+action = "Vérifiez l'adresse collée, ou activez la source qui la publie."
 
 [errors."source.not_loaded"]
 title = "Une source n'est pas chargée."
@@ -1087,6 +1120,7 @@ header = "{series} série(s), {files} fichier(s) existant(s) ; aucun ne sera mod
 series_line = "Série {name} : {files} fichier(s)"
 volume_only_line = "Série {name} : tomes seuls, plage de chapitres inconnue (aucun suivi automatique)."
 rename_line = "Renommage proposé (jamais appliqué) : {from_path} -> {to_path}"
+active_content_line = "Contenu actif (scripts, gestionnaires ou ressources distantes) dans l'EPUB : {path} (adopté tel quel, jamais servi ni réécrit par Shelfhold)."
 duplicate_line = "Doublon de même numéro dans {series} (conservé) : n° {number} : {files}"
 refused = "Des comptes plus restreints que le plafond de l'étagère lisent cette bibliothèque, adoption refusée : {accounts}"
 child_accounts = "Comptes restreints qui la lisent : {accounts}"
@@ -1274,6 +1308,18 @@ needs_confirmation = "Retapez l'identifiant avec --confirm pour effacer."
 done = "{units} Unité(s) concernée(s), {erased} fichier(s) effacé(s)."
 root_pending = "Racine {root} : la pierre tombale lui sera écrite à son retour ; rien d'autre n'y sera écrit avant."
 alert = "À faire à la main : {alert}"
+upstream = "Service : {released} téléchargement(s) libéré(s), {kept} gardé(s) par un autre compte, {unfollowed} série(s) retirée(s) de la bibliothèque."
+retained_backup = "Sauvegarde conservée qui contient encore ces données (à écarter à la main, jamais réécrite) : {name}"
+checkpoint_help = "Refait seulement le vidage du journal de la base, après un effacement dont le journal était tenu."
+checkpoint_done = "Journal vidé : l'effacement est finalisé."
+kept_ack_help = "Efface la marque des téléchargements laissés dans le service (à faire après les avoir supprimés dans Suwayomi)."
+kept_ack_done = "{count} marque(s) effacée(s)."
+leftovers_help = "Propose de libérer, dans le service, les téléchargements laissés par les purges de la version précédente (plan, puis --confirm)."
+leftovers_not_connected = "Aucun service connecté : rien à proposer."
+leftovers_plan = "{downloads} téléchargement(s) encore tenu(s) par le service, {dead} ticket(s) oublié(s) par le service, {series} série(s) purgée(s) encore dans sa bibliothèque. Rien n'a été effacé."
+leftovers_series_unknown = "Le service n'a pas pu lister sa bibliothèque : les séries purgées ne sont pas proposées cette fois."
+leftovers_confirm = "Pour libérer ces téléchargements : shelfhold purge --leftovers --confirm {version}"
+leftovers_done = "{released} téléchargement(s) libéré(s), {forgotten} ticket(s) oublié(s), {unfollowed} série(s) retirée(s) de la bibliothèque."
 out_of_reach = "Hors de portée d'un effacement :"
 out_of_reach_item = "  - {item}"
 

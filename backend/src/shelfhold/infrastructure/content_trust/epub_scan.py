@@ -82,6 +82,9 @@ _MEDIA_FAMILY: Final = {
     "application/x-dtbncx+xml": "xml", "image/png": "image", "image/jpeg": "image",
     "image/gif": "image", "image/webp": "image", "application/oebps-package+xml": "opf",
 }  # fmt: skip
+_META_INF_XML: Final = frozenset(
+    f"META-INF/{n}" for n in ("manifest.xml", "metadata.xml", "rights.xml", "signatures.xml")
+)
 _XML_EXTS: Final = frozenset({"", ".xml", ".ncx"})
 _STORED_EXT: Final = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".woff", ".woff2"})
 _DECODED_REMOTE: Final = re.compile(r"[a-z][a-z0-9+.\-]*://|//")
@@ -89,6 +92,7 @@ _PI: Final = re.compile(rb"<\?(?!xml[\s?])", re.I)
 _BAD_ELEMENTS: Final = frozenset({"html", "svg", "script", "body", "iframe", "object", "embed"})
 _PAGE_NAMESPACES: Final = ("http://www.w3.org/1999/xhtml", "http://www.w3.org/2000/svg")
 _URL_ATTRS: Final = frozenset({"href", "src", "refines", "base"})
+_LINK_ATTRS: Final = frozenset({"href", "src"})
 _MAGIC: Final = {
     ".png": (b"\x89PNG\r\n\x1a\n",), ".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",),
     ".gif": (b"GIF87a", b"GIF89a"), ".woff": (b"wOFF",), ".woff2": (b"wOF2",),
@@ -169,6 +173,11 @@ def _read_xml(archive: SafeArchive, name: str, reason: str) -> Element:
         tag = str(element.tag)
         if tag.startswith("{") and tag[1:].partition("}")[0] in _PAGE_NAMESPACES:
             raise NeutralizationError("page_in_xml", name)
+        if any(_local(k).lower().startswith("on") for k in element.attrib):
+            raise NeutralizationError("page_in_xml", name)  # an event handler is not metadata
+        for key, value in element.attrib.items():  # `href`, `src`, `xlink:href`: as in the OPF
+            if _local(key).lower() in _LINK_ATTRS:
+                _checked_reference(value, posixpath.dirname(name), name)
         if _local(tag).lower() in _BAD_ELEMENTS:
             raise NeutralizationError("page_in_xml", name)
     return root
@@ -208,6 +217,8 @@ def _read_package(archive: SafeArchive, opf: str, declared: dict[str, str | None
             # `refines` is a fragment (`#id`); `xml:base` and every href or src is a path
             path = _checked_reference(value, base, opf)
             if _local(element.tag) == "item" and _local(key) == "href":
+                if path.startswith("META-INF/"):  # the container's folder is not a place for pages
+                    raise NeutralizationError("meta_inf_item", opf)
                 media = _media_type(element.attrib.get("media-type"))
                 family = _MEDIA_FAMILY.get(media or "")
                 if path in declared and declared[path] != family:
@@ -227,6 +238,9 @@ def _manifest(archive: SafeArchive) -> tuple[set[str], dict[str, str | None]]:
             )
     if not opfs:
         raise NeutralizationError("container")
+    for opf in opfs:
+        if _ext(opf) != ".opf":  # a rootfile that is not a package is a page in disguise
+            raise NeutralizationError("container", opf)
     declared: dict[str, str | None] = {}
     for opf in opfs:
         if opf not in names:
@@ -236,6 +250,9 @@ def _manifest(archive: SafeArchive) -> tuple[set[str], dict[str, str | None]]:
         if _ext(name) == ".opf" and name not in opfs:
             _read_package(archive, name, declared)
             opfs.append(name)
+    for opf in opfs:  # a package the manifest also lists as a page would be copied unread
+        if declared.get(opf) in _PAGE_FAMILIES:
+            raise NeutralizationError("type_mismatch", opf)
     return set(opfs), declared
 
 
@@ -243,8 +260,15 @@ def _classify(
     archive: SafeArchive, name: str, opfs: set[str], declared: dict[str, str | None]
 ) -> str:
     """`copy`, or the page kind to neutralize; a refusal if the entry is in no category."""
-    if name == "mimetype" or name.startswith("META-INF/") or name in opfs:
+    if name == "mimetype" or name in opfs or name == "META-INF/container.xml":
         return "copy"
+    if name == "META-INF/encryption.xml":  # an encrypted package cannot be read, so not checked
+        raise NeutralizationError("encrypted", name)
+    if name in _META_INF_XML:  # known container files: read in full, copied as they are
+        _read_xml(archive, name, "xml")
+        return "copy"
+    # any other entry under META-INF/ is classified like any entry: a page is neutralized, what
+    # is in no category refuses the EPUB (it used to be copied whatever it held)
     ext = _ext(name)
     by_ext = _EXT_FAMILY.get(ext)
     by_type = declared.get(name)

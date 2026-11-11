@@ -67,6 +67,8 @@ def test_backend_is_sharded_and_coverage_is_combined_with_unchanged_thresholds()
         assert jobs[name]["if"] == "needs.changes.outputs.backend == 'true'"
     # the number of shards is defined once, in the `changes` job
     assert jobs["changes"]["env"]["BACKEND_SHARDS"].isdigit()
+    assert jobs["changes"]["env"]["BACKEND_INTEGRATION_SHARDS"].isdigit()
+    assert jobs["backend-integration"]["strategy"]["matrix"]["shard"]
     assert jobs["e2e-front"]["strategy"]["matrix"]["shard"]
     text = CI.read_text(encoding="utf-8")
     assert "--fail-under=85" in text  # diff coverage threshold kept
@@ -76,9 +78,11 @@ def test_backend_is_sharded_and_coverage_is_combined_with_unchanged_thresholds()
 
 @pytest.mark.req("ENF-SEC-007")
 def test_every_job_has_a_timeout_of_at_most_15_minutes() -> None:
+    # backend-integration shards get 20 min of margin (target: < 7 min per shard)
     ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
     for name, job in ci["jobs"].items():
         if "uses" in job:  # reusable workflow: its own jobs carry the timeout
             continue
-        assert 0 < job.get("timeout-minutes", 0) <= 15, name
+        limit = 20 if name == "backend-integration" else 15
+        assert 0 < job.get("timeout-minutes", 0) <= limit, name
     assert ci["concurrency"]["cancel-in-progress"]

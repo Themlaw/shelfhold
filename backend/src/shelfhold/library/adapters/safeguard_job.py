@@ -27,18 +27,20 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass, field, replace
-from typing import Any, Protocol
+from datetime import datetime
+from typing import Any, Protocol, cast
 
 import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.identity.public import AuditEntry, audit_insert
 from shelfhold.infrastructure.archives import UnsafeArchiveError
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.infrastructure.fsops import FileIdentity, Fsops, FsopsError
-from shelfhold.infrastructure.schema import acquisition, catalog, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, coherence, platform, storage
 from shelfhold.library.adapters.safeguard import payload_hash_at
 from shelfhold.library.adapters.safeguard_inventory import (
     PurgeCandidate,
@@ -49,8 +51,10 @@ from shelfhold.library.adapters.safeguard_inventory import (
 )
 from shelfhold.library.adapters.storage import KeepCopier, verify_kept
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY
+from shelfhold.library.domain.download_ticket import DownloadTicket
 from shelfhold.library.domain.failures import SafeguardFailedError
 from shelfhold.library.domain.safeguard_rules import (
+    DEED_OPEN,
     NOT_DOWNLOADED,
     REFUSALS,
     ROLES_UNVERIFIED,
@@ -78,12 +82,15 @@ from shelfhold.library.tombstones.values import ContentHash, SeriesBindingRef, V
 
 __all__ = [
     "CycleReport",
+    "DownloadTicket",
     "IntentLog",
     "PinnedCopy",
     "PurgeDone",
     "PurgePlan",
     "PurgeRefused",
     "PurgeReport",
+    "PurgeUnresolvedError",
+    "ReleaseOutcome",
     "SafeguardCycle",
     "ServiceGate",
     "TombstoneScreen",
@@ -143,6 +150,37 @@ class UpstreamService(Protocol):
     async def poll(self, f: Any, t: Any) -> str: ...
 
     async def release(self, f: Any, t: Any) -> Any: ...
+
+
+class QueueService(UpstreamService, Protocol):
+    """What `purge --now` asks of the service on top of the above: take a queued chapter out of
+    its queue (`cancel`, EF-SRC-033)."""
+
+    async def cancel(self, f: Any, t: Any) -> None: ...
+
+
+@dataclass(frozen=True)
+class ReleaseOutcome:
+    kind: str  # released | gone | cancelled | kept_by_other_account
+    freed_bytes: int | None = None
+
+
+KEPT_PREFIX = "purge.kept_in_service:"  # `app_setting`: one key per request (an opaque ULID)
+
+
+def mark_kept_in_service(connection: Connection, request_id: str, at: datetime) -> None:
+    """A download the service still holds after a purge let go of Shelfhold's claim: the admin
+    deletes it there, then clears the mark. Idempotent."""
+    connection.execute(
+        sqlite_insert(platform.app_setting)
+        .values(key=KEPT_PREFIX + request_id, value=at.isoformat())
+        .on_conflict_do_nothing(index_elements=["key"])
+    )
+
+
+class PurgeUnresolvedError(Exception):
+    """A deed on this download was begun and nobody knows whether it landed (or another deed is
+    about to): it is never sent again, the admin decides (`intents list`, `intents resolve`)."""
 
 
 @dataclass(frozen=True)
@@ -542,6 +580,91 @@ class UpstreamPurge:
             )
             if not verdict.allowed:
                 raise PurgeRefused(verdict.reason or STORE_COPY_MISSING)
+            if self._other_deed_open(connection, candidate.request_id, intent_id):
+                raise PurgeRefused(DEED_OPEN)  # `purge --now` is on this very download
+            self._journal.mark_applying(intent_id, within=connection)
+
+    @staticmethod
+    def _other_deed_open(connection: Connection, request_id: str, intent_id: str) -> bool:
+        """Another erasure of this download is begun: the service takes a second one for the
+        withdrawal of another account's claim, so a download gets one deed at a time."""
+        table = coherence.fs_intent
+        for _other, payload in connection.execute(
+            sa.select(table.c.id, table.c.expected_file_id).where(
+                table.c.op == PURGE_OP, table.c.state == "applying", table.c.id != intent_id
+            )
+        ):
+            if str((payload or {}).get("request_id") or "") == request_id:
+                return True
+        return False
+
+    # -- `purge --now`: the download of a Unit being erased (EF-BIB-052, EF-SRC-033) -----------
+
+    async def release_for_purge(self, target: DownloadTicket) -> ReleaseOutcome:
+        """Let the service go of the download of a Unit the admin is purging, by the road of the
+        deed above: an intent that names the request, the service asked first, `release` sent once
+        and never again. No shelf option and no /store copy is asked for (the admin typed the
+        identifier and the tombstone is down), but the service gate is: a paused, unverified or
+        unloaded service is not given a delete. A queued chapter is taken out of its queue."""
+        with self._engine.connect() as connection:
+            refusal = self._service_gate(connection, target.plugin_id, target.source_key)
+        if refusal:
+            raise PurgeRefused(refusal)
+        ticket = self._ticket(target.ticket)
+        for intent_id, state, payload in self._journal.open_payloads(PURGE_OP):
+            if str(payload.get("request_id") or "") != target.request_id:
+                continue
+            if state == "pending":
+                self._journal.cancel(intent_id)  # recorded, never begun
+                continue
+            held = await self._still_held(ticket)
+            # begun: never sent again, whoever began it. Gone: it landed. Still there: not sent,
+            # or (`ui_login`) another account keeps the file; nothing tells which, so the claim
+            # is let go of and the admin is told to delete in the service. The ticket goes with
+            # the intent: no door (`intents resolve`, `--abandon`) leads to a second erasure.
+            self._settle(target, intent_id, kept=held)
+            return ReleaseOutcome("kept_by_other_account" if held else "gone")
+        if target.state == "requested":
+            await cast("QueueService", self._service).cancel(self._fetcher, ticket)
+        if not await self._still_held(ticket):
+            self._settle(target, None)  # nothing downloaded: the queue entry (if any) is gone
+            return ReleaseOutcome("cancelled" if target.state == "requested" else "gone")
+        intent_id = self._journal.record(
+            op="purge_upstream",
+            expected_file_id=PinnedCopy(0, 0, 0, request_id=target.request_id),
+        )
+        try:
+            self._mark_alone(target, intent_id)
+        except BaseException:
+            self._journal.cancel(intent_id)  # nothing was erased
+            raise
+        # From here an unknown outcome leaves the intent `applying`: see `release_for_purge`.
+        result = await self._service.release(self._fetcher, ticket)
+        present = getattr(result, "still_present", None)
+        if not (getattr(result, "released", False) or present):
+            self._journal.cancel(intent_id)  # it was not downloaded after all
+            self._settle(target, None)
+            return ReleaseOutcome("gone")
+        self._settle(target, intent_id, kept=bool(present))
+        return ReleaseOutcome(
+            "kept_by_other_account" if present else "released", getattr(result, "freed_bytes", None)
+        )
+
+    def _mark_alone(self, target: DownloadTicket, intent_id: str) -> None:
+        """`applying`, in a locked transaction that looks once more: the ticket is still the
+        request's and no other deed holds it."""
+        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        table = acquisition.download_request
+        with immediate.begin() as connection:
+            held = connection.execute(
+                sa.select(table.c.id).where(
+                    table.c.id == target.request_id, table.c.ticket == target.ticket
+                )
+            ).first()
+            if held is None:
+                raise PurgeUnresolvedError(target.request_id)  # settled meanwhile: not ours to send
+            if self._other_deed_open(connection, target.request_id, intent_id):
+                raise PurgeUnresolvedError(target.request_id)
             self._journal.mark_applying(intent_id, within=connection)
 
     def _check_pinned(
@@ -578,10 +701,18 @@ class UpstreamPurge:
             if other == (dev, ino):
                 raise PurgeRefused(STORE_COPY_CHANGED)
 
-    def _settle(self, candidate: PurgeCandidate, intent_id: str) -> None:
+    def _settle(
+        self,
+        candidate: PurgeCandidate | DownloadTicket,
+        intent_id: str | None,
+        *,
+        kept: bool = False,
+    ) -> None:
         """The database learns it, in one transaction with the end of the intent: the ticket is
         let go of (the next sweep never asks again), Shelfhold no longer counts the origin as a
-        copy of its own, the audit says which Unit (an opaque identifier, never a title)."""
+        copy of its own, the audit says which Unit (an opaque identifier, never a title). `kept`:
+        the file stays in the service (another account may hold it, or the answer was ambiguous):
+        a durable mark, which `status` shows until the admin clears it (`purge --kept-ack`)."""
         now = self._clock.now()
         with self._engine.begin() as connection:
             connection.execute(
@@ -593,15 +724,21 @@ class UpstreamPurge:
                 .values(ticket=None, updated_at=now)
             )
             withdraw_upstream_claims(connection, [candidate.unit_id])
+            # a Unit that is gone (the leftovers of an M1a purge) is named by its request
+            target = (
+                f"unit:{candidate.unit_id}"
+                if candidate.unit_id
+                else f"request:{candidate.request_id}"
+            )
             connection.execute(
                 audit_insert(
-                    AuditEntry(
-                        actor_id=None, action="unit.upstream_purged", at=now,
-                        target=f"unit:{candidate.unit_id}",
-                    )
+                    AuditEntry(actor_id=None, action="unit.upstream_purged", at=now, target=target)
                 )
             )  # fmt: skip
-            self._journal.mark_done(intent_id, within=connection)
+            if kept:
+                mark_kept_in_service(connection, candidate.request_id, now)
+            if intent_id is not None:
+                self._journal.mark_done(intent_id, within=connection)
 
     # -- a deed that was begun: asked of the service, never sent again --------------------------
 
@@ -617,7 +754,11 @@ class UpstreamPurge:
             report.handed_to_admin += 1
             return
         if await self._still_held(self._ticket(found[0].ticket)):
+            # not sent, or another account keeps the file: nothing tells which. The claim is let
+            # go of with the intent (a second DELETE would take it for the other account's), and
+            # the download is left in the service for the admin to delete there.
             log.warning("safeguard.purge_ambiguous", intent=intent_id)
+            self._settle(found[0], intent_id, kept=True)
             report.handed_to_admin += 1
             return
         self._settle(found[0], intent_id)
