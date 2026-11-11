@@ -145,6 +145,8 @@ def test_a_start_behind_a_migration_says_so_and_takes_the_lock_when_it_is_free(
         starting = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer shk_x.y"})
         assert starting.status_code == 503  # a credential is not even looked at until it is up
         assert starting.json()["code"] == "instance.starting"
+        login = client.post("/api/v1/auth/login", json={"username": "a", "password": "b" * 12})
+        assert login.status_code == 503  # nobody signs in before the start-up is done
         release.touch()
         assert slow_migrator.wait(timeout=60) == 0
         deadline = time.monotonic() + 30

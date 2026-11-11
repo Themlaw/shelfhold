@@ -40,7 +40,11 @@ from typing import BinaryIO
 import sqlalchemy as sa
 
 from shelfhold.identity.public import revoke_all_credentials
-from shelfhold.infrastructure.identity_counter import COUNTER_KEY, IdentityCounter
+from shelfhold.infrastructure.identity_counter import (
+    COUNTER_KEY,
+    IdentityCounter,
+    IdentityCounterError,
+)
 from shelfhold.infrastructure.restore_notice import RestoreNoticeData
 from shelfhold.infrastructure.secrets.errors import ExportError
 from shelfhold.infrastructure.secrets.export import read_passphrase_file
@@ -274,7 +278,7 @@ class _Live:
     """What the live database says about the identities, when it can be read."""
 
     passkeys: tuple[tuple[str, str, str, str | None], ...]  # id, name, created_at, revoked_at
-    passwords: tuple[tuple[str, str], ...]  # user id, password hash
+    passwords: tuple[tuple[str, str | None], ...]  # user id, password hash (None: none)
     counter: int
 
 
@@ -306,7 +310,8 @@ def _read_live(live_data_dir: Path | None) -> _Live | None:
             )
         )
         passwords = tuple(
-            (str(i), str(h)) for i, h in connection.execute("SELECT id, password_hash FROM user")
+            (str(i), None if h is None else str(h))  # a passkey-only account has no hash
+            for i, h in connection.execute("SELECT id, password_hash FROM user")
         )
         row = connection.execute(
             "SELECT value FROM app_setting WHERE key = ?", (COUNTER_KEY,)
@@ -316,7 +321,14 @@ def _read_live(live_data_dir: Path | None) -> _Live | None:
     finally:
         connection.close()
     in_db = int(row[0]) if row and str(row[0]).isdigit() else 0
-    return _Live(passkeys, passwords, max(in_db, IdentityCounter(live_data_dir).file_value() or 0))
+    return _Live(passkeys, passwords, max(in_db, _file_counter(live_data_dir)))
+
+
+def _file_counter(directory: Path) -> int:
+    try:
+        return max(IdentityCounter(directory).file_value() or 0, 0)
+    except IdentityCounterError:
+        return 0
 
 
 def _passkey_changes(live: _Live, since: datetime | None, restored_ids: set[str]) -> list[str]:
@@ -350,6 +362,7 @@ def _revoke_credentials(
             tables = set(sa.inspect(connection).get_table_names())
             if {"session", "api_key", "audit", "app_setting"} <= tables:
                 changes: list[str] = []
+                deleted: list[str] = []
                 if live is not None:
                     restored = {
                         str(r[0])
@@ -368,6 +381,22 @@ def _revoke_credentials(
                             (password_hash, user_id),
                         )
                     changes = _passkey_changes(live, _when(created_at), restored)
+                    # an account deleted since the backup comes back with its password and its
+                    # passkeys: it gets neither (no hash, passkeys revoked) and is named
+                    alive = {user_id for user_id, _hash in live.passwords}
+                    for user_id, username in connection.exec_driver_sql(
+                        "SELECT id, username FROM user"
+                    ).fetchall():
+                        if user_id not in alive:
+                            deleted.append(str(username))
+                            connection.exec_driver_sql(
+                                "UPDATE user SET password_hash = NULL WHERE id = ?", (user_id,)
+                            )
+                            connection.exec_driver_sql(
+                                "UPDATE webauthn_credential SET revoked_at = ? "
+                                "WHERE user_id = ? AND revoked_at IS NULL",
+                                (now, user_id),
+                            )
                 sessions, keys, value = revoke_all_credentials(
                     connection,
                     now=now,
@@ -378,6 +407,7 @@ def _revoke_credentials(
                         0,
                         passwords_carried=live is not None,
                         passkey_changes=tuple(changes),
+                        deleted_accounts=tuple(deleted),
                     ),
                     counter=counter,
                     counter_at_least=live.counter if live else 0,

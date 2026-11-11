@@ -115,7 +115,10 @@ def test_local_cli_and_fresh_session_may_run_every_reserved_action(effect: Effec
         verdict = authorize_reserved(
             principal, action, now=T0, fresh_auth_s=900, restricted_profile_exists=True
         )
-        assert isinstance(verdict, Allowed)
+        if effect is Effect.ACKNOWLEDGES_RESTORE and principal.credential is Credential.SESSION:
+            assert isinstance(verdict, CredentialNotAllowed)  # the host CLI only
+        else:
+            assert isinstance(verdict, Allowed)
 
 
 @pytest.mark.req("EF-USR-022")

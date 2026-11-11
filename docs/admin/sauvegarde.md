@@ -130,25 +130,31 @@ phrase de passe donnent **la même phrase** (volontairement).
 ### Après la restauration : passkeys et mots de passe
 
 Tant que l'avertissement est là, **la connexion par passkey est refusée pour tous les comptes**
-(message : se connecter par mot de passe et voir l'administrateur) : une passkey révoquée depuis la
-sauvegarde serait sinon de nouveau valide. Les mots de passe, eux, ne sont pas révoqués (le compte
-doit rester joignable).
+(ainsi que la preuve de ré-authentification par passkey) : une passkey révoquée depuis la sauvegarde
+serait sinon de nouveau valide.
 
 - Si `backup restore` peut lire la base en service (`/data` d'origine encore là), il en reporte les
   révocations de passkeys et les empreintes de mots de passe : un `admin reset-password` fait depuis
-  la sauvegarde est conservé. Il liste aussi les passkeys créées ou révoquées depuis la sauvegarde.
-- Sinon, les mots de passe changés depuis la sauvegarde **sont revenus à l'ancienne valeur**, et
-  l'avertissement le dit.
+  la sauvegarde est conservé. Les comptes **supprimés depuis la sauvegarde** reviennent sans mot de
+  passe et avec leurs passkeys révoquées ; l'avertissement les nomme. Il liste aussi les passkeys
+  créées ou révoquées depuis la sauvegarde.
+- Sinon (base remise à la main, ou `/data` d'origine perdu), les mots de passe changés depuis la
+  sauvegarde **sont revenus à l'ancienne valeur**, peut-être une valeur qui a fuité. **La connexion
+  par mot de passe est alors suspendue aussi** (409 `password_login_suspended`).
 
-`shelfhold status` affiche `restored_credentials` tant que ce n'est pas acquitté, redémarrages
-compris. Revoyez les passkeys, puis lancez
+**Se reconnecter après une restauration** (aucune session HTTP ne peut lever l'avertissement) :
+sur la machine hôte, avec la CLI locale (socket ops locale),
 
 ```sh
-shelfhold restore acknowledge     # réservée : session récente (fraîche) ou CLI de l'hôte, jamais une clé
+shelfhold admin reset-password <compte>   # pour chaque compte, si les mots de passe n'ont pas été reportés
+shelfhold status                          # liste `restored_credentials`, les passkeys et comptes concernés
+shelfhold restore acknowledge             # CLI de l'hôte uniquement : ni session, ni clé, jamais via HTTP
 ```
 
-(API : `POST /api/v1/restore/acknowledge`). La commande liste les passkeys créées ou révoquées depuis
-la sauvegarde, rétablit la connexion par passkey et est auditée (`restore.credentials_acknowledged`).
+`restore acknowledge` liste les passkeys créées ou révoquées depuis la sauvegarde, rétablit les
+connexions (passkey, et mot de passe s'il était suspendu) et est audité
+(`restore.credentials_acknowledged`). `shelfhold status` affiche `restored_credentials` tant que ce
+n'est pas acquitté, redémarrages compris.
 
 ### Compteur d'identité
 
@@ -156,9 +162,14 @@ Une base remise à la main n'est pas toujours « en retard » sur des fichiers (
 bibliothèque, ou sentinelles identiques). Shelfhold tient donc un **compteur d'identité monotone**
 dans `/data/.identity-counter` (écrit de façon atomique, droits `0600`, **jamais sauvegardé**),
 copié dans la base dans la même transaction. Chaque révocation (session, clé d'API, passkey) et
-chaque changement de mot de passe l'augmente. Au démarrage, avant toute requête : si le fichier est
-au-dessus de la base, la base est plus ancienne que l'état connu, toutes les sessions et clés d'API
-sont révoquées et l'avertissement est posé.
+chaque changement de mot de passe l'augmente ; le fichier est écrit **avant** la validation de la
+transaction (un arrêt brutal le laisse en avance, jamais en retard). Avant toute écriture d'identité
+et au démarrage, avant toute requête : si le fichier est au-dessus de la base, la base est plus
+ancienne que l'état connu, toutes les sessions et clés d'API sont révoquées et l'avertissement est
+posé (une commande lancée sur la copie avant le démarrage ne masque donc pas l'écart). Un fichier
+vide ou illisible compte comme en avance (une révocation, puis il est réécrit) ; un **dossier** à sa
+place refuse le démarrage avec un message clair ; une base verrouillée ou en erreur est retentée
+puis arrête le démarrage. Pendant `instance.starting`, `/api/v1/auth/*` répond aussi 503.
 
 Limite : si **tout `/data`** est remplacé, le fichier part avec la base ; il ne reste alors que la
 détection par les sentinelles (`restored_behind`).

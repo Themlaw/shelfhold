@@ -41,6 +41,8 @@ class RestoreNoticeData:
     # The live database was readable: its revocations and password hashes were carried over.
     passwords_carried: bool = False
     passkey_changes: tuple[str, ...] = field(default=())  # "created: <name>" / "revoked: <name>"
+    # accounts deleted since the backup: they came back, without password, passkeys revoked
+    deleted_accounts: tuple[str, ...] = field(default=())
 
 
 def write_notice(connection: Connection, data: RestoreNoticeData, *, keep_existing: bool) -> None:
@@ -48,7 +50,13 @@ def write_notice(connection: Connection, data: RestoreNoticeData, *, keep_existi
     table = platform.app_setting
     if keep_existing and read_notice(connection) is not None:
         return
-    body = json.dumps(asdict(data) | {"passkey_changes": list(data.passkey_changes[:_MAX_CHANGES])})
+    body = json.dumps(
+        asdict(data)
+        | {
+            "passkey_changes": list(data.passkey_changes[:_MAX_CHANGES]),
+            "deleted_accounts": list(data.deleted_accounts[:_MAX_CHANGES]),
+        }
+    )
     updated = connection.execute(
         sa.update(table).where(table.c.key == NOTICE_KEY).values(value=body)
     ).rowcount
@@ -70,6 +78,7 @@ def read_notice(connection: Connection) -> RestoreNoticeData | None:
             api_keys=int(document["api_keys"]),
             passwords_carried=bool(document.get("passwords_carried", False)),
             passkey_changes=tuple(str(c) for c in document.get("passkey_changes", ())),
+            deleted_accounts=tuple(str(c) for c in document.get("deleted_accounts", ())),
         )
     except (ValueError, KeyError, TypeError):
         return RestoreNoticeData("unknown", None, 0, 0)  # a damaged notice still warns

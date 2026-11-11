@@ -1,10 +1,11 @@
 """SQL storage of users, sessions, API keys and audit entries (tables of migration 0002)."""
 
 import secrets
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -22,11 +23,12 @@ from shelfhold.identity.application.ports import (
     SessionRecord,
     UserRecord,
 )
-from shelfhold.infrastructure.identity_counter import IdentityCounter
+from shelfhold.infrastructure.identity_counter import DAMAGED, IdentityCounter
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.restore_notice import (
     RestoreNoticeData,
     notice_active,
+    read_notice,
     write_notice,
 )
 from shelfhold.infrastructure.schema import identity
@@ -96,31 +98,51 @@ def revoke_all_credentials(
         ),
         keep_existing=keep_notice,  # a notice nobody has seen yet is not replaced by a later one
     )
-    value = counter.bump(connection, at_least=counter_at_least) if counter else None
+    value = counter.bump(connection, at_least=counter_at_least) if counter else None  # + the file
     return sessions, keys, value
+
+
+def revoke_if_behind(
+    connection: sa.Connection, counter: IdentityCounter, *, now: datetime
+) -> tuple[int, int] | None:
+    """The file of /data ahead of the database means the database was put back from an older
+    state: every session and API key is revoked and the notice written, in the caller's
+    transaction. Returns `(sessions, api_keys)` when it acted. Every write of identity runs this
+    first (`SqlIdentityStore._changing`): a command that revokes something on a copied database,
+    or a password rehashed at login, cannot bring the database level with the file unnoticed."""
+    on_file = counter.file_value()
+    if on_file is None or not (on_file == DAMAGED or on_file > counter.db_value(connection)):
+        return None
+    sessions, keys, _ = revoke_all_credentials(
+        connection, now=now, counter=counter, counter_at_least=max(on_file, 0)
+    )
+    return sessions, keys
+
+
+_LOCKED_RETRIES = 4
 
 
 def reconcile_identity_counter(
     engine: Engine, counter: IdentityCounter, *, now: datetime
 ) -> tuple[int, int] | None:
-    """At start, before any authenticated request: the file ahead of the database means the
-    database was put back from an older state. Every session and API key is revoked and the notice
-    is written, in one transaction. Returns `(sessions, api_keys)` when it acted. Otherwise the
-    file follows the database (a missing file is created)."""
-    try:
-        with engine.begin() as connection:
-            on_file = counter.file_value()
-            in_db = counter.db_value(connection)
-            if on_file is not None and on_file > in_db:
-                sessions, keys, value = revoke_all_credentials(
-                    connection, now=now, counter=counter, counter_at_least=on_file
-                )
-                acted = (sessions, keys)
-            else:
-                value, acted = in_db, None
-    except sa.exc.OperationalError:  # not migrated yet: nothing to compare
-        return None
-    if value is not None:
+    """At start, before any authenticated request. Returns `(sessions, api_keys)` when it revoked
+    (see `revoke_if_behind`). Otherwise the file follows the database (a missing file is created).
+    A database not migrated yet ("no such table") has nothing to compare; any other database
+    error (a lock held by a shell, say) is retried and then stops the start: it is never skipped."""
+    for attempt in range(_LOCKED_RETRIES + 1):
+        try:
+            with engine.begin() as connection:
+                acted = revoke_if_behind(connection, counter, now=now)
+                value = counter.db_value(connection)
+            break
+        except sa.exc.OperationalError as error:
+            if "no such table" in str(error.orig):
+                return None
+            if attempt == _LOCKED_RETRIES:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+    current = counter.file_value()
+    if acted is None and (current is None or current < value):  # a missing or lagging file
         counter.publish(value)
     return acted
 
@@ -168,21 +190,29 @@ class SqlIdentityStore:
     @contextmanager
     def _changing(self, *, immediate: bool = False) -> Iterator[sa.Connection]:
         """A transaction that revokes a credential or changes a password: it also adds one to the
-        identity counter (in the database, same transaction), and the file follows the commit."""
+        identity counter (in the database, same transaction; the file is written first, see
+        `IdentityCounter.bump`). A database found behind the file is revoked before the change."""
         engine = (
             self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
             if immediate
             else self._engine
         )
         with engine.begin() as conn:
+            if self._counter is not None:
+                revoke_if_behind(conn, self._counter, now=datetime.now(UTC))
             yield conn
-            value = self._counter.bump(conn) if self._counter else None
-        if value is not None and self._counter is not None:
-            self._counter.publish(value)
+            if self._counter is not None:
+                self._counter.bump(conn)
 
     def restore_notice_active(self) -> bool:
         with self._engine.connect() as conn:
             return notice_active(conn)
+
+    def password_login_suspended(self) -> bool:
+        """A restore warning is up and the live passwords were not carried over."""
+        with self._engine.connect() as conn:
+            notice = read_notice(conn)
+        return notice is not None and not notice.passwords_carried
 
     # --- users -------------------------------------------------------------------------------
 

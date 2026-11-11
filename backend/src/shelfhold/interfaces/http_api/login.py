@@ -21,6 +21,7 @@ from shelfhold.i18n import t
 from shelfhold.identity.public import (
     MAX_PASSWORD_LENGTH,
     InvalidCredentialsError,
+    PasswordLoginSuspendedError,
     Principal,
     RememberNeedsConfirmationError,
     ThrottledError,
@@ -189,6 +190,8 @@ def build_login_router(source_url: str) -> APIRouter:
             raise _throttled(error) from None
         except InvalidCredentialsError:
             raise ProblemError("invalid_credentials") from None
+        except PasswordLoginSuspendedError:
+            raise ProblemError("password_login_suspended") from None
         except RememberNeedsConfirmationError:
             raise ProblemError("remember_needs_confirmation") from None
         response = JSONResponse({"csrf_token": issued.csrf_secret})

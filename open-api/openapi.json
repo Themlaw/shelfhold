@@ -7735,6 +7735,10 @@
       "code": "passkey_unavailable",
       "status": 409
     },
+    "/api/v1/problems/password-login-suspended": {
+      "code": "password_login_suspended",
+      "status": 409
+    },
     "/api/v1/problems/plan.stale": {
       "code": "plan.stale",
       "status": 412

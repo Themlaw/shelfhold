@@ -10,7 +10,7 @@ Invariants this module keeps (EF-USR-021, EF-USR-022, EF-USR-003, ENF-SEC-008):
 
 import math
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
@@ -98,6 +98,15 @@ class RememberNeedsConfirmationError(AuthError):
 
     def __init__(self) -> None:
         super().__init__("remember_needs_confirmation")
+
+
+class PasswordLoginSuspendedError(AuthError):
+    """After a restore that could not carry the passwords over: a password changed since the
+    backup is back to its old value, so no password signs in until the admin has reset the
+    accounts from the host (`shelfhold admin reset-password`) and run `restore acknowledge`."""
+
+    def __init__(self) -> None:
+        super().__init__("password_login_suspended")
 
 
 class AdminExistsError(AuthError):
@@ -199,10 +208,15 @@ class PasskeyReauth:
 
     name = "passkey"
 
-    def __init__(self, ceremony: PasskeyCeremony) -> None:
+    def __init__(
+        self, ceremony: PasskeyCeremony, suspended: Callable[[], bool] = lambda: False
+    ) -> None:
         self._ceremony = ceremony
+        self._suspended = suspended  # true while a restore warning has passkeys suspended
 
     def verify(self, user: UserRecord, payload: Mapping[str, object]) -> bool:
+        if self._suspended():
+            return False
         flow, credential, session_id = (
             payload.get("flow"),
             payload.get("credential"),
@@ -249,7 +263,7 @@ class LocalAuth:
             per_address=OPTIONS_PER_MINUTE, per_account=OPTIONS_PER_MINUTE
         )
         if passkeys is not None and passkeys.available:  # the method exists in a secure context
-            methods.append(PasskeyReauth(passkeys))
+            methods.append(PasskeyReauth(passkeys, store.restore_notice_active))
         self._reauth = {method.name: method for method in methods}
 
     @property
@@ -397,6 +411,8 @@ class LocalAuth:
         presented_token: str | None = None,
         device_proof: str | None = None,
     ) -> IssuedSession:
+        if self._store.password_login_suspended():
+            raise PasswordLoginSuspendedError
         known_device = self._device_proof is not None and self._device_proof.verify(
             device_proof, username, self.now()
         )
@@ -571,6 +587,7 @@ class LocalAuth:
         self._audit("passkey.revoked", principal, target=passkey_id)
 
     def passkey_reauth_options(self, principal: Principal) -> PasskeyOptions:
+        self._refuse_while_restore_pending()
         user = self._account(principal)
         return self._ceremony().reauth_options(user, str(principal.session_id))
 

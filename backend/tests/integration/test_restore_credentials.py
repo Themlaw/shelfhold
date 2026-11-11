@@ -12,6 +12,7 @@ lists it and no passkey signs in.
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -21,15 +22,21 @@ import sqlalchemy as sa
 from shelfhold.identity.application.passkeys import PasskeyUnavailableError
 from shelfhold.identity.domain.catalogue import EXIT_ROUTES, RESERVED_ACTIONS
 from shelfhold.identity.public import (
+    AuthError,
     CreatedApiKey,
     Credential,
+    PasswordLoginSuspendedError,
     Principal,
     local_auth,
     reconcile_identity_counter,
     revoke_all_credentials,
 )
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.identity_counter import COUNTER_FILE, IdentityCounter
+from shelfhold.infrastructure.identity_counter import (
+    COUNTER_FILE,
+    IdentityCounter,
+    IdentityCounterError,
+)
 from shelfhold.infrastructure.restore_notice import notice_active, read_notice
 from shelfhold.infrastructure.schema import identity
 from shelfhold.ops.backup import restore_archive
@@ -182,7 +189,7 @@ def test_the_notice_and_the_revocation_commit_or_fail_together(tmp_path: Path) -
             assert read_notice(connection) is None  # nothing half done
         auth = local_auth(bench.engine, bench.settings, bench.clock)
         assert auth.authenticate_api_key(key.value) is not None
-        assert counter.file_value() == before  # the file only follows a commit
+        assert (counter.file_value() or 0) >= (before or 0)  # never behind: the safe side
 
 
 def test_the_restore_leaves_a_notice_in_the_database_until_it_is_acknowledged(
@@ -286,7 +293,8 @@ def test_a_reset_password_after_the_backup_is_carried_over(tmp_path: Path) -> No
         engine = create_db_engine(other / "shelfhold.db")
         try:
             blind = local_auth(engine, bench.settings.model_copy(update={"data_dir": other}))
-            blind.login("admin", PASSWORD, ip="10.0.0.7")  # back to the old one: the notice says so
+            with pytest.raises(PasswordLoginSuspendedError):  # the old one is back: none signs in
+                blind.login("admin", PASSWORD, ip="10.0.0.7")
             with engine.connect() as connection:
                 notice = read_notice(connection)
             assert notice is not None and notice.passwords_carried is False
@@ -294,37 +302,25 @@ def test_a_reset_password_after_the_backup_is_carried_over(tmp_path: Path) -> No
             engine.dispose()
 
 
-def test_the_acknowledgement_is_a_reserved_exit_asking_for_a_fresh_session() -> None:
+def test_the_acknowledgement_is_a_reserved_exit_of_the_host_cli_only() -> None:
     from datetime import UTC, datetime
 
-    from shelfhold.identity.public import Allowed, ReauthRequired, authorize_reserved
+    from shelfhold.identity.public import Allowed, CredentialNotAllowed, authorize_reserved
 
     routes = [r for r in EXIT_ROUTES if r.waiting_state == "restored_credentials"]
     assert [(r.command, r.reserved) for r in routes] == [
         ("restore acknowledge", RESERVED_ACTIONS["restore.acknowledge"])
     ]
     now = datetime(2026, 11, 11, tzinfo=UTC)
-
-    def verdict(age: timedelta) -> object:
-        who = Principal(
-            "u",
-            "admin",
-            "admin",
-            Credential.SESSION,
-            session_id="s",
-            auth_time=now - age,
-            can_rate=True,
-        )
-        return authorize_reserved(
-            who,
-            RESERVED_ACTIONS["restore.acknowledge"],
-            now=now,
-            fresh_auth_s=900,
-            restricted_profile_exists=False,
-        )
-
-    assert isinstance(verdict(timedelta(minutes=1)), Allowed)
-    assert isinstance(verdict(timedelta(hours=2)), ReauthRequired)
+    action = RESERVED_ACTIONS["restore.acknowledge"]
+    fresh = Principal(
+        "u", "admin", "admin", Credential.SESSION, session_id="s", auth_time=now, can_rate=True
+    )
+    for who in (fresh, replace(fresh, credential=Credential.API_KEY, key_id="k")):
+        verdict = authorize_reserved(who, action, now=now, fresh_auth_s=900)
+        assert isinstance(verdict, CredentialNotAllowed)  # a leaked password cannot lift it
+    host = replace(fresh, credential=Credential.LOCAL_CLI)
+    assert isinstance(authorize_reserved(host, action, now=now), Allowed)
 
 
 def test_a_start_behind_its_disk_revokes_every_credential() -> None:
@@ -363,3 +359,252 @@ def test_a_start_behind_its_disk_revokes_every_credential() -> None:
             assert revoked is not None
             assert notice_active(connection)  # written in the same transaction
         assert env.guard().enter_restored_behind().revoked is None  # the second start: nothing
+
+
+def _hand_copy(bench: BackupBench, tmp_path: Path) -> Path:
+    copy = tmp_path / "hand-made.db"
+    with sqlite3.connect(bench.settings.database_path) as live, sqlite3.connect(copy) as target:
+        live.backup(target)
+    return copy
+
+
+def _put_back(bench: BackupBench, copy: Path) -> None:
+    bench.engine.dispose()
+    for suffix in ("", "-wal", "-shm"):
+        Path(str(bench.settings.database_path) + suffix).unlink(missing_ok=True)
+    copy.replace(bench.settings.database_path)
+
+
+def test_a_command_run_on_the_copied_database_before_the_start_does_not_hide_the_gap(
+    tmp_path: Path,
+) -> None:
+    """A revocation made by the CLI on the copy brings the counter of the database to the file's:
+    the start would see nothing. Every write of identity first revokes what the copy brings back."""
+    with backup_bench(tmp_path) as bench:
+        key, _kept, token = _seed(bench)
+        copy = _hand_copy(bench, tmp_path)
+        auth = local_auth(bench.engine, bench.settings, bench.clock)
+        assert auth.revoke_api_key(key.prefix)
+        _put_back(bench, copy)
+        engine = create_db_engine(bench.settings.database_path)
+        try:
+            cli = local_auth(engine, bench.settings, bench.clock)
+            other = cli.create_api_key(name="tmp")
+            cli.revoke_api_key(other.prefix)  # any revocation, before the start
+            assert cli.authenticate_api_key(key.value) is None
+            assert cli.authenticate_session(token) is None
+            with engine.connect() as connection:
+                assert notice_active(connection)
+            assert (
+                reconcile_identity_counter(
+                    engine, IdentityCounter(bench.settings.data_dir), now=bench.clock.now()
+                )
+                is None
+            )  # nothing left to do at start
+        finally:
+            engine.dispose()
+
+
+def test_a_password_rehashed_at_login_on_the_copy_does_not_hide_the_gap(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench:
+        key, _kept, _token = _seed(bench)
+        copy = _hand_copy(bench, tmp_path)
+        _put_back(bench, copy)  # the file is ahead: something was revoked after the copy
+        IdentityCounter(bench.settings.data_dir).publish(50)
+        engine = create_db_engine(bench.settings.database_path)
+        try:
+            store_auth = local_auth(engine, bench.settings, bench.clock)
+            user = store_auth._store.user_by_name("admin")
+            assert user is not None
+            store_auth._store.set_password_hash(user.id, user.password_hash)
+            assert store_auth.authenticate_api_key(key.value) is None
+        finally:
+            engine.dispose()
+
+
+def test_a_leaked_password_cannot_sign_in_or_lift_the_passkey_suspension(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench:
+        auth, _key, _token = (local_auth(bench.engine, bench.settings, bench.clock), None, None)
+        auth.create_admin("admin", PASSWORD)
+        copy = _hand_copy(bench, tmp_path)
+        auth.reset_password("admin", NEW_PASSWORD)  # the old one leaked
+        _put_back(bench, copy)
+        engine = create_db_engine(bench.settings.database_path)
+        try:
+            reconcile_identity_counter(
+                engine, IdentityCounter(bench.settings.data_dir), now=bench.clock.now()
+            )
+            restored = local_auth(engine, bench.settings, bench.clock)
+            with pytest.raises(PasswordLoginSuspendedError):
+                restored.login("admin", PASSWORD, ip="10.6.6.6")  # the leaked password
+            with pytest.raises(PasswordLoginSuspendedError):
+                restored.login("admin", NEW_PASSWORD, ip="10.6.6.7")  # not even a good one
+            with pytest.raises(PasskeyUnavailableError):
+                restored.passkey_reauth_options(ADMIN)  # nor a passkey proof of a session
+            from_host = RestoreCredentialsExit(engine, bench.clock)
+            (item,) = from_host.waiting()
+            assert "reset-password" in item.reason  # how the admin gets back in
+            restored.reset_password("admin", NEW_PASSWORD)  # from the host
+            from_host.acknowledge(principal=ADMIN)  # from the host
+            restored.login("admin", NEW_PASSWORD, ip="10.0.0.8")
+        finally:
+            engine.dispose()
+
+
+def test_an_account_deleted_since_the_backup_comes_back_without_password_or_passkeys(
+    tmp_path: Path,
+) -> None:
+    from shelfhold.identity.adapters.passwords import Argon2Hasher
+
+    member_password = "member synthetic " + "x" * 12
+    with backup_bench(tmp_path) as bench:
+        auth, _key, _token = (local_auth(bench.engine, bench.settings, bench.clock), None, None)
+        auth.create_admin("admin", PASSWORD)
+        with bench.engine.begin() as connection:
+            connection.execute(
+                sa.insert(identity.user).values(
+                    id="01JMEMBER00000000000000000", username="bob", role="member",
+                    can_rate=False, password_hash=Argon2Hasher().hash(member_password),
+                    created_at=bench.clock.now(),
+                )
+            )  # fmt: skip
+        bench.service.run()
+        auth.delete_user("bob")
+        target = tmp_path / "restored"
+        restore_archive(
+            bench.backups / bench.names()[0], target, bench.passphrase,
+            live_data_dir=bench.settings.data_dir,
+        )  # fmt: skip
+        engine = create_db_engine(target / "shelfhold.db")
+        try:
+            with engine.connect() as connection:
+                notice = read_notice(connection)
+                query = sa.select(identity.user.c.username, identity.user.c.password_hash)
+                hashes = {name: value for name, value in connection.execute(query).all()}
+            assert notice is not None and notice.deleted_accounts == ("bob",)
+            assert hashes["bob"] is None and hashes["admin"] is not None
+            restored = local_auth(engine, bench.settings.model_copy(update={"data_dir": target}))
+            with pytest.raises(AuthError):
+                restored.login("bob", member_password, ip="10.0.0.9", confirm_remember=True)
+            (item,) = RestoreCredentialsExit(engine, bench.clock).waiting()
+            assert "bob" in item.reason
+        finally:
+            engine.dispose()
+
+
+def test_a_passkey_only_account_keeps_no_hash_not_the_text_none(tmp_path: Path) -> None:
+    from shelfhold.identity.adapters.passwords import Argon2Hasher
+
+    with backup_bench(tmp_path) as bench:
+        auth = local_auth(bench.engine, bench.settings, bench.clock)
+        auth.create_admin("admin", PASSWORD)
+        with bench.engine.begin() as connection:
+            connection.execute(
+                sa.insert(identity.user).values(
+                    id="01JMEMBER00000000000000000", username="bob", role="member",
+                    can_rate=False, password_hash=Argon2Hasher().hash("m" * 20),
+                    created_at=bench.clock.now(),
+                )
+            )  # fmt: skip
+        bench.service.run()
+        with bench.engine.begin() as connection:  # bob became passkey-only in the live database
+            connection.execute(
+                sa.update(identity.user)
+                .where(identity.user.c.username == "bob")
+                .values(password_hash=None)
+            )
+        target = tmp_path / "restored"
+        restore_archive(
+            bench.backups / bench.names()[0], target, bench.passphrase,
+            live_data_dir=bench.settings.data_dir,
+        )  # fmt: skip
+        with sqlite3.connect(target / "shelfhold.db") as connection:
+            row = connection.execute("SELECT password_hash FROM user WHERE username='bob'")
+            assert row.fetchone() == (None,)
+
+
+def test_the_file_is_written_before_the_commit_so_a_kill_leaves_it_ahead(tmp_path: Path) -> None:
+    with backup_bench(tmp_path) as bench:
+        key, _kept, token = _seed(bench)
+        counter = IdentityCounter(bench.settings.data_dir)
+        with pytest.raises(RuntimeError), bench.engine.begin() as connection:
+            counter.bump(connection)
+            raise RuntimeError("killed before the commit")
+        with bench.engine.connect() as connection:
+            assert (counter.file_value() or 0) > IdentityCounter.db_value(connection)
+        acted = reconcile_identity_counter(bench.engine, counter, now=bench.clock.now())
+        assert acted is not None  # the safe side: revoked, never missed
+        auth = local_auth(bench.engine, bench.settings, bench.clock)
+        assert auth.authenticate_api_key(key.value) is None
+        assert auth.authenticate_session(token) is None
+
+
+def test_a_database_error_at_start_is_retried_then_stops_the_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import time
+
+    from sqlalchemy.exc import OperationalError
+
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+
+    class Locked:
+        calls = 0
+
+        def begin(self) -> object:
+            Locked.calls += 1
+            raise OperationalError("BEGIN", {}, Exception("database is locked"))
+
+    with backup_bench(tmp_path) as bench:
+        with pytest.raises(OperationalError):  # not skipped: the start is refused
+            reconcile_identity_counter(
+                Locked(),  # type: ignore[arg-type]
+                IdentityCounter(bench.settings.data_dir),
+                now=bench.clock.now(),
+            )
+        assert Locked.calls == 5  # tried again before giving up
+
+        class NoTable(Locked):
+            def begin(self) -> object:
+                raise OperationalError("SELECT", {}, Exception("no such table: app_setting"))
+
+        assert (
+            reconcile_identity_counter(
+                NoTable(),  # type: ignore[arg-type]
+                IdentityCounter(bench.settings.data_dir),
+                now=bench.clock.now(),
+            )
+            is None
+        )  # not migrated yet: nothing to compare
+
+
+@pytest.mark.parametrize("content", [b"", b"garbage", b"\xff\xfe"])
+def test_an_empty_or_damaged_counter_file_revokes_once_and_is_written_again(
+    tmp_path: Path, content: bytes
+) -> None:
+    with backup_bench(tmp_path) as bench:
+        key, _kept, _token = _seed(bench)
+        counter = IdentityCounter(bench.settings.data_dir)
+        counter.path.write_bytes(content)
+        first = reconcile_identity_counter(bench.engine, counter, now=bench.clock.now())
+        assert first is not None  # an empty file is a torn write, not a zero
+        auth = local_auth(bench.engine, bench.settings, bench.clock)
+        assert auth.authenticate_api_key(key.value) is None
+        again = reconcile_identity_counter(bench.engine, counter, now=bench.clock.now())
+        assert again is None  # one revocation, not one per start
+        assert (counter.file_value() or 0) > 0
+
+
+def test_a_directory_in_place_of_the_counter_refuses_the_start_without_revoking(
+    tmp_path: Path,
+) -> None:
+    with backup_bench(tmp_path) as bench:
+        key, _kept, _token = _seed(bench)
+        counter = IdentityCounter(bench.settings.data_dir)
+        counter.path.unlink(missing_ok=True)
+        counter.path.mkdir()
+        for _start in range(2):
+            with pytest.raises(IdentityCounterError, match="is a directory"):
+                reconcile_identity_counter(bench.engine, counter, now=bench.clock.now())
+        auth = local_auth(bench.engine, bench.settings, bench.clock)
+        assert auth.authenticate_api_key(key.value) is not None  # nothing was revoked by it

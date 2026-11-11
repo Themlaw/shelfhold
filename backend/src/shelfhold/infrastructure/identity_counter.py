@@ -20,11 +20,17 @@ from sqlalchemy import Connection
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets.atomic import write_private
 
-__all__ = ["COUNTER_FILE", "COUNTER_KEY", "IdentityCounter"]
+__all__ = ["COUNTER_FILE", "COUNTER_KEY", "DAMAGED", "IdentityCounter", "IdentityCounterError"]
 
 COUNTER_FILE = ".identity-counter"
 COUNTER_KEY = "identity.counter"
 _MAX_BYTES = 32
+DAMAGED = -1  # a file that is there but empty, unreadable or not a number
+
+
+class IdentityCounterError(RuntimeError):
+    """The counter's place holds something that is not a file: the start is refused, with a clear
+    message, rather than revoking everything again at every start."""
 
 
 class IdentityCounter:
@@ -32,19 +38,24 @@ class IdentityCounter:
         self.path = data_dir / COUNTER_FILE
 
     def file_value(self) -> int | None:
-        """None: no file. A file that cannot be read counts as the highest number (the safe side:
-        it triggers the revocation, which rewrites the file)."""
+        """None: no file. `DAMAGED`: a file that is empty, unreadable or not a number (it counts
+        as ahead of any database: the revocation runs once and the file is written again).
+        A directory in its place raises `IdentityCounterError`."""
         try:
             with self.path.open("rb") as handle:
                 raw = handle.read(_MAX_BYTES)
         except FileNotFoundError:
             return None
+        except IsADirectoryError:
+            raise IdentityCounterError(
+                f"{self.path} is a directory: remove it so the identity counter can be a file"
+            ) from None
         except OSError:
-            return 2**62
+            return DAMAGED
         try:
-            return max(int(raw.strip() or b"0"), 0)
+            return max(int(raw.strip()), 0)
         except ValueError:
-            return 2**62
+            return DAMAGED  # empty included: an empty file is a torn write, not a zero
 
     @staticmethod
     def db_value(connection: Connection) -> int:
@@ -58,9 +69,15 @@ class IdentityCounter:
 
     def bump(self, connection: Connection, *, at_least: int = 0) -> int:
         """Inside the caller's transaction: one more than the file and the database hold (and
-        `at_least`), stored in the database. The file follows with `publish`, after the commit."""
+        `at_least`), stored in the database, then written to the file. The file comes first on
+        purpose: if the commit never happens the file is ahead of the database, and the next
+        start revokes everything (the safe side); the other order could leave it behind."""
         known = max(self.db_value(connection), self.file_value() or 0, at_least)
-        return self.store(connection, known + 1)
+        value = self.store(connection, known + 1)
+        self.publish(
+            value
+        )  # before the commit: a kill in between leaves the file ahead, never behind
+        return value
 
     @staticmethod
     def store(connection: Connection, value: int) -> int:
@@ -73,7 +90,7 @@ class IdentityCounter:
         return value
 
     def publish(self, value: int) -> None:
-        """After the commit. A number lower than the file's never replaces it."""
+        """A number lower than the file's never replaces it; a damaged file is written again."""
         current = self.file_value()
-        if current is None or value > current:
+        if current is None or current == DAMAGED or value > current:
             write_private(self.path, str(value).encode("ascii"), overwrite=True)

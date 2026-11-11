@@ -195,7 +195,9 @@ class AuthMiddleware:
         names = self.gate.cookies_for(scope)
 
         if not self.gate.ready() and (
-            _bearer(headers) is not None or _cookie_value(headers, names.session) is not None
+            _bearer(headers) is not None
+            or _cookie_value(headers, names.session) is not None
+            or str(scope.get("path", "")).startswith("/api/v1/auth/")  # no sign-in either
         ):
             await self._problem(scope, receive, send, "instance.starting")
             return

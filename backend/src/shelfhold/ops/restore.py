@@ -77,6 +77,16 @@ class RestoreCredentialsExit:
             reason += " (revocations and password hashes of the live database carried over)"
         else:
             reason += "; passwords changed since then are back to their old value"
+        if data.deleted_accounts:
+            reason += (
+                "; accounts deleted since then came back without password or passkeys: "
+                + ", ".join(data.deleted_accounts)
+            )
+        if not data.passwords_carried:
+            reason += (
+                ". Password sign-in is suspended: on the host, `shelfhold admin reset-password`"
+            )
+            reason += " for each account, then `shelfhold restore acknowledge`"
         return [WaitingItem("restored_credentials", "instance", "instance", reason)]
 
     def acknowledge(self, *, principal: Principal) -> list[str]:

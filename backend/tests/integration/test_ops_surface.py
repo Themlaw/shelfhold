@@ -446,6 +446,9 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
             assert keyring.imports == []
             for route in served:
                 method, path = _url(route.command, **ids)
+                if route.command == "restore acknowledge":  # the host CLI only, never a session
+                    assert api.post(path, json={}).status_code == 403
+                    continue
                 put_health(env, child_exposure=True)
                 done = api.post(path, json=_body(route.command)) if method == "POST" else None
                 assert done is not None and done.status_code in (200, 202, 204), route.command
@@ -454,6 +457,8 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
             api.clock.advance(timedelta(minutes=20))
             for route in served:
                 assert route.reserved is not None
+                if route.command == "restore acknowledge":
+                    continue
                 _method, path = _url(route.command, **ids)
                 stale = api.post(path, json=_body(route.command))
                 wants_fresh = route.reserved.needs_fresh_auth(

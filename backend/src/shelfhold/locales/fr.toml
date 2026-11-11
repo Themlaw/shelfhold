@@ -652,6 +652,10 @@ action = "Réessayez ; si l'erreur persiste, relevez l'identifiant de requête e
 title = "Le profil durci demande de confirmer « se souvenir de moi »."
 action = "Décochez « se souvenir de moi » pour une session de navigateur, ou confirmez-le explicitement (confirm_remember) : la session durera alors le temps du profil durci."
 
+[errors."password_login_suspended"]
+title = "La connexion par mot de passe est suspendue : une restauration a pu ramener d'anciens mots de passe."
+action = "Sur la machine hôte : « shelfhold admin reset-password » pour chaque compte, puis « shelfhold restore acknowledge »."
+
 [errors."invalid_credentials"]
 title = "Identifiant ou mot de passe incorrect."
 action = "Vérifiez l'identifiant et le mot de passe, puis recommencez."
