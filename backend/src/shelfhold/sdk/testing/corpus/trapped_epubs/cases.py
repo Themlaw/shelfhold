@@ -301,6 +301,10 @@ def _archives() -> list[Trap]:
         Trap("zip_mimetype_missing", "archive", page(ok, first=[]), "refused", "mimetype"),
         Trap("zip_mimetype_not_first", "archive", page(ok, first=[Member("OEBPS/z.txt", b"z"), Member("mimetype", b"application/epub+zip", False)]), "refused", "mimetype"),
         Trap("zip_mimetype_wrong", "archive", page(ok, first=[Member("mimetype", b"text/html", False)]), "refused", "mimetype"),
+        Trap("meta_inf_manifest_page", "disguise", page(ok, opf_extra='<item id="e" href="../META-INF/evil.xhtml" media-type="application/xhtml+xml"/>', extra=[Member("META-INF/evil.xhtml", b"<html><script>alert(1)</script></html>")]), "refused", "meta_inf_item"),
+        Trap("meta_inf_undeclared_page", "disguise", page(ok, extra=[Member("META-INF/evil.xhtml", xhtml("<p>x</p><script>alert(1)</script>"))]), "neutralized", "META-INF/evil.xhtml"),
+        Trap("meta_inf_unknown_file", "disguise", page(ok, extra=[Member("META-INF/evil.dat", b"x")]), "refused", "unexpected_entry"),
+        Trap("meta_inf_encryption", "disguise", page(ok, extra=[Member("META-INF/encryption.xml", b"<encryption/>")]), "refused", "encrypted"),
         Trap("zip_opf_missing", "archive", zip_bytes([Member("mimetype", b"application/epub+zip", False), Member("OEBPS/ch1.xhtml", ok)]), "refused", "container"),
     ]  # fmt: skip
 
