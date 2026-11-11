@@ -6,13 +6,17 @@ asks; an irreplaceable Unit needs its identifier typed; a frozen root is never w
 """
 
 import errno
+import os
+import time
 from datetime import timedelta
 
 import pytest
 import sqlalchemy as sa
 
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
+from shelfhold.export.application.recycle_sweep import RecycleSweeper
 from shelfhold.export.application.upgrade import UPGRADE_REASONS, UpgradeOutcome
+from shelfhold.export.domain.physical_roots import RECYCLE_DIR, SENTINEL_FILE
 from shelfhold.infrastructure.fsops import confined
 from shelfhold.infrastructure.schema import coherence, export, platform, storage
 from shelfhold.ops.status import koreader_reset_report
@@ -178,6 +182,28 @@ def test_upgrade_never_writes_on_a_frozen_root() -> None:
             ).scalar_one() == 0  # fmt: skip
 
 
+@pytest.mark.req("EF-EXP-029")
+def test_upgrade_on_a_root_blocked_by_its_sentinel_records_nothing() -> None:
+    """A root whose sentinel does not match is as untouchable as a frozen one: the refusal comes
+    before the journal, so not even a cancelled intent is left behind."""
+    with export_env() as env:
+        exported = export_one(env)
+        before = exported.target.read_bytes()
+        content_id = better_copy(env, exported)
+        (env.lib.library / SENTINEL_FILE).write_text("garbage\n")
+
+        result = service(env).upgrade(request(env, exported, content_id))
+
+        assert result.outcome is UpgradeOutcome.ROOT_FROZEN
+        assert exported.target.read_bytes() == before
+        assert bin_files(env) == []
+        with env.engine.connect() as connection:
+            assert connection.execute(
+                sa.select(sa.func.count()).select_from(coherence.fs_intent)
+                .where(coherence.fs_intent.c.op == "upgrade")
+            ).scalar_one() == 0  # fmt: skip
+
+
 def test_up_to_date_unit_is_left_alone() -> None:
     with export_env() as env:
         exported = export_one(env)
@@ -220,6 +246,68 @@ def test_upgrade_restore_puts_the_old_version_back() -> None:
                 ).all()
             )
         assert states[done.upgrade_id] == "restored"
+
+
+def test_restore_reads_the_bin_path_recorded_not_the_current_one() -> None:
+    """The served file was renamed after the upgrade: the restore still finds the old version at
+    the path the bin index recorded, and puts it back at the current path."""
+    with export_env() as env:
+        exported = export_one(env)
+        old_bytes = exported.target.read_bytes()
+        content_id = better_copy(env, exported)
+        upgrade = service(env)
+        done = upgrade.upgrade(request(env, exported, content_id))
+        assert done.upgrade_id is not None
+        record = export.export_record
+        row = record_of(env, exported)
+        renamed_rel = str(row.rel_path).replace(".cbz", " (renamed).cbz")
+        assert renamed_rel != row.rel_path
+        renamed = exported.target.with_name(renamed_rel.rsplit("/", 1)[-1])
+        exported.target.rename(renamed)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(record)
+                .where(record.c.shelf_destination_id == env.destination_id,
+                       record.c.export_item_id == exported.export_item_id)
+                .values(rel_path=renamed_rel)
+            )  # fmt: skip
+
+        back = upgrade.restore(done.upgrade_id)
+
+        assert back.outcome is UpgradeOutcome.UPGRADED
+        assert env.files() == [renamed]
+        assert renamed.read_bytes() == old_bytes
+
+
+@pytest.mark.req("ENF-OPS-009")
+def test_retention_sweep_forgets_the_bin_rows_it_removes() -> None:
+    """A swept upgrade bin entry leaves the bin index: no restore points at a removed file."""
+    with export_env() as env:
+        exported = export_one(env)
+        content_id = better_copy(env, exported)
+        done = service(env).upgrade(request(env, exported, content_id))
+        assert done.upgrade_id is not None
+        (entry,) = (env.lib.library / RECYCLE_DIR).iterdir()
+        old = time.time() - 31 * 86400
+        os.utime(entry, (old, old))
+        journal = IntentJournal(env.engine, env.lib.fsops, clock=env.clock)
+
+        report = RecycleSweeper(env.lib.fsops, journal, [str(env.lib.library)]).sweep()
+
+        assert report.removed == 1
+        assert bin_files(env) == []
+        with env.engine.connect() as connection:
+            assert connection.execute(
+                sa.select(sa.func.count()).select_from(storage.trash_item)
+                .where(storage.trash_item.c.kind == "export_file")
+            ).scalar_one() == 0  # fmt: skip
+            trash_item_id = connection.execute(
+                sa.select(export.export_upgrade.c.trash_item_id)
+                .where(export.export_upgrade.c.id == done.upgrade_id)
+            ).scalar_one()  # fmt: skip
+        assert trash_item_id is None
+        with pytest.raises(LookupError):
+            service(env).restore(done.upgrade_id)
 
 
 def test_exchange_unsupported_still_serves_one_file(monkeypatch: pytest.MonkeyPatch) -> None:
