@@ -350,6 +350,20 @@ help_jobs_retry = "Remet une tâche abandonnée en file, ou relance l'indexation
 help_jobs_run = "Lance dès le prochain passage du planificateur (une minute au plus) une tâche périodique, par exemple follow.cycle ou export.run."
 help_edition = "Éditions."
 help_edition_set_lang = "Donne une langue à une édition de langue inconnue."
+help_edition_attachments = "Liste les rattachements d'éditions par identifiant externe."
+help_edition_detach = "Défait un rattachement par identifiant externe (Séparer)."
+help_edition_attach_confirm = "Affiche le plan de retrait d'un rattachement suggéré, puis l'applique avec son jeton."
+help_edition_attach_token = "Le jeton affiché avec le plan : confirme le rattachement."
+help_edition_attach_decline = "Refuse un rattachement suggéré."
+attach_none = "Aucun rattachement par identifiant externe."
+attach_line = "{attach} : édition {edition} → œuvre {work} (venue de {origin}), {state}"
+attach_detached = "Séparé : l'édition {edition} est revenue à l'œuvre {work}."
+attach_to_rate = "Elle attend un classement (« À classer ») avant d'entrer dans une étagère famille."
+attach_kept = "Champ modifié depuis le rattachement, laissé tel quel : {field}"
+attach_confirm_with = "Pour rattacher, relancez : shelfhold edition attach-confirm {attach} --confirm {token}"
+attach_confirmed = "Rattaché : l'édition {edition} appartient à l'œuvre {work}."
+attach_withdraw_next = "Appliquez le plan de retrait avec « shelfhold shelf withdraw »."
+attach_declined = "Rattachement {attach} refusé."
 help_lang = "Étiquette BCP 47 (par ex. fr, ja, pt-BR)."
 help_edition_set_series_name = "Fixe le nom de série exporté d'une édition dont le nom est déjà pris dans la bibliothèque."
 help_series_name = "Le nom de la série dans la bibliothèque du serveur (distinct de ceux qui existent)."
@@ -1051,6 +1065,18 @@ action = "Ne plus suivre garde la série dans le service ; pour l'en retirer aus
 [errors."series.gap"]
 title = "Il manque des chapitres dans la série."
 action = "Consultez la série et lancez la recherche des chapitres manquants."
+
+[errors."edition.auto_attached"]
+title = "Une édition a été rattachée à l'œuvre qui porte le même identifiant externe."
+action = "Vérifiez le rattachement avec « shelfhold edition attachments » ; « shelfhold edition detach » le défait (Séparer). L'édition reste hors des étagères famille tant qu'elle n'est pas classée."
+
+[errors."edition.attach_suggested"]
+title = "Un rattachement par identifiant externe attend votre confirmation : il relèverait l'âge de l'œuvre."
+action = "Lisez le plan de retrait avec « shelfhold edition attach-confirm », puis confirmez-le avec le jeton affiché, ou refusez-le avec « shelfhold edition attach-decline »."
+
+[errors."edition.attach_refused"]
+title = "Ce rattachement ne peut pas être défait ni confirmé dans son état actuel."
+action = "Consultez son état avec « shelfhold edition attachments » : il a déjà été défait, refusé, ou l'édition a changé d'œuvre depuis."
 
 [errors."tombstone.journal_truncated"]
 title = "Le journal d'effacement d'une racine a été tronqué."

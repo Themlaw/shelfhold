@@ -1325,10 +1325,10 @@ def test_external_id_is_polymorphic_and_unique_per_provider(
         }
         connection.execute(sa.insert(table).values(**values))
         assert connection.execute(sa.select(table.c.state)).scalar_one() == "current"
-        rejected(
+        rejected(  # L12: the append-only guard speaks before the key does
             connection,
             sa.insert(table).values(**{**values, "entity_id": new_ulid()}),
-            "UNIQUE constraint failed",
+            "external_id is append-only",
         )
         connection.execute(sa.insert(table).values(**{**values, "entity_type": "contributor"}))
         connection.execute(  # a renumbering adds, then marks the old one superseded

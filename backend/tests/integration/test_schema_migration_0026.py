@@ -1,4 +1,4 @@
-"""Migration 0023 (M2 L12): external identifiers append-only in the database, and the journal of
+"""Migration 0026 (M2 L12): external identifiers append-only in the database, and the journal of
 attaches by external identifier (`edition_attach`), which "Séparer" reads to undo one exactly."""
 
 import sqlite3
@@ -19,7 +19,7 @@ OTHER = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
 
 
 def previous_revision() -> str:
-    down = ScriptDirectory(str(default_script_location())).get_revision("0023").down_revision
+    down = ScriptDirectory(str(default_script_location())).get_revision("0026").down_revision
     assert isinstance(down, str)
     return down
 
@@ -36,7 +36,7 @@ def test_upgrade_keeps_external_ids_and_makes_them_append_only(settings: Setting
         )
         db.commit()
 
-    assert migrate(settings).applied[-1] == "0023"
+    assert migrate(settings).applied[-1] == "0026"
 
     assert "edition_attach" in tables(database)
     with closing(sqlite3.connect(database)) as db:
@@ -72,4 +72,4 @@ def test_downgrade_drops_the_journal_and_the_guards(settings: Settings) -> None:
             "VALUES ('work', ?, 'anilist', '1', 'source')",
             (ID,),
         )
-        db.execute("DELETE FROM external_id")  # as before 0023
+        db.execute("DELETE FROM external_id")  # as before 0026

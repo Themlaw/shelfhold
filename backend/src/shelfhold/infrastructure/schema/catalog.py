@@ -14,6 +14,7 @@ from shelfhold.infrastructure.schema._base import (
     add_trigger,
     bool_column,
     in_check,
+    json_shape_check,
     metadata,
     now_column,
     positive_check,
@@ -276,6 +277,33 @@ external_id = sa.Table(
     ),
     sa.CheckConstraint("\"value\" <> ''", name="value_not_empty"),
     sa.Index("ix_external_id_entity", "entity_type", "entity_id"),
+)
+# Append-only in the database (L12): the one change allowed is the mark of a renumbering, once
+# (`current` -> `superseded`, the origin kept or set to `legacy`); nothing else is rewritten.
+add_trigger(
+    external_id,
+    "external_id_no_update",
+    "BEFORE UPDATE ON external_id "
+    "WHEN OLD.entity_type IS NOT NEW.entity_type OR OLD.entity_id IS NOT NEW.entity_id "
+    "OR OLD.provider IS NOT NEW.provider OR OLD.value IS NOT NEW.value "
+    "OR OLD.id_scheme IS NOT NEW.id_scheme OR OLD.created_at IS NOT NEW.created_at "
+    "OR OLD.state IS NOT 'current' OR NEW.state IS NOT 'superseded' "
+    "OR (NEW.origin IS NOT OLD.origin AND NEW.origin IS NOT 'legacy') "
+    "BEGIN SELECT RAISE(ABORT, 'external_id is append-only'); END",
+)
+add_trigger(
+    external_id,
+    "external_id_no_delete",
+    "BEFORE DELETE ON external_id BEGIN SELECT RAISE(ABORT, 'external_id is append-only'); END",
+)
+# `INSERT OR REPLACE` resolves a conflict by deleting the old row without a DELETE trigger.
+add_trigger(
+    external_id,
+    "external_id_no_replace",
+    "BEFORE INSERT ON external_id "
+    "WHEN EXISTS (SELECT 1 FROM external_id WHERE entity_type = NEW.entity_type "
+    "AND provider = NEW.provider AND value = NEW.value) "
+    "BEGIN SELECT RAISE(ABORT, 'external_id is append-only'); END",
 )
 
 # Works related without being merged (EF-BIB-039): a hook of V1, open vocabulary like work_kind.
@@ -703,4 +731,32 @@ metadata_field = sa.Table(
         '"confidence" IS NULL OR "confidence" BETWEEN 0 AND 1', name="confidence_range"
     ),
     sa.Index("ix_metadata_field_entity", "entity_type", "entity_id"),
+)
+
+# The journal of attaches by external identifier (EF-BIB-003, EF-BIB-037, L12): what an attach
+# changed, kept so that "Séparer" undoes it exactly, and the suggestions that wait for an admin
+# (an attach that would raise the age is never automatic). `prior` holds the state of the Edition
+# and of the fields the attach wrote. Who decided is in the audit journal.
+EDITION_ATTACH_STATES = ("suggested", "attached", "undone", "declined")
+EDITION_ATTACH_REASONS = ("external_id", "age_raise")
+edition_attach = sa.Table(
+    "edition_attach",
+    metadata,
+    ulid_column("id", primary_key=True),
+    _fk("edition_id", "edition.id", ondelete="CASCADE"),
+    _fk("from_work_id", "work.id", ondelete="CASCADE"),
+    _fk("to_work_id", "work.id", ondelete="CASCADE"),
+    sa.Column("provider", sa.String(), nullable=False),
+    sa.Column("value", sa.String(), nullable=False),
+    sa.Column("state", sa.String(), nullable=False),
+    sa.Column("reason", sa.String(), nullable=False),
+    sa.Column("prior", sa.JSON(), nullable=False, server_default="{}"),
+    now_column(),
+    sa.Column("decided_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    in_check("state", EDITION_ATTACH_STATES),
+    in_check("reason", EDITION_ATTACH_REASONS),
+    json_shape_check("prior", "object"),
+    sa.CheckConstraint('"from_work_id" <> "to_work_id"', name="distinct_works"),
+    sa.Index("ix_edition_attach_edition", "edition_id"),
 )

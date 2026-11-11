@@ -281,13 +281,14 @@ def test_undo_keeps_what_an_admin_changed_since() -> None:
         assert undone.kept == (FieldKey("work", s.family.work_id, "genre"),)
         with env.engine.connect() as connection:
             t = catalog.metadata_field
-            rows = dict(
-                connection.execute(
-                    sa.select(t.c.field, sa.tuple_(t.c.value, t.c.locked)).where(
+            rows = {
+                r.field: (r.value, r.locked)
+                for r in connection.execute(
+                    sa.select(t.c.field, t.c.value, t.c.locked).where(
                         t.c.entity_id == s.family.work_id
                     )
-                ).all()
-            )
+                )
+            }
         assert rows["summary"] == ('"old"', False) and rows["genre"] == ('"seinen"', True)
 
 
@@ -352,8 +353,10 @@ def test_age_raising_merge_by_external_id_requires_confirmation() -> None:
             )
         assert done.withdrawals == plan.withdrawals
         assert edition_row(env, uncut.edition_id)[0] == s.family.work_id
+        env.add_chapter(s.family, "2")  # the family Edition no longer goes anywhere below 18+
         blocked = {b.code for b in env.pipeline.preview(env.destination_id).blocked}
         assert "shelf.above_ceiling" in blocked
+        assert run(env) == 0
 
 
 def test_arrival_without_holder_records_its_ids_on_its_own_work() -> None:
