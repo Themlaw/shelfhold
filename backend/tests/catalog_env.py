@@ -16,12 +16,13 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
-from shelfhold.catalog.public import BindingRef, Catalog, EditionRef, EditionSpec
+from shelfhold.catalog.public import BindingRef, EditionRef, EditionSpec
 from shelfhold.config import load_settings
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import acquisition
+from tests.support.catalog import SupportCatalog
 
 T0 = datetime(2026, 11, 4, 8, 0, tzinfo=UTC)
 
@@ -56,7 +57,7 @@ def at(minutes: int) -> datetime:
 @dataclass
 class Harness:
     connection: sa.Connection
-    catalog: Catalog
+    catalog: SupportCatalog
 
     def work(self, kind: str = "manga", title: str = "Work") -> str:
         return self.catalog.create_work(kind, title)
@@ -135,6 +136,6 @@ def harness() -> Iterator[Harness]:
         engine = create_db_engine(path)
         try:
             with engine.begin() as connection:
-                yield Harness(connection, Catalog(connection))
+                yield Harness(connection, SupportCatalog(connection))
         finally:
             engine.dispose()

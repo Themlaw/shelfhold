@@ -38,7 +38,6 @@ from shelfhold.catalog.application.dto import (
     IncomingUnit,
     IngestResult,
     TeamRef,
-    UnitView,
 )
 from shelfhold.catalog.application.editions import translation_type_for
 from shelfhold.catalog.application.external_ids import (
@@ -275,7 +274,6 @@ __all__ = [
     "StoredExternalId",
     "TeamRef",
     "TextVersionRef",
-    "UnitView",
     "VariantFacts",
     "Verdict",
     "Withdrawal",

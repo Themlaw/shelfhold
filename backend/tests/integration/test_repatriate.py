@@ -218,7 +218,7 @@ def test_a_copy_between_roots_cut_short_is_settled_at_boot() -> None:
         )  # fmt: skip
         journal.mark_applying(gone)  # killed before the copy landed
         report = journal.resolve_open()
-        assert report.abandoned == [gone] and not report.still_open
+        assert report.abandoned == [gone] and not [*report.refused, *report.drifted]
         done = journal.record(
             op="copy_cross_root", src=action.source, dst=action.target,
             expected_sha256=action.file_hash,
@@ -226,7 +226,7 @@ def test_a_copy_between_roots_cut_short_is_settled_at_boot() -> None:
         journal.mark_applying(done)
         r.fsops.copy_across(action.source, action.target, parents=True)  # landed, then killed
         report = journal.resolve_open()
-        assert report.completed == [done] and not report.still_open
+        assert report.completed == [done] and not [*report.refused, *report.drifted]
 
 
 @pytest.mark.req("EF-EXP-051")

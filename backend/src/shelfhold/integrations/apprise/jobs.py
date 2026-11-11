@@ -13,7 +13,6 @@ from shelfhold.integrations.apprise.dispatch import NotificationDispatcher
 from shelfhold.jobs.public import JobContext, JobPools
 
 KIND: Final = "notify.dispatch"
-DEDUPE_KEY: Final = "notify:dispatch"
 SWEEP_CRON: Final = "*/5 * * * *"
 
 
@@ -23,8 +22,3 @@ def register_notification_job(pools: JobPools, dispatcher: NotificationDispatche
 
     pools.register(KIND, pool="io", handler=handle)
     pools.scheduler.add(KIND, SWEEP_CRON)
-
-
-def request_dispatch(pools: JobPools) -> None:
-    """Call after the publisher's transaction committed."""
-    pools.submit(KIND, dedupe_key=DEDUPE_KEY)

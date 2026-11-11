@@ -15,13 +15,13 @@ from shelfhold.acquisition.public import (
     BackfillConfirmationRequired,
     suppress_follow,
 )
-from shelfhold.catalog.public import Catalog
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import record_replica
 from tests.follow_env import START, Bench, follow_bench, new_chapter
 from tests.integration.test_schema_catalog import add_unit, add_variant
 from tests.integration.test_schema_platform import add_user
+from tests.support.catalog import SupportCatalog
 
 
 def _ms(days_ago: float) -> str:
@@ -272,7 +272,7 @@ def test_follow_suppressed_survives_source_restore() -> None:
             suppress_follow(connection, unit_1, actor_id=admin, now=bench.clock.now())
         variant = bench.rows("SELECT id FROM unit_variant WHERE unit_id = :u", u=unit_1)[0]["id"]
         with bench.lib.engine.begin() as connection:  # the source loses the chapter...
-            Catalog(connection).mark_removed(variant, bench.clock.now())
+            SupportCatalog(connection).mark_removed(variant, bench.clock.now())
         original = [c for c in bench.alpha()["chapters"] if c["chapterNumber"] != 1.0]
         _serve(bench, [_chapter(1, "B", 3), *original])  # ...and gives it back, as a new release
         Backfill(bench.lib.engine, free_bytes=lambda: 10**12, unit_bytes=1).start(

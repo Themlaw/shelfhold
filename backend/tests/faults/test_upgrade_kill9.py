@@ -191,4 +191,4 @@ def test_boot_replay_survives_a_purged_export_line() -> None:
         assert len(report.drifted) == 1
         assert "LookupError" in " ".join(report.drift_reasons.values())
         again = _boot(env)  # and the next boot does not stop either
-        assert again.still_open
+        assert [*again.refused, *again.drifted]

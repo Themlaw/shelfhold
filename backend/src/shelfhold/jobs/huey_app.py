@@ -217,13 +217,6 @@ class JobPools:
     def huey(self, pool: str) -> Huey:
         return self._hueys[pool]
 
-    def periodic_tasks(self) -> list[tuple[str, str]]:
-        return [
-            (name, task.name)
-            for name, huey in self._hueys.items()
-            for task in huey._registry.periodic_tasks
-        ]
-
     # -- registration and submission --------------------------------------------------------
 
     def register(
@@ -313,10 +306,6 @@ class JobPools:
         return self.ledger.forget_dispatches_not_in(present)
 
     # -- shutdown (ENF-OPS-007) ---------------------------------------------------------------
-
-    @property
-    def stopping(self) -> bool:
-        return self._stopping
 
     def stop_claiming(self) -> None:
         """Step 1 of the shutdown: a task that reaches a worker now is left in the queue."""

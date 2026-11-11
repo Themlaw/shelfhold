@@ -5,6 +5,14 @@ import pytest
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMapError, PathMode
 
 
+def _dump(path_map: PathMap) -> str:
+    """The setting as the admin writes it (production only reads it)."""
+    return ",".join(
+        f"{e.local}={e.remote}" + ("" if e.mode is PathMode.RW else f"@{e.mode.value}")
+        for e in path_map.entries
+    )
+
+
 @pytest.mark.req("EF-EXP-003")
 def test_default_path_map_library_to_kavita_paths() -> None:
     path_map = PathMap.default()
@@ -34,7 +42,7 @@ def test_path_map_setting_round_trips() -> None:
     text = "/library/manga=/manga,/mnt/b=/books"
     path_map = PathMap.parse(text)
     assert path_map.to_remote("/mnt/b/Y") == "/books/Y"
-    assert PathMap.parse(path_map.dump()) == path_map
+    assert PathMap.parse(_dump(path_map)) == path_map
     assert PathMap.parse("") == PathMap.default()
 
 

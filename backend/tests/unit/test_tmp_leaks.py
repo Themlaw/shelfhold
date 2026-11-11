@@ -11,7 +11,6 @@ from tests.catalog_env import _template
 from tests.support.leaks import leftovers
 
 
-@pytest.mark.req("ENF-QUAL-007")
 def test_catalog_template_lives_under_the_pytest_base_temporary_folder(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
@@ -19,7 +18,6 @@ def test_catalog_template_lives_under_the_pytest_base_temporary_folder(
     assert Path(tmp_path_factory.getbasetemp()) in template.parents, template
 
 
-@pytest.mark.req("ENF-QUAL-007")
 def test_session_fails_when_a_fixture_leaks_a_template_folder(tmp_path: Path) -> None:
     before = leftovers()
     (tmp_path / "test_leaks.py").write_text(

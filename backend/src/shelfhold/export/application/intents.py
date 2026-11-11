@@ -104,10 +104,6 @@ class ResolveReport:
     abandoned: list[str] = field(default_factory=list)  # a write that never reached the disk
     drift_reasons: dict[str, str] = field(default_factory=dict)
 
-    @property
-    def still_open(self) -> list[str]:
-        return [*self.refused, *self.drifted]
-
 
 ManifestHook = Callable[[Connection, OpenIntent], None]
 

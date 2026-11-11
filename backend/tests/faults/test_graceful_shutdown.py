@@ -103,7 +103,7 @@ def test_a_cooperative_job_stops_at_its_checkpoint_and_resumes_there(tmp_path: P
             done.append(n)
             if n == 0:
                 started.set()
-                while not pools.stopping:
+                while not pools._stopping:
                     time.sleep(0.01)
 
         return run

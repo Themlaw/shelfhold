@@ -15,7 +15,7 @@ from shelfhold.integrations.apprise.dispatch import (
     DispatchReport,
     NotificationDispatcher,
 )
-from shelfhold.integrations.apprise.jobs import register_notification_job, request_dispatch
+from shelfhold.integrations.apprise.jobs import register_notification_job
 from shelfhold.integrations.apprise.render import Message, neutralize_markdown, render_notification
 from shelfhold.integrations.apprise.schemes import ALLOWED_SCHEMES
 from shelfhold.integrations.apprise.send import SendResult, send_with_apprise
@@ -35,7 +35,6 @@ __all__ = [
     "operating_bus",
     "register_notification_job",
     "render_notification",
-    "request_dispatch",
     "send_with_apprise",
     "validate_channel_url",
 ]

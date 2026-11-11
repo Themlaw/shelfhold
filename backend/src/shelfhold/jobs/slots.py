@@ -6,8 +6,6 @@ renewed by each acquisition. A worker never waits for a slot: it asks again late
 rescheduled by `huey_app`), so a busy domain does not hold a thread.
 """
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import timedelta
 
 import sqlalchemy as sa
@@ -24,10 +22,6 @@ RETRY_DELAY_S = 30  # how long a job whose domain is full waits before asking ag
 
 class UnknownLimitKeyError(KeyError):
     """No slot count was declared for this limit key."""
-
-
-class SlotBusyError(Exception):
-    """Every slot of the domain is in use."""
 
 
 class DomainSlots:
@@ -94,12 +88,3 @@ class DomainSlots:
                     sa.select(domain_slot.c.in_use).where(domain_slot.c.limit_key == limit_key)
                 ).scalar_one()
             )
-
-    @contextmanager
-    def slot(self, limit_key: str) -> Iterator[None]:
-        if not self.try_acquire(limit_key):
-            raise SlotBusyError(limit_key)
-        try:
-            yield
-        finally:
-            self.release(limit_key)

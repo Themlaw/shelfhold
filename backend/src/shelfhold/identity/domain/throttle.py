@@ -114,10 +114,3 @@ class LoginThrottle:
                 stamps = self._failures.get(key)
                 if stamps is not None and at in stamps:
                     stamps.remove(at)
-
-    def failure(self, *, ip: str, account: str, now: datetime) -> None:
-        with self._lock:
-            self._record(ip, account, now)
-
-    def tracked_keys(self) -> int:
-        return len(self._failures)

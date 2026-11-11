@@ -40,10 +40,6 @@ def window_rank(kind: str) -> int:
         return len(WINDOW_JOB_ORDER)
 
 
-def order_window_jobs(kinds: Sequence[str]) -> list[str]:
-    return sorted(kinds, key=window_rank)
-
-
 @dataclass(frozen=True)
 class Span:
     """One occurrence of the window, `[start, end)` in UTC."""

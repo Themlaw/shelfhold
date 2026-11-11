@@ -51,6 +51,7 @@ from shelfhold.acquisition.application.planning import (
     watermark_of,
 )
 from shelfhold.acquisition.application.preference import TeamPreference, record_release
+from shelfhold.acquisition.application.presence import present_for_acquisition
 from shelfhold.acquisition.application.ranges import Keeper, RangeTickets, RangeUnit
 from shelfhold.acquisition.application.staleness import stale_series
 from shelfhold.acquisition.application.tickets import (
@@ -107,7 +108,6 @@ from shelfhold.library.public import (
     SeriesBindingRef,
     TombstoneGate,
     VariantRef,
-    has_readable_copy,
 )
 from shelfhold.plugin_host.errors import (
     AuthModeUnsupported,
@@ -1177,7 +1177,7 @@ def _is_new(connection: sa.Connection, unit_id: str, mark: Watermark) -> bool:
             unit.c.follow_suppressed,
         ).where(unit.c.id == unit_id)
     ).one()
-    if row.follow_suppressed or has_readable_copy(connection, unit_id):
+    if row.follow_suppressed or present_for_acquisition(connection, unit_id):
         return False
     if row.track == "unnumbered":
         return True

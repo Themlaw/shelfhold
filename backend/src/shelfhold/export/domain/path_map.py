@@ -101,12 +101,6 @@ class PathMap:
             entries.append(PathEntry(local.strip(), remote.strip(), path_mode))
         return cls(tuple(entries))
 
-    def dump(self) -> str:
-        return ",".join(
-            f"{e.local}={e.remote}" + ("" if e.mode is PathMode.RW else f"@{e.mode.value}")
-            for e in self.entries
-        )
-
     def writable(self) -> tuple[PathEntry, ...]:
         return tuple(e for e in self.entries if e.mode is PathMode.RW)
 

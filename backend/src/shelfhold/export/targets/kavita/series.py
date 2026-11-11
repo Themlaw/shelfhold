@@ -53,10 +53,6 @@ class Resolution:
     series: dto.SeriesInfo | None
     by: str | None  # "cache" | "path" | None
 
-    @property
-    def found(self) -> bool:
-        return self.series is not None
-
     def renamed(self, frozen_name: str | None) -> bool:
         """Kavita shows another name than the one Shelfhold froze (never rewritten)."""
         return (

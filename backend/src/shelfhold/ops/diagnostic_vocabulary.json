@@ -305,7 +305,6 @@
   "ShelfConflict",
   "ShelfExposedToChildren",
   "ShuttingDownError",
-  "SlotBusyError",
   "SnapshotRefusedError",
   "SourceAuthModeUnsupported",
   "SourceChanged",
