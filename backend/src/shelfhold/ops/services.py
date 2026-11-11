@@ -36,6 +36,7 @@ from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export, platform
+from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
@@ -92,6 +93,7 @@ NOT_INDEXED = "target.not_indexed"
 MAX_SERIES_NAME = 200
 KOREADER_RESET_WINDOW = timedelta(days=7)  # how far back `status` lists the upgrades
 ULID_PATTERN = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
+WINDOW_FORMAT = "%Y-%m-%dT%H:%M:%SZ"  # how the scheduler stores the instants of a window (UTC)
 
 
 def user_of(principal: Principal) -> str | None:
@@ -189,7 +191,9 @@ class OpsServices:
         follows: FollowOps | None = None,
         acquire: AcquireOps | None = None,
         roots: RootOps | None = None,
+        window: MaintenanceWindow | None = None,
     ) -> None:
+        self._window = window or DEFAULT_WINDOW
         self._engine = engine
         self._clock = clock
         self._bus = bus
@@ -343,13 +347,25 @@ class OpsServices:
     def jobs_run_now(self, kind: str) -> None:
         """A periodic job is due now: the server's next tick (at most a minute) starts it."""
         table = platform.schedule
+        now = self._clock.now()
         with self._engine.begin() as connection:
-            done = connection.execute(
-                sa.update(table)
-                .where(table.c.job_kind == kind, table.c.enabled)
-                .values(next_due_at=self._clock.now())
-            ).rowcount
-        if not done:
+            rows = connection.execute(
+                sa.select(table.c.id, table.c.window).where(
+                    table.c.job_kind == kind, table.c.enabled
+                )
+            ).all()
+            for row in rows:
+                values: dict[str, Any] = {"next_due_at": now}
+                if row.window:
+                    # a night job is planned for its next night: asked for now, it takes the
+                    # window that is open now (else the next one: the disks stay asleep by day)
+                    span = self._window.next_span(now)
+                    values["window"] = {
+                        "start_utc": span.start.strftime(WINDOW_FORMAT),
+                        "end_utc": span.end.strftime(WINDOW_FORMAT),
+                    }
+                connection.execute(sa.update(table).where(table.c.id == row.id).values(**values))
+        if not rows:
             raise UnknownSubjectError("no periodic job of this kind is scheduled")
 
     def jobs_retry(self, subject: str) -> JobRow | None:
