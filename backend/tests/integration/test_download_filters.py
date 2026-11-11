@@ -243,3 +243,24 @@ def test_late_upgrade_never_asks_a_copy_the_filters_refuse() -> None:
         settle(bench)
         assert [(n, s) for n, s, _ in requests(bench)] == [("1", "beta")]
         assert len(asked(bench)) == 1
+
+
+def test_filtered_unit_is_never_asked_again_by_reopen() -> None:
+    """A ticket given up before a filter was set is reopened by a healthy source: the filter is
+    consulted before it is sent, and the Unit stays out."""
+    with filter_bench(two_bindings=False) as bench:
+        serve(bench, ALPHA, listing(ALPHA, [1]))
+        bench.run()
+        before = asked(bench)
+        assert before
+        with bench.lib.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE download_request SET state='abandoned', attempts=99, ticket=NULL")
+            )
+        set_filters(bench, {"languages": ["de"]})  # chapter 1 is not German: refused from now on
+        bench.cycle._tickets.reopen_abandoned()
+        bench.run()
+        assert asked(bench) == before
+        assert not bench.rows(
+            "SELECT id FROM download_request WHERE state IN ('requested','downloaded')"
+        )

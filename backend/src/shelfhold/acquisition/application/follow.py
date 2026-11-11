@@ -302,6 +302,7 @@ class FollowCycle:
             plugin_id=self._plugin_id, sleep=sleep, slots=slots, max_attempts=max_attempts,
             stall_after=stall_after, announce=self._emit, requeue_cap=requeue_cap,
             queue_empty=self._server_queue_empty, blocked=self._request_blocked,
+            filtered=self._request_filtered,
         )  # fmt: skip
         self._pending: list[PublishedEvent] = []
         self._caps = (service_cap, key_cap)
@@ -527,6 +528,17 @@ class FollowCycle:
         if ConnectedCapability.HEALTH_PROBE not in self._service.connected:
             return False
         return await from_service(self._service.download_queue_size(self._fetcher)) == 0
+
+    def _request_filtered(self, request: OpenRequest) -> bool:
+        """The filters of the series, as they are now, refuse this offer: a ticket opened before
+        they were set (or reopened after being given up) is not sent (EF-SRC-039)."""
+        with self._engine.connect() as connection:
+            edition_id = connection.execute(
+                sa.select(catalog.unit.c.edition_id).where(catalog.unit.c.id == request.unit_id)
+            ).scalar()
+            return edition_id is not None and bool(
+                refusals(connection, edition_id, request.unit_id, {request.variant_id})
+            )
 
     def _request_blocked(self, request: OpenRequest) -> bool:
         """A chapter, or the series it belongs to, was purged for good: never asked again."""

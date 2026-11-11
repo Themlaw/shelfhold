@@ -208,6 +208,7 @@ class DownloadTickets:
         requeue_cap: int = MAX_REQUEUE,
         queue_empty: QueueEmpty | None = None,
         blocked: Blocked | None = None,
+        filtered: Blocked | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -227,6 +228,7 @@ class DownloadTickets:
         self._requeue_cap = requeue_cap
         self._queue_empty = queue_empty  # None: the service cannot say, nothing is asked again
         self._blocked = blocked
+        self._filtered = filtered  # a download filter refuses it now (EF-SRC-039)
         self._queue_checked: bool | None = None  # read once per cycle, when first needed
         self.unloaded: frozenset[str] = frozenset()  # sources the probe found unusable this cycle
 
@@ -294,6 +296,9 @@ class DownloadTickets:
         queues: dict[str, deque[OpenRequest]] = {}
         for request in self._open_requests():
             if request.ticket is None:
+                if self._filtered is not None and self._filtered(request):
+                    self._update(request.id, state="cancelled")  # never sent: reopened or not
+                    continue
                 queues.setdefault(request.source_key, deque()).append(request)
             else:
                 await self._guarded(request, report)
