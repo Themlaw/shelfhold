@@ -505,8 +505,16 @@ jobs:
         working-directory: frontend
       - run: npm ci
         working-directory: e2e
-      - run: npx playwright install --with-deps chromium
+      # The runner image already ships Chromium's system libraries; when the
+      # Ubuntu mirrors are unreachable, install the browser alone instead of
+      # failing the job on apt.
+      - name: Playwright browser
         working-directory: e2e
+        run: |
+          # apt waits ~10 min per unreachable mirror: bound it, then fall back.
+          timeout 180 npx playwright install --with-deps chromium && exit 0
+          echo "::warning::playwright --with-deps failed; installing the browser alone"
+          npx playwright install chromium
       - name: Playwright (chromium, shard)
         working-directory: e2e
         env:
