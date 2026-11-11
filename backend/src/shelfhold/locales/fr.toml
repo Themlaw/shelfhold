@@ -1036,7 +1036,7 @@ title = "Le service de la source semble avoir été réinstallé."
 action = "Confirmez avec « shelfhold source reconnect » ; rien n'est supprimé en attendant."
 
 [errors."source.not_configured"]
-title = "Cette source n'est pas configurée : un réglage obligatoire manque ou est refusé."
+title = "Cette source n'est pas configurée : un réglage obligatoire manque, ou l'adresse du catalogue est absente ou refusée."
 action = "Renseignez ses réglages (par exemple l'adresse du catalogue et celle du miroir) avec « shelfhold plugin set », puis relancez la demande."
 
 [errors."source.filter_invalid"]
@@ -1046,10 +1046,6 @@ action = "Retirez le filtre, ou demandez la liste de ceux que la source déclare
 [errors."acquire.unsupported_file"]
 title = "La source ne fournit pas un fichier que Shelfhold range."
 action = "Seuls les livres EPUB et les archives d'images (CBZ) sont rangés ; un PDF passe par le dossier d'import."
-
-[errors."source.not_configured"]
-title = "La source n'a pas d'adresse utilisable."
-action = "Renseignez l'adresse du catalogue (http ou https, sans identifiants) dans les réglages de la source."
 
 [errors."source.credential_origin"]
 title = "Un lien pointait ailleurs que le catalogue : les identifiants ne sont pas envoyés."
