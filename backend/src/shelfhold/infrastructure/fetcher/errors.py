@@ -62,3 +62,9 @@ class FetchTimeout(FetchError):
 
 class FetchUnreachable(FetchError):
     code: ClassVar[str] = "fetch.unreachable"
+
+
+class RobotsDisallowed(FetchError):
+    """The site's robots.txt does not allow this path to a native source (ENF-LEG-003)."""
+
+    code: ClassVar[str] = "fetch.robots_disallowed"

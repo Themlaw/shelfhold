@@ -27,6 +27,7 @@ from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow, Span, windo
 
 schedule = platform.schedule
 _FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+DEFAULT_SPREAD_S = 900
 
 
 class Dispatcher(Protocol):
@@ -159,6 +160,11 @@ class Scheduler:
                     next_due_at=due,
                 )
             )
+
+    def add_default(self, kind: str, cron: str, *, scope_key: str = "") -> None:
+        """Register a periodic with the default spread (ENF-LEG-007): the occurrence is moved by
+        a delay drawn from the instance seed: installations do not all fire together."""
+        self.add(kind, cron, scope_key=scope_key, jitter_s=DEFAULT_SPREAD_S)
 
     def _window_unchanged(self, stored: dict[str, str] | None) -> bool:
         """The occurrence a window job is planned for is one of the window as configured now:

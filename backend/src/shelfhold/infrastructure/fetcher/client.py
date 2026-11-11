@@ -21,6 +21,7 @@ import httpx2
 import structlog
 
 from shelfhold import __version__
+from shelfhold.infrastructure.fetcher.cache import CacheEntry, HttpCache, cacheable_request
 from shelfhold.infrastructure.fetcher.errors import (
     DnsBlocked,
     DnsResolutionError,
@@ -43,9 +44,12 @@ from shelfhold.infrastructure.fetcher.guard import (
 )
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.fetcher.resolver import Resolver
+from shelfhold.infrastructure.fetcher.robots import RobotsPolicy
 from shelfhold.infrastructure.logging import elapsed_ms, known_secret_values, route_of
 from shelfhold.sdk.fetcher import Response
 
+# ENF-LEG-007: who is calling, and where to reach its maintainers.
+USER_AGENT: Final = f"Shelfhold/{__version__} (+https://github.com/Themlaw/shelfhold)"
 _REDIRECTS: Final = frozenset({301, 302, 303, 307, 308})
 # Off origin, only these request headers travel: an allow-list cannot miss a new credential name.
 _CROSS_ORIGIN_HEADERS: Final = frozenset(
@@ -102,10 +106,14 @@ class GuardedFetcher:
         limits: FetchLimits | None = None,
         transport: httpx2.AsyncBaseTransport | None = None,
         tls_context: ssl.SSLContext | None = None,
-        user_agent: str = f"Shelfhold/{__version__}",
+        user_agent: str = USER_AGENT,
         domains: DomainAllowlist | None = None,
+        cache: HttpCache | None = None,
+        robots: RobotsPolicy | None = None,
     ) -> None:
         self._resolver = resolver
+        self._cache = cache  # None: off (config, or per source)
+        self._robots = robots  # None: the source does not respect robots (or is not native)
         self._domains = domains  # a plugin's Fetcher: its DomainRules, checked at every hop
         self._lan = LanTargets.empty()  # the default fetcher, used for upstream URLs, has none
         self._limits = limits or FetchLimits()
@@ -250,19 +258,33 @@ class GuardedFetcher:
         body: dict[str, Any],
         max_bytes: int | None,
         tally: _Tally | None,
+        polite: bool = True,
     ) -> Response:
         url = _parse_url(raw_url)
         if params:
             url = url.copy_merge_params(params)
         cap = self._limits.max_bytes if max_bytes is None else max_bytes
         first = _origin(url)
-        for _ in range(self._limits.max_redirects + 1):
+        for hop in range(self._limits.max_redirects + 1):
             if self._domains is not None:  # by name, before any resolution (EF-SRC-003)
                 self._domains.check(url.raw_host.decode("ascii"), route_of(str(url)))
             # a LAN target is reachable only as the origin the caller asked for, never by redirect
             on_lan = _origin(url) == first and self._lan.addresses(url.host, _port(url)) is not None
+            if polite and self._robots is not None:
+                await self._robots_check(url)
+            cache_key = self._cache_key(method, url, headers, tally, hop)
+            entry: CacheEntry | None = None
+            if cache_key is not None and self._cache is not None:
+                entry = self._cache.lookup(*cache_key, self._effective(headers))
+                if entry is not None and self._cache.is_fresh(entry):
+                    return self._cache.serve(entry)
             addresses = await self._pin(url, allow_lan=on_lan)
-            response = await self._send(method, url, addresses, headers, body, cap, tally)
+            sent = {**headers, **entry.validators} if entry is not None else headers
+            response = await self._send(method, url, addresses, sent, body, cap, tally)
+            if self._cache is not None and hop == 0:
+                settled = self._settle(cache_key, entry, method, url, headers, response)
+                if settled is not None:
+                    return settled
             location = response.headers.get("location")
             if response.status not in _REDIRECTS or not location:
                 return response
@@ -277,6 +299,67 @@ class GuardedFetcher:
                 method, body = "GET", {}
             url = target
         raise TooManyRedirects(f"more than {self._limits.max_redirects} redirections")
+
+    # -- politeness (ENF-LEG-007): the cache and robots.txt ---------------------------------------
+
+    def _effective(self, headers: Mapping[str, str]) -> dict[str, str]:
+        return {"user-agent": self._user_agent, **{k.lower(): v for k, v in headers.items()}}
+
+    def _cache_key(
+        self,
+        method: str,
+        url: httpx2.URL,
+        headers: Mapping[str, str],
+        tally: _Tally | None,
+        hop: int,
+    ) -> tuple[str, str] | None:
+        """(source, URL) when this hop may use the cache: a first-hop GET to a buffer, without
+        credentials. The source is the plugin id: a cache is never read across sources."""
+        if self._cache is None or method != "GET" or tally is not None or hop != 0:
+            return None
+        if not cacheable_request(headers):
+            return None
+        return (self._domains.plugin_id if self._domains is not None else "-", str(url))
+
+    def _settle(
+        self,
+        key: tuple[str, str] | None,
+        entry: CacheEntry | None,
+        method: str,
+        url: httpx2.URL,
+        headers: Mapping[str, str],
+        response: Response,
+    ) -> Response | None:
+        """After the first hop: a 304 gives back the stored answer, a storable 200 is stored, a
+        successful unsafe method drops the entry. None: carry on with the response as it is."""
+        cache = self._cache
+        if cache is None:
+            return None
+        if method not in ("GET", "HEAD") and response.status < 400:
+            cache.invalidate(self._domains.plugin_id if self._domains else "-", str(url))
+        if key is None:
+            return None
+        if response.status == 304 and entry is not None:
+            return cache.revalidated(entry, response.headers)
+        if response.status == 200:
+            cache.store(*key, self._effective(headers), response)
+        return None
+
+    async def _robots_check(self, url: httpx2.URL) -> None:
+        policy = self._robots
+        if policy is None:
+            return
+        origin = f"{url.scheme}://{_authority(url)}"
+        if url.path == "/robots.txt":
+            return  # the file itself is always readable
+        target = url.raw_path.decode("ascii")
+
+        async def fetch(robots_url: str) -> Response:
+            return await self._follow(
+                "GET", robots_url, {}, None, {}, 512 * 1024, None, polite=False
+            )
+
+        await policy.check(origin, target, fetch)
 
     async def _pin(self, url: httpx2.URL, *, allow_lan: bool) -> list[IPAddress]:
         """Resolve once and return the only addresses that may be connected to."""
@@ -444,7 +527,7 @@ class IntegrationFetcher(GuardedFetcher):
         limits: FetchLimits | None = None,
         transport: httpx2.AsyncBaseTransport | None = None,
         tls_context: ssl.SSLContext | None = None,
-        user_agent: str = f"Shelfhold/{__version__}",
+        user_agent: str = USER_AGENT,
     ) -> None:
         super().__init__(
             resolver, limits=limits, transport=transport, tls_context=tls_context,

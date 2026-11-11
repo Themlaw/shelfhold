@@ -147,7 +147,9 @@ def test_vary_is_respected() -> None:
     def respond(request: httpx2.Request) -> httpx2.Response:
         lang = request.headers.get("accept-language", "")
         return httpx2.Response(
-            200, content=lang.encode(), headers={"vary": "Accept-Language", "cache-control": "max-age=600"}
+            200,
+            content=lang.encode(),
+            headers={"vary": "Accept-Language", "cache-control": "max-age=600"},
         )
 
     rec = Recorder(respond)
