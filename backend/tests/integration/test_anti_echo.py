@@ -295,7 +295,8 @@ def test_anti_echo_ignores_an_export_made_from_the_same_binding() -> None:
             ).scalar()
             connection.execute(
                 sa.text(
-                    "INSERT INTO unit_coverage (carrier_type, carrier_id, unit_id, position, origin)"
+                    "INSERT INTO unit_coverage "
+                    "(carrier_type, carrier_id, unit_id, position, origin)"
                     " VALUES ('export_item', :i, :u, 1, 'manual')"
                 ),
                 {"i": own.export_item_id, "u": unit},
