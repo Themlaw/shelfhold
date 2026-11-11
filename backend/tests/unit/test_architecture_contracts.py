@@ -405,6 +405,9 @@ WRITERS_ALLOWED = (
     "shelfhold/ops/backup/restore.py",  # a restore's new folder, written from a descriptor on it
     "shelfhold/ops/backup/scratch.py",  # private snapshot folders of /data/tmp, lock file
     "shelfhold/ops/backup/verify.py",  # the spool of the database being checked (a scratch file)
+    # the import folder (EF-SRC-012): the person's own folder, not a library root; its only write
+    # is `_remove_verified` (a classed deletion emitter), by descriptor, after a verified storage
+    "shelfhold/library/adapters/import_scan.py",
 )
 PATH_WRITE_METHODS = {
     "write_text", "write_bytes", "unlink", "rename", "mkdir", "rmdir", "touch",

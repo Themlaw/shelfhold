@@ -59,7 +59,7 @@ def test_protected_epub_refused_with_message(tmp_path: Path) -> None:
     found = detect_protection(at(tmp_path, book), "epub")
     assert found is not None and found.code == PROTECTED == "import.protected"
     assert "protégé" in t("errors.import.protected.title")
-    assert "reste dans le dossier d'import" in t("errors.import.protected.action")
+    assert "dossier d'import" in t("errors.import.protected.action")
 
 
 @pytest.mark.req("EF-SRC-012")

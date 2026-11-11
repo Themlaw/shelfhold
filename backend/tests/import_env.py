@@ -173,6 +173,7 @@ def import_env(
     with lib_env() as lib:
         incoming = lib.tmp / "incoming"
         incoming.mkdir()
+        (lib.tmp / "staging").mkdir(exist_ok=True)
         env = ImportEnv(lib, incoming, build_stores(lib, with_store=with_store, max_pdf=max_pdf))
         env.build(**folder)
         yield env

@@ -158,6 +158,9 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "src/shelfhold/ops/backup/scratch.py" = ["TID251"]
 "src/shelfhold/ops/backup/store_missing.py" = ["TID251"]
 "src/shelfhold/ops/backup/archive.py" = ["TID251"]
+# the import folder (EF-SRC-012): the person's own folder, opened by descriptors with O_NOFOLLOW from
+# its root; the one removal is `_remove_verified`, after a hash-verified storage. Never a library root.
+"src/shelfhold/library/adapters/import_scan.py" = ["TID251"]
 "src/shelfhold/jobs/maintenance.py" = ["TID251"]  # /data/.maintenance.lock
 "tests/unit/test_governance_docs.py" = ["S101", "S603", "S607"]
 "tests/contract/**" = ["S101", "S106", "E501", "TID251"]

@@ -1569,3 +1569,71 @@ pending_header = "{count} Œuvre(s) seraient classées {age} :"
 pending_confirm = "Pour les classer toutes, retapez la confirmation : shelfhold rate {age} --pending --confirm {token}"
 pending_needs_confirm = "La confirmation ne correspond pas à la liste lue ({token}) : relisez la liste puis retapez-la."
 batch_done = "{count} Œuvre(s) classée(s) {age} (une entrée d'audit par Œuvre)."
+
+[errors."import.protected"]
+title = "Fichier protégé, non pris en charge."
+action = "Shelfhold ne lève aucune protection : le fichier reste dans le dossier d'import, intact. Déposez une version sans protection que vous avez le droit d'utiliser."
+
+[errors."import.protected_licence"]
+title = "Fichier protégé par une licence de prêt ou d'achat, non pris en charge."
+action = "Lisez-le dans l'application prévue pour sa licence, empruntez-le en médiathèque ou achetez une version sans protection. Le fichier reste dans le dossier d'import, intact."
+
+[errors."import.audio_unsupported"]
+title = "Fichier audio refusé : les livres audio ne sont pas encore pris en charge."
+action = "Le fichier reste dans le dossier d'import. Il pourra être importé quand les éditions audio seront disponibles."
+
+[errors."import.unsupported_file"]
+title = "Fichier non reconnu : seuls les CBZ, les EPUB et les PDF sont importés."
+action = "Le type d'un fichier se lit dans son contenu, pas dans son nom. Le fichier reste dans le dossier d'import."
+
+[errors."import.too_large"]
+title = "Fichier trop volumineux pour l'import."
+action = "Le fichier reste dans le dossier d'import. Relevez la limite de réception ou découpez-le."
+
+[errors."import.archive_refused"]
+title = "L'archive n'est pas sûre à ouvrir, ou contient une entrée non autorisée."
+action = "Le fichier reste dans le dossier d'import et n'a pas été rangé."
+
+[errors."import.link_refused"]
+title = "Lien symbolique, lien physique ou point de montage refusé dans le dossier d'import."
+action = "Déposez le fichier lui-même, sans lien, dans le dossier d'import."
+
+[errors."import.unsafe_name"]
+title = "Nom de fichier refusé : caractère de contrôle, « .. », espace ou point final, ou nom trop long."
+action = "Renommez le fichier. Il reste dans le dossier d'import."
+
+[errors."import.name_collision"]
+title = "Deux fichiers ont le même nom une fois normalisé (majuscules ou accents)."
+action = "Renommez l'un d'eux. Les deux restent dans le dossier d'import."
+
+[errors."import.not_ready"]
+title = "Fichier pas encore prêt : il est encore en cours d'écriture ou vient d'être déposé."
+action = "Rien à faire : Shelfhold le relira quand sa taille et sa date n'auront plus bougé."
+
+[errors."import.changed_while_reading"]
+title = "Le fichier a changé pendant sa lecture : il n'a pas été rangé."
+action = "Rien à faire : il sera relu au prochain passage."
+
+[errors."import.hash_mismatch"]
+title = "La copie rangée n'a pas la même empreinte que le fichier d'origine."
+action = "Le fichier reste dans le dossier d'import et n'est pas retiré. Vérifiez le disque puis relancez l'import."
+
+[errors."import.disk_full"]
+title = "Disque plein : le fichier n'a pas pu être rangé."
+action = "Le fichier reste dans le dossier d'import. Libérez de la place puis relancez l'import."
+
+[errors."import.not_stored"]
+title = "Le fichier n'a pas pu être rangé."
+action = "Le fichier reste dans le dossier d'import. Consultez le diagnostic puis relancez l'import."
+
+[errors."import.tombstoned"]
+title = "Ce contenu a été purgé : il n'est pas rangé de nouveau."
+action = "Le fichier reste dans le dossier d'import. Retirez-le vous-même si vous n'en voulez plus."
+
+[errors."import.original_not_kept"]
+title = "Fichier rangé sous sa forme neutralisée seulement : l'original n'est conservé nulle part."
+action = "Le fichier reste dans le dossier d'import, car il serait perdu sinon. Configurez /store pour conserver les originaux."
+
+[errors."content.untrusted_pdf"]
+title = "PDF rangé tel quel, non exporté : sa provenance n'est pas déclarée."
+action = "Un PDF peut contenir du code que lirait le lecteur d'une destination. Déclarez-le comme un achat à l'import pour l'exporter."
