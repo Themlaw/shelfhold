@@ -477,7 +477,7 @@ def _scan_guard(comp: Composition, disks: _Disks, destination_id: str) -> Callab
                 ctx = load_context(connection, destination_id)
             disks.fsops().require_scan_allowed(ctx.path_map.to_local(remote))
         except (RootBlockedError, PathMapError, OSError, LookupError):
-            log.info("export.scan_refused", folder=remote, reason="root_not_ready")
+            log.info("export.scan_refused", destination_id=destination_id, reason="root_not_ready")
             return False
         return True
 

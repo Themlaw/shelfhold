@@ -102,6 +102,17 @@ def read_passphrase_file(path: Path) -> str:
     return text
 
 
+def read_operator_file(path: Path, *, limit: int, what: str) -> tuple[bytes, os.stat_result]:
+    """A file the operator names on the command line (a log for the diagnostic bundle): a
+    regular file, not a link (`O_NOFOLLOW`), never under `/proc`, `/sys` or `/dev`, read up to
+    `limit + 1` bytes from the descriptor that was checked (`fstat`), so the caller sees an
+    oversized file without reading it whole."""
+    if str(path.resolve()).startswith(VIRTUAL_TREES):
+        raise ExportError(f"the {what} is not a file")
+    descriptor, status = _open_regular(path, what, nofollow=True)
+    return _read_bounded(descriptor, limit, what), status
+
+
 def read_export_file(path: Path, *, nofollow: bool = False) -> str:
     """An export file as text, read within a bound: it is encrypted and signed by nobody, so
     nothing about it is trusted before it has been decrypted and parsed."""

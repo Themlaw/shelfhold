@@ -53,7 +53,7 @@ from shelfhold.export.domain.planner import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.logging import debug_enabled, elapsed_ms, escaped
+from shelfhold.infrastructure.logging import debug_enabled, elapsed_ms
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.library.public import (
     ExportSource,
@@ -449,8 +449,7 @@ class ExportPipeline:
                     kind=op.kind,
                     unit_id=op.unit_id,
                     series_id=op.work_id,
-                    rel_path=escaped(op.rel_path),
-                )
+                )  # ULIDs only: the relative path holds the title (EF-BIB-053)
             for blocked in plan.blocked:
                 log.debug("export.plan_blocked", code=blocked.code, unit_id=blocked.unit_id)
 
@@ -547,7 +546,6 @@ class ExportPipeline:
             log.debug(
                 "export.op_done",
                 kind=planned.kind,
-                rel_path=escaped(planned.rel_path),
                 duration_ms=elapsed_ms(started),
                 wrote=folder is not None,
             )

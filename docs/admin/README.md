@@ -30,4 +30,5 @@ Une commande marquée **[M1b]** n'existe pas encore en 0.2 : la page dit ce qu'o
 | Plugins tiers (désactivés par défaut, installation, activation) | [plugins-tiers.md](plugins-tiers.md) |
 | Secrets, notifications, qui possède quel champ | [secrets.md](secrets.md), [notifications.md](notifications.md), [proprietaire-des-champs.md](proprietaire-des-champs.md) |
 | Lire les journaux, régler leur niveau | [journaux.md](journaux.md) |
+| Joindre un paquet de diagnostic à une demande d'aide | [diagnostic.md](diagnostic.md) |
 | Dimensionner la machine | [budget-ram.md](budget-ram.md) |

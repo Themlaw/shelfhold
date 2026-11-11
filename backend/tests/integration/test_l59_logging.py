@@ -157,6 +157,7 @@ def test_context_is_bound_on_every_line_of_a_scope(
     assert series and all(r.get("edition_id") and r.get("series_id") for r in series)
     ops = named(records, "export.op_done")
     assert ops and all(r.get("unit_id") and r.get("edition_id") and r.get("target_id") for r in ops)
+    assert not any("rel_path" in r or "path" in r for r in ops)  # ULIDs only, never the title
 
 
 # -- no noise in nominal operation ------------

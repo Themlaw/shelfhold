@@ -311,10 +311,11 @@ def known_secret_index() -> SecretIndex:
     return index
 
 
-def redact_source_urls(text: str) -> str:
+def redact_source_urls(text: str, replace: Callable[[str], str] | None = None) -> str:
     """Mask every URL in a text (a diagnostic bundle must not name where content comes from,
-    EF-EXP-063 / I33); the rest of the text is left as it is."""
-    return _SOURCE_URL.sub(REDACTED, text)
+    EF-EXP-063 / I33, ENF-LEG-009); the rest of the text is left as it is. `replace` gives the
+    stand-in of a URL (the bundle's `<source-N>`), `***` without it."""
+    return _SOURCE_URL.sub(lambda m: REDACTED if replace is None else replace(m.group()), text)
 
 
 def _scrub_text(text: str) -> str:
