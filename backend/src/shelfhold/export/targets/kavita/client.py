@@ -483,7 +483,7 @@ def _count(value: object) -> int:
 def _is_json(raw: bytes) -> bool:
     try:
         json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):
         return False
     return True
 
@@ -493,7 +493,7 @@ def _decode(raw: bytes, route: routes.Route) -> Any:
         return None
     try:
         return json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):
         raise ProtocolError(f"{route.label} did not answer JSON") from None
 
 

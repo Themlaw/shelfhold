@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -50,8 +51,17 @@ def test_plans_refuse_a_key_with_the_admin_scope_of_a_non_admin(
     assert plans.require_admin(object()) is admin  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("url", ["http://svc.example:0/x", "https://svc.example:0/"])
-def test_fetcher_refuses_port_zero(url: str) -> None:
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://svc.example:0/x",
+        "https://svc.example:0/",
+        "http://svc.example:-1/",
+        "http://svc.example:65536/",
+        "http://svc.example:99999999999999999999/",
+    ],
+)
+def test_fetcher_refuses_a_port_out_of_range(url: str) -> None:
     with pytest.raises(InvalidFetchUrl):
         _parse_url(url)
 
@@ -73,3 +83,30 @@ def test_suwayomi_deeply_nested_answer_is_an_invalid_answer() -> None:
     service = SuwayomiService(BASE_URL)
     with pytest.raises(SourceChanged):
         asyncio.run(service.search(_Deep(), "", {}, None))  # type: ignore[arg-type]
+
+
+_DEEP = b"[" * 200_000 + b"]" * 200_000
+
+
+def test_kavita_deeply_nested_answer_is_a_protocol_error() -> None:
+    from shelfhold.export.targets.kavita import routes
+    from shelfhold.export.targets.kavita.client import ProtocolError, _decode, _is_json
+
+    assert _is_json(_DEEP) is False
+    route = next(iter(vars(routes).values()), None)  # any route: only its label is read
+    del route
+    with pytest.raises(ProtocolError):
+        _decode(_DEEP, type("R", (), {"label": "route"})())  # type: ignore[arg-type]
+
+
+def test_suwayomi_token_endpoint_deeply_nested_answer_is_source_changed() -> None:
+    from shelfhold.plugin_host.adapters.meta.suwayomi.jwt import suwayomi_jwt_fetcher
+
+    fetcher = suwayomi_jwt_fetcher(
+        _Deep(),  # type: ignore[arg-type]
+        {"username": "u", "password": secrets.token_hex(8)},
+        origin=BASE_URL,
+    )
+    with pytest.raises(SourceChanged):
+        asyncio.run(fetcher._token_call("query", "login"))
+    assert fetcher._refused(Response(status=200, body=b"nauthorized" + _DEEP)) is False

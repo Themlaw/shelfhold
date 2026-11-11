@@ -406,8 +406,8 @@ def _parse_url(raw: str) -> httpx2.URL:
         raise InvalidFetchUrl("only absolute http and https URLs are fetched")
     if url.userinfo:
         raise InvalidFetchUrl("credentials in a URL are refused; use an AuthFlow")
-    if url.port == 0:  # `or` would read it as "no port" and fetch on the default one
-        raise InvalidFetchUrl("port 0 is refused")
+    if url.port is not None and not 0 < url.port < 65536:  # `or` would read 0 as "no port"
+        raise InvalidFetchUrl("the port is out of range")
     return url
 
 
