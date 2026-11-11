@@ -34,7 +34,7 @@ Une commande **réservée** exige une session administrateur dont le mot de pass
 moins de 15 minutes, ou la ligne de commande locale ; une clé d'API est refusée
 (`credential-not-allowed`). Voir [durcir.md](durcir.md) pour la fraîcheur.
 
-## Les états de la version 0.2
+## Les états
 
 | État | Ce qui s'est passé | Commande de sortie | Réservée |
 | --- | --- | --- | --- |
@@ -56,6 +56,11 @@ moins de 15 minutes, ou la ligne de commande locale ; une clé d'API est refusé
 | `language_unknown` | Une Édition adoptée n'a pas de langue | `shelfhold edition set-lang <édition> <langue>` (ex. `fr`, `ja`, `pt-BR`) | non |
 | `series_name_collision` | Le nom de série d'une Édition est déjà pris dans la bibliothèque Kavita (par exemple deux Œuvres du même titre, `en` et `fr`) : rien n'est exporté pour elle, ni écrasé | `shelfhold edition set-series-name <édition> "<nom>"` (API : `POST /api/v1/editions/{id}/series-name`) | non |
 | `mount_sentinel_missing` | La sentinelle `.shelfhold-mount-id` d'une racine manque ou n'est pas la bonne (volume non monté, disque vide) : écritures et scans bloqués | montez le bon volume, puis `shelfhold target recheck <cible>` | non |
+| `rating_pending` | Une Œuvre a une Édition non classée : elle est retenue, ou attend sur une étagère famille (affiché seulement quand une étagère famille existe) | `shelfhold rate <âge> --work <id>` (toutes d'un coup : `rate <âge> --pending`), voir [a-classer.md](a-classer.md) | oui (admin ; mot de passe récent seulement en profil durci) |
+| `follow_suspended` | Une Œuvre adoptée n'est pas suivie tant qu'elle n'est pas classée | idem : `shelfhold rate <âge> --work <id>` | oui (idem) |
+| `withdrawal_pending` | Un fichier attend de quitter une étagère famille (classement relevé, ou un export tenait le verrou) | `shelfhold shelf withdraw`, puis `--apply --confirm <version>` ; jamais automatique | oui |
+| `safeguard_backlog` | La mise à l'abri n'a pas tout copié dans son quota (200 Unités, 5 Gio, place de `/store`) | rien à faire : elle se résorbe de nuit en nuit ; `shelfhold jobs list` ; libérez de la place dans `/store` si elle dure | non |
+| `tombstone_lines_owed` | Une racine démontée doit encore des lignes à son journal de pierres tombales ; aucune écriture vers elle | remontez la racine, puis `shelfhold tombstone flush` | non |
 | `restored_behind` | La base est en retard sur les fichiers : lecture seule | `shelfhold reconcile --adopt-after-restore`, voir [restauration.md](restauration.md) | seule la suppression confirmée |
 | `restored_credentials` | Une restauration a révoqué toutes les sessions et clés d'API ; la connexion par passkey est suspendue ; mots de passe possiblement revenus à l'état de la sauvegarde | revoyez les passkeys, puis `shelfhold restore acknowledge` (CLI de l'hôte uniquement ; liste les passkeys changées) (la route API refuse toute session ou clé), voir [sauvegarde.md](sauvegarde.md) | oui |
 | `tombstone_key_unknown` | Un journal de pierres tombales est chiffré par une clé absente du trousseau | `shelfhold secrets import --passphrase-file <fichier> --in <export>` (voir [secrets.md](secrets.md)), ou remettre le fichier de trousseau d'origine à sa place ; en dernier recours `shelfhold tombstone accept-lost-keyring --confirm "the keyring is lost"` | oui |
@@ -72,7 +77,7 @@ Notes :
 - `tombstone accept-lost-keyring` lève le blocage de réacquisition pour les clés manquantes **d'aujourd'hui**
   seulement ; une clé perdue plus tard n'est pas pardonnée d'avance. La phrase de confirmation se tape à l'identique, en anglais ; pendant `restored_behind` elle est plus longue et énonce le coût (voir [secrets.md](secrets.md)).
 - Les quatre états des racines sont détectés racine par racine, au démarrage et à chaque écriture
-  refusée, et listés par `shelfhold status` (la notation et la mise à l'abri arrivent avec M1b).
+  refusée, et listés par `shelfhold status`.
   Aucune de ces commandes ne supprime un fichier, et aucune ne touche à `.shelfhold/` autrement
   qu'en y ajoutant (voir [sinistre-sans-sauvegarde.md](sinistre-sans-sauvegarde.md) et
   [topologie-racines-physiques.md](topologie-racines-physiques.md)).

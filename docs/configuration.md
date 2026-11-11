@@ -32,6 +32,12 @@ s'il est lisible par tous.
 | `SHELFHOLD_ALLOW_NETWORK_DATA_DIR` | `false` | `/data` sur NFS, CIFS/SMB, 9p, Ceph, AFS ou `fuse.sshfs` est refusé au démarrage (détection `statfs`, `/proc/self/mountinfo` pour FUSE) : SQLite et le `flock` d'instance exigent un disque local (ENF-OPS-010). À `true`, le démarrage continue avec un avertissement, repris par `shelfhold status`, à vos risques (base corrompue, deux instances). `/store` et `/library` peuvent être en réseau (leur sentinelle les garde). Si `statfs` échoue, un avertissement est journalisé et rien n'est refusé |
 | `SHELFHOLD_DISK_PAUSE_PERCENT` / `SHELFHOLD_DISK_PAUSE_GIB` | `5` / `10` | Garde disque (ENF-OPS-006) : sous `max(pourcentage, Gio)` libres sur `/data`, `/store` ou une racine de la bibliothèque, les files d'écriture sont mises en pause (`disk.low`, aucune suppression) |
 | `SHELFHOLD_DISK_RESUME_PERCENT` / `SHELFHOLD_DISK_RESUME_GIB` | `8` / `15` | Reprise au-dessus de `max(pourcentage, Gio)` ; doivent être strictement supérieurs aux seuils de pause |
+| `SHELFHOLD_BACKUP_DIR` | aucun | Dossier de la sauvegarde intégrée, hors de `/data` et de `/store` ; sans lui, aucune sauvegarde (`docs/admin/sauvegarde.md`) |
+| `SHELFHOLD_BACKUP_PASSPHRASE_FILE` | aucun | Fichier (droits 0600, 12 caractères au moins) qui contient la phrase de passe des sauvegardes ; variable seule |
+| `SHELFHOLD_BACKUP_RETENTION` / `SHELFHOLD_BACKUP_STALE_HOURS` | `14` / `36` | Nombre de sauvegardes gardées (1 à 30) ; âge au-delà duquel `backup.stale` et un avertissement de `status` apparaissent |
+| `SHELFHOLD_WAKE_URL`, `_WAKE_SUWAYOMI`, `_WAKE_KAVITA`, `_WAKE_TIMEOUT_S`, `_WAKE_SESSION_S`, `_WAKE_TOKEN` | aucun (60 s, 300 s) | Réveil à la demande par Sablier (`docs/admin/reveil-sablier.md`) |
+| `SHELFHOLD_MAINTENANCE_WINDOW_START` / `_END` / `SHELFHOLD_TIMEZONE` | `03:00` / `07:00` / `Europe/Paris` | Fenêtre de maintenance ; elle peut traverser minuit, et la changer replanifie les tâches de fenêtre |
+| `SHELFHOLD_RETENTION_EVENTS_DAYS` / `SHELFHOLD_RETENTION_AUDIT_DAYS` | `90` / `365` | Rétention des événements et tâches terminés (7 à 3650 jours), de l'audit (90 à 3650) ; la corbeille garde 30 jours, non réglable |
 
 ## Valeurs par défaut sans réglage (M1a)
 

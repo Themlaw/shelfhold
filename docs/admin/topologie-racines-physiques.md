@@ -60,16 +60,22 @@ vérifiée par empreinte, avec intention journalisée, puis suppression de l'anc
 Une sentinelle plus récente que la base : [restauration.md](restauration.md) (`restored_behind`).
 Une sentinelle d'une **autre instance** (`foreign_root`), un disque remplacé par un disque vide
 (`root_lost`) ou une racine restaurée par l'hôte, plus vieille que la base (`root_behind`) :
-sorties `shelfhold root takeover`, `root reinit` et `root restored` **[M1b]**. `takeover`
+sorties `shelfhold root takeover`, `root reinit` et `root restored`. `takeover`
 ré-estampille la sentinelle en gardant la liste des identifiants prédécesseurs ; `reinit` passe les
-éléments en `missing` sans rien supprimer ; aucune ne touche à `.shelfhold/`. Ce sont des actions
-réservées. En M1a, un tel état se lit dans `shelfhold status` et l'écriture vers la racine reste
-bloquée.
+éléments en `missing` sans rien supprimer et ne réexporte rien ; `restored` replanifie ce qui manque par le
+pipeline habituel (barrière parentale comprise). Aucune ne supprime un fichier ni ne touche à `.shelfhold/`
+autrement qu'en y ajoutant ; `takeover` et `reinit` sont des actions réservées. La sentinelle ne recule jamais.
+Seule `root_lost` se lève d'elle-même quand la sentinelle revient ; les autres attendent leur commande.
+`<racine>` est l'identifiant que montre `shelfhold status`, ou le chemin absolu du dossier.
 
-Le même principe vaut pour `/store` (`shelfhold store reinit`, M1b).
+Le même principe vaut pour `/store` : `shelfhold store reinit` estampille `/store` et passe en
+`store_missing` les chapitres dont la copie conservée y était. Après un déplacement de disques (rsync,
+dates conservées), `shelfhold reconcile --rebaseline-inodes` remet à jour les numéros d'inode des fichiers
+dont la taille, la date et l'empreinte concordent avec le miroir de provenance ; il refuse tout si une
+empreinte diffère.
 
 ## Remarque sur NFS et disques durs
 
 Les racines peuvent être en réseau ou sur disque dur. Le bail et l'écriture n'ont lieu que pendant
 une session d'écriture, et les tâches périodiques lourdes sont regroupées dans la fenêtre de
-maintenance (03:00 à 07:00 par défaut, fixe en M1a), pour laisser les disques se mettre en veille.
+maintenance (03:00 à 07:00 par défaut, `Europe/Paris` ; réglable par `SHELFHOLD_MAINTENANCE_WINDOW_START`, `_END` et `SHELFHOLD_TIMEZONE`), pour laisser les disques se mettre en veille.

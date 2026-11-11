@@ -17,7 +17,8 @@ les routes sont dans [headless.md](headless.md).
 ## Pas à pas
 
 1. **Récupérer le compose** : [`compose.yaml`](../../compose.yaml) du dépôt. Il épingle l'image sur
-   la ligne `0.2`, qui n'existe qu'à la publication de la 0.2.0 : d'ici là, remplacez-la par `edge`.
+   une ligne `X.Y` (`0.2` aujourd'hui, `0.3` à la publication de la 0.3.0 : tant qu'elle n'existe pas,
+   gardez `0.2` ou prenez `edge`).
    Ajoutez le montage de la bibliothèque (par exemple `/srv/media/manga:/library/manga`, le même
    dossier que celui de Kavita) : le compose fourni ne monte que `/data` et `/store`.
 2. **Préparer les dossiers** :

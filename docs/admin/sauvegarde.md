@@ -146,7 +146,7 @@ serait sinon de nouveau valide.
 sur la machine hôte, avec la CLI locale (socket ops locale),
 
 ```sh
-shelfhold admin reset-password <compte>   # pour chaque compte, si les mots de passe n'ont pas été reportés
+shelfhold admin reset-password --username <compte> --password-file <fichier>   # pour chaque compte, si les mots de passe n'ont pas été reportés
 shelfhold status                          # liste `restored_credentials`, les passkeys et comptes concernés
 shelfhold restore acknowledge             # CLI de l'hôte uniquement ; après `restore adopt` si la restauration a aussi gelé des racines : ni session, ni clé, jamais via HTTP
 ```

@@ -115,7 +115,9 @@ KEYS: Final = {
                   "is deduced from the locale (EF-SRC-024).", _jurisdiction,
                   default_doc="déduit de la langue du système"),
         ConfigKey("maintenance.window", MAINTENANCE_WINDOW,
-                  "The fixed maintenance window (ENF-OPS-014); read only in M1a.", readonly=True),
+                  "The default maintenance window (ENF-OPS-014), read only here: it is set by "
+                  "SHELFHOLD_MAINTENANCE_WINDOW_START, _END and SHELFHOLD_TIMEZONE.",
+                  readonly=True),
         ConfigKey("notify.urls", [], "Notification channels, name=url; the URL is sealed.",
                   secret=True),
     )

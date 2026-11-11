@@ -29,7 +29,7 @@ partie publique de la clé.
 - **Révoquer** : bouton sur la même page. On ne peut pas retirer son **dernier moyen de connexion** :
   sans mot de passe, la dernière clé reste.
 
-En profil durci (`durcir.md`), enregistrer ou révoquer une clé demande une authentification récente (15 min), comme les autres actions réservées. Révoquer une clé ferme aussi les sessions qu'elle a ouvertes.
+**Enregistrer** une clé demande une authentification récente (900 s par défaut), dans tous les profils : une session volée ne peut pas ajouter une passkey qui survivrait à la révocation des sessions. En profil durci ([durcir.md](durcir.md)), **révoquer** une clé la demande aussi. Révoquer une clé ferme aussi les sessions qu'elle a ouvertes.
 
 ## Perdre un appareil, oublier son mot de passe
 
