@@ -1,4 +1,5 @@
-"""Catalog: codes of the attach by external identifier (EF-BIB-003, EF-BIB-037, L12)."""
+"""Catalog: codes of the attach by external identifier (EF-BIB-003, EF-BIB-037, L12) and of the
+merge of Editions (EF-BIB-049, L14)."""
 
 from shelfhold.error_catalog import ErrorCode
 
@@ -13,4 +14,6 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("unit.revision_suspect", 409, "admin", event=True),
     # EF-BIB-043: the "to rewrite" queue is confirmed by batch, with the token `revisions list` gave
     ErrorCode("revisions.confirmation_required", 409, "admin"),
+    # a merge of Editions that a tombstone, another Work or a dependent row stops (EF-BIB-049)
+    ErrorCode("edition.merge_refused", 409, "admin"),
 )

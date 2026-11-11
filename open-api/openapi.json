@@ -9093,6 +9093,10 @@
       "code": "edition.auto_attached",
       "status": 409
     },
+    "/api/v1/problems/edition.merge-refused": {
+      "code": "edition.merge_refused",
+      "status": 409
+    },
     "/api/v1/problems/export.age-tier-mix": {
       "code": "export.age_tier_mix",
       "status": 409

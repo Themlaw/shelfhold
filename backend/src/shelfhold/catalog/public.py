@@ -61,6 +61,16 @@ from shelfhold.catalog.application.fields import (
     unlock_field,
 )
 from shelfhold.catalog.application.ingest import UnsupportedFileError, announced_kind
+from shelfhold.catalog.application.merge import (
+    EDITION_KEY,
+    EditionMerged,
+    EditionMergePlan,
+    EditionMergeRefusedError,
+    StaleMergePlanError,
+    apply_edition_merge,
+    plan_after_contributor_merge,
+    plan_edition_merge,
+)
 from shelfhold.catalog.application.new_edition_gate import Filing, file_new_edition
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.ports import StoredVariant
@@ -99,6 +109,11 @@ from shelfhold.catalog.application.revisions import (
 from shelfhold.catalog.application.rights import Rights, RightsReport
 from shelfhold.catalog.application.series import SeriesAlreadyAttachedError
 from shelfhold.catalog.application.service import CatalogService
+from shelfhold.catalog.application.tombstone_screen import (
+    MergedPlace,
+    TombstoneScreen,
+    TombstoneScreenMissingError,
+)
 from shelfhold.catalog.domain.age import (
     Admission,
     EditionAge,
@@ -316,6 +331,7 @@ __all__ = [
     "AUTO_ATTACHED",
     "BOOK_KINDS",
     "DEFAULT_MIN_PAGE_RATIO",
+    "EDITION_KEY",
     "LANG_NORMALIZER_ID",
     "TEXT_VERSION_LABELS",
     "WRITER",
@@ -334,6 +350,9 @@ __all__ = [
     "Detached",
     "Discriminant",
     "EditionAge",
+    "EditionMergePlan",
+    "EditionMergeRefusedError",
+    "EditionMerged",
     "EditionRef",
     "EditionSpec",
     "EditionSuggestion",
@@ -354,6 +373,7 @@ __all__ = [
     "LanguageError",
     "ListedUnit",
     "MetadataPusher",
+    "MergedPlace",
     "NameKind",
     "NoPersonFieldName",
     "NormalizerId",
@@ -377,17 +397,21 @@ __all__ = [
     "RightsReport",
     "RightsService",
     "SeriesAlreadyAttachedError",
+    "StaleMergePlanError",
     "StoredExternalId",
     "TeamRef",
     "TextVersionRef",
     "UnknownTargetError",
     "UnsupportedFileError",
+    "TombstoneScreen",
+    "TombstoneScreenMissingError",
     "VariantFacts",
     "Verdict",
     "Withdrawal",
     "add_external_id",
     "admission",
     "announced_kind",
+    "apply_edition_merge",
     "ceiling_of",
     "content_warning_age",
     "default_registry",
@@ -409,6 +433,8 @@ __all__ = [
     "person_field_name",
     "place_key",
     "place_parts",
+    "plan_after_contributor_merge",
+    "plan_edition_merge",
     "propose_fields",
     "relate_works",
     "relations_of",

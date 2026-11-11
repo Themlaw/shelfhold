@@ -56,6 +56,10 @@ from shelfhold.catalog.application.fields import (
 )
 from shelfhold.catalog.application.new_edition_gate import Filing, file_new_edition
 from shelfhold.catalog.application.rating import RatingService, Withdrawal
+from shelfhold.catalog.application.tombstone_screen import (
+    TombstoneScreen,
+    TombstoneScreenMissingError,
+)
 from shelfhold.catalog.domain.age import Admission
 from shelfhold.catalog.domain.external_ids import (
     ExternalId,
@@ -238,7 +242,9 @@ class AutoAttachService:
         events: EventPublisher | None = None,
         rating: RatingService | None = None,
         fresh_auth_s: int = 900,
+        tombstones: TombstoneScreen | None = None,
     ) -> None:
+        self._tombstones = tombstones
         self._events = events
         self._rating = rating or RatingService(fresh_auth_s=fresh_auth_s)
         self._fresh_auth_s = fresh_auth_s
@@ -248,6 +254,8 @@ class AutoAttachService:
         self, connection: Connection, incoming: IncomingEdition, *, now: datetime
     ) -> Arrival:
         edition_id = incoming.edition_id
+        if self._tombstones is None:  # fail closed: a purged Work must not come back by here
+            raise TombstoneScreenMissingError("an arrival is screened by the Work tombstones")
         from_work = _work_of(connection, edition_id)
         # The gate first: whatever follows, a shelf below 18+ does not take it unrated.
         filing = file_new_edition(connection, edition_id, incoming.shelf_id, rating=self._rating)
@@ -273,6 +281,14 @@ class AutoAttachService:
                 conflicts.append("unsupported_entity")
         own = [p for p in incoming.fields if p.entity_type == "edition"]
         work_fields = tuple(p for p in incoming.fields if p.entity_type == "work")
+        if work_ids and self._tombstones.work_ids(work_ids):
+            # A purged Work (or a merged one) does not come back by an identifier it carried:
+            # no identifier is recorded for the Work, no attach, nothing of its fields (L14).
+            propose_fields(
+                connection, {"edition": edition_id}, own, now=now, origin=incoming.origin
+            )
+            conflicts.append("tombstoned")
+            return Arrival(edition_id, from_work, "conflict", filing, conflicts=tuple(conflicts))
         propose_fields(connection, {"edition": edition_id}, own, now=now, origin=incoming.origin)
 
         held = {e: holder_of(connection, e) for e in work_ids}
@@ -344,6 +360,12 @@ class AutoAttachService:
             raise AttachRefusedError(f"not a suggestion: {row.state}")
         if _work_of(connection, row.edition_id) != row.from_work_id:
             raise AttachRefusedError("stale: the Edition moved since the suggestion")
+        if not _exists(connection, row.to_work_id):
+            raise AttachRefusedError("stale: the Work no longer exists")
+        if self._tombstones is None:
+            raise TombstoneScreenMissingError("a suggestion is screened by the Work tombstones")
+        if self._tombstones.work_ids([ExternalId("work", row.provider, row.value)]):
+            raise AttachRefusedError("tombstoned: the identifier was purged since the suggestion")
         savepoint = connection.begin_nested()
         try:
             _carry(connection, row.edition_id, row.from_work_id, now=row.created_at)

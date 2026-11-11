@@ -11,7 +11,7 @@ from typing import Any
 
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli._ops import ops_command
-from shelfhold.interfaces.local_cli import OpsChannel
+from shelfhold.interfaces.local_cli import OpsChannel, OpsRefusal
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -45,6 +45,21 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     )
     decline.add_argument("attach_id")
     decline.set_defaults(handler=run_attach_decline, configure_logging=False)
+    merge = actions.add_parser("merge", help=t("ops.help_edition_merge"), allow_abbrev=False)
+    merge.add_argument("keep", help=t("ops.help_edition_merge_keep"))
+    merge.add_argument("drop", help=t("ops.help_edition_merge_drop"))
+    mode = merge.add_mutually_exclusive_group()
+    mode.add_argument("--plan", action="store_true", help=t("ops.help_edition_merge_plan"))
+    mode.add_argument(
+        "--apply", metavar="FINGERPRINT", default=None, help=t("ops.help_edition_merge_apply")
+    )
+    merge.set_defaults(handler=run_merge, configure_logging=False)
+    proposals = actions.add_parser(
+        "merge-proposals", help=t("ops.help_edition_merge_proposals"), allow_abbrev=False
+    )
+    proposals.add_argument("keep", help=t("ops.help_edition_merge_contributor_keep"))
+    proposals.add_argument("drop", help=t("ops.help_edition_merge_contributor_drop"))
+    proposals.set_defaults(handler=run_merge_proposals, configure_logging=False)
 
 
 @ops_command
@@ -114,4 +129,54 @@ def run_attach_confirm(args: argparse.Namespace, channel: OpsChannel) -> int:
 def run_attach_decline(args: argparse.Namespace, channel: OpsChannel) -> int:
     channel.call("ops.attach_decline", attach_id=args.attach_id)
     print(t("ops.attach_declined", attach=args.attach_id))
+    return 0
+
+
+STALE_PLAN = 4
+
+
+def _print_merge(done: dict[str, Any]) -> None:
+    print(t("ops.merge_header", keep=done["keep_id"], drop=done["drop_id"],
+            units=len(done["units"]), volumes=len(done["volumes"]),
+            bindings=len(done["bindings"])))  # fmt: skip
+    print(t("ops.merge_age", keep=done["keep_age"] or "-", drop=done["drop_age"] or "-",
+            merged=done["merged_age"] or "-"))  # fmt: skip
+    if done["unrated_after"]:
+        print(t("ops.merge_unrated"))
+    for reason in done["blockers"]:
+        print(t("ops.merge_blocker", reason=reason))
+    if done["tombstoned_units"]:
+        print(t("ops.merge_tombstoned_units", count=done["tombstoned_units"]))
+    if done["tombstoned_ids"]:
+        print(t("ops.merge_tombstoned_ids", count=done["tombstoned_ids"]))
+
+
+@ops_command
+def run_merge(args: argparse.Namespace, channel: OpsChannel) -> int:
+    try:
+        done = channel.call("ops.edition_merge", keep=args.keep, drop=args.drop, confirm=args.apply)
+    except OpsRefusal as refusal:
+        if refusal.code != "ops.preview_stale":
+            raise
+        print(t("ops.merge_plan_stale"), file=sys.stderr)
+        return STALE_PLAN
+    _print_merge(done)
+    if done["applied"]:
+        print(t("ops.merge_applied", keep=done["keep_id"], drop=done["drop_id"]))
+    elif done["mergeable"]:
+        print(t("ops.merge_fingerprint", fingerprint=done["fingerprint"]))
+    else:
+        print(t("ops.merge_not_mergeable"), file=sys.stderr)
+        return 1
+    return 0
+
+
+@ops_command
+def run_merge_proposals(args: argparse.Namespace, channel: OpsChannel) -> int:
+    plans = channel.call("ops.edition_merge_proposals", keep=args.keep, drop=args.drop)
+    if not plans:
+        print(t("ops.merge_proposals_none"))
+    for done in plans:
+        _print_merge(done)
+        print(t("ops.merge_proposed", keep=done["keep_id"], drop=done["drop_id"]))
     return 0

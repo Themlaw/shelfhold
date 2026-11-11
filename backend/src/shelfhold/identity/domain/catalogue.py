@@ -57,6 +57,9 @@ _DECLARED = (
     _action("revisions.force", Effect.REWRITES_EXPORTED_FILES),
     # Identity keys
     _action("normalize.migrate", Effect.MIGRATES_IDENTITY),  # EF-BIB-054, ENF-OPS-021
+    # `edition merge`: one Edition takes the Units of another (EF-BIB-049); it also decides the
+    # age and the filing of what it takes, so it is a parental decision too
+    _action("edition.merge", Effect.MIGRATES_IDENTITY, Effect.PARENTAL_CONTROL),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),

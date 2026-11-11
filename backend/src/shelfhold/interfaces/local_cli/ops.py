@@ -449,6 +449,16 @@ def _attach_decline(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.attach.decline(_text(p, "attach_id"), principal=by)
 
 
+def _edition_merge(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.edition_merge.merge(
+        _text(p, "keep"), _text(p, "drop"), confirm=_optional(p, "confirm"), principal=by
+    )
+
+
+def _edition_merge_proposals(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.edition_merge.proposals(_text(p, "keep"), _text(p, "drop"), principal=by)
+
+
 def _rate_pending(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.rating.pending(_text(p, "age"))
 
@@ -538,6 +548,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.attach_plan": (_attach_plan, None),
     "ops.attach_confirm": (_attach_confirm, "rate"),
     "ops.attach_decline": (_attach_decline, None),
+    "ops.edition_merge": (_edition_merge, "edition.merge"),
+    "ops.edition_merge_proposals": (_edition_merge_proposals, "edition.merge"),
     "ops.root_takeover": (_root_takeover, "root.takeover"),
     "ops.root_reinit": (_root_reinit, "root.reinit"),
     "ops.root_restored": (_root_restored, None),

@@ -194,6 +194,7 @@ from shelfhold.library.tombstones import (
     WorkRef,
     normalizers_of,
 )
+from shelfhold.library.tombstones.screen import CatalogScreenAdapter
 
 __all__ = [
     "CONFIRMATION_CODE",
@@ -219,6 +220,7 @@ __all__ = [
     "Batch",
     "BinnedFile",
     "Candidate",
+    "CatalogScreenAdapter",
     "ConfirmationRequiredError",
     "ContentErrorCandidate",
     "ContentHash",
