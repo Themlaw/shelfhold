@@ -14,7 +14,6 @@ from shelfhold.catalog.application.dto import (
     EditionRef,
     EditionSpec,
     IncomingUnit,
-    UnitView,
 )
 from shelfhold.catalog.application.ports import StoredVariant
 from shelfhold.catalog.domain.identity import sort_title
@@ -29,21 +28,10 @@ from shelfhold.catalog.lang import LANG_NORMALIZER_ID, variant_lang
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
 
-_TRACK_RANK = {track: rank for rank, track in enumerate(catalog.UNIT_TRACKS)}
-
 
 class SqlWorkStore:
     def __init__(self, connection: sa.Connection) -> None:
         self._c = connection
-
-    def insert_series(self, title: str) -> str:
-        series_id = new_ulid()
-        self._c.execute(
-            sa.insert(catalog.series).values(
-                id=series_id, title=title, sort_title=sort_title(title)
-            )
-        )
-        return series_id
 
     def insert_work(self, kind: str, title: str, series_id: str | None, position: str) -> str:
         work_id = new_ulid()
@@ -73,11 +61,6 @@ class SqlWorkStore:
                 series_id=series_id, work_id=work_id, position=position
             )
         )
-
-    def insert_contributor(self, name: str) -> str:
-        contributor_id = new_ulid()
-        self._c.execute(sa.insert(catalog.contributor).values(id=contributor_id, primary_name=name))
-        return contributor_id
 
 
 class SqlContributorStore:
@@ -481,51 +464,11 @@ class SqlUnitStore:
         )
         return suggestion_id
 
-    def mark_removed(self, variant_id: str, at: datetime) -> None:
-        v = catalog.unit_variant
-        self._c.execute(
-            sa.update(v)
-            .where(v.c.id == variant_id, v.c.removed_at.is_(None))
-            .values(removed_at=at, preferred=False)  # a removed Variant is no longer exported
-        )
-
     def set_preferred(self, unit_id: str, variant_id: str | None) -> None:
         v = catalog.unit_variant
         self._c.execute(sa.update(v).where(v.c.unit_id == unit_id).values(preferred=False))
         if variant_id is not None:
             self._c.execute(sa.update(v).where(v.c.id == variant_id).values(preferred=True))
-
-    def units_in_order(self, edition_id: str) -> list[UnitView]:
-        u = catalog.unit.c
-        rows = self._c.execute(
-            sa.select(
-                u.id,
-                u.number_raw,
-                u.number_norm,
-                u.track,
-                u.number_segment,
-                u.part,
-                u.source_order,
-                u.number_segment_ordinal,
-            ).where(u.edition_id == edition_id)
-        ).all()
-        ordered = sorted(
-            rows,
-            key=lambda r: (
-                _TRACK_RANK[r.track],
-                r.number_segment_ordinal,
-                Decimal(r.number_norm or "0"),
-                int(r.part or 1),
-                r.source_order,
-                r.id,
-            ),
-        )
-        return [
-            UnitView(
-                r.id, r.number_raw, r.number_norm, r.track, r.number_segment, r.part, r.source_order
-            )
-            for r in ordered
-        ]
 
     def numbers(self, edition_id: str) -> list[tuple[str, str, int, Decimal]]:
         """Numbered Units as `(id, segment, segment ordinal, number)`, from the stored keys."""
@@ -538,14 +481,3 @@ class SqlUnitStore:
         return [
             (r.id, r.number_segment, r.number_segment_ordinal, Decimal(r.number_norm)) for r in rows
         ]
-
-    def irreplaceable(self, edition_id: str) -> list[str]:
-        """Units whose every Variant is removed: the candidates EF-BIB-042 must not invent."""
-        u, v = catalog.unit.c, catalog.unit_variant.c
-        live = sa.exists().where(v.unit_id == u.id, v.removed_at.is_(None))
-        any_variant = sa.exists().where(v.unit_id == u.id)
-        return list(
-            self._c.execute(
-                sa.select(u.id).where(u.edition_id == edition_id, any_variant, ~live).order_by(u.id)
-            ).scalars()
-        )

@@ -3,7 +3,7 @@
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.catalog.public import Catalog, SeriesAlreadyAttachedError
+from shelfhold.catalog.public import SeriesAlreadyAttachedError
 from shelfhold.export.application.export_items import (
     FrozenSeriesError,
     reassign_edition_series,
@@ -13,6 +13,7 @@ from shelfhold.export.domain.planner import SeriesRef
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from tests.export_env import ExportEnv, Series, export_env
+from tests.support.catalog import SupportCatalog
 
 GROUP = {"series": "01JSERIES0000000000000CYCLE"}
 
@@ -28,7 +29,7 @@ def tables(env: ExportEnv) -> dict[str, list[tuple[object, ...]]]:
 
 def attach(env: ExportEnv, title: str, members: list[Series]) -> str:
     with env.engine.begin() as connection:
-        books = Catalog(connection)
+        books = SupportCatalog(connection)
         series_id = books.create_series(title)
         for position, member in enumerate(members, 1):
             books.attach_to_series(series_id, member.work_id, str(position))
@@ -143,7 +144,7 @@ def test_a_work_belongs_to_one_series_at_most() -> None:
         lone = env.new_series("Album 1")
         first = attach(env, "Le Cycle", [lone])
         with env.engine.begin() as connection:
-            books = Catalog(connection)
+            books = SupportCatalog(connection)
             other = books.create_series("Autre")
             with pytest.raises(SeriesAlreadyAttachedError):
                 books.attach_to_series(other, lone.work_id, "1")

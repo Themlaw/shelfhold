@@ -23,3 +23,10 @@ Le développement est fait par des agents d'IA orchestrés par le mainteneur. Le
 | M4 | | | | | | |
 | M5 | | | | | | |
 | M6 | | | | | | |
+
+## Dette de code mesurée
+
+| Lot | Mesure | Valeur |
+|---|---|---|
+| M1b L31 (objection 15) | lignes de `backend/src` (hors tests), delta net | environ -255 (20 ajoutées, 274 supprimées) ; les aides déplacées vivent dans `backend/tests/support/` |
+| M1b L31 | entrées de `production-reachability-allowlist.toml` | 47 symboles « until M1b L31 » et 5 « until M1b L20/L24/L25 » retirés ; 31 symboles regroupés par raison et par jalon (M2, M3, M4) |

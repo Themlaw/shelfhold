@@ -8,7 +8,6 @@ from sqlalchemy import exc
 
 from shelfhold.catalog.adapters.tx import run_immediate
 from shelfhold.catalog.public import (
-    Catalog,
     Discriminant,
     EditionSpec,
     IncomingUnit,
@@ -21,6 +20,7 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import storage
 from tests.catalog_env import Harness, at, database, harness
+from tests.support.catalog import SupportCatalog
 
 
 def unit(binding, remote: str, raw: str | None, minute: int = 0, **kw) -> IncomingUnit:  # type: ignore[no-untyped-def]
@@ -335,7 +335,7 @@ def test_concurrent_ingests_of_one_release_make_one_variant() -> None:
     with database() as path:
         engine = create_db_engine(path)
         with engine.begin() as connection:
-            h = Harness(connection, Catalog(connection))
+            h = Harness(connection, SupportCatalog(connection))
             binding = h.binding(h.edition())
         item = unit(binding, "race", "5", 0, team_label="Alpha")
         outcomes: list[IngestOutcome] = []

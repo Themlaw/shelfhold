@@ -64,7 +64,7 @@ def test_one_huey_instance_per_pool(pools: JobPools, tmp_path: Path) -> None:
 
 @pytest.mark.req("EF-INT-003")
 def test_a_single_periodic_task_scans_the_schedule(pools: JobPools, clock: ManualClock) -> None:
-    assert pools.periodic_tasks() == [("io", "tick")]
+    assert [t.name for t in pools.huey("io")._registry.periodic_tasks] == ["tick"]
     (periodic,) = pools.huey("io")._registry.periodic_tasks
     for minute in (0, 1, 31, 59):
         assert periodic.validate_datetime(datetime(2026, 11, 4, 12, minute, tzinfo=UTC))

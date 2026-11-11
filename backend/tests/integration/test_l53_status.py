@@ -176,12 +176,19 @@ def test_status_lists_tombstoned_upstream_series(
 
 
 @pytest.mark.req("EF-EXP-059")
+@pytest.mark.parametrize("cloned", [True, False])
 def test_status_shows_per_root_reflink_and_hardlink_capabilities(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     settings: Settings,
     tmp_path: Path,
+    cloned: bool,
 ) -> None:
+    import shelfhold.infrastructure.fsops.capabilities as capabilities
+
+    # The reflink answer is the file system's (some machines answer "unknown", `None`): the probe
+    # is injected so the test proves what `status` makes of each answer, on any machine.
+    monkeypatch.setattr(capabilities, "_reflink", lambda _root, _made: cloned)
     with instance(settings, tmp_path) as inst:
         inst.configure()
         end(boot_runtime(inst))  # the probes run at the start of the server
@@ -189,7 +196,7 @@ def test_status_shows_per_root_reflink_and_hardlink_capabilities(
         by_root = {c["root"]: c for c in report["capabilities"]}
         assert str(inst.library) in by_root
         caps = by_root[str(inst.library)]
-        assert caps["reflink"] in (True, False)
+        assert caps["reflink"] is cloned
         assert caps["hardlink_store"] in ("yes", "no")  # /store is mounted here
         assert caps["inodes_stable"] is True
         assert caps["copy_fallback"] == (not caps["reflink"] and caps["hardlink_store"] != "yes")

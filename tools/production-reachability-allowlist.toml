@@ -39,9 +39,11 @@ symbols = [
 
 [[allow]]
 category = "unwired-m3-deletion-of-copies"
-reason = "Deletion of the copies of a Unit needs the typed confirmation (EF-BIB-031): there is still no path that deletes the copies of a Unit (the deletions that exist go through the purge gate and the typed replay confirmation, proved on their real routes). L16 reads the irreplaceable candidates but deletes only the upstream download, after the verification of the copy in /store and of the one Kavita reads, never a copy Shelfhold holds, so nothing in it asks for this confirmation; the deletion of the copies of a Unit by an admin comes with the library screens."
+reason = "Deletion of the copies of a Unit needs the typed confirmation (EF-BIB-031): there is still no path that deletes the copies of a Unit (the deletions that exist go through the purge gate and the typed replay confirmation, proved on their real routes). L16 reads the irreplaceable candidates but deletes only the upstream download, after the verification of the copy in /store and of the one Kavita reads, never a copy Shelfhold holds, so nothing in it asks for this confirmation; `safe_to_clean` (the recycle bin check) and `Fsops.require_delete_allowed` (the pre-check of a delete) are the guards of that same deletion, called by no production delete until then; the deletion of the copies of a Unit by an admin comes with the library screens."
 until = "M3"
 symbols = [
+  "shelfhold.library.adapters.units:safe_to_clean",
+  "shelfhold.infrastructure.fsops.facade:Fsops.require_delete_allowed",
   "shelfhold.library.adapters.units:DeletionRefusedError",
   "shelfhold.library.adapters.units:require_deletion_allowed",
   "shelfhold.library.domain.irreplaceable:require_typed_confirmation",
@@ -56,94 +58,16 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m1b-l20"
-reason = "Suwayomi account secret opened by the SuwayomiJwt AuthFlow and the service account (L20)."
-until = "M1b L20"
-symbols = [
-  "shelfhold.plugin_host.authflow:load_account_secret",
-]
-
-[[allow]]
-category = "unwired-m1b-l24"
-reason = "Window, priority classes, technical retention and SQLite maintenance (ENF-OPS-014, ENF-OPS-009): M1a has no /store and its window jobs are ordered by the scheduler; the recycle bin (30 days), the monthly VACUUM and the stepwise runner with its schedule matcher are L24's (PLAN-M1b: run_steps has its production callers, tick_matches left with L24)."
-until = "M1b L24"
-symbols = [
-  "shelfhold.jobs.huey_app:JobPools.periodic_tasks",
-  "shelfhold.jobs.window:order_window_jobs",
-  "shelfhold.library.adapters.units:safe_to_clean",
-]
-
-[[allow]]
-category = "unwired-m1b-l25"
-reason = "One physical root per device (EF-EXP-059) and the sentinel states at root takeover/reinit; M1a registers roots in root_bootstrap and every write already goes through the gated fsops primitives (the pre-checks of scan and delete are their L25 callers)."
-until = "M1b L25"
-symbols = [
-  "shelfhold.infrastructure.fsops.facade:Fsops.require_delete_allowed",
-]
-
-[[allow]]
-category = "unwired-m1b-l31"
-reason = "Production code that only tests call: domain helpers whose production counterpart does the same thing inline, accessors and predicates added for a test, and the first draft of features that M1b wires. PLAN-M1b L31 takes the inventory (PLAN-M1b D10): each is wired, deleted or moved to tests/support. Named one by one, never by module."
-until = "M1b L31"
-symbols = [
-  "shelfhold.identity.adapters.store:SqlIdentityStore.delete_user",
-  "shelfhold.acquisition.application.presence:present_for_acquisition",
-  "shelfhold.acquisition.application.presence:present_in",
-  "shelfhold.catalog.adapters.repo:SqlUnitStore.mark_removed",
-  "shelfhold.catalog.adapters.repo:SqlUnitStore.units_in_order",
-  "shelfhold.catalog.adapters.repo:SqlWorkStore.series_of",
-  "shelfhold.catalog.application.service:CatalogService.create_contributor",
-  "shelfhold.catalog.application.service:CatalogService.create_series",
-  "shelfhold.catalog.application.service:CatalogService.edition_for_translation",
-  "shelfhold.catalog.application.service:CatalogService.elect_preferred",
-  "shelfhold.catalog.application.service:CatalogService.irreplaceable_candidates",
-  "shelfhold.catalog.application.service:CatalogService.place_owner",
-  "shelfhold.catalog.application.service:CatalogService.units_beyond",
-  "shelfhold.catalog.domain.dates:PartialDate.coarsened_to",
-  "shelfhold.catalog.domain.dates:comicinfo_date_fields",
-  "shelfhold.catalog.domain.identity:Discriminant",
-  "shelfhold.catalog.domain.identity:TextVersionRef",
-  "shelfhold.catalog.domain.identity:translation_discriminant",
-  "shelfhold.catalog.domain.normalizers:NormalizerRegistry.plan_migration",
-  "shelfhold.catalog.domain.normalizers:resolve_key",
-  "shelfhold.catalog.domain.numbering:follow_from",
-  "shelfhold.catalog.domain.numbering:is_beyond",
-  "shelfhold.catalog.domain.numbering:unit_sort_key",
-  "shelfhold.events.bus:EventBus.subscribe",
-  "shelfhold.export.application.intents:IntentJournal.apply_rename",
-  "shelfhold.export.application.intents:RenameStep",
-  "shelfhold.export.application.intents:ResolveReport.still_open",
-  "shelfhold.export.application.migration_detect:SwitchoverDetector.classify_download_dir",
-  "shelfhold.export.domain.naming:check_incoming",
-  "shelfhold.export.domain.naming:find_number_collisions",
-  "shelfhold.export.domain.naming:manifest_entry",
-  "shelfhold.export.domain.path_map:PathMap.dump",
-  "shelfhold.export.domain.physical_roots:discover_physical_roots",
-  "shelfhold.export.targets.kavita.adopt:Adopter.link_library",
-  "shelfhold.export.targets.kavita.adopt:BulkParse.for_plan",
-  "shelfhold.export.targets.kavita.client:KavitaClient.collision_check_available",
-  "shelfhold.export.targets.kavita.client:KavitaClient.parse_name",
-  "shelfhold.export.targets.kavita.client:KavitaClient.preview_verified",
-  "shelfhold.export.targets.kavita.destination:KavitaDestination.parse_name_call",
-  "shelfhold.export.targets.kavita.series:Resolution.found",
-  "shelfhold.export.targets.kavita.series:Resolution.renamed",
-  "shelfhold.export.targets.kavita.series:SeriesResolver",
-  "shelfhold.identity.domain.throttle:LoginThrottle.failure",
-  "shelfhold.identity.domain.throttle:LoginThrottle.tracked_keys",
-  "shelfhold.infrastructure.clock:Stamped",
-  "shelfhold.infrastructure.clock:merge_last_write_wins",
-  "shelfhold.integrations.apprise.jobs:request_dispatch",
-  "shelfhold.jobs.huey_app:JobPools.stopping",
-  "shelfhold.jobs.slots:DomainSlots.slot",
-  "shelfhold.jobs.slots:SlotBusyError",
-  "shelfhold.sdk.export_target:ExportTarget",
-]
-
-[[allow]]
 category = "unwired-m2"
 reason = "Consumers arrive with the content and plugin features of M2: image decode worker and caps (B1), CBZ writer from pages, EPUB/OPF dates, and the per-unit download, filters and per-key limits of the Source contract (Suwayomi downloads through tickets)."
 until = "M2"
 symbols = [
+  "shelfhold.catalog.application.editions:edition_for_translation",
+  "shelfhold.catalog.domain.dates:comicinfo_date_fields",
+  "shelfhold.catalog.domain.dates:PartialDate.coarsened_to",
+  "shelfhold.catalog.domain.identity:Discriminant",
+  "shelfhold.catalog.domain.identity:TextVersionRef",
+  "shelfhold.catalog.domain.identity:translation_discriminant",
   "shelfhold.catalog.domain.dates:opf_date",
   "shelfhold.infrastructure.imaging.client:*",
   "shelfhold.infrastructure.packaging.cbz.packager:write_cbz",
@@ -158,6 +82,7 @@ category = "unwired-m3-series"
 reason = "A Series attached after its Works exist, and the explicit plan that moves the exported link of an Edition to the series (EF-BIB-025, EF-EXP-062, I26): the model and the guard of an adopted series are here, the plan with its path warning (EF-EXP-037) and the merge and split of Works (EF-BIB-019) are M3's, the only callers."
 until = "M3"
 symbols = [
+  "shelfhold.catalog.adapters.repo:SqlWorkStore.series_of",
   "shelfhold.catalog.application.series:SeriesAlreadyAttachedError",
   "shelfhold.catalog.application.service:CatalogService.attach_to_series",
   "shelfhold.export.application.export_items:FrozenSeriesError",
@@ -181,6 +106,7 @@ category = "unwired-m4"
 reason = "Related Works (EF-BIB-039): M1b holds the model and the service (a typed link, never a merge). The admin API that links two Works, the page that shows the relation and the push to the \"related series\" of Kavita are M4's, the first callers."
 until = "M4"
 symbols = [
+  "shelfhold.acquisition.application.presence:present_in",
   "shelfhold.catalog.application.relations:RelatedWork",
   "shelfhold.catalog.application.relations:RelationError",
   "shelfhold.catalog.application.relations:relate_works",
@@ -286,4 +212,56 @@ until = "M2"
 symbols = [
   "shelfhold.infrastructure.fetcher.cache:cache_for",
   "shelfhold.jobs.scheduler:Scheduler.add_default",
+]
+
+# What L31 (M1b) did not wire: wiring it would change what production does (a refusal, a check, a
+# screen, a command), which the refactor does not do. Each group names the milestone that owns the
+# feature and the first caller; docs/decisions/M1b.md (L31) lists them for the owner to arbitrate.
+[[allow]]
+category = "deferred-l31-adoption-and-preview"
+reason = "M1a features whose production caller is a screen or a command that does not exist yet: the journaled rename of a series folder (EF-EXP-041, `apply_rename`), the adoption of a foreign library (EF-EXP-044, EF-EXP-051, EF-EXP-055: download folder verdict, library link, bulk parse), the `ParseSeriesName` collision check and the \"not verified\" mark of the preview (EF-EXP-009, ENF-COMP-001), the naming pre-checks of an incoming file (EF-EXP-028) and the discovery of physical roots (EF-EXP-059). Wiring any of them adds a check or a refusal to the export path."
+until = "M3"
+symbols = [
+  "shelfhold.export.application.intents:IntentJournal.apply_rename",
+  "shelfhold.export.application.intents:RenameStep",
+  "shelfhold.export.application.migration_detect:SwitchoverDetector.classify_download_dir",
+  "shelfhold.export.domain.naming:check_incoming",
+  "shelfhold.export.domain.naming:find_number_collisions",
+  "shelfhold.export.domain.naming:manifest_entry",
+  "shelfhold.export.domain.physical_roots:discover_physical_roots",
+  "shelfhold.export.targets.kavita.adopt:Adopter.link_library",
+  "shelfhold.export.targets.kavita.adopt:BulkParse.for_plan",
+  "shelfhold.export.targets.kavita.client:KavitaClient.collision_check_available",
+  "shelfhold.export.targets.kavita.client:KavitaClient.parse_name",
+  "shelfhold.export.targets.kavita.client:KavitaClient.preview_verified",
+  "shelfhold.export.targets.kavita.destination:KavitaDestination.parse_name_call",
+  "shelfhold.export.targets.kavita.series:Resolution.renamed",
+  "shelfhold.export.targets.kavita.series:SeriesResolver",
+]
+
+[[allow]]
+category = "deferred-l31-accounts-and-sync"
+reason = "Deleting an account with its audit entries kept under a pseudonym (EF-USR-013: Shelfhold has one administrator until the accounts of M3), the in-process subscribers of the event bus (the notifications go through the outbox; the first subscriber is a live view of M3) and the last-write-wins merge of a client write (reading progress, M3)."
+until = "M3"
+symbols = [
+  "shelfhold.events.bus:EventBus.subscribe",
+  "shelfhold.identity.adapters.store:SqlIdentityStore.delete_user",
+  "shelfhold.infrastructure.clock:Stamped",
+  "shelfhold.infrastructure.clock:merge_last_write_wins",
+]
+
+[[allow]]
+category = "deferred-l31-normalizer-migration"
+reason = "The preview of a migration to a new version of a normalizer (`normalize migrate`, EF-BIB-054, ENF-OPS-021): every normalizer is still at its first version, so no command runs it. It is proved by its tests and comes with the first version bump."
+until = "M4"
+symbols = [
+  "shelfhold.catalog.domain.normalizers:NormalizerRegistry.plan_migration",
+]
+
+[[allow]]
+category = "published-sdk-contract"
+reason = "ExportTarget is the destination contract published under MIT (SDK 1.1: the Kavita-only members are deprecated and kept, N-1). The host builds its Kavita destination without going through the Protocol; the contract is read by third parties. The reduction is decided in M4 with the second adapter (PLAN-M1b D9)."
+until = "M4"
+symbols = [
+  "shelfhold.sdk.export_target:ExportTarget",
 ]

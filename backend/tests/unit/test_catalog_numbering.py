@@ -9,11 +9,9 @@ from shelfhold.catalog.domain.numbering import (
     NUMBER_NORMALIZER_ID,
     NumberError,
     Track,
-    follow_from,
-    is_beyond,
     parse_number,
-    unit_sort_key,
 )
+from tests.support.numbering import follow_from, is_beyond, unit_sort_key
 
 
 @pytest.mark.req("EF-BIB-002")

@@ -76,14 +76,3 @@ class IngestResult:
     unit_created: bool = False
     supersedes_variant_id: str | None = None
     suggestion_id: str | None = None
-
-
-@dataclass(frozen=True)
-class UnitView:
-    id: str
-    number_raw: str
-    number_norm: str
-    track: str
-    segment: str
-    part: str
-    source_order: int

@@ -11,8 +11,8 @@ from shelfhold.jobs.window import (
     OutsideMaintenanceWindowError,
     StoreOrigin,
     ensure_store_access,
-    order_window_jobs,
     run_until,
+    window_rank,
 )
 from tests.fakes_clock import ManualClock
 
@@ -111,7 +111,7 @@ def test_window_jobs_priority_order() -> None:
         "thumbnail_gc",
     )
     shuffled = ["thumbnail_gc", "wal_checkpoint", "integrity_rolling", "store_verify"]
-    assert order_window_jobs(shuffled) == [
+    assert sorted(shuffled, key=window_rank) == [
         "wal_checkpoint",
         "store_verify",
         "integrity_rolling",

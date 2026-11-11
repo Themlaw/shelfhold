@@ -69,7 +69,7 @@ def test_throttle_ten_per_minute_per_address_then_backoff() -> None:
     throttle = LoginThrottle()
     for n in range(10):
         assert throttle.retry_after(ip="192.0.2.1", account="admin", now=T0) is None
-        throttle.failure(ip="192.0.2.1", account="admin", now=T0 + timedelta(seconds=n))
+        throttle.reserve(ip="192.0.2.1", account="admin", now=T0 + timedelta(seconds=n))
     wait = throttle.retry_after(ip="192.0.2.1", account="admin", now=T0 + timedelta(seconds=10))
     assert wait is not None
     assert 0 < wait <= 60
@@ -81,7 +81,7 @@ def test_throttle_ten_per_minute_per_address_then_backoff() -> None:
 def test_throttle_groups_ipv6_by_64_prefix() -> None:
     throttle = LoginThrottle()
     for n in range(10):
-        throttle.failure(ip=f"2001:db8:1:2::{n + 1:x}", account=f"user{n}", now=T0)
+        throttle.reserve(ip=f"2001:db8:1:2::{n + 1:x}", account=f"user{n}", now=T0)
     assert throttle.retry_after(ip="2001:db8:1:2::ffff", account="x", now=T0) is not None
     assert throttle.retry_after(ip="2001:db8:1:3::1", account="x", now=T0) is None
 
@@ -90,8 +90,8 @@ def test_throttle_groups_ipv6_by_64_prefix() -> None:
 def test_throttle_memory_is_bounded() -> None:
     throttle = LoginThrottle(max_keys=100)
     for n in range(1000):
-        throttle.failure(ip=f"10.0.{n // 256}.{n % 256}", account=f"user{n}", now=T0)
-    assert throttle.tracked_keys() <= 200
+        throttle.reserve(ip=f"10.0.{n // 256}.{n % 256}", account=f"user{n}", now=T0)
+    assert len(throttle._failures) <= 200
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-010")

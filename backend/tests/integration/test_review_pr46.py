@@ -130,7 +130,7 @@ def test_kill9_between_placement_and_manifest_is_adopted_at_resume() -> None:
                 ("write", "applying")
             ]
         report = resume(env)
-        assert len(report.completed) == 1 and report.still_open == []  # type: ignore[attr-defined]
+        assert len(report.completed) == 1 and [*report.refused, *report.drifted] == []  # type: ignore[attr-defined]
         record = env.rows(export.export_record)
         assert [r.state for r in record] == ["written"] and record[0].size is not None
         with env.engine.connect() as c:
@@ -147,7 +147,7 @@ def test_kill9_before_the_placement_closes_the_intent_and_the_next_run_writes() 
         run_killed(env, "journal", "mark_applying")
         assert env.files() == []
         report = resume(env)
-        assert len(report.abandoned) == 1 and report.still_open == []  # type: ignore[attr-defined]
+        assert len(report.abandoned) == 1 and [*report.refused, *report.drifted] == []  # type: ignore[attr-defined]
         env.pipeline.run(env.destination_id, job_id=new_ulid())
         assert len(env.files()) == 1
         assert [r.state for r in env.rows(export.export_record)] == ["written"]

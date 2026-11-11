@@ -7,6 +7,7 @@ tests, not a product requirement.
 
 from __future__ import annotations
 
+import re
 import textwrap
 from pathlib import Path
 
@@ -22,6 +23,20 @@ def test_req_cited_symbols_have_production_caller() -> None:
         "or list them in tools/production-reachability-allowlist.toml with a reason and an "
         "`until`:\n" + "\n".join(f"  {o.symbol}  <- {o.test}" for o in orphans)
     )
+
+
+def test_no_production_symbol_only_called_from_tests() -> None:
+    """L31 (PLAN-M1b D10): what only a test calls is wired, deleted or moved to `tests/support`;
+    what stays is named in the allowlist with a milestone that has not come yet. No entry is left
+    for an M1b lot that has merged (L31 is this one)."""
+    entries = reach.load_allowlist(REPO)
+    expired = [
+        f"{e['category']} (until {e['until']})"
+        for e in entries
+        if (m := re.fullmatch(r"M1b L(\d+)", e["until"])) and int(m.group(1)) <= 31
+    ]
+    assert not expired, f"entries of M1b lots that have merged: {expired}"
+    assert not reach.unlisted_orphans(REPO)
 
 
 def test_req_tests_declare_no_routes() -> None:

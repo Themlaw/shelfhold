@@ -8,7 +8,6 @@ from hypothesis import strategies as st
 
 from shelfhold.catalog.domain.normalizers import (
     default_registry,
-    resolve_key,
     to_nfc,
 )
 
@@ -26,7 +25,7 @@ def test_normalizer_upgrade_produces_no_new_key_without_plan_property(raws: list
     expected_v1 = [registry.get(v1)(raw) for raw in raws]
     v2 = registry.register("series_name", 2, _alnum_only)
     # New rows get v2 keys; the rows stored under v1 keep exactly the v1 key, unrecomputed.
-    assert [resolve_key(s) for s in stored] == expected_v1
+    assert [s.value for s in stored] == expected_v1
     assert all(s.by == str(v1) for s in stored)
     fresh = [registry.normalize("series_name", raw) for raw in raws]
     assert [f.key for f in fresh] == [_alnum_only(raw) for raw in raws]
@@ -35,7 +34,7 @@ def test_normalizer_upgrade_produces_no_new_key_without_plan_property(raws: list
     migrated = plan.apply()
     assert [m.key for m in migrated] == [f.key for f in fresh]
     assert [m.by for m in migrated] == [str(v2)] * len(raws)
-    assert [resolve_key(s) for s in stored] == expected_v1
+    assert [s.value for s in stored] == expected_v1
     # Every merge preview is a real collision of two different raw values on one new key.
     for merge in plan.merges:
         assert len(merge.raws) >= 2

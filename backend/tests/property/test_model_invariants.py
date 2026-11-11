@@ -41,8 +41,6 @@ from shelfhold.catalog.domain.numbering import (
     NUMBER_NORMALIZER_ID,
     NumberError,
     UnitNumber,
-    follow_from,
-    is_beyond,
     parse_number,
 )
 from shelfhold.catalog.domain.placement import place_of
@@ -74,6 +72,7 @@ from shelfhold.sdk.refs import UnitInfo
 from tests.catalog_env import Harness, at, harness
 from tests.fsops_env import Env, make_env
 from tests.restore_env import RestoreEnv, restore_env
+from tests.support.numbering import follow_from, is_beyond
 
 EDITION_KEY = (
     "work_id",

@@ -17,13 +17,10 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, quote_plus, urlencode, urlsplit, urlunsplit
 
-from sqlalchemy import Connection
-
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.logging import known_secret_values, register_secret_value
 from shelfhold.infrastructure.secret_text import secret_forms
 from shelfhold.infrastructure.secrets.envelope import Envelope, open_with, seal
-from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.plugin_host.errors import AuthExpired, UnsupportedAuthFlow
 from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Fetcher, Response
 from shelfhold.sdk.models import AuthApiKey, AuthBasic, AuthFlow
@@ -35,19 +32,7 @@ __all__ = [
     "JwtDialect",
     "JwtFetcher",
     "UnsupportedAuthFlow",
-    "load_account_secret",
 ]
-
-
-def load_account_secret(
-    connection: Connection, vault: SecretVault, account_id: str
-) -> dict[str, str]:
-    """Open the sealed secret of a `source_account` row (a JSON object of strings)."""
-    plain = vault.open_row(connection, "source_account", account_id)
-    loaded = json.loads(plain)
-    if not isinstance(loaded, dict):
-        raise ValueError("the account secret is not a JSON object")
-    return {str(k): str(v) for k, v in loaded.items()}
 
 
 _DEFAULT_PORTS = {"http": 80, "https": 443}

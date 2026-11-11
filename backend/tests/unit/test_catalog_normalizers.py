@@ -10,7 +10,6 @@ from shelfhold.catalog.domain.normalizers import (
     NormalizerId,
     NormalizerRegistry,
     default_registry,
-    resolve_key,
     to_nfc,
 )
 
@@ -59,7 +58,7 @@ def test_normalizer_upgrade_produces_no_new_key_without_plan() -> None:
     old = [registry.normalize("k", raw) for raw in ("Berserk", "BERSERK", "Vagabond")]
     registry.register("k", 2, lambda s: s.lower().replace("e", ""))
     # nothing is recomputed on read: the stored key stays, whatever the current version says
-    assert [resolve_key(s) for s in old] == ["berserk", "berserk", "vagabond"]
+    assert [s.value for s in old] == ["berserk", "berserk", "vagabond"]
     plan = registry.plan_migration(old, "k")
     assert plan.target == NormalizerId("k", 2)
     assert {c.raw for c in plan.changes} == {"Berserk", "BERSERK", "Vagabond"}

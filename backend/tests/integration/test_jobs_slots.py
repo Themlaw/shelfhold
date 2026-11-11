@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
@@ -11,7 +12,7 @@ from sqlalchemy import Engine
 
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.schema import metadata
-from shelfhold.jobs.slots import DomainSlots, SlotBusyError, UnknownLimitKeyError
+from shelfhold.jobs.slots import DomainSlots, UnknownLimitKeyError
 from tests.fakes_clock import ManualClock
 
 
@@ -24,6 +25,21 @@ def engine(tmp_path: Path) -> Iterator[Engine]:
 
 
 NOW = datetime(2026, 11, 4, 12, tzinfo=UTC)
+
+
+class SlotBusyError(Exception):
+    pass
+
+
+@contextmanager
+def held(slots: DomainSlots, limit_key: str) -> Iterator[None]:
+    """A slot for the time of a block (production takes and gives it back in two steps)."""
+    if not slots.try_acquire(limit_key):
+        raise SlotBusyError(limit_key)
+    try:
+        yield
+    finally:
+        slots.release(limit_key)
 
 
 @pytest.mark.req("EF-INT-003")
@@ -55,12 +71,12 @@ def test_domain_slot_under_parallel_acquirers(engine: Engine) -> None:
 
 
 @pytest.mark.req("EF-INT-003")
-def test_slot_context_manager_releases_and_reports_busy(engine: Engine) -> None:
+def test_slot_taken_then_released_reports_busy(engine: Engine) -> None:
     slots = DomainSlots(engine, ManualClock(NOW))
     slots.declare("d", 1)
-    with slots.slot("d"), pytest.raises(SlotBusyError), slots.slot("d"):
+    with held(slots, "d"), pytest.raises(SlotBusyError), held(slots, "d"):
         pass
-    with slots.slot("d"):
+    with held(slots, "d"):
         pass
     assert slots.in_use("d") == 0
 

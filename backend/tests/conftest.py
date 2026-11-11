@@ -10,10 +10,17 @@ import pytest
 
 from shelfhold.config import Settings, load_settings
 
+pytest_plugins = ["tests.support.leaks"]  # the temporary-folder guard (not in a pytester copy)
+
 
 @pytest.fixture
 def env(tmp_path: Path) -> dict[str, str]:
+    # The disk guard reads the real free space of the folder under test: on a small temporary file
+    # system (a 3 GiB tmpfs) every start would be refused as "disk low" and the probes would
+    # answer "unknown". Tests of the guard set their own thresholds and usage.
     return {
+        "SHELFHOLD_DISK_PAUSE_PERCENT": "0",
+        "SHELFHOLD_DISK_PAUSE_GIB": "0",
         "SHELFHOLD_DATA_DIR": str(tmp_path / "data"),
         "SHELFHOLD_STORE_DIR": str(tmp_path / "store"),
     }

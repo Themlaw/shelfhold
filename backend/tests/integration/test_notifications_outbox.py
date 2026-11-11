@@ -23,7 +23,6 @@ from shelfhold.integrations.apprise import (
     SendResult,
     ValidatedChannel,
     register_notification_job,
-    request_dispatch,
     validate_channel_url,
 )
 from shelfhold.jobs.huey_app import JobPools
@@ -221,8 +220,8 @@ def test_dispatch_job_is_idempotent_and_swept_after_a_lost_queue(
     huey.execute(task)
     assert len(send.sent) == 1
     assert count(env, pending) == 0
-    request_dispatch(pools)
-    request_dispatch(pools)  # the same constant key: one job
+    for _ in range(2):  # the same constant key: one job
+        pools.submit("notify.dispatch", dedupe_key="notify:dispatch")
     assert huey.pending_count() == 1
     with env.engine.connect() as connection:
         keys = [r.dedupe_key for r in connection.execute(sa.select(platform.job_view))]

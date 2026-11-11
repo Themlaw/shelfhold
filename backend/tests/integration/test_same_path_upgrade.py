@@ -351,7 +351,7 @@ def test_upgrade_intent_is_settled_by_the_boot_replay() -> None:
 
         report = journal.resolve_open(on_done=upgrade.settle_hook())
 
-        assert report.still_open == []
+        assert [*report.refused, *report.drifted] == []
 
 
 def test_shelf_option_defaults_to_skipping_read_units() -> None:

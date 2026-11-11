@@ -363,7 +363,7 @@ def test_rekey_killed_midway_never_loses_the_journal(tmp_path: Path, point: str)
     recovery = IntentJournal(env.engine, env.fs.fsops)  # the start-up that follows the kill
     assert [i.op for i in recovery.open_intents()] == ["tombstone_rekey"]
     resolved = recovery.resolve_open()
-    assert resolved.still_open == [] and len(resolved.completed) == 1
+    assert [*resolved.refused, *resolved.drifted] == [] and len(resolved.completed) == 1
 
     for root in env.roots[:1]:
         raw = env.journal_path(root).read_bytes()

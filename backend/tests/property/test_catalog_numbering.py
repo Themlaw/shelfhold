@@ -11,11 +11,9 @@ from hypothesis import strategies as st
 from shelfhold.catalog.domain.numbering import (
     NumberError,
     Track,
-    follow_from,
-    is_beyond,
     parse_number,
-    unit_sort_key,
 )
+from tests.support.numbering import follow_from, is_beyond, unit_sort_key
 
 decimals = st.decimals(min_value=0, max_value=10**17, places=6, allow_nan=False)
 RAW_TEXT = st.one_of(

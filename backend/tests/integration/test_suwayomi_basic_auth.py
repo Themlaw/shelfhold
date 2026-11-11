@@ -22,7 +22,7 @@ from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
-from shelfhold.plugin_host.authflow import AuthInjectingFetcher, load_account_secret
+from shelfhold.plugin_host.authflow import AuthInjectingFetcher
 from shelfhold.sdk.models import AuthBasic
 from shelfhold.sdk.source import AuthRequired
 from tests.fakes.suwayomi import BASE_URL, PASSWORD, USER, FakeSuwayomi
@@ -80,7 +80,7 @@ def test_suwayomi_basic_auth_m1(engine: Engine) -> None:
     service = SuwayomiService(BASE_URL)
 
     with engine.connect() as conn:
-        secret = load_account_secret(conn, vault, account)
+        secret = json.loads(vault.open_row(conn, "source_account", account))
     assert secret == {"username": USER, "password": PASSWORD}
     with engine.connect() as conn:  # the column holds ciphertext, never the password
         raw: Any = conn.execute(sa.select(source_account.c.secret_ct)).scalar_one()

@@ -3,7 +3,7 @@
 Every identity key is registered under `normalizer_id@version` and stored with the raw value. A
 change of behaviour is a new version; rows of an older version stay valid until an explicit
 migration plan (with the merge preview) is applied. Nothing is ever recomputed on read:
-`resolve_key` returns the stored value.
+the key of a stored row is its stored `value`.
 """
 
 import unicodedata
@@ -67,11 +67,6 @@ class Normalized:
     @property
     def key(self) -> str:
         return self.value
-
-
-def resolve_key(stored: Normalized) -> str:
-    """Identity key of a stored row: that of its own version, never recomputed."""
-    return stored.value
 
 
 @dataclass(frozen=True)

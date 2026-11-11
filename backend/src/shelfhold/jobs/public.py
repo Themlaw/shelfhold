@@ -3,7 +3,7 @@
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.jobs.errors import JobFailedError
 from shelfhold.jobs.huey_app import BootReport, JobContext, JobPools, boot_jobs
-from shelfhold.jobs.slots import DomainSlots, SlotBusyError
+from shelfhold.jobs.slots import DomainSlots
 from shelfhold.jobs.window import (
     DEFAULT_WINDOW,
     OutsideMaintenanceWindowError,
@@ -21,7 +21,6 @@ __all__ = [
     "JobFailedError",
     "JobPools",
     "OutsideMaintenanceWindowError",
-    "SlotBusyError",
     "StoreOrigin",
     "SystemClock",
     "boot_jobs",

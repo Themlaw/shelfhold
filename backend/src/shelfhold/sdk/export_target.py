@@ -12,10 +12,20 @@ parts (version ranges, events, progress) are fixed by the lot that implements th
 
 from datetime import datetime
 from typing import Any, Literal, Protocol
+from warnings import deprecated
 
 from pydantic import Field
 
 from shelfhold.sdk.models import SdkModel, StrictSdkModel
+
+DEPRECATED_SINCE = "1.1"
+"""Members that only describe how Kavita works are deprecated from SDK 1.1: they stay in the
+contract (a destination written for SDK 1.0 still resolves, N-1 compatibility) and the contract
+v2 that M4 decides, with the second adapter, takes them out (PLAN-M1b D9, objection 14)."""
+
+KAVITA_ONLY = (
+    f"Kavita-specific: deprecated since SDK {DEPRECATED_SINCE}, removed by contract v2 (M4)"
+)
 
 JsonObject = dict[str, Any]
 """Placeholder shape for the types the destination lot (M4) will refine: ExportItem, SidecarFile,
@@ -93,20 +103,25 @@ class ExportTarget(Protocol):
 
     def render_sidecars(self, item: JsonObject, cfg: JsonObject) -> list[JsonObject]: ...
 
+    @deprecated(KAVITA_ONLY)  # Kavita's `ParseSeriesName` check
     def parse_name_call(self, name: str, lib_type: str) -> ApiCall | None: ...
 
     def inventory_calls(self, remote_library_id: str) -> list[ApiCall]: ...
 
+    @deprecated(KAVITA_ONLY)  # the creation of a Kavita library
     def ensure_library_call(self, spec: JsonObject, current: JsonObject | None) -> ApiCall: ...
 
     def scan_calls(self, remote_paths: list[str]) -> list[ApiCall]: ...
 
+    @deprecated(KAVITA_ONLY)  # the lookup of a Kavita series by folder
     def resolve_remote_calls(self, item: JsonObject) -> list[ApiCall]: ...
 
     def interpret(self, call: ApiCall, response: JsonObject) -> Any: ...
 
     def supported_versions(self) -> JsonObject: ...
 
+    @deprecated(KAVITA_ONLY)  # Kavita's SignalR hub
     def event_subscription(self) -> JsonObject | None: ...
 
+    @deprecated(KAVITA_ONLY)  # Kavita's reading-progress API
     def progress_calls(self, ref: JsonObject, p: JsonObject | None) -> list[ApiCall]: ...

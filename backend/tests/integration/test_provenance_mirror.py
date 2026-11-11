@@ -104,7 +104,7 @@ def test_mirror_intent_without_file_is_abandoned_at_boot(monkeypatch: pytest.Mon
         report = journal.resolve_open(
             on_done=adopt_written_hook(env.lib.fsops, env.lib.locate, env.clock)
         )
-        assert report.still_open == [] and len(report.abandoned) == 1
+        assert [*report.refused, *report.drifted] == [] and len(report.abandoned) == 1
         assert mirror_of(env).rebuild(env.destination_id) != []
         assert len(mirror_files(env)) == 1
 

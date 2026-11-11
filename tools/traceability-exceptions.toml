@@ -88,3 +88,11 @@ reason = "garde de joignabilité des tests `req` (L58) : contrôle les tests, pa
 [[exception]]
 path = "backend/tests/unit/test_openapi_diff.py"
 reason = "règles de rupture de tools/openapi_diff.py (L58) : test de l'outil lui-même"
+
+[[exception]]
+path = "backend/tests/unit/test_tmp_leaks.py"
+reason = "garde de l'hygiène des fixtures (aucun dossier laissé dans /tmp) : pas une exigence du produit (M1b L31)"
+
+[[exception]]
+path = "backend/tests/unit/test_sdk_export_target.py"
+reason = "dépréciations du contrat SDK ExportTarget (D9, M1b L31) : le contrat reste lisible, ce n'est pas une exigence EF-/ENF-"

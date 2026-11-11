@@ -6,13 +6,18 @@ import pytest
 
 pytest_plugins = ["pytester"]
 
+_CONFTEST = "\n".join(
+    line
+    for line in Path(__file__).parents[1].joinpath("conftest.py").read_text("utf-8").splitlines()
+    if not line.startswith("pytest_plugins")  # the guard imports `tests`, absent from a pytester
+)
 _SUITE = "\n".join(f"def test_{i}() -> None:\n    pass\n" for i in range(40))
 
 
 @pytest.mark.req("ENF-SEC-007")
 def test_shards_partition_the_suite(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(test_suite=_SUITE)
-    pytester.makeconftest(Path(__file__).parents[1].joinpath("conftest.py").read_text("utf-8"))
+    pytester.makeconftest(_CONFTEST)
     seen: list[str] = []
     for index in (1, 2, 3):
         result = pytester.runpytest_subprocess("--shard", f"{index}/3", "--collect-only", "-q")
@@ -23,6 +28,6 @@ def test_shards_partition_the_suite(pytester: pytest.Pytester) -> None:
 @pytest.mark.req("ENF-SEC-007")
 def test_shard_option_is_validated(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(test_suite=_SUITE)
-    pytester.makeconftest(Path(__file__).parents[1].joinpath("conftest.py").read_text("utf-8"))
+    pytester.makeconftest(_CONFTEST)
     result = pytester.runpytest_subprocess("--shard", "5/4")
     assert result.ret != 0

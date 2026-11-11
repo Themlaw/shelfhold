@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
@@ -15,6 +16,7 @@ import pytest
 import sqlalchemy as sa
 
 import shelfhold.composition as composition
+import shelfhold.infrastructure.instance.lease as lease
 import shelfhold.runtime_jobs as rj
 from shelfhold.acquisition.public import Backfill
 from shelfhold.config import Settings
@@ -146,6 +148,13 @@ def bench54(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> Iterator[Bench54]:
     monkeypatch.setattr(rj, "SCAN_QUIET_S", 0)  # the scans leave at once: no 31 s debounce
+    # The lease runs on the real clock: on a loaded machine a bench outlives the 30 s heartbeat,
+    # and the heartbeat thread and a write meet on the same renewal (LeaseLostError, "changed
+    # under us"). The bench does not test the lease: nothing is renewed and nothing runs out.
+    long = timedelta(hours=6)
+    monkeypatch.setattr(lease, "LEASE_VALIDITY", long)
+    monkeypatch.setattr(lease, "HEARTBEAT_INTERVAL", long)
+    monkeypatch.setattr(composition, "HEARTBEAT_INTERVAL", long)
     with seeded(settings, tmp_path) as env:
         inst = env.inst
         inst.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=f"{USER}:{PASSWORD}")

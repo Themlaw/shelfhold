@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.tools import require_tool
+
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS = ROOT / ".github" / "scripts"
 DIGEST = "sha256:" + "a" * 64
@@ -53,6 +55,7 @@ case "$*" in *token*) echo '{"token":"t"}' ;; *) cat "$STUB_STATE/tags.json" ;; 
 
 @pytest.fixture
 def env(tmp_path: Path) -> dict[str, str]:
+    require_tool("jq")  # release-retag.sh pipes the registry answers through jq
     bindir = tmp_path / "bin"
     bindir.mkdir()
     for name, body in (("docker", DOCKER), ("gh", GH), ("curl", CURL), ("sleep", "#!/bin/sh\n")):
