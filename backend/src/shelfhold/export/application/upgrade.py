@@ -50,6 +50,7 @@ from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.rendering import CbzRenderer, comicinfo_xml
 from shelfhold.export.application.snapshot import DestinationContext, load_context
+from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import FileIdentity, Fsops
 from shelfhold.infrastructure.ids import new_ulid
@@ -290,8 +291,8 @@ class SamePathUpgrade:
             refused = self._refusal(connection, served, typed, check_read=False)
             if refused is not None:
                 return UpgradeResult(refused)
-        token = binned.path.split("/", 1)[0]
-        with self._fsops.open_bin_entry(served.target, token) as stream:
+        # the bin path as recorded: the file may have been renamed since the upgrade
+        with self._fsops.open_bin_entry(served.target, binned.path) as stream:
             new = _New(
                 stream, str(row.old_file_hash), row.old_content_hash, row.old_sidecar_sha256,
                 row.old_content_id,
@@ -318,7 +319,11 @@ class SamePathUpgrade:
     ) -> UpgradeOutcome | None:
         target = served.target
         root_id, _rel = self._locate(target)
-        if self._fsops.frozen or self._fsops.freeze_state.frozen_for(root_id):
+        if (
+            self._fsops.frozen
+            or self._fsops.freeze_state.frozen_for(root_id)
+            or self._fsops.status(target).state is not RootState.OK
+        ):  # frozen, or blocked by its sentinel or its lease: nothing, not even the intent
             log.warning("upgrade.root_frozen", root_id=root_id)
             return UpgradeOutcome.ROOT_FROZEN
         if check_read and served.skip_read and _is_read(connection, served.unit_id):
@@ -428,7 +433,9 @@ class SamePathUpgrade:
         intent = connection.execute(
             sa.text("SELECT dst_path, expected_sha256 FROM fs_intent WHERE id = :i"),
             {"i": intent_id},
-        ).one()
+        ).one_or_none()
+        if intent is None:
+            raise LookupError(f"upgrade intent {intent_id} is gone")
         target, new_hash = str(intent.dst_path), str(intent.expected_sha256)
         destination_id = str(payload["destination_id"])
         item_id = str(payload["export_item_id"])
@@ -436,13 +443,17 @@ class SamePathUpgrade:
             sa.select(record, item.c.content_id)
             .join(item, item.c.id == record.c.export_item_id)
             .where(record.c.shelf_destination_id == destination_id, item.c.id == item_id)
-        ).one()
+        ).one_or_none()
+        if line is None:  # the line was purged in between: a drift for an admin, not a crash
+            raise LookupError(f"export line {destination_id}/{item_id} is gone")
         unit_id = connection.execute(
             sa.select(export.unit_coverage.c.unit_id).where(
                 export.unit_coverage.c.carrier_type == "export_item",
                 export.unit_coverage.c.carrier_id == item_id,
             )
-        ).scalar_one()
+        ).scalar_one_or_none()
+        if unit_id is None:
+            raise LookupError(f"export item {item_id} covers no Unit any more")
         now = self._clock.now()
         observed = self._fsops.observe(target)
         if observed is None:

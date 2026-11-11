@@ -1238,12 +1238,16 @@ class Fsops:
             root.unlink(staged)
 
     @contextmanager
-    def open_bin_entry(self, target: str, token: str) -> Iterator[BinaryIO]:
+    def open_bin_entry(self, target: str, path: str) -> Iterator[BinaryIO]:
         """The old version a same-path replacement put in the bin, opened for reading (the
-        restore reads it back)."""
-        located, _staged, recycled = self._same_path(target, token)
+        restore reads it back). `path` is the one recorded in the bin index, relative to the bin
+        of `target`'s root (`<token>/<rel at the time>`), never recomputed: the file may have
+        been renamed since. Read through the confined root (no `..`, no symbolic link)."""
+        located = self._locate(target)
+        if not path or path.startswith("/") or ".." in path.split("/"):
+            raise OutsidePathMapError(f"{path!r} is not a path inside a bin")
         with self._root(located.root_path) as root:
-            fd = root.open_file(recycled, os.O_RDONLY)
+            fd = root.open_file(f"{RECYCLE_DIR}/{path}", os.O_RDONLY)
             with os.fdopen(fd, "rb") as stream:
                 yield stream
 

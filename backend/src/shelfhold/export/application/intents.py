@@ -32,6 +32,7 @@ from shelfhold.infrastructure.fsops import FileIdentity, FsopsError, SamePathSta
 from shelfhold.infrastructure.fsops.confined import Kind
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, coherence, platform
+from shelfhold.library.public import forget_binned_export_files
 
 INTENT_SCHEMA_VERSION = "1"  # frozen and versioned: ENF-OPS-019
 KNOWN_SCHEMA_VERSIONS = frozenset({INTENT_SCHEMA_VERSION})
@@ -137,6 +138,15 @@ def open_intent_paths(connection: Connection) -> frozenset[str]:
     return frozenset(p for row in rows for p in (row.src_path, row.dst_path) if p)
 
 
+def open_intent_ids(connection: Connection) -> frozenset[str]:
+    """The ids of the open intents. A same-path upgrade names its bin entry after its intent:
+    the retention sweep keeps such an entry while the intent is open (it may hold the only copy
+    of the old version)."""
+    table = coherence.fs_intent
+    rows = connection.execute(sa.select(table.c.id).where(table.c.state.in_(OPEN_STATES)))
+    return frozenset(str(row.id) for row in rows)
+
+
 def within_any(path: str, bases: Iterable[str]) -> bool:
     """A path is covered by an open intent when it is, or lies under, a path of one (a folder
     under `rmdir` covers what it holds). The planner asks this for every candidate (I9)."""
@@ -157,6 +167,12 @@ class IntentJournal:
         self._clock = clock or SystemClock()
         # runs in the transaction that closes an intent (the audit of an admin's resolution)
         self._settled = settled
+
+    @property
+    def engine(self) -> Engine:
+        """The database the journal writes to (a caller closes an intent in its own transaction
+        through `mark_done(within=...)`)."""
+        return self._engine
 
     # -- the protocol ---------------------------------------------------------------------------
 
@@ -492,7 +508,14 @@ class IntentJournal:
         if intent.src is None:
             return self._drift(intent, report, "a bin sweep needs its entry")
         if self._disk.observe(intent.src) is None:
-            self._finish(intent, on_done)
+            entry = intent.src.rstrip("/").rsplit("/", 1)[-1]
+
+            def forget(conn: Connection, done: OpenIntent) -> None:
+                forget_binned_export_files(conn, entry)  # the sweep's own bookkeeping
+                if on_done is not None:
+                    on_done(conn, done)
+
+            self._finish(intent, forget)
             report.completed.append(intent.id)
         else:
             self._close(intent.id, "cancelled")
