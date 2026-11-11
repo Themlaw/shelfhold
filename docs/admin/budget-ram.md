@@ -2,15 +2,15 @@
 
 Shelfhold est un seul conteneur, mais il vit à côté de Suwayomi et de Kavita, qui pèsent plus
 lourd que lui. Cette page donne le budget du **profil de référence** (ENF-OPS-005) : Shelfhold,
-Suwayomi et Kavita sur une même machine, dans l'état de la version 0.2, avant le traitement
-d'images de M1b.
+Suwayomi et Kavita sur une même machine. Le chiffre de l'image à vide date de la version 0.2 ; les bancs
+de M1b (plus bas) mesurent le profil de référence avec le traitement d'images.
 
 ## Profil de référence : mémoire
 
 | Service | Au repos | En pic | Source |
 | --- | --- | --- | --- |
 | Shelfhold | **102,8 Mo** | **133,9 Mo** après 8 000 requêtes (pic du cgroup 137,1 Mo) | mesuré sur l'image de la 0.2, voir ci-dessous |
-| Suwayomi | au moins 750 Mo | selon les extensions et les mises à jour | estimation du jalon, à mesurer en M1b |
+| Suwayomi | au moins 750 Mo | selon les extensions et les mises à jour | estimation du jalon, non mesurée dans ce dépôt |
 | Kavita | environ 200 Mo | jusqu'à 2 Go pendant un gros scan | estimation du jalon |
 | **Total à prévoir** | environ 1,1 Go au repos | **3 Go** avec un scan de Kavita | somme des lignes ci-dessus |
 
@@ -41,8 +41,8 @@ départ, avant M1a.
   pas de fuite visible) ;
 - image compressée : **57,5 Mo**, pour un plafond de 300 Mo ; sur disque : 244 Mo.
 
-Ces mesures ne comptent ni Pillow ni libvips : elles seront refaites en M1b avec le traitement
-d'images. La cible reste de 250 Mo au repos et 500 Mo en pic pour Shelfhold seul, et la 0.2 les
+Ces mesures de la 0.2 ne comptent ni Pillow ni libvips : les bancs de M1b ci-dessous, qui les
+comptent, les complètent. La cible reste de 250 Mo au repos et 500 Mo en pic pour Shelfhold seul, et la 0.2 les
 respecte. Les chiffres de Suwayomi et de Kavita sont ceux du cahier des charges, pas des mesures de
 ce dépôt.
 

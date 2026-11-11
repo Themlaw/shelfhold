@@ -1,8 +1,8 @@
 # Exposer Shelfhold hors de chez vous
 
 Par défaut le compose publie le port sur `127.0.0.1:8080` seulement. Rien n'est pensé pour être
-exposé directement à Internet en M1a, et l'interface web n'existe pas encore : l'administration se
-fait en ligne de commande, qui ne passe pas par le réseau.
+exposé directement à Internet, et l'interface web se limite pour l'instant aux écrans « À classer » et
+« À ranger » : l'administration se fait en ligne de commande, qui ne passe pas par le réseau.
 
 Si vous avez besoin d'atteindre l'API à distance (clé d'API, outil tiers) :
 

@@ -2,6 +2,68 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## [0.3.0] - 2026-11-11 — M1b
+
+Migration : oui (migrations 0013 à 0017, voir ci-dessous), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde et par `shelfhold reconcile --adopt-after-restore` avec le service complet (`docs/admin/retour-arriere.md`). Version minimale de Kavita prise en charge : **0.9.1** (ENF-COMP-001) ; les étagères famille la refusent en dessous.
+
+Migrations :
+
+- 0013 : passkeys (`webauthn_credential`), exécutions de sauvegarde (`backup_run`), empreinte d'instance d'un service connecté (`source_config`).
+- 0014 : `download_request.visibility` et `requester_user_id` (qui a demandé, qui peut voir).
+- 0015 : RP ID de chaque passkey et passkey à l'origine d'une session.
+- 0016 : `follow_request` (demandes de suivi approuvées, une par série amont).
+- 0017 : `safeguard_backlog` (ce que « Mettre à l'abri » n'a pas pu copier à son dernier passage).
+
+### Ajouté
+
+- **Rôles, droits et passkeys** (EF-USR-005, EF-USR-016, EF-USR-022, EF-USR-024, EF-USR-025, ENF-SEC-010) : table de vérité exhaustive action x rôle x crédential avec colonne de fraîcheur (`shelfhold access-table`), droit « classer », visibilité de l'activité (un adulte compte comme parent), démasquage audité. Passkeys WebAuthn : connexion sans mot de passe, ré-authentification en un geste, révocation, avertissement si le domaine change ; HTTPS ou `localhost` seulement.
+- **Contrôle parental** (EF-BIB-036, EF-BIB-037, EF-BIB-055, EF-EXP-002, EF-EXP-046, EF-EXP-047, EF-EXP-048, EF-EXP-050, EF-EXP-055, EF-USR-015) : étagères famille (plafond sous 18+) sur une bibliothèque Kavita dédiée, retenue des Œuvres non classées, âge effectif (maximum des Éditions, âge d'Édition explicite), `shelfhold rate`, écran « À classer » et vue « À ranger », retrait par plan (`shelfhold shelf withdraw`, jamais automatique), adoption d'une bibliothèque lue par des enfants, âge poussé vers Kavita sur la série et verrouillé (EF-EXP-040).
+- **Suwayomi** (EF-SRC-009, EF-SRC-025, EF-SRC-026, EF-SRC-029, EF-SRC-031, EF-SRC-033, EF-SRC-036) : `shelfhold follow` et `unfollow`, catégorie « Shelfhold » exclue du téléchargement automatique, compte de service en `ui_login` (jetons JWT en mémoire, droits minimaux vérifiés), détection d'une réinstallation (`source reconnect`), mode piloté, sonde fonctionnelle (source non chargée) et relance bornée, `series.stale` agrégé, refus guidé quand `excludeUnreadChapters` ou `excludeNotStarted` sont actifs.
+- **Sablier** (EF-INT-022, ENF-OPS-011) : port `WakeHook`, réveil de Suwayomi et de Kavita à la demande, sans jamais compter un réveil raté contre une source ni lever la barrière parentale.
+- **Copie conservée et « Mettre à l'abri »** (EF-BIB-006, EF-BIB-027, EF-BIB-031, EF-BIB-038, EF-BIB-042, EF-BIB-048) : copie indépendante dans `/store` (clone sinon copie vérifiée, jamais de lien), dérivé canonique déclaré, `store/INDEX.jsonl`, copie avant la disparition de la source, quota et arriéré, purge chez Suwayomi facultative (`shelfhold shelf purge-upstream`).
+- **Racines** (EF-EXP-043, EF-EXP-064) : `shelfhold root takeover|reinit|restored`, `store reinit`, `reconcile --rebaseline-inodes` ; la sentinelle est authentifiée et ne recule jamais.
+- **Pierres tombales** (EF-BIB-052, EF-BIB-053, EF-BIB-054) : journal chaîné, détection d'une troncature (`tombstone set-aside-journal`), `tombstone rekey`, `tombstone flush`, `secrets import` ; purge étendue à `/store`, à son index, au téléchargement Suwayomi, au désabonnement, aux tâches et notifications, avec `purge --checkpoint`, `--leftovers` et `--kept-ack`.
+- **Sauvegarde intégrée** (EF-INT-014, EF-INT-015, EF-INT-027, ENF-OPS-001) : `shelfhold backup run|verify|restore`, chaque nuit, archive entièrement chiffrée (age, scrypt à facteur fixe) dans un dossier distinct, rétention, alerte d'échec ; restauration vers un autre dossier qui révoque sessions et clés d'API ; `shelfhold restore acknowledge` ; compteur d'identité hors base.
+- **Exploitation** (EF-INT-017, ENF-OPS-009, ENF-OPS-014, ENF-OPS-016, ENF-PERF-001, ENF-PERF-008, ENF-PERF-009) : fenêtre de maintenance réglable, classes de priorité avec vieillissement, rétention technique (événements 90 jours, audit 1 an), entretien SQLite (`optimize`, point de contrôle, `VACUUM` toutes les 28 jours), bancs de mémoire et de fenêtre sur un profil de référence (135 Mo au repos).
+- **Plugins tiers** (EF-SRC-019, ENF-SEC-009) : `shelfhold plugin install|enable|disable|remove|list` ; désactivés par défaut, chargés seulement après une variable d'environnement et une phrase tapée liée aux fichiers installés.
+- **Catalogue** (EF-BIB-025, EF-BIB-029, EF-BIB-033, EF-BIB-039, EF-EXP-062) : Série facultative au-dessus de l'Œuvre, rattachement tardif, relations d'Œuvres, `rights` dans le ComicInfo, `shelfhold relink`.
+- **Chaîne de livraison** (ENF-SEC-007, ENF-QUAL-007) : SBOM SPDX et attestations de provenance sur chaque plateforme de l'image, analyse Grype, CodeQL, preuves de release en assets, nettoyage planifié des images de PR, outils téléchargés par la CI en cache vérifié par somme de contrôle.
+- **Qualité** (ENF-QUAL-006, ENF-OPS-008) : suite de propriétés sur le classement, parcours de bout en bout sur l'image réelle (famille, mise à l'abri, Sablier, sauvegarde et restauration, compte de service, passkey, retour arrière vers la 0.2.0), additions de nuit contre de vrais Kavita et Suwayomi.
+- **Documentation d'administration** : `docs/admin/` complété (rôles, famille, « À classer », Suwayomi multi-comptes, purge, copie conservée, retour arrière, restauration), `docs/decisions/M1b.md`.
+- Variables : `SHELFHOLD_BACKUP_DIR`, `SHELFHOLD_BACKUP_PASSPHRASE_FILE`, `SHELFHOLD_BACKUP_RETENTION`, `SHELFHOLD_BACKUP_STALE_HOURS`, `SHELFHOLD_WAKE_URL`, `_WAKE_SUWAYOMI`, `_WAKE_KAVITA`, `_WAKE_TIMEOUT_S`, `_WAKE_SESSION_S`, `_WAKE_TOKEN`, `SHELFHOLD_MAINTENANCE_WINDOW_START`, `_END`, `SHELFHOLD_TIMEZONE`, `SHELFHOLD_RETENTION_EVENTS_DAYS`, `SHELFHOLD_RETENTION_AUDIT_DAYS` (`docs/reference/config.md`).
+
+### Modifié
+
+- **`shelfhold shelf create`** accepte tous les plafonds de l'échelle (`0`, `10+`, `12+`, `13+`, `16+`, `18+`, `X`) ; sous 18+, l'étagère est une étagère famille.
+- **Restauration** : toutes les sessions et clés d'API sont révoquées ; la connexion par passkey est refusée tant que `restore acknowledge` n'a pas été fait.
+- **Gel de restauration** : un seul état (`FreezeState`) pour les écritures, les tâches et les services.
+- **`source.check_mode`** vaut `always_on`, ou `piloted` quand un réveil est configuré.
+- Le réglage `shelf.upstream_purge` du plan est `shelf.purge_upstream_after_export` (désactivé par défaut).
+- Code réservé aux tests retiré de `src` (environ 255 lignes) ; les méthodes d'`ExportTarget` propres à Kavita sont dépréciées (SDK 1.1).
+
+### Corrigé
+
+- `shelfhold jobs run` d'une tâche à fenêtre ne s'exécutait jamais (la fenêtre stockée était celle de la nuit suivante).
+- Une purge ne laisse plus de titre dans les pages libres de la base ni dans son journal (`secure_delete`, point de contrôle).
+- Rejeu du journal des pierres tombales après une restauration, un remontage ou une sortie de racine : l'index suit sans redémarrage.
+- `rate` d'une Œuvre ne règle plus les suggestions d'âge plus élevées d'une Édition (migration de données 0025 : les suggestions déjà réglées sont rouvertes).
+- Course entre le renouvellement du bail et la vérification de la session d'écriture.
+
+### Sécurité
+
+- Les actions réservées sont refusées à toute clé d'API et à tout jeton, portée `admin` comprise ; la table complète est publiée par `shelfhold access-table`.
+- Une restauration ne rend plus valides une session fermée, une clé révoquée ni un mot de passe réinitialisé depuis la sauvegarde.
+- Les plugins tiers ne peuvent plus être chargés sans l'accord explicite et vérifié de l'administrateur.
+
+### Connu
+
+- **Le second registre d'images et le miroir du dépôt sont à venir** (ENF-GOV-004, L28) : en attente du jeton du second registre. La 0.3.0 est publiée sur GHCR seulement ; ENF-GOV-004 est la seule exigence de M1b sans test.
+- Sur le Suwayomi épinglé, `excludeUnreadChapters` et `excludeNotStarted` sont activés par défaut : `source add` est refusé tant qu'ils ne sont pas désactivés (`docs/admin/suwayomi-multi-comptes.md`).
+- Sans passkey ni mot de passe récent hors profil durci, une session volée peut enregistrer une passkey (`docs/decisions/M1b.md`, point 1 des points à valider).
+- Une étagère en mode conservation créée par `POST /api/v1/shelves` n'est pas liée à une bibliothèque Kavita : la lier par la CLI.
+- Certains chemins du journal structuré (`fsops.write_atomic`, `export.op_done`) contiennent encore le titre.
+- Les migrations 0020 et suivantes (M2) sont déjà sur `main` ; elles ne font pas partie des exigences de M1b.
+
 ## [0.2.0] - 2026-11-07 — M1a
 
 Migration : oui (migrations 0002 à 0012, voir ci-dessous), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à 0.1 passe par la restauration de cette sauvegarde (`docs/admin/restauration.md`).

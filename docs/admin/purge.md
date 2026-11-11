@@ -6,8 +6,10 @@ le retrouver. **Purger** est l'inverse : toutes les copies que Shelfhold gère d
 
 ## Lancer une purge
 
-`shelfhold purge --now --unit <id> --confirm <id>` (ou `--work <id>`), et les routes d'administration
-`POST /api/v1/units/{id}/purge` et `POST /api/v1/works/{id}/purge`.
+    shelfhold purge --now --unit <id> --confirm <id>
+    shelfhold purge --now --work <id> --confirm <id>
+
+(routes `POST /api/v1/units/{id}/purge` et `POST /api/v1/works/{id}/purge`)
 
 - Action **réservée** : administrateur, mot de passe saisi il y a moins de 15 minutes, ou ligne de
   commande locale. Une clé d'API est refusée.
@@ -15,26 +17,67 @@ le retrouver. **Purger** est l'inverse : toutes les copies que Shelfhold gère d
   remplaçable. Le refus a lieu avant toute écriture, pierre tombale comprise.
 - Une ligne d'audit est écrite, sans titre.
 
-## Ce qui est supprimé
+## Dans quel ordre
 
-Toutes les copies gérées connues : les fichiers des destinations (sous `/library`), la copie
-conservée de `/store` et les copies de la corbeille, les vignettes et caches dérivés, les lignes
-de base qui les nomment (variantes, contenus, copies, exports, positions de lecture), et la
-revendication côté Shelfhold des téléchargements de Suwayomi (les tickets sont clos).
+1. la **pierre tombale**, durable et chaînée, avant toute suppression ;
+2. le **service connecté** : la revendication de Shelfhold sur le téléchargement est retirée chez
+   Suwayomi (une demande encore en file est annulée), une seule fois ;
+3. l'**index de `/store`** (`INDEX.jsonl`) est réécrit **avant** les copies : un arrêt brutal laisse un index
+   qui cite des fichiers présents, jamais une ligne morte ;
+4. les **copies** : `/library`, `/store`, la corbeille, les vignettes et caches dérivés, `/data` et le miroir
+   de provenance ;
+5. pour une **Œuvre**, le **désabonnement** de Suwayomi (`unfollow`), quand tous les téléchargements sont
+   réglés ;
+6. la **clôture** : les lignes de base (variantes, contenus, copies, exports, positions de lecture), les
+   tâches et événements terminés dont le texte cite un identifiant de la purge ou un titre, leurs
+   notifications en attente, les journaux d'intentions et les plans d'export terminés dont les chemins
+   épellent le titre, et pour une Œuvre ses métadonnées et son `work.json`.
 
-Ce qui reste, volontairement :
+Le dossier de série vidé reste. Un fichier qui porte d'autres Unités (volume, archive multi-chapitres) n'est
+jamais effacé pour une seule : la purge s'arrête (`purge.collateral`) et le rapport le dit. Une copie sur une
+racine en lecture seule (`adopt_ro`) n'est jamais touchée. Une racine absente : la purge fait ce qu'elle
+peut, garde les lignes de journal dues, et la même commande, relancée au remontage, termine.
 
-- Le dossier de série vidé, et les lignes d'Œuvre et d'Édition (titres compris) jusqu'à M1b.
-- Un fichier qui porte d'autres Unités (volume, archive multi-chapitres) n'est jamais effacé pour
-  une seule : la purge s'arrête (`purge.collateral`) et le rapport le dit.
-- Une copie sur une racine en lecture seule (`adopt_ro`) n'est jamais touchée.
+## Ce qui reste chez Suwayomi
+
+Si Suwayomi garde le fichier pour un autre compte (mode `ui_login`), Shelfhold ne le supprime jamais : le
+rapport dit `kept_by_other_account` et l'alerte vous demande de le supprimer dans Suwayomi. Une revendication
+dont le résultat est inconnu après un arrêt (`upstream_unresolved`) n'est **jamais rejouée** : regardez-la
+avec `shelfhold intents list`, puis `shelfhold intents resolve <intention>`.
+
+## Le journal de la base : `--checkpoint`
+
+La base est en mode journal (WAL) : un titre effacé d'une table peut survivre un moment dans le fichier du
+journal. Shelfhold active `secure_delete` sur chaque connexion et vide le journal (`wal_checkpoint(TRUNCATE)`)
+à la fin d'une purge. Si un lecteur de la base garde un instantané ouvert (le serveur, quand la purge est
+lancée depuis l'hôte), le journal ne peut pas être vidé : trois essais espacés d'une seconde, puis
+`purge.wal_busy`. **L'effacement est fait**, seul le vidage manque. Relancez quand le serveur est inactif,
+ou arrêtez-le ; sans rien faire, le journal est vidé chaque nuit et à l'arrêt. Pour ne refaire que ce vidage :
+
+    shelfhold purge --checkpoint
+
+## Après une mise à jour depuis la 0.2 : `--leftovers`
+
+Les purges de la version précédente n'ont pas libéré les téléchargements chez Suwayomi et ont laissé des
+titres dans les pages libres de la base. Rien n'est appliqué d'office :
+
+    shelfhold purge --leftovers                 # le plan, et sa version
+    shelfhold purge --leftovers --confirm <version>
+
+Le plan dit ce que le service tient encore. L'application est une action réservée ; elle commence par un
+`VACUUM` qui réécrit la base entière (prévoyez de la place libre, les écritures attendent), refusé avec
+`purge.busy` si une sauvegarde ou l'entretien nocturne le tient. Une version de plan périmée ne fait rien
+(`plan.stale`). Une fois les téléchargements supprimés à la main dans Suwayomi, `shelfhold purge --kept-ack`
+efface la marque qui les signalait.
 
 ## Ce que Shelfhold ne peut pas effacer
 
-Chaque rapport de purge le rappelle : les sauvegardes de l'hôte, les caches et signets de Kavita,
-les copies faites hors de Shelfhold, les journaux de l'hôte, les sauvegardes retenues. Dans
-Suwayomi, le chapitre n'est pas supprimé par Shelfhold : l'alerte `unit.delete_in_suwayomi` vous
-demande de le faire.
+Chaque rapport de purge le rappelle : les sauvegardes de l'hôte, les caches et signets de Kavita, les copies
+faites hors de Shelfhold, les journaux de l'hôte, les sauvegardes retenues. Pour les sauvegardes intégrées,
+le rapport **liste** celles qui sont encore présentes et datent d'après la création des lignes purgées (leur
+nom, c'est-à-dire un horodatage : elles ne sont ni déchiffrées ni réécrites). Elles contiennent encore l'Œuvre jusqu'à ce
+que la rétention les renouvelle ([sauvegarde.md](sauvegarde.md)), et une restauration ne la
+ressuscite pas : le journal des pierres tombales est rejoué avant toute réadoption.
 
 ## Les pierres tombales
 
@@ -59,4 +102,6 @@ Conséquences :
   ([restauration.md](restauration.md)).
 
 Lister ou lever une pierre tombale sont aussi des actions réservées ; aucune commande ne les
-expose dans cette version.
+expose dans cette version. Les commandes de sortie qui touchent aux pierres tombales
+(`tombstone flush`, `set-aside-journal`, `rekey`, `accept-lost-keyring`) sont dans
+[etats-attente-et-sorties.md](etats-attente-et-sorties.md) et [secrets.md](secrets.md).
