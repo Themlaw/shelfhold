@@ -118,6 +118,10 @@ class SourceChanged(SourceError):
     code = "source.changed"  # the parser broke
 
 
+class NotConfigured(SourceError):
+    code = "source.not_configured"  # no usable address (or setting) given by the admin
+
+
 class TemporarilyUnavailable(SourceError):
     code = "source.temporarily_unavailable"  # upstream asleep or down: pause, not failure
 

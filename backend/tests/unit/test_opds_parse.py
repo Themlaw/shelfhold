@@ -7,11 +7,11 @@ from __future__ import annotations
 import json
 
 import pytest
+
+from shelfhold.infrastructure.xml import safe_parse_xml
 from shelfhold.plugin_host.adapters.native.opds import atom, opensearch
 from shelfhold.plugin_host.adapters.native.opds import json as opds_json
 from shelfhold.plugin_host.adapters.native.opds.model import Feed, FeedError
-
-from shelfhold.infrastructure.xml import safe_parse_xml
 from tests.fakes.opds import (
     ATOM,
     OPDS2,
@@ -207,17 +207,17 @@ def test_opds_text_is_read_as_text_never_as_markup() -> None:
 def test_opds_entry_stored_as_received_same_hash() -> None:
     """The same entry, met in a search feed and served alone, has the same digest (what the host
     keeps as the revision hint); any change of what the source says changes it."""
-    raw = acquisition_entry("urn:b", "Un livre", "/opds/f/b.epub", EPUB, summary="  espaces  \n")
+    raw = acquisition_entry("urn:b", "Un livre", "/opds/f/b.epub", EPUB, summary="  blancs  \n")
     in_feed = read_atom(atom_feed("urn:s", "Résultats", [raw])).entries[0]
     alone = atom.parse_atom(entry_document(raw), f"{BASE}b", safe_parse_xml)
     (single,) = alone.entries
     assert alone.is_entry and in_feed.digest == single.digest
-    assert in_feed.summary == "  espaces  \n"  # as received, not stripped
+    assert in_feed.summary == "  blancs  \n"  # as received, not stripped
     assert in_feed.digest.startswith("sha256:") and len(in_feed.digest) == len("sha256:") + 64
     for changed in (
         raw.replace("Un livre", "Un livre!"),
         raw.replace("/opds/f/b.epub", "/opds/f/b2.epub"),
-        raw.replace("espaces", "espace"),
+        raw.replace("blancs", "blanc"),
         raw.replace(EPUB, CBZ),
     ):
         other = read_atom(atom_feed("urn:s", "Résultats", [changed])).entries[0]

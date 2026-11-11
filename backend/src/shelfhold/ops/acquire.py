@@ -24,6 +24,7 @@ from shelfhold.infrastructure.fetcher import FetchError
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
+from shelfhold.plugin_host.settings import SourceSettings
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.source import SourceError
 
@@ -52,6 +53,7 @@ class AcquireOps:
             staging_dir=comp.settings.data_dir / "tmp",
             max_bytes=comp.settings.received_cbz_max_bytes,
             source_settings=self._settings_of,
+            source_secrets=self._secrets_of,
             connected=(lambda key: link if key == "suwayomi" else None),
         )  # fmt: skip
 
@@ -62,6 +64,12 @@ class AcquireOps:
                 sa.select(table.c.settings).where(table.c.plugin_id == plugin_id)
             ).scalar_one_or_none()
         return dict(found or {})
+
+    def _secrets_of(self, plugin_id: str) -> dict[str, str]:
+        """The sealed secrets of a source (L07), opened for the host's own injection only."""
+        comp = self._comp
+        loaded = SourceSettings(comp.engine, comp.vault, now=comp.clock.now).load(plugin_id)
+        return dict(loaded.values)
 
     @staticmethod
     def _refused(error: Exception) -> CodedRefusal:

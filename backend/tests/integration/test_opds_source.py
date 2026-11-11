@@ -275,7 +275,11 @@ def test_opds_file_redirected_to_another_origin_of_the_same_host_loses_the_crede
             )
             b.wire.serve("/second/tome-1.epub", file(CLEAN))
             acquire(b)
-            (second,) = [r for r in b.wire.recorder.requests if r.url.port == 8443]
+            (second,) = [
+                r
+                for r in b.wire.recorder.requests
+                if r.url.port == 8443 and r.url.path != "/robots.txt"
+            ]
             sent = f"{second.url}\n{dict(second.headers)}"
             for form in forms_of(b):
                 assert form not in sent, mode
@@ -493,7 +497,6 @@ def test_opds_manifest_is_untrusted_and_bound_to_the_configured_host() -> None:
     from pathlib import Path
 
     from shelfhold.plugin_host.native_sources import opds_source
-
     from shelfhold.sdk.source import Capability, SourceManifest
 
     source = opds_source()
@@ -514,3 +517,117 @@ def test_opds_manifest_is_untrusted_and_bound_to_the_configured_host() -> None:
         ("api_key", "query"),
         ("api_key", "path"),
     } <= kinds
+
+
+# -- OPDS 2.0, errors, configuration --------------------------------------------------------------
+
+
+@pytest.mark.req("EF-SRC-006")
+def test_opds_2_0_catalogue_search_and_acquire() -> None:
+    """The JSON flavour end to end: a templated search link, publications, a file."""
+    from tests.fakes.opds import OPDS2, opds2_feed, publication
+
+    with opds_bench(auth="none", base_path="/opds/v2") as b:
+        root = opds2_feed(
+            "Catalogue",
+            links=[
+                {
+                    "rel": "search",
+                    "href": "/opds/v2/search{?query}",
+                    "type": OPDS2,
+                    "templated": True,
+                }
+            ],
+        )
+        found = opds2_feed(
+            "Résultats",
+            publications=[publication("pub-1", "Un livre 2.0", "/opds/v2/files/pub-1.epub")],
+        )
+        b.wire.serve("/opds/v2", document(root, OPDS2))
+        b.wire.serve("/opds/v2/search", document(found, OPDS2))
+        b.wire.serve("/opds/v2/files/pub-1.epub", file(CLEAN))
+        (ref,) = search(b, "un titre")
+        assert ref.title == "Un livre 2.0" and ref.memo == {"entry": "pub-1"}
+        queries = [r.url.params.get("query") for r in b.wire.recorder.requests]
+        assert "un titre" in queries
+        _prepared, outcome = acquire(b, ref)
+        assert outcome.state == "fetched"
+
+
+@pytest.mark.req("EF-SRC-006")
+def test_opds_http_errors_are_typed_source_errors() -> None:
+    from shelfhold.sdk.source import (
+        AuthRequired,
+        ContentRemoved,
+        RateLimited,
+        SourceChanged,
+        TemporarilyUnavailable,
+    )
+
+    cases: dict[int, type[Exception]] = {
+        401: AuthRequired,
+        403: AuthRequired,
+        404: ContentRemoved,
+        429: RateLimited,
+        503: TemporarilyUnavailable,
+        418: SourceChanged,
+    }
+    for status, expected in cases.items():
+        with opds_bench(auth="none", base_path="/opds") as b:
+            headers = {"retry-after": "7"} if status == 429 else {}
+            b.wire.serve("/opds", lambda _r, s=status, h=headers: httpx2.Response(s, headers=h))
+            with pytest.raises(expected) as caught:
+                search(b)
+            if status == 429:
+                assert caught.value.retry_after == 7.0  # type: ignore[attr-defined]
+
+
+@pytest.mark.req("EF-SRC-006")
+def test_opds_html_or_garbage_instead_of_a_feed_is_a_source_that_changed() -> None:
+    from shelfhold.sdk.source import SourceChanged
+
+    for body in (b"<html><body>login</body></html>", b"\x00\xff\x00", b"{}", b""):
+        with opds_bench(auth="none", base_path="/opds") as b:
+            b.wire.serve("/opds", document(body, "text/html"))
+            with pytest.raises(SourceChanged):
+                search(b)
+
+
+@pytest.mark.req("EF-SRC-006", "EF-SRC-023")
+def test_opds_address_that_is_not_a_catalogue_is_refused_before_any_request() -> None:
+    for bad in ("", "ftp://opds.example.org/x", "opds.example.org", "https://", "http://h:99999/x",
+                f"https://opds.example.org/x#{new_key()}"):  # fmt: skip
+        with opds_bench(auth="none", base_path="/opds") as b:
+            b.settings["base_url"] = bad
+            with pytest.raises((AcquireRefused, SourceError)):
+                search(b)
+            assert b.wire.recorder.requests == []
+
+
+@pytest.mark.req("EF-SRC-023")
+def test_opds_credentials_chosen_but_not_set_send_nothing() -> None:
+    """`auth` says basic and no password is set: no request goes out unauthenticated."""
+    for mode, secret_name in (("basic", "password"), ("api_key_header", "api_key")):
+        with opds_bench(auth=mode, base_path="/opds") as b:
+            serve_komga(b, {"tome-1.epub": CLEAN})
+            b.secrets.pop(secret_name)
+            from shelfhold.sdk.source import AuthRequired
+
+            with pytest.raises(AuthRequired):
+                search(b)
+            assert b.wire.recorder.requests == []
+        with opds_bench(auth="api_key_nowhere", base_path="/opds") as b:  # not a declared flow
+            with pytest.raises(SourceError):
+                search(b)
+            assert b.wire.recorder.requests == []
+
+
+@pytest.mark.req("EF-SRC-006")
+def test_opds_a_source_that_stopped_being_configured_closes_the_request_for_good() -> None:
+    with opds_bench(auth="basic", base_path="/opds") as b:
+        serve_komga(b, {"tome-1.epub": CLEAN})
+        (ref,) = search(b)
+        prepared = run(b.acquirer.prepare(ref))
+        b.settings["base_url"] = ""  # the admin cleared it between the request and the job
+        outcome = run(b.acquirer.fetch(prepared.request_id, b.store(), b.place))
+        assert outcome.state == "abandoned" and outcome.reason == "source.not_configured"
