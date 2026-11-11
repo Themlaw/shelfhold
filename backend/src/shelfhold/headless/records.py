@@ -40,8 +40,13 @@ def target_names(connection: Connection) -> list[str]:
     return list(connection.execute(sa.select(table.c.name).order_by(table.c.name)).scalars())
 
 
-def set_jurisdiction(connection: Connection, value: str) -> None:
-    connection.execute(sa.update(platform.instance).values(jurisdiction=value))
+def set_jurisdiction(connection: Connection, value: str, confirmed_at: datetime) -> None:
+    """The admin chose the country: it is confirmed from now on (EF-SRC-024, D4)."""
+    connection.execute(
+        sa.update(platform.instance).values(
+            jurisdiction=value, jurisdiction_confirmed_at=confirmed_at
+        )
+    )
 
 
 def setting(connection: Connection, key: str) -> str | None:

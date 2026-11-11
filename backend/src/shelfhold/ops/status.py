@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.acquisition.public import stale_series
-from shelfhold.catalog.public import RatingService
+from shelfhold.catalog.public import RatingService, RightsService
 from shelfhold.export.application.target_health import TargetHealth
 from shelfhold.export.application.to_rate import to_rate
 from shelfhold.export.application.withdrawal import build_plan
@@ -34,8 +34,10 @@ __all__ = [
     "candidate_report",
     "collect",
     "command_for",
+    "jurisdiction_report",
     "known_bad_report",
     "queues_of",
+    "rights_report",
     "stale_report",
     "tombstoned_report",
 ]
@@ -348,6 +350,25 @@ def tombstoned_report(connection: Connection) -> list[dict[str, object]]:
         .order_by(notice.c.told_at, notice.c.key_hash)
     )
     return [{"title": r.subject, "since": r.told_at.isoformat()} for r in rows]
+
+
+def jurisdiction_report(connection: Connection) -> dict[str, object] | None:
+    """The country of the instance and whether the admin confirmed it (EF-SRC-024, D4): until
+    `config set instance.jurisdiction`, the value is the one the locale suggests. `None` before
+    the instance exists. The calculation uses the unconfirmed value."""
+    if connection.execute(sa.select(platform.instance.c.instance_id)).first() is None:
+        return None
+    country, confirmed = RightsService(connection).jurisdiction()
+    return {"jurisdiction": country, "confirmed": confirmed}
+
+
+def rights_report(connection: Connection, today: date) -> list[dict[str, object]]:
+    """The Editions that may still be protected in the country of the instance (EF-SRC-024). A
+    list to read, indicative: no addition was or will be refused because of it."""
+    return [
+        {"edition_id": r.edition_id, "reason": r.reason}
+        for r in RightsService(connection).protected(today)
+    ]
 
 
 def known_bad_report(connection: Connection, today: date) -> dict[str, object]:

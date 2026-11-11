@@ -53,5 +53,10 @@
   "reauth.confirm": "Confirmer",
   "reauth.passkey": "Confirmer avec une clé d'accès",
   "reauth.cancel": "Annuler",
-  "reauth.failed": "La confirmation a échoué. Recommencez."
+  "reauth.failed": "La confirmation a échoué. Recommencez.",
+  "rights.us_public_domain": "Libre de droits aux États-Unis",
+  "rights.us_public_domain_note": "Libre de droits aux États-Unis ne veut pas dire libre de droits partout : la protection dépend du pays de l'instance.",
+  "rights.may_be_protected": "Peut-être encore protégé dans votre pays ({country}). Ce calcul est indicatif et ne bloque rien.",
+  "rights.translation_may_be_protected": "La traduction peut être encore protégée dans votre pays ({country}). Ce calcul est indicatif et ne bloque rien.",
+  "rights.no_information": "Aucune information sur les droits dans votre pays."
 }
