@@ -13,13 +13,15 @@ No message here quotes the reference or the value: the reason is a closed word.
 import re
 from collections.abc import Iterable
 from typing import Final
-from urllib.parse import unquote
 
 from shelfhold.infrastructure.secret_text import (
     SecretIndex,
     contains_secret,
+    credentialish,
     decoded_views,
     secret_forms,
+    sensitive_name,
+    tokenlike,
 )
 from shelfhold.sdk.refs import SECRET_PLACEHOLDER
 
@@ -32,20 +34,11 @@ __all__ = [
     "rewrite_ref",
 ]
 
-# `//name:pass@host` or `//name@host`; or, with no scheme, `name:pass@host`. An `@` after the first
-# slash of the path is just a character.
-_USERINFO: Final = re.compile(r"//[^/?#\s]*@|^[^/?#\s@]*:[^/?#\s@]*@")
-# A parameter whose name says what it holds. `page_token` counts: refused is the safe side.
-_SENSITIVE_NAME: Final = re.compile(
-    r"(?:^|[-_.])(?:api[-_]?key|apikey|access[-_]?token|refresh[-_]?token|id[-_]?token|token|secret"
-    r"|passw(?:or)?d|passwd|pwd|auth|authorization|signature|sig|sas|session(?:[-_]?id)?"
-    r"|jsessionid|sid|cookie|credentials?)$",
-    re.IGNORECASE,
-)
-_PATH_AFTER_NAME: Final = re.compile(
-    r"/(?:api[-_]?key|apikey|key|token|access[-_]?token|secret|auth|bearer|session)/(?P<v>[^/?#]+)"
-    r"|/api/opds/(?P<o>[^/?#]+)",
-    re.IGNORECASE,
+# The authority of a reference as a URL parser reads it: an optional scheme, any run of slashes or
+# backslashes (`https:/user:pw@h` and `https:\\\\user:pw@h` still have a userinfo), then up to the
+# first `/`, `\\`, `?` or `#`. Spaces inside are kept: they are part of the userinfo.
+_AUTHORITY: Final = re.compile(
+    r"^\s*(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*:)?(?P<slashes>[/\\]*)(?P<auth>[^/\\?#]*)"
 )
 _JWT_SEGMENT: Final = re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]*")
 
@@ -60,39 +53,42 @@ class SecretInRef(ValueError):
 
 
 def has_userinfo(text: str) -> bool:
-    """A `user[:password]@` part, as written or encoded."""
-    return any(_USERINFO.search(view) for view in decoded_views(text))
+    """A `user[:password]@` part, as written, encoded, or spelled the way a URL parser accepts."""
+    for view in decoded_views(text):
+        match = _AUTHORITY.match(view)
+        if match is None or "@" not in match.group("auth"):
+            continue
+        slashes = len(match.group("slashes"))
+        if match.group("scheme") or slashes >= 2 or (slashes == 0 and ":" in match.group("auth")):
+            return True
+    return False
 
 
 def _sensitive_pairs(part: str) -> bool:
     for piece in re.split(r"[&;]", part):
         name, equals, value = piece.partition("=")
-        if (
-            equals
-            and value
-            and value != SECRET_PLACEHOLDER
-            and _SENSITIVE_NAME.search(unquote(name))
-        ):
+        if not equals or not value or value == SECRET_PLACEHOLDER:
+            continue
+        if _JWT_SEGMENT.fullmatch(value) or (sensitive_name(name) and credentialish(value)):
             return True
     return False
 
 
 def _pattern_reason(ref: str) -> str | None:
-    """A secret nobody registered still shows by where it sits."""
+    """A secret nobody registered still shows by what it is shaped like and where it sits: the
+    value of a credential-named parameter, a token-shaped path segment or fragment. A word, a
+    slug or a short number never counts."""
     for view in decoded_views(ref):
         body, _, fragment = view.partition("#")
         path, _, query = body.partition("?")
         if _sensitive_pairs(query):
             return "query"
-        if "=" in fragment and _sensitive_pairs(fragment):
+        if fragment and (_sensitive_pairs(fragment) if "=" in fragment else tokenlike(fragment)):
             return "fragment"
-        if _sensitive_pairs(path.replace("/", ";")) and ";" in path:
-            return "path"  # a matrix parameter: `/series/1;jsessionid=...`
-        for match in _PATH_AFTER_NAME.finditer(path):
-            if (match.group("v") or match.group("o")) != SECRET_PLACEHOLDER:
+        for segment in path.split("/"):
+            head, _, matrix = segment.partition(";")
+            if tokenlike(head) or _sensitive_pairs(matrix):
                 return "path"
-        if any(_JWT_SEGMENT.fullmatch(segment) for segment in path.split("/")):
-            return "path"
     return None
 
 
