@@ -4,11 +4,13 @@ An EPUB already in a library is not rewritten. It is only looked at, to tell the
 an `on*` handler, a `javascript:` URL, a frame or an embedded object, a remote resource, a remote
 `@import` or `url()`. Nothing here produces a derivative (`xhtml_neutralizer` is the only producer);
 this reads and answers, over the same archive and XML readers. A page the reader refuses, or an
-archive the neutralizer would refuse, counts as active: it is not safe to hand to a reader either.
+archive the neutralizer would refuse (it is asked), counts as active: not safe to hand to a
+reader either.
 """
 
 from __future__ import annotations
 
+import io
 import re
 from pathlib import PurePath
 from typing import BinaryIO, Final
@@ -18,7 +20,11 @@ from shelfhold.infrastructure.archives import (
     UnsafeArchiveError,
     safe_open_archive,
 )
-from shelfhold.infrastructure.content_trust.xhtml_neutralizer import parse_xml_document
+from shelfhold.infrastructure.content_trust.epub_scan import neutralize_epub
+from shelfhold.infrastructure.content_trust.xhtml_neutralizer import (
+    NeutralizationError,
+    parse_xml_document,
+)
 from shelfhold.infrastructure.xml import Element
 
 _PAGE_BYTES: Final = 32 * 1024 * 1024
@@ -77,4 +83,10 @@ def find_active_content(source: BinaryIO, *, name: str = "book.epub") -> tuple[s
                     found.append(entry.name)
     except UnsafeArchiveError:
         return (name,)
+    if not found:  # what the neutralizer would refuse is not safe to hand to a reader either
+        source.seek(0)
+        try:
+            neutralize_epub(source, io.BytesIO(), name=name)
+        except NeutralizationError as error:
+            found.append(error.entry or name)
     return tuple(found)

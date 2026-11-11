@@ -2,6 +2,8 @@
 
 from typing import ClassVar
 
+from shelfhold.infrastructure.content_trust.cbz_entries import UntrustedEntryError
+
 
 class ReceivedTooLargeError(ValueError):
     """A received archive is above the bound (`received_cbz_max_bytes`), checked before opening."""
@@ -30,17 +32,13 @@ class TombstonedContentError(PermissionError):
     code = "unit.tombstoned"
 
 
-class EpubRefusedError(ValueError):
+class EpubRefusedError(UntrustedEntryError):
     """The neutralizer refused an `untrusted` EPUB (an entry that is not on its allowlist, an
     unsafe archive or XML): there is no derivative and nothing is exported (EF-BIB-051). `reason`
     is the stable word of the refusal, `entry` the archive entry it is about, if any."""
 
-    code: ClassVar[str] = "content.untrusted_entry"
-
-    def __init__(self, reason: str, entry: str | None = None) -> None:
-        super().__init__(f"{self.code}: {reason}" + (f" ({entry})" if entry else ""))
-        self.reason = reason
-        self.entry = entry
+    # an `UntrustedEntryError` (same stable code): the ticket that carried the file is closed for
+    # good with an announcement, never retried (the same bytes would be refused again)
 
 
 class OriginalNotServableError(PermissionError):

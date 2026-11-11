@@ -355,6 +355,8 @@ class UntrustedEpubStore:
         content_id = new_ulid()
         kept_local: str | None = None
         rel = original_rel(unit_id, content_id)
+        if self._fsops.observe(dest) is not None:  # before the original: no orphan in /store
+            raise FileExistsError(dest)
         if self._store is not None:  # the original first: nothing is shown before it is safe
             kept_local = f"{self._store}/{rel}"
             with staged.open("rb") as stream:
@@ -500,12 +502,18 @@ class UntrustedEpubStore:
                     .where(revision.c.id == latest.id)
                     .values(quarantined_at=now, quarantine_reason=reason)
                 )
-            connection.execute(
-                sa.update(catalog.unit)
-                .where(catalog.unit.c.id == unit_id)
-                .values(state="quarantined")
-            )
-        log.warning("content.untrusted_entry", reason=error.reason, entry=error.entry)
+            other = connection.execute(
+                sa.select(storage.content.c.id).where(storage.content.c.unit_id == unit_id)
+            ).first()
+            if other is None:  # a Unit with a valid content keeps it: the revision says why
+                connection.execute(
+                    sa.update(catalog.unit)
+                    .where(catalog.unit.c.id == unit_id)
+                    .values(state="quarantined")
+                )
+        log.warning("content.untrusted_entry", unit_id=unit_id, reason=error.reason)
+        if error.entry:  # the archive's own text: not at warning level
+            log.debug("content.untrusted_entry_name", unit_id=unit_id, entry=repr(error.entry))
 
     @staticmethod
     def _leave_refused_state(connection: Connection, unit_id: str) -> None:
@@ -526,6 +534,23 @@ class UntrustedEpubStore:
         verified by `derived_hash` (the payload, so the OPF a destination rewrote does not count)
         and must be clean for the neutralizer; it is recorded `extracted_derived` and nothing is
         put in /store, for there is no original to keep."""
+        if derived_by != DERIVED_BY and not derived_by.startswith("xhtml-neutralizer@"):
+            raise OriginalNotServableError("derived_by_unknown", "not a neutralizer generation")
+        with tempfile.NamedTemporaryFile(
+            dir=self._staging(), suffix=".epub", prefix="found-"
+        ) as copy:  # one private copy: everything below is verified on the bytes that are filed
+            with found.open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    copy.write(chunk)
+            copy.flush()
+            return self._restore_copy(
+                Path(copy.name), unit_id, variant_id, dest, expected_derived_hash, derived_by
+            )
+
+    def _restore_copy(
+        self, found: Path, unit_id: str, variant_id: str, dest: str,
+        expected_derived_hash: str, derived_by: str,
+    ) -> EpubIngested:  # fmt: skip
         with safe_open_archive(found, name=PurePath(dest).name, limits=self._limits) as archive:
             payload = epub_payload_hash(archive)
         if payload != expected_derived_hash:
@@ -533,6 +558,14 @@ class UntrustedEpubStore:
         if not _is_clean(found, staging=self._staging(), limits=self._limits):
             raise OriginalNotServableError("not_clean", "the neutralizer would still change it")
         self._require_not_tombstoned([ContentHash(_EPUB_HASH_BY, payload)])
+        with self._engine.connect() as connection:
+            if connection.execute(
+                sa.select(storage.content.c.id).where(
+                    storage.content.c.variant_id == variant_id,
+                    storage.content.c.media_type == EPUB_MEDIA_TYPE,
+                )
+            ).first():
+                raise VariantAlreadyStoredError(f"the Variant {variant_id} already has its EPUB")
         file_hash, content_id = sha256_file(found), new_ulid()
         root_id, rel = self._locate(dest)
         with found.open("rb") as stream:

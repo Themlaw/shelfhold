@@ -11,7 +11,7 @@ nothing is written.
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -59,6 +59,7 @@ from shelfhold.library.public import (
     ExportSource,
     OriginalNotServableError,
     RootLocator,
+    ServableEpub,
     export_sources,
     has_epub,
     require_servable_derivative,
@@ -606,11 +607,12 @@ class ExportPipeline:
         return str(found) if found is not None else None
 
     def _source(self, unit_id: str) -> ExportSource:
+        served: ServableEpub | None = None
         with self._engine.connect() as connection:
             try:  # EF-BIB-051: an untrusted EPUB leaves by its derivative or not at all
                 require_servable_derivative(connection, unit_id)
                 if has_epub(connection, unit_id):
-                    servable_epub(
+                    served = servable_epub(
                         self._engine,
                         self._fsops,
                         unit_id,
@@ -621,6 +623,8 @@ class ExportPipeline:
             source = export_sources(connection, [unit_id]).get(unit_id)
         if source is None or source.local_path is None:
             raise SourceMissingError(unit_id)
+        if served is not None:  # the file that was verified is the one that leaves
+            source = replace(source, local_path=served.path)
         return source
 
     def _write(
