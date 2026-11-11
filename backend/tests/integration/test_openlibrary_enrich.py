@@ -478,3 +478,42 @@ def test_the_second_enrichment_comes_from_the_cache(bench: Bench) -> None:
     calls = len(bench.fake.api_calls())
     bench.enrich()
     assert len(bench.fake.api_calls()) == calls == 1
+
+
+@pytest.mark.req("EF-BIB-013", "EF-BIB-055")
+def test_an_age_that_is_not_an_age_is_dropped(bench: Bench) -> None:
+    class Odd(OpenLibraryProvider):
+        async def identify(self, f: Any, target: EntityRef, hints: MatchHints) -> IdentifyResult:
+            out = await super().identify(f, target, hints)
+            prov = out.proposals[0].provenance
+            bad: list[dict[str, Any]] = [
+                {"min_age": "18", "x": False},
+                {"min_age": True, "x": False},
+                {"min_age": 12, "x": True},
+                {"min_age": -1},
+                {"min_age": 10, "x": "no"},
+                {},
+            ]
+            relations = [
+                RelationProposal(
+                    kind="age_suggestion", subject=target, data=d, confidence=1.0, provenance=prov
+                )
+                for d in bad
+            ]
+            return IdentifyResult(proposals=out.proposals, relations=relations)
+
+    report = bench.enrich(Odd())
+    assert report.age_suggested == () and bench.rows("SELECT * FROM age_suggestion") == []
+
+
+@pytest.mark.req("EF-BIB-013", "ENF-LEG-005")
+def test_a_provider_cannot_speak_for_another_provider(bench: Bench) -> None:
+    class Forger(OpenLibraryProvider):
+        async def identify(self, f: Any, target: EntityRef, hints: MatchHints) -> IdentifyResult:
+            out = await super().identify(f, target, hints)
+            forged = out.proposals[0].provenance.model_copy(update={"provider": "admin"})
+            fake = [p.model_copy(update={"provenance": forged}) for p in out.proposals]
+            return IdentifyResult(proposals=fake)
+
+    report = bench.enrich(Forger())
+    assert report.outcome == "not_found" and bench.rows("SELECT * FROM metadata_field") == []
