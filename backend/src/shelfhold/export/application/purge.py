@@ -45,7 +45,7 @@ import hashlib
 import json
 import time
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -280,7 +280,7 @@ class PurgeService:
         store_dir: Path | None = None,
         upstream: UpstreamPort | None = None,
         backups: BackupsSince | None = None,
-        index_lock: Callable[[], AbstractContextManager[Any]] | None = None,
+        index_lock: Callable[[], AbstractContextManager[Any]],
     ) -> None:
         self._index_lock = index_lock
         self._fresh_auth_s = fresh_auth_s  # from the settings, never from the caller
@@ -752,12 +752,15 @@ class PurgeService:
         window's own pass draws the same file), never a line that points at nothing."""
         if self._store_dir is None:
             return
-        index = StoreIndex(self._engine, self._fsops, str(self._store_dir), self._tombstones)
+        index = StoreIndex(
+            self._engine, self._fsops, str(self._store_dir), self._tombstones,
+            hold=self._index_lock,
+        )  # fmt: skip
         # rendered and written under the lock of the index, the one the window's pass takes: a
         # render made before this purge must not be written after it (it would cite the Units
         # again); a lock held past its timeout stops the purge here, before any copy goes, and the
         # same command run again finishes
-        with self._index_lock() if self._index_lock is not None else nullcontext():
+        with self._index_lock():
             self._write_index(index, plan, progress)
 
     def _write_index(self, index: StoreIndex, plan: _Plan, progress: _Progress) -> None:

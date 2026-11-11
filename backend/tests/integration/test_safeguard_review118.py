@@ -20,6 +20,7 @@ from shelfhold.library.public import PassthroughStore
 from shelfhold.sdk.connected import ReleaseResult
 from tests.integration.test_schema_catalog import add_variant
 from tests.library_env import JPEG, PNG, cbz_bytes, lib_env
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 from tests.safeguard_env import World
 
@@ -80,7 +81,14 @@ def second_content(world: World, first: Any) -> tuple[Path, bytes]:
         variant_b = add_variant(c, first.unit_id, env.chain["binding"], "ch-1-teamB")
     data_b = cbz_bytes((("001.png", PNG + b"teamB"), ("002.jpg", JPEG + b"B")))
     dest_b = env.manga / "Dr Stone" / "Dr Stone - 1 (B).cbz"
-    PassthroughStore(env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED).ingest(
+    PassthroughStore(
+        env.engine,
+        env.fsops,
+        env.locate,
+        env.data,
+        tombstones=NONE_PURGED,
+        hold_work=work_lock(env.engine),
+    ).ingest(
         unit_id=first.unit_id, variant_id=variant_b, staged=env.stage(data_b), dest=str(dest_b)
     )
     with env.engine.begin() as c:

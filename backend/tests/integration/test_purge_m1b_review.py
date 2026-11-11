@@ -35,6 +35,7 @@ from shelfhold.work_locks import holder_over, index_holder_over
 from tests.export_env import ExportEnv, export_env
 from tests.integration.test_schema_catalog import add_unit, add_variant
 from tests.library_env import cbz_bytes
+from tests.locks_env import index_lock, work_lock
 from tests.purge_env import ADMIN, TITLE, PurgeEnv, make_purge_env, spread
 from tests.purge_m1b_env import (
     FakeService,
@@ -149,6 +150,7 @@ def _followed_work(env: ExportEnv, tmp_path: Path) -> tuple[_Service, Any, str, 
     base.purge = PurgeService(
         env.engine, env.lib.fsops, base.tombstones, clock=base.clock, data_dir=env.lib.data,
         bus=base.bus, fresh_auth_s=900, store_dir=env.lib.store, upstream=upstream,
+index_lock=index_lock(env.engine),
     )  # fmt: skip
     return service, series, unit, source_key, base
 
@@ -382,7 +384,12 @@ def test_ingest_failing_after_the_write_takes_the_file_away() -> None:
             second = add_unit(connection, series.edition_id, "2")
             variant = add_variant(connection, second, series.binding_id, "ch-two")
         store = PassthroughStore(
-            env.engine, env.lib.fsops, env.lib.locate, env.lib.data, tombstones=purge.tombstones
+            env.engine,
+            env.lib.fsops,
+            env.lib.locate,
+            env.lib.data,
+            tombstones=purge.tombstones,
+            hold_work=work_lock(env.engine),
         )
         real = Fsops.write_atomic
         dest = env.lib.manga / RECEIVED_DIR / f"{second}.cbz"

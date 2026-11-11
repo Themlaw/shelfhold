@@ -11,7 +11,7 @@ secret, a path outside /store, a destination's name. The write is atomic and goe
 
 import json
 from collections.abc import Callable, Collection
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -43,7 +43,7 @@ class StoreIndex:
         store_dir: str,
         tombstones: ContentTombstones,
         *,
-        hold: Callable[[], AbstractContextManager[Any]] | None = None,
+        hold: Callable[[], AbstractContextManager[Any]],
     ) -> None:
         self._hold = hold  # the lock of the index, shared with `purge --now`
         self._engine = engine
@@ -115,7 +115,7 @@ class StoreIndex:
         """Rendered and written under the lock of the index: a purge that rewrites the file in
         between (its Units gone from the index before their copies go) is never overwritten by a
         render that was made before it (EF-BIB-052)."""
-        with self._hold() if self._hold is not None else nullcontext():
+        with self._hold():
             data, count, left_out = self.render()
             try:
                 same = self._fsops.read_bytes(self._path) == data

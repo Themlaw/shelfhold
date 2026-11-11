@@ -29,6 +29,7 @@ from tests.library_env import (
     cbz_bytes,
     lib_env,
 )
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 
 
@@ -55,7 +56,10 @@ def safeguard(env: LibEnv) -> Safeguard:
 def ingest_and_render(env: LibEnv, received: bytes) -> Path:
     """Ingest as received, then let the exporter replace the file with its rendering."""
     dest = env.manga / "Dr Stone" / "Dr Stone - 1.cbz"
-    PassthroughStore(env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED).ingest(
+    PassthroughStore(
+        env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED,
+        hold_work=work_lock(env.engine),
+    ).ingest(
         unit_id=env.chain["unit"], variant_id=env.chain["variant"],
         staged=env.stage(received), dest=str(dest),
     )  # fmt: skip

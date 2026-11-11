@@ -23,6 +23,7 @@ from tests.export_env import ExportEnv, Series
 from tests.fakes_clock import ManualClock
 from tests.intents_env import NOW
 from tests.library_env import LibEnv
+from tests.locks_env import index_lock
 
 TITLE = "Dr Stone"
 ADMIN = Principal("01J00000000000000000000ADM", "admin", "admin", Credential.LOCAL_CLI)
@@ -108,7 +109,14 @@ def make_purge_env(lib: LibEnv) -> PurgeEnv:
     bus = EventBus(clock)
     tombstones = TombstoneService(lib.engine, store.load(), lib.fsops, bus)
     purge = PurgeService(
-        lib.engine, lib.fsops, tombstones, clock=clock, data_dir=lib.data, bus=bus, fresh_auth_s=900
+        lib.engine,
+        lib.fsops,
+        tombstones,
+        clock=clock,
+        data_dir=lib.data,
+        bus=bus,
+        fresh_auth_s=900,
+        index_lock=index_lock(lib.engine),
     )
     env = PurgeEnv(lib, tombstones, purge, bus, clock, store)
     env.replay()  # membership fails closed until a replay ran

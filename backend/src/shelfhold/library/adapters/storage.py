@@ -121,7 +121,7 @@ class PassthroughStore:
         max_received_bytes: int = DEFAULT_MAX_RECEIVED_BYTES,
         limits: ArchiveLimits = DEFAULT_LIMITS,
         tombstones: ContentTombstones,
-        hold_work: WorkHolder | None = None,
+        hold_work: WorkHolder,
     ) -> None:
         self._hold_work = hold_work
         self._engine = engine
@@ -168,10 +168,9 @@ class PassthroughStore:
         return ingested
 
     def _held(self, unit_id: str) -> AbstractContextManager[Any]:
-        if self._hold_work is None:
-            return nullcontext()
         with self._engine.connect() as connection:
             work_id = work_of_unit(connection, unit_id)
+        # a Unit with no Work row is gone: `_file` refuses it (UnitGoneError) under no lock
         return nullcontext() if work_id is None else self._hold_work(work_id)
 
     def _file(
@@ -380,8 +379,8 @@ class KeepCopier:
         data_dir: Path,
         journal: IntentLog,
         *,
+        hold_work: WorkHolder,
         extract: Callable[[str], Any] | None = None,
-        hold_work: WorkHolder | None = None,
     ) -> None:
         self._hold_work = hold_work
         self._engine = engine
@@ -396,8 +395,6 @@ class KeepCopier:
         """Under the lock of the Work, the one a purge holds: a keep that was checking the
         tombstone while a purge ran would leave a readable copy in /store with no row that knows
         it (EF-BIB-052). A Work that stays held is `work_busy`: the next cycle takes it again."""
-        if self._hold_work is None:
-            return self._keep(unit_id)
         with self._engine.connect() as connection:
             work_id = work_of_unit(connection, unit_id)
         if work_id is None:

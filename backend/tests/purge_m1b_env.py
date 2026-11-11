@@ -20,6 +20,7 @@ from shelfhold.purge_upstream import ConnectedUpstream
 from shelfhold.safeguard_jobs import service_refusal
 from shelfhold.sdk.connected import ReleaseResult, Ticket
 from tests.export_env import ExportEnv
+from tests.locks_env import index_lock as locks_index
 from tests.null_tombstones import NONE_PURGED
 from tests.purge_env import PurgeEnv, make_purge_env
 
@@ -84,6 +85,7 @@ def make_m1b_env(
     backups: Any = None,
     index_lock: Any = None,
 ) -> PurgeEnv:
+    # the lock is always explicit: the one the test names, else the real one over this database
     """The purge of M1a, with what M1b adds: /store, the service, the retained backups."""
     lib = export.lib
     env = make_purge_env(lib)
@@ -91,7 +93,7 @@ def make_m1b_env(
         lib.engine, lib.fsops, env.tombstones, clock=env.clock, data_dir=lib.data, bus=env.bus,
         fresh_auth_s=900, store_dir=lib.store,
         upstream=connected(env, service) if service is not None else None, backups=backups,
-        index_lock=index_lock,
+        index_lock=index_lock if index_lock is not None else locks_index(lib.engine),
     )  # fmt: skip
     return env
 
@@ -99,7 +101,9 @@ def make_m1b_env(
 def write_index(env: PurgeEnv) -> bytes:
     """`store/INDEX.jsonl` as the window job writes it (the title is in it, EF-INT-027)."""
     lib = env.lib
-    StoreIndex(lib.engine, lib.fsops, str(lib.store), NONE_PURGED).rewrite()
+    StoreIndex(
+        lib.engine, lib.fsops, str(lib.store), NONE_PURGED, hold=locks_index(lib.engine)
+    ).rewrite()
     return (lib.store / "INDEX.jsonl").read_bytes()
 
 
