@@ -2325,6 +2325,11 @@
             ],
             "title": "Retention Mode",
             "type": "string"
+          },
+          "skip_read_upgrades": {
+            "default": true,
+            "title": "Skip Read Upgrades",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2345,6 +2350,19 @@
           "id"
         ],
         "title": "ShelfOut",
+        "type": "object"
+      },
+      "SkipReadUpgradesIn": {
+        "properties": {
+          "skip_read_upgrades": {
+            "title": "Skip Read Upgrades",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "skip_read_upgrades"
+        ],
+        "title": "SkipReadUpgradesIn",
         "type": "object"
       },
       "SourceIn": {
@@ -6207,6 +6225,79 @@
         ]
       }
     },
+    "/api/v1/shelves/{shelf_id}/skip-read-upgrades": {
+      "post": {
+        "description": "\"Ne pas mettre à niveau les Unités déjà lues\" (EF-EXP-016), on by default: every path\nthat asks for an upgrade reads it.",
+        "operationId": "set_skip_read_upgrades",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shelf_id",
+            "required": true,
+            "schema": {
+              "title": "Shelf Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkipReadUpgradesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkipReadUpgradesIn"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Set Skip Read Upgrades",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
     "/api/v1/sources": {
       "post": {
         "operationId": "add_source",
@@ -8131,6 +8222,10 @@
     "/api/v1/problems/unit.safeguard-failed": {
       "code": "unit.safeguard_failed",
       "status": 500
+    },
+    "/api/v1/problems/unit.upgraded": {
+      "code": "unit.upgraded",
+      "status": 409
     },
     "/api/v1/problems/validation-failed": {
       "code": "validation_failed",

@@ -470,3 +470,60 @@ document_alias = sa.Table(
     sa.Index("ix_document_alias_file_hash", "file_hash"),
     sa.Index("ix_document_alias_md5", "koreader_partial_md5"),
 )
+
+# EF-EXP-016: why a served file was replaced at its path. `restore` puts a binned version back.
+# There is no `revision` here: a revision recorded before M2 is never applied by an upgrade
+# (EF-BIB-043, the queue of L17).
+UPGRADE_REASONS = ("better_version", "preferred_team", "integrity_reacquire", "restore")
+UPGRADE_STATES = ("done", "restored")
+
+# One same-path replacement of an exported file (EF-EXP-016): what was served before, what is
+# served now and the bin entry (`trash_item`) of the old version, which `restore` puts back. The
+# row is written in the transaction that closes the `upgrade` intent, so it exists iff the swap
+# did. `koreader_reset`: a new file at the same path is a new document for KOReader (D21).
+export_upgrade = sa.Table(
+    "export_upgrade",
+    metadata,
+    ulid_column("id", primary_key=True),
+    ulid_column("intent_id"),  # the `upgrade` intent; no key, the journal is pruned
+    sa.Column(
+        "shelf_destination_id",
+        sa.String(26),
+        sa.ForeignKey("shelf_destination.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "export_item_id",
+        sa.String(26),
+        sa.ForeignKey("export_item.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "unit_id", sa.String(26), sa.ForeignKey("unit.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("reason", sa.String(), nullable=False),
+    bool_column("automatic", default=True),
+    bool_column("koreader_reset", default=True),
+    sa.Column("old_content_id", sa.String(26), sa.ForeignKey("content.id", ondelete="SET NULL")),
+    sa.Column("old_content_hash", sa.String(), nullable=True),
+    sa.Column("old_sidecar_sha256", sa.String(), nullable=True),
+    sa.Column("old_file_hash", sa.String(), nullable=False),
+    sa.Column("new_file_hash", sa.String(), nullable=False),
+    sa.Column("trash_item_id", sa.String(26), sa.ForeignKey("trash_item.id", ondelete="SET NULL")),
+    sa.Column("state", sa.String(), nullable=False, server_default="done"),
+    now_column(),
+    sa.Column("restored_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    ulid_check("intent_id"),
+    in_check("reason", UPGRADE_REASONS),
+    in_check("state", UPGRADE_STATES),
+    prefixed_hash_check("old_content_hash"),
+    prefixed_hash_check("old_sidecar_sha256"),
+    prefixed_hash_check("old_file_hash"),
+    prefixed_hash_check("new_file_hash"),
+    sa.CheckConstraint(
+        '("state" = \'restored\') = ("restored_at" IS NOT NULL)', name="restored_at_iff_restored"
+    ),
+    sa.Index("ix_export_upgrade_item", "export_item_id"),
+    sa.Index("ix_export_upgrade_created_at", "created_at"),
+)

@@ -65,6 +65,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "tombstone.unverified",
         "unit.safeguard_backlog",
         "unit.safeguard_failed",
+        "unit.upgraded",  # M2 L16 (EF-EXP-016, D21): KOReader's position was reset
         "wake.deferred",
     }
 )

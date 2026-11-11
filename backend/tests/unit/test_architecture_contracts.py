@@ -637,3 +637,57 @@ def test_probe_file_cleanup_has_one_deletion_site() -> None:
     sites = [s for s, name in DELETION_SITES.items() if name == "probe_file_cleanup"]
     assert not [s for s in sites if "preflight.py" in s]
     assert "shelfhold/export/application/preflight.py" not in FSOPS_CALLERS
+
+
+# --- M2 L16: a file served at a path is replaced only under an `upgrade` intent (EF-EXP-016) ---
+
+SAME_PATH_STEPS = {
+    "same_path_stage", "same_path_swap", "same_path_recycle_old", "same_path_discard",
+}  # fmt: skip
+SAME_PATH_CALLERS = (
+    "shelfhold/export/application/upgrade.py",  # records the intent before the first step
+    "shelfhold/export/application/intents.py",  # the replay of an open `upgrade` intent
+    "shelfhold/infrastructure/fsops/",  # the steps themselves
+)
+
+
+@pytest.mark.req("EF-EXP-016", "EF-EXP-041")
+def test_same_path_replacement_happens_only_under_an_intent() -> None:
+    offences = []
+    for path in sorted(SRC.rglob("*.py")):
+        rel = path.relative_to(SRC).as_posix()
+        if rel.startswith(SAME_PATH_CALLERS):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        offences += [
+            f"{rel}:{node.lineno}:{node.attr}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and node.attr in SAME_PATH_STEPS
+        ]
+    assert offences == []
+
+
+@pytest.mark.req("EF-EXP-016", "EF-EXP-041")
+def test_upgrade_records_its_intent_before_the_first_step() -> None:
+    """In `upgrade.py`, every function that takes a step has recorded and marked its intent
+    first, in the order of the protocol (`record`, `mark_applying`, then the disk)."""
+    source = (SRC / "shelfhold" / "export" / "application" / "upgrade.py").read_text("utf-8")
+    tree = ast.parse(source)
+    stepping = 0
+    for func in ast.walk(tree):
+        if not isinstance(func, ast.FunctionDef):
+            continue
+        calls = sorted(
+            (n.lineno, n.func.attr)
+            for n in ast.walk(func)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+        )
+        names = [name for _, name in calls]
+        forward = SAME_PATH_STEPS - {"same_path_discard"}
+        steps = [i for i, name in enumerate(names) if name in forward]
+        if not steps:
+            continue
+        stepping += 1
+        assert "record" in names and "mark_applying" in names, func.name
+        assert names.index("record") < names.index("mark_applying") < steps[0], func.name
+    assert stepping >= 1

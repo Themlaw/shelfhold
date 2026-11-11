@@ -8,8 +8,10 @@ Nothing here ever reads a path that was checked by a separate call.
 """
 
 import contextlib
+import errno
 import hashlib
 import os
+import re
 import stat
 import time
 import uuid
@@ -32,6 +34,7 @@ from shelfhold.export.domain.path_map import (
 from shelfhold.export.domain.physical_roots import (
     LEASE_FILE,
     RECYCLE_DIR,
+    RESERVED_DIR,
     STAGING_DIR,
     ExpectedRoot,
     RootState,
@@ -98,7 +101,7 @@ from shelfhold.infrastructure.fsops.writer import (
 from shelfhold.infrastructure.logging import escaped
 from shelfhold.infrastructure.observability.network_fs import filesystem_kind
 
-__all__ = ["BootReport", "Fsops", "IndependentCopy", "RootStatus"]
+__all__ = ["BootReport", "Fsops", "IndependentCopy", "RootStatus", "SamePathState"]
 
 
 log = structlog.get_logger(__name__)
@@ -111,6 +114,39 @@ ROOT_FREEZE_STATES: dict[str, RootState] = {
     "store_lost": RootState.MISSING,
     "root_behind": RootState.STALE,
 }
+
+
+# The token of a same-path replacement: the ULID of its `upgrade` intent (EF-EXP-016).
+_TOKEN = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}\Z")
+# Not the staging area: the boot empties it before the intents are settled, and the staged file of
+# an interrupted replacement is the new version (before the swap) or the old one (after it).
+SAME_PATH_DIR = f"{RESERVED_DIR}/upgrade"  # `<root>/.shelfhold/upgrade/<token>`
+OTHER = "other"  # what `SamePathState` says of an entry that is not a regular file
+_NO_EXCHANGE = (errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP, errno.EPERM)
+
+
+@dataclass(frozen=True)
+class SamePathState:
+    """The three places of a same-path replacement, each as `sha256:<hex>` of the regular file
+    there, `"other"` for anything else, None when empty: the served path, the staged file (the
+    new version before the swap, the old one after it) and the bin entry of the old version."""
+
+    target: str | None
+    staged: str | None
+    recycled: str | None
+
+
+def _digest_at(root: ConfinedRoot, rel: str) -> str | None:
+    kind = root.lstat_kind(rel)
+    if kind is None:
+        return None
+    if kind != "file":
+        return OTHER
+    fd = root.open_file(rel, os.O_RDONLY)
+    try:
+        return "sha256:" + _digest_of(fd)
+    finally:
+        os.close(fd)
 
 
 @dataclass(frozen=True)
@@ -1102,6 +1138,118 @@ class Fsops:
                     root.remove_tree(folder)  # only empty folders made just above
                 raise
             return f"{root.path}/{target}"
+
+    # -- same-path replacement (EF-EXP-016) -------------------------------------------------
+    #
+    # Three steps, each under the `upgrade` intent whose identifier is `token`, so that a crash
+    # between any two leaves a state the replay knows (`IntentJournal`): stage the new version in
+    # a host folder of the root, swap it with the served file in one `RENAME_EXCHANGE`, move the old
+    # one (now staged) into the root's bin. At every instant the path holds exactly one file, and
+    # the staged file and the bin are in host folders that no library scans. Without
+    # `RENAME_EXCHANGE` the old file is first copied into the bin (an independent, verified copy),
+    # then the staged one replaces it in one `rename`: the same guarantee, one copy more.
+
+    def _same_path(self, target: str, token: str) -> tuple[_Located, str, str]:
+        if not _TOKEN.fullmatch(token):
+            raise ValueError("a same-path replacement is named by the ULID of its intent")
+        located = self._locate(target)
+        if located.read_only:
+            raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
+        if located.rel == ".":
+            raise NotRegularFileError("the root itself is not a file")
+        staged = f"{SAME_PATH_DIR}/{token}"
+        return located, staged, f"{RECYCLE_DIR}/{token}/{located.rel}"
+
+    def same_path_bin_entry(self, target: str, token: str) -> tuple[str, str]:
+        """`(local path, path relative to the bin)` where the old version of `target` goes."""
+        located, _staged, recycled = self._same_path(target, token)
+        return f"{located.root_path}/{recycled}", recycled.removeprefix(f"{RECYCLE_DIR}/")
+
+    def same_path_state(self, target: str, token: str) -> SamePathState:
+        located, staged, recycled = self._same_path(target, token)
+        with self._root(located.root_path) as root:
+            return SamePathState(
+                _digest_at(root, located.rel), _digest_at(root, staged), _digest_at(root, recycled)
+            )
+
+    def same_path_stage(
+        self, target: str, token: str, data: bytes | Readable, *, verify_digest: Callable[[], str]
+    ) -> FileIdentity:
+        """Step 1: the new version, flushed and read back against `verify_digest()` (hex), put
+        in the host folder of the target's root under the token. Absent or whole, never half."""
+        log.debug("fsops.same_path_stage", path=escaped(target))
+        located, staged, _recycled = self._same_path(target, token)
+        self._require_space()
+        with self._gated(located) as root:
+            if root.lstat_kind(located.rel) != "file":
+                raise NotRegularFileError(f"{escaped(target)} is not a served file")
+            return write_atomic(
+                root, staged, data, parents=True, replace=False, verify_digest=verify_digest,
+                file_mode=0o666,  # a library file (umask applies), not a host-only one
+            )  # fmt: skip
+
+    def same_path_swap(self, target: str, token: str) -> None:
+        """Step 2: the staged version takes the path in one step; the old one is then staged
+        (`RENAME_EXCHANGE`) or already in the bin (copy, then the replacing `rename`)."""
+        log.debug("fsops.same_path_swap", path=escaped(target))
+        located, staged, recycled = self._same_path(target, token)
+        with self._gated(located) as root:
+            for rel in (staged, located.rel):
+                if root.lstat_kind(rel) != "file":
+                    raise NotRegularFileError(f"{rel!r} is not a regular file")
+            if root.lstat_kind(recycled) is None:
+                try:
+                    root.exchange(staged, located.rel)
+                    return
+                except OSError as error:
+                    if error.errno not in _NO_EXCHANGE:
+                        raise
+                    log.info("fsops.exchange_unsupported", root=located.root_path)
+                self._copy_to_bin(root, located.rel, recycled)
+            root.rename(staged, located.rel, replace=True)
+
+    def _copy_to_bin(self, root: ConfinedRoot, rel: str, recycled: str) -> None:
+        self._require_space()
+        fd = root.open_file(rel, os.O_RDONLY)
+        try:
+            expected = _digest_of(fd)
+            write_independent(
+                root, recycled, fd, parents=True, replace=False, verify_digest=lambda: expected
+            )
+        finally:
+            os.close(fd)
+
+    def same_path_recycle_old(self, target: str, token: str) -> str:
+        """Step 3: the old version, staged by the swap, into the root's bin under the token
+        (never replacing). Returns where it is; a no-op when it is there already."""
+        log.debug("fsops.same_path_recycle_old", path=escaped(target))
+        located, staged, recycled = self._same_path(target, token)
+        with self._gated(located) as root:
+            if root.lstat_kind(staged) is not None:
+                root.mkdir(recycled.rpartition("/")[0], parents=True, exist_ok=True)
+                root.rename(staged, recycled, replace=False)
+            return f"{root.path}/{recycled}"
+
+    def same_path_discard(self, target: str, token: str) -> None:
+        """A replacement given up before its swap: the staged new version goes, nothing else
+        (the path is the token's own)."""
+        located, staged, _recycled = self._same_path(target, token)
+        with self._gated(located) as root, contextlib.suppress(FileNotFoundError):
+            root.unlink(staged)
+
+    @contextmanager
+    def open_bin_entry(self, target: str, path: str) -> Iterator[BinaryIO]:
+        """The old version a same-path replacement put in the bin, opened for reading (the
+        restore reads it back). `path` is the one recorded in the bin index, relative to the bin
+        of `target`'s root (`<token>/<rel at the time>`), never recomputed: the file may have
+        been renamed since. Read through the confined root (no `..`, no symbolic link)."""
+        located = self._locate(target)
+        if not path or path.startswith("/") or ".." in path.split("/"):
+            raise OutsidePathMapError(f"{path!r} is not a path inside a bin")
+        with self._root(located.root_path) as root:
+            fd = root.open_file(f"{RECYCLE_DIR}/{path}", os.O_RDONLY)
+            with os.fdopen(fd, "rb") as stream:
+                yield stream
 
     def copy_across(
         self,

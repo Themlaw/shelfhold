@@ -38,6 +38,7 @@ __all__ = [
     "jurisdiction_report",
     "kept_in_service_report",
     "known_bad_report",
+    "koreader_reset_report",
     "queues_of",
     "rights_report",
     "stale_report",
@@ -364,6 +365,27 @@ def jurisdiction_report(connection: Connection) -> dict[str, object] | None:
         return None
     country, confirmed = RightsService(connection).jurisdiction()
     return {"jurisdiction": country, "confirmed": confirmed}
+
+
+def koreader_reset_report(connection: Connection, since: datetime) -> list[dict[str, object]]:
+    """The files replaced at their path since `since` (EF-EXP-016, D21): Kavita kept its progress,
+    KOReader starts each of them again. The Activity screen comes in M3; until then `status`
+    lists them, newest first."""
+    table = export.export_upgrade
+    rows = connection.execute(
+        sa.select(table.c.unit_id, table.c.reason, table.c.automatic, table.c.created_at)
+        .where(table.c.koreader_reset.is_(True), table.c.created_at >= since)
+        .order_by(table.c.created_at.desc(), table.c.id.desc())
+    )
+    return [
+        {
+            "unit_id": r.unit_id,
+            "reason": r.reason,
+            "automatic": bool(r.automatic),
+            "at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
 
 
 def rights_report(connection: Connection, today: date) -> list[dict[str, object]]:

@@ -290,6 +290,7 @@ known_bad_outdated = "Kavita : version minimale {minimum} ; la liste des version
 known_bad_target = "Cible {name} (Kavita {version}) : version signalée vulnérable ({advisories}). Mettez Kavita à jour."
 restored_behind = "la base est plus ancienne que les fichiers (restauration ou retour arrière) : lecture seule. Lancez « {command} »."
 jurisdiction_unconfirmed = "Le pays de l'instance ({country}) est déduit de la langue du système et n'a jamais été confirmé : les avertissements « domaine public » s'appuient dessus. Confirmez-le avec « shelfhold config set instance.jurisdiction <pays> » (code à deux lettres)."
+koreader_reset_line = "Le chapitre {unit_id} a été remplacé au même emplacement le {at} : progression Kavita conservée, position KOReader réinitialisée."
 rights_may_be_protected = "L'Édition {edition_id} peut encore être protégée dans le pays de l'instance : libre de droits aux États-Unis ne veut pas dire libre de droits partout. Indication seulement : elle n'empêche rien."
 rights_translation_may_be_protected = "La traduction de l'Édition {edition_id} peut encore être protégée dans le pays de l'instance (droits propres du traducteur). Indication seulement : elle n'empêche rien."
 identity_header_stripped = "des requêtes portent l'en-tête d'identité « {header} », retiré et jamais cru (forward-auth non configuré ou proxy hors des CIDR de confiance). Retirez-le au niveau du proxy ou du tunnel, ou configurez le forward-auth (M3)."
@@ -999,6 +1000,10 @@ action = "Tapez l'identifiant du chapitre pour confirmer. Aucune copie ne sera s
 [errors."unit.safeguard_failed"]
 title = "La mise à l'abri d'un chapitre a échoué."
 action = "Consultez l'Activité et relancez la mise à l'abri du chapitre."
+
+[errors."unit.upgraded"]
+title = "Un chapitre a été remplacé par une meilleure version, au même emplacement."
+action = "La progression Kavita est conservée ; sur KOReader, la position de lecture repart du début. L'ancienne version reste 30 jours dans la corbeille."
 
 [errors."validation_failed"]
 title = "Des champs de la requête sont invalides."

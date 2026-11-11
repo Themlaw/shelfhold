@@ -51,4 +51,6 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("repatriate.stale", 409, "admin"),
     ErrorCode("repatriate.blocked", 409, "admin"),
     ErrorCode("repatriate.no_space", 507, "admin"),
+    # L16 (M2): a served file replaced at its path; KOReader starts it again (EF-EXP-016, D21)
+    ErrorCode("unit.upgraded", 409, "user", event=True),
 )

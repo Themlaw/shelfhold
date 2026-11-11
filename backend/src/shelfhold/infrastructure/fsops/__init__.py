@@ -24,7 +24,13 @@ from shelfhold.infrastructure.fsops.errors import (
     SentinelFormatError,
     TombstonePendingError,
 )
-from shelfhold.infrastructure.fsops.facade import BootReport, Fsops, IndependentCopy, RootStatus
+from shelfhold.infrastructure.fsops.facade import (
+    BootReport,
+    Fsops,
+    IndependentCopy,
+    RootStatus,
+    SamePathState,
+)
 from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of
 from shelfhold.infrastructure.fsops.openat2 import openat2_supported
 from shelfhold.infrastructure.fsops.sentinel import create_sentinel, read_sentinel
@@ -52,6 +58,7 @@ __all__ = [
     "RootCapabilities",
     "RootState",
     "RootStatus",
+    "SamePathState",
     "SentinelFormatError",
     "Strategy",
     "TombstonePendingError",

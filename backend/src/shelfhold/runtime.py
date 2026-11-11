@@ -31,6 +31,7 @@ from shelfhold.export.application.root_bootstrap import (
     target_roots,
 )
 from shelfhold.export.application.roots import LoadedRoots, load_roots
+from shelfhold.export.application.upgrade import SamePathUpgrade
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import LEGACY_RECEIVED_DIR, RECEIVED_DIR
 from shelfhold.infrastructure.clock import SystemClock
@@ -238,9 +239,14 @@ class InstanceRuntime:
                     old_dir=LEGACY_RECEIVED_DIR, new_dir=RECEIVED_DIR,
                 )  # fmt: skip
                 adopt = adopt_written_hook(fsops, loaded.locate, clock)
+                upgraded = SamePathUpgrade(  # an upgrade cut short: its bookkeeping (EF-EXP-016)
+                    engine, fsops, locate=loaded.locate, data_dir=self.settings.data_dir,
+                    clock=clock, bus=bus,
+                ).settle_hook()  # fmt: skip
 
                 def hook(connection: sa.Connection, intent: OpenIntent) -> None:
                     adopt(connection, intent)
+                    upgraded(connection, intent)
                     if intent.op == "copy_cross_root" and intent.dst is not None:
                         complete_interrupted_keep(  # a kept copy on disk, its bookkeeping owed
                             connection, fsops, loaded.locate, src=intent.src, dst=intent.dst,

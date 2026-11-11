@@ -20,7 +20,7 @@ from collections.abc import Callable, Iterable
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
@@ -28,10 +28,11 @@ from sqlalchemy import Connection, Engine
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR
 from shelfhold.export.domain.provenance_mirror import MIRROR_DIR
 from shelfhold.infrastructure.clock import Clock, SystemClock
-from shelfhold.infrastructure.fsops import FileIdentity, FsopsError
+from shelfhold.infrastructure.fsops import FileIdentity, FsopsError, SamePathState
 from shelfhold.infrastructure.fsops.confined import Kind
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, coherence, platform
+from shelfhold.library.public import forget_binned_export_files
 
 INTENT_SCHEMA_VERSION = "1"  # frozen and versioned: ENF-OPS-019
 KNOWN_SCHEMA_VERSIONS = frozenset({INTENT_SCHEMA_VERSION})
@@ -44,6 +45,7 @@ __all__ = [
     "OpenIntent",
     "RenameStep",
     "ResolveReport",
+    "SamePathDisk",
     "open_intent_paths",
     "within_any",
 ]
@@ -59,6 +61,15 @@ class DiskPort(Protocol):
     def sha256_of(self, local: str) -> str: ...
 
 
+@runtime_checkable
+class SamePathDisk(Protocol):
+    """The steps of a same-path replacement (EF-EXP-016), which `Fsops` has."""
+
+    def same_path_state(self, target: str, token: str) -> SamePathState: ...
+    def same_path_swap(self, target: str, token: str) -> None: ...
+    def same_path_recycle_old(self, target: str, token: str) -> str: ...
+
+
 @dataclass(frozen=True)
 class OpenIntent:
     id: str
@@ -71,6 +82,9 @@ class OpenIntent:
     epoch: int
     schema_version: str
     plan_id: str | None = None
+    # the raw JSON of `expected_file_id`: what an operation wrote about itself (an upgrade: the
+    # hash of the old file, the manifest line it completes)
+    payload: dict[str, Any] = field(default_factory=dict, compare=False)
 
 
 @dataclass(frozen=True)
@@ -111,6 +125,7 @@ def _intent_from(row: sa.Row[tuple[object, ...]]) -> OpenIntent:
         epoch=row.epoch,
         schema_version=row.intent_schema_version,
         plan_id=row.plan_id,
+        payload=dict(file_id or {}),
     )
 
 
@@ -121,6 +136,15 @@ def open_intent_paths(connection: Connection) -> frozenset[str]:
         sa.select(table.c.src_path, table.c.dst_path).where(table.c.state.in_(OPEN_STATES))
     )
     return frozenset(p for row in rows for p in (row.src_path, row.dst_path) if p)
+
+
+def open_intent_ids(connection: Connection) -> frozenset[str]:
+    """The ids of the open intents. A same-path upgrade names its bin entry after its intent:
+    the retention sweep keeps such an entry while the intent is open (it may hold the only copy
+    of the old version)."""
+    table = coherence.fs_intent
+    rows = connection.execute(sa.select(table.c.id).where(table.c.state.in_(OPEN_STATES)))
+    return frozenset(str(row.id) for row in rows)
 
 
 def within_any(path: str, bases: Iterable[str]) -> bool:
@@ -143,6 +167,12 @@ class IntentJournal:
         self._clock = clock or SystemClock()
         # runs in the transaction that closes an intent (the audit of an admin's resolution)
         self._settled = settled
+
+    @property
+    def engine(self) -> Engine:
+        """The database the journal writes to (a caller closes an intent in its own transaction
+        through `mark_done(within=...)`)."""
+        return self._engine
 
     # -- the protocol ---------------------------------------------------------------------------
 
@@ -397,6 +427,8 @@ class IntentJournal:
                 self._resolve_recycle(intent, report, on_done)
             elif intent.op == "write" and intent.dst:
                 self._resolve_write(intent, report, on_done)
+            elif intent.op == "upgrade" and intent.dst:
+                self._resolve_upgrade(intent, report, on_done)
             elif intent.op == "copy_cross_root" and intent.src and intent.dst:
                 self._resolve_copy(intent, report, on_done)
             elif intent.op == "purge_upstream":
@@ -476,7 +508,14 @@ class IntentJournal:
         if intent.src is None:
             return self._drift(intent, report, "a bin sweep needs its entry")
         if self._disk.observe(intent.src) is None:
-            self._finish(intent, on_done)
+            entry = intent.src.rstrip("/").rsplit("/", 1)[-1]
+
+            def forget(conn: Connection, done: OpenIntent) -> None:
+                forget_binned_export_files(conn, entry)  # the sweep's own bookkeeping
+                if on_done is not None:
+                    on_done(conn, done)
+
+            self._finish(intent, forget)
             report.completed.append(intent.id)
         else:
             self._close(intent.id, "cancelled")
@@ -507,6 +546,45 @@ class IntentJournal:
             report.abandoned.append(intent.id)
         else:
             self._drift(intent, report, "the target is not the file that was being written")
+
+    def _resolve_upgrade(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """A same-path replacement (EF-EXP-016): stage the new version, swap it with the served
+        file in one step, move the old one into the bin. The path always holds one file, so the
+        disk is in one of four known states, told apart by the hashes of the three places:
+
+        - the old file served, nothing staged, nothing binned: the disk was never touched, the
+          intent is closed (the upgrade is asked again by whoever wanted it);
+        - the old file served, the new one staged: the swap and the binning are redone;
+        - the new file served, the old one staged: the binning is redone;
+        - the new file served, the old one in the bin: only the bookkeeping is owed.
+
+        Anything else (a third file, a hash nobody wrote) is drift: nothing is touched."""
+        disk, target = self._disk, intent.dst
+        old, new = intent.payload.get("old_sha256"), intent.expected_sha256
+        if target is None or not isinstance(old, str) or new is None or old == new:
+            return self._drift(intent, report, "an upgrade needs its path and both hashes")
+        if not isinstance(disk, SamePathDisk):
+            return self._drift(intent, report, "this disk cannot replace a file at its path")
+        state = disk.same_path_state(target, intent.id)
+        if state == SamePathState(old, None, None):
+            self._close(intent.id, "cancelled")
+            report.abandoned.append(intent.id)
+        elif state.target == old and state.staged == new and state.recycled in (None, old):
+            disk.same_path_swap(target, intent.id)
+            disk.same_path_recycle_old(target, intent.id)
+            self._finish(intent, on_done)
+            report.replayed.append(intent.id)
+        elif state == SamePathState(new, old, None):
+            disk.same_path_recycle_old(target, intent.id)
+            self._finish(intent, on_done)
+            report.replayed.append(intent.id)
+        elif state == SamePathState(new, None, old):
+            self._finish(intent, on_done)
+            report.completed.append(intent.id)
+        else:
+            self._drift(intent, report, "the served path is in no known state of an upgrade")
 
     def _resolve_rekey(self, intent: OpenIntent, report: ResolveReport) -> None:
         """A rewrite of a tombstone journal (`tombstone rekey`, EF-BIB-054 (10)): a new file next
