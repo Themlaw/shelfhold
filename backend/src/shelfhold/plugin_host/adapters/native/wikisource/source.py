@@ -158,7 +158,8 @@ def attribution(
         who += " and other contributors"
     return (
         f"Source: {page_url(language, title)}. Licence: {LICENCE}. "
-        f"Contributors of Wikisource: {who}."
+        f"Contributors of Wikisource (a book assembled from other pages may have more: see the "
+        f"history of the page): {who}."
     )
 
 
@@ -246,7 +247,7 @@ class WikisourceSource:
             language,
             {
                 "action": "query", "prop": "contributors", "titles": title.replace("_", " "),
-                "pclimit": str(MAX_CONTRIBUTORS * 2),
+                "pclimit": str(MAX_CONTRIBUTORS * 2), "redirects": "1",
             },
         )  # fmt: skip
         pages = body.get("query", {}).get("pages", [])

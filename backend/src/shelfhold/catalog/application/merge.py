@@ -146,6 +146,16 @@ def _edition(connection: Connection, edition_id: str) -> sa.Row[Any]:
     return row
 
 
+def _rights_of(row: sa.Row[Any]) -> list[str]:
+    return [row.rights or "", row.rights_basis or "", row.rights_jurisdiction or ""]
+
+
+def _rights_differ(keep: sa.Row[Any], drop: sa.Row[Any]) -> bool:
+    """Both Editions carry an attribution and they are not the same text (EF-BIB-033)."""
+    mine, theirs = (keep.rights or "").strip(), (drop.rights or "").strip()
+    return bool(mine) and bool(theirs) and mine != theirs
+
+
 def _own_age(connection: Connection, row: sa.Row[Any]) -> AgeRating | None:
     """The age an Edition counts for: its own when an admin fixed one, else its Work's."""
     explicit = _age(row.age_rating, row.age_x)
@@ -228,6 +238,8 @@ def plan_edition_merge(
     if pointed is not None:
         blockers.append("dependent:edition")
     blockers.extend(_collisions(connection, keep_id, drop_id))
+    if _rights_differ(keep, drop):
+        blockers.append("rights")  # two attributions: neither is dropped, an admin chooses
 
     units = _places(connection, drop_id)
     key = tuple((c, str(keep._mapping[c])) for c in EDITION_KEY)
@@ -267,6 +279,7 @@ def plan_edition_merge(
         "places": tombstoned_units, "ids": tombstoned_ids, "keep_age": _label(keep_age),
         "drop_age": _label(drop_age), "merged": _label(merged), "unrated": unrated_after,
         "shelf": keep.shelf_id, "carried": _carried(connection, drop_id),
+        "rights": [_rights_of(keep), _rights_of(drop)],
     }  # fmt: skip
     digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()[:16]
     return EditionMergePlan(
@@ -376,6 +389,13 @@ def apply_edition_merge(
         if raised:
             age, x = to_columns(merged)
             values.update(age_rating=age, age_x=x)
+        if not (keep.rights or "").strip() and (drop.rights or "").strip():
+            # the attribution a licence asks for follows the text (EF-BIB-033), with its basis
+            values["rights"] = drop.rights
+            if keep.rights_basis is None:
+                values.update(
+                    rights_basis=drop.rights_basis, rights_jurisdiction=drop.rights_jurisdiction
+                )
         if plan.unrated_after:
             values["rated_at"] = None  # never rated as a whole: the barrier of EF-BIB-055
         if values:

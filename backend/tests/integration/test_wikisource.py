@@ -13,9 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 
 from shelfhold.export.application.rendering import EpubRenderer, epub_opf_edit
 from shelfhold.infrastructure.fetcher import DomainNotAllowed
+from shelfhold.infrastructure.schema import catalog
 from shelfhold.library.public import servable_epub
 from shelfhold.plugin_host.errors import NoSourceForUrl
 from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, opf, xhtml
@@ -165,7 +167,7 @@ def test_an_epub_whose_own_rights_omit_the_licence_still_carries_the_attribution
 
 @pytest.mark.req("EF-BIB-033")
 def test_an_epub_that_already_carries_the_licence_is_not_given_it_twice(tmp_path: Path) -> None:
-    book = with_metadata("<dc:rights>Licence CC-BY-SA 4.0, texte de Wikisource</dc:rights>")
+    book = with_metadata(f"<dc:rights>Licence CC-BY-SA 4.0, texte de {PAGE_URL}</dc:rights>")
     with wikisource_bench(exports={BOOK: book}) as b:
         prepared, _ = b.acquire()
         root = exported_opf(b, prepared.unit_id, tmp_path)
@@ -376,3 +378,91 @@ def test_the_rhythm_holds_for_two_books_asked_at_the_same_time() -> None:
         gaps = [later - earlier for earlier, later in pairwise(b.wire.stamps)]
         limit = b.plugin.manifest.rate_limit
         assert len(b.wire.stamps) >= 6 and min(gaps) >= 1 / limit.requests_per_second - 1e-6
+
+
+@pytest.mark.req("EF-BIB-033")
+@pytest.mark.parametrize("own", ["CC BY-SA 4.0", "CC BY 4.0", "CC BY-NC-SA 4.0"])
+def test_a_bare_licence_name_in_the_book_does_not_stand_for_the_attribution(
+    tmp_path: Path, own: str
+) -> None:
+    """Attack: the book's `dc:rights` names a licence, with no link and no contributors. The line
+    of Shelfhold is still written: it is the origin link that tells the attribution is there."""
+    with wikisource_bench(exports={BOOK: with_metadata(f"<dc:rights>{own}</dc:rights>")}) as b:
+        prepared, _ = b.acquire()
+        rights = texts(exported_opf(b, prepared.unit_id, tmp_path), "rights")
+        assert own in rights
+        assert any("Alice Synth" in r and PAGE_URL in r for r in rights)
+
+
+@pytest.mark.req("EF-SRC-011")
+def test_the_contributors_are_asked_through_redirections_and_not_given_as_complete() -> None:
+    with wikisource_bench(exports={BOOK: CLEAN}) as b:
+        b.acquire()
+        asked = [r for r in b.wire.to(API_HOST) if r.url.params.get("prop") == "contributors"]
+        assert asked and all(r.url.params.get("redirects") == "1" for r in asked)
+        (edition,) = b.rows("SELECT rights FROM edition")
+        assert "history of the page" in edition["rights"]
+
+
+# -- an Edition merge keeps the attribution (L14) -----------------------------
+
+
+def merge_bench_run(b: Bench, other_rights: str | None, tmp_path: Path) -> tuple[Any, Any, str]:
+    from shelfhold.catalog.public import plan_edition_merge
+    from shelfhold.library.public import CatalogScreenAdapter
+    from tests.integration.test_schema_catalog import add_edition
+    from tests.purge_env import make_purge_env
+
+    (ed,) = b.rows("SELECT id, work_id FROM edition")
+    with b.lib.engine.begin() as c:
+        keep = add_edition(c, ed["work_id"], lang="fr", publisher="Autre")
+        c.execute(
+            sa.update(catalog.edition)
+            .where(catalog.edition.c.id == keep)
+            .values(rights=other_rights)
+        )
+    screen = CatalogScreenAdapter(make_purge_env(b.lib).tombstones)
+    with b.lib.engine.connect() as c:
+        plan = plan_edition_merge(c, keep, ed["id"], screen=screen)
+    return plan, screen, keep
+
+
+@pytest.mark.req("EF-BIB-033", "EF-BIB-054")
+def test_an_edition_merge_keeps_the_attribution_of_the_absorbed_edition(tmp_path: Path) -> None:
+    from shelfhold.catalog.public import apply_edition_merge
+
+    with wikisource_bench(exports={BOOK: CLEAN}) as b:
+        prepared, _ = b.acquire()
+        (before,) = b.rows("SELECT rights FROM edition")
+        plan, screen, keep = merge_bench_run(b, None, tmp_path)
+        assert plan.mergeable
+        with b.lib.engine.begin() as c:
+            apply_edition_merge(c, keep, plan.drop_id, confirm=plan.fingerprint, screen=screen)
+        (after,) = b.rows("SELECT rights, rights_basis, rights_jurisdiction FROM edition")
+        assert after["rights"] == before["rights"] and after["rights_basis"] == "licence"
+        root = exported_opf(b, prepared.unit_id, tmp_path)
+        assert any("CC BY-SA" in r and "Alice Synth" in r for r in texts(root, "rights"))
+
+
+@pytest.mark.req("EF-BIB-033", "EF-BIB-054")
+def test_two_different_attributions_block_the_merge_and_move_the_fingerprint(
+    tmp_path: Path,
+) -> None:
+    from shelfhold.catalog.public import EditionMergeRefusedError, apply_edition_merge
+
+    with wikisource_bench(exports={BOOK: CLEAN}) as b:
+        b.acquire()
+        plan, screen, keep = merge_bench_run(b, "Un autre texte de droits", tmp_path)
+        assert "rights" in plan.blockers and not plan.mergeable
+        with b.lib.engine.begin() as c, pytest.raises(EditionMergeRefusedError):
+            apply_edition_merge(c, keep, plan.drop_id, confirm=plan.fingerprint, screen=screen)
+        assert len(b.rows("SELECT id FROM edition")) == 2  # nothing moved
+        from shelfhold.catalog.public import plan_edition_merge
+
+        with b.lib.engine.begin() as c:
+            c.execute(
+                sa.update(catalog.edition).where(catalog.edition.c.id == keep).values(rights=None)
+            )
+        with b.lib.engine.connect() as c:
+            again = plan_edition_merge(c, keep, plan.drop_id, screen=screen)
+        assert again.fingerprint != plan.fingerprint  # the rights are counted in the fingerprint
