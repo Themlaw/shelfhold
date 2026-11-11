@@ -34,6 +34,7 @@ BODIES: dict[str, dict[str, object]] = {
     "root takeover": {},
     "root reinit": {},
     "store reinit": {},
+    "restore acknowledge": {},
 }
 
 

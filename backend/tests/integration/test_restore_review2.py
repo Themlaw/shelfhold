@@ -93,6 +93,9 @@ def test_a_root_remounted_ahead_is_frozen_through_the_real_app(
                 assert refused.json()["code"] == "instance.restored_behind"
                 # the freeze is in the database now, and the next write is refused as well
                 assert db_rows(settings, "SELECT restore_generation FROM instance")[0][0] > 0
+                # entering `restored_behind` revoked every session: the admin signs in again
+                assert api.client.get("/api/v1/about").status_code == 401
+                assert api.login().status_code == 200
                 again = api.post(
                     "/api/v1/plans/01J0000000000000000000PLAN/apply",
                     headers={"If-Match": '"abc"'},

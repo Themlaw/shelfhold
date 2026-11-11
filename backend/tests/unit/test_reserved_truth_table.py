@@ -289,6 +289,7 @@ FRESHNESS_LINE = {
             "device_token.manage",
             "passkey.register",
             "passkey.revoke",
+            "restore.acknowledge",
         ),
         "none",
     ),

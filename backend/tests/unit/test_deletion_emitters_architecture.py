@@ -167,6 +167,7 @@ EXPECTED_CLOSED = {
     "own_scratch": {
         f"{FSOPS}/facade.py::_claim_lease",
         "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",
+        "shelfhold/infrastructure/restore_notice.py::RestoreNotice.acknowledge",
         "shelfhold/infrastructure/secrets/atomic.py::write_private",
         "shelfhold/infrastructure/local_socket/server.py::LocalSocketServer._remove_socket",
         "shelfhold/infrastructure/local_socket/server.py::bind_private",

@@ -27,6 +27,7 @@ from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
 from shelfhold.identity.public import EXIT_ROUTES, EXIT_STATES_LATER
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.restore_notice import RestoreNotice, RestoreNoticeData
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.secrets.diagnostics import store_for
 from shelfhold.infrastructure.secrets.keyring import Keyring
@@ -86,6 +87,7 @@ M1B_STATES = frozenset(
         WaitingState.TOMBSTONE_JOURNAL_TRUNCATED,
         WaitingState.SOURCE_INSTANCE_CHANGED,
         WaitingState.WITHDRAWAL_PENDING,
+        WaitingState.RESTORED_CREDENTIALS,
     }
 )
 M3_STATES = frozenset({s for s in WaitingState if s.value in EXIT_STATES_LATER})
@@ -476,6 +478,24 @@ def store_lost(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[st
     _root_scenario(monkeypatch, capsys, "store_lost", damage, lambda _env: ("store", "reinit"))
 
 
+def restored_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """After a restore: the notice (a file of /data) is listed with its command until the reserved
+    `restore acknowledge` runs; a second run finds nothing to acknowledge."""
+    with seeded(settings, tmp_path):
+        ctx = L53Context(monkeypatch, capsys, settings)
+        RestoreNotice(settings.data_dir).write(RestoreNoticeData("2026-11-11T00:00:00", None, 1, 2))
+        (item,) = ctx.listed("restored_credentials")
+        assert item["command"] == "shelfhold restore acknowledge"
+        assert item["reserved"] is True
+        ctx.listed_then_gone("restored_credentials", lambda: ctx.cli("restore", "acknowledge") == 0)
+        assert ctx.cli("restore", "acknowledge") != 0  # nothing waits any more
+
+
 def tombstone_key_unknown(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -687,7 +707,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         missing, paused_foreign_writer, dead_letter, instance_changed, target_forbidden,
         key_expiring, not_indexed, auth_expired, adoption_refused, permission_denied,
         child_exposure, auth_mode_unsupported, coverage_unknown, language_unknown,
-        restored_behind, tombstone_key_unknown, tombstone_lines_owed, route_missing,
+        restored_behind, restored_credentials, tombstone_key_unknown, tombstone_lines_owed, route_missing,
         series_name_collision, mount_sentinel_missing, rating_pending, follow_suspended,
         source_instance_changed, foreign_root, root_lost, root_behind, store_lost,
         safeguard_backlog,

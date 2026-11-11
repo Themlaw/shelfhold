@@ -378,6 +378,19 @@ class _Roots:
         return self._done("store reinit")
 
 
+class _Credentials:
+    """The restore notice: always there, acknowledged by anyone the route lets through."""
+
+    def __init__(self) -> None:
+        self.acknowledged = 0
+
+    def waiting(self) -> list[object]:
+        return []
+
+    def acknowledge(self, **_: object) -> None:
+        self.acknowledged += 1
+
+
 class _Headless:
     def target_rotate_key(self, *, target: str, password: str) -> None: ...
     def source_set_secret(self, secret: str) -> None: ...
@@ -395,7 +408,13 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
         w = wire(env)
         keyring, restore = FakeKeyring(), FakeRestore()
         ops = make_ops(
-            env, w, keyring=keyring, restore=restore, headless=_Headless(), roots=_Roots()
+            env,
+            w,
+            keyring=keyring,
+            restore=restore,
+            headless=_Headless(),
+            roots=_Roots(),
+            credentials=_Credentials(),
         )
         put_health(env, child_exposure=True)
         ids = {"target_id": env.target_id, "work_id": env.new_series().work_id, "root": "x"}
@@ -569,6 +588,7 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("shelf.purge_upstream")  # M1b L16: turning on the erasure of the upstream copy
     declared.add("rate")  # M1b L11: the exit of rating_pending and follow_suspended
     declared |= {"root.takeover", "root.reinit", "store.reinit"}  # M1b L25: the root exits
+    declared.add("restore.acknowledge")  # cross review: the exit of restored_credentials
     declared.add(
         "tombstone.rekey"
     )  # M1b L26: reserved; the rewrite after a key leak, no waiting state

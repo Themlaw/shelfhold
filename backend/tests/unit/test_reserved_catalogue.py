@@ -24,6 +24,7 @@ RESERVED = {
     ("store reinit", "store_lost"),
     ("target recheck [child_exposure]", "child_exposure"),
     ("shelf withdraw", "withdrawal_pending"),  # M1b L10: EF-BIB-037
+    ("restore acknowledge", "restored_credentials"),  # cross review: after a restore
     ("reconcile --adopt-after-restore [confirm-deletion]", "restored_behind"),
 }
 NOT_RESERVED = {
