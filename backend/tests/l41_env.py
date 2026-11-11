@@ -25,6 +25,7 @@ from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.jobs.huey_app import JobContext
 from tests.fakes.kavita import API_KEY, FakeKavita
+from tests.fakes.lncrawl import FakeLncrawl
 from tests.fakes.kavita import BASE_URL as KAVITA_URL
 from tests.fakes.kavita.server import LAN_ADDRESS
 from tests.fakes.suwayomi import FakeSuwayomi
@@ -68,6 +69,7 @@ class Instance:
     suwayomi: FakeSuwayomi
     library: Path
     network: Network
+    lncrawl: FakeLncrawl
 
     def configure(self, *, suwayomi: bool = False) -> None:
         self.admin.target_add_kavita(
@@ -90,13 +92,18 @@ def instance(settings: Settings, tmp: Path, *, linker: object = None) -> Iterato
     engine = create_db_engine(settings.database_path)
     keyring = boot_check(settings, announce=False)
     kavita, suwayomi = FakeKavita(), FakeSuwayomi(auth_mode="basic_auth")
+    lncrawl = FakeLncrawl()
 
     async def route(request: httpx2.Request) -> httpx2.Response:
         host = request.headers.get("host", request.url.host)  # the guard connects by address
+        if host.startswith("lncrawl.lan"):
+            return await lncrawl.transport.handle_async_request(request)
         target = kavita if host.startswith("kavita.lan") else suwayomi
         return await target.transport.handle_async_request(request)
 
-    resolver = FakeResolver({"kavita.lan": [LAN_ADDRESS], "suwayomi.lan": [LAN_ADDRESS]})
+    resolver = FakeResolver(
+        {"kavita.lan": [LAN_ADDRESS], "suwayomi.lan": [LAN_ADDRESS], "lncrawl.lan": [LAN_ADDRESS]}
+    )
     network = Network(resolver=resolver, transport=httpx2.MockTransport(route))
     admin = HeadlessAdmin(
         engine, SecretVault(keyring), clock=SystemClock(), kavita=_Exchange(),  # type: ignore[arg-type]
@@ -105,6 +112,6 @@ def instance(settings: Settings, tmp: Path, *, linker: object = None) -> Iterato
     )  # fmt: skip
     comp = Composition(settings, engine, clock=SystemClock(), network=network)
     try:
-        yield Instance(settings, engine, admin, comp, kavita, suwayomi, library, network)
+        yield Instance(settings, engine, admin, comp, kavita, suwayomi, library, network, lncrawl)
     finally:
         engine.dispose()
