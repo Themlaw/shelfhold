@@ -61,7 +61,7 @@ def upgrade() -> None:
     )
     with op.batch_alter_table("plugin_attestation") as batch:
         batch.add_column(
-            sa.Column("plugin_version", sa.String(), server_default="", nullable=False)
+            sa.Column("plugin_version", sa.String(), server_default=sa.text("''"), nullable=False)
         )
 
 

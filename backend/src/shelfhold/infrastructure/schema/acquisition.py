@@ -456,7 +456,7 @@ plugin_attestation = sa.Table(
     sa.Column("attested_at", UtcDateTime(), nullable=False),
     # The installed version it was given for (EF-EXP-065): another version is code nobody vouched
     # for, so the attestation lapses; '' (rows from before 0027) matches no version.
-    sa.Column("plugin_version", sa.String(), nullable=False, server_default=""),
+    sa.Column("plugin_version", sa.String(), nullable=False, server_default=sa.text("''")),
     sa.PrimaryKeyConstraint("plugin_key", "field"),
     in_check("field", ATTESTATION_FIELDS),
     sa.CheckConstraint("\"plugin_key\" <> ''", name="plugin_key_not_empty"),
