@@ -87,3 +87,26 @@ La source `opds` lit un catalogue OPDS 1.2 (Atom) ou 2.0 (JSON), avec la recherc
 - Seul l'hôte de `base_url` est joignable ; un lien de téléchargement ailleurs n'est pas proposé.
 - Les EPUB reçus sont **non fiables** : ils passent par le neutralisateur avant tout export.
 - **Si le catalogue est l'instance d'une destination active** (le Kavita où Shelfhold écrit), les réglages affichent « utilisez readback » : Shelfhold ne réimporte jamais ses propres exports. Un fichier qui en est un est rangé comme réplique de l'export, jamais comme nouvelle Variante.
+
+## Wikisource, un EPUB par livre avec son attribution CC BY-SA
+
+La source `wikisource` prend **un livre** (une page de l'espace principal d'un Wikisource) et en
+récupère l'EPUB auprès de l'outil d'export du wiki. Elle ne lit jamais une page du wiki : les règles
+de domaine ne laissent passer que l'API (`/w/` d'un hôte `*.wikisource.org`) et l'outil d'export,
+et toute autre adresse est refusée avant d'envoyer quoi que ce soit.
+
+- Chercher : par titre, dans la langue du réglage `language` (par défaut `fr`) ou du filtre
+  « Langue ». Un code qui ne ressemble pas à un code de langue est refusé.
+- Coller l'adresse d'un livre (`https://fr.wikisource.org/wiki/Titre`) donne le livre, sans requête.
+- Rythme : une requête par seconde au plus pour toute la source, quel que soit le nombre de
+  demandes en cours.
+- Les EPUB sont toujours **non fiables** : le neutraliseur passe avant tout export, l'original est
+  gardé dans `/store`.
+
+Le texte de Wikisource est partagé sous **CC BY-SA** : la licence demande que les contributeurs, la
+licence et un lien vers l'origine accompagnent le texte. Shelfhold construit cette attribution
+(le lien de la page, la licence, les contributeurs de la page, en nombre borné), la range sur
+l'Édition avec sa provenance (la source qui l'a dite) et l'affiche sur la fiche. À l'export, elle est
+copiée dans l'EPUB (`dc:rights` et `dc:source`) quand le fichier n'a pas de `dc:rights` ; s'il en a un
+qui ne nomme pas la licence, la ligne du livre reste telle quelle et l'attribution est écrite à côté.
+Un nom de contributeur qui contient du balisage, un lien ou un saut de ligne n'est pas recopié.

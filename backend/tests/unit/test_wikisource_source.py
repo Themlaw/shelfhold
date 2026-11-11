@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 import pytest
-from shelfhold.plugin_host.adapters.native.wikisource import WikisourceSource, build_manifest
 
+from shelfhold.plugin_host.adapters.native.wikisource import WikisourceSource, build_manifest
 from shelfhold.plugin_host.registry import compile_url_pattern
 from shelfhold.sdk.testing.fakes import FakeFetcher
 
@@ -52,7 +52,7 @@ def test_the_url_patterns_take_only_the_book_pages_of_a_wikisource() -> None:
     [
         ("https://fr.wikisource.org/wiki/Titre", "fr:Titre"),
         ("https://en.wikisource.org/wiki/The_Title/Chapter_1", "en:The_Title/Chapter_1"),
-        ("https://fr.wikisource.org/wiki/Titre%20avec%20espaces", "fr:Titre_avec_espaces"),
+        ("https://fr.wikisource.org/wiki/Titre%20avec%20blanc", "fr:Titre_avec_blanc"),
         ("https://fr.wikisource.org/wiki/Titre#Section", "fr:Titre"),
         ("https://fr.wikisource.org/wiki/Titre?action=raw", "fr:Titre"),
         ("https://fr.wikisource.org/wiki/", None),

@@ -123,7 +123,8 @@ class Bench:
     def acquire(self, title: str = BOOK, **kw: Any) -> tuple[Any, Any]:
         async def go() -> tuple[Any, Any]:
             prepared = await self.acquirer.prepare(self.ref(title), **kw)
-            assert prepared.request_id is not None
+            if prepared.request_id is None:  # the Variant already has its file
+                return prepared, None
             outcome = await self.acquirer.fetch(
                 prepared.request_id, RoutedStore(self.lib), self.place
             )

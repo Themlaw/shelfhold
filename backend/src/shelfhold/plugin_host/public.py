@@ -15,6 +15,7 @@ import structlog
 
 from shelfhold.config import Settings
 from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
+from shelfhold.plugin_host.adapters.native.wikisource import WikisourceSource
 from shelfhold.plugin_host.attestation import InstalledVersion, publisher_attested
 from shelfhold.plugin_host.gutenberg_rdf import read_rdf
 from shelfhold.plugin_host.install import Layout, read_state, verdicts
@@ -70,7 +71,13 @@ def first_party_candidates() -> list[PluginCandidate]:
     def gutenberg() -> GutenbergSource:
         return GutenbergSource(rdf=read_rdf)
 
-    return [PluginCandidate(key="gutenberg", origin=PluginOrigin.FIRST_PARTY, load=gutenberg)]
+    def wikisource() -> WikisourceSource:
+        return WikisourceSource()
+
+    return [
+        PluginCandidate(key="gutenberg", origin=PluginOrigin.FIRST_PARTY, load=gutenberg),
+        PluginCandidate(key="wikisource", origin=PluginOrigin.FIRST_PARTY, load=wikisource),
+    ]
 
 
 def start_plugins(

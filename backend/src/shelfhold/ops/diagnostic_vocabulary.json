@@ -1383,6 +1383,8 @@
   "shelfhold.plugin_host.adapters.native.opds.source",
   "shelfhold.plugin_host.adapters.native.openlibrary",
   "shelfhold.plugin_host.adapters.native.openlibrary.provider",
+  "shelfhold.plugin_host.adapters.native.wikisource",
+  "shelfhold.plugin_host.adapters.native.wikisource.source",
   "shelfhold.plugin_host.attestation",
   "shelfhold.plugin_host.audit_hook",
   "shelfhold.plugin_host.authflow",
@@ -2653,6 +2655,7 @@
   "webp",
   "webtoon",
   "whole",
+  "wikisource",
   "wildcard",
   "window.preempted",
   "winreg.",
@@ -2813,7 +2816,9 @@
    "erase",
    "root_away"
   ],
-  "format": [],
+  "format": [
+   "epub-3"
+  ],
   "job_kind": [],
   "kind": [
    "adopted_missing",

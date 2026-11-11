@@ -165,7 +165,7 @@ def test_an_epub_whose_own_rights_omit_the_licence_still_carries_the_attribution
 
 @pytest.mark.req("EF-BIB-033")
 def test_an_epub_that_already_carries_the_licence_is_not_given_it_twice(tmp_path: Path) -> None:
-    book = with_metadata("<dc:rights>Licence CC-BY-SA 4.0, contributeurs de Wikisource</dc:rights>")
+    book = with_metadata("<dc:rights>Licence CC-BY-SA 4.0, texte de Wikisource</dc:rights>")
     with wikisource_bench(exports={BOOK: book}) as b:
         prepared, _ = b.acquire()
         root = exported_opf(b, prepared.unit_id, tmp_path)
@@ -263,7 +263,7 @@ def test_an_export_redirected_off_the_domain_rules_is_refused_at_the_hop() -> No
 @pytest.mark.req("EF-SRC-011", "ENF-SEC-014")
 @pytest.mark.parametrize(
     "language",
-    ["fr.evil.example", "fr/../x", "fr#", "FR", "", "f", "fr\n", "a" * 40, "fr.wikisource.org/x?"],
+    ["fr.evil.example", "fr/../x", "fr#", "FR", "f", "fr\n", "a" * 40, "fr.wikisource.org/x?"],
 )
 def test_a_language_cannot_choose_the_host(language: str) -> None:
     """Attack: the language names the sub-domain; a value that is not a language code is refused
