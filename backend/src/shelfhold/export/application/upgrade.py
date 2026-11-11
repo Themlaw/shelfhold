@@ -323,6 +323,7 @@ class SamePathUpgrade:
         data: BinaryIO,
         file_hash: str,
         content_hash: str,
+        source_hash: str,
         spine_count: int,
     ) -> UpgradeResult:
         """The tail of a volume (an EPUB of a range, EF-BIB-044) replaced at its path by the new
@@ -338,9 +339,28 @@ class SamePathUpgrade:
             refused = self._refusal(connection, served, None, check_read=True)
             if refused is not None:
                 return UpgradeResult(refused)
-        if content_hash == served.content_hash or file_hash == served.file_hash:
+            stored = connection.execute(
+                sa.select(export.export_record.c.spine_count).where(
+                    export.export_record.c.shelf_destination_id == destination_id,
+                    export.export_record.c.export_item_id == export_item_id,
+                )
+            ).scalar()
+        if file_hash == served.file_hash:
             return UpgradeResult(UpgradeOutcome.UP_TO_DATE)
-        new = _New(data, file_hash, content_hash, None, None, spine_count)
+        if stored is None:  # the length served is unknown: nothing to compare the new one with
+            return UpgradeResult(UpgradeOutcome.SUSPECT_REVISION)
+        if (
+            suspect_reason(
+                stored_pages=int(stored),
+                new_pages=spine_count,
+                availability="free",
+                min_ratio=self._min_page_ratio,
+            )
+            is not None
+        ):  # the guard of L17, here too: no way to ask for the replacement skips it
+            log.warning("upgrade.suspect_revision", unit_id=served.unit_id)
+            return UpgradeResult(UpgradeOutcome.SUSPECT_REVISION)
+        new = _New(data, file_hash, content_hash, source_hash, None, spine_count)
         return self._replace_held(
             served, new, reason="better_version", automatic=True, restores=None
         )

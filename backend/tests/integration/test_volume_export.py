@@ -9,6 +9,8 @@ an age moved. The pipeline, the database and the files are the production ones; 
 simulated server (no network).
 """
 
+import io
+import json
 import zipfile
 from pathlib import Path
 
@@ -24,7 +26,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.volumes import write_data_file
 from shelfhold.library.adapters.origin_opf import origin_opf_rel
-from shelfhold.library.public import PassthroughStore
+from shelfhold.library.public import PassthroughStore, own_export_of, received_content_hash
 from tests.epub_export_env import (
     TEEN,
     UNKNOWN,
@@ -111,7 +113,8 @@ def test_closed_volume_reaches_the_destination_through_the_pipeline() -> None:
         assert path.name.endswith(" - Vol.1.epub")
         line = record(env, bench.item_id)
         assert (line.state, line.format, line.spine_count) == ("written", "epub", 3)
-        assert line.content_hash == digest(bench.kept())  # the payload as received
+        assert line.sidecar_sha256 == digest(bench.kept())  # the kept file it was made from
+        assert line.content_hash == received_content_hash(path, ".epub")  # the payload (anti-echo)
         assert line.file_hash == digest(path)
         with zipfile.ZipFile(path) as archive:  # the chapters are the ones kept, byte for byte
             kept = zipfile.ZipFile(bench.kept())
@@ -215,7 +218,7 @@ def test_rolling_tail_is_replaced_at_the_same_path_by_the_upgrade() -> None:
         assert env.files() == [path] and digest(path) != first  # the same name, a new file
         line = record(env, bench.item_id)
         assert (line.state, line.spine_count) == ("written", 3)
-        assert line.content_hash == digest(bench.kept()) and line.file_hash == digest(path)
+        assert line.sidecar_sha256 == digest(bench.kept()) and line.file_hash == digest(path)
         assert upgrades(env) == 1 and len(binned(env)) == 1  # the old file is in the bin
         assert digest(binned(env)[0]) == first
         with env.engine.connect() as connection:
@@ -525,3 +528,103 @@ def test_volumes_of_a_series_wait_for_the_age_to_read_back_locked() -> None:
         kavita_scans(w, "Vol.1")
         (second,) = export_round(w)  # pushed, read back locked: now the rest of the series
         assert sorted(written(env)) == sorted([first, second])
+
+
+# -- regressions of the review of #160 ---------------------------------------------------------
+
+
+def test_chapter_a_re_cut_unit_became_is_not_exported_beside_the_volume() -> None:
+    with export_env() as env:
+        series, bench = volume_on_shelf(env, 3, closed=True)
+        child = env.add_chapter(series, "100.1")
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.insert(export.unit_coverage).values(
+                    carrier_type="unit", carrier_id=bench.unit_ids[0], unit_id=child,
+                    position=0, extent="partial", origin="provider",
+                )
+            )  # fmt: skip
+        assert run(env) == 1 and [p.suffix for p in env.files()] == [".epub"]
+
+
+def test_a_unit_in_two_volumes_leaves_in_one_only() -> None:
+    with export_env() as env:
+        _, first = volume_on_shelf(env, 3, closed=True)
+        second = ranged_bench(env.lib, 3, closed=True, label="Vol.2")
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.insert(export.unit_coverage).values(
+                    carrier_type="export_item", carrier_id=second.item_id,
+                    unit_id=first.unit_ids[0], position=99, extent="full", origin="provider",
+                )
+            )  # fmt: skip
+        assert run(env) == 1 and len(env.files()) == 1
+        assert blocked(env) == ["export.volume_unit_already_exported"]
+
+
+def test_echo_of_a_served_volume_with_a_rewritten_opf_is_still_recognized() -> None:
+    with export_env() as env:
+        volume_on_shelf(env, 3, closed=True)
+        assert run(env) == 1
+        (served,) = env.files()
+        payload = received_content_hash(served, ".epub")
+        with env.engine.connect() as connection:
+            assert own_export_of(connection, file_hash=None, content_hash=payload) is not None
+
+
+def test_the_name_of_a_volume_is_not_written_into_the_shared_item() -> None:
+    with export_env() as env:
+        _, bench = volume_on_shelf(env, 2, closed=True, label="Saison 2 Vol.3")
+        run(env)
+        (path,) = env.files()
+        assert path.name.endswith(" - Vol.3.epub")
+        (item,) = env.rows(export.export_item)
+        assert item.frozen_attrs == {"volume_label": "Saison 2 Vol.3"}
+
+
+def test_a_restored_tail_with_no_length_served_is_not_rewritten() -> None:
+    with export_env() as env:
+        _, bench = volume_on_shelf(env, 2, closed=False, policy="rolling_tail")
+        run(env)
+        (path,) = env.files()
+        served = digest(path)
+        with env.engine.begin() as connection:  # what a restore leaves: no length, no fingerprint
+            connection.execute(sa.update(export.export_record).values(spine_count=None))
+        regrow(bench, 3)
+        assert run(env) == 0 and digest(path) == served and upgrades(env) == 0
+        with env.engine.begin() as connection:
+            connection.execute(sa.update(export.export_record).values(sidecar_sha256=None))
+        assert run(env) == 0 and digest(path) == served and upgrades(env) == 0
+
+
+def test_replace_volume_guards_the_length_itself() -> None:
+    with export_env() as env:
+        _, bench = volume_on_shelf(env, 6, closed=False, policy="rolling_tail")
+        run(env)
+        door = SamePathUpgrade(
+            env.engine, env.lib.fsops, locate=env.lib.locate, data_dir=env.lib.data, clock=env.clock
+        )
+        short = io.BytesIO(b"x")
+        result = door.replace_volume(
+            env.destination_id,
+            bench.item_id,
+            data=short,
+            file_hash="sha256:" + "1" * 64,
+            content_hash="sha256:" + "2" * 64,
+            source_hash="sha256:" + "3" * 64,
+            spine_count=2,
+        )
+        assert result.outcome.value == "suspect_revision" and upgrades(env) == 0
+
+
+def test_the_mirror_carries_closed_so_a_restore_keeps_the_volume_frozen() -> None:
+    with export_env() as env:
+        volume_on_shelf(env, 2, closed=True)
+        run(env)
+        lines = [
+            json.loads(line)
+            for f in env.lib.tmp.rglob("*.jsonl")
+            for line in f.read_text().splitlines()
+        ]
+        items = [e["export_item"] for e in lines if e.get("kind") == "entry"]
+        assert items and all(i["closed"] is True for i in items)

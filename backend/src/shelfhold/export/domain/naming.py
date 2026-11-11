@@ -211,7 +211,10 @@ class FrozenAttrs:
         """The attributes of an item as the database keeps them: an item of a range also keeps
         the label its source gave the volume, which names nothing once the item is exported."""
         known = cls.__dataclass_fields__
-        return cls(**{k: v for k, v in attrs.items() if k in known})  # type: ignore[arg-type]
+        values = {k: v for k, v in attrs.items() if k in known}
+        if "number_norm" not in values:  # an item of a range, not named yet: nothing to read
+            values |= {"series": "", "track": "main", "number_norm": "0", "kind": "volume"}
+        return cls(**values)  # type: ignore[arg-type]
 
     def __post_init__(self) -> None:
         if self.track not in TRACKS:
@@ -243,11 +246,15 @@ def _decimal(text: str) -> Decimal | None:
         return None
 
 
+_VOLUME_WORD: Final = re.compile(r"(?:vol(?:ume)?|tome|book)\.?\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
+
+
 def volume_number(label: str | None) -> str | None:
     """The number a volume is named with, read from the label the source gave it ("Vol.3",
     "Volume 12", "Tome 04": the first number, plain decimal); None when there is none."""
-    found = _NUMBER.search(label or "")
-    number = _decimal(found.group(0)) if found else None
+    text = label or ""
+    found = _VOLUME_WORD.search(text) or _NUMBER.search(text)  # "Saison 2 Vol.3" is volume 3
+    number = _decimal(found.group(found.lastindex or 0)) if found else None
     return None if number is None else format(number.normalize(), "f")
 
 

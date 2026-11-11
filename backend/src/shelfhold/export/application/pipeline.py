@@ -753,6 +753,12 @@ class ExportPipeline:
         with self._engine.connect() as connection:
             self._require_barrier(connection, ctx, planned)
         wrote: list[str] = []
+        served = self._ranged.served_copy(ctx.destination_id, item_id)
+        if served is None and self._has_line(ctx.destination_id, item_id):
+            # a line without the fingerprint it was made from (restored, or from before): it is
+            # not a first write and the length served is unknown, so nothing is rewritten
+            log.warning("export.volume_served_unknown")
+            return False
 
         def place(prepared: PreparedRange) -> None:
             rendered = self._render_volume(prepared, planned)
@@ -768,6 +774,9 @@ class ExportPipeline:
             wrote.append("placed")
 
         def replace(prepared: PreparedRange) -> None:
+            if served is None or served.spine_count is None:  # the guard of L17 has nothing to read
+                log.warning("export.volume_served_unknown")
+                return
             rendered = self._render_volume(prepared, planned)
             try:
                 result = self._replace_volume(ctx, planned, prepared, rendered, guard)
@@ -780,8 +789,7 @@ class ExportPipeline:
 
         try:
             outcome = self._ranged.export(
-                item_id, served=self._ranged.served_copy(ctx.destination_id, item_id),
-                place=place, replace=replace,
+                item_id, served=served, place=place, replace=replace,
             )  # fmt: skip
         except RangedExportError as error:  # nothing was written: the rest of the plan goes on
             log.warning("export.volume_refused", code=error.code)
@@ -789,6 +797,20 @@ class ExportPipeline:
         if outcome.warning is not None:
             log.info("export.volume_tail", warning=outcome.warning)
         return bool(wrote)
+
+    def _has_line(self, destination_id: str, item_id: str) -> bool:
+        table = export.export_record
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    sa.select(table.c.state).where(
+                        table.c.shelf_destination_id == destination_id,
+                        table.c.export_item_id == item_id,
+                        table.c.state.in_(("written", "scanned", "resolved", "adopted")),
+                    )
+                ).first()
+                is not None
+            )
 
     def _render_volume(self, prepared: PreparedRange, planned: PlannedOp) -> RenderedEpub:
         """The derivative of the file kept, its OPF edited (series, volume number, rights)."""
@@ -816,8 +838,9 @@ class ExportPipeline:
             )  # fmt: skip
             result = upgrade.replace_volume(
                 ctx.destination_id, str(planned.export_item_id), data=rendered.file,
-                file_hash=rendered.file_hash, content_hash=prepared.source_hash,
-                spine_count=prepared.spine_count,
+                file_hash=rendered.file_hash,
+                content_hash=prepared.payload_hash or prepared.source_hash,
+                source_hash=prepared.source_hash, spine_count=prepared.spine_count,
             )  # fmt: skip
         return result.outcome
 
@@ -1020,7 +1043,10 @@ class ExportPipeline:
         return {
             "locator_type": "path", "rel_path": planned.rel_path, "format": "epub",
             "template_ref": str(planned.frozen["template_ref"]),
-            "content_hash": prepared.source_hash, "sidecar_sha256": None,
+            # the payload (anti-echo, as for a chapter); the kept file it came from rides in the
+            # sidecar column, which an EPUB has no use for
+            "content_hash": prepared.payload_hash or prepared.source_hash,
+            "sidecar_sha256": prepared.source_hash,
             "file_hash": rendered.file_hash, "spine_count": prepared.spine_count,
             "state": "planned",
         }  # fmt: skip
@@ -1049,18 +1075,8 @@ class ExportPipeline:
                 connection, shelf_destination_id=ctx.destination_id,
                 remote_library_id=ctx.remote_library_id, ref=planned.series, now=self._clock.now(),
             )  # fmt: skip
-        if planned.unit_id is None:  # a volume: the item the keeper made, named for good now
-            item_id = str(planned.export_item_id)
-            table = export.export_item
-            kept = connection.execute(
-                sa.select(table.c.frozen_attrs).where(table.c.id == item_id)
-            ).scalar_one()
-            label = (kept or {}).get("volume_label")  # what the source called it stays with it
-            frozen = dict(planned.frozen) | ({"volume_label": label} if label else {})
-            connection.execute(
-                sa.update(table).where(table.c.id == item_id).values(frozen_attrs=frozen)
-            )
-            return item_id
+        if planned.unit_id is None:  # a volume: the item the keeper made, shared by destinations
+            return str(planned.export_item_id)
         if planned.export_item_id is not None:
             return planned.export_item_id
         if source is None:

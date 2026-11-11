@@ -1351,7 +1351,7 @@ class RestoreAdopter:
             connection.execute(
                 sa.insert(export.export_item).values(
                     id=item_id, edition_id=edition_id, kind=kind, frozen_attrs=frozen,
-                    content_id=content_id,
+                    content_id=content_id, closed=item.get("closed") is True,
                 )
             )  # fmt: skip
             for position, covered in enumerate(lineage.coverage):

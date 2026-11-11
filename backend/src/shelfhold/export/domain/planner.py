@@ -140,6 +140,9 @@ class VolumeFacts:
     unit_ids: tuple[str, ...]
     content_hash: str | None = None
     verdict: str = "export"
+    # the chapters a re-cut Unit of the volume became (`unit_coverage` of carrier `unit`): they
+    # are the volume's too, and are never exported beside it
+    child_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -319,7 +322,7 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
             for covered_unit in (*([line.unit_id] if line.unit_id else []), *line.unit_ids):
                 by_unit.setdefault(covered_unit, line)
     # A Unit a volume carries is the volume's, never also a chapter of its own (one file per Unit)
-    in_volume = {uid for v in volumes for uid in v.unit_ids}
+    in_volume = {uid for v in volumes for uid in (*v.unit_ids, *v.child_ids)}
     in_volume |= {uid for r in request.records if r.kind in VOLUME_KINDS for uid in r.unit_ids}
     editions = {e.edition_id: e for e in request.editions}
     known = {s.export_series_id: s for s in request.series}
@@ -409,10 +412,17 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
             continue
         seen.add(rel)
         ops.append(_op("write", unit, editions, rel, resolution, frozen, record))
+    taken = {
+        uid for r in request.records if r.kind in VOLUME_KINDS and r.state in DONE_STATES
+        for uid in r.unit_ids
+    }  # fmt: skip
     for volume in volumes:
         _plan_volume(
             request, volume, by_item.get(volume.export_item_id), by_unit,
-            _Shared(parse, editions, known, series_of, family, seen, seeds, ops, blocked, warnings),
+            _Shared(
+                parse, editions, known, series_of, family, seen, seeds, taken, ops, blocked,
+                warnings,
+            ),
         )  # fmt: skip
     ops.sort(key=lambda o: (o.rel_path or "", o.unit_id or "", o.export_item_id or ""))
     checks = TREE_CHECKS if dest.transport == "tree" else ()
@@ -431,10 +441,11 @@ class _Shared:
     parse: Callable[[str], Parsed]
     editions: Mapping[str, EditionFacts]
     known: Mapping[str, SeriesFacts]
-    series_of: Callable[[str], "SeriesRef | Blocked"]
+    resolve_series: Callable[[str], "SeriesRef | Blocked"]
     family: bool
     seen: set[str]
     seeds: set[str]
+    units_taken: set[str]  # the Units of a volume already left, or planned, in another volume
     ops: list[PlannedOp]
     blocked: list[Blocked]
     warnings: list[PlanWarning]
@@ -478,10 +489,12 @@ def _plan_volume(
         if volume.content_hash is None:
             stop(SOURCE_MISSING)
             return
+        chapter_states = DONE_STATES | {"planned"}
         taken = [
-            u for u in volume.unit_ids
-            if u in by_unit and by_unit[u].state in DONE_STATES | {"planned"}
-        ]  # fmt: skip
+            u
+            for u in volume.unit_ids
+            if u in shared.units_taken or (u in by_unit and by_unit[u].state in chapter_states)
+        ]
         if taken:  # a Unit already left as a chapter: never twice
             stop(VOLUME_UNIT_EXPORTED, taken[0])
             return
@@ -490,7 +503,7 @@ def _plan_volume(
         if verdict != "allowed":
             stop(ADMISSION_CODES.get(verdict, "shelf.rating_required"), verdict)
             return
-    resolution = shared.series_of(volume.edition_id)
+    resolution = shared.resolve_series(volume.edition_id)
     if isinstance(resolution, Blocked):
         stop(resolution.code, resolution.detail)
         return
@@ -508,22 +521,21 @@ def _plan_volume(
     if not _age_gate_lets(request, volume.edition_id, True, resolution, shared.seeds):
         stop(AGE_WAIT)
         return
+    # The name comes from the label the source gave and from the series of this destination, never
+    # from what the item keeps: the item is shared by every destination (I22 holds per line)
+    number = volume_number(volume.label)
+    if number is None:
+        stop(VOLUME_UNNAMED)
+        return
+    frozen = FrozenAttrs(
+        series=resolution.frozen_series or resolution.name_raw, track="main",
+        number_norm=number, kind="volume", template_ref=dest.template.ref,
+    )  # fmt: skip
     if replaced and record is not None:  # the same path, the same name: the upgrade's business
         shared.ops.append(
-            _volume_op("write", volume, shared.editions, record.rel_path, resolution, record.frozen)
+            _volume_op("write", volume, shared.editions, record.rel_path, resolution, frozen)
         )
         return
-    if record is not None:  # a line left `planned` or `error`: the name it already has
-        frozen = record.frozen
-    else:
-        number = volume_number(volume.label)
-        if number is None:
-            stop(VOLUME_UNNAMED)
-            return
-        frozen = FrozenAttrs(
-            series=resolution.frozen_series or resolution.name_raw, track="main",
-            number_norm=number, kind="volume", template_ref=dest.template.ref,
-        )  # fmt: skip
     if dest.transport == "pull":
         shared.ops.append(_volume_op("register", volume, shared.editions, None, resolution, frozen))
         return
@@ -549,6 +561,7 @@ def _plan_volume(
         stop("export.destination_occupied", rel)
         return
     shared.seen.add(rel)
+    shared.units_taken.update(volume.unit_ids)
     shared.ops.append(_volume_op("write", volume, shared.editions, rel, resolution, frozen))
 
 

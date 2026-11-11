@@ -519,8 +519,11 @@ def _records(connection: Connection, destination_id: str) -> dict[str, RecordFac
         item_id: RecordFacts(
             export_item_id=item_id,
             unit_id=units[item_id][0] if len(units[item_id]) == 1 else None,
-            state=r.state, rel_path=r.rel_path, content_hash=r.content_hash,
-            sidecar_sha256=r.sidecar_sha256,
+            state=r.state, rel_path=r.rel_path,
+            # a volume keeps the payload in `content_hash` (anti-echo) and the fingerprint of the
+            # kept file it was made from in `sidecar_sha256`: the one the planner compares
+            content_hash=r.sidecar_sha256 if r.kind in ("volume", "bundle") else r.content_hash,
+            sidecar_sha256=None if r.kind in ("volume", "bundle") else r.sidecar_sha256,
             frozen=FrozenAttrs.stored(r.frozen_attrs),
             kind=r.kind, unit_ids=tuple(units[item_id]),
         )
@@ -562,18 +565,28 @@ def _volume_rows(connection: Connection, editions: tuple[EditionFacts, ...]) -> 
             .order_by(coverage.c.carrier_id, coverage.c.position)
         ):
             units[c.carrier_id].append(c.unit_id)
-    return [_VolumeRow(r, tuple(units[r.id])) for r in rows]
+    children: dict[str, list[str]] = defaultdict(list)
+    owner = {u: v for v, us in units.items() for u in us}
+    if owner:  # the same union as `RangedExporter._facts`: the chapters a re-cut Unit became
+        for c in connection.execute(
+            sa.select(coverage.c.carrier_id, coverage.c.unit_id)
+            .where(coverage.c.carrier_type == "unit", coverage.c.carrier_id.in_(sorted(owner)))
+            .order_by(coverage.c.carrier_id, coverage.c.position)
+        ):
+            children[owner[c.carrier_id]].append(c.unit_id)
+    return [_VolumeRow(r, tuple(units[r.id]), tuple(children[r.id])) for r in rows]
 
 
 class _VolumeRow:
     """An export item of a range, as the database says it."""
 
-    def __init__(self, row: Any, unit_ids: tuple[str, ...]) -> None:
+    def __init__(self, row: Any, unit_ids: tuple[str, ...], child_ids: tuple[str, ...]) -> None:
         self.id = str(row.id)
         self.edition_id = str(row.edition_id)
         self.closed = bool(row.closed)
         self.label = (row.frozen_attrs or {}).get("volume_label")
         self.unit_ids = unit_ids
+        self.child_ids = child_ids
         self.verdict = _verdict(
             str(row.volume_policy), row.upstream_status == "finished", self.closed
         )
@@ -594,7 +607,7 @@ def _volume_facts(
     served = record is not None and record.state in _DONE
     return VolumeFacts(
         export_item_id=row.id, edition_id=row.edition_id, label=row.label, closed=row.closed,
-        unit_ids=row.unit_ids, verdict=row.verdict,
+        unit_ids=row.unit_ids, verdict=row.verdict, child_ids=row.child_ids,
         content_hash=None if served and row.closed else ranged_hash(row.id),
     )  # fmt: skip
 
@@ -671,7 +684,8 @@ def _version(
         "admissions": sorted(admissions.items()),  # a rating that moves stales the plan
         # what the database says of the ranges (not the bytes: the file is read when it is put)
         "volumes": [
-            [v.id, v.edition_id, v.label, v.closed, list(v.unit_ids), v.verdict] for v in volumes
+            [v.id, v.edition_id, v.label, v.closed, list(v.unit_ids), list(v.child_ids), v.verdict]
+            for v in volumes
         ],
     }
     if world is not None:

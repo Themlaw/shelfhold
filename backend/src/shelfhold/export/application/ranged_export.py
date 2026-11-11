@@ -53,6 +53,7 @@ from shelfhold.library.public import (
     decide_export,
     decide_replacement,
     parse_policy,
+    received_content_hash,
 )
 
 __all__ = [
@@ -113,7 +114,7 @@ def locate_ranged(data_dir: Path, item_id: str) -> Path:
 @dataclass(frozen=True)
 class ServedCopy:
     """What the destination holds for the item now. `file_hash` is the fingerprint of the kept
-    file the served copy was made from (`PreparedRange.source_hash`, the `content_hash` of the
+    file the served copy was made from (`PreparedRange.source_hash`, the `sidecar_sha256` of the
     manifest line): the file served itself is that one with its OPF edited."""
 
     file_hash: str
@@ -128,6 +129,7 @@ class PreparedRange:
     path: Path  # the neutralized derivative, in staging
     file_hash: str  # of the derivative
     source_hash: str  # of the file kept under /data/ranged, as the source sent it
+    payload_hash: str | None  # the payload of the EPUB, OPF aside: what the anti-echo compares
     spine_count: int
     report: CoverageReport
     closed: bool
@@ -193,7 +195,8 @@ class RangedExporter:
                     digest.update(block)
             yield PreparedRange(
                 item_id, str(item.edition_id), derivative, "sha256:" + digest.hexdigest(),
-                source_hash, len(toc.spine), report, bool(item.closed),
+                source_hash, received_content_hash(derivative, ".epub"), len(toc.spine), report,
+                bool(item.closed),
             )  # fmt: skip
 
     # -- facts ------------------------------------------------------------------------------
@@ -212,7 +215,7 @@ class RangedExporter:
         record, shelf, dest = export.export_record, export.shelf, export.shelf_destination
         with self._engine.connect() as connection:
             row = connection.execute(
-                sa.select(record.c.content_hash, record.c.spine_count, shelf.c.skip_read_upgrades)
+                sa.select(record.c.sidecar_sha256, record.c.spine_count, shelf.c.skip_read_upgrades)
                 .select_from(
                     record.join(dest, dest.c.id == record.c.shelf_destination_id).join(
                         shelf, shelf.c.id == dest.c.shelf_id
@@ -222,13 +225,13 @@ class RangedExporter:
                     record.c.shelf_destination_id == destination_id,
                     record.c.export_item_id == item_id,
                     record.c.state == "written",
-                    record.c.content_hash.is_not(None),
+                    record.c.sidecar_sha256.is_not(None),
                 )
             ).one_or_none()
         if row is None:
             return None
         return ServedCopy(
-            str(row.content_hash), bool(row.skip_read_upgrades),
+            str(row.sidecar_sha256), bool(row.skip_read_upgrades),
             None if row.spine_count is None else int(row.spine_count),
         )  # fmt: skip
 
