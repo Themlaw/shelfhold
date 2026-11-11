@@ -111,7 +111,11 @@ def test_diagnostic_bundle_redacts_source_urls(
     assert sources["items"] == {"<source-1>": 1}
     logs = [json.loads(line) for line in _members(out)["logs.jsonl"].splitlines()]
     looked = next(line for line in logs if line["event"] == "follow.series_looked")
-    assert looked["outcome"] == "ok" and looked["series_id"] == traps.ids["work"]
+    assert (
+        looked["outcome"] == "ok"
+        and looked["logger"].startswith("shelfhold.")
+        and looked["series_id"] == traps.ids["work"]
+    )
     assert "source" not in looked or looked["source"] == "<source-1>"
     assert looked["user_id"] == "<user-1>"  # a user identifier is never written in clear
 

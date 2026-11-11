@@ -6,7 +6,8 @@ connexion et n'écrit que le fichier demandé, en `0600`. Elle n'écrase jamais 
 L'interface viendra en M3.
 
 ```sh
-docker compose logs --no-color shelfhold > /tmp/shelfhold.log
+docker compose logs --no-color shelfhold \
+  | docker compose exec -T shelfhold sh -c 'cat > /tmp/shelfhold.log'
 docker compose exec shelfhold shelfhold diagnostic bundle \
   --out /data/diagnostic.zip --log-file /tmp/shelfhold.log
 ```
@@ -27,10 +28,12 @@ Le paquet est **fermé par défaut** : une liste positive dit ce qui entre, rien
 | `schema.sql` | la structure de la base, sans aucune ligne |
 | `content.json` | nombre et taille des fichiers par format ; un fichier **tatoué** n'est cité que par son empreinte et sa taille |
 | `sources.json` | sous-sources et séries amont sous `<source-1>`, `<source-2>`… |
-| `logs.jsonl` | chaque ligne JSON du journal donné, réduite à ses champs autorisés : événement, niveau, module, horodatage, mots fermés (`outcome`, `code`…), nombres, identifiants internes (ULID) ; un identifiant d'utilisateur devient `<user-N>` |
+| `logs.jsonl` | chaque ligne JSON du journal donné, réduite au **vocabulaire du code** : un événement, un champ, un mot (`outcome`, `code`…), un module ou une classe d'erreur que le code écrit lui-même ; toute autre valeur devient `<other>`, un champ inconnu est retiré ; identifiants internes (ULID) et nombres gardés ; un identifiant d'utilisateur devient `<user-N>` |
 
 ## Ce qui n'entre jamais
 
+- Aucun journal lu hors des bornes : au plus 8 fichiers, 64 Mio chacun et 128 Mio en tout ;
+  jamais un lien symbolique, ni un fichier de `/data`, `/proc`, `/sys` ou `/dev`.
 - Aucun fichier de contenu, et en particulier aucun fichier tatoué : un achat tatoué se lit dans
   le foyer, jamais au-delà (ENF-LEG-009, ADR-0033). Un fichier de `/store`, de la bibliothèque,
   d'une racine physique, du miroir de provenance (`.shelfhold/manifest/`), une archive ou un fichier
@@ -46,7 +49,8 @@ Une ligne de journal qui n'est pas un objet JSON (une trace d'erreur en texte, p
 ## La dernière barrière
 
 Avant d'écrire, la commande cherche dans chaque fichier du paquet toutes les valeurs que l'instance
-garde et qui ne doivent pas sortir : secrets enregistrés et secrets scellés (ouverts pour la
+garde et qui ne doivent pas sortir, sans tenir compte de la casse ni des accents, et sous forme
+de « slug » (`phare_oublie` pour « Phare Oublié ») : secrets enregistrés et secrets scellés (ouverts pour la
 vérification seulement), titres, chemins, URL et hôtes des sources, noms de sous-sources, noms et
 identifiants d'utilisateurs, URL configurées, nom de la machine. Elle les cherche en clair,
 encodées dans une URL et en base64, et cherche aussi toute adresse e-mail, adresse IP ou URL.

@@ -25,6 +25,8 @@ nothing: the error names the category, never the value.
 
 from __future__ import annotations
 
+import base64
+import functools
 import hashlib
 import io
 import ipaddress
@@ -32,6 +34,7 @@ import json
 import platform as host_platform
 import re
 import sqlite3
+import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -64,8 +67,9 @@ from shelfhold.infrastructure.secret_text import (
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.atomic import write_private
 from shelfhold.infrastructure.secrets.diagnostics import register_for_scrubbing, store_for
-from shelfhold.infrastructure.secrets.errors import KeyringError
-from shelfhold.infrastructure.secrets.vault import SecretVault
+from shelfhold.infrastructure.secrets.errors import ExportError, KeyringError
+from shelfhold.infrastructure.secrets.export import read_operator_file
+from shelfhold.infrastructure.secrets.vault import IDENTIFIER_FIELDS, SecretVault
 
 __all__ = [
     "BUNDLE_FORMAT",
@@ -83,7 +87,11 @@ __all__ = [
 ]
 
 BUNDLE_FORMAT: Final = "1.0"
-MAX_LOG_BYTES: Final = 64 * 1024 * 1024
+MAX_LOG_BYTES: Final = 64 * 1024 * 1024  # one file
+MAX_LOG_TOTAL_BYTES: Final = 128 * 1024 * 1024  # all of them
+MAX_LOG_FILES: Final = 8
+MAX_LINE_BYTES: Final = 64 * 1024
+_VIRTUAL_ROOTS: Final = (Path("/proc"), Path("/sys"), Path("/dev"))
 MAX_LOG_LINES: Final = 50_000  # the last ones are kept
 FIRST_PARTY_PLUGINS: Final = frozenset({"suwayomi", "lncrawl"})  # named as is; others: <plugin-N>
 
@@ -114,30 +122,61 @@ SETTING_CLASSES: Final[Mapping[str, str]] = {
 
 # -- closed shapes of what may be written ----------------------------------------------------
 _CLOSED_WORD = re.compile(r"^(?:[a-z][a-z0-9_.:-]{0,63}|<(?:source|host|user|plugin)-\d+>)$")
+_PSEUDONYM = re.compile(r"^<(?:source|host|user|plugin)-\d+>$")
 _SETTING_WORD = re.compile(r"^[A-Za-z0-9_:/+.-]{1,40}$")  # INFO, Europe/Paris, 03:00
-_CLASS_NAME = re.compile(r"^[A-Z][A-Za-z0-9_]{0,63}$")
-_LOGGER = re.compile(r"^[a-z_][a-z0-9_.]{0,127}$")
+_LOGGER = re.compile(r"^shelfhold(?:\.[a-z_][a-z0-9_]*)*$")
 _TIMESTAMP = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)?$")
-_HTTP_METHOD = re.compile(r"^(?:GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$")
-_ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
-_NUMERIC_KEY = re.compile(r"^[a-z][a-z0-9_]{0,48}$")
+_HTTP_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+_ULID = re.compile(r"^[0-7][0-9A-HJKMNP-TV-Z]{25}$")
+_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+_ULID_EPOCH_MS = (1_577_836_800_000, 4_102_444_800_000)  # 2020-01-01 .. 2100-01-01
 OTHER: Final = "<other>"
-
-_LOG_WORD_KEYS = frozenset({
-    "event", "level", "outcome", "kind", "job_kind", "code", "reason", "state", "method", "queue",
-    "mode", "format", "media", "retention", "decision", "result", "capability", "transport",
-    "status", "phase", "action", "strategy",
-})  # fmt: skip
-_LOG_ID_KEYS = frozenset({
-    "job_id", "unit_id", "series_id", "edition_id", "binding_id", "target_id", "destination_id",
-    "root_id", "dst_root_id", "plan_id", "export_series_id", "variant_id", "work_id", "shelf_id",
-    "content_id", "intent_id", "item_id", "export_item_id", "remote_library_id",
-})  # fmt: skip
+_VOCABULARY_FILE: Final = Path(__file__).with_name("diagnostic_vocabulary.json")
 _LOG_USER_KEYS = frozenset({"user_id", "actor_id", "account_id", "member_id", "owner_id"})
-_LOG_SHAPES: Final[Mapping[str, re.Pattern[str]]] = {
-    "timestamp": _TIMESTAMP, "logger": _LOGGER, "error": _CLASS_NAME, "method": _HTTP_METHOD,
-    **dict.fromkeys(_LOG_ID_KEYS, _ULID),
-}  # fmt: skip
+
+
+@dataclass(frozen=True)
+class Vocabulary:
+    """What the code writes in a log line (`tools/diagnostic_vocabulary.py`, checked in):
+    a value outside it never enters the bundle."""
+
+    events: frozenset[str]
+    keys: frozenset[str]
+    words: Mapping[str, frozenset[str]]
+    errors: frozenset[str]
+    loggers: frozenset[str]
+
+    @classmethod
+    def load(cls) -> Vocabulary:
+        raw = json.loads(_VOCABULARY_FILE.read_text(encoding="utf-8"))
+        shared = frozenset(raw["shared_words"])
+        return cls(
+            events=frozenset(raw["events"]),
+            keys=frozenset(raw["keys"]),
+            words={key: frozenset(values) | shared for key, values in raw["words"].items()},
+            errors=frozenset(raw["errors"]),
+            loggers=frozenset(raw["loggers"]),
+        )
+
+    def word(self, key: str, value: str) -> str:
+        return value if value in self.words.get(key, frozenset()) else OTHER
+
+
+@functools.cache
+def vocabulary() -> Vocabulary:
+    return Vocabulary.load()
+
+
+def _plausible_ulid(value: str) -> bool:
+    """A ULID whose time part falls in this century: a hexadecimal or base32 text that happens to
+    have the shape of one (a title smuggled under an id field) does not."""
+    if not _ULID.fullmatch(value):
+        return False
+    millis = 0
+    for char in value[:10]:
+        millis = millis * 32 + _CROCKFORD.index(char)
+    return _ULID_EPOCH_MS[0] <= millis <= _ULID_EPOCH_MS[1]
+
 
 # -- what a bundle must never hold, wherever it is: the last barrier ---------------------------
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
@@ -149,6 +188,12 @@ _SENSITIVE_COLUMN = re.compile(
     r"(title|name|label|url|path|remote_id|username|host|series|memo|settings|alias|value|email)",
 )
 _NOT_SENSITIVE_COLUMN = re.compile(r"(_by|_hash|_kind|_lang|_state|_at)$")
+# Names and titles (and the keys that name a source): a whole word, whatever the length.
+_WORD_COLUMN = re.compile(r"(title|name|label|username|alias|source_key|plugin_id)")
+_REFERENCE_TABLES = frozenset(
+    {"work_kind", "work_relation_kind", "normalizer", "safeguard_backlog"}
+)
+_NOT_HOUSEHOLD_COLUMNS = frozenset({"title_lang_pref"})
 _SHORT = 12  # a value shorter than this is matched as a whole word only
 _CODE_LIKE = re.compile(r"^[a-z0-9_.:-]+$")  # a short lower-case word cannot be told from a code
 _PRODUCT_WORDS = frozenset({"shelfhold", "localhost"})
@@ -344,13 +389,14 @@ def _schema_sql(database: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _content(connection: sa.Connection) -> dict[str, object]:
+def _content(connection: sa.Connection, words: Vocabulary) -> dict[str, object]:
     """Counts and bytes by format, kind and retention; a watermarked file by hash and size."""
     c = storage.content.c
     by_format = [
         {
-            "format": _code(row.format), "kind": _code(row.kind),
-            "retention": _code(row.retention), "watermarked": bool(row.watermarked),
+            "format": words.word("format", row.format), "kind": words.word("kind", row.kind),
+            "retention": words.word("retention", row.retention),
+            "watermarked": bool(row.watermarked),
             "count": int(row.n), "bytes": int(row.total or 0),
         }
         for row in connection.execute(
@@ -412,43 +458,64 @@ def _sources(connection: sa.Connection, names: Pseudonyms) -> dict[str, object]:
 # -- log lines --------------------------------------------------------------------------------
 
 
-def _log_word(value: str, names: Pseudonyms) -> str:
-    value = redact_source_urls(value, names.url)
-    return _code(names.word(value))
+def _log_word(key: str, value: str, names: Pseudonyms, words: Vocabulary) -> str:
+    """A word field: a URL or a source's name becomes its stand-in; otherwise the value must be a
+    word the code writes under this key, else `<other>`."""
+    replaced = names.word(redact_source_urls(value, names.url))
+    if _PSEUDONYM.fullmatch(replaced):
+        return replaced
+    return words.word(key, value)
 
 
 def reduce_log_line(
-    line: Mapping[str, object], names: Pseudonyms, users: frozenset[str] = frozenset()
+    line: Mapping[str, object],
+    names: Pseudonyms,
+    users: frozenset[str] = frozenset(),
+    words: Vocabulary | None = None,
 ) -> dict[str, object]:
-    """One JSON log line, reduced to its allowed fields. Anything else is dropped, not masked:
-    a free text, a path, a URL, a name and every field this list does not know."""
+    """One JSON log line, reduced to the closed vocabulary of the code. A field the code never
+    writes is dropped (its name included); a value outside the field's vocabulary becomes
+    `<other>`: free text, paths, URLs, names, a title spelled as a slug or as a class name."""
+    words = words or vocabulary()
     kept: dict[str, object] = {}
     for key, value in line.items():
         if not isinstance(key, str):
             continue
-        if key in _LOG_USER_KEYS and isinstance(value, str):
-            kept[key] = names.user(value)
-        elif isinstance(value, str) and value in users:
-            kept[key] = names.user(value)  # a user's id under any other name
-        elif isinstance(value, str) and (shape := _LOG_SHAPES.get(key)) and shape.fullmatch(value):
+        if key in _LOG_USER_KEYS or (isinstance(value, str) and value in users):
+            if isinstance(value, str):
+                kept[key] = names.user(value)  # a user's id, under any name
+            continue
+        if key == "timestamp":
+            kept[key] = value if isinstance(value, str) and _TIMESTAMP.fullmatch(value) else OTHER
+        elif key == "event":
+            kept[key] = value if isinstance(value, str) and value in words.events else OTHER
+        elif key == "logger":
+            known = isinstance(value, str) and _LOGGER.fullmatch(value) and value in words.loggers
+            kept[key] = value if known else OTHER
+        elif key == "error":
+            kept[key] = value if isinstance(value, str) and value in words.errors else OTHER
+        elif key == "method":
+            kept[key] = value if value in _HTTP_METHODS else OTHER
+        elif key not in words.keys and key not in words.words:
+            continue  # a field the code never writes: not even its name enters
+        elif key.endswith("_id"):
+            kept[key] = value if isinstance(value, str) and _plausible_ulid(value) else OTHER
+        elif isinstance(value, str):
+            kept[key] = _log_word(key, value, names, words) if key in words.words else OTHER
+        elif isinstance(value, bool | int | float) or value is None:
             kept[key] = value
-        elif key in _LOG_WORD_KEYS and isinstance(value, str):
-            kept[key] = _log_word(value, names)
-        elif (
-            isinstance(value, bool | int | float)
-            and _NUMERIC_KEY.fullmatch(key)
-            and key not in _LOG_USER_KEYS
-        ):
-            kept[key] = value
+        else:
+            kept[key] = OTHER  # a list or a mapping: never walked
     return kept
 
 
-def _log_lines(text: str) -> Iterator[dict[str, object] | None]:
+def _log_lines(text: str, index: int) -> Iterator[dict[str, object] | None]:
     """Each line as `docker compose logs` writes it (`name-1  | {...}`), parsed; None when it is
-    not one JSON object (a traceback, a plain-text line: dropped)."""
+    not one JSON object (a traceback, a plain-text line) or is longer than a log line can be:
+    dropped. A line nested past what the parser can follow refuses the whole file."""
     for raw in text.splitlines():
         start = raw.find("{")
-        if start == -1:
+        if start == -1 or len(raw) - start > MAX_LINE_BYTES:
             yield None
             continue
         try:
@@ -456,6 +523,8 @@ def _log_lines(text: str) -> Iterator[dict[str, object] | None]:
         except ValueError:
             yield None
             continue
+        except RecursionError:
+            raise DiagnosticInputRefusedError("nested_too_deep", index) from None
         yield parsed if isinstance(parsed, dict) else None
 
 
@@ -473,28 +542,41 @@ _ARCHIVE_MAGIC = (b"PK\x03\x04", b"PK\x05\x06", b"\x1f\x8b", b"BZh", b"\xfd7zXZ"
 
 
 def _read_log_input(
-    path: Path, index: int, *, content_roots: Sequence[Path], content_hashes: frozenset[str]
+    path: Path,
+    index: int,
+    *,
+    forbidden_roots: Sequence[Path],
+    content_hashes: frozenset[str],
+    budget: list[int],
 ) -> str:
-    """The text of one `--log-file`, or a refusal: the provenance mirror (I33), anything under
-    /store, /library or a physical root, an archive, or a file whose hash is a content's."""
+    """The text of one `--log-file`, or a refusal: the provenance mirror (I33); anything under
+    `/data`, `/store`, the library or a physical root (the database, the keyring, contents);
+    `/proc`, `/sys`, `/dev`; a link; an archive; a file whose hash is a content's; a file past
+    the bound, or past what is left of the total (`budget`)."""
     if is_diagnostic_excluded(str(path)):
         raise DiagnosticInputRefusedError("provenance_mirror", index)
     try:
         resolved = path.resolve(strict=True)
-    except OSError:
+    except (OSError, RuntimeError):
         raise DiagnosticInputRefusedError("unreadable", index) from None
     if is_diagnostic_excluded(str(resolved)):
         raise DiagnosticInputRefusedError("provenance_mirror", index)
-    if not resolved.is_file():
-        raise DiagnosticInputRefusedError("not_a_file", index)
-    if _under(resolved, content_roots):
-        raise DiagnosticInputRefusedError("content_area", index)
-    if resolved.stat().st_size > MAX_LOG_BYTES:
-        raise DiagnosticInputRefusedError("too_large", index)
+    if _under(resolved, forbidden_roots):
+        raise DiagnosticInputRefusedError("protected_area", index)
+    limit = min(MAX_LOG_BYTES, budget[0])
     try:
-        data = resolved.read_bytes()
+        data, status = read_operator_file(path, limit=limit, what="log file")
+    except ExportError:
+        raise DiagnosticInputRefusedError("not_a_regular_file", index) from None
+    try:
+        same = resolved.stat()
     except OSError:
         raise DiagnosticInputRefusedError("unreadable", index) from None
+    if (same.st_dev, same.st_ino) != (status.st_dev, status.st_ino):
+        raise DiagnosticInputRefusedError("not_a_regular_file", index)  # swapped under us
+    if len(data) > limit:
+        raise DiagnosticInputRefusedError("too_large", index)
+    budget[0] -= len(data)
     if data.startswith(_ARCHIVE_MAGIC):
         raise DiagnosticInputRefusedError("archive", index)
     if "sha256:" + hashlib.sha256(data).hexdigest() in content_hashes:
@@ -505,57 +587,99 @@ def _read_log_input(
 # -- the last barrier -------------------------------------------------------------------------
 
 
+_Word = tuple[str, re.Pattern[str]]
+_SEPARATORS = re.compile(r"[\s\-_.:/+]+")
+
+
+def canonical(text: str) -> str:
+    """The form two spellings of a name share: accents dropped (NFKD), case folded, every run of
+    separators (space, `-`, `_`, `.`, `:`, `/`, `+`) one space. `Phare Oublié` and
+    `phare_oublie` are one value."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return _SEPARATORS.sub(" ", stripped.casefold()).strip()
+
+
 @dataclass
 class _Forbidden:
-    """Values that must not leave, by category: long ones looked up with their encoded forms
-    (percent-encoded, base64), short ones as whole words only."""
+    """Values that must not leave, by category, compared in the canonical form (any case, any
+    accent, slug or spaced). A long value is found anywhere, and in its encoded forms
+    (percent-encoded, base64, hexadecimal, base32); a short one as a whole word."""
 
     long: dict[str, set[str]] = field(default_factory=dict)
     short: dict[str, set[str]] = field(default_factory=dict)
+    encoded: dict[str, set[str]] = field(default_factory=dict)
     forms: dict[str, set[str]] = field(default_factory=dict)  # already every form (the registry)
-    _compiled: list[tuple[str, SecretIndex | re.Pattern[str]]] | None = None
+    _compiled: (
+        tuple[list[tuple[str, SecretIndex]], list[tuple[str, SecretIndex]], list[_Word]] | None
+    ) = None
 
     def add(self, category: str, value: object, *, word: bool = False) -> None:
-        """`word`: a short value is a whole word to look for even when it reads like a code."""
+        """`word`: a name or a title, looked for as a whole word whatever its length or shape
+        (false positives are accepted: the positive list has already replaced everything)."""
         if isinstance(value, dict | list):
             for item in value.values() if isinstance(value, dict) else value:
-                self.add(category, item)
+                self.add(category, item, word=word)
             return
         if not isinstance(value, str):
             return
         text = value.strip()
-        if len(text) < 4 or not any(ch.isalpha() for ch in text):
+        folded = canonical(text)
+        if len(folded) < (3 if word else 4) or not any(ch.isalpha() for ch in folded):
             return
-        if len(text) >= _SHORT:
-            self.long.setdefault(category, set()).add(text)
+        self._compiled = None
+        if len(folded) >= _SHORT:
+            self.long.setdefault(category, set()).add(folded)
+            self.encoded.setdefault(category, set()).add(text)
         elif word or not _CODE_LIKE.fullmatch(text):
-            self.short.setdefault(category, set()).add(text)
+            self.short.setdefault(category, set()).add(folded)
         if "://" in text:
             host = _host_of(text)
             if host:
                 self.add(f"{category}.host", host, word=True)
 
-    def _patterns(self) -> list[tuple[str, SecretIndex | re.Pattern[str]]]:
+    def _patterns(
+        self,
+    ) -> tuple[list[tuple[str, SecretIndex]], list[tuple[str, SecretIndex]], list[_Word]]:
         if self._compiled is None:
-            compiled: list[tuple[str, SecretIndex | re.Pattern[str]]] = []
-            for category, values in sorted(self.long.items()):
-                index = SecretIndex(form for value in values for form in _forms(value))
-                compiled.append((category, index))
-            for category, values in sorted(self.forms.items()):
-                compiled.append((category, SecretIndex(values)))
+            raw = [
+                (category, SecretIndex(form for value in values for form in _forms(value)))
+                for category, values in sorted(self.encoded.items())
+            ]
+            raw += [
+                (category, SecretIndex(values)) for category, values in sorted(self.forms.items())
+            ]
+            folded = [
+                (category, SecretIndex(values)) for category, values in sorted(self.long.items())
+            ]
+            words = []
             for category, values in sorted(self.short.items()):
                 alternatives = "|".join(re.escape(v) for v in sorted(values, key=len, reverse=True))
-                compiled.append((category, re.compile(rf"(?<!\w)(?:{alternatives})(?!\w)")))
-            self._compiled = compiled
+                words.append(
+                    (category, re.compile(rf"(?<!\w)(?:{alternatives})(?!\w)", re.IGNORECASE))
+                )
+            self._compiled = (raw, folded, words)
         return self._compiled
 
-    def check(self, member: str, text: str) -> None:
+    def check(self, member: str, text: str, words_in: Iterable[str] | None = None) -> None:
+        """`words_in`: the texts a short value is looked for in (the values of a JSON member);
+        None: the whole text."""
         views = decoded_views(text)
-        for category, pattern in self._patterns():
-            if isinstance(pattern, SecretIndex):
-                if contains_secret(text, pattern):
-                    raise DiagnosticLeakError(category, member)
-            elif any(pattern.search(view) for view in views):
+        folded_views = [canonical(view) for view in views]
+        word_views = [
+            canonical(view)
+            for item in ([text] if words_in is None else words_in)
+            for view in decoded_views(item)
+        ]
+        raw, folded, words = self._patterns()
+        for category, index in raw:
+            if contains_secret(text, index):
+                raise DiagnosticLeakError(category, member)
+        for category, index in folded:
+            if any(index.find(view) for view in folded_views):
+                raise DiagnosticLeakError(category, member)
+        for category, pattern in words:
+            if any(pattern.search(view) for view in word_views):
                 raise DiagnosticLeakError(category, member)
         for category, shape in (("email", _EMAIL), ("ip_address", _IPV4), ("url", _URL)):
             if any(shape.search(view) for view in views):
@@ -572,36 +696,51 @@ def _is_ipv6(text: str) -> bool:
 
 
 def _forms(value: str) -> Iterator[str]:
-    yield from secret_forms(value)
-    folded = value.casefold()
-    if folded != value:
-        yield from secret_forms(folded)
+    """The value and its case-folded form, each as a URL or base64 carries it, in hexadecimal
+    (either case) and in base32 (either case, padded or not)."""
+    for form in dict.fromkeys((value, value.casefold(), canonical(value))):
+        yield from secret_forms(form)
+        raw = form.encode("utf-8")
+        yield raw.hex()
+        yield raw.hex().upper()
+        b32 = base64.b32encode(raw).decode("ascii")
+        yield from (b32, b32.rstrip("="), b32.lower(), b32.rstrip("=").lower())
 
 
-def _sensitive_columns() -> Iterator[sa.Column[object]]:
+def _sensitive_columns() -> Iterator[tuple[sa.Column[object], bool]]:
+    """Each column whose text names something of the household, and whether it is a name or a
+    title (looked for as a whole word, whatever its length)."""
     for table in metadata.tables.values():
+        if table.name in _REFERENCE_TABLES:
+            continue
         for column in table.columns:
             name = column.name
-            if not _SENSITIVE_COLUMN.search(name) or _NOT_SENSITIVE_COLUMN.search(name):
+            if name in _NOT_HOUSEHOLD_COLUMNS or _NOT_SENSITIVE_COLUMN.search(name):
                 continue
-            if name.endswith("_id") and name != "remote_id":
+            word = bool(_WORD_COLUMN.search(name))
+            if name.endswith("_id") and name not in ("remote_id", "plugin_id"):
                 continue
-            yield column
+            if word or _SENSITIVE_COLUMN.search(name):
+                yield column, word
 
 
 def _collect_forbidden(connection: sa.Connection, forbidden: _Forbidden) -> frozenset[str]:
     """What the database holds of the household. Returns the user ids (kept as `<user-N>`)."""
-    for column in _sensitive_columns():
+    for column, word in _sensitive_columns():
         rows = connection.execute(sa.select(column).where(column.is_not(None)).distinct())
         for (value,) in rows:
-            forbidden.add(f"{column.table.name}.{column.name}", value)
+            if column.name == "plugin_id" and value in FIRST_PARTY_PLUGINS:
+                continue  # named as is in `sources.json`
+            forbidden.add(f"{column.table.name}.{column.name}", value, word=word)
     users = frozenset(str(v) for v in connection.execute(sa.select(identity.user.c.id)).scalars())
     for user_id in users:
-        forbidden.long.setdefault("user.id", set()).add(user_id)
+        forbidden.add("user.id", user_id, word=True)
     return users
 
 
-def _register_instance_secrets(settings: Settings, connection: sa.Connection) -> dict[str, int]:
+def _register_instance_secrets(
+    settings: Settings, connection: sa.Connection, forbidden: _Forbidden
+) -> dict[str, int]:
     """The secrets a running instance would have registered (L04's scrubber, by value): the
     keyring, the secret settings, and every sealed row opened once."""
     for name in Settings.model_fields:
@@ -624,14 +763,41 @@ def _register_instance_secrets(settings: Settings, connection: sa.Connection) ->
         ).scalars()
         for row_id in ids:
             try:
-                vault.open_row(connection, name, str(row_id))
+                plaintext = vault.open_row(connection, name, str(row_id))
                 opened += 1
             except Exception:  # a row that does not open is counted, not quoted
                 failed += 1
+                continue
+            try:  # the user name next to a password is no secret, but it names somebody
+                document = json.loads(plaintext)
+            except ValueError:
+                continue
+            if isinstance(document, dict):
+                for field_name in IDENTIFIER_FIELDS:
+                    forbidden.add(
+                        f"{name}.secret.{field_name}", document.get(field_name), word=True
+                    )
     return {"sealed_opened": opened, "sealed_unreadable": failed, "keyring": 1}
 
 
 # -- writing ----------------------------------------------------------------------------------
+
+
+def _json_strings(name: str, text: str) -> Iterator[str]:
+    """The string values of a JSON member (one document, or one per line): where a short name
+    is looked for. Keys are the code's own; `schema.sql` is the code's DDL and holds no value."""
+    if not name.endswith((".json", ".jsonl")):
+        return
+    documents = text.splitlines() if name.endswith(".jsonl") else [text]
+    pending: list[object] = [json.loads(document) for document in documents if document]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            yield item
+        elif isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
 
 
 def _dump(value: object) -> str:
@@ -668,6 +834,7 @@ def build_bundle(
     database = settings.database_path
     migrated = database.exists() and current_revision(database) == head_revision()
     names = Pseudonyms()
+    words = vocabulary()
     forbidden = _Forbidden()
     users: frozenset[str] = frozenset()
     content_hashes: frozenset[str] = frozenset()
@@ -679,7 +846,7 @@ def build_bundle(
         engine = create_db_engine(database)
         try:
             with engine.connect() as connection:
-                secrets = _register_instance_secrets(settings, connection)
+                secrets = _register_instance_secrets(settings, connection, forbidden)
                 users = _collect_forbidden(connection, forbidden)
                 content_hashes = frozenset(
                     connection.execute(sa.select(storage.content.c.original_sha256)).scalars()
@@ -690,15 +857,21 @@ def build_bundle(
                         sa.select(platform.physical_root.c.path_entry)
                     ).scalars()
                 ]
-                content = _content(connection)
+                content = _content(connection, words)
                 sources = _sources(connection, names)
         finally:
             engine.dispose()
     content_roots = [r.resolve() for r in roots]
     if _under(out.parent.resolve(), content_roots):
         raise DiagnosticOutputRefusedError(out.name)
+    if len(log_files) > MAX_LOG_FILES:
+        raise DiagnosticInputRefusedError("too_many_files", MAX_LOG_FILES + 1)
+    protected = [*content_roots, settings.data_dir.resolve(), *_VIRTUAL_ROOTS]
+    budget = [MAX_LOG_TOTAL_BYTES]
     texts = [
-        _read_log_input(path, index, content_roots=content_roots, content_hashes=content_hashes)
+        _read_log_input(
+            path, index, forbidden_roots=protected, content_hashes=content_hashes, budget=budget
+        )
         for index, path in enumerate(log_files, start=1)
     ]
     for name in ("public_url", "source_url", "wake_url"):
@@ -724,12 +897,14 @@ def build_bundle(
     kept = dropped = 0
     if texts:
         reduced: list[str] = []
-        for text in texts:
-            for line in _log_lines(text):
+        for index, text in enumerate(texts, start=1):
+            for line in _log_lines(text, index):
                 if line is None:
                     dropped += 1
                     continue
-                reduced.append(json.dumps(reduce_log_line(line, names, users), sort_keys=True))
+                reduced.append(
+                    json.dumps(reduce_log_line(line, names, users, words), sort_keys=True)
+                )
         dropped += max(0, len(reduced) - MAX_LOG_LINES)
         reduced = reduced[-MAX_LOG_LINES:]
         kept = len(reduced)
@@ -751,6 +926,6 @@ def build_bundle(
     }  # fmt: skip
     members = {"manifest.json": _dump(manifest), **dict(sorted(members.items()))}
     for name, text in members.items():
-        forbidden.check(name, name + "\n" + text)
+        forbidden.check(name, name + "\n" + text, words_in=[name, *_json_strings(name, text)])
     _write_zip(out, members)
     return BundleReport(out, tuple(members), kept, dropped)
