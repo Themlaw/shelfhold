@@ -167,9 +167,10 @@ class RangedExporter:
             if item is None:
                 raise RangedExportError("ranged.unknown_item")
         raw = _read_regular(path)
-        self._staging.mkdir(parents=True, exist_ok=True)
         with (
-            tempfile.NamedTemporaryFile(dir=self._staging, suffix=".epub", delete=True) as out,
+            tempfile.NamedTemporaryFile(
+                dir=self._staging if self._staging.is_dir() else None, suffix=".epub", delete=True
+            ) as out,
         ):
             try:
                 neutralize_epub(io.BytesIO(raw), cast(BinaryIO, out), name=path.name)
