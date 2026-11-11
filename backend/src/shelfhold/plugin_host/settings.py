@@ -36,7 +36,7 @@ from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.logging import register_secret_value
+from shelfhold.infrastructure.logging import MIN_KNOWN_SECRET, register_secret_value
 from shelfhold.infrastructure.schema import acquisition, identity
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.vault import SecretVault
@@ -276,9 +276,10 @@ def parse_settings_schema(raw: Mapping[str, Any] | None) -> SettingsSchema:
     return SettingsSchema(tuple(fields))
 
 
-def secret_row_id(plugin_id: str, kind: str, field_name: str) -> str:
-    """The row id, which is also the row coordinate of the envelope's associated data."""
-    return f"{plugin_id}/{kind}/{field_name}"
+def secret_row_id(plugin_id: str, kind: str, field_name: str, generation: int = 1) -> str:
+    """The row id, which is also the row coordinate of the envelope's associated data. The
+    generation grows on every write, so an older envelope put back under the row does not open."""
+    return f"{plugin_id}/{kind}/{field_name}/{generation}"
 
 
 @dataclass(frozen=True)
@@ -444,6 +445,8 @@ class SourceSettings:
         spec = schema.secret_field(name)
         if not value:
             raise SettingValueError(name, "empty")
+        if len(value) < MIN_KNOWN_SECRET:  # too short to be masked in a log line: refused
+            raise SettingValueError(name, "too_short")
         spec.check(value)
         register_secret_value(value)  # known before anything can log it
         state = self._seal(plugin_id, "secret", name, value.encode("utf-8"), value)
@@ -495,25 +498,44 @@ class SourceSettings:
         self, plugin_id: str, kind: str, field_name: str, plaintext: bytes, text: str
     ) -> SecretState:
         vault = self.vault()
-        row_id = secret_row_id(plugin_id, kind, field_name)
-        envelope = vault.seal(plaintext, table=_TABLE, column=registry.SEALED_COLUMN, row_id=row_id)
-        fingerprint = self._fingerprint(vault, row_id, text)
-        columns = {**envelope.to_columns(), "fingerprint": fingerprint, "updated_at": self._now()}
+        table = acquisition.source_secret
+        fingerprint = self._fingerprint(vault, f"{plugin_id}/{kind}/{field_name}", text)
         with self.engine.begin() as connection:
+            where = self._where(plugin_id, kind, field_name)
+            previous = connection.execute(sa.select(table.c.generation).where(where)).scalar()
+            generation = (previous or 0) + 1
+            row_id = secret_row_id(plugin_id, kind, field_name, generation)
+            envelope = vault.seal(
+                plaintext, table=_TABLE, column=registry.SEALED_COLUMN, row_id=row_id
+            )
             registry.register_active_key(connection, vault.keyring)
+            connection.execute(sa.delete(table).where(where))
             connection.execute(
-                sqlite_insert(acquisition.source_secret)
-                .values(id=row_id, plugin_id=plugin_id, kind=kind, field=field_name, **columns)
-                .on_conflict_do_update(index_elements=["id"], set_=columns)
+                sa.insert(table).values(
+                    id=row_id,
+                    plugin_id=plugin_id,
+                    kind=kind,
+                    field=field_name,
+                    generation=generation,
+                    fingerprint=fingerprint,
+                    updated_at=self._now(),
+                    **envelope.to_columns(),
+                )
             )
         return SecretState(True, fingerprint)
+
+    @staticmethod
+    def _where(plugin_id: str, kind: str, field_name: str) -> sa.ColumnElement[bool]:
+        table = acquisition.source_secret
+        return sa.and_(
+            table.c.plugin_id == plugin_id, table.c.kind == kind, table.c.field == field_name
+        )
 
     def _delete(
         self, plugin_id: str, kind: str, field_name: str, action: str, target: str, actor: Actor
     ) -> None:
-        row_id = secret_row_id(plugin_id, kind, field_name)
         with self.engine.begin() as connection:
             connection.execute(
-                sa.delete(acquisition.source_secret).where(acquisition.source_secret.c.id == row_id)
+                sa.delete(acquisition.source_secret).where(self._where(plugin_id, kind, field_name))
             )
             write_audit(connection, action, target, actor)

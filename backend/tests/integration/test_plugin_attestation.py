@@ -28,6 +28,7 @@ from shelfhold.plugin_host.attestation import (
     AttestationNotNeeded,
     AttestationStore,
     InstalledVersion,
+    publisher_attested,
     retain,
 )
 from shelfhold.plugin_host.registry import (
@@ -294,3 +295,71 @@ def test_cli_plugin_attest_is_bound_to_the_installed_wheel_and_lapses_on_removal
         ("plugin.attested", f"{KEY}@1.4:content_trust=publisher"),
         ("plugin.attestation_revoked", f"{KEY}@1.4:content_trust=publisher"),
     ]
+
+
+def test_a_new_wheel_under_the_same_version_lapses_the_attestation() -> None:
+    """Review #142 (C1): the word is bound to the installed files, not only to a version number
+    a rebuilt wheel can repeat."""
+    with lib_env() as env:
+        attestations = _third_party_binding(env, version="1.0.0")
+        set_binding_trust(env, "publisher")
+        attestations.attest(KEY, "content_trust", "publisher", actor=ADMIN)
+        rebuilt = "sha256:" + "b" * 64
+        revoked = attestations.sync_installed({KEY: InstalledVersion(KEY, KEY, "1.0.0", rebuilt)})
+        assert [(a.plugin_key, a.field) for a in revoked] == [(KEY, "content_trust")]
+        with env.engine.connect() as connection:
+            assert trust_of(connection, env.chain["variant"]) == "untrusted"
+        assert attestations.valid() == {}
+
+
+def test_a_same_version_wheel_swapped_behind_the_store_is_not_trusted() -> None:
+    with lib_env() as env:
+        attestations = _third_party_binding(env, version="1.0.0")
+        set_binding_trust(env, "publisher")
+        attestations.attest(KEY, "content_trust", "publisher", actor=ADMIN)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(acquisition.plugin_install).values(sha256="sha256:" + "d" * 64)
+            )
+            assert trust_of(connection, env.chain["variant"]) == "untrusted"
+
+
+def test_a_plugin_the_host_does_not_know_is_never_publisher() -> None:
+    """Review #142 (C2): only the host's own plugins are taken at their word."""
+    with lib_env() as env:
+        set_binding_trust(env, "publisher")
+        with env.engine.begin() as connection:
+            connection.execute(sa.update(acquisition.source_item).values(plugin_id="unlisted"))
+        with env.engine.connect() as connection:
+            assert not publisher_attested(connection, "unlisted")
+            assert not publisher_attested(connection, None)
+            assert trust_of(connection, env.chain["variant"]) == "untrusted"
+            assert publisher_attested(connection, "suwayomi")  # first-party
+
+
+def test_withdraw_and_list(engine: sa.Engine) -> None:
+    attestations = AttestationStore(engine, clock=SystemClock())
+    attestations.sync_installed({KEY: InstalledVersion(KEY, KEY, "1.0.0", "c" * 64)})
+    assert attestations.withdraw(KEY, "content_trust", actor=ADMIN) is False
+    attestations.attest(KEY, "egress", "foyer", actor=ADMIN)
+    assert [a.field for a in attestations.listed(KEY)] == ["egress"]
+    assert attestations.withdraw(KEY, "egress", actor=ADMIN) is True
+    assert attestations.listed(KEY) == []
+    attestations.attest(KEY, "egress", "foyer", actor=ADMIN)
+    assert [a.field for a in attestations.revoke(KEY)] == ["egress"]
+    assert [a for a, _t, _x in _audit(engine)] == [
+        "plugin.attested", "plugin.attestation_withdrawn", "plugin.attested",
+        "plugin.attestation_revoked",
+    ]  # fmt: skip
+
+
+def test_registry_gives_back_and_withdraws_the_attested_value() -> None:
+    registry, _record = _loaded(PluginOrigin.THIRD_PARTY, content_trust="publisher")
+    registry.apply_attestations({KEY: {"content_trust": "publisher"}})
+    record = registry.get(KEY)
+    assert record is not None and record.manifest.content_trust == "publisher"
+    assert record.proposed == {}
+    registry.apply_attestations({})  # the word was withdrawn
+    record = registry.get(KEY)
+    assert record is not None and record.manifest.content_trust == "untrusted"
+    assert record.proposed == {"content_trust": "publisher"}

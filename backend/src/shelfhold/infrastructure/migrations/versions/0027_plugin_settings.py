@@ -1,10 +1,11 @@
 """Per-source settings and attested trust values (PLAN-M2 L07, EF-SRC-013, EF-EXP-065).
 
 `source_secret`: one sealed value per source and field (a secret field of `settings_schema`, or the
-cookie jar), whose id `<plugin>/<kind>/<field>` is the row coordinate of the envelope's associated
-data. `plugin_attestation.plugin_version`: the installed version an attestation was given for; the
-rows written before this revision get '' and match no version, so they lapse (the safe side). No
-other row is touched.
+cookie jar). Its id `<plugin>/<kind>/<field>/<generation>` is the row coordinate of the envelope's
+associated data, and the generation grows on every write: an older envelope put back does not
+open. `plugin_attestation.plugin_version` and `plugin_sha256`: the installed version and files
+digest an attestation was given for; the rows written before this revision get '' and match
+nothing, so they lapse (the safe side). No other row is touched.
 """
 
 import sqlalchemy as sa
@@ -32,6 +33,7 @@ def upgrade() -> None:
         sa.Column("kind", sa.String(), nullable=False),
         sa.Column("field", sa.String(), nullable=False),
         sa.Column("fingerprint", sa.String(), nullable=False),
+        sa.Column("generation", sa.Integer(), nullable=False),
         sa.Column("secret_kid", sa.String(), nullable=True),
         sa.Column("secret_v", sa.Integer(), nullable=True),
         sa.Column("secret_nonce", sa.LargeBinary(), nullable=True),
@@ -44,10 +46,11 @@ def upgrade() -> None:
             "\"kind\" IN ('secret', 'cookies')", name=op.f("ck_source_secret_kind_values")
         ),
         sa.CheckConstraint(
-            '"id" = "plugin_id" || \'/\' || "kind" || \'/\' || "field"',
+            '"id" = "plugin_id" || \'/\' || "kind" || \'/\' || "field" || \'/\' || "generation"',
             name=op.f("ck_source_secret_id_coordinates"),
         ),
         sa.CheckConstraint('"secret_ct" IS NOT NULL', name=op.f("ck_source_secret_sealed")),
+        sa.CheckConstraint('"generation" >= 1', name=op.f("ck_source_secret_generation_min")),
         sa.CheckConstraint(
             "\"plugin_id\" <> '' AND \"field\" <> ''", name=op.f("ck_source_secret_named")
         ),
@@ -63,9 +66,13 @@ def upgrade() -> None:
         batch.add_column(
             sa.Column("plugin_version", sa.String(), server_default=sa.text("''"), nullable=False)
         )
+        batch.add_column(
+            sa.Column("plugin_sha256", sa.String(), server_default=sa.text("''"), nullable=False)
+        )
 
 
 def downgrade() -> None:
     with op.batch_alter_table("plugin_attestation") as batch:
+        batch.drop_column("plugin_sha256")
         batch.drop_column("plugin_version")
     op.drop_table("source_secret")

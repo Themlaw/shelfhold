@@ -42,7 +42,7 @@ _LIBRARY_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 # key leak and a line per call. Our own `http.call` line (route only) replaces it, always.
 _NEVER_BELOW_WARNING = ("httpx", "httpx2", "httpcore", "httpcore2")
 _MAX_DEPTH = 12
-_MIN_KNOWN_SECRET = 8  # shorter values would blank ordinary words
+MIN_KNOWN_SECRET = 8  # shorter values would blank ordinary words
 
 # `name: value`, `name=value`, `"name": "value"`, `{'name': b'value'}`, `name:\"value\"` in free
 # text. A quoted value runs to its closing quote (spaces, `;` and `&` included); an unquoted one
@@ -297,7 +297,7 @@ def log_outcome[F: Callable[..., Any]](
 def register_secret_value(value: str) -> None:
     """Scrub this exact value (and its base64 forms, and the forms a URL carries it in: percent
     encoded once or twice, `+` for a space) wherever it shows up later."""
-    if len(value) < _MIN_KNOWN_SECRET:
+    if len(value) < MIN_KNOWN_SECRET:
         return
     _known_values.update(secret_forms(value))
 

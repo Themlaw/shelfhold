@@ -164,8 +164,9 @@ shelfhold plugin withdraw <clé> content_trust     # retour à la valeur sûre
 
 ou `POST /api/v1/plugins/<clé>/attestations` (`{"field": "content_trust", "value": "publisher"}`).
 
-- L'attestation vaut pour **cette instance** et pour la **version installée** du plugin. Une autre
-  version (mise à jour, réinstallation) est du code que personne n'a attesté : l'attestation tombe
+- L'attestation vaut pour **cette instance**, pour la **version installée** du plugin et pour
+  l'**empreinte de ses fichiers**. Une autre version, ou une autre roue sous le même numéro (mise à
+  jour, réinstallation), est du code que personne n'a attesté : l'attestation tombe
   au démarrage suivant ou à la prochaine commande `plugin`, avec une ligne d'audit
   `plugin.attestation_revoked`, et la valeur sûre s'applique jusqu'à une nouvelle attestation.
 - Seule la valeur que le plugin déclare peut être attestée : attester `publisher` pour un plugin

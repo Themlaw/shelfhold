@@ -29,8 +29,9 @@ qu'une valeur a changé sans la montrer.
 
 Au repos, chaque secret et le pot de cookies sont **chiffrés un par un** dans la table
 `source_secret`, avec l'enveloppe du trousseau ([secrets.md](secrets.md)). Les données associées
-nomment la source et le champ : une valeur recopiée sur une autre source ou un autre champ ne se
-déchiffre pas. Une sauvegarde contient ces valeurs chiffrées ; une restauration les relit avec le
+nomment la source, le champ et une génération qui augmente à chaque écriture : une valeur recopiée
+sur une autre source ou un autre champ, ou une ancienne valeur remise en place, ne se déchiffre
+pas. Un secret de moins de 8 caractères est refusé : il serait trop court pour être masqué. Une sauvegarde contient ces valeurs chiffrées ; une restauration les relit avec le
 trousseau restauré (ou `SHELFHOLD_SECRET_KEY_FILE`).
 
 Dès qu'un secret est déchiffré, Shelfhold l'ajoute à la liste des valeurs à masquer, sous toutes ses

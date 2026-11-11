@@ -99,6 +99,7 @@ class Attestation:
     attested_at: datetime
     attested_by: str | None = None  # the user, when the account still exists
     attested_by_actor: str | None = None  # the session or the host CLI (also in the audit)
+    plugin_sha256: str = ""  # the digest of the installed files the word was given for
 
 
 @dataclass(frozen=True)
@@ -133,6 +134,7 @@ def _valid_rows(connection: Connection, plugin_key: str | None = None) -> list[s
         .where(
             install.c.origin == THIRD_PARTY_ORIGIN,
             attestation.c.plugin_version == install.c.version,
+            attestation.c.plugin_sha256 == install.c.sha256,
         )
         .order_by(attestation.c.plugin_key, attestation.c.field)
     )
@@ -142,9 +144,9 @@ def _valid_rows(connection: Connection, plugin_key: str | None = None) -> list[s
 
 
 def publisher_attested(connection: Connection, plugin_id: str | None) -> bool:
-    """May a binding of this plugin say `publisher`? Yes for any plugin not installed as third
-    party; for a third-party one, only with an attestation of `publisher` for its installed
-    version."""
+    """May a binding of this plugin say `publisher`? Yes for the host's own plugins; for a
+    third-party one, only with an attestation of `publisher` for its installed version and files;
+    never for a plugin the host does not know."""
     if plugin_id is None:
         return False
     install = acquisition.plugin_install
@@ -154,7 +156,7 @@ def publisher_attested(connection: Connection, plugin_id: str | None) -> bool:
         )
     ).first()
     if third is None:
-        return True
+        return plugin_id in FIRST_PARTY_PLUGIN_KEYS
     return any(
         r.field == "content_trust" and r.value == "publisher"
         for r in _valid_rows(connection, plugin_id)
@@ -163,7 +165,13 @@ def publisher_attested(connection: Connection, plugin_id: str | None) -> bool:
 
 def _as_attestation(row: sa.Row[Any]) -> Attestation:
     return Attestation(
-        row.plugin_key, row.field, row.value, row.plugin_version, row.attested_at, row.attested_by
+        row.plugin_key,
+        row.field,
+        row.value,
+        row.plugin_version,
+        row.attested_at,
+        row.attested_by,
+        plugin_sha256=row.plugin_sha256,
     )
 
 
@@ -179,7 +187,7 @@ class AttestationStore:
 
     def sync_installed(self, installed: Mapping[str, InstalledVersion]) -> list[Attestation]:
         """Record the third-party plugins the guard installed, then revoke (and audit) every
-        attestation given for a version that is no longer the installed one."""
+        attestation given for a version or files that are no longer the installed ones."""
         install, attestation = acquisition.plugin_install, acquisition.plugin_attestation
         revoked: list[Attestation] = []
         with self._engine.begin() as connection:
@@ -203,7 +211,10 @@ class AttestationStore:
                 .join(install, install.c.plugin_id == attestation.c.plugin_key)
                 .where(
                     install.c.origin == THIRD_PARTY_ORIGIN,
-                    attestation.c.plugin_version != install.c.version,
+                    sa.or_(
+                        attestation.c.plugin_version != install.c.version,
+                        attestation.c.plugin_sha256 != install.c.sha256,
+                    ),
                 )
                 .order_by(attestation.c.plugin_key, attestation.c.field)
             ).all()
@@ -233,20 +244,22 @@ class AttestationStore:
             raise AttestationError(f"{field_name}={value} is not a trust value that needs a word")
         install = acquisition.plugin_install
         with self._engine.begin() as connection:
-            version = connection.execute(
-                sa.select(install.c.version).where(
+            installed = connection.execute(
+                sa.select(install.c.version, install.c.sha256).where(
                     install.c.plugin_id == plugin_key, install.c.origin == THIRD_PARTY_ORIGIN
                 )
-            ).scalar()
-            if version is None:
+            ).first()
+            if installed is None:
                 if plugin_key in FIRST_PARTY_PLUGIN_KEYS:
                     raise AttestationNotNeeded(f"{plugin_key} is first-party: nothing to attest")
                 raise AttestationError(f"{plugin_key} is not an installed third-party plugin")
             given = Attestation(
-                plugin_key, field_name, value, str(version), self._now(), user_id, actor.actor_id
-            )
+                plugin_key, field_name, value, str(installed.version), self._now(), user_id,
+                actor.actor_id, plugin_sha256=str(installed.sha256),
+            )  # fmt: skip
             columns = {
                 "value": value, "plugin_version": given.plugin_version,
+                "plugin_sha256": given.plugin_sha256,
                 "attested_by": user_id, "attested_at": given.attested_at,
             }  # fmt: skip
             connection.execute(

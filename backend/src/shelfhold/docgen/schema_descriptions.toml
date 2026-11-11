@@ -986,13 +986,15 @@ value = "The attested value."
 attested_by = "Admin who attested (`user.id`); NULL once the account is gone."
 attested_at = "When it was attested (UTC)."
 plugin_version = "Installed version of the plugin it was given for; another version lapses it ('' matches none)."
+plugin_sha256 = "Digest of the installed plugin files it was given for; another wheel, even under the same version, lapses it ('' matches none)."
 
 [tables.source_secret]
 description = "One sealed secret setting or cookie jar per source and field; never read back, only shown as set with a fingerprint."
 [tables.source_secret.columns]
-id = "`<plugin>/<kind>/<field>`, the row coordinate of the envelope's associated data."
+id = "`<plugin>/<kind>/<field>/<generation>`, the row coordinate of the envelope's associated data."
 field = "Name of the secret field in the source's `settings_schema`; `jar` for the cookies."
 fingerprint = "Short keyed digest of the value, shown instead of it."
+generation = "Grows on every write and is part of the id, so an older envelope put back does not open."
 
 [tables.series_gap]
 description = "A hole seen in an Edition's numbering; its row is what keeps the notification to one per gap."

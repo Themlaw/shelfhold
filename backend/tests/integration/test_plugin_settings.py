@@ -10,6 +10,7 @@ Proxy, anti-bot solver, TLS fingerprint and headless browser stay reserved.
 Test values are generated at run time (`secrets.token_hex`): nothing for a secret scanner.
 """
 
+import hashlib
 import secrets
 from collections.abc import Iterator
 from datetime import timedelta
@@ -84,7 +85,9 @@ def _forms(*values: str) -> set[str]:
 def _dump(engine: sa.Engine) -> str:
     raw = engine.raw_connection()
     try:
-        return "\n".join(raw.driver_connection.iterdump())  # type: ignore[attr-defined]
+        driver = raw.driver_connection
+        assert driver is not None
+        return "\n".join(driver.iterdump())
     finally:
         raw.close()
 
@@ -309,3 +312,190 @@ def test_api_never_reads_a_secret_back_and_setting_one_is_reserved(
     assert ("source.cookies_set", f"{KEY}:cookies") in audit
     assert ("source.settings_changed", f"{KEY}:lang") in audit
     assert all(key_value not in (t or "") for _a, t in audit)
+
+
+def _row_id(engine: sa.Engine, plugin_id: str, field: str) -> str:
+    with engine.connect() as connection:
+        return str(
+            connection.execute(
+                sa.text("SELECT id FROM source_secret WHERE plugin_id = :p AND field = :f"),
+                {"p": plugin_id, "f": field},
+            ).scalar_one()
+        )
+
+
+def test_a_relabelled_row_is_refused_by_the_database(bench: tuple[sa.Engine, SecretVault]) -> None:
+    """Review #142 (C3): the source and field of a row cannot drift from its id (the AAD)."""
+    engine, vault = bench
+    store = SourceSettings(engine, vault)
+    store.set_secret(KEY, parse_settings_schema(SCHEMA), "password", secrets.token_hex(8),
+                     actor=ADMIN)  # fmt: skip
+    row_id = _row_id(engine, KEY, "password")
+    with pytest.raises(sa.exc.IntegrityError), engine.begin() as connection:
+        connection.execute(
+            sa.text("UPDATE source_secret SET plugin_id = 'evil', field = 'api_key' WHERE id = :i"),
+            {"i": row_id},
+        )
+    assert store.load("evil").values == {}
+
+
+def test_an_older_envelope_put_back_does_not_open(bench: tuple[sa.Engine, SecretVault]) -> None:
+    """Review #142: every write bumps the generation in the associated data."""
+    engine, vault = bench
+    store = SourceSettings(engine, vault)
+    schema = parse_settings_schema(SCHEMA)
+    old, new = secrets.token_hex(16), secrets.token_hex(16)
+    store.set_secret(KEY, schema, "api_key", old, actor=ADMIN)
+    first = _row_id(engine, KEY, "api_key")
+    with engine.connect() as connection:
+        saved = connection.execute(
+            sa.text("SELECT secret_nonce, secret_ct FROM source_secret WHERE id = :i"),
+            {"i": first},
+        ).one()
+    store.set_secret(KEY, schema, "api_key", new, actor=ADMIN)
+    second = _row_id(engine, KEY, "api_key")
+    assert second != first and second == secret_row_id(KEY, "secret", "api_key", 2)
+    assert store.load(KEY).values == {"api_key": new}
+    with engine.begin() as connection:  # someone puts the old ciphertext back
+        connection.execute(
+            sa.text("UPDATE source_secret SET secret_nonce = :n, secret_ct = :c WHERE id = :i"),
+            {"n": saved.secret_nonce, "c": saved.secret_ct, "i": second},
+        )
+    with pytest.raises(DecryptionError):
+        store.load(KEY)
+
+
+def test_the_fingerprint_is_keyed(bench: tuple[sa.Engine, SecretVault]) -> None:
+    engine, vault = bench
+    store = SourceSettings(engine, vault)
+    schema = parse_settings_schema(SCHEMA)
+    value = secrets.token_hex(8)
+    store.set_secret(KEY, schema, "password", value, actor=ADMIN)
+    shown = store.view(KEY, schema).secrets["password"].fingerprint
+    row_id = _row_id(engine, KEY, "password")
+    plain = {
+        hashlib.sha256(x).hexdigest()[:8] for x in (value.encode(), f"{row_id}\x00{value}".encode())
+    }
+    assert shown not in plain
+
+
+def test_a_secret_too_short_to_be_masked_is_refused(bench: tuple[sa.Engine, SecretVault]) -> None:
+    """Below the scrubber's floor a value could not be masked in a log line: refused, not kept."""
+    engine, vault = bench
+    store = SourceSettings(engine, vault)
+    schema = parse_settings_schema(SCHEMA)
+    short = secrets.token_hex(3)  # 6 characters
+    with pytest.raises(SettingValueError) as caught:
+        store.set_secret(KEY, schema, "password", short, actor=ADMIN)
+    assert short not in str(caught.value)
+    assert store.view(KEY, schema).secrets["password"].set is False
+
+
+def test_refusals_name_the_field_never_the_value(bench: tuple[sa.Engine, SecretVault]) -> None:
+    engine, vault = bench
+    store = SourceSettings(engine, vault)
+    schema = parse_settings_schema(SCHEMA)
+    value = secrets.token_hex(16)
+    for name, given in (("lang", value), ("api_key", ""), ("page_size", value),
+                        ("api_key", value + "\n" + value), ("nope", value)):  # fmt: skip
+        with pytest.raises(SettingValueError) as caught:
+            if name in {"api_key", "nope"}:
+                store.set_secret(KEY, schema, name, given, actor=ADMIN)
+            else:
+                store.set_values(KEY, schema, {name: given}, actor=ADMIN)
+        assert value not in str(caught.value)
+    for jar in ({"bad name": value}, {"sid": value + ";"}, {str(i): "x" for i in range(65)}):
+        with pytest.raises(SettingValueError) as caught:
+            store.set_cookies(KEY, jar, actor=ADMIN)
+        assert value not in str(caught.value)
+    store.set_cookies(KEY, {"sid": value}, actor=ADMIN)
+    assert store.set_cookies(KEY, {}, actor=ADMIN).set is False  # an empty jar clears it
+    store.set_secret(KEY, schema, "api_key", value, actor=ADMIN)
+    assert store.clear_secret(KEY, schema, "api_key", actor=ADMIN).set is False
+    store.set_values(KEY, schema, {"lang": "en"}, actor=ADMIN)
+    assert store.set_values(KEY, schema, {"lang": None}, actor=ADMIN).values == {"lang": "fr"}
+    assert store.load(KEY).values == {} and repr(store) == "SourceSettings()"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"type": "object", "properties": []},
+        {"type": "object", "extra": 1},
+        {"type": "object", "properties": {"x": "string"}},
+        {"type": "object", "properties": {"x": {"type": "string", "format": "email"}}},
+        {"type": "object", "properties": {"x": {"type": "string", "writeOnly": "yes"}}},
+        {"type": "object", "properties": {"x": {"type": "string", "enum": "a"}}},
+        {"type": "object", "properties": {"x": {"type": "integer", "minimum": "1"}}},
+        {"type": "object", "properties": {"x": {"type": "string", "maxLength": -1}}},
+        {"type": "object", "properties": {"x": {"type": "integer", "enum": [1], "default": 2}}},
+        {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["y"]},
+        {"type": "object", "properties": {"http_proxy": {"type": "string"}}},
+    ],
+)
+def test_schema_refusals(bad: dict[str, Any]) -> None:
+    with pytest.raises(SettingsSchemaError):
+        parse_settings_schema(bad)
+
+
+def test_schema_values_by_type() -> None:
+    schema = parse_settings_schema(
+        {
+            "type": "object",
+            "properties": {
+                "on": {"type": "boolean"},
+                "ratio": {"type": "number", "maximum": 1},
+                "name": {"type": "string", "minLength": 2, "maxLength": 3},
+            },
+        }
+    )
+    assert schema.validate_values({"on": True, "ratio": 0.5, "name": "ab"}) == {
+        "on": True, "ratio": 0.5, "name": "ab"
+    }  # fmt: skip
+    for values in ({"on": 1}, {"ratio": 2}, {"name": "a"}, {"name": "abcd"}, {"name": "a\x00b"}):
+        with pytest.raises(SettingValueError):
+            schema.validate_values(values)
+
+
+def test_http_errors_and_csrf(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
+    value = secrets.token_hex(16)
+    _registry_with_schema(monkeypatch)
+    with auth_env(monkeypatch, settings) as api:
+        assert api.login().status_code == 200
+        base = f"/api/v1/sources/{KEY}"
+        assert api.client.put(f"{base}/cookies", json={"cookies": {"a": "b"}}).status_code == 403
+        assert (
+            api.client.patch(f"{base}/settings", json={"values": {"lang": "en"}}).status_code == 403
+        )
+        headers = {CSRF_HEADER: api.csrf()}
+        jar = api.client.put(f"{base}/cookies", json={"cookies": f"sid={value}"}, headers=headers)
+        assert jar.status_code == 422 and value not in jar.text
+        bad = api.client.put(
+            f"{base}/cookies", json={"cookies": {"sid": value + ";"}}, headers=headers
+        )
+        assert bad.status_code == 422 and value not in bad.text
+        short = api.client.put(f"{base}/secrets/api_key", json={"value": "abc"}, headers=headers)
+        assert short.status_code == 422 and short.json()["field"] == "api_key"
+        unknown = api.client.put(f"{base}/secrets/lang", json={"value": value}, headers=headers)
+        assert unknown.status_code == 422 and value not in unknown.text
+        gone = api.client.delete(f"{base}/secrets/api_key", headers=headers)
+        assert gone.status_code == 200 and gone.json()["set"] is False
+        assert api.client.delete(f"{base}/secrets/lang", headers=headers).status_code == 422
+        assert (
+            api.client.put(
+                "/api/v1/sources/nobody/cookies", json={"cookies": {}}, headers=headers
+            ).status_code
+            == 404
+        )
+        first = api.post(
+            "/api/v1/plugins/suwayomi/attestations",
+            json={"field": "content_trust", "value": "publisher"},
+        )
+        assert first.status_code == 409 and first.json()["code"] == "plugin.attestation_not_needed"
+        partition = api.post(
+            "/api/v1/plugins/nobody/attestations",
+            json={"field": "access_partitioning", "value": "user"},
+        )
+        assert partition.status_code == 422
+        withdrawn = api.client.delete("/api/v1/plugins/nobody/attestations/egress", headers=headers)
+        assert withdrawn.status_code == 200 and withdrawn.json() == {"items": []}

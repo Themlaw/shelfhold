@@ -3,7 +3,8 @@ is looked for everywhere it could leak, in every form, and found nowhere.
 
 The value is registered by `register_secret_value` the moment it is opened. Then: the log lines
 that quote it, the L30 diagnostic bundle made from those lines and the database, the L06 HTTP
-cache, a remote reference, an HTTP error and the database dump.
+cache, a remote reference, an HTTP error and the database dump. The refusals (422) quote no
+value either, and a value too short to be masked is refused before it is kept or logged.
 """
 
 import json
@@ -30,8 +31,9 @@ from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.infrastructure.write_guard import SecretInWriteError
 from shelfhold.interfaces.http_api.problems import ProblemError, problem_body
 from shelfhold.plugin_host.settings import SourceSettings, parse_settings_schema
-from tests.auth_env import db_dump, run_cli
+from tests.auth_env import CSRF_HEADER, auth_env, db_dump, run_cli
 from tests.diagnostic_env import Traps, leaks
+from tests.integration.test_plugin_settings import _registry_with_schema
 from tests.redaction_support import forget_secret_values
 
 pytestmark = pytest.mark.req("EF-SRC-013", "EF-SRC-035")
@@ -127,3 +129,35 @@ def test_a_loaded_source_secret_is_found_nowhere(
     )  # fmt: skip
     assert code == 0
     assert leaks(out.read_bytes(), traps) == []
+
+
+def test_a_refused_secret_or_cookie_is_quoted_nowhere(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
+) -> None:
+    value = secrets.token_hex(16)
+    short = "".join(secrets.choice("ghjkmnpqrstvwxyz") for _ in range(6))  # under the mask floor
+    _registry_with_schema(monkeypatch)
+    configure_logging(level="DEBUG", log_format="json")
+    with auth_env(monkeypatch, settings) as api:
+        assert api.login().status_code == 200
+        headers = {CSRF_HEADER: api.csrf()}
+        base = f"/api/v1/sources/{KEY}"
+        answers = [
+            api.client.put(f"{base}/cookies", json={"cookies": f"sid={value}"}, headers=headers),
+            api.client.put(f"{base}/cookies", json={"cookies": {"sid": value + ";"}},
+                           headers=headers),
+            api.client.put(f"{base}/cookies", json={"cookies": {f"{value} x": "1"}},
+                           headers=headers),
+            api.client.put(f"{base}/secrets/api_key", json={"value": value + "\n"},
+                           headers=headers),
+            api.client.put(f"{base}/secrets/api_key", json={"value": short}, headers=headers),
+            api.client.patch(f"{base}/settings", json={"values": {"lang": value}},
+                             headers=headers),
+        ]  # fmt: skip
+        assert [a.status_code for a in answers] == [422] * len(answers)
+        bodies = "".join(a.text for a in answers)
+        dump = db_dump(settings)
+    logged = capsys.readouterr()
+    for where in (bodies, logged.out + logged.err, dump):
+        assert not [f for f in secret_forms(value) if f in where]
+        assert short not in where
