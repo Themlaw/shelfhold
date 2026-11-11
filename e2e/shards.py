@@ -35,5 +35,6 @@ SHARDS: dict[str, tuple[str, ...]] = {
         "test_rollback_after_lazy_format_migration_no_loss",
         "test_rollback_reads_m1b_sentinel_without_field_loss",
         "test_rollback_adoption_clears_restored_behind",
+        "test_rollback_with_a_work_tombstone_starts_the_previous_release",
     ),
 }

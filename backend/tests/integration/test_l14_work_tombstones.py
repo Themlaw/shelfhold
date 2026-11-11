@@ -23,8 +23,8 @@ from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, platform
 from shelfhold.library.public import CatalogScreenAdapter, WorkRef
-from shelfhold.library.tombstones.values import encode_plaintext
 from shelfhold.library.tombstones import TombstoneService
+from shelfhold.library.tombstones.values import encode_plaintext
 from shelfhold.sdk.metadata import FieldProposal, Provenance
 from tests.export_env import ExportEnv, Series
 from tests.family_env import NOW, family_env, rate, rate_edition, suggest
