@@ -509,7 +509,10 @@ class NativeAcquirer:
         request = asset.request
         if request.method != "GET" or request.body is not None:
             raise AcquireRefused("acquire.unsupported_file", "a file is asked for with a GET")
-        headers = dict(request.headers)
+        # the host and the User-Agent are the Fetcher's, never the source's (ENF-LEG-007)
+        headers = {
+            k: v for k, v in request.headers.items() if k.lower() not in ("user-agent", "host")
+        }
         async with receive_cbz(
             handle.fetcher, request.url, staging_dir=self._staging, max_bytes=self._max,
             headers=headers,

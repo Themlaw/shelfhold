@@ -10,8 +10,9 @@ here and through no other. It carries three things the plugin cannot take off:
   connected service is a tool the owner installed, not a site; the manifest's `respects_robots`
   can only lower it for a connected service);
 - the HTTP cache of that source alone (`cache_for`, `fetcher_cache`): a request that carries a
-  credential, or a response that sets a cookie, is never cached, and one source never reads the
-  entry of another.
+  credential is never cached, a response that sets a cookie is never cached, and the client keeps
+  no cookie (its jar refuses every domain), so no request carries one the caller did not write;
+  one source never reads the entry of another.
 
 The cache and the robots rules are kept for the life of the process, per source: the Fetcher
 itself is built for each operation, because its connection pool belongs to one event loop.
