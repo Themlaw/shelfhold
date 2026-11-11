@@ -363,6 +363,12 @@ def _backfill_start(ops: OpsServices, _by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _import_scan(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.import_folder.scan(
+        dry_run=_flag(p, "dry_run"), declared_purchase=_flag(p, "purchase")
+    )
+
+
 def _follow(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.follows.follow(
         _text(p, "source_key"), _text(p, "remote_id"), requester_user_id=user_of(by)
@@ -576,6 +582,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.meta_enrich": (_meta_enrich, None),
     "ops.backfill_estimate": (_backfill_estimate, None),
     "ops.backfill_start": (_backfill_start, None),
+    "ops.import_scan": (_import_scan, None),
     "ops.follow": (_follow, None),
     "ops.unfollow": (_unfollow, None),
     "ops.follow_gap_ack": (_gap_ack, None),

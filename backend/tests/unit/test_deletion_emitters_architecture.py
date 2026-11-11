@@ -180,6 +180,10 @@ EXPECTED_CLOSED = {
         "shelfhold/ops/backup/store.py::BackupDirectory._discard",
         "shelfhold/ops/backup/scratch.py::_remove_scratch",
     },
+    "import_folder": {
+        "shelfhold/library/adapters/import_scan.py::ImportFolder._put_back",
+        "shelfhold/library/adapters/import_scan.py::ImportFolder._quarantine_and_drop",
+    },
     "restore": {"shelfhold/infrastructure/migrate.py::_restore_database"},
     "intent_replay": {"shelfhold/export/application/intents.py::IntentJournal._resolve_rmdir"},
 }

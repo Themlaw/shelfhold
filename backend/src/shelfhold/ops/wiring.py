@@ -35,6 +35,7 @@ from shelfhold.ops.content import ContentOps
 from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.follows import FollowOps
+from shelfhold.ops.import_folder import ImportOps
 from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
@@ -136,7 +137,7 @@ def open_ops(
         credentials=RestoreCredentialsExit(engine, clock),
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), revisions=RevisionOps(composition),
-        backfill=BackfillOps(composition),
+        backfill=BackfillOps(composition), import_folder=ImportOps(composition),
         normalize=NormalizeOps(composition), meta=MetaOps(composition),
         content=ContentOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),

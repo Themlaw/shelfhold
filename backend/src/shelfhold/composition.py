@@ -122,7 +122,7 @@ class WriteContext:
     def received_path(self, variant_id: str, extension: str = ".cbz") -> str:
         """Where a received file is filed: the first writable root's inbox. `extension` is what
         the content says it is (`sniff_kind`), never what its sender called it (EF-BIB-051)."""
-        if extension not in (".cbz", ".epub"):
+        if extension not in (".cbz", ".epub", ".pdf"):
             raise ValueError(f"no received file is filed as {extension!r}")
         return f"{self.writable_roots[0]}/{RECEIVED_DIR}/{variant_id}{extension}"
 

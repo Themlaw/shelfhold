@@ -1,0 +1,36 @@
+{
+  "key": "import_folder",
+  "kind": "source",
+  "version": "0.1.0",
+  "api": 1,
+  "name": "Import folder",
+  "permissions": {
+    "domains": [],
+    "lan_targets": [],
+    "needs_browser": false,
+    "needs_solver": false
+  },
+  "settings_schema": {},
+  "content_warning": "mixed",
+  "terms_url": "https://github.com/Themlaw/shelfhold/blob/main/docs/admin/dossier-import.md",
+  "respects_robots": true,
+  "attribution": null,
+  "homepage": null,
+  "langs": [],
+  "content_kinds": [
+    "file"
+  ],
+  "url_patterns": [],
+  "capabilities": [],
+  "rate_limit": {
+    "requests_per_second": 1.0,
+    "concurrency": 1
+  },
+  "auth": [],
+  "id_scheme": "v1",
+  "rights_basis": "user_supplied",
+  "rights_jurisdiction": null,
+  "translation_nature": "unknown",
+  "content_trust": "untrusted",
+  "tests": []
+}

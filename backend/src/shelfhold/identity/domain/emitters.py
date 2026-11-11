@@ -20,6 +20,10 @@ A site is `<path under src>::<qualified function>`. Its class is one of:
   *recursively* (its files, links and the staged sub-folders, never a link's target), only a
   folder of that exact name that carries the marker file the module writes first, and that nobody
   holds a lock on);
+- `IMPORT_FOLDER`: a file of the import folder (EF-SRC-012), taken out only after the store accepted
+  it and a copy holding the very same SHA-256 was read back from the disk, the source being hashed
+  once more (`library/adapters/import_scan.py`, one function, one regular file by descriptor, never
+  a link, never a directory);
 - `OWN_SCRATCH`: a file the process created for its own mechanism (temporary copy, progress
   marker, lease swap), never library data.
 
@@ -36,6 +40,7 @@ RESTORE = "restore"
 DB_ROWS = "database_rows"
 REPLAY = "intent_replay"
 BACKUP_DIRECTORY = "backup_directory"
+IMPORT_FOLDER = "import_folder"
 
 _FSOPS = "shelfhold/infrastructure/fsops"
 
@@ -97,6 +102,13 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
             {
                 "shelfhold/ops/backup/store.py::BackupDirectory._discard",
                 "shelfhold/ops/backup/scratch.py::_remove_scratch",
+            }
+        ),
+        # The import folder: the one removal of a source file, after a hash-verified storage.
+        IMPORT_FOLDER: frozenset(
+            {
+                "shelfhold/library/adapters/import_scan.py::ImportFolder._put_back",
+                "shelfhold/library/adapters/import_scan.py::ImportFolder._quarantine_and_drop",
             }
         ),
         # Completes an `rmdir` of an empty folder a classed emitter journaled before a crash.

@@ -52,6 +52,7 @@ from shelfhold.ops.errors import (
     UnknownSubjectError,
 )
 from shelfhold.ops.follows import FollowOps
+from shelfhold.ops.import_folder import ImportOps
 from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.meta import MetaOps
@@ -184,6 +185,7 @@ class OpsServices:
         intents: IntentOps | None = None,
         revisions: RevisionOps | None = None,
         backfill: BackfillOps | None = None,
+        import_folder: ImportOps | None = None,
         normalize: NormalizeOps | None = None,
         meta: MetaOps | None = None,
         content: ContentOps | None = None,
@@ -210,6 +212,7 @@ class OpsServices:
         self._intents = intents
         self._revisions = revisions
         self._backfill = backfill
+        self._import_folder = import_folder
         self._normalize = normalize
         self._meta = meta
         self._content = content
@@ -714,6 +717,13 @@ class OpsServices:
         if self._backfill is None:
             raise ExitUnavailableError("backfill is not connected")
         return self._backfill
+
+    @property
+    def import_folder(self) -> ImportOps:
+        """`import scan` (EF-SRC-012)."""
+        if self._import_folder is None:
+            raise ExitUnavailableError("the import folder is not connected")
+        return self._import_folder
 
     @property
     def normalize(self) -> NormalizeOps:

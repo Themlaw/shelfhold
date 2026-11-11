@@ -28,6 +28,7 @@ from shelfhold.acquisition.application.follow_request import (
     ServiceLink,
     ServiceNotConnectedError,
 )
+from shelfhold.acquisition.application.import_target import IMPORT_PLUGIN, ImportTargets
 from shelfhold.acquisition.application.planning import pending
 from shelfhold.acquisition.application.preference import TeamPreference
 from shelfhold.acquisition.application.presence import present_for_acquisition, present_in
@@ -68,6 +69,7 @@ __all__ = [
     "ACQUIRE_JOB_KIND",
     "DEFAULT_K",
     "FOLLOW_JOB_KIND",
+    "IMPORT_PLUGIN",
     "AcquireOutcome",
     "AcquireRefused",
     "Backfill",
@@ -86,6 +88,7 @@ __all__ = [
     "FollowRefused",
     "FollowReport",
     "FollowRequests",
+    "ImportTargets",
     "LeasedReceiver",
     "NativeAcquirer",
     "Pause",

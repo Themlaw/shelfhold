@@ -22,6 +22,13 @@ from shelfhold.library.adapters.export_source import (
     record_destination_copy,
     upgrade_source,
 )
+from shelfhold.library.adapters.import_scan import (
+    ImportFolder,
+    ImportFolderOverlapError,
+    ImportItem,
+    ImportOutcome,
+    make_precheck,
+)
 from shelfhold.library.adapters.meta_projection import (
     MetaProjection,
     RepairReport,
@@ -31,6 +38,7 @@ from shelfhold.library.adapters.meta_projection import (
     work_rel,
 )
 from shelfhold.library.adapters.origin_opf import keep_origin_opf
+from shelfhold.library.adapters.pdf_store import PdfStore
 from shelfhold.library.adapters.purge_inventory import (
     closed_request_ids,
     content_hashes,
@@ -264,6 +272,10 @@ __all__ = [
     "ExportSource",
     "ExportVerdict",
     "Hash",
+    "ImportFolder",
+    "ImportFolderOverlapError",
+    "ImportItem",
+    "ImportOutcome",
     "IndexReport",
     "Ingested",
     "Irreplaceability",
@@ -275,6 +287,7 @@ __all__ = [
     "OriginalNotServableError",
     "OwnExport",
     "PassthroughStore",
+    "PdfStore",
     "PinnedCopy",
     "PlaceRef",
     "PurgeAuthorization",
@@ -369,6 +382,7 @@ __all__ = [
     "keep_origin_opf",
     "leftover_tickets",
     "let_go_tickets",
+    "make_precheck",
     "median_unit_bytes",
     "meta_path",
     "meta_rel",

@@ -91,6 +91,7 @@ from shelfhold.export.targets.kavita.series import (
     refresh_foreign_names,
     refresh_names,
 )
+from shelfhold.import_jobs import register_import_job
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
@@ -845,4 +846,11 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     register_notification_job(pools, LazyDispatcher(comp))  # type: ignore[arg-type]
     register_store_jobs(pools, comp)  # the window jobs of /store (L14)
     register_safeguard_job(pools, comp)  # "Mettre à l'abri" and the optional purge (L16)
+
+    def export_stored() -> None:
+        pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)
+
+    register_import_job(
+        pools, comp, export_stored
+    )  # the import folder (EF-SRC-012), only when `import_dir` is set
     register_retention_jobs(pools, comp)  # technical retention (ENF-OPS-009)

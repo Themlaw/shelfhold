@@ -113,6 +113,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "backup_dir": "backup_dir", "backup_retention": "backup_retention",
     "backup_stale_hours": "backup_stale_hours",
     "data_dir": "data_dir", "store_dir": "store_dir", "library_dir": "library_dir",
+    "import_dir": "import_dir",
     "host": "host", "port": "port", "log_level": "log_level", "log_format": "log_format",
     "umask": "umask", "public_url": "public_url", "frontend_dir": "frontend_dir",
     "plugin_repos": "plugin_repos", "active_sources": "active_sources",

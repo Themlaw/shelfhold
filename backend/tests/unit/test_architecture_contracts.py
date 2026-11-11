@@ -233,9 +233,13 @@ VIOLATIONS = [
      "infrastructure/content_trust/sanitize.py"),
     ("sanitize-single-entry", "infrastructure/content_trust/other.py", "import nh3\n", None),
     ("sanitize-single-entry", "catalog/other.py", "import bleach\n", None),
-    ("pillow-confined", "library/other.py", "import PIL.Image\n",
+    ("pillow-confined", "library/other.py", "import PIL.Image\nimport pypdf\n",
      "infrastructure/imaging/worker.py"),
     ("pillow-confined", "infrastructure/imaging/other.py", "from PIL import ImageOps\n", None),
+    ("pypdf-confined", "library/other.py", "import PIL.Image\nimport pypdf\n",
+     "infrastructure/imaging/worker.py"),
+    ("pypdf-confined", "infrastructure/content_trust/other.py", "from pypdf import PdfReader\n",
+     None),
     ("http-client-single-entry", "library/other.py", "import httpx2\n",
      "infrastructure/fetcher/other.py"),
     ("http-client-single-entry", "export/other.py", "import requests\n", None),
@@ -405,6 +409,9 @@ WRITERS_ALLOWED = (
     "shelfhold/ops/backup/restore.py",  # a restore's new folder, written from a descriptor on it
     "shelfhold/ops/backup/scratch.py",  # private snapshot folders of /data/tmp, lock file
     "shelfhold/ops/backup/verify.py",  # the spool of the database being checked (a scratch file)
+    # the import folder (EF-SRC-012): the person's own folder, not a library root; its only write
+    # is `_quarantine_and_drop` (a classed deletion emitter), after a verified storage
+    "shelfhold/library/adapters/import_scan.py",
 )
 PATH_WRITE_METHODS = {
     "write_text", "write_bytes", "unlink", "rename", "mkdir", "rmdir", "touch",

@@ -26,6 +26,7 @@ l'installation.
 | Révisions republiées par une source, version suspecte, chapitre retiré à la source | [revisions-en-attente.md](revisions-en-attente.md) |
 | Effacer pour de bon (`purge --now`, `--checkpoint`, `--leftovers`) | [purge.md](purge.md) |
 | Garder une copie dans `/store`, « Mettre à l'abri », purge chez Suwayomi, l'index de `/store` | [copie-conservee.md](copie-conservee.md) |
+| Importer vos propres fichiers, fichiers protégés et audio refusés, tatouage | [dossier-import.md](dossier-import.md) |
 | Comprendre la pause « disque presque plein » | [garde-disque.md](garde-disque.md) |
 | Mettre à jour ou recréer le conteneur | [redeploiement.md](redeploiement.md) |
 | Plusieurs disques sous `/library` | [topologie-racines-physiques.md](topologie-racines-physiques.md), [montage-adopt-ro.md](montage-adopt-ro.md) |
