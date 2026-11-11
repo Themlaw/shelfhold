@@ -45,6 +45,7 @@ __all__ = ["ConnectedUpstream", "connected_upstream"]
 
 log = structlog.get_logger(__name__)
 PLUGIN_ID = "suwayomi"
+CONTENT_REMOVED = "source.content_removed"  # `sdk.source.ContentRemoved.code`
 
 
 class _Unscreened:
@@ -159,6 +160,8 @@ class ConnectedUpstream:
             raise
         except Exception as error:
             code = getattr(error, "code", None)
+            if code == CONTENT_REMOVED:  # the service no longer knows the series: it is out
+                return UnfollowResult(key, True, "already_gone")
             log.warning("purge.unfollow_failed", error_type=type(error).__name__)
             return UnfollowResult(key, False, code if isinstance(code, str) else "service_error")
         return UnfollowResult(key, True)
