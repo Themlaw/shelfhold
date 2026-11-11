@@ -37,7 +37,7 @@ from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import export
 
-__all__ = ["AccessAuditor", "AuditReport"]
+__all__ = ["AccessAuditor", "AuditReport", "account_of"]
 
 ACCESS_CONTROL = "access_control"
 
@@ -54,7 +54,7 @@ class AuditReport:
     warnings: tuple[str, ...] = ()
 
 
-def _account(member: dto.Member) -> Account:
+def account_of(member: dto.Member) -> Account:
     return Account(
         member.username, member.is_admin, member.age_rating, member.include_unknowns,
         member.library_ids,
@@ -68,7 +68,7 @@ class AccessAuditor:
         self._events = events
 
     async def accounts(self, client: KavitaClient) -> list[Account]:
-        return [_account(m) for m in await client.list_users()]
+        return [account_of(m) for m in await client.list_users()]
 
     async def refused_names(
         self,

@@ -27,7 +27,7 @@ leaves the old file and the old rows.
 
 import functools
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -209,6 +209,21 @@ def _generations(content: Any) -> set[str | None]:
 
 def has_epub(connection: Connection, unit_id: str) -> bool:
     return _unit_content(connection, unit_id) is not None
+
+
+def epub_units(connection: Connection, unit_ids: Iterable[str]) -> frozenset[str]:
+    """Among `unit_ids`, the Units whose content is an EPUB (one query for a whole shelf)."""
+    wanted = sorted(set(unit_ids))
+    if not wanted:
+        return frozenset()
+    content = storage.content
+    return frozenset(
+        connection.execute(
+            sa.select(content.c.unit_id)
+            .where(content.c.unit_id.in_(wanted), content.c.format == "epub")
+            .distinct()
+        ).scalars()
+    )
 
 
 def servable_epub(
@@ -772,6 +787,7 @@ __all__ = [
     "ServableEpub",
     "UntrustedEpubStore",
     "binding_warning",
+    "epub_units",
     "has_active_content",
     "has_epub",
     "require_servable_derivative",

@@ -7,6 +7,12 @@ counted only for the Editions that are in the library at this moment, that is, f
 shelf of the destination and admitted by the same last look the exporter takes before a write
 (`barrier_holds`). An Edition filed elsewhere, or that the admission now refuses, is not an age to
 push: its change of shelf is the business of the removal plan (L10), never of a metadata push.
+
+The age of an Edition is the one its admission reads (`EditionAge.age`): the age an admin fixed for
+it, else the class of its Work. So a repackaged Edition (an `omnibus`, a Kavita series of its own)
+pushes its own age (EF-BIB-001). An EPUB series is gated on it (M2 L09): `wanted_editions` lists
+the Editions whose series has an age to push, `seeded_series` the series that already hold a file,
+and `verified_age` tells whether what Kavita shows is the lock Shelfhold wants now.
 """
 
 from __future__ import annotations
@@ -19,11 +25,13 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import RatingService
-from shelfhold.export.application.snapshot import barrier_holds, load_context
+from shelfhold.export.application.snapshot import barrier_holds, edition_age, load_context
+from shelfhold.export.domain.field_owner import OwnedField
+from shelfhold.export.domain.kavita_access import age_of_rating, rating_for_age
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.sdk.age import AgeRating, max_rating
 
-__all__ = ["SeriesAgeTask", "due_ages"]
+__all__ = ["SeriesAgeTask", "due_ages", "verified_age"]
 
 _WRITTEN = ("written", "scanned", "resolved")
 
@@ -34,10 +42,16 @@ class SeriesAgeTask:
     kavita_series_id: int | None  # the id cached by the arrival polling, if Kavita indexed it
     folder: str  # the remote folder of the series: how a reinstalled Kavita finds it again
     wanted: AgeRating
+    # every Kavita series its files were resolved to: more than one that Kavita still shows is
+    # a series Kavita split
+    kavita_series_ids: tuple[int, ...] = ()
 
 
-def due_ages(connection: Connection, destination_id: str) -> list[SeriesAgeTask]:
-    """The series of the destination that have a class to push, in a stable order."""
+def due_ages(
+    connection: Connection, destination_id: str, *, only: str | None = None
+) -> list[SeriesAgeTask]:
+    """The series of the destination that have a class to push, in a stable order (`only`: the
+    one export series asked for)."""
     ctx = load_context(connection, destination_id)
     if ctx.remote_library_id is None:
         return []
@@ -64,6 +78,7 @@ def due_ages(connection: Connection, destination_id: str) -> list[SeriesAgeTask]
             record.c.locator_type == "path",
             record.c.state.in_(_WRITTEN),
             record.c.rel_path.is_not(None),
+            *([link.c.export_series_id == only] if only is not None else []),
         )
         .order_by(record.c.rel_path)
     ).all()
@@ -90,7 +105,7 @@ def due_ages(connection: Connection, destination_id: str) -> list[SeriesAgeTask]
                     connection, destination_id, edition_id
                 )
             if in_place[edition_id]:
-                age = rating.effective_age_of(connection, editions[edition_id].work_id)
+                age = edition_age(connection, edition_id, rating=rating)
                 if age is not None:
                     classes.append(age)
         wanted = max_rating(classes)
@@ -101,6 +116,29 @@ def due_ages(connection: Connection, destination_id: str) -> list[SeriesAgeTask]
             for r in series_rows
             if r.state == "resolved" and str(r.remote_ref).isdigit()
         ]
+        # every Kavita series a file of the series was ever resolved to, whatever the state of
+        # its line now (a rescan or a rewrite takes it out of `resolved`, not out of Kavita):
+        # whether one of them is gone is for Kavita to say (`SeriesAgeGate`)
+        ids = tuple(
+            dict.fromkeys(int(r.remote_ref) for r in series_rows if str(r.remote_ref).isdigit())
+        )
         folder = posixpath.dirname(posixpath.join(root, series_rows[0].rel_path))
-        tasks.append(SeriesAgeTask(series_id, resolved[0] if resolved else None, folder, wanted))
+        tasks.append(
+            SeriesAgeTask(series_id, resolved[0] if resolved else None, folder, wanted, ids)
+        )
     return tasks
+
+
+def verified_age(
+    wanted: AgeRating, owned: OwnedField | None, *, locked: bool, kavita_value: int
+) -> bool:
+    """Is what Kavita shows the age Shelfhold wants now, locked by Shelfhold itself?
+
+    The lock must be in Kavita, the value the one the `field_owner` registry says Shelfhold
+    pushed, and that value at least the class wanted now (a tag may have raised it, never
+    lowered): a reclassification upwards is not verified until the new age is pushed."""
+    if not locked or owned is None or not owned.pushed or owned.last_value != kavita_value:
+        return False
+    shown = age_of_rating(kavita_value)
+    needed = age_of_rating(rating_for_age(wanted.min_age, x=wanted.x))
+    return shown is not None and needed is not None and shown >= needed

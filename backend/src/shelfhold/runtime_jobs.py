@@ -80,7 +80,14 @@ from shelfhold.export.targets.kavita.errors import (
     TargetForbidden,
     TargetUnreachable,
 )
-from shelfhold.export.targets.kavita.series import SeriesAges, refresh_foreign_names, refresh_names
+from shelfhold.export.targets.kavita.series import (
+    SeriesAgeGate,
+    SeriesAges,
+    blocking_age_reader,
+    blocking_unknowns_tier,
+    refresh_foreign_names,
+    refresh_names,
+)
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
@@ -430,6 +437,18 @@ async def _export_bound(
             pipeline, _fsops = disks.get()
             bulk = await BulkParse.fetch(client, names, library_type_named(kind))
             pipeline.bind_parse(bulk, verified=True)
+            # EPUB series (EF-EXP-040): the ages due pushed, then read back locked, before any
+            # plan; Kavita failing keeps the gate closed and no EPUB beyond what it shows leaves
+            events = BusTargetEvents(comp.engine, comp.bus)
+            gate = SeriesAgeGate(comp.engine, comp.clock, events)
+            pipeline.bind_age_gate(
+                await gate.open(client, destination.id),
+                # the last look before an EPUB write reads Kavita again, under the locks
+                blocking_age_reader(lambda: comp.kavita_client(destination.target_id)),
+                blocking_unknowns_tier(
+                    comp.engine, lambda: comp.kavita_client(destination.target_id), destination.id
+                ),
+            )
             if apply is None:
                 report = pipeline.run(destination.id, job_id=context.job_id)
             else:

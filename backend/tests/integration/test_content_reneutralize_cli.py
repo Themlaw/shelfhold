@@ -216,8 +216,8 @@ def test_export_refuses_an_untrusted_epub_whose_derivative_is_gone(
     with seeded(settings, tmp_path / "inst") as env:
         unit, library = add_epub(env)
         pipeline, _reconciler, _fsops = rj.build_pipeline(env.inst.comp, env.scans)
-        with pytest.raises(SourceMissingError):  # the derivative is there, but this is no CBZ
-            pipeline._source(unit)
+        # M2 L09: an EPUB is exported, by its verified derivative and by nothing else
+        assert pipeline._source(unit).local_path == str(library)
         library.write_bytes(TRAPPED)  # the original lands in /library: it is not servable
         with pytest.raises(SourceMissingError, match="library_not_derivative"):
             pipeline._source(unit)

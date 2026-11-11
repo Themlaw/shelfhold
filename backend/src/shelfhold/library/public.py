@@ -6,6 +6,7 @@ from shelfhold.library.adapters.epub_derivative import (
     ServableEpub,
     UntrustedEpubStore,
     binding_warning,
+    epub_units,
     has_active_content,
     has_epub,
     require_servable_derivative,
@@ -29,6 +30,7 @@ from shelfhold.library.adapters.meta_projection import (
     work_path,
     work_rel,
 )
+from shelfhold.library.adapters.origin_opf import keep_origin_opf
 from shelfhold.library.adapters.purge_inventory import (
     closed_request_ids,
     content_hashes,
@@ -312,6 +314,7 @@ __all__ = [
     "destination_identities",
     "distrust_root_copies",
     "download_tickets",
+    "epub_units",
     "erase_history",
     "erase_units",
     "erase_work_rows",
@@ -325,6 +328,7 @@ __all__ = [
     "is_independent",
     "is_rendered_sidecar",
     "keep_candidates",
+    "keep_origin_opf",
     "leftover_tickets",
     "let_go_tickets",
     "median_unit_bytes",

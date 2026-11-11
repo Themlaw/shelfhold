@@ -21,6 +21,7 @@ class EditionNaming:
     text_version: str = ""
     series_id: str | None = None  # the optional Series above the Work (EF-BIB-025)
     series_title: str | None = None
+    packaging: str = ""  # `omnibus`, `kanzenban`, `deluxe`: a repackaging is a series of its own
 
 
 @dataclass(frozen=True)
@@ -40,18 +41,21 @@ def propose_series_name(
     of the Series). When other Editions of the same Work share the library, the language label
     suffixes it ("Monster (fr)"); when one of them has the same language, the version of the text
     does too ("Titre (fr, <version>)", GAP-7-15). Members of a Series in another language or
-    another version of the text are told apart the same way.
+    another version of the text are told apart the same way. A repackaged Edition (EF-BIB-001,
+    `packaging`) is a Kavita series of its own, with its own age: when another Edition shares its
+    language and text, its packaging ends the label ("Titre (fr, omnibus)").
     """
     others = [s for s in siblings if _tells_apart(edition, s)]
     name = edition.series_title or edition.work_title
     if others:
-        same_lang = any(s.lang == edition.lang for s in others)
-        label = (
-            f"{edition.lang}, {edition.text_version}"
-            if same_lang and edition.text_version
-            else edition.lang
-        )
-        name = f"{name} ({label})"
+        same_lang = [s for s in others if s.lang == edition.lang]
+        parts = [edition.lang]
+        if same_lang and edition.text_version:
+            parts.append(edition.text_version)
+        same_text = [s for s in same_lang if s.text_version == edition.text_version]
+        if same_text and edition.packaging:
+            parts.append(edition.packaging)
+        name = f"{name} ({', '.join(parts)})"
     return SeriesProposal(
         name=name,
         normalized=normalize_series_name(name),
@@ -59,6 +63,7 @@ def propose_series_name(
             "work": edition.work_id,
             "lang": edition.lang,
             "text_version": edition.text_version,
+            **({"packaging": edition.packaging} if edition.packaging else {}),
             **({"series": edition.series_id} if edition.series_id else {}),
         },
     )
@@ -72,7 +77,8 @@ def _tells_apart(edition: EditionNaming, other: EditionNaming) -> bool:
         return other.work_id == edition.work_id
     if other.series_id != edition.series_id:
         return False
-    return other.work_id == edition.work_id or (other.lang, other.text_version) != (
-        edition.lang,
-        edition.text_version,
-    )
+    return other.work_id == edition.work_id or (
+        other.lang,
+        other.text_version,
+        other.packaging,
+    ) != (edition.lang, edition.text_version, edition.packaging)

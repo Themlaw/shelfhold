@@ -64,6 +64,10 @@ _TEMPLATES = {
     "auth_mode_unsupported": "shelfhold source recheck",
     "permission_denied": "shelfhold target recheck {extra}",
     "child_exposure": "shelfhold target recheck {subject}",
+    # M2 L09: the age gate of an EPUB series (not states of the enumeration: the next export
+    # run reads Kavita again and lifts them; the recheck says what Kavita answers)
+    "series_age_stale": "shelfhold target recheck {extra}",
+    "series_split": "shelfhold target recheck {extra}",
     "route_missing": "shelfhold target recheck {subject}",
     "language_unknown": "shelfhold edition set-lang {subject} <lang>",
     "mount_sentinel_missing": "shelfhold target recheck {extra}",
@@ -180,6 +184,22 @@ def _series(connection: Connection) -> list[WaitingItem]:
             items.append(
                 _item("permission_denied", "export", row.id, "write refused", row.target_id)
             )
+        elif row.paused_reason == "series_age_stale":  # export.series_age_stale (M2 L09)
+            items.append(
+                _item(
+                    "series_age_stale", "export", row.id,
+                    "export.series_age_stale: Kavita shows an age below the rated one",
+                    row.target_id,
+                )
+            )  # fmt: skip
+        elif row.paused_reason == "series_split":
+            items.append(
+                _item(
+                    "series_split", "export", row.id,
+                    "Kavita split the series: its age is not locked on every part",
+                    row.target_id,
+                )
+            )  # fmt: skip
     return items
 
 

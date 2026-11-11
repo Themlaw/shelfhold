@@ -158,6 +158,7 @@ class FakeKavita:
     next_series_id: int = 100
     reinstalls: int = 0
     asleep: bool = False  # stopped by Sablier: the connection is refused until `wake_up`
+    drops_age_lock: bool = False  # takes a metadata update but forgets the lock of the age
     manga_parse_only: bool = True  # the replica of plugin/parse is the Manga one: refuse others
 
     # -- scenario helpers -------------------------------------------------------------------
@@ -508,6 +509,8 @@ class FakeKavita:
         if unknown or sid not in self.ages:
             return self._violation(f"metadata update: unknown={sorted(unknown)} series={sid!r}")
         self.ages[sid] = copy.deepcopy(document)
+        if self.drops_age_lock:
+            self.ages[sid]["ageRatingLocked"] = False
         return self._text(200, "")
 
     def _series(self, recorded: RecordedRequest) -> httpx2.Response:

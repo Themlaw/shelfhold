@@ -53,4 +53,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("repatriate.no_space", 507, "admin"),
     # L16 (M2): a served file replaced at its path; KOReader starts it again (EF-EXP-016, D21)
     ErrorCode("unit.upgraded", 409, "user", event=True),
+    # L09 (M2): EPUB series in a Kavita Books library (EF-EXP-040, D19)
+    ErrorCode("export.awaiting_series_age", 409, "admin"),
+    ErrorCode("target.library_type_mismatch", 409, "admin"),
+    ErrorCode("export.series_age_stale", 409, "admin"),
 )

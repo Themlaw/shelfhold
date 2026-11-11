@@ -97,6 +97,7 @@ from shelfhold.catalog.domain.external_ids import (
     normalize_external_id,
 )
 from shelfhold.catalog.domain.identity import (
+    BOOK_KINDS,
     TEXT_VERSION_LABELS,
     Discriminant,
     TextVersionRef,
@@ -221,6 +222,7 @@ __all__ = [
     "ARTIST",
     "ATTACH_SUGGESTED",
     "AUTO_ATTACHED",
+    "BOOK_KINDS",
     "LANG_NORMALIZER_ID",
     "TEXT_VERSION_LABELS",
     "WRITER",
