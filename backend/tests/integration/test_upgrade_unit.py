@@ -82,3 +82,29 @@ def test_a_unit_nothing_was_exported_for_has_nothing_to_upgrade() -> None:
         content_id = better_copy(env, exported)
         other = env.add_chapter(exported.series, "2")  # never exported
         assert service(env).upgrade_unit(other, content_id) == []
+
+
+def test_a_volume_or_a_bundle_is_never_replaced_by_a_chapter_and_nothing_crashes() -> None:
+    """An item that covers several Units (a volume, a range bundle) is left alone, and an item of
+    another kind that covers a single Unit is left alone too."""
+    with export_env() as env:
+        exported = export_one(env)
+        old = exported.target.read_bytes()
+        content_id = better_copy(env, exported)
+        other = env.add_chapter(exported.series, "2")
+        with env.engine.begin() as c:
+            c.execute(
+                sa.text("UPDATE export_item SET kind='volume' WHERE id=:i"),
+                {"i": exported.export_item_id},
+            )
+        assert service(env).upgrade_unit(exported.unit_id, content_id) == []  # a one-Unit volume
+        with env.engine.begin() as c:
+            c.execute(
+                sa.text(
+                    "INSERT INTO unit_coverage (carrier_type, carrier_id, unit_id, position, "
+                    "extent, origin) VALUES ('export_item', :i, :u, 1, 'full', 'provider')"
+                ),
+                {"i": exported.export_item_id, "u": other},
+            )
+        assert service(env).upgrade_unit(exported.unit_id, content_id) == []  # a two-Unit one
+        assert exported.target.read_bytes() == old

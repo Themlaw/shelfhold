@@ -307,6 +307,7 @@ class FollowCycle:
         self._allowed: frozenset[str] = frozenset()  # the bindings this cycle may ask
         self._asked_units: set[str] = set()  # I52: a Unit is asked of one binding per cycle
         self._not_loaded_cycles: dict[str, int] = {}
+        self._unloaded: frozenset[str] = frozenset()
         self._slots = slots
         self._series_taken: dict[str, int] = {}
         self._tombstones = tombstones  # EF-BIB-053: required, a cycle never runs without it
@@ -433,6 +434,7 @@ class FollowCycle:
             [ref for ref in library if ref.source_key not in unloaded], report
         )
         in_library = {(ref.source_key, ref.remote_id) for ref in library}
+        self._unloaded = unloaded
         present = self._reconcile_library(in_library, report)
         self._rank_fallback(unloaded, report)
         budget = RequestBudget(*self._caps)
@@ -773,7 +775,7 @@ class FollowCycle:
                     {"edition_id": binding.edition_id, "work_id": binding.work_id},
                 )  # fmt: skip
             if changed:  # EF-SRC-037: another rank takes over, and it is told
-                self._fallback.announce_removed(connection, binding.id)
+                self._fallback.announce_removed(connection, binding.id, self._usable())
             self._ledger.clear_missing(connection, binding.id)
         return bool(changed)
 
@@ -1051,6 +1053,14 @@ class FollowCycle:
                         .values(backfill_mode="none")
                     )
 
+    def _usable(self) -> set[str]:
+        """The bindings a fallback may hand over to: active, not paused, on a loaded source."""
+        return {
+            b.id
+            for b in self._bindings()
+            if b.active and b.check_override != "paused" and b.source_key not in self._unloaded
+        }
+
     def _rank_fallback(self, unloaded: frozenset[str], report: FollowReport) -> None:
         """EF-SRC-037: a binding whose source stays unloaded three cycles, or whose content errors
         reach the threshold, falls back to the next rank (told once); one that fell for an
@@ -1063,7 +1073,9 @@ class FollowCycle:
                         connection, binding.id,
                         not_loaded_cycles=cycles if binding.source_key in unloaded else 0,
                     )  # fmt: skip
-                    if reason and self._fallback.fall_back(connection, binding.id, reason):
+                    if reason and self._fallback.fall_back(
+                        connection, binding.id, reason, self._usable()
+                    ):
                         report.fell_back += 1
                 elif binding.disabled_reason == "not_loaded" and binding.source_key not in unloaded:
                     if self._fallback.restore(connection, binding.id):

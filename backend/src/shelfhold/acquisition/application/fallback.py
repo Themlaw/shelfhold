@@ -13,7 +13,7 @@ the admin disabled (`manual`), the content errors and what left upstream are nev
 on from here.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Final
 
 import sqlalchemy as sa
@@ -49,9 +49,11 @@ class Fallback:
         self._return = return_to_origin
 
     @staticmethod
-    def target(connection: Connection, binding_id: str) -> str | None:
+    def target(
+        connection: Connection, binding_id: str, usable: Collection[str] | None = None
+    ) -> str | None:
         """The binding that takes over: another active one of the same Edition (and so of the
-        same Work), the next rank first."""
+        same Work), the next rank first; among `usable` when given (what the cycle may ask)."""
         b = acquisition.source_binding
         me = connection.execute(
             sa.select(b.c.edition_id, b.c.work_id, b.c.priority).where(b.c.id == binding_id)
@@ -66,6 +68,8 @@ class Fallback:
             )
             .order_by(b.c.priority)
         ).all()  # fmt: skip
+        if usable is not None:
+            others = [o for o in others if o.id in usable]
         after = [o for o in others if o.priority > me.priority]
         chosen = after[0] if after else (others[0] if others else None)
         return None if chosen is None else str(chosen.id)
@@ -86,12 +90,18 @@ class Fallback:
             return "content_failures"
         return None
 
-    def fall_back(self, connection: Connection, binding_id: str, reason: str) -> bool:
+    def fall_back(
+        self,
+        connection: Connection,
+        binding_id: str,
+        reason: str,
+        usable: Collection[str] | None = None,
+    ) -> bool:
         """True when the binding went inactive for `reason` in this call (and `source.fallback`
         was told). False when there is no other binding to take over or it already had."""
         if reason not in FALLBACK_REASONS:
             raise ValueError(f"not a fallback reason: {reason!r}")
-        successor = self.target(connection, binding_id)
+        successor = self.target(connection, binding_id, usable)
         if successor is None:
             return False
         b = acquisition.source_binding
@@ -116,7 +126,9 @@ class Fallback:
         log.warning("follow.fallback", binding_id=binding_id, to=successor, reason=reason)
         return True
 
-    def announce_removed(self, connection: Connection, binding_id: str) -> bool:
+    def announce_removed(
+        self, connection: Connection, binding_id: str, usable: Collection[str] | None = None
+    ) -> bool:
         """The binding left upstream (it is already inactive): its open requests are postponed and
         the fallback is told, if another binding can take over."""
         b = acquisition.source_binding
@@ -124,7 +136,7 @@ class Fallback:
             sa.select(b.c.edition_id, b.c.work_id).where(b.c.id == binding_id)
         ).one()
         self._postpone(connection, binding_id)
-        successor = self.target(connection, binding_id)  # the others, which are active
+        successor = self.target(connection, binding_id, usable)  # the others, which are active
         if successor is None:
             return False
         self._emit(
@@ -181,10 +193,5 @@ class Fallback:
             .values(active=True, disabled_reason=None)
         ).rowcount
         if changed:
-            connection.execute(
-                sa.update(acquisition.source_failure)
-                .where(acquisition.source_failure.c.source_binding_id == binding_id)
-                .values(consecutive_content_errors=0)
-            )
             log.info("follow.fallback_returned", binding_id=binding_id)
         return bool(changed)

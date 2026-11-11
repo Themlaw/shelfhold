@@ -3,8 +3,8 @@
 `download_request.unit_id` names the Unit a `unit` ticket asks for, so that a unique index can say
 that a Unit never has two open requests, whatever the Variant and the binding they come from. The
 column is filled from the Variant. A Unit that already holds two open requests (it could before
-this migration) keeps the oldest; the others are cancelled, and the next cycle asks again if the
-Unit is still missing. No file and no Variant is touched.
+this migration) keeps the one already `downloaded`, else the oldest; the others are cancelled, and
+the next cycle asks again if the Unit is still missing. No file and no Variant is touched.
 """
 
 import sqlalchemy as sa
@@ -28,8 +28,9 @@ def upgrade() -> None:
         "UPDATE download_request SET state = 'cancelled' WHERE unit_id IS NOT NULL "
         "AND state IN ('requested', 'downloaded') AND EXISTS (SELECT 1 FROM download_request o "
         "WHERE o.unit_id = download_request.unit_id AND o.state IN ('requested', 'downloaded') "
-        "AND (o.requested_at < download_request.requested_at "
-        "OR (o.requested_at = download_request.requested_at AND o.id < download_request.id)))"
+        "AND ((o.state = 'downloaded' AND download_request.state = 'requested') "
+        "OR (o.state = download_request.state AND (o.requested_at < download_request.requested_at "
+        "OR (o.requested_at = download_request.requested_at AND o.id < download_request.id)))))"
     )
     op.execute(
         "CREATE UNIQUE INDEX uq_download_request_open_unit ON download_request (unit_id) "

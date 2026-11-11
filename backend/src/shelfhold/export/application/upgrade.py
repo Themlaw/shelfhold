@@ -309,6 +309,7 @@ class SamePathUpgrade:
         through every guard of it (read Unit, suspect revision, irreplaceable Unit, frozen root).
         A Unit nothing was exported for has nothing to upgrade."""
         record, coverage = export.export_record, export.unit_coverage
+        item, covers = export.export_item, sa.alias(export.unit_coverage)
         with self._engine.connect() as connection:
             served = connection.execute(
                 sa.select(record.c.shelf_destination_id, record.c.export_item_id)
@@ -321,10 +322,20 @@ class SamePathUpgrade:
                         ),
                     )
                 )
+                .join(item, item.c.id == record.c.export_item_id)
                 .where(
                     coverage.c.unit_id == unit_id,
                     record.c.locator_type == "path",
                     record.c.state == "written",
+                    item.c.kind == "unit",  # never a volume or a bundle: a chapter would replace it
+                    sa.select(sa.func.count())
+                    .select_from(covers)
+                    .where(
+                        covers.c.carrier_type == "export_item",
+                        covers.c.carrier_id == record.c.export_item_id,
+                    )
+                    .scalar_subquery()
+                    == 1,  # it covers this Unit and no other
                 )
                 .order_by(record.c.shelf_destination_id, record.c.export_item_id)
             ).all()

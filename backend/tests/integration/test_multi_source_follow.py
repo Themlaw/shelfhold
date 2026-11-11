@@ -376,3 +376,84 @@ def test_an_upgrade_that_worked_moves_the_exported_variant_to_the_better_rank() 
             "JOIN source_item si ON si.id = b.source_item_id WHERE v.preferred"
         )
         assert now["r"] == "/series-alpha"
+
+
+def test_reopening_what_was_given_up_never_collides_with_the_next_rank() -> None:
+    """Fell back to rank 2, then rank 1 comes back: the abandoned ticket of rank 1 stays closed
+    while rank 2 holds the Unit (one open request per Unit), and the cycle does not crash."""
+    with follow_bench() as bench:
+        beta = bind_beta(bench)
+        watermark(bench)
+        serve(bench, ALPHA, chapters(ALPHA, [1]))
+        serve(bench, BETA, chapters(BETA, [1]))
+        bench.run()
+        with bench.lib.engine.begin() as c:
+            c.execute(sa.text("UPDATE download_request SET state='abandoned', attempts=99"))
+            unit, variant = c.execute(
+                sa.text("SELECT unit_id, id FROM unit_variant WHERE source_binding_id = :b"),
+                {"b": beta},
+            ).one()
+            assert DownloadTickets.open(
+                c, binding_id=beta, variant_id=variant, unit_id=unit, now=bench.clock.now()
+            )
+        assert bench.cycle._tickets.reopen_abandoned() == 0
+        (n,) = bench.rows(
+            "SELECT count(*) AS n FROM download_request WHERE unit_id = :u "
+            "AND state IN ('requested','downloaded')",
+            u=unit,
+        )
+        assert n["n"] == 1
+
+
+def test_a_manual_request_and_the_follow_share_one_open_request_per_unit() -> None:
+    from shelfhold.acquisition.application.acquire import NativeAcquirer
+
+    with follow_bench() as bench:
+        beta = bind_beta(bench)
+        serve(bench, ALPHA, chapters(ALPHA, [1]))
+        serve(bench, BETA, chapters(BETA, [1]))
+        bench.run()
+        with bench.lib.engine.begin() as c:
+            rows = c.execute(
+                sa.text("SELECT id, unit_id, source_binding_id FROM unit_variant")
+            ).all()
+            vb = next(r for r in rows if r.source_binding_id == beta)
+            va = next(r for r in rows if r.source_binding_id != beta and r.unit_id == vb.unit_id)
+            manual = NativeAcquirer._open_request(
+                c, beta, vb.id, None, "private", bench.clock.now()
+            )
+            assert not DownloadTickets.open(
+                c,
+                binding_id=va.source_binding_id,
+                variant_id=va.id,
+                unit_id=va.unit_id,
+                now=bench.clock.now(),
+            )  # the follow does not open a second one
+            assert (
+                NativeAcquirer._open_request(
+                    c, va.source_binding_id, va.id, None, "private", bench.clock.now()
+                )
+                == manual
+            )  # and a manual one reuses the open request of the Unit
+            assert (
+                c.execute(
+                    sa.text("SELECT unit_id FROM download_request WHERE id = :i"), {"i": manual}
+                ).scalar_one()
+                == vb.unit_id
+            )
+
+
+def test_fallback_hands_over_to_a_binding_the_cycle_may_ask() -> None:
+    from shelfhold.acquisition.application.fallback import Fallback
+
+    with lib_env() as lib, lib.engine.begin() as connection:
+        work = add_work(connection)
+        edition = add_edition(connection, work)
+        first = add_binding(connection, work, edition, add_source_item(connection, "a"))
+        second = add_binding(
+            connection, work, edition, add_source_item(connection, "b"), priority=2
+        )
+        third = add_binding(connection, work, edition, add_source_item(connection, "c"), priority=3)
+        assert Fallback.target(connection, first) == second
+        assert Fallback.target(connection, first, {third}) == third  # second is not allowed
+        assert Fallback.target(connection, first, set()) is None

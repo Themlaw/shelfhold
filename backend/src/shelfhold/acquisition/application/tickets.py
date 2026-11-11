@@ -602,7 +602,17 @@ class DownloadTickets:
                     r.c.attempts >= self._max_attempts,
                     *only,
                     ~sa.exists().where(
-                        other.c.variant_id == r.c.variant_id, other.c.state.in_(OPEN_STATES)
+                        sa.or_(
+                            other.c.variant_id == r.c.variant_id,
+                            other.c.unit_id == r.c.unit_id,  # the next rank holds the Unit (I52)
+                        ),
+                        other.c.state.in_(OPEN_STATES),
+                    ),
+                    ~sa.exists().where(  # two given up for one Unit: only the older comes back
+                        other.c.unit_id == r.c.unit_id,
+                        other.c.state == "abandoned",
+                        other.c.attempts >= self._max_attempts,
+                        other.c.id < r.c.id,
                     ),
                 )
                 .values(state="requested", attempts=0, ticket=None, updated_at=self._clock.now())

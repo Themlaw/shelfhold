@@ -51,15 +51,23 @@ def test_upgrade_fills_unit_id_dedupes_open_requests_and_adds_the_index(settings
         )
         unit = add_unit(connection, edition, "1")
         lone = add_unit(connection, edition, "2")
+        mid = add_unit(connection, edition, "3")
         ids = []
-        for binding, target in ((first, unit), (second, unit), (first, lone)):
+        for binding, target in (
+            (first, unit),
+            (second, unit),
+            (first, lone),
+            (first, mid),
+            (second, mid),
+        ):
             variant = add_variant(connection, target, binding, f"r-{new_ulid()}")
             request = new_ulid()
             ids.append(request)
             connection.execute(
                 sa.insert(acquisition.download_request).values(
                     id=request, target_kind="unit", variant_id=variant,
-                    source_binding_id=binding, state="requested", requested_at=now,
+                    source_binding_id=binding, requested_at=now,
+                    state="downloaded" if len(ids) == 5 else "requested",
                 )
             )  # fmt: skip
     engine.dispose()
@@ -68,7 +76,13 @@ def test_upgrade_fills_unit_id_dedupes_open_requests_and_adds_the_index(settings
 
     with closing(sqlite3.connect(database)) as db:
         rows = dict(db.execute("SELECT id, state FROM download_request"))
-        assert [rows[i] for i in ids] == ["requested", "cancelled", "requested"]  # the older stays
+        assert [rows[i] for i in ids] == [
+            "requested",
+            "cancelled",
+            "requested",
+            "cancelled",
+            "downloaded",
+        ]  # older, or downloaded
         units = {r[0]: r[1] for r in db.execute("SELECT id, unit_id FROM download_request")}
         assert units[ids[0]] == unit and units[ids[2]] == lone
         with pytest.raises(sqlite3.IntegrityError):  # the wall
