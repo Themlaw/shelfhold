@@ -309,14 +309,12 @@ def _settle(
             sa.tuple_(suggestion.c.entity_type, suggestion.c.entity_id).in_(covered),
         )
     ).all()
+    kept = {r.id for r in rows if keep_edition_above and r.entity_type == "edition"}
     accepted = [
-        r.id for r in rows if not (AgeRating(18, True) if r.x else AgeRating(r.value)) > rating
-    ]
-    kept = {
         r.id
         for r in rows
-        if keep_edition_above and r.id not in accepted and r.entity_type == "edition"
-    }
+        if r.id not in kept and not (AgeRating(18, True) if r.x else AgeRating(r.value)) > rating
+    ]
     rejected = [r.id for r in rows if r.id not in accepted and r.id not in kept]
     for state, ids in (("accepted", accepted), ("rejected", rejected)):
         if ids:

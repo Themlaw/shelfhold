@@ -139,9 +139,14 @@ class Composition:
         self.network = network or default_network()
         self.gates = gates or Gates()
         self.bus = bus or operating_bus(self.clock)
+        # (signature, epoch of `roots_changed`, service, the paths of the roots away at replay)
         self._tombstones: (
-            tuple[tuple[tuple[str, str, tuple[str, ...]], ...], TombstoneService] | None
+            tuple[
+                tuple[tuple[str, str, tuple[str, ...]], ...], int, TombstoneService, tuple[str, ...]
+            ]
+            | None
         ) = None
+        self._roots_epoch = 0  # moved by roots_changed, lock-free: it may run inside a replay
         self._lock = threading.Lock()
         self._boot_id = uuid.uuid4().hex
         self._held_lock = threading.Lock()
@@ -217,12 +222,19 @@ class Composition:
                 (r.root_id, r.path, r.predecessors) for r in loaded.roots if r.mode is PathMode.RW
             )
         )
+        cached = self._tombstones  # fail closed: a root away at replay is looked at again
+        back = cached is not None and any(fsops.root_state(p) is RootState.OK for p in cached[3])
         with self._lock:
-            if self._tombstones is None or self._tombstones[0] != signature:
+            entry = self._tombstones
+            if (
+                entry is None or back or entry[0] != signature
+                or entry[1] != self._roots_epoch
+            ):  # fmt: skip
+                epoch = self._roots_epoch
                 service = TombstoneService(self.engine, self.keyring(), fsops, self.bus)
-                self._tombstones = (signature, service)
-                self._replay(service, fsops, loaded)
-            service = self._tombstones[1]
+                away = self._replay(service, fsops, loaded)
+                entry = self._tombstones = (signature, epoch, service, away)
+            service = entry[2]
         service.use_disk(fsops)
         fsops.enforce_tombstone_flush(
             lambda path: any(
@@ -232,10 +244,10 @@ class Composition:
         return service
 
     def roots_changed(self) -> None:
-        """A root exit (`takeover`, `reinit`, `restored`, `store reinit`) changed what a root is:
-        the next look rebuilds the index from the table and the journals."""
-        with self._lock:
-            self._tombstones = None
+        """A root exit (`takeover`, `reinit`, `restored`, `store reinit`), or a root seen right
+        again, changed what a root is: the next look rebuilds the index from the table and the
+        journals. It takes no lock: the watcher calls it from inside a replay."""
+        self._roots_epoch += 1  # no lock: refresh may call it from inside a replay
 
     def fresh_tombstones(
         self, fsops: Fsops, loaded: LoadedRoots, normalizers: Normalizers
@@ -273,16 +285,16 @@ class Composition:
             return  # nothing registered yet, or no keyring, or no root mounted: nothing to pay
 
     @staticmethod
-    def _replay(service: TombstoneService, fsops: Fsops, loaded: LoadedRoots) -> None:
-        service.replay(
-            [
-                TombstoneRoot(
-                    r.root_id, r.path, fsops.root_state(r.path) is RootState.OK, r.predecessors
-                )
-                for r in loaded.roots
-                if r.mode is PathMode.RW
-            ]
-        )
+    def _replay(service: TombstoneService, fsops: Fsops, loaded: LoadedRoots) -> tuple[str, ...]:
+        roots = [
+            TombstoneRoot(
+                r.root_id, r.path, fsops.root_state(r.path) is RootState.OK, r.predecessors
+            )
+            for r in loaded.roots
+            if r.mode is PathMode.RW
+        ]
+        service.replay(roots)
+        return tuple(r.path for r in roots if not r.mounted)
 
     def read_context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
         """Everything that reads the library or the tombstones, and writes nothing

@@ -1007,11 +1007,8 @@ class ClassificationInvariants(RuleBasedStateMachine):
         self.service.rate(self.h.connection, self.work_id, age, principal=RATER, now=self.now)
         self.work_age = age
         self.editions = {k: (explicit, True) for k, (explicit, _) in self.editions.items()}
-        # rating a Work accepts the suggestions up to its age; a higher one of an Edition stays
-        # open and keeps blocking that Edition until `rate_edition` (fail closed)
-        self.suggested = {
-            k: [s for s in v if weight(s) > weight(age)] for k, v in self.suggested.items()
-        }
+        # rating a Work rules on no suggestion of an Edition: the admission ignores the ones that
+        # are not above the age, and only `rate_edition` settles them (fail closed)
 
     @rule(pick=st.integers(0, 9), tier=st.sampled_from(AGE_TIERS))
     def rate_edition(self, pick: int, tier: int) -> None:

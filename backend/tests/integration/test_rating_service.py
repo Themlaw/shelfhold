@@ -201,11 +201,11 @@ def test_rating_a_work_does_not_settle_a_higher_edition_suggestion(h: Harness) -
 
 
 @pytest.mark.req("EF-BIB-055")
-def test_rating_a_work_settles_the_edition_suggestions_up_to_its_age(h: Harness) -> None:
+def test_rating_a_work_settles_no_edition_suggestion(h: Harness) -> None:
     edition = h.edition()
     suggest(h, edition.id, AgeRating(10), "comicinfo")
     SERVICE.rate(h.connection, edition.work_id, AgeRating(10), principal=admin(), now=NOW)
-    assert states(h) == ["accepted"]
+    assert states(h) == ["open"]  # not above: it blocks nothing, and only rate_edition rules
 
 
 @pytest.mark.req("EF-BIB-055")
@@ -240,7 +240,7 @@ def test_suggestion_after_the_rating_blocks_again_until_rated_again(h: Harness) 
         SERVICE.admission_of(h.connection, edition.id, shelf_id=family)
         is Admission.SUGGESTION_ABOVE
     )  # rating the Work does not rule on a higher suggestion of an Edition
-    assert states(h) == ["accepted", "open"]
+    assert states(h) == ["open", "open"]
     SERVICE.rate_edition(h.connection, edition.id, AgeRating(10), principal=admin(), now=NOW)
     assert SERVICE.admission_of(h.connection, edition.id, shelf_id=family) is Admission.ALLOWED
     assert states(h) == ["accepted", "rejected"]
@@ -254,3 +254,35 @@ def test_rating_an_edition_settles_only_its_own_suggestions(h: Harness) -> None:
     suggest(h, other.id, X, "comicinfo")
     SERVICE.rate_edition(h.connection, mine.id, AgeRating(10), principal=admin(), now=NOW)
     assert states(h) == ["open", "rejected"]  # comicinfo (the other Edition) stays open
+
+
+@pytest.mark.req("EF-BIB-055")
+def test_sibling_rating_and_rerating_keep_the_block(h: Harness) -> None:
+    from shelfhold.export.application.to_rate import SUGGESTION_ABOVE, rateable, to_rate
+
+    e1 = h.edition()
+    e2 = h.edition(e1.work_id, lang="fr")
+    family = shelf(h, 10)
+    suggest(h, e1.id, X, "sub_source")
+    SERVICE.rate(h.connection, e1.work_id, AgeRating(10), principal=admin(), now=NOW)
+    SERVICE.rate_edition(h.connection, e2.id, AgeRating(10), principal=admin(), now=NOW)
+    SERVICE.rate(h.connection, e1.work_id, AgeRating(10), principal=admin(), now=NOW)
+    assert SERVICE.admission_of(h.connection, e1.id, shelf_id=family) is Admission.SUGGESTION_ABOVE
+    listed = to_rate(h.connection)
+    assert [i.state for i in listed] == [SUGGESTION_ABOVE] and rateable(listed) == []
+
+
+@pytest.mark.req("EF-BIB-055")
+def test_x_work_rating_then_lowered_does_not_let_the_x_edition_in(h: Harness) -> None:
+    """Rated X first (the suggestion is not above), lowered to 10 later: no decision about the
+    Edition was ever taken, so it must not enter the child shelf."""
+    edition = h.edition()
+    family = shelf(h, 10)
+    suggest(h, edition.id, X, "sub_source")
+    SERVICE.rate(h.connection, edition.work_id, X, principal=admin(), now=NOW)
+    SERVICE.rate(h.connection, edition.work_id, AgeRating(10), principal=admin(), now=NOW)
+    assert (
+        SERVICE.admission_of(h.connection, edition.id, shelf_id=family)
+        is Admission.SUGGESTION_ABOVE
+    )
+    assert states(h) == ["open"]
