@@ -225,6 +225,7 @@ def acquire_bench(
         bus = EventBus(clock)
         delivered: list[Any] = []
         bus.subscribe(delivered.append, event_type="unit.stored")
+        (lib.tmp / "recv").mkdir()
         acquirer = NativeAcquirer(
             lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
             max_bytes=8 * 1024 * 1024,

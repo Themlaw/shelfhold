@@ -119,9 +119,12 @@ class WriteContext:
     def writable_roots(self) -> list[str]:
         return [e.path for e in self.loaded.expected]
 
-    def received_path(self, variant_id: str) -> str:
-        """Where the follow cycle files a received archive: the first writable root's inbox."""
-        return f"{self.writable_roots[0]}/{RECEIVED_DIR}/{variant_id}.cbz"
+    def received_path(self, variant_id: str, extension: str = ".cbz") -> str:
+        """Where a received file is filed: the first writable root's inbox. `extension` is what
+        the content says it is (`sniff_kind`), never what its sender called it (EF-BIB-051)."""
+        if extension not in (".cbz", ".epub"):
+            raise ValueError(f"no received file is filed as {extension!r}")
+        return f"{self.writable_roots[0]}/{RECEIVED_DIR}/{variant_id}{extension}"
 
 
 PROBE_INTERVAL_S = 30.0  # a root that is not MISSING but is not right is looked at this often
@@ -166,6 +169,11 @@ class Composition:
         self._watcher: RootWatcher | None = None
         self._wakes: Wakes | None = None
         self._wakes_lock = threading.Lock()
+        # what only a running server holds: the plugins loaded at start-up (EF-SRC-019) and the
+        # job queues; a command run by itself has neither and says so (`ExitUnavailableError`)
+        self.plugins: Callable[[], Any] = lambda: None
+        self.pools: Callable[[], Any] = lambda: None
+        self._fetchers: Any = None
 
     # -- secrets -----------------------------------------------------------------------------
 
@@ -547,6 +555,19 @@ class Composition:
         if document.get("username") and document.get("password"):
             return {"username": document["username"], "password": document["password"]}
         return None
+
+    def source_fetchers(self) -> Any:
+        """The Fetchers of the source plugins, one factory per process: the HTTP cache and the
+        robots.txt rules of a source live as long as it does (ENF-LEG-007)."""
+        from shelfhold.plugin_host.source_fetcher import SourceFetchers
+
+        if self._fetchers is None:
+            self._fetchers = SourceFetchers(
+                self.network,
+                cache_enabled=self.settings.fetcher_cache,
+                cache_off_sources=self.settings.fetcher_cache_off_sources,
+            )
+        return self._fetchers
 
     def run(self, work: Any) -> Any:
         return asyncio.run(work)

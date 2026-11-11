@@ -1,5 +1,14 @@
 """What the interfaces and the composition root may use from the acquisition context."""
 
+from shelfhold.acquisition.application.acquire import (
+    ACQUIRE_JOB_KIND,
+    AcquireOutcome,
+    AcquireRefused,
+    NativeAcquirer,
+    Prepared,
+    SourceDirectory,
+    acquire_dedupe_key,
+)
 from shelfhold.acquisition.application.backfill import Backfill, BackfillConfirmationRequired
 from shelfhold.acquisition.application.discovery import decline_pairing
 from shelfhold.acquisition.application.failures import FailureLedger, Pause
@@ -37,6 +46,7 @@ from shelfhold.acquisition.application.tickets import (
     Receiver,
     TicketReport,
     bounded_receiver,
+    oriented_name,
 )
 from shelfhold.acquisition.application.unit_follow import suppress_follow
 from shelfhold.acquisition.application.upstream import (
@@ -55,8 +65,11 @@ from shelfhold.acquisition.domain.team_policy import TeamChoice, TeamStats, choo
 from shelfhold.acquisition.domain.watermark import Watermark
 
 __all__ = [
+    "ACQUIRE_JOB_KIND",
     "DEFAULT_K",
     "FOLLOW_JOB_KIND",
+    "AcquireOutcome",
+    "AcquireRefused",
     "Backfill",
     "BackfillConfirmationRequired",
     "BackfillEstimate",
@@ -74,8 +87,10 @@ __all__ = [
     "FollowReport",
     "FollowRequests",
     "LeasedReceiver",
+    "NativeAcquirer",
     "Pause",
     "Placement",
+    "Prepared",
     "RangeReport",
     "RangeRequest",
     "RangeTickets",
@@ -85,6 +100,7 @@ __all__ = [
     "ServiceLink",
     "ServiceNotConnectedError",
     "SnapshotRefusedError",
+    "SourceDirectory",
     "StaleSeries",
     "TakeReport",
     "TeamChoice",
@@ -93,6 +109,7 @@ __all__ = [
     "TicketReport",
     "UpstreamSnapshots",
     "Watermark",
+    "acquire_dedupe_key",
     "bounded_receiver",
     "cadence",
     "choose_team",
@@ -102,6 +119,7 @@ __all__ = [
     "follow_dedupe_key",
     "follow_job",
     "is_stale",
+    "oriented_name",
     "pending",
     "present_for_acquisition",
     "present_in",

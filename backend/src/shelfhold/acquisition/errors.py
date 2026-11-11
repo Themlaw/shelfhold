@@ -22,6 +22,12 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source.update_filters_blocking", 409, "admin"),
     # EF-SRC-004: a pasted URL that no active plugin recognises
     ErrorCode("source.no_match", 422, "user"),
+    # EF-SRC-015 (M2 L19): one-shot acquisition from a native source
+    ErrorCode("source.filter_invalid", 422, "user"),  # a search filter the source does not declare
+    ErrorCode("acquire.unsupported_file", 422, "user"),  # a PDF, audio, or no file at all
+    ErrorCode("acquire.unit_required", 422, "user"),  # several Units offered, none chosen
+    ErrorCode("acquire.series_tombstoned", 409, "user"),  # the series was deleted on purpose
+    ErrorCode("unit.stored", 409, "user", event=True),  # "rangé": the file is in the library
     # EF-SRC-013: a per-source setting refused (the field and a reason, never the value)
     ErrorCode("source.setting_invalid", 422, "admin"),
     # EF-SRC-013, EF-EXP-065: no loaded plugin, or no installed third-party plugin, by that key

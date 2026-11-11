@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any, Protocol
 
 import sqlalchemy as sa
@@ -38,6 +38,7 @@ from shelfhold.library.public import (
     Received,
     VariantAlreadyStoredError,
     receive_cbz,
+    sniff_kind,
 )
 from shelfhold.sdk.connected import ConnectedService, Ticket
 from shelfhold.sdk.fetcher import Fetcher
@@ -60,6 +61,12 @@ def jitter_fraction(request_id: str) -> float:
     """A stable value in [0, JITTER) for a request (EF-SRC-009): no random source in tests."""
     digest = hashlib.sha256(request_id.encode()).digest()
     return JITTER * int.from_bytes(digest[:4], "big") / 2**32
+
+
+def oriented_name(filename: str, staged: Path) -> str:
+    """The name a received file is filed under: the service's stem, and the extension its bytes
+    call for (`.epub` or `.cbz`), never the one the service gave it (EF-BIB-051)."""
+    return f"{PurePath(filename).stem}{sniff_kind(staged)}"
 
 
 class Receiver(Protocol):
@@ -395,11 +402,14 @@ class DownloadTickets:
         except InvalidFetchUrl as error:  # the plugin pointed the credential at another origin
             raise SourceChanged("the service handed back a URL off its origin") from error
         async with receiving as received:
+            # what the bytes are, not what the service called them (EF-BIB-051): an EPUB goes to
+            # the trust sort and the neutralizer, whatever its file name says
+            oriented = oriented_name(payload.filename, received.path)
             with suppress(VariantAlreadyStoredError):  # a replay after a crash: already there
                 self._store.ingest(
                     unit_id=request.unit_id, variant_id=request.variant_id,
                     staged=received.path, expected_sha256=received.sha256,
-                    dest=self._place(request.unit_id, request.variant_id, payload.filename),
+                    dest=self._place(request.unit_id, request.variant_id, oriented),
                     upstream_ref=request.remote_unit_id,
                 )  # fmt: skip
         now = self._clock.now()

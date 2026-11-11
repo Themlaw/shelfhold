@@ -67,6 +67,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "tombstone.unverified",
         "unit.safeguard_backlog",
         "unit.safeguard_failed",
+        "unit.stored",  # M2 L19 (EF-SRC-015): a requested file is filed ("rangé")
         "unit.upgraded",  # M2 L16 (EF-EXP-016, D21): KOReader's position was reset
         "wake.deferred",
     }

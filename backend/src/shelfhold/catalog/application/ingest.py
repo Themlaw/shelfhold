@@ -98,3 +98,29 @@ def ingest_unit(units: UnitStore, teams: TeamStore, item: IncomingUnit) -> Inges
     return IngestResult(
         decision.outcome, unit_id, variant_id, team_id, 1, unit_created, supersedes, suggestion_id
     )
+
+
+# -- a file a source hands over whole (`FileAsset`, EF-SRC-015) ------------------------------------
+
+# What a source may announce for a passthrough file. The announcement only decides whether the
+# file is taken at all: what it is, and so where it is filed, is read from its bytes by the
+# receiver (`sniff_kind`), never from this label or from a file name (EF-BIB-051).
+FILE_MIMES: dict[str, str] = {
+    "application/epub+zip": "epub",
+    "application/vnd.comicbook+zip": "cbz",
+    "application/x-cbz": "cbz",
+    "application/zip": "cbz",
+}
+
+
+class UnsupportedFileError(ValueError):
+    """The source announced a file this release does not take (a PDF, audio, anything else)."""
+
+
+def announced_kind(mime: str) -> str:
+    """ "epub" or "cbz": what a source says of a file it hands over whole. Only a gate: the bytes
+    are what the receiver reads, so the label can neither route a file nor excuse one."""
+    announced = FILE_MIMES.get(mime.split(";")[0].strip().lower())
+    if announced is None:
+        raise UnsupportedFileError("the source announced a file type that is not taken")
+    return announced

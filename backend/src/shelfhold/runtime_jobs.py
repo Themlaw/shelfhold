@@ -29,6 +29,7 @@ from collections.abc import Callable, Iterable
 from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import PurePath
 from typing import Any, cast
 
 import sqlalchemy as sa
@@ -36,6 +37,7 @@ import structlog
 from structlog.contextvars import bound_contextvars
 
 from shelfhold.acquisition.public import (
+    ACQUIRE_JOB_KIND,
     FOLLOW_JOB_KIND,
     FollowCycle,
     LeasedReceiver,
@@ -96,6 +98,7 @@ from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.library.public import PassthroughStore, RangedKeeper, UntrustedEpubStore
+from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.retention_jobs import register_retention_jobs
@@ -208,6 +211,35 @@ class _LazyStore:
         return store.ingest(**arguments)
 
 
+def acquire_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext], None]:
+    """One request of a person (EF-SRC-015): the file of one `download_request` of a native
+    source, fetched under the source's own Fetcher and filed like any received file. The lease on
+    the library is taken first: nothing is downloaded that cannot be filed."""
+
+    def run(context: JobContext) -> None:
+        request_id = context.dedupe_key.removeprefix(f"{ACQUIRE_JOB_KIND}:")
+        try:
+            acquirer = AcquireOps(comp).acquirer()
+            with ExitStack() as stack:
+                lazy = _LazyWrite(comp, stack)
+                lazy.get()
+                outcome = asyncio.run(
+                    acquirer.fetch(
+                        request_id, cast("Any", _LazyStore(comp, lazy)),
+                        lambda variant, extension: lazy.get().received_path(variant, extension),
+                    )
+                )  # fmt: skip
+        except (NoLibraryError, KeyringUnavailableError, ExitUnavailableError) as error:
+            log.info("acquire.skipped", reason=type(error).__name__)
+            context.record(skipped=type(error).__name__)
+            return
+        context.record(state=outcome.state)
+        if outcome.state == "fetched":  # what arrived goes out
+            pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)
+
+    return run
+
+
 def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
         arrived: list[int] = []
@@ -220,8 +252,8 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
             with ExitStack() as stack:
                 lazy = _LazyWrite(comp, stack)
 
-                def place(_unit: str, variant_id: str, _filename: str) -> str:
-                    return lazy.get().received_path(variant_id)
+                def place(_unit: str, variant_id: str, filename: str) -> str:
+                    return lazy.get().received_path(variant_id, PurePath(filename).suffix)
 
                 keeper = RangedKeeper(comp.settings.data_dir)
                 keeper.sweep(comp.engine)  # files of a transaction that did not commit
@@ -765,6 +797,7 @@ class LazyDispatcher:
 def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.register(FOLLOW_JOB_KIND, pool="io", handler=follow_handler(comp, pools))
     pools.scheduler.add(FOLLOW_JOB_KIND, FOLLOW_CRON, jitter_s=120)
+    pools.register(ACQUIRE_JOB_KIND, pool="io", handler=acquire_handler(comp, pools))
     pools.register(EXPORT_JOB_KIND, pool="io", handler=export_handler(comp))
     pools.register(APPLY_JOB_KIND, pool="io", handler=apply_handler(comp))
     pools.scheduler.add(EXPORT_JOB_KIND, EXPORT_CRON, jitter_s=60)
