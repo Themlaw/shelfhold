@@ -25,6 +25,8 @@ from tests.integration.test_untrusted_epub_pipeline import (
 )
 from tests.library_env import lib_env
 
+pytestmark = pytest.mark.req("EF-BIB-051")
+
 SCRIPT = "<p>x</p><script>alert(document.cookie)</script>"
 META_EPUB = epub_bytes(
     xhtml("<p>chapter</p>"),

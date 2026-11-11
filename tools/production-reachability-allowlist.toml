@@ -140,14 +140,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m2-derivative"
-reason = "Taking the derivative of an `untrusted` EPUB back from a destination when the original is lost (`extracted_derived`, EF-BIB-051): the library half is proved here; its caller is the re-adoption of EPUB files after a restore, wired with the derivative lots of M2 that read EPUB files (the restore of a root, L25, only reaches CBZ archives today)."
-until = "M2"
-symbols = [
-  "shelfhold.library.adapters.epub_derivative:UntrustedEpubStore.restore_from_destination",
-]
-
-[[allow]]
 category = "unwired-m2"
 reason = "Consumers arrive with the content and plugin features of M2: image decode worker and caps (B1), CBZ writer from pages, EPUB/OPF dates, and the per-unit download, filters and per-key limits of the Source contract (Suwayomi downloads through tickets)."
 until = "M2"
