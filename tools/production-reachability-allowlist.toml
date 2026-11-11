@@ -240,3 +240,13 @@ symbols = [
   "shelfhold.sdk.models:SDK_VERSION",
   "shelfhold.sdk.models:sdk_supports",
 ]
+
+[[allow]]
+category = "unwired-m2-l15"
+reason = "The rights review that announces the non-blocking warning (`Rights.review`), the derived death-year cache and the article-free sort key (EF-SRC-024, EF-BIB-046, ENF-I18N-003, M2 L15) are proved by their tests; their first production callers are the Gutenberg / Standard Ebooks ingest of the M2 source lots (review, cache) and the atelier list (sort key, M3). `status` already reads the calculation through `Rights.protected`."
+until = "M2"
+symbols = [
+  "shelfhold.catalog.application.rights:Rights.refresh_cache",
+  "shelfhold.catalog.application.rights:Rights.review",
+  "shelfhold.catalog.domain.sort_key:sort_key",
+]

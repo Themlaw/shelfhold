@@ -260,7 +260,12 @@ def report_lines(ops: dict[str, object]) -> list[str]:
     if where is not None and not where["confirmed"]:  # EF-SRC-024: deduced, never asked yet
         lines.append(t("status.jurisdiction_unconfirmed", country=where["jurisdiction"]))
     for w in ops.get("rights_warnings", []):  # type: ignore[attr-defined]
-        lines.append(t(f"status.rights_{w['reason']}", edition_id=w["edition_id"]))
+        if w["reason"] == "translation_may_be_protected":
+            lines.append(
+                t("status.rights_translation_may_be_protected", edition_id=w["edition_id"])
+            )
+        else:
+            lines.append(t("status.rights_may_be_protected", edition_id=w["edition_id"]))
     for s in ops.get("tombstoned_upstream", []):  # type: ignore[attr-defined]
         lines.append(t("status.tombstoned_upstream_line", **s))
     for c in ops.get("capabilities", []):  # type: ignore[attr-defined]
