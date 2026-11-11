@@ -19,6 +19,7 @@ UNIT_JSON_VERSION: Final = "1.1"
 _CURRENT = (1, 1)
 _OWNED: Final = (
     "schema_version", "unit_id", "edition_id", "contents", "file_hashes", "origin_comicinfo",
+    "origin_opf",
 )  # fmt: skip
 _VERSION = re.compile(r"(\d+)(?:\.(\d+))?")
 _HASH = re.compile(r"sha256:[0-9a-f]{64}")
