@@ -66,7 +66,6 @@ symbols = [
   "shelfhold.catalog.domain.dates:comicinfo_date_fields",
   "shelfhold.catalog.domain.dates:PartialDate.coarsened_to",
   "shelfhold.catalog.domain.identity:Discriminant",
-  "shelfhold.catalog.domain.identity:TextVersionRef",
   "shelfhold.catalog.domain.identity:translation_discriminant",
   "shelfhold.catalog.domain.dates:opf_date",
   "shelfhold.infrastructure.packaging.cbz.packager:write_cbz",
@@ -154,8 +153,6 @@ reason = "The arrival of an Edition with its external identifiers and field prop
 until = "M2"
 symbols = [
   "shelfhold.catalog.application.auto_attach:IncomingEdition",
-  "shelfhold.catalog.application.external_ids:ExternalIdConflictError",
-  "shelfhold.catalog.application.external_ids:add_external_id",
   "shelfhold.catalog.application.external_ids:renumber_external_id",
   "shelfhold.catalog.application.fields:lock_field",
   "shelfhold.catalog.application.fields:unlock_field",
@@ -175,7 +172,6 @@ reason = "The rights review that announces the non-blocking warning (`Rights.rev
 until = "M2"
 symbols = [
   "shelfhold.catalog.application.rights:Rights.refresh_cache",
-  "shelfhold.catalog.application.rights:Rights.review",
   "shelfhold.catalog.domain.sort_key:sort_key",
 ]
 
