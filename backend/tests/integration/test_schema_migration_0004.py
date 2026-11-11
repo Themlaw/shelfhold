@@ -43,10 +43,10 @@ OTHER = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
 @pytest.mark.req("ENF-OPS-002")
 def test_single_alembic_head() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0022"]
+    assert script.get_heads() == ["0025"]
     chain = [rev.revision for rev in script.walk_revisions()]
     assert chain == [
-        "0022",
+        "0025",
         "0020",
         "0017",
         "0016",
@@ -132,11 +132,11 @@ def test_upgrade_from_0003_keeps_existing_rows_and_fills_the_new_foreign_keys(
         "0016",
         "0017",
         "0020",
-        "0022",
+        "0025",
     )
     assert result.backup is not None
-    assert "0003-to-0022" in result.backup.name
-    assert current_revision(database) == "0022"
+    assert "0003-to-0025" in result.backup.name
+    assert current_revision(database) == "0025"
     with closing(sqlite3.connect(database)) as db:
         assert db.execute("SELECT value FROM app_setting").fetchall() == [("DEBUG",)]
         assert db.execute("SELECT id, shelf_id FROM edition").fetchall() == [(ULID, None)]

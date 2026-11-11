@@ -13,7 +13,7 @@ downgrade keeps the rows open (they cannot be told apart from the ones that alwa
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0022"
+revision = "0025"
 down_revision = "0020"
 branch_labels = None
 depends_on = None

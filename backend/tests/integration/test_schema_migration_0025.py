@@ -1,4 +1,4 @@
-"""Migration 0022 (cross-cutting review 2026-11-11): the Edition age suggestions that rating a Work
+"""Migration 0025 (cross-cutting review 2026-11-11): the Edition age suggestions that rating a Work
 rejected are open again when nobody rated the Edition and they are above the Work's rating."""
 
 import sqlite3
@@ -50,7 +50,7 @@ def test_rejected_edition_suggestions_above_the_work_are_reopened(settings: Sett
             )
         db.commit()
 
-    assert migrate(settings).applied == ("0022",)
+    assert migrate(settings).applied == ("0025",)
 
     with closing(sqlite3.connect(database)) as db:
         got = [r[0] for r in db.execute("SELECT state FROM age_suggestion ORDER BY id")]

@@ -28,7 +28,7 @@ def test_upgrade_from_0015_adds_the_table_and_keeps_data(settings: Settings) -> 
 
     result = migrate(settings)
 
-    assert result.applied == ("0016", "0017", "0020", "0022")
+    assert result.applied == ("0016", "0017", "0020", "0025")
     with closing(sqlite3.connect(database)) as db:
         assert db.execute("SELECT username FROM user").fetchall() == [("a",)]
         db.execute(
