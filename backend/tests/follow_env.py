@@ -31,6 +31,7 @@ from tests.fakes_clock import ManualClock
 from tests.fakes_fetcher import FakeResolver
 from tests.integration.test_schema_catalog import add_edition, add_work
 from tests.library_env import LibEnv, lib_env
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 
 LAN_IP = "192.168.1.50"
@@ -260,7 +261,8 @@ def follow_bench(
             return FollowCycle(
                 lib.engine, bus, clock, service, fetcher,
                 store=PassthroughStore(
-                    lib.engine, lib.fsops, lib.locate, lib.data, tombstones=guard
+                    lib.engine, lib.fsops, lib.locate, lib.data, tombstones=guard,
+hold_work=work_lock(lib.engine),
                 ),
                 receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
                 place=_placement(lib), sleep=sleep, stale_k=stale_k, max_attempts=max_attempts,

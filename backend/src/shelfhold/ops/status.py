@@ -27,7 +27,8 @@ from shelfhold.export.domain.kavita_compat import (
 )
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
-from shelfhold.library.public import backlog_row, content_error_candidates
+from shelfhold.infrastructure.wal import WAL_PENDING_KEY
+from shelfhold.library.public import KEPT_PREFIX, backlog_row, content_error_candidates
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 
 __all__ = [
@@ -35,11 +36,13 @@ __all__ = [
     "collect",
     "command_for",
     "jurisdiction_report",
+    "kept_in_service_report",
     "known_bad_report",
     "queues_of",
     "rights_report",
     "stale_report",
     "tombstoned_report",
+    "wal_pending_report",
 ]
 
 UNKNOWN_LANGUAGE = "x-unknown"  # what an adopted Edition without a language carries
@@ -369,6 +372,28 @@ def rights_report(connection: Connection, today: date) -> list[dict[str, object]
         {"edition_id": r.edition_id, "reason": r.reason}
         for r in RightsService(connection).protected(today)
     ]
+
+
+def kept_in_service_report(connection: Connection) -> list[dict[str, object]]:
+    """The downloads a purge let go of that the service still holds (another account may keep the
+    file, or the answer was ambiguous): the admin deletes them there, then `purge --kept-ack`.
+    Opaque request identifiers only, never a title."""
+    setting = platform.app_setting
+    rows = connection.execute(
+        sa.select(setting.c.key, setting.c.value)
+        .where(setting.c.key.like(KEPT_PREFIX + "%"))
+        .order_by(setting.c.value, setting.c.key)
+    )
+    return [{"request": r.key.removeprefix(KEPT_PREFIX), "since": r.value} for r in rows]
+
+
+def wal_pending_report(connection: Connection) -> list[dict[str, object]]:
+    """An erasure whose log a reader still held (`purge.wal_busy`): to finalise with
+    `shelfhold purge --checkpoint`, or by itself at the next night or start."""
+    value = connection.execute(
+        sa.select(platform.app_setting.c.value).where(platform.app_setting.c.key == WAL_PENDING_KEY)
+    ).scalar()
+    return [] if value is None else [{"since": value}]
 
 
 def known_bad_report(connection: Connection, today: date) -> dict[str, object]:

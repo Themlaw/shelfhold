@@ -93,6 +93,7 @@ from shelfhold.ops.events import BusTargetEvents
 from shelfhold.retention_jobs import register_retention_jobs
 from shelfhold.safeguard_jobs import register_safeguard_job
 from shelfhold.store_jobs import register_store_jobs
+from shelfhold.work_locks import work_holder
 
 __all__ = [
     "APPLY_JOB_KIND",
@@ -185,7 +186,7 @@ class _LazyStore:
         w = self._lazy.get()
         store = PassthroughStore(
             self._comp.engine, w.fsops, w.loaded.locate, self._comp.settings.data_dir,
-            tombstones=w.tombstones,
+            tombstones=w.tombstones, hold_work=work_holder(self._comp),
         )  # fmt: skip
         return store.ingest(**arguments)
 

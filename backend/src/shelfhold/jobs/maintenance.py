@@ -41,6 +41,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.schema import platform
+from shelfhold.infrastructure.wal import settle_pending, truncate_wal
 from shelfhold.jobs.huey_app import JobContext, JobPools
 from shelfhold.jobs.window import MaintenanceWindow, WindowRun
 
@@ -53,6 +54,7 @@ __all__ = [
     "MaintenanceGate",
     "SqliteMaintenance",
     "VacuumReport",
+    "compact_database",
     "register_sqlite_maintenance",
 ]
 
@@ -158,6 +160,23 @@ class MaintenanceGate:
                     os.close(descriptor)
 
 
+def compact_database(database: Path, gate: MaintenanceGate) -> None:
+    """`VACUUM` of one file now, under the exclusive gate, then the log is cut: the free pages of
+    rows deleted before `secure_delete` was on (a title of an earlier purge) are rewritten away.
+    Cost: the whole file is rewritten (about its size in reads and writes, and in free room), and
+    writers wait for it. A gate held (a backup, the nightly VACUUM) is `MaintenanceBusyError`."""
+    with gate.exclusive() as ours:
+        if not ours:
+            raise MaintenanceBusyError("the database is in use by a backup or a VACUUM")
+        connection = sqlite3.connect(database, timeout=VACUUM_WAIT_S, isolation_level=None)
+        try:
+            connection.execute("VACUUM")
+        finally:
+            connection.close()
+        truncate_wal(database, mark_on_failure=True)  # a reader keeps the log: `WalBusyError`
+    log.info("sqlite.compacted", database=database.name)
+
+
 class SpaceCheck(Protocol):
     def has_room_for_vacuum(self, *, database_bytes: int, volume: str) -> bool: ...
 
@@ -236,6 +255,8 @@ class SqliteMaintenance:
             if busy:
                 partial.append(name)
                 log.info("sqlite.checkpoint_partial", database=name)
+            elif name == "main":
+                settle_pending(self._files[name])  # an erasure that waited for the log is done
         return CheckpointReport(len(self._files), partial)
 
     def _last_vacuum(self) -> datetime | None:

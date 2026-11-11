@@ -7725,8 +7725,16 @@
       "code": "precondition_required",
       "status": 428
     },
+    "/api/v1/problems/purge.busy": {
+      "code": "purge.busy",
+      "status": 409
+    },
     "/api/v1/problems/purge.collateral": {
       "code": "purge.collateral",
+      "status": 409
+    },
+    "/api/v1/problems/purge.wal-busy": {
+      "code": "purge.wal_busy",
       "status": 409
     },
     "/api/v1/problems/reauth-required": {

@@ -11,6 +11,7 @@ from shelfhold.infrastructure.schema import acquisition
 from shelfhold.library.public import PassthroughStore, TombstonedContentError
 from tests.follow_env import Bench, follow_bench, new_chapter
 from tests.library_env import LibEnv
+from tests.locks_env import work_lock
 from tests.purge_env import ADMIN, PurgeEnv, make_purge_env
 
 pytestmark = pytest.mark.req("EF-BIB-052", "EF-BIB-053")
@@ -61,6 +62,7 @@ def test_tombstone_blocks_fill_gaps_and_reimport() -> None:
         store = PassthroughStore(
             bench.lib.engine, bench.lib.fsops, bench.lib.locate, bench.lib.data,
             tombstones=purge.tombstones,
+hold_work=work_lock(bench.lib.engine),
         )  # fmt: skip
         other_unit, other_variant = bench.lib.new_unit()
         staged = bench.lib.stage(SYNTHETIC.read_bytes())  # the bytes the fake served for chapter 3

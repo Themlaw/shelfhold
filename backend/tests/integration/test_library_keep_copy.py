@@ -30,6 +30,7 @@ from shelfhold.library.public import (
 )
 from tests.fakes_clock import ManualClock
 from tests.library_env import JPEG, PNG, LibEnv, cbz_bytes, lib_env
+from tests.locks_env import index_lock, work_lock
 from tests.null_tombstones import NONE_PURGED
 
 
@@ -41,6 +42,7 @@ def keeper(env: LibEnv, *, extract: Any = None) -> KeepCopier:
     return KeepCopier(
         env.engine, env.fsops, env.locate, str(env.store), env.data,
         IntentJournal(env.engine, env.fsops), extract=extract,
+hold_work=work_lock(env.engine),
     )  # fmt: skip
 
 
@@ -54,7 +56,10 @@ def prepare(env: LibEnv) -> None:
 
 def ingest(env: LibEnv, data: bytes, unit_id: str, variant_id: str, name: str) -> Path:
     dest = env.manga / "Dr Stone" / name
-    PassthroughStore(env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED).ingest(
+    PassthroughStore(
+        env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED,
+        hold_work=work_lock(env.engine),
+    ).ingest(
         unit_id=unit_id, variant_id=variant_id, staged=env.stage(data), dest=str(dest),
     )  # fmt: skip
     return dest
@@ -334,7 +339,9 @@ def test_store_index_regenerable_and_excludes_tombstoned() -> None:
         for unit_id, _, _ in found:
             copier.keep(unit_id)
         index_path = env.store / "INDEX.jsonl"
-        index = StoreIndex(env.engine, env.fsops, str(env.store), NONE_PURGED)
+        index = StoreIndex(
+            env.engine, env.fsops, str(env.store), NONE_PURGED, hold=index_lock(env.engine)
+        )
         report = index.rewrite()
         assert (report.lines, report.tombstoned, report.rewritten) == (2, 0, True)
         first = index_path.read_bytes()
@@ -347,8 +354,46 @@ def test_store_index_regenerable_and_excludes_tombstoned() -> None:
         index_path.unlink()  # regenerable: lost, it comes back byte for byte
         assert index.rewrite().rewritten and index_path.read_bytes() == first
         banned = sha(found[0][2])
-        gated = StoreIndex(env.engine, env.fsops, str(env.store), Gate(banned))
+        gated = StoreIndex(
+            env.engine, env.fsops, str(env.store), Gate(banned), hold=index_lock(env.engine)
+        )
         report = gated.rewrite()
         assert (report.lines, report.tombstoned) == (1, 1)
         text = index_path.read_text()
         assert found[0][0] not in text and found[1][0] in text  # no line under a tombstone
+
+
+@pytest.mark.req("EF-BIB-052")
+def test_declare_derivative_is_work_busy_while_a_purge_holds_the_work() -> None:
+    """The derivative is written under the Work lock (the one `purge --now` takes): a held Work
+    stops it before /store or /library is touched."""
+    from shelfhold.export.application.locks import ResourceLocks, work_resource
+    from shelfhold.infrastructure.clock import SystemClock
+    from shelfhold.library.adapters.storage import work_of_unit
+    from shelfhold.work_locks import holder_over
+
+    scrambled = cbz_bytes((("001.png", PNG + b"scrambled"), ("002.jpg", JPEG)))
+    derived = cbz_bytes((("001.png", PNG), ("002.jpg", JPEG)))
+    with lib_env() as env:
+        prepare(env)
+        unit = env.chain["unit"]
+        library = ingest(env, scrambled, unit, env.chain["variant"], "Dr Stone - 1.cbz")
+        file = env.stage(derived, "derived.cbz")
+        busy = KeepCopier(
+            env.engine, env.fsops, env.locate, str(env.store), env.data,
+            IntentJournal(env.engine, env.fsops),
+            hold_work=holder_over(env.engine, SystemClock(), wait=0.0),
+        )  # fmt: skip
+        with env.engine.connect() as connection:
+            work_id = work_of_unit(connection, unit)
+        assert work_id is not None
+        with (
+            ResourceLocks(env.engine, clock=SystemClock()).hold_resources(
+                new_ulid(), [work_resource(work_id)]
+            ),
+            pytest.raises(SafeguardFailedError) as refused,
+        ):
+            busy.declare_derivative(unit, file, "descrambler@v1")
+        assert refused.value.reason == "work_busy"
+        assert library.read_bytes() == scrambled  # /library untouched
+        assert env.files_under(env.store) == []  # nothing copied

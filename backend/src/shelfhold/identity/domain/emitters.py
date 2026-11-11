@@ -134,6 +134,13 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/library/adapters/safeguard_job.py::UpstreamPurge.execute": (
             "shelf.purge_upstream"
         ),
+        # `purge --now` (L17): the download of a purged Unit in the connected service, by the deed
+        # of "Mettre à l'abri" (an intent that names the request, one erasure at most, never again
+        # for a deed that was begun). Reached from the purge and from the M1b leftovers plan,
+        # both behind the reserved action `purge.now`.
+        "shelfhold/library/adapters/safeguard_job.py::UpstreamPurge.release_for_purge": (
+            "purge.now"
+        ),
         # The recycle bins past 30 days (ENF-OPS-009): the daily sweep, under an intention; fsops
         # reads the age of the entry from the file system and refuses a younger one.
         f"{_EXPORT_APP}/recycle_sweep.py::RecycleSweeper.sweep": "trash_retention_purge",

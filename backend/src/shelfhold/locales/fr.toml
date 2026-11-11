@@ -269,6 +269,8 @@ yes = "oui"
 no = "non"
 stale_series_line = "Série silencieuse : « {title} » n'a reçu aucun chapitre depuis {silent_days} jours (seuil : {threshold_days} jours). Vérifiez la source ou mettez le suivi en pause."
 irreplaceable_candidate_line = "Candidate irremplaçable : l'unité {unit_id} (source « {source_key} », {errors} erreurs de contenu de suite, copies indépendantes : {independent_copies}). Rien n'est copié ni supprimé pour l'instant."
+wal_pending_line = "Effacement à finaliser depuis {since} : le journal de la base est encore tenu par un lecteur. Lancez « shelfhold purge --checkpoint » (ou arrêtez le serveur)."
+kept_in_service_line = "Téléchargement laissé dans Suwayomi par une purge (demande {request}, depuis {since}) : supprimez-le dans Suwayomi, puis « shelfhold purge --kept-ack »."
 tombstoned_upstream_line = "Série purgée encore présente dans Suwayomi : « {title} ». Shelfhold l'ignore ; retirez-la manuellement dans Suwayomi."
 capabilities_line = "Racine {root} ({filesystem}) : reflink {reflink} ; lien dur vers /store {link} ; inodes stables {inodes}{fallback}"
 capabilities_unprobed = "Racine {root} : capacités non sondées au démarrage ({why}). Elles le seront au prochain démarrage, une fois la racine prête à l'écriture."
@@ -548,6 +550,14 @@ action = "Si une empreinte diffère, un fichier a été modifié et non déplac�
 [errors."purge.collateral"]
 title = "Un fichier de cette Unité porte aussi d'autres Unités : l'effacer les effacerait."
 action = "Effacez toutes les Unités du fichier ensemble, ou gardez-le."
+
+[errors."purge.busy"]
+title = "Un fichier ou une Œuvre à effacer est tenu par un autre travail : rien n'a été effacé."
+action = "Relancez la commande dans un instant, quand le travail en cours (copie, import) sera fini."
+
+[errors."purge.wal_busy"]
+title = "L'effacement est fait, mais le serveur tient encore le journal de la base : il peut garder un titre jusqu'à son prochain vidage."
+action = "Lancez « shelfhold purge --checkpoint » quand le serveur est inactif (ou arrêtez-le) : il ne refait que le vidage du journal. Il l'est aussi chaque nuit et au démarrage."
 
 [errors."pairing.batch_stale"]
 title = "Le lot d'appariements confirmé n'est plus celui qui a été proposé."
@@ -1260,6 +1270,18 @@ needs_confirmation = "Retapez l'identifiant avec --confirm pour effacer."
 done = "{units} Unité(s) concernée(s), {erased} fichier(s) effacé(s)."
 root_pending = "Racine {root} : la pierre tombale lui sera écrite à son retour ; rien d'autre n'y sera écrit avant."
 alert = "À faire à la main : {alert}"
+upstream = "Service : {released} téléchargement(s) libéré(s), {kept} gardé(s) par un autre compte, {unfollowed} série(s) retirée(s) de la bibliothèque."
+retained_backup = "Sauvegarde conservée qui contient encore ces données (à écarter à la main, jamais réécrite) : {name}"
+checkpoint_help = "Refait seulement le vidage du journal de la base, après un effacement dont le journal était tenu."
+checkpoint_done = "Journal vidé : l'effacement est finalisé."
+kept_ack_help = "Efface la marque des téléchargements laissés dans le service (à faire après les avoir supprimés dans Suwayomi)."
+kept_ack_done = "{count} marque(s) effacée(s)."
+leftovers_help = "Propose de libérer, dans le service, les téléchargements laissés par les purges de la version précédente (plan, puis --confirm)."
+leftovers_not_connected = "Aucun service connecté : rien à proposer."
+leftovers_plan = "{downloads} téléchargement(s) encore tenu(s) par le service, {dead} ticket(s) oublié(s) par le service, {series} série(s) purgée(s) encore dans sa bibliothèque. Rien n'a été effacé."
+leftovers_series_unknown = "Le service n'a pas pu lister sa bibliothèque : les séries purgées ne sont pas proposées cette fois."
+leftovers_confirm = "Pour libérer ces téléchargements : shelfhold purge --leftovers --confirm {version}"
+leftovers_done = "{released} téléchargement(s) libéré(s), {forgotten} ticket(s) oublié(s), {unfollowed} série(s) retirée(s) de la bibliothèque."
 out_of_reach = "Hors de portée d'un effacement :"
 out_of_reach_item = "  - {item}"
 

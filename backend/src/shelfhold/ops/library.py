@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from collections.abc import Callable
+import sqlite3
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
@@ -38,6 +42,8 @@ from shelfhold.export.application.coverage import (
     flag_unknown_coverage,
     set_volume_coverage,
 )
+from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.locks import LockBusyError
 from shelfhold.export.application.migration_detect import (
     STEPS,
     SwitchoverDetector,
@@ -50,6 +56,7 @@ from shelfhold.export.application.pairing import (
     PairingResult,
     Proposal,
 )
+from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.purge import (
     PurgeCollateralError,
@@ -58,6 +65,7 @@ from shelfhold.export.application.purge import (
     PurgeService,
     PurgeUnknownError,
 )
+from shelfhold.export.application.purge_leftovers import PurgeLeftovers
 from shelfhold.export.application.repatriate import (
     RepatriationBlockedError,
     RepatriationCheck,
@@ -84,14 +92,27 @@ from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.series import refresh_names
-from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
+from shelfhold.identity.public import (
+    RESERVED_ACTIONS,
+    Allowed,
+    AuditEntry,
+    Principal,
+    audit_insert,
+    authorize_reserved,
+)
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export, identity
-from shelfhold.library.public import ConfirmationRequiredError
+from shelfhold.infrastructure.schema import export, identity, platform
+from shelfhold.infrastructure.wal import WalBusyError, truncate_wal
+from shelfhold.jobs.maintenance import MaintenanceBusyError, MaintenanceGate, compact_database
+from shelfhold.library.public import KEPT_PREFIX, ConfirmationRequiredError
+from shelfhold.ops.backup.report import retained_since
+from shelfhold.ops.backup.scratch import sweep_orphans
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
+from shelfhold.purge_upstream import connected_upstream
 from shelfhold.sdk.refs import SeriesRef
+from shelfhold.work_locks import index_holder
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition, WriteContext
@@ -206,6 +227,9 @@ OWN_CODES = frozenset({"pairing", "repatriate", "backfill", "instance"})
 _CODED: tuple[tuple[type[Exception], str], ...] = (
     (PurgeUnknownError, "ops.unknown_subject"),
     (PurgeCollateralError, "purge.collateral"),
+    (WalBusyError, "purge.wal_busy"),
+    (LockBusyError, "purge.busy"),
+    (MaintenanceBusyError, "purge.busy"),
     (ConfirmationRequiredError, "unit.confirmation_required"),
     (PurgeRefusedError, "forbidden"),
     (SwitchoverIncompleteError, "pairing.switchover_unconfirmed"),
@@ -217,6 +241,10 @@ _CODED: tuple[tuple[type[Exception], str], ...] = (
 
 def refusal_of(error: Exception) -> OpsError | None:
     """The refusal that stands for a service's exception, or None when it is a real failure."""
+    if isinstance(error, sa.exc.OperationalError | sqlite3.OperationalError) and (
+        "locked" in str(error).lower()
+    ):  # the database is held by another writer: ask again in a moment
+        return CodedRefusal("purge.busy", "database is locked")
     if isinstance(error, RootBlockedError):  # the exit command is in the message and the catalog
         frozen = error.state is RootState.RESTORED_BEHIND
         code = "instance.restored_behind" if frozen else "root.blocked"
@@ -791,11 +819,27 @@ class LibraryOps:
     def purge(
         self, *, kind: str, anchor_id: str, typed: str | None, principal: Principal
     ) -> dict[str, Any]:
-        with self._comp.write_context() as w:
+        settings = self._comp.settings
+        backups = None
+        if settings.backup_dir is not None:
+            folder, engine = settings.backup_dir, self._comp.engine
+
+            def backups(since: datetime) -> list[tuple[str, datetime]]:
+                sweep_orphans(settings.data_dir)  # a dead run's snapshot (the titles) is not listed
+                return retained_since(engine, folder, since)
+
+        with (
+            self._comp.write_context() as w,
+            connected_upstream(
+                self._comp, w.fsops,
+                IntentJournal(self._comp.engine, w.fsops, clock=self._comp.clock),
+            ) as upstream,
+        ):  # fmt: skip
             service = PurgeService(
                 self._comp.engine, w.fsops, w.tombstones, clock=self._comp.clock,
-                data_dir=self._comp.settings.data_dir, bus=w.bus,
-                fresh_auth_s=self._comp.settings.fresh_auth_s,
+                data_dir=settings.data_dir, bus=w.bus, fresh_auth_s=settings.fresh_auth_s,
+                store_dir=settings.store_dir, upstream=upstream, backups=backups,
+                index_lock=index_holder(self._comp),
             )  # fmt: skip
             run = service.purge_work if kind == "work" else service.purge_unit
             report: PurgeReport = run(
@@ -810,9 +854,110 @@ class LibraryOps:
             "pending_roots": list(report.pending_roots),
             "refused": [vars(r) if hasattr(r, "__dict__") else str(r) for r in report.refused],
             "closed_tickets": report.closed_tickets,
+            "upstream_released": report.upstream_released,
+            "upstream_kept_by_others": report.upstream_kept_by_others,
+            "unfollowed": report.unfollowed,
+            "retained_backups": [
+                {"name": b.name, "taken_at": b.taken_at.isoformat()}
+                for b in report.retained_backups
+            ],
             "alerts": list(report.alerts),
             "out_of_reach": list(report.out_of_reach),
         }
+
+    # -- what the purges of M1a left in the service (L17): a plan, then a confirmation ------------
+
+    @_refused
+    def kept_ack(self, *, principal: Principal) -> dict[str, Any]:
+        """The admin deleted in the service what a purge left there: the marks `status` shows go.
+        A reserved action (the marks are the only reminder), with its trace in the audit log."""
+        now = self._comp.clock.now()
+        verdict = authorize_reserved(
+            principal, RESERVED_ACTIONS["purge.now"], now=now,
+            fresh_auth_s=self._comp.settings.fresh_auth_s,
+        )  # fmt: skip
+        if not isinstance(verdict, Allowed):
+            raise CodedRefusal("forbidden", type(verdict).__name__)
+        setting = platform.app_setting
+        with self._comp.engine.begin() as connection:
+            count = connection.execute(
+                sa.delete(setting).where(setting.c.key.like(KEPT_PREFIX + "%"))
+            ).rowcount
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=principal.actor_id, action="purge.kept_acknowledged", at=now,
+                        target=f"requests:{count}",
+                    )
+                )
+            )  # fmt: skip
+        return {"cleared": count}
+
+    @_refused
+    def settle_log(self) -> dict[str, Any]:
+        """Only the emptying of the log, after a `purge.wal_busy`: no purge is run again."""
+        truncate_wal(Path(str(self._comp.engine.url.database)))
+        return {"done": True}
+
+    @_refused
+    def leftovers_plan(self) -> dict[str, Any]:
+        """Read only. The migration to M1b offers; it never applies by itself."""
+        with self._leftovers() as leftovers:
+            if leftovers is None:
+                return {"connected": False, "downloads": [], "dead_tickets": [], "unknown": 0,
+                        "series": [], "series_unknown": False, "version": ""}  # fmt: skip
+            plan = leftovers.plan()
+        return {
+            "connected": True,
+            "downloads": [i.request_id for i in plan.downloads],
+            "dead_tickets": [i.request_id for i in plan.dead_tickets],
+            "unknown": plan.unknown,
+            "series": [i.request_id for i in plan.series],
+            "series_unknown": plan.series_unknown,
+            "version": plan.version,
+        }
+
+    @_refused
+    def leftovers_apply(self, *, if_match: str, principal: Principal) -> dict[str, Any]:
+        with self._leftovers() as leftovers:
+            if leftovers is None:
+                raise CodedRefusal("source.not_connected", "no connected service")
+            try:
+                report = leftovers.apply(
+                    if_match=if_match, principal=principal, now=self._comp.clock.now()
+                )
+            except StalePlanError as error:
+                raise CodedRefusal("plan.stale", str(error)) from None
+            except PermissionError:
+                raise CodedRefusal("forbidden", "a fresh admin session is needed") from None
+        return {
+            "released": report.released,
+            "kept_by_other_account": report.kept_by_other_account,
+            "forgotten": report.forgotten,
+            "unsettled": report.unsettled,
+            "unfollowed": report.unfollowed,
+        }
+
+    @contextmanager
+    def _leftovers(self) -> Iterator[PurgeLeftovers | None]:
+        settings = self._comp.settings
+        with (
+            self._comp.write_context() as w,
+            connected_upstream(
+                self._comp, w.fsops,
+                IntentJournal(self._comp.engine, w.fsops, clock=self._comp.clock),
+            ) as upstream,
+        ):  # fmt: skip
+            yield (
+                None if upstream is None else PurgeLeftovers(
+                    self._comp.engine, upstream, clock=self._comp.clock,
+                    fresh_auth_s=settings.fresh_auth_s, tombstones=w.tombstones,
+                    compact=lambda: compact_database(
+                        Path(str(self._comp.engine.url.database)),
+                        MaintenanceGate(settings.data_dir / ".maintenance.lock"),
+                    ),
+                )
+            )  # fmt: skip
 
     # -- the removal plan of the family shelves (L10, EF-BIB-037) --------------------------------
 

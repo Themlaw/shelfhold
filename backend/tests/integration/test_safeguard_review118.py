@@ -20,6 +20,7 @@ from shelfhold.library.public import PassthroughStore
 from shelfhold.sdk.connected import ReleaseResult
 from tests.integration.test_schema_catalog import add_variant
 from tests.library_env import JPEG, PNG, cbz_bytes, lib_env
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 from tests.safeguard_env import World
 
@@ -80,7 +81,14 @@ def second_content(world: World, first: Any) -> tuple[Path, bytes]:
         variant_b = add_variant(c, first.unit_id, env.chain["binding"], "ch-1-teamB")
     data_b = cbz_bytes((("001.png", PNG + b"teamB"), ("002.jpg", JPEG + b"B")))
     dest_b = env.manga / "Dr Stone" / "Dr Stone - 1 (B).cbz"
-    PassthroughStore(env.engine, env.fsops, env.locate, env.data, tombstones=NONE_PURGED).ingest(
+    PassthroughStore(
+        env.engine,
+        env.fsops,
+        env.locate,
+        env.data,
+        tombstones=NONE_PURGED,
+        hold_work=work_lock(env.engine),
+    ).ingest(
         unit_id=first.unit_id, variant_id=variant_b, staged=env.stage(data_b), dest=str(dest_b)
     )
     with env.engine.begin() as c:
@@ -160,12 +168,13 @@ def test_a_release_that_was_sent_is_never_sent_again_after_a_lost_answer() -> No
         first = sweep(world)
         assert first.failed == 1 and world.upstream.calls == [item.ticket]
         assert [i.state for i in world.intents()] == ["applying"]
-        for _ in range(2):  # the next sweeps, with the same answer: ambiguous, left to the admin
-            again = sweep(world)
-            assert again.handed_to_admin == 1 and again.purged == 0
+        again = sweep(world)  # ambiguous (not sent, or another account keeps the file)
+        assert again.handed_to_admin == 1 and again.purged == 0
+        assert world.ticket_of(item) is None  # the claim goes with the intent: nothing asks again
+        assert [i.state for i in world.intents()] == ["done"]
+        for _ in range(2):
+            assert sweep(world).handed_to_admin == 0
         assert world.upstream.calls == [item.ticket]  # one DELETE, ever
-        assert world.ticket_of(item) == item.ticket
-        assert [i.state for i in world.intents()] == ["applying"]  # `intents list` shows it
 
 
 def test_a_release_that_landed_is_settled_by_asking_even_without_the_store_copy() -> None:
