@@ -335,7 +335,7 @@ Ces lots n'avaient pas de section : ce qui suit reprend leurs descriptions de PR
 L28 n'est **pas** fusionné : elle attend le jeton du second registre (D4, Codeberg), que le porteur doit fournir. Elle porte ENF-GOV-004 (workflow `publish-mirror`, image sur les deux registres, `test_update_check_failure_is_silent`), la politique de tags et les notes de version « migration oui/non, réversible » d'ENF-OPS-008, et le volet reporté d'ENF-OPS-002. Conséquences assumées pour la 0.3.0 :
 
 - l'image est publiée sur GHCR seulement ; les attestations et le SBOM (L27) y sont ;
-- la matrice de traçabilité de M1b affiche **63/64** : ENF-GOV-004 est la seule exigence sans test ;
+- ENF-GOV-004 est **reportée en M2** (accord du porteur 2026-11-11) : elle quitte la liste de M1b dans le cahier des charges et la feuille de route, et la matrice de M1b est à 63/63 ; une entrée `[[deferred]]` de `traceability-exceptions.toml` garde la trace ;
 - le compose d'exemple et la documentation ne citent qu'un nom d'image.
 
 Le CHANGELOG et la documentation l'annoncent « à venir » ; rien ne bloque la 0.3.0 là-dessus, hors décision du porteur.
@@ -403,8 +403,14 @@ Décisions prises par délégation, sous une forme à relire ; chacune se défai
 Ce lot ne contient **pas de migration** et ne change aucune route.
 
 1. **Documentation d'administration de M1b**, relue contre le code et `shelfhold --help` (chaque commande citée dans `docs/admin` est vérifiée, par un contrôle en processus, contre l'arbre de commandes réel : sous-commandes et options). Nouvelles pages : `roles.md`, `famille.md`, `a-classer.md`, `suwayomi-multi-comptes.md`. Pages complétées : `controle-parental.md`, `purge.md` (`--checkpoint`, `--leftovers`, `--kept-ack`), `copie-conservee.md` (« Mettre à l'abri », purge amont), `retour-arriere.md` (retour à la 0.2.0, service complet), `restauration.md`, `reveil-sablier.md`, `etats-attente-et-sorties.md`, `durcir.md`, `topologie-racines-physiques.md`, `configuration.md`. Aucun chemin, hôte ni adresse réels : exemples génériques.
-2. **Traçabilité.** `tools/traceability.py --milestone M1b` : 63/64 exigences couvertes, aucun test orphelin, aucun identifiant inconnu. La seule exigence sans test est ENF-GOV-004, qui dépend de L28 (voir plus haut). Le contrôle manuel des exigences du §1 du plan et des volets M1b reste à faire par le contradicteur.
+2. **Traçabilité.** `tools/traceability.py --milestone M1b` : toutes les exigences couvertes (63/63 après le report d'ENF-GOV-004 en M2), aucun test orphelin, aucun identifiant inconnu. Le contrôle manuel des exigences du §1 du plan et des volets M1b reste à faire par le contradicteur.
 3. **Compose d'exemple.** Il reste sur la ligne `0.2` jusqu'à la publication de la 0.3.0 (changer l'étiquette avant que l'image existe casserait l'installation) ; le passage à `0.3` fait partie du commit de release.
+
+## Décisions du porteur du 2026-11-11
+
+1. **v0.3.0 = `main`**, section « Avant-première M2 » dans le CHANGELOG ; ces fonctions n'ont pas eu leur revue de jalon. La source OPDS (#149, L22 de M2) n'en fait partie que si elle est fusionnée au moment du tag.
+2. **ENF-GOV-004 reportée en M2** : « second registre livré avec un lot M2 ». Elle est déplacée de M1b à M2 dans `docs/spec/01` et `docs/spec/03`, et inscrite en `[[deferred]]` dans `tools/traceability-exceptions.toml`. Réponse à B4 et à P1 : la 0.3.0 est publiée sur GHCR seulement.
+3. **P2 et P3 tranchées : une authentification de moins de 900 s est exigée pour enregistrer une passkey et pour classer une Œuvre, dans tous les profils** (`SHELFHOLD_FRESH_AUTH_S`). Cela remplace « aucune fraîcheur par défaut » pour ces deux actions (EF-USR-022, M1b) et ferme le point 1 des points à valider (session volée qui ajoute une passkey). Le code est fait dans une autre PR ; la documentation (`roles.md`, `passkeys.md`, `a-classer.md`, `durcir.md`) suit cette décision. Révoquer une passkey, démasquer et gérer les clés gardent la règle d'avant (fraîcheur en profil durci seulement).
 
 ## Contradicteur (Opus)
 

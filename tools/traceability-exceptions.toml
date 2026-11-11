@@ -96,3 +96,8 @@ reason = "garde de l'hygiène des fixtures (aucun dossier laissé dans /tmp) : p
 [[exception]]
 path = "backend/tests/unit/test_sdk_export_target.py"
 reason = "dépréciations du contrat SDK ExportTarget (D9, M1b L31) : le contrat reste lisible, ce n'est pas une exigence EF-/ENF-"
+
+[[deferred]]
+requirement = "ENF-GOV-004"
+aspect = "second registre d'images, miroir du dépôt, vérificateur de mises à jour non bloquant"
+reason = "accord du porteur 2026-11-11, second registre livré avec un lot M2"

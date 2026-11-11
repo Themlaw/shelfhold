@@ -47,8 +47,10 @@ répond « Connexion requise » : connectez-vous d'abord. Classer une Édition s
 ## Droits
 
 Classer est une action réservée à l'administrateur : une clé d'API ou un jeton est refusé (403). Elle
-n'exige **pas** de mot de passe récent, sauf en profil durci ([durcir.md](durcir.md)), où un 401
-`reauth-required` ouvre la ré-authentification sur place, puis rejoue la même action. Voir
+exige un mot de passe (ou une passkey) saisi il y a moins de 900 s (`SHELFHOLD_FRESH_AUTH_S`), **dans tous
+les profils** : sinon un 401 `reauth-required` ouvre la ré-authentification sur place, puis rejoue la même
+action. Le classement par lot et `shelfhold rate` en ligne de commande suivent la même règle (la console de
+l'hôte est exemptée). Voir
 [roles.md](roles.md).
 
 ## Après un classement

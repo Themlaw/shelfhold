@@ -47,7 +47,7 @@ Migrations de M2 que l'image taggée depuis `main` applique aussi (voir « Avant
 
 Le code de M2 déjà fusionné sur `main` est joignable dans l'image de la 0.3.0. **Ces fonctions n'ont pas encore eu leur revue de jalon** : considérez-les comme une avant-première, sans garantie de stabilité.
 
-- Sources natives : Project Gutenberg (catalogue officiel et miroir, jamais le site) et OPDS, ajoutables par `shelfhold source add`.
+- Sources natives : Project Gutenberg (catalogue officiel et miroir, jamais le site), ajoutable par `shelfhold source add`. (La source OPDS n'est pas fusionnée : elle ne figure ici que si elle l'est au moment du tag.)
 - Suivi multi-sources (liaisons classées, une demande par Unité et par cycle, repli notifié), filtres de téléchargement avant la demande, détection des trous de numérotation.
 - Dossier d'import (EPUB non fiables neutralisés, PDF protégés refusés).
 - Purge de portée `work` (`shelfhold purge --work`, avec pierres tombales d'Œuvre).
@@ -72,15 +72,15 @@ Le code de M2 déjà fusionné sur `main` est joignable dans l'image de la 0.3.0
 
 ### Sécurité
 
+- Classer une Œuvre et enregistrer une passkey exigent une authentification de moins de 900 s dans tous les profils (décision du porteur du 2026-11-11).
 - Les actions réservées sont refusées à toute clé d'API et à tout jeton, portée `admin` comprise ; la table complète est publiée par `shelfhold access-table`.
 - Une restauration ne rend plus valides une session fermée, une clé révoquée ni un mot de passe réinitialisé depuis la sauvegarde.
 - Les plugins tiers ne peuvent plus être chargés sans l'accord explicite et vérifié de l'administrateur.
 
 ### Connu
 
-- **Le second registre d'images et le miroir du dépôt sont à venir** (ENF-GOV-004, L28) : en attente du jeton du second registre. La 0.3.0 est publiée sur GHCR seulement ; ENF-GOV-004 est la seule exigence de M1b sans test.
+- **Le second registre d'images et le miroir du dépôt sont à venir** (ENF-GOV-004) : reportés en M2 (accord du porteur 2026-11-11). La 0.3.0 est publiée sur GHCR seulement.
 - Sur le Suwayomi épinglé, `excludeUnreadChapters` et `excludeNotStarted` sont activés par défaut : `source add` est refusé tant qu'ils ne sont pas désactivés (`docs/admin/suwayomi-multi-comptes.md`).
-- Sans passkey ni mot de passe récent hors profil durci, une session volée peut enregistrer une passkey (`docs/decisions/M1b.md`, point 1 des points à valider).
 - Une étagère en mode conservation créée par `POST /api/v1/shelves` n'est pas liée à une bibliothèque Kavita : la lier par la CLI.
 - Certains chemins du journal structuré (`fsops.write_atomic`, `export.op_done`) contiennent encore le titre.
 - Les migrations M2 listées plus haut ne font pas partie des exigences de M1b.

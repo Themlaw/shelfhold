@@ -58,15 +58,18 @@ plus `SHELFHOLD_FRESH_AUTH_S` secondes (900 par défaut), sinon 401 `reauth-requ
 - `shelf purge-upstream`, `intents resolve`, `normalize migrate`, les révisions (`revisions apply|force`),
   fusionner des Éditions, accepter le risque d'un Kavita ouvert (`--accept-admin-risk`).
 
-**Sans mot de passe récent**, l'admin peut : classer (`rate`), démasquer une demande, créer, faire tourner ou
-révoquer une clé d'API ou un jeton, enregistrer ou révoquer une passkey, attester un plugin.
+**Classer** (`rate`) et **enregistrer une passkey** exigent la même fraîcheur, **dans tous les profils**
+(décision du porteur du 2026-11-11) : sans mot de passe ou passkey récents, 401 `reauth-required`.
+
+**Sans mot de passe récent** (hors profil durci), l'admin peut : démasquer une demande, créer, faire
+tourner ou révoquer une clé d'API ou un jeton, révoquer une passkey, attester un plugin.
 
 **Le contrôle parental** (`shelf create` avec plafond, plafond d'âge, profils autorisés, correspondance
 des profils, `target recheck` d'une exposition d'enfant, retrait d'une étagère famille) n'exige un mot de
 passe récent que **si un profil restreint existe**.
 
 **Le profil durci** ([durcir.md](durcir.md)) exige la fraîcheur pour toute action réservée, classer et
-gérer les clés ou les passkeys compris.
+gérer les clés ou révoquer une passkey compris.
 
 `shelfhold restore acknowledge` ne se fait que depuis la CLI de l'hôte : ni session, ni clé, jamais par
 HTTP ([restauration.md](restauration.md)).
