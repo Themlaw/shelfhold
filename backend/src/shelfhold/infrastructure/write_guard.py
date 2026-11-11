@@ -66,10 +66,19 @@ EXEMPT_TABLES: Final[dict[str, str]] = {
     "work_title": _CATALOG,
 }  # fmt: skip
 
+_NAME: Final = r"""(?:["`\[]?\w+["`\]]?\s*\.\s*)?["`\[]?(\w+)"""  # `main.unit_variant` too
 _WRITE: Final = re.compile(
-    r"""^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE(?:\s+OR\s+\w+)?)\s+["`\[]?(\w+)""",
+    rf"^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE(?:\s+OR\s+\w+)?)\s+{_NAME}",
     re.IGNORECASE,
 )
+# `-- ...` and `/* ... */`, outside of a quoted literal (a comment before the verb hid the write)
+_COMMENTS: Final = re.compile(r"""('(?:[^']|'')*'|"(?:[^"]|"")*")|--[^\n]*|/\*.*?\*/""", re.DOTALL)
+
+
+def _without_comments(statement: str) -> str:
+    if "--" not in statement and "/*" not in statement:
+        return statement
+    return _COMMENTS.sub(lambda m: m.group(1) or " ", statement)
 
 
 _MAX_JSON: Final = 1 << 20
@@ -98,7 +107,7 @@ def _strings(value: Any, depth: int = 0) -> list[str]:
 
 _CTE: Final = re.compile(r"^\s*WITH\b", re.IGNORECASE)
 _WRITE_ANYWHERE: Final = re.compile(
-    r"""\b(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE)\s+["`\[]?(\w+)""", re.IGNORECASE
+    rf"\b(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE)\s+{_NAME}", re.IGNORECASE
 )
 
 
@@ -114,13 +123,16 @@ def _written(statement: str) -> list[str]:
 
 def check_write(statement: str, parameters: Any, *, many: bool) -> None:
     """Raise `SecretInWriteError` when a guarded table is written with a registered secret."""
-    if not parameters:
-        return
+    statement = _without_comments(statement)
     tables = [t for t in _written(statement) if t not in EXEMPT_TABLES]
     if not tables:
         return
     known = known_secret_index()
     if not known:
+        return
+    if contains_secret(statement, known):  # a value written into the SQL text itself
+        raise SecretInWriteError(tables[0])
+    if not parameters:
         return
     rows: Sequence[Any] = parameters if many else [parameters]
     for row in rows:

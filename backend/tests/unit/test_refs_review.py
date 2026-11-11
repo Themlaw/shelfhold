@@ -129,3 +129,39 @@ def test_a_ref_with_a_secret_is_a_content_error_and_a_published_event() -> None:
         asyncio.run(from_service(refuse()))
     assert caught.value.code == "source.ref_has_secret" in OPERATING_EVENTS
     assert disposition_of(classify(caught.value)) is Disposition.COUNT
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "/* note */ INSERT INTO unit_variant (id, remote_unit_id) VALUES (?, ?)",
+        "-- note\nINSERT INTO unit_variant (id, remote_unit_id) VALUES (?, ?)",
+        "/* a */ /* b */ UPDATE unit_variant SET remote_unit_id = ? WHERE id = ?",
+        "INSERT INTO main.unit_variant (id, remote_unit_id) VALUES (?, ?)",
+        'INSERT INTO "main"."unit_variant" (id, remote_unit_id) VALUES (?, ?)',
+        "WITH x AS (SELECT 1) /* c */ INSERT INTO unit_variant (id, remote_unit_id) VALUES (?, ?)",
+    ],
+)
+def test_the_write_guard_reads_through_comments_and_schema_prefixes(statement: str) -> None:
+    from shelfhold.infrastructure.logging import register_secret_value
+    from shelfhold.infrastructure.write_guard import SecretInWriteError, check_write
+
+    key = synthetic_text("review-d")[:16]
+    register_secret_value(key)
+    with pytest.raises(SecretInWriteError):
+        check_write(statement, ("a", f"/x/{key}"), many=False)
+
+
+def test_the_write_guard_sees_a_value_written_into_the_sql_text() -> None:
+    from shelfhold.infrastructure.logging import register_secret_value
+    from shelfhold.infrastructure.write_guard import SecretInWriteError, check_write
+
+    key = synthetic_text("review-e")[:16]
+    register_secret_value(key)
+    with pytest.raises(SecretInWriteError):
+        check_write(
+            "INSERT INTO unit_variant (id, remote_unit_id) VALUES ('a', '/x/" + key + "')",
+            (),
+            many=False,
+        )
+    check_write("INSERT INTO unit_variant (id) VALUES ('a') -- /* ok */", (), many=False)
