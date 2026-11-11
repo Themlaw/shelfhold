@@ -9,6 +9,8 @@ volume's `export_item`, so that presence (I20) skips them: `backfill --gaps` ask
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Final
@@ -25,8 +27,10 @@ __all__ = [
     "AdoptedVolume",
     "CoverageError",
     "adopted_volumes",
+    "apply_comicinfo_range",
     "attach_chapter",
     "attach_to_volume",
+    "comicinfo_range",
     "flag_unknown_coverage",
     "has_chapter_files",
     "set_volume_coverage",
@@ -197,8 +201,9 @@ def attach_chapter(
 
 
 def set_volume_coverage(
-    connection: Connection, edition_id: str, volume: str, first: str, last: str
-) -> int:
+    connection: Connection, edition_id: str, volume: str, first: str, last: str,
+    *, origin: str = "manual",
+) -> int:  # fmt: skip
     """Chapters `first` to `last` (whole numbers) are what the adopted volume `volume` holds.
     Returns the number of chapters newly put under it."""
     try:
@@ -225,8 +230,34 @@ def set_volume_coverage(
     added = 0
     for number in range(low, high + 1):
         unit_id = _chapter_unit(connection, edition_id, str(number))
-        added += attach_chapter(connection, target.export_item_id, unit_id, origin="manual")
+        added += attach_chapter(connection, target.export_item_id, unit_id, origin=origin)
     return added
+
+
+_RANGE: Final = re.compile(r"(\d{1,7})\s*[-\u2013]\s*(\d{1,7})")
+
+
+def comicinfo_range(info: Mapping[str, str]) -> tuple[str, str, str] | None:
+    """`(volume, first, last)` from the ComicInfo of an adopted volume: `Volume` is the volume's
+    number and `Number` the chapters it holds, as a range (`41-50`). Anything else says nothing
+    (the range is then asked of the admin, never guessed)."""
+    wanted = volume_number_of(f"vol {info.get('Volume', '')}")
+    found = _RANGE.fullmatch(info.get("Number", "").strip())
+    if wanted is None or found is None:
+        return None
+    first, last = found.groups()
+    if int(last) < int(first):
+        return None
+    return wanted, first, last
+
+
+def apply_comicinfo_range(connection: Connection, edition_id: str, info: Mapping[str, str]) -> int:
+    """Put the chapters a ComicInfo names under its adopted volume (origin `comicinfo`). Returns
+    the number of chapters newly put there; 0 when the ComicInfo names no range."""
+    named = comicinfo_range(info)
+    if named is None:
+        return 0
+    return set_volume_coverage(connection, edition_id, *named, origin="comicinfo")
 
 
 def attach_to_volume(connection: Connection, edition_id: str, unit_id: str, label: str) -> bool:

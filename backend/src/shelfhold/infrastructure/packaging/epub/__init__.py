@@ -13,6 +13,7 @@ from shelfhold.infrastructure.packaging.epub.opf import (
     find_opf_path,
     rewrite_opf,
 )
+from shelfhold.infrastructure.packaging.epub.toc import Toc, TocChapter, TocError, read_toc
 from shelfhold.infrastructure.packaging.epub.writer import RepackagedEpub, repackage_epub
 
 __all__ = [
@@ -20,7 +21,11 @@ __all__ = [
     "OpfError",
     "OpfRewrite",
     "RepackagedEpub",
+    "Toc",
+    "TocChapter",
+    "TocError",
     "find_opf_path",
+    "read_toc",
     "repackage_epub",
     "rewrite_opf",
 ]

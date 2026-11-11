@@ -316,7 +316,9 @@ def read_comicinfo(fsops: Fsops, local: str) -> dict[str, str]:
         root = safe_parse_xml(raw)
     except (UnsafeArchiveError, UnsafeXmlError, KeyError, OSError):
         return {}
-    wanted = ("Series", "LocalizedSeries", "SeriesSort", "LanguageISO", "Number", "AgeRating")
+    wanted = (
+        "Series", "LocalizedSeries", "SeriesSort", "LanguageISO", "Number", "Volume", "AgeRating",
+    )  # fmt: skip
     return {tag: value for tag in wanted if (value := _text(root, tag))}
 
 
