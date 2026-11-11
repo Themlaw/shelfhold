@@ -11,6 +11,8 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.export.application.locks import work_lock_for
+from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.content_trust import find_active_content
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.public import (
@@ -78,6 +80,7 @@ def test_a_file_above_the_bound_is_refused_before_it_is_opened() -> None:
         small = UntrustedEpubStore(
             env.engine, env.fsops, env.locate, env.data, store_dir=str(env.store),
             tombstones=Purged(), max_received_bytes=10,
+            hold_work=work_lock_for(env.engine, clock=SystemClock()),
         )  # fmt: skip
         with pytest.raises(ReceivedTooLargeError):
             small.ingest(
@@ -286,3 +289,83 @@ def test_unused_content_row_is_untouched_by_a_failed_ingest() -> None:
                 dest=dest,
             )
         assert content_row(env) == before
+
+
+# -- the Work lock: a purge and a write of the same Work never interleave (EF-BIB-052) ------------
+
+
+def _purge_holding(env: Any) -> Any:
+    """What `purge --now` does first: it holds the lock of the Work it is about to erase."""
+    from shelfhold.export.application.locks import ResourceLocks, work_resource
+    from shelfhold.infrastructure.ids import new_ulid
+
+    return ResourceLocks(env.engine, clock=SystemClock()).hold_resources(
+        new_ulid(), [work_resource(env.chain["work"])]
+    )
+
+
+def test_ingest_waits_for_a_purge_of_the_same_work_and_writes_nothing() -> None:
+    from shelfhold.export.application.locks import LockBusyError
+
+    with lib_env() as env:
+        dest, staged = file_in(env, TRAPPED)
+        with _purge_holding(env), pytest.raises(LockBusyError):
+            store(env).ingest(
+                unit_id=env.chain["unit"],
+                variant_id=env.chain["variant"],
+                staged=staged,
+                dest=dest,
+            )
+        assert not Path(dest).exists() and env.files_under(env.store) == []  # no orphan copy
+        with env.engine.connect() as c:
+            assert (
+                c.execute(sa.select(sa.func.count()).select_from(storage.content)).scalar_one() == 0
+            )
+        ingest(env)  # the purge is over: the same ingest goes through
+        assert len(env.files_under(env.store)) == 1
+
+
+def test_regenerate_waits_for_a_purge_of_the_same_work_and_replaces_nothing() -> None:
+    from shelfhold.export.application.locks import LockBusyError
+
+    with lib_env() as env:
+        _result, library = ingest(env)
+        before = (library.read_bytes(), library.stat().st_ino)
+        with _purge_holding(env), pytest.raises(LockBusyError):
+            store(env).regenerate(env.chain["unit"])
+        assert (library.read_bytes(), library.stat().st_ino) == before
+        store(env).regenerate(env.chain["unit"])  # after the purge's lock is released
+
+
+def test_restore_from_destination_waits_for_a_purge_too() -> None:
+    from shelfhold.export.application.locks import LockBusyError
+
+    with lib_env() as env:
+        dest, staged = file_in(env, CLEAN)
+        with _purge_holding(env), pytest.raises(LockBusyError):
+            store(env).restore_from_destination(
+                unit_id=env.chain["unit"],
+                variant_id=env.chain["variant"],
+                found=staged,
+                dest=dest,
+                expected_derived_hash=sha(b"x"),
+                derived_by="xhtml-neutralizer@v1",
+            )
+        assert not Path(dest).exists()
+
+
+def test_the_store_cannot_be_built_without_the_work_lock() -> None:
+    with lib_env() as env, pytest.raises(TypeError):
+        UntrustedEpubStore(  # type: ignore[call-arg]
+            env.engine,
+            env.fsops,
+            env.locate,
+            env.data,
+            store_dir=str(env.store),
+            tombstones=Purged(),
+        )
+
+
+def test_a_regeneration_of_an_unknown_unit_is_blocked() -> None:
+    with lib_env() as env, pytest.raises(RegenerationBlockedError):
+        store(env).regenerate("0" * 26)

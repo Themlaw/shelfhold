@@ -21,7 +21,9 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.archives import safe_open_archive
+from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.content_trust import DERIVED_BY, epub_payload_hash, neutralize_epub
 from shelfhold.infrastructure.schema import catalog, storage
 from shelfhold.library.public import (
@@ -58,6 +60,7 @@ def store(env: LibEnv, *, with_store: bool = True, tombstones: Any = NONE_PURGED
     return UntrustedEpubStore(
         env.engine, env.fsops, env.locate, env.data,
         store_dir=str(env.store) if with_store else None, tombstones=tombstones,
+        hold_work=work_lock_for(env.engine, clock=SystemClock(), timeout=0.0),
     )  # fmt: skip
 
 

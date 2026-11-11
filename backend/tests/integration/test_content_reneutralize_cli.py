@@ -15,6 +15,7 @@ import sqlalchemy as sa
 import shelfhold.runtime_jobs as rj
 from shelfhold.config import Settings
 from shelfhold.events.waiting_state import WaitingState  # noqa: F401  (the catalogue is loaded)
+from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.application.pipeline import SourceMissingError
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.content_trust import DERIVED_BY
@@ -52,6 +53,7 @@ def add_epub(env: Seeded, data: bytes = TRAPPED) -> tuple[str, Path]:
             env.inst.engine, w.fsops, w.loaded.locate, env.inst.settings.data_dir,
             store_dir=store_dir if any(e.path == store_dir for e in w.loaded.expected) else None,
             tombstones=w.tombstones,
+            hold_work=work_lock_for(env.inst.engine, clock=env.inst.comp.clock),
         ).ingest(unit_id=unit, variant_id=variant, staged=staged, dest=str(dest))  # fmt: skip
     with env.inst.engine.begin() as connection:
         connection.execute(

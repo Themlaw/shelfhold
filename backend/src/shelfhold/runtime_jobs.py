@@ -50,6 +50,7 @@ from shelfhold.composition import (
 )
 from shelfhold.export.application import blocked_memo
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
 from shelfhold.export.application.pipeline import (
     ExportPipeline,
@@ -190,6 +191,7 @@ class _LazyStore:
             epubs = UntrustedEpubStore(
                 self._comp.engine, w.fsops, w.loaded.locate, self._comp.settings.data_dir,
                 store_dir=store_dir if mounted else None, tombstones=w.tombstones,
+                hold_work=work_lock_for(self._comp.engine, clock=self._comp.clock),
             )  # fmt: skip
             return epubs.ingest(**arguments)
         store = PassthroughStore(

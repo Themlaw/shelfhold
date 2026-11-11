@@ -25,8 +25,10 @@ replaces anything, by an atomic replacement (never a deletion first), and a fail
 leaves the old file and the old rows.
 """
 
+import functools
 import tempfile
-from contextlib import suppress
+from collections.abc import Callable
+from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
@@ -235,6 +237,25 @@ def servable_epub(
     raise OriginalNotServableError("library_not_derivative")
 
 
+# The lock of one Work (`work:<id>`), the one `purge --now` holds while it erases (EF-BIB-052).
+# It is a required argument with no default: no write under /store or `received/` without it.
+WorkHolder = Callable[[str], AbstractContextManager[Any]]
+
+
+def _under_work[F: Callable[..., Any]](method: F) -> F:
+    """Run a writing method with the lock of the Unit's Work held, from its first read to its last
+    write: a purge that holds it first leaves nothing to write; one that waits finds the files and
+    the rows complete."""
+
+    @functools.wraps(method)
+    def locked(self: "UntrustedEpubStore", *args: Any, **kwargs: Any) -> Any:
+        unit_id = kwargs["unit_id"] if "unit_id" in kwargs else args[0]
+        with self._hold_work(self._work_of(unit_id)):
+            return method(self, *args, **kwargs)
+
+    return locked  # type: ignore[return-value]
+
+
 class UntrustedEpubStore:
     def __init__(
         self,
@@ -245,6 +266,7 @@ class UntrustedEpubStore:
         *,
         store_dir: str | None,
         tombstones: ContentTombstones,
+        hold_work: WorkHolder,
         max_received_bytes: int = DEFAULT_MAX_RECEIVED_BYTES,
         limits: ArchiveLimits = DEFAULT_LIMITS,
         neutralize: Neutralize = neutralize_epub,
@@ -255,6 +277,7 @@ class UntrustedEpubStore:
         self._data_dir = data_dir
         self._store = store_dir.rstrip("/") if store_dir else None
         self._tombstones = tombstones
+        self._hold_work = hold_work
         self._max = max_received_bytes
         self._limits = limits
         self._neutralize = neutralize
@@ -262,6 +285,7 @@ class UntrustedEpubStore:
 
     # -- ingest -----------------------------------------------------------------------------
 
+    @_under_work
     def ingest(
         self,
         *,
@@ -493,6 +517,7 @@ class UntrustedEpubStore:
 
     # -- restoring the derivative from a destination ------------------------------------------
 
+    @_under_work
     def restore_from_destination(
         self, *, unit_id: str, variant_id: str, found: Path, dest: str,
         expected_derived_hash: str, derived_by: str,
@@ -565,6 +590,7 @@ class UntrustedEpubStore:
                     return "derived", copy.local
         return "blocked", "neither_original_nor_derivative_verifies"
 
+    @_under_work
     def regenerate(
         self, unit_id: str, *, neutralize: Neutralize | None = None, target: str = DERIVED_BY
     ) -> Regenerated:
@@ -625,6 +651,17 @@ class UntrustedEpubStore:
         return Regenerated(unit_id, content.id, source, made.derived_by, made.derived_hash)
 
     # -- internals --------------------------------------------------------------------------
+
+    def _work_of(self, unit_id: str) -> str:
+        with self._engine.connect() as connection:
+            work = connection.execute(
+                sa.select(catalog.edition.c.work_id)
+                .select_from(catalog.unit.join(catalog.edition))
+                .where(catalog.unit.c.id == unit_id)
+            ).scalar()
+        if work is None:
+            raise RegenerationBlockedError("unknown_unit")
+        return str(work)
 
     def _staging(self) -> Path:
         staging = self._data_dir / "tmp"

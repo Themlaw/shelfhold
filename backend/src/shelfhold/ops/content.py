@@ -14,6 +14,7 @@ from __future__ import annotations
 import hmac
 from typing import TYPE_CHECKING, Any
 
+from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.content_trust import DERIVED_BY
 from shelfhold.library.public import (
     ReneutralizePlan,
@@ -84,5 +85,6 @@ class ContentOps:
         epubs = UntrustedEpubStore(
             comp.engine, fsops, loaded.locate, comp.settings.data_dir,
             store_dir=store if mounted else None, tombstones=tombstones,
+            hold_work=work_lock_for(comp.engine, clock=comp.clock),
         )  # fmt: skip
         return Reneutralizer(epubs, engine=comp.engine)
