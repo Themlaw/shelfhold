@@ -4,7 +4,9 @@
 `superseded`, origin kept or set to `legacy`), no DELETE, no `INSERT OR REPLACE`. No row is
 rewritten. New table `edition_attach` (EF-BIB-003, EF-BIB-037, EF-BIB-055): what an attach by
 external identifier changed, so that "Séparer" undoes it exactly, and the attaches that wait for
-an admin's confirmation.
+an admin's confirmation. `age_suggestion.provenance` gets `attach`: the age an Edition had in the
+Work it came from, carried as its own suggestion when an attach moves it (rebuild: a CHECK is not
+changed in place).
 
 The number: 0021 to 0024 are reserved by PLAN-M2 §2 (L16, L17, L25, L27) and 0025 is the
 reopening of the age suggestions (#126); `down_revision` is the head of `main` at the rebase.
@@ -43,9 +45,28 @@ TRIGGERS = {
 }
 
 
+PROVENANCES = "'comicinfo', 'opf', 'sub_source', 'provider', 'import'"
+
+
+def _provenances(listing: str) -> None:
+    with op.batch_alter_table(
+        "age_suggestion",
+        recreate="always",
+        reflect_args=(
+            sa.Column("x", sa.Boolean(), server_default=sa.text("0"), nullable=False),
+            sa.Column("state", sa.String(), server_default="open", nullable=False),
+        ),
+    ) as batch:
+        batch.drop_constraint(op.f("ck_age_suggestion_provenance_values"), type_="check")
+        batch.create_check_constraint(
+            op.f("ck_age_suggestion_provenance_values"), f'"provenance" IN ({listing})'
+        )
+
+
 def upgrade() -> None:
     for statement in TRIGGERS.values():
         op.execute(statement)
+    _provenances(PROVENANCES + ", 'attach'")
     op.create_table(
         "edition_attach",
         sa.Column("id", sa.String(length=26), nullable=False),
@@ -111,3 +132,5 @@ def downgrade() -> None:
     op.drop_table("edition_attach")
     for name in reversed(TRIGGERS):
         op.execute(f"DROP TRIGGER {name}")
+    op.execute("DELETE FROM age_suggestion WHERE provenance = 'attach'")
+    _provenances(PROVENANCES)

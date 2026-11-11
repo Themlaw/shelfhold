@@ -5,7 +5,10 @@ old one `superseded` (`origin = legacy`): nothing is overwritten, nothing is del
 itself refuses any other UPDATE and every DELETE (triggers), and the repository offers neither.
 """
 
+import sqlite3
 from collections.abc import Iterator
+from contextlib import closing
+from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
@@ -122,6 +125,51 @@ def test_external_id_update_or_delete_refused(migrated: Engine) -> None:
     with migrated.begin() as connection:  # superseded is final
         rejected(connection, sa.update(table).where(one).values(state="current"), "append-only")
     assert rows(migrated) == [("work", work, "anilist", "1", "legacy", "superseded")]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # the review of #134: every other road to rewrite a row
+        "INSERT INTO external_id (entity_type, entity_id, provider, value, origin) "
+        "VALUES ('work', :other, 'anilist', '1', 'source') "
+        "ON CONFLICT DO UPDATE SET entity_id = excluded.entity_id",
+        "UPDATE external_id SET entity_id = :other WHERE rowid = 1",
+        "UPDATE OR REPLACE external_id SET value = '2'",
+        "REPLACE INTO external_id (entity_type, entity_id, provider, value, origin) "
+        "VALUES ('work', :other, 'anilist', '1', 'source')",
+        "DELETE FROM external_id",
+    ],
+)
+def test_external_id_refuses_upserts_rowid_and_replace(migrated: Engine, sql: str) -> None:
+    with migrated.begin() as connection:
+        work, other = add_work(connection), add_work(connection)
+        add_external_id(connection, work, ExternalId("work", "anilist", "1"), origin="source")
+    with migrated.begin() as connection:
+        statement = sa.text(sql)
+        if ":other" in sql:
+            statement = statement.bindparams(other=other)
+        rejected(connection, statement, "external_id is append-only")
+    assert rows(migrated) == [("work", work, "anilist", "1", "source", "current")]
+
+
+def test_external_id_triggers_survive_vacuum_and_rename(migrated: Engine, tmp_path: Path) -> None:
+    names = ["external_id_no_delete", "external_id_no_replace", "external_id_no_update"]
+    copy = tmp_path / "copy.db"
+    with closing(sqlite3.connect(migrated.url.database or "")) as db:
+        db.execute("VACUUM INTO ?", (str(copy),))
+    with closing(sqlite3.connect(copy)) as db:
+        found = db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'external_id' "
+            "ORDER BY name"
+        ).fetchall()
+        assert [r[0] for r in found] == names
+        db.execute("ALTER TABLE external_id RENAME TO renamed")
+        found = db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'renamed' "
+            "ORDER BY name"
+        ).fetchall()
+        assert [r[0] for r in found] == names
 
 
 @pytest.mark.parametrize(

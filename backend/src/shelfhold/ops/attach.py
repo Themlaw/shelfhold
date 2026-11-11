@@ -77,6 +77,8 @@ class AttachOps:
             "shelf_id": done.filing.shelf_id,
             "to_rate": done.filing.waiting,
             "kept": [f"{k.entity_type}:{k.field}:{k.lang}" for k in done.kept],
+            "refile": [{"edition_id": r.edition_id, "shelf_id": r.shelf_id} for r in done.refile],
+            "pending_ids": [[e.provider, e.value] for e in done.pending_ids],
         }
 
     def plan(self, attach_id: str) -> dict[str, Any]:

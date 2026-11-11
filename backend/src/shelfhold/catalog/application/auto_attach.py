@@ -8,6 +8,9 @@ the same Work: the Edition is attached to it, and that is
 - **gated first**: the gate of the new Edition files it (or not) before anything else, and again
   once attached; new to the Work, it counts as unrated there (`rated_at` cleared), so a shelf
   below 18+ never takes it until an admin rates it;
+- **with its age**: the age it had where it came from (its own, else its Work's) and the open
+  suggestions of that Work go with it, as suggestions of the Edition (`attach` for the age): rating
+  the Work it joins does not rule on them (#126), only `rate_edition` does;
 - **shown**: an event (`edition.auto_attached`) and the journal `edition_attach`, listed by
   `edition attachments`;
 - **undoable**: "Séparer" (`separate`, CLI `edition detach`) puts back exactly what the attach
@@ -18,10 +21,11 @@ the same Work: the Edition is attached to it, and that is
   nothing behind in `external_id`, which is
   append-only.
 
-An attach that would raise the effective age of the Work (an Edition an admin rated 18+, say) is
-never automatic: it is a suggestion (`edition.attach_suggested`). `plan` shows the removal plan of
-the shelves below 18+ it would cause, computed in a savepoint that is rolled back; `confirm`, a
-reserved action (`rate`), applies the attach for the token of that plan only and returns the plan,
+An attach of an Edition whose age of origin (its own, else its Work's) exceeds the effective age of
+the Work it would join, or of a Work nobody rated, is never automatic: it is a suggestion
+(`edition.attach_suggested`). `plan` shows the removal plan of the shelves below 18+ it would
+cause, computed in a savepoint that is rolled back; `confirm`, a reserved action (`rate`), applies
+the attach for the token of that plan only and returns the plan,
 which `shelf withdraw` applies. Nothing is withdrawn here.
 
 An identifier two Works hold, a holder that no longer exists, or an Edition of the same key in the
@@ -52,7 +56,7 @@ from shelfhold.catalog.application.fields import (
 )
 from shelfhold.catalog.application.new_edition_gate import Filing, file_new_edition
 from shelfhold.catalog.application.rating import RatingService, Withdrawal
-from shelfhold.catalog.domain.age import UNRATED_FLOOR, effective_age
+from shelfhold.catalog.domain.age import Admission
 from shelfhold.catalog.domain.external_ids import (
     ExternalId,
     ExternalIdError,
@@ -85,6 +89,7 @@ __all__ = [
     "Detached",
     "EventPublisher",
     "IncomingEdition",
+    "Refiling",
 ]
 
 AUTO_ATTACHED = "edition.auto_attached"
@@ -173,6 +178,16 @@ class Detached:
     work_id: str  # where it is back
     filing: Filing
     kept: tuple[FieldKey, ...]  # fields an admin changed since the attach: left as they are
+    refile: tuple["Refiling", ...] = ()  # sisters the confirmed attach withdrew, admitted again
+    pending_ids: tuple[ExternalId, ...] = ()  # what the Edition brought for its Work: to record
+
+
+@dataclass(frozen=True)
+class Refiling:
+    """A shelf an Edition may go back to: proposed, never applied here (the admin files it)."""
+
+    edition_id: str
+    shelf_id: str
 
 
 def _stored_json(stored: StoredField | None) -> dict[str, Any] | None:
@@ -329,6 +344,7 @@ class AutoAttachService:
             raise AttachRefusedError(f"not a suggestion: {row.state}")
         savepoint = connection.begin_nested()
         try:
+            _carry(connection, row.edition_id, row.from_work_id, now=row.created_at)
             _move(connection, row.edition_id, row.to_work_id)
             _clear_rating(connection, row.edition_id)
             withdrawals = self._rating.withdrawals(connection, work_id=row.to_work_id)
@@ -371,13 +387,14 @@ class AutoAttachService:
             now,
             pending=[],
         )
+        withdrawals = self._rating.withdrawals(connection, work_id=row.to_work_id)
+        done["withdrawals"] = [[w.edition_id, w.shelf_id] for w in withdrawals]
         connection.execute(
             sa.update(catalog.edition_attach)
             .where(catalog.edition_attach.c.id == attach_id)
             .values(state="attached", prior=done, decided_at=now)
         )
         _audit(connection, principal, "edition.attach_confirm", row.edition_id, attach_id, now)
-        withdrawals = self._rating.withdrawals(connection, work_id=row.to_work_id)
         return AttachPlan(attach_id, row.edition_id, row.to_work_id, withdrawals, shown.token)
 
     def decline(
@@ -398,8 +415,18 @@ class AutoAttachService:
     def separate(
         self, connection: Connection, attach_id: str, *, principal: Principal, now: datetime
     ) -> Detached:
-        """Undo an attach exactly: what it changed goes back, what an admin changed since stays."""
-        _require_admin(principal)
+        """Undo an attach exactly: what it changed goes back, what an admin changed since stays.
+
+        A parental decision too (the Edition returns to a Work and a shelf): the reserved action
+        `rate`, a fresh session. The rating stamp of the Edition comes back only if the Work it
+        returns to was not rated again since the attach, or was rated before the stamp; else the
+        Edition is unrated there ("À classer"). Returns what to file again (the sisters the
+        confirmation withdrew) and the identifiers it brought, never applied here."""
+        verdict = authorize_reserved(
+            principal, RESERVED_ACTIONS["rate"], now=now, fresh_auth_s=self._fresh_auth_s
+        )
+        if not isinstance(verdict, Allowed):
+            raise AttachRefusedError(type(verdict).__name__)
         row = _row(connection, attach_id)
         if row.state != "attached":
             raise AttachRefusedError(f"not attached: {row.state}")
@@ -414,22 +441,32 @@ class AutoAttachService:
             else:
                 kept.append(key)
         _move(connection, row.edition_id, row.from_work_id)
-        rated_at = prior.get("rated_at")
+        _uncarry(connection, prior.get("suggestions", {}))
         connection.execute(
             sa.update(catalog.edition)
             .where(catalog.edition.c.id == row.edition_id)
-            .values(rated_at=None if rated_at is None else datetime.fromisoformat(rated_at))
+            .values(rated_at=_stamp_back(connection, row.from_work_id, prior))
         )
         filing = file_new_edition(
             connection, row.edition_id, prior.get("shelf_id"), rating=self._rating
         )
+        refile = tuple(
+            Refiling(edition_id, shelf_id)
+            for edition_id, shelf_id in prior.get("withdrawals", [])
+            if _unfiled(connection, edition_id)
+            and self._rating.admission_of(connection, edition_id, shelf_id=shelf_id)
+            is Admission.ALLOWED
+        )
+        pending = tuple(ExternalId("work", p, v) for p, v in prior.get("pending_ids", []))
         connection.execute(
             sa.update(catalog.edition_attach)
             .where(catalog.edition_attach.c.id == attach_id)
             .values(state="undone", decided_at=now)
         )
         _audit(connection, principal, "edition.detach", row.edition_id, attach_id, now)
-        return Detached(attach_id, row.edition_id, row.from_work_id, filing, tuple(kept))
+        return Detached(
+            attach_id, row.edition_id, row.from_work_id, filing, tuple(kept), refile, pending
+        )
 
     # -- reads ----------------------------------------------------------------------------------
     def attachments(self, connection: Connection, *, state: str | None = None) -> list[AttachView]:
@@ -470,6 +507,8 @@ class AutoAttachService:
         ).one()
         keys = keys_of(list(work_fields), {"work": to_work})
         snapshot = {k: read_field(connection, k) for k in keys}
+        origin_work = _work_rating(connection, from_work)
+        carried = _carry(connection, edition_id, from_work, now=now)
         _move(connection, edition_id, to_work)
         _clear_rating(connection, edition_id)  # new to this Work: unrated there (EF-BIB-055)
         report = propose_fields(connection, {"work": to_work}, work_fields, now=now, origin=origin)
@@ -477,6 +516,8 @@ class AutoAttachService:
         prior = {
             "rated_at": None if before.rated_at is None else before.rated_at.isoformat(),
             "shelf_id": before.shelf_id,
+            "origin_work": origin_work,  # its rating when the attach was made
+            "suggestions": carried,  # what the attach added: the undo removes those still open
             "fields": [
                 {
                     "key": {
@@ -506,19 +547,14 @@ class AutoAttachService:
         propose_fields(connection, {"work": work_id}, proposals, now=now, origin=incoming.origin)
 
     def _raises_age(self, connection: Connection, edition_id: str, holder: str) -> bool:
-        """Would the Edition raise the effective age of the holder? Only an age an admin fixed for
-        it counts (a suggested age blocks the Edition, EF-BIB-055, but is not its age)."""
-        row = connection.execute(
-            sa.select(catalog.edition.c.age_rating, catalog.edition.c.age_x).where(
-                catalog.edition.c.id == edition_id
-            )
-        ).one()
-        own = _age(row.age_rating, row.age_x)
-        if own is None:
+        """Would the Edition raise the effective age of the holder? Its age of origin counts: the
+        one an admin fixed for it, else the one of the Work it comes from. A holder nobody rated
+        has no age to compare with: an Edition with an age of origin waits for an admin."""
+        origin = _origin_age(connection, edition_id)
+        if origin is None:
             return False
         before = self._rating.effective_age_of(connection, holder)
-        after = effective_age(before, (own,))
-        return (after or UNRATED_FLOOR) > (before or UNRATED_FLOOR)
+        return before is None or origin > before
 
     def _publish(
         self,
@@ -584,6 +620,118 @@ def _move(connection: Connection, edition_id: str, work_id: str) -> None:
         connection.execute(
             sa.update(table).where(table.c.edition_id == edition_id).values(work_id=work_id)
         )
+
+
+def _origin_age(connection: Connection, edition_id: str) -> AgeRating | None:
+    """The age the Edition has where it is: its own, else the one of its Work (not the effective
+    age of that Work, which its sisters may raise: theirs is not its age)."""
+    e, w = catalog.edition, catalog.work
+    row = connection.execute(
+        sa.select(e.c.age_rating, e.c.age_x, w.c.age_rating, w.c.age_x)
+        .join(w, w.c.id == e.c.work_id)
+        .where(e.c.id == edition_id)
+    ).one()
+    own = _age(row[0], row[1])
+    return own if own is not None else _age(row[2], row[3])
+
+
+def _work_rating(connection: Connection, work_id: str) -> dict[str, Any]:
+    w = catalog.work
+    row = connection.execute(
+        sa.select(w.c.age_rating, w.c.age_x, w.c.rated_at).where(w.c.id == work_id)
+    ).one()
+    return {
+        "age_rating": row.age_rating,
+        "age_x": bool(row.age_x),
+        "rated_at": None if row.rated_at is None else row.rated_at.isoformat(),
+    }
+
+
+def _carry(
+    connection: Connection, edition_id: str, from_work: str, *, now: datetime
+) -> dict[str, list[Any]]:
+    """What the Edition takes with it, as its own suggestions: the age of its Work when it has
+    none of its own (`attach`), and the open suggestions of that Work. Returns what it changed."""
+    e, w, suggestion = catalog.edition, catalog.work, catalog.age_suggestion
+    row = connection.execute(
+        sa.select(e.c.age_rating, e.c.age_x, w.c.age_rating, w.c.age_x)
+        .join(w, w.c.id == e.c.work_id)
+        .where(e.c.id == edition_id)
+    ).one()
+    wanted: list[tuple[int, bool, str]] = []
+    if _age(row[0], row[1]) is None and (age := _age(row[2], row[3])) is not None:
+        wanted.append((age.min_age, age.x, "attach"))
+    wanted += [
+        (int(r.value), bool(r.x), r.provenance)
+        for r in connection.execute(
+            sa.select(suggestion.c.value, suggestion.c.x, suggestion.c.provenance).where(
+                suggestion.c.entity_type == "work",
+                suggestion.c.entity_id == from_work,
+                suggestion.c.state == "open",
+            )
+        )
+    ]
+    added: list[str] = []
+    reopened: list[list[str]] = []
+    for value, x, provenance in wanted:
+        found = connection.execute(
+            sa.select(suggestion.c.id, suggestion.c.state).where(
+                suggestion.c.entity_type == "edition",
+                suggestion.c.entity_id == edition_id,
+                suggestion.c.value == value,
+                suggestion.c.x == x,
+                suggestion.c.provenance == provenance,
+            )
+        ).first()
+        if found is not None:
+            if found.state != "open":  # ruled on for this Edition before: it blocks again
+                connection.execute(
+                    sa.update(suggestion).where(suggestion.c.id == found.id).values(state="open")
+                )
+                reopened.append([found.id, found.state])
+            continue
+        suggestion_id = new_ulid()
+        connection.execute(
+            sa.insert(suggestion).values(
+                id=suggestion_id, entity_type="edition", entity_id=edition_id, value=value,
+                x=x, provenance=provenance, seen_at=now, state="open",
+            )
+        )  # fmt: skip
+        added.append(suggestion_id)
+    return {"added": added, "reopened": reopened}
+
+
+def _uncarry(connection: Connection, carried: Mapping[str, list[Any]]) -> None:
+    """The undo of `_carry`, on what is still open: an admin's ruling since stays."""
+    suggestion = catalog.age_suggestion
+    open_ = suggestion.c.state == "open"
+    if added := carried.get("added", []):
+        connection.execute(sa.delete(suggestion).where(suggestion.c.id.in_(added), open_))
+    for suggestion_id, state in carried.get("reopened", []):
+        connection.execute(
+            sa.update(suggestion).where(suggestion.c.id == suggestion_id, open_).values(state=state)
+        )
+
+
+def _stamp_back(connection: Connection, work_id: str, prior: Mapping[str, Any]) -> datetime | None:
+    """The rating stamp the Edition had, if it still holds in the Work it returns to."""
+    stamp = prior.get("rated_at")
+    if stamp is None:
+        return None
+    at = datetime.fromisoformat(stamp)
+    now_rated = _work_rating(connection, work_id)
+    if now_rated == prior.get("origin_work"):
+        return at  # the Work was not rated again since the attach
+    work_at = now_rated["rated_at"]
+    if work_at is None or at > datetime.fromisoformat(work_at):
+        return at  # rated after its Work: an admin's own decision on it
+    return None
+
+
+def _unfiled(connection: Connection, edition_id: str) -> bool:
+    e = catalog.edition
+    row = connection.execute(sa.select(e.c.shelf_id).where(e.c.id == edition_id)).first()
+    return row is not None and row.shelf_id is None
 
 
 def _clear_rating(connection: Connection, edition_id: str) -> None:

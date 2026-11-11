@@ -27,6 +27,7 @@ from shelfhold.catalog.application.auto_attach import (
     Detached,
     EventPublisher,
     IncomingEdition,
+    Refiling,
 )
 from shelfhold.catalog.application.contributors import ARTIST, WRITER
 from shelfhold.catalog.application.dating import period_start, stored_date
@@ -261,6 +262,7 @@ __all__ = [
     "RatingRefusedError",
     "RatingResult",
     "RatingService",
+    "Refiling",
     "RelatedWork",
     "RelationError",
     "RelinkRefusedError",

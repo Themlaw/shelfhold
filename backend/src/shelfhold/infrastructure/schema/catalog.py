@@ -50,7 +50,7 @@ UNIT_STATES = (
 MERGE_ENTITIES = ("work", "contributor", "variant")
 SUGGESTION_STATES = ("open", "accepted", "rejected")
 AGE_SUGGESTION_ENTITIES = ("work", "edition")
-AGE_PROVENANCES = ("comicinfo", "opf", "sub_source", "provider", "import")
+AGE_PROVENANCES = ("comicinfo", "opf", "sub_source", "provider", "import", "attach")
 
 # Wildcards are not languages: they never enter an Edition's key (ENF-I18N-005).
 LANG_WILDCARDS = ("all", "multi", "und", "mul")

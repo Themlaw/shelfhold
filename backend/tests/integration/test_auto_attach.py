@@ -19,12 +19,14 @@ from sqlalchemy import Connection
 
 from shelfhold.catalog.public import (
     Admission,
+    AttachPlan,
     AttachPlanStaleError,
     AttachRefusedError,
     AutoAttachService,
     ExternalId,
     FieldKey,
     IncomingEdition,
+    Refiling,
     Withdrawal,
     add_external_id,
     lock_field,
@@ -196,7 +198,7 @@ def test_auto_attach_displayed_and_undoable() -> None:
         s = scene(env)
         adult_shelf, _ = add_adult_shelf(env)
         uncut = arriving(env)
-        rate(env, uncut, 16)  # it had been rated where it came from
+        rate(env, uncut, 0)  # rated where it came from, no higher than the Work it joins
         with env.engine.begin() as connection:
             connection.execute(
                 sa.update(catalog.edition)
@@ -249,6 +251,7 @@ def test_auto_attach_displayed_and_undoable() -> None:
         with env.engine.begin() as connection:
             undone = s.service.separate(connection, attach_id, principal=admin(), now=NOW)
         assert undone.kept == ()
+        assert undone.pending_ids == (ExternalId("work", "mangaupdates", "m-1"),)  # to record
         assert edition_row(env, uncut.edition_id) == before_edition
         assert table_rows(env, catalog.metadata_field) == before_fields
         assert table_rows(env, catalog.external_id) == before_ids
@@ -375,3 +378,141 @@ def _holder(connection: Connection, external: ExternalId) -> str | None:
     from shelfhold.catalog.public import holder_of
 
     return holder_of(connection, external)
+
+
+# -- the review of #134: two ordinary admin gestures must never put a 16+ chapter below 13 -------
+
+
+def _confirmed(s: Scene, attach_id: str) -> AttachPlan:
+    with s.env.engine.begin() as connection:
+        plan = s.service.plan(connection, attach_id)
+        return s.service.confirm(
+            connection, attach_id, confirm=plan.token, principal=admin(), now=NOW
+        )
+
+
+def _files(env: ExportEnv, edition_id: str) -> bool:
+    return ShelfService(env.engine, clock=env.clock).file_edition(edition_id, env.shelf_id).filed
+
+
+def _open_suggestions(env: ExportEnv, edition_id: str) -> list[tuple[int, bool, str]]:
+    t = catalog.age_suggestion
+    with env.engine.connect() as connection:
+        return sorted(
+            (r.value, bool(r.x), r.provenance)
+            for r in connection.execute(
+                sa.select(t.c.value, t.c.x, t.c.provenance).where(
+                    t.c.entity_type == "edition", t.c.entity_id == edition_id, t.c.state == "open"
+                )
+            )
+        )
+
+
+def test_the_age_of_its_work_of_origin_makes_the_attach_a_suggestion_and_goes_with_it() -> None:
+    """Rated 16+ through its Work, an Edition never joins a Work "Tous publics" by itself, and
+    once an admin confirms it, its 16+ stays as its suggestion: rating that Work 0+ again does
+    not let it into the shelf capped at 13."""
+    with family_env(13) as env:
+        s = scene(env)
+        assert run(env) == 1  # the chapter of "Dr Stone", in the library of the children
+        uncut = arriving(env)
+        rate(env, uncut, 16)
+        arrival = arrive(s, IncomingEdition(uncut.edition_id, shelf_id=None, ids=(ANILIST,)))
+        assert arrival.state == "suggested"  # type: ignore[attr-defined]
+        assert edition_row(env, uncut.edition_id)[0] == uncut.work_id
+        rate(env, s.family, 0)
+        assert not _files(env, uncut.edition_id)  # 16+ where it is
+        _confirmed(s, arrival.attach_id)  # type: ignore[attr-defined]
+        assert edition_row(env, uncut.edition_id)[0] == s.family.work_id
+        assert _open_suggestions(env, uncut.edition_id) == [(16, False, "attach")]
+        rate(env, s.family, 0)  # the admin rates "Dr Stone" 0+ from "À classer"
+        assert not _files(env, uncut.edition_id)
+        env.add_chapter(Series(s.family.work_id, uncut.edition_id, uncut.binding_id), "9")
+        assert run(env) == 0  # nothing 16+ in the library of the children
+        rate_edition(env, uncut.edition_id, 16)  # only a decision on this Edition rules
+        assert not _files(env, uncut.edition_id)
+
+
+def test_the_open_suggestions_of_its_work_of_origin_go_with_the_edition() -> None:
+    with family_env(13) as env:
+        s = scene(env)
+        uncut = arriving(env)
+        with env.engine.begin() as connection:
+            suggest_age(
+                connection, "work", uncut.work_id, AgeRating(18, x=True),
+                provenance="sub_source", now=NOW,
+            )  # fmt: skip
+        arrival = arrive(s, IncomingEdition(uncut.edition_id, shelf_id=None, ids=(ANILIST,)))
+        assert arrival.state == "attached"  # type: ignore[attr-defined]  # no age of origin
+        assert _open_suggestions(env, uncut.edition_id) == [(18, True, "sub_source")]
+        rate(env, s.family, 0)
+        assert not _files(env, uncut.edition_id)  # the X of the sub-source still blocks
+        with env.engine.begin() as connection:
+            s.service.separate(
+                connection,
+                arrival.attach_id,
+                principal=admin(),
+                now=NOW,  # type: ignore[attr-defined]
+            )
+        assert _open_suggestions(env, uncut.edition_id) == []  # the copy goes, exactly
+        with env.engine.connect() as connection:
+            t = catalog.age_suggestion
+            on_work = connection.execute(
+                sa.select(t.c.state).where(t.c.entity_id == uncut.work_id)
+            ).all()
+        assert [r.state for r in on_work] == ["open"]  # the Work's own is untouched
+
+
+def test_separate_does_not_bring_back_a_stamp_its_work_was_rated_again_without() -> None:
+    with family_env(13) as env:
+        s = scene(env)
+        uncut = arriving(env)
+        rate(env, uncut, 16)
+        arrival = arrive(s, IncomingEdition(uncut.edition_id, shelf_id=None, ids=(ANILIST,)))
+        _confirmed(s, arrival.attach_id)  # type: ignore[attr-defined]
+        rate(env, uncut, 0)  # its Work of origin, without it, rated 0+
+        with env.engine.begin() as connection:
+            s.service.separate(
+                connection,
+                arrival.attach_id,
+                principal=admin(),
+                now=NOW,  # type: ignore[attr-defined]
+            )
+        assert edition_row(env, uncut.edition_id) == (uncut.work_id, None, None)  # "À classer"
+        assert not _files(env, uncut.edition_id)
+
+
+def test_separate_is_the_reserved_action_rate_and_proposes_what_to_file_again() -> None:
+    with family_env(13) as env:
+        s = scene(env)
+        uncut = arriving(env)
+        rate_edition(env, uncut.edition_id, 18)
+        arrival = arrive(
+            s, IncomingEdition(uncut.edition_id, shelf_id=env.shelf_id, ids=(ANILIST,))
+        )
+        attach_id = arrival.attach_id  # type: ignore[attr-defined]
+        done = _confirmed(s, attach_id)
+        assert done.withdrawals == (
+            Withdrawal(s.family.edition_id, env.shelf_id, Admission.ABOVE_CEILING),
+        )
+        with env.engine.begin() as connection:  # what `shelf withdraw` does with the plan
+            connection.execute(
+                sa.update(catalog.edition)
+                .where(catalog.edition.c.id == s.family.edition_id)
+                .values(shelf_id=None)
+            )
+        key = Principal(
+            user_id=new_ulid(), username="k", role="admin", credential=Credential.API_KEY,
+            session_id=None, auth_time=None, can_rate=True,
+        )  # fmt: skip
+        reader = Principal(
+            user_id=new_ulid(), username="m", role="member", credential=Credential.SESSION,
+            session_id=new_ulid(), auth_time=NOW, can_rate=False,
+        )  # fmt: skip
+        for refused in (key, reader):
+            with env.engine.begin() as connection, pytest.raises(AttachRefusedError):
+                s.service.separate(connection, attach_id, principal=refused, now=NOW)
+        with env.engine.begin() as connection:
+            undone = s.service.separate(connection, attach_id, principal=admin(), now=NOW)
+        assert undone.refile == (Refiling(s.family.edition_id, env.shelf_id),)
+        assert edition_row(env, s.family.edition_id)[2] is None  # proposed, not applied

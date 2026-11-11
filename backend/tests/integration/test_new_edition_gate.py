@@ -134,21 +134,130 @@ _OTHER_WRITERS = {
     # a new Work whose files already are in that library: held, follow suspended (EF-EXP-048)
     "export/targets/kavita/adopt.py",
 }
-_EDITION_TABLE = re.compile(r"\b(?:catalog\.)?edition\)")
+_RAW_SQL = re.compile(
+    r"\b(?:UPDATE|INSERT\s+(?:OR\s+\w+\s+)?INTO|REPLACE\s+INTO)\s+[\"']?edition\b[\s\S]*\bshelf_id\b",
+    re.IGNORECASE,
+)
+
+
+def _names(tree: ast.AST) -> dict[str, str]:
+    """What each name of the file is bound to: `e = catalog.edition`,
+    `edition, other = catalog.edition, catalog.x`, `e = catalog.edition.alias()`."""
+    bound: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            pairs: list[tuple[ast.expr, ast.expr]] = []
+            for target in node.targets:
+                if isinstance(target, ast.Tuple) and isinstance(node.value, ast.Tuple):
+                    pairs += list(zip(target.elts, node.value.elts, strict=False))
+                else:
+                    pairs.append((target, node.value))
+            for target, value in pairs:
+                if isinstance(target, ast.Name):
+                    bound[target.id] = ast.unparse(value)
+        elif isinstance(node, ast.ImportFrom):  # `from ...schema.catalog import edition`
+            for alias in node.names:
+                if (node.module or "").endswith("schema.catalog"):
+                    bound[alias.asname or alias.name] = f"catalog.{alias.name}"
+    return bound
+
+
+def _is_edition(expr: str, bound: dict[str, str], depth: int = 0) -> bool:
+    expr = re.sub(r"\.alias\([^)]*\)$", "", expr.strip())
+    expr = re.sub(r"^(?:sa\.)?alias\((.*?)(?:,.*)?\)$", r"\1", expr)
+    if expr in ("catalog.edition", "edition") and (
+        expr != "edition" or bound.get("edition", "catalog.edition") == "catalog.edition"
+    ):
+        return True
+    if depth < 5 and expr in bound and bound[expr] != expr:
+        return _is_edition(bound[expr], bound, depth + 1)
+    return False
+
+
+def _writes_shelf(call: ast.Call) -> bool:
+    """`.values(shelf_id=...)`, `.values({"shelf_id": ...})`, `.values({t.c.shelf_id: ...})`."""
+    if any(k.arg == "shelf_id" for k in call.keywords):
+        return True
+    for arg in call.args:
+        for d in ast.walk(arg):
+            if isinstance(d, ast.Dict):
+                for key in d.keys:
+                    if isinstance(key, ast.Constant) and key.value == "shelf_id":
+                        return True
+                    if isinstance(key, ast.Attribute) and key.attr == "shelf_id":
+                        return True
+    return False
+
+
+def _target(node: ast.expr) -> ast.expr | None:
+    """The table of `update(t)` / `insert(t)` at the root of a statement chain."""
+    while True:
+        if isinstance(node, ast.Call):
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name in ("update", "insert") and node.args:
+                return node.args[0]
+            if name in ("update", "insert") and isinstance(func, ast.Attribute):
+                return func.value  # `edition.update()`
+            node = func.value if isinstance(func, ast.Attribute) else func
+        elif isinstance(node, ast.Attribute):
+            node = node.value
+        else:
+            return None
+
+
+def writes_edition_shelf(source: str) -> bool:
+    tree = ast.parse(source)
+    bound = _names(tree)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and _RAW_SQL.search(node.value)
+        ):
+            return True
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr not in ("values", "execute") or not _writes_shelf(node):
+            continue
+        if node.func.attr == "values":
+            target = _target(node.func.value)
+        else:  # `connection.execute(sa.update(edition), {"shelf_id": ...})`
+            target = _target(node.args[0]) if node.args else None
+        if target is not None and _is_edition(ast.unparse(target), bound):
+            return True
+    return False
 
 
 def _writers() -> set[str]:
-    found = set()
-    for path in SRC.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
-                continue
-            if node.func.attr != "values" or not any(k.arg == "shelf_id" for k in node.keywords):
-                continue
-            if _EDITION_TABLE.search(ast.unparse(node.func.value)):
-                found.add(path.relative_to(SRC).as_posix())
-    return found
+    return {
+        path.relative_to(SRC).as_posix()
+        for path in SRC.rglob("*.py")
+        if writes_edition_shelf(path.read_text(encoding="utf-8"))
+    }
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "sa.update(catalog.edition).values(shelf_id=None)",
+        "e = catalog.edition\nsa.update(e).where(e.c.id == 1).values(shelf_id=None)",
+        "e = catalog.edition.alias('x')\nsa.update(e).values(shelf_id=None)",
+        "edition, s = catalog.edition, catalog.shelf\nsa.update(edition).values({'shelf_id': 1})",
+        "t = catalog.edition\nsa.update(t).values({t.c.shelf_id: 1})",
+        "from shelfhold.infrastructure.schema.catalog import edition as ed\n"
+        "c.execute(sa.update(ed), {'shelf_id': 1})",
+        "c.exec_driver_sql('UPDATE edition SET shelf_id = NULL')",
+        "c.execute(sa.text('update \"edition\" set title = 1, shelf_id = 2'))",
+    ],
+)
+def test_the_writer_scan_sees_aliases_dicts_and_raw_sql(source: str) -> None:
+    assert writes_edition_shelf(source)
+
+
+def test_the_writer_scan_ignores_other_tables() -> None:
+    assert not writes_edition_shelf("sa.update(catalog.shelf).values(shelf_id=None)")
+    assert not writes_edition_shelf("s = catalog.series\nsa.update(s).values({'shelf_id': 1})")
 
 
 def test_every_writer_of_the_shelf_of_an_edition_goes_through_the_gate() -> None:

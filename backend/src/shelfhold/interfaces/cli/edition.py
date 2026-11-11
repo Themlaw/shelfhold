@@ -80,6 +80,10 @@ def run_detach(args: argparse.Namespace, channel: OpsChannel) -> int:
         print(t("ops.attach_to_rate"))
     for field in done["kept"]:
         print(t("ops.attach_kept", field=field))
+    for r in done["refile"]:
+        print(t("ops.attach_refile", edition=r["edition_id"], shelf=r["shelf_id"]))
+    for provider, value in done["pending_ids"]:
+        print(t("ops.attach_pending_id", provider=provider, value=value))
     return 0
 
 

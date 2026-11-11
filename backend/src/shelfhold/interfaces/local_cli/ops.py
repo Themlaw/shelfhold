@@ -491,7 +491,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.rate_pending": (_rate_pending, None),
     "ops.rate_batch": (_rate_batch, "rate"),
     "ops.attach_list": (_attach_list, None),
-    "ops.attach_detach": (_attach_detach, None),
+    "ops.attach_detach": (_attach_detach, "rate"),
     "ops.attach_plan": (_attach_plan, None),
     "ops.attach_confirm": (_attach_confirm, "rate"),
     "ops.attach_decline": (_attach_decline, None),
