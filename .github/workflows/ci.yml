@@ -511,11 +511,9 @@ jobs:
       - name: Playwright browser
         working-directory: e2e
         run: |
-          for attempt in 1 2 3; do
-            npx playwright install --with-deps chromium && exit 0
-            echo "::warning::playwright --with-deps failed (attempt $attempt)"
-            sleep 15
-          done
+          # apt waits ~10 min per unreachable mirror: bound it, then fall back.
+          timeout 180 npx playwright install --with-deps chromium && exit 0
+          echo "::warning::playwright --with-deps failed; installing the browser alone"
           npx playwright install chromium
       - name: Playwright (chromium, shard)
         working-directory: e2e
