@@ -110,7 +110,7 @@ _AS_IS = (
     "disk_pause_percent", "disk_pause_gib", "disk_resume_percent", "disk_resume_gib",
     "wake_timeout_s", "wake_session_s", "maintenance_window_start", "maintenance_window_end",
     "timezone", "retention_events_days", "retention_audit_days", "backup_retention",
-    "backup_stale_hours",
+    "backup_stale_hours", "fetcher_cache",
 )  # fmt: skip
 _PRESENCE = (
     "public_url", "api_token", "secret_key_file", "frontend_dir", "source_url", "wake_url",
@@ -118,7 +118,7 @@ _PRESENCE = (
 )  # fmt: skip
 _VOLUMES = ("data_dir", "store_dir", "library_dir")
 _COUNTS = ("plugin_repos", "active_sources", "forward_auth_trusted_cidrs", "wake_suwayomi",
-           "wake_kavita")  # fmt: skip
+           "wake_kavita", "fetcher_cache_off_sources")  # fmt: skip
 SETTING_CLASSES: Final[Mapping[str, str]] = {
     **dict.fromkeys(_AS_IS, "as_is"),
     **dict.fromkeys(_PRESENCE, "presence"),

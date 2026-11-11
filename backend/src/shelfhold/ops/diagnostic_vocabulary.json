@@ -1605,6 +1605,8 @@
   "fcntl.",
   "fetch",
   "fetched",
+  "fetcher_cache",
+  "fetcher_cache_off_sources",
   "file",
   "file_hash",
   "file_hashes",
