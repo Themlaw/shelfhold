@@ -47,10 +47,18 @@ def _leftovers(args: argparse.Namespace, channel: OpsChannel) -> int:
     if not plan["connected"]:
         print(t("purge.leftovers_not_connected"))
         return 0
+    series = len(plan.get("series", []))
     print(
-        t("purge.leftovers_plan", downloads=len(plan["downloads"]), dead=len(plan["dead_tickets"]))
+        t(
+            "purge.leftovers_plan",
+            downloads=len(plan["downloads"]),
+            dead=len(plan["dead_tickets"]),
+            series=series,
+        )
     )
-    if plan["downloads"] or plan["dead_tickets"]:
+    if plan.get("series_unknown"):
+        print(t("purge.leftovers_series_unknown"), file=sys.stderr)
+    if plan["downloads"] or plan["dead_tickets"] or series:
         print(t("purge.leftovers_confirm", version=plan["version"]))
     return 0
 
