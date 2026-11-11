@@ -7695,6 +7695,10 @@
       "code": "fetch.invalid_url",
       "status": 422
     },
+    "/api/v1/problems/fetch.robots-disallowed": {
+      "code": "fetch.robots_disallowed",
+      "status": 403
+    },
     "/api/v1/problems/fetch.timeout": {
       "code": "fetch.timeout",
       "status": 504

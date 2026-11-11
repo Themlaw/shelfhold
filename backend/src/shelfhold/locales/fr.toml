@@ -636,6 +636,10 @@ action = "Réessayez plus tard ; si le problème persiste, consultez les journau
 title = "L'adresse n'est pas valide."
 action = "Corrigez l'adresse : schéma http ou https, sans identifiants dans l'URL."
 
+[errors."fetch.robots_disallowed"]
+title = "Le site demande aux robots de ne pas lire cette page."
+action = "Shelfhold respecte le fichier robots.txt de la source ; ouvrez la page depuis un navigateur."
+
 [errors."fetch.timeout"]
 title = "Le service externe a mis trop de temps à répondre."
 action = "Réessayez plus tard ou vérifiez que le service est en marche."

@@ -129,6 +129,10 @@ class Settings(BaseModel):
     backup_retention: int = Field(default=14, ge=1, le=30)
     backup_stale_hours: int = Field(default=36, ge=25, le=24 * 60)
 
+    # ENF-LEG-007: the HTTP cache of the Fetcher, and the sources (plugin ids) it is off for.
+    fetcher_cache: bool = True
+    fetcher_cache_off_sources: tuple[str, ...] = ()
+
     @field_validator("umask", mode="before")
     @classmethod
     def _octal_umask(cls, value: object) -> object:

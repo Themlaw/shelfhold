@@ -261,3 +261,12 @@ symbols = [
   "shelfhold.plugin_host.errors:NoSourceForUrl",
   "shelfhold.plugin_host.registry:PluginRegistry.resolve_url",
 ]
+
+[[allow]]
+category = "unwired-m2-l06"
+reason = "The per-source HTTP cache factory (`cache_for`, config `fetcher_cache`) and the robots.txt policy of ENF-LEG-007 (M2 L06) are proved by their tests (`RobotsPolicy` is already reached through the Fetcher's own import, so the allowlist test refuses it as an entry); the periodic spread `Scheduler.add_default` is first called by the adaptive check cadence of M2 L29; the Fetcher accepts both, and the OpenLibrary provider (M2 L13, mandatory cache and robots) and the native acquisition (M2 L19) are the first to build a Fetcher with them, robots.txt being read for native sources only. Nothing is cached on disk."
+until = "M2"
+symbols = [
+  "shelfhold.infrastructure.fetcher.cache:cache_for",
+  "shelfhold.jobs.scheduler:Scheduler.add_default",
+]

@@ -115,6 +115,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "naming_segment_policy_confirmed": "naming_segment_policy_confirmed",
     "wake_url": "wake_url", "wake_suwayomi": "wake_suwayomi", "wake_kavita": "wake_dest",
     "wake_timeout_s": "wake_timeout_s", "wake_session_s": "wake_duration_s",
+    "fetcher_cache": "fetcher_cache", "fetcher_cache_off_sources": "fetcher_cache_off_sources",
     "cli_allow_host": "cli_allow_host", "allow_network_data_dir": "allow_network_data_dir",
     "disk_pause_percent": "disk_pause_percent", "disk_pause_gib": "disk_pause_gib",
     "disk_resume_percent": "disk_resume_percent", "disk_resume_gib": "disk_resume_gib",
