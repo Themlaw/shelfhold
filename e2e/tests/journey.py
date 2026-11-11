@@ -111,7 +111,10 @@ class Journey:
         runs first, as in a redeploy); the simulated servers and the volumes stay as they are."""
         self.compose("stop", "shelfhold")
         self.app_image = image
-        self.compose("up", "--wait", "-d", "--force-recreate", "shelfhold-migrate", "shelfhold")
+        # the simulated servers stay up: no `--wait` on their health (it flaps on a loaded host)
+        self.compose("run", "--rm", "--no-deps", "-T", "shelfhold-migrate")
+        self.compose("up", "-d", "--force-recreate", "--no-deps", "shelfhold")
+        assert wait_for(lambda: self.shelfhold("status").code == 0, 180)
 
     def secrets(self) -> None:
         self.put("/tmp/kavita.pw", KAVITA_PASSWORD + "\n")
