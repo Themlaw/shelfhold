@@ -99,10 +99,12 @@ class TeamPreference:
         choice = selected.choice
         chosen = next(f for f in live if f.id == selected.candidate.variant_id)
         previous = connection.execute(
-            sa.select(v.c.team_id).where(v.c.unit_id == unit_id, v.c.preferred)
+            sa.select(v.c.id, v.c.team_id).where(v.c.unit_id == unit_id, v.c.preferred)
         ).one_or_none()
         service.set_preferred(unit_id, chosen.id)
-        if choice.fallback or (previous is not None and previous.team_id != choice.team_id):
+        if (previous is None or previous.id != chosen.id) and (
+            choice.fallback or (previous is not None and previous.team_id != choice.team_id)
+        ):  # said when the choice changes: a second election of the same one is silent
             log.warning(
                 "team.fallback" if choice.fallback else "team.switched",
                 reason=choice.fallback or choice.reason, unit_id=unit_id, number=unit.number_norm,
