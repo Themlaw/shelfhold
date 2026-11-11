@@ -340,7 +340,6 @@ def test_external_keyring_modifiable_by_group_or_others_is_refused(
         store.load()
 
 
-@pytest.mark.req("ENF-SEC-005")
 class _OwnedByRoot:
     """A real ``stat_result`` seen as owned by root; every other field is the real one."""
 
@@ -353,6 +352,7 @@ class _OwnedByRoot:
         return getattr(self._real, name)
 
 
+@pytest.mark.req("ENF-SEC-005")
 def test_external_keyring_owned_by_a_stranger_is_refused_but_root_is_accepted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
