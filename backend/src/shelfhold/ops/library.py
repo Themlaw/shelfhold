@@ -96,9 +96,9 @@ from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, auth
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export, identity
+from shelfhold.infrastructure.schema import export, identity, platform
 from shelfhold.jobs.maintenance import MaintenanceBusyError, MaintenanceGate, compact_database
-from shelfhold.library.public import ConfirmationRequiredError
+from shelfhold.library.public import KEPT_PREFIX, ConfirmationRequiredError
 from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
 from shelfhold.purge_upstream import connected_upstream
@@ -852,6 +852,16 @@ class LibraryOps:
         }
 
     # -- what the purges of M1a left in the service (L17): a plan, then a confirmation ------------
+
+    @_refused
+    def kept_ack(self) -> dict[str, Any]:
+        """The admin deleted in the service what a purge left there: the marks `status` shows go."""
+        setting = platform.app_setting
+        with self._comp.engine.begin() as connection:
+            count = connection.execute(
+                sa.delete(setting).where(setting.c.key.like(KEPT_PREFIX + "%"))
+            ).rowcount
+        return {"cleared": count}
 
     @_refused
     def leftovers_plan(self) -> dict[str, Any]:

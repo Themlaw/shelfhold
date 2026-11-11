@@ -27,18 +27,20 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import Any, Protocol, cast
 
 import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.identity.public import AuditEntry, audit_insert
 from shelfhold.infrastructure.archives import UnsafeArchiveError
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.infrastructure.fsops import FileIdentity, Fsops, FsopsError
-from shelfhold.infrastructure.schema import acquisition, catalog, coherence, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, coherence, platform, storage
 from shelfhold.library.adapters.safeguard import payload_hash_at
 from shelfhold.library.adapters.safeguard_inventory import (
     PurgeCandidate,
@@ -161,6 +163,19 @@ class QueueService(UpstreamService, Protocol):
 class ReleaseOutcome:
     kind: str  # released | gone | cancelled | kept_by_other_account
     freed_bytes: int | None = None
+
+
+KEPT_PREFIX = "purge.kept_in_service:"  # `app_setting`: one key per request (an opaque ULID)
+
+
+def mark_kept_in_service(connection: Connection, request_id: str, at: datetime) -> None:
+    """A download the service still holds after a purge let go of Shelfhold's claim: the admin
+    deletes it there, then clears the mark. Idempotent."""
+    connection.execute(
+        sqlite_insert(platform.app_setting)
+        .values(key=KEPT_PREFIX + request_id, value=at.isoformat())
+        .on_conflict_do_nothing(index_elements=["key"])
+    )
 
 
 class PurgeUnresolvedError(Exception):
@@ -607,7 +622,7 @@ class UpstreamPurge:
             # or (`ui_login`) another account keeps the file; nothing tells which, so the claim
             # is let go of and the admin is told to delete in the service. The ticket goes with
             # the intent: no door (`intents resolve`, `--abandon`) leads to a second erasure.
-            self._settle(target, intent_id)
+            self._settle(target, intent_id, kept=held)
             return ReleaseOutcome("kept_by_other_account" if held else "gone")
         if target.state == "requested":
             await cast("QueueService", self._service).cancel(self._fetcher, ticket)
@@ -630,7 +645,7 @@ class UpstreamPurge:
             self._journal.cancel(intent_id)  # it was not downloaded after all
             self._settle(target, None)
             return ReleaseOutcome("gone")
-        self._settle(target, intent_id)
+        self._settle(target, intent_id, kept=bool(present))
         return ReleaseOutcome(
             "kept_by_other_account" if present else "released", getattr(result, "freed_bytes", None)
         )
@@ -686,10 +701,18 @@ class UpstreamPurge:
             if other == (dev, ino):
                 raise PurgeRefused(STORE_COPY_CHANGED)
 
-    def _settle(self, candidate: PurgeCandidate | DownloadTicket, intent_id: str | None) -> None:
+    def _settle(
+        self,
+        candidate: PurgeCandidate | DownloadTicket,
+        intent_id: str | None,
+        *,
+        kept: bool = False,
+    ) -> None:
         """The database learns it, in one transaction with the end of the intent: the ticket is
         let go of (the next sweep never asks again), Shelfhold no longer counts the origin as a
-        copy of its own, the audit says which Unit (an opaque identifier, never a title)."""
+        copy of its own, the audit says which Unit (an opaque identifier, never a title). `kept`:
+        the file stays in the service (another account may hold it, or the answer was ambiguous):
+        a durable mark, which `status` shows until the admin clears it (`purge --kept-ack`)."""
         now = self._clock.now()
         with self._engine.begin() as connection:
             connection.execute(
@@ -712,6 +735,8 @@ class UpstreamPurge:
                     AuditEntry(actor_id=None, action="unit.upstream_purged", at=now, target=target)
                 )
             )  # fmt: skip
+            if kept:
+                mark_kept_in_service(connection, candidate.request_id, now)
             if intent_id is not None:
                 self._journal.mark_done(intent_id, within=connection)
 
@@ -733,7 +758,7 @@ class UpstreamPurge:
             # go of with the intent (a second DELETE would take it for the other account's), and
             # the download is left in the service for the admin to delete there.
             log.warning("safeguard.purge_ambiguous", intent=intent_id)
-            self._settle(found[0], intent_id)
+            self._settle(found[0], intent_id, kept=True)
             report.handed_to_admin += 1
             return
         self._settle(found[0], intent_id)

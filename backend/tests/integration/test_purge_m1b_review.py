@@ -28,6 +28,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.library.adapters.storage import KeepCopier, complete_keep, keep_rel
 from shelfhold.library.public import PassthroughStore, PinnedCopy, StoreIndex, UnitGoneError
+from shelfhold.ops.status import kept_in_service_report
 from shelfhold.purge_upstream import ConnectedUpstream
 from shelfhold.safeguard_jobs import service_refusal
 from shelfhold.sdk.refs import SeriesRef
@@ -224,6 +225,9 @@ def test_ui_login_deed_killed_after_the_release_is_never_sent_twice(tmp_path: Pa
         with pytest.raises(PurgeUnknownError):  # the Unit is gone: nothing runs a second time
             again.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=again.clock.now())
         assert service.released() == ["ticket-1"]  # one DELETE, ever
+        with env.engine.connect() as connection:  # the file stays in the service: a durable mark
+            shown = kept_in_service_report(connection)
+        assert len(shown) == 1 and "dr-stone" not in repr(shown).lower()
 
 
 def test_abandoning_a_begun_deed_withdraws_the_ticket(tmp_path: Path) -> None:

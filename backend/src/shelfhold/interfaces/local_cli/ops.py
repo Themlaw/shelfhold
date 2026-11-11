@@ -278,6 +278,10 @@ def _purge(ops: OpsServices, by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _kept_ack(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.library.kept_ack()
+
+
 def _leftovers_plan(ops: OpsServices, _by: Principal, _p: Params) -> object:
     return ops.library.leftovers_plan()
 
@@ -442,6 +446,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.repatriate_check": (_repatriate_check, None),
     "ops.detach_restore_upstream": (_give_back, None),
     "ops.purge": (_purge, "purge.now"),
+    "ops.kept_ack": (_kept_ack, None),
     "ops.leftovers_plan": (_leftovers_plan, None),
     "ops.leftovers_apply": (_leftovers_apply, "purge.now"),
     "ops.probe": (_probe, None),

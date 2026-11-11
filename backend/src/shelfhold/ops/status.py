@@ -27,7 +27,7 @@ from shelfhold.export.domain.kavita_compat import (
 )
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
-from shelfhold.library.public import backlog_row, content_error_candidates
+from shelfhold.library.public import KEPT_PREFIX, backlog_row, content_error_candidates
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 
 __all__ = [
@@ -35,6 +35,7 @@ __all__ = [
     "collect",
     "command_for",
     "jurisdiction_report",
+    "kept_in_service_report",
     "known_bad_report",
     "queues_of",
     "rights_report",
@@ -369,6 +370,19 @@ def rights_report(connection: Connection, today: date) -> list[dict[str, object]
         {"edition_id": r.edition_id, "reason": r.reason}
         for r in RightsService(connection).protected(today)
     ]
+
+
+def kept_in_service_report(connection: Connection) -> list[dict[str, object]]:
+    """The downloads a purge let go of that the service still holds (another account may keep the
+    file, or the answer was ambiguous): the admin deletes them there, then `purge --kept-ack`.
+    Opaque request identifiers only, never a title."""
+    setting = platform.app_setting
+    rows = connection.execute(
+        sa.select(setting.c.key, setting.c.value)
+        .where(setting.c.key.like(KEPT_PREFIX + "%"))
+        .order_by(setting.c.value, setting.c.key)
+    )
+    return [{"request": r.key.removeprefix(KEPT_PREFIX), "since": r.value} for r in rows]
 
 
 def known_bad_report(connection: Connection, today: date) -> dict[str, object]:

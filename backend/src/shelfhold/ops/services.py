@@ -68,6 +68,7 @@ from shelfhold.ops.status import (
     collect,
     dress,
     jurisdiction_report,
+    kept_in_service_report,
     known_bad_report,
     queues_of,
     rights_report,
@@ -104,6 +105,7 @@ class StatusReport:
     content_error_candidates: list[dict[str, object]] = field(default_factory=list)
     jurisdiction: dict[str, object] | None = None  # EF-SRC-024: the country, confirmed or not
     rights_warnings: list[dict[str, object]] = field(default_factory=list)
+    kept_in_service: list[dict[str, object]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -118,6 +120,7 @@ class StatusReport:
             "content_error_candidates": self.content_error_candidates,
             "jurisdiction": self.jurisdiction,
             "rights_warnings": self.rights_warnings,
+            "kept_in_service": self.kept_in_service,
         }
 
 
@@ -218,6 +221,7 @@ class OpsServices:
                 known_bad_report(connection, now.date()), service_url_report(connection),
                 unverifiable_download_dirs(connection), candidate_report(connection),
                 jurisdiction_report(connection), rights_report(connection, now.date()),
+                kept_in_service_report(connection),
             )  # fmt: skip
 
     def restored_behind(self) -> bool:

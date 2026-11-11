@@ -41,6 +41,7 @@ from shelfhold.library.adapters.safeguard_inventory import (
     owed_unit_ids,
 )
 from shelfhold.library.adapters.safeguard_job import (
+    KEPT_PREFIX,
     CycleReport,
     DownloadTicket,
     PinnedCopy,
@@ -176,6 +177,7 @@ __all__ = [
     "EDITION_KEY_COLUMNS",
     "FILE_HASH_BY",
     "INDEX_NAME",
+    "KEPT_PREFIX",
     "NOT_DOWNLOADED",
     "NO_KAVITA_COPY",
     "OPTION_OFF",

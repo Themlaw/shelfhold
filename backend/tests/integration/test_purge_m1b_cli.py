@@ -132,3 +132,30 @@ def test_leftovers_without_a_connected_service_offers_nothing(
         capsys.readouterr()
         assert run_cli(monkeypatch, settings, "purge", "--leftovers") == 0
         assert "Aucun service connecté" in capsys.readouterr().out
+
+
+def test_kept_in_service_is_shown_by_status_until_the_admin_clears_it(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """A download the service still holds after a purge (another account keeps it) is a durable
+    mark: `status` shows it, and only `purge --kept-ack` clears it."""
+    from shelfhold.library.public import KEPT_PREFIX
+
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        request = new_ulid()
+        with b.engine.begin() as connection:
+            connection.execute(
+                sa.insert(platform.app_setting).values(
+                    key=KEPT_PREFIX + request, value="2099-01-01T00:00:00+00:00"
+                )
+            )
+        capsys.readouterr()
+        b.cli("status")
+        assert request in capsys.readouterr().out
+        assert b.cli("purge", "--kept-ack") == 0
+        assert "1 marque(s)" in capsys.readouterr().out
+        b.cli("status")
+        assert request not in capsys.readouterr().out
