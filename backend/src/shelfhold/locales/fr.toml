@@ -842,6 +842,10 @@ action = "Vérifiez l'extension de la source dans le service, puis relancez-la."
 title = "La source limite le nombre de requêtes."
 action = "Aucune action : Shelfhold réessaie après le délai demandé par la source."
 
+[errors."source.ref_has_secret"]
+title = "Une référence rendue par la source contient un secret."
+action = "La source ne respecte pas le contrat : mettez-la à jour ou désactivez-la. Aucune référence contenant un secret n'est conservée."
+
 [errors."source.temporarily_unavailable"]
 title = "La source est momentanément indisponible."
 action = "Aucune action : la file est en pause et reprend d'elle-même."

@@ -7,6 +7,8 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, create_engine, event
 
+from shelfhold.infrastructure.write_guard import install_write_guard
+
 
 def create_db_engine(path: Path) -> Engine:
     engine = create_engine(f"sqlite+pysqlite:///{path}")
@@ -29,6 +31,7 @@ def create_db_engine(path: Path) -> Engine:
         # `execution_options(shelfhold_begin="BEGIN IMMEDIATE")` takes the write lock first
         conn.exec_driver_sql(str(conn.get_execution_options().get("shelfhold_begin", "BEGIN")))
 
+    install_write_guard(engine)  # a registered secret never reaches a reference or a journal
     return engine
 
 

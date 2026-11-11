@@ -15,7 +15,7 @@ import unicodedata
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from shelfhold.catalog.lang import LanguageError, normalize_lang
 from shelfhold.infrastructure.clock import DEFAULT_SKEW
@@ -560,6 +560,13 @@ class SuwayomiService:
         return hashlib.sha256(f"{KEY}|{MARK}|{int(found['id'])}".encode()).hexdigest()[:32]
 
     # -- UPSTREAM_RESTORE (EF-EXP-056) -------------------------------------------------------
+    # The closed shape of a snapshot (ids, names and keywords): nothing else is ever stored.
+    snapshot_schema: ClassVar[dict[str, Any]] = {
+        "categories": [{"id": int, "name": str, "include_in_update": str}],
+        "update_strategy": str,
+        "shelfhold_excluded?": [int],
+    }
+
     async def snapshot_upstream(self, f: Fetcher, ref: SeriesRef) -> dict[str, object]:
         """What decides whether Suwayomi's own schedule updates the series: its categories and
         its update strategy. Ids, names and keywords; nothing secret."""

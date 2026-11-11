@@ -20,13 +20,14 @@ from urllib.parse import quote, quote_plus, urlencode, urlsplit, urlunsplit
 from sqlalchemy import Connection
 
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
-from shelfhold.infrastructure.logging import register_secret_value
+from shelfhold.infrastructure.logging import known_secret_values, register_secret_value
+from shelfhold.infrastructure.secret_text import secret_forms
 from shelfhold.infrastructure.secrets.envelope import Envelope, open_with, seal
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.plugin_host.errors import AuthExpired, UnsupportedAuthFlow
 from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Fetcher, Response
 from shelfhold.sdk.models import AuthApiKey, AuthBasic, AuthFlow
-from shelfhold.sdk.refs import ImageRequest
+from shelfhold.sdk.refs import SECRET_PLACEHOLDER, ImageRequest
 from shelfhold.sdk.source import SourceChanged, TemporarilyUnavailable
 
 __all__ = [
@@ -95,6 +96,25 @@ class AuthInjectingFetcher:
     def __repr__(self) -> str:
         return f"AuthInjectingFetcher(flow={self._flow.kind!r})"
 
+    @property
+    def ref_template(self) -> str | None:
+        """The template the adapter declared for the references it hands back (EF-SRC-035)."""
+        flow = self._flow
+        return flow.ref_template if isinstance(flow, AuthApiKey) else None
+
+    def ref_secret(self) -> str | None:
+        """The key a `{secret}` in a stored reference stands for (host side only: it goes back to
+        the plugin in an argument, never into a log or a row)."""
+        flow = self._flow
+        if isinstance(flow, AuthApiKey) and flow.ref_template is not None:
+            return self._value(self._open())
+        return None
+
+    def secret_values(self) -> frozenset[str]:
+        """Every form of the injected value, and the registered ones: what a reference is checked
+        against. The value itself is never rendered by this wrapper, only compared."""
+        return known_secret_values() | secret_forms(self._value(self._open()))
+
     def _open(self) -> dict[str, str]:
         plain = open_with(
             self._key, self._sealed, table="authflow", column="secret", row_id=self._row
@@ -138,6 +158,8 @@ class AuthInjectingFetcher:
             out_params[flow.name] = value
         else:
             url = url.replace("{" + flow.name + "}", quote(value, safe=""))
+        if isinstance(flow, AuthApiKey):  # a reference stored with the template (EF-SRC-035)
+            url = url.replace(SECRET_PLACEHOLDER, quote(value, safe=""))
         return url, out_headers, out_params
 
     @staticmethod

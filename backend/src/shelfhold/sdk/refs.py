@@ -15,6 +15,11 @@ from shelfhold.sdk.age import AgeRating
 from shelfhold.sdk.lang import LanguageTag
 from shelfhold.sdk.models import SdkModel
 
+# Where a credential sits in a reference (an OPDS feed that carries the API key in its path), a
+# source writes this placeholder instead and the host puts the key back when it sends the request
+# (EF-SRC-035). The reference then stays the same when the key is rotated.
+SECRET_PLACEHOLDER = "{secret}"  # noqa: S105 - the name of a template slot, not a credential
+
 Nature = Literal["published", "community", "machine", "unknown"]
 
 

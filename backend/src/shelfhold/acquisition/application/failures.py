@@ -18,6 +18,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.schema import acquisition
+from shelfhold.plugin_host.errors import RefHasSecret
 from shelfhold.sdk.source import SourceChanged
 
 _PAUSE_EVENTS = {
@@ -45,6 +46,8 @@ async def from_service[T](call: Awaitable[T]) -> T:
     """
     try:
         return await call
+    except RefHasSecret:
+        raise  # a Unit's problem, before the `SourceChanged` reading: never a pause (EF-SRC-035)
     except _SHAPE_ERRORS as error:
         raise unexpected_shape(error) from error
     except InvalidFetchUrl as error:
@@ -205,6 +208,21 @@ class FailureLedger:
     def clear_outage(self, connection: Connection) -> None:
         self._unset(connection, "$.outage")
         self._unset(connection, "$.unavailable")
+
+    # -- units left out because their reference held a secret (EF-SRC-035) -------------------------
+    def quarantine(self, connection: Connection, binding_id: str, reason: str, count: int) -> bool:
+        """Remember why a series has Units left out; True the first time of an episode (the one
+        `source.ref_has_secret` is due). The state shows in `source_config.health`."""
+        value = {"reason": reason, "units": count}
+        fresh = self._set(
+            connection, f"$.quarantine.{json.dumps(binding_id)}", value, if_unset=True
+        )
+        if not fresh:
+            self._set(connection, f"$.quarantine.{json.dumps(binding_id)}", value)
+        return fresh
+
+    def release(self, connection: Connection, binding_id: str) -> None:
+        self._unset(connection, f"$.quarantine.{json.dumps(binding_id)}")
 
     # -- absence from the service's library (EF-SRC-027) ---------------------------------------
     def bump_missing(self, connection: Connection, binding_id: str) -> int:

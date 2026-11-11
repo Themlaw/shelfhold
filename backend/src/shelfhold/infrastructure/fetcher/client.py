@@ -42,7 +42,7 @@ from shelfhold.infrastructure.fetcher.guard import (
 )
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.fetcher.resolver import Resolver
-from shelfhold.infrastructure.logging import elapsed_ms, route_of
+from shelfhold.infrastructure.logging import elapsed_ms, known_secret_values, route_of
 from shelfhold.sdk.fetcher import Response
 
 _REDIRECTS: Final = frozenset({301, 302, 303, 307, 308})
@@ -125,6 +125,11 @@ class GuardedFetcher:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    def secret_values(self) -> frozenset[str]:
+        """The values this Fetcher may put in a request (and every other registered secret), with
+        the forms a URL carries them in: what a reference is checked against (EF-SRC-035)."""
+        return known_secret_values()
 
     async def get(
         self,

@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, cast
 
 import sqlalchemy as sa
 import structlog
@@ -114,6 +114,7 @@ from shelfhold.plugin_host.errors import (
     ServiceInstanceChanged,
     ServiceVersionMismatch,
 )
+from shelfhold.plugin_host.refs_guard import screened, secret_of, values_of
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
@@ -259,9 +260,20 @@ class FollowCycle:
         self._engine = engine
         self._bus = bus
         self._clock = clock
+        self._plugin_id = service.manifest.key
+        # every reference the service hands back goes through the guard (EF-SRC-035): refused or
+        # rewritten to the template the adapter declared, before the cycle stores any of it
+        service = cast(
+            "ConnectedService",
+            screened(
+                service,
+                values_of(fetcher),
+                lambda: getattr(fetcher, "ref_template", None),
+                secret_of(fetcher),
+            ),
+        )
         self._service = service
         self._fetcher = fetcher
-        self._plugin_id = service.manifest.key
         self._k = stale_k
         self._ledger = FailureLedger(self._plugin_id)
         self._tickets = DownloadTickets(
@@ -282,6 +294,7 @@ class FollowCycle:
         self._receive_files = receive
         self._keep_range = keep_range  # the host store of a ranged file (EF-SRC-032)
         self._ranged: dict[str, list[UnitInfo]] = {}  # listing of the ranged series, this cycle
+        self._left_out: dict[str, list[str]] = {}
         self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
         self._notices = Notices(clock)
         self._buried: dict[str, str] = {}  # tombstoned series of this cycle, by notice key
@@ -558,11 +571,14 @@ class FollowCycle:
     async def _discover_series(self, library: list[SeriesRef], report: FollowReport) -> None:
         """EF-SRC-009: a series of the library without a binding gets its Work, Edition and
         binding before anything else is read; its watermark is its highest visible chapter."""
-        found = await self._discovery.run(
-            library,
-            lambda ref: from_service(self._service.list_units(self._fetcher, ref)),
-            self._sub_sources,
-        )
+
+        async def list_units(ref: SeriesRef) -> list[UnitInfo]:
+            units = await from_service(self._service.list_units(self._fetcher, ref))
+            if reasons := self._take_quarantined():
+                self._left_out[ref.remote_id] = reasons  # told at the look of its binding
+            return units
+
+        found = await self._discovery.run(library, list_units, self._sub_sources)
         self._listed = found.units
         report.created += found.created
         report.tombstoned += found.tombstoned
@@ -771,6 +787,8 @@ class FollowCycle:
         fresh = units is not None
         if units is None:
             units = await from_service(self._service.list_units(self._fetcher, ref))
+            self._left_out[binding.remote_id] = self._take_quarantined()
+        self._quarantine(binding)
         if self._is_ranged():
             self._ranged[binding.id] = units
         await self._credit_authors(binding, ref)
@@ -826,6 +844,28 @@ class FollowCycle:
             connection.execute(
                 sa.update(table).where(table.c.id == binding.id).values(last_checked=look.now)
             )
+
+    def _take_quarantined(self) -> list[str]:
+        taken = getattr(self._service, "take_quarantined", None)
+        return taken() if callable(taken) else []
+
+    def _quarantine(self, binding: _Binding) -> None:
+        """Units whose reference held a secret were left out of the listing: the series goes on
+        without them, the state says why (visible), and `source.ref_has_secret` is told once per
+        episode. The service is never paused for it."""
+        reasons = self._left_out.pop(binding.remote_id, [])
+        with self._engine.begin() as connection:
+            if not reasons:
+                self._ledger.release(connection, binding.id)
+                return
+            reason = reasons[0]
+            log.warning("follow.units_quarantined", binding_id=binding.id, units=len(reasons))
+            if self._ledger.quarantine(connection, binding.id, reason, len(reasons)):
+                self._emit(
+                    connection,
+                    "source.ref_has_secret",
+                    {"code": "source.ref_has_secret", "units": len(reasons)},
+                )
 
     async def _credit_authors(self, binding: _Binding, ref: SeriesRef) -> None:
         """The authors the source gives become contributors of the Work (EF-BIB-046).

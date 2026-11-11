@@ -11,9 +11,8 @@ deletes or moves a file, and it does not touch Kavita (its settings from before 
 as they are, EF-EXP-028).
 """
 
-import json
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Final
 
@@ -21,9 +20,20 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
 
+from shelfhold.acquisition.application.upstream_snapshot import (
+    CAPABILITY,
+    SCHEMA_VERSION,
+    SEALED_KEY,
+    SnapshotRefusedError,
+    open_sealed,
+    prepare_payload,
+    seal_fields,
+    validate_payload,
+)
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
+from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.sdk.connected import ConnectedCapability
 from shelfhold.sdk.fetcher import Fetcher
 from shelfhold.sdk.refs import SeriesRef
@@ -39,18 +49,11 @@ __all__ = [
     "TakeReport",
     "UpstreamSnapshots",
     "series_key",
+    "validate_payload",
 ]
 
 log = structlog.get_logger(__name__)
-CAPABILITY: Final = "upstream_restore"
-SCHEMA_VERSION: Final = 1
 EXCLUSION_MARK: Final = "Shelfhold"  # the name of the category that holds a series out of updates
-MAX_PAYLOAD_BYTES: Final = 16 * 1024
-_SECRET_WORDS: Final = ("password", "passwd", "secret", "token", "apikey", "api_key", "cookie")
-
-
-class SnapshotRefusedError(ValueError):
-    """The payload is not a plain, secret-free document (EF-EXP-056, passe 9)."""
 
 
 def series_key(ref: SeriesRef) -> str:
@@ -58,33 +61,11 @@ def series_key(ref: SeriesRef) -> str:
     return f"{ref.source_key}|{ref.remote_id}"
 
 
-def _walk(value: object, depth: int = 0) -> None:
-    if depth > 6:
-        raise SnapshotRefusedError("snapshot too deep")
-    if isinstance(value, Mapping):
-        for key, inner in value.items():
-            if not isinstance(key, str) or any(w in key.casefold() for w in _SECRET_WORDS):
-                raise SnapshotRefusedError(f"snapshot key {key!r} is not allowed")
-            _walk(inner, depth + 1)
-    elif isinstance(value, list):
-        for inner in value:
-            _walk(inner, depth + 1)
-    elif value is not None and not isinstance(value, str | int | float | bool):
-        raise SnapshotRefusedError("snapshot holds a value that is not plain data")
-
-
-def validate_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Plain JSON, small, and with no key that names a secret: it is stored in the clear."""
-    _walk(payload)
-    if len(json.dumps(payload, separators=(",", ":"), sort_keys=True)) > MAX_PAYLOAD_BYTES:
-        raise SnapshotRefusedError("snapshot too large")
-    return dict(payload)
-
-
 class UpstreamSnapshots:
-    def __init__(self, engine: Engine, *, clock: Clock) -> None:
+    def __init__(self, engine: Engine, *, clock: Clock, vault: SecretVault | None = None) -> None:
         self._engine = engine
         self._clock = clock
+        self._vault = vault  # seals the fields a service declares sensitive (ENF-SEC-005)
 
     async def take(
         self, service: Any, f: Fetcher, *, connected_service_id: str, ref: SeriesRef
@@ -95,16 +76,25 @@ class UpstreamSnapshots:
         if ConnectedCapability.UPSTREAM_RESTORE not in service.connected:
             return False
         key = series_key(ref)
-        if self.get(connected_service_id, key) is not None:
+        if self._stored(connected_service_id, key) is not None:
             return False
-        payload = validate_payload(await service.snapshot_upstream(f, ref))
+        sensitive = frozenset(getattr(service, "snapshot_sensitive_fields", ()))
+        clear, hidden = prepare_payload(
+            await service.snapshot_upstream(f, ref),
+            sensitive,
+            can_seal=self._vault is not None,
+            schema=getattr(service, "snapshot_schema", None),
+        )
+        row_id = new_ulid()
+        if hidden and self._vault is not None:
+            clear = {**clear, SEALED_KEY: seal_fields(self._vault, row_id, hidden)}
         with self._engine.begin() as connection:
             if self._row(connection, connected_service_id, key) is not None:
                 return False
             connection.execute(
                 sa.insert(acquisition.upstream_snapshot).values(
-                    id=new_ulid(), connected_service_id=connected_service_id, series_ref=key,
-                    capability=CAPABILITY, payload=payload, schema_version=SCHEMA_VERSION,
+                    id=row_id, connected_service_id=connected_service_id, series_ref=key,
+                    capability=CAPABILITY, payload=clear, schema_version=SCHEMA_VERSION,
                     taken_at=self._clock.now(),
                 )
             )  # fmt: skip
@@ -152,9 +142,10 @@ class UpstreamSnapshots:
         category named `EXCLUSION_MARK`): the only ones a detachment removes. An exclusion under
         another name is the administrator's own. Returns their ids."""
         key = series_key(ref)
-        snap = self.get(connected_service_id, key)
-        if snap is None:
+        stored = self._stored(connected_service_id, key)
+        if stored is None:
             return []
+        snap = {k: v for k, v in stored.items() if k != SEALED_KEY}  # the sealed part stays as is
         known = {int(c["id"]) for c in snap.get("categories", [])}
         now = await service.snapshot_upstream(f, ref)
         added = sorted(
@@ -164,7 +155,11 @@ class UpstreamSnapshots:
             and c.get("name") == EXCLUSION_MARK
             and int(c["id"]) not in known
         )
-        payload = validate_payload({**snap, "shelfhold_excluded": added})
+        payload = validate_payload(
+            {**snap, "shelfhold_excluded": added}, schema=getattr(service, "snapshot_schema", None)
+        )
+        if SEALED_KEY in stored:
+            payload[SEALED_KEY] = stored[SEALED_KEY]
         table = acquisition.upstream_snapshot
         with self._engine.begin() as connection:
             connection.execute(
@@ -179,6 +174,20 @@ class UpstreamSnapshots:
         return added
 
     def get(self, connected_service_id: str, key: str) -> dict[str, Any] | None:
+        """The snapshot as it was taken, the sealed fields opened."""
+        with self._engine.connect() as connection:
+            row = self._row(connection, connected_service_id, key)
+        if row is None:
+            return None
+        payload = dict(row.payload)
+        blob = payload.pop(SEALED_KEY, None)
+        if blob is not None:
+            if self._vault is None:
+                raise SnapshotRefusedError("a sealed snapshot needs the vault to be read")
+            payload.update(open_sealed(self._vault, row.id, blob))
+        return payload
+
+    def _stored(self, connected_service_id: str, key: str) -> dict[str, Any] | None:
         with self._engine.connect() as connection:
             row = self._row(connection, connected_service_id, key)
         return dict(row.payload) if row is not None else None

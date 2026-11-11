@@ -35,7 +35,9 @@ from shelfhold.export.domain.provenance_mirror import (
     mirror_name,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.fetcher.refs import projectable
 from shelfhold.infrastructure.fsops import Fsops, PathEscapeError
+from shelfhold.infrastructure.logging import known_secret_values
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
 from shelfhold.integrations.apprise import operating_bus as default_bus
 from shelfhold.library.public import export_sources
@@ -364,7 +366,11 @@ class ProvenanceMirror:
                     variant=chosen.get(covered["unit"]) or None,
                     source_key=detail.source_key if detail else None,
                     sub_source=None,
-                    remote_unit_id=detail.remote_unit_id if detail else None,
+                    remote_unit_id=(
+                        projectable(detail.remote_unit_id, known_secret_values())
+                        if detail
+                        else None
+                    ),
                     team=(
                         {"id": detail.team_id, "label": detail.label}
                         if detail and detail.team_id

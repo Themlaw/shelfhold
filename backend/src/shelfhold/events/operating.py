@@ -46,6 +46,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "source.fallback",
         "source.instance_changed",
         "source.not_loaded",
+        "source.ref_has_secret",
         "source.version_unsupported",
         "target.child_exposure",
         "target.forbidden",
