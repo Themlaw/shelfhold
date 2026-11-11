@@ -25,6 +25,8 @@ from shelfhold.infrastructure.secret_text import (
     contains_secret,
     decoded_views,
     secret_forms,
+    sensitive_name,
+    tokenlike,
 )
 
 _WORDS = (
@@ -67,7 +69,6 @@ _TOKEN_SEGMENT = re.compile(
     r"eyJ[\w-]+\.[\w-]+\.[\w-]*|[0-9a-fA-F]{32,}|[A-Za-z0-9_-]{20,}={0,2}(?=[A-Za-z0-9_-]*\d)"
     r"(?=[A-Za-z0-9_-]*[a-z])(?=[A-Za-z0-9_-]*[A-Z])"
 )
-_URL_SENSITIVE = re.compile(rf"{_WORDS}|signature|^sig$|^sas$|jsessionid|^sid$", re.IGNORECASE)
 _URL_IN_TEXT = re.compile(r"""\b[a-z][a-z0-9+.-]*://[^\s'"<>)\]}]+""", re.IGNORECASE)
 _SOURCE_URL = re.compile(r"""\b[a-z][a-z0-9+.-]*://[^\s'"<>)\]}]+""", re.IGNORECASE)
 
@@ -159,6 +160,7 @@ def _redact_path(path: str) -> str:
             contains_secret(segment, known_secret_index())
             or (named and segment != _PLACEHOLDER)
             or _TOKEN_SEGMENT.fullmatch(decoded)
+            or tokenlike(decoded)
         ):
             segments[index] = REDACTED
         previous = decoded
@@ -178,12 +180,15 @@ def _redact_pairs(text: str, separators: str = "&;") -> str:
             continue
         name, equals, value = piece.partition("=")
         if equals and (
-            _URL_SENSITIVE.search(unquote(name))
+            sensitive_name(name)
             or contains_secret(value, known_secret_index())
             or _TOKEN_SEGMENT.fullmatch(unquote(value))
+            or tokenlike(unquote(value))
         ):
             pieces[index] = f"{name}={REDACTED}"
-        elif contains_secret(piece, known_secret_index()):
+        elif contains_secret(piece, known_secret_index()) or (
+            not equals and tokenlike(unquote(piece))  # `#<token>`: a bare fragment
+        ):
             pieces[index] = REDACTED
     return "".join(pieces)
 

@@ -165,3 +165,24 @@ def test_the_write_guard_sees_a_value_written_into_the_sql_text() -> None:
             many=False,
         )
     check_write("INSERT INTO unit_variant (id) VALUES ('a') -- /* ok */", (), many=False)
+
+
+def test_redact_url_masks_short_names_and_bare_tokens_but_keeps_an_author() -> None:
+    from shelfhold.infrastructure.logging import redact_url, route_of
+
+    tok = synthetic_text("review-f")[:16]
+    b36 = "".join(c for c in synthetic_text("review-g").lower() if c.isalnum())[:24]
+    for url in (
+        f"https://h.example/x?t={tok}",
+        f"https://h.example/x?Policy={tok}&k=1",
+        f"https://h.example/x?accessToken={tok}",
+        f"https://h.example/api/{b36}/feed",
+        f"https://h.example/s/{tok}/ch-1",
+        f"https://h.example/x#{tok}",
+        f"https://h.example/x?token[]={tok}",
+    ):
+        out = redact_url(url)
+        assert tok not in out and b36 not in out, (url, out)
+    assert route_of(f"https://h.example/s/{b36}/ch-1") == "h.example/s/***/ch-1"
+    kept = "https://h.example/search?author=Hugo&q=Miserables&keyword=a#top"
+    assert redact_url(kept) == kept

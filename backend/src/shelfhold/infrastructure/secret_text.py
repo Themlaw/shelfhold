@@ -154,9 +154,15 @@ _SENSITIVE_WORDS = frozenset(
         "key", "t", "token", "hmac", "policy", "signature", "sig", "secret", "password", "passwd",
         "pwd", "auth", "authorization", "session", "sid", "cookie", "credential", "credentials",
         "code", "jwt", "bearer", "sas", "otp", "sso", "apikey", "accesstoken", "refreshtoken",
-        "idtoken", "authtoken", "sessionid", "jsessionid", "phpsessid",
+        "idtoken", "authtoken", "sessionid", "jsessionid", "phpsessid", "pass", "passphrase",
+        "komga",
     }
 )  # fmt: skip
+# Long enough not to be found inside a word that means something else: any name that *contains*
+# one of these is sensitive (`sessionkey`, `mytoken`). `auth`, `key`, `sig`, `code` are not here:
+# `author`, `keyword` and `sigma` are not credentials.
+_LONG_WORDS = ("token", "secret", "password", "passwd", "passphrase", "cookie", "credential",
+               "session", "signature", "apikey")  # fmt: skip
 _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _JWT = re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]*")
 _UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
@@ -175,7 +181,12 @@ def sensitive_name(name: str) -> bool:
     """A parameter name that says it holds a credential, read word by word (camelCase, `-`, `_`,
     a trailing `[]`) and never as a substring: `author` is not `auth`."""
     words = _words(name)
-    return any(w in _SENSITIVE_WORDS for w in words) or "".join(words) in _SENSITIVE_WORDS
+    joined = "".join(words)
+    return (
+        any(w in _SENSITIVE_WORDS for w in words)
+        or joined in _SENSITIVE_WORDS
+        or any(w in joined for w in _LONG_WORDS)
+    )
 
 
 def _entropy(text: str) -> float:
