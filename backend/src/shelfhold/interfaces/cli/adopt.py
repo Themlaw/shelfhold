@@ -96,6 +96,8 @@ def _show(report: AdoptionReport) -> None:
         print(t("adopt.child_library_files"))
     for rename in report.renames:
         print(t("adopt.rename_line", from_path=rename.from_path, to_path=rename.to_path))
+    for path in report.active_content:
+        print(t("adopt.active_content_line", path=path))
     for duplicate in report.duplicates:
         print(
             t(

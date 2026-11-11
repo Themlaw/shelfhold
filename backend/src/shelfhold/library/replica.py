@@ -95,15 +95,35 @@ def _source_is_alive(unit_id: str) -> sa.ColumnElement[bool]:
     return sa.and_(listed, still_there)
 
 
+def _derived_hashes(connection: Connection, unit_id: str) -> set[str]:
+    content = storage.content
+    return {
+        h
+        for h in connection.execute(
+            sa.select(content.c.derived_hash).where(
+                content.c.unit_id == unit_id, content.c.derived_hash.is_not(None)
+            )
+        ).scalars()
+    }
+
+
 def independent_copies(connection: Connection, unit_id: str) -> int:
     reference = reference_content_hash(connection, unit_id)
-    if reference is None:
+    derived = _derived_hashes(connection, unit_id)
+    if reference is None and not derived:
         return 0
+    # The derivative of an `untrusted` EPUB is a readable copy of its own (EF-BIB-051): its hash
+    # is not the original's, so it is counted by `derived_hash`, and a content whose original is
+    # gone (`extracted_derived`) is evaluated without it.
+    same = replica_table.c.content_hash == reference if reference is not None else sa.false()
+    readable = sa.and_(
+        replica_table.c.fidelity == "derived", replica_table.c.content_hash.in_(derived)
+    )
     rows = connection.execute(
         sa.select(replica_table.c.id, replica_table.c.dev, replica_table.c.ino).where(
             replica_table.c.unit_id == unit_id,
             replica_table.c.independent,
-            replica_table.c.content_hash == reference,
+            sa.or_(same, readable),
             # the origin is a copy only while it still lists the Unit: decided here, at counting
             # time, not by a row someone must remember to update
             sa.or_(replica_table.c.location != "upstream", _source_is_alive(unit_id)),
@@ -268,8 +288,13 @@ class StoreCopy:
     file_hash: str | None  # the bytes that were put in /store
 
 
-def store_copies(connection: Connection, unit_id: str) -> Sequence[StoreCopy]:
-    """The Unit's copies in /store, oldest first (the kept originals, EF-BIB-027)."""
+def store_copies(
+    connection: Connection, unit_id: str, *, include_untrusted: bool = False
+) -> Sequence[StoreCopy]:
+    """The Unit's copies in /store, oldest first (the kept originals, EF-BIB-027).
+
+    The originals of `untrusted` EPUBs (`untrusted/`) are left out unless asked for: only the
+    derivative pipeline has a use for them, and nothing else may be handed one (EF-BIB-051)."""
     root = platform.physical_root
     rows = connection.execute(
         sa.select(
@@ -282,7 +307,11 @@ def store_copies(connection: Connection, unit_id: str) -> Sequence[StoreCopy]:
         .where(replica_table.c.unit_id == unit_id, replica_table.c.location == "store")
         .order_by(replica_table.c.id)
     )
-    return [StoreCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash) for r in rows]
+    return [
+        StoreCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash)
+        for r in rows
+        if include_untrusted or not r.rel_path.startswith("untrusted/")
+    ]
 
 
 @dataclass(frozen=True)
@@ -375,6 +404,7 @@ def record_library_rewrite(
     size: int,
     mtime_ns: int,
     verified_at: datetime,
+    content_hash: str | None = None,
 ) -> None:
     """A /library file replaced in place (an atomic write makes a new inode): the manifest's hash
     and the identity of what is there now, so a stale inode is never counted as a copy."""
@@ -388,6 +418,7 @@ def record_library_rewrite(
             size=size,
             mtime_ns=mtime_ns,
             verified_at=verified_at,
+            **({} if content_hash is None else {"content_hash": content_hash}),
         )
     )
 

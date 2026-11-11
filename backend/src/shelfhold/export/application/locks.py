@@ -8,8 +8,8 @@ boot once the instance lock is ours.
 
 import threading
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 from datetime import timedelta
 
 import sqlalchemy as sa
@@ -17,6 +17,7 @@ from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence
 
 DEFAULT_LEASE = timedelta(minutes=10)
@@ -30,6 +31,7 @@ __all__ = [
     "ResourceLocks",
     "library_resource",
     "path_resource",
+    "work_lock_for",
     "work_resource",
 ]
 
@@ -58,6 +60,20 @@ def path_resource(series: str) -> str:
 def library_resource(remote_library_id: str, normalized_name: str) -> str:
     """A series name of a remote library, whichever shelf writes it (EF-EXP-062)."""
     return f"library:{remote_library_id}/{normalized_name}"
+
+
+def work_lock_for(
+    engine: Engine, *, clock: Clock, timeout: float = 30.0
+) -> Callable[[str], "AbstractContextManager[HeldLocks]"]:
+    """The `hold_work` of a writer that lives outside `export` (the store of EPUB derivatives):
+    the lock of one Work, the one `purge --now` takes before it erases (EF-BIB-052), so a write
+    under /store or `received/` and a purge of the same Work never interleave."""
+    locks = ResourceLocks(engine, clock=clock)
+
+    def hold(work_id: str) -> "AbstractContextManager[HeldLocks]":
+        return locks.hold_resources(new_ulid(), [work_resource(work_id)], timeout=timeout)
+
+    return hold
 
 
 class HeldLocks:

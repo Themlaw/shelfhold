@@ -73,6 +73,7 @@ from shelfhold.library.public import (
     FILE_HASH_BY,
     ContentHash,
     ContentTombstones,
+    has_active_content,
     record_destination_copy,
 )
 from shelfhold.sdk.age import from_comicinfo
@@ -133,6 +134,7 @@ class AdoptedFile:
     mtime_ns: int
     ino: int
     tombstoned: bool = False  # purged for good: never adopted again (EF-BIB-052 (2))
+    active_content: bool = False  # an EPUB the neutralizer would change or refuse (EF-BIB-051)
 
 
 @dataclass(frozen=True)
@@ -195,6 +197,13 @@ class AdoptionReport:
     def tombstoned(self) -> tuple[str, ...]:
         """Files purged for good: the preview says so, the adoption leaves them out."""
         return tuple(f.rel_path for s in self.series for f in s.files if f.tombstoned)
+
+    @property
+    def active_content(self) -> tuple[str, ...]:
+        """EPUB already in the library that hold active content (scripts, handlers, remote
+        resources) or that the neutralizer refuses: adopted as they are, never served by Shelfhold
+        and never rewritten, but the admin is told (EF-BIB-051, passe 10)."""
+        return tuple(f.rel_path for s in self.series for f in s.files if f.active_content)
 
     @property
     def files(self) -> int:
@@ -569,6 +578,7 @@ class Adopter:
                 AdoptedFile(
                     name, rel, local, kind, number, origin, seen[1].size, seen[1].mtime_ns,
                     seen[1].ino, purged,
+                    local.lower().endswith(".epub") and has_active_content(self._fsops, local),
                 )
             )  # fmt: skip
         parsed_names = [

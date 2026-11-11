@@ -46,3 +46,11 @@ Frontière de confiance du **corps** des fichiers (EF-BIB-051, ENF-SEC-015, ADR-
 - Une référence relative qui remonte au-delà de la racine du paquet (`../../…`) n'est pas bornée ici : la fonction ne connaît pas le chemin de l'entrée.
 - Le MathML est supprimé ; l'audio et la vidéo aussi.
 - `content-hash@2` (hash d'un EPUB sans son OPF) est défini dans `epub_scan.py` ; le lot qui fournit le hash du contenu EPUB (L09) doit l'adopter tel quel ou changer la version.
+
+## Où le dérivé est produit et servi (M2 L03)
+
+- À l'ingestion d'un EPUB de source `untrusted` (ou sans liaison lisible) : dérivé vers `/library`, original vers `/store/untrusted/`. Rien d'autre que le dérivé n'est lisible par une destination.
+- Un EPUB refusé n'a ni dérivé ni original rangé : l'Unité est en quarantaine avec la raison.
+- Après une mise à jour de sécurité du neutraliseur : `shelfhold content reneutralize` (aperçu), puis `--confirm <empreinte>`. Il repart de l'original, sinon du dérivé rangé, et garde l'ancienne génération dans `derived_chain`.
+- Sans `/store`, seul le dérivé est gardé (avertissement `content.original_not_kept`) : une correction du neutraliseur ne repart alors que du dérivé.
+- Le rapport d'adoption signale les EPUB déjà présents qui contiennent du contenu actif ; il ne les modifie pas.

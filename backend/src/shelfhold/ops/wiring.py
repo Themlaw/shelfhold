@@ -28,6 +28,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
 from shelfhold.ops.adoption import LibraryAdoptionExit
 from shelfhold.ops.backfill import BackfillOps
+from shelfhold.ops.content import ContentOps
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.intents import IntentOps
@@ -129,6 +130,7 @@ def open_ops(
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), backfill=BackfillOps(composition),
         normalize=NormalizeOps(composition), meta=MetaOps(composition),
+        content=ContentOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),
         follows=FollowOps(composition), roots=RootOps(composition),
     )  # fmt: skip

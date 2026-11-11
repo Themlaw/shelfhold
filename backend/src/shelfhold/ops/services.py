@@ -37,6 +37,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export, platform
 from shelfhold.ops.backfill import BackfillOps
+from shelfhold.ops.content import ContentOps
 from shelfhold.ops.errors import (
     CodedRefusal,
     ExitUnavailableError,
@@ -172,6 +173,7 @@ class OpsServices:
         backfill: BackfillOps | None = None,
         normalize: NormalizeOps | None = None,
         meta: MetaOps | None = None,
+        content: ContentOps | None = None,
         rating: RatingOps | None = None,
         follows: FollowOps | None = None,
         roots: RootOps | None = None,
@@ -190,6 +192,7 @@ class OpsServices:
         self._backfill = backfill
         self._normalize = normalize
         self._meta = meta
+        self._content = content
         self._rating = rating
         self._follows = follows
         self._roots = roots
@@ -649,6 +652,13 @@ class OpsServices:
         if self._meta is None:
             raise ExitUnavailableError("the projections are not connected")
         return self._meta
+
+    @property
+    def content(self) -> ContentOps:
+        """`content reneutralize` (EF-BIB-051)."""
+        if self._content is None:
+            raise ExitUnavailableError("the content pipeline is not connected")
+        return self._content
 
     def adopt_set_follow_from(self, *, destination_id: str, series: str, chapter: str) -> None:
         if self._adoption is not None:
