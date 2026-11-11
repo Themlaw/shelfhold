@@ -13,7 +13,6 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.plugin_host.native_sources import opds_source
 
 from shelfhold.config import Settings
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
@@ -23,6 +22,7 @@ from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import export
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.vault import SecretVault
+from shelfhold.plugin_host.native_sources import opds_source
 from shelfhold.plugin_host.settings import SourceSettings, parse_settings_schema
 from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.anti_echo_env import seed_own_export

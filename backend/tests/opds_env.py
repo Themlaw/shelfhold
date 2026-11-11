@@ -18,7 +18,6 @@ from unittest.mock import patch
 
 import httpx2
 import sqlalchemy as sa
-from shelfhold.plugin_host.native_sources import opds_source
 
 from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.events.bus import EventBus
@@ -26,6 +25,7 @@ from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.fetcher import Network
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.attestation import FIRST_PARTY_PLUGIN_KEYS
+from shelfhold.plugin_host.native_sources import opds_source
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
 from tests.acquire_env import RoutedStore
