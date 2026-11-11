@@ -23,6 +23,7 @@ from sqlalchemy import Engine
 
 from shelfhold.infrastructure.content_trust import DERIVED_BY, neutralize_epub
 from shelfhold.infrastructure.schema import storage
+from shelfhold.library.replica import library_copies
 
 log = structlog.get_logger(__name__)
 
@@ -52,6 +53,8 @@ class PlanItem:
     to_by: str
     source: Literal["original", "derived", "blocked"]
     reason: str = ""
+    derived_hash: str = ""  # what the plan was made against: a change of any of these is stale
+    library_file: str = ""  # path and recorded hash of the file that would be replaced
 
 
 @dataclass(frozen=True)
@@ -68,9 +71,26 @@ class ReneutralizeReport:
     items: tuple[PlanItem, ...] = ()
 
 
+_PLAN_FIELDS = (
+    "unit_id", "content_id", "from_by", "to_by", "source", "reason", "derived_hash", "library_file",
+)  # fmt: skip
+
+
 def _fingerprint(items: Sequence[PlanItem]) -> str:
     body = json.dumps(
-        [[i.unit_id, i.content_id, i.from_by, i.to_by, i.source, i.reason] for i in items]
+        [
+            [
+                i.unit_id,
+                i.content_id,
+                i.from_by,
+                i.to_by,
+                i.source,
+                i.reason,
+                i.derived_hash,
+                i.library_file,
+            ]
+            for i in items
+        ]
     )
     return hashlib.sha256(body.encode()).hexdigest()
 
@@ -93,7 +113,9 @@ class Reneutralizer:
         content = storage.content
         with self._engine.connect() as connection:
             rows = connection.execute(
-                sa.select(content.c.id, content.c.unit_id, content.c.derived_by)
+                sa.select(
+                    content.c.id, content.c.unit_id, content.c.derived_by, content.c.derived_hash
+                )
                 .where(
                     content.c.format == "epub",
                     content.c.derived_hash.is_not(None),
@@ -105,6 +127,9 @@ class Reneutralizer:
         items: list[PlanItem] = []
         for row in rows:
             source, why = self._store.source_of(row.unit_id)
+            with self._engine.connect() as connection:
+                copies = library_copies(connection, row.unit_id)
+            library = f"{copies[0].local}#{copies[0].file_hash}" if copies else ""
             items.append(
                 PlanItem(
                     row.unit_id,
@@ -113,6 +138,8 @@ class Reneutralizer:
                     self._target,
                     source,
                     why if source == "blocked" else "",
+                    row.derived_hash,
+                    library,
                 )
             )
         plan = tuple(items)

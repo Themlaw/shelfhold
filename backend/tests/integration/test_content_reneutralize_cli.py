@@ -125,7 +125,7 @@ def test_a_derivative_that_cannot_be_regenerated_is_reported_blocked(
         capsys.readouterr()
         assert run_cli(monkeypatch, settings, "content", "reneutralize") == 0
         out = capsys.readouterr().out
-        assert "blocked" in out and "neither_original_nor_derivative_verifies" in out
+        assert "blocked" in out and "library_file_was_replaced" in out
         fingerprint = fingerprint_of(out)
         assert run_cli(monkeypatch, settings, "content", "reneutralize", "--confirm",
                        fingerprint) == 0  # fmt: skip

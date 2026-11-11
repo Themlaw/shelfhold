@@ -575,6 +575,8 @@ class UntrustedEpubStore:
             copies = list(library_copies(connection, unit_id))
         if content is None or content.derived_hash is None:
             return "blocked", "no_derivative"
+        if copies and not self._ours(copies[0], content):
+            return "blocked", "library_file_was_replaced"  # the user's file is never overwritten
         for kept in stores:
             if "/untrusted/" not in kept.local:
                 continue  # only the originals of this pipeline, under /store/untrusted/
@@ -589,6 +591,21 @@ class UntrustedEpubStore:
                 if _payload_of(stream) == content.derived_hash:
                     return "derived", copy.local
         return "blocked", "neither_original_nor_derivative_verifies"
+
+    def _ours(self, copy: Any, content: Any) -> bool:
+        """The file in /library is one Shelfhold wrote: the recorded bytes, or a generation of the
+        derivative (the current one or one of `derived_chain`: a crash between the file and its
+        rows leaves either). A file the user put there since is theirs, and never replaced."""
+        generations = {content.derived_hash} | {
+            e.get("derived_hash") for e in content.derived_chain or ()
+        }
+        with suppress(FileNotFoundError, FsopsError, UnsafeArchiveError):
+            seen = self._fsops.sha256_of(copy.local)
+            if seen in (copy.file_hash, content.original_sha256):
+                return True  # what was written, or the original a restore put back (repair)
+            with self._fsops.open_read(copy.local) as stream:
+                return _payload_of(stream) in generations
+        return False
 
     @_under_work
     def regenerate(
@@ -605,6 +622,8 @@ class UntrustedEpubStore:
         if content is None or not copies:
             raise RegenerationBlockedError("no_library_copy")
         into = copies[0]
+        if not self._ours(into, content):
+            raise RegenerationBlockedError("library_file_was_replaced")
         with tempfile.NamedTemporaryFile(
             dir=self._staging(), suffix=".epub", prefix="regen-"
         ) as out:
@@ -617,11 +636,27 @@ class UntrustedEpubStore:
             self._verify_derivative(staged, made.derived_hash)  # verified before it replaces
             digest = sha256_file(staged)
             now = datetime.now(UTC)
-            with staged.open("rb") as stream:
-                written = self._fsops.write_atomic(
-                    into.local, stream, replace=True,
-                    verify_digest=lambda: digest.removeprefix("sha256:"),
+            chain = extend_chain(
+                content.derived_chain,
+                chain_entry(content.derived_by, content.derived_hash, content.derived_hash_by, now),
+            )
+            # the rows first: a crash after the file lands leaves rows that describe it, one
+            # before leaves the old file, whose hash is in `derived_chain` (`_ours`): never blocked
+            self._set_generation(
+                content.id, made.derived_hash, made.derived_by, made.derived_hash_by, chain, None
+            )
+            try:
+                with staged.open("rb") as stream:
+                    written = self._fsops.write_atomic(
+                        into.local, stream, replace=True,
+                        verify_digest=lambda: digest.removeprefix("sha256:"),
+                    )  # fmt: skip
+            except BaseException:
+                self._set_generation(
+                    content.id, content.derived_hash, content.derived_by,
+                    content.derived_hash_by, list(content.derived_chain or ()), None,
                 )  # fmt: skip
+                raise
             with self._engine.begin() as connection:
                 record_library_rewrite(
                     connection, into.replica_id, file_hash=digest,
@@ -631,26 +666,28 @@ class UntrustedEpubStore:
                 connection.execute(
                     sa.update(storage.content)
                     .where(storage.content.c.id == content.id)
-                    .values(
-                        derived_hash=made.derived_hash,
-                        derived_by=made.derived_by,
-                        derived_hash_by=made.derived_hash_by,
-                        size=written.size,
-                        derived_chain=extend_chain(
-                            content.derived_chain,
-                            chain_entry(
-                                content.derived_by,
-                                content.derived_hash,
-                                content.derived_hash_by,
-                                now,
-                            ),
-                        ),
-                    )
+                    .values(size=written.size)
                 )
         self._projection.project(unit_id)
         return Regenerated(unit_id, content.id, source, made.derived_by, made.derived_hash)
 
     # -- internals --------------------------------------------------------------------------
+
+    def _set_generation(
+        self, content_id: str, derived_hash: str, derived_by: str, hash_by: str | None,
+        chain: list[Any], size: int | None,
+    ) -> None:  # fmt: skip
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(storage.content)
+                .where(storage.content.c.id == content_id)
+                .values(
+                    derived_hash=derived_hash,
+                    derived_by=derived_by,
+                    derived_hash_by=hash_by,
+                    derived_chain=chain,
+                )
+            )
 
     def _work_of(self, unit_id: str) -> str:
         with self._engine.connect() as connection:
