@@ -95,7 +95,7 @@ jobs:
       # One runner per shard, the same image artifact for all (e2e/shards.py: each under 10 minutes).
       matrix:
         arch: ${{ fromJSON(inputs.arm64 && '["amd64","arm64"]' || '["amd64"]') }}
-        shard: [smoke-install, redeploy, redeploy-export, detach-exits, exits-live-roots, detach-exclusion, name-collision, name-foreign]
+        shard: [smoke-install, redeploy, redeploy-export, detach-exits, exits-live-roots, detach-exclusion, name-collision, name-foreign, m1b-family, m1b-safeguard, m1b-wake, m1b-backup, m1b-ui-login, m1b-purge, m1b-rollback]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
@@ -117,9 +117,23 @@ jobs:
         run: docker/load-oci.sh "$RUNNER_TEMP/image-${ARCH}.tar"
       - name: Install dependencies
         run: uv sync --project backend --locked
+      - name: Previous release (tag v0.2.0) as an image, for the way back (ENF-OPS-008)
+        # Only the rollback shard needs it: the image of the last release, built from its own tag
+        # (nothing of the current tree), to run on the volumes of the image under test.
+        if: matrix.shard == 'm1b-rollback'
+        run: |
+          git fetch --no-tags --depth=1 origin "refs/tags/${PREVIOUS_TAG}:refs/tags/${PREVIOUS_TAG}"
+          mkdir "$RUNNER_TEMP/previous"
+          git archive "$PREVIOUS_TAG" | tar -x -C "$RUNNER_TEMP/previous"
+          docker build -f "$RUNNER_TEMP/previous/docker/Dockerfile" \
+            --build-arg WITH_FRONTEND=true --build-arg VERSION="${PREVIOUS_TAG#v}" \
+            -t shelfhold:previous "$RUNNER_TEMP/previous"
+        env:
+          PREVIOUS_TAG: v0.2.0
       - name: Smoke (up --wait, /readyz, SPA index) and no outbound request
         working-directory: e2e
         env:
           SHELFHOLD_IMAGE: shelfhold:ci
+          SHELFHOLD_IMAGE_PREVIOUS: ${{ matrix.shard == 'm1b-rollback' && 'shelfhold:previous' || '' }}
           E2E_SHARD: ${{ matrix.shard }}
         run: uv run --project ../backend --locked pytest tests

@@ -12,6 +12,7 @@ on:
     paths:
       - "e2e/suwayomi/**"
       - "backend/tests/contract/**"
+      - "backend/src/shelfhold/plugin_host/adapters/meta/suwayomi/**"
       - "backend/tests/fixtures/synthetic/**"
       - "backend/pyproject.toml"
       - "backend/uv.lock"
@@ -42,6 +43,6 @@ jobs:
         run: docker compose -f e2e/suwayomi/compose.yaml pull
         env:
           SUWAYOMI_DATA: ${{ runner.temp }}
-      - name: Contract tests (basic_auth and ui_login)
+      - name: Contract tests (basic_auth and ui_login, the M1b documents included)
         working-directory: backend
         run: uv run --locked pytest -m contract tests/contract -v

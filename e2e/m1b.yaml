@@ -1,0 +1,49 @@
+# M1b overlay (L30), used with compose.yaml and journey.yaml: `-f compose.yaml -f journey.yaml
+# -f m1b.yaml`. Adds the simulated Sablier (the WakeHook, EF-INT-022), the backup folder and its
+# passphrase file (EF-INT-015), outside /data and /store. Nothing here leaves the network
+# namespace of the stack. `ui-login.yaml` is the variant with Suwayomi in `ui_login`.
+name: shelfhold-e2e-m1b
+
+services:
+  library-init:
+    command: ["sh", "-c", "chown 1000:1000 /library /backups"]
+    volumes:
+      - library:/library
+      - backups:/backups
+
+  fake-sablier:
+    image: ${SHELFHOLD_IMAGE:?}
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: service:egress-watch
+    command: ["python", "/fakes/sablier/serve.py"]
+    environment:
+      PYTHONPATH: /fakes
+      PYTHONDONTWRITEBYTECODE: "1"
+    depends_on:
+      egress-watch: { condition: service_healthy }
+    volumes:
+      - ./fakes:/fakes:ro
+    tmpfs: ["/tmp"]
+
+  fake-suwayomi:
+    environment:
+      FAKE_STORE_ROOT: /store
+    volumes:
+      - store:/store:ro
+
+  shelfhold:
+    depends_on:
+      fake-sablier: { condition: service_started }
+    environment:
+      SHELFHOLD_WAKE_URL: http://127.0.0.1:10000
+      SHELFHOLD_WAKE_SUWAYOMI: fake-suwayomi
+      SHELFHOLD_BACKUP_DIR: /backups
+      SHELFHOLD_BACKUP_PASSPHRASE_FILE: /tmp/backup.pass
+    volumes:
+      - backups:/backups
+
+volumes:
+  backups:

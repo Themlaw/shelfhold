@@ -4,7 +4,7 @@ tests behind a socket. Basic authentication, the synthetic library of
 
 POST /_fake/publish releases the second chapter of the first series upstream;
 POST /_fake/twin gives the second series the title of the first (another language)
-and a second chapter, published with the first one's; POST /_fake/reinstall renumbers every local id (the tool reinstalled, EF-SRC-036); GET /_fake/state
+and a second chapter, published with the first one's; POST /_fake/sleep and /_fake/wake stop and start it (Sablier); POST /_fake/reinstall renumbers every local id (the tool reinstalled, EF-SRC-036); GET /_fake/state
 tells what was asked of it. Never used by Shelfhold.
 """
 
@@ -24,11 +24,40 @@ fake = FakeSuwayomi(auth_mode=os.environ.get("FAKE_SUWAYOMI_AUTH", "basic_auth")
 # The series starts with its first chapter only; the test publishes the next one upstream.
 _alpha = fake.state["mangas"][0]["chapters"]
 unpublished = [_alpha.pop()] if len(_alpha) > 1 else []
+# What /store held when Suwayomi was asked to erase a download (the volume is mounted read-only
+# by the M1b overlay): "the copy is put to safety before the upstream purge" is read there.
+erased_with_store: list[dict[str, object]] = []
+_STORE = Path(os.environ.get("FAKE_STORE_ROOT", "/nonexistent"))
+_erase = fake._q_deleteDownloadedChapter  # noqa: SLF001
+
+
+def _erase_observed(query: str, variables: dict[str, object]):  # type: ignore[no-untyped-def]
+    kept = sorted(str(p) for p in _STORE.rglob("*.cbz")) if _STORE.is_dir() else []
+    erased_with_store.append({"variables": variables, "store_files": kept})
+    return _erase(query, variables)
+
+
+fake._q_deleteDownloadedChapter = _erase_observed  # type: ignore[method-assign]  # noqa: SLF001
 twin_chapters: list[dict[str, object]] = []  # filled by /_fake/twin, published with the rest
 
 
 def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # type: ignore[no-untyped-def]
     path = target.split("?", 1)[0]
+    if path == "/_fake/publish_hidden" and method == "POST":
+        # published upstream, but Suwayomi does not know it until it refreshes the series
+        # (`fetchChapters`): what a tool that slept through its own schedule looks like
+        while unpublished:
+            fake.publish_upstream(unpublished.pop(), fake.state["mangas"][0]["id"])
+        return 200, {}, b"{}"
+    if path == "/_fake/expire" and method == "POST":
+        fake._authorized = lambda headers: False  # type: ignore[method-assign]  # noqa: SLF001
+        return 200, {}, b"{}"  # the credentials stop working: every call is answered 401
+    if path == "/_fake/sleep" and method == "POST":
+        fake.asleep = True  # Sablier stopped the container: nothing answers until the wake
+        return 200, {}, b"{}"
+    if path == "/_fake/wake" and method == "POST":
+        fake.wake_up()
+        return 200, {}, b"{}"
     if path == "/_fake/reinstall" and method == "POST":
         fake.reinstall()
         return 200, {}, b"{}"
@@ -64,6 +93,12 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
         state = {"requests": [f"{r.method} {r.path}" for r in fake.requests],
                  "violations": fake.violations,
                  "categories": fake.categories,
+                 "erased_with_store": erased_with_store, "refreshed": fake.refreshed,
+                 "deleted": fake.deleted,  # chapters whose download Shelfhold asked to erase
+                 "files_removed": fake.files_removed,
+                 "logins": fake.logins, "login_users": fake.login_users,
+                 "library": {a: sorted(acc.library) if acc.library is not None else None
+                             for a, acc in fake.accounts.items()},
                  "assigned": {m["url"]: sorted(m.get("categoryIds", []))
                               for m in fake.state["mangas"]}}  # fmt: skip
         return 200, {"content-type": "application/json"}, json.dumps(state).encode()

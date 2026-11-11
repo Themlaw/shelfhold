@@ -61,11 +61,18 @@ jobs:
         run: uv run --locked pytest -m nightly tests/nightly/test_kavita_nightly.py -v --no-cov
 
   suwayomi-extension:
-    name: suwayomi (synthetic extension)
+    # The JDK of the build is the one the dependency verification was generated with (21, see the
+    # README of the extension) AND the one the workflow used until now (17): both are built, so a
+    # drift of either shows up here and not at the next regeneration of the metadata.
+    name: suwayomi (synthetic extension, JDK ${{ matrix.java }})
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ["17", "21"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,7 +86,7 @@ jobs:
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: ${{ matrix.java }}
       - name: "Build the synthetic extension (Gradle dependencies, the only network use of the build)"
         run: backend/tests/contract/suwayomi-synthetic-extension/build.sh
       - name: Pull the pinned images (Suwayomi, fixture server)
@@ -91,6 +98,34 @@ jobs:
         env:
           SYNTHETIC_EXTENSION_APK: ${{ github.workspace }}/backend/tests/contract/suwayomi-synthetic-extension/build/synthetic.apk
         run: uv run --locked pytest -m nightly tests/nightly/test_suwayomi_synthetic_extension.py -v --no-cov
+
+  suwayomi-contract:
+    # The points of the M1b contract that were "to confirm at the nightly" (EF-SRC-009, EF-SRC-026,
+    # EF-SRC-029): the documents Shelfhold sends, played as written on the pinned Suwayomi (category
+    # created then excluded from the download, download queue, global update filters), in both
+    # authentication modes. Internal network only, local source only, synthetic CBZ.
+    name: suwayomi (pinned, M1b documents)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: false
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: Pull the pinned image (the only network use; the bench network is internal)
+        run: docker compose -f e2e/suwayomi/compose.yaml pull
+        env:
+          SUWAYOMI_DATA: ${{ runner.temp }}
+      - name: Contract tests of the M1b documents (basic_auth and ui_login)
+        working-directory: backend
+        run: uv run --locked pytest -m nightly tests/contract/suwayomi/test_suwayomi_m1b_contract.py -v --no-cov
 
   bench-rss:
     # The heavy peak-memory bench (ENF-PERF-009): 500 chapters exported over the whole reference

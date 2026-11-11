@@ -18,7 +18,8 @@ from pathlib import Path
 
 import httpx2
 
-from tests.fakes.kavita import API_KEY, FakeKavita  # type: ignore[import-not-found]
+from tests.fakes.kavita import API_KEY, FakeKavita
+from tests.fakes.kavita.server import member  # type: ignore[import-not-found]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from httpshell import serve  # noqa: E402
@@ -76,6 +77,26 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
         folder = f"{library['folders'][0].rstrip('/')}/elsewhere/{name}"
         fake.add_series(name, folder, [f"{folder}/1.cbz"], library_id=library["id"])
         return _json({})
+    if path == "/_fake/child" and method == "POST":
+        # a restricted account (?name=<n>&library=<id>[&age=<rating>&unknowns=0]): it reads only
+        # the libraries it was given, like a child account of the household
+        from urllib.parse import parse_qs, urlsplit
+
+        query = parse_qs(urlsplit(target).query)
+        fake.users.append(
+            member(query["name"][0], libraries=tuple(int(i) for i in query.get("library", [])),
+                   age_rating=int(query.get("age", ["-1"])[0]),
+                   include_unknowns=query.get("unknowns", ["1"])[0] != "0")
+        )  # fmt: skip
+        return _json({})
+    if path == "/_fake/visible" and method == "GET":
+        # what ?name=<n> can read: the series of its libraries (never an unlisted library)
+        from urllib.parse import parse_qs, urlsplit
+
+        name = parse_qs(urlsplit(target).query)["name"][0]
+        user = next(u for u in fake.users if u["username"] == name)
+        allowed = {lib["id"] for lib in user["libraries"]}
+        return _json([s["name"] for s in fake.series if s["libraryId"] in allowed])
     if path == "/_fake/index" and method == "POST":
         # Kavita looks at a folder of the shared volume: ?folder=<path> (as a scan would)
         from urllib.parse import parse_qs, urlsplit
