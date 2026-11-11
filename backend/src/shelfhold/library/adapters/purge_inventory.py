@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Collection, Iterable, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
@@ -52,6 +52,7 @@ __all__ = [
     "request_ids",
     "title_needles",
     "unresolved_bin_items",
+    "upstream_tokens",
 ]
 
 
@@ -305,19 +306,65 @@ def title_needles(
     return sorted({n.strip().lower() for n in found if n and len(n.strip()) >= _MIN_NEEDLE})
 
 
-def _cites(text: str, ids: Collection[str], needles: Sequence[str]) -> bool:
-    lowered = text.lower()
-    return any(token in ids for token in _ULID.findall(text)) or any(n in lowered for n in needles)
+def upstream_tokens(
+    connection: Connection, unit_ids: Collection[str], work_id: str | None
+) -> list[str]:
+    """The upstream identifiers of the purged rows (the chapter's `remote_unit_id`, and for a Work
+    the series' `remote_id`): a job or an error text quotes them, a URL slug spells the title."""
+    v, si = catalog.unit_variant, acquisition.source_item
+    found = set(
+        connection.execute(sa.select(v.c.remote_unit_id).where(v.c.unit_id.in_(unit_ids))).scalars()
+    )
+    if work_id is not None:
+        b = acquisition.source_binding
+        found.update(
+            connection.execute(
+                sa.select(si.c.remote_id)
+                .select_from(si.join(b, b.c.source_item_id == si.c.id))
+                .where(b.c.work_id == work_id)
+            ).scalars()
+        )
+    return sorted(t for t in found if t and len(t) >= _MIN_NEEDLE)
+
+
+def _matcher(needles: Sequence[str]) -> re.Pattern[str] | None:
+    """A title is found as a word (or a phrase), never inside another one: a Unit called "Port"
+    must not take the jobs and notifications of "export" and "report" with it."""
+    if not needles:
+        return None
+    return re.compile(r"(?<!\w)(?:" + "|".join(re.escape(n) for n in needles) + r")(?!\w)")
+
+
+def _cites(
+    text: str,
+    ids: Collection[str],
+    titles: re.Pattern[str] | None,
+    tokens: Sequence[str],
+) -> bool:
+    return (
+        any(token in ids for token in _ULID.findall(text))
+        or (titles is not None and titles.search(text.lower()) is not None)
+        or any(token in text for token in tokens)
+    )
+
+
+FINISHED_JOBS: Final = ("succeeded", "failed", "cancelled", "dead_letter")
 
 
 def erase_history(
-    connection: Connection, ids: Collection[str], needles: Sequence[str]
+    connection: Connection,
+    ids: Collection[str],
+    needles: Sequence[str],
+    tokens: Sequence[str] = (),
 ) -> tuple[int, int]:
     """The jobs and the events (and the notifications waiting on them) that cite the purged rows:
-    by an identifier of theirs, or by a title in their text (an error message, a payload). A job
-    or an event that cites nothing is not touched. Returns `(jobs, events)` erased."""
+    by an identifier of theirs, by an upstream identifier (`tokens`: a chapter or series key), or
+    by a title as a whole word in their text (an error message, a payload). Only a job that is
+    over goes: a queued or running one is somebody's work, and its own run settles it. A job or an
+    event that cites nothing is not touched. Returns `(jobs, events)` erased."""
     job, event, pending = platform.job_view, platform.event, platform.notification_pending
     wanted = set(ids)
+    titles = _matcher(needles)
     jobs = [
         row.id
         for row in connection.execute(
@@ -328,17 +375,17 @@ def erase_history(
                 job.c.last_error,
                 job.c.cursor,
                 job.c.source_key,
-            )
+            ).where(job.c.status.in_(FINISHED_JOBS))
         )
         if row.request_id in wanted
-        or _cites(" ".join(str(c or "") for c in row[2:]), wanted, needles)
+        or _cites(" ".join(str(c or "") for c in row[2:]), wanted, titles, tokens)
     ]
     for chunk in _chunks(jobs):
         connection.execute(sa.delete(job).where(job.c.id.in_(chunk)))
     events = [
         row.id
         for row in connection.execute(sa.select(event.c.id, event.c.payload))
-        if _cites(json.dumps(row.payload, ensure_ascii=False), wanted, needles)
+        if _cites(json.dumps(row.payload, ensure_ascii=False), wanted, titles, tokens)
     ]
     for chunk in _chunks(events):
         connection.execute(sa.delete(pending).where(pending.c.event_id.in_(chunk)))

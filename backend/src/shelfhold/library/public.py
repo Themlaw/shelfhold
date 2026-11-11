@@ -28,6 +28,7 @@ from shelfhold.library.adapters.purge_inventory import (
     request_ids,
     title_needles,
     unresolved_bin_items,
+    upstream_tokens,
 )
 from shelfhold.library.adapters.ranged import RangedKeeper
 from shelfhold.library.adapters.receive import Received, receive_cbz
@@ -305,6 +306,7 @@ __all__ = [
     "unit_tombstoned",
     "unresolved_bin_items",
     "upstream_claims",
+    "upstream_tokens",
     "upstream_verdict",
     "verify_kept",
     "withdraw_upstream_claims",

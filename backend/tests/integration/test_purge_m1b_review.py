@@ -507,3 +507,65 @@ def test_migration_offers_and_unfollows_series_buried_by_m1a(tmp_path: Path) -> 
         assert done.unfollowed == 1 and service.unfollowed == [("suwayomi", key, SLUG)]
         assert service.library == [("suwayomi:other", "/manga/not-ours")]
         assert leftovers.plan().series == []
+
+
+# -- the history of jobs and events: whole words, finished jobs, upstream identifiers --------------
+
+
+def test_erase_history_matches_whole_words_finished_jobs_and_upstream_ids() -> None:
+    """P8: a Unit titled "Port" took the queued export job and the notification of another report
+    with it (substring match); a job whose error quotes the series URL slug survived."""
+    from datetime import datetime as dt
+
+    from shelfhold.infrastructure.schema import catalog, platform
+
+    with export_env() as env:
+        series = env.new_series(TITLE)
+        unit, _ = spread(env, series)
+        purge = make_m1b_env(env)
+        with env.engine.connect() as connection:
+            remote_unit = connection.execute(
+                sa.select(catalog.unit_variant.c.remote_unit_id).where(
+                    catalog.unit_variant.c.unit_id == unit
+                )
+            ).scalar_one()
+        jobs = {name: new_ulid() for name in ("export", "slug", "done_title", "running_title")}
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(catalog.unit).where(catalog.unit.c.id == unit).values(title="Port")
+            )
+            for name, values in {
+                "export": {"kind": "export", "status": "queued", "dedupe_key": "export:target-1"},
+                "slug": {
+                    "kind": "download",
+                    "status": "failed",
+                    "last_error": f"HTTP 404 on {remote_unit}",
+                },
+                "done_title": {"kind": "download", "status": "failed", "last_error": "no Port 1"},
+                "running_title": {
+                    "kind": "download",
+                    "status": "running",
+                    "last_error": "no Port 2",
+                },
+            }.items():
+                connection.execute(sa.insert(platform.job_view).values(id=jobs[name], **values))
+            event = connection.execute(
+                sa.insert(platform.event).values(
+                    type="unit.ready",
+                    schema_version=1,
+                    payload={"note": "report of a Work"},
+                    occurred_at=dt(2026, 11, 10, tzinfo=UTC),
+                    visibility="ops",
+                )
+            ).inserted_primary_key[0]
+        assert purge.purge.purge_unit(
+            unit, principal=ADMIN, typed=unit, now=purge.clock.now()
+        ).complete
+        with env.engine.connect() as connection:
+            kept = set(connection.execute(sa.select(platform.job_view.c.id)).scalars())
+            events = set(connection.execute(sa.select(platform.event.c.id)).scalars())
+        assert jobs["export"] in kept  # "export" is not the word "Port"
+        assert jobs["running_title"] in kept  # not over: its own run settles it
+        assert jobs["done_title"] not in kept  # the title as a word, in a job that is over
+        assert jobs["slug"] not in kept  # the upstream identifier of the chapter
+        assert event in events  # "report" is not the word "Port"

@@ -128,6 +128,7 @@ from shelfhold.library.public import (
     title_needles,
     unresolved_bin_items,
     upstream_claims,
+    upstream_tokens,
     withdraw_upstream_claims,
     work_rel,
 )
@@ -238,6 +239,7 @@ class _Plan:
     tickets: list[DownloadTicket] = field(default_factory=list)
     requests: list[str] = field(default_factory=list)
     needles: list[str] = field(default_factory=list)
+    tokens: list[str] = field(default_factory=list)
     since: datetime | None = None
     resources: list[str] = field(default_factory=list)
 
@@ -427,6 +429,7 @@ class PurgeService:
         plan.tickets = download_tickets(connection, unit_ids)
         plan.requests = request_ids(connection, unit_ids)
         plan.needles = title_needles(connection, unit_ids, work_id if kind == "work" else None)
+        plan.tokens = upstream_tokens(connection, unit_ids, work_id if kind == "work" else None)
         plan.since = created_since(connection, unit_ids, work_id if kind == "work" else None)
         plan.resources = self._resources(connection, work_id, plan.items)
         return plan
@@ -953,7 +956,7 @@ class PurgeService:
             ids.add(plan.work_id)
             ids.update(u.edition_id for u in plan.units)
             ids.update(b.id for b in plan.bindings if hasattr(b, "id"))
-        jobs, events = erase_history(connection, ids, plan.needles)
+        jobs, events = erase_history(connection, ids, plan.needles, plan.tokens)
         log.debug("purge.history_erased", jobs=jobs, events=events)
         if plan.kind == "work":
             erase_work_rows(connection, plan.work_id)
