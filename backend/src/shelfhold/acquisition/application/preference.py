@@ -10,6 +10,7 @@ A Unit that already has a ticket (open or fetched) keeps the Variant it was aske
 before EF-EXP-016.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -17,6 +18,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection
 
+from shelfhold.acquisition.domain.selection import Candidate, select
 from shelfhold.acquisition.domain.team_policy import (
     DEFAULT_INACTIVE_MONTHS,
     TeamChoice,
@@ -24,7 +26,7 @@ from shelfhold.acquisition.domain.team_policy import (
     TeamStats,
     choose_team,
 )
-from shelfhold.catalog.public import Catalog
+from shelfhold.catalog.public import Catalog, VariantFacts
 from shelfhold.infrastructure.schema import acquisition, catalog
 
 log = structlog.get_logger(__name__)
@@ -58,7 +60,18 @@ class TeamPreference:
     def __init__(self, *, inactive_months: int = DEFAULT_INACTIVE_MONTHS) -> None:
         self._months = inactive_months
 
-    def elect(self, connection: Connection, unit_id: str, now: datetime) -> Election | None:
+    def elect(
+        self,
+        connection: Connection,
+        unit_id: str,
+        now: datetime,
+        *,
+        allowed: Collection[str] | None = None,
+    ) -> Election | None:
+        """The Variant to ask for: the selection of EF-SRC-037 over the Variants whose binding is
+        active, belongs to the Edition's own Work and, when given, is one of `allowed` (the
+        bindings the cycle may ask: not tombstoned, not paused, not unloaded). None when none is
+        left: the Variant exported so far is then left as it is."""
         u, v = catalog.unit, catalog.unit_variant
         unit = connection.execute(
             sa.select(u.c.edition_id, u.c.number_norm).where(u.c.id == unit_id)
@@ -73,25 +86,66 @@ class TeamPreference:
             service.set_preferred(unit_id, asked)  # what was asked for stays the exported one
             return self._election(connection, asked, TeamChoice(None, "already_asked"))
         stats = self._stats(connection, unit.edition_id)
-        choice = choose_team(
-            {f.team_id for f in live},
-            stats,
-            priority=service.team_priority(unit.edition_id),
-            now=now,
-            inactive_months=self._months,
-        )
-        chosen = min((f for f in live if f.team_id == choice.team_id), key=lambda f: f.age)
+        priority = service.team_priority(unit.edition_id)
+
+        def team(teams: set[TeamKey]) -> TeamChoice:
+            return choose_team(
+                teams, stats, priority=priority, now=now, inactive_months=self._months
+            )
+
+        selected = select(self._candidates(connection, unit.edition_id, live, allowed), team)
+        if selected is None:
+            return None
+        choice = selected.choice
+        chosen = next(f for f in live if f.id == selected.candidate.variant_id)
         previous = connection.execute(
-            sa.select(v.c.team_id).where(v.c.unit_id == unit_id, v.c.preferred)
+            sa.select(v.c.id, v.c.team_id).where(v.c.unit_id == unit_id, v.c.preferred)
         ).one_or_none()
         service.set_preferred(unit_id, chosen.id)
-        if choice.fallback or (previous is not None and previous.team_id != choice.team_id):
+        if (previous is None or previous.id != chosen.id) and (
+            choice.fallback or (previous is not None and previous.team_id != choice.team_id)
+        ):  # said when the choice changes: a second election of the same one is silent
             log.warning(
                 "team.fallback" if choice.fallback else "team.switched",
                 reason=choice.fallback or choice.reason, unit_id=unit_id, number=unit.number_norm,
                 edition_id=unit.edition_id, team_id=choice.team_id,
             )  # fmt: skip
         return self._election(connection, chosen.id, choice)
+
+    @staticmethod
+    def _candidates(
+        connection: Connection,
+        edition_id: str,
+        live: list[VariantFacts],
+        allowed: Collection[str] | None,
+    ) -> list[Candidate]:
+        b, e = acquisition.source_binding, catalog.edition
+        work_id = connection.execute(sa.select(e.c.work_id).where(e.c.id == edition_id)).scalar()
+        known = {
+            row.id: row
+            for row in connection.execute(
+                sa.select(b.c.id, b.c.priority, b.c.active, b.c.edition_id, b.c.work_id).where(
+                    b.c.id.in_({f.binding_id for f in live})
+                )
+            )
+        }
+        out: list[Candidate] = []
+        for f in live:
+            binding = known.get(f.binding_id)
+            if binding is None:
+                continue
+            out.append(
+                Candidate(
+                    f.id,
+                    f.binding_id,
+                    binding.priority,
+                    f.team_id,
+                    f.age,
+                    active=bool(binding.active) and (allowed is None or f.binding_id in allowed),
+                    same_work=binding.edition_id == edition_id and binding.work_id == work_id,
+                )
+            )
+        return out
 
     @staticmethod
     def _asked_variant(connection: Connection, unit_id: str) -> str | None:

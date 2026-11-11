@@ -28,6 +28,7 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_AUTH_HARDENED` | `auth_hardened` | bool | `false` |  | `SHELFHOLD_AUTH_HARDENED_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_FRESH_AUTH_S` | `fresh_auth_s` | int | `900` | >= 60, <= 86400 | `SHELFHOLD_FRESH_AUTH_S_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_REVISION_MIN_PAGE_RATIO` | `revision_min_page_ratio` | float | `0.5` | >= 0.05, <= 1.0 | `SHELFHOLD_REVISION_MIN_PAGE_RATIO_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_FOLLOW_FALLBACK_RETURN` | `follow_fallback_return` | bool | `true` |  | `SHELFHOLD_FOLLOW_FALLBACK_RETURN_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_NAMING_SEGMENT_POLICY_CONFIRMED` | `naming_segment_policy_confirmed` | bool | `false` |  | `SHELFHOLD_NAMING_SEGMENT_POLICY_CONFIRMED_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_FORWARD_AUTH_TRUSTED_CIDRS` | `forward_auth_trusted_cidrs` | liste de str | aucun |  | `SHELFHOLD_FORWARD_AUTH_TRUSTED_CIDRS_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_CLI_ALLOW_HOST` | `cli_allow_host` | bool | `false` |  | `SHELFHOLD_CLI_ALLOW_HOST_FILE` en lit la valeur dans un fichier |

@@ -518,11 +518,15 @@ class NativeAcquirer:
         now: datetime,
     ) -> str:
         table = acquisition.download_request
+        unit_id = connection.execute(
+            sa.select(catalog.unit_variant.c.unit_id).where(catalog.unit_variant.c.id == variant_id)
+        ).scalar()
         open_one = connection.execute(
             sa.select(table.c.id).where(
-                table.c.variant_id == variant_id, table.c.state.in_(OPEN_STATES)
+                sa.or_(table.c.variant_id == variant_id, table.c.unit_id == unit_id),
+                table.c.state.in_(OPEN_STATES),
             )
-        ).scalar()
+        ).scalar()  # one open request per Unit (I52): the follow's own is reused
         if open_one is not None:
             return str(open_one)
         request_id = new_ulid()
@@ -530,7 +534,7 @@ class NativeAcquirer:
             sa.insert(table).values(
                 id=request_id, target_kind="unit", variant_id=variant_id,
                 source_binding_id=binding_id, state="requested", requested_at=now,
-                visibility=visibility, requester_user_id=requester_user_id,
+                unit_id=unit_id, visibility=visibility, requester_user_id=requester_user_id,
             )
         )  # fmt: skip
         return request_id

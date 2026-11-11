@@ -42,7 +42,13 @@ from shelfhold.acquisition.application.discovery import (
     digest,
 )
 from shelfhold.acquisition.application.failures import FailureLedger, from_service, pause_of
+from shelfhold.acquisition.application.fallback import Fallback
 from shelfhold.acquisition.application.instance import check_instance
+from shelfhold.acquisition.application.late_upgrade import (
+    Upgrader,
+    fetched_upgrades,
+    upgrade_candidates,
+)
 from shelfhold.acquisition.application.planning import (
     NOTHING_YET,
     highest_numbered,
@@ -144,6 +150,8 @@ def submit_follow(pools: JobPools, plugin_id: str) -> Created:
     )
 
 
+FALLEN = ("removed_upstream", "not_loaded", "content_failures")  # kept in view while inactive
+UPGRADE_WINDOW = timedelta(days=1)  # how long a better-ranked copy is offered to the upgrade
 MISSING_CYCLES = 2  # consecutive cycles of absence before a series is deemed removed
 OUTAGE_CYCLES = 3  # cycles in a row without an answer before the service is "unavailable"
 REFRESH_SPACING = 2.0  # seconds between two refreshes asked of the same upstream source
@@ -182,6 +190,8 @@ class FollowReport:
     deferred: bool = False  # the service sleeps and was not woken: the cycle is put off
     refreshed: int = 0  # series Suwayomi was asked to refresh (piloted mode)
     not_loaded: int = 0  # upstream sources the probe found unusable (EF-SRC-026 a)
+    fell_back: int = 0  # bindings that fell back to the next rank (EF-SRC-037)
+    upgraded: int = 0  # Units upgraded at their path to a better-ranked copy (EF-SRC-037)
     tickets: TicketReport = field(default_factory=TicketReport)
 
     def counters(self) -> dict[str, object]:
@@ -193,7 +203,8 @@ class FollowReport:
             "awaiting_shelf": self.awaiting_shelf, "stale": self.stale,
             "paused": self.paused, "unavailable": self.unavailable,
             "deferred": self.deferred, "refreshed": self.refreshed,
-            "not_loaded": self.not_loaded,
+            "not_loaded": self.not_loaded, "fell_back": self.fell_back,
+            "upgraded": self.upgraded,
         }  # fmt: skip
 
     def has_news(self) -> bool:
@@ -258,6 +269,8 @@ class FollowCycle:
         check_mode: Literal["always_on", "piloted"] = "always_on",
         refresh_delay: Callable[[list[str]], list[float]] = refresh_delays,
         min_page_ratio: float = DEFAULT_MIN_PAGE_RATIO,
+        fallback_return: bool = True,
+        upgrader: Upgrader | None = None,
     ) -> None:
         self._min_page_ratio = min_page_ratio
         self._engine = engine
@@ -288,6 +301,14 @@ class FollowCycle:
         self._pending: list[PublishedEvent] = []
         self._caps = (service_cap, key_cap)
         self._prefs = TeamPreference(inactive_months=inactive_months)
+        self._fallback = Fallback(self._emit, return_to_origin=fallback_return)
+        self._fallback_return = fallback_return
+        self._upgrader = upgrader  # the same-path upgrade of EF-EXP-016, when a library is mounted
+        self._allowed: frozenset[str] = frozenset()  # the bindings this cycle may ask
+        self._asked_units: set[str] = set()  # I52: a Unit is asked of one binding per cycle
+        self._not_loaded_cycles: dict[str, int] = {}
+        self._unloaded: frozenset[str] = frozenset()
+        self._slots = slots
         self._series_taken: dict[str, int] = {}
         self._tombstones = tombstones  # EF-BIB-053: required, a cycle never runs without it
         self._discovery = SeriesDiscovery(
@@ -413,9 +434,12 @@ class FollowCycle:
             [ref for ref in library if ref.source_key not in unloaded], report
         )
         in_library = {(ref.source_key, ref.remote_id) for ref in library}
+        self._unloaded = unloaded
         present = self._reconcile_library(in_library, report)
+        self._rank_fallback(unloaded, report)
         budget = RequestBudget(*self._caps)
         self._series_taken = {}
+        self._asked_units = set()
         self._buried = {}
         self._buried_ids = {}
         suspended = self._suspended()
@@ -429,6 +453,7 @@ class FollowCycle:
             and (binding.source_key, binding.remote_id) in present
             and not self._series_tombstoned(binding, report)
         ]
+        self._allowed = frozenset(binding.id for binding in followed)
         self._remember_buried()
         log.debug("follow.followed", followed=len(followed), in_library=len(present))
         if self._piloted:
@@ -437,8 +462,10 @@ class FollowCycle:
             await self._discover_isolated(binding, report, budget)
         self._fill(followed, budget, report)
         await self._ranges(followed, budget, report)
+        started = self._clock.now()
         report.tickets = await self._tickets.advance()
         report.fetched += report.tickets.fetched
+        self._apply_upgrades(started - UPGRADE_WINDOW, report)
         if report.tickets.fetched:  # the source delivers: what was given up may be tried again
             self._tickets.reopen_abandoned()
         if report.tickets.dropped:
@@ -473,6 +500,10 @@ class FollowCycle:
             back = (known - unloaded) & keys
             for key in sorted(back):
                 self._ledger.clear_not_loaded(connection, key)
+            for key in sorted(unloaded):  # EF-SRC-037: how many cycles in a row
+                self._not_loaded_cycles[key] = self._ledger.bump_not_loaded_cycles(connection, key)
+            for key in sorted(set(self._ledger.not_loaded_cycle_keys(connection)) - unloaded):
+                self._ledger.clear_not_loaded_cycles(connection, key)
         if back:
             self._tickets.reopen_abandoned(back)
         self._tickets.unloaded = unloaded
@@ -593,7 +624,14 @@ class FollowCycle:
         """The sub-sources of the service; none for a service that has no such capability (the
         method exists only when the manifest declares it)."""
         listing = getattr(self._service, "sub_sources", None)
-        return [] if listing is None else await from_service(listing(self._fetcher))
+        subs: list[SubSource] = (
+            [] if listing is None else await from_service(listing(self._fetcher))
+        )
+        slots_of = getattr(self._service, "limit_slots", None)
+        if self._slots is not None and slots_of is not None:  # one count of slots per limit key
+            for key, count in slots_of(subs).items():
+                self._slots.declare(key, count)
+        return subs
 
     def _reconcile_library(
         self, in_library: set[tuple[str, str]], report: FollowReport
@@ -633,6 +671,7 @@ class FollowCycle:
         for binding in bindings:
             if (
                 not binding.active
+                and binding.disabled_reason == "removed_upstream"
                 and (binding.source_key, binding.remote_id) in in_library
                 and self._reactivate(binding)
             ):
@@ -713,7 +752,7 @@ class FollowCycle:
             )
             .where(
                 si.c.plugin_id == self._plugin_id,
-                sa.or_(b.c.active, b.c.disabled_reason == "removed_upstream"),
+                sa.or_(b.c.active, b.c.disabled_reason.in_(FALLEN)),
             )
             .order_by(b.c.edition_id, b.c.priority)
         )  # fmt: skip
@@ -735,6 +774,8 @@ class FollowCycle:
                     connection, "series.removed_upstream",
                     {"edition_id": binding.edition_id, "work_id": binding.work_id},
                 )  # fmt: skip
+            if changed:  # EF-SRC-037: another rank takes over, and it is told
+                self._fallback.announce_removed(connection, binding.id, self._usable())
             self._ledger.clear_missing(connection, binding.id)
         return bool(changed)
 
@@ -750,6 +791,8 @@ class FollowCycle:
             ).first()
             if taken is not None:  # another binding took its rank meanwhile: M1b decides
                 return False
+            if not self._fallback_return and self._fallback.target(connection, binding.id):
+                return False  # the setting: what fell back stays on the next rank
             return bool(
                 connection.execute(
                     sa.update(table)
@@ -931,7 +974,7 @@ class FollowCycle:
         if _place_of(info) in look.contested:
             look.touched.add(result.unit_id)
             return
-        election = self._prefs.elect(connection, result.unit_id, look.now)
+        election = self._prefs.elect(connection, result.unit_id, look.now, allowed=self._allowed)
         if (
             result.outcome is not IngestOutcome.NEW_VARIANT  # a human decides a replacement
             or look.mark is None
@@ -940,6 +983,8 @@ class FollowCycle:
             or not _is_new(connection, result.unit_id, look.mark)
         ):
             return
+        if result.unit_id in self._asked_units:
+            return  # I52: another binding already asked for this Unit in this cycle
         if result.variant_id not in look.taken:
             if not self._take(look.binding, budget):
                 return  # no room this cycle: asked next cycle, in order
@@ -949,14 +994,24 @@ class FollowCycle:
             unit_id=result.unit_id, now=look.now,
         ):  # fmt: skip
             look.opened.add(result.variant_id)
+            self._asked_units.add(result.unit_id)
 
     # -- requests beyond the first look: what the caps held back, then backfill -----------------
+    def _limit_key(self, binding: _Binding) -> str:
+        """The rate-limit key of the upstream source a series comes from (EF-SRC-037, EF-INT-003):
+        what the service says, the source key otherwise."""
+        key_for = getattr(self._service, "limit_key_for", None)
+        if key_for is None:
+            return binding.source_key
+        ref = SeriesRef(source_key=binding.source_key, remote_id=binding.remote_id, title="")
+        return str(key_for(ref))
+
     def _take(self, binding: _Binding, budget: RequestBudget) -> bool:
         taken = self._series_taken.get(binding.id, 0)
         room = None if binding.cap is None else binding.cap - taken
         if room is not None and room <= 0:
             return False
-        if budget.take(binding.source_key, 1, series_cap=room) == 0:
+        if budget.take(self._limit_key(binding), 1, series_cap=room) == 0:
             log.debug("follow.budget_exhausted", binding_id=binding.id)
             return False
         self._series_taken[binding.id] = taken + 1
@@ -986,6 +1041,7 @@ class FollowCycle:
                 if modes.get(b.edition_id) == mode and self._backfill_ok(b, mode)
             ]
             report.requested += self._round_robin(asked, mode, by_id, budget)
+        report.requested += self._request_upgrades(by_id, budget)
         with self._engine.begin() as connection:
             for edition in editions:
                 if modes.get(edition.edition_id) in ("gaps", "all") and not pending(
@@ -996,6 +1052,79 @@ class FollowCycle:
                         .where(acquisition.series_follow.c.edition_id == edition.edition_id)
                         .values(backfill_mode="none")
                     )
+
+    def _usable(self) -> set[str]:
+        """The bindings a fallback may hand over to: active, not paused, on a loaded source."""
+        return {
+            b.id
+            for b in self._bindings()
+            if b.active and b.check_override != "paused" and b.source_key not in self._unloaded
+        }
+
+    def _rank_fallback(self, unloaded: frozenset[str], report: FollowReport) -> None:
+        """EF-SRC-037: a binding whose source stays unloaded three cycles, or whose content errors
+        reach the threshold, falls back to the next rank (told once); one that fell for an
+        unloaded source that is loaded again goes back to its rank (a setting)."""
+        for binding in self._bindings():
+            with self._engine.begin() as connection:
+                if binding.active:
+                    cycles = self._not_loaded_cycles.get(binding.source_key, 0)
+                    reason = self._fallback.dead_reason(
+                        connection, binding.id,
+                        not_loaded_cycles=cycles if binding.source_key in unloaded else 0,
+                    )  # fmt: skip
+                    if reason and self._fallback.fall_back(
+                        connection, binding.id, reason, self._usable()
+                    ):
+                        report.fell_back += 1
+                elif binding.disabled_reason == "not_loaded" and binding.source_key not in unloaded:
+                    if self._fallback.restore(connection, binding.id):
+                        report.reactivated += 1
+
+    def _request_upgrades(self, by_id: dict[str, _Binding], budget: RequestBudget) -> int:
+        """Under `prefer_rank`, a Unit held from a worse rank is asked of the better one that
+        lists it late: within the caps, one request per Unit (I52)."""
+        now = self._clock.now()
+        opened = 0
+        with self._engine.connect() as connection:
+            candidates = upgrade_candidates(connection, self._allowed)
+        for candidate in candidates:
+            binding = by_id.get(candidate.binding_id)
+            if binding is None or candidate.unit_id in self._asked_units:
+                continue
+            with self._engine.begin() as connection:
+                if not self._take(binding, budget):
+                    break
+                if DownloadTickets.open(
+                    connection, binding_id=binding.id, variant_id=candidate.variant_id,
+                    unit_id=candidate.unit_id, now=now,
+                ):  # fmt: skip
+                    self._asked_units.add(candidate.unit_id)
+                    opened += 1
+        return opened
+
+    def _apply_upgrades(self, since: datetime, report: FollowReport) -> None:
+        """A better-ranked copy arrived: the file served at the Unit's path is replaced by it,
+        through the same-path upgrade and its guards. Only what it did is believed: a Unit it
+        leaves as it is (read, suspect, irreplaceable) keeps its exported Variant."""
+        if self._upgrader is None:
+            return
+        with self._engine.connect() as connection:
+            fetched = fetched_upgrades(connection, since)
+        for item in fetched:
+            try:
+                outcomes = self._upgrader.upgrade_unit(item.unit_id, item.content_id)
+            except (LookupError, OSError) as error:
+                log.warning(
+                    "follow.upgrade_failed", unit_id=item.unit_id, error=type(error).__name__
+                )
+                continue
+            if "upgraded" not in outcomes:
+                log.info("follow.upgrade_left", unit_id=item.unit_id, outcomes=outcomes)
+                continue
+            with self._engine.begin() as connection:
+                Catalog(connection).set_preferred(item.unit_id, item.variant_id)
+            report.upgraded += 1
 
     def _backfill_ok(self, edition: _Binding, mode: BackfillMode) -> bool:
         """Later arrivals may not take a backfill past what the user confirmed: it stops, and a
@@ -1042,29 +1171,22 @@ class FollowCycle:
     def _open_for_unit(
         self, unit_id: str, by_id: dict[str, _Binding], budget: RequestBudget
     ) -> str:
-        v = catalog.unit_variant
+        if unit_id in self._asked_units:
+            return "skipped"  # I52: this Unit was asked of a binding already in this cycle
         now = self._clock.now()
         with self._engine.begin() as connection:
-            chosen = connection.execute(
-                sa.select(v.c.id, v.c.source_binding_id).where(
-                    v.c.unit_id == unit_id, v.c.preferred, v.c.removed_at.is_(None)
-                )
-            ).first()
-            variant_id, binding_id = (
-                (chosen.id, chosen.source_binding_id) if chosen else (None, None)
-            )
-            if variant_id is None:
-                election = self._prefs.elect(connection, unit_id, now)
-                if election is not None:
-                    variant_id, binding_id = election.variant_id, election.binding_id
-            binding = by_id.get(binding_id) if binding_id else None
-            if variant_id is None or binding is None:
-                return "skipped"  # no live Variant, or it belongs to another service's binding
+            election = self._prefs.elect(connection, unit_id, now, allowed=self._allowed)
+            binding = by_id.get(election.binding_id) if election else None
+            if election is None or binding is None:
+                return "skipped"  # no Variant that a followed, active binding can be asked for
             if not self._take(binding, budget):
                 return "exhausted"
             opened = DownloadTickets.open(
-                connection, binding_id=binding.id, variant_id=variant_id, unit_id=unit_id, now=now
-            )
+                connection, binding_id=binding.id, variant_id=election.variant_id,
+                unit_id=unit_id, now=now,
+            )  # fmt: skip
+            if opened:
+                self._asked_units.add(unit_id)
         return "opened" if opened else "skipped"
 
     # -- freshness (EF-SRC-026 c) ------------------------------------------------------------

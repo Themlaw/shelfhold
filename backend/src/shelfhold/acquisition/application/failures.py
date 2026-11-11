@@ -261,6 +261,21 @@ class FailureLedger:
     def clear_not_loaded(self, connection: Connection, source_key: str) -> None:
         self._unset(connection, f"$.not_loaded.{json.dumps(source_key)}")
 
+    def bump_not_loaded_cycles(self, connection: Connection, source_key: str) -> int:
+        """One more cycle in a row that found the source unloaded (EF-SRC-037: after three, a
+        binding of a ranked Edition falls back); returns the count."""
+        raw = self._read(connection).get("not_loaded_cycles")
+        count = (int(raw.get(source_key, 0)) if isinstance(raw, dict) else 0) + 1
+        self._set(connection, f"$.not_loaded_cycles.{json.dumps(source_key)}", count)
+        return count
+
+    def not_loaded_cycle_keys(self, connection: Connection) -> list[str]:
+        raw = self._read(connection).get("not_loaded_cycles")
+        return sorted(raw) if isinstance(raw, dict) else []
+
+    def clear_not_loaded_cycles(self, connection: Connection, source_key: str) -> None:
+        self._unset(connection, f"$.not_loaded_cycles.{json.dumps(source_key)}")
+
     # -- series silent for too long (EF-SRC-026 c): the episode of each ---
     def sync_stale(self, connection: Connection, current: list[str]) -> list[str]:
         """Remember which editions are stale now; the ones that were not before (a new episode:

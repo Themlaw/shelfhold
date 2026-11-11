@@ -235,15 +235,17 @@ class DownloadTickets:
     def open(
         connection: Connection, *, binding_id: str, variant_id: str, unit_id: str, now: datetime
     ) -> bool:
-        """One open ticket per Variant: a second call while one is open changes nothing."""
+        """One open ticket per Variant and per Unit (I52): a second call while one is open, for
+        the same Variant or for another Variant of the same Unit, changes nothing."""
         request_id = new_ulid()
         inserted = connection.execute(
             sqlite_insert(acquisition.download_request)
             .values(
                 id=request_id, target_kind="unit", variant_id=variant_id,
-                source_binding_id=binding_id, state="requested", requested_at=now,
+                source_binding_id=binding_id, state="requested", requested_at=now, unit_id=unit_id,
             )
-            .on_conflict_do_nothing()  # the partial unique index: one open ticket per Variant
+            .on_conflict_do_nothing()  # the partial unique indexes: one open ticket per Variant
+            # and per Unit, whatever the writers
         ).rowcount  # fmt: skip
         if not inserted:
             return False
@@ -600,7 +602,17 @@ class DownloadTickets:
                     r.c.attempts >= self._max_attempts,
                     *only,
                     ~sa.exists().where(
-                        other.c.variant_id == r.c.variant_id, other.c.state.in_(OPEN_STATES)
+                        sa.or_(
+                            other.c.variant_id == r.c.variant_id,
+                            other.c.unit_id == r.c.unit_id,  # the next rank holds the Unit (I52)
+                        ),
+                        other.c.state.in_(OPEN_STATES),
+                    ),
+                    ~sa.exists().where(  # two given up for one Unit: only the older comes back
+                        other.c.unit_id == r.c.unit_id,
+                        other.c.state == "abandoned",
+                        other.c.attempts >= self._max_attempts,
+                        other.c.id < r.c.id,
                     ),
                 )
                 .values(state="requested", attempts=0, ticket=None, updated_at=self._clock.now())

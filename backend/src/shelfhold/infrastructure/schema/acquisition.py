@@ -252,6 +252,10 @@ download_request = sa.Table(
     ulid_column("id", primary_key=True),
     sa.Column("target_kind", sa.String(), nullable=False),
     _fk("variant_id", "unit_variant.id", ondelete="SET NULL", nullable=True),
+    # the Unit a `unit` ticket asks for (I52): what makes "one open request per Unit" a property
+    # of the database, whatever Variant, binding or worker asks
+    # (no foreign key: a plain ADD COLUMN, and the purge closes the ticket by its state)
+    sa.Column("unit_id", sa.String(26), nullable=True),
     sa.Column("range_ref", sa.JSON(), nullable=True),  # edition, first and last Unit, volume label
     _fk("source_binding_id", "source_binding.id"),
     sa.Column("ticket", sa.String(), nullable=True),  # opaque; set once the service answered
@@ -287,6 +291,15 @@ sa.Index(
 sa.Index(
     "uq_download_request_open_variant",
     download_request.c.variant_id,
+    unique=True,
+    sqlite_where=sa.text("\"state\" IN ('requested', 'downloaded')"),
+)
+
+# One open ticket per Unit (I52, EF-SRC-037): two bindings that both offer a Unit are never both
+# asked, even by two workers at once. A range ticket carries no `unit_id` and is out of it.
+sa.Index(
+    "uq_download_request_open_unit",
+    download_request.c.unit_id,
     unique=True,
     sqlite_where=sa.text("\"state\" IN ('requested', 'downloaded')"),
 )

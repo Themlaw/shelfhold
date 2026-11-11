@@ -127,6 +127,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "auth_hardened": "hardened_profile",  # a switch
     "fresh_auth_s": "recent_login_window_s",  # a duration
     "revision_min_page_ratio": "revision_min_page_ratio",
+    "follow_fallback_return": "follow_fallback_return",
     "secret_key_file": "trousseau_path",  # where the keyring is: a path, not the keyring
     "forward_auth_trusted_cidrs": "proxy_trusted_cidrs",  # networks, not credentials
     "maintenance_window_start": "maintenance_window_start",
