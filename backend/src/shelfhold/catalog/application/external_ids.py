@@ -41,10 +41,6 @@ class StoredExternalId:
     origin: str
     state: str  # current | superseded
 
-    @property
-    def value(self) -> str:
-        return self.external.value
-
 
 def _clean(external: ExternalId) -> ExternalId:
     return normalize_external_id(

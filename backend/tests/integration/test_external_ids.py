@@ -69,7 +69,7 @@ def test_external_id_polymorphic_unique_per_entity_type(migrated: Engine) -> Non
             add_external_id(connection, other, anilist, origin="source")
         assert conflict.value.holder_id == work
         assert holder_of(connection, anilist) == work
-        assert [i.value for i in external_ids_of(connection, "work", other)] == []
+        assert [i.external.value for i in external_ids_of(connection, "work", other)] == []
     assert len(rows(migrated)) == 2
 
 
@@ -86,7 +86,7 @@ def test_external_id_renumbering_appends_never_overwrites(migrated: Engine) -> N
         renumber_external_id(  # applying the table again changes nothing
             connection, work, ExternalId("work", "mangaupdates", "123"), "a1b2c3", origin="provider"
         )
-        both = {i.value: i.state for i in external_ids_of(connection, "work", work)}
+        both = {i.external.value: i.state for i in external_ids_of(connection, "work", work)}
     assert both == {"123": "superseded", "a1b2c3": "current"}
     assert rows(migrated) == [
         ("work", work, "mangaupdates", "123", "legacy", "superseded"),

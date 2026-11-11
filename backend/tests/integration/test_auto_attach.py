@@ -247,7 +247,7 @@ def test_auto_attach_displayed_and_undoable() -> None:
         assert values == {"title": '"Dr Stone"', "summary": '"new"', "genre": '"sf"'}
         # "Séparer": exactly as before
         with env.engine.begin() as connection:
-            undone = s.service.detach(connection, attach_id, principal=admin(), now=NOW)
+            undone = s.service.separate(connection, attach_id, principal=admin(), now=NOW)
         assert undone.kept == ()
         assert edition_row(env, uncut.edition_id) == before_edition
         assert table_rows(env, catalog.metadata_field) == before_fields
@@ -256,7 +256,7 @@ def test_auto_attach_displayed_and_undoable() -> None:
         with env.engine.connect() as connection:
             assert [a.state for a in s.service.attachments(connection)] == ["undone"]
         with env.engine.begin() as connection, pytest.raises(AttachRefusedError):
-            s.service.detach(connection, attach_id, principal=admin(), now=NOW)  # once
+            s.service.separate(connection, attach_id, principal=admin(), now=NOW)  # once
 
 
 def test_undo_keeps_what_an_admin_changed_since() -> None:
@@ -272,7 +272,7 @@ def test_undo_keeps_what_an_admin_changed_since() -> None:
         )  # fmt: skip
         with env.engine.begin() as connection:
             lock_field(connection, FieldKey("work", s.family.work_id, "genre"), "seinen", now=NOW)
-            undone = s.service.detach(
+            undone = s.service.separate(
                 connection,
                 arrival.attach_id,
                 principal=admin(),
@@ -307,7 +307,7 @@ def test_undo_of_an_unrated_edition_never_files_it_below_18() -> None:
             s, IncomingEdition(uncut.edition_id, shelf_id=env.shelf_id, ids=(ANILIST,))
         )
         with env.engine.begin() as connection:
-            s.service.detach(
+            s.service.separate(
                 connection,
                 arrival.attach_id,
                 principal=admin(),

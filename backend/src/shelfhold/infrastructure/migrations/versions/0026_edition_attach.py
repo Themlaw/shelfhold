@@ -6,8 +6,8 @@ rewritten. New table `edition_attach` (EF-BIB-003, EF-BIB-037, EF-BIB-055): what
 external identifier changed, so that "Séparer" undoes it exactly, and the attaches that wait for
 an admin's confirmation.
 
-The number: 0021 to 0024 are reserved by PLAN-M2 §2 (L16, L17, L25, L27) and 0025 is the reopening of
-the age suggestions (#126); `down_revision` is the head of `main` at the rebase.
+The number: 0021 to 0024 are reserved by PLAN-M2 §2 (L16, L17, L25, L27) and 0025 is the
+reopening of the age suggestions (#126); `down_revision` is the head of `main` at the rebase.
 """
 
 import sqlalchemy as sa

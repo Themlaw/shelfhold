@@ -60,10 +60,10 @@ class AttachOps:
                 for a in self._service.attachments(connection)
             ]  # fmt: skip
 
-    def detach(self, attach_id: str, *, principal: Principal) -> dict[str, Any]:
+    def separate(self, attach_id: str, *, principal: Principal) -> dict[str, Any]:
         try:
             with self._engine.begin() as connection:
-                done = self._service.detach(
+                done = self._service.separate(
                     connection, attach_id, principal=principal, now=self._clock.now()
                 )
         except AttachRefusedError as error:

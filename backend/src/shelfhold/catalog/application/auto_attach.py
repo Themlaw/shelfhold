@@ -10,11 +10,12 @@ the same Work: the Edition is attached to it, and that is
   below 18+ never takes it until an admin rates it;
 - **shown**: an event (`edition.auto_attached`) and the journal `edition_attach`, listed by
   `edition attachments`;
-- **undoable**: "Séparer" (`detach`) puts back exactly what the attach changed: the Work, the
-  rating stamp and the shelf of the Edition (the shelf through the gate again: the way back is a
-  road too), the values, provenances and locks of the fields the attach wrote, unless an admin
-  changed them since. An attach writes **no** external identifier: the ones the Edition brought
-  for its Work stay in the journal, so the undo leaves nothing behind in `external_id`, which is
+- **undoable**: "Séparer" (`separate`, CLI `edition detach`) puts back exactly what the attach
+  changed: the Work, the rating stamp and the shelf of the Edition (the shelf through the gate
+  again: the way back is a road too), the values, provenances and locks of the fields the
+  attach wrote, unless an admin changed them since. An attach writes **no** external
+  identifier: the ones the Edition brought for its Work stay in the journal, so the undo leaves
+  nothing behind in `external_id`, which is
   append-only.
 
 An attach that would raise the effective age of the Work (an Edition an admin rated 18+, say) is
@@ -394,7 +395,7 @@ class AutoAttachService:
         _audit(connection, principal, "edition.attach_decline", row.edition_id, attach_id, now)
 
     # -- "Séparer" ------------------------------------------------------------------------------
-    def detach(
+    def separate(
         self, connection: Connection, attach_id: str, *, principal: Principal, now: datetime
     ) -> Detached:
         """Undo an attach exactly: what it changed goes back, what an admin changed since stays."""

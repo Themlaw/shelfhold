@@ -391,7 +391,7 @@ def _attach_list(ops: OpsServices, _by: Principal, _p: Params) -> object:
 
 
 def _attach_detach(ops: OpsServices, by: Principal, p: Params) -> object:
-    return ops.attach.detach(_text(p, "attach_id"), principal=by)
+    return ops.attach.separate(_text(p, "attach_id"), principal=by)
 
 
 def _attach_plan(ops: OpsServices, _by: Principal, p: Params) -> object:
