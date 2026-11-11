@@ -13,6 +13,8 @@ from typing import Any
 import pytest
 import yaml
 
+from tests.support.tools import require_tool
+
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github" / "workflows"
 PIN = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
@@ -303,12 +305,9 @@ def _simulated_versions() -> list[dict[str, Any]]:
 @pytest.mark.req("ENF-QUAL-007")
 def test_ghcr_cleanup_selects_only_pr_only_old_versions() -> None:
     import json
-    import shutil
     import subprocess
 
-    jq = shutil.which("jq")
-    if jq is None:
-        pytest.skip("jq is not installed")
+    jq = require_tool("jq")
     (job,) = _load("cleanup.yml")["jobs"].values()
     run = _text(job)
     program = re.search(r"jq -r --arg cutoff \"\$cutoff\" '(.*?)'", run, re.S)

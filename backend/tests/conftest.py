@@ -10,6 +10,15 @@ import pytest
 
 from shelfhold.config import Settings, load_settings
 
+pytest_plugins = ["tests.support.leaks"]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _catalog_template_root(tmp_path_factory: pytest.TempPathFactory) -> None:
+    from tests.catalog_env import use_template_root
+
+    use_template_root(tmp_path_factory.mktemp("catalog-template"))
+
 
 @pytest.fixture
 def env(tmp_path: Path) -> dict[str, str]:

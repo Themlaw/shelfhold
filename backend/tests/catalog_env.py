@@ -4,6 +4,7 @@ Migrating costs a second; the template is built once per process and every harne
 file, so a Hypothesis run can afford a fresh database per example.
 """
 
+import atexit
 import shutil
 import tempfile
 from collections.abc import Iterator
@@ -25,9 +26,23 @@ from shelfhold.infrastructure.schema import acquisition
 T0 = datetime(2026, 11, 4, 8, 0, tzinfo=UTC)
 
 
+_TEMPLATE_ROOT: Path | None = None
+
+
+def use_template_root(root: Path) -> None:
+    """Build the template under `root` (the session fixture gives a folder of the pytest base
+    temporary folder, which pytest removes): nothing is left in the system temporary folder."""
+    global _TEMPLATE_ROOT
+    _TEMPLATE_ROOT = root
+    _template.cache_clear()
+
+
 @cache
 def _template() -> Path:
-    root = Path(tempfile.mkdtemp(prefix="shelfhold-catalog-template-"))
+    root = _TEMPLATE_ROOT
+    if root is None:  # outside a pytest session (a script): still removed at exit
+        root = Path(tempfile.mkdtemp(prefix="shelfhold-catalog-template-"))
+        atexit.register(shutil.rmtree, root, ignore_errors=True)
     env = {"SHELFHOLD_DATA_DIR": str(root / "data"), "SHELFHOLD_STORE_DIR": str(root / "store")}
     settings = load_settings(env).values
     migrate(settings)
