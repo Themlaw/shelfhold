@@ -67,8 +67,10 @@ _DECLARED = (
     _action("target.recheck_child_exposure", Effect.PARENTAL_CONTROL),
     _action("shelf.choose_family", Effect.PARENTAL_CONTROL),  # EF-BIB-036: file on a family shelf
     _action("shelf.withdraw", Effect.PARENTAL_CONTROL),  # EF-BIB-037: apply a removal plan
-    # Without freshness by default (P3), still refused to every key and token
+    # Classing needs a fresh session in every profile (porteur, 2026-11-11), and is refused to
+    # every key and token
     _action("rate", Effect.RATES_CONTENT),
+    # Without freshness by default (P3), still refused to every key and token
     _action("request.unmask", Effect.UNMASKS_REQUEST),
     _action("keys.create", Effect.MANAGES_CREDENTIALS),
     _action("keys.rotate", Effect.MANAGES_CREDENTIALS),
@@ -77,9 +79,9 @@ _DECLARED = (
         "restore.acknowledge", Effect.ACKNOWLEDGES_RESTORE
     ),  # passkeys, passwords after a restore
     _action("device_token.manage", Effect.MANAGES_CREDENTIALS),
-    # A passkey is a persistent way in: adding or retiring one needs a fresh proof in the hardened
-    # profile only (review PR #95; the default is the porteur's call, docs/decisions/M1b.md)
-    _action("passkey.register", Effect.MANAGES_CREDENTIALS),
+    # A passkey is a persistent way in: adding one needs a fresh proof in every profile (porteur,
+    # 2026-11-11); retiring one keeps the rule of the other credential actions (hardened only)
+    _action("passkey.register", Effect.ENROLS_PASSKEY),
     _action("passkey.revoke", Effect.MANAGES_CREDENTIALS),
     _action("admin_risk.accept", Effect.ACCEPTS_ADMIN_RISK),
     # Trust boundary (EF-EXP-065, D15): a third-party plugin's declared trust value; for

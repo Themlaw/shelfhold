@@ -40,6 +40,8 @@ class Effect(StrEnum):
     RATES_CONTENT = "rates_content"
     UNMASKS_REQUEST = "unmasks_request"
     MANAGES_CREDENTIALS = "manages_credentials"  # create, rotate or revoke a key or a token
+    # `passkey.register`: adds a way in that outlives the session (and its revocation) that added it
+    ENROLS_PASSKEY = "enrols_passkey"
     ACCEPTS_ADMIN_RISK = "accepts_admin_risk"  # `--accept-admin-risk`
     # `intents resolve`: completes, replays or gives up an interrupted file operation, which lifts
     # the protection its paths had from the planner and the reconciliation (EF-EXP-041)
@@ -63,11 +65,12 @@ class Effect(StrEnum):
 # classed is fresh-required (the safe side). Only these effects are listed as NOT needing it, and
 # a test pins `irreversible | these == set(Effect)` by hand, so a new effect fails CI until it is
 # placed in one of the two lists. PARENTAL_CONTROL is here but conditional: it needs freshness as
-# soon as a restricted profile exists.
+# soon as a restricted profile exists. RATES_CONTENT and ENROLS_PASSKEY are NOT here (porteur,
+# 2026-11-11): a stolen session must neither file adult content as "0" nor add a passkey that
+# survives the revocation of sessions, so both need a session fresher than 900 s in every profile.
 NO_REAUTH_EFFECTS = frozenset(
     {
         Effect.PARENTAL_CONTROL,
-        Effect.RATES_CONTENT,
         Effect.UNMASKS_REQUEST,
         Effect.MANAGES_CREDENTIALS,
         Effect.ATTESTS_TRUST,  # D15: freshness only in the hardened profile

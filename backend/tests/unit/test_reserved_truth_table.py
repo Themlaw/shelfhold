@@ -275,6 +275,8 @@ FRESHNESS_LINE = {
             "restore.acknowledge",
             "admin_risk.accept",
             "shelf.purge_upstream",
+            "rate",  # porteur 2026-11-11: fresh in every profile
+            "passkey.register",  # same: a stolen session adds no passkey that outlives it
         ),
         "p3",
     ),
@@ -292,13 +294,11 @@ FRESHNESS_LINE = {
     ),
     **dict.fromkeys(
         (
-            "rate",
             "request.unmask",
             "keys.create",
             "keys.rotate",
             "keys.revoke",
             "device_token.manage",
-            "passkey.register",
             "passkey.revoke",
             "plugin.attest",  # D15: freshness only in the hardened profile
         ),
