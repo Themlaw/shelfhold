@@ -140,6 +140,7 @@ __all__ = [
     "PurgeReport",
     "PurgeService",
     "PurgeUnknownError",
+    "PurgeWalBusyError",
     "Refused",
     "Retained",
 ]
@@ -157,10 +158,21 @@ OUT_OF_REACH: Final = (
 ALERT_DELETE_UPSTREAM: Final = "unit.delete_in_suwayomi"
 OPEN_TICKETS: Final = ("requested", "downloaded")
 _RW = "rw"
+LOCK_WAIT_S: Final = (
+    10.0  # a folder held longer: `LockBusyError`, the caller stops (nothing erased)
+)
+CHECKPOINT_TRIES: Final = 3
+CHECKPOINT_PAUSE_S: Final = 1.0
 
 
 class PurgeUnknownError(LookupError):
     """No such Unit (or Work): nothing to purge."""
+
+
+class PurgeWalBusyError(RuntimeError):
+    """The purge is done, but a reader still holds the write-ahead log: it keeps the pages the
+    purge rewrote until that reader leaves (EF-BIB-053). Stop the server, or wait for it to be
+    idle, and the nightly checkpoint (or the next restart) empties the log."""
 
 
 class PurgeCollateralError(RuntimeError):
@@ -485,7 +497,7 @@ class PurgeService:
     def _run_locked(self, plan: _Plan, allowed: PurgeAuthorization, job_id: str) -> PurgeReport:
         held = plan
         for _ in range(3):
-            with self._locks.hold_resources(job_id, held.resources):
+            with self._locks.hold_resources(job_id, held.resources, timeout=LOCK_WAIT_S):
                 fresh = self._replan(held)  # what arrived while the locks were awaited counts
                 if set(fresh.resources) <= set(held.resources):
                     return self._execute(fresh, allowed)
@@ -733,9 +745,21 @@ class PurgeService:
     def _checkpoint(self) -> None:
         """The write-ahead log holds the pages the purge rewrote, with the rows it erased in their
         earlier state: it is folded into the file and emptied (the pages were blanked by
-        `secure_delete`). Best effort: a reader that holds the log keeps it for the next run."""
-        with self._engine.connect() as connection:
-            connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+        `secure_delete`). A reader that holds a snapshot keeps the log: the flag `busy` is read,
+        the try repeated a few times, and a log still held is a `PurgeWalBusyError`."""
+        for attempt in range(CHECKPOINT_TRIES):
+            with self._engine.connect() as connection:
+                connection.exec_driver_sql("PRAGMA busy_timeout=1000")
+                try:
+                    row = connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                finally:
+                    connection.exec_driver_sql("PRAGMA busy_timeout=5000")
+            if row is not None and not row[0]:
+                return
+            if attempt + 1 < CHECKPOINT_TRIES:
+                time.sleep(CHECKPOINT_PAUSE_S)
+        log.warning("purge.wal_busy")
+        raise PurgeWalBusyError("a reader holds the write-ahead log")
 
     def _with_backups(self, report: PurgeReport, plan: _Plan) -> PurgeReport:
         """The integrated backups taken while these rows existed, read only (EF-BIB-052 (5))."""

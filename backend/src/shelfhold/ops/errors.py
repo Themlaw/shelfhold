@@ -11,6 +11,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("ops.preview_stale", 409, "admin"),
     ErrorCode("ops.still_waiting", 409, "admin"),
     ErrorCode("purge.collateral", 409, "admin"),
+    ErrorCode("purge.busy", 409, "admin"),
+    ErrorCode("purge.wal_busy", 409, "admin"),
     ErrorCode("root.blocked", 409, "admin"),
     # L25: the exits of a root that is not right (EF-EXP-064) and `--rebaseline-inodes` (EF-EXP-043)
     ErrorCode("root.unauthenticated", 409, "admin"),

@@ -549,6 +549,14 @@ action = "Si une empreinte diffère, un fichier a été modifié et non déplac�
 title = "Un fichier de cette Unité porte aussi d'autres Unités : l'effacer les effacerait."
 action = "Effacez toutes les Unités du fichier ensemble, ou gardez-le."
 
+[errors."purge.busy"]
+title = "Un fichier ou une Œuvre à effacer est tenu par un autre travail : rien n'a été effacé."
+action = "Relancez la commande dans un instant, quand le travail en cours (copie, import) sera fini."
+
+[errors."purge.wal_busy"]
+title = "L'effacement est fait, mais le serveur tient encore le journal de la base : il peut garder un titre jusqu'à son prochain vidage."
+action = "Relancez « shelfhold purge » quand le serveur est inactif, ou arrêtez le serveur : le journal est vidé chaque nuit et à l'arrêt."
+
 [errors."pairing.batch_stale"]
 title = "Le lot d'appariements confirmé n'est plus celui qui a été proposé."
 action = "Relancez « shelfhold adopt --pair-auto », relisez le rapport, puis confirmez avec la nouvelle empreinte."

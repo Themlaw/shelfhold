@@ -41,6 +41,7 @@ from shelfhold.export.application.coverage import (
     set_volume_coverage,
 )
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.locks import LockBusyError
 from shelfhold.export.application.migration_detect import (
     STEPS,
     SwitchoverDetector,
@@ -61,6 +62,7 @@ from shelfhold.export.application.purge import (
     PurgeReport,
     PurgeService,
     PurgeUnknownError,
+    PurgeWalBusyError,
 )
 from shelfhold.export.application.purge_leftovers import PurgeLeftovers
 from shelfhold.export.application.repatriate import (
@@ -214,6 +216,8 @@ OWN_CODES = frozenset({"pairing", "repatriate", "backfill", "instance"})
 _CODED: tuple[tuple[type[Exception], str], ...] = (
     (PurgeUnknownError, "ops.unknown_subject"),
     (PurgeCollateralError, "purge.collateral"),
+    (PurgeWalBusyError, "purge.wal_busy"),
+    (LockBusyError, "purge.busy"),
     (ConfirmationRequiredError, "unit.confirmation_required"),
     (PurgeRefusedError, "forbidden"),
     (SwitchoverIncompleteError, "pairing.switchover_unconfirmed"),

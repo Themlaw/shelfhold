@@ -5,6 +5,7 @@ real `FollowRequests`); the service is a fake only at the network edge."""
 
 import json
 import re
+import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -576,3 +577,68 @@ def test_erase_history_matches_whole_words_finished_jobs_and_upstream_ids() -> N
         assert jobs["done_title"] not in kept  # the title as a word, in a job that is over
         assert jobs["slug"] not in kept  # the upstream identifier of the chapter
         assert event in events  # "report" is not the word "Port"
+
+
+# -- counter-review: a reader holding the log, a purge waiting for a held Work ---------------------
+
+
+def test_purge_refuses_to_say_clean_while_a_reader_holds_the_wal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P11: the server (a reader holding a snapshot) keeps the `-wal` that holds the title. The
+    flag `busy` of the checkpoint is read: a log still held is `purge.wal_busy`, and once the
+    reader leaves, a checkpoint empties it."""
+    from shelfhold.export.application import purge as purge_module
+    from shelfhold.ops.library import refusal_of
+
+    monkeypatch.setattr(purge_module, "CHECKPOINT_PAUSE_S", 0.01)
+    with export_env() as env:
+        service = FakeService(tmp_path)
+        series = env.new_series(TITLE)
+        unit, _ = spread(env, series)
+        request = fetched_ticket(env, service, unit, "tok-1")
+        purge = make_m1b_env(env, service)
+        write_index(purge)
+        cite(purge, request_id=request, unit=unit, title=TITLE)
+        database = str(env.engine.url.database)
+        reader = sqlite3.connect(database, isolation_level=None)
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM work").fetchone()  # a snapshot, held
+        try:
+            with pytest.raises(purge_module.PurgeWalBusyError) as refused:
+                purge.purge.purge_work(
+                    series.work_id, principal=ADMIN, typed=series.work_id, now=purge.clock.now()
+                )
+            assert getattr(refusal_of(refused.value), "code", None) == "purge.wal_busy"
+        finally:
+            reader.execute("COMMIT")
+            reader.close()
+        with env.engine.connect() as connection:
+            row = connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        assert row is not None
+        assert row[0] == 0
+        raw = _database_bytes(env.engine)
+        assert TITLE.encode() not in raw
+
+
+def test_purge_waits_for_a_held_work_then_refuses_with_a_catalog_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P10: a Work held by a copy that does not end: the purge waits a bounded time, erases
+    nothing, and the refusal is the catalog's `purge.busy` (not a raw trace)."""
+    from shelfhold.export.application import purge as purge_module
+    from shelfhold.export.application.locks import LockBusyError, ResourceLocks, work_resource
+    from shelfhold.ops.library import refusal_of
+
+    monkeypatch.setattr(purge_module, "LOCK_WAIT_S", 0.2)
+    with export_env() as env:
+        series = env.new_series(TITLE)
+        unit, _ = spread(env, series)
+        purge = make_m1b_env(env)
+        held = ResourceLocks(env.engine, clock=purge.clock)
+        with held.hold_resources(new_ulid(), [work_resource(series.work_id)], timeout=1.0):
+            with pytest.raises(LockBusyError) as busy:
+                purge.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=purge.clock.now())
+            assert getattr(refusal_of(busy.value), "code", None) == "purge.busy"
+        report = purge.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=purge.clock.now())
+        assert report.complete
