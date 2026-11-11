@@ -107,6 +107,7 @@ class FakeSuwayomi:
     _polls: dict[int, int] = field(default_factory=dict)
     _downloaded: set[int] = field(default_factory=set)
     _enqueued: set[int] = field(default_factory=set)
+    enqueue_calls: list[int] = field(default_factory=list)  # every chapter ever asked, in order
     categories: list[dict[str, Any]] = field(default_factory=list)  # id, name, includeInUpdate
     updated_by_schedule: list[int] = field(default_factory=list)  # manga ids, in order
     deleted: list[int] = field(default_factory=list)  # chapter ids of `deleteDownloadedChapter`
@@ -566,6 +567,7 @@ class FakeSuwayomi:
     def _q_enqueueChapterDownload(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         wanted = self._wanted_id(query, variables, "id")
         if wanted is not None and self._chapter(wanted) is not None:
+            self.enqueue_calls.append(wanted)
             self._enqueued.add(wanted)
             self._polls[wanted] = 0
             self.claims.setdefault(wanted, set()).add(self._account)
