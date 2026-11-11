@@ -145,8 +145,9 @@ def absorb_echo(
     keep_shell: bool = False,
 ) -> EchoOfOwnExport | None:
     """If the received file is an echo of an export of ours, record it as a replica of that
-    export and take back what the request had made for it (its wanted Variant and Unit, which
-    hold no content): the file leaves nothing in the catalogue. None when it is not an echo.
+    export and take back what the request had made for it (its wanted Variant, which holds no
+    content, and the request itself): the file leaves no Variant, no content and no file. The
+    Unit stays, empty (only the reserved action deletes a Unit). None when it is not an echo.
 
     `keep_shell`: a Unit a followed series announces stays, and its request is only closed as
     abandoned, which a cycle does not ask again (taking the Unit away would have the next cycle
@@ -155,7 +156,7 @@ def absorb_echo(
     One transaction: the replica exists iff the request's shell is gone.
     """
     payload = received_content_hash(staged, kind)
-    request, variant, unit = acquisition.download_request, catalog.unit_variant, catalog.unit
+    request, variant = acquisition.download_request, catalog.unit_variant
     with engine.connect() as connection:
         connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
         with connection.begin():
@@ -185,7 +186,7 @@ def absorb_echo(
             else:
                 connection.execute(sa.delete(request).where(request.c.id == request_id))
             if not keep_shell and row is not None and row.variant_id is not None:
-                _drop_empty_shell(connection, row.variant_id, variant, unit)
+                _drop_empty_shell(connection, row.variant_id, variant)
     log.info(
         "acquire.echo_of_own_export",
         request_id=request_id,
@@ -195,14 +196,10 @@ def absorb_echo(
     return EchoOfOwnExport(own, replica_id)
 
 
-def _drop_empty_shell(
-    connection: Connection, variant_id: str, variant: sa.Table, unit: sa.Table
-) -> None:
-    """The Variant the request made and the Unit it made for it, when nothing else holds them.
-    A shell that something references is left where it is: the replica is what matters."""
-    unit_id = connection.execute(
-        sa.select(variant.c.unit_id).where(variant.c.id == variant_id)
-    ).scalar()
+def _drop_empty_shell(connection: Connection, variant_id: str, variant: sa.Table) -> None:
+    """The Variant the request made, when it holds no content and nothing else references it.
+    The Unit it was made for is left: a Unit is deleted only through the reserved action
+    (EF-BIB-031), and with no Variant it holds no file and offers none."""
     held = connection.execute(
         sa.select(storage.content.c.id).where(storage.content.c.variant_id == variant_id)
     ).first()
@@ -210,11 +207,3 @@ def _drop_empty_shell(
         return
     with suppress(sa.exc.IntegrityError), connection.begin_nested():
         connection.execute(sa.delete(variant).where(variant.c.id == variant_id))
-    if unit_id is None:
-        return
-    others = connection.execute(
-        sa.select(variant.c.id).where(variant.c.unit_id == unit_id).limit(1)
-    ).first()
-    if others is None:
-        with suppress(sa.exc.IntegrityError), connection.begin_nested():
-            connection.execute(sa.delete(unit).where(unit.c.id == unit_id))

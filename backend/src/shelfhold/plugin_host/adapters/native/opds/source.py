@@ -94,6 +94,7 @@ def build_manifest() -> SourceManifest:
         version="0.1.0",
         api=API,
         name="OPDS catalogue (Kavita, Komga, Calibre-web, ...)",
+        terms_url="https://github.com/Themlaw/shelfhold/blob/main/docs/admin/sources.md",
         permissions=Permissions(
             # the host is the one the admin configured: `opds.invalid` reaches nothing alone
             domains=[DomainRule(pattern="opds.invalid", purpose="api", base_url_setting="base_url")]
