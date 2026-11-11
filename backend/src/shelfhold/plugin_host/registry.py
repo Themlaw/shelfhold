@@ -22,6 +22,11 @@ Every loaded plugin is handed out behind the direct-I/O detector (``plugin_host.
 EF-SRC-002), and a manifest whose DomainRules or ``url_patterns`` do not parse is refused: a
 pattern that cannot be read is never guessed at (EF-SRC-003). ``resolve_url`` gives a pasted URL
 to the first active plugin whose ``url_patterns`` match it (EF-SRC-004).
+
+A manifest whose ``settings_schema`` the host does not accept is refused (EF-SRC-013, reserved
+network settings included). A trust value declared by a plugin that is not first-party is only a
+proposed default (EF-EXP-065 (5), GAP-11-09): the record's manifest carries the safe value and
+``proposed`` what the plugin asked for, until ``apply_attestations`` is handed the admin's word.
 """
 
 import importlib.abc
@@ -32,7 +37,7 @@ import re
 import sys
 import threading
 from collections.abc import Callable, Collection, Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import metadata
 from importlib.machinery import ModuleSpec
@@ -48,8 +53,10 @@ from shelfhold.infrastructure.fetcher.guard import (
     DomainPatternError,
     compile_domain_pattern,
 )
+from shelfhold.plugin_host.attestation import retain
 from shelfhold.plugin_host.audit_hook import allow_code_root, audited, host_io, importing
 from shelfhold.plugin_host.errors import NoSourceForUrl
+from shelfhold.plugin_host.settings import SettingsSchemaError, parse_settings_schema
 from shelfhold.sdk.models import API_VERSION, PluginKind, PluginManifest
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import Capability, SourceManifest
@@ -112,6 +119,15 @@ class PluginRecord:
     reason: str | None = None
     manifest: PluginManifest | None = None
     instance: Any = None
+    # Trust values the plugin declared and the host withholds until the admin attests them
+    proposed: Mapping[str, str] = field(default_factory=dict)
+
+
+def _trust_values(manifest: PluginManifest) -> dict[str, str]:
+    """The declared values the attestation rule covers (M2: a source's `content_trust`)."""
+    if isinstance(manifest, SourceManifest):
+        return {"content_trust": manifest.content_trust}
+    return {}
 
 
 def _normalise(name: str) -> str:
@@ -446,7 +462,33 @@ class PluginRegistry:
         problem = _pattern_problem(manifest)
         if problem is not None:
             return PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, problem)
-        return PluginRecord(key, origin, status.status, None, manifest, audited(instance, key))
+        try:
+            parse_settings_schema(manifest.settings_schema)
+        except SettingsSchemaError as exc:
+            return PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, f"settings_schema: {exc}")
+        kept = retain(origin, _trust_values(manifest), {})
+        if kept.proposed:
+            manifest = manifest.model_copy(update=kept.values)
+        return PluginRecord(
+            key, origin, status.status, None, manifest, audited(instance, key), kept.proposed
+        )
+
+    def apply_attestations(self, attested: Mapping[str, Mapping[str, str]]) -> None:
+        """Give each withheld value back where the admin attested it (`AttestationStore.valid()`,
+        which already checked the installed version); a value no longer attested is withdrawn."""
+        records = []
+        for record in self._records:
+            manifest = record.manifest
+            if manifest is None or record.origin is PluginOrigin.FIRST_PARTY:
+                records.append(record)
+                continue
+            declared = {**_trust_values(manifest), **record.proposed}
+            kept = retain(record.origin, declared, attested.get(record.key, {}))
+            if kept.values != _trust_values(manifest) or kept.proposed != record.proposed:
+                manifest = manifest.model_copy(update=kept.values)
+                record = replace(record, manifest=manifest, proposed=kept.proposed)
+            records.append(record)
+        self._records = records
 
     async def resolve_url(
         self, url: str, fetcher_for: Callable[[PluginRecord], Any]

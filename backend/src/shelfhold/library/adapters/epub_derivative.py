@@ -92,6 +92,7 @@ from shelfhold.library.replica import (
     store_copies,
 )
 from shelfhold.library.tombstones.values import ContentHash
+from shelfhold.plugin_host.public import publisher_attested
 
 log = structlog.get_logger(__name__)
 
@@ -140,20 +141,25 @@ def _unit_content(connection: Connection, unit_id: str) -> Any:
 
 
 def trust_of(connection: Connection, variant_id: str | None) -> str:
-    """`content_trust` of the binding a Variant came by; `untrusted` when it cannot be read."""
+    """`content_trust` of the binding a Variant came by; `untrusted` when it cannot be read.
+
+    A binding of a third-party plugin says `publisher` in vain until the admin attested it for
+    the installed version of that plugin (EF-EXP-065 (5), GAP-11-09)."""
     if variant_id is None:
         return "untrusted"
-    value = connection.execute(
-        sa.select(acquisition.source_binding.c.content_trust)
+    binding, item = acquisition.source_binding, acquisition.source_item
+    row = connection.execute(
+        sa.select(binding.c.content_trust, item.c.plugin_id)
         .select_from(
             catalog.unit_variant.join(
-                acquisition.source_binding,
-                acquisition.source_binding.c.id == catalog.unit_variant.c.source_binding_id,
-            )
+                binding, binding.c.id == catalog.unit_variant.c.source_binding_id
+            ).outerjoin(item, item.c.id == binding.c.source_item_id)
         )
         .where(catalog.unit_variant.c.id == variant_id)
-    ).scalar()
-    return "publisher" if value == "publisher" else "untrusted"
+    ).first()
+    if row is None or row.content_trust != "publisher":
+        return "untrusted"
+    return "publisher" if publisher_attested(connection, row.plugin_id) else "untrusted"
 
 
 def require_servable_derivative(connection: Connection, unit_id: str) -> None:

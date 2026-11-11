@@ -144,6 +144,42 @@ segment et `**` un nombre quelconque. Une adresse avec identifiants ou sur un po
 correspond à rien. Sans plugin qui correspond, ou si celui qui correspond ne trouve rien, la
 réponse est 422 `source.no_match` (« aucune source »).
 
+## Valeurs de confiance : attestation de l'admin
+
+Un plugin qui n'est pas first-party peut **déclarer** des valeurs de confiance ; dès M2, ce ne sont
+que des **défauts proposés** (EF-EXP-065, GAP-11-09), qu'il soit isolé ou non :
+
+| Champ | Valeur déclarée | Ce qui s'applique sans attestation |
+|---|---|---|
+| `content_trust` | `publisher` (ses EPUB échappent au neutraliseur) | `untrusted` : le neutraliseur s'applique, l'original reste dans `/store` |
+| `access_partitioning` | `library` ou `user` | `none` : une étagère sous 18+ ne lui est pas liée |
+| `egress` | `foyer` | `externe` : un fichier tatoué n'y part pas |
+
+`shelfhold plugin list --load` montre ce qu'un plugin propose. Pour appliquer une valeur, attestez-la :
+
+```sh
+shelfhold plugin attest <clé> content_trust publisher
+shelfhold plugin withdraw <clé> content_trust     # retour à la valeur sûre
+```
+
+ou `POST /api/v1/plugins/<clé>/attestations` (`{"field": "content_trust", "value": "publisher"}`).
+
+- L'attestation vaut pour **cette instance** et pour la **version installée** du plugin. Une autre
+  version (mise à jour, réinstallation) est du code que personne n'a attesté : l'attestation tombe
+  au démarrage suivant ou à la prochaine commande `plugin`, avec une ligne d'audit
+  `plugin.attestation_revoked`, et la valeur sûre s'applique jusqu'à une nouvelle attestation.
+- Seule la valeur que le plugin déclare peut être attestée : attester `publisher` pour un plugin
+  qui se dit `untrusted` ne change rien.
+- C'est une action réservée par propriété (`plugin.attest`) : refusée à toute clé d'API, auditée
+  (`plugin.attested`, `plugin.attestation_withdrawn`) ; une session fraîche n'est exigée qu'en
+  profil durci. Pour `access_partitioning` (`plugin.attest_partitioning`), c'est aussi du contrôle
+  parental : la fraîcheur est exigée dès qu'un profil restreint existe.
+- Un plugin first-party (livré avec Shelfhold) n'a rien à attester : ses valeurs s'appliquent telles
+  qu'il les déclare.
+
+N'attestez `publisher` que pour un plugin dont vous savez qu'il ne livre que des fichiers d'éditeur
+tels quels : un EPUB `publisher` part en bibliothèque sans passer par le neutraliseur.
+
 ## Licence
 
 Un plugin chargé en processus relève de l'exception de plugin provisoire (ENF-LEG-010). Tant qu'elle

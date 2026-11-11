@@ -74,6 +74,16 @@ plugin_remove_help = "Désinstalle un plugin."
 plugin_name_help = "Nom de la distribution du plugin."
 plugin_list_help = "Liste les plugins tiers installés et pourquoi ils sont inactifs."
 plugin_load_help = "Charge les plugins autorisés, comme au démarrage, et montre le résultat."
+plugin_key_help = "Clé du plugin (celle de son manifeste)."
+plugin_attest_help = "Atteste une valeur de confiance déclarée par un plugin tiers, pour sa version installée (audité)."
+plugin_attest_value_help = "Valeur attestée : publisher, library, user ou foyer selon le champ."
+plugin_withdraw_help = "Retire une attestation (audité) : la valeur sûre s'applique de nouveau."
+plugin_settings_help = "Montre les réglages d'une source ; d'un secret, seulement s'il est défini et son empreinte."
+plugin_set_help = "Règle des valeurs non secrètes d'une source (NOM=JSON)."
+plugin_field_help = "Nom du champ secret, tel que le déclare le settings_schema de la source."
+plugin_set_secret_help = "Règle un secret d'une source, lu dans un fichier ou sur l'entrée standard (audité)."
+plugin_set_cookies_help = "Remplace les cookies d'une source par un objet JSON nom → valeur (audité ; un objet vide les efface)."
+plugin_cookies_file_help = "Fichier JSON des cookies, ou - pour l'entrée standard."
 secrets_help = "Gère les secrets chiffrés au repos : export, rotation, état du trousseau."
 secrets_export_help = "Exporte le trousseau dans un fichier age protégé par une phrase de passe."
 secrets_import_help = "Fusionne les clés d'un export age dans le trousseau, puis rejoue les pierres tombales en attente (action réservée)."
@@ -148,6 +158,17 @@ row = "{name} {version}\t{status}"
 row_loaded = "{plugin}\t{status}\t{reason}"
 status_ready = "prêt"
 status_disabled = "désactivé : {reason}"
+attested = "{plugin} : {field}={value} attesté pour la version {version}. Une autre version devra être attestée de nouveau."
+attest_refused = "Attestation refusée : {detail}"
+withdrawn = "Attestation de {plugin} retirée : la valeur sûre s'applique."
+nothing_attested = "Rien n'était attesté pour {plugin} sur ce champ."
+keyring_unreadable = "Trousseau illisible : {detail}"
+setting_row = "{name}\t{value}"
+secret_set = "défini (empreinte {fingerprint})"
+secret_unset = "non défini"
+setting_refused = "Réglage refusé ({field}) : {reason}"
+assignment_invalid = "« {name} » n'a pas la forme NOM=VALEUR."
+cookies_unreadable = "Les cookies doivent être un objet JSON nom → valeur, lisible."
 
 [secrets]
 exported = "Trousseau exporté (age, scrypt) : {path}"
@@ -931,6 +952,22 @@ action = "Confirmez avec « shelfhold source reconnect » ; rien n'est supprimé
 [errors."source.no_match"]
 title = "Aucune source ne reconnaît cette adresse."
 action = "Vérifiez l'adresse collée, ou activez la source qui la publie."
+
+[errors."source.setting_invalid"]
+title = "Ce réglage de la source est refusé."
+action = "Corrigez le champ nommé ; un secret se règle à part, par set-secret, jamais comme une valeur."
+
+[errors."plugin.unknown"]
+title = "Aucun plugin chargé ou installé ne porte cette clé."
+action = "Vérifiez la clé avec « shelfhold plugin list »."
+
+[errors."plugin.attestation_invalid"]
+title = "Cette valeur ne s'atteste pas."
+action = "Seules content_trust=publisher, access_partitioning=library|user et egress=foyer d'un plugin tiers installé s'attestent."
+
+[errors."plugin.attestation_not_needed"]
+title = "Ce plugin est first-party : ses valeurs s'appliquent telles quelles."
+action = "Rien à attester."
 
 [errors."source.not_loaded"]
 title = "Une source n'est pas chargée."

@@ -51,6 +51,7 @@ from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
+from shelfhold.interfaces.http_api.plugins import build_plugins_router
 from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
@@ -59,7 +60,9 @@ from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.ops import OpsServices
 from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.wiring import open_ops
-from shelfhold.plugin_host.public import start_plugins
+from shelfhold.plugin_host.attestation import AttestationStore
+from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
+from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
 from shelfhold.runtime_jobs import PlanService
 
@@ -183,6 +186,25 @@ def create_app(
             ]
         return opened[0][1]
 
+    plugins: list[PluginRegistry] = []  # the start-up load, once this process owns /data
+
+    def schema_for(key: str) -> SettingsSchema | None:
+        record = plugins[0].get(key) if plugins else None
+        if record is None or record.manifest is None or record.status.value == "incompatible":
+            return None
+        return parse_settings_schema(record.manifest.settings_schema)
+
+    def load_plugins() -> None:
+        registry, _records = start_plugins(resolved)
+        installed = installed_versions(resolved)
+        if installed:  # EF-EXP-065: nothing to attest without a third-party plugin
+            # the installed versions recorded, the attestations of another version revoked
+            # (audited), then the admin's word given back to the plugins it was given for
+            attestations = AttestationStore(engine, clock=clock)
+            attestations.sync_installed(installed)
+            registry.apply_attestations(attestations.valid())
+        plugins[:] = [registry]
+
     @cache
     def headless_admin() -> HeadlessAdmin:
         return wiring.open_headless(resolved)  # opened at first use, after the keyring check
@@ -210,6 +232,12 @@ def create_app(
         build_ops_router(ops_services),  # EF-INT-023: the exits
         build_triage_router(ops_services),  # EF-USR-015, EF-EXP-046: the two lists, the batch
         build_library_router(ops_services),  # pairing, repatriation, detach, purge, probe
+        # EF-SRC-013, EF-EXP-065: per-source settings (nothing secret read back), attestations
+        build_plugins_router(
+            lambda: SourceSettings(engine, composition.vault, now=clock.now),
+            lambda: AttestationStore(engine, clock=clock),
+            schema_for,
+        ),
     )
 
     def on_shutdown() -> None:
@@ -248,7 +276,7 @@ def create_app(
         try:
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
             # EF-SRC-019: third-party code only once this process owns /data and the schema is ours
-            start_plugins(resolved)
+            load_plugins()
             start_owned()
             ready.set(runtime.owns_volumes)  # waiting for a migration's lock: not ready yet
         except BaseException:

@@ -69,6 +69,56 @@ export type ActivityOut = {
 };
 
 /**
+ * AttestationIn
+ */
+export type AttestationIn = {
+    /**
+     * Field
+     */
+    field: string;
+    /**
+     * Value
+     */
+    value: string;
+};
+
+/**
+ * AttestationOut
+ */
+export type AttestationOut = {
+    /**
+     * Attested At
+     */
+    attested_at: string;
+    /**
+     * Field
+     */
+    field: string;
+    /**
+     * Plugin Key
+     */
+    plugin_key: string;
+    /**
+     * Plugin Version
+     */
+    plugin_version: string;
+    /**
+     * Value
+     */
+    value: string;
+};
+
+/**
+ * AttestationsOut
+ */
+export type AttestationsOut = {
+    /**
+     * Items
+     */
+    items: Array<AttestationOut>;
+};
+
+/**
  * BackfillIn
  */
 export type BackfillIn = {
@@ -180,6 +230,18 @@ export type ConfigRow = {
      * Warning
      */
     warning?: string | null;
+};
+
+/**
+ * CookiesIn
+ */
+export type CookiesIn = {
+    /**
+     * Cookies
+     */
+    cookies: {
+        [key: string]: string;
+    };
 };
 
 /**
@@ -1316,13 +1378,17 @@ export type RotateIn = {
 };
 
 /**
- * SecretIn
+ * SecretStateOut
  */
-export type SecretIn = {
+export type SecretStateOut = {
     /**
-     * Secret
+     * Fingerprint
      */
-    secret: string;
+    fingerprint?: string | null;
+    /**
+     * Set
+     */
+    set: boolean;
 };
 
 /**
@@ -1433,6 +1499,37 @@ export type SetAsideOut = {
      */
     aside: {
         [key: string]: string;
+    };
+};
+
+/**
+ * SettingsOut
+ */
+export type SettingsOut = {
+    cookies: SecretStateOut;
+    /**
+     * Secrets
+     */
+    secrets: {
+        [key: string]: SecretStateOut;
+    };
+    /**
+     * Values
+     */
+    values: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * SettingsPatch
+ */
+export type SettingsPatch = {
+    /**
+     * Values
+     */
+    values: {
+        [key: string]: unknown;
     };
 };
 
@@ -1782,6 +1879,26 @@ export type ShelfholdInterfacesHttpApiOpsResolveIn = {
      * Action
      */
     action: string;
+};
+
+/**
+ * SecretIn
+ */
+export type ShelfholdInterfacesHttpApiOpsSecretIn = {
+    /**
+     * Secret
+     */
+    secret: string;
+};
+
+/**
+ * SecretIn
+ */
+export type ShelfholdInterfacesHttpApiPluginsSecretIn = {
+    /**
+     * Value
+     */
+    value: string;
 };
 
 export type AboutData = {
@@ -3244,6 +3361,124 @@ export type ApplyResponses = {
 
 export type ApplyResponse = ApplyResponses[keyof ApplyResponses];
 
+export type ReadAttestationsData = {
+    body?: never;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{key}/attestations';
+};
+
+export type ReadAttestationsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadAttestationsError = ReadAttestationsErrors[keyof ReadAttestationsErrors];
+
+export type ReadAttestationsResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttestationsOut;
+};
+
+export type ReadAttestationsResponse = ReadAttestationsResponses[keyof ReadAttestationsResponses];
+
+export type AttestData = {
+    body: AttestationIn;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{key}/attestations';
+};
+
+export type AttestErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AttestError = AttestErrors[keyof AttestErrors];
+
+export type AttestResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttestationOut;
+};
+
+export type AttestResponse = AttestResponses[keyof AttestResponses];
+
+export type WithdrawData = {
+    body?: never;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{key}/attestations/{name}';
+};
+
+export type WithdrawErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WithdrawError = WithdrawErrors[keyof WithdrawErrors];
+
+export type WithdrawResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttestationsOut;
+};
+
+export type WithdrawResponse = WithdrawResponses[keyof WithdrawResponses];
+
 export type ProbeData = {
     body: ProbeIn;
     path?: never;
@@ -3900,7 +4135,7 @@ export type SourceReconnectResponses = {
 export type SourceReconnectResponse = SourceReconnectResponses[keyof SourceReconnectResponses];
 
 export type SourceSetSecretData = {
-    body: SecretIn;
+    body: ShelfholdInterfacesHttpApiOpsSecretIn;
     path?: never;
     query?: never;
     url: '/api/v1/sources/suwayomi/secret';
@@ -3931,6 +4166,204 @@ export type SourceSetSecretResponses = {
 };
 
 export type SourceSetSecretResponse = SourceSetSecretResponses[keyof SourceSetSecretResponses];
+
+export type PutCookiesData = {
+    body: CookiesIn;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/v1/sources/{key}/cookies';
+};
+
+export type PutCookiesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PutCookiesError = PutCookiesErrors[keyof PutCookiesErrors];
+
+export type PutCookiesResponses = {
+    /**
+     * Successful Response
+     */
+    200: SecretStateOut;
+};
+
+export type PutCookiesResponse = PutCookiesResponses[keyof PutCookiesResponses];
+
+export type DeleteSecretData = {
+    body?: never;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/sources/{key}/secrets/{name}';
+};
+
+export type DeleteSecretErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeleteSecretError = DeleteSecretErrors[keyof DeleteSecretErrors];
+
+export type DeleteSecretResponses = {
+    /**
+     * Successful Response
+     */
+    200: SecretStateOut;
+};
+
+export type DeleteSecretResponse = DeleteSecretResponses[keyof DeleteSecretResponses];
+
+export type PutSecretData = {
+    body: ShelfholdInterfacesHttpApiPluginsSecretIn;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/sources/{key}/secrets/{name}';
+};
+
+export type PutSecretErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PutSecretError = PutSecretErrors[keyof PutSecretErrors];
+
+export type PutSecretResponses = {
+    /**
+     * Successful Response
+     */
+    200: SecretStateOut;
+};
+
+export type PutSecretResponse = PutSecretResponses[keyof PutSecretResponses];
+
+export type ReadSettingsData = {
+    body?: never;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/v1/sources/{key}/settings';
+};
+
+export type ReadSettingsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadSettingsError = ReadSettingsErrors[keyof ReadSettingsErrors];
+
+export type ReadSettingsResponses = {
+    /**
+     * Successful Response
+     */
+    200: SettingsOut;
+};
+
+export type ReadSettingsResponse = ReadSettingsResponses[keyof ReadSettingsResponses];
+
+export type PatchSettingsData = {
+    body: SettingsPatch;
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/v1/sources/{key}/settings';
+};
+
+export type PatchSettingsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PatchSettingsError = PatchSettingsErrors[keyof PatchSettingsErrors];
+
+export type PatchSettingsResponses = {
+    /**
+     * Successful Response
+     */
+    200: SettingsOut;
+};
+
+export type PatchSettingsResponse = PatchSettingsResponses[keyof PatchSettingsResponses];
 
 export type StatsData = {
     body?: never;

@@ -81,6 +81,7 @@ NON_P3 = {
     "rates_content",
     "unmasks_request",
     "manages_credentials",
+    "attests_trust",  # D15 (M2 L07)
 }
 
 
@@ -280,6 +281,7 @@ FRESHNESS_LINE = {
             "shelf.withdraw",
             "profile.kavita_mapping",
             "target.recheck_child_exposure",
+            "plugin.attest_partitioning",  # D15: which shelves a third-party target may serve
         ),
         "parental",
     ),
@@ -293,6 +295,7 @@ FRESHNESS_LINE = {
             "device_token.manage",
             "passkey.register",
             "passkey.revoke",
+            "plugin.attest",  # D15: freshness only in the hardened profile
         ),
         "none",
     ),

@@ -50,6 +50,9 @@ class Effect(StrEnum):
     # `restore acknowledge`: says the passkeys and passwords of a restored database were looked at,
     # which lifts the suspension of passkey logins: the host CLI only, never a key or a session
     ACKNOWLEDGES_RESTORE = "acknowledges_restore"
+    # `plugin attest`: a non-first-party plugin's declared trust value (`content_trust:
+    # publisher`, `access_partitioning`, `egress`) applied on the admin's word (EF-EXP-065, D15)
+    ATTESTS_TRUST = "attests_trust"
 
 
 # P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody
@@ -63,6 +66,7 @@ NO_REAUTH_EFFECTS = frozenset(
         Effect.RATES_CONTENT,
         Effect.UNMASKS_REQUEST,
         Effect.MANAGES_CREDENTIALS,
+        Effect.ATTESTS_TRUST,  # D15: freshness only in the hardened profile
     }  # not ACCEPTS_ADMIN_RISK: it takes a third party's admin password (L38 review)
 )
 

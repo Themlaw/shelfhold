@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, EditionSetSeriesNameData, EditionSetSeriesNameErrors, EditionSetSeriesNameResponses, FileEditionData, FileEditionErrors, FileEditionResponses, FollowData, FollowErrors, FollowResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, JobStatusData, JobStatusErrors, JobStatusResponses, ListActivityData, ListActivityErrors, ListActivityResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PasskeyLoginData, PasskeyLoginErrors, PasskeyLoginOptionsData, PasskeyLoginOptionsErrors, PasskeyLoginOptionsResponses, PasskeyLoginResponses, PasskeyReauthOptionsData, PasskeyReauthOptionsErrors, PasskeyReauthOptionsResponses, PasskeyRegisterData, PasskeyRegisterErrors, PasskeyRegisterResponses, PasskeyRegistrationOptionsData, PasskeyRegistrationOptionsErrors, PasskeyRegistrationOptionsResponses, PasskeyRevokeData, PasskeyRevokeErrors, PasskeyRevokeResponses, PasskeysListData, PasskeysListErrors, PasskeysListResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, RateBatchData, RateBatchErrors, RateBatchResponses, RateWorkData, RateWorkErrors, RateWorkResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAcknowledgeData, RestoreAcknowledgeErrors, RestoreAcknowledgeResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, RootReinitData, RootReinitErrors, RootReinitResponses, RootRestoredData, RootRestoredErrors, RootRestoredResponses, RootTakeoverData, RootTakeoverErrors, RootTakeoverResponses, SecretsImportData, SecretsImportErrors, SecretsImportResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SetMaxAgeData, SetMaxAgeErrors, SetMaxAgeResponses, SetProfilesData, SetProfilesErrors, SetProfilesResponses, SetSkipReadUpgradesData, SetSkipReadUpgradesErrors, SetSkipReadUpgradesResponses, ShelfProposalData, ShelfProposalErrors, ShelfProposalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceReconnectData, SourceReconnectErrors, SourceReconnectResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, StoreReinitData, StoreReinitErrors, StoreReinitResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses, ToRateListData, ToRateListErrors, ToRateListResponses, ToShelveListData, ToShelveListErrors, ToShelveListResponses, UnfollowData, UnfollowErrors, UnfollowResponses, UnmaskData, UnmaskErrors, UnmaskResponses, WithdrawalApplyData, WithdrawalApplyErrors, WithdrawalApplyResponses, WithdrawalPlanData, WithdrawalPlanErrors, WithdrawalPlanResponses } from './types.gen';
+import type { AboutData, AboutErrors, AboutResponses, AcceptLostKeyringData, AcceptLostKeyringErrors, AcceptLostKeyringResponses, AddSourceData, AddSourceErrors, AddSourceResponses, AddTargetData, AddTargetErrors, AddTargetResponses, AdoptConfirmMigrationData, AdoptConfirmMigrationErrors, AdoptConfirmMigrationResponses, AdoptSetFollowFromData, AdoptSetFollowFromErrors, AdoptSetFollowFromResponses, ApplyData, ApplyErrors, ApplyResponses, AttestData, AttestErrors, AttestResponses, BackfillEstimateData, BackfillEstimateErrors, BackfillEstimateResponses, BackfillStartData, BackfillStartErrors, BackfillStartResponses, BindDestinationData, BindDestinationErrors, BindDestinationResponses, CreateShelfData, CreateShelfErrors, CreateShelfResponses, DeleteSecretData, DeleteSecretErrors, DeleteSecretResponses, EditionSetLangData, EditionSetLangErrors, EditionSetLangResponses, EditionSetSeriesNameData, EditionSetSeriesNameErrors, EditionSetSeriesNameResponses, FileEditionData, FileEditionErrors, FileEditionResponses, FollowData, FollowErrors, FollowResponses, HealthzData, HealthzErrors, HealthzResponses, IntentsListData, IntentsListErrors, IntentsListResponses, IntentsResolveData, IntentsResolveErrors, IntentsResolveResponses, JobsListData, JobsListErrors, JobsListResponses, JobsRetryData, JobsRetryErrors, JobsRetryResponses, JobStatusData, JobStatusErrors, JobStatusResponses, ListActivityData, ListActivityErrors, ListActivityResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, MigrationData, MigrationErrors, MigrationResponses, MissingResolveData, MissingResolveErrors, MissingResolveResponses, PairAutoData, PairAutoErrors, PairAutoResponses, PairData, PairErrors, PairProposeData, PairProposeErrors, PairProposeResponses, PairResponses, PasskeyLoginData, PasskeyLoginErrors, PasskeyLoginOptionsData, PasskeyLoginOptionsErrors, PasskeyLoginOptionsResponses, PasskeyLoginResponses, PasskeyReauthOptionsData, PasskeyReauthOptionsErrors, PasskeyReauthOptionsResponses, PasskeyRegisterData, PasskeyRegisterErrors, PasskeyRegisterResponses, PasskeyRegistrationOptionsData, PasskeyRegistrationOptionsErrors, PasskeyRegistrationOptionsResponses, PasskeyRevokeData, PasskeyRevokeErrors, PasskeyRevokeResponses, PasskeysListData, PasskeysListErrors, PasskeysListResponses, PatchConfigData, PatchConfigErrors, PatchConfigResponses, PatchSettingsData, PatchSettingsErrors, PatchSettingsResponses, PreviewData, PreviewErrors, PreviewResponses, ProbeData, ProbeErrors, ProbeResponses, PurgeUnitData, PurgeUnitErrors, PurgeUnitResponses, PurgeWorkData, PurgeWorkErrors, PurgeWorkResponses, PutCookiesData, PutCookiesErrors, PutCookiesResponses, PutSecretData, PutSecretErrors, PutSecretResponses, RateBatchData, RateBatchErrors, RateBatchResponses, RateWorkData, RateWorkErrors, RateWorkResponses, ReadAttestationsData, ReadAttestationsErrors, ReadAttestationsResponses, ReadConfigData, ReadConfigErrors, ReadConfigResponses, ReadSettingsData, ReadSettingsErrors, ReadSettingsResponses, ReadyzData, ReadyzErrors, ReadyzResponses, ReauthData, ReauthErrors, ReauthResponses, RepatriateData, RepatriateErrors, RepatriateResponses, RestoreAcknowledgeData, RestoreAcknowledgeErrors, RestoreAcknowledgeResponses, RestoreAdoptData, RestoreAdoptErrors, RestoreAdoptResponses, RestoreUpstreamData, RestoreUpstreamErrors, RestoreUpstreamResponses, RootReinitData, RootReinitErrors, RootReinitResponses, RootRestoredData, RootRestoredErrors, RootRestoredResponses, RootTakeoverData, RootTakeoverErrors, RootTakeoverResponses, SecretsImportData, SecretsImportErrors, SecretsImportResponses, SeriesResumeData, SeriesResumeErrors, SeriesResumeResponses, SessionData, SessionErrors, SessionResponses, SetAsideJournalData, SetAsideJournalErrors, SetAsideJournalResponses, SetMaxAgeData, SetMaxAgeErrors, SetMaxAgeResponses, SetProfilesData, SetProfilesErrors, SetProfilesResponses, SetSkipReadUpgradesData, SetSkipReadUpgradesErrors, SetSkipReadUpgradesResponses, ShelfProposalData, ShelfProposalErrors, ShelfProposalResponses, SourceRecheckData, SourceRecheckErrors, SourceRecheckResponses, SourceReconnectData, SourceReconnectErrors, SourceReconnectResponses, SourceSetSecretData, SourceSetSecretErrors, SourceSetSecretResponses, StatsData, StatsErrors, StatsResponses, StatusData, StatusErrors, StatusResponses, StoreReinitData, StoreReinitErrors, StoreReinitResponses, TargetRecheckData, TargetRecheckErrors, TargetRecheckResponses, TargetReconnectData, TargetReconnectErrors, TargetReconnectResponses, TargetRotateKeyData, TargetRotateKeyErrors, TargetRotateKeyResponses, TombstoneFlushData, TombstoneFlushErrors, TombstoneFlushResponses, ToRateListData, ToRateListErrors, ToRateListResponses, ToShelveListData, ToShelveListErrors, ToShelveListResponses, UnfollowData, UnfollowErrors, UnfollowResponses, UnmaskData, UnmaskErrors, UnmaskResponses, WithdrawalApplyData, WithdrawalApplyErrors, WithdrawalApplyResponses, WithdrawalPlanData, WithdrawalPlanErrors, WithdrawalPlanResponses, WithdrawData, WithdrawErrors, WithdrawResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -365,6 +365,28 @@ export const preview = <ThrowOnError extends boolean = false>(options: Options<P
 export const apply = <ThrowOnError extends boolean = false>(options: Options<ApplyData, ThrowOnError>): RequestResult<ApplyResponses, ApplyErrors, ThrowOnError> => (options.client ?? client).post<ApplyResponses, ApplyErrors, ThrowOnError>({ url: '/api/v1/plans/{plan_id}/apply', ...options });
 
 /**
+ * Read Attestations
+ */
+export const readAttestations = <ThrowOnError extends boolean = false>(options: Options<ReadAttestationsData, ThrowOnError>): RequestResult<ReadAttestationsResponses, ReadAttestationsErrors, ThrowOnError> => (options.client ?? client).get<ReadAttestationsResponses, ReadAttestationsErrors, ThrowOnError>({ url: '/api/v1/plugins/{key}/attestations', ...options });
+
+/**
+ * Attest
+ */
+export const attest = <ThrowOnError extends boolean = false>(options: Options<AttestData, ThrowOnError>): RequestResult<AttestResponses, AttestErrors, ThrowOnError> => (options.client ?? client).post<AttestResponses, AttestErrors, ThrowOnError>({
+    url: '/api/v1/plugins/{key}/attestations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Withdraw
+ */
+export const withdraw = <ThrowOnError extends boolean = false>(options: Options<WithdrawData, ThrowOnError>): RequestResult<WithdrawResponses, WithdrawErrors, ThrowOnError> => (options.client ?? client).delete<WithdrawResponses, WithdrawErrors, ThrowOnError>({ url: '/api/v1/plugins/{key}/attestations/{name}', ...options });
+
+/**
  * Probe
  */
 export const probe = <ThrowOnError extends boolean = false>(options: Options<ProbeData, ThrowOnError>): RequestResult<ProbeResponses, ProbeErrors, ThrowOnError> => (options.client ?? client).post<ProbeResponses, ProbeErrors, ThrowOnError>({
@@ -558,6 +580,52 @@ export const sourceReconnect = <ThrowOnError extends boolean = false>(options?: 
  */
 export const sourceSetSecret = <ThrowOnError extends boolean = false>(options: Options<SourceSetSecretData, ThrowOnError>): RequestResult<SourceSetSecretResponses, SourceSetSecretErrors, ThrowOnError> => (options.client ?? client).post<SourceSetSecretResponses, SourceSetSecretErrors, ThrowOnError>({
     url: '/api/v1/sources/suwayomi/secret',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Put Cookies
+ */
+export const putCookies = <ThrowOnError extends boolean = false>(options: Options<PutCookiesData, ThrowOnError>): RequestResult<PutCookiesResponses, PutCookiesErrors, ThrowOnError> => (options.client ?? client).put<PutCookiesResponses, PutCookiesErrors, ThrowOnError>({
+    url: '/api/v1/sources/{key}/cookies',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete Secret
+ */
+export const deleteSecret = <ThrowOnError extends boolean = false>(options: Options<DeleteSecretData, ThrowOnError>): RequestResult<DeleteSecretResponses, DeleteSecretErrors, ThrowOnError> => (options.client ?? client).delete<DeleteSecretResponses, DeleteSecretErrors, ThrowOnError>({ url: '/api/v1/sources/{key}/secrets/{name}', ...options });
+
+/**
+ * Put Secret
+ */
+export const putSecret = <ThrowOnError extends boolean = false>(options: Options<PutSecretData, ThrowOnError>): RequestResult<PutSecretResponses, PutSecretErrors, ThrowOnError> => (options.client ?? client).put<PutSecretResponses, PutSecretErrors, ThrowOnError>({
+    url: '/api/v1/sources/{key}/secrets/{name}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read Settings
+ */
+export const readSettings = <ThrowOnError extends boolean = false>(options: Options<ReadSettingsData, ThrowOnError>): RequestResult<ReadSettingsResponses, ReadSettingsErrors, ThrowOnError> => (options.client ?? client).get<ReadSettingsResponses, ReadSettingsErrors, ThrowOnError>({ url: '/api/v1/sources/{key}/settings', ...options });
+
+/**
+ * Patch Settings
+ */
+export const patchSettings = <ThrowOnError extends boolean = false>(options: Options<PatchSettingsData, ThrowOnError>): RequestResult<PatchSettingsResponses, PatchSettingsErrors, ThrowOnError> => (options.client ?? client).patch<PatchSettingsResponses, PatchSettingsErrors, ThrowOnError>({
+    url: '/api/v1/sources/{key}/settings',
     ...options,
     headers: {
         'Content-Type': 'application/json',

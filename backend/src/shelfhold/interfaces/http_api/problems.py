@@ -19,6 +19,7 @@ from starlette.requests import Request
 from shelfhold.error_catalog import ErrorCode
 from shelfhold.i18n import t
 from shelfhold.infrastructure.http_headers import apply_security_headers
+from shelfhold.infrastructure.logging import mask_known_secrets
 from shelfhold.interfaces.http_api.catalog import all_error_codes, error_code
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -102,10 +103,12 @@ def problem_body(
         "action": t(spec.action_key),
     }
     if detail:
-        body["detail"] = detail
+        body["detail"] = mask_known_secrets(detail)  # a quoted upstream answer may hold one
     if request_id:
         body["request_id"] = request_id
     for name, value in (extensions or {}).items():
+        if isinstance(value, str):
+            value = mask_known_secrets(value)
         body.setdefault(name, value)  # an extension never overrides a standard member
     return body
 

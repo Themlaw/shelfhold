@@ -146,6 +146,18 @@ def _mask_known(text: str) -> str:
     return text
 
 
+def mask_known_secrets(text: str) -> str:
+    """Every registered secret value masked in `text`, in any form a URL carries it in, and
+    nothing else changed: for text that leaves the process outside a log line (an HTTP problem
+    detail, EF-SRC-013)."""
+    text = _mask_known(text)
+    if "%" in text and _known_values:
+        for view in decoded_views(text)[1:]:
+            if contains_secret(view, known_secret_index()):
+                return _mask_known(view)
+    return text
+
+
 def _redact_path(path: str) -> str:
     """The path of a URL with every segment that holds a credential masked: a registered secret
     (as written, or once or twice percent-encoded), the segment that follows a word naming a

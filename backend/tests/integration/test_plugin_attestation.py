@@ -48,6 +48,7 @@ from tests.integration.test_untrusted_epub_pipeline import (
     set_binding_trust,
 )
 from tests.library_env import LibEnv, lib_env
+from tests.plugin_guard_env import build_wheel, make_cli
 
 pytestmark = pytest.mark.req("EF-EXP-065")
 
@@ -267,4 +268,29 @@ def test_http_attestation_is_audited_and_refused_without_a_session(
         actions = [a for a, _t, _actor in _audit(engine)]
     finally:
         engine.dispose()
-    assert actions == ["plugin.attested"]
+    # the reserved-action gate logs `plugin.attest` per call; one attestation was recorded
+    assert actions.count("plugin.attested") == 1 and "plugin.attest" in actions
+
+
+def test_cli_plugin_attest_is_bound_to_the_installed_wheel_and_lapses_on_removal(
+    tmp_path: Path,
+) -> None:
+    """`plugin attest` reads the installed version without importing the plugin, writes the
+    audit line, and a removal takes the word back (a reinstall is code nobody vouched for)."""
+    cli = make_cli(tmp_path)
+    wheel = build_wheel(
+        tmp_path, "acme-plug", {"acme_plug/__init__.py": "plugin = None\n"},
+        entry=(KEY, "acme_plug:plugin"), version="1.4",
+    )  # fmt: skip
+    assert cli.run("plugin", "install", str(wheel.path), "--sha256", wheel.sha256).returncode == 0
+    refused = cli.run("plugin", "attest", "nobody", "content_trust", "publisher")
+    assert refused.returncode != 0
+    done = cli.run("plugin", "attest", KEY, "content_trust", "publisher")
+    assert done.returncode == 0, done.stderr
+    assert "1.4" in done.stdout
+    assert cli.run("plugin", "remove", "acme-plug").returncode == 0
+    trail = [(a, t) for a, t in cli.audit_actions() if a.startswith("plugin.attest")]
+    assert trail == [
+        ("plugin.attested", f"{KEY}@1.4:content_trust=publisher"),
+        ("plugin.attestation_revoked", f"{KEY}@1.4:content_trust=publisher"),
+    ]

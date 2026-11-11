@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import structlog
 
 from shelfhold.config import Settings
+from shelfhold.plugin_host.attestation import InstalledVersion, publisher_attested
 from shelfhold.plugin_host.install import Layout, read_state, verdicts
 from shelfhold.plugin_host.registry import (
     InstalledPlugin,
@@ -26,13 +27,16 @@ from shelfhold.plugin_host.registry import (
 )
 
 __all__ = [
+    "InstalledVersion",
     "PluginCandidate",
     "PluginOrigin",
     "PluginRecord",
     "PluginRegistry",
     "PluginState",
     "PluginStatus",
+    "installed_versions",
     "load_plugin_state",
+    "publisher_attested",
     "start_plugins",
 ]
 
@@ -80,3 +84,21 @@ def start_plugins(
             "plugin.third_party", key=record.key, status=record.status.value, reason=record.reason
         )
     return registry, records
+
+
+def installed_versions(settings: Settings) -> dict[str, InstalledVersion]:
+    """The third-party plugins the guard installed, by plugin key, with the installed version and
+    files digest (EF-EXP-065: what an attestation is bound to). Nothing is imported."""
+    layout = Layout.of(settings.data_dir)
+    state = read_state(layout)
+    if not state.installed:
+        return {}
+    installed = [InstalledPlugin(i.name, i.top_levels) for i in state.installed.values()]
+    found: dict[str, InstalledVersion] = {}
+    for candidate in third_party_candidates(layout.site, installed, blocked={}):
+        plugin = state.installed.get(candidate.dist or "")
+        if plugin is not None:
+            found[candidate.key] = InstalledVersion(
+                candidate.key, plugin.name, plugin.version, plugin.digest
+            )
+    return found
