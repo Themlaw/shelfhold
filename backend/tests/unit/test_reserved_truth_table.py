@@ -108,10 +108,10 @@ def expected(
 ) -> type[Allowed] | type[CredentialNotAllowed] | type[RoleNotAllowed] | type[ReauthRequired]:
     if axis not in ("local_cli", "fresh_session", "session"):
         return CredentialNotAllowed  # every key scope (admin included) and every device token
-    if Effect.ACKNOWLEDGES_RESTORE in effects and axis != "local_cli":
-        return CredentialNotAllowed  # the host CLI only: no session, however fresh
     if role != "admin":
         return RoleNotAllowed  # review PR #43 (M4): reserved means admin unless a route says so
+    if Effect.ACKNOWLEDGES_RESTORE in effects and axis != "local_cli":
+        return CredentialNotAllowed  # the host CLI only: no session, however fresh
     if axis == "local_cli":  # PR #49: the CLI is held to the role as well, never to freshness
         return Allowed
     needs_fresh = (

@@ -13,7 +13,10 @@ from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.restore import DeletionCandidate
 from shelfhold.export.application.restore_purge import DeletionIncompleteError, RestoreDeletion
 from shelfhold.export.domain.physical_roots import MAX_RESTORE_EPOCH, RootState
+from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.library.tombstones import TombstoneRoot
+from shelfhold.ops.restore import RestoreCredentialsExit
 from tests.auth_env import auth_env, db_rows, run_cli
 from tests.integration.test_restore_epoch import purge_after_backup, restored
 from tests.integration.test_restore_review import SENTINEL, edit_sentinel, stored
@@ -95,6 +98,17 @@ def test_a_root_remounted_ahead_is_frozen_through_the_real_app(
                 assert db_rows(settings, "SELECT restore_generation FROM instance")[0][0] > 0
                 # entering `restored_behind` revoked every session: the admin signs in again
                 assert api.client.get("/api/v1/about").status_code == 401
+                # the passwords may be old ones (nothing was carried over): none signs in until
+                # the admin has acknowledged from the host
+                suspended = api.login()
+                assert suspended.status_code == 409
+                assert suspended.json()["code"] == "password_login_suspended"
+                engine = create_db_engine(settings.database_path)
+                try:
+                    host = Principal("-", "host", "admin", Credential.LOCAL_CLI, can_rate=True)
+                    RestoreCredentialsExit(engine, api.clock).acknowledge(principal=host)
+                finally:
+                    engine.dispose()
                 assert api.login().status_code == 200
                 again = api.post(
                     "/api/v1/plans/01J0000000000000000000PLAN/apply",

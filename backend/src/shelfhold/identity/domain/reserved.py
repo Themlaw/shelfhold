@@ -144,10 +144,6 @@ def authorize_reserved(
     # `is`, never `==`: a look-alike value must not pass for the enum member
     if credential is not Credential.LOCAL_CLI and credential is not Credential.SESSION:
         return CredentialNotAllowed(credential)  # keys and device tokens, whatever their scope
-    if Effect.ACKNOWLEDGES_RESTORE in action.effects and credential is not Credential.LOCAL_CLI:
-        # a restored instance answers to a password that may be an old, leaked one: the
-        # acknowledgement lifts the passkey suspension, so it is made on the host, never over HTTP
-        return CredentialNotAllowed(credential)
     # review PR #43 (M4): `admin` unless the route says; the local CLI is held to it too (PR #49).
     # A role outside the specification is refused even when a route lists it (closed by default).
     if principal.role not in allowed_roles or principal.role not in KNOWN_ROLES:
@@ -156,6 +152,10 @@ def authorize_reserved(
         principal.role, principal.can_rate
     ):
         return RoleNotAllowed(principal.role)  # EF-BIB-036: classify is a right, not a role
+    if Effect.ACKNOWLEDGES_RESTORE in action.effects and credential is not Credential.LOCAL_CLI:
+        # a restored instance answers to a password that may be an old, leaked one: the
+        # acknowledgement lifts the passkey suspension, so it is made on the host, never over HTTP
+        return CredentialNotAllowed(credential)
     if credential is Credential.LOCAL_CLI:
         return Allowed()
     if not action.needs_fresh_auth(

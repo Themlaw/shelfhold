@@ -145,6 +145,8 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
         action = ReservedAction(f"test.{effect.value}", frozenset({effect}))
         verdict = authorize_reserved(stale, action, now=T0, fresh_auth_s=900)
         expected = ReauthRequired if effect not in NO_REAUTH_EFFECTS else Allowed
+        if effect is Effect.ACKNOWLEDGES_RESTORE:
+            expected = CredentialNotAllowed  # the host CLI only: freshness never comes into it
         assert isinstance(verdict, expected), effect
 
 
