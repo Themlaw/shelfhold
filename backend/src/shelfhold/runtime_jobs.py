@@ -67,6 +67,7 @@ from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
+from shelfhold.export.application.upgrade import SamePathUpgrade
 from shelfhold.export.application.waiting_marks import mark_mount_blocked
 from shelfhold.export.application.wiring import NoRemoteParse
 from shelfhold.export.domain.path_map import PathMapError
@@ -174,6 +175,23 @@ class _LazyWrite:
         return self._context
 
 
+class _LazyUpgrader:
+    """The same-path upgrade of a better-ranked copy (EF-SRC-037), on the write context the cycle
+    opens when a chapter is received: a cycle that upgrades nothing takes no lease for it."""
+
+    def __init__(self, comp: Composition, lazy: _LazyWrite) -> None:
+        self._comp = comp
+        self._lazy = lazy
+
+    def upgrade_unit(self, unit_id: str, content_id: str) -> list[str]:
+        w = self._lazy.get()
+        upgrade = SamePathUpgrade(
+            self._comp.engine, w.fsops, locate=w.loaded.locate,
+            data_dir=self._comp.settings.data_dir, clock=self._comp.clock, bus=w.bus,
+        )  # fmt: skip
+        return [r.outcome.value for r in upgrade.upgrade_unit(unit_id, content_id)]
+
+
 class _LazyTombstones:
     """The tombstone checks of the cycle (a read of the database: no lease), on the service that
     is replayed once per process and found again here, opened at the first check."""
@@ -275,6 +293,8 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                     wakes=comp.wakes(),
                     check_mode="piloted" if comp.check_mode() == "piloted" else "always_on",
                     min_page_ratio=comp.settings.revision_min_page_ratio,
+                    fallback_return=comp.settings.follow_fallback_return,
+                    upgrader=_LazyUpgrader(comp, lazy),
                 )  # fmt: skip
 
                 async def once() -> None:

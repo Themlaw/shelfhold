@@ -176,7 +176,10 @@ def add_adult_shelf(lib: LibEnv, *, max_age_rating: int | None = None) -> str:
 
 def _placement(lib: LibEnv) -> Any:
     def place(unit_id: str, variant_id: str, filename: str) -> str:
-        return str(lib.manga / "Series Alpha" / filename)
+        path = lib.manga / "Series Alpha" / filename
+        if path.exists():  # another Variant of a Unit that is already there (two bindings)
+            path = path.with_name(f"{variant_id}-{filename}")
+        return str(path)
 
     return place
 

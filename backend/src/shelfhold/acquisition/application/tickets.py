@@ -235,15 +235,17 @@ class DownloadTickets:
     def open(
         connection: Connection, *, binding_id: str, variant_id: str, unit_id: str, now: datetime
     ) -> bool:
-        """One open ticket per Variant: a second call while one is open changes nothing."""
+        """One open ticket per Variant and per Unit (I52): a second call while one is open, for
+        the same Variant or for another Variant of the same Unit, changes nothing."""
         request_id = new_ulid()
         inserted = connection.execute(
             sqlite_insert(acquisition.download_request)
             .values(
                 id=request_id, target_kind="unit", variant_id=variant_id,
-                source_binding_id=binding_id, state="requested", requested_at=now,
+                source_binding_id=binding_id, state="requested", requested_at=now, unit_id=unit_id,
             )
-            .on_conflict_do_nothing()  # the partial unique index: one open ticket per Variant
+            .on_conflict_do_nothing()  # the partial unique indexes: one open ticket per Variant
+            # and per Unit, whatever the writers
         ).rowcount  # fmt: skip
         if not inserted:
             return False

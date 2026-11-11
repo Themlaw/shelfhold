@@ -69,8 +69,6 @@ symbols = [
   "shelfhold.catalog.domain.identity:translation_discriminant",
   "shelfhold.catalog.domain.dates:opf_date",
   "shelfhold.infrastructure.packaging.cbz.packager:write_cbz",
-  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.limit_key_for",
-  "shelfhold.plugin_host.adapters.meta.suwayomi.service:SuwayomiService.limit_slots",
 ]
 
 [[allow]]

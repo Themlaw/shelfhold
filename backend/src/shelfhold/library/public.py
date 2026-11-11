@@ -128,6 +128,7 @@ from shelfhold.library.domain.failures import (
     VariantAlreadyStoredError,
 )
 from shelfhold.library.domain.irreplaceable import (
+    CANDIDATE_AFTER,
     CONFIRMATION_CODE,
     ConfirmationRequiredError,
     confirmation_phrase,
@@ -197,6 +198,7 @@ from shelfhold.library.tombstones import (
 from shelfhold.library.tombstones.screen import CatalogScreenAdapter
 
 __all__ = [
+    "CANDIDATE_AFTER",
     "CONFIRMATION_CODE",
     "CONTENT_HASH_BY",
     "DEFAULT_BATCH_BYTES",

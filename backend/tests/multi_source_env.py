@@ -70,7 +70,9 @@ def policy(bench: Bench, value: str) -> None:
 def settle(bench: Bench) -> None:
     for _ in range(6):
         bench.run()
-    assert not bench.rows("SELECT id FROM download_request WHERE state IN ('requested','downloaded')")
+    assert not bench.rows(
+        "SELECT id FROM download_request WHERE state IN ('requested','downloaded')"
+    )
 
 
 def requests(bench: Bench) -> list[tuple[str, str, str]]:

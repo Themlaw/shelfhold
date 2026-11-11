@@ -303,6 +303,40 @@ class SamePathUpgrade:
         finally:
             rendered.file.close()
 
+    def upgrade_unit(self, unit_id: str, content_id: str) -> list[UpgradeResult]:
+        """The door of a better copy received for a Unit (EF-SRC-037, a better rank listed late):
+        every file served for the Unit, in every destination, goes through `upgrade` and so
+        through every guard of it (read Unit, suspect revision, irreplaceable Unit, frozen root).
+        A Unit nothing was exported for has nothing to upgrade."""
+        record, coverage = export.export_record, export.unit_coverage
+        with self._engine.connect() as connection:
+            served = connection.execute(
+                sa.select(record.c.shelf_destination_id, record.c.export_item_id)
+                .select_from(
+                    record.join(
+                        coverage,
+                        sa.and_(
+                            coverage.c.carrier_type == "export_item",
+                            coverage.c.carrier_id == record.c.export_item_id,
+                        ),
+                    )
+                )
+                .where(
+                    coverage.c.unit_id == unit_id,
+                    record.c.locator_type == "path",
+                    record.c.state == "written",
+                )
+                .order_by(record.c.shelf_destination_id, record.c.export_item_id)
+            ).all()
+        return [
+            self.upgrade(
+                UpgradeRequest(
+                    row.shelf_destination_id, row.export_item_id, content_id, "better_version"
+                )
+            )
+            for row in served
+        ]
+
     def _too_short(self, connection: Connection, served: _Served, new_pages: int | None) -> bool:
         """The better version has too few pages next to the one served (EF-BIB-024): checked
         here too, on the page count recorded at reception, so no way to ask for an upgrade

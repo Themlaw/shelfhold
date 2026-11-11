@@ -141,9 +141,12 @@ def test_two_workers_never_open_two_requests_for_one_unit() -> None:
             thread.join()
         assert sorted(opened) == [False, True]
         with lib.engine.connect() as connection:
-            assert connection.execute(
-                sa.text("SELECT count(*) FROM download_request WHERE state = 'requested'")
-            ).scalar_one() == 1
+            assert (
+                connection.execute(
+                    sa.text("SELECT count(*) FROM download_request WHERE state = 'requested'")
+                ).scalar_one()
+                == 1
+            )
 
         with pytest.raises(sa.exc.IntegrityError), lib.engine.begin() as connection:
             connection.execute(  # a writer that skips `open` meets the same wall

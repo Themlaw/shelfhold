@@ -103,7 +103,9 @@ def test_dead_reason_waits_three_cycles_and_two_content_failures() -> None:
             assert fallback.dead_reason(connection, first, not_loaded_cycles=3) == "not_loaded"
             connection.execute(
                 sa.insert(acquisition.source_failure).values(
-                    source_binding_id=first, limit_key="suwayomi:1", failure_class="content",
+                    source_binding_id=first,
+                    limit_key="suwayomi:1",
+                    failure_class="content",
                     consecutive_content_errors=1,
                 )
             )
@@ -196,3 +198,27 @@ def test_the_return_to_the_original_rank_is_a_setting_on_by_default() -> None:
     from shelfhold.config import Settings
 
     assert Settings.model_fields["follow_fallback_return"].default is True
+
+
+def test_limit_key_and_slots_of_the_service_are_what_the_cycle_uses() -> None:
+    """EF-SRC-037: the request budget counts under the service's `limit_key`, and the slot count
+    of each sub-source is declared from the service's `limit_slots`."""
+    from shelfhold.jobs.public import DomainSlots
+
+    with follow_bench() as bench:
+        slots = DomainSlots(bench.lib.engine, bench.clock)
+        bench.cycle = bench.new_cycle(slots=slots)
+        asked: list[str] = []
+        original = bench.service.limit_key_for
+
+        def spy(ref: Any) -> str:
+            asked.append(ref.source_key)
+            return original(ref)
+
+        bench.service.limit_key_for = spy  # type: ignore[method-assign]
+        watermark(bench)
+        serve(bench, ALPHA, chapters(ALPHA, [1]))
+        bench.run()
+        assert "suwayomi:7001" in asked
+        declared = bench.rows("SELECT limit_key, slots FROM domain_slot")
+        assert {r["limit_key"] for r in declared} >= {"suwayomi:7001", "suwayomi:7002"}
