@@ -2,8 +2,6 @@
 gaps" and the import all ask the tombstones first; a re-uploaded chapter at the same place under a
 new identifier is stopped by the `place` scope. Real follow cycle over the simulated Suwayomi."""
 
-from pathlib import Path
-
 import pytest
 import sqlalchemy as sa
 
@@ -15,7 +13,6 @@ from tests.locks_env import work_lock
 from tests.purge_env import ADMIN, PurgeEnv, make_purge_env
 
 pytestmark = pytest.mark.req("EF-BIB-052", "EF-BIB-053")
-SYNTHETIC = Path(__file__).parents[1] / "fixtures" / "synthetic" / "comic_a_002.cbz"
 
 
 def _units(bench: Bench) -> list[str]:
@@ -65,7 +62,7 @@ def test_tombstone_blocks_fill_gaps_and_reimport() -> None:
 hold_work=work_lock(bench.lib.engine),
         )  # fmt: skip
         other_unit, other_variant = bench.lib.new_unit()
-        staged = bench.lib.stage(SYNTHETIC.read_bytes())  # the bytes the fake served for chapter 3
+        staged = bench.lib.stage(bench.server.cbz_bytes("/series-alpha/ch-003"))  # as served
         with pytest.raises(TombstonedContentError):
             store.ingest(
                 unit_id=other_unit, variant_id=other_variant, staged=staged,
