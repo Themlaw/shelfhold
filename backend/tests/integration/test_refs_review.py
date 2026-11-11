@@ -86,3 +86,30 @@ def test_a_unit_with_a_secret_is_quarantined_and_the_service_goes_on() -> None:
         finally:
             raw.close()
         assert UNREG not in dump
+
+
+@pytest.mark.req("EF-EXP-056", "EF-SRC-035")
+@pytest.mark.parametrize(
+    "name",
+    ["auth", "session", "sid", "authorization", "credentials", "pwd", "key", "bearer", "pass"],
+)
+def test_the_snapshot_schema_is_closed_whatever_the_name_of_the_key(name: str) -> None:
+    """A denylist of words let `auth`, `sid`, `pwd`... through; only declared keys pass (review)."""
+    from shelfhold.acquisition.application.upstream_snapshot import (
+        SnapshotRefusedError,
+        validate_payload,
+    )
+    from shelfhold.plugin_host.adapters.meta.suwayomi.service import SuwayomiService
+
+    schema = SuwayomiService.snapshot_schema
+    ok = {"categories": [{"id": 1, "name": "Reading", "include_in_update": "INCLUDE"}]}
+    assert validate_payload({**ok, "update_strategy": "ALWAYS_UPDATE"}, schema=schema)
+    with pytest.raises(SnapshotRefusedError):
+        validate_payload({**ok, name: synthetic_text("snap")}, schema=schema)
+    with pytest.raises(SnapshotRefusedError):  # a key nested where the schema has none
+        validate_payload(
+            {"categories": [{"id": 1, "name": "x", "include_in_update": "a", name: "v"}]},
+            schema=schema,
+        )
+    with pytest.raises(SnapshotRefusedError):  # no schema declared: nothing is kept
+        validate_payload(ok, schema=None)

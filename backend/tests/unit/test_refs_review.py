@@ -160,7 +160,7 @@ def test_the_write_guard_sees_a_value_written_into_the_sql_text() -> None:
     register_secret_value(key)
     with pytest.raises(SecretInWriteError):
         check_write(
-            "INSERT INTO unit_variant (id, remote_unit_id) VALUES ('a', '/x/" + key + "')",
+            "INSERT INTO unit_variant (id, remote_unit_id) VALUES ('a', '/x/" + key + "')",  # noqa: S608
             (),
             many=False,
         )

@@ -6,6 +6,11 @@ secret and no value that is one (a registered secret in any form a URL carries i
 `user:password@` part, a token shaped value). A payload that fails is refused and nothing is
 stored.
 
+The payload is checked against a **closed schema** the service declares (`snapshot_schema`): every
+key and every nesting level it may hold, with the type of each value. A key that is not in the
+schema is refused, whatever its name; there is no list of words to forget one from. A service
+without a schema keeps no snapshot at all.
+
 A service whose settings do hold something sensitive that the restoration needs declares it:
 `snapshot_sensitive_fields`, a tuple of top-level field names. Those fields are not refused, they
 are sealed in the ENF-SEC-005 envelope, bound to the table, the column and the row id (associated
@@ -41,7 +46,6 @@ CAPABILITY: Final = "upstream_restore"
 SCHEMA_VERSION: Final = 1
 MAX_PAYLOAD_BYTES: Final = 16 * 1024
 SEALED_KEY: Final = "$sealed"
-_SECRET_WORDS: Final = ("password", "passwd", "secret", "token", "apikey", "api_key", "cookie")
 _TOKEN_VALUE: Final = re.compile(
     r"eyJ[\w-]+\.[\w-]+\.[\w-]*|\b(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE
 )
@@ -50,6 +54,37 @@ _MAX_DEPTH: Final = 6
 
 class SnapshotRefusedError(ValueError):
     """The payload is not a plain, secret-free document (EF-EXP-056, passe 9)."""
+
+
+# A schema is a type (`int`, `str`, `bool`, `float`), a one-item list (every item is that shape) or
+# a dictionary of shapes (closed: no other key). A key that may be missing is `"name?"`.
+Shape = Any
+
+
+def _shaped(value: object, shape: Shape, where: str) -> None:
+    if isinstance(shape, dict):
+        if not isinstance(value, Mapping):
+            raise SnapshotRefusedError(f"snapshot {where} must be an object")
+        allowed = {k.rstrip("?"): v for k, v in shape.items()}
+        for key in value:
+            if key not in allowed:
+                raise SnapshotRefusedError(f"snapshot key {where}{key!r} is not in the schema")
+        for key, inner in shape.items():
+            name = key.rstrip("?")
+            if name in value:
+                _shaped(value[name], inner, f"{where}{name}.")
+            elif not key.endswith("?"):
+                raise SnapshotRefusedError(f"snapshot is missing {where}{name!r}")
+    elif isinstance(shape, list):
+        if not isinstance(value, list):
+            raise SnapshotRefusedError(f"snapshot {where} must be a list")
+        for item in value:
+            _shaped(item, shape[0], where)
+    elif shape is float:
+        if type(value) not in (int, float):
+            raise SnapshotRefusedError(f"snapshot {where} must be a number")
+    elif type(value) is not shape:
+        raise SnapshotRefusedError(f"snapshot {where} has the wrong type")
 
 
 def _plain(value: object, depth: int = 0) -> None:
@@ -72,8 +107,8 @@ def _walk(value: object, known: SecretIndex, depth: int = 0) -> None:
         raise SnapshotRefusedError("snapshot too deep")
     if isinstance(value, Mapping):
         for key, inner in value.items():
-            if not isinstance(key, str) or any(w in key.casefold() for w in _SECRET_WORDS):
-                raise SnapshotRefusedError(f"snapshot key {key!r} is not allowed")
+            if not isinstance(key, str):
+                raise SnapshotRefusedError("snapshot keys must be text")
             if contains_secret(key, known):
                 raise SnapshotRefusedError("snapshot key holds a secret")
             _walk(inner, known, depth + 1)
@@ -95,18 +130,21 @@ def _size(payload: Mapping[str, Any]) -> None:
 
 
 def validate_payload(
-    payload: Mapping[str, Any], *, known: Iterable[str] | None = None
+    payload: Mapping[str, Any], *, schema: Shape, known: Iterable[str] | None = None
 ) -> dict[str, Any]:
-    """Plain JSON, small, and with no secret in it (key or value): it is stored in the clear.
-    `known` defaults to every registered secret value."""
+    """Plain JSON in the shape of the service's closed `schema`, small, and with no secret in it
+    (key or value): it is stored in the clear. `known` defaults to every registered secret."""
+    if not isinstance(schema, dict):
+        raise SnapshotRefusedError("the service declares no snapshot schema")
     values = known_secret_index() if known is None else SecretIndex(known)
+    _shaped(payload, schema, "")
     _walk(payload, values)
     _size(payload)
     return dict(payload)
 
 
 def prepare_payload(
-    payload: Mapping[str, Any], sensitive: Collection[str], *, can_seal: bool
+    payload: Mapping[str, Any], sensitive: Collection[str], *, can_seal: bool, schema: Shape
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """`(clear part, sensitive part)`. The clear part is validated; the sensitive fields must be
     plain data and there must be a vault to seal them, else the payload is refused."""
@@ -114,7 +152,9 @@ def prepare_payload(
     if hidden and not can_seal:
         raise SnapshotRefusedError("a sensitive field cannot be kept without the vault")
     _plain(hidden)
-    clear = validate_payload({k: v for k, v in payload.items() if k not in sensitive})
+    clear = validate_payload(
+        {k: v for k, v in payload.items() if k not in sensitive}, schema=schema
+    )
     _size(payload)
     return clear, hidden
 

@@ -229,10 +229,21 @@ def test_the_database_itself_refuses_a_secret_in_a_reference_or_a_journal() -> N
 # -- upstream_restore -----------------------------------------------------------------------------
 
 
+_SCHEMA: dict[str, Any] = {
+    "categories?": [{"id": int, "name": str}],
+    "update_strategy?": str,
+    "note?": str,
+    "endpoint?": str,
+    "hint?": str,
+    "list?": [{"deep": str}],
+}
+
+
 class _Service:
     """A connected service with the `upstream_restore` capability and a payload we choose."""
 
     connected = ConnectedCapability.UPSTREAM_RESTORE
+    snapshot_schema = _SCHEMA
 
     def __init__(self, payload: dict[str, object], sensitive: tuple[str, ...] = ()) -> None:
         self.payload = payload
@@ -266,8 +277,10 @@ def test_upstream_snapshot_payload_schema_has_no_secret() -> None:
     ]
     for payload in bad:
         with pytest.raises(SnapshotRefusedError):
-            validate_payload(payload)
-    assert validate_payload({"categories": [{"id": 1, "name": "Reading"}], "update_strategy": "X"})
+            validate_payload(payload, schema=_SCHEMA)
+    assert validate_payload(
+        {"categories": [{"id": 1, "name": "Reading"}], "update_strategy": "X"}, schema=_SCHEMA
+    )
     with lib_env() as lib:
         snapshots = UpstreamSnapshots(lib.engine, clock=SystemClock())
         for payload in bad:

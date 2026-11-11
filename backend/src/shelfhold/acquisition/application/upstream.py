@@ -80,7 +80,10 @@ class UpstreamSnapshots:
             return False
         sensitive = frozenset(getattr(service, "snapshot_sensitive_fields", ()))
         clear, hidden = prepare_payload(
-            await service.snapshot_upstream(f, ref), sensitive, can_seal=self._vault is not None
+            await service.snapshot_upstream(f, ref),
+            sensitive,
+            can_seal=self._vault is not None,
+            schema=getattr(service, "snapshot_schema", None),
         )
         row_id = new_ulid()
         if hidden and self._vault is not None:
@@ -152,7 +155,9 @@ class UpstreamSnapshots:
             and c.get("name") == EXCLUSION_MARK
             and int(c["id"]) not in known
         )
-        payload = validate_payload({**snap, "shelfhold_excluded": added})
+        payload = validate_payload(
+            {**snap, "shelfhold_excluded": added}, schema=getattr(service, "snapshot_schema", None)
+        )
         if SEALED_KEY in stored:
             payload[SEALED_KEY] = stored[SEALED_KEY]
         table = acquisition.upstream_snapshot

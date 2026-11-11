@@ -137,10 +137,11 @@ def test_snapshot_is_taken_once_and_holds_no_secret() -> None:
         (row,) = p.rows("SELECT payload, schema_version, capability FROM upstream_snapshot")
         assert row["capability"] == "upstream_restore" and row["schema_version"] == 1
         from shelfhold.acquisition.application.upstream import validate_payload
+        from shelfhold.plugin_host.adapters.meta.suwayomi.service import SuwayomiService
 
         for bad in ({"password": "x"}, {"a": {"api_key": "x"}}, {"x": object()}):
             with pytest.raises(SnapshotRefusedError):
-                validate_payload(bad)
+                validate_payload(bad, schema=SuwayomiService.snapshot_schema)
 
 
 @pytest.mark.req("EF-EXP-056")
