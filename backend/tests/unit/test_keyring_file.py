@@ -341,6 +341,18 @@ def test_external_keyring_modifiable_by_group_or_others_is_refused(
 
 
 @pytest.mark.req("ENF-SEC-005")
+class _OwnedByRoot:
+    """A real ``stat_result`` seen as owned by root; every other field is the real one."""
+
+    def __init__(self, real: os.stat_result) -> None:
+        self._real = real
+
+    st_uid = 0
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._real, name)
+
+
 def test_external_keyring_owned_by_a_stranger_is_refused_but_root_is_accepted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -352,11 +364,7 @@ def test_external_keyring_owned_by_a_stranger_is_refused_but_root_is_accepted(
         with pytest.raises(KeyringPermissionsError):
             store.load()
     real_stat = os.fstat
-    monkeypatch.setattr(
-        os,
-        "fstat",
-        lambda fd: type("S", (), {"st_mode": real_stat(fd).st_mode, "st_uid": 0})(),
-    )
+    monkeypatch.setattr(os, "fstat", lambda fd: _OwnedByRoot(real_stat(fd)))
     assert store.load().active.state == "active"  # owned by root
 
 
