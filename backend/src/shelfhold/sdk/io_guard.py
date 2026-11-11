@@ -2,21 +2,27 @@
 """The direct-I/O detector of plugins (EF-SRC-002): a `sys.addaudithook`, **not** a sandbox.
 
 A plugin never does network or disk I/O itself: it is handed the host's `Fetcher`. While plugin
-code runs (`plugin_io`, or a call through `GuardedPlugin`), the audit hook refuses, *before* it
-happens, every socket and name lookup, every process, thread, signal or foreign library, and every
-file or directory outside the plugin's sandbox. The refusal raises `ForbiddenIOError` at the call
-site (fail closed: an error inside the detector refuses too) and is reported with the plugin's id,
-even when the plugin catches the error. Code the plugin imports may still be read; nothing may be
-written outside the sandbox, the bytecode cache included.
+code runs (`plugin_io`, or a call through `GuardedPlugin`), the audit hook looks at every socket
+and name lookup, every process start, thread start, signal or foreign library, and every file or
+directory outside the plugin's sandbox (code the plugin imports may be read). Each one is reported
+with the plugin's id, even when the plugin catches an error, and an error inside the detector is
+reported too (it never stays silent).
+
+Two modes. `report` (the default, the host in production) only reports: the detector is not the
+trust boundary, and refusing would break legitimate plugins (the time zone file read by
+`datetime.now().astimezone()`, a temporary file) without closing the holes the process keeps.
+`raise` (the conformance kit) refuses the event before it happens with `ForbiddenIOError`, which
+fails the plugin's tests.
 
 What the host does on the plugin's behalf (the `Fetcher` it was handed) runs in `host_io` and is
 not looked at. The scope is a context variable: it follows the plugin into the tasks it creates,
 and it is lost in a thread that already existed before the call. Hence a detector: Python code in
 the host process can step around it (a pre-existing thread, an object of the host that does I/O,
-memory tricks). The isolation is the M6 sandbox.
+memory tricks). A thread the plugin starts is seen when it starts, but what it then does is not:
+a `threading.Thread` does not inherit the context variable. The isolation is the M6 sandbox.
 
-Shared by the conformance kit (it fails a plugin with `ForbiddenIOError`) and by the host
-(`shelfhold.plugin_host.audit_hook`, which logs every refusal).
+Shared by the conformance kit (`raise`) and by the host (`shelfhold.plugin_host.audit_hook`,
+`report`, which logs every event).
 """
 
 import contextlib
@@ -28,7 +34,7 @@ import sysconfig
 import threading
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 __all__ = [
     "ForbiddenIOError",
@@ -67,6 +73,7 @@ class IoViolation:
 
 
 Report = Callable[[IoViolation], object]
+Mode = Literal["report", "raise"]
 
 
 @dataclass
@@ -74,6 +81,7 @@ class _Scope:
     plugin_id: str
     sandbox: str | None  # real path, or None: no file at all
     report: Report | None
+    mode: Mode = "report"
     violations: list[IoViolation] = field(default_factory=list)
 
 
@@ -85,7 +93,7 @@ _LOCK = threading.Lock()
 _INSTALLED: list[bool] = []
 _EXTRA_CODE_ROOTS: set[str] = set()
 _ROOTS_CACHE: dict[tuple[str, ...], tuple[str, ...]] = {}
-_SILENT: Final = "\x00silent"  # refused, but not a finding: the import system's bytecode cache
+_SILENT: Final = "\x00silent"  # not a finding (refused in raise mode): the bytecode cache
 
 # Every event of these families is refused in plugin code, except the path events below.
 _FAMILIES: Final = (
@@ -141,11 +149,15 @@ def plugin_io(
     *,
     sandbox: str | os.PathLike[str] | None = None,
     report: Report | None = None,
+    mode: Mode = "report",
 ) -> Iterator[list[IoViolation]]:
-    """Run the block as plugin code: direct I/O is refused and reported. Yields the violations."""
+    """Run the block as plugin code: direct I/O is reported (and refused in `raise` mode).
+    Yields the violations."""
+    if mode not in ("report", "raise"):
+        raise ValueError(f"unknown detector mode {mode!r}")
     install()
     root = os.path.realpath(sandbox) if sandbox is not None else None
-    scope = _Scope(plugin_id, root, report)
+    scope = _Scope(plugin_id, root, report, mode)
     token = _SCOPE.set(scope)
     try:
         yield scope.violations
@@ -173,7 +185,7 @@ def _hook(event: str, args: tuple[Any, ...]) -> None:
     try:
         try:
             refused = _verdict(event, args, scope)
-        except Exception as exc:  # fail closed: a detector that cannot decide refuses
+        except Exception as exc:  # a detector that cannot decide reports (and refuses in raise)
             refused = f"the detector could not judge the event ({type(exc).__name__})"
         if refused is None:
             return
@@ -181,10 +193,12 @@ def _hook(event: str, args: tuple[Any, ...]) -> None:
             violation = IoViolation(scope.plugin_id, event, refused)
             scope.violations.append(violation)
             if scope.report is not None:
-                with contextlib.suppress(Exception):  # a failing report never lets I/O through
+                with contextlib.suppress(Exception):  # a failing report changes nothing
                     scope.report(violation)
     finally:
         _BUSY.on = False
+    if scope.mode != "raise":
+        return
     raise ForbiddenIOError(scope.plugin_id, event, "" if refused == _SILENT else refused)
 
 
@@ -298,14 +312,18 @@ class GuardedPlugin:
         *,
         sandbox: str | os.PathLike[str] | None = None,
         report: Report | None = None,
+        mode: Mode = "report",
     ) -> None:
         object.__setattr__(self, "_inner", inner)
         object.__setattr__(self, "plugin_id", plugin_id)
         object.__setattr__(self, "_sandbox", sandbox)
         object.__setattr__(self, "_report", report)
+        object.__setattr__(self, "_mode", mode)
 
     def _scope(self) -> contextlib.AbstractContextManager[Any]:
-        return plugin_io(self.plugin_id, sandbox=self._sandbox, report=self._report)
+        return plugin_io(
+            self.plugin_id, sandbox=self._sandbox, report=self._report, mode=self._mode
+        )
 
     def __getattr__(self, name: str) -> Any:
         value = getattr(self._inner, name)

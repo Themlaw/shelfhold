@@ -41,18 +41,21 @@ from types import CodeType
 from typing import Any, Final
 from urllib.parse import urlsplit
 
+import structlog
+
 from shelfhold.infrastructure.fetcher.guard import (
     DomainPattern,
     DomainPatternError,
     compile_domain_pattern,
 )
-from shelfhold.plugin_host.audit_hook import allow_code_root, audited
+from shelfhold.plugin_host.audit_hook import allow_code_root, audited, host_io, importing
 from shelfhold.plugin_host.errors import NoSourceForUrl
 from shelfhold.sdk.models import API_VERSION, PluginKind, PluginManifest
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import Capability, SourceManifest
 
 ENTRY_POINT_GROUP = "shelfhold.plugins"
+log = structlog.get_logger(__name__)
 FIRST_PARTY_DISTRIBUTIONS = frozenset({"shelfhold"})
 
 _LOADED = frozenset({"loaded", "loaded_shim"})
@@ -259,14 +262,16 @@ def _third_party_loader(site_dir: Path, ep: Any, top_levels: Iterable[str]) -> C
         Only now, for a granted plugin, are its own top-level modules made importable. The
         process environment is the one channel left; names that look like secrets are taken
         out of it while the plugin's code is imported."""
-        finder_for(site_dir).grant(granted)
-        hidden = {k: v for k, v in os.environ.items() if SECRET_ENV.search(k)}
-        for k in hidden:
-            del os.environ[k]
+        with host_io():  # the registry may run this under the plugin's import scope
+            finder_for(site_dir).grant(granted)
+            hidden = {k: v for k, v in os.environ.items() if SECRET_ENV.search(k)}
+            for k in hidden:
+                del os.environ[k]
         try:
             return ep.load()
         finally:
-            os.environ.update(hidden)
+            with host_io():
+                os.environ.update(hidden)
 
     return load
 
@@ -428,7 +433,8 @@ class PluginRegistry:
             reason = candidate.blocked or "third-party plugins are disabled by default"
             return PluginRecord(key, origin, PluginStatus.DISABLED, reason)
         try:
-            instance = candidate.load()
+            with importing(key):  # import-time I/O is logged too (report mode, never blocked)
+                instance = candidate.load()
             manifest, status = self._manifest(getattr(instance, "manifest", None))
         except Exception as exc:  # a broken plugin is reported, never raised
             return PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, f"load failed: {exc}")
@@ -458,8 +464,11 @@ class PluginRegistry:
                 continue
             ref = await record.instance.resolve_url(fetcher_for(record), url)
             if not isinstance(ref, SeriesRef | UnitInfo):
-                raise NoSourceForUrl(f"source {record.key!r} recognises the URL but finds nothing")
+                # the plugin's key is for the admin's log, never for the user's 422
+                log.warning("source.no_match", plugin_id=record.key, reason="resolved_to_nothing")
+                raise NoSourceForUrl()
             return UrlResolution(record.key, ref)
+        log.info("source.no_match", plugin_id=None, reason="no_pattern_matched")
         raise NoSourceForUrl()
 
     def _manifest(self, raw: Any) -> tuple[PluginManifest | None, ApiVerdict]:

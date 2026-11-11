@@ -6,10 +6,11 @@ No match, or a match that resolves to nothing, is the 422 `source.no_match` ("au
 """
 
 import asyncio
-import socket
+from pathlib import Path
 from typing import Any
 
 import pytest
+import structlog
 
 from shelfhold.i18n import load_catalog
 from shelfhold.interfaces.http_api.catalog import all_error_codes
@@ -22,7 +23,6 @@ from shelfhold.plugin_host.registry import (
     UrlPatternError,
     compile_url_pattern,
 )
-from shelfhold.sdk.io_guard import ForbiddenIOError
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.testing.fakes import FakeRangedConnectedService
 
@@ -110,14 +110,28 @@ def test_plugin_without_url_resolve_capability_is_skipped() -> None:
     assert mute.calls == []
 
 
-def test_resolution_runs_under_the_audit_hook() -> None:
-    class Leaky(_Plugin):
+def test_resolution_runs_under_the_audit_hook(tmp_path: Path) -> None:
+    class Chatty(_Plugin):
         async def resolve_url(self, f: Any, url: str) -> SeriesRef | None:
-            socket.getaddrinfo("exfiltrate.example.org", 80)
+            (tmp_path / "x").write_text("x", encoding="utf-8")
+            return await super().resolve_url(f, url)
+
+    registry = _registry(Chatty("chatty", ["https://example.org/**"]))
+    with structlog.testing.capture_logs() as logs:
+        assert _resolve(registry, "https://example.org/x").key == "chatty"
+    assert any(e["event"] == "plugin.forbidden_io" and e["plugin_id"] == "chatty" for e in logs)
+
+
+def test_no_source_error_does_not_name_the_plugin() -> None:
+    class Empty(_Plugin):
+        async def resolve_url(self, f: Any, url: str) -> SeriesRef | None:
             return None
 
-    with pytest.raises(ForbiddenIOError):
-        _resolve(_registry(Leaky("leaky", ["https://example.org/**"])), "https://example.org/x")
+    registry = _registry(Empty("secret-plugin-key", ["https://example.org/**"]))
+    with structlog.testing.capture_logs() as logs, pytest.raises(NoSourceForUrl) as caught:
+        _resolve(registry, "https://example.org/x")
+    assert "secret-plugin-key" not in str(caught.value)
+    assert any(e.get("plugin_id") == "secret-plugin-key" for e in logs)  # the admin's log
 
 
 @pytest.mark.parametrize(

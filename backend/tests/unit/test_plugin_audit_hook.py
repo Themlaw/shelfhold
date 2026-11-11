@@ -104,7 +104,7 @@ def test_file_outside_the_sandbox_refused_inside_allowed(tmp_path: Path) -> None
     outside = tmp_path / "outside.txt"
     outside.write_text("host data", encoding="utf-8")
     seen: list[io_guard.IoViolation] = []
-    with plugin_io("p-files", sandbox=sandbox, report=seen.append):
+    with plugin_io("p-files", sandbox=sandbox, report=seen.append, mode="raise"):
         (sandbox / "own.txt").write_text("mine", encoding="utf-8")
         assert (sandbox / "own.txt").read_text(encoding="utf-8") == "mine"
         with pytest.raises(ForbiddenIOError):
@@ -129,12 +129,12 @@ def test_symlink_out_of_the_sandbox_refused(tmp_path: Path) -> None:
     secret.write_text("k", encoding="utf-8")
     (sandbox / "link").symlink_to(secret)
     with (
-        plugin_io("p-link", sandbox=sandbox, report=lambda v: None),
+        plugin_io("p-link", sandbox=sandbox, report=lambda v: None, mode="raise"),
         pytest.raises(ForbiddenIOError),
     ):
         (sandbox / "link").read_text(encoding="utf-8")
     with (
-        plugin_io("p-dots", sandbox=sandbox, report=lambda v: None),
+        plugin_io("p-dots", sandbox=sandbox, report=lambda v: None, mode="raise"),
         pytest.raises(ForbiddenIOError),
     ):
         (sandbox / ".." / "keyring").read_text(encoding="utf-8")
@@ -143,14 +143,14 @@ def test_symlink_out_of_the_sandbox_refused(tmp_path: Path) -> None:
 def test_no_sandbox_means_no_file_at_all(tmp_path: Path) -> None:
     target = tmp_path / "x.txt"
     target.write_text("x", encoding="utf-8")
-    with plugin_io("p-none", report=lambda v: None), pytest.raises(ForbiddenIOError):
+    with plugin_io("p-none", report=lambda v: None, mode="raise"), pytest.raises(ForbiddenIOError):
         target.read_bytes()
 
 
 def test_subprocess_thread_and_ctypes_refused(tmp_path: Path) -> None:
     marker = tmp_path / "ran"
     seen: list[io_guard.IoViolation] = []
-    with plugin_io("p-proc", report=seen.append):
+    with plugin_io("p-proc", report=seen.append, mode="raise"):
         with pytest.raises(ForbiddenIOError):
             subprocess.run(["touch", str(marker)], check=False)  # noqa: S603, S607
         with pytest.raises(ForbiddenIOError):
@@ -220,48 +220,73 @@ def test_hook_fails_closed_on_an_internal_error(
 
     monkeypatch.setattr(io_guard, "_verdict", broken)
     seen: list[io_guard.IoViolation] = []
-    with plugin_io("p-bug", sandbox=tmp_path, report=seen.append), pytest.raises(ForbiddenIOError):
+    with (
+        plugin_io("p-bug", sandbox=tmp_path, report=seen.append, mode="raise"),
+        pytest.raises(ForbiddenIOError),
+    ):
         (tmp_path / "ok.txt").write_text("x", encoding="utf-8")
     assert not (tmp_path / "ok.txt").exists()
     assert seen and seen[0].plugin_id == "p-bug"
 
 
-def test_production_refusal_is_logged_with_plugin_id(listener: socket.socket) -> None:
-    port = listener.getsockname()[1]
+def test_production_reports_without_blocking(tmp_path: Path) -> None:
+    """The host runs the detector in `report` mode: logged with the plugin id, never blocked
+    (the spec of L05: it is a detector, the trust boundary is the M6 sandbox)."""
+    target = tmp_path / "written-by-plugin.txt"
 
-    class Leaky:
+    class Chatty:
         manifest = None
 
         async def search(self, f: Any, q: str) -> Any:
-            socket.create_connection(("127.0.0.1", port)).sendall(b"stolen")
+            target.write_text("plugin", encoding="utf-8")
+            return "done"
 
-    with structlog.testing.capture_logs() as logs, pytest.raises(ForbiddenIOError):
-        asyncio.run(audited(Leaky(), "third-leaky").search(None, "q"))
+    with structlog.testing.capture_logs() as logs:
+        assert asyncio.run(audited(Chatty(), "third-chatty").search(None, "q")) == "done"
+    assert target.read_text(encoding="utf-8") == "plugin"  # not blocked
     (entry,) = [e for e in logs if e["event"] == "plugin.forbidden_io"]
-    assert entry["plugin_id"] == "third-leaky" and entry["io_event"].startswith("socket.")
+    assert entry["plugin_id"] == "third-chatty" and entry["io_event"] == "open"
     assert entry["log_level"] == "warning"
-    assert _nothing_arrived(listener)
 
 
-def test_registry_hands_out_audited_plugins(listener: socket.socket) -> None:
-    port = listener.getsockname()[1]
+def test_kit_raises_where_production_reports(tmp_path: Path) -> None:
+    target = tmp_path / "x.txt"
+    with plugin_io("p-kit", mode="raise"), pytest.raises(ForbiddenIOError):
+        target.write_text("x", encoding="utf-8")
+    assert not target.exists()
+    with plugin_io("p-prod") as seen:  # the default is report
+        target.write_text("x", encoding="utf-8")
+    assert target.exists() and [v.plugin_id for v in seen] == ["p-prod"]
+    with pytest.raises(ValueError, match="mode"), plugin_io("p-bad", mode="block"):  # type: ignore[arg-type]
+        pass
+
+
+def test_registry_hands_out_audited_plugins(tmp_path: Path) -> None:
     raw = FakeRangedConnectedService().manifest.model_dump(mode="json")
+    at_import = tmp_path / "import.txt"
+    at_call = tmp_path / "call.txt"
 
     class Plugin:
         manifest: ClassVar[dict[str, Any]] = {**raw, "key": "audited-one"}
 
+        def __init__(self) -> None:
+            at_import.write_text("import", encoding="utf-8")
+
         async def search(self, f: Any, q: str) -> Any:
-            socket.create_connection(("127.0.0.1", port))
+            at_call.write_text("call", encoding="utf-8")
 
     registry = PluginRegistry()
-    (record,) = registry.load_all(
-        [PluginCandidate(key="audited-one", origin=PluginOrigin.FIRST_PARTY, load=Plugin)]
-    )
+    with structlog.testing.capture_logs() as logs:
+        (record,) = registry.load_all(
+            [PluginCandidate(key="audited-one", origin=PluginOrigin.FIRST_PARTY, load=Plugin)]
+        )
+    assert record.status.value == "loaded" and at_import.exists()
+    assert [e["plugin_id"] for e in logs if e["event"] == "plugin.forbidden_io"] == ["audited-one"]
     assert isinstance(record.instance, GuardedPlugin)
-    with structlog.testing.capture_logs() as logs, pytest.raises(ForbiddenIOError):
+    with structlog.testing.capture_logs() as logs:
         asyncio.run(record.instance.search(None, "q"))
-    assert any(e.get("plugin_id") == "audited-one" for e in logs)
-    assert _nothing_arrived(listener)
+    assert at_call.exists()
+    assert [e["plugin_id"] for e in logs if e["event"] == "plugin.forbidden_io"] == ["audited-one"]
 
 
 def test_hook_is_installed_once() -> None:

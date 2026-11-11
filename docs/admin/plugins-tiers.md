@@ -79,23 +79,33 @@ d'audit (`plugin.install`, `plugin.enable`, `plugin.enable_refused`...). Si l'é
 ## Entrées-sorties directes : un détecteur, pas une isolation
 
 Un plugin ne fait jamais d'entrée-sortie lui-même : il reçoit le `Fetcher` de l'hôte (EF-SRC-002).
-Pendant que son code tourne, un crochet d'audit Python (`sys.addaudithook`) **refuse avant qu'elle
-n'ait lieu** toute tentative d'ouvrir une socket ou de résoudre un nom, de lancer un processus, un
-thread ou une bibliothèque native (`ctypes`), d'envoyer un signal, ou d'ouvrir, lister, écrire ou
-supprimer un fichier hors du dossier de travail du plugin (aucun dossier par défaut : aucun fichier).
-Le plugin peut seulement relire le code qu'il importe. Le refus lève `ForbiddenIOError` et est
-journalisé (`plugin.forbidden_io`, avec `plugin_id` et l'événement), même si le plugin intercepte
-l'erreur. Si le détecteur ne sait pas juger un événement, il refuse. Le kit de conformité du SDK
-applique le même crochet : un plugin qui ouvre une socket échoue au contrôle `no_direct_io`.
+Pendant que son code tourne, y compris pendant son import au démarrage, un crochet d'audit Python
+(`sys.addaudithook`) surveille l'ouverture d'une socket ou la résolution d'un nom, le lancement d'un
+processus, d'un thread ou d'une bibliothèque native (`ctypes`), l'envoi d'un signal, et l'ouverture,
+la liste, l'écriture ou la suppression d'un fichier hors du dossier de travail du plugin (aucun
+dossier par défaut). Le plugin peut relire le code qu'il importe sans être signalé.
 
-C'est un **détecteur, pas une isolation**. Du code Python qui tourne dans le processus de Shelfhold
-peut le contourner : un thread qui existait avant l'appel (le crochet suit le plugin dans les tâches
-qu'il crée, pas dans un thread déjà ouvert de l'hôte), un objet de l'hôte qui fait des entrées-sorties
-pour lui, un descripteur de fichier ou une socket que l'hôte a déjà ouverts, la mémoire du
-processus, le détecteur lui-même (son état est un objet Python), et le code exécuté à l'import du
-plugin, qui n'est pas surveillé. Il attrape un plugin
-négligent ou une dépendance bavarde ; il n'arrête pas un plugin écrit pour nuire. L'isolation réelle
-est le bac à sable du jalon M6. Les conditions d'activation ci-dessus restent donc entières.
+- **En production, Shelfhold journalise et ne bloque rien.** Chaque événement donne une ligne
+  `plugin.forbidden_io` (avertissement, avec `plugin_id`, l'événement et le chemin ou la cible).
+  Bloquer casserait des plugins légitimes (la lecture du fuseau horaire par
+  `datetime.now().astimezone()`, un fichier temporaire) sans fermer les autres chemins qu'offre le
+  processus. Si le détecteur ne sait pas juger un événement, il le journalise aussi.
+- **Dans le kit de conformité du SDK**, le même crochet **refuse** l'événement avant qu'il ait lieu
+  (`ForbiddenIOError`). Le plugin échoue au contrôle `no_direct_io`, même s'il intercepte l'erreur.
+
+C'est un **détecteur, pas une isolation**. Il signale un plugin négligent ou une dépendance bavarde,
+pas un plugin écrit pour nuire, qui peut passer par :
+
+- un thread : le démarrage d'un thread est signalé, mais ce que fait ensuite un `threading.Thread`
+  n'est pas surveillé, car il n'hérite pas du contexte du plugin ;
+- un thread de l'hôte déjà ouvert (un exécuteur, par exemple), qui n'est pas surveillé non plus ;
+- un objet de l'hôte qui fait l'entrée-sortie à sa place ;
+- un descripteur de fichier ou une socket que l'hôte a déjà ouverts ;
+- la mémoire du processus ;
+- le détecteur lui-même, dont l'état est un objet Python.
+
+La seule isolation est le bac à sable du jalon M6. Les conditions d'activation ci-dessus restent donc
+entières.
 
 ## Domaines autorisés et adresse surchargée
 

@@ -152,7 +152,10 @@ def _audited(
     factory: Callable[[], Source], plugin_id: str, report: ConformanceReport
 ) -> Callable[[], Source]:
     def fresh() -> Source:
-        return cast(Source, GuardedPlugin(factory(), plugin_id, report=report.io_violations.append))
+        return cast(
+            Source,
+            GuardedPlugin(factory(), plugin_id, report=report.io_violations.append, mode="raise"),
+        )
 
     return fresh
 
@@ -172,7 +175,9 @@ async def run_source_conformance(
     """
     report = ConformanceReport()
     plugin_id = str(getattr(getattr(source, "manifest", None), "key", "") or "plugin")
-    source = cast(Source, GuardedPlugin(source, plugin_id, report=report.io_violations.append))
+    source = cast(
+        Source, GuardedPlugin(source, plugin_id, report=report.io_violations.append, mode="raise")
+    )
     guarded_reinstall = None if reinstall is None else _audited(reinstall, plugin_id, report)
 
     async def guarded(name: str, step: Callable[[], Awaitable[None]]) -> None:
