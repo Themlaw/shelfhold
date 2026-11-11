@@ -112,3 +112,20 @@ def test_every_base64_and_encoded_form_of_a_registered_key_is_found() -> None:
     for blob in blobs:
         assert contains_secret(f"/dl/{blob}/ch-1", known), blob
     assert not contains_secret("/dl/" + base64.b64encode(b"nothing here at all").decode(), known)
+
+
+def test_a_ref_with_a_secret_is_a_content_error_and_a_published_event() -> None:
+    import asyncio
+
+    from shelfhold.acquisition.application.failures import from_service
+    from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
+    from shelfhold.events.operating import OPERATING_EVENTS
+    from shelfhold.plugin_host.errors import RefHasSecret
+
+    async def refuse() -> None:
+        raise RefHasSecret("memo: the reference holds a secret (query)")
+
+    with pytest.raises(RefHasSecret) as caught:
+        asyncio.run(from_service(refuse()))
+    assert caught.value.code == "source.ref_has_secret" in OPERATING_EVENTS
+    assert disposition_of(classify(caught.value)) is Disposition.COUNT

@@ -18,6 +18,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.schema import acquisition
+from shelfhold.plugin_host.errors import RefHasSecret
 from shelfhold.sdk.source import SourceChanged
 
 _PAUSE_EVENTS = {
@@ -45,6 +46,8 @@ async def from_service[T](call: Awaitable[T]) -> T:
     """
     try:
         return await call
+    except RefHasSecret:
+        raise  # a Unit's problem, before the `SourceChanged` reading: never a pause (EF-SRC-035)
     except _SHAPE_ERRORS as error:
         raise unexpected_shape(error) from error
     except InvalidFetchUrl as error:

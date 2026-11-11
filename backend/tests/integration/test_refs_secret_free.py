@@ -187,7 +187,8 @@ def test_api_key_rotation_keeps_remote_ids() -> None:
 @pytest.mark.req("EF-SRC-035")
 def test_a_reference_with_the_key_and_no_template_is_quarantined(captured: Any) -> None:
     """No template declared: the references are refused as a contract error. The Units are
-    quarantined (never the whole service paused, review of L04) and nothing with the key is stored."""
+    quarantined (the service is never paused for it, review of L04); nothing with the key is
+    stored."""
     register_secret_value(KEY_A)
     with follow_bench() as bench:
         _carry_key(bench, KEY_A)
