@@ -324,3 +324,55 @@ def test_a_variant_tied_to_a_binding_of_another_edition_is_never_an_upgrade() ->
         settle(bench)
         assert [(n, s) for n, s, _ in requests(bench)] == [("1", "beta")]
         assert upgrader.calls == []
+
+
+class _Refusing:
+    """The same-path upgrade answers like its guards do for a read Unit, then fails once."""
+
+    def __init__(self, *answers: object) -> None:
+        self.answers = list(answers)
+        self.calls = 0
+
+    def upgrade_unit(self, unit_id: str, content_id: str) -> list[str]:
+        self.calls += 1
+        answer = self.answers.pop(0) if self.answers else ["skipped_read"]
+        if isinstance(answer, Exception):
+            raise answer
+        return list(answer)  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize("answer", [["skipped_read"], ["suspect_revision"], LookupError("gone")])
+def test_a_refused_late_upgrade_keeps_the_exported_variant(answer: object) -> None:
+    """Only what the upgrade did is believed: a Unit it leaves as it is keeps its Variant, and
+    the cycle goes on."""
+    with follow_bench() as bench:
+        bind_beta(bench)
+        refusing = _Refusing(answer)
+        bench.cycle = bench.new_cycle(upgrader=refusing)
+        policy(bench, "prefer_rank")
+        _held_from_beta(bench)
+        serve(bench, ALPHA, chapters(ALPHA, [1]))
+        settle(bench)
+        assert refusing.calls >= 1
+        (kept,) = bench.rows(
+            "SELECT si.remote_id AS r FROM unit_variant v "
+            "JOIN source_binding b ON b.id = v.source_binding_id "
+            "JOIN source_item si ON si.id = b.source_item_id WHERE v.preferred"
+        )
+        assert kept["r"] == "/series-beta"  # the served Variant did not move
+
+
+def test_an_upgrade_that_worked_moves_the_exported_variant_to_the_better_rank() -> None:
+    with follow_bench() as bench:
+        bind_beta(bench)
+        _with_upgrader(bench)
+        policy(bench, "prefer_rank")
+        _held_from_beta(bench)
+        serve(bench, ALPHA, chapters(ALPHA, [1]))
+        settle(bench)
+        (now,) = bench.rows(
+            "SELECT si.remote_id AS r FROM unit_variant v "
+            "JOIN source_binding b ON b.id = v.source_binding_id "
+            "JOIN source_item si ON si.id = b.source_item_id WHERE v.preferred"
+        )
+        assert now["r"] == "/series-alpha"
