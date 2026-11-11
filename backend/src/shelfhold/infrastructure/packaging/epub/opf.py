@@ -40,7 +40,7 @@ _META: Final = re.compile(
 _ATTR: Final = re.compile(r"""\b(?P<name>[\w:.-]+)\s*=\s*(?:"(?P<d>[^"]*)"|'(?P<s>[^']*)')""")
 _DC_DECLARATION: Final = re.compile(rf"""xmlns:(?P<p>[\w.-]+)\s*=\s*["']{re.escape(DC_URI)}["']""")
 _INDEX: Final = re.compile(r"\d+(?:\.\d+)?")
-_ILLEGAL: Final = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
+_ILLEGAL: Final = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 _SERIES_NAMES: Final = frozenset({"calibre:series", "calibre:series_index"})
 _SERIES_PROPS: Final = frozenset({"belongs-to-collection", "collection-type", "group-position"})
 _ELEMENT: Final = re.compile(
