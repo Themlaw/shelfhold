@@ -9069,6 +9069,10 @@
       "code": "content.untrusted_entry",
       "status": 422
     },
+    "/api/v1/problems/content.untrusted-pdf": {
+      "code": "content.untrusted_pdf",
+      "status": 409
+    },
     "/api/v1/problems/credential-not-allowed": {
       "code": "credential_not_allowed",
       "status": 403
@@ -9236,6 +9240,78 @@
     "/api/v1/problems/image.worker-failed": {
       "code": "image.worker_failed",
       "status": 500
+    },
+    "/api/v1/problems/import.archive-refused": {
+      "code": "import.archive_refused",
+      "status": 422
+    },
+    "/api/v1/problems/import.audio-unsupported": {
+      "code": "import.audio_unsupported",
+      "status": 422
+    },
+    "/api/v1/problems/import.changed-while-reading": {
+      "code": "import.changed_while_reading",
+      "status": 409
+    },
+    "/api/v1/problems/import.disk-full": {
+      "code": "import.disk_full",
+      "status": 507
+    },
+    "/api/v1/problems/import.hash-mismatch": {
+      "code": "import.hash_mismatch",
+      "status": 500
+    },
+    "/api/v1/problems/import.link-refused": {
+      "code": "import.link_refused",
+      "status": 422
+    },
+    "/api/v1/problems/import.name-collision": {
+      "code": "import.name_collision",
+      "status": 422
+    },
+    "/api/v1/problems/import.not-configured": {
+      "code": "import.not_configured",
+      "status": 409
+    },
+    "/api/v1/problems/import.not-ready": {
+      "code": "import.not_ready",
+      "status": 409
+    },
+    "/api/v1/problems/import.not-stored": {
+      "code": "import.not_stored",
+      "status": 500
+    },
+    "/api/v1/problems/import.original-not-kept": {
+      "code": "import.original_not_kept",
+      "status": 409
+    },
+    "/api/v1/problems/import.protected": {
+      "code": "import.protected",
+      "status": 422
+    },
+    "/api/v1/problems/import.protected-licence": {
+      "code": "import.protected_licence",
+      "status": 422
+    },
+    "/api/v1/problems/import.purchase-pending": {
+      "code": "import.purchase_pending",
+      "status": 409
+    },
+    "/api/v1/problems/import.tombstoned": {
+      "code": "import.tombstoned",
+      "status": 409
+    },
+    "/api/v1/problems/import.too-large": {
+      "code": "import.too_large",
+      "status": 422
+    },
+    "/api/v1/problems/import.unsafe-name": {
+      "code": "import.unsafe_name",
+      "status": 422
+    },
+    "/api/v1/problems/import.unsupported-file": {
+      "code": "import.unsupported_file",
+      "status": 422
     },
     "/api/v1/problems/instance.lease-conflict": {
       "code": "instance.lease_conflict",
