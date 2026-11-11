@@ -72,6 +72,7 @@ class RootOps:
             comp.engine, clock=comp.clock, umask=settings.umask, store_path=store,
             locks=ResourceLocks(comp.engine, clock=comp.clock), watcher=self._watcher,
             evidence=self._evidence, tombstones=self._tombstones,
+            roots_changed=comp.roots_changed,
             policy=RootPolicy(settings.library_dir, settings.data_dir, settings.store_dir),
             fresh_auth_s=settings.fresh_auth_s,
         )  # fmt: skip

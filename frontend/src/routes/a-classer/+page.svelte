@@ -29,7 +29,8 @@
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
   const STATES: Record<string, MessageKey> = {
     rating_pending: 'toRate.state.rating_pending',
-    follow_suspended: 'toRate.state.follow_suspended'
+    follow_suspended: 'toRate.state.follow_suspended',
+    suggestion_above: 'toRate.state.suggestion_above'
   };
 
   const stateLabel = (state: string): string => {
@@ -167,6 +168,16 @@
               <strong>{item.title}</strong>
               <span class="muted">{stateLabel(item.state)}</span>
             </div>
+            {#each item.suggestions ?? [] as suggestion (suggestion.edition_id + suggestion.provenance)}
+              <p class="muted">
+                {t('toRate.suggestion', {
+                  edition: suggestion.edition_id,
+                  age: suggestion.x ? 'X' : `${suggestion.age}+`,
+                  provenance: suggestion.provenance
+                })}
+              </p>
+            {/each}
+            {#if item.state !== 'suggestion_above'}
             <AgePicker
               name={`age-${item.work_id}`}
               legend={t('toRate.age_for', { title: item.title })}
@@ -175,6 +186,7 @@
             <button type="button" disabled={!chosen[item.work_id]} onclick={() => rateOne(item)}>
               {t('toRate.rate')}
             </button>
+            {/if}
           </li>
         {/each}
       </ul>

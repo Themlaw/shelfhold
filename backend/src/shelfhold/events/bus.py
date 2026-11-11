@@ -54,6 +54,10 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     "notify.failed": {"reason": frozenset({"retries_exhausted"})},
     "job.dead_lettered": {"reason": frozenset({"retries_exhausted", "handler_error"})},
     "ops.window_missed": {"reason": frozenset({"window_over"})},
+    # EF-SRC-024: an Edition that may still be protected where the instance is; never blocking.
+    "ops.rights_warning": {
+        "reason": frozenset({"may_be_protected", "translation_may_be_protected"})
+    },
     # EF-BIB-053 (3): why a tombstone line is inert; never a value of the line.
     "tombstone.unverified": {
         "reason": frozenset(

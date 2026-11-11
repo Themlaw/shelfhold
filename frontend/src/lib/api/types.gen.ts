@@ -103,6 +103,10 @@ export type BatchRatedOut = {
      */
     label: string;
     /**
+     * Open Suggestions
+     */
+    open_suggestions?: Array<EditionSuggestionOut>;
+    /**
      * Target
      */
     target: string;
@@ -270,6 +274,31 @@ export type EditionShelfIn = {
      * Shelf Id
      */
     shelf_id: string;
+};
+
+/**
+ * EditionSuggestionOut
+ *
+ * An open suggested age above an Edition's: rating the Work leaves it open and the Edition
+ * stays out of the shelves below 18+ until `rate_edition`.
+ */
+export type EditionSuggestionOut = {
+    /**
+     * Age
+     */
+    age: number;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Provenance
+     */
+    provenance: string;
+    /**
+     * X
+     */
+    x: boolean;
 };
 
 /**
@@ -1060,6 +1089,10 @@ export type RatedOut = {
      */
     label: string;
     /**
+     * Open Suggestions
+     */
+    open_suggestions?: Array<EditionSuggestionOut>;
+    /**
      * Target
      */
     target: string;
@@ -1547,6 +1580,10 @@ export type ToRateItem = {
      * State
      */
     state: string;
+    /**
+     * Suggestions
+     */
+    suggestions?: Array<EditionSuggestionOut>;
     /**
      * Title
      */

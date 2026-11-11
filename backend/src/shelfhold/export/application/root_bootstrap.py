@@ -15,6 +15,7 @@ import os
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -63,22 +64,26 @@ def ensure_instance(engine: Engine, *, jurisdiction: str | None = None) -> str:
         if found is not None:
             return str(found)
         instance_id = new_ulid()
+        chosen, confirmed = _chosen(connection)
         connection.execute(
             sa.insert(platform.instance).values(
-                instance_id=instance_id, jurisdiction=jurisdiction or _chosen(connection)
+                instance_id=instance_id,
+                jurisdiction=jurisdiction or chosen,
+                # D4: confirmed only when the admin set it (`config set`), never by the locale
+                jurisdiction_confirmed_at=datetime.now(UTC) if confirmed else None,
             )
         )
         return instance_id
 
 
-def _chosen(connection: sa.Connection) -> str:
-    """The country the admin set, else the one the locale suggests."""
+def _chosen(connection: sa.Connection) -> tuple[str, bool]:
+    """The country the admin set (confirmed), else the one the locale suggests (not)."""
     stored = connection.execute(
         sa.select(platform.app_setting.c.value).where(
             platform.app_setting.c.key == "instance.jurisdiction"
         )
     ).scalar_one_or_none()
-    return stored or default_jurisdiction()
+    return (stored, True) if stored else (default_jurisdiction(), False)
 
 
 def target_roots(engine: Engine) -> list[tuple[str, PathMode]]:

@@ -284,6 +284,9 @@ download_dir_unverifiable = "Bascule non vérifiable pour la destination {destin
 known_bad_outdated = "Kavita : version minimale {minimum} ; la liste des versions vulnérables date du {listed_on} ({age} jours) : elle est ancienne, mettez Shelfhold à jour."
 known_bad_target = "Cible {name} (Kavita {version}) : version signalée vulnérable ({advisories}). Mettez Kavita à jour."
 restored_behind = "la base est plus ancienne que les fichiers (restauration ou retour arrière) : lecture seule. Lancez « {command} »."
+jurisdiction_unconfirmed = "Le pays de l'instance ({country}) est déduit de la langue du système et n'a jamais été confirmé : les avertissements « domaine public » s'appuient dessus. Confirmez-le avec « shelfhold config set instance.jurisdiction <pays> » (code à deux lettres)."
+rights_may_be_protected = "L'Édition {edition_id} peut encore être protégée dans le pays de l'instance : libre de droits aux États-Unis ne veut pas dire libre de droits partout. Indication seulement : elle n'empêche rien."
+rights_translation_may_be_protected = "La traduction de l'Édition {edition_id} peut encore être protégée dans le pays de l'instance (droits propres du traducteur). Indication seulement : elle n'empêche rien."
 identity_header_stripped = "des requêtes portent l'en-tête d'identité « {header} », retiré et jamais cru (forward-auth non configuré ou proxy hors des CIDR de confiance). Retirez-le au niveau du proxy ou du tunnel, ou configurez le forward-auth (M3)."
 
 [ops]
@@ -1290,6 +1293,8 @@ choose_one = "Indiquez --work, --edition ou --pending (un seul)."
 done = "{target} classé {age}."
 withdrawals_plan = "{count} Édition(s) ne tiennent plus dans une étagère famille ; rien n'a été retiré. Lancez « shelfhold shelf withdraw » pour voir le plan et le confirmer :"
 withdrawal_line = "  Édition {edition} (étagère {shelf}) : {reason}"
+suggestions_open = "{count} âge(s) suggéré(s) plus élevé(s) restent ouverts : ils bloquent leur Édition tant qu'elle n'est pas classée (shelfhold rate ÂGE --edition ID) :"
+suggestion_line = "  Édition {edition} : {age} suggéré ({provenance})"
 pending_line = "  {work}  {title}  ({state})"
 pending_none = "Aucune Œuvre n'attend dans « À classer »."
 pending_header = "{count} Œuvre(s) seraient classées {age} :"

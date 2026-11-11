@@ -142,6 +142,16 @@ class WithdrawalOut(BaseModel):
     reason: str
 
 
+class EditionSuggestionOut(BaseModel):
+    """An open suggested age above an Edition's: rating the Work leaves it open and the Edition
+    stays out of the shelves below 18+ until `rate_edition`."""
+
+    edition_id: str
+    age: int
+    x: bool
+    provenance: str
+
+
 class RatedOut(BaseModel):
     """The Work is rated; the files a raised age no longer lets stay on a shelf below 18+ are
     listed in `withdrawals` and nothing was taken out (`shelf withdraw`, EF-BIB-037)."""
@@ -151,6 +161,7 @@ class RatedOut(BaseModel):
     effective: int | None
     effective_x: bool
     withdrawals: list[WithdrawalOut]
+    open_suggestions: list[EditionSuggestionOut] = []
 
 
 class RootIn(BaseModel):

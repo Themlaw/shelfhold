@@ -174,3 +174,40 @@ def test_follow_skips_a_suspended_work_until_it_is_rated(
         b.follow()
         assert len(b.downloaded()) == asked + 2  # now they are
         assert "follow_suspended" not in b.status(capsys)
+
+
+@pytest.mark.req("EF-INT-014", "EF-BIB-055")
+def test_cli_rate_work_lists_the_higher_edition_suggestions_it_leaves_open(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from shelfhold.infrastructure.ids import new_ulid
+
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        shelf = with_family_shelf(b)
+        series = b.env.new_series("Kids title")
+        with b.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE edition SET shelf_id = :s WHERE id = :e"),
+                {"s": shelf, "e": series.edition_id},
+            )
+            connection.execute(
+                sa.text(
+                    "INSERT INTO age_suggestion (id, entity_type, entity_id, value, x, provenance,"
+                    " seen_at) VALUES (:i, 'edition', :e, 18, 1, 'sub_source', CURRENT_TIMESTAMP)"
+                ),
+                {"i": new_ulid(), "e": series.edition_id},
+            )
+        capsys.readouterr()
+        assert b.cli("rate", "10+", "--work", series.work_id) == 0
+        err = capsys.readouterr().err
+        assert series.edition_id in err and "sub_source" in err and "X" in err
+        assert b.rows("SELECT state FROM age_suggestion")[0]["state"] == "open"
+        # the Work is rated, but the Edition still waits: the list shows it, the batch skips it
+        assert b.cli("rate", "13+", "--pending") == 0
+        captured = capsys.readouterr()
+        assert "Aucune" in captured.out and series.edition_id in captured.err
+        assert b.cli("rate", "10+", "--edition", series.edition_id) == 0
+        assert b.rows("SELECT state FROM age_suggestion")[0]["state"] == "rejected"

@@ -12,26 +12,40 @@ Two reasons put an unrated Work there, and each is a waiting state with `rate` a
 
 import hashlib
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.catalog.public import EditionSuggestion, RatingService
 from shelfhold.infrastructure.follow_suspended import suspended_work_ids
 from shelfhold.infrastructure.schema import catalog, export
 
-__all__ = ["FOLLOW_SUSPENDED", "RATING_PENDING", "ToRate", "batch_token", "to_rate"]
+__all__ = [
+    "FOLLOW_SUSPENDED",
+    "RATING_PENDING",
+    "SUGGESTION_ABOVE",
+    "ToRate",
+    "batch_token",
+    "rateable",
+    "to_rate",
+]
 
 FOLLOW_SUSPENDED = "follow_suspended"
 RATING_PENDING = "rating_pending"
+SUGGESTION_ABOVE = "suggestion_above"  # rated Work, an Edition a suggested age keeps out
+_SUGGESTION_REASON = (
+    "an Edition has a suggested age above its rating: rate that Edition to settle it"
+)
 
 
 @dataclass(frozen=True)
 class ToRate:
     work_id: str
     title: str
-    state: str  # FOLLOW_SUSPENDED | RATING_PENDING
+    state: str  # FOLLOW_SUSPENDED | RATING_PENDING | SUGGESTION_ABOVE
     reason: str
+    suggestions: tuple[EditionSuggestion, ...] = ()  # open ones above an Edition's age
 
 
 def to_rate(connection: Connection) -> list[ToRate]:
@@ -60,6 +74,17 @@ def to_rate(connection: Connection) -> list[ToRate]:
     )
     if not family:
         return found
+    on_family = set(
+        connection.execute(
+            sa.select(edition.c.id).where(
+                sa.or_(edition.c.shelf_id.is_(None), edition.c.shelf_id.in_(family))
+            )
+        ).scalars()
+    )
+    above: dict[str, list[EditionSuggestion]] = {}
+    for suggestion in RatingService().open_suggestions(connection):
+        if suggestion.edition_id in on_family:
+            above.setdefault(suggestion.work_id, []).append(suggestion)
     rows = connection.execute(
         sa.select(work.c.id, work.c.title)
         .distinct()
@@ -78,7 +103,26 @@ def to_rate(connection: Connection) -> list[ToRate]:
         for r in rows
         if r.id not in suspended
     ]  # fmt: skip
+    listed = {i.work_id for i in found}
+    found = [replace(i, suggestions=tuple(above.get(i.work_id, ()))) for i in found]
+    if above.keys() - listed:  # rated Works whose Edition a higher suggestion keeps out
+        titles_above = {
+            r.id: r.title
+            for r in connection.execute(
+                sa.select(work.c.id, work.c.title).where(work.c.id.in_(above.keys() - listed))
+            )
+        }
+        found += [
+            ToRate(w, titles_above[w], SUGGESTION_ABOVE, _SUGGESTION_REASON, tuple(above[w]))
+            for w in sorted(titles_above)
+        ]
     return found
+
+
+def rateable(items: Sequence[ToRate]) -> list[ToRate]:
+    """What the batch rates: the Works nobody rated. A Work that only waits for an Edition to be
+    rated (`suggestion_above`) is already rated; rating it again at the batch age could lower it."""
+    return [i for i in items if i.state != SUGGESTION_ABOVE]
 
 
 def batch_token(items: Sequence[ToRate], age: str) -> str:

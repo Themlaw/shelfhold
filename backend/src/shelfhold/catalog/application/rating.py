@@ -34,7 +34,13 @@ from shelfhold.infrastructure.follow_suspended import lift
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.sdk.age import AGE_TIERS, AgeRating, label_key, to_columns
 
-__all__ = ["RatingRefusedError", "RatingResult", "RatingService", "Withdrawal"]
+__all__ = [
+    "EditionSuggestion",
+    "RatingRefusedError",
+    "RatingResult",
+    "RatingService",
+    "Withdrawal",
+]
 
 
 class RatingRefusedError(Exception):
@@ -49,12 +55,25 @@ class Withdrawal:
 
 
 @dataclass(frozen=True)
+class EditionSuggestion:
+    """An age a file, a sub-source or a provider suggested for one Edition, still open and above
+    what the Edition counts for: it keeps the Edition out of the shelves below 18+ until an admin
+    rates the Edition (`rate_edition`), whatever the Work was rated."""
+
+    edition_id: str
+    work_id: str
+    age: AgeRating
+    provenance: str
+
+
+@dataclass(frozen=True)
 class RatingResult:
     target: str  # `work:<id>` or `edition:<id>`
     rating: AgeRating
     label: str  # i18n key
     effective: AgeRating | None  # of the Work, once rated
     withdrawals: tuple[Withdrawal, ...]
+    open_suggestions: tuple[EditionSuggestion, ...] = ()  # of the Editions of the Work, above
 
 
 def _age(age_rating: int | None, age_x: bool) -> AgeRating | None:
@@ -92,7 +111,7 @@ class RatingService:
         editions = connection.execute(sa.select(edition.c.id).where(edition.c.work_id == work_id))
         covered = [("work", work_id), *(("edition", r[0]) for r in editions)]
         lift(connection, work_id)  # rating is the way out of an adopted child library (EF-EXP-048)
-        settled = _settle(connection, covered, rating)
+        settled = _settle(connection, covered, rating, keep_edition_above=True)
         return self._done(connection, f"work:{work_id}", work_id, rating, principal, now, settled)
 
     def rate_edition(
@@ -127,6 +146,42 @@ class RatingService:
             sa.select(edition.c.age_rating, edition.c.age_x).where(edition.c.work_id == work_id)
         )
         return effective_age(_age(own.age_rating, own.age_x), (_age(r[0], r[1]) for r in rows))
+
+    def open_suggestions(
+        self, connection: Connection, *, work_id: str | None = None
+    ) -> tuple[EditionSuggestion, ...]:
+        """The open suggestions of Editions that are above what the Edition counts for (its own
+        age, else its Work's; unrated counts 18+), in the order of the Edition: the ones that
+        block it below 18+ and that rating the Work does not settle."""
+        edition, suggestion = catalog.edition, catalog.age_suggestion
+        query = (
+            sa.select(
+                edition.c.id, edition.c.work_id, suggestion.c.value, suggestion.c.x,
+                suggestion.c.provenance,
+            )
+            .select_from(
+                suggestion.join(
+                    edition,
+                    sa.and_(
+                        suggestion.c.entity_type == "edition",
+                        suggestion.c.entity_id == edition.c.id,
+                    ),
+                )
+            )
+            .where(suggestion.c.state == "open")
+            .order_by(edition.c.id, suggestion.c.id)
+        )  # fmt: skip
+        if work_id is not None:
+            query = query.where(edition.c.work_id == work_id)
+        found: list[EditionSuggestion] = []
+        counts: dict[str, EditionAge] = {}
+        for edition_id, of_work, value, x, provenance in connection.execute(query).all():
+            if edition_id not in counts:
+                counts[edition_id] = self._facts(connection, edition_id)
+            age = AgeRating(18, True) if x else AgeRating(int(value))
+            if counts[edition_id].age < age:
+                found.append(EditionSuggestion(edition_id, of_work, age, provenance))
+        return tuple(found)
 
     def admission_of(self, connection: Connection, edition_id: str, *, shelf_id: str) -> Admission:
         ceiling = connection.execute(
@@ -171,6 +226,7 @@ class RatingService:
         return RatingResult(
             target, rating, label_key(rating), self.effective_age_of(connection, work_id),
             self._withdrawals(connection, work_id),
+            self.open_suggestions(connection, work_id=work_id),
         )  # fmt: skip
 
     def _withdrawals(self, connection: Connection, work_id: str) -> tuple[Withdrawal, ...]:
@@ -233,22 +289,33 @@ class RatingService:
 
 
 def _settle(
-    connection: Connection, covered: list[tuple[str, str]], rating: AgeRating
-) -> tuple[int, int]:
+    connection: Connection, covered: list[tuple[str, str]], rating: AgeRating,
+    *, keep_edition_above: bool = False,
+) -> tuple[int, int]:  # fmt: skip
     """Rating is the way out of a block: the open suggestions on what was rated are ruled on, in
     the rating's transaction. At most the new age: accepted; above it: rejected (the admin decided
-    knowing it). One that arrives afterwards stays open and blocks again (EF-BIB-055)."""
+    knowing it). One that arrives afterwards stays open and blocks again (EF-BIB-055).
+
+    Rating a Work (`keep_edition_above`) never rules on a suggestion of an Edition that is above
+    the age: the admin rates from a list that does not show it, and a Work's age is not the
+    decision about an Edition's. It stays open and keeps blocking that Edition until
+    `rate_edition` (fail closed)."""
     suggestion = catalog.age_suggestion
     rows = connection.execute(
-        sa.select(suggestion.c.id, suggestion.c.value, suggestion.c.x).where(
+        sa.select(
+            suggestion.c.id, suggestion.c.entity_type, suggestion.c.value, suggestion.c.x
+        ).where(
             suggestion.c.state == "open",
             sa.tuple_(suggestion.c.entity_type, suggestion.c.entity_id).in_(covered),
         )
     ).all()
+    kept = {r.id for r in rows if keep_edition_above and r.entity_type == "edition"}
     accepted = [
-        r.id for r in rows if not (AgeRating(18, True) if r.x else AgeRating(r.value)) > rating
+        r.id
+        for r in rows
+        if r.id not in kept and not (AgeRating(18, True) if r.x else AgeRating(r.value)) > rating
     ]
-    rejected = [r.id for r in rows if r.id not in accepted]
+    rejected = [r.id for r in rows if r.id not in accepted and r.id not in kept]
     for state, ids in (("accepted", accepted), ("rejected", rejected)):
         if ids:
             connection.execute(

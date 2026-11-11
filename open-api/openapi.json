@@ -159,6 +159,14 @@
             "title": "Label",
             "type": "string"
           },
+          "open_suggestions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EditionSuggestionOut"
+            },
+            "title": "Open Suggestions",
+            "type": "array"
+          },
           "target": {
             "title": "Target",
             "type": "string"
@@ -434,6 +442,35 @@
           "shelf_id"
         ],
         "title": "EditionShelfIn",
+        "type": "object"
+      },
+      "EditionSuggestionOut": {
+        "description": "An open suggested age above an Edition's: rating the Work leaves it open and the Edition\nstays out of the shelves below 18+ until `rate_edition`.",
+        "properties": {
+          "age": {
+            "title": "Age",
+            "type": "integer"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "provenance": {
+            "title": "Provenance",
+            "type": "string"
+          },
+          "x": {
+            "title": "X",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "edition_id",
+          "age",
+          "x",
+          "provenance"
+        ],
+        "title": "EditionSuggestionOut",
         "type": "object"
       },
       "EstimateOut": {
@@ -1700,6 +1737,14 @@
             "title": "Label",
             "type": "string"
           },
+          "open_suggestions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EditionSuggestionOut"
+            },
+            "title": "Open Suggestions",
+            "type": "array"
+          },
           "target": {
             "title": "Target",
             "type": "string"
@@ -2467,6 +2512,14 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "suggestions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EditionSuggestionOut"
+            },
+            "title": "Suggestions",
+            "type": "array"
           },
           "title": {
             "title": "Title",

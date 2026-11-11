@@ -85,7 +85,7 @@ def test_upgrade_from_0019_keeps_data(settings: Settings) -> None:
 
     result = migrate(settings)
 
-    assert result.applied[-1] == "0020"
+    assert result.applied[-2:] == ("0020", "0025")
     assert {
         "metadata_field", "metadata_cache", "provider_quota", "http_cache", "import_entry",
         "plugin_attestation", "series_gap", "binding_release_sample",

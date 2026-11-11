@@ -214,7 +214,7 @@ def _waiting(resolved: ResolvedSettings) -> dict[str, object]:
         return {
             "waiting": [], "queues": [], "stale_series": [], "tombstoned_upstream": [],
             "capabilities": [], "known_bad": {}, "service_urls": [], "unverifiable_dirs": [],
-            "content_error_candidates": [],
+            "content_error_candidates": [], "jurisdiction": None, "rights_warnings": [],
         }  # fmt: skip
     engine = create_db_engine(database)
     try:
@@ -229,7 +229,9 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     if args.json:
         print(json.dumps({"warnings": found, **ops}, ensure_ascii=False, indent=2))
         return 0
-    if not found and not ops["waiting"]:
+    where: dict[str, Any] | None = ops.get("jurisdiction")  # type: ignore[assignment]
+    unconfirmed = where is not None and not where["confirmed"]
+    if not found and not ops["waiting"] and not unconfirmed:
         print(t("status.no_warning"))
     for warning in found:
         print(t("status.warning_line", message=warning["message"]))
@@ -254,6 +256,16 @@ def report_lines(ops: dict[str, object]) -> list[str]:
         lines.append(t("status.stale_series_line", **s))
     for s in ops.get("content_error_candidates", []):  # type: ignore[attr-defined]
         lines.append(t("status.irreplaceable_candidate_line", **s))
+    where: dict[str, Any] | None = ops.get("jurisdiction")  # type: ignore[assignment]
+    if where is not None and not where["confirmed"]:  # EF-SRC-024: deduced, never asked yet
+        lines.append(t("status.jurisdiction_unconfirmed", country=where["jurisdiction"]))
+    for w in ops.get("rights_warnings", []):  # type: ignore[attr-defined]
+        if w["reason"] == "translation_may_be_protected":
+            lines.append(
+                t("status.rights_translation_may_be_protected", edition_id=w["edition_id"])
+            )
+        else:
+            lines.append(t("status.rights_may_be_protected", edition_id=w["edition_id"]))
     for s in ops.get("tombstoned_upstream", []):  # type: ignore[attr-defined]
         lines.append(t("status.tombstoned_upstream_line", **s))
     for c in ops.get("capabilities", []):  # type: ignore[attr-defined]
