@@ -1,6 +1,7 @@
 """EPUB passthrough through the database: no age in the file, the original OPF kept in /data/meta
 and referenced by `unit.json` (EF-EXP-033 / Z3-a, EF-BIB-048)."""
 
+import hashlib
 import io
 import json
 import os
@@ -23,7 +24,12 @@ GOLDEN = Path(__file__).parents[1] / "golden" / "epub"
 
 
 def render(
-    env: ExportEnv, tmp_path: Path, *, age: int | None, rights: str | None
+    env: ExportEnv,
+    tmp_path: Path,
+    *,
+    age: int | None,
+    rights: str | None,
+    source_epub: bytes | None = None,
 ) -> tuple[str, RenderedEpub]:
     book = env.new_series("Série synthétique")
     with env.engine.begin() as connection:
@@ -37,7 +43,7 @@ def render(
         )
         unit = add_unit(connection, book.edition_id, "3")
     source = tmp_path / "derivative.epub"
-    source.write_bytes(epub())
+    source.write_bytes(source_epub or epub())
     with env.engine.connect() as connection:
         edit = epub_opf_edit(connection, unit, "Série synthétique")
     return unit, EpubRenderer(staging_dir=tmp_path).render(str(source), edit)
@@ -90,3 +96,61 @@ def test_rendered_epub_is_a_stream_for_the_caller(tmp_path: Path) -> None:
             raw = rendered.file.read()
     assert len(raw) == rendered.size
     assert zipfile.ZipFile(io.BytesIO(raw)).testzip() is None
+
+
+AGED_ORIGIN = (
+    '    <meta property="schema:typicalAgeRange">16+</meta>\n'
+    "    <dc:subject>18+</dc:subject>\n"
+    '    <meta name="calibre:rating" content="8"/>\n'
+    '    <meta property="ibooks:age-rating">17+</meta>\n'
+    '    <meta property="schema:typicalAgeRange" id="ag">16+</meta>\n'
+    '    <meta refines="#ag" property="role">x</meta>\n'
+    '    <opf:meta xmlns:opf="http://www.idpf.org/2007/opf" name="age_rating" content="18"/>\n'
+)
+
+
+@pytest.mark.req("EF-EXP-033")
+def test_epub_already_carrying_an_age_leaves_without_one(tmp_path: Path) -> None:
+    """Golden: an origin OPF that has an age in every known form leaves with none of them, the
+    XHTML head and every other entry are untouched, and the original OPF still has them (D1)."""
+    xhtml_head = (
+        b'<html xmlns="http://www.w3.org/1999/xhtml"><head><meta name="age" content="18+"/>'
+        b"<title>t</title></head><body><p>x</p></body></html>\n"
+    )
+    source = epub(opf(extra_metadata=AGED_ORIGIN))
+    with zipfile.ZipFile(io.BytesIO(source)) as z:
+        entries = {n: z.read(n) for n in z.namelist()}
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        for name, data in entries.items():
+            info = zipfile.ZipInfo(name, (2020, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_STORED if name == "mimetype" else zipfile.ZIP_DEFLATED
+            z.writestr(info, xhtml_head if name == "OEBPS/c1.xhtml" else data)
+            if name == "OEBPS/c1.xhtml":
+                entries[name] = xhtml_head
+    with export_env() as env:
+        _, rendered = render(env, tmp_path, age=16, rights=None, source_epub=buffer.getvalue())
+        with rendered.file, zipfile.ZipFile(rendered.file) as archive:
+            written = archive.read("OEBPS/content.opf").decode()
+            for name in archive.namelist():
+                if name != "OEBPS/content.opf":  # outside the OPF: same bytes, so same sha256
+                    assert (
+                        hashlib.sha256(archive.read(name)).hexdigest()
+                        == hashlib.sha256(entries[name]).hexdigest()
+                    ), name
+        assert b'content="18+"' in xhtml_head and rendered.original_opf.decode().count("16+") == 2
+    low = written.lower()
+    for needle in (
+        "16+",
+        "17+",
+        "18+",
+        "agerange",
+        "age-rating",
+        "age_rating",
+        "rating",
+        'id="ag"',
+    ):
+        assert needle not in low, needle
+    assert "<dc:subject>Fiction</dc:subject>" in written
+    assert 'page-progression-direction="rtl"' in written
+    assert "schema:accessibilitySummary" in written

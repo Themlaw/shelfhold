@@ -5,7 +5,10 @@ Only these elements are written: `calibre:series`, `calibre:series_index`, the E
 `dc:rights` / `dc:source` when the book has none. They are spliced into the text of the document,
 which is otherwise copied as it was: no serialisation, so prefixes, comments, attribute order,
 the `spine` (`page-progression-direction`), the writing mode and the `schema:access*` metadata
-come out character for character. The edit has no age: nothing here can write one (D1, Z3-a).
+come out character for character. The edit has no age: nothing here can write one, and an age
+that the book already carries in its metadata (`typicalAgeRange`, an `18+` subject, a rating, a
+`refines` of one of those) is removed from the exported OPF (D1, Z3-a); the original OPF is kept in
+`/data/meta`, so nothing is lost.
 
 The document is read by `safe_parse_xml` and the result is read again by it, then compared with
 the original: whatever was in `<metadata>` and is not one of the replaced series elements must
@@ -39,6 +42,24 @@ _DC_DECLARATION: Final = re.compile(rf"""xmlns:(?P<p>[\w.-]+)\s*=\s*["']{re.esca
 _INDEX: Final = re.compile(r"\d+(?:\.\d+)?")
 _ILLEGAL: Final = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
 _SERIES_NAMES: Final = frozenset({"calibre:series", "calibre:series_index"})
+_SERIES_PROPS: Final = frozenset({"belongs-to-collection", "collection-type", "group-position"})
+_ELEMENT: Final = re.compile(
+    rf"(?P<lead>[ \t]*)<(?P<p>{_PREFIX})(?P<local>meta|subject)\b"
+    r"(?P<attrs>(?:[^>\"']|\"[^\"]*\"|'[^']*')*?)"
+    r"(?:/>|>(?P<body>.*?)</(?P=p)(?P=local)\s*>)[ \t]*(?P<eol>\r?\n)?",
+    re.DOTALL,
+)
+# An age in a metadata name or property (any prefix the book declared), and in a subject.
+_AGE_KEY: Final = re.compile(
+    r"age[-_ ]?(?:rat|range|limit|group|class|restrict|suit)|typicalage|rating|matur|adult"
+    r"|audience|pegi|esrb|advisory|contentwarn|nsfw|explicit",
+    re.IGNORECASE,
+)
+_AGE_SUBJECT: Final = re.compile(
+    r"\d{1,2}\s*\+|\+\s*\d{1,2}\b|\b(?:r|x)[-\s]?(?:18|rated)\b|\bages?\b"
+    r"|\d{1,2}\s*(?:ans|years?|yrs?)\b|matur|adult|nsfw|explicit|erwachsen",
+    re.IGNORECASE,
+)
 
 
 class OpfError(ValueError):
@@ -107,22 +128,61 @@ def _collection_ids_to_drop(metadata: Element) -> set[str]:
     }
 
 
-def _drop_series(inner: str, drop_ids: set[str]) -> str:
-    def dropped(attrs: dict[str, str]) -> bool:
+def _local(name: str | None) -> str:
+    return (name or "").rpartition(":")[2]
+
+
+def _is_age(local: str, name: str | None, prop: str | None, text: str) -> bool:
+    """An age in any of the forms a book is known to carry (any case, any prefix)."""
+    if local.lower() == "subject":
+        return _AGE_SUBJECT.search(text) is not None
+    return any(_AGE_KEY.search(_local(key)) for key in (name, prop) if key)
+
+
+def _age_ids(metadata: Element) -> set[str]:
+    """Ids of the age elements and, to a fixed point, of whatever refines them."""
+    ids: set[str] = set()
+    for child in metadata:
+        tag = child.tag.rpartition("}")[2]
+        if tag in {"meta", "subject"} and _is_age(
+            tag, child.get("name"), child.get("property"), child.text or ""
+        ):
+            ids.add(child.get("id") or "")
+    ids.discard("")
+    grown = True
+    while grown:
+        grown = False
+        for child in metadata:
+            ident = child.get("id") or ""
+            if ident and ident not in ids and child.get("refines", "").lstrip("#") in ids:
+                ids.add(ident)
+                grown = True
+    return ids
+
+
+def _drop(inner: str, drop_ids: set[str], age_ids: set[str], *, series: bool) -> str:
+    def dropped(local: str, attrs: dict[str, str], body: str) -> bool:
+        refines = attrs.get("refines", "").lstrip("#")
+        if _is_age(local, attrs.get("name"), attrs.get("property"), body):
+            return True
+        if attrs.get("id", "") in age_ids or (refines != "" and refines in age_ids):
+            return True
+        if not series:
+            return False
         if attrs.get("name") in _SERIES_NAMES:
             return True
         prop = attrs.get("property")
         if prop == "belongs-to-collection":
             return attrs.get("id", "") in drop_ids
-        refines = attrs.get("refines", "").lstrip("#")
         return (
             refines in drop_ids and refines != "" and prop in {"collection-type", "group-position"}
         )
 
     def visit(match: re.Match[str]) -> str:
-        return "" if dropped(_attributes(match["attrs"])) else match[0]
+        attrs = _attributes(match["attrs"])
+        return "" if dropped(match["local"], attrs, match["body"] or "") else match[0]
 
-    return _META.sub(visit, inner)
+    return _ELEMENT.sub(visit, inner)
 
 
 def _fresh_id(existing: set[str]) -> str:
@@ -158,8 +218,9 @@ def rewrite_opf(raw: bytes, edit: OpfEdit) -> OpfRewrite:
     index = edit.series_index if edit.series_index and _INDEX.fullmatch(edit.series_index) else None
     lines: list[str] = []
     open_, close = f"<{prefix}meta", f"</{prefix}meta>"
+    original_inner = inner
+    inner = _drop(inner, drop, _age_ids(metadata), series=bool(edit.series))
     if edit.series:
-        inner = _drop_series(inner, drop)
         name = _attr(edit.series)
         lines.append(f'<{prefix}meta name="calibre:series" content="{name}"/>')
         if index:
@@ -178,7 +239,7 @@ def rewrite_opf(raw: bytes, edit: OpfEdit) -> OpfRewrite:
     for tag, value in (("rights", edit.rights), ("source", edit.source)):
         if value and value.strip() and f"{DC}{tag}" not in have:
             lines.append(f"<{dc_prefix}:{tag}{local}>{_text(value.strip())}</{dc_prefix}:{tag}>")
-    if not lines:
+    if not lines and inner == original_inner:
         return OpfRewrite(bytes(raw), changed=False)
 
     eol = "\r\n" if "\r\n" in inner else "\n"
@@ -199,22 +260,72 @@ def _signature(element: Element) -> tuple[str, tuple[tuple[str, str], ...], str]
     return element.tag, tuple(sorted(element.attrib.items())), (element.text or "").strip()
 
 
+def _is_series(child: Element) -> bool:
+    return child.get("name") in _SERIES_NAMES or child.get("property") in _SERIES_PROPS
+
+
+def _carries_age(child: Element) -> bool:
+    tag = child.tag.rpartition("}")[2]
+    return tag in {"meta", "subject"} and _is_age(
+        tag, child.get("name"), child.get("property"), child.text or ""
+    )
+
+
 def _check(before: Element, after: Element, edit: OpfEdit) -> None:
-    """Everything of the book's own is still there and the rest of the package is untouched."""
+    """The rewrite wrote nothing outside the list, kept the book's own metadata, and left no age.
+
+    Allowed to appear: the series `meta`, the collection (and the two `meta` that refine it, by the
+    id written here), `dc:rights`, `dc:source`. Allowed to go: the series it replaces and the ages.
+    Anything else new, or anything else gone, refuses the whole rewrite.
+    """
     old, new = before.find(f"{OPF_NS}metadata"), after.find(f"{OPF_NS}metadata")
     if old is None or new is None:
         raise OpfError("rewrite_refused", "metadata lost")
+    age_ids = _age_ids(old)
+    ids_kept = {c.get("id") for c in old if c.get("id") and not _is_series(c)}
     kept = [_signature(c) for c in new]
     for child in old:
-        series = child.get("name") in _SERIES_NAMES or child.get("property") in {
-            "belongs-to-collection", "collection-type", "group-position",
-        }  # fmt: skip
-        if (edit.series is None or not series) and _signature(child) not in kept:
+        gone = (
+            _carries_age(child)
+            or child.get("id") in age_ids
+            or (child.get("refines", "").lstrip("#") in age_ids)
+        )
+        removable = gone or (edit.series is not None and _is_series(child))
+        if not removable and _signature(child) not in kept:
             raise OpfError("rewrite_refused", f"{child.tag} changed")
+    was = [_signature(c) for c in old]
+    written_ids = {c.get("id") for c in new if c.get("property") == "belongs-to-collection"}
+    for child in new:
+        if _carries_age(child) or child.get("id") in age_ids:
+            raise OpfError("rewrite_refused", "an age is still there")
+        if _signature(child) in was:
+            was.remove(_signature(child))
+            continue
+        if not _may_be_written(child, edit, ids_kept, written_ids):
+            raise OpfError("rewrite_refused", f"{child.tag} is not on the list")
     for part in ("manifest", "spine", "guide"):
         a, b = before.find(f"{OPF_NS}{part}"), after.find(f"{OPF_NS}{part}")
         if (a is None) != (b is None) or (a is not None and b is not None and _tree(a) != _tree(b)):
             raise OpfError("rewrite_refused", f"{part} changed")
+
+
+def _may_be_written(
+    child: Element, edit: OpfEdit, ids_kept: set[str | None], written_ids: set[str | None]
+) -> bool:
+    """Exact names, exact case: a look-alike (`Calibre:Series`, a renamed namespace) is refused."""
+    attrs = dict(child.attrib)
+    if child.tag in {f"{DC}rights", f"{DC}source"}:
+        return not attrs
+    if child.tag != f"{OPF_NS}meta" or edit.series is None:
+        return False
+    name, prop = attrs.get("name"), attrs.get("property")
+    if name in _SERIES_NAMES:
+        return set(attrs) == {"name", "content"}
+    if prop == "belongs-to-collection":
+        return set(attrs) == {"property", "id"} and attrs["id"] not in ids_kept
+    if prop in {"collection-type", "group-position"}:
+        return set(attrs) == {"refines", "property"} and attrs["refines"][1:] in written_ids
+    return False
 
 
 def _tree(element: Element) -> list[tuple[str, tuple[tuple[str, str], ...], str]]:

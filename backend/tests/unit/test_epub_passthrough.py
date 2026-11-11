@@ -234,3 +234,89 @@ def test_unsafe_or_non_utf8_opf_is_refused() -> None:
         rewrite_opf(b'<!DOCTYPE x [<!ENTITY a "b">]><package xmlns="x"/>', EDIT)
     with pytest.raises(OpfError):
         rewrite_opf(opf().replace(b"utf-8", b"latin-1").replace("é".encode(), b"\xe9"), EDIT)
+
+
+AGE_FORMS = {
+    "typical_age_range": '<meta property="schema:typicalAgeRange">16+</meta>',
+    "typical_age_range_case_and_prefix": '<meta property="S:TYPICALAGERANGE">16</meta>',
+    "subject_18_plus": "<dc:subject>18+</dc:subject>",
+    "subject_renamed_prefix": (
+        '<d:subject xmlns:d="http://purl.org/dc/elements/1.1/">18 +</d:subject>'
+    ),
+    "subject_mature": "<dc:subject>Mature</dc:subject>",
+    "calibre_rating": '<meta name="calibre:rating" content="8"/>',
+    "calibre_rating_single_quotes": "<meta name='Calibre:Rating' content='8'/>",
+    "ibooks_age_rating": '<meta property="ibooks:age-rating">17+</meta>',
+    "ibooks_name_form": '<meta name="ibooks:age-rating" content="17+"/>',
+    "opf_prefixed_meta": '<opf:meta xmlns:opf="http://www.idpf.org/2007/opf" name="age_rating" '
+    'content="18"/>',
+    "refines_of_an_age": '<meta property="schema:typicalAgeRange" id="ag">16+</meta>\n'
+    '    <meta refines="#ag" property="role">x</meta>\n'
+    '    <meta refines="#ag" id="ag2" property="source">y</meta>\n'
+    '    <meta refines="#ag2" property="z">w</meta>',
+}
+
+
+@pytest.mark.req("EF-EXP-033")
+@pytest.mark.parametrize("form", list(AGE_FORMS.values()), ids=list(AGE_FORMS))
+@pytest.mark.parametrize("edit", [EDIT, OpfEdit()], ids=["edit", "no_edit"])
+def test_age_already_in_the_origin_opf_is_removed(form: str, edit: OpfEdit) -> None:
+    source = opf(extra_metadata=f"    {form}\n")
+    written = rewrite_opf(source, edit)
+    assert written.changed
+    text = written.opf.decode()
+    for needle in ("16+", "18+", "18 +", "agerange", "age-rating", "age_rating", "rating", "mature",
+                   'refines="#ag'):  # fmt: skip
+        assert needle not in text.lower(), needle
+    assert "<dc:subject>Fiction</dc:subject>" in text  # the book's own subject stays
+    root = safe_parse_xml(written.opf)
+    assert 'page-progression-direction="rtl"' in text
+    assert any(m.get("property") == "schema:accessMode" for m in root.iter(META))
+
+
+@pytest.mark.req("EF-EXP-033")
+def test_origin_opf_without_age_and_without_edit_is_unchanged() -> None:
+    assert rewrite_opf(opf(), OpfEdit()).changed is False
+
+
+@pytest.mark.req("EF-EXP-033")
+def test_check_refuses_anything_outside_the_list() -> None:
+    from shelfhold.infrastructure.packaging.epub import OpfError
+    from shelfhold.infrastructure.packaging.epub.opf import _check
+
+    before = safe_parse_xml(opf())
+    good = rewrite_opf(opf(), EDIT).opf.decode()
+    _check(before, safe_parse_xml(good.encode()), EDIT)  # the real rewrite passes
+    wrong_edit = (
+        # not on the list: an age, in every spelling, even if it was not in the origin
+        '<meta property="schema:typicalAgeRange">16+</meta>',
+        "<dc:subject>18+</dc:subject>",
+        '<meta name="calibre:rating" content="1"/>',
+        '<meta property="ibooks:age-rating">17+</meta>',
+        # not on the list: other elements, look-alikes, renamed namespaces
+        '<meta name="Calibre:Series" content="x"/>',
+        '<meta name="calibre:series" content="x" extra="1"/>',
+        '<meta name="shelfhold:anything" content="1"/>',
+        '<x:meta xmlns:x="urn:evil" name="calibre:series" content="x"/>',
+        '<d:rights xmlns:d="urn:evil">x</d:rights>',
+        '<dc:rights lang="x">x</dc:rights>',
+        "<dc:creator>Someone</dc:creator>",
+        # refines pointing somewhere that is not the collection written here
+        '<meta refines="#id" property="group-position">3</meta>',
+        '<meta refines="#nope" property="collection-type">series</meta>',
+        '<meta refines="#coll1" property="role">x</meta>',
+    )
+    for extra in wrong_edit:
+        bad = good.replace("</metadata>", f"{extra}</metadata>")
+        with pytest.raises(OpfError):
+            _check(before, safe_parse_xml(bad.encode()), EDIT)
+    # something of the book's own going missing is refused too
+    with pytest.raises(OpfError):
+        _check(
+            before,
+            safe_parse_xml(good.replace("<dc:title>Livre synthétique</dc:title>", "").encode()),
+            EDIT,
+        )
+    # with no series in the edit, even the series forms are off the list
+    with pytest.raises(OpfError):
+        _check(before, safe_parse_xml(good.encode()), OpfEdit())
