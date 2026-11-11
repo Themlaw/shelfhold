@@ -24,6 +24,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, platform
 from shelfhold.library.public import CatalogScreenAdapter, WorkRef
 from shelfhold.library.tombstones import TombstoneService
+from shelfhold.library.tombstones.values import encode_plaintext
 from shelfhold.sdk.metadata import FieldProposal, Provenance
 from tests.export_env import ExportEnv, Series
 from tests.family_env import NOW, family_env, rate, rate_edition, suggest
@@ -329,3 +330,33 @@ def test_work_tombstone_compares_under_a_versioned_normalizer(
             w, IncomingEdition(other.edition_id, ids=(ExternalId("work", provider, "999"),))
         )
         assert free.state != "conflict"  # type: ignore[attr-defined]
+
+
+# What the release 0.2.0 reads of a tombstone (git show v0.2.0:backend/src/shelfhold/library/
+# tombstones/{values,index}.py), frozen here: a rollback to it replays the journal of the newer
+# release, and it must still build its index (B3 of the M1b adversarial review).
+V020_INDEXED_NORMALIZERS = frozenset(
+    {"number", "number_segment", "lang", "publisher", "text_version"}
+)
+V020_BODY_KEYS = {"f", "scope", "values", "normalizers", "pad"}
+V020_WORK_KEYS = {"id_scheme", "value"}
+
+
+@pytest.mark.req("EF-BIB-053", "EF-BIB-054", "ENF-OPS-008")
+def test_a_work_tombstone_is_readable_by_the_release_0_2_0() -> None:
+    """B3: the clear text of a `work` tombstone has the exact shape the 0.2.0 decoder demands, and
+    the 0.2.0 index only checks the versions of the normalizers it indexes: `work_id@1` is no
+    reason for it to refuse to build, nor does its absence there let a purged Work come back by
+    anything but a spelling the 0.2.0 never normalised."""
+    with family_env(13) as env:
+        w = world(env)
+        purge_the_work(w)
+        ref = WorkRef("anilist", "30013")
+        cited = w.purge.tombstones.cited_now(ref)
+        assert cited == {"work_id": "work_id@1"}
+        body = json.loads(encode_plaintext(ref, cited))
+        assert set(body) == V020_BODY_KEYS and body["scope"] == "work"
+        assert set(body["values"]) == V020_WORK_KEYS  # the 0.2.0 `decode_plaintext`, strict
+        assert body["values"] == {"id_scheme": "anilist", "value": "30013"}
+        assert body["normalizers"].keys() - V020_INDEXED_NORMALIZERS == {"work_id"}  # ignored there
+        assert blocked(w, "anilist", "30013")
