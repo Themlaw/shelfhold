@@ -681,3 +681,24 @@ def test_leftovers_apply_compacts_the_titles_an_m1a_purge_left_in_free_pages(
         assert TITLE.encode() in _database_bytes(env.engine)  # refused: nothing was done
         leftovers.apply(if_match=plan.version, principal=ADMIN, now=built.clock.now())
         assert TITLE.encode() not in _database_bytes(env.engine)
+
+
+def test_backups_floor_counts_the_series_rows_older_than_the_units(tmp_path: Path) -> None:
+    """A backup taken after the follow began holds its `source_item` and `follow_request` (the
+    slug spells the title) even when every Unit is newer: the floor is the oldest of them all."""
+    from shelfhold.library.adapters.purge_inventory import created_since
+
+    with export_env() as env:
+        _service, series, unit, _key, _built = _followed_work(env, tmp_path)
+        old = datetime(2020, 1, 1, tzinfo=UTC)
+        with env.engine.begin() as connection:
+            connection.execute(sa.update(acquisition.follow_request).values(created_at=old))
+            floor = created_since(connection, [unit], series.work_id)
+            assert floor is not None and floor.astimezone(UTC) <= old
+            connection.execute(
+                sa.update(acquisition.source_item).values(
+                    created_at=datetime(2019, 1, 1, tzinfo=UTC)
+                )
+            )
+            floor = created_since(connection, [unit], series.work_id)
+            assert floor is not None and floor.astimezone(UTC).year == 2019

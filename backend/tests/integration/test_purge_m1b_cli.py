@@ -159,3 +159,26 @@ def test_kept_in_service_is_shown_by_status_until_the_admin_clears_it(
         assert "1 marque(s)" in capsys.readouterr().out
         b.cli("status")
         assert request not in capsys.readouterr().out
+
+
+def test_purge_sweeps_the_backup_snapshots_a_dead_run_left_behind(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """A killed backup leaves `/data/tmp/backup-*` (a database snapshot, titles in the clear):
+    the report of the retained backups clears what nobody holds before it lists."""
+    from shelfhold.ops.backup.scratch import MARKER, SCRATCH_PARENT
+
+    folder = tmp_path / "backups"
+    folder.mkdir()
+    monkeypatch.setenv("SHELFHOLD_BACKUP_DIR", str(folder))
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        work = _work_of(b, _paired(b, capsys))
+        orphan = settings.data_dir / SCRATCH_PARENT / "backup-deadbeef"
+        orphan.mkdir(parents=True)
+        (orphan / MARKER).write_bytes(b"")
+        (orphan / "snapshot.db").write_bytes(b"a title in the clear")
+        assert b.cli("purge", "--now", "--work", work, "--confirm", work) == 0
+        assert not orphan.exists()

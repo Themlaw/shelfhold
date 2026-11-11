@@ -266,6 +266,28 @@ def created_since(
                 sa.select(catalog.work.c.created_at).where(catalog.work.c.id == work_id)
             ).scalar()
         )
+        # the series' rows (its source item, its follow request) may be older than any Unit: a
+        # backup taken since the follow began holds them (the slug spells the title)
+        si, fr, b = acquisition.source_item, acquisition.follow_request, acquisition.source_binding
+        found.append(
+            connection.execute(
+                sa.select(sa.func.min(si.c.created_at))
+                .select_from(si.join(b, b.c.source_item_id == si.c.id))
+                .where(b.c.work_id == work_id)
+            ).scalar()
+        )
+        found.append(
+            connection.execute(
+                sa.select(sa.func.min(fr.c.created_at))
+                .select_from(
+                    fr.join(
+                        si, sa.and_(fr.c.source_key == si.c.source_key,
+                                    fr.c.remote_id == si.c.remote_id),
+                    ).join(b, b.c.source_item_id == si.c.id)
+                )
+                .where(b.c.work_id == work_id)
+            ).scalar()
+        )  # fmt: skip
     dates = [d for d in found if d is not None]
     return min(dates) if dates else None
 

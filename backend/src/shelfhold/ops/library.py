@@ -100,6 +100,7 @@ from shelfhold.infrastructure.schema import export, identity, platform
 from shelfhold.jobs.maintenance import MaintenanceBusyError, MaintenanceGate, compact_database
 from shelfhold.library.public import KEPT_PREFIX, ConfirmationRequiredError
 from shelfhold.ops.backup.report import retained_since
+from shelfhold.ops.backup.scratch import sweep_orphans
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
 from shelfhold.purge_upstream import connected_upstream
 from shelfhold.sdk.refs import SeriesRef
@@ -812,6 +813,7 @@ class LibraryOps:
             folder, engine = settings.backup_dir, self._comp.engine
 
             def backups(since: datetime) -> list[tuple[str, datetime]]:
+                sweep_orphans(settings.data_dir)  # a dead run's snapshot (the titles) is not listed
                 return retained_since(engine, folder, since)
 
         with (
