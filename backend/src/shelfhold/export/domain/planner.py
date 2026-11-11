@@ -39,6 +39,7 @@ from shelfhold.export.domain.naming import (
     NamingTemplate,
     Parsed,
     checked_export_path,
+    volume_number,
 )
 from shelfhold.sdk.age import AgeRating
 
@@ -60,6 +61,7 @@ __all__ = [
     "SeriesFacts",
     "SeriesRef",
     "UnitFacts",
+    "VolumeFacts",
     "age_rank",
     "plan_destination",
     "series_key",
@@ -69,6 +71,12 @@ EditionFacts = EditionNaming
 TREE_CHECKS: Final = ("sentinel", "reconcile", "foreign_writer")  # only the tree declares them
 PATH_TRANSPORTS: Final = frozenset({"tree", "dropbox"})
 DONE_STATES: Final = frozenset({"written", "scanned", "resolved", "adopted"})
+VOLUME_KINDS: Final = frozenset({"volume", "bundle"})  # the items of a range (EF-BIB-044)
+VOLUME_WAITS: Final = "volume_waits"  # a warning: the policy keeps the volume for later
+VOLUME_REFUSED: Final = "volume_refused"  # a warning: never, for this novel under this policy
+SOURCE_MISSING: Final = "export.ranged_source_missing"
+VOLUME_UNNAMED: Final = "export.volume_unnamed"
+VOLUME_UNIT_EXPORTED: Final = "export.volume_unit_already_exported"
 GONE_STATES: Final = frozenset({"missing", "recycled"})
 SUPPORTED_TRANSPORTS: Final = PATH_TRANSPORTS | {"pull"}  # `push` arrives in M4
 AGE_WAIT: Final = "export.awaiting_series_age"
@@ -116,6 +124,28 @@ class UnitFacts:
 
 
 @dataclass(frozen=True)
+class VolumeFacts:
+    """An export item of a range: one EPUB for several Units (EF-BIB-044, `/data/ranged`).
+
+    `label` is what the source called the volume ("Vol.3"); the number of the name is read from
+    it. `closed`: the source will not add to it. `verdict` is what the volume policy says (the
+    value of `ExportVerdict`: `export`, `export_tail`, `wait`, `refuse`), read by the loader.
+    `content_hash` is the fingerprint of the kept file; None when it is missing.
+    """
+
+    export_item_id: str
+    edition_id: str
+    label: str | None
+    closed: bool
+    unit_ids: tuple[str, ...]
+    content_hash: str | None = None
+    verdict: str = "export"
+    # the chapters a re-cut Unit of the volume became (`unit_coverage` of carrier `unit`): they
+    # are the volume's too, and are never exported beside it
+    child_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class AgeGateFacts:
     """What Kavita said of the series ages just before planning (EF-EXP-040).
 
@@ -147,13 +177,19 @@ GATE_CLOSED: Final = AgeGateFacts()
 
 @dataclass(frozen=True)
 class RecordFacts:
+    """A manifest line, by export item. `unit_id` is the one Unit of a file of its own (a chapter);
+    `unit_ids` are all the Units the item covers, which a volume or an adopted file has several
+    of (then `unit_id` is None)."""
+
     export_item_id: str
-    unit_id: str
+    unit_id: str | None
     state: str
     rel_path: str | None
     content_hash: str | None
     sidecar_sha256: str | None
     frozen: FrozenAttrs
+    kind: str = "unit"
+    unit_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -178,6 +214,7 @@ class PlanRequest:
     editions: tuple[EditionFacts, ...]
     units: tuple[UnitFacts, ...]
     records: tuple[RecordFacts, ...] = ()
+    volumes: tuple[VolumeFacts, ...] = ()  # the items of a range: planned like files of their own
     series: tuple[SeriesFacts, ...] = ()
     edition_series: Mapping[str, str] = field(default_factory=dict)
     # Both take a path relative to the destination root: already there / under an open intent (I9)
@@ -212,13 +249,14 @@ class SeriesRef:
 @dataclass(frozen=True)
 class PlannedOp:
     kind: Literal["write", "register"]
-    unit_id: str
+    unit_id: str | None  # None for a volume: its `export_item_id` says what it is
     work_id: str
     rel_path: str | None
     series: SeriesRef
     frozen: Mapping[str, object]
     content_hash: str
-    export_item_id: str | None = None  # the item of a record left `planned` or `error`
+    # the item of a record left `planned` or `error`, and always the item of a volume
+    export_item_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -228,12 +266,14 @@ class Blocked:
     detail: str = ""
     component: str | None = None
     suggestion: str | None = None
+    export_item_id: str | None = None  # a volume has no Unit to name
 
 
 @dataclass(frozen=True)
 class PlanWarning:
     code: str
     unit_id: str | None = None
+    export_item_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -253,35 +293,50 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
     blocked: list[Blocked] = []
     warnings: list[PlanWarning] = []
     ready = [u for u in request.units if u.content_hash is not None]
+    volumes = sorted(request.volumes, key=lambda v: v.export_item_id)
     if dest.transport not in SUPPORTED_TRANSPORTS:
         blocked = [
             Blocked(u.unit_id, "export.transport_unsupported", dest.transport) for u in ready
         ]
+        blocked += _volumes_blocked(volumes, "export.transport_unsupported", dest.transport)
         return Plan(blocked=tuple(blocked))
     if dest.transport == "tree" and dest.remote_library_id is None:
         blocked = [Blocked(u.unit_id, "export.no_remote_library") for u in ready]
+        blocked += _volumes_blocked(volumes, "export.no_remote_library")
         return Plan(blocked=tuple(blocked), checks=TREE_CHECKS)
     family = is_family(dest.max_age_rating)
     if family:
         refusal = _family_refusal(request)
         if refusal is not None:
-            return Plan(
-                blocked=tuple(Blocked(u.unit_id, refusal) for u in ready), checks=TREE_CHECKS
-            )
+            blocked = [Blocked(u.unit_id, refusal) for u in ready]
+            blocked += _volumes_blocked(volumes, refusal)
+            return Plan(blocked=tuple(blocked), checks=TREE_CHECKS)
     elif len(request.library_ceilings | {dest.max_age_rating}) > 1:
         warnings.append(PlanWarning("age_tier_mix"))  # tiers mixed in one remote library
     if request.holds_books and (dest.library_type or "").casefold() != "book":
         warnings.append(PlanWarning("target.library_type_mismatch"))  # D19: announced, not fixed
-    records = {r.unit_id: r for r in request.records}
+    by_item = {r.export_item_id: r for r in request.records}
+    by_unit: dict[str, RecordFacts] = {}
+    for line in request.records:
+        if line.kind not in VOLUME_KINDS:
+            for covered_unit in (*([line.unit_id] if line.unit_id else []), *line.unit_ids):
+                by_unit.setdefault(covered_unit, line)
+    # A Unit a volume carries is the volume's, never also a chapter of its own (one file per Unit)
+    in_volume = {uid for v in volumes for uid in (*v.unit_ids, *v.child_ids)}
+    in_volume |= {uid for r in request.records if r.kind in VOLUME_KINDS for uid in r.unit_ids}
     editions = {e.edition_id: e for e in request.editions}
     known = {s.export_series_id: s for s in request.series}
-    series_of = _series_resolution(request, editions, known, ready)
+    pending = {u.edition_id for u in ready if u.unit_id not in in_volume}
+    pending |= {v.edition_id for v in volumes}
+    series_of = _series_resolution(request, editions, known, pending)
 
     ops: list[PlannedOp] = []
     seen: set[str] = set()
     seeds: set[str] = set()  # the series whose first EPUB this plan already sends
     for unit in ready:
-        record = records.get(unit.unit_id)
+        if unit.unit_id in in_volume:
+            continue
+        record = by_unit.get(unit.unit_id)
         if record is not None and record.state in GONE_STATES:
             warnings.append(PlanWarning("record_gone", unit.unit_id))
             continue
@@ -322,7 +377,7 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
         if resolution.export_series_id in request.paused_series:
             blocked.append(Blocked(unit.unit_id, "target.foreign_writer_detected"))
             continue
-        if not _age_gate_lets(request, unit, resolution, seeds):
+        if not _age_gate_lets(request, unit.edition_id, unit.format == "epub", resolution, seeds):
             blocked.append(Blocked(unit.unit_id, AGE_WAIT))
             continue
         # an adopted series is written under the name and in the folder it already has
@@ -357,9 +412,172 @@ def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Pl
             continue
         seen.add(rel)
         ops.append(_op("write", unit, editions, rel, resolution, frozen, record))
-    ops.sort(key=lambda o: (o.rel_path or "", o.unit_id))
+    taken = {
+        uid for r in request.records if r.kind in VOLUME_KINDS and r.state in DONE_STATES
+        for uid in r.unit_ids
+    }  # fmt: skip
+    for volume in volumes:
+        _plan_volume(
+            request, volume, by_item.get(volume.export_item_id), by_unit,
+            _Shared(
+                parse, editions, known, series_of, family, seen, seeds, taken, ops, blocked,
+                warnings,
+            ),
+        )  # fmt: skip
+    ops.sort(key=lambda o: (o.rel_path or "", o.unit_id or "", o.export_item_id or ""))
     checks = TREE_CHECKS if dest.transport == "tree" else ()
     return Plan(tuple(ops), tuple(blocked), tuple(warnings), checks)
+
+
+def _volumes_blocked(volumes: Iterable[VolumeFacts], code: str, detail: str = "") -> list[Blocked]:
+    return [Blocked(None, code, detail, export_item_id=v.export_item_id) for v in volumes]
+
+
+@dataclass
+class _Shared:
+    """What the loop over the Units leaves for the loop over the volumes: one plan, one set of
+    names taken, one set of series whose first EPUB has gone."""
+
+    parse: Callable[[str], Parsed]
+    editions: Mapping[str, EditionFacts]
+    known: Mapping[str, SeriesFacts]
+    resolve_series: Callable[[str], "SeriesRef | Blocked"]
+    family: bool
+    seen: set[str]
+    seeds: set[str]
+    units_taken: set[str]  # the Units of a volume already left, or planned, in another volume
+    ops: list[PlannedOp]
+    blocked: list[Blocked]
+    warnings: list[PlanWarning]
+
+
+def _plan_volume(
+    request: PlanRequest,
+    volume: VolumeFacts,
+    record: RecordFacts | None,
+    by_unit: Mapping[str, RecordFacts],
+    shared: _Shared,
+) -> None:
+    """One export item of a range, by the roads of a file of its own: its Edition admitted on a
+    family shelf, its series free of a foreign writer and through the age gate (it is an EPUB),
+    its name read by `plugin/parse`. Whether it goes at all is the policy's verdict (L26): a volume
+    still open under `closed_only` waits; the open tail already served is planned again, at the
+    path it has, only when the policy rolls it and the kept file is no longer the one served."""
+    dest, blocked = request.destination, shared.blocked
+    item = volume.export_item_id
+
+    def stop(code: str, detail: str = "") -> None:
+        blocked.append(Blocked(None, code, detail, export_item_id=item))
+
+    replaced = False
+    if record is not None and record.state in GONE_STATES:
+        shared.warnings.append(PlanWarning("record_gone", export_item_id=item))
+        return
+    if record is not None and record.state in DONE_STATES:
+        if record.state == "adopted" or volume.closed or dest.transport == "pull":
+            return  # a closed volume is frozen: never compared, never replaced
+        if volume.verdict != "export_tail":
+            return  # nothing rolls the tail under this policy: the served copy stays
+        if volume.content_hash is None or volume.content_hash == record.content_hash:
+            return
+        replaced = True
+    else:
+        if volume.verdict in ("wait", "refuse"):
+            code = VOLUME_WAITS if volume.verdict == "wait" else VOLUME_REFUSED
+            shared.warnings.append(PlanWarning(code, export_item_id=item))
+            return
+        if volume.content_hash is None:
+            stop(SOURCE_MISSING)
+            return
+        chapter_states = DONE_STATES | {"planned"}
+        taken = [
+            u
+            for u in volume.unit_ids
+            if u in shared.units_taken or (u in by_unit and by_unit[u].state in chapter_states)
+        ]
+        if taken:  # a Unit already left as a chapter: never twice
+            stop(VOLUME_UNIT_EXPORTED, taken[0])
+            return
+    if shared.family:
+        verdict = request.admissions.get(volume.edition_id, "unrated_edition")  # closed
+        if verdict != "allowed":
+            stop(ADMISSION_CODES.get(verdict, "shelf.rating_required"), verdict)
+            return
+    resolution = shared.resolve_series(volume.edition_id)
+    if isinstance(resolution, Blocked):
+        stop(resolution.code, resolution.detail)
+        return
+    if (
+        shared.family
+        and resolution.export_series_id is not None
+        and shared.known[resolution.export_series_id].shelf_destination_id
+        not in (None, dest.shelf_destination_id)
+    ):
+        stop("export.series_other_shelf")  # one Kavita series, one shelf (EF-BIB-037)
+        return
+    if resolution.export_series_id in request.paused_series:
+        stop("target.foreign_writer_detected")
+        return
+    if not _age_gate_lets(request, volume.edition_id, True, resolution, shared.seeds):
+        stop(AGE_WAIT)
+        return
+    # The name comes from the label the source gave and from the series of this destination, never
+    # from what the item keeps: the item is shared by every destination (I22 holds per line)
+    number = volume_number(volume.label)
+    if number is None:
+        stop(VOLUME_UNNAMED)
+        return
+    frozen = FrozenAttrs(
+        series=resolution.frozen_series or resolution.name_raw, track="main",
+        number_norm=number, kind="volume", template_ref=dest.template.ref,
+    )  # fmt: skip
+    if replaced and record is not None:  # the same path, the same name: the upgrade's business
+        shared.ops.append(
+            _volume_op("write", volume, shared.editions, record.rel_path, resolution, frozen)
+        )
+        return
+    if dest.transport == "pull":
+        shared.ops.append(_volume_op("register", volume, shared.editions, None, resolution, frozen))
+        return
+    try:
+        path = checked_export_path(
+            frozen, shared.parse, dest.template, ".epub",
+            segment_policy_confirmed=request.segment_policy_confirmed,
+        )  # fmt: skip
+    except NamingGuardError as error:
+        blocked.append(
+            Blocked(None, error.code, str(error), error.component, error.suggestion, item)
+        )
+        return
+    except ValueError as error:
+        stop("export.name_misread_number", str(error))
+        return
+    rel = path.rel_path
+    if resolution.series_dir:
+        rel = "/".join((resolution.series_dir, *path.directory[1:], path.filename))
+    if request.covered(rel):
+        return  # under an open intent: invisible to planning (I9)
+    if rel in shared.seen or request.occupied(rel):
+        stop("export.destination_occupied", rel)
+        return
+    shared.seen.add(rel)
+    shared.units_taken.update(volume.unit_ids)
+    shared.ops.append(_volume_op("write", volume, shared.editions, rel, resolution, frozen))
+
+
+def _volume_op(
+    kind: Literal["write", "register"],
+    volume: VolumeFacts,
+    editions: Mapping[str, EditionFacts],
+    rel_path: str | None,
+    series: SeriesRef,
+    frozen: FrozenAttrs,
+) -> PlannedOp:
+    return PlannedOp(
+        kind=kind, unit_id=None, work_id=editions[volume.edition_id].work_id, rel_path=rel_path,
+        series=series, frozen=asdict(frozen), content_hash=str(volume.content_hash),
+        export_item_id=volume.export_item_id,
+    )  # fmt: skip
 
 
 def series_key(ref: SeriesRef) -> str:
@@ -367,15 +585,18 @@ def series_key(ref: SeriesRef) -> str:
     return ref.export_series_id or f"new:{ref.normalized_name}"
 
 
-def _age_gate_lets(request: PlanRequest, unit: UnitFacts, ref: SeriesRef, seeds: set[str]) -> bool:
-    """May this Unit be planned as far as the age of its series goes (EF-EXP-040)?
+def _age_gate_lets(
+    request: PlanRequest, edition_id: str, is_epub: bool, ref: SeriesRef, seeds: set[str]
+) -> bool:
+    """May this file (a Unit's, or a volume's: always an EPUB) be planned as far as the age of its
+    series goes (EF-EXP-040)?
 
     Only an EPUB of an Edition with an age to push is gated (a CBZ carries its age in ComicInfo;
     an unrated Edition has none to push, and a shelf below 18+ already refuses it). A `pull`
     destination has no Kavita series. A series whose age is verified takes everything; a series
     that holds no file yet takes one first EPUB, while Kavita answers; any other waits.
     """
-    if unit.format != "epub" or unit.edition_id not in request.age_wanted:
+    if not is_epub or edition_id not in request.age_wanted:
         return True
     if request.destination.transport == "pull":
         return True
@@ -387,7 +608,7 @@ def _age_gate_lets(request: PlanRequest, unit: UnitFacts, ref: SeriesRef, seeds:
         return False
     if ref.export_series_id is not None and ref.export_series_id in request.age_seeded:
         return False  # it holds files whose age is not read back locked yet
-    if unit.edition_id in request.age_unknown_exposed:
+    if edition_id in request.age_unknown_exposed:
         return False  # "unknown" until the push, and an account restricted below sees unknowns
     seeds.add(key)
     return True
@@ -455,7 +676,7 @@ def _series_resolution(
     request: PlanRequest,
     editions: Mapping[str, EditionFacts],
     known: Mapping[str, SeriesFacts],
-    ready: list[UnitFacts],
+    pending: set[str],
 ) -> Callable[[str], SeriesRef | Blocked]:
     """Which series each Edition writes into: its link if it has one, else a proposal, refused
     when its normalized name is already used in the remote library (EF-EXP-032, EF-EXP-062)."""
@@ -466,7 +687,6 @@ def _series_resolution(
             EditionNaming(f"series:{existing.export_series_id}", work, "", "")
             for work in existing.work_ids
         ]
-    pending = {u.edition_id for u in ready}
     resolved: dict[str, SeriesRef | Blocked] = {}
     proposals: dict[str, SeriesRef] = {}
     for edition_id in sorted(pending):

@@ -123,7 +123,7 @@ class SeriesCovers:
                 ]
                 if not known:
                     continue  # Kavita has not indexed this series yet
-                frozen = [FrozenAttrs(**r.frozen_attrs) for r in series_rows]
+                frozen = [FrozenAttrs.stored(r.frozen_attrs) for r in series_rows]
                 chosen = series_cover_source(frozen)
                 if chosen is None:
                     continue

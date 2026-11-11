@@ -254,13 +254,20 @@ symbols = [
 
 [[allow]]
 category = "unwired-m2-l26"
-reason = "2026-11-11 (M2 L26): the volume policy, the bounds read from the table of contents, the re-cut chapter proposals and the export of a file kept under /data/ranged are proved by their tests over a fake provider (no crawler adapter yet: M2 L25). `RangedExporter` takes the two doors of a destination as ports (the placement of the export pipeline, the same-path upgrade of L16, whose CBZ renderer does not carry an EPUB): their binding belongs to L25, which is the first caller of a ranged EPUB. `apply_comicinfo_range` waits for the adoption cycle to hand over the ComicInfo it already reads."
+reason = "2026-11-11 (M2 L26b): the export of a volume is wired (the planner, the age gate and the family barrier, `RangedExporter` behind `ExportPipeline._write`, the replacement of the open tail through the same-path upgrade); what L26 proposed beyond it is still reached by no entry point: the re-cut chapter proposals (`propose_resplit`, `apply_resplit`: the porteur confirms them, a command or a screen of M3), the range read from an adopted ComicInfo (`comicinfo_range`, `apply_comicinfo_range`: the adoption cycle will hand it over), the cut of a closed volume by Shelfhold (`volume_slices`, its default size: M2 L25 asks for it once lncrawl is wired), and `locate_ranged`, a helper for display."
 until = "M2"
 symbols = [
-  "shelfhold.catalog.application.coverage:*",
+  "shelfhold.catalog.application.coverage:ConfirmationRequiredError",
+  "shelfhold.catalog.application.coverage:ResplitError",
+  "shelfhold.catalog.application.coverage:ResplitProposal",
+  "shelfhold.catalog.application.coverage:ResplitSigner",
+  "shelfhold.catalog.application.coverage:apply_resplit",
+  "shelfhold.catalog.application.coverage:propose_resplit",
   "shelfhold.export.application.coverage:apply_comicinfo_range",
   "shelfhold.export.application.coverage:comicinfo_range",
-  "shelfhold.export.application.ranged_export:*",
-  "shelfhold.infrastructure.packaging.epub.toc:*",
-  "shelfhold.library.domain.volume_policy:*",
+  "shelfhold.export.application.ranged_export:locate_ranged",
+  "shelfhold.library.domain.volume_policy:DEFAULT_POLICY",
+  "shelfhold.library.domain.volume_policy:DEFAULT_VOLUME_SIZE",
+  "shelfhold.library.domain.volume_policy:ExportDecision.exports",
+  "shelfhold.library.domain.volume_policy:volume_slices",
 ]

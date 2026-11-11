@@ -203,7 +203,7 @@ class ProvenanceMirror:
                 record.c.export_item_id, record.c.rel_path, record.c.file_hash,
                 record.c.content_hash, record.c.template_ref,
                 record.c.written_by_shelfhold_at, record.c.exported_at,
-                item.c.kind, item.c.frozen_attrs, item.c.edition_id,
+                item.c.kind, item.c.frozen_attrs, item.c.edition_id, item.c.closed,
                 link.c.export_series_id,
                 catalog.edition.c.age_rating, catalog.edition.c.age_x,
             )
@@ -244,6 +244,7 @@ class ProvenanceMirror:
                 "export_item": {
                     "id": row.export_item_id, "kind": row.kind,
                     "frozen_attrs": dict(row.frozen_attrs or {}),
+                    "closed": bool(row.closed),  # a closed volume stays frozen after a restore
                 },
                 "coverage": covered, "template_ref": row.template_ref,
                 "edition": row.edition_id, "series": row.export_series_id,

@@ -42,13 +42,23 @@ from shelfhold.export.domain.planner import (
     RecordFacts,
     SeriesFacts,
     UnitFacts,
+    VolumeFacts,
     age_rank,
 )
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.library.public import ExportSource, epub_units, export_sources
+from shelfhold.library.public import (
+    ExportSource,
+    ExportVerdict,
+    decide_export,
+    epub_units,
+    export_sources,
+    parse_policy,
+)
 from shelfhold.sdk.age import X_MIN_AGE, AgeRating
 
 _HOLDING = ("written", "scanned", "resolved")  # a record whose file is in the library
+_DONE = ("written", "scanned", "resolved", "adopted")
+RangedHash = Callable[[str], str | None]  # export item id -> fingerprint of the kept file
 
 __all__ = [
     "DestinationContext",
@@ -164,17 +174,20 @@ def load_request(
     covered_locals: frozenset[str],
     segment_policy_confirmed: bool,
     age_gate: AgeGateFacts = GATE_CLOSED,
+    ranged_hash: RangedHash = lambda _item: None,
 ) -> LoadedRequest:
     """`age_gate`: what Kavita said of the series ages just before (the export job reads it);
-    a preview, which asks Kavita nothing, plans every gated EPUB as waiting."""
+    a preview, which asks Kavita nothing, plans every gated EPUB as waiting. `ranged_hash`
+    fingerprints the file kept for an export item of a range (a volume), None when it is gone."""
     editions, unit_rows, sources = _inputs(connection, ctx)
     admissions = admissions_of(connection, ctx, editions)
     records = _records(connection, ctx.destination_id)
+    by_unit = {r.unit_id: r for r in records.values() if r.unit_id is not None}
     epubs = epub_units(connection, [u.id for u in unit_rows])
     units = []
     for u in unit_rows:
         source = sources.get(u.id)
-        record = records.get(u.id)
+        record = by_unit.get(u.id)
         ready = source is not None and source.local_path is not None
         sidecar = (  # an EPUB has no ComicInfo: its OPF edit is what the record keeps
             comicinfo_sha256(connection, u.id, record.frozen.series)
@@ -191,12 +204,17 @@ def load_request(
                 format="epub" if u.id in epubs else "cbz",
             )
         )  # fmt: skip
-    gated = sorted({u.edition_id for u in unit_rows if u.id in epubs})
+    volume_rows = _volume_rows(connection, editions)
+    volumes = tuple(_volume_facts(v, records.get(v.id), ranged_hash) for v in volume_rows)
+    gated = sorted(
+        {u.edition_id for u in unit_rows if u.id in epubs} | {v.edition_id for v in volumes}
+    )
     series, edition_series, ceilings = _series(connection, ctx, {e.edition_id for e in editions})
     root = ctx.root_local
     request = PlanRequest(
         destination=ctx.facts(), editions=editions, units=tuple(units),
-        records=tuple(records.values()), series=series, edition_series=edition_series,
+        records=tuple(records.values()), volumes=volumes, series=series,
+        edition_series=edition_series,
         occupied=(lambda rel: root is not None and exists(f"{root}/{rel}")),
         covered=(lambda rel: root is not None and within_any(f"{root}/{rel}", covered_locals)),
         library_ceilings=ceilings, segment_policy_confirmed=segment_policy_confirmed,
@@ -211,7 +229,13 @@ def load_request(
     return LoadedRequest(
         request,
         _version(
-            ctx, editions, unit_rows, sources, _world(records, series, edition_series), admissions
+            ctx,
+            editions,
+            unit_rows,
+            sources,
+            _world(records, series, edition_series),
+            admissions,
+            volume_rows,
         ),
     )
 
@@ -423,7 +447,7 @@ def version_of(connection: Connection, ctx: DestinationContext) -> str:
     series, edition_series, _ = _series(connection, ctx, {e.edition_id for e in editions})
     return _version(
         ctx, editions, unit_rows, sources, _world(records, series, edition_series),
-        admissions_of(connection, ctx, editions),
+        admissions_of(connection, ctx, editions), _volume_rows(connection, editions),
     )  # fmt: skip
 
 
@@ -431,7 +455,13 @@ def inputs_version_of(connection: Connection, ctx: DestinationContext) -> str:
     """The inputs alone: what must not move while a plan is being applied."""
     editions, unit_rows, sources = _inputs(connection, ctx)
     return _version(
-        ctx, editions, unit_rows, sources, None, admissions_of(connection, ctx, editions)
+        ctx,
+        editions,
+        unit_rows,
+        sources,
+        None,
+        admissions_of(connection, ctx, editions),
+        _volume_rows(connection, editions),
     )
 
 
@@ -463,11 +493,13 @@ def _world(
 
 
 def _records(connection: Connection, destination_id: str) -> dict[str, RecordFacts]:
+    """The manifest of the destination, by export item: a chapter has its one Unit, a volume or an
+    adopted file all the ones it covers."""
     record, item, coverage = export.export_record, export.export_item, export.unit_coverage
     rows = connection.execute(
-        sa.select(record, item.c.frozen_attrs, coverage.c.unit_id)
+        sa.select(record, item.c.frozen_attrs, item.c.kind, coverage.c.unit_id)
         .select_from(
-            record.join(item, item.c.id == record.c.export_item_id).join(
+            record.join(item, item.c.id == record.c.export_item_id).outerjoin(
                 coverage,
                 sa.and_(
                     coverage.c.carrier_type == "export_item", coverage.c.carrier_id == item.c.id
@@ -475,15 +507,109 @@ def _records(connection: Connection, destination_id: str) -> dict[str, RecordFac
             )
         )
         .where(record.c.shelf_destination_id == destination_id)
+        .order_by(record.c.export_item_id, coverage.c.position)
     )
+    units: dict[str, list[str]] = defaultdict(list)
+    heads: dict[str, Any] = {}
+    for r in rows:
+        heads.setdefault(r.export_item_id, r)
+        if r.unit_id is not None:
+            units[r.export_item_id].append(r.unit_id)
     return {
-        r.unit_id: RecordFacts(
-            export_item_id=r.export_item_id, unit_id=r.unit_id, state=r.state, rel_path=r.rel_path,
-            content_hash=r.content_hash, sidecar_sha256=r.sidecar_sha256,
-            frozen=FrozenAttrs(**r.frozen_attrs),
+        item_id: RecordFacts(
+            export_item_id=item_id,
+            unit_id=units[item_id][0] if len(units[item_id]) == 1 else None,
+            state=r.state, rel_path=r.rel_path,
+            # a volume keeps the payload in `content_hash` (anti-echo) and the fingerprint of the
+            # kept file it was made from in `sidecar_sha256`: the one the planner compares
+            content_hash=r.sidecar_sha256 if r.kind in ("volume", "bundle") else r.content_hash,
+            sidecar_sha256=None if r.kind in ("volume", "bundle") else r.sidecar_sha256,
+            frozen=FrozenAttrs.stored(r.frozen_attrs),
+            kind=r.kind, unit_ids=tuple(units[item_id]),
         )
-        for r in rows
+        for item_id, r in heads.items()
     }  # fmt: skip
+
+
+def _volume_rows(connection: Connection, editions: tuple[EditionFacts, ...]) -> list["_VolumeRow"]:
+    """The export items of a range of the Editions on the shelf (database only): the volume or
+    bundle the keeper left, its label, whether it is closed, the Units it covers, in order, and
+    what the volume policy of its Edition says (`ExportVerdict`)."""
+    item, coverage, edition = export.export_item, export.unit_coverage, catalog.edition
+    rows = list(
+        connection.execute(
+            sa.select(
+                item.c.id,
+                item.c.edition_id,
+                item.c.closed,
+                item.c.frozen_attrs,
+                edition.c.volume_policy,
+                edition.c.upstream_status,
+            )
+            .join(edition, edition.c.id == item.c.edition_id)
+            .where(
+                item.c.kind.in_(("volume", "bundle")),
+                item.c.edition_id.in_([e.edition_id for e in editions]),
+            )
+            .order_by(item.c.id)
+        )
+    )
+    units: dict[str, list[str]] = defaultdict(list)
+    if rows:
+        for c in connection.execute(
+            sa.select(coverage.c.carrier_id, coverage.c.unit_id)
+            .where(
+                coverage.c.carrier_type == "export_item",
+                coverage.c.carrier_id.in_([r.id for r in rows]),
+            )
+            .order_by(coverage.c.carrier_id, coverage.c.position)
+        ):
+            units[c.carrier_id].append(c.unit_id)
+    children: dict[str, list[str]] = defaultdict(list)
+    owner = {u: v for v, us in units.items() for u in us}
+    if owner:  # the same union as `RangedExporter._facts`: the chapters a re-cut Unit became
+        for c in connection.execute(
+            sa.select(coverage.c.carrier_id, coverage.c.unit_id)
+            .where(coverage.c.carrier_type == "unit", coverage.c.carrier_id.in_(sorted(owner)))
+            .order_by(coverage.c.carrier_id, coverage.c.position)
+        ):
+            children[owner[c.carrier_id]].append(c.unit_id)
+    return [_VolumeRow(r, tuple(units[r.id]), tuple(children[r.id])) for r in rows]
+
+
+class _VolumeRow:
+    """An export item of a range, as the database says it."""
+
+    def __init__(self, row: Any, unit_ids: tuple[str, ...], child_ids: tuple[str, ...]) -> None:
+        self.id = str(row.id)
+        self.edition_id = str(row.edition_id)
+        self.closed = bool(row.closed)
+        self.label = (row.frozen_attrs or {}).get("volume_label")
+        self.unit_ids = unit_ids
+        self.child_ids = child_ids
+        self.verdict = _verdict(
+            str(row.volume_policy), row.upstream_status == "finished", self.closed
+        )
+
+
+def _verdict(raw_policy: str, finished: bool, closed: bool) -> str:
+    try:
+        policy = parse_policy(raw_policy)
+    except ValueError:
+        return ExportVerdict.REFUSE.value  # a policy nobody knows: never silently the default
+    return decide_export(policy, volume_closed=closed, novel_finished=finished).verdict.value
+
+
+def _volume_facts(
+    row: "_VolumeRow", record: RecordFacts | None, ranged_hash: RangedHash
+) -> VolumeFacts:
+    """A volume still served closed needs no fingerprint (it is frozen, never read again)."""
+    served = record is not None and record.state in _DONE
+    return VolumeFacts(
+        export_item_id=row.id, edition_id=row.edition_id, label=row.label, closed=row.closed,
+        unit_ids=row.unit_ids, verdict=row.verdict, child_ids=row.child_ids,
+        content_hash=None if served and row.closed else ranged_hash(row.id),
+    )  # fmt: skip
 
 
 def _series(
@@ -539,6 +665,7 @@ def _version(
     sources: dict[str, ExportSource],
     world: dict[str, object] | None,
     admissions: dict[str, str],
+    volumes: list["_VolumeRow"],
 ) -> str:
     def unit_material(u: sa.Row[Any]) -> list[object]:
         source = sources.get(u.id)
@@ -555,6 +682,11 @@ def _version(
         "editions": [asdict(e) for e in editions],
         "units": [unit_material(u) for u in unit_rows],
         "admissions": sorted(admissions.items()),  # a rating that moves stales the plan
+        # what the database says of the ranges (not the bytes: the file is read when it is put)
+        "volumes": [
+            [v.id, v.edition_id, v.label, v.closed, list(v.unit_ids), list(v.child_ids), v.verdict]
+            for v in volumes
+        ],
     }
     if world is not None:
         material["world"] = world

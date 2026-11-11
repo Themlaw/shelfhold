@@ -28,6 +28,11 @@ from shelfhold.export.application.locks import ResourceLocks, library_resource
 from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.plans import PlanOp, PlanStore, StalePlanError
+from shelfhold.export.application.ranged_export import (
+    PreparedRange,
+    RangedExporter,
+    RangedExportError,
+)
 from shelfhold.export.application.rendering import (
     CbzRenderer,
     EpubRenderer,
@@ -35,12 +40,14 @@ from shelfhold.export.application.rendering import (
     RenderedEpub,
     comicinfo_xml,
     epub_opf_edit,
+    volume_opf_edit,
 )
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.series_age import due_ages, verified_age
 from shelfhold.export.application.snapshot import (
     DestinationContext,
     LoadedRequest,
+    RangedHash,
     barrier_holds,
     edition_age,
     inputs_version_of,
@@ -51,6 +58,7 @@ from shelfhold.export.application.snapshot import (
     version_of,
 )
 from shelfhold.export.application.target_state import FieldRegistry, ensure_active
+from shelfhold.export.application.upgrade import SamePathUpgrade, UpgradeOutcome
 from shelfhold.export.domain.field_owner import AGE_RATING
 from shelfhold.export.domain.naming import Parsed
 from shelfhold.export.domain.planner import (
@@ -202,10 +210,12 @@ def mark_name_collisions(
     for `status`, which reads the database from another process. The mark goes with the
     collision (`edition set-series-name` or a change of the library leaves it)."""
     edition_of = {u.unit_id: u.edition_id for u in request.units}
+    edition_of |= {v.export_item_id: v.edition_id for v in request.volumes}
     colliding: dict[str, str] = {}
     for blocked in plan.blocked:
-        if blocked.code == "export.series_name_collision" and blocked.unit_id in edition_of:
-            colliding.setdefault(edition_of[blocked.unit_id], blocked.detail)
+        who = blocked.unit_id or blocked.export_item_id
+        if blocked.code == "export.series_name_collision" and who in edition_of:
+            colliding.setdefault(edition_of[who], blocked.detail)
     with engine.begin() as connection:
         waiting_marks.clear_except(connection, "series_name_collision", destination_id, colliding)
         for edition_id, name in colliding.items():
@@ -217,7 +227,11 @@ def mark_name_collisions(
 
 
 def wanted_names(
-    engine: Engine, destination_id: str, *, segment_policy_confirmed: bool = False
+    engine: Engine,
+    destination_id: str,
+    *,
+    segment_policy_confirmed: bool = False,
+    ranged_hash: RangedHash = lambda _item: None,
 ) -> tuple[list[str], str | None]:
     """The names a plan of this destination asks `plugin/parse` about, and the Kavita library
     type to ask with. Read from the database alone: no disk is looked at, so an empty answer
@@ -235,6 +249,7 @@ def wanted_names(
             exists=lambda _path: False,  # whether a name is taken is a question for the disk
             covered_locals=open_intent_paths(connection),
             segment_policy_confirmed=segment_policy_confirmed,
+            ranged_hash=ranged_hash,
         )  # fmt: skip
         kind = connection.execute(
             sa.select(export.shelf_destination.c.kavita_library_type).where(
@@ -298,6 +313,10 @@ class ExportPipeline:
         self._staging = data_dir / "tmp"
         self._renderer = renderer or CbzRenderer(fsops, staging_dir=self._staging)
         self._epub_renderer = EpubRenderer(fsops, staging_dir=self._staging)
+        # a volume is read from our own /data (the derivative of the neutralizer), never a library
+        self._ranged = RangedExporter(engine, data_dir, staging_dir=self._staging)
+        self._ranged_renderer = EpubRenderer(None, staging_dir=self._staging)
+        self._operating_bus = operating_bus
         self._age_gate: AgeGateFacts = GATE_CLOSED  # bound per run by the export job
         self._age_reader: Callable[[int], tuple[int, bool] | None] | None = None
         self._tier_reader: Callable[[], int | None] | None = None
@@ -355,7 +374,10 @@ class ExportPipeline:
     def wanted_names(self, destination_id: str) -> tuple[list[str], str | None]:
         """See the module function: fetched in bulk, then `bind_parse` makes the plan applicable."""
         return wanted_names(
-            self._engine, destination_id, segment_policy_confirmed=self._segment_policy_confirmed
+            self._engine,
+            destination_id,
+            segment_policy_confirmed=self._segment_policy_confirmed,
+            ranged_hash=self._ranged.source_hash,
         )
 
     def _compute(
@@ -374,6 +396,7 @@ class ExportPipeline:
                 covered_locals=covered,
                 segment_policy_confirmed=self._segment_policy_confirmed,
                 age_gate=self._age_gate,
+                ranged_hash=self._ranged.source_hash,
             )  # fmt: skip
         plan = plan_destination(loaded.request, self._parse)
         mark_name_collisions(self._engine, destination_id, loaded.request, plan)
@@ -568,9 +591,11 @@ class ExportPipeline:
                 .where(coherence.export_op.c.plan_id == plan_id)
                 .order_by(coherence.export_op.c.batch, coherence.export_op.c.position)
             ).scalars()
-            wanted = [(p["kind"], p["unit_id"], p["rel_path"]) for p in stored if p]
+            wanted = [
+                (p["kind"], p["unit_id"], p["export_item_id"], p["rel_path"]) for p in stored if p
+            ]
         _ctx, _loaded, fresh = self._compute(str(plan.shelf_destination_id))
-        if wanted != [(op.kind, op.unit_id, op.rel_path) for op in fresh.ops]:
+        if wanted != [(op.kind, op.unit_id, op.export_item_id, op.rel_path) for op in fresh.ops]:
             self._mark_stale(plan_id)
             raise StalePlanError("the names changed under plugin/parse: recompute the preview")
 
@@ -623,7 +648,8 @@ class ExportPipeline:
                 if planned.kind == "register":
                     self._register(ctx, planned)
                     return None
-                self._write(ctx, planned, plan_id, held.ensure)
+                if not self._write(ctx, planned, plan_id, held.ensure):
+                    return REFUSED  # a volume the last look left as it was: nothing written
             except SeriesAgeGateClosedError:
                 log.warning("export.series_age_unverified", edition_id=planned.series.edition_id)
                 return REFUSED
@@ -686,14 +712,18 @@ class ExportPipeline:
 
     def _write(
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, guard: Callable[[], None]
-    ) -> None:
+    ) -> bool:
+        """Write one operation; False when a last look left the destination as it was (only a
+        volume does: the file kept is refused, or the policy keeps what is served)."""
         if planned.rel_path is None:
             raise ValueError("a write operation has a path")
+        if planned.unit_id is None:
+            return self._write_volume(ctx, planned, plan_id, guard)
         source, is_epub = self._source_of(planned.unit_id)
         series_name = str(planned.frozen["series"])
         if is_epub:
             self._write_epub(ctx, planned, plan_id, source, guard)
-            return
+            return True
         with self._engine.connect() as connection:
             xml = comicinfo_xml(connection, planned.unit_id, series_name)
         rendered = self._renderer.render(str(source.local_path), xml)
@@ -705,6 +735,134 @@ class ExportPipeline:
             )
         finally:
             rendered.file.close()
+        return True
+
+    def _write_volume(
+        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, guard: Callable[[], None]
+    ) -> bool:
+        """A volume (an EPUB of a range) through `RangedExporter`, which decides again, from the
+        database and the file kept, what the plan only forecast: the policy, the coverage of the
+        table of contents, the tail already served. `place` is the pipeline's own placement;
+        `replace` is the same-path upgrade (L16), which keeps the old file in the bin. Both come
+        after the last look at the age gate and at the barrier of a family shelf, the replacement
+        included: a volume whose age rose is not rewritten into the library of the children."""
+        item_id = planned.export_item_id
+        if item_id is None:
+            raise ValueError("a volume operation names its item")
+        self._require_age_gate(ctx, planned)
+        with self._engine.connect() as connection:
+            self._require_barrier(connection, ctx, planned)
+        wrote: list[str] = []
+        served = self._ranged.served_copy(ctx.destination_id, item_id)
+        if served is None and self._has_line(ctx.destination_id, item_id):
+            # a line without the fingerprint it was made from (restored, or from before): it is
+            # not a first write and the length served is unknown, so nothing is rewritten
+            log.warning("export.volume_served_unknown")
+            return False
+
+        def place(prepared: PreparedRange) -> None:
+            rendered = self._render_volume(prepared, planned)
+            try:
+                self._place(
+                    ctx, planned, plan_id, None, rendered, guard,
+                    self._reserved_volume(planned, prepared, rendered),
+                )  # fmt: skip
+            finally:
+                rendered.file.close()
+            self._ranged.note_placed(ctx.destination_id, item_id, prepared)
+            self._keep_volume_opf(item_id, rendered.original_opf)
+            wrote.append("placed")
+
+        def replace(prepared: PreparedRange) -> None:
+            if served is None or served.spine_count is None:  # the guard of L17 has nothing to read
+                log.warning("export.volume_served_unknown")
+                return
+            rendered = self._render_volume(prepared, planned)
+            try:
+                result = self._replace_volume(ctx, planned, prepared, rendered, guard)
+            finally:
+                rendered.file.close()
+            if result is UpgradeOutcome.UPGRADED:
+                wrote.append("replaced")
+            else:  # a last look of L16 (a reader, a frozen root, a rewritten file): left alone
+                log.info("export.volume_kept", reason=result.value)
+
+        try:
+            outcome = self._ranged.export(
+                item_id, served=served, place=place, replace=replace,
+            )  # fmt: skip
+        except RangedExportError as error:  # nothing was written: the rest of the plan goes on
+            log.warning("export.volume_refused", code=error.code)
+            return False
+        if outcome.warning is not None:
+            log.info("export.volume_tail", warning=outcome.warning)
+        return bool(wrote)
+
+    def _has_line(self, destination_id: str, item_id: str) -> bool:
+        table = export.export_record
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    sa.select(table.c.state).where(
+                        table.c.shelf_destination_id == destination_id,
+                        table.c.export_item_id == item_id,
+                        table.c.state.in_(("written", "scanned", "resolved", "adopted")),
+                    )
+                ).first()
+                is not None
+            )
+
+    def _render_volume(self, prepared: PreparedRange, planned: PlannedOp) -> RenderedEpub:
+        """The derivative of the file kept, its OPF edited (series, volume number, rights)."""
+        if prepared.source_hash != planned.content_hash:
+            raise SourceMissingError(f"{planned.export_item_id}: the volume changed since the plan")
+        with self._engine.connect() as connection:
+            edit = volume_opf_edit(
+                connection, planned.series.edition_id, str(planned.frozen["series"]),
+                str(planned.frozen["number_norm"]),
+            )  # fmt: skip
+        return self._ranged_renderer.render(str(prepared.path), edit)
+
+    def _replace_volume(
+        self, ctx: DestinationContext, planned: PlannedOp, prepared: PreparedRange,
+        rendered: RenderedEpub, guard: Callable[[], None],
+    ) -> UpgradeOutcome:  # fmt: skip
+        target = ctx.local(str(planned.rel_path))
+        opened = (
+            self._sessions.open(target, guard=guard) if self._sessions else nullcontext(self._fsops)
+        )
+        with opened as writer:
+            upgrade = SamePathUpgrade(
+                self._engine, writer, locate=self._locate, data_dir=self._data_dir,
+                clock=self._clock, bus=self._operating_bus, mirror=self.mirror,
+            )  # fmt: skip
+            result = upgrade.replace_volume(
+                ctx.destination_id, str(planned.export_item_id), data=rendered.file,
+                file_hash=rendered.file_hash,
+                content_hash=prepared.payload_hash or prepared.source_hash,
+                source_hash=prepared.source_hash, spine_count=prepared.spine_count,
+            )  # fmt: skip
+        return result.outcome
+
+    def _keep_volume_opf(self, item_id: str, original_opf: bytes) -> None:
+        """The original OPF, kept under the first Unit the volume covers (so that the purge of
+        that Unit takes it too); best effort, as for a chapter."""
+        with self._engine.connect() as connection:
+            unit_id = connection.execute(
+                sa.select(export.unit_coverage.c.unit_id)
+                .where(
+                    export.unit_coverage.c.carrier_type == "export_item",
+                    export.unit_coverage.c.carrier_id == item_id,
+                )
+                .order_by(export.unit_coverage.c.position)
+                .limit(1)
+            ).scalar()
+        if unit_id is None:
+            return
+        try:
+            keep_origin_opf(self._data_dir, str(unit_id), original_opf)
+        except (OSError, ValueError):
+            log.warning("export.origin_opf_not_kept", item_id=item_id)
 
     def _write_epub(
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, source: ExportSource,
@@ -712,11 +870,12 @@ class ExportPipeline:
     ) -> None:  # fmt: skip
         """The passthrough of L08: the OPF edited (no age, D1), every other entry byte for byte;
         the original OPF kept in /data/meta once the file is placed (EF-BIB-048)."""
+        unit_id = str(planned.unit_id)
         if source.content_hash != planned.content_hash:
-            raise SourceMissingError(f"{planned.unit_id}: the book changed since the plan")
+            raise SourceMissingError(f"{unit_id}: the book changed since the plan")
         self._require_age_gate(ctx, planned)
         with self._engine.connect() as connection:
-            edit = epub_opf_edit(connection, planned.unit_id, str(planned.frozen["series"]))
+            edit = epub_opf_edit(connection, unit_id, str(planned.frozen["series"]))
         rendered = self._epub_renderer.render(str(source.local_path), edit)
         try:
             self._place(
@@ -726,9 +885,9 @@ class ExportPipeline:
         finally:
             rendered.file.close()
         try:  # best effort: a full disk costs the metadata, never the book
-            keep_origin_opf(self._data_dir, planned.unit_id, rendered.original_opf)
+            keep_origin_opf(self._data_dir, unit_id, rendered.original_opf)
         except (OSError, ValueError):
-            log.warning("export.origin_opf_not_kept", unit_id=planned.unit_id)
+            log.warning("export.origin_opf_not_kept", unit_id=unit_id)
 
     def _require_age_gate(self, ctx: DestinationContext, planned: PlannedOp) -> None:
         """The last look before an EPUB is written, under the locks of the operation (the
@@ -798,7 +957,7 @@ class ExportPipeline:
         ctx: DestinationContext,
         planned: PlannedOp,
         plan_id: str,
-        source: ExportSource,
+        source: ExportSource | None,
         rendered: RenderedCbz | RenderedEpub,
         guard: Callable[[], None],
         reserved: dict[str, Any],
@@ -877,15 +1036,31 @@ class ExportPipeline:
             "file_hash": rendered.file_hash, "state": "planned",
         }  # fmt: skip
 
+    @staticmethod
+    def _reserved_volume(
+        planned: PlannedOp, prepared: PreparedRange, rendered: RenderedEpub
+    ) -> dict[str, Any]:
+        return {
+            "locator_type": "path", "rel_path": planned.rel_path, "format": "epub",
+            "template_ref": str(planned.frozen["template_ref"]),
+            # the payload (anti-echo, as for a chapter); the kept file it came from rides in the
+            # sidecar column, which an EPUB has no use for
+            "content_hash": prepared.payload_hash or prepared.source_hash,
+            "sidecar_sha256": prepared.source_hash,
+            "file_hash": rendered.file_hash, "spine_count": prepared.spine_count,
+            "state": "planned",
+        }  # fmt: skip
+
     def _register(self, ctx: DestinationContext, planned: PlannedOp) -> None:
         """A `pull` destination: the manifest line only, no locator, nothing on disk."""
-        source = self._source(planned.unit_id)
+        source = self._source(planned.unit_id) if planned.unit_id is not None else None
         now = self._clock.now()
         with self._engine.begin() as connection:
             self._require_barrier(connection, ctx, planned)
             item_id = self._item(connection, ctx, planned, source)
             values = {
-                "locator_type": "none", "content_hash": source.content_hash,
+                "locator_type": "none",
+                "content_hash": source.content_hash if source is not None else planned.content_hash,
                 "template_ref": str(planned.frozen["template_ref"]), "written_by_shelfhold_at": now,
                 "exported_at": now, "state": "written",
             }  # fmt: skip
@@ -893,15 +1068,19 @@ class ExportPipeline:
 
     def _item(
         self, connection: sa.Connection, ctx: DestinationContext, planned: PlannedOp,
-        source: ExportSource,
+        source: ExportSource | None,
     ) -> str:  # fmt: skip
         if ctx.remote_library_id is not None:
             ensure_export_series(
                 connection, shelf_destination_id=ctx.destination_id,
                 remote_library_id=ctx.remote_library_id, ref=planned.series, now=self._clock.now(),
             )  # fmt: skip
+        if planned.unit_id is None:  # a volume: the item the keeper made, shared by destinations
+            return str(planned.export_item_id)
         if planned.export_item_id is not None:
             return planned.export_item_id
+        if source is None:
+            raise ValueError("a new item of a Unit has a source")
         return create_export_item(
             connection, edition_id=planned.series.edition_id, unit_id=planned.unit_id,
             kind="unit", frozen_attrs=dict(planned.frozen), content_id=source.content_id,
@@ -913,15 +1092,21 @@ class ExportPipeline:
         values: dict[str, Any],
     ) -> None:  # fmt: skip
         table = export.export_record
-        if planned.export_item_id is not None:  # a record left `planned` or `error`
-            connection.execute(
+        if planned.export_item_id is not None:  # a record left `planned` or `error`, or a volume
+            updated = connection.execute(
                 sa.update(table)
                 .where(
                     table.c.shelf_destination_id == ctx.destination_id,
                     table.c.export_item_id == item_id,
                 )
                 .values(**values)
-            )
+            ).rowcount
+            if updated == 0:  # the item of a volume exists before its first line does
+                connection.execute(
+                    sa.insert(table).values(
+                        shelf_destination_id=ctx.destination_id, export_item_id=item_id, **values
+                    )
+                )
         else:
             connection.execute(
                 sa.insert(table).values(

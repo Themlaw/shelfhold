@@ -21,7 +21,7 @@ from shelfhold.catalog.public import ResplitSigner
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.volumes import write_data_file
-from tests.integration.test_schema_catalog import add_unit
+from tests.integration.test_schema_catalog import add_unit, add_variant
 from tests.library_env import LibEnv
 
 CONTAINER = (
@@ -154,6 +154,7 @@ def ranged_bench(
     data: bytes | None = None,
     declare_bounds: bool = True,
     declared: Sequence[int] | None = None,
+    label: str | None = "Vol.1",
 ) -> RangedBench:
     """What a `ranged_content` service leaves: one item covering `count` Units (the chapters
     `declared`, default all, with their bounds in the file) and the kept file."""
@@ -164,8 +165,9 @@ def ranged_bench(
     with lib.engine.begin() as connection:
         connection.execute(
             sa.insert(export.export_item).values(
-                id=item_id, edition_id=lib.chain["edition"], kind="volume",
-                frozen_attrs={"volume_label": "Vol.1"}, closed=closed,
+                id=item_id, edition_id=lib.chain["edition"],
+                kind="volume" if label else "bundle",
+                frozen_attrs={"volume_label": label} if label else {}, closed=closed,
             )
         )  # fmt: skip
         top = connection.execute(
@@ -176,6 +178,7 @@ def ranged_bench(
         start = first_number if first_number is not None else int(top or 0) + 100
         for position, n in enumerate(wanted):
             unit = add_unit(connection, lib.chain["edition"], str(start + position))
+            add_variant(connection, unit, lib.chain["binding"], f"remote-{unit}")  # still listed
             units.append(unit)
             connection.execute(
                 sa.insert(export.unit_coverage).values(
@@ -193,3 +196,35 @@ def signer(lib: LibEnv) -> ResplitSigner:
     """A signer of resplit tokens over the /data of the environment: each call is a new object
     (a new process, a restart), the key is the file."""
     return ResplitSigner(lib.data)
+
+
+def regrow(bench: RangedBench, chapters: int, *, data: bytes | None = None) -> None:
+    """What the keeper does when a chapter joins (or leaves) the rolling volume: the same item,
+    its coverage rewritten for the first `chapters` chapters, the kept file replaced."""
+    engine = bench.lib.engine
+    with engine.begin() as connection:
+        while len(bench.unit_ids) < chapters:
+            top = connection.execute(
+                sa.select(sa.func.max(catalog.unit.c.number_sort)).where(
+                    catalog.unit.c.edition_id == bench.edition
+                )
+            ).scalar()
+            unit = add_unit(connection, bench.edition, str(int(top or 0) + 1))
+            add_variant(connection, unit, bench.lib.chain["binding"], f"remote-{unit}")
+            bench.unit_ids.append(unit)
+        cover = export.unit_coverage
+        connection.execute(
+            sa.delete(cover).where(
+                cover.c.carrier_type == "export_item", cover.c.carrier_id == bench.item_id
+            )
+        )
+        for position, unit in enumerate(bench.unit_ids[:chapters]):
+            connection.execute(
+                sa.insert(cover).values(
+                    carrier_type="export_item", carrier_id=bench.item_id, unit_id=unit,
+                    position=position, extent="full", origin="provider",
+                    start_locator=chapter_path(position + 1),
+                    end_locator=chapter_path(position + 1),
+                )
+            )  # fmt: skip
+    write_data_file(bench.lib.data, f"ranged/{bench.item_id}.epub", data or volume_epub(chapters))

@@ -110,6 +110,7 @@ from shelfhold.library.application.anti_echo import (
     OwnExport,
     absorb_echo,
     own_export_of,
+    received_content_hash,
 )
 from shelfhold.library.application.reneutralize import (
     ReneutralizePlan,
@@ -380,6 +381,7 @@ __all__ = [
     "plan_batch",
     "readable_unit_ids",
     "receive_cbz",
+    "received_content_hash",
     "record_binned_export_file",
     "record_destination_copy",
     "record_replica",
