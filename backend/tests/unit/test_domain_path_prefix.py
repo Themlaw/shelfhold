@@ -51,6 +51,12 @@ def test_a_path_that_climbs_out_of_the_prefix_is_refused(path: str) -> None:
         allow.check("www.example.org", "www.example.org/x", path=path)
 
 
+def test_the_robots_rules_of_the_host_are_always_readable() -> None:
+    DomainAllowlist("p", rules()).check("www.example.org", "r", path="/robots.txt")
+    with pytest.raises(DomainNotAllowed):
+        DomainAllowlist("p", rules()).check("www.example.org", "r", path="/robots.txt.bak")
+
+
 def test_another_rule_for_the_same_host_without_a_prefix_opens_it_whole() -> None:
     allow = DomainAllowlist("p", rules(DomainRule(pattern="www.example.org", purpose="other")))
     allow.check("www.example.org", "www.example.org/ebooks/1", path="/ebooks/1")
@@ -60,7 +66,9 @@ def test_the_override_of_a_setting_keeps_the_prefix() -> None:
     rule = DomainRule(
         pattern="catalog.invalid", purpose="api", base_url_setting="catalog_url", path_prefix=FEED
     )
-    allow = DomainAllowlist("p", [rule], {"catalog_url": "https://www.example.org" + FEED + "f.csv"})
+    allow = DomainAllowlist(
+        "p", [rule], {"catalog_url": "https://www.example.org" + FEED + "f.csv"}
+    )
     allow.check("www.example.org", "r", path=FEED + "f.csv")
     with pytest.raises(DomainNotAllowed):
         allow.check("www.example.org", "r", path="/ebooks/1")

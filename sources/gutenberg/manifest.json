@@ -1,0 +1,69 @@
+{
+  "key": "gutenberg",
+  "kind": "source",
+  "version": "0.1.0",
+  "api": 1,
+  "name": "Project Gutenberg (official catalogue and a mirror)",
+  "permissions": {
+    "domains": [
+      {
+        "pattern": "catalog.unset.invalid",
+        "purpose": "api",
+        "base_url_setting": "catalog_url",
+        "path_prefix": "/cache/epub/feeds/"
+      },
+      {
+        "pattern": "mirror.unset.invalid",
+        "purpose": "other",
+        "base_url_setting": "mirror_url",
+        "path_prefix": null
+      }
+    ],
+    "lan_targets": [],
+    "needs_browser": false,
+    "needs_solver": false
+  },
+  "settings_schema": {
+    "type": "object",
+    "required": [
+      "catalog_url",
+      "mirror_url"
+    ],
+    "properties": {
+      "catalog_url": {
+        "type": "string",
+        "format": "uri",
+        "title": "Address of the official catalogue file (CSV or RDF)"
+      },
+      "mirror_url": {
+        "type": "string",
+        "format": "uri",
+        "title": "Address of a mirror from the official list"
+      }
+    }
+  },
+  "content_warning": "safe",
+  "terms_url": "https://www.gutenberg.org/policy/terms_of_use.html",
+  "respects_robots": true,
+  "attribution": "Project Gutenberg texts, in the public domain in the United States (not necessarily elsewhere).",
+  "homepage": null,
+  "langs": [],
+  "content_kinds": [
+    "file"
+  ],
+  "url_patterns": [],
+  "capabilities": [
+    "SEARCH"
+  ],
+  "rate_limit": {
+    "requests_per_second": 0.2,
+    "concurrency": 1
+  },
+  "auth": [],
+  "id_scheme": "v1",
+  "rights_basis": "us_public_domain",
+  "rights_jurisdiction": "US",
+  "translation_nature": "published",
+  "content_trust": "untrusted",
+  "tests": []
+}

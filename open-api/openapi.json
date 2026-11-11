@@ -9585,6 +9585,10 @@
       "code": "source.no_match",
       "status": 422
     },
+    "/api/v1/problems/source.not-configured": {
+      "code": "source.not_configured",
+      "status": 409
+    },
     "/api/v1/problems/source.not-loaded": {
       "code": "source.not_loaded",
       "status": 503

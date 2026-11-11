@@ -33,6 +33,7 @@ from shelfhold.infrastructure.schema import platform
 from shelfhold.library.public import PassthroughStore, UntrustedEpubStore
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
+from shelfhold.plugin_host.gutenberg_rdf import read_rdf
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
 from shelfhold.sdk.refs import SeriesRef
@@ -56,7 +57,8 @@ CSV = (
     CSV_HEADER
     + '1001,Text,2001-01-01,A Study in Test,en,"Doe, Jane, 1850-1920",Tests,PR,\n'
     + '3001,Text,2002-02-02,The Protected Tale,en,"Roe, Richard, 1900-1960",Tests,PR,\n'
-    + '4001,Text,2003-03-03,"<script>alert(1)</script>Odd <b>Title</b>",en,"Poe, Edgar, 1809-1849",,,\n'
+    + '4001,Text,2003-03-03,"<script>alert(1)</script>Odd <b>Title</b>",'
+    + 'en,"Poe, Edgar, 1809-1849",,,\n'
     + '5001,Sound,2004-04-04,An Audio Reading,en,"Doe, Jane, 1850-1920",,,\n'
     + '6001,Text,2005-05-05,Le Comte de Test,fr,"Dumas, Alexandre, 1802-1870",,,\n'
     + '8001,Text,2006-06-06,No Dates,en,"Nobody, Anne",,,\n'
@@ -91,7 +93,8 @@ def rdf_ebook(pg_id: int, title: str, lang: str, author: str, years: str, transl
 
 
 def rdf_catalog(*ebooks: str) -> bytes:
-    return f'<?xml version="1.0" encoding="utf-8"?><rdf:RDF {RDF_NS}>{"".join(ebooks)}</rdf:RDF>'.encode()
+    body = "".join(ebooks)
+    return f'<?xml version="1.0" encoding="utf-8"?><rdf:RDF {RDF_NS}>{body}</rdf:RDF>'.encode()
 
 
 # Two published translations of one novel, by two translators, in the same language.
@@ -102,6 +105,11 @@ TRANSLATIONS_RDF = rdf_catalog(
 
 CLEAN = epub_bytes(xhtml("<p>chapitre</p>"))
 TRAPPED = epub_bytes(xhtml("<p>chapitre</p><script>alert(1)</script>"))
+
+
+def host_of(request: httpx2.Request) -> str:
+    """The name asked for: the Fetcher connects to the pinned address and sets `Host`."""
+    return request.headers.get("host", request.url.host).split(":")[0].lower()
 
 
 def epub_path(pg_id: int) -> str:
@@ -138,13 +146,13 @@ class Wire:
     stamps: list[float] = field(default_factory=list)
 
     def respond(self, request: httpx2.Request) -> httpx2.Response:
-        host, path = request.url.host, request.url.path
+        host, path = host_of(request), request.url.path
         self.stamps.append(self.now())
         if path == "/robots.txt":
             if self.robots is None:
                 return httpx2.Response(404)
             return httpx2.Response(200, content=self.robots.encode())
-        if host == CATALOG_HOST and path == self.catalog_path:
+        if host in (CATALOG_HOST, *SITE_HOSTS) and path == self.catalog_path:
             if request.headers.get("if-none-match") == self.etag:
                 return httpx2.Response(304, headers={"etag": self.etag})
             return httpx2.Response(200, content=self.catalog, headers={"etag": self.etag})
@@ -156,11 +164,21 @@ class Wire:
         return httpx2.Response(404)
 
     def to(self, host: str) -> list[httpx2.Request]:
-        return [r for r in self.recorder.requests if r.url.host == host]
+        return [r for r in self.recorder.requests if host_of(r) == host]
+
+    @property
+    def site_pages(self) -> list[httpx2.Request]:
+        """What reached the website beyond its robots rules and the official feed path."""
+        return [
+            r
+            for r in self.site
+            if r.url.path != "/robots.txt"
+            and not r.url.path.startswith(CATALOG_PATH.rsplit("/", 1)[0])
+        ]
 
     @property
     def site(self) -> list[httpx2.Request]:
-        return [r for r in self.recorder.requests if r.url.host in SITE_HOSTS]
+        return [r for r in self.recorder.requests if host_of(r) in SITE_HOSTS]
 
 
 class RoutedStore:
@@ -226,7 +244,8 @@ class Bench:
             if row is None:
                 connection.execute(
                     sa.insert(platform.instance).values(
-                        instance_id=self.lib.instance_id, jurisdiction=country,
+                        instance_id=self.lib.instance_id,
+                        jurisdiction=country,
                         jurisdiction_confirmed_at=stamp,
                     )
                 )
@@ -254,7 +273,8 @@ def gutenberg_bench(
         {"catalog_url": CATALOG_URL, "mirror_url": MIRROR_URL} if settings is None else settings
     )
     fake = FakeTime()
-    with patch.object(attestation, "FIRST_PARTY_PLUGIN_KEYS", attestation.FIRST_PARTY_PLUGIN_KEYS | {KEY}), lib_env() as lib:  # fmt: skip
+    first_party = attestation.FIRST_PARTY_PLUGIN_KEYS | {KEY}
+    with patch.object(attestation, "FIRST_PARTY_PLUGIN_KEYS", first_party), lib_env() as lib:
         empty_catalog(lib)
         holder: list[Wire] = []
         recorder = Recorder(lambda request: holder[0].respond(request))
@@ -265,7 +285,7 @@ def gutenberg_bench(
         network = Network(
             resolver=FakeResolver({h: [PUBLIC] for h in hosts}), transport=recorder.transport
         )
-        source = plugin or GutenbergSource(clock=fake.clock)
+        source = plugin or GutenbergSource(clock=fake.clock, rdf=read_rdf)
         registry = PluginRegistry()
         registry.load_all(
             [PluginCandidate(key=KEY, origin=PluginOrigin.FIRST_PARTY, load=lambda: source)]

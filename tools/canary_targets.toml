@@ -1,0 +1,7 @@
+# Targets of the canary workflow (`.github/workflows/canary.yml`, PLAN-M2 D12).
+#
+# The list is EMPTY on purpose. A real target needs its own pull request, and only when the
+# terms of that source allow a canary (ENF-LEG-003): never with a spoofed fingerprint, never with
+# a solver, and never against the Project Gutenberg website. `test_canary_never_targets_gutenberg_org`
+# reads this file and fails when a target names it.
+targets = []

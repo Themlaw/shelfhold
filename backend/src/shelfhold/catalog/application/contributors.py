@@ -41,6 +41,10 @@ class ContributorStore(Protocol):
     def insert(self, name: str, kind: str, family_first: bool) -> str: ...
     def credit(self, work_id: str, contributor_id: str, role: str, position: int) -> bool: ...
     def next_position(self, work_id: str) -> int: ...
+    def credit_edition(
+        self, edition_id: str, contributor_id: str, role: str, position: int
+    ) -> bool: ...
+    def set_death_year(self, contributor_id: str, year: int) -> bool: ...
 
 
 def _collapse(text: str) -> str:
@@ -81,3 +85,14 @@ def record_credits(store: ContributorStore, work_id: str, role: str, raw_names: 
             added += 1
             position += 1
     return added
+
+
+def contributor_of(store: ContributorStore, name: str) -> str | None:
+    """The contributor a source's spelling of one person names, made if there is none yet."""
+    found = credits_of([name])
+    if not found:
+        return None
+    credit = found[0]
+    return store.find(credit.name, credit.kind) or store.insert(
+        credit.name, credit.kind, credit.family_first
+    )

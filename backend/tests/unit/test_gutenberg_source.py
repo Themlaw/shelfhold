@@ -13,9 +13,9 @@ from typing import Any
 import pytest
 
 from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource, build_manifest
+from shelfhold.sdk.fetcher import Response
 from shelfhold.sdk.testing.fakes import FakeFetcher
 from shelfhold.sdk.testing.kit import run_source_conformance
-from shelfhold.sdk.fetcher import Response
 from tests.gutenberg_env import CATALOG_URL, CSV, MIRROR_URL
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -51,12 +51,16 @@ def test_no_host_is_a_default_in_the_manifest_or_the_code() -> None:
     """Every declared host is a placeholder that resolves nowhere until the admin sets the
     address; the website is not written as a URL anywhere in the package."""
     m = build_manifest()
-    assert m.permissions.domains and all(d.pattern.endswith(".invalid") for d in m.permissions.domains)
+    assert m.permissions.domains and all(
+        d.pattern.endswith(".invalid") for d in m.permissions.domains
+    )
     assert {d.base_url_setting for d in m.permissions.domains} == {"catalog_url", "mirror_url"}
     assert set(m.settings_schema["required"]) == {"catalog_url", "mirror_url"}
     for path in PACKAGE.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        assert not re.search(r"https?://[^\s'\"]*gutenberg\.org", text, re.IGNORECASE), path
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "terms_url" in line or "www.gutenberg.org/2009/pgterms" in line:
+                continue  # a link for the person to read, and an XML namespace: never requested
+            assert not re.search(r"https?://[^\s'\"]*gutenberg\.org", line, re.IGNORECASE), line
 
 
 @pytest.mark.req("ENF-LEG-003")
@@ -85,8 +89,25 @@ def test_the_source_passes_the_conformance_kit_with_a_scripted_fetcher() -> None
         return fetcher
 
     report = asyncio.run(
-        run_source_conformance(
-            GutenbergSource(), scripted(), reinstall=GutenbergSource
-        )
+        run_source_conformance(GutenbergSource(), scripted(), reinstall=GutenbergSource)
     )
     assert report.ok, report.failures
+
+
+@pytest.mark.req("EF-SRC-007", "ENF-LEG-001")
+def test_the_host_ships_the_source_switched_off_and_with_its_xml_reader() -> None:
+    """Loaded at start with the host's reader of RDF, and not active until the admin lists it."""
+    from shelfhold.plugin_host.public import first_party_candidates
+    from shelfhold.plugin_host.registry import PluginRegistry
+    from tests.gutenberg_env import TRANSLATIONS_RDF
+
+    (candidate,) = first_party_candidates()
+    registry = PluginRegistry(active_keys=())
+    (record,) = registry.load_all([candidate])
+    assert record.key == "gutenberg" and not registry.active()  # a fresh install switches none on
+    settings = {"catalog_url": CATALOG_URL, "mirror_url": MIRROR_URL}
+    fetcher = FakeFetcher(
+        {("GET", CATALOG_URL): Response(status=200, body=TRANSLATIONS_RDF)}, settings=settings
+    )
+    page = asyncio.run(record.instance.search(fetcher, "count", {}, None))
+    assert [r.remote_id for r in page.items] == ["7001", "7002"]

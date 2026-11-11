@@ -122,6 +122,12 @@ class TemporarilyUnavailable(SourceError):
     code = "source.temporarily_unavailable"  # upstream asleep or down: pause, not failure
 
 
+class NotConfigured(SourceError):
+    code = (
+        "source.not_configured"  # a setting the source cannot work without is missing or unusable
+    )
+
+
 class Source(Protocol):
     """A source. Methods tied to a capability exist only when the manifest declares it."""
 

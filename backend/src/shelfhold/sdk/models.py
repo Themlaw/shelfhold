@@ -13,7 +13,15 @@ from datetime import datetime
 from enum import Flag, StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator, WithJsonSchema
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    PlainValidator,
+    WithJsonSchema,
+    field_validator,
+)
 
 from shelfhold.sdk.lang import LanguageTag
 
@@ -93,6 +101,26 @@ class DomainRule(SdkModel):
     pattern: str  # "example.org", "*.cdn.example.org" (suffix / wildcard)
     purpose: Literal["api", "pages", "covers", "auth", "other"]
     base_url_setting: str | None = None  # a setting may override the domain; logged (EF-SRC-003)
+    # Limits the host to this path and what is under it (ENF-LEG-003): a host opened for one feed
+    # is not opened for the rest of its site. Absolute, no dot segment, ends with "/".
+    path_prefix: str | None = None
+
+    @field_validator("path_prefix")
+    @classmethod
+    def _prefix_is_a_plain_directory(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = value.split("/")
+        plain = (
+            value.startswith("/")
+            and value.endswith("/")
+            and all(parts[1:-1])  # no empty segment ("//")
+            and not any(p in (".", "..") for p in parts)
+            and not any(c in value for c in "\\%?#:@ ")
+        )
+        if not plain:
+            raise ValueError("path_prefix is an absolute directory path: /a/b/")
+        return value
 
 
 class Permissions(SdkModel):

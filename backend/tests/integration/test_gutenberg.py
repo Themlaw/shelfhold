@@ -9,6 +9,7 @@ import io
 import socket
 import zipfile
 from datetime import date
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -20,13 +21,12 @@ from shelfhold.infrastructure.fetcher import DomainNotAllowed
 from shelfhold.library.public import servable_epub
 from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
 from shelfhold.plugin_host.errors import NoSourceForUrl
-from shelfhold.sdk.io_guard import ForbiddenIOError, plugin_io
+from shelfhold.sdk.io_guard import ForbiddenIOError, GuardedPlugin
 from tests.gutenberg_env import (
     CATALOG_HOST,
     CATALOG_PATH,
     CATALOG_URL,
     CLEAN,
-    CSV,
     KEY,
     MIRROR_HOST,
     MIRROR_URL,
@@ -35,6 +35,7 @@ from tests.gutenberg_env import (
     Bench,
     epub_path,
     gutenberg_bench,
+    host_of,
 )
 
 
@@ -48,7 +49,7 @@ def search(b: Bench, query: str) -> list[str]:
     return [r.remote_id for r in page.items]
 
 
-# -- the sources of the files: catalogue and mirror, nothing else --------------------------------
+# -- the sources of the files: catalogue and mirror, nothing else -------------------------------
 
 
 @pytest.mark.req("EF-SRC-007", "ENF-LEG-003")
@@ -59,7 +60,7 @@ def test_gutenberg_uses_rdf_csv_catalog_or_mirror_never_website() -> None:
         assert search(b, "study") == ["1001"]
         _prepared, outcome = b.acquire(1001)
         assert outcome.state == "fetched" and outcome.kind == "epub"
-        hosts = {r.url.host for r in b.wire.recorder.requests}
+        hosts = {host_of(r) for r in b.wire.recorder.requests}
         assert hosts <= {CATALOG_HOST, MIRROR_HOST} and not b.wire.site
         (catalog_request,) = [r for r in b.wire.to(CATALOG_HOST) if r.url.path != "/robots.txt"]
         assert catalog_request.url.path == CATALOG_PATH  # the official feed path, nothing else
@@ -132,9 +133,9 @@ def test_a_plugin_that_opens_a_socket_to_the_website_is_caught_by_the_audit_hook
             return await super().search(f, q, filters, cursor, **kw)
 
     seen: list[Any] = []
-    rogue = Rogue()
-    with plugin_io(KEY, report=seen.append, mode="raise"), pytest.raises(ForbiddenIOError):
-        asyncio.run(rogue.search(None, "study", {}, None))
+    guarded = GuardedPlugin(Rogue(), KEY, report=seen.append, mode="raise")
+    with pytest.raises(ForbiddenIOError):
+        asyncio.run(guarded.search(None, "study", {}, None))
     assert attempts == ["search"]
     assert [v.plugin_id for v in seen] == [KEY] and "getaddrinfo" in seen[0].event
 
@@ -174,11 +175,11 @@ def test_a_mirror_that_redirects_to_the_website_is_refused_at_the_hop(on_site_fe
     }
     target = "https://www.gutenberg.org/ebooks/1001.epub.noimages"
     with gutenberg_bench(settings=settings, wire={"redirect_files_to": target}) as b:
-        # the catalogue of that run is already known: only the book is asked for
-        b.plugin.seed_catalog(CSV.encode())
+        search(b, "study")  # the catalogue is read through the allowed feed path
         _prepared, outcome = b.acquire(1001)
         assert outcome.state == "abandoned" and outcome.reason == "source.domain_not_allowed"
-        assert not b.wire.site
+        assert not b.wire.site_pages  # at most its robots rules and the feed the admin chose
+        assert on_site_feed or not b.wire.site
         assert b.rows("SELECT id FROM content") == []
 
 
@@ -203,7 +204,6 @@ def test_a_mirror_that_is_the_website_or_not_a_plain_url_is_refused_before_any_r
     a plain http(s) one; the source is then simply not configured."""
     with gutenberg_bench(files={epub_path(1001): CLEAN}) as b:
         b.settings["mirror_url"] = mirror
-        b.plugin.seed_catalog(CSV.encode())
         with pytest.raises(AcquireRefused) as raised:
             b.acquire(1001)
         assert raised.value.code == "source.not_configured"
@@ -221,7 +221,7 @@ def test_a_source_without_its_mirror_is_not_configured_and_sends_nothing() -> No
             assert not b.wire.recorder.requests
 
 
-# -- the catalogue: conditional, at most once a week ------------------------------------------------
+# -- the catalogue: conditional, at most once a week --------------------------------------------
 
 
 @pytest.mark.req("EF-SRC-007", "ENF-LEG-003")
@@ -239,7 +239,7 @@ def test_the_catalog_is_read_once_a_week_and_revalidated_with_a_conditional_get(
         assert again[1].headers.get("if-none-match") == b.wire.etag  # conditional, a 304 answers
 
 
-# -- rate: prudent, and no way around it ------------------------------------------------------------
+# -- rate: prudent, and no way around it --------------------------------------------------------
 
 
 @pytest.mark.req("ENF-LEG-003")
@@ -251,7 +251,7 @@ def test_gutenberg_rate_limit_prudent() -> None:
         search(b, "study")
         b.acquire(1001)
         b.acquire(3001)
-        gaps = [later - earlier for earlier, later in zip(b.wire.stamps, b.wire.stamps[1:])]
+        gaps = [later - earlier for earlier, later in pairwise(b.wire.stamps)]
         assert len(b.wire.stamps) >= 5 and min(gaps) >= 1 / limit.requests_per_second - 1e-6
 
 
@@ -260,7 +260,7 @@ def test_the_rhythm_holds_for_requests_made_at_the_same_time() -> None:
     """Attack: many files asked together, each with a Fetcher of its own, share one rhythm."""
     names = {epub_path(1001): CLEAN, epub_path(3001): CLEAN, epub_path(4001): CLEAN}
     with gutenberg_bench(files=names) as b:
-        b.plugin.seed_catalog(CSV.encode())
+        search(b, "study")
 
         async def together() -> None:
             await asyncio.gather(
@@ -273,19 +273,19 @@ def test_the_rhythm_holds_for_requests_made_at_the_same_time() -> None:
             await asyncio.gather(*requests)
 
         b.run(together())
-        files = [i for i, r in enumerate(b.wire.recorder.requests) if "/cache/epub/" in r.url.path]
+        files = [i for i, r in enumerate(b.wire.recorder.requests) if r.url.path.endswith(".epub")]
         stamps = [b.wire.stamps[i] for i in files]
         assert len(stamps) == 3
-        assert all(later - earlier >= 5 - 1e-6 for earlier, later in zip(stamps, stamps[1:]))
+        assert all(later - earlier >= 5 - 1e-6 for earlier, later in pairwise(stamps))
 
 
 @pytest.mark.req("ENF-LEG-003")
 def test_a_redirection_hop_and_a_robots_read_count_as_requests_of_the_rhythm() -> None:
     target = f"https://{MIRROR_HOST}/gutenberg/cache/epub/1001/other.epub"
     with gutenberg_bench(wire={"redirect_files_to": target}) as b:
-        b.plugin.seed_catalog(CSV.encode())
+        search(b, "study")
         b.acquire(1001)  # robots.txt, the book, and the hops it is bounced through
-        gaps = [later - earlier for earlier, later in zip(b.wire.stamps, b.wire.stamps[1:])]
+        gaps = [later - earlier for earlier, later in pairwise(b.wire.stamps)]
         assert len(b.wire.stamps) >= 3 and min(gaps) >= 5 - 1e-6
 
 
@@ -303,10 +303,11 @@ def test_a_request_served_from_the_cache_does_not_cost_the_rhythm_but_a_new_one_
         record = b.registry.get(KEY)
         fetcher = b.fetchers.for_record(record, b.settings)
         b.run(fetcher.get(f"https://{MIRROR_HOST}/gutenberg/cache/epub/1/pg1.epub"))
-        assert b.time.slept == slept  # the hour had already paid for the slot
+        # the robots rules of the mirror went at once, the book then waited one slot, no more
+        assert b.time.slept == [*slept, 5.0]
 
 
-# -- the file: the untrusted chain, always ----------------------------------------------------------
+# -- the file: the untrusted chain, always ------------------------------------------------------
 
 
 @pytest.mark.req("EF-BIB-051", "EF-SRC-007")
@@ -340,7 +341,7 @@ def test_a_book_the_mirror_does_not_have_waits_or_closes_without_touching_the_we
         assert outcome.state in ("abandoned", "waiting") and not b.wire.site
 
 
-# -- what the catalogue gives the library ----------------------------------------------------------
+# -- what the catalogue gives the library -------------------------------------------------------
 
 
 @pytest.mark.req("EF-SRC-007", "EF-SRC-024")
@@ -383,11 +384,13 @@ def test_gutenberg_translations_published_two_editions() -> None:
         editions = b.rows("SELECT text_version, translation_type, rights_basis FROM edition")
         assert len(editions) == 2 and len({e["text_version"] for e in editions}) == 2
         assert all(e["translation_type"] == "official" for e in editions)
-        values = {r["value"] for r in b.rows("SELECT value FROM external_id WHERE provider = 'gutenberg'")}
+        values = {
+            r["value"] for r in b.rows("SELECT value FROM external_id WHERE provider = 'gutenberg'")
+        }
         assert values == {"7001", "7002"}
 
 
-# -- the rights: US public domain is not the user's public domain -----------------------------------
+# -- the rights: US public domain is not the user's public domain -------------------------------
 
 
 @pytest.mark.req("EF-SRC-024", "ENF-LEG-008", "EF-SRC-007")
@@ -401,7 +404,10 @@ def test_a_us_public_domain_book_added_outside_the_us_is_not_taken_as_free() -> 
         _prepared, outcome = b.acquire(3001)
         assert outcome.state == "fetched"  # not blocked
         (edition,) = b.rows("SELECT id, rights_basis, rights_jurisdiction FROM edition")
-        assert (edition["rights_basis"], edition["rights_jurisdiction"]) == ("us_public_domain", "US")
+        assert (edition["rights_basis"], edition["rights_jurisdiction"]) == (
+            "us_public_domain",
+            "US",
+        )
         assert [w.payload["reason"] for w in b.warnings] == ["may_be_protected"]  # Roe: 1960 + 70
         with b.lib.engine.connect() as connection:
             report = RightsService(connection).assess(edition["id"], today=date(2026, 11, 11))

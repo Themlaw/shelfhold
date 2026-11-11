@@ -6,11 +6,12 @@ from __future__ import annotations
 import pytest
 
 from shelfhold.plugin_host.adapters.native.gutenberg.catalog import (
+    MAX_BOOKS,
     CatalogError,
     parse_catalog,
     parse_csv,
-    parse_rdf,
 )
+from shelfhold.plugin_host.gutenberg_rdf import read_rdf
 from tests.gutenberg_env import CSV, TRANSLATIONS_RDF
 
 pytestmark = pytest.mark.req("EF-SRC-007")
@@ -52,10 +53,14 @@ def test_csv_without_the_expected_header_is_refused() -> None:
 
 
 def test_rdf_gives_translators_and_publisher() -> None:
-    books = {b.pg_id: b for b in parse_rdf(TRANSLATIONS_RDF)}
+    books = {b.pg_id: b for b in read_rdf(TRANSLATIONS_RDF, MAX_BOOKS)}
     assert set(books) == {7001, 7002}
-    assert books[7001].translators == ("Ames, Alice",) and books[7002].translators == ("Bell, Bruno",)
-    assert books[7001].publisher == "Project Gutenberg" and books[7001].authors[0].death_year == 1870
+    assert books[7001].translators == ("Ames, Alice",) and books[7002].translators == (
+        "Bell, Bruno",
+    )
+    assert (
+        books[7001].publisher == "Project Gutenberg" and books[7001].authors[0].death_year == 1870
+    )
 
 
 @pytest.mark.parametrize(
@@ -69,16 +74,18 @@ def test_rdf_gives_translators_and_publisher() -> None:
 def test_rdf_with_a_doctype_or_entities_is_refused_without_expansion(payload: bytes) -> None:
     """Attack: an entity bomb or an external entity in the catalogue."""
     with pytest.raises(CatalogError):
-        parse_rdf(payload)
+        read_rdf(payload, MAX_BOOKS)
     with pytest.raises(CatalogError):
-        parse_catalog(payload)
+        parse_catalog(payload, rdf=read_rdf)
 
 
 def test_the_format_is_read_from_the_bytes() -> None:
     assert len(parse_catalog(CSV.encode())) == 5
-    assert len(parse_catalog(b"  \n" + TRANSLATIONS_RDF)) == 2
+    assert len(parse_catalog(b"  \n" + TRANSLATIONS_RDF, rdf=read_rdf)) == 2
     with pytest.raises(CatalogError):
         parse_catalog(b"")
+    with pytest.raises(CatalogError):  # no XML reader was given: an RDF document is refused
+        parse_catalog(TRANSLATIONS_RDF)
 
 
 def test_a_catalogue_with_too_many_books_is_refused() -> None:
