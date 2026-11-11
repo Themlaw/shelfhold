@@ -74,13 +74,24 @@ def run_enrich(args: argparse.Namespace, channel: OpsChannel) -> int:
     done = channel.call("ops.meta_enrich", target=args.target)
     outcome = done["outcome"]
     if outcome != "enriched":
-        print(t(f"meta.enrich_{outcome}", reason=done["reason"] or ""), file=sys.stderr)
+        reason = done["reason"] or ""
+        if outcome == "provider_down":
+            message = t("meta.enrich_provider_down", reason=reason)
+        elif outcome == "robots_disallowed":
+            message = t("meta.enrich_robots_disallowed")
+        elif outcome == "quota":
+            message = t("meta.enrich_quota")
+        else:
+            message = t("meta.enrich_not_found")
+        print(message, file=sys.stderr)
         return 1
-    print(t("meta.enriched", fields=", ".join(done["written"]) or "-", edition=done["edition_id"]))
+    print(t("meta.enriched", edition=done["edition_id"], count=len(done["written"])))
+    for name in done["written"]:
+        print(t("meta.enrich_field", field=name))
     for name in done["kept_locked"] + done["kept_manual"]:
         print(t("meta.enrich_kept", field=name))
     for age in done["ages"]:
-        label = "X" if age["x"] else f"{age['age']}+"
+        label = t("meta.enrich_age_x") if age["x"] else f"{age['age']}+"
         print(t("meta.enrich_age_suggested", age=label))
     if done["cover_rejected"]:
         print(t("meta.enrich_cover_rejected", code=done["cover_rejected"]))

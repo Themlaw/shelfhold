@@ -63,7 +63,7 @@ def test_cli_meta_enrich(
         capsys.readouterr()
         assert b.cli("meta", "enrich", ISBN) == 0
         out = capsys.readouterr().out
-        assert "Open Library" in out and "contributors" in out
+        assert "Open Library" in out and "- contributors" in out
         assert field(b, edition, "contributors") == '["Ada Example","Bo Sample"]'
         assert field(b, edition, "cover") is not None
         agents = {s.user_agent for s in fake.seen}
