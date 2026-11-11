@@ -68,11 +68,12 @@ def test_a_missing_file_is_a_cbz_for_the_audit(tmp_path: Path) -> None:
 
 
 @pytest.mark.req("EF-BIB-051")
-def test_the_inbox_path_takes_an_epub_or_a_cbz_and_nothing_else() -> None:
+def test_the_inbox_path_takes_an_epub_a_cbz_or_a_pdf_and_nothing_else() -> None:
     context = WriteContext.__new__(WriteContext)
     context.loaded = type("L", (), {"expected": [type("E", (), {"path": "/library"})()]})()  # type: ignore[assignment]
     assert context.received_path("V1").endswith("/V1.cbz")
     assert context.received_path("V1", ".epub").endswith("/V1.epub")
-    for bad in (".pdf", ".exe", "", "/../x"):
+    assert context.received_path("V1", ".pdf").endswith("/V1.pdf")  # the import folder (D9)
+    for bad in (".exe", "", "/../x"):
         with pytest.raises(ValueError, match="no received file"):
             context.received_path("V1", bad)

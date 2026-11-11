@@ -49,6 +49,10 @@ class Settings(BaseModel):
     data_dir: Path = Path("/data")
     store_dir: Path = Path("/store")
     library_dir: Path = Path("/library")  # the physical roots live under it (EF-EXP-059)
+    # EF-SRC-012: the folder the admin drops their own CBZ, EPUB and PDF files in. Off while unset;
+    # it may not hold, or sit inside, /data, /store or /library: Shelfhold would take its own
+    # output back in.
+    import_dir: Path | None = None
     host: str = "127.0.0.1"
     port: int = Field(default=8080, ge=1, le=65535)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
@@ -249,6 +253,17 @@ class Settings(BaseModel):
         data, store = self.data_dir, self.store_dir
         if data == store or data in store.parents or store in data.parents:
             raise ValueError("data_dir and store_dir must be distinct and not nested")
+        return self
+
+    @model_validator(mode="after")
+    def _import_dir_is_apart(self) -> Self:
+        folder = self.import_dir
+        if folder is None:
+            return self
+        for name in ("data_dir", "store_dir", "library_dir"):
+            other = getattr(self, name)
+            if folder == other or folder in other.parents or other in folder.parents:
+                raise ValueError(f"import_dir must be distinct from {name} and not nested in it")
         return self
 
 

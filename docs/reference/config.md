@@ -12,6 +12,7 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_DATA_DIR` | `data_dir` | Path | `/data` |  | variable seule, jamais dans `config.toml`; `SHELFHOLD_DATA_DIR_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_STORE_DIR` | `store_dir` | Path | `/store` |  | `SHELFHOLD_STORE_DIR_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_LIBRARY_DIR` | `library_dir` | Path | `/library` |  | `SHELFHOLD_LIBRARY_DIR_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_IMPORT_DIR` | `import_dir` | Path (optionnel) | aucun |  | `SHELFHOLD_IMPORT_DIR_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_HOST` | `host` | str | `127.0.0.1` |  | `SHELFHOLD_HOST_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_PORT` | `port` | int | `8080` | >= 1, <= 65535 | `SHELFHOLD_PORT_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_LOG_LEVEL` | `log_level` | 'DEBUG' \| 'INFO' \| 'WARNING' \| 'ERROR' | `INFO` |  | `SHELFHOLD_LOG_LEVEL_FILE` en lit la valeur dans un fichier |

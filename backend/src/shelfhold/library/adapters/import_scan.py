@@ -45,10 +45,18 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
-from shelfhold.infrastructure.archives import DEFAULT_LIMITS, ArchiveLimits, UnsafeArchiveError
+from shelfhold.infrastructure.archives import (
+    DEFAULT_LIMITS,
+    ArchiveLimits,
+    UnsafeArchiveError,
+    safe_open_archive,
+)
 from shelfhold.infrastructure.content_trust import (
     Destination,
+    NeutralizationError,
     UntrustedEntryError,
+    check_cbz_entries,
+    neutralize_epub,
     sanitize_upstream_text,
 )
 from shelfhold.infrastructure.content_trust.protection import (
@@ -65,6 +73,7 @@ from shelfhold.library.adapters.storage import (
     UnitGoneError,
     WorkBusyError,
 )
+from shelfhold.library.domain.content_hash import FILE_HASH_BY
 from shelfhold.library.domain.failures import (
     EpubRefusedError,
     ReceivedTooLargeError,
@@ -72,6 +81,7 @@ from shelfhold.library.domain.failures import (
     VariantAlreadyStoredError,
 )
 from shelfhold.library.replica import LibraryCopy, StoreCopy, library_copies, store_copies
+from shelfhold.library.tombstones.values import ContentHash
 
 log = structlog.get_logger(__name__)
 
@@ -243,7 +253,31 @@ class Filer(Protocol):
 
 
 Target = Callable[[ImportItem], tuple[str, str]]  # item -> (unit_id, variant_id)
+# (staged file, kind, sha256, trust) -> the code that refuses it, or None: asked before any Unit
+Precheck = Callable[[Path, str, str, str], str | None]
 Place = Callable[[str, str, str], str]  # (unit id, variant id, `.cbz`/`.epub`/`.pdf`) -> local path
+
+
+def make_precheck(tombstones: Any, limits: ArchiveLimits = DEFAULT_LIMITS) -> Precheck:
+    """What the stores would refuse, asked first: a purged content, a CBZ entry off the allowlist,
+    an EPUB the neutralizer cannot take (an `untrusted` one only: a publisher file is not
+    rewritten). Nothing is stored and nothing is kept."""
+
+    def check(staged: Path, kind: str, sha: str, trust: str) -> str | None:
+        if tombstones.check_content([ContentHash(FILE_HASH_BY, sha)]):
+            return TOMBSTONED
+        try:
+            if kind == "cbz":
+                with safe_open_archive(staged, name="import.cbz", limits=limits) as archive:
+                    check_cbz_entries(archive)
+            elif kind == "epub" and trust != "publisher":
+                with tempfile.TemporaryFile(dir=staged.parent) as sink:
+                    neutralize_epub(staged, sink, name="import.epub", limits=limits)
+        except (UnsafeArchiveError, UntrustedEntryError, NeutralizationError):
+            return ARCHIVE
+        return None
+
+    return check
 
 
 class ImportFolderOverlapError(ValueError):
@@ -270,6 +304,8 @@ class ImportFolder:
         target: Target,
         place: Place,
         keep_apart: tuple[Path, ...] = (),
+        precheck: Precheck | None = None,
+        default_trust: str = "untrusted",
         max_bytes: int = DEFAULT_MAX_RECEIVED_BYTES,
         settle_seconds: float = DEFAULT_SETTLE_SECONDS,
         recheck_seconds: float = DEFAULT_RECHECK_SECONDS,
@@ -288,6 +324,8 @@ class ImportFolder:
         self._staging = staging_dir
         self._target = target
         self._place = place
+        self._precheck = precheck
+        self._default_trust = default_trust
         self._max = max_bytes
         self._settle = settle_seconds
         self._recheck = recheck_seconds
@@ -530,8 +568,20 @@ class ImportFolder:
         self, staged: Path, sha: str, kind: str, name: str, declared: bool, item: Found,
         shown: str,
     ) -> tuple[str, str] | ImportOutcome:  # fmt: skip
-        trust = "publisher" if declared else "untrusted"
+        """Everything that can refuse the file is asked **before** the Unit is made, so a refused
+        file leaves no empty Unit behind; then the Unit, then the bytes."""
+        trust = "publisher" if declared else self._default_trust
+        if self._precheck is not None:
+            code = self._precheck(staged, kind, sha, trust)
+            if code is not None:
+                return self._refuse(item, shown, code, sha, kind=kind)
         unit_id, variant_id = self._target(ImportItem(kind, _title_of(name), trust, sha))
+        return self._ingest_into(staged, sha, kind, unit_id, variant_id, item, shown)
+
+    def _ingest_into(
+        self, staged: Path, sha: str, kind: str, unit_id: str, variant_id: str, item: Found,
+        shown: str,
+    ) -> tuple[str, str] | ImportOutcome:  # fmt: skip
         try:
             ingested = self._store.ingest(
                 unit_id=unit_id, variant_id=variant_id, staged=staged, expected_sha256=sha,

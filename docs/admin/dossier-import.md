@@ -4,6 +4,22 @@ Le dossier d'import prend vos propres fichiers : CBZ, EPUB et PDF (EF-SRC-012). 
 lu, vérifié, rangé comme une Unité, puis **retiré du dossier seulement quand sa copie rangée a été
 relue et reconnue identique** (même empreinte SHA-256). Au moindre doute, il reste où il est.
 
+## Le mettre en route
+
+Définissez `SHELFHOLD_IMPORT_DIR` : un dossier **distinct** de `/library`, `/store` et `/data` (et
+qui n'est ni dedans ni au-dessus), sinon Shelfhold refuse de démarrer. Sans ce réglage, l'import
+est éteint. Un passage automatique a lieu toutes les dix minutes ; à la main :
+
+```
+shelfhold import scan --dry-run    # liste ce qui est prêt, ne range ni ne retire rien
+shelfhold import scan              # range ce qui est prêt
+shelfhold import scan --purchase   # déclare ces fichiers comme un achat (voir plus bas)
+```
+
+Chaque fichier devient une Œuvre, une Édition et une Unité, rangée par la barrière des nouvelles
+Éditions comme tout ce qui arrive (une étagère sous 18+ ne la prend pas tant qu'elle n'est pas
+classée).
+
 ## Ce que Shelfhold refuse, et ce qu'il dit
 
 Un fichier refusé reste en place, intact, et reçoit un message. Rien n'est jamais modifié ni

@@ -473,6 +473,18 @@ help_backfill_confirm_bytes = "Au-delà de 100 chapitres ou 5 Gio : la taille en
 backfill_estimate = "Rattrapage « {mode} » : {units} chapitre(s), {size} octets à télécharger, {free} octets libres."
 backfill_started = "Rattrapage lancé : le suivi demandera ces chapitres dans ses plafonds par cycle."
 backfill_needs_confirmation = "Cette estimation dépasse 100 chapitres ou 5 Gio. Pour la confirmer : shelfhold backfill --{mode} {edition} --confirm-units {units} --confirm-bytes {size}"
+help_import = "Le dossier d'import : vos propres CBZ, EPUB et PDF."
+help_import_scan = "Examine le dossier d'import et range ce qui est prêt ; un fichier refusé reste en place avec son message."
+help_import_dry_run = "Montre ce que le dossier contient et ce qui serait pris, sans rien ranger ni retirer."
+help_import_purchase = "Déclare ces fichiers comme un achat : non réécrits, marqués tatoués (watermarked)."
+import_ready = "Prêt à être rangé : {path}"
+import_waiting = "En attente : {path} ({message})"
+import_refused = "Refusé et laissé en place : {path} : {message}"
+import_stored = "Rangé : {path} ({kind}){removed}"
+import_removed = ", retiré du dossier"
+import_kept = ", laissé dans le dossier : {message}"
+import_watermark = " ; drapeau tatoué posé ({origin})"
+import_summary = "{stored} rangé(s), {refused} refusé(s), {waiting} en attente."
 backfill_choose_mode = "Choisissez --gaps ou --all."
 backfill_confirm_pair = "--confirm-units et --confirm-bytes vont ensemble."
 help_follow_series = "Suit une série du service connecté depuis Shelfhold : une seule entrée dans sa bibliothèque, catégorie « Shelfhold », sans téléchargement automatique."
@@ -1637,3 +1649,7 @@ action = "Le fichier reste dans le dossier d'import, car il serait perdu sinon. 
 [errors."content.untrusted_pdf"]
 title = "PDF rangé tel quel, non exporté : sa provenance n'est pas déclarée."
 action = "Un PDF peut contenir du code que lirait le lecteur d'une destination. Déclarez-le comme un achat à l'import pour l'exporter."
+
+[errors."import.not_configured"]
+title = "Aucun dossier d'import n'est configuré."
+action = "Définissez SHELFHOLD_IMPORT_DIR (un dossier distinct de /library, /store et /data), puis relancez."

@@ -920,3 +920,30 @@ def test_every_code_the_folder_gives_has_its_message() -> None:
     for code in import_scan.REFUSED_CODES:
         assert t(f"errors.{code}.title") and t(f"errors.{code}.action"), code
     assert sa  # the module under test imports sqlalchemy for the rows it keeps
+
+
+@pytest.mark.req("EF-SRC-012", "EF-BIB-051")
+def test_a_refusal_known_beforehand_makes_no_unit() -> None:
+    """The precheck asks what the stores would refuse before the Unit exists: a purged content, a
+    trapped EPUB, a CBZ with an entry off the allowlist. The target is never called."""
+    from shelfhold.library.adapters.import_scan import make_precheck
+    from tests.null_tombstones import NONE_PURGED
+
+    class Purged:
+        def check_content(self, hashes: Any = (), **_: Any) -> bool:
+            return True
+
+    bad_cbz = zip_bytes([Member("1.png", b"\x89PNG\r\n\x1a\n"), Member("run.sh", b"#!/bin/sh")])
+    with import_env() as env:
+        env.build(precheck=make_precheck(NONE_PURGED))
+        env.drop("trap.epub", epub_with(Member("OEBPS/run.js", b"alert(1)")))
+        env.drop("bad.cbz", bad_cbz)
+        _scan, outcomes = outcome_of(env)
+        assert {o.code for o in outcomes} == {"import.archive_refused"}
+        assert env.items == [] and env.contents() == []
+        assert (env.incoming / "trap.epub").exists() and (env.incoming / "bad.cbz").exists()
+    with import_env() as env:
+        env.build(precheck=make_precheck(Purged()))
+        env.drop("a.cbz", CBZ)
+        assert only(outcome_of(env)[1]).code == "import.tombstoned"
+        assert env.items == [] and (env.incoming / "a.cbz").exists()
