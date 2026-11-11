@@ -25,6 +25,8 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "backup.stale",
         "content.untrusted_entry",
         "disk.low",
+        "edition.attach_suggested",
+        "edition.auto_attached",
         "instance.lease_conflict",
         "instance.restored_behind",
         "job.dead_lettered",

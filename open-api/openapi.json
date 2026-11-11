@@ -7639,6 +7639,18 @@
       "code": "disk.low",
       "status": 503
     },
+    "/api/v1/problems/edition.attach-refused": {
+      "code": "edition.attach_refused",
+      "status": 409
+    },
+    "/api/v1/problems/edition.attach-suggested": {
+      "code": "edition.attach_suggested",
+      "status": 409
+    },
+    "/api/v1/problems/edition.auto-attached": {
+      "code": "edition.auto_attached",
+      "status": 409
+    },
     "/api/v1/problems/export.age-tier-mix": {
       "code": "export.age_tier_mix",
       "status": 409

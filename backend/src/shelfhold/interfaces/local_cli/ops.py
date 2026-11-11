@@ -386,6 +386,26 @@ def _rate(ops: OpsServices, by: Principal, p: Params) -> object:
     )
 
 
+def _attach_list(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.attach.attachments()
+
+
+def _attach_detach(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.attach.separate(_text(p, "attach_id"), principal=by)
+
+
+def _attach_plan(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.attach.plan(_text(p, "attach_id"))
+
+
+def _attach_confirm(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.attach.confirm(_text(p, "attach_id"), confirm=_text(p, "confirm"), principal=by)
+
+
+def _attach_decline(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.attach.decline(_text(p, "attach_id"), principal=by)
+
+
 def _rate_pending(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.rating.pending(_text(p, "age"))
 
@@ -470,6 +490,11 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.rate": (_rate, "rate"),
     "ops.rate_pending": (_rate_pending, None),
     "ops.rate_batch": (_rate_batch, "rate"),
+    "ops.attach_list": (_attach_list, None),
+    "ops.attach_detach": (_attach_detach, "rate"),
+    "ops.attach_plan": (_attach_plan, None),
+    "ops.attach_confirm": (_attach_confirm, "rate"),
+    "ops.attach_decline": (_attach_decline, None),
     "ops.root_takeover": (_root_takeover, "root.takeover"),
     "ops.root_reinit": (_root_reinit, "root.reinit"),
     "ops.root_restored": (_root_restored, None),
@@ -497,7 +522,7 @@ READS_AND_RESTORE_EXITS = frozenset(
         "ops.status", "ops.missing_list", "ops.jobs_list", "ops.pair_propose",
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
         "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
-        "ops.rate_pending",
+        "ops.rate_pending", "ops.attach_list",
         "ops.restore_adopt", "ops.restore_acknowledge", "ops.tombstone_set_aside_journal",
         "ops.secrets_import",
         "ops.tombstone_accept_lost_keyring",

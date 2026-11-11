@@ -22,7 +22,7 @@ CATALOG_TABLES = {
     "contributor_name", "contribution", "external_id", "edition", "volume", "unit",
     "unit_variant", "variant_revision", "team", "team_alias", "team_priority",
     "merge_suggestion", "age_suggestion", "normalizer", "work_relation", "work_relation_kind",
-    "metadata_field",
+    "metadata_field", "edition_attach",
 }  # fmt: skip
 ACQUISITION_TABLES = {
     "follow_notice",

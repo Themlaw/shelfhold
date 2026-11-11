@@ -925,6 +925,19 @@ confidence = "Confidence of the match between 0 and 1; NULL when not known."
 locked = "A hand-edited value that a refresh never overwrites."
 fetched_at = "When the value was fetched (UTC)."
 
+[tables.edition_attach]
+description = "Journal of the attaches of an Edition to the Work that holds the same external identifier: what an attach changed, so that \"Séparer\" undoes it exactly, and the attaches that wait for an admin's confirmation."
+[tables.edition_attach.columns]
+id = "Identifier of the attach (ULID)."
+from_work_id = "Work the Edition came from (`work.id`)."
+to_work_id = "Work the Edition is, or would be, attached to (`work.id`)."
+provider = "Provider key of the shared external identifier."
+value = "Value of the shared external identifier."
+state = "`suggested` (waits for a confirmation), `attached`, `undone` or `declined`."
+reason = "`external_id` (automatic) or `age_raise` (would raise the age of the Work: never automatic)."
+prior = "What the undo puts back: rating stamp and shelf of the Edition, the fields written before and after, the identifiers never written (JSON object)."
+decided_at = "When an admin confirmed, declined or undid it (UTC); who is in the audit."
+
 [tables.metadata_cache]
 description = "Answers of the metadata providers, kept until they expire so a refresh does not ask twice."
 [tables.metadata_cache.columns]

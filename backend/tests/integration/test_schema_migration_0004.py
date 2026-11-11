@@ -44,9 +44,10 @@ OTHER = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
 @pytest.mark.req("ENF-OPS-002")
 def test_single_alembic_head() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0021"]
+    assert script.get_heads() == ["0026"]
     chain = [rev.revision for rev in script.walk_revisions()]
     assert chain == [
+        "0026",
         "0021",
         "0025",
         "0020",

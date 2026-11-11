@@ -222,13 +222,30 @@ reason = "MetadataProvider contract (SDK 1.2, EF-BIB-013, M2 L11): the proposal 
 until = "M2"
 symbols = [
   "shelfhold.sdk.metadata:EntityRef",
-  "shelfhold.sdk.metadata:FieldProposal",
   "shelfhold.sdk.metadata:IdentifyResult",
   "shelfhold.sdk.metadata:MetadataManifest",
   "shelfhold.sdk.metadata:Provenance",
   "shelfhold.sdk.metadata:RelationProposal",
   "shelfhold.sdk.models:SDK_VERSION",
   "shelfhold.sdk.models:sdk_supports",
+]
+
+[[allow]]
+category = "unwired-m2-l12"
+reason = "The arrival of an Edition with its external identifiers and field proposals (`AutoAttachService.arrive`, EF-BIB-003, EF-BIB-008, EF-BIB-055, M2 L12), the append-only identifier store, the field locks and the suggested ages are proved by their tests; their first production callers are the ingest pipeline of the M2 sources (L19) and the OpenLibrary enrichment (L13). The undo, the confirmation and the list of attaches are already wired (`shelfhold edition detach|attach-confirm|attach-decline|attachments`)."
+until = "M2"
+symbols = [
+  "shelfhold.catalog.application.auto_attach:IncomingEdition",
+  "shelfhold.catalog.application.external_ids:ExternalIdConflictError",
+  "shelfhold.catalog.application.external_ids:add_external_id",
+  "shelfhold.catalog.application.external_ids:external_ids_of",
+  "shelfhold.catalog.application.external_ids:holder_of",
+  "shelfhold.catalog.application.external_ids:renumber_external_id",
+  "shelfhold.catalog.application.fields:lock_field",
+  "shelfhold.catalog.application.fields:suggest_age",
+  "shelfhold.catalog.application.fields:unlock_field",
+  "shelfhold.catalog.domain.external_ids:ExternalIdError",
+  "shelfhold.catalog.domain.external_ids:normalize_external_id",
 ]
 
 [[allow]]

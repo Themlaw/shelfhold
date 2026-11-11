@@ -15,6 +15,20 @@ from shelfhold.catalog.adapters.repo import (
 )
 from shelfhold.catalog.adapters.rights_store import SqlRightsStore
 from shelfhold.catalog.adapters.tx import run_immediate
+from shelfhold.catalog.application.auto_attach import (
+    ATTACH_SUGGESTED,
+    AUTO_ATTACHED,
+    Arrival,
+    AttachPlan,
+    AttachPlanStaleError,
+    AttachRefusedError,
+    AttachView,
+    AutoAttachService,
+    Detached,
+    EventPublisher,
+    IncomingEdition,
+    Refiling,
+)
 from shelfhold.catalog.application.contributors import ARTIST, WRITER
 from shelfhold.catalog.application.dating import period_start, stored_date
 from shelfhold.catalog.application.dto import (
@@ -27,6 +41,22 @@ from shelfhold.catalog.application.dto import (
     UnitView,
 )
 from shelfhold.catalog.application.editions import translation_type_for
+from shelfhold.catalog.application.external_ids import (
+    ExternalIdConflictError,
+    StoredExternalId,
+    add_external_id,
+    external_ids_of,
+    holder_of,
+    renumber_external_id,
+)
+from shelfhold.catalog.application.fields import (
+    FieldReport,
+    lock_field,
+    propose_fields,
+    suggest_age,
+    unlock_field,
+)
+from shelfhold.catalog.application.new_edition_gate import Filing, file_new_edition
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.rating import (
     EditionSuggestion,
@@ -62,6 +92,11 @@ from shelfhold.catalog.domain.age import (
     parse_age,
 )
 from shelfhold.catalog.domain.dates import parse_partial_date
+from shelfhold.catalog.domain.external_ids import (
+    ExternalId,
+    ExternalIdError,
+    normalize_external_id,
+)
 from shelfhold.catalog.domain.identity import (
     TEXT_VERSION_LABELS,
     Discriminant,
@@ -83,6 +118,7 @@ from shelfhold.catalog.domain.normalizers import (
 )
 from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, place_of
+from shelfhold.catalog.domain.provenance import FieldKey
 from shelfhold.catalog.domain.public_domain import Verdict
 from shelfhold.catalog.domain.sort_key import sort_key
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
@@ -184,18 +220,35 @@ def numbered_mark(raw_number: str | None, source_order: int = 0) -> tuple[str, s
 
 __all__ = [
     "ARTIST",
+    "ATTACH_SUGGESTED",
+    "AUTO_ATTACHED",
     "LANG_NORMALIZER_ID",
     "TEXT_VERSION_LABELS",
     "WRITER",
     "Admission",
+    "Arrival",
+    "AttachPlan",
+    "AttachPlanStaleError",
+    "AttachRefusedError",
+    "AttachView",
+    "AutoAttachService",
     "BindingRef",
     "Catalog",
     "ContributorName",
+    "Detached",
     "Discriminant",
     "EditionAge",
     "EditionRef",
     "EditionSpec",
     "EditionSuggestion",
+    "EventPublisher",
+    "ExternalId",
+    "ExternalIdConflictError",
+    "ExternalIdError",
+    "FieldKey",
+    "FieldReport",
+    "Filing",
+    "IncomingEdition",
     "IncomingUnit",
     "IngestOutcome",
     "IngestResult",
@@ -209,6 +262,7 @@ __all__ = [
     "RatingRefusedError",
     "RatingResult",
     "RatingService",
+    "Refiling",
     "RelatedWork",
     "RelationError",
     "RelinkRefusedError",
@@ -218,20 +272,27 @@ __all__ = [
     "RightsReport",
     "RightsService",
     "SeriesAlreadyAttachedError",
+    "StoredExternalId",
     "TeamRef",
     "TextVersionRef",
     "UnitView",
     "VariantFacts",
     "Verdict",
     "Withdrawal",
+    "add_external_id",
     "admission",
     "ceiling_of",
     "content_warning_age",
     "default_registry",
     "edition_key_lang",
     "effective_age",
+    "external_ids_of",
+    "file_new_edition",
+    "holder_of",
     "ingest_isolated",
     "join_people",
+    "lock_field",
+    "normalize_external_id",
     "numbered_mark",
     "parse_age",
     "parse_number",
@@ -240,12 +301,16 @@ __all__ = [
     "person_field_name",
     "place_key",
     "place_parts",
+    "propose_fields",
     "relate_works",
     "relations_of",
     "relink_isolated",
+    "renumber_external_id",
     "sort_key",
     "stored_date",
+    "suggest_age",
     "translation_discriminant",
     "translation_type_for",
+    "unlock_field",
     "unrelate_works",
 ]

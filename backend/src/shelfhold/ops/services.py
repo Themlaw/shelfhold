@@ -36,6 +36,7 @@ from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export, platform
+from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
 from shelfhold.ops.errors import (
@@ -181,6 +182,7 @@ class OpsServices:
         meta: MetaOps | None = None,
         content: ContentOps | None = None,
         rating: RatingOps | None = None,
+        attach: AttachOps | None = None,
         follows: FollowOps | None = None,
         roots: RootOps | None = None,
     ) -> None:
@@ -201,6 +203,7 @@ class OpsServices:
         self._meta = meta
         self._content = content
         self._rating = rating
+        self._attach = attach
         self._follows = follows
         self._roots = roots
 
@@ -630,6 +633,13 @@ class OpsServices:
         if self._library is None:
             raise ExitUnavailableError("the library operations are not connected")
         return self._library
+
+    @property
+    def attach(self) -> AttachOps:
+        """The attaches by external identifier: list, "Séparer", confirm (EF-BIB-003, L12)."""
+        if self._attach is None:
+            raise ExitUnavailableError("the attaches are not connected")
+        return self._attach
 
     @property
     def rating(self) -> RatingOps:

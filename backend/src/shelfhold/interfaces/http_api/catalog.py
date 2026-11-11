@@ -4,6 +4,7 @@ from functools import cache
 from types import ModuleType
 
 from shelfhold.acquisition import errors as acquisition_errors
+from shelfhold.catalog import errors as catalog_errors
 from shelfhold.error_catalog import ErrorCode
 from shelfhold.events import errors as events_errors
 from shelfhold.export import errors as export_errors
@@ -18,6 +19,7 @@ from shelfhold.ops import errors as ops_errors
 # A new context adds its `errors` module here; a test fails if one is declared but not listed.
 _MODULES: tuple[ModuleType, ...] = (
     acquisition_errors,
+    catalog_errors,
     events_errors,
     export_errors,
     headless_errors,
