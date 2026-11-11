@@ -68,6 +68,6 @@ Enregistrées en base ; l'environnement et `config.toml` l'emportent. Le rôle e
 | `export.missing_ratio` | `0.05` | oui | non | Sentinel: share of missing files, above which (with the floor) exports, removals and scans are blocked (EF-EXP-029). |
 | `export.missing_ceiling` | `50` | oui | non | Sentinel: more missing files than this block whatever the share (EF-EXP-029). |
 | `instance.jurisdiction` | déduit de la langue du système | oui | non | Country whose copyright law drives the public-domain notices; the default is deduced from the locale (EF-SRC-024). |
-| `maintenance.window` | `03:00-07:00 Europe/Paris` | non (lecture seule) | non | The fixed maintenance window (ENF-OPS-014); read only in M1a. |
+| `maintenance.window` | `03:00-07:00 Europe/Paris` | non (lecture seule) | non | The default maintenance window (ENF-OPS-014), read only here: it is set by SHELFHOLD_MAINTENANCE_WINDOW_START, _END and SHELFHOLD_TIMEZONE. |
 | `notify.urls` | aucun | oui | oui | Notification channels, name=url; the URL is sealed. |
 | `path_map.<cible>` | selon la cible | oui | non | Correspondance des chemins de la destination (JSON) ; une clé par cible. |

@@ -1,30 +1,42 @@
-# Sauvegarder et restaurer (M1a)
+# Ce que l'hôte sauvegarde, et restaurer
 
-Depuis M1b, Shelfhold sauvegarde `/data` seul : voir [sauvegarde.md](sauvegarde.md) (destination
-distincte, rétention de 14, alerte d'échec). Cette page dit ce qu'il faut sauvegarder
-vous-même, à quelle fréquence, et comment repartir d'une copie.
+Depuis la 0.3, Shelfhold sauvegarde `/data` lui-même, chaque nuit : voir [sauvegarde.md](sauvegarde.md)
+(destination distincte, chiffrement, rétention de 14, alerte d'échec). Cette page dit ce qui **reste** à
+sauvegarder avec l'outil de votre hôte, et comment repartir d'une copie.
 
 ## Objectifs
 
-- **RPO 24 h** : une sauvegarde par jour au moins de `/data`.
+- **RPO 24 h** : une sauvegarde par jour au moins de `/data` (la sauvegarde intégrée de 01 h 40).
 - **RTO 1 h** pour la remise en service (pas pour recopier le contenu).
 
 ## Quoi sauvegarder
 
 | Élément | Contenu | Comment |
 | --- | --- | --- |
-| `/data` | base SQLite, configuration, `meta/`, journal des pierres tombales | arrêtez l'instance puis copiez le dossier, ou utilisez un instantané du système de fichiers (ZFS, btrfs, LVM). **Ne copiez pas une base en marche avec `cp`.** |
-| Clé maîtresse | `/data/keyring`, qui scelle tous les secrets de la base | **export obligatoire** : `shelfhold secrets export` |
+| `/data` | base SQLite, configuration, `meta/`, journal des pierres tombales | `shelfhold backup run` chaque nuit (automatique, chiffré), puis copie du **dossier de sauvegarde** par l'outil de l'hôte. Ne copiez pas une base en marche avec `cp`. |
+| Clé maîtresse | `/data/keyring`, qui scelle tous les secrets de la base | **export obligatoire** : `shelfhold secrets export` (la sauvegarde intégrée en contient aussi le trousseau complet, mais gardez cet export hors de la phrase de passe de la sauvegarde) |
 | `/store` | copies conservées (vide tant que vous n'en gardez pas) | outil de sauvegarde de l'hôte |
 | `/library` | votre bibliothèque | votre sauvegarde habituelle de Kavita : Shelfhold n'en est pas le propriétaire |
+
+### La liste à confier à l'outil de l'hôte
+
+Shelfhold ne copie ni `/store` ni `/library` ni rien hors de son dossier de sauvegarde. Avec rsync, restic
+ou l'outil de votre choix, sauvegardez :
+
+1. le **dossier de sauvegarde** (`SHELFHOLD_BACKUP_DIR`), vers un autre disque ou une autre machine ;
+2. **`/store`** : les copies conservées et `INDEX.jsonl`, qui permet de relire `/store` si `/data` est perdu ;
+3. **`/library`** : par votre sauvegarde habituelle de Kavita ;
+4. l'**export de clé** (`keyring.age`) et la **phrase de passe** de la sauvegarde, séparément, hors de l'hôte.
+
+Le fichier `/data/.identity-counter` n'est volontairement **pas** sauvegardé : il sert à reconnaître une
+base restaurée. Sans sauvegarde du tout, voir [sinistre-sans-sauvegarde.md](sinistre-sans-sauvegarde.md).
 
 ### Pour relire la base sans Shelfhold (EF-INT-027)
 
 Chaque release publie en assets deux fichiers générés des migrations : **`schema.sql`** (le schéma
 SQLite complet) et **`data-dictionary.md`** (tables, colonnes, valeurs sentinelles, formats écrits
-sur disque et leurs versions). **Rangez-les avec votre jeu de sauvegarde**, à côté de la copie de
-`/data` : en M1a c'est vous qui les copiez (la sauvegarde intégrée, qui les inclura d'elle-même,
-arrive en M1b). Une base retrouvée des années plus tard se relit alors avec `sqlite3` seul :
+sur disque et leurs versions). La sauvegarde intégrée les inclut d'elle-même ; si
+vous copiez `/data` autrement, **rangez-les avec votre jeu de sauvegarde**. Une base retrouvée des années plus tard se relit alors avec `sqlite3` seul :
 
 ```sh
 sqlite3 vide.db < schema.sql       # schéma vide dans un fichier à part, pour comparer

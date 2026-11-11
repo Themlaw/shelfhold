@@ -58,7 +58,7 @@ def test_restore_doc_puts_the_schema_assets_in_the_backup_set() -> None:
     text = (ADMIN / "restauration.md").read_text(encoding="utf-8")
     assert "schema.sql" in text and "data-dictionary.md" in text
     assert "jeu de sauvegarde" in text and "sqlite3" in text
-    assert "M1b" in text  # the integrated backup will carry them itself
+    assert "sauvegarde intégrée les inclut" in text  # the integrated backup carries them itself
 
 
 @pytest.mark.req("ENF-LEG-001", "ENF-PRIV-002")

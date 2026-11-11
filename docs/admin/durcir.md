@@ -17,7 +17,7 @@ Le **profil durci** ajoute de la friction. Il n'est jamais exigé au démarrage.
 | --- | --- | --- |
 | Session admin | 30 jours glissants, « se souvenir de moi » coché | 30 min d'inactivité, 12 h au plus, y compris pour les sessions déjà ouvertes |
 | « Se souvenir de moi » | coché par défaut | refusé pour l'admin tant qu'il n'est pas confirmé : la connexion répond 422 `remember-needs-confirmation` ; décochez la case, ou envoyez `confirm_remember: true` pour une session qui dure le temps du profil durci |
-| Mot de passe redemandé (`reauth-required`) | actions irréversibles ou qui révèlent un secret (purge immédiate, pierres tombales, export ou rotation des secrets, réinitialisation d'une racine, vider la corbeille, `detach` complet, confirmation post-restauration), contrôle parental dès qu'un profil restreint existe | toute action réservée (classer, démasquer, gérer les clés compris) |
+| Mot de passe redemandé (`reauth-required`) | actions irréversibles ou qui révèlent un secret (purge immédiate, pierres tombales, export ou rotation des secrets, réinitialisation d'une racine, vider la corbeille, `detach` complet, confirmation post-restauration), contrôle parental dès qu'un profil restreint existe | toute action réservée : démasquer, gérer les clés, révoquer une passkey (classer et enregistrer une passkey l'exigent déjà dans tous les profils), attester un plugin, changer un plafond d'âge ou retirer une étagère famille compris (la liste complète est dans [roles.md](roles.md)) |
 | Expiration des clés d'API | facultative (aucune par défaut) | 90 jours au plus, imposés à la création |
 
 La fenêtre de fraîcheur (`SHELFHOLD_FRESH_AUTH_S`, 900 s par défaut) vaut dans les deux profils.

@@ -39,3 +39,17 @@ redirection vers une adresse privée que vous n'avez pas déclarée).
 - Un réveil qui échoue **n'est pas une panne** de la source : le lot est différé, rien n'est compté
   contre elle. Après trois lots différés de suite, l'événement `wake.deferred` vous prévient ;
   vérifiez Sablier et les noms de conteneurs, ou démarrez l'outil à la main.
+
+## Sonde de santé après le réveil
+
+Une fois Suwayomi réveillé, et avant de lire une série, Shelfhold lit la liste des sources de Suwayomi : une
+source absente, remplacée par un bouchon ou à moitié mise à jour est déclarée non chargée (`source.not_loaded`),
+sans rien compter contre elle. Il relance aussi, de façon bornée, les chapitres demandés mais jamais
+téléchargés. Le détail est dans [suwayomi-multi-comptes.md](suwayomi-multi-comptes.md).
+
+## Ce que Sablier ne change pas
+
+- Un réveil qui échoue ne crée aucune candidate à la mise à l'abri, n'ouvre aucune pause et ne compte aucune
+  erreur de contenu : il diffère le lot.
+- Le défaut de `source.check_mode` est `always_on` ; il vaut `piloted` quand un réveil est configuré et
+  qu'aucune valeur n'a été enregistrée (`shelfhold config set source.check_mode always_on` pour le refuser).
