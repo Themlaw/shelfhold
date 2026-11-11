@@ -83,6 +83,7 @@ from shelfhold.export.targets.kavita.errors import (
 from shelfhold.export.targets.kavita.series import (
     SeriesAgeGate,
     SeriesAges,
+    blocking_age_reader,
     refresh_foreign_names,
     refresh_names,
 )
@@ -439,7 +440,11 @@ async def _export_bound(
             # plan; Kavita failing keeps the gate closed and no EPUB beyond what it shows leaves
             events = BusTargetEvents(comp.engine, comp.bus)
             gate = SeriesAgeGate(comp.engine, comp.clock, events)
-            pipeline.bind_age_gate(await gate.open(client, destination.id))
+            pipeline.bind_age_gate(
+                await gate.open(client, destination.id),
+                # the last look before an EPUB write reads Kavita again, under the locks
+                blocking_age_reader(lambda: comp.kavita_client(destination.target_id)),
+            )
             if apply is None:
                 report = pipeline.run(destination.id, job_id=context.job_id)
             else:

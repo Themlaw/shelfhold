@@ -56,4 +56,5 @@ CODES: tuple[ErrorCode, ...] = (
     # L09 (M2): EPUB series in a Kavita Books library (EF-EXP-040, D19)
     ErrorCode("export.awaiting_series_age", 409, "admin"),
     ErrorCode("target.library_type_mismatch", 409, "admin"),
+    ErrorCode("export.series_age_stale", 409, "admin"),
 )

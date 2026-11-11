@@ -33,6 +33,7 @@ from shelfhold.export.domain.kavita_compat import TargetMode, blocks_family_shel
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute
 from shelfhold.export.domain.planner import (
+    AGE_PAUSES,
     GATE_CLOSED,
     AgeGateFacts,
     DestinationFacts,
@@ -41,6 +42,7 @@ from shelfhold.export.domain.planner import (
     RecordFacts,
     SeriesFacts,
     UnitFacts,
+    age_rank,
 )
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import ExportSource, epub_units, export_sources
@@ -58,6 +60,7 @@ __all__ = [
     "load_context",
     "load_request",
     "paused_series",
+    "unknown_exposed",
     "version_of",
 ]
 
@@ -201,6 +204,7 @@ def load_request(
         foreign_names=load_foreign_names(connection, ctx.destination_id),
         admissions=admissions, holds_books=_holds_books(connection, ctx, editions),
         age_wanted=wanted_editions(connection, gated),
+        age_unknown_exposed=unknown_exposed(connection, gated, age_gate.unknowns_tier),
         age_seeded=seeded_series(connection, ctx.destination_id) if gated else frozenset(),
         age_gate=age_gate,
     )  # fmt: skip
@@ -233,6 +237,21 @@ def wanted_editions(connection: Connection, edition_ids: list[str]) -> frozenset
     return frozenset(
         e for e in edition_ids if edition_age(connection, e, rating=rating) is not None
     )
+
+
+def unknown_exposed(
+    connection: Connection, edition_ids: list[str], unknowns_tier: int | None
+) -> frozenset[str]:
+    """The Editions whose first EPUB an account that sees the "unknown" series could read: their
+    age is above the lowest tier of such an account (`AgeGateFacts.unknowns_tier`)."""
+    if unknowns_tier is None:
+        return frozenset()
+    found = set()
+    for edition_id in edition_ids:
+        age = edition_age(connection, edition_id)
+        if age is not None and age_rank(age) > unknowns_tier:
+            found.add(edition_id)
+    return frozenset(found)
 
 
 def seeded_series(connection: Connection, destination_id: str) -> frozenset[str]:
@@ -329,7 +348,9 @@ def paused_series(connection: Connection, destination_id: str) -> frozenset[str]
     return frozenset(
         connection.execute(
             sa.select(series.c.id).where(
-                series.c.shelf_destination_id == destination_id, series.c.paused_reason.isnot(None)
+                series.c.shelf_destination_id == destination_id,
+                series.c.paused_reason.isnot(None),
+                series.c.paused_reason.not_in(sorted(AGE_PAUSES)),  # the age gate holds those
             )
         ).scalars()
     )

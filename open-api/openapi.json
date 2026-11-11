@@ -7675,6 +7675,10 @@
       "code": "export.segment_policy_unconfirmed",
       "status": 409
     },
+    "/api/v1/problems/export.series-age-stale": {
+      "code": "export.series_age_stale",
+      "status": 409
+    },
     "/api/v1/problems/export.series-name-collision": {
       "code": "export.series_name_collision",
       "status": 409

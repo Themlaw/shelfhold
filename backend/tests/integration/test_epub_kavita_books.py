@@ -73,12 +73,12 @@ def test_epub_series_age_pushed_locked_visible_to_restricted_child() -> None:
         assert len(export_round(w)) == 1
         sid = kavita_scans(w, "Le Livre")
         assert w.fake.ages[sid]["ageRating"] == 0  # Kavita reads no age in an EPUB
-        assert not visible_to_restricted(0, False, ceiling=TEEN)
+        assert not visible_to_restricted(0, ceiling=TEEN, include_unknowns=False)
 
         facts = open_gate(w)  # pushed, then read back after the scan
         assert w.fake.ages[sid]["ageRating"] == EVERYONE_10
         assert w.fake.ages[sid]["ageRatingLocked"] is True
-        assert visible_to_restricted(EVERYONE_10, True, ceiling=TEEN)
+        assert visible_to_restricted(EVERYONE_10, ceiling=TEEN, include_unknowns=False)
         (series,) = env.rows(export.export_series)
         assert series.id in facts.verified
         with env.engine.connect() as connection:
@@ -99,7 +99,7 @@ def test_epub_series_age_pushed_locked_visible_to_restricted_child() -> None:
         rate(env, book, 13)  # reclassified in the same shelf: pushed again, locked
         open_gate(w)
         assert w.fake.ages[sid]["ageRating"] == TEEN and w.fake.ages[sid]["ageRatingLocked"]
-        assert visible_to_restricted(TEEN, True, ceiling=TEEN)
+        assert visible_to_restricted(TEEN, ceiling=TEEN, include_unknowns=False)
         assert len(metadata_posts(w)) == 2
         assert w.fake.violations == []
 

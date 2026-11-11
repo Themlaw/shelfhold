@@ -13,14 +13,16 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR
+from shelfhold.export.targets.kavita import AdminKey, KavitaClient
 from shelfhold.export.targets.kavita.arrival import ArrivalPoller
-from shelfhold.export.targets.kavita.series import SeriesAgeGate
+from shelfhold.export.targets.kavita.series import SeriesAgeGate, blocking_age_reader
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import UntrustedEpubStore
 from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.export_env import ExportEnv, Series
+from tests.fakes.kavita import API_KEY, BASE_URL, build_fetcher
 from tests.integration.test_schema_catalog import add_unit, add_variant
 from tests.kavita_env import run
 from tests.kavita_export_env import REMOTE_ROOT, Wired
@@ -81,8 +83,15 @@ def open_gate(w: Wired) -> Any:
     """What the export job does before it plans: push the ages due, then read them back."""
     gate = SeriesAgeGate(w.env.engine, w.env.clock, w.events)
     facts = run(gate.open(w.client, w.env.destination_id))
-    w.env.pipeline.bind_age_gate(facts)
+    w.env.pipeline.bind_age_gate(facts, blocking_age_reader(lambda: fresh_client(w)))
     return facts
+
+
+def fresh_client(w: Wired) -> KavitaClient:
+    """A client of its own, as the last look of the pipeline makes in its worker thread."""
+    return KavitaClient(
+        build_fetcher(w.fake), BASE_URL, AdminKey(API_KEY), events=w.events, clock=w.env.clock
+    )
 
 
 def export_round(w: Wired) -> list[str]:
@@ -92,7 +101,10 @@ def export_round(w: Wired) -> list[str]:
     return sorted(str(op.rel_path) for op in report.ops)
 
 
-def visible_to_restricted(age_rating: int, locked: bool, *, ceiling: int) -> bool:
-    """Kavita shows a series to an account restricted to `ceiling` (a Kavita `AgeRating`) without
-    "include unknowns" when its rating is known and not above the restriction."""
-    return locked and age_rating != UNKNOWN and age_rating <= ceiling
+def visible_to_restricted(age_rating: int, *, ceiling: int, include_unknowns: bool) -> bool:
+    """What Kavita shows an account restricted to `ceiling` (a Kavita `AgeRating`): a series of
+    known age not above the restriction, and a series of "unknown" age only when the account
+    includes the unknowns."""
+    if age_rating == UNKNOWN:
+        return include_unknowns
+    return age_rating <= ceiling

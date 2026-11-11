@@ -9,7 +9,10 @@ its name is not written over.
 
 from __future__ import annotations
 
+import asyncio
 import posixpath
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import sqlalchemy as sa
@@ -24,27 +27,38 @@ from shelfhold.export.application.series_age import SeriesAgeTask, due_ages, ver
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import DestinationPausedError, FieldRegistry
 from shelfhold.export.domain.field_owner import AGE_RATING, effective_age, should_push
-from shelfhold.export.domain.kavita_access import rating_for_age
+from shelfhold.export.domain.kavita_access import age_of_rating, rating_for_age, reaches, tier
 from shelfhold.export.domain.kavita_compat import blocks_family_shelf
 from shelfhold.export.domain.naming import normalize_series_name
-from shelfhold.export.domain.planner import GATE_CLOSED, AgeGateFacts
+from shelfhold.export.domain.planner import (
+    AGE_PAUSES,
+    GATE_CLOSED,
+    SERIES_AGE_STALE,
+    SERIES_SPLIT,
+    AgeGateFacts,
+)
 from shelfhold.export.targets.kavita import dto
+from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import ListingIncomplete, ProtocolError, TargetError
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import export
+from shelfhold.sdk.age import AgeRating
 
 __all__ = [
     "Resolution",
     "SeriesAgeGate",
     "SeriesAges",
     "SeriesResolver",
+    "below_wanted",
+    "blocking_age_reader",
     "folded",
     "refresh_foreign_names",
     "refresh_names",
 ]
 
 log = structlog.get_logger(__name__)
+READ_TIMEOUT_S = 60.0
 
 
 def folded(name: str) -> str:
@@ -312,15 +326,22 @@ class SeriesAgeGate:
 
     An EPUB carries no age (D1): until Kavita holds the age of its series, locked, Kavita shows
     it "unknown". So, before anything is planned: Kavita must answer on a release at the floor of
-    ENF-COMP-001 (0.9.1), the ages due are pushed (a reclassification is pushed here, before any
-    new file of the series is exposed), then every EPUB series is read back. A series is
-    `verified` when Kavita shows the lock Shelfhold holds (`field_owner`) at the value wanted
-    now; only then does it take more files. Kavita that does not answer, refuses a push, or
-    drops the lock keeps the gate closed (nothing is exported): fail closed.
+    ENF-COMP-001 (0.9.1); the accounts are read, and the lowest tier of a non-admin account that
+    reaches the library with "include unknowns" on is kept (it would see a first EPUB before its
+    age is pushed: no first EPUB above that tier goes, and `target.child_exposure` names the
+    setting); the ages due are pushed (a reclassification is pushed here, before any new file of
+    the series is exposed); then every EPUB series is read back, on every Kavita series its
+    files are in. A series is `verified` when each of them shows the lock Shelfhold holds
+    (`field_owner`) at the value wanted now. A series Kavita split (`series_split`) or whose age
+    reads below the one wanted (`series_age_stale`) is paused, listed by `status`, and takes
+    nothing until a later read-back verifies it. Kavita that does not answer, refuses a push or
+    drops the lock keeps the gate closed: fail closed.
     """
 
     def __init__(self, engine: Engine, clock: Clock, events: TargetEvents) -> None:
         self._engine = engine
+        self._clock = clock
+        self._events = events
         self._ages = SeriesAges(engine, clock, events)
 
     async def open(self, client: KavitaClient, destination_id: str) -> AgeGateFacts:
@@ -330,13 +351,44 @@ class SeriesAgeGate:
                 log.info("export.age_gate_closed", destination_id=destination_id,
                          reason="version_below_floor")  # fmt: skip
                 return GATE_CLOSED
-            await self._ages.push_or_raise(client, destination_id)
+            tier = await self._unknowns_tier(client, destination_id)
+            refused: Exception | None = None
+            try:
+                await self._ages.push_or_raise(client, destination_id)
+            except (TargetError, ListingIncomplete, DestinationPausedError) as error:
+                refused = error  # the read-back still says which series stay below their age
             verified = await self._verified(client, destination_id)
         except (TargetError, ListingIncomplete, DestinationPausedError) as error:
             log.info("export.age_gate_closed", destination_id=destination_id,
                      reason=type(error).__name__)  # fmt: skip
             return GATE_CLOSED
-        return AgeGateFacts(open=True, verified=frozenset(verified))
+        if refused is not None:
+            log.info("export.age_gate_closed", destination_id=destination_id,
+                     reason=type(refused).__name__)  # fmt: skip
+            return GATE_CLOSED
+        return AgeGateFacts(open=True, verified=frozenset(verified), unknowns_tier=tier)
+
+    async def _unknowns_tier(self, client: KavitaClient, destination_id: str) -> int | None:
+        """The lowest tier of a restricted account that sees the "unknown" series of the library."""
+        with self._engine.connect() as connection:
+            library = _library_ref(connection, destination_id)
+        if library is None:
+            return None
+        accounts = await AccessAuditor(self._engine, self._clock, self._events).accounts(client)
+        seeing = [
+            a for a in accounts
+            if not a.is_admin and a.include_unknowns and a.age_restricted
+            and reaches(a, library)
+        ]  # fmt: skip
+        if not seeing:
+            return None
+        lowest = min(tier(a) for a in seeing)
+        self._events.emit(
+            "target.child_exposure", destination_id=destination_id,
+            accounts=sorted(a.username for a in seeing if tier(a) == lowest),
+            cause="include_unknowns", setting="include_unknowns",
+        )  # fmt: skip
+        return lowest
 
     async def _verified(self, client: KavitaClient, destination_id: str) -> list[str]:
         with self._engine.connect() as connection:
@@ -344,8 +396,13 @@ class SeriesAgeGate:
             books = _epub_series(connection, destination_id)
         found: list[str] = []
         for task in tasks:
-            if task.export_series_id not in books or task.kavita_series_id is None:
-                continue  # a CBZ carries its age; a series not indexed yet is not verified
+            if task.export_series_id not in books:
+                continue  # a CBZ carries its age in its ComicInfo
+            if task.split:
+                self._pause(destination_id, task.export_series_id, SERIES_SPLIT)
+                continue
+            if task.kavita_series_id is None:
+                continue  # not indexed yet: not verified
             try:
                 current = await client.series_age(task.kavita_series_id)
             except ProtocolError:
@@ -357,10 +414,50 @@ class SeriesAgeGate:
             if verified_age(
                 task.wanted, owned, locked=current.locked, kavita_value=current.age_rating
             ):
+                self._pause(destination_id, task.export_series_id, None)
                 found.append(task.export_series_id)
-            else:
-                log.info("export.age_unverified", export_series_id=task.export_series_id)
+                continue
+            log.info("export.age_unverified", export_series_id=task.export_series_id)
+            if below_wanted(task.wanted, current.age_rating):
+                self._pause(destination_id, task.export_series_id, SERIES_AGE_STALE)
         return found
+
+    def _pause(self, destination_id: str, series_id: str, reason: str | None) -> None:
+        """Set (or clear, with None) the age pause of a series; announce it when it starts."""
+        series = export.export_series
+        with self._engine.begin() as connection:
+            now = connection.execute(
+                sa.select(series.c.paused_reason).where(series.c.id == series_id)
+            ).scalar()
+            if reason is None and now not in AGE_PAUSES:
+                return  # no age pause, or another one (a foreign writer) not ours to lift
+            if reason is not None and now is not None:
+                return  # already paused, by us or by another cause that keeps it closed too
+            connection.execute(
+                sa.update(series).where(series.c.id == series_id).values(paused_reason=reason)
+            )
+        if reason is not None:
+            self._events.emit(
+                "reconcile.drift", destination_id=destination_id, export_series_id=series_id,
+                cause=reason, field=AGE_RATING,
+            )  # fmt: skip
+
+
+def below_wanted(wanted: AgeRating, kavita_value: int) -> bool:
+    """Kavita shows an age below the class wanted now (or none)."""
+    shown = age_of_rating(kavita_value)
+    needed = age_of_rating(rating_for_age(wanted.min_age, x=wanted.x))
+    return shown is None or needed is None or shown < needed
+
+
+def _library_ref(connection: sa.Connection, destination_id: str) -> int | None:
+    link, library = export.shelf_destination_remote_library, export.remote_library
+    ref = connection.execute(
+        sa.select(library.c.remote_ref)
+        .select_from(library.join(link, link.c.remote_library_id == library.c.id))
+        .where(link.c.shelf_destination_id == destination_id)
+    ).scalar()
+    return int(ref) if ref is not None and str(ref).isdigit() else None
 
 
 def _epub_series(connection: sa.Connection, destination_id: str) -> frozenset[str]:
@@ -378,3 +475,22 @@ def _epub_series(connection: sa.Connection, destination_id: str) -> frozenset[st
             .distinct()
         ).scalars()
     )
+
+
+def blocking_age_reader(
+    make_client: Callable[[], KavitaClient],
+) -> Callable[[int], tuple[int, bool]]:
+    """`(age_rating, locked)` of a Kavita series, read now, for the last look of the pipeline
+    before it writes an EPUB (it runs under the locks, outside any event loop of its own: the
+    read gets a client and a loop of its own in a worker thread)."""
+
+    def in_thread(series_id: int) -> tuple[int, bool]:
+        client = make_client()  # built in the worker thread too: no event loop is running there
+        current = asyncio.run(client.series_age(series_id))
+        return current.age_rating, current.locked
+
+    def read(series_id: int) -> tuple[int, bool]:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(in_thread, series_id).result(timeout=READ_TIMEOUT_S)
+
+    return read

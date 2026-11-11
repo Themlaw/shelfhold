@@ -866,7 +866,11 @@ action = "Une bibliothèque famille ne sert qu'une étagère famille : liez chaq
 
 [errors."export.awaiting_series_age"]
 title = "Ce livre attend que Kavita affiche l'âge de sa série, verrouillé."
-action = "Rien n'est perdu : l'export reprend dès que Kavita répond et garde le verrou. Vérifiez « shelfhold target status »."
+action = "Rien n'est perdu : l'export reprend dès que Kavita répond et garde le verrou. Un aperçu ne contacte pas Kavita : il affiche donc toujours cette attente pour ces livres, seul l'export la lève. Vérifiez « shelfhold target status »."
+
+[errors."export.series_age_stale"]
+title = "Kavita affiche pour cette série un âge inférieur à son classement."
+action = "La série ne reçoit plus rien. Le prochain export repousse l'âge et le relit ; si cela échoue encore, vérifiez Kavita avec « shelfhold target recheck »."
 
 [errors."target.library_type_mismatch"]
 title = "Cette étagère de livres vise une bibliothèque Kavita qui n'est pas de type Livres."

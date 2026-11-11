@@ -40,10 +40,14 @@ from shelfhold.export.domain.naming import (
     Parsed,
     checked_export_path,
 )
+from shelfhold.sdk.age import AgeRating
 
 __all__ = [
+    "AGE_PAUSES",
     "AGE_WAIT",
     "GATE_CLOSED",
+    "SERIES_AGE_STALE",
+    "SERIES_SPLIT",
     "AgeGateFacts",
     "Blocked",
     "DestinationFacts",
@@ -56,6 +60,7 @@ __all__ = [
     "SeriesFacts",
     "SeriesRef",
     "UnitFacts",
+    "age_rank",
     "plan_destination",
     "series_key",
 ]
@@ -121,6 +126,20 @@ class AgeGateFacts:
 
     open: bool = False
     verified: frozenset[str] = frozenset()
+    # the lowest tier of a non-admin account that reaches the library with "include unknowns" on:
+    # a series of "unknown" age is shown to it, so no first EPUB above that tier may go
+    unknowns_tier: int | None = None
+
+
+# `export_series.paused_reason` set by the age gate: the series takes nothing until it clears
+SERIES_AGE_STALE: Final = "series_age_stale"  # Kavita shows an age below the one wanted now
+SERIES_SPLIT: Final = "series_split"  # Kavita split the files of the series into two series
+AGE_PAUSES: Final = frozenset({SERIES_AGE_STALE, SERIES_SPLIT})
+
+
+def age_rank(age: AgeRating) -> int:
+    """An age as a tier of `kavita_access.tier`: X reads as 99."""
+    return 99 if age.x else age.min_age
 
 
 GATE_CLOSED: Final = AgeGateFacts()
@@ -173,6 +192,7 @@ class PlanRequest:
     holds_books: bool = False  # the shelf takes book Works (`novel`, `light_novel`, `ebook`)
     age_wanted: frozenset[str] = frozenset()  # Editions whose series has an age to push
     age_seeded: frozenset[str] = frozenset()  # export series that already hold an exported file
+    age_unknown_exposed: frozenset[str] = frozenset()  # above `unknowns_tier`: no first EPUB
     age_gate: AgeGateFacts = GATE_CLOSED
 
 
@@ -367,6 +387,8 @@ def _age_gate_lets(request: PlanRequest, unit: UnitFacts, ref: SeriesRef, seeds:
         return False
     if ref.export_series_id is not None and ref.export_series_id in request.age_seeded:
         return False  # it holds files whose age is not read back locked yet
+    if unit.edition_id in request.age_unknown_exposed:
+        return False  # "unknown" until the push, and an account restricted below sees unknowns
     seeds.add(key)
     return True
 

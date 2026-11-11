@@ -37,6 +37,7 @@ from shelfhold.export.application.rendering import (
     epub_opf_edit,
 )
 from shelfhold.export.application.restore import RestoredBehindError
+from shelfhold.export.application.series_age import due_ages, verified_age
 from shelfhold.export.application.snapshot import (
     DestinationContext,
     LoadedRequest,
@@ -49,7 +50,8 @@ from shelfhold.export.application.snapshot import (
     seeded_series,
     version_of,
 )
-from shelfhold.export.application.target_state import ensure_active
+from shelfhold.export.application.target_state import FieldRegistry, ensure_active
+from shelfhold.export.domain.field_owner import AGE_RATING
 from shelfhold.export.domain.naming import Parsed
 from shelfhold.export.domain.planner import (
     GATE_CLOSED,
@@ -60,6 +62,7 @@ from shelfhold.export.domain.planner import (
     PlanRequest,
     PlanWarning,
     SeriesRef,
+    age_rank,
     plan_destination,
 )
 from shelfhold.infrastructure.clock import Clock
@@ -287,6 +290,7 @@ class ExportPipeline:
         self._renderer = renderer or CbzRenderer(fsops, staging_dir=self._staging)
         self._epub_renderer = EpubRenderer(fsops, staging_dir=self._staging)
         self._age_gate: AgeGateFacts = GATE_CLOSED  # bound per run by the export job
+        self._age_reader: Callable[[int], tuple[int, bool]] | None = None
         self._locks = ResourceLocks(engine, clock=clock)
         self.mirror = mirror or ProvenanceMirror(
             engine, fsops, clock=clock, operating_bus=operating_bus
@@ -323,10 +327,15 @@ class ExportPipeline:
         self._parse = parse
         self._parse_verified = verified
 
-    def bind_age_gate(self, facts: AgeGateFacts) -> None:
+    def bind_age_gate(
+        self, facts: AgeGateFacts, reader: Callable[[int], tuple[int, bool]] | None = None
+    ) -> None:
         """Put what Kavita said of the series ages (read just before) behind the planner and the
-        last look before an EPUB is written (EF-EXP-040). Unbound, the gate is closed."""
+        last look before an EPUB is written (EF-EXP-040). `reader` gives `(age_rating, locked)`
+        of a Kavita series now: the series is read again under the locks, right before the
+        write. Unbound, the gate is closed."""
         self._age_gate = facts
+        self._age_reader = reader
 
     def wanted_names(self, destination_id: str) -> tuple[list[str], str | None]:
         """See the module function: fetched in bulk, then `bind_parse` makes the plan applicable."""
@@ -705,23 +714,50 @@ class ExportPipeline:
             log.warning("export.origin_opf_not_kept", unit_id=planned.unit_id)
 
     def _require_age_gate(self, ctx: DestinationContext, planned: PlannedOp) -> None:
-        """The last look before an EPUB is written, read again now and not from the plan: a
-        series with an age to push takes a file only once its age is read back locked, or as
-        its very first file while Kavita answers (EF-EXP-040). Pull destinations have no
-        Kavita series."""
+        """The last look before an EPUB is written, under the locks of the operation (the
+        library one among them), from the database and from Kavita now, not from the plan: a
+        series with an age to push takes a file only once its age reads back locked, on every
+        Kavita series its files are in, at the value wanted now; or as its very first file while
+        Kavita answers and no account that sees the "unknown" series is restricted below its age
+        (EF-EXP-040). Pull destinations have no Kavita series."""
         if ctx.transport == "pull":
             return
+        gate = self._age_gate
         with self._engine.connect() as connection:
-            if edition_age(connection, planned.series.edition_id) is None:
+            age = edition_age(connection, planned.series.edition_id)
+            if age is None:
                 return  # nobody rated it: no age to push (a shelf below 18+ refused it already)
             series_id = self._series_of(ctx, planned)
-            if series_id is not None and series_id in self._age_gate.verified:
-                return
+            if series_id is not None and series_id in gate.verified:
+                if self._reads_locked(connection, ctx, series_id):
+                    return
+                raise SeriesAgeGateClosedError(planned.series.edition_id)
             first = series_id is None or series_id not in seeded_series(
                 connection, ctx.destination_id
             )
-        if not (self._age_gate.open and first):
+        hidden = gate.unknowns_tier is None or age_rank(age) <= gate.unknowns_tier
+        if not (gate.open and first and hidden):
             raise SeriesAgeGateClosedError(planned.series.edition_id)
+
+    def _reads_locked(
+        self, connection: sa.Connection, ctx: DestinationContext, series_id: str
+    ) -> bool:
+        (task,) = due_ages(connection, ctx.destination_id, only=series_id) or (None,)
+        if task is None or task.split or not task.kavita_series_ids or self._age_reader is None:
+            return False
+        owned = FieldRegistry(connection).get(ctx.destination_id, series_id, AGE_RATING)
+        for kavita_id in task.kavita_series_ids:
+            try:
+                rating, locked = self._age_reader(kavita_id)
+            except Exception as error:  # Kavita does not answer now: fail closed
+                log.info(
+                    "export.age_reread_failed", export_series_id=series_id,
+                    reason=type(error).__name__,
+                )  # fmt: skip
+                return False
+            if not verified_age(task.wanted, owned, locked=locked, kavita_value=rating):
+                return False
+        return True
 
     def _place(
         self,

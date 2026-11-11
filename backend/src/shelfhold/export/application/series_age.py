@@ -42,10 +42,19 @@ class SeriesAgeTask:
     kavita_series_id: int | None  # the id cached by the arrival polling, if Kavita indexed it
     folder: str  # the remote folder of the series: how a reinstalled Kavita finds it again
     wanted: AgeRating
+    # every Kavita series its resolved files are in: more than one is a series Kavita split
+    kavita_series_ids: tuple[int, ...] = ()
+
+    @property
+    def split(self) -> bool:
+        return len(self.kavita_series_ids) > 1
 
 
-def due_ages(connection: Connection, destination_id: str) -> list[SeriesAgeTask]:
-    """The series of the destination that have a class to push, in a stable order."""
+def due_ages(
+    connection: Connection, destination_id: str, *, only: str | None = None
+) -> list[SeriesAgeTask]:
+    """The series of the destination that have a class to push, in a stable order (`only`: the
+    one export series asked for)."""
     ctx = load_context(connection, destination_id)
     if ctx.remote_library_id is None:
         return []
@@ -72,6 +81,7 @@ def due_ages(connection: Connection, destination_id: str) -> list[SeriesAgeTask]
             record.c.locator_type == "path",
             record.c.state.in_(_WRITTEN),
             record.c.rel_path.is_not(None),
+            *([link.c.export_series_id == only] if only is not None else []),
         )
         .order_by(record.c.rel_path)
     ).all()
@@ -109,8 +119,11 @@ def due_ages(connection: Connection, destination_id: str) -> list[SeriesAgeTask]
             for r in series_rows
             if r.state == "resolved" and str(r.remote_ref).isdigit()
         ]
+        ids = tuple(dict.fromkeys(resolved))  # in the order of the files, each id once
         folder = posixpath.dirname(posixpath.join(root, series_rows[0].rel_path))
-        tasks.append(SeriesAgeTask(series_id, resolved[0] if resolved else None, folder, wanted))
+        tasks.append(
+            SeriesAgeTask(series_id, resolved[0] if resolved else None, folder, wanted, ids)
+        )
     return tasks
 
 
