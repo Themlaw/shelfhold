@@ -811,6 +811,9 @@ description = "Revisions seen before M2, never applied in bulk."
 id = "Row identifier (ULID)."
 nature = "`metadata_only` or `rewrite`."
 koreader_impact = "Estimated impact on reading positions."
+field = "The metadata field a `metadata_only` revision changed (what the Kavita API is asked to set)."
+value = "The new value of that field."
+applied_via = "The door a resolved row went through: `kavita_api`, `rewrite` or `forced_rewrite`."
 
 [tables.variant_revision]
 description = "Append-only history of the revisions of a Variant."

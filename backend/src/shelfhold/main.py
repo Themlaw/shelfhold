@@ -52,6 +52,7 @@ from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
+from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
 from shelfhold.interfaces.http_api.sources import build_sources_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
@@ -125,6 +126,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "disk_resume_percent": "disk_resume_percent", "disk_resume_gib": "disk_resume_gib",
     "auth_hardened": "hardened_profile",  # a switch
     "fresh_auth_s": "recent_login_window_s",  # a duration
+    "revision_min_page_ratio": "revision_min_page_ratio",
     "secret_key_file": "trousseau_path",  # where the keyring is: a path, not the keyring
     "forward_auth_trusted_cidrs": "proxy_trusted_cidrs",  # networks, not credentials
     "maintenance_window_start": "maintenance_window_start",
@@ -227,6 +229,7 @@ def create_app(
         build_plans_router(plans),
         build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202
         build_intents_router(ops_services),  # EF-INT-014: the open intents and their settlement
+        build_revisions_router(ops_services),  # EF-BIB-043: the queue of pending revisions
         build_backfill_router(ops_services),  # EF-EXP-053: estimate, confirmation, start
         build_follows_router(ops_services),  # EF-SRC-029: follow, unfollow
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL

@@ -116,6 +116,8 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     "unit.upgraded": {
         "reason": frozenset({"better_version", "preferred_team", "integrity_reacquire", "restore"})
     },
+    # EF-BIB-024: why a new version of a chapter was quarantined, never a title.
+    "unit.revision_suspect": {"reason": frozenset({"fewer_pages", "stubbed"})},
     # ENF-OPS-006: the volume under its free-space mark.
     "disk.low": {"volume": VOLUME_VALUES},
     "ops.disk_recovered": {"volume": VOLUME_VALUES},

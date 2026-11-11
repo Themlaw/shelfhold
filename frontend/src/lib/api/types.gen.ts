@@ -91,6 +91,42 @@ export type ActivityOut = {
 };
 
 /**
+ * AppliedOut
+ */
+export type AppliedOut = {
+    /**
+     * Metadata Applied
+     */
+    metadata_applied: number;
+    /**
+     * Requested
+     */
+    requested: number;
+    /**
+     * Skipped Read
+     */
+    skipped_read: number;
+    /**
+     * Skipped Suspect
+     */
+    skipped_suspect: number;
+};
+
+/**
+ * ApplyIn
+ */
+export type ApplyIn = {
+    /**
+     * Confirm
+     */
+    confirm?: string | null;
+    /**
+     * Include Read
+     */
+    include_read?: boolean;
+};
+
+/**
  * AttestationIn
  */
 export type AttestationIn = {
@@ -475,6 +511,24 @@ export type FollowOut = {
      * State
      */
     state: 'followed' | 'unfollowed' | 'in_progress';
+};
+
+/**
+ * ForceIn
+ */
+export type ForceIn = {
+    /**
+     * Confirm
+     */
+    confirm?: string | null;
+    /**
+     * Include Read
+     */
+    include_read?: boolean;
+    /**
+     * Revision Ids
+     */
+    revision_ids: Array<string>;
 };
 
 /**
@@ -1320,6 +1374,70 @@ export type RestoreIn = {
      * Confirm Deletion
      */
     confirm_deletion?: boolean;
+};
+
+/**
+ * RevisionOut
+ */
+export type RevisionOut = {
+    /**
+     * Field
+     */
+    field: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Koreader Reset
+     */
+    koreader_reset: boolean;
+    /**
+     * Nature
+     */
+    nature: string;
+    /**
+     * Read
+     */
+    read: boolean;
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Suspect
+     */
+    suspect: string | null;
+    /**
+     * Unit Id
+     */
+    unit_id: string;
+    /**
+     * Variant Id
+     */
+    variant_id: string;
+};
+
+/**
+ * RevisionsOut
+ */
+export type RevisionsOut = {
+    /**
+     * Items
+     */
+    items: Array<RevisionOut>;
+    /**
+     * Koreader Positions
+     */
+    koreader_positions: number;
+    /**
+     * Newly Queued
+     */
+    newly_queued: number;
+    /**
+     * Token
+     */
+    token: string;
 };
 
 /**
@@ -3680,6 +3798,105 @@ export type RestoreAcknowledgeResponses = {
 };
 
 export type RestoreAcknowledgeResponse = RestoreAcknowledgeResponses[keyof RestoreAcknowledgeResponses];
+
+export type RevisionsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/revisions';
+};
+
+export type RevisionsListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RevisionsListError = RevisionsListErrors[keyof RevisionsListErrors];
+
+export type RevisionsListResponses = {
+    /**
+     * Successful Response
+     */
+    200: RevisionsOut;
+};
+
+export type RevisionsListResponse = RevisionsListResponses[keyof RevisionsListResponses];
+
+export type RevisionsApplyData = {
+    body: ApplyIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/revisions/apply';
+};
+
+export type RevisionsApplyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RevisionsApplyError = RevisionsApplyErrors[keyof RevisionsApplyErrors];
+
+export type RevisionsApplyResponses = {
+    /**
+     * Successful Response
+     */
+    200: AppliedOut;
+};
+
+export type RevisionsApplyResponse = RevisionsApplyResponses[keyof RevisionsApplyResponses];
+
+export type RevisionsForceData = {
+    body: ForceIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/revisions/force';
+};
+
+export type RevisionsForceErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RevisionsForceError = RevisionsForceErrors[keyof RevisionsForceErrors];
+
+export type RevisionsForceResponses = {
+    /**
+     * Successful Response
+     */
+    200: AppliedOut;
+};
+
+export type RevisionsForceResponse = RevisionsForceResponses[keyof RevisionsForceResponses];
 
 export type RootReinitData = {
     body: RootIn;

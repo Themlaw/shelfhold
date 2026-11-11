@@ -64,6 +64,14 @@ class IncomingUnit:
     published_on: str | None = None  # partial ISO 8601 date, with its precision (EF-BIB-047)
     date_precision: str | None = None
     kind: str = "chapter"
+    # What the source says of the Unit's availability, an open vocabulary (EF-BIB-009): None = it
+    # said nothing; a value outside the contract is stored as `locked` with the text as detail.
+    availability: str | None = None
+    available_until: datetime | None = None
+    # Metadata fields of the Unit that changed with this revision (field, new value): what a
+    # revision that rewrites no file carries (EF-BIB-043). Only fields the Kavita API can take
+    # are pushed; anything else goes to the "to rewrite" queue.
+    metadata: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -76,3 +84,4 @@ class IngestResult:
     unit_created: bool = False
     supersedes_variant_id: str | None = None
     suggestion_id: str | None = None
+    suspect: str | None = None  # EF-BIB-024: why the revision was quarantined (stored one kept)

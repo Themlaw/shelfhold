@@ -240,4 +240,10 @@ symbols = [
   "shelfhold.infrastructure.imaging.client:probe_image",
   "shelfhold.plugin_host.adapters.native.openlibrary.provider:OpenLibraryProvider.ids_from_url",
   "shelfhold.plugin_host.adapters.native.openlibrary.provider:OpenLibraryProvider.url_for",
+
+category = "m2-l17-revision-queue-single-connection"
+reason = "2026-11-11 (M2 L17): `RevisionQueue.apply_metadata` is the whole metadata push on one connection, as the tests drive it. The operating surface (`ops.revisions`) composes its parts (`metadata_candidates`, then `settle_metadata` in a transaction of its own per row), because the Kavita call must never be awaited inside a write transaction. The rewrite requester (`RewriteRequester`) has no production binding until the acquisition lot that fetches a revised file: `revisions apply` answers `ops.exit_unavailable` after the batch token is checked."
+until = "M2"
+symbols = [
+  "shelfhold.catalog.application.revisions:RevisionQueue.apply_metadata",
 ]

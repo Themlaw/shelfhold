@@ -1,7 +1,10 @@
 """Ingest one release: Unit (the place), Variant (the exemplar), revision (EF-BIB-034, EF-BIB-050).
 
-Nothing here touches `content`: before M2 a republication is recorded without replacing the
-exported file (no upgrade before EF-EXP-016), and a revision never moves a Variant.
+Nothing here touches `content`: a republication is recorded without replacing the exported file
+and a revision never moves a Variant. Every revision waits in `revision_pending` (EF-BIB-043); one
+that counts under half the pages of the stored version, or that the source gives as `stubbed`,
+is quarantined on top and the admin is warned (EF-BIB-024). A Unit a source removes keeps its
+local copy (EF-BIB-009).
 """
 
 from dataclasses import replace
@@ -9,6 +12,7 @@ from dataclasses import replace
 from shelfhold.catalog.application.dto import IncomingUnit, IngestResult
 from shelfhold.catalog.application.ports import StoredVariant, TeamStore, UnitStore
 from shelfhold.catalog.application.teams import check_binding, team_of_checked_binding
+from shelfhold.catalog.domain.availability import normalize_availability
 from shelfhold.catalog.domain.identity import sort_title
 from shelfhold.catalog.domain.numbering import NumberError, UnitNumber, parse_number
 from shelfhold.catalog.domain.placement import (
@@ -18,6 +22,7 @@ from shelfhold.catalog.domain.placement import (
     decide_new_variant,
     place_of,
 )
+from shelfhold.catalog.domain.revisions import DEFAULT_MIN_PAGE_RATIO, suspect_reason
 
 
 def _number(item: IncomingUnit) -> UnitNumber:
@@ -45,11 +50,38 @@ def _reappear(units: UnitStore, variant: StoredVariant) -> str | None:
     return None
 
 
-def ingest_unit(units: UnitStore, teams: TeamStore, item: IncomingUnit) -> IngestResult:
+# The one field of a revision the Kavita API can take without a file being rewritten.
+API_FIELDS = frozenset({"summary"})
+
+
+def _nature(
+    units: UnitStore, existing: StoredVariant, item: IncomingUnit
+) -> tuple[str, str | None, str | None]:
+    """`metadata_only` when the file did not change and the revision carries one field the API
+    takes; anything else is a `rewrite`, which only a confirmed batch can apply."""
+    _hint, last_hash, last_pages = units.last_healthy_revision(existing)
+    same_file = item.content_hash in (None, last_hash) and item.page_count in (None, last_pages)
+    wanted = [(f, v) for f, v in item.metadata if f in API_FIELDS]
+    if same_file and len(wanted) == 1 and len(item.metadata) == 1:
+        return "metadata_only", wanted[0][0], wanted[0][1]
+    return "rewrite", None, None
+
+
+def ingest_unit(
+    units: UnitStore,
+    teams: TeamStore,
+    item: IncomingUnit,
+    *,
+    min_page_ratio: float = DEFAULT_MIN_PAGE_RATIO,
+) -> IngestResult:
     check_binding(teams, item.binding)
     existing = units.find_variant(item.binding.id, item.remote_unit_id)
+    availability = None if item.availability is None else normalize_availability(item.availability)
     if existing is not None:  # same (binding, remote id): the same Variant, whatever it now says
-        suggestion_id = _reappear(units, existing)
+        removed_now = availability is not None and availability.value == "removed"
+        suggestion_id = None if removed_now else _reappear(units, existing)
+        if availability is not None:
+            units.apply_availability(existing.unit_id, existing.id, availability, item)
         if not units.revision_changed(existing, item):
             return IngestResult(
                 IngestOutcome.UNCHANGED,
@@ -59,7 +91,18 @@ def ingest_unit(units: UnitStore, teams: TeamStore, item: IncomingUnit) -> Inges
                 existing.revision,
                 suggestion_id=suggestion_id,
             )
-        revision = units.add_revision(existing, item)
+        suspect = suspect_reason(
+            stored_pages=units.stored_pages(existing),
+            new_pages=item.page_count,
+            availability="free" if availability is None else availability.value,
+            min_ratio=min_page_ratio,
+        )
+        carried = units.latest_quarantine(existing)
+        if suspect is None and carried and item.page_count is None:
+            suspect = carried  # nothing proves this one is whole: the quarantine stays (EF-BIB-024)
+        nature = ("rewrite", None, None) if suspect else _nature(units, existing, item)
+        revision = units.add_revision(existing, item, quarantine=suspect)
+        units.queue_revision(existing, revision, nature=nature[0], field=nature[1], value=nature[2])
         return IngestResult(
             IngestOutcome.REVISION,
             existing.unit_id,
@@ -67,6 +110,7 @@ def ingest_unit(units: UnitStore, teams: TeamStore, item: IncomingUnit) -> Inges
             existing.team_id,
             revision,
             suggestion_id=suggestion_id,
+            suspect=suspect,
         )
 
     edition_id = item.binding.edition_id
@@ -86,6 +130,8 @@ def ingest_unit(units: UnitStore, teams: TeamStore, item: IncomingUnit) -> Inges
     )
     supersedes = decision.other_id if decision.outcome is IngestOutcome.SUPERSEDING else None
     variant_id = units.insert_variant(unit_id, team_id, supersedes, item)
+    if availability is not None:
+        units.apply_availability(unit_id, variant_id, availability, item)
     suggestion_id = None
     if decision.outcome is IngestOutcome.NUMBERING_CONFLICT and decision.other_id:
         suggestion_id = units.open_suggestion(decision.other_id, variant_id, NUMBERING_CONFLICT)

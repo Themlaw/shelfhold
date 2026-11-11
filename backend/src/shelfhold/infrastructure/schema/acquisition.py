@@ -43,6 +43,7 @@ ACCOUNT_KINDS = ("admin", "service")
 PLUGIN_ORIGINS = ("builtin", "local")  # `repo` joins in M6
 REVISION_NATURES = ("metadata_only", "rewrite")
 REVISION_STATES = ("open", "applied", "dismissed")
+REVISION_DOORS = ("kavita_api", "rewrite", "forced_rewrite")  # `applied_via`, kept by the code
 ATTESTATION_FIELDS = ("content_trust", "publisher", "access_partitioning", "egress")
 SOURCE_SECRET_KINDS = ("secret", "cookies")  # a secret field of `settings_schema`, the cookie jar
 
@@ -437,6 +438,11 @@ revision_pending = sa.Table(
     sa.Column("state", sa.String(), nullable=False, server_default="open"),
     now_column(),
     sa.Column("resolved_at", UtcDateTime(), nullable=True),
+    # M2 L17: the metadata field a `metadata_only` revision carries and its new value (what the
+    # Kavita API is asked to set), and the door a resolved row went through.
+    sa.Column("field", sa.String(), nullable=True),
+    sa.Column("value", sa.String(), nullable=True),
+    sa.Column("applied_via", sa.String(), nullable=True),
     ulid_check("id"),
     in_check("nature", REVISION_NATURES),
     in_check("state", REVISION_STATES),

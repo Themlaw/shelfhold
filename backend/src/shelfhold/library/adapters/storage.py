@@ -21,8 +21,10 @@ from pathlib import Path, PurePath
 from typing import Any, Final, Literal, Protocol
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
+from shelfhold.catalog.public import DEFAULT_MIN_PAGE_RATIO, guard_received
 from shelfhold.infrastructure.archives import DEFAULT_LIMITS, ArchiveLimits, safe_open_archive
 from shelfhold.infrastructure.content_trust import check_cbz_entries
 from shelfhold.infrastructure.content_trust.cbz_entries import COMICINFO_MAX_BYTES
@@ -91,6 +93,8 @@ class ContentTombstones(Protocol):
 # local path -> (physical root id, path relative to that root); the composition root provides it
 RootLocator = Callable[[str], tuple[str, str]]
 
+log = structlog.get_logger(__name__)
+
 
 @dataclass(frozen=True)
 class Ingested:
@@ -122,7 +126,9 @@ class PassthroughStore:
         limits: ArchiveLimits = DEFAULT_LIMITS,
         tombstones: ContentTombstones,
         hold_work: WorkHolder,
+        min_page_ratio: float = DEFAULT_MIN_PAGE_RATIO,
     ) -> None:
+        self._min_page_ratio = min_page_ratio
         self._hold_work = hold_work
         self._engine = engine
         self._fsops = fsops
@@ -244,6 +250,13 @@ class PassthroughStore:
         now = datetime.now(UTC)
         content_id = new_ulid()
         with self._engine.begin() as connection:
+            # before the new content exists: the baseline is the version already stored (EF-BIB-024)
+            suspect = guard_received(
+                connection, variant_id=variant_id, pages=images, content_hash=payload_hash,
+                seen_at=now, min_page_ratio=self._min_page_ratio,
+            )  # fmt: skip
+            if suspect:
+                log.warning("content.suspect_revision", unit_id=unit_id, reason=suspect)
             connection.execute(
                 sa.insert(storage.content).values(
                     id=content_id, unit_id=unit_id, variant_id=variant_id, kind="images",

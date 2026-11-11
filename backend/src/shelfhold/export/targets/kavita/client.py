@@ -403,6 +403,11 @@ class KavitaClient:
         """Push the age of a series, locked, as a faithful update of the document just read."""
         await self._send(routes.SERIES_METADATA_UPDATE, body=current.age_update(age_rating))
 
+    async def set_series_field(self, current: dto.SeriesAge, key: str, value: str) -> None:
+        """Set one metadata field of a series, locked, as a faithful update of the document read."""
+        body = dto.field_update(current.document, current.series_id, key, value)
+        await self._send(routes.SERIES_METADATA_UPDATE, body=body)
+
     async def create_library(
         self,
         name: str,

@@ -207,6 +207,7 @@ class _LazyStore:
         store = PassthroughStore(
             self._comp.engine, w.fsops, w.loaded.locate, self._comp.settings.data_dir,
             tombstones=w.tombstones, hold_work=work_holder(self._comp),
+            min_page_ratio=self._comp.settings.revision_min_page_ratio,
         )  # fmt: skip
         return store.ingest(**arguments)
 
@@ -273,6 +274,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                     tombstones=cast("Any", _LazyTombstones(comp)),
                     wakes=comp.wakes(),
                     check_mode="piloted" if comp.check_mode() == "piloted" else "always_on",
+                    min_page_ratio=comp.settings.revision_min_page_ratio,
                 )  # fmt: skip
 
                 async def once() -> None:

@@ -41,6 +41,7 @@ from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.rating import RatingOps
 from shelfhold.ops.restore import RestoreCredentialsExit, RestoreGuardExit
+from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
 from shelfhold.ops.services import OpsServices
 
@@ -131,7 +132,8 @@ def open_ops(
         restore=RestoreGuardExit(engine, read_only, clock, bus),
         credentials=RestoreCredentialsExit(engine, clock),
         library=library, adoption=LibraryAdoptionExit(engine, library),
-        intents=IntentOps(composition), backfill=BackfillOps(composition),
+        intents=IntentOps(composition), revisions=RevisionOps(composition),
+        backfill=BackfillOps(composition),
         normalize=NormalizeOps(composition), meta=MetaOps(composition),
         content=ContentOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),

@@ -18,6 +18,8 @@ Before anything is recorded, in this order:
 - the Unit was read and the shelf says "do not upgrade read Units" (`skip_read_upgrades`, on by
   default): nothing, whatever the reason (every path that asks for an upgrade comes here);
 - nothing changed (same content): nothing;
+- the better version comes from a revision the suspect-revision guard quarantined (EF-BIB-024):
+  nothing, unless the request carries the grant of the reserved action `revisions.force`;
 - the Unit is irreplaceable (EF-BIB-031): its identifier must be typed, which an automatic
   upgrade cannot do;
 - the served file is not the one the manifest knows (a third party rewrote it): nothing.
@@ -39,6 +41,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
 
+from shelfhold.catalog.public import DEFAULT_MIN_PAGE_RATIO, suspect_reason
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.export.application.intents import (
     IntentJournal,
@@ -51,6 +54,7 @@ from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.rendering import CbzRenderer, comicinfo_xml
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.identity.public import Allowed
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import FileIdentity, Fsops
 from shelfhold.infrastructure.ids import new_ulid
@@ -91,6 +95,7 @@ class UpgradeOutcome(enum.Enum):
     ROOT_FROZEN = "root_frozen"  # the root (or the instance) is frozen: nothing is written
     BUSY = "busy"  # another intent holds the path
     TARGET_CHANGED = "target_changed"  # the served file is not the manifest's: left alone
+    SUSPECT_REVISION = "suspect_revision"  # quarantined by the guard: never promoted (EF-BIB-024)
 
 
 @dataclass(frozen=True)
@@ -102,6 +107,8 @@ class UpgradeRequest:
     automatic: bool = True  # asked by Shelfhold itself (a follow cycle, an integrity check)
     typed: str | None = None  # the Unit's identifier, typed, for an irreplaceable Unit
     job_id: str | None = None  # holds the locks of the Work and the series folder when given
+    # The grant of `revisions.force`, for a version the guard quarantined: nothing else lifts it
+    suspect_grant: Allowed | None = None
 
 
 @dataclass(frozen=True)
@@ -168,6 +175,21 @@ def _is_read(connection: Connection, unit_id: str) -> bool:
     )
 
 
+def _quarantined(connection: Connection, variant_id: str | None) -> bool:
+    """The latest revision of the Variant was quarantined by the suspect-revision guard."""
+    if variant_id is None:
+        return False
+    return bool(
+        connection.execute(
+            sa.text(
+                "SELECT quarantined_at IS NOT NULL FROM variant_revision "
+                "WHERE variant_id = :v ORDER BY revision DESC LIMIT 1"
+            ),
+            {"v": variant_id},
+        ).scalar()
+    )
+
+
 def _served(connection: Connection, destination_id: str, export_item_id: str) -> _Served | None:
     record, item, coverage = export.export_record, export.export_item, export.unit_coverage
     d, shelf = export.shelf_destination, export.shelf
@@ -225,7 +247,9 @@ class SamePathUpgrade:
         renderer: CbzRenderer | None = None,
         mirror: ProvenanceMirror | None = None,
         request_scan: Callable[[str], None] | None = None,
+        min_page_ratio: float = DEFAULT_MIN_PAGE_RATIO,
     ) -> None:
+        self._min_page_ratio = min_page_ratio
         self._engine = engine
         self._fsops: Fsops = fsops
         self._locate = locate
@@ -255,6 +279,12 @@ class SamePathUpgrade:
                 raise LookupError(f"no library copy of content {request.content_id}")
             if source.content_hash is not None and source.content_hash == served.content_hash:
                 return UpgradeResult(UpgradeOutcome.UP_TO_DATE)
+            if (
+                _quarantined(connection, source.variant_id)
+                or self._too_short(connection, served, source.page_count)
+            ) and not isinstance(request.suspect_grant, Allowed):
+                log.warning("upgrade.suspect_revision", unit_id=served.unit_id)
+                return UpgradeResult(UpgradeOutcome.SUSPECT_REVISION)
             xml = comicinfo_xml(connection, served.unit_id, served.series_name)
         rendered = self._renderer.render(str(source.local_path), xml)
         try:
@@ -272,6 +302,23 @@ class SamePathUpgrade:
             )  # fmt: skip
         finally:
             rendered.file.close()
+
+    def _too_short(self, connection: Connection, served: _Served, new_pages: int | None) -> bool:
+        """The better version has too few pages next to the one served (EF-BIB-024): checked
+        here too, on the page count recorded at reception, so no way to ask for an upgrade
+        skips the guard."""
+        if served.content_id is None:
+            return False
+        stored = connection.execute(
+            sa.text("SELECT page_count FROM content WHERE id = :c"), {"c": served.content_id}
+        ).scalar()
+        return (
+            suspect_reason(
+                stored_pages=stored, new_pages=new_pages, availability="free",
+                min_ratio=self._min_page_ratio,
+            )
+            is not None
+        )  # fmt: skip
 
     def restore(self, upgrade_id: str, *, typed: str | None = None) -> UpgradeResult:
         """Put back the version an upgrade sent to the bin: the same replacement, the other way

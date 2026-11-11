@@ -128,6 +128,11 @@ def _volume_label(name: object) -> str | None:
     return f"Vol.{found.group(1)}" if found else None
 
 
+def _pages(value: object) -> int | None:
+    """Suwayomi says 0 (or -1) for a chapter whose pages it has not read yet: that is unknown."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
 class SuwayomiService:
     wake_target: str | None = None
 
@@ -694,6 +699,7 @@ class SuwayomiService:
             volume_label=_volume_label(chapter.get("name")),
             team=chapter.get("scanlator") or None,
             published_at=_upload_date(chapter.get("uploadDate"), self._now()),
+            page_count=_pages(chapter.get("pageCount")),
             memo={"fetch_handle": chapter["id"], "chapter_url": chapter["url"]},
         )
 
