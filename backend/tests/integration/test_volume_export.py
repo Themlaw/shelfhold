@@ -574,7 +574,7 @@ def test_echo_of_a_served_volume_with_a_rewritten_opf_is_still_recognized() -> N
 
 def test_the_name_of_a_volume_is_not_written_into_the_shared_item() -> None:
     with export_env() as env:
-        _, bench = volume_on_shelf(env, 2, closed=True, label="Saison 2 Vol.3")
+        _ = volume_on_shelf(env, 2, closed=True, label="Saison 2 Vol.3")
         run(env)
         (path,) = env.files()
         assert path.name.endswith(" - Vol.3.epub")
