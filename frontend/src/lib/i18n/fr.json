@@ -30,6 +30,8 @@
   "toRate.signed_out": "Connexion requise : ouvrez une session d'administration, puis revenez sur cette page.",
   "toRate.state.rating_pending": "Non classée, en attente d'une étagère famille",
   "toRate.state.follow_suspended": "Adoptée non classée, suivi suspendu",
+  "toRate.state.suggestion_above": "Classée, mais un âge suggéré plus élevé bloque une Édition",
+  "toRate.suggestion": "Édition {edition} : {age} suggéré ({provenance}). Classer l'Édition seule : « shelfhold rate ÂGE --edition {edition} ».",
   "toRate.age_for": "Âge de « {title} »",
   "toRate.rate": "Classer",
   "toRate.rated": "« {title} » est classée : {age}.",

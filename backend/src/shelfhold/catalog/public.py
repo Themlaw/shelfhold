@@ -29,6 +29,7 @@ from shelfhold.catalog.application.dto import (
 from shelfhold.catalog.application.editions import translation_type_for
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.rating import (
+    EditionSuggestion,
     RatingRefusedError,
     RatingResult,
     RatingService,
@@ -194,6 +195,7 @@ __all__ = [
     "EditionAge",
     "EditionRef",
     "EditionSpec",
+    "EditionSuggestion",
     "IncomingUnit",
     "IngestOutcome",
     "IngestResult",

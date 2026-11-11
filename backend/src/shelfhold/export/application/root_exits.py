@@ -202,11 +202,14 @@ class RootWatcher:
         umask: int,
         store_path: str | None,
         freeze: FreezeState | None = None,
+        on_root_ok: Callable[[], None] = lambda: None,
     ) -> None:
         self._engine = engine
         self._umask = umask
         self._store = _absolute_or_none(store_path)
         self._freeze = freeze
+        self._on_root_ok = on_root_ok
+        self._seen_ok: dict[str, bool] = {}
         self._told: dict[str, RootState] = {}
 
     def bind(self, freeze: FreezeState) -> None:
@@ -245,6 +248,13 @@ class RootWatcher:
         """Judge the roots, record the states that wait and release the roots that are right
         again. Idempotent; a state already recorded is not written twice."""
         verdicts = self.assess()
+        back = False
+        for verdict in verdicts:  # a root that is right again (or first seen so) is replayed
+            ok = verdict.state is RootState.OK
+            back = back or (ok and not self._seen_ok.get(verdict.subject, False))
+            self._seen_ok[verdict.subject] = ok
+        if back:
+            self._on_root_ok()
         with self._engine.begin() as connection:
             stored = FreezeState.stored_roots(connection)
             for verdict in verdicts:
@@ -321,6 +331,7 @@ class RootExits:
         watcher: RootWatcher,
         evidence: Callable[[Fsops], EvidenceSource | None] = lambda _fsops: None,
         tombstones: Callable[[], TombstoneOwing | None] = lambda: None,
+        roots_changed: Callable[[], None] = lambda: None,
         policy: RootPolicy | None = None,
         fresh_auth_s: int = 900,
         freeze: FreezeState | None = None,
@@ -333,6 +344,7 @@ class RootExits:
         self._watcher = watcher
         self._evidence = evidence
         self._tombstones = tombstones
+        self._roots_changed = roots_changed
         self._policy = policy
         self._fresh_auth_s = fresh_auth_s
         self._freeze = freeze
@@ -651,6 +663,7 @@ class RootExits:
             self._follow(target.path)
 
     def _follow(self, subject: str) -> None:
+        self._roots_changed()  # every exit ends here: the tombstone index is replayed again
         if self._freeze is not None:
             self._freeze.follow_root(subject, None)
 

@@ -15,17 +15,19 @@ audit entry per Work, all in one transaction: all of them or none.
 from __future__ import annotations
 
 import hmac
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 
 from shelfhold.catalog.public import (
+    EditionSuggestion,
     RatingRefusedError,
     RatingResult,
     RatingService,
     parse_age,
 )
-from shelfhold.export.application.to_rate import ToRate, batch_token, to_rate
+from shelfhold.export.application.to_rate import ToRate, batch_token, rateable, to_rate
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.schema import catalog
 from shelfhold.ops.errors import (
@@ -46,8 +48,18 @@ __all__ = ["RatingOps"]
 _VIEW_LIMIT = 500
 
 
-def _item(i: ToRate) -> dict[str, str]:
-    return {"work_id": i.work_id, "title": i.title, "state": i.state, "reason": i.reason}
+def _suggestions(found: Iterable[EditionSuggestion]) -> list[dict[str, Any]]:
+    return [
+        {"edition_id": s.edition_id, "age": s.age.min_age, "x": s.age.x, "provenance": s.provenance}
+        for s in found
+    ]
+
+
+def _item(i: ToRate) -> dict[str, Any]:
+    return {
+        "work_id": i.work_id, "title": i.title, "state": i.state, "reason": i.reason,
+        "suggestions": _suggestions(i.suggestions),
+    }  # fmt: skip
 
 
 def _result(r: RatingResult) -> dict[str, Any]:
@@ -60,6 +72,7 @@ def _result(r: RatingResult) -> dict[str, Any]:
             {"edition_id": w.edition_id, "shelf_id": w.shelf_id, "reason": w.reason.value}
             for w in r.withdrawals
         ],
+        "open_suggestions": _suggestions(r.open_suggestions),
     }
 
 
@@ -111,7 +124,8 @@ class RatingOps:
         text = _age_text(_age(age))
         with self._engine.connect() as connection:
             items = to_rate(connection)
-        return {"age": text, "items": [_item(i) for i in items], "token": batch_token(items, text)}
+        batch = rateable(items)
+        return {"age": text, "items": [_item(i) for i in items], "token": batch_token(batch, text)}
 
     def listing(self, age: str | None) -> dict[str, Any]:
         """The screen "À classer": the waiting Works, and the batch token when an age is chosen."""
@@ -150,7 +164,7 @@ class RatingOps:
             with self._engine.connect() as connection:
                 connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
                 with connection.begin():
-                    items = to_rate(connection)  # again, under the write lock
+                    items = rateable(to_rate(connection))  # again, under the write lock
                     if not hmac.compare_digest(
                         confirm.strip().encode(), batch_token(items, text).encode()
                     ):

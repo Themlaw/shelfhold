@@ -29,6 +29,20 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     rate.set_defaults(handler=run, configure_logging=False)
 
 
+def _suggestions(suggestions: list[dict[str, object]]) -> None:
+    """The suggested ages that rating a Work leaves open: each keeps its Edition out until
+    `shelfhold rate AGE --edition ID`."""
+    if not suggestions:
+        return
+    print(t("rate.suggestions_open", count=len(suggestions)), file=sys.stderr)
+    for s in suggestions:
+        age = "X" if s["x"] else f"{s['age']}+"
+        print(
+            t("rate.suggestion_line", edition=s["edition_id"], age=age, provenance=s["provenance"]),
+            file=sys.stderr,
+        )
+
+
 def _withdrawals(withdrawals: list[dict[str, str]]) -> None:
     if not withdrawals:
         return
@@ -52,12 +66,16 @@ def run(args: argparse.Namespace, channel: OpsChannel) -> int:
     done = channel.call("ops.rate", age=args.age, work_id=args.work, edition_id=args.edition)
     print(t("rate.done", target=done["target"], age=args.age))
     _withdrawals(done["withdrawals"])
+    _suggestions(done["open_suggestions"])
     return 0
 
 
 def _batch(args: argparse.Namespace, channel: OpsChannel) -> int:
     listed = channel.call("ops.rate_pending", age=args.age)
-    items = listed["items"]
+    items = [i for i in listed["items"] if i["state"] != "suggestion_above"]
+    for waiting in listed["items"]:  # rated Works whose Edition a higher suggestion keeps out
+        if waiting["state"] == "suggestion_above":
+            _suggestions(waiting["suggestions"])
     if not items:
         print(t("rate.pending_none"))
         return 0
@@ -66,6 +84,10 @@ def _batch(args: argparse.Namespace, channel: OpsChannel) -> int:
         for item in items:
             print(t("rate.pending_line", work=item["work_id"], title=item["title"],
                     state=item["state"]))  # fmt: skip
+            for sug in item["suggestions"]:
+                age = "X" if sug["x"] else f"{sug['age']}+"
+                print(t("rate.suggestion_line", edition=sug["edition_id"], age=age,
+                        provenance=sug["provenance"]))  # fmt: skip
         if args.confirm:
             print(t("rate.pending_needs_confirm", token=listed["token"]), file=sys.stderr)
         else:
@@ -74,4 +96,5 @@ def _batch(args: argparse.Namespace, channel: OpsChannel) -> int:
     done = channel.call("ops.rate_batch", age=args.age, confirm=args.confirm)
     print(t("rate.batch_done", count=len(done["rated"]), age=done["age"]))
     _withdrawals([w for r in done["rated"] for w in r["withdrawals"]])
+    _suggestions([x for r in done["rated"] for x in r["open_suggestions"]])
     return 0

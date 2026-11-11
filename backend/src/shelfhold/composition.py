@@ -14,7 +14,9 @@ a simulated server, nothing else in the code reaches the network.
 from __future__ import annotations
 
 import asyncio
+import math
 import threading
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
@@ -122,6 +124,9 @@ class WriteContext:
         return f"{self.writable_roots[0]}/{RECEIVED_DIR}/{variant_id}.cbz"
 
 
+PROBE_INTERVAL_S = 30.0  # a root that is not MISSING but is not right is looked at this often
+
+
 class Composition:
     def __init__(
         self,
@@ -139,7 +144,20 @@ class Composition:
         self.network = network or default_network()
         self.gates = gates or Gates()
         self.bus = bus or operating_bus(self.clock)
-        self._tombstones: tuple[tuple[tuple[str, str], ...], TombstoneService] | None = None
+        # (signature, epoch of `roots_changed`, service, the roots away or unreadable at replay as
+        # (path, missing))
+        self._tombstones: (
+            tuple[
+                tuple[tuple[str, str, tuple[str, ...]], ...],
+                int,
+                TombstoneService,
+                tuple[tuple[str, bool], ...],
+            ]
+            | None
+        ) = None
+        self._probed: dict[str, float] = {}  # monotonic time of the last probe of a root away
+        self.probe_interval_s = PROBE_INTERVAL_S  # between two probes of a root that is not MISSING
+        self._roots_epoch = 0  # moved by roots_changed, lock-free: it may run inside a replay
         self._lock = threading.Lock()
         self._boot_id = uuid.uuid4().hex
         self._held_lock = threading.Lock()
@@ -190,8 +208,9 @@ class Composition:
         with self._lock:
             if self._watcher is None:
                 self._watcher = RootWatcher(
-                    self.engine, umask=self.settings.umask, store_path=str(self.settings.store_dir)
-                )
+                    self.engine, umask=self.settings.umask, store_path=str(self.settings.store_dir),
+                    on_root_ok=self.roots_changed,
+                )  # fmt: skip
             return self._watcher
 
     def open_fsops(self, loaded: LoadedRoots) -> Fsops:
@@ -203,16 +222,29 @@ class Composition:
 
     def tombstones(self, fsops: Fsops, loaded: LoadedRoots) -> TombstoneService:
         """The tombstone service, replayed (a purged file is never acquired again). One per
-        process while the roots stay the same; the flush gate is posed on the `fsops` given."""
+        process while the roots stay the same; the flush gate is posed on the `fsops` given.
+
+        "The same" includes the predecessors of each root. A root that comes back (remount,
+        `takeover`, `reinit`, `restored`, `store reinit`) is replayed through `roots_changed` (the
+        exits and `RootWatcher.refresh` call it): looking at the sentinel here would wake the disks
+        at every call (ENF-OPS-014)."""
         signature = tuple(
-            sorted((r.root_id, r.path) for r in loaded.roots if r.mode is PathMode.RW)
+            sorted(
+                (r.root_id, r.path, r.predecessors) for r in loaded.roots if r.mode is PathMode.RW
+            )
         )
+        back = self._away_is_back(fsops)
         with self._lock:
-            if self._tombstones is None or self._tombstones[0] != signature:
+            entry = self._tombstones
+            if (
+                entry is None or back or entry[0] != signature
+                or entry[1] != self._roots_epoch
+            ):  # fmt: skip
+                epoch = self._roots_epoch
                 service = TombstoneService(self.engine, self.keyring(), fsops, self.bus)
-                self._tombstones = (signature, service)
-                self._replay(service, fsops, loaded)
-            service = self._tombstones[1]
+                away = self._replay(service, fsops, loaded)
+                entry = self._tombstones = (signature, epoch, service, away)
+            service = entry[2]
         service.use_disk(fsops)
         fsops.enforce_tombstone_flush(
             lambda path: any(
@@ -220,6 +252,29 @@ class Composition:
             )
         )
         return service
+
+    def _away_is_back(self, fsops: Fsops) -> bool:
+        """Fail closed: a root that was away (or whose journal could not be read) at the replay is
+        looked at again. A `MISSING` one at every call (a lookup that finds nothing is cheap and
+        wakes nothing); the others (`root_behind`, another instance's sentinel, an unreadable
+        journal) at most every `probe_interval_s`. A root that is there is never looked at."""
+        cached = self._tombstones
+        if cached is None:
+            return False
+        now = time.monotonic()
+        for path, missing in cached[3]:
+            if not missing and now - self._probed.get(path, -math.inf) < self.probe_interval_s:
+                continue
+            self._probed[path] = now
+            if fsops.root_state(path) is RootState.OK:
+                return True
+        return False
+
+    def roots_changed(self) -> None:
+        """A root exit (`takeover`, `reinit`, `restored`, `store reinit`), or a root seen right
+        again, changed what a root is: the next look rebuilds the index from the table and the
+        journals. It takes no lock: the watcher calls it from inside a replay."""
+        self._roots_epoch += 1  # no lock: refresh may call it from inside a replay
 
     def fresh_tombstones(
         self, fsops: Fsops, loaded: LoadedRoots, normalizers: Normalizers
@@ -256,15 +311,26 @@ class Composition:
         except (NoLibraryError, KeyringUnavailableError):
             return  # nothing registered yet, or no keyring, or no root mounted: nothing to pay
 
-    @staticmethod
-    def _replay(service: TombstoneService, fsops: Fsops, loaded: LoadedRoots) -> None:
-        service.replay(
-            [
-                TombstoneRoot(r.root_id, r.path, mounted=fsops.root_state(r.path) is RootState.OK)
-                for r in loaded.roots
-                if r.mode is PathMode.RW
-            ]
-        )
+    def _replay(
+        self, service: TombstoneService, fsops: Fsops, loaded: LoadedRoots
+    ) -> tuple[tuple[str, bool], ...]:
+        """Replay; the roots to look at again: those not mounted, and those mounted whose
+        journal could not be read (a disk that is still spinning up)."""
+        states = {r.path: fsops.root_state(r.path) for r in loaded.roots if r.mode is PathMode.RW}
+        roots = [
+            TombstoneRoot(r.root_id, r.path, states[r.path] is RootState.OK, r.predecessors)
+            for r in loaded.roots
+            if r.mode is PathMode.RW
+        ]
+        report = service.replay(roots)
+        now = time.monotonic()
+        away = []
+        for r in roots:
+            if not r.mounted or r.root_id in report.unreadable_roots:
+                missing = states[r.path] is RootState.MISSING
+                away.append((r.path, missing))
+                self._probed[r.path] = now  # the next probe of a non-missing root: in a while
+        return tuple(away)
 
     def read_context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
         """Everything that reads the library or the tombstones, and writes nothing
