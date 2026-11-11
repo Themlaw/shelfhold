@@ -631,3 +631,20 @@ def test_opds_a_source_that_stopped_being_configured_closes_the_request_for_good
         b.settings["base_url"] = ""  # the admin cleared it between the request and the job
         outcome = run(b.acquirer.fetch(prepared.request_id, b.store(), b.place))
         assert outcome.state == "abandoned" and outcome.reason == "source.not_configured"
+
+
+@pytest.mark.req("EF-SRC-023", "EF-SRC-035")
+def test_opds_key_written_in_the_address_is_refused_unless_it_is_the_path_flow() -> None:
+    keys = (
+        "/api/opds/0f8fad5b-d9cb-469f-a165-70867728950e/",
+        "/api/opds/" + "a1b2c3d4e5f6a7b8c9d0e1f2",
+    )
+    for path in keys:
+        for mode in ("none", "basic", "api_key_header"):
+            with opds_bench(auth=mode, base_path=path) as b:
+                with pytest.raises((AcquireRefused, SourceError)):
+                    search(b)
+                assert b.wire.recorder.requests == []
+    with opds_bench(auth="api_key_path", base_path="/api/opds/{apiKey}") as b:
+        serve_kavita(b, {"livre.epub": CLEAN})
+        assert search(b)

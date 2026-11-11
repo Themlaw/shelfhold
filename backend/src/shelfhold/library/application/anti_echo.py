@@ -74,13 +74,8 @@ def own_export_of(
     *,
     file_hash: str | None,
     content_hash: str | None,
-    binding_id: str | None = None,
 ) -> OwnExport | None:
-    """The `export_item` whose file or payload this is, or None. NULL never matches.
-
-    `binding_id`: an export made from a Variant of that same binding is that source's own file
-    met again (another Unit with the same bytes), not an echo: the source is not giving our
-    output back, it is where it came from."""
+    """The `export_item` whose file or payload this is, or None. NULL never matches."""
     item, record, alias, content = (
         export.export_item,
         export.export_record,
@@ -135,25 +130,32 @@ def own_export_of(
             )
         )
     for matched_by, query in probes:
-        if binding_id is not None:
-            query = query.where(~_made_from(binding_id))
         found = _first(connection, query)
         if found is not None:
             return OwnExport(found[0], found[1], matched_by)
     return None
 
 
-def _made_from(binding_id: str) -> sa.ColumnElement[bool]:
-    coverage, variant = export.unit_coverage, catalog.unit_variant
+def _already_received(
+    connection: Connection, binding_id: str | None, file_hash: str, payload: str | None
+) -> bool:
+    """These bytes were already received from this very binding (a `content` of one of its
+    Variants holds them): the source is giving back what it gave, not what we exported. Only
+    that excuses a match; the export probes themselves are never narrowed."""
+    if binding_id is None:
+        return False
+    content, variant = storage.content, catalog.unit_variant
+    same = [content.c.original_sha256 == file_hash]
+    if payload:
+        same.append(content.c.content_hash == payload)
     return (
-        sa.select(coverage.c.carrier_id)
-        .join(variant, variant.c.unit_id == coverage.c.unit_id)
-        .where(
-            coverage.c.carrier_type == "export_item",
-            coverage.c.carrier_id == export.export_item.c.id,
-            variant.c.source_binding_id == binding_id,
-        )
-        .exists()
+        connection.execute(
+            sa.select(content.c.id)
+            .join(variant, variant.c.id == content.c.variant_id)
+            .where(variant.c.source_binding_id == binding_id, sa.or_(*same))
+            .limit(1)
+        ).first()
+        is not None
     )
 
 
@@ -187,10 +189,8 @@ def absorb_echo(
             binding_id = connection.execute(
                 sa.select(request.c.source_binding_id).where(request.c.id == request_id)
             ).scalar()
-            own = own_export_of(
-                connection, file_hash=file_hash, content_hash=payload, binding_id=binding_id
-            )
-            if own is None:
+            own = own_export_of(connection, file_hash=file_hash, content_hash=payload)
+            if own is None or _already_received(connection, binding_id, file_hash, payload):
                 return None
             replica_id = upstream_echo_of(connection, own.export_item_id, remote_ref, file_hash)
             if replica_id is None:

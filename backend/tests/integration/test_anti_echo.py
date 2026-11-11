@@ -278,29 +278,61 @@ def test_anti_echo_holds_for_a_connected_service_too() -> None:
 
 
 @pytest.mark.req("EF-SRC-006")
-def test_anti_echo_ignores_an_export_made_from_the_same_binding() -> None:
-    """Another Unit of the same source with the same bytes is that source's own file, not an echo:
-    the source is where the export came from."""
+def test_anti_echo_ignores_bytes_already_received_from_the_same_binding() -> None:
+    """Another chapter of the same source with identical bytes is not an echo: those bytes came
+    from that source (a content of one of its Variants holds them)."""
     from tests.follow_env import follow_bench
 
     with follow_bench() as bench:
         bench.run()
         bench.add_chapter(3)
-        url = "/series-alpha/ch-003"
-        own = seed_own_export(bench.lib, file_hash="sha256:" + bench.server.cbz_sha256(url))
-        with bench.lib.engine.begin() as connection:
-            unit = connection.execute(
-                sa.text("SELECT id FROM unit WHERE edition_id = :e LIMIT 1"),
-                {"e": bench.edition_id},
-            ).scalar()
-            connection.execute(
-                sa.text(
-                    "INSERT INTO unit_coverage "
-                    "(carrier_type, carrier_id, unit_id, position, origin)"
-                    " VALUES ('export_item', :i, :u, 1, 'manual')"
-                ),
-                {"i": own.export_item_id, "u": unit},
-            )
+        for _ in range(3):
+            bench.run()
+        held = bench.rows("SELECT original_sha256 AS h FROM content LIMIT 1")[0]["h"]
+        seed_own_export(bench.lib, file_hash=held)
+        bench.add_chapter(4)
         for _ in range(3):
             bench.run()
         assert bench.rows("SELECT id FROM replica WHERE export_item_id IS NOT NULL") == []
+
+
+@pytest.mark.req("EF-SRC-006")
+def test_anti_echo_catches_our_export_offered_back_by_the_same_binding() -> None:
+    """Kavita is source and destination: the file we rendered comes back as a new entry of the
+    same binding, with bytes that source never gave us: a replica, whether or not the export
+    covers a Unit of that binding."""
+    from tests.fakes.suwayomi.server import SYNTHETIC
+    from tests.follow_env import follow_bench, new_chapter
+
+    for cover in (False, True):
+        with follow_bench() as bench:
+            bench.run()
+            rendered_bytes = (SYNTHETIC / "comic_a_001.cbz").read_bytes()
+            rendered = "sha256:" + hashlib.sha256(rendered_bytes).hexdigest()
+            assert bench.rows("SELECT id FROM content WHERE original_sha256 = :h", h=rendered) == []
+            own = seed_own_export(bench.lib, file_hash=rendered)
+            if cover:
+                with bench.lib.engine.begin() as connection:
+                    unit = connection.execute(
+                        sa.text(
+                            "SELECT unit_id FROM unit_variant WHERE source_binding_id = :b LIMIT 1"
+                        ),
+                        {"b": bench.binding_id},
+                    ).scalar()
+                    connection.execute(
+                        sa.text(
+                            "INSERT INTO unit_coverage "
+                            "(carrier_type, carrier_id, unit_id, position, origin) "
+                            "VALUES ('export_item', :i, :u, 1, 'manual')"
+                        ),
+                        {"i": own.export_item_id, "u": unit},
+                    )
+            before = bench.rows("SELECT count(*) n FROM content")[0]["n"]
+            chapter = new_chapter(5030, 3)
+            chapter["cbz"] = "comic_a_001.cbz"
+            bench.alpha()["chapters"].append(chapter)
+            for _ in range(3):
+                bench.run()
+            after = bench.rows("SELECT count(*) n FROM content")[0]["n"]
+            echoes = bench.rows("SELECT count(*) n FROM replica WHERE export_item_id IS NOT NULL")
+            assert echoes[0]["n"] == 1 and after == before, cover

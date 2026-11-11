@@ -64,6 +64,9 @@ KEY: Final = "opds"
 MAX_PAGES: Final = 20  # pages of one feed read in a row: a series longer than that is refused
 SEARCH_REL: Final = "search"
 OPDS_JSON: Final = ("application/opds+json", "application/json")
+_KEY_IN_PATH = re.compile(
+    r"/api/opds/(?!\{)(?:[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}|[0-9A-Za-z_-]{16,})(?:/|$)"
+)
 _UNSAFE_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 MAX_NAME: Final = 120
 SETTINGS_SCHEMA: Final[dict[str, Any]] = {
@@ -143,6 +146,9 @@ class OpdsSource:
         if "@" in parts.netloc or parts.fragment:
             # a credential belongs in the secret settings, never in an address kept in clear
             raise NotConfigured("the catalogue address holds credentials or a fragment")
+        if settings.get("auth") != "api_key_path" and _KEY_IN_PATH.search(parts.path):
+            # a key written in the address would sit in clear in the settings, references, logs
+            raise NotConfigured("the catalogue address holds a key: use the api_key_path flow")
         return OpdsSource(self._parse_xml, base_url=text.rstrip("/"))
 
     def filters(self) -> list[FilterSpec]:
