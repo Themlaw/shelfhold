@@ -342,6 +342,8 @@ class AutoAttachService:
         row = _row(connection, attach_id)
         if row.state != "suggested":
             raise AttachRefusedError(f"not a suggestion: {row.state}")
+        if _work_of(connection, row.edition_id) != row.from_work_id:
+            raise AttachRefusedError("stale: the Edition moved since the suggestion")
         savepoint = connection.begin_nested()
         try:
             _carry(connection, row.edition_id, row.from_work_id, now=row.created_at)

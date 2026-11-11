@@ -9,7 +9,8 @@ Work it came from, carried as its own suggestion when an attach moves it (rebuil
 changed in place).
 
 The number: 0021 to 0024 are reserved by PLAN-M2 §2 (L16, L17, L25, L27) and 0025 is the
-reopening of the age suggestions (#126); `down_revision` is the head of `main` at the rebase.
+reopening of the age suggestions (#126); `down_revision` is the head of `main` at the rebase
+(0021, L16).
 """
 
 import sqlalchemy as sa
