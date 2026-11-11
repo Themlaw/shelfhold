@@ -287,8 +287,8 @@ def _views(data: bytes, depth: int = 0) -> Iterator[str]:
         yield from nxt
     yield text
     yield data.decode("latin-1")
-    for decoded in _base64_decodings(data):
-        yield decoded.decode("utf-8", errors="ignore")
+    for raw in _base64_decodings(data):
+        yield raw.decode("utf-8", errors="ignore")
     for inner in _decompressed(data):
         yield from _views(inner, depth + 1)
 

@@ -25,9 +25,15 @@ _VOLATILE = (
 )
 
 
+_RELEASED = {"schema_revision", "schema_head", "shelfhold_version"}  # move with each release
+
+
 def _shape(value: object) -> object:
     if isinstance(value, dict):
-        return {key: _shape(item) for key, item in sorted(value.items())}
+        return {
+            key: f"<{key}>" if key in _RELEASED else _shape(item)
+            for key, item in sorted(value.items())
+        }
     if isinstance(value, list):
         return [_shape(item) for item in value]
     if isinstance(value, str):

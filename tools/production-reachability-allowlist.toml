@@ -166,12 +166,10 @@ symbols = [
 
 [[allow]]
 category = "unwired-m3"
-reason = "Diagnostic bundle, content serving and the `?since=` tokens (backed by the event sequence, with the removals of a list) come with the reader and the admin UI of M3 (B1 for content_response); no list is backed by the event table in M1a. The cursor and the ETag of a list are wired on the job list."
+reason = "Content serving and the `?since=` tokens (backed by the event sequence, with the removals of a list) come with the reader and the admin UI of M3 (B1 for content_response); no list is backed by the event table in M1a. The cursor and the ETag of a list are wired on the job list. The diagnostic bundle is wired by its CLI (M2 L30); its download over HTTP (attachment_disposition) comes with the admin UI of M3."
 until = "M3"
 symbols = [
-  "shelfhold.export.domain.provenance_mirror:is_diagnostic_excluded",
   "shelfhold.infrastructure.http_headers:attachment_disposition",
-  "shelfhold.infrastructure.logging:redact_source_urls",
   "shelfhold.interfaces.http_api.content:content_response",
   "shelfhold.interfaces.http_api.lists:Since",
   "shelfhold.interfaces.http_api.lists:decode_since",

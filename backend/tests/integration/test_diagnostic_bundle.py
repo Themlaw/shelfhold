@@ -147,6 +147,9 @@ def test_diagnostic_bundle_is_owner_only_and_never_overwrites(
     code, _ = _bundle(monkeypatch, settings, tmp_path)
     assert code == 2 and out.read_bytes() == before
     assert "logs.jsonl" not in _members(out)  # no log file given: no log member
+    beside = settings.store_dir / "bundle.zip"  # never next to the contents
+    assert run_cli(monkeypatch, settings, "diagnostic", "bundle", "--out", str(beside)) == 2
+    assert not beside.exists()
 
 
 def test_diagnostic_bundle_refused_when_a_trap_value_survives(
@@ -197,3 +200,12 @@ def test_fsops_debug_lines_carry_the_root_never_the_path(
     assert all(x.get("root_id") == env.expected[0].root_id for x in written), written
     text = json.dumps(lines, ensure_ascii=False)
     assert WORK_TITLE not in text and UNIT_TITLE not in text
+
+
+def test_every_setting_has_a_bundle_class() -> None:
+    """Closed by default: a new setting enters the bundle only once somebody classified it."""
+    from shelfhold.ops.diagnostic import SETTING_CLASSES
+
+    assert set(SETTING_CLASSES) == set(Settings.model_fields)
+    secrets = {n for n, f in Settings.model_fields.items() if "SecretStr" in str(f.annotation)}
+    assert secrets and all(SETTING_CLASSES[name] == "presence" for name in secrets)

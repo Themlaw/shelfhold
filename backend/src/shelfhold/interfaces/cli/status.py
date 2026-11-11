@@ -225,6 +225,12 @@ def _waiting(resolved: ResolvedSettings) -> dict[str, object]:
         engine.dispose()
 
 
+def report(resolved: ResolvedSettings) -> dict[str, object]:
+    """What `status --json` prints: the warnings and what waits (read by the diagnostic bundle,
+    which keeps only the codes and the counts)."""
+    return {"warnings": warnings(resolved), **_waiting(resolved)}
+
+
 def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     found = warnings(resolved)
     ops = _waiting(resolved)
