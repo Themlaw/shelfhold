@@ -3,6 +3,7 @@
 Each test goes through the real path (the real `PurgeService`, the real `ConnectedUpstream`, the
 real `FollowRequests`); the service is a fake only at the network edge."""
 
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -140,3 +141,24 @@ def test_purge_work_completes_when_the_series_is_already_gone_from_the_service(
             assert not connection.execute(
                 sa.text("SELECT id FROM work WHERE id = :w"), {"w": series.work_id}
             ).all()
+
+
+def test_purge_work_erases_the_follow_request_and_the_series_url(tmp_path: Path) -> None:
+    """P3: `follow_request` is keyed by `(source_key, remote_id)`, not by a foreign key: the row
+    kept the URL slug of the series (a title) after the purge."""
+    with export_env() as env:
+        service, series, _unit, key, purge = _followed_work(env, tmp_path)
+        service.series_known = True
+        report = purge.purge.purge_work(
+            series.work_id, principal=ADMIN, typed=series.work_id, now=purge.clock.now()
+        )
+        assert report.complete and service.unfollowed == [("suwayomi", key, SLUG)]
+        with env.engine.connect() as connection:
+            rows = connection.execute(sa.select(acquisition.follow_request.c.remote_id)).all()
+            assert rows == []
+            for name in connection.execute(
+                sa.text("SELECT name FROM sqlite_master WHERE type = 'table'")
+            ).scalars():
+                found = connection.execute(sa.text(f'SELECT * FROM "{name}"'))  # noqa: S608
+                blob = json.dumps([[str(c) for c in r] for r in found])
+                assert "dr-stone" not in blob, name

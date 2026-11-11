@@ -385,12 +385,13 @@ def erase_work_rows(connection: Connection, work_id: str) -> None:
     items = list(
         connection.execute(sa.select(b.c.source_item_id).where(b.c.work_id == work_id)).scalars()
     )
-    keys = [
-        f"{row.source_key}|{row.remote_id}"
+    pairs = [
+        (row.source_key, row.remote_id)
         for row in connection.execute(
             sa.select(si.c.source_key, si.c.remote_id).where(si.c.id.in_(items))
         )
     ]
+    keys = [f"{source_key}|{remote_id}" for source_key, remote_id in pairs]
     series = list(
         connection.execute(
             sa.select(catalog.series_member.c.series_id).where(
@@ -418,6 +419,19 @@ def erase_work_rows(connection: Connection, work_id: str) -> None:
     unshared = sa.and_(si.c.id.in_(items), ~sa.exists().where(b.c.source_item_id == si.c.id))
     _erase_with_dependents(connection, si, unshared, ())
     connection.execute(sa.delete(snap).where(snap.c.series_ref.in_(keys)))
+    # `follow_request` is keyed by the upstream series, with no foreign key: its row spells the
+    # series (a URL slug) and would outlive the Work. A series another Work still binds stays.
+    follow = acquisition.follow_request
+    for source_key, remote_id in pairs:
+        still_bound = connection.execute(
+            sa.select(si.c.id).where(si.c.source_key == source_key, si.c.remote_id == remote_id)
+        ).first()
+        if still_bound is None:
+            connection.execute(
+                sa.delete(follow).where(
+                    follow.c.source_key == source_key, follow.c.remote_id == remote_id
+                )
+            )
     member = catalog.series_member
     _erase_with_dependents(
         connection,
