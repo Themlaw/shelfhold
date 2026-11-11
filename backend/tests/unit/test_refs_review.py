@@ -275,3 +275,32 @@ def test_property_a_clean_reference_over_the_full_alphabet_is_never_refused(
     if names:
         ref += "?" + "&".join(f"{n}={v}" for n, v in zip(names, numbers, strict=False))
     assert check_ref(ref, ()) == ref
+
+
+def test_shelfhold_own_identifiers_are_not_taken_for_credentials() -> None:
+    """ULIDs, UUIDs and ids built from them (`ch-<ulid>`) are shown to the administrator and typed
+    back: no shape check may mask or refuse them. A registered secret still is, whatever it looks
+    like."""
+    from shelfhold.infrastructure.ids import new_ulid
+    from shelfhold.infrastructure.logging import (
+        redact_url,
+        redact_value,
+        register_secret_value,
+        route_of,
+    )
+
+    ulid, uid = new_ulid(), "0b9f6c1e-3a52-4c7d-9e0a-5d2f8b7a1c34"
+    for ident in (ulid, ulid.lower(), uid, f"ch-{ulid}", f"series-{ulid}", f"suwayomi:{ulid}"):
+        assert not tokenlike(ident), ident
+        assert check_ref(f"/s/{ident}/x?id={ident}", ()) == f"/s/{ident}/x?id={ident}"
+        assert redact_url(f"https://h.example/s/{ident}?id={ident}#{ident}") == (
+            f"https://h.example/s/{ident}?id={ident}#{ident}"
+        )
+        assert ident in route_of(f"https://h.example/s/{ident}/x")
+        assert redact_value(f"id {ident}") == f"id {ident}"
+    assert check_ref("suwayomi:1", ()) == "suwayomi:1"
+    forget_secret_values()
+    register_secret_value(ulid)  # registered: masked even though it looks like an ULID
+    assert ulid not in redact_url(f"https://h.example/s/{ulid}")
+    with pytest.raises(SecretInRef):
+        check_ref(f"/s/{ulid}", {ulid})

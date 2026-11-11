@@ -27,6 +27,7 @@ from shelfhold.infrastructure.secret_text import (
     secret_forms,
     sensitive_name,
     tokenlike,
+    without_internal_ids,
 )
 
 _WORDS = (
@@ -159,7 +160,7 @@ def _redact_path(path: str) -> str:
         if segment and (
             contains_secret(segment, known_secret_index())
             or (named and segment != _PLACEHOLDER)
-            or _TOKEN_SEGMENT.fullmatch(decoded)
+            or _TOKEN_SEGMENT.fullmatch(without_internal_ids(decoded))
             or tokenlike(decoded)
         ):
             segments[index] = REDACTED
@@ -182,7 +183,7 @@ def _redact_pairs(text: str, separators: str = "&;") -> str:
         if equals and (
             sensitive_name(name)
             or contains_secret(value, known_secret_index())
-            or _TOKEN_SEGMENT.fullmatch(unquote(value))
+            or _TOKEN_SEGMENT.fullmatch(without_internal_ids(unquote(value)))
             or tokenlike(unquote(value))
         ):
             pieces[index] = f"{name}={REDACTED}"

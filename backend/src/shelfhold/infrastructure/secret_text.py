@@ -24,6 +24,7 @@ __all__ = [
     "secret_forms",
     "sensitive_name",
     "tokenlike",
+    "without_internal_ids",
 ]
 
 _DECODE_ROUNDS = 4
@@ -165,9 +166,15 @@ _LONG_WORDS = ("token", "secret", "password", "passwd", "passphrase", "cookie", 
                "session", "signature", "apikey")  # fmt: skip
 _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _JWT = re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]*")
-_UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 _BASE64URL = re.compile(r"[A-Za-z0-9_-]+")
 _ALNUM = re.compile(r"[A-Za-z0-9]+")
+# Shelfhold's own identifiers (ULID, Crockford base32) are not credentials: they are shown to the
+# administrator and typed back. A *registered* secret is matched by value before shape is asked.
+_INTERNAL_ID = re.compile(
+    r"(?<![A-Za-z0-9])(?:[0-9A-HJKMNP-TV-Z]{26}"
+    r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)  # a ULID or a UUID standing alone in a segment, or between `-`, `_`, `.`, `:` (`ch-<ulid>`)
 
 
 def _words(name: str) -> list[str]:
@@ -194,11 +201,20 @@ def _entropy(text: str) -> float:
     return -sum(n / len(text) * math.log2(n / len(text)) for n in counts.values())
 
 
+def without_internal_ids(text: str) -> str:
+    """`text` with the ULIDs and UUIDs Shelfhold itself writes taken out (`ch-<ulid>` -> `ch-`)."""
+    return _INTERNAL_ID.sub("", text)
+
+
 def tokenlike(text: str) -> bool:
-    """Shaped like an opaque credential, whatever the place it sits in: a JWT, a UUID, a mixed
+    """Shaped like an opaque credential, whatever the place it sits in: a JWT, a mixed
     case run of 12 or more (base64url), or a run of 20 or more letters and digits with both and a
     spread of characters (hexadecimal, base36). A word, a slug, a number and a short id are not."""
-    if _JWT.fullmatch(text) or _UUID.fullmatch(text):
+    if _INTERNAL_ID.search(text):
+        text = _INTERNAL_ID.sub("", text)  # `ch-<ulid>`: judge what is left, never the identifier
+        if not text.strip("-_.:"):
+            return False
+    if _JWT.fullmatch(text):
         return True
     has_digit = any(c.isdigit() for c in text)
     has_lower = any(c.islower() for c in text)
