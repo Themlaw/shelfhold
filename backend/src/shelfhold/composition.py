@@ -139,7 +139,9 @@ class Composition:
         self.network = network or default_network()
         self.gates = gates or Gates()
         self.bus = bus or operating_bus(self.clock)
-        self._tombstones: tuple[tuple[tuple[str, str], ...], TombstoneService] | None = None
+        self._tombstones: (
+            tuple[tuple[tuple[str, str, bool, tuple[str, ...]], ...], TombstoneService] | None
+        ) = None
         self._lock = threading.Lock()
         self._boot_id = uuid.uuid4().hex
         self._held_lock = threading.Lock()

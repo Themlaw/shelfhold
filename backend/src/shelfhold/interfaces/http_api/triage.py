@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.interfaces.http_api.auth import reserved_action
-from shelfhold.interfaces.http_api.ops import RatedOut, refusals
+from shelfhold.interfaces.http_api.ops import EditionSuggestionOut, RatedOut, refusals
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.ops import OpsServices
 
@@ -29,6 +29,7 @@ class ToRateItem(BaseModel):
     title: str
     state: str
     reason: str
+    suggestions: list[EditionSuggestionOut] = []  # open ones above an Edition's age
 
 
 class ToRateOut(BaseModel):
