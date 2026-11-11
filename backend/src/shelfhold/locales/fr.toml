@@ -835,6 +835,10 @@ action = "Aucune action : la copie déjà conservée est gardée."
 title = "Le résolveur DNS du foyer bloque cette source."
 action = "Autorisez le domaine de la source dans le bloqueur DNS (liste blanche), puis relancez."
 
+[errors."source.domain_not_allowed"]
+title = "Une source a demandé un domaine qu'elle n'a pas déclaré."
+action = "La requête est refusée. Vérifiez l'adresse réglée pour la source ; si elle est juste, mettez la source à jour ou désactivez-la."
+
 [errors."source.downloads_dropped"]
 title = "La source a abandonné des téléchargements."
 action = "Relancez les téléchargements abandonnés depuis l'Activité."
@@ -843,9 +847,17 @@ action = "Relancez les téléchargements abandonnés depuis l'Activité."
 title = "La source a signalé une erreur."
 action = "Consultez l'état de la source dans la page Sources."
 
+[errors."source.forbidden_io"]
+title = "Une source a tenté d'accéder seule au réseau, au disque ou à un programme."
+action = "L'accès est refusé et journalisé. La source ne respecte pas le contrat : désactivez-la ou mettez-la à jour."
+
 [errors."source.instance_changed"]
 title = "Le service de la source semble avoir été réinstallé."
 action = "Confirmez avec « shelfhold source reconnect » ; rien n'est supprimé en attendant."
+
+[errors."source.no_match"]
+title = "Aucune source ne reconnaît cette adresse."
+action = "Vérifiez l'adresse collée, ou activez la source qui la publie."
 
 [errors."source.not_loaded"]
 title = "Une source n'est pas chargée."

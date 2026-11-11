@@ -42,6 +42,16 @@ class RefHasSecret(ContentRemoved):
     code = "source.ref_has_secret"
 
 
+class NoSourceForUrl(SourceError):
+    """No active plugin recognises a pasted URL, or the one that does resolves it to nothing
+    (EF-SRC-004): the 422 "aucune source"."""
+
+    code = "source.no_match"
+
+    def __init__(self, message: str = "no active source recognises this URL") -> None:
+        super().__init__(message)
+
+
 class AuthModeUnsupported(SourceError):
     """The tool runs in an authentication mode this release does not drive (EF-SRC-031)."""
 

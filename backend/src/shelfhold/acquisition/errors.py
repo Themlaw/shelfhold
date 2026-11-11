@@ -20,6 +20,12 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source.instance_changed", 409, "admin", event=True),
     # EF-SRC-026 (d): the global update settings of the tool leave out the series that are followed
     ErrorCode("source.update_filters_blocking", 409, "admin"),
+    # EF-SRC-004: a pasted URL that no active plugin recognises
+    ErrorCode("source.no_match", 422, "user"),
+    # EF-SRC-003: a plugin's Fetcher asked for a host outside its DomainRules
+    ErrorCode("source.domain_not_allowed", 403, "admin"),
+    # EF-SRC-002: a plugin did network, disk or process I/O itself (the audit-hook detector)
+    ErrorCode("source.forbidden_io", 403, "admin"),
     ErrorCode("source.dns_blocked", 502, "admin", event=True),
     ErrorCode("ssrf.blocked", 403, "admin"),
     ErrorCode("fetch.error", 502, "admin"),

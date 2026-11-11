@@ -262,3 +262,12 @@ symbols = [
   "shelfhold.infrastructure.packaging.epub.opf:rewrite_opf",
   "shelfhold.library.adapters.origin_opf:keep_origin_opf",
 ]
+
+[[allow]]
+category = "unwired-m2-url-resolution"
+reason = "Pasting a URL (EF-SRC-004, M2 L05): PluginRegistry.resolve_url and its 422 source.no_match are proved by their tests; the first production caller is the one-off acquisition by URL of M2 L19, which wires them and removes this entry."
+until = "M2"
+symbols = [
+  "shelfhold.plugin_host.errors:NoSourceForUrl",
+  "shelfhold.plugin_host.registry:PluginRegistry.resolve_url",
+]

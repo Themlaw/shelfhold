@@ -7885,6 +7885,10 @@
       "code": "source.dns_blocked",
       "status": 502
     },
+    "/api/v1/problems/source.domain-not-allowed": {
+      "code": "source.domain_not_allowed",
+      "status": 403
+    },
     "/api/v1/problems/source.downloads-dropped": {
       "code": "source.downloads_dropped",
       "status": 503
@@ -7897,9 +7901,17 @@
       "code": "source.fallback",
       "status": 409
     },
+    "/api/v1/problems/source.forbidden-io": {
+      "code": "source.forbidden_io",
+      "status": 403
+    },
     "/api/v1/problems/source.instance-changed": {
       "code": "source.instance_changed",
       "status": 409
+    },
+    "/api/v1/problems/source.no-match": {
+      "code": "source.no_match",
+      "status": 422
     },
     "/api/v1/problems/source.not-loaded": {
       "code": "source.not_loaded",

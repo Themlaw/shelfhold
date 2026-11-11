@@ -6,15 +6,30 @@ short forms, zero padding, percent-encoding, IPv6 zone) is refused, because reso
 disagree on them and the disagreement is the attack. `block_reason` decides whether an address may
 be connected to; it looks through the IPv6 forms that carry an IPv4 address (mapped, compatible,
 NAT64, 6to4) and refuses Teredo and every address that is not globally routable.
+
+A plugin's Fetcher adds a third check, by name and before any resolution: `DomainAllowlist`, the
+plugin's DomainRules (EF-SRC-003), at every hop.
 """
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import re
-from typing import Final
+import threading
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from typing import Final, Literal
+from urllib.parse import urlsplit
 
-from shelfhold.infrastructure.fetcher.errors import SsrfBlocked
+import idna
+import structlog
+
+from shelfhold.infrastructure.fetcher.errors import DomainNotAllowed, SsrfBlocked
+from shelfhold.infrastructure.logging import redact_url
+from shelfhold.sdk.models import DomainRule
+
+log = structlog.get_logger(__name__)
 
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 
@@ -150,3 +165,188 @@ def lan_block_reason(ip: IPAddress) -> str | None:
     if ip.is_unspecified or ip.is_multicast:
         return "unspecified or multicast"
     return None
+
+
+# -- DomainRule: the allowlist of a plugin (EF-SRC-003) --------------------------------------------
+#
+# `example.org` is that host only; `.example.org` the host and every name under it;
+# `*.example.org` every name under it, never the host itself. A joker is the whole leftmost label
+# and needs two labels after it (`*.org` would span a whole TLD; there is no public-suffix list, so
+# `*.co.uk` is the admin's call). Hosts and patterns compare in their A-label form (IDNA 2008, the
+# encoding the HTTP client puts on the wire), case folded, one trailing dot ignored. A pattern that
+# does not parse is refused: a rule never matches more than it says.
+
+_LDH: Final = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+
+
+class DomainPatternError(ValueError):
+    """A DomainRule pattern, a url_patterns host or a host name that is not a valid name."""
+
+
+def canonical_host(name: str) -> str:
+    """The comparison form of a host: an IP literal compressed, a name in lower-case A-labels
+    without its trailing dot. Raises DomainPatternError for anything else."""
+    if not isinstance(name, str) or not name or name != name.strip():
+        raise DomainPatternError(f"{name!r} is not a host name")
+    literal = name[1:-1] if name.startswith("[") and name.endswith("]") else name
+    try:
+        return ipaddress.ip_address(literal).compressed
+    except ValueError:
+        pass
+    trimmed = name[:-1] if name.endswith(".") else name
+    labels = trimmed.split(".")
+    if not trimmed or any(not label for label in labels):
+        raise DomainPatternError(f"{name!r} has an empty label")
+    host = ".".join(_a_label(label, name) for label in labels)
+    if len(host) > 253:
+        raise DomainPatternError(f"{name!r} is longer than 253 characters")
+    return host
+
+
+def _a_label(label: str, name: str) -> str:
+    if label.isascii():
+        low = label.lower()
+        if not _LDH.fullmatch(low) or (low[2:4] == "--" and not low.startswith("xn--")):
+            raise DomainPatternError(f"{name!r}: {label!r} is not a host label")
+        if low.startswith("xn--"):
+            try:
+                back = idna.encode(idna.decode(low)).decode("ascii")
+            except (idna.IDNAError, UnicodeError) as exc:
+                raise DomainPatternError(f"{name!r}: {label!r} is not valid punycode") from exc
+            if back != low:  # pragma: no cover - idna already refuses a non-canonical A-label
+                raise DomainPatternError(f"{name!r}: {label!r} is not in canonical form")
+        return low
+    try:
+        encoded = idna.encode(label, uts46=True).decode("ascii")
+    except (idna.IDNAError, UnicodeError) as exc:
+        raise DomainPatternError(f"{name!r}: {label!r} is not a valid IDN label") from exc
+    if "." in encoded:  # a full stop look-alike that the mapping turns into a separator
+        raise DomainPatternError(f"{name!r}: {label!r} hides a label separator")
+    return encoded
+
+
+@dataclass(frozen=True)
+class DomainPattern:
+    kind: Literal["exact", "suffix", "wildcard"]
+    base: str  # canonical form
+
+    def matches(self, host: str) -> bool:
+        try:
+            name = canonical_host(host)
+        except DomainPatternError:
+            return False
+        if self.kind == "exact":
+            return name == self.base
+        under = name.endswith("." + self.base)
+        return under if self.kind == "wildcard" else (under or name == self.base)
+
+
+def compile_domain_pattern(pattern: str) -> DomainPattern:
+    if not isinstance(pattern, str):
+        raise DomainPatternError(f"{pattern!r} is not a domain pattern")
+    kind: Literal["exact", "suffix", "wildcard"] = "exact"
+    rest = pattern
+    if pattern.startswith("*."):
+        kind, rest = "wildcard", pattern[2:]
+    elif pattern.startswith("."):
+        kind, rest = "suffix", pattern[1:]
+    if "*" in rest:
+        raise DomainPatternError(f"{pattern!r}: a joker is only the whole leftmost label")
+    base = canonical_host(rest)
+    if kind != "exact":
+        try:
+            ipaddress.ip_address(base)
+        except ValueError:
+            pass
+        else:
+            raise DomainPatternError(f"{pattern!r}: an address matches only exactly")
+        labels = base.split(".")
+        if len(labels) < 2 or _NUMERIC_LABEL.fullmatch(labels[-1]):
+            raise DomainPatternError(f"{pattern!r} would span a whole top-level domain")
+    return DomainPattern(kind, base)
+
+
+_OVERRIDES: dict[tuple[str, str], str | None] = {}  # (plugin, setting) -> digest of the value
+_OVERRIDES_LOCK: Final = threading.Lock()
+
+
+class DomainAllowlist:
+    """The domains a plugin's Fetcher may reach: its DomainRules, after the `base_url_setting`
+    overrides. An override replaces the declared host by the exact host of the configured URL; it
+    is logged (URL redacted) each time it changes, and a value that is not a plain http(s) URL
+    makes its rule reach nothing (fail closed)."""
+
+    def __init__(
+        self,
+        plugin_id: str,
+        rules: Iterable[DomainRule],
+        settings: Mapping[str, object] | None = None,
+    ) -> None:
+        self.plugin_id = plugin_id
+        values = settings or {}
+        patterns: list[DomainPattern] = []
+        for rule in rules:
+            declared = compile_domain_pattern(rule.pattern)
+            if rule.base_url_setting is None:
+                patterns.append(declared)
+                continue
+            override = self._override(rule, values.get(rule.base_url_setting))
+            if override is not None:
+                patterns.extend(override)
+            else:
+                patterns.append(declared)
+        self._patterns = tuple(patterns)
+
+    def _override(self, rule: DomainRule, value: object) -> tuple[DomainPattern, ...] | None:
+        """None: no override, the declared pattern stands; () refuses; else the override."""
+        setting = str(rule.base_url_setting)
+        key = (self.plugin_id, setting)
+        if value is None or value == "":
+            self._note(key, None, rule, None)
+            return None
+        host = _override_host(value)
+        shown = redact_url(value) if isinstance(value, str) else f"<{type(value).__name__}>"
+        if host is None:
+            log.warning("plugin.base_url_override_refused", plugin_id=self.plugin_id,
+                        setting=setting, purpose=rule.purpose, url=shown)  # fmt: skip
+            return ()
+        digest = hashlib.sha256(str(value).encode()).hexdigest()
+        self._note(key, digest, rule, shown)
+        return (DomainPattern("exact", host),)
+
+    def _note(
+        self, key: tuple[str, str], digest: str | None, rule: DomainRule, shown: str | None
+    ) -> None:
+        with _OVERRIDES_LOCK:
+            previous = _OVERRIDES.get(key)
+            changed = previous != digest and (digest is not None or key in _OVERRIDES)
+            _OVERRIDES[key] = digest
+        if changed:
+            log.warning("plugin.base_url_override", plugin_id=self.plugin_id, setting=key[1],
+                        purpose=rule.purpose, url=shown)  # fmt: skip
+
+    def allows(self, host: str) -> bool:
+        return any(p.matches(host) for p in self._patterns)
+
+    def check(self, host: str, route: str) -> None:
+        """Raise DomainNotAllowed (logged with the plugin id) unless `host` is allowed."""
+        if not self.allows(host):
+            log.warning("plugin.domain_not_allowed", plugin_id=self.plugin_id, route=route)
+            raise DomainNotAllowed(f"{host} is not among the domains of plugin {self.plugin_id}")
+
+
+def _override_host(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parts = urlsplit(value)
+        hostname = parts.hostname
+        parts.port  # noqa: B018 - raises on a malformed port
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not hostname or "@" in parts.netloc:
+        return None
+    try:
+        return canonical_host(hostname)
+    except DomainPatternError:
+        return None
