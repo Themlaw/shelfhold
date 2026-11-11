@@ -57,6 +57,7 @@ from tests.integration.test_schema_catalog import (
     add_source_item,
     add_work,
 )
+from tests.null_tombstones import NO_CATALOG_HITS
 
 pytestmark = pytest.mark.req("EF-BIB-055", "EF-BIB-037", "EF-BIB-003")
 
@@ -90,7 +91,7 @@ def scene(env: ExportEnv) -> Scene:
             now=NOW - timedelta(days=3),
         )  # fmt: skip
     bus = EventBus(env.clock)
-    return Scene(env, bus, AutoAttachService(events=bus), family)
+    return Scene(env, bus, AutoAttachService(events=bus, tombstones=NO_CATALOG_HITS), family)
 
 
 def arriving(env: ExportEnv, *, title: str = "Dr Stone (uncut)") -> Series:

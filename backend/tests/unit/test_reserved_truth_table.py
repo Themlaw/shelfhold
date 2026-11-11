@@ -270,6 +270,7 @@ FRESHNESS_LINE = {
             "revisions.apply",
             "revisions.force",
             "normalize.migrate",
+            "edition.merge",
             "restore.acknowledge",
             "admin_risk.accept",
             "shelf.purge_upstream",

@@ -378,6 +378,26 @@ help_edition_detach = "Défait un rattachement par identifiant externe (Séparer
 help_edition_attach_confirm = "Affiche le plan de retrait d'un rattachement suggéré, puis l'applique avec son jeton."
 help_edition_attach_token = "Le jeton affiché avec le plan : confirme le rattachement."
 help_edition_attach_decline = "Refuse un rattachement suggéré."
+help_edition_merge = "Fusionne deux éditions d'une œuvre : affiche le plan (--plan, par défaut), l'applique avec son empreinte (--apply)."
+help_edition_merge_keep = "L'édition qui reste."
+help_edition_merge_drop = "L'édition fusionnée dans la première, qui disparaît."
+help_edition_merge_plan = "Affiche le plan et son empreinte sans rien modifier (par défaut)."
+help_edition_merge_apply = "Applique le plan dont l'empreinte est donnée."
+help_edition_merge_proposals = "Affiche les plans de fusion d'éditions que demanderait la fusion de deux contributeurs, sans rien appliquer."
+help_edition_merge_contributor_keep = "Le contributeur qui reste."
+help_edition_merge_contributor_drop = "Le contributeur fusionné dans le premier."
+merge_header = "Fusion de l'édition {drop} dans {keep} : {units} unités, {volumes} volumes, {bindings} liaisons."
+merge_age = "Âge : {keep} et {drop}, l'édition gardée prend le plus strict : {merged}."
+merge_unrated = "L'édition gardée repasse « à classer » : l'une des deux n'était pas classée."
+merge_blocker = "Bloquée : {reason}."
+merge_tombstoned_units = "{count} unités reprendraient la place d'une unité effacée : fusion bloquée, rien n'est supprimé."
+merge_tombstoned_ids = "{count} identifiants de l'œuvre sont sous pierre tombale : fusion bloquée, rien n'est supprimé."
+merge_fingerprint = "Empreinte du plan : {fingerprint} (appliquez avec --apply)."
+merge_applied = "Édition {drop} fusionnée dans {keep}."
+merge_plan_stale = "Le plan n'est plus celui des données : relancez sans --apply, relisez-le, puis confirmez."
+merge_not_mergeable = "Ce plan ne peut pas être appliqué."
+merge_proposals_none = "Aucune fusion d'éditions n'est à proposer."
+merge_proposed = "Fusion proposée de {drop} dans {keep} (jamais appliquée sans confirmation)."
 attach_none = "Aucun rattachement par identifiant externe."
 attach_line = "{attach} : édition {edition} → œuvre {work} (venue de {origin}), {state}"
 attach_detached = "Séparé : l'édition {edition} est revenue à l'œuvre {work}."
@@ -1211,6 +1231,10 @@ action = "Lisez le plan de retrait avec « shelfhold edition attach-confirm », 
 [errors."edition.attach_refused"]
 title = "Ce rattachement ne peut pas être défait ni confirmé dans son état actuel."
 action = "Consultez son état avec « shelfhold edition attachments » : il a déjà été défait, refusé, ou l'édition a changé d'œuvre depuis."
+
+[errors."edition.merge_refused"]
+title = "Cette fusion d'éditions est refusée : rien n'a été modifié ni supprimé."
+action = "Relisez le plan avec « shelfhold edition merge » : une pierre tombale (une place ou un identifiant d'œuvre purgés), une autre œuvre, une place déjà occupée ou une liaison que la fusion ne sait pas déplacer l'arrête."
 
 [errors."tombstone.journal_truncated"]
 title = "Le journal d'effacement d'une racine a été tronqué."

@@ -17,13 +17,19 @@ from shelfhold.catalog.public import (
     AutoAttachService,
 )
 from shelfhold.identity.public import Principal
-from shelfhold.ops.errors import CodedRefusal, StalePreviewError, UnknownSubjectError
+from shelfhold.ops.errors import (
+    CodedRefusal,
+    ExitUnavailableError,
+    StalePreviewError,
+    UnknownSubjectError,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
     from shelfhold.catalog.public import EventPublisher
     from shelfhold.infrastructure.clock import Clock
+    from shelfhold.ops.tombstone_screens import CatalogScreens
 
 __all__ = ["AttachOps"]
 
@@ -43,11 +49,29 @@ def _plan(plan: AttachPlan) -> dict[str, Any]:
 
 class AttachOps:
     def __init__(
-        self, engine: Engine, clock: Clock, bus: EventPublisher, *, fresh_auth_s: int = 900
+        self,
+        engine: Engine,
+        clock: Clock,
+        bus: EventPublisher,
+        *,
+        fresh_auth_s: int = 900,
+        screens: CatalogScreens | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
+        self._bus = bus
+        self._fresh_auth_s = fresh_auth_s
+        self._screens = screens
         self._service = AutoAttachService(events=bus, fresh_auth_s=fresh_auth_s)
+
+    def _screened(self) -> AutoAttachService:
+        """A service that asks the Work tombstones (the plan and the confirmation of a suggested
+        attach look again: the Work it names may have been purged since). Fails closed."""
+        if self._screens is None:
+            raise ExitUnavailableError("the Work tombstones cannot be checked here")
+        return AutoAttachService(
+            events=self._bus, fresh_auth_s=self._fresh_auth_s, tombstones=self._screens.open()
+        )
 
     def attachments(self) -> list[dict[str, str]]:
         with self._engine.connect() as connection:
@@ -82,18 +106,20 @@ class AttachOps:
         }
 
     def plan(self, attach_id: str) -> dict[str, Any]:
+        service = self._screened()  # the screen is replayed before any write transaction
         try:
             with self._engine.begin() as connection:
-                return _plan(self._service.plan(connection, attach_id))
+                return _plan(service.plan(connection, attach_id))
         except AttachRefusedError as error:
             raise CodedRefusal("edition.attach_refused", str(error)) from None
         except LookupError as error:
             raise UnknownSubjectError(str(error)) from None
 
     def confirm(self, attach_id: str, *, confirm: str, principal: Principal) -> dict[str, Any]:
+        service = self._screened()
         try:
             with self._engine.begin() as connection:
-                done = self._service.confirm(
+                done = service.confirm(
                     connection, attach_id, confirm=confirm, principal=principal,
                     now=self._clock.now(),
                 )  # fmt: skip

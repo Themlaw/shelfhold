@@ -26,6 +26,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.sdk.age import AgeRating
 from tests.integration.test_schema_catalog import add_edition, add_work
 from tests.l54_env import Bench54, bench54
+from tests.null_tombstones import NO_CATALOG_HITS
 
 pytestmark = pytest.mark.req("EF-BIB-003", "EF-BIB-037")
 
@@ -54,7 +55,7 @@ def arrive(b: Bench54, *, age: int | None = None) -> tuple[str, str, str]:
             RatingService().rate_edition(
                 connection, edition, AgeRating(age), principal=admin, now=NOW
             )  # fmt: skip
-        arrival = AutoAttachService().arrive(
+        arrival = AutoAttachService(tombstones=NO_CATALOG_HITS).arrive(
             connection, IncomingEdition(edition, ids=(ANILIST,)), now=NOW
         )
     assert arrival.attach_id is not None

@@ -23,6 +23,7 @@ CITABLE_NORMALIZERS: Final[tuple[str, ...]] = (
     "publisher@1",
     "number_segment@1",
     "remote_unit_id@1",
+    "work_id@1",
 )
 CITABLE_CONTENT_HASHES: Final[tuple[str, ...]] = ("content-hash@1",)
 SUPPORTED_CONTENT_HASHES: Final[frozenset[str]] = frozenset({CONTENT_HASH_BY})

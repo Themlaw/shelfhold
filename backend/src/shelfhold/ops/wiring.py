@@ -31,6 +31,7 @@ from shelfhold.ops.adoption import LibraryAdoptionExit
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
+from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.intents import IntentOps
@@ -44,6 +45,7 @@ from shelfhold.ops.restore import RestoreCredentialsExit, RestoreGuardExit
 from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
 from shelfhold.ops.services import OpsServices
+from shelfhold.ops.tombstone_screens import CatalogScreens
 
 __all__ = ["open_ops"]
 
@@ -137,6 +139,10 @@ def open_ops(
         normalize=NormalizeOps(composition), meta=MetaOps(composition),
         content=ContentOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),
-        attach=AttachOps(engine, clock, bus, fresh_auth_s=settings.fresh_auth_s),
+        attach=AttachOps(
+            engine, clock, bus, fresh_auth_s=settings.fresh_auth_s,
+            screens=CatalogScreens(composition),
+        ),
+        edition_merge=EditionMergeOps(composition),
         follows=FollowOps(composition), acquire=AcquireOps(composition), roots=RootOps(composition),
     )  # fmt: skip

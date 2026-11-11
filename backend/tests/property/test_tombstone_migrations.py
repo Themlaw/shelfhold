@@ -16,6 +16,7 @@ from shelfhold.library.tombstones import (
     MembershipIndex,
     PlaceRef,
     VariantRef,
+    WorkRef,
     missing_citable,
     normalizers_of,
 )
@@ -53,7 +54,8 @@ def test_cited_normalizer_version_never_removed() -> None:
 
 
 @pytest.mark.parametrize(
-    "migration", ["normalizer_v_next", "content_hash_v2", "edition_key_column_added"]
+    "migration",
+    ["normalizer_v_next", "content_hash_v2", "edition_key_column_added", "work_identifier"],
 )
 def test_tombstone_survives_every_identity_migration(tmp_path: Path, migration: str) -> None:
     """Purged under number@1 and content-hash@1; after the migration the same reference or file
@@ -63,9 +65,14 @@ def test_tombstone_survives_every_identity_migration(tmp_path: Path, migration: 
     service.replay(env.roots)
     service.record(VARIANT, env.roots)
     service.record(PLACE, env.roots)
+    service.record(WorkRef("anilist", "30013"), env.roots)  # a purged Work (M2, L14)
     migrated = env.service(normalizers=normalizers_of(_with_number_v2(_strict)))
     migrated.replay(env.roots)
-    if migration == "normalizer_v_next":
+    if migration == "work_identifier":  # the identifier of a purged Work, after the migration
+        assert migrated.check(WorkRef("anilist", "30013"), root_id=None).blocked
+        assert not migrated.check(WorkRef("anilist", "30014"), root_id=None).blocked
+        assert not migrated.check(WorkRef("kitsu", "30013"), root_id=None).blocked  # per provider
+    elif migration == "normalizer_v_next":
         again = PlaceRef.of(dict(PLACE.edition_key), track="main", number_segment="",
                             number_raw="7.0", part="")  # fmt: skip
         assert migrated.check(again, root_id=env.library.root_id).blocked

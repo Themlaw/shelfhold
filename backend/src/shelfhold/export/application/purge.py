@@ -115,6 +115,7 @@ from shelfhold.library.public import (
     TombstoneRoot,
     TombstoneService,
     VariantRef,
+    WorkRef,
     content_hashes,
     content_ids,
     copies,
@@ -250,6 +251,7 @@ class _Plan:
     tokens: list[str] = field(default_factory=list)
     since: datetime | None = None
     resources: list[str] = field(default_factory=list)
+    external_ids: list[Any] = field(default_factory=list)  # `(provider, value)` of the Work
 
 
 @dataclass
@@ -440,6 +442,15 @@ class PurgeService:
         plan.tokens = upstream_tokens(connection, unit_ids, work_id if kind == "work" else None)
         plan.since = created_since(connection, unit_ids, work_id if kind == "work" else None)
         plan.resources = self._resources(connection, work_id, plan.items)
+        if kind == "work":  # every identifier the Work carried, the renumbered ones too (L14)
+            xid = catalog.external_id
+            plan.external_ids = list(
+                connection.execute(
+                    sa.select(xid.c.provider, xid.c.value)
+                    .where(xid.c.entity_type == "work", xid.c.entity_id == work_id)
+                    .order_by(xid.c.provider, xid.c.value)
+                )
+            )
         return plan
 
     @staticmethod
@@ -588,8 +599,8 @@ class PurgeService:
         pending.update(r.root_id for r in roots if self._tombstones.has_pending(r.root_id))
         return pending
 
-    def _values(self, plan: _Plan) -> list[VariantRef | PlaceRef | SeriesBindingRef]:
-        values: list[VariantRef | PlaceRef | SeriesBindingRef] = []
+    def _values(self, plan: _Plan) -> list[VariantRef | PlaceRef | SeriesBindingRef | WorkRef]:
+        values: list[VariantRef | PlaceRef | SeriesBindingRef | WorkRef] = []
         for row in plan.variants:
             values.append(
                 VariantRef(row.plugin_id, row.source_key, row.remote_unit_id,
@@ -604,6 +615,8 @@ class PurgeService:
         values.extend(
             SeriesBindingRef(b.plugin_id, b.source_key, b.remote_id) for b in plan.bindings
         )
+        # the scheme of a `work` tombstone is the provider key: the identifier as it was stored
+        values.extend(WorkRef(x.provider, x.value) for x in plan.external_ids)
         return values
 
     # -- steps 3 and 4: intent, then deletion -------------------------------------------------

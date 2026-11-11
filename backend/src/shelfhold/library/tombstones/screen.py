@@ -7,11 +7,19 @@ Nothing here deletes anything.
 """
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from shelfhold.library.tombstones.service import TombstoneRoot, TombstoneService
-from shelfhold.library.tombstones.values import ContentHash, PlaceRef, SeriesBindingRef, VariantRef
+from shelfhold.library.tombstones.values import (
+    ContentHash,
+    PlaceRef,
+    SeriesBindingRef,
+    TombstoneValues,
+    VariantRef,
+    WorkRef,
+)
 
-__all__ = ["TombstoneScreenAdapter"]
+__all__ = ["CatalogScreenAdapter", "TombstoneScreenAdapter"]
 
 
 class TombstoneScreenAdapter:
@@ -83,3 +91,47 @@ class TombstoneScreenAdapter:
         return self._service.check(
             SeriesBindingRef(plugin_id, source_key, series_ref), root_id=root_id
         ).blocked
+
+
+class CatalogScreenAdapter:
+    """The two questions the catalog asks (a merge of Editions, the arrival of an Edition by
+    external identifier), answered from the tombstones in plain values (EF-BIB-049, EF-BIB-054 (4)).
+
+    It only reads: a hit is remembered, and `announce` tells it (`tombstone.migration_hit`) once
+    the caller has let go of the write lock (the bus writes in its own transaction). It fails
+    closed: the service raises `NotReplayedError` until its first replay."""
+
+    def __init__(self, service: TombstoneService) -> None:
+        self._service = service
+        self._hits: list[tuple[str, TombstoneValues]] = []
+
+    def places(self, places: Sequence[Any]) -> set[str]:
+        """The `unit_id`s whose place (`edition_key`, `track`, `number_segment`, `number_raw`,
+        `part`, all raw) a `place` tombstone covers."""
+        blocked: set[str] = set()
+        for p in places:
+            place = PlaceRef.of(
+                dict(p.edition_key), track=p.track, number_segment=p.number_segment,
+                number_raw=p.number_raw, part=p.part,
+            )  # fmt: skip
+            if self._service.check(place, root_id=None).blocked:
+                blocked.add(p.unit_id)
+                self._hits.append((p.unit_id, place))
+        return blocked
+
+    def work_ids(self, ids: Sequence[Any]) -> set[tuple[str, str]]:
+        """The `(provider, value)` of the Work identifiers a `work` tombstone covers. The
+        identifier scheme of a `work` tombstone is the provider key."""
+        blocked: set[tuple[str, str]] = set()
+        for external in ids:
+            ref = WorkRef(external.provider, external.value)
+            if self._service.check(ref, root_id=None).blocked:
+                blocked.add((external.provider, external.value))
+                self._hits.append((f"{external.provider}", ref))
+        return blocked
+
+    def announce(self) -> None:
+        """Tell the hits, once (`tombstone.migration_hit`, the scope only: never a value)."""
+        hits, self._hits = self._hits, []
+        if hits:
+            self._service.screen_migration(hits)

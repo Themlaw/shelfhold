@@ -40,6 +40,7 @@ from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
+from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.errors import (
     CodedRefusal,
     ExitUnavailableError,
@@ -186,6 +187,7 @@ class OpsServices:
         content: ContentOps | None = None,
         rating: RatingOps | None = None,
         attach: AttachOps | None = None,
+        edition_merge: EditionMergeOps | None = None,
         follows: FollowOps | None = None,
         acquire: AcquireOps | None = None,
         roots: RootOps | None = None,
@@ -209,6 +211,7 @@ class OpsServices:
         self._content = content
         self._rating = rating
         self._attach = attach
+        self._edition_merge = edition_merge
         self._follows = follows
         self._acquire = acquire
         self._roots = roots
@@ -646,6 +649,13 @@ class OpsServices:
         if self._attach is None:
             raise ExitUnavailableError("the attaches are not connected")
         return self._attach
+
+    @property
+    def edition_merge(self) -> EditionMergeOps:
+        """`edition merge`: the plan of a merge of two Editions and its application (EF-BIB-049)."""
+        if self._edition_merge is None:
+            raise ExitUnavailableError("the merge of Editions is not connected")
+        return self._edition_merge
 
     @property
     def rating(self) -> RatingOps:

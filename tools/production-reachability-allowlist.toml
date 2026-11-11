@@ -162,6 +162,14 @@ symbols = [
 ]
 
 [[allow]]
+category = "unwired-m2-l14"
+reason = "The arrival of an Edition now asks the Work tombstones first (`AutoAttachService.arrive`, EF-BIB-053, EF-BIB-054, M2 L14): a purged Work does not come back by an external identifier it carried, and an arrival without a screen fails closed. Its first production caller is the ingest pipeline of the M2 sources (L19), which hands it the screen (`ops.tombstone_screens.CatalogScreens`); the plan and the confirmation of a suggested attach, and `edition merge`, already use that screen."
+until = "M2"
+symbols = [
+  "shelfhold.catalog.application.auto_attach:AutoAttachService.arrive",
+]
+
+[[allow]]
 category = "unwired-m2-l15"
 reason = "The rights review that announces the non-blocking warning (`Rights.review`), the derived death-year cache and the article-free sort key (EF-SRC-024, EF-BIB-046, ENF-I18N-003, M2 L15) are proved by their tests; their first production callers are the Gutenberg / Standard Ebooks ingest of the M2 source lots (review, cache) and the atelier list (sort key, M3). `status` already reads the calculation through `Rights.protected`."
 until = "M2"
