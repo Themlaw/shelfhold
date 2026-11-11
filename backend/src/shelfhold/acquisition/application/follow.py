@@ -114,7 +114,7 @@ from shelfhold.plugin_host.errors import (
     ServiceInstanceChanged,
     ServiceVersionMismatch,
 )
-from shelfhold.plugin_host.refs_guard import screened, values_of
+from shelfhold.plugin_host.refs_guard import screened, secret_of, values_of
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
 from shelfhold.sdk.fetcher import Fetcher
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
@@ -265,7 +265,12 @@ class FollowCycle:
         # rewritten to the template the adapter declared, before the cycle stores any of it
         service = cast(
             "ConnectedService",
-            screened(service, values_of(fetcher), lambda: getattr(fetcher, "ref_template", None)),
+            screened(
+                service,
+                values_of(fetcher),
+                lambda: getattr(fetcher, "ref_template", None),
+                secret_of(fetcher),
+            ),
         )
         self._service = service
         self._fetcher = fetcher

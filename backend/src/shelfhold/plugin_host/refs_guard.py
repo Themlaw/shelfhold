@@ -16,6 +16,7 @@ import functools
 import inspect
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Final, cast
+from urllib.parse import quote
 
 from pydantic import BaseModel
 
@@ -23,8 +24,9 @@ from shelfhold.infrastructure.fetcher.refs import SecretInRef, check_ref, rewrit
 from shelfhold.infrastructure.logging import known_secret_index
 from shelfhold.infrastructure.secret_text import SecretIndex, contains_secret
 from shelfhold.plugin_host.errors import RefHasSecret
+from shelfhold.sdk.refs import SECRET_PLACEHOLDER
 
-__all__ = ["RefsGuard", "ScreenedService", "screened", "values_of"]
+__all__ = ["RefsGuard", "ScreenedService", "screened", "secret_of", "values_of"]
 
 # Identifiers the host stores and compares: the full check (known values, userinfo, and a token or
 # a key-named parameter nobody registered).
@@ -40,8 +42,10 @@ class RefsGuard:
         known: "Callable[[], Iterable[str] | SecretIndex]",
         *,
         template: str | Callable[[], str | None] | None = None,
+        secret: Callable[[], str | None] | None = None,
     ) -> None:
         self._known = known
+        self._secret = secret  # the key `{secret}` stands for, to give it back to the plugin
         self._declared = template  # read at each call: the adapter may declare it after start
 
     @property
@@ -64,6 +68,36 @@ class RefsGuard:
     def screen[T](self, value: T) -> T:
         """`value` with every reference in it screened (models, lists, dictionaries)."""
         return cast("T", self._walk(value, "", None))
+
+    def restore[T](self, value: T) -> T:
+        """What goes back to the plugin: `{secret}` is the key again (percent-encoded, as the
+        Fetcher writes it into a URL). The stored form keeps the placeholder; the plugin must
+        find the reference it first handed over, or it cannot find its own URL (review of L04)."""
+        key = self._secret() if self._secret is not None else None
+        if not key:
+            return value
+        return cast("T", self._restore(value, quote(key, safe="")))
+
+    def _restore(self, value: Any, key: str) -> Any:
+        if isinstance(value, str):
+            return value.replace(SECRET_PLACEHOLDER, key) if SECRET_PLACEHOLDER in value else value
+        if isinstance(value, BaseModel):
+            changes = {}
+            for name in type(value).model_fields:
+                inner = getattr(value, name)
+                done = self._restore(inner, key)
+                if done is not inner:
+                    changes[name] = done
+            return value.model_copy(update=changes) if changes else value
+        if isinstance(value, Mapping):
+            out = {k: self._restore(v, key) for k, v in value.items()}
+            return out if any(out[k] is not value[k] for k in out) else value
+        if isinstance(value, list | tuple):
+            items = [self._restore(v, key) for v in value]
+            if all(a is b for a, b in zip(items, value, strict=True)):
+                return value
+            return tuple(items) if isinstance(value, tuple) else items
+        return value
 
     def _walk(self, value: Any, field: str, kind: str | None) -> Any:
         if isinstance(value, str):
@@ -123,13 +157,26 @@ def values_of(fetcher: Any) -> Callable[[], SecretIndex]:
     return known
 
 
+def secret_of(fetcher: Any) -> Callable[[], str | None]:
+    """The key a `{secret}` placeholder stands for, when the Fetcher injects one in a URL."""
+
+    def key() -> str | None:
+        own = getattr(fetcher, "ref_secret", None)
+        value = own() if callable(own) else None
+        return value if isinstance(value, str) else None
+
+    return key
+
+
 def screened(
     service: Any,
     known: "Callable[[], Iterable[str] | SecretIndex]",
     template: str | Callable[[], str | None] | None = None,
+    secret: Callable[[], str | None] | None = None,
 ) -> Any:
-    """`service` whose every answer goes through the guard."""
-    return ScreenedService(service, RefsGuard(known, template=template))
+    """`service` whose every answer goes through the guard (and whose every argument gets the key
+    back in place of `{secret}`)."""
+    return ScreenedService(service, RefsGuard(known, template=template, secret=secret))
 
 
 class ScreenedService:
@@ -147,6 +194,7 @@ class ScreenedService:
 
             @functools.wraps(attr)
             async def guarded(*args: Any, **kwargs: Any) -> Any:
+                args, kwargs = guard.restore((args, kwargs))
                 return guard.screen(await attr(*args, **kwargs))
 
             return guarded
@@ -156,6 +204,7 @@ class ScreenedService:
 
             @functools.wraps(attr)
             def guarded_sync(*args: Any, **kwargs: Any) -> Any:
+                args, kwargs = guard.restore((args, kwargs))
                 return guard.screen(attr(*args, **kwargs))
 
             return guarded_sync

@@ -102,6 +102,14 @@ class AuthInjectingFetcher:
         flow = self._flow
         return flow.ref_template if isinstance(flow, AuthApiKey) else None
 
+    def ref_secret(self) -> str | None:
+        """The key a `{secret}` in a stored reference stands for (host side only: it goes back to
+        the plugin in an argument, never into a log or a row)."""
+        flow = self._flow
+        if isinstance(flow, AuthApiKey) and flow.ref_template is not None:
+            return self._value(self._open())
+        return None
+
     def secret_values(self) -> frozenset[str]:
         """Every form of the injected value, and the registered ones: what a reference is checked
         against. The value itself is never rendered by this wrapper, only compared."""

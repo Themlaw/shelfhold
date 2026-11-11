@@ -55,7 +55,7 @@ from shelfhold.integrations.apprise import operating_bus
 from shelfhold.library.public import Normalizers, TombstoneRoot, TombstoneService
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
-from shelfhold.plugin_host.refs_guard import screened, values_of
+from shelfhold.plugin_host.refs_guard import screened, secret_of, values_of
 from shelfhold.sdk.connected import ConnectedCapability
 from shelfhold.sdk.models import AuthBasic
 
@@ -450,7 +450,10 @@ class Composition:
         # every reference the service hands back is screened for secrets, wherever it is read
         # from (the follow cycle, the adoption listing): EF-SRC-035
         checked = screened(
-            service, values_of(fetcher), lambda: getattr(fetcher, "ref_template", None)
+            service,
+            values_of(fetcher),
+            lambda: getattr(fetcher, "ref_template", None),
+            secret_of(fetcher),
         )
         return SuwayomiLink(checked, fetcher, guarded, url)
 
