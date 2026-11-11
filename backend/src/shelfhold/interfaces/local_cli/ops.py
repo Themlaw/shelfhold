@@ -282,8 +282,8 @@ def _kept_ack(ops: OpsServices, by: Principal, _p: Params) -> object:
     return ops.library.kept_ack(principal=by)
 
 
-def _purge_checkpoint(ops: OpsServices, _by: Principal, _p: Params) -> object:
-    return ops.library.purge_checkpoint()
+def _settle_log(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.library.settle_log()
 
 
 def _leftovers_plan(ops: OpsServices, _by: Principal, _p: Params) -> object:
@@ -451,7 +451,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.detach_restore_upstream": (_give_back, None),
     "ops.purge": (_purge, "purge.now"),
     "ops.kept_ack": (_kept_ack, "purge.now"),
-    "ops.purge_checkpoint": (_purge_checkpoint, None),
+    "ops.purge_checkpoint": (_settle_log, None),
     "ops.leftovers_plan": (_leftovers_plan, None),
     "ops.leftovers_apply": (_leftovers_apply, "purge.now"),
     "ops.probe": (_probe, None),

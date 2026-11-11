@@ -894,7 +894,7 @@ class LibraryOps:
         return {"cleared": count}
 
     @_refused
-    def purge_checkpoint(self) -> dict[str, Any]:
+    def settle_log(self) -> dict[str, Any]:
         """Only the emptying of the log, after a `purge.wal_busy`: no purge is run again."""
         truncate_wal(Path(str(self._comp.engine.url.database)))
         return {"done": True}
