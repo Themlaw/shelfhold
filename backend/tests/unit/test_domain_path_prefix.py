@@ -43,6 +43,10 @@ def test_the_prefix_limits_the_host_to_that_path() -> None:
         FEED + "a/./../../x",
         FEED + "a\\..\\x",
         FEED + "%00",
+        FEED + "..;/..;/1/pg1.epub",
+        FEED + "%252e%252e/ebooks/1",
+        FEED + "%c0%ae%c0%ae/ebooks/1",
+        FEED + "a;b",
     ],
 )
 def test_a_path_that_climbs_out_of_the_prefix_is_refused(path: str) -> None:

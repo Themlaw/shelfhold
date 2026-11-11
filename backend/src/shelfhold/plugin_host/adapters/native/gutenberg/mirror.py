@@ -10,6 +10,7 @@ bound the Fetcher by name and by path (ENF-LEG-003).
 from __future__ import annotations
 
 import ipaddress
+import unicodedata
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -19,17 +20,31 @@ __all__ = ["CATALOG_PATH_PREFIX", "SETTINGS_KEYS", "SiteRefused", "epub_url", "s
 
 SETTINGS_KEYS = ("catalog_url", "mirror_url")
 CATALOG_PATH_PREFIX = "/cache/epub/feeds/"  # where the official feeds are served, on any host
-_WEBSITE = frozenset({"gutenberg.org", "www.gutenberg.org"})
+_PROJECT = ("gutenberg.org", "gutenberg.net")  # the project and every host under it
+_FEED_HOSTS = frozenset({"gutenberg.org", "www.gutenberg.org"})  # where the feeds are served
 
 
 class SiteRefused(NotConfigured):
     """The address is the website of the project, not a mirror."""
 
 
+def _canonical(name: str) -> str:
+    """The comparison form of a host: NFKC (full-width letters), A-labels, lower case."""
+    text = unicodedata.normalize("NFKC", name).rstrip(".").lower()
+    try:
+        return text.encode("idna").decode("ascii").lower()
+    except UnicodeError as error:
+        raise NotConfigured("the address has a host name that is not valid") from error
+
+
+def _of_project(host: str) -> bool:
+    return any(host == p or host.endswith("." + p) for p in _PROJECT)
+
+
 def _host_of(url: str) -> str:
     try:
         parts = urlsplit(url)
-        host = (parts.hostname or "").rstrip(".").lower()
+        host = _canonical(parts.hostname or "")
         parts.port  # noqa: B018 - raises on a malformed port
     except ValueError as error:
         raise NotConfigured("the address is not a URL") from error
@@ -55,8 +70,8 @@ def setting_url(settings: dict[str, Any], key: str) -> str:
     url = value.strip()
     host = _host_of(url)
     path = urlsplit(url).path
-    if key == "mirror_url" and host in _WEBSITE:
-        raise SiteRefused("the mirror is the website: the files come from a mirror")
+    if _of_project(host) and (key == "mirror_url" or host not in _FEED_HOSTS):
+        raise SiteRefused("the address is the project's website: a mirror, an official feed")
     if key == "catalog_url" and (not path.startswith(CATALOG_PATH_PREFIX) or path.endswith("/")):
         raise NotConfigured("the catalogue is a file of the official feeds")
     return url

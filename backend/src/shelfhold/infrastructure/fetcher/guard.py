@@ -341,7 +341,6 @@ class DomainAllowlist:
 
 
 _DOT_SEGMENT = re.compile(r"(?:^|/)(?:\.|\.\.)(?:/|$)")
-_ESCAPES: Final = ("%2e", "%2f", "%5c", "%00")
 
 
 def _in_prefix(path: str, prefix: str | None) -> bool:
@@ -350,8 +349,7 @@ def _in_prefix(path: str, prefix: str | None) -> bool:
     outright: nothing legitimate under a prefix needs one."""
     if prefix is None or path == "/robots.txt":  # politeness: the rules of the site are read
         return True
-    lowered = path.lower()
-    if "\\" in path or any(e in lowered for e in _ESCAPES) or _DOT_SEGMENT.search(path):
+    if "\\" in path or ";" in path or "%" in path or _DOT_SEGMENT.search(path):
         return False
     return path.startswith(prefix)
 
