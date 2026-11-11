@@ -110,3 +110,28 @@ l'Édition avec sa provenance (la source qui l'a dite) et l'affiche sur la fiche
 copiée dans l'EPUB (`dc:rights` et `dc:source`) quand le fichier n'a pas de `dc:rights` ; s'il en a un
 qui ne nomme pas la licence, la ligne du livre reste telle quelle et l'attribution est écrite à côté.
 Un nom de contributeur qui contient du balisage, un lien ou un saut de ligne n'est pas recopié.
+
+## Standard Ebooks, libre de droits aux États-Unis (une adresse par livre, flux patron)
+
+Standard Ebooks publie des éditions soignées d'œuvres **libres de droits aux États-Unis**, ce qui
+n'est pas forcément le cas dans votre pays : voir [domaine-public.md](domaine-public.md). La
+production est versée au domaine public (CC0) ; Shelfhold garde la mention « libre de droits aux
+États-Unis » telle quelle sur l'Édition et n'en fait jamais une affirmation sur votre pays.
+
+Deux entrées, et pas de troisième :
+
+- **Une adresse par livre.** Coller l'adresse d'un livre (`…/ebooks/auteur/titre`)
+  donne le livre, sans requête ; le fichier est le téléchargement de ce livre, une seule requête. Le
+  titre vient de l'adresse. Shelfhold ne lit **jamais** une page du site, une liste d'auteurs ou de
+  sujets : il ne moissonne pas.
+- **Le flux OPDS des patrons.** Le flux complet est réservé aux patrons du projet. Il n'est
+  lu que si vous avez réglé `auth` sur `basic` avec votre identifiant de patron (`username`, et le
+  mot de passe comme secret : [secrets.md](secrets.md)). Sans cela, aucune requête ne part vers le
+  flux, quoi qu'on demande. Le flux est lu par la source OPDS générique ; une recherche lit une page
+  de résultats et rend un curseur, elle ne suit jamais la page suivante d'elle-même.
+
+L'identifiant est injecté par l'hôte, vers `standardebooks.org` seulement (aucun réglage ne change
+cette origine), et masqué des journaux, du cache, des références et du paquet de diagnostic. Le
+rythme est lent (une requête toutes les 5 secondes au plus pour toute la source) et les EPUB sont
+toujours **non fiables** : le neutraliseur passe avant tout export, l'original est gardé dans
+`/store`. Pour l'activer, ajoutez la clé `standardebooks` aux sources actives.

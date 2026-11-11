@@ -1,0 +1,91 @@
+{
+  "key": "standardebooks",
+  "kind": "source",
+  "version": "0.1.0",
+  "api": 1,
+  "name": "Standard Ebooks (one address per book, patron feed with credentials)",
+  "permissions": {
+    "domains": [
+      {
+        "pattern": "standardebooks.org",
+        "purpose": "other",
+        "base_url_setting": null,
+        "path_prefix": "/ebooks/"
+      },
+      {
+        "pattern": "standardebooks.org",
+        "purpose": "api",
+        "base_url_setting": null,
+        "path_prefix": "/feeds/"
+      }
+    ],
+    "lan_targets": [],
+    "needs_browser": false,
+    "needs_solver": false
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "base_url": {
+        "type": "string",
+        "title": "Origin of the patron credential (fixed)",
+        "enum": [
+          "https://standardebooks.org"
+        ],
+        "default": "https://standardebooks.org"
+      },
+      "auth": {
+        "type": "string",
+        "title": "Patron feed: none, or basic with the patron's credentials",
+        "enum": [
+          "none",
+          "basic"
+        ],
+        "default": "none"
+      },
+      "username": {
+        "type": "string",
+        "title": "Patron user name (basic)"
+      },
+      "password": {
+        "type": "string",
+        "format": "password",
+        "title": "Patron password"
+      }
+    }
+  },
+  "content_warning": "safe",
+  "terms_url": "https://standardebooks.org/about",
+  "respects_robots": true,
+  "attribution": "Standard Ebooks productions, dedicated to the public domain (CC0); the texts are free of rights in the United States, not necessarily elsewhere.",
+  "homepage": null,
+  "langs": [
+    "en"
+  ],
+  "content_kinds": [
+    "file"
+  ],
+  "url_patterns": [
+    "https://standardebooks.org/ebooks/*/*",
+    "https://standardebooks.org/ebooks/*/*/*"
+  ],
+  "capabilities": [
+    "SEARCH",
+    "URL_RESOLVE"
+  ],
+  "rate_limit": {
+    "requests_per_second": 0.2,
+    "concurrency": 1
+  },
+  "auth": [
+    {
+      "kind": "basic"
+    }
+  ],
+  "id_scheme": "v1",
+  "rights_basis": "us_public_domain",
+  "rights_jurisdiction": "US",
+  "translation_nature": "unknown",
+  "content_trust": "untrusted",
+  "tests": []
+}
