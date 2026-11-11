@@ -19,6 +19,7 @@ from shelfhold.library.public import PassthroughStore
 from tests.export_env import ExportEnv, Series
 from tests.integration.test_schema_catalog import add_variant
 from tests.library_env import cbz_bytes
+from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 
 
@@ -60,7 +61,12 @@ def better_copy(env: ExportEnv, exported: Exported, *, tag: bytes = b"better") -
         )
     pages = (("1-001.png", b"\x89PNG\r\n\x1a\n" + tag + b"\x00" * 32),)
     PassthroughStore(
-        env.engine, env.lib.fsops, env.lib.locate, env.lib.data, tombstones=NONE_PURGED
+        env.engine,
+        env.lib.fsops,
+        env.lib.locate,
+        env.lib.data,
+        tombstones=NONE_PURGED,
+        hold_work=work_lock(env.engine),
     ).ingest(
         unit_id=exported.unit_id,
         variant_id=variant,
