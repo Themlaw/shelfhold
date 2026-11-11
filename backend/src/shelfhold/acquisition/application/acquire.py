@@ -43,6 +43,7 @@ from shelfhold.catalog.public import (
     UnsupportedFileError,
     announced_kind,
     edition_key_lang,
+    file_new_edition,
     translation_type_for,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
@@ -411,11 +412,8 @@ class NativeAcquirer:
             edition_id = books.ensure_edition(
                 EditionSpec(work_id, lang, translation_type=translation, media="text")
             ).id
-        connection.execute(
-            sa.update(catalog.edition)
-            .where(catalog.edition.c.id == edition_id)
-            .values(shelf_id=shelf_id or _shelf(connection))
-        )
+        # the one door of the shelf of a new Edition: a shelf below 18+ never takes it unrated
+        file_new_edition(connection, edition_id, shelf_id or _shelf(connection))
         item_id = new_ulid()
         connection.execute(
             sa.insert(item).values(
