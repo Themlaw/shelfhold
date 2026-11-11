@@ -23,6 +23,9 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     rebuild = actions.add_parser("rebuild", help=t("cli.meta_rebuild_help"), allow_abbrev=False)
     rebuild.add_argument("--unit", help=t("cli.meta_unit_help"))
     rebuild.set_defaults(handler=run_rebuild)
+    enrich = actions.add_parser("enrich", help=t("cli.meta_enrich_help"), allow_abbrev=False)
+    enrich.add_argument("target", help=t("cli.meta_target_help"))
+    enrich.set_defaults(handler=run_enrich)
     check = actions.add_parser("check", help=t("cli.meta_check_help"), allow_abbrev=False)
     check.set_defaults(handler=run_check)
 
@@ -64,3 +67,24 @@ def run_check(args: argparse.Namespace, channel: OpsChannel) -> int:
     if drift:
         print(t("meta.run_rebuild"), file=sys.stderr)
     return 1 if drift else 0
+
+
+@ops_command
+def run_enrich(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.meta_enrich", target=args.target)
+    outcome = done["outcome"]
+    if outcome != "enriched":
+        print(t(f"meta.enrich_{outcome}", reason=done["reason"] or ""), file=sys.stderr)
+        return 1
+    print(t("meta.enriched", fields=", ".join(done["written"]) or "-", edition=done["edition_id"]))
+    for name in done["kept_locked"] + done["kept_manual"]:
+        print(t("meta.enrich_kept", field=name))
+    for age in done["ages"]:
+        label = "X" if age["x"] else f"{age['age']}+"
+        print(t("meta.enrich_age_suggested", age=label))
+    if done["cover_rejected"]:
+        print(t("meta.enrich_cover_rejected", code=done["cover_rejected"]))
+    print(
+        t("meta.enrich_attribution", text=done["attribution"] or "", url=done["source_url"] or "")
+    )
+    return 0

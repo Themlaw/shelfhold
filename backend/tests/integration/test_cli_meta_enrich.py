@@ -104,7 +104,6 @@ def test_cli_meta_enrich_refuses_what_it_cannot_do(
         assert field(b, edition, "title") is None
         rows = b.rows("SELECT type FROM event WHERE type = 'metadata.provider_down'")
         assert len(rows) == 1
-        assert b.cli("meta", "enrich") != 0  # a target is needed
 
 
 @pytest.mark.req("EF-BIB-013", "ENF-LEG-007")

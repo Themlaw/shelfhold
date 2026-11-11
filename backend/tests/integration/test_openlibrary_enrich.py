@@ -33,8 +33,9 @@ from shelfhold.catalog.public import FieldKey, lock_field
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fetcher.errors import UserAgentNotIdentifiable
-from shelfhold.infrastructure.imaging import WorkerLimits, client as imaging_client
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.imaging import WorkerLimits
+from shelfhold.infrastructure.imaging import client as imaging_client
 from shelfhold.infrastructure.schema import catalog, metadata
 from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider, build_manifest
 from shelfhold.plugin_host.provider_fetcher import ProviderFetcher, ProviderRuntime, open_provider
@@ -164,7 +165,9 @@ def test_openlibrary_isbn_proposes_authors_and_cover_with_provenance(
     contributors = bench.field("contributors")
     assert contributors is not None
     assert (contributors["provider"], contributors["provenance"], contributors["locked"]) == (
-        "openlibrary", "provider", 0
+        "openlibrary",
+        "provider",
+        0,
     )
     assert contributors["value"] == '["Ada Example","Bo Sample"]'
     assert contributors["entity_type"] == "edition" and contributors["confidence"] is not None
@@ -239,8 +242,12 @@ def test_a_provider_cannot_hand_over_a_cover_as_a_field(bench: Bench) -> None:
         async def identify(self, f: Any, target: EntityRef, hints: MatchHints) -> IdentifyResult:
             out = await super().identify(f, target, hints)
             prov = out.proposals[0].provenance
-            extra = [FieldProposal(entity_type="edition", field=name, value="1", confidence=1.0,
-                                   provenance=prov) for name in ("cover", "age_rating", "rating")]
+            extra = [
+                FieldProposal(
+                    entity_type="edition", field=name, value="1", confidence=1.0, provenance=prov
+                )
+                for name in ("cover", "age_rating", "rating")
+            ]
             return IdentifyResult(proposals=[*out.proposals, *extra], relations=out.relations)
 
     bench.fake.covers.pop(ISBN)  # no cover on the server: only the sneaky one could set one
@@ -285,7 +292,9 @@ def test_a_hand_typed_value_is_never_overwritten_even_after_the_lock_is_lifted(
     publisher = bench.field("publisher")
     assert publisher is not None and publisher["value"] == '"Mon éditeur"'
     assert (publisher["provider"], publisher["provenance"], publisher["locked"]) == (
-        "admin", "manual", 0
+        "admin",
+        "manual",
+        0,
     )
     assert key(bench, "publisher") in report.kept_manual
     assert bench.field("title") is not None  # nothing hand-typed: the provider fills it
@@ -371,7 +380,7 @@ def test_metadata_provider_down_notifies_only(bench: Bench) -> None:
     assert "http_503" in str(event["payload"]) and "openlibrary" not in str(event["payload"])
     assert len(bench.rows("SELECT * FROM notification_pending")) == 1  # the notification
     assert bench.rows("SELECT * FROM metadata_field") == [] and bench.covers() == []
-    assert bench.rows("SELECT * FROM job") == []  # nothing queued, paused or retried
+    assert bench.rows("SELECT * FROM job_view") == []  # nothing queued, paused or retried
     again = bench.enrich()  # the next try: still down, the admin is not told twice an hour
     assert again.outcome == "provider_down" and bench.events() == ["metadata.provider_down"]
     bench.clock.advance(seconds=DOWN_NOTICE_INTERVAL.total_seconds() + 1)
@@ -386,12 +395,13 @@ def test_an_unreachable_provider_is_down_too_and_a_missing_book_is_not(bench: Be
     def refuse(request: httpx2.Request) -> httpx2.Response:
         raise httpx2.ConnectError("synthetic")
 
+    down = httpx2.MockTransport(refuse)
     fetcher = open_provider(build_manifest(), bench.fake.resolver, contact=None,
-                            runtime=bench.runtime, transport=httpx2.MockTransport(refuse))  # fmt: skip
+                            runtime=bench.runtime, transport=down)  # fmt: skip
     report = bench.enrich(fetcher=fetcher)
     assert report.outcome == "provider_down" and report.reason == "unreachable"
-    other = bench.runtime
-    other.caches.clear()
+    bench.runtime.caches.clear()
+    bench.runtime.robots.clear()  # robots.txt could not be read: asked again at the next try
     bench.fake.books.clear()
     missing = bench.enrich()
     assert missing.outcome == "not_found" and bench.events() == ["metadata.provider_down"]

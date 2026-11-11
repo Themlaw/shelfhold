@@ -8,6 +8,7 @@ and the robots.txt it respects. A fake OpenLibrary answers; nothing leaves the m
 from __future__ import annotations
 
 import asyncio
+import itertools
 from collections.abc import Awaitable
 
 import pytest
@@ -22,13 +23,17 @@ from shelfhold.infrastructure.fetcher.client import (
 )
 from shelfhold.infrastructure.fetcher.errors import ProviderQuotaExceeded, UserAgentNotIdentifiable
 from shelfhold.infrastructure.fetcher.limiter import ProviderBuckets, TokenBucket
-from shelfhold.plugin_host.adapters.native.openlibrary import build_manifest, quota_for
+from shelfhold.plugin_host.adapters.native.openlibrary import build_manifest
 from shelfhold.plugin_host.provider_fetcher import ProviderFetcher, ProviderRuntime, open_provider
 from shelfhold.sdk.metadata import ProviderQuota
 from tests.fakes.openlibrary.server import API_HOST, ISBN, FakeOpenLibrary
 
 CONTACT = "owner@example.org"
 BOOKS = f"https://{API_HOST}/api/books?bibkeys=ISBN:{ISBN}&format=json&jscmd=data"
+
+
+def quota(contact: str | None) -> ProviderQuota:
+    return build_manifest().quota.effective(contact is not None)
 
 
 def run[T](coro: Awaitable[T]) -> T:
@@ -89,8 +94,19 @@ def test_default_user_agent_has_the_repository_and_never_an_address() -> None:
 
 
 @pytest.mark.req("ENF-LEG-005")
-@pytest.mark.parametrize("contact", ["a b@example.org", "x@y)", "(x@example.org", "x@y;z", "",
-                                      "http://example.org/contact", "no-at-no-url", "a@b\r\nX: 1"])
+@pytest.mark.parametrize(
+    "contact",
+    [
+        "a b@example.org",
+        "x@y)",
+        "(x@example.org",
+        "x@y;z",
+        "",
+        "http://example.org/contact",
+        "no-at-no-url",
+        "a@b\r\nX: 1",
+    ],
+)
 def test_a_contact_that_could_break_the_agent_is_refused(contact: str) -> None:
     with pytest.raises(ValueError, match="contact"):
         identifiable_user_agent(contact)
@@ -107,7 +123,7 @@ def test_a_provider_is_never_called_with_an_anonymous_user_agent() -> None:
         assert not is_identifiable(agent)
         inner = GuardedFetcher(fake.resolver, transport=fake.transport, user_agent=agent)
         with pytest.raises(UserAgentNotIdentifiable):
-            ProviderFetcher(inner, build_manifest(), ProviderRuntime())
+            ProviderFetcher(inner, build_manifest())
     assert fake.seen == []
     assert is_identifiable(USER_AGENT) and is_identifiable(identifiable_user_agent(CONTACT))
 
@@ -134,21 +150,22 @@ def test_metadata_token_bucket_per_provider() -> None:
         run(f.get(BOOKS, headers={"X-Nonce": str(len(fake.seen))}))  # not the same cache key
     at = [s.at for s in fake.api_calls()]
     assert len(at) == 6
-    assert all(b - a >= 1.0 - 1e-9 for a, b in zip(at, at[1:], strict=False))
-    assert quota_for(None).requests_per_second == 1.0
+    assert all(b - a >= 1.0 - 1e-9 for a, b in itertools.pairwise(at))
+    assert quota(None).requests_per_second == 1.0
+    assert build_manifest().quota.requests_per_second == 1.0
 
 
 @pytest.mark.req("ENF-LEG-005")
 def test_contact_opens_three_requests_per_second_and_no_more() -> None:
-    assert quota_for(CONTACT).requests_per_second == 3.0
+    assert quota(CONTACT).requests_per_second == 3.0
     fake = FakeOpenLibrary()
     time = FakeTime()
     f = provider_fetcher(fake, contact=CONTACT, time=time)
     for n in range(9):
         run(f.get(BOOKS, headers={"X-Nonce": str(n)}))
     api = [s.at for s in fake.api_calls()]
-    assert max(b - a for a, b in zip(api, api[1:], strict=False)) <= 1 / 3 + 1e-6
-    assert all(b - a >= 1 / 3 - 1e-9 for a, b in zip(api, api[1:], strict=False))
+    assert max(b - a for a, b in itertools.pairwise(api)) <= 1 / 3 + 1e-6
+    assert all(b - a >= 1 / 3 - 1e-9 for a, b in itertools.pairwise(api))
 
 
 @pytest.mark.req("ENF-LEG-005")
@@ -179,7 +196,7 @@ def test_the_bucket_is_the_hosts_and_shared_by_every_fetcher_of_the_provider() -
 
     run(both())
     at = sorted(s.at for s in fake.api_calls())
-    assert len(at) == 3 and all(b - a >= 1.0 - 1e-9 for a, b in zip(at, at[1:], strict=False))
+    assert len(at) == 3 and all(b - a >= 1.0 - 1e-9 for a, b in itertools.pairwise(at))
 
 
 @pytest.mark.req("ENF-LEG-005")
@@ -222,11 +239,11 @@ def test_a_refused_request_does_not_leave_the_host() -> None:
 @pytest.mark.req("ENF-LEG-005")
 def test_the_buckets_change_when_a_contact_is_configured() -> None:
     buckets = ProviderBuckets()
-    slow = buckets.bucket_for("openlibrary", quota_for(None))
-    assert buckets.bucket_for("openlibrary", quota_for(None)) is slow  # one per provider
-    fast = buckets.bucket_for("openlibrary", quota_for(CONTACT))
+    slow = buckets.bucket_for("openlibrary", quota(None))
+    assert buckets.bucket_for("openlibrary", quota(None)) is slow  # one per provider
+    fast = buckets.bucket_for("openlibrary", quota(CONTACT))
     assert fast is not slow and fast.rate == 3.0
-    assert buckets.bucket_for("another", quota_for(None)) is not slow
+    assert buckets.bucket_for("another", quota(None)) is not slow
 
 
 # -- the cache and robots ----------------------------------------------------------------------
@@ -239,7 +256,7 @@ def test_metadata_cache_hit() -> None:
     f = provider_fetcher(fake, time=time)
     first, second = run(f.get(BOOKS)), run(f.get(BOOKS))
     assert first.body == second.body and len(fake.api_calls()) == 1
-    assert time.slept == []  # a cached answer costs no token
+    assert time.slept == [1.0]  # robots.txt + the call, the first time; the cache costs no token
 
 
 @pytest.mark.req("ENF-LEG-007")

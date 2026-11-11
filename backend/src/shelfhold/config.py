@@ -133,6 +133,21 @@ class Settings(BaseModel):
     fetcher_cache: bool = True
     fetcher_cache_off_sources: tuple[str, ...] = ()
 
+    # ENF-LEG-005 (D7): the instance's own contact (an e-mail address or an https URL), added to
+    # the agent of the metadata providers and opening their higher quota (3 requests per second
+    # at OpenLibrary instead of 1). Never a default, never an address of the maintainer; never
+    # logged: it is an address of the owner.
+    metadata_contact: str | None = None
+
+    @field_validator("metadata_contact")
+    @classmethod
+    def _contact_fits_an_agent(cls, value: str | None) -> str | None:
+        if value is not None:
+            from shelfhold.infrastructure.fetcher.client import identifiable_user_agent
+
+            identifiable_user_agent(value)  # ValueError: not an address nor an https URL
+        return value
+
     @field_validator("umask", mode="before")
     @classmethod
     def _octal_umask(cls, value: object) -> object:

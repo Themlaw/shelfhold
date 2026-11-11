@@ -68,7 +68,7 @@ class Seen:
 class FakeOpenLibrary:
     """`clock`: the fake instant stamped on each request (the bucket's clock, in the tests)."""
 
-    clock: Callable[[], float] = lambda: 0.0  # noqa: E731
+    clock: Callable[[], float] = lambda: 0.0
     books: dict[str, dict[str, Any]] = field(default_factory=dict)
     covers: dict[str, bytes] = field(default_factory=dict)  # isbn -> image bytes
     robots: dict[str, str] = field(default_factory=dict)  # host -> robots.txt ("" = none: 404)
@@ -120,7 +120,7 @@ class FakeOpenLibrary:
             if key.startswith("ISBN:") and isbn in self.books:
                 found[key] = self.books[isbn]
             elif key.startswith("OLID:"):
-                found.update({key: b for b in self.books.values() if b["key"].endswith(key[5:])})
+                found.update({key: b for b in self.books.values() if b["key"].endswith(key[5:])})  # noqa: B035
         headers = {}
         if self.cache_control:
             headers["cache-control"] = self.cache_control

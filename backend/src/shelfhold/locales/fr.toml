@@ -62,6 +62,8 @@ content_reneutralize_help = "Aperçu, puis régénération des dérivés après 
 content_confirm_help = "Empreinte donnée par l'aperçu : régénère exactement ce qui a été montré, sans rien supprimer."
 meta_help = "Projections de la base (unit.json, work.json, miroir de provenance) : régénère ou vérifie."
 meta_rebuild_help = "Réécrit les projections divergentes, manquantes ou illisibles à partir de la base ; les lignes inexpliquées du miroir restent « unresolved »."
+meta_enrich_help = "Demande à OpenLibrary ce qu'elle sait d'une Édition : les valeurs proposées gardent leur provenance, aucun champ verrouillé ou saisi à la main n'est remplacé, un âge n'est jamais appliqué."
+meta_target_help = "Un ISBN (10 ou 13 chiffres) ou l'identifiant d'une Édition."
 meta_check_help = "Liste les projections qui divergent de la base, sans rien écrire (code 1 s'il y en a)."
 meta_unit_help = "Se limite à un chapitre (identifiant)."
 plugin_help = "Plugins tiers : installation locale, activation confirmée, état (désactivés par défaut)."
@@ -557,6 +559,15 @@ newer_format = "unit.json d'un format plus récent, laissé tel quel (lecture se
 work_newer_format = "work.json d'un format plus récent, laissé tel quel (lecture seule) : {work}"
 mirror_skipped = "Fichier du miroir laissé tel quel (illisible, lien ou format plus récent) : {name}"
 run_rebuild = "Lancez « shelfhold meta rebuild » pour les régénérer."
+enriched = "Propositions enregistrées pour l'Édition {edition} : {fields}."
+enrich_kept = "Valeur conservée (verrouillée ou saisie à la main) : {field}"
+enrich_age_suggested = "Âge suggéré par le fournisseur, jamais appliqué : {age} (à confirmer avec « shelfhold rate »)."
+enrich_cover_rejected = "Couverture refusée par le décodeur ({code}) : elle n'est pas enregistrée."
+enrich_attribution = "Source : {text} {url}"
+enrich_not_found = "OpenLibrary ne connaît pas ce livre : rien n'est enregistré."
+enrich_provider_down = "OpenLibrary est indisponible ({reason}) : l'administrateur est prévenu, rien n'est enregistré. Réessayez plus tard."
+enrich_robots_disallowed = "Le robots.txt d'OpenLibrary refuse cette lecture : rien n'est demandé."
+enrich_quota = "Le plafond du jour d'OpenLibrary est atteint : rien n'est demandé avant demain."
 
 # Catalogue d'erreurs (EF-UX-003) : un titre et une action par code ; le code est la clé.
 
@@ -691,6 +702,14 @@ action = "Corrigez l'adresse : schéma http ou https, sans identifiants dans l'U
 [errors."fetch.robots_disallowed"]
 title = "Le site demande aux robots de ne pas lire cette page."
 action = "Shelfhold respecte le fichier robots.txt de la source ; ouvrez la page depuis un navigateur."
+
+[errors."fetch.quota_exceeded"]
+title = "Le plafond du jour de ce fournisseur de métadonnées est atteint."
+action = "Rien n'est envoyé d'ici demain ; les valeurs déjà reçues sont conservées."
+
+[errors."fetch.user_agent_not_identifiable"]
+title = "L'agent de la requête ne dit pas qui la fait ; elle n'est pas envoyée."
+action = "Configurez un contact valide (SHELFHOLD_METADATA_CONTACT) ou laissez l'agent par défaut."
 
 [errors."fetch.timeout"]
 title = "Le service externe a mis trop de temps à répondre."

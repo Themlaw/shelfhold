@@ -40,6 +40,11 @@ from shelfhold.catalog.application.dto import (
     TeamRef,
 )
 from shelfhold.catalog.application.editions import translation_type_for
+from shelfhold.catalog.application.enrich import (
+    EnrichReport,
+    EnrichService,
+    UnknownTargetError,
+)
 from shelfhold.catalog.application.external_ids import (
     ExternalIdConflictError,
     StoredExternalId,
@@ -243,6 +248,8 @@ __all__ = [
     "EditionRef",
     "EditionSpec",
     "EditionSuggestion",
+    "EnrichReport",
+    "EnrichService",
     "EventPublisher",
     "ExternalId",
     "ExternalIdConflictError",
@@ -277,6 +284,7 @@ __all__ = [
     "StoredExternalId",
     "TeamRef",
     "TextVersionRef",
+    "UnknownTargetError",
     "UnsupportedFileError",
     "VariantFacts",
     "Verdict",

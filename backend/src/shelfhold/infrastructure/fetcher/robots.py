@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Final
 from urllib.robotparser import RobotFileParser
 
-from shelfhold.infrastructure.fetcher.errors import FetchError, RobotsDisallowed
+from shelfhold.infrastructure.fetcher.errors import FetchError, RobotsDisallowed, RobotsUnavailable
 from shelfhold.sdk.fetcher import Response
 
 ROBOTS_AGENT: Final = "Shelfhold"
@@ -45,7 +45,9 @@ class RobotsPolicy:
         if rules is None or rules.expires <= self.clock():
             rules = await self._load(origin, fetch)
             self._rules[origin] = rules
-        if rules.parser is None or not rules.parser.can_fetch(ROBOTS_AGENT, path_and_query):
+        if rules.parser is None:
+            raise RobotsUnavailable(f"robots.txt of {origin} could not be read")
+        if not rules.parser.can_fetch(ROBOTS_AGENT, path_and_query):
             raise RobotsDisallowed(f"robots.txt of {origin} does not allow this path")
 
     async def _load(self, origin: str, fetch: RobotsFetch) -> _Rules:

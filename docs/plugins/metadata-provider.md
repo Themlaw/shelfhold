@@ -33,7 +33,20 @@ Tome) ; ce que le fournisseur sait de l'Œuvre (rattachement, auteur d'Œuvre) p
   `provider` est la clé du plugin ; `source_url` ne contient aucun secret.
 - `confidence` est comprise entre 0 et 1. Seuls les champs listés dans `touched_fields` sont proposés.
 - `quota` déclare le seau à jetons (`requests_per_second`, `burst`) et un plafond journalier. L'hôte
-  l'applique ; le plugin ne s'auto-limite pas.
+  l'applique ; le plugin ne s'auto-limite pas. `requests_per_second_with_contact` déclare le palier
+  plus haut qu'un fournisseur accorde à un agent qui donne un contact : l'hôte ne l'ouvre que si
+  l'instance a configuré `metadata_contact`. Le seau est celui du fournisseur, partagé par tous ses
+  `Fetcher`, et son solde survit au processus (`provider_quota`) ; robots.txt compte comme une requête.
+- Un fournisseur injoignable (5xx, 429, réponse qui n'est pas celle qu'il documente) lève
+  `ProviderUnavailable(reason)` : l'hôte prévient l'administrateur (`metadata.provider_down`, au plus
+  une fois par heure) et ne change rien d'autre.
+- L'hôte ouvre le `Fetcher` : agent identifiable (`Shelfhold/x.y (+dépôt[; contact])`, jamais remplaçable
+  par le plugin), domaines déclarés, robots.txt, cache RFC 9111 obligatoire (jamais pour une requête
+  authentifiée). La couverture est une `ImageRequest` : l'hôte la télécharge et la décode dans le
+  worker (ENF-SEC-003), le plugin ne reçoit ni ne rend jamais d'octets d'image.
+- Un fournisseur ne propose jamais d'âge comme champ : un âge est une `RelationProposal`
+  `age_suggestion`, enregistrée comme suggestion et jamais appliquée. Il ne propose pas non plus
+  `cover`, le champ de l'hôte. Une valeur verrouillée, ou saisie à la main, n'est jamais remplacée.
 - Aucun secret ne passe par le plugin : les clés sont injectées par l'hôte (EF-SRC-035).
 
 ## Kit de conformité
