@@ -62,7 +62,7 @@ from shelfhold.infrastructure.imaging import (
     make_thumbnail,
 )
 from shelfhold.infrastructure.schema import catalog, platform
-from shelfhold.infrastructure.secrets.atomic import write_private
+from shelfhold.infrastructure.secrets.atomic import ensure_private_dir, write_private
 from shelfhold.sdk.age import AgeRating
 from shelfhold.sdk.metadata import (
     EntityRef,
@@ -360,7 +360,7 @@ class EnrichService:
     def _store(self, data: bytes) -> str:
         """Content-addressed under `/data/covers`: the same image is one file."""
         name = f"{hashlib.sha256(data).hexdigest()}.webp"
-        self._covers.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(self._covers)
         with contextlib.suppress(FileExistsError):
             write_private(self._covers / name, data, overwrite=False)
         return f"covers/{name}"
