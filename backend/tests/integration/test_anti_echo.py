@@ -48,7 +48,7 @@ def cbz_payload(data: bytes) -> str:
 def tree(bench: Bench) -> dict[str, int]:
     counts: dict[str, int] = {}
     for table in ("unit_variant", "unit", "content", "work", "replica"):
-        (row,) = bench.rows(f"SELECT count(*) AS n FROM {table}")
+        (row,) = bench.rows(f"SELECT count(*) AS n FROM {table}")  # noqa: S608
         counts[table] = row["n"]
     return counts
 
@@ -88,8 +88,8 @@ def test_opds_source_reimport_of_own_export_is_replica_not_variant() -> None:
         assert replica["unit_id"] is None and replica["independent"] == 0
         assert replica["location"] == "upstream" and replica["file_hash"] == sha(CLEAN)
         assert prepared.request_id is not None
-        (request,) = b.rows("SELECT state FROM download_request")
-        assert request["state"] == "cancelled"  # closed: asking again would find the same file
+        # the request leaves with its shell: nothing asked of the source is left to ask again
+        assert b.rows("SELECT id FROM download_request") == []
         assert not b.delivered  # no `unit.stored`: nothing arrived
 
 
@@ -209,7 +209,7 @@ def test_anti_echo_does_not_count_the_replica_as_an_independent_copy() -> None:
     trust=st.sampled_from(["publisher", "untrusted"]),
 )
 def test_reimport_never_creates_a_variant_property(by: str, trust: str) -> None:
-    """Property: whichever hash the echo matches, whatever the source's trust, no Variant is made."""
+    """Property: whichever hash the echo matches, whatever the trust of the source: no Variant."""
     payload = epub_payload(CLEAN)
     seeds: dict[str, dict[str, Any]] = {
         "file_hash": {"file_hash": sha(CLEAN)},
@@ -220,9 +220,10 @@ def test_reimport_never_creates_a_variant_property(by: str, trust: str) -> None:
     }
     with acquire_bench(NativeBooks(trust=trust), files={FILE: CLEAN}) as b:
         seed_own_export(b.lib, **seeds[by])
+        seeded = tree(b)["content"]  # the seed's own `content` (its `export_item` was made of it)
         _prepared, outcome = acquire(b)
         assert outcome.state == "replica"
-        assert tree(b)["unit_variant"] == 0 and tree(b)["content"] == 0
+        assert tree(b)["unit_variant"] == 0 and tree(b)["content"] == seeded
 
 
 def zip_with(name: str) -> bytes:
@@ -246,3 +247,30 @@ def test_anti_echo_runs_after_the_archive_audit() -> None:
 
 def run(coro: Any) -> Any:
     return asyncio.run(coro)
+
+
+@pytest.mark.req("EF-SRC-006")
+def test_anti_echo_holds_for_a_connected_service_too() -> None:
+    """The rule is for every source: a chapter the connected service hands back, whose file is an
+    export of ours, is a replica; the Unit is announced, its request closed, no content filed."""
+    from tests.follow_env import follow_bench
+
+    with follow_bench() as bench:
+        bench.run()  # baseline
+        bench.add_chapter(3)
+        url = "/series-alpha/ch-003"
+        own = seed_own_export(bench.lib, file_hash="sha256:" + bench.server.cbz_sha256(url))
+        for _ in range(3):
+            bench.run()
+        (replica,) = bench.rows(
+            "SELECT export_item_id FROM replica WHERE export_item_id IS NOT NULL"
+        )
+        assert replica["export_item_id"] == own.export_item_id
+        (request,) = bench.rows("SELECT state FROM download_request")
+        assert request["state"] == "abandoned"  # closed for good: no cycle asks for it again
+        unit = "SELECT id FROM unit WHERE number_raw = '3'"
+        assert bench.rows(f"SELECT id FROM content WHERE unit_id IN ({unit})") == []  # noqa: S608
+        assert (
+            bench.rows("SELECT count(*) n FROM replica WHERE export_item_id IS NOT NULL")[0]["n"]
+            == 1
+        )

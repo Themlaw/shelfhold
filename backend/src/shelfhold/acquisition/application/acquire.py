@@ -72,6 +72,7 @@ from shelfhold.infrastructure.schema import acquisition, catalog, export, storag
 from shelfhold.library.public import (
     SeriesBindingRef,
     VariantAlreadyStoredError,
+    absorb_echo,
     receive_cbz,
     sniff_kind,
 )
@@ -87,6 +88,7 @@ __all__ = [
     "AcquireOutcome",
     "AcquireRefused",
     "NativeAcquirer",
+    "OwnExportEcho",
     "Prepared",
     "SourceDirectory",
     "acquire_dedupe_key",
@@ -107,6 +109,15 @@ TAKEN_FILE_KEY = "file"
 
 def acquire_dedupe_key(request_id: str) -> str:
     return f"{ACQUIRE_JOB_KIND}:{request_id}"
+
+
+class OwnExportEcho(Exception):
+    """The file is an export of Shelfhold's own: it was recorded as a replica of
+    `export_item_id` and the request that asked for it is gone (I50)."""
+
+    def __init__(self, export_item_id: str) -> None:
+        super().__init__(export_item_id)
+        self.export_item_id = export_item_id
 
 
 class AcquireRefused(Exception):
@@ -148,7 +159,7 @@ class Prepared:
 
 @dataclass(frozen=True)
 class AcquireOutcome:
-    state: str  # fetched | abandoned | waiting | stored
+    state: str  # fetched | abandoned | waiting | stored | replica
     request_id: str
     reason: str | None = None
     sha256: str | None = None
@@ -560,6 +571,8 @@ class NativeAcquirer:
             payload = await handle.service.fetch_unit(handle.fetcher, ref, unit)
             asset = _taken(payload)
             sha, kind = await self._receive(handle, asset, row, filer, place)
+        except OwnExportEcho:
+            return AcquireOutcome("replica", row.id, "own_export")
         except (
             AcquireRefused,
             DomainNotAllowed,
@@ -600,6 +613,13 @@ class NativeAcquirer:
             headers=headers,
         ) as received:  # fmt: skip
             kind = sniff_kind(received.path)  # the bytes decide, not the name or the MIME type
+            # I50: what Shelfhold exported comes back as a replica, never as a Variant
+            echo = absorb_echo(
+                self._engine, request_id=row.id, staged=received.path, kind=kind,
+                file_hash=received.sha256, size=received.size, remote_ref=row.remote_unit_id,
+            )  # fmt: skip
+            if echo is not None:
+                raise OwnExportEcho(echo.own.export_item_id)
             with suppress(VariantAlreadyStoredError):  # a replay after a crash: already there
                 filer.ingest(
                     unit_id=row.unit_id, variant_id=row.variant_id, staged=received.path,

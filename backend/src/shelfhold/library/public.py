@@ -105,6 +105,12 @@ from shelfhold.library.adapters.units import (
     require_purge_allowed,
     safe_to_clean,
 )
+from shelfhold.library.application.anti_echo import (
+    EchoOfOwnExport,
+    OwnExport,
+    absorb_echo,
+    own_export_of,
+)
 from shelfhold.library.application.reneutralize import (
     ReneutralizePlan,
     Reneutralizer,
@@ -250,6 +256,7 @@ __all__ = [
     "DeletionRefusedError",
     "Derivative",
     "DownloadTicket",
+    "EchoOfOwnExport",
     "EpubIngested",
     "EpubRefusedError",
     "ExportDecision",
@@ -265,6 +272,7 @@ __all__ = [
     "NewerFormatError",
     "Normalizers",
     "OriginalNotServableError",
+    "OwnExport",
     "PassthroughStore",
     "PinnedCopy",
     "PlaceRef",
@@ -323,6 +331,7 @@ __all__ = [
     "WorkBusyError",
     "WorkHolder",
     "WorkRef",
+    "absorb_echo",
     "backlog_row",
     "binding_warning",
     "binned_export_file",
@@ -366,6 +375,7 @@ __all__ = [
     "normalizers_of",
     "owed_unit_ids",
     "parse_policy",
+    "own_export_of",
     "payload_hash_at",
     "plan_batch",
     "readable_unit_ids",

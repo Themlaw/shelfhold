@@ -59,6 +59,7 @@ def seed_own_export(
                     id=content_id, kind="file", media_type="application/epub+zip", format="epub",
                     retention="adopted_ref", original_sha256="sha256:" + "0" * 64,
                     content_hash=kept_content_hash, derived_hash=kept_derived_hash,
+                    derived_by="xhtml-neutralizer@v1" if kept_derived_hash else None,
                     store_provenance="received", size=10,
                 )
             )  # fmt: skip
@@ -77,7 +78,8 @@ def seed_own_export(
         if alias_file_hash is not None and alias_content_hash is not None:
             connection.execute(
                 sa.insert(export.document_alias).values(
-                    export_item_id=item_id, file_hash=alias_file_hash,
+                    export_item_id=item_id,
+                    file_hash=alias_file_hash,
                     content_hash=alias_content_hash,
                 )
             )
