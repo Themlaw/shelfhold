@@ -44,6 +44,7 @@ __all__ = [
     "comicinfo_sha256",
     "comicinfo_xml",
     "epub_opf_edit",
+    "volume_opf_edit",
 ]
 
 log = structlog.get_logger(__name__)
@@ -338,6 +339,14 @@ def epub_opf_edit(connection: Connection, unit_id: str, series: str) -> OpfEdit:
         series=series, series_index=number, rights=notes or None, source=web or None,
         licence=licence_of(notes),
     )  # fmt: skip
+
+
+def volume_opf_edit(connection: Connection, edition_id: str, series: str, number: str) -> OpfEdit:
+    """What may be written into the OPF of a volume (an EPUB of a range, EF-BIB-044): the series,
+    the number of the volume as its index, and the rights of the Edition. Never the age (D1)."""
+    notes, web = _rights(connection, edition_id)
+    index = number if _NUMBER.fullmatch(number) else None
+    return OpfEdit(series=series, series_index=index, rights=notes or None, source=web or None)
 
 
 class EpubRenderer:

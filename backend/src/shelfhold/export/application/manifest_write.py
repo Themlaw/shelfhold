@@ -45,10 +45,11 @@ def complete_write(
     record, coverage = export.export_record, export.unit_coverage
     where = (record.c.shelf_destination_id == destination_id, record.c.export_item_id == item_id)
     row = connection.execute(sa.select(record).where(*where)).one()
-    unit_id = connection.execute(
-        sa.select(coverage.c.unit_id).where(
-            coverage.c.carrier_type == "export_item", coverage.c.carrier_id == item_id
-        )
+    unit_id = connection.execute(  # a volume covers several: its replica is told by the first
+        sa.select(coverage.c.unit_id)
+        .where(coverage.c.carrier_type == "export_item", coverage.c.carrier_id == item_id)
+        .order_by(coverage.c.position)
+        .limit(1)
     ).scalar_one()
     connection.execute(
         sa.update(record)

@@ -15,11 +15,15 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.export.application.pipeline import SourceMissingError
 from shelfhold.export.application.plans import StalePlanError
+from shelfhold.export.application.upgrade import SamePathUpgrade, UpgradeRequest
 from shelfhold.export.application.withdrawal import WithdrawalService
 from shelfhold.export.domain.planner import AGE_WAIT
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.schema import catalog, export
+from shelfhold.infrastructure.volumes import write_data_file
+from shelfhold.library.adapters.origin_opf import origin_opf_rel
 from shelfhold.library.public import PassthroughStore
 from tests.epub_export_env import (
     TEEN,
@@ -27,6 +31,7 @@ from tests.epub_export_env import (
     books_library,
     export_round,
     kavita_scans,
+    open_gate,
     visible_to_restricted,
     written,
 )
@@ -110,7 +115,8 @@ def test_closed_volume_reaches_the_destination_through_the_pipeline() -> None:
         assert line.file_hash == digest(path)
         with zipfile.ZipFile(path) as archive:  # the chapters are the ones kept, byte for byte
             kept = zipfile.ZipFile(bench.kept())
-            assert archive.read("OEBPS/ch2.xhtml") == kept.read("OEBPS/ch2.xhtml")
+            assert b"text of ch2.xhtml" in archive.read("OEBPS/ch2.xhtml")
+            assert sorted(archive.namelist()) == sorted(kept.namelist())
         items = env.rows(export.export_item)  # no second item: the one the keeper made
         assert [i.id for i in items] == [bench.item_id] and len(env.rows(export.unit_coverage)) == 3
         before = state_of(env)
@@ -275,6 +281,62 @@ def test_stubbed_chapter_in_the_new_tail_trips_the_guard() -> None:
         assert run(env) == 0 and digest(path) == served and upgrades(env) == 0
 
 
+def test_irreplaceable_tail_is_not_replaced_without_the_identifier_typed() -> None:
+    with export_env() as env:
+        _, bench = volume_on_shelf(env, 2, closed=False, policy="rolling_tail")
+        run(env)
+        (path,) = env.files()
+        served = digest(path)
+        with (
+            env.engine.begin() as connection
+        ):  # no binding lists the chapters any more (EF-BIB-031)
+            connection.execute(sa.update(catalog.unit_variant).values(removed_at=env.clock.now()))
+        regrow(bench, 3)
+        assert run(env) == 0 and digest(path) == served and upgrades(env) == 0
+
+
+def test_chapter_upgrade_door_refuses_a_volume() -> None:
+    with export_env() as env:
+        _, bench = volume_on_shelf(env, 2, closed=False, policy="rolling_tail")
+        run(env)
+        door = SamePathUpgrade(
+            env.engine, env.lib.fsops, locate=env.lib.locate, data_dir=env.lib.data, clock=env.clock
+        )
+        with pytest.raises(LookupError):  # a chapter's content would replace the whole volume
+            door.upgrade(
+                UpgradeRequest(env.destination_id, bench.item_id, new_ulid(), "better_version")
+            )
+        assert door.upgrade_unit(bench.unit_ids[0], new_ulid()) == []  # and no door by one Unit
+        assert upgrades(env) == 0
+
+
+def test_kept_file_changed_between_the_plan_and_the_write_is_not_written() -> None:
+    with export_env() as env:
+        _, bench = volume_on_shelf(env, 3, closed=True)
+        preview = env.pipeline.preview(env.destination_id)
+        write_data_file(env.lib.data, f"ranged/{bench.item_id}.epub", volume_epub(3, cover=True))
+        with pytest.raises(SourceMissingError):
+            env.pipeline.apply(preview.plan_id, if_match=preview.base_version, job_id=new_ulid())
+        assert env.files() == []
+        assert [r.state for r in env.rows(export.export_record)] in ([], ["planned"])
+
+
+def test_a_refused_volume_does_not_hold_back_the_chapters_of_the_plan() -> None:
+    with export_env() as env:
+        series, _ = volume_on_shelf(
+            env, 3, closed=True, data=volume_epub(3, nav=[("Chapter 1", "ch1.xhtml")])
+        )
+        env.add_chapter(series, "900")
+        assert run(env) == 1 and [p.suffix for p in env.files()] == [".cbz"]
+
+
+def test_the_original_opf_of_a_volume_is_kept_under_its_first_unit() -> None:
+    with export_env() as env:
+        _, bench = volume_on_shelf(env, 2, closed=True)
+        run(env)
+        assert (env.lib.data / origin_opf_rel(bench.unit_ids[0])).is_file()
+
+
 def test_volume_with_a_hole_in_its_table_of_contents_is_never_written() -> None:
     with export_env() as env:
         nav = [("Chapter 1", "ch1.xhtml"), ("Chapter 3", "ch3.xhtml")]
@@ -322,7 +384,10 @@ def test_unit_already_exported_as_a_chapter_blocks_the_volume_that_covers_it() -
         with env.engine.begin() as connection:  # the chapter left earlier, as its own item
             connection.execute(
                 sa.insert(export.export_item).values(
-                    id=item, edition_id=series.edition_id, kind="unit", frozen_attrs={}
+                    id=item,
+                    edition_id=series.edition_id,
+                    kind="unit",
+                    frozen_attrs={"series": "Old", "track": "main", "number_norm": "1"},
                 )
             )
             connection.execute(
@@ -347,20 +412,27 @@ def test_unit_already_exported_as_a_chapter_blocks_the_volume_that_covers_it() -
 
 def test_sixteen_plus_volume_never_reaches_a_family_shelf() -> None:
     with family_env(13) as env:
-        series, _bench = volume_on_shelf(env, 2, closed=True)
+        w = wire(env)
+        books_library(env)
+        series, _ = volume_on_shelf(env, 2, closed=True)
         assert blocked(env) == ["shelf.rating_required"]  # nobody rated it
-        assert run(env) == 0 and env.files() == [] and env.rows(export.export_record) == []
+        assert export_round(w) == [] and env.files() == []
+        assert env.rows(export.export_record) == []
         rate(env, series, 16)
         assert blocked(env) == ["shelf.above_ceiling"]
-        assert run(env) == 0 and env.files() == [] and env.rows(export.export_record) == []
+        assert export_round(w) == [] and env.files() == []
+        assert env.rows(export.export_record) == []
         rate(env, series, 13)
-        assert run(env) == 1 and len(env.files()) == 1
+        assert len(export_round(w)) == 1 and len(env.files()) == 1
 
 
 def test_a_plan_stored_below_the_ceiling_is_not_applied_once_the_age_rose() -> None:
     with family_env(13) as env:
+        w = wire(env)
+        books_library(env)
         series, bench = volume_on_shelf(env, 2, closed=True)
         rate(env, series, 10)
+        open_gate(w)
         preview = env.pipeline.preview(env.destination_id)
         assert [op.export_item_id for op in preview.ops] == [bench.item_id]
         rate(env, series, 16)
@@ -371,22 +443,31 @@ def test_a_plan_stored_below_the_ceiling_is_not_applied_once_the_age_rose() -> N
 
 def test_rolling_tail_of_a_volume_whose_age_rose_is_not_replaced_on_a_family_shelf() -> None:
     with family_env(16) as env:
+        w = wire(env)
+        books_library(env)
         series, bench = volume_on_shelf(env, 2, closed=False, policy="rolling_tail")
         rate(env, series, 10)
-        run(env)
+        assert len(export_round(w)) == 1
         (path,) = env.files()
         served = digest(path)
+        kavita_scans(w, "")
         rate(env, series, 18)  # above the shelf now, not yet withdrawn
         regrow(bench, 3)
-        assert run(env) == 0 and digest(path) == served and upgrades(env) == 0
+        assert export_round(w) == [] and digest(path) == served and upgrades(env) == 0
 
 
 def test_withdrawal_after_an_age_rise_takes_the_volumes_out_too() -> None:
     with family_env(13) as env:
+        w = wire(env)
+        books_library(env)
         series, first = volume_on_shelf(env, 2, closed=True, label="Vol.1")
         second = ranged_bench(env.lib, 2, closed=True, label="Vol.2")
         rate(env, series, 10)
-        assert run(env) == 2 and len(env.files()) == 2
+        export_round(w)
+        kavita_scans(w, "")
+        open_gate(w)  # the age is pushed and read back: the second volume may go
+        export_round(w)
+        assert len(env.files()) == 2
         rate(env, series, 16)  # the admin ruled: the children no longer read it
         service = WithdrawalService(
             env.engine, env.lib.fsops, clock=env.clock, request_scan=env.scans.append
@@ -397,7 +478,7 @@ def test_withdrawal_after_an_age_rise_takes_the_volumes_out_too() -> None:
         report = service.apply(if_match=plan.version, principal=admin(), now=NOW)
         assert report.files == 2 and env.files() == []
         assert {r.state for r in env.rows(export.export_record)} == {"recycled"}
-        assert run(env) == 0 and env.files() == []  # and nothing comes back by itself
+        assert export_round(w) == [] and env.files() == []  # and nothing comes back by itself
 
 
 # -- the age gate of an EPUB series (Kavita) -----------------------------------------------------

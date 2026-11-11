@@ -112,7 +112,9 @@ def locate_ranged(data_dir: Path, item_id: str) -> Path:
 
 @dataclass(frozen=True)
 class ServedCopy:
-    """What the destination holds for the item now."""
+    """What the destination holds for the item now. `file_hash` is the fingerprint of the kept
+    file the served copy was made from (`PreparedRange.source_hash`, the `content_hash` of the
+    manifest line): the file served itself is that one with its OPF edited."""
 
     file_hash: str
     skip_read: bool = True  # the shelf keeps the files a reader finished (L16)
@@ -124,7 +126,8 @@ class PreparedRange:
     item_id: str
     edition_id: str
     path: Path  # the neutralized derivative, in staging
-    file_hash: str
+    file_hash: str  # of the derivative
+    source_hash: str  # of the file kept under /data/ranged, as the source sent it
     spine_count: int
     report: CoverageReport
     closed: bool
@@ -183,23 +186,33 @@ class RangedExporter:
                 raise RangedExportError("ranged.no_toc", error.reason) from None
             with self._engine.connect() as connection:
                 report = verify_item(connection, item_id, toc)
+            source_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
             digest = hashlib.sha256()
             with derivative.open("rb") as stream:
                 for block in iter(lambda: stream.read(1 << 20), b""):
                     digest.update(block)
             yield PreparedRange(
                 item_id, str(item.edition_id), derivative, "sha256:" + digest.hexdigest(),
-                len(toc.spine), report, bool(item.closed),
+                source_hash, len(toc.spine), report, bool(item.closed),
             )  # fmt: skip
 
     # -- facts ------------------------------------------------------------------------------
+
+    def source_hash(self, item_id: str) -> str | None:
+        """The fingerprint of the file kept for the item, None when it is missing or unsafe (the
+        planner reads it to know whether the kept file moved since the copy served)."""
+        try:
+            _, raw = _kept(self._data_dir, item_id, read=True)
+        except RangedExportError:
+            return None
+        return "sha256:" + hashlib.sha256(raw).hexdigest()
 
     def served_copy(self, destination_id: str, item_id: str) -> ServedCopy | None:
         """The file the manifest says the destination holds for the item, or None."""
         record, shelf, dest = export.export_record, export.shelf, export.shelf_destination
         with self._engine.connect() as connection:
             row = connection.execute(
-                sa.select(record.c.file_hash, record.c.spine_count, shelf.c.skip_read_upgrades)
+                sa.select(record.c.content_hash, record.c.spine_count, shelf.c.skip_read_upgrades)
                 .select_from(
                     record.join(dest, dest.c.id == record.c.shelf_destination_id).join(
                         shelf, shelf.c.id == dest.c.shelf_id
@@ -209,13 +222,13 @@ class RangedExporter:
                     record.c.shelf_destination_id == destination_id,
                     record.c.export_item_id == item_id,
                     record.c.state == "written",
-                    record.c.file_hash.is_not(None),
+                    record.c.content_hash.is_not(None),
                 )
             ).one_or_none()
         if row is None:
             return None
         return ServedCopy(
-            str(row.file_hash), bool(row.skip_read_upgrades),
+            str(row.content_hash), bool(row.skip_read_upgrades),
             None if row.spine_count is None else int(row.spine_count),
         )  # fmt: skip
 
@@ -313,7 +326,7 @@ class RangedExporter:
             if served is None:
                 place(prepared)
                 return RangedExportOutcome("placed", warning=verdict.warning)
-            if served.file_hash == prepared.file_hash:
+            if served.file_hash == prepared.source_hash:
                 return RangedExportOutcome("kept", "up_to_date")
             suspect = (
                 suspect_reason(

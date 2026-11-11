@@ -21,7 +21,7 @@ from shelfhold.catalog.public import ResplitSigner
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.volumes import write_data_file
-from tests.integration.test_schema_catalog import add_unit
+from tests.integration.test_schema_catalog import add_unit, add_variant
 from tests.library_env import LibEnv
 
 CONTAINER = (
@@ -178,6 +178,7 @@ def ranged_bench(
         start = first_number if first_number is not None else int(top or 0) + 100
         for position, n in enumerate(wanted):
             unit = add_unit(connection, lib.chain["edition"], str(start + position))
+            add_variant(connection, unit, lib.chain["binding"], f"remote-{unit}")  # still listed
             units.append(unit)
             connection.execute(
                 sa.insert(export.unit_coverage).values(
@@ -208,7 +209,9 @@ def regrow(bench: RangedBench, chapters: int, *, data: bytes | None = None) -> N
                     catalog.unit.c.edition_id == bench.edition
                 )
             ).scalar()
-            bench.unit_ids.append(add_unit(connection, bench.edition, str(int(top or 0) + 1)))
+            unit = add_unit(connection, bench.edition, str(int(top or 0) + 1))
+            add_variant(connection, unit, bench.lib.chain["binding"], f"remote-{unit}")
+            bench.unit_ids.append(unit)
         cover = export.unit_coverage
         connection.execute(
             sa.delete(cover).where(

@@ -22,7 +22,7 @@ import json
 import re
 import unicodedata
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Final, Protocol
@@ -206,6 +206,13 @@ class FrozenAttrs:
     source_order: int = 0
     template_ref: str = DEFAULT_TEMPLATE_REF
 
+    @classmethod
+    def stored(cls, attrs: Mapping[str, object]) -> "FrozenAttrs":
+        """The attributes of an item as the database keeps them: an item of a range also keeps
+        the label its source gave the volume, which names nothing once the item is exported."""
+        known = cls.__dataclass_fields__
+        return cls(**{k: v for k, v in attrs.items() if k in known})  # type: ignore[arg-type]
+
     def __post_init__(self) -> None:
         if self.track not in TRACKS:
             raise ValueError(f"unknown track {self.track!r}")
@@ -234,6 +241,14 @@ def _decimal(text: str) -> Decimal | None:
         return Decimal(text)
     except InvalidOperation:
         return None
+
+
+def volume_number(label: str | None) -> str | None:
+    """The number a volume is named with, read from the label the source gave it ("Vol.3",
+    "Volume 12", "Tome 04": the first number, plain decimal); None when there is none."""
+    found = _NUMBER.search(label or "")
+    number = _decimal(found.group(0)) if found else None
+    return None if number is None else format(number.normalize(), "f")
 
 
 def is_chapter_zero(frozen: FrozenAttrs) -> bool:

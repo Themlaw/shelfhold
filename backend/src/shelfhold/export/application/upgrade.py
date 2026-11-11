@@ -32,7 +32,7 @@ file): every upgrade says so with `unit.upgraded` and `koreader_reset = true` (D
 from __future__ import annotations
 
 import enum
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -123,7 +123,8 @@ class _Served:
 
     ctx: DestinationContext
     export_item_id: str
-    unit_id: str
+    unit_id: str  # the first Unit the item covers (a volume covers several)
+    unit_ids: tuple[str, ...]
     work_id: str
     rel_path: str
     file_hash: str
@@ -150,6 +151,7 @@ class _New:
     content_hash: str | None
     sidecar_sha256: str | None
     content_id: str | None
+    spine_count: int | None = None  # reading-order items of an EPUB (L17), None for a CBZ
 
 
 @dataclass(frozen=True)
@@ -164,14 +166,15 @@ class UpgradeMark(FileIdentity):
         return {**super().to_json(), "old_sha256": self.old_sha256, **dict(self.fields)}
 
 
-def _is_read(connection: Connection, unit_id: str) -> bool:
-    """Any reader finished this Unit (`reading_progress`, EF-LEC-014)."""
-    return (
+def _is_read(connection: Connection, unit_ids: Sequence[str]) -> bool:
+    """Any reader finished one of these Units (`reading_progress`, EF-LEC-014)."""
+    return any(
         connection.execute(
             sa.text("SELECT 1 FROM reading_progress WHERE unit_id = :u AND state = 'read' LIMIT 1"),
             {"u": unit_id},
         ).first()
         is not None
+        for unit_id in unit_ids
     )
 
 
@@ -216,20 +219,27 @@ def _served(connection: Connection, destination_id: str, export_item_id: str) ->
     ).one_or_none()
     if row is None or row.locator_type != "path" or row.state != "written" or not row.file_hash:
         return None
-    unit_id = connection.execute(
-        sa.select(coverage.c.unit_id).where(
-            coverage.c.carrier_type == "export_item", coverage.c.carrier_id == export_item_id
-        )
-    ).scalar_one()
+    unit_ids = tuple(
+        connection.execute(
+            sa.select(coverage.c.unit_id)
+            .where(
+                coverage.c.carrier_type == "export_item", coverage.c.carrier_id == export_item_id
+            )
+            .order_by(coverage.c.position)
+        ).scalars()
+    )
+    if not unit_ids:
+        return None  # an item that covers nothing has nothing to upgrade
     work_id = connection.execute(
         sa.text(
             "SELECT e.work_id FROM unit u JOIN edition e ON e.id = u.edition_id WHERE u.id = :u"
         ),
-        {"u": unit_id},
+        {"u": unit_ids[0]},
     ).scalar_one()
     return _Served(
-        load_context(connection, destination_id), export_item_id, str(unit_id), str(work_id),
-        str(row.rel_path), str(row.file_hash), row.content_hash, row.content_id,
+        load_context(connection, destination_id), export_item_id, str(unit_ids[0]),
+        tuple(map(str, unit_ids)), str(work_id), str(row.rel_path), str(row.file_hash),
+        row.content_hash, row.content_id,
         str(dict(row.frozen_attrs).get("series", "")), bool(row.skip_read_upgrades),
     )  # fmt: skip
 
@@ -271,6 +281,8 @@ class SamePathUpgrade:
             served = _served(connection, request.destination_id, request.export_item_id)
             if served is None:
                 raise LookupError(f"no file served for {request.export_item_id}")
+            if len(served.unit_ids) != 1:  # a volume is rewritten whole, by `replace_volume`
+                raise LookupError(f"{request.export_item_id} covers several Units: not a chapter")
             refused = self._refusal(connection, served, request.typed, check_read=True)
             if refused is not None:
                 return UpgradeResult(refused)
@@ -302,6 +314,36 @@ class SamePathUpgrade:
             )  # fmt: skip
         finally:
             rendered.file.close()
+
+    def replace_volume(
+        self,
+        destination_id: str,
+        export_item_id: str,
+        *,
+        data: BinaryIO,
+        file_hash: str,
+        content_hash: str,
+        spine_count: int,
+    ) -> UpgradeResult:
+        """The tail of a volume (an EPUB of a range, EF-BIB-044) replaced at its path by the new
+        file, which the caller has rendered: the same guards as a chapter (root frozen, a Unit a
+        reader finished, an irreplaceable Unit, a file someone else rewrote), the same intent, bin
+        and manifest. The caller holds the locks of the Work and the folder, as the export
+        pipeline does from its last look to its write: they are not taken twice. The length of
+        the new file is kept for the guard of the next replacement (L17)."""
+        with self._engine.connect() as connection:
+            served = _served(connection, destination_id, export_item_id)
+            if served is None:
+                raise LookupError(f"no file served for {export_item_id}")
+            refused = self._refusal(connection, served, None, check_read=True)
+            if refused is not None:
+                return UpgradeResult(refused)
+        if content_hash == served.content_hash or file_hash == served.file_hash:
+            return UpgradeResult(UpgradeOutcome.UP_TO_DATE)
+        new = _New(data, file_hash, content_hash, None, None, spine_count)
+        return self._replace_held(
+            served, new, reason="better_version", automatic=True, restores=None
+        )
 
     def upgrade_unit(self, unit_id: str, content_id: str) -> list[UpgradeResult]:
         """The door of a better copy received for a Unit (EF-SRC-037, a better rank listed late):
@@ -418,14 +460,15 @@ class SamePathUpgrade:
         ):  # frozen, or blocked by its sentinel or its lease: nothing, not even the intent
             log.warning("upgrade.root_frozen", root_id=root_id)
             return UpgradeOutcome.ROOT_FROZEN
-        if check_read and served.skip_read and _is_read(connection, served.unit_id):
+        if check_read and served.skip_read and _is_read(connection, served.unit_ids):
             log.info("upgrade.skipped_read", unit_id=served.unit_id)
             return UpgradeOutcome.SKIPPED_READ
-        if irreplaceability(connection, served.unit_id).irreplaceable and (
-            typed is None or typed.strip() != confirmation_phrase(served.unit_id)
-        ):
-            log.info("upgrade.needs_confirmation", unit_id=served.unit_id)
-            return UpgradeOutcome.NEEDS_CONFIRMATION
+        for unit_id in served.unit_ids:  # the identifier typed is the first Unit's
+            if irreplaceability(connection, unit_id).irreplaceable and (
+                typed is None or typed.strip() != confirmation_phrase(served.unit_id)
+            ):
+                log.info("upgrade.needs_confirmation", unit_id=unit_id)
+                return UpgradeOutcome.NEEDS_CONFIRMATION
         if target in open_intent_paths(connection):
             return UpgradeOutcome.BUSY
         return None
@@ -465,6 +508,7 @@ class SamePathUpgrade:
                 ("content_id", new.content_id), ("content_hash", new.content_hash),
                 ("sidecar_sha256", new.sidecar_sha256), ("reason", reason),
                 ("automatic", automatic), ("restores", restores),
+                ("spine_count", new.spine_count),
             ),
         )  # fmt: skip
         intent = self._journal.record(
@@ -539,10 +583,13 @@ class SamePathUpgrade:
         if line is None:  # the line was purged in between: a drift for an admin, not a crash
             raise LookupError(f"export line {destination_id}/{item_id} is gone")
         unit_id = connection.execute(
-            sa.select(export.unit_coverage.c.unit_id).where(
+            sa.select(export.unit_coverage.c.unit_id)
+            .where(
                 export.unit_coverage.c.carrier_type == "export_item",
                 export.unit_coverage.c.carrier_id == item_id,
             )
+            .order_by(export.unit_coverage.c.position)
+            .limit(1)
         ).scalar_one_or_none()
         if unit_id is None:
             raise LookupError(f"export item {item_id} covers no Unit any more")
@@ -559,7 +606,7 @@ class SamePathUpgrade:
                 file_hash=new_hash, content_hash=payload.get("content_hash"),
                 sidecar_sha256=payload.get("sidecar_sha256"), size=identity.size,
                 mtime_ns=identity.mtime_ns, written_by_shelfhold_at=now, exported_at=now,
-                updated_at=now, state="written",
+                updated_at=now, state="written", spine_count=payload.get("spine_count"),
             )
         )  # fmt: skip
         connection.execute(

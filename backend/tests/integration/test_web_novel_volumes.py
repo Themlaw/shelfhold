@@ -45,10 +45,10 @@ class Doors:
         self.replaced: list[str] = []
 
     def place(self, prepared: PreparedRange) -> None:
-        self.placed.append(prepared.file_hash)
+        self.placed.append(prepared.source_hash)
 
     def replace(self, prepared: PreparedRange) -> None:
-        self.replaced.append(prepared.file_hash)
+        self.replaced.append(prepared.source_hash)
 
 
 def exporter(lib: LibEnv, **kw: float) -> RangedExporter:
@@ -451,7 +451,7 @@ def test_served_copy_reads_the_manifest_and_the_shelf_option() -> None:
         assert exporter_.served_copy(env.destination_id, bench.item_id) is None  # nothing yet
         with env.engine.begin() as connection:
             add_record(
-                connection, env.destination_id, bench.item_id, file_hash="sha256:" + "f" * 64
+                connection, env.destination_id, bench.item_id, content_hash="sha256:" + "f" * 64
             )
         served = exporter_.served_copy(env.destination_id, bench.item_id)
         assert served == ServedCopy("sha256:" + "f" * 64, skip_read=True)
@@ -530,7 +530,7 @@ def test_suspect_guard_live_for_rolling_tail_from_the_manifest() -> None:
         ex = RangedExporter(env.engine, env.lib.data)
         with env.engine.begin() as connection:
             add_record(
-                connection, env.destination_id, bench.item_id, file_hash="sha256:" + "f" * 64
+                connection, env.destination_id, bench.item_id, content_hash="sha256:" + "f" * 64
             )
         with ex.prepare(bench.item_id) as stub_prepared:
             ex.note_placed(env.destination_id, bench.item_id, stub_prepared)
