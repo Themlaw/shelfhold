@@ -38,6 +38,7 @@ from shelfhold.library.public import (
 )
 from shelfhold.sdk.connected import Ticket
 from shelfhold.store_jobs import store_budget
+from shelfhold.work_locks import work_holder
 
 __all__ = ["SAFEGUARD_KIND", "register_safeguard_job", "safeguard_handler", "service_refusal"]
 
@@ -80,7 +81,7 @@ def safeguard_handler(comp: Composition) -> Callable[[JobContext], None]:
                 )
                 keeper = KeepCopier(
                     comp.engine, w.fsops, w.loaded.locate, store_dir, comp.settings.data_dir,
-                    journal, extract=safeguard.run,
+                    journal, extract=safeguard.run, hold_work=work_holder(comp),
                 )  # fmt: skip
 
                 def publish(connection: Connection, event: str, payload: dict[str, object]) -> None:

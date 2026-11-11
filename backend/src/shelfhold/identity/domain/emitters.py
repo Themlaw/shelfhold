@@ -141,6 +141,14 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/library/adapters/safeguard_job.py::UpstreamPurge.release_for_purge": (
             "purge.now"
         ),
+        # What a purge leaves behind when a writer of the window met it (L17, EF-BIB-052): a copy
+        # in /store under the keep name of a content whose row is gone (the replay of a kept copy
+        # after a purge), and the file a chapter ingestion has just placed when its rows refused it
+        # (the Unit was purged between). Each deletes only what the very call wrote or the
+        # keep-name of a purged content, never a file the registry knows; the same rule as the
+        # purge, so the reserved action it stands in for is `purge.now`.
+        "shelfhold/library/adapters/storage.py::complete_keep": "purge.now",
+        "shelfhold/library/adapters/storage.py::PassthroughStore._file": "purge.now",
         # The recycle bins past 30 days (ENF-OPS-009): the daily sweep, under an intention; fsops
         # reads the age of the entry from the file system and refuses a younger one.
         f"{_EXPORT_APP}/recycle_sweep.py::RecycleSweeper.sweep": "trash_retention_purge",

@@ -33,6 +33,7 @@ from shelfhold.library.public import (
     keep_candidates,
     plan_batch,
 )
+from shelfhold.work_locks import work_holder
 
 __all__ = ["KEEP_CATCHUP_KIND", "STORE_INDEX_KIND", "register_store_jobs", "store_budget"]
 
@@ -72,7 +73,7 @@ def keep_catchup_handler(comp: Composition) -> Callable[[JobContext], None]:
                 keeper = KeepCopier(
                     comp.engine, w.fsops, w.loaded.locate, store_dir, comp.settings.data_dir,
                     IntentJournal(comp.engine, w.fsops, clock=comp.clock),
-                    extract=safeguard.run,
+                    extract=safeguard.run, hold_work=work_holder(comp),
                 )  # fmt: skip
 
                 def step(unit_id: str) -> Callable[[], None]:

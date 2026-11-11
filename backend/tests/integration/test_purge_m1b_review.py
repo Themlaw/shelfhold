@@ -5,6 +5,8 @@ real `FollowRequests`); the service is a fake only at the network edge."""
 
 import json
 import re
+import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -19,14 +21,20 @@ from shelfhold.export.application.purge import (
     PurgeService,
     PurgeUnknownError,
 )
+from shelfhold.export.domain.physical_roots import RECEIVED_DIR
+from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition
-from shelfhold.library.public import PinnedCopy
+from shelfhold.library.adapters.storage import KeepCopier, complete_keep, keep_rel
+from shelfhold.library.public import PassthroughStore, PinnedCopy, UnitGoneError
 from shelfhold.purge_upstream import ConnectedUpstream
 from shelfhold.safeguard_jobs import service_refusal
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.source import ContentRemoved
+from shelfhold.work_locks import holder_over
 from tests.export_env import ExportEnv, export_env
+from tests.integration.test_schema_catalog import add_unit, add_variant
+from tests.library_env import cbz_bytes
 from tests.purge_env import ADMIN, TITLE, PurgeEnv, make_purge_env, spread
 from tests.purge_m1b_env import FakeService, cite, fetched_ticket, make_m1b_env, write_index
 
@@ -69,6 +77,7 @@ def test_purge_leaves_no_title_in_free_pages_or_the_wal(tmp_path: Path) -> None:
 # -- the series, through the real FollowRequests --------------------------------------------------
 
 SLUG = "/manga/dr-stone"
+PNG = b"\x89PNG\r\n\x1a\n2" + b"\x00" * 16
 
 
 class _Service(FakeService):
@@ -221,3 +230,170 @@ def test_abandoning_a_begun_deed_withdraws_the_ticket(tmp_path: Path) -> None:
                 )
             ).scalar_one()
         assert ticket is None
+
+
+# -- a window write and a purge never interleave --------------------------------------------------
+
+
+def _store_files(env: ExportEnv) -> list[Path]:
+    return [p for p in env.lib.store.rglob("*.cbz") if p.is_file()]
+
+
+def test_keep_and_purge_never_leave_a_readable_orphan_in_store() -> None:
+    """P5 (keep): the keep ("Mettre à l'abri") copies the file while `purge --now` runs on the same
+    Work. The two share the lock of the Work: the purge is refused while the copy is made, and the
+    run that follows erases the copy that the registry now knows."""
+    with export_env() as env:
+        series = env.new_series(TITLE)
+        unit = env.add_chapter(series, "1")
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        purge = make_m1b_env(env)
+        journal = IntentJournal(env.engine, env.lib.fsops, clock=purge.clock)
+        keeper = KeepCopier(
+            env.engine, env.lib.fsops, env.lib.locate, str(env.lib.store), env.lib.data, journal,
+            hold_work=holder_over(env.engine, purge.clock),
+        )  # fmt: skip
+        during: list[object] = []
+        real = Fsops.copy_independent
+
+        def copy_then_purge(self: Fsops, *args: Any, **kwargs: Any) -> Any:
+            done = real(self, *args, **kwargs)  # the copy has landed in /store
+
+            def attempt() -> None:
+                try:
+                    during.append(
+                        purge.purge.purge_unit(
+                            unit, principal=ADMIN, typed=unit, now=purge.clock.now()
+                        )
+                    )
+                except Exception as error:
+                    during.append(error)
+
+            thread = threading.Thread(target=attempt)
+            thread.start()
+            thread.join()
+            return done
+
+        Fsops.copy_independent = copy_then_purge  # type: ignore[method-assign]
+        try:
+            keeper.keep(unit)
+        finally:
+            Fsops.copy_independent = real  # type: ignore[method-assign]
+        assert len(during) == 1 and isinstance(during[0], Exception)  # refused: the Work is held
+        report = purge.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=purge.clock.now())
+        assert report.complete
+        assert _store_files(env) == []
+
+
+def test_keep_of_a_work_a_purge_holds_is_work_busy() -> None:
+    from shelfhold.export.application.locks import ResourceLocks, work_resource
+    from shelfhold.library.domain.failures import SafeguardFailedError
+
+    with export_env() as env:
+        series = env.new_series(TITLE)
+        unit = env.add_chapter(series, "1")
+        purge = make_m1b_env(env)
+        keeper = KeepCopier(
+            env.engine, env.lib.fsops, env.lib.locate, str(env.lib.store), env.lib.data,
+            IntentJournal(env.engine, env.lib.fsops, clock=purge.clock),
+            hold_work=holder_over(env.engine, purge.clock, wait=0.0),
+        )  # fmt: skip
+        locks = ResourceLocks(env.engine, clock=purge.clock)
+        with (
+            locks.hold_resources(new_ulid(), [work_resource(series.work_id)]),
+            pytest.raises(SafeguardFailedError) as refused,
+        ):
+            keeper.keep(unit)
+        assert refused.value.reason == "work_busy" and _store_files(env) == []
+
+
+def test_replayed_keep_of_a_purged_content_removes_the_copy() -> None:
+    """P5: a `copy_cross_root` intent that was left by a kill, its content row gone (the purge ran
+    first): the boot's bookkeeping used to close it and leave the copy. It takes the copy away."""
+    with export_env() as env:
+        series = env.new_series(TITLE)
+        unit = env.add_chapter(series, "1")
+        with env.engine.connect() as connection:
+            content_id, size = connection.execute(
+                sa.text("SELECT id, size FROM content WHERE unit_id = :u"), {"u": unit}
+            ).one()
+        target = env.lib.store / keep_rel(unit, content_id)
+        env.lib.fsops.write_atomic(str(target), b"PK-readable-copy", parents=True)
+        with env.engine.begin() as connection:
+            connection.execute(sa.text("DELETE FROM content WHERE id = :c"), {"c": content_id})
+            complete_keep(
+                connection,
+                env.lib.fsops,
+                env.lib.locate,
+                content_id,
+                str(target),
+                None,
+                datetime.now(UTC),
+            )
+        assert not target.exists() and size
+
+
+def test_ingest_of_a_chapter_for_a_purged_unit_writes_nothing() -> None:
+    """P5 (ingest): the follow cycle files a chapter while `purge --work` runs. Under the lock the
+    Unit is looked at again: it is gone, nothing is written and nothing readable is left."""
+    with export_env() as env:
+        series = env.new_series(TITLE)
+        spread(env, series)
+        purge = make_m1b_env(env)
+        with env.engine.begin() as connection:
+            second = add_unit(connection, series.edition_id, "2")
+            variant = add_variant(connection, second, series.binding_id, "ch-two")
+        store = PassthroughStore(
+            env.engine, env.lib.fsops, env.lib.locate, env.lib.data, tombstones=purge.tombstones,
+            hold_work=holder_over(env.engine, purge.clock),
+        )  # fmt: skip
+        assert purge.purge.purge_work(
+            series.work_id, principal=ADMIN, typed=series.work_id, now=purge.clock.now()
+        ).complete
+        dest = env.lib.manga / RECEIVED_DIR / f"{second}.cbz"
+        staged = env.lib.stage(cbz_bytes((("2-001.png", PNG),)))
+        with pytest.raises(UnitGoneError):
+            store.ingest(unit_id=second, variant_id=variant, staged=staged, dest=str(dest))
+        assert not dest.exists()
+
+
+def test_ingest_failing_after_the_write_takes_the_file_away() -> None:
+    """P5: the rows refuse the file after it was placed (the Unit went between the look and the
+    insert): the file is removed, never left readable."""
+    with export_env() as env:
+        series = env.new_series(TITLE)
+        spread(env, series)
+        purge = make_m1b_env(env)
+        with env.engine.begin() as connection:
+            second = add_unit(connection, series.edition_id, "2")
+            variant = add_variant(connection, second, series.binding_id, "ch-two")
+        store = PassthroughStore(
+            env.engine, env.lib.fsops, env.lib.locate, env.lib.data, tombstones=purge.tombstones
+        )
+        real = Fsops.write_atomic
+        dest = env.lib.manga / RECEIVED_DIR / f"{second}.cbz"
+
+        def write_then_drop(self: Fsops, local: str, *args: Any, **kwargs: Any) -> Any:
+            done = real(self, local, *args, **kwargs)
+            if local == str(dest):
+                with env.engine.begin() as connection:
+                    connection.execute(sa.text("PRAGMA foreign_keys=ON"))
+                    connection.execute(
+                        sa.text("DELETE FROM unit_variant WHERE id = :v"), {"v": variant}
+                    )
+            return done
+
+        Fsops.write_atomic = write_then_drop  # type: ignore[method-assign]
+        try:
+            with pytest.raises(sa.exc.IntegrityError):
+                store.ingest(
+                    unit_id=second,
+                    variant_id=variant,
+                    staged=env.lib.stage(
+                        cbz_bytes((("2-001.png", b"\x89PNG\r\n\x1a\n2" + b"\x00" * 16),))
+                    ),
+                    dest=str(dest),
+                )
+        finally:
+            Fsops.write_atomic = real  # type: ignore[method-assign]
+        assert not dest.exists()
