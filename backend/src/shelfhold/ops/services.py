@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
@@ -72,6 +72,7 @@ from shelfhold.ops.status import (
     jurisdiction_report,
     kept_in_service_report,
     known_bad_report,
+    koreader_reset_report,
     queues_of,
     rights_report,
     service_url_report,
@@ -86,6 +87,7 @@ __all__ = ["JobRow", "OpsServices", "RecheckOutcome", "StatusReport", "user_of"]
 DEAD = ("dead_letter", "failed")
 NOT_INDEXED = "target.not_indexed"
 MAX_SERIES_NAME = 200
+KOREADER_RESET_WINDOW = timedelta(days=7)  # how far back `status` lists the upgrades
 ULID_PATTERN = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
 
 
@@ -110,6 +112,7 @@ class StatusReport:
     rights_warnings: list[dict[str, object]] = field(default_factory=list)
     kept_in_service: list[dict[str, object]] = field(default_factory=list)
     wal_pending: list[dict[str, object]] = field(default_factory=list)
+    koreader_resets: list[dict[str, object]] = field(default_factory=list)  # EF-EXP-016, D21
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -126,6 +129,7 @@ class StatusReport:
             "rights_warnings": self.rights_warnings,
             "kept_in_service": self.kept_in_service,
             "wal_pending": self.wal_pending,
+            "koreader_resets": self.koreader_resets,
         }
 
 
@@ -237,6 +241,7 @@ class OpsServices:
                 unverifiable_download_dirs(connection), candidate_report(connection),
                 jurisdiction_report(connection), rights_report(connection, now.date()),
                 kept_in_service_report(connection), wal_pending_report(connection),
+                koreader_reset_report(connection, now - KOREADER_RESET_WINDOW),
             )  # fmt: skip
 
     def restored_behind(self) -> bool:

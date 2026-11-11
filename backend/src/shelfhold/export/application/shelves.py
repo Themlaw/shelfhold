@@ -109,6 +109,7 @@ class ShelfService:
         hold_until_rated: bool | None = None,
         allowed_profiles: tuple[str, ...] = (),
         actor: Actor | None = None,
+        skip_read_upgrades: bool = True,
     ) -> str:
         """A ceiling off the scale is refused before anything is stored. "Retenir tant que non
         classé" is on by default for a shelf below 18+ (EF-EXP-050)."""
@@ -120,7 +121,7 @@ class ShelfService:
                 sa.insert(export.shelf).values(
                     id=shelf_id, name=name, phrase=phrase, max_age_rating=max_age_rating,
                     retention_mode=retention_mode, hold_until_rated=hold,
-                    allowed_profiles=list(allowed_profiles),
+                    allowed_profiles=list(allowed_profiles), skip_read_upgrades=skip_read_upgrades,
                 )
             )  # fmt: skip
             self._audit(connection, actor, "shelf.create", f"shelf:{shelf_id};max:{max_age_rating}")
@@ -183,6 +184,23 @@ class ShelfService:
             if done.rowcount != 1:
                 raise LookupError(f"no such shelf: {shelf_id}")
             self._audit(connection, actor, "shelf.set_hold", f"shelf:{shelf_id};{hold}")
+
+    def set_skip_read_upgrades(
+        self, shelf_id: str, skip: bool, *, actor: Actor | None = None
+    ) -> None:
+        """ "Do not upgrade read Units" (EF-EXP-016): on by default; `SamePathUpgrade` reads it
+        for every reason it is asked to replace a file."""
+        with self._engine.begin() as connection:
+            done = connection.execute(
+                sa.update(export.shelf)
+                .where(export.shelf.c.id == shelf_id)
+                .values(skip_read_upgrades=skip)
+            )
+            if done.rowcount != 1:
+                raise LookupError(f"no such shelf: {shelf_id}")
+            self._audit(
+                connection, actor, "shelf.set_skip_read_upgrades", f"shelf:{shelf_id};{skip}"
+            )
 
     def set_purge_upstream(
         self, shelf_id: str, enabled: bool, *, actor: Actor | None = None

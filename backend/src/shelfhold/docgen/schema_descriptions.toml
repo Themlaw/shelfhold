@@ -836,6 +836,23 @@ description = "One row per rewrite of an exported file: a hash of a volume resol
 [tables.document_alias.columns]
 koreader_partial_md5 = "Partial MD5 KOReader computes."
 
+[tables.export_upgrade]
+description = "One replacement of an exported file at its path: what was served before and after, and the bin entry of the old version."
+[tables.export_upgrade.columns]
+id = "Identifier of the replacement (ULID)."
+intent_id = "The `upgrade` intent it was made under (`fs_intent.id`); the journal is pruned, so no key."
+reason = "Why: `better_version`, `preferred_team`, `integrity_reacquire` or `restore`."
+automatic = "Asked by Shelfhold itself rather than by a person."
+koreader_reset = "A new file at the same path: KOReader starts the document again."
+old_content_id = "Content that was served before (`content.id`); NULL once it is gone."
+old_content_hash = "Hash of the pages served before."
+old_sidecar_sha256 = "Hash of the ComicInfo served before."
+old_file_hash = "Hash of the file served before, now in the bin."
+new_file_hash = "Hash of the file served after."
+trash_item_id = "Bin entry of the old version (`trash_item.id`); NULL once the bin let it go."
+state = "`done`, or `restored` once the old version was put back."
+restored_at = "When the old version was put back (UTC)."
+
 [tables.export_record]
 description = "The manifest: what was written, where, for which destination."
 [tables.export_record.columns]

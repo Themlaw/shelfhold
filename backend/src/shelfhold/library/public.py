@@ -12,9 +12,13 @@ from shelfhold.library.adapters.epub_derivative import (
     servable_epub,
 )
 from shelfhold.library.adapters.export_source import (
+    BinnedFile,
     ExportSource,
+    binned_export_file,
     export_sources,
+    record_binned_export_file,
     record_destination_copy,
+    upgrade_source,
 )
 from shelfhold.library.adapters.meta_projection import (
     MetaProjection,
@@ -210,6 +214,7 @@ __all__ = [
     "TOMBSTONED",
     "UNIT_JSON_VERSION",
     "Batch",
+    "BinnedFile",
     "Candidate",
     "ConfirmationRequiredError",
     "ContentErrorCandidate",
@@ -291,6 +296,7 @@ __all__ = [
     "WorkRef",
     "backlog_row",
     "binding_warning",
+    "binned_export_file",
     "closed_request_ids",
     "complete_interrupted_keep",
     "confirmation_phrase",
@@ -329,6 +335,7 @@ __all__ = [
     "plan_batch",
     "readable_unit_ids",
     "receive_cbz",
+    "record_binned_export_file",
     "record_destination_copy",
     "record_replica",
     "refresh_destination_identity",
@@ -343,6 +350,7 @@ __all__ = [
     "title_needles",
     "unit_tombstoned",
     "unresolved_bin_items",
+    "upgrade_source",
     "upstream_claims",
     "upstream_tokens",
     "upstream_verdict",

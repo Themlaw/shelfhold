@@ -216,6 +216,7 @@ def _waiting(resolved: ResolvedSettings) -> dict[str, object]:
             "capabilities": [], "known_bad": {}, "service_urls": [], "unverifiable_dirs": [],
             "content_error_candidates": [], "jurisdiction": None, "rights_warnings": [],
             "kept_in_service": [], "wal_pending": [],
+            "koreader_resets": [],
         }  # fmt: skip
     engine = create_db_engine(database)
     try:
@@ -267,6 +268,8 @@ def report_lines(ops: dict[str, object]) -> list[str]:
             )
         else:
             lines.append(t("status.rights_may_be_protected", edition_id=w["edition_id"]))
+    for u in ops.get("koreader_resets", []):  # type: ignore[attr-defined]
+        lines.append(t("status.koreader_reset_line", unit_id=u["unit_id"], at=u["at"]))
     for s in ops.get("tombstoned_upstream", []):  # type: ignore[attr-defined]
         lines.append(t("status.tombstoned_upstream_line", **s))
     for w in ops.get("wal_pending", []):  # type: ignore[attr-defined]

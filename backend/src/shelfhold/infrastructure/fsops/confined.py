@@ -21,6 +21,7 @@ from shelfhold.infrastructure.fsops.openat2 import (
     CONFINED,
     openat2,
     openat2_supported,
+    renameat2_exchange,
     renameat2_noreplace,
 )
 
@@ -350,6 +351,22 @@ class ConfinedRoot:
                 os.close(dst_parent)
         finally:
             os.close(src_parent)
+
+    def exchange(self, a: str, b: str) -> None:
+        """Swap two existing names of this root in one step (`RENAME_EXCHANGE`), then flush both
+        folders: neither name is ever empty, before or after a crash. `OSError(ENOSYS/EINVAL)`
+        when the file system cannot; the caller then takes another path (EF-EXP-016)."""
+        a_parent, a_name = self._parent(a)
+        try:
+            b_parent, b_name = self._parent(b)
+            try:
+                renameat2_exchange(a_parent, a_name, b_parent, b_name)
+                os.fsync(a_parent)
+                os.fsync(b_parent)
+            finally:
+                os.close(b_parent)
+        finally:
+            os.close(a_parent)
 
     @staticmethod
     def _rename_noreplace(src_parent: int, src: str, dst_parent: int, dst: str) -> None:

@@ -63,6 +63,7 @@ def openat2_supported(root_fd: int | None = None) -> bool:
 
 # renameat2(2) is not in Python's `os` either. The number is per architecture.
 RENAME_NOREPLACE = 1
+RENAME_EXCHANGE = 2
 _RENAMEAT2 = {"x86_64": 316, "aarch64": 276, "arm64": 276}.get(platform.machine())
 _libc2 = ctypes.CDLL(None, use_errno=True)
 _syscall2 = _libc2.syscall
@@ -88,3 +89,16 @@ def renameat2_noreplace(src_dir_fd: int, src: str, dst_dir_fd: int, dst: str) ->
     if result < 0:
         code = ctypes.get_errno()
         raise OSError(code, os.strerror(code), src)
+
+
+def renameat2_exchange(a_dir_fd: int, a: str, b_dir_fd: int, b: str) -> None:
+    """Swap two names atomically (`RENAME_EXCHANGE`): at every instant each name holds one of the
+    two files, never none. `OSError(ENOSYS/EINVAL)` when the kernel or the file system cannot."""
+    if _RENAMEAT2 is None:
+        raise OSError(errno.ENOSYS, "renameat2 number unknown on this architecture")
+    result = _syscall2(
+        _RENAMEAT2, a_dir_fd, os.fsencode(a), b_dir_fd, os.fsencode(b), RENAME_EXCHANGE
+    )
+    if result < 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), a)

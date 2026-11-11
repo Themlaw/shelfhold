@@ -42,6 +42,11 @@ class ShelfIn(BaseModel):
     retention_mode: Literal["passthrough", "keep"] = "passthrough"
     hold_until_rated: bool | None = None  # on by default below 18+ (EF-EXP-050)
     allowed_profiles: list[str] = Field(default_factory=list)
+    skip_read_upgrades: bool = True  # a read Unit is never replaced by a better one (EF-EXP-016)
+
+
+class SkipReadUpgradesIn(BaseModel):
+    skip_read_upgrades: bool
 
 
 class CeilingIn(BaseModel):
@@ -101,10 +106,27 @@ def build_shelves_router(
                 name=body.name, phrase=body.phrase, max_age_rating=body.max_age_rating,
                 retention_mode=body.retention_mode, hold_until_rated=body.hold_until_rated,
                 allowed_profiles=tuple(body.allowed_profiles), actor=_actor(principal),
+                skip_read_upgrades=body.skip_read_upgrades,
             )  # fmt: skip
         except BindingError as error:
             raise ProblemError(error.code) from None
         return ShelfOut(id=shelf_id)
+
+    @router.post("/{shelf_id}/skip-read-upgrades")
+    def set_skip_read_upgrades(
+        shelf_id: str,
+        body: SkipReadUpgradesIn,
+        principal: Principal = Depends(reserved_action(_CEILING)),  # noqa: B008
+    ) -> SkipReadUpgradesIn:
+        """ "Ne pas mettre à niveau les Unités déjà lues" (EF-EXP-016), on by default: every path
+        that asks for an upgrade reads it."""
+        try:
+            get_service().set_skip_read_upgrades(
+                shelf_id, body.skip_read_upgrades, actor=_actor(principal)
+            )
+        except LookupError:
+            raise ProblemError("not_found") from None
+        return body
 
     @router.post("/{shelf_id}/destinations", status_code=201)
     def bind_destination(

@@ -50,7 +50,7 @@ def test_rejected_edition_suggestions_above_the_work_are_reopened(settings: Sett
             )
         db.commit()
 
-    assert migrate(settings).applied == ("0025",)
+    assert migrate(settings).applied[:1] == ("0025",)  # later ones follow
 
     with closing(sqlite3.connect(database)) as db:
         got = [r[0] for r in db.execute("SELECT state FROM age_suggestion ORDER BY id")]

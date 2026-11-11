@@ -1464,6 +1464,10 @@ export type ShelfIn = {
      * Retention Mode
      */
     retention_mode?: 'passthrough' | 'keep';
+    /**
+     * Skip Read Upgrades
+     */
+    skip_read_upgrades?: boolean;
 };
 
 /**
@@ -1474,6 +1478,16 @@ export type ShelfOut = {
      * Id
      */
     id: string;
+};
+
+/**
+ * SkipReadUpgradesIn
+ */
+export type SkipReadUpgradesIn = {
+    /**
+     * Skip Read Upgrades
+     */
+    skip_read_upgrades: boolean;
 };
 
 /**
@@ -3747,6 +3761,44 @@ export type SetMaxAgeResponses = {
 };
 
 export type SetMaxAgeResponse = SetMaxAgeResponses[keyof SetMaxAgeResponses];
+
+export type SetSkipReadUpgradesData = {
+    body: SkipReadUpgradesIn;
+    path: {
+        /**
+         * Shelf Id
+         */
+        shelf_id: string;
+    };
+    query?: never;
+    url: '/api/v1/shelves/{shelf_id}/skip-read-upgrades';
+};
+
+export type SetSkipReadUpgradesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetSkipReadUpgradesError = SetSkipReadUpgradesErrors[keyof SetSkipReadUpgradesErrors];
+
+export type SetSkipReadUpgradesResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkipReadUpgradesIn;
+};
+
+export type SetSkipReadUpgradesResponse = SetSkipReadUpgradesResponses[keyof SetSkipReadUpgradesResponses];
 
 export type AddSourceData = {
     body: SourceIn;

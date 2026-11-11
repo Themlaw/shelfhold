@@ -15,6 +15,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
+from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.upgrade import UpgradeOutcome
 from shelfhold.infrastructure.fsops import Fsops, confined
 from shelfhold.infrastructure.schema import export
@@ -86,7 +87,9 @@ def test_upgrade_interrupted_resumes_from_intent(
         _, status = os.waitpid(pid, 0)
         assert os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGKILL
 
-        # The restart: every open intent is settled before anything else.
+        # The restart: the locks of the dead process go (`release_all` at boot), then every open
+        # intent is settled before anything else.
+        ResourceLocks(env.engine, clock=env.clock).release_all()
         upgrade = service(env)
         IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open(
             on_done=upgrade.settle_hook()
@@ -106,8 +109,8 @@ def test_upgrade_interrupted_resumes_from_intent(
         assert exported.target.read_bytes() != old_bytes
         assert [p.read_bytes() for p in bin_files(env)] == [old_bytes]
         assert record_of(env, exported).file_hash == digest(exported.target)
-        staging = env.lib.library / ".shelfhold" / "staging"
-        assert not any(p.is_file() for p in staging.rglob("*"))  # nothing left half-way
+        for host in ("staging", "upgrade"):  # nothing left half-way
+            assert not any(p.is_file() for p in (env.lib.library / ".shelfhold" / host).rglob("*"))
         with env.engine.connect() as connection:
             upgrades = connection.execute(
                 sa.select(sa.func.count()).select_from(export.export_upgrade)

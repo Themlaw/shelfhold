@@ -169,8 +169,8 @@ def test_upgrade_never_writes_on_a_frozen_root() -> None:
         assert result.outcome is UpgradeOutcome.ROOT_FROZEN
         assert exported.target.read_bytes() == before
         assert bin_files(env) == []
-        staging = env.lib.library / ".shelfhold" / "staging"
-        assert not staging.exists() or not any(p.is_file() for p in staging.rglob("*"))
+        for host in ("staging", "upgrade"):
+            assert not any(p.is_file() for p in (env.lib.library / ".shelfhold" / host).rglob("*"))
         with env.engine.connect() as connection:
             assert connection.execute(
                 sa.select(sa.func.count()).select_from(coherence.fs_intent)
