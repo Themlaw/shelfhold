@@ -111,6 +111,20 @@ révision, dans `/data/backups/pre-migration`), redéployez l'image précédente
 (`restored_behind`). Les acquisitions postérieures à la sauvegarde sont signalées, jamais
 supprimées. Voir [redeploiement.md](redeploiement.md).
 
+Pas à pas, pour revenir de la version courante à la précédente :
+
+1. `docker compose stop shelfhold`.
+2. Remettez la sauvegarde d'avant la migration à la place de la base :
+   `cp /data/backups/pre-migration/<fichier> /data/shelfhold.db`, puis supprimez
+   `shelfhold.db-wal` et `shelfhold.db-shm`. Les sentinelles des racines, elles, sont celles de la
+   version courante : l'image précédente les relit et conserve les champs qu'elle ne connaît pas.
+3. Redéployez l'image précédente. Elle démarre en lecture seule, état d'attente `restored_behind`.
+4. Arrêtez-la, puis lancez la réconciliation **avec toutes les racines montées** (le service
+   `shelfhold`, pas celui de la migration, qui n'a pas `/library` : une racine non montée n'est pas
+   jugée) : `shelfhold reconcile --adopt-after-restore`, relisez l'aperçu, puis `--confirm <empreinte>`.
+5. Redémarrez. Rien n'est supprimé ; les sessions ouvertes depuis la sauvegarde ne sont pas rétablies
+   (voir `restore acknowledge` ci-dessus).
+
 ## Ce que Shelfhold ne sauvegarde pas
 
 Cette liste est aussi celle de l'effacement ([purge.md](purge.md)) : les sauvegardes de l'hôte,

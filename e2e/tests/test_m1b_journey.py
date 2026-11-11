@@ -386,11 +386,13 @@ def run_rollback(j: Journey) -> dict[str, object]:
         "&& rm -f /data/shelfhold.db-wal /data/shelfhold.db-shm",
     )  # fmt: skip
     j.switch_app_image(PREVIOUS or "")
-    j.compose("stop", "shelfhold")  # the adoption wants the volumes to itself
+    # the adoption wants the volumes to itself, and every root mounted (the `shelfhold` service,
+    # not the migration one, which has no /library: a root that is not mounted is not judged)
+    j.compose("stop", "shelfhold")
 
     def offline(*args: str) -> subprocess.CompletedProcess[str]:
         return j.compose(
-            "run", "--rm", "--no-deps", "-T", "--entrypoint", "shelfhold", "shelfhold-migrate",
+            "run", "--rm", "--no-deps", "-T", "--entrypoint", "shelfhold", "shelfhold",
             *args, check=False,
         )  # fmt: skip
 
@@ -453,12 +455,6 @@ def test_rollback_reads_m1b_sentinel_without_field_loss(
 
 @needs_previous
 @pytest.mark.e2e_timeout(900)
-@pytest.mark.xfail(
-    reason="observed on the real images (M1b L30): after the adoption by the previous release the "
-    "library root keeps its sentinel (generation 7, database 6) and the instance is `restored_behind` "
-    "again at the next start; the store root is re-stamped. To investigate (Opus review).",
-    strict=False,
-)
 @pytest.mark.req("ENF-OPS-008", "EF-INT-026")
 def test_rollback_adoption_clears_restored_behind(rollback_world: dict[str, object]) -> None:
     """After `reconcile --adopt-after-restore` by the previous release, no waiting state is left
