@@ -75,6 +75,10 @@ _DECLARED = (
     _action("passkey.register", Effect.MANAGES_CREDENTIALS),
     _action("passkey.revoke", Effect.MANAGES_CREDENTIALS),
     _action("admin_risk.accept", Effect.ACCEPTS_ADMIN_RISK),
+    # Trust boundary (EF-EXP-065, D15): a third-party plugin's declared trust value; for
+    # `access_partitioning` it is also parental control (which shelves may be bound to it)
+    _action("plugin.attest", Effect.ATTESTS_TRUST),
+    _action("plugin.attest_partitioning", Effect.ATTESTS_TRUST, Effect.PARENTAL_CONTROL),
 )
 
 RESERVED_ACTIONS: Mapping[str, ReservedAction] = MappingProxyType(

@@ -37,7 +37,7 @@ def test_upgrade_keeps_external_ids_and_makes_them_append_only(settings: Setting
         )
         db.commit()
 
-    assert migrate(settings).applied[-1] == "0026"
+    assert "0026" in migrate(settings).applied  # the head may be a later revision
 
     assert "edition_attach" in tables(database)
     with closing(sqlite3.connect(database)) as db:

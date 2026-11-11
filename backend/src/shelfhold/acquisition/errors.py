@@ -22,6 +22,13 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source.update_filters_blocking", 409, "admin"),
     # EF-SRC-004: a pasted URL that no active plugin recognises
     ErrorCode("source.no_match", 422, "user"),
+    # EF-SRC-013: a per-source setting refused (the field and a reason, never the value)
+    ErrorCode("source.setting_invalid", 422, "admin"),
+    # EF-SRC-013, EF-EXP-065: no loaded plugin, or no installed third-party plugin, by that key
+    ErrorCode("plugin.unknown", 404, "admin"),
+    # EF-EXP-065 (5): only a declared trust value of a third-party plugin is attested
+    ErrorCode("plugin.attestation_invalid", 422, "admin"),
+    ErrorCode("plugin.attestation_not_needed", 409, "admin"),
     # EF-SRC-003: a plugin's Fetcher asked for a host outside its DomainRules
     ErrorCode("source.domain_not_allowed", 403, "admin"),
     # EF-SRC-002: a plugin did network, disk or process I/O itself (the audit-hook detector)

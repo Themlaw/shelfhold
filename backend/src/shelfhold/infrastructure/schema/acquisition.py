@@ -44,6 +44,7 @@ PLUGIN_ORIGINS = ("builtin", "local")  # `repo` joins in M6
 REVISION_NATURES = ("metadata_only", "rewrite")
 REVISION_STATES = ("open", "applied", "dismissed")
 ATTESTATION_FIELDS = ("content_trust", "publisher", "access_partitioning", "egress")
+SOURCE_SECRET_KINDS = ("secret", "cookies")  # a secret field of `settings_schema`, the cookie jar
 
 
 def _fk(
@@ -453,9 +454,43 @@ plugin_attestation = sa.Table(
     sa.Column("value", sa.String(), nullable=False),
     sa.Column("attested_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL")),
     sa.Column("attested_at", UtcDateTime(), nullable=False),
+    # The installed version it was given for (EF-EXP-065): another version is code nobody vouched
+    # for, so the attestation lapses; '' (rows from before 0027) matches no version.
+    sa.Column("plugin_version", sa.String(), nullable=False, server_default=sa.text("''")),
+    # ... and the digest of the installed files: a new wheel under the same version lapses it too
+    sa.Column("plugin_sha256", sa.String(), nullable=False, server_default=sa.text("''")),
     sa.PrimaryKeyConstraint("plugin_key", "field"),
     in_check("field", ATTESTATION_FIELDS),
     sa.CheckConstraint("\"plugin_key\" <> ''", name="plugin_key_not_empty"),
+)
+
+# One sealed value per source and field (EF-SRC-013, ENF-SEC-005): a secret field of the source's
+# `settings_schema`, or its cookie jar (`kind = cookies`, field `jar`). The id is
+# `<plugin>/<kind>/<field>/<generation>` and it is the row coordinate of the envelope's associated
+# data, so a sealed value copied to another source or field, or an older one put back, does not
+# open. `fingerprint` is a short keyed
+# digest the API shows instead of the value; nothing reads a secret back.
+source_secret = sa.Table(
+    "source_secret",
+    metadata,
+    sa.Column("id", sa.String(), primary_key=True),
+    sa.Column("plugin_id", sa.String(), nullable=False),
+    sa.Column("kind", sa.String(), nullable=False),
+    sa.Column("field", sa.String(), nullable=False),
+    sa.Column("fingerprint", sa.String(), nullable=False),
+    # Bumped on every write and part of the id, so an older envelope put back does not open
+    sa.Column("generation", sa.Integer(), nullable=False),
+    *sealed_secret_columns(),
+    now_column("updated_at"),
+    in_check("kind", SOURCE_SECRET_KINDS),
+    sa.CheckConstraint(
+        '"id" = "plugin_id" || \'/\' || "kind" || \'/\' || "field" || \'/\' || "generation"',
+        name="id_coordinates",
+    ),
+    positive_check("generation", minimum=1),
+    sa.CheckConstraint('"secret_ct" IS NOT NULL', name="sealed"),
+    sa.CheckConstraint("\"plugin_id\" <> '' AND \"field\" <> ''", name="named"),
+    sa.UniqueConstraint("plugin_id", "kind", "field"),
 )
 
 # A hole seen in an Edition's numbering; the row is what makes the notification one per gap

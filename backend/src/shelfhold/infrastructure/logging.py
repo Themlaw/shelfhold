@@ -42,7 +42,7 @@ _LIBRARY_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 # key leak and a line per call. Our own `http.call` line (route only) replaces it, always.
 _NEVER_BELOW_WARNING = ("httpx", "httpx2", "httpcore", "httpcore2")
 _MAX_DEPTH = 12
-_MIN_KNOWN_SECRET = 8  # shorter values would blank ordinary words
+MIN_KNOWN_SECRET = 8  # shorter values would blank ordinary words
 
 # `name: value`, `name=value`, `"name": "value"`, `{'name': b'value'}`, `name:\"value\"` in free
 # text. A quoted value runs to its closing quote (spaces, `;` and `&` included); an unquoted one
@@ -143,6 +143,18 @@ def _mask_known(text: str) -> str:
         return text
     for known in sorted(_known_values, key=len, reverse=True):
         text = text.replace(known, REDACTED)
+    return text
+
+
+def mask_known_secrets(text: str) -> str:
+    """Every registered secret value masked in `text`, in any form a URL carries it in, and
+    nothing else changed: for text that leaves the process outside a log line (an HTTP problem
+    detail, EF-SRC-013)."""
+    text = _mask_known(text)
+    if "%" in text and _known_values:
+        for view in decoded_views(text)[1:]:
+            if contains_secret(view, known_secret_index()):
+                return _mask_known(view)
     return text
 
 
@@ -285,7 +297,7 @@ def log_outcome[F: Callable[..., Any]](
 def register_secret_value(value: str) -> None:
     """Scrub this exact value (and its base64 forms, and the forms a URL carries it in: percent
     encoded once or twice, `+` for a space) wherever it shows up later."""
-    if len(value) < _MIN_KNOWN_SECRET:
+    if len(value) < MIN_KNOWN_SECRET:
         return
     _known_values.update(secret_forms(value))
 

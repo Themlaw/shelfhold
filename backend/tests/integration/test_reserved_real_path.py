@@ -92,6 +92,9 @@ def call(env: AuthEnv, method: str, path: str, **kwargs: Any) -> Any:
     if method == "DELETE":
         headers = {CSRF_HEADER: env.csrf(), **kwargs.pop("headers", {})}
         return env.client.delete(path, headers=headers, **kwargs)
+    if method in {"PUT", "PATCH"}:  # M2 L07: secrets and cookies of a source
+        headers = {CSRF_HEADER: env.csrf(), **kwargs.pop("headers", {})}
+        return env.client.request(method, path, json={}, headers=headers, **kwargs)
     return env.post(path, json={}, **kwargs)  # an empty body: a 422 means the rule let it through
 
 

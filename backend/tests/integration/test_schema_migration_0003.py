@@ -30,6 +30,7 @@ ACQUISITION_TABLES = {
     "download_request", "download_request_unit", "source_failure", "source_config",
     "source_account", "upstream_snapshot", "plugin_install", "plugin_state", "revision_pending",
     "follow_request", "plugin_attestation", "series_gap", "binding_release_sample",
+    "source_secret",
 }  # fmt: skip
 
 
