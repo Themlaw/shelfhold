@@ -363,7 +363,7 @@ class JwtFetcher:
             raise SourceChanged(f"unexpected answer {response.status} from the token endpoint")
         try:
             payload = json.loads(response.body)
-        except ValueError as exc:
+        except (ValueError, RecursionError) as exc:
             raise SourceChanged("the token endpoint did not answer with JSON") from exc
         data = payload.get("data") if isinstance(payload, dict) else None
         granted = data.get(field) if isinstance(data, dict) else None
@@ -444,7 +444,7 @@ class JwtFetcher:
             return False
         try:
             payload = json.loads(response.body)
-        except ValueError:
+        except (ValueError, RecursionError):
             return False
         errors = payload.get("errors") if isinstance(payload, dict) else None
         return isinstance(errors, list) and any(

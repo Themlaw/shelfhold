@@ -322,10 +322,11 @@ def test_plans_are_for_admins() -> None:
         return Principal("u", "u", role, credential, session_id="s", key_id="k", scopes=scopes)
 
     assert require_admin(request(who("admin", Credential.SESSION)))
-    assert require_admin(request(who("member", Credential.API_KEY, ("admin",))))
+    assert require_admin(request(who("admin", Credential.API_KEY, ("admin",))))
     for refused in (
         who("member", Credential.SESSION),
         who("child", Credential.SESSION),
+        who("member", Credential.API_KEY, ("admin",)),  # the admin scope of a non-admin: no
         who("admin", Credential.API_KEY, ("request",)),
         who("admin", Credential.DEVICE_TOKEN),
     ):

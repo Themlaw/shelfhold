@@ -10,6 +10,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("invalid_credentials", 401, "user"),
     ErrorCode("remember_needs_confirmation", 422, "user"),
     ErrorCode("too_many_attempts", 429, "user"),
+    ErrorCode("password_login_suspended", 409, "admin"),  # a restore: passwords may be old ones
     ErrorCode("csrf_failed", 403, "user"),
     # Passkeys (EF-USR-025, ADR-0050)
     ErrorCode("passkey_unavailable", 409, "admin"),

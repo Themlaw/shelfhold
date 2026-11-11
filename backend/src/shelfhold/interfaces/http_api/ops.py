@@ -35,11 +35,17 @@ _RATE = reserved_action(RESERVED_ACTIONS["rate"])
 _ROOT_TAKEOVER = reserved_action(RESERVED_ACTIONS["root.takeover"])
 _ROOT_REINIT = reserved_action(RESERVED_ACTIONS["root.reinit"])
 _STORE_REINIT = reserved_action(RESERVED_ACTIONS["store.reinit"])
+_RESTORE_ACK = reserved_action(RESERVED_ACTIONS["restore.acknowledge"])
 Admin = Annotated[Principal, Depends(require_admin)]
 
 
 class Done(BaseModel):
     ok: bool = True
+
+
+class AcknowledgedOut(BaseModel):
+    ok: bool = True
+    passkey_changes: list[str] = []
 
 
 class ResolveIn(BaseModel):
@@ -308,6 +314,16 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         """`/store` is not what the database remembers: its Units go to `store_missing`."""
         with refusals():
             return RootOut(**get_ops().store_reinit(principal=principal))
+
+    @router.post(_path("restore", "acknowledge"))
+    def restore_acknowledge(
+        principal: Annotated[Principal, Depends(_RESTORE_ACK)],
+    ) -> AcknowledgedOut:
+        """The passkeys and passwords changed since the backup were looked at: passkey sign-in
+        comes back. Lists the passkeys created or revoked since the backup, as far as known."""
+        with refusals():
+            changes = get_ops().restore_acknowledge(principal=principal)
+        return AcknowledgedOut(passkey_changes=changes)
 
     @router.post(_path("target", "rotate-key"))
     def target_rotate_key(

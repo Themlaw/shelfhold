@@ -27,6 +27,7 @@ _RESOURCE_ATTRS: Final = frozenset(
     {"src", "href", "xlink:href", "poster", "action", "formaction", "data", "srcset", "background",
      "longdesc", "manifest", "ping", "cite"}
 )  # fmt: skip
+_CHARSETS: Final = frozenset({"utf-8", "utf-16"})
 _CSS_URL = re.compile(r"url\s*\(\s*([^)]*)\)", re.I)
 
 
@@ -94,6 +95,8 @@ def find_active_patterns(data: bytes) -> list[str]:
                 found.append(f"a-scheme:{squashed.split(':')[0]}")  # an outbound link, too
             if attr == "http-equiv":
                 found.append("meta-http-equiv")
+            if name == "meta" and attr == "charset" and value.strip().lower() not in _CHARSETS:
+                found.append(f"meta-charset:{value.strip().lower()[:20]}")  # utf-7 and the like
             if attr == "style":
                 found += _css_findings(value)
             if name == "link" and attr == "rel" and "import" in value.lower():

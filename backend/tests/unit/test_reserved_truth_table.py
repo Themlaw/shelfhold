@@ -44,6 +44,7 @@ P3 = {
     "accepts_admin_risk",  # the admin password of Kavita goes through it (L38)
     "settles_fs_intent",  # `intents resolve` frees the paths of an interrupted operation (L51)
     "migrates_identity",  # `normalize migrate` rewrites the identity keys of live rows (L55)
+    "acknowledges_restore",  # `restore acknowledge`: passkey logins come back with it
 }
 
 
@@ -109,6 +110,8 @@ def expected(
         return CredentialNotAllowed  # every key scope (admin included) and every device token
     if role != "admin":
         return RoleNotAllowed  # review PR #43 (M4): reserved means admin unless a route says so
+    if Effect.ACKNOWLEDGES_RESTORE in effects and axis != "local_cli":
+        return CredentialNotAllowed  # the host CLI only: no session, however fresh
     if axis == "local_cli":  # PR #49: the CLI is held to the role as well, never to freshness
         return Allowed
     needs_fresh = (
@@ -263,6 +266,7 @@ FRESHNESS_LINE = {
             "config.path_map",
             "intents.resolve",
             "normalize.migrate",
+            "restore.acknowledge",
             "admin_risk.accept",
             "shelf.purge_upstream",
         ),

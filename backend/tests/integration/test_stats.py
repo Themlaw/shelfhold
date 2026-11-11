@@ -54,10 +54,12 @@ def _add_member(api: AuthEnv) -> None:
         connection.close()
 
 
-def _key_of(api: AuthEnv, username: str) -> str:
+def _key_of(api: AuthEnv, username: str, *, read_only: bool = False) -> str:
     engine = create_db_engine(api.settings.database_path)
     try:
-        created = local_auth(engine, api.settings).create_api_key(name="kid", username=username)
+        created = local_auth(engine, api.settings).create_api_key(
+            name="kid", username=username, read_only=read_only
+        )
     finally:
         engine.dispose()
     return created.value
@@ -97,7 +99,7 @@ def test_stats_local_only_admin_only(
 
     # a member's key and a member's session: 403, and no number leaks
     _add_member(api)
-    key = _key_of(api, "member")
+    key = _key_of(api, "member", read_only=True)  # the `admin` scope is not a member's to hold
     denied = api.other_client("10.0.0.9").get(
         "/api/v1/stats", headers={"Authorization": f"Bearer {key}"}
     )

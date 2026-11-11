@@ -3,6 +3,7 @@
 from shelfhold.error_catalog import ErrorCode
 
 CODES: tuple[ErrorCode, ...] = (
+    ErrorCode("instance.starting", 503, "user"),  # the late start-up behind a migration
     ErrorCode("ops.not_waiting", 409, "admin"),
     ErrorCode("ops.unknown_subject", 404, "admin"),
     ErrorCode("ops.exit_unavailable", 503, "admin"),

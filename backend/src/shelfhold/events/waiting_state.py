@@ -40,6 +40,7 @@ class WaitingState(StrEnum):
     STORE_LOST = "store_lost"
     TOMBSTONE_JOURNAL_TRUNCATED = "tombstone_journal_truncated"  # D12: `set-aside-journal`
     SOURCE_INSTANCE_CHANGED = "source_instance_changed"
+    RESTORED_CREDENTIALS = "restored_credentials"  # `restore acknowledge` (the cross review)
     WITHDRAWAL_PENDING = "withdrawal_pending"  # a file waits to leave a family shelf (EF-BIB-037)
     # M3
     LIBRARY_TYPE_CHANGED = "library_type_changed"

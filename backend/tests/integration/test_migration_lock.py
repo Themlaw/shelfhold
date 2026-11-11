@@ -117,3 +117,80 @@ def test_a_killed_migrator_does_not_leave_the_state_stuck(
         slow_migrator.kill()
         slow_migrator.wait()
         assert client.get("/healthz").json()["state"] == "ok"
+
+
+@pytest.mark.req("ENF-OPS-015", "ENF-OPS-002")
+def test_a_start_behind_a_migration_says_so_and_takes_the_lock_when_it_is_free(
+    settings: Settings,
+    slow_migrator: subprocess.Popen[bytes],
+    release: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import structlog
+
+    from shelfhold import runtime
+    from shelfhold.infrastructure.instance import InstanceLock, InstanceLockHeldError
+
+    monkeypatch.setattr(runtime, "RETAKE_INTERVAL_S", 0.05)
+    monkeypatch.setattr("shelfhold.main.RETAKE_INTERVAL_S", 0.05)
+    # the slow revision of this fixture is not one of the package's: its schema looks "newer"
+    monkeypatch.setattr("shelfhold.main.check_schema_not_newer", lambda _settings: None)
+    with structlog.testing.capture_logs() as logs, TestClient(create_app(settings)) as client:
+
+        def said(event: str) -> bool:
+            return any(entry["event"] == event for entry in logs)
+
+        wait_for_state(client, "migrating")
+        assert said("instance.waiting_for_lock")  # not mute: the wait is logged
+        starting = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer shk_x.y"})
+        assert starting.status_code == 503  # a credential is not even looked at until it is up
+        assert starting.json()["code"] == "instance.starting"
+        login = client.post("/api/v1/auth/login", json={"username": "a", "password": "b" * 12})
+        assert login.status_code == 503  # nobody signs in before the start-up is done
+        release.touch()
+        assert slow_migrator.wait(timeout=60) == 0
+        deadline = time.monotonic() + 30
+        while not said("instance.lock_taken") and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert said("instance.lock_taken")
+        other = InstanceLock(settings.data_dir)  # the service holds it again, and says no
+        with pytest.raises(InstanceLockHeldError):
+            other.acquire()
+
+
+@pytest.mark.req("ENF-OPS-015", "ENF-OPS-002")
+def test_a_late_start_that_fails_stops_the_process(
+    settings: Settings,
+    slow_migrator: subprocess.Popen[bytes],
+    release: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import signal
+
+    import structlog
+
+    from shelfhold import runtime
+
+    monkeypatch.setattr(runtime, "RETAKE_INTERVAL_S", 0.05)
+    monkeypatch.setattr("shelfhold.main.RETAKE_INTERVAL_S", 0.05)
+
+    def check(_settings: Settings) -> None:
+        if release.exists():  # the late start-up, once the migration is done
+            raise RuntimeError("schema check failed late")
+
+    monkeypatch.setattr("shelfhold.main.check_schema_not_newer", check)
+    stopped: list[int] = []
+    monkeypatch.setattr("shelfhold.main.os.kill", lambda _pid, sig: stopped.append(int(sig)))
+    with structlog.testing.capture_logs() as logs, TestClient(create_app(settings)) as client:
+        wait_for_state(client, "migrating")
+        release.touch()
+        assert slow_migrator.wait(timeout=60) == 0
+        deadline = time.monotonic() + 30
+        while not stopped and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert stopped == [int(signal.SIGTERM)]  # not left half-started
+        assert any(e["event"] == "instance.start_after_wait_failed" for e in logs)
+        assert (
+            client.get("/api/v1/auth/me", headers={"Authorization": "Bearer shk_x.y"}).status_code
+            == 503
+        )

@@ -72,7 +72,11 @@ def require_admin(request: Request) -> Principal:
     """Plans touch the library on disk: an admin session or an API key with the `admin` scope."""
     principal = require_principal(request)
     is_admin_session = principal.credential is Credential.SESSION and principal.role == "admin"
-    is_admin_key = principal.credential is Credential.API_KEY and "admin" in principal.scopes
+    is_admin_key = (
+        principal.credential is Credential.API_KEY
+        and principal.role == "admin"
+        and "admin" in principal.scopes
+    )
     if not (is_admin_session or is_admin_key):
         raise ProblemError("forbidden")
     return principal

@@ -47,6 +47,9 @@ class Effect(StrEnum):
     # `normalize migrate`: rewrites the identity keys of live rows (a Unit's place), and the check
     # against the tombstones is what stops it from bringing purged content back (EF-BIB-054)
     MIGRATES_IDENTITY = "migrates_identity"
+    # `restore acknowledge`: says the passkeys and passwords of a restored database were looked at,
+    # which lifts the suspension of passkey logins: the host CLI only, never a key or a session
+    ACKNOWLEDGES_RESTORE = "acknowledges_restore"
 
 
 # P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody
@@ -149,6 +152,10 @@ def authorize_reserved(
         principal.role, principal.can_rate
     ):
         return RoleNotAllowed(principal.role)  # EF-BIB-036: classify is a right, not a role
+    if Effect.ACKNOWLEDGES_RESTORE in action.effects and credential is not Credential.LOCAL_CLI:
+        # a restored instance answers to a password that may be an old, leaked one: the
+        # acknowledgement lifts the passkey suspension, so it is made on the host, never over HTTP
+        return CredentialNotAllowed(credential)
     if credential is Credential.LOCAL_CLI:
         return Allowed()
     if not action.needs_fresh_auth(

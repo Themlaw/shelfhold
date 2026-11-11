@@ -112,6 +112,13 @@ phrase de passe donnent **la même phrase** (volontairement).
    dernier puis contrôlée là où elle atterrit. Un nom d'entrée avec `..`, absolu, ou un lien est
    refusé ; rien n'est jamais supprimé. Si l'instance garde son trousseau ailleurs
    (`SHELFHOLD_SECRET_KEY_FILE`), aucun trousseau n'est recréé dans le nouveau dossier.
+   **Les identifiants sont révoqués dans la base restaurée**, avant qu'elle ne prenne son nom : toutes
+   les sessions et toutes les clés d'API, y compris celles qui étaient valides le jour de la
+   sauvegarde. Sans cela, une clé révoquée après la sauvegarde (ou une session fermée après une
+   compromission) serait de nouveau valide. La commande dit combien en ont été fermées ; la ligne
+   d'audit `restore.credentials_revoked` le garde. Les clés se recréent (`shelfhold admin keys
+   create`) et on se reconnecte. L'avertissement est écrit dans la base elle-même, dans la même
+   transaction : il est **durable** (voir plus bas).
 2. Démarrez Shelfhold avec `SHELFHOLD_DATA_DIR=/nouveau/data`. Si une racine de la bibliothèque est en
    avance sur la base, l'instance démarre en **`restored_behind`** (lecture seule).
 3. `shelfhold reconcile --adopt-after-restore` réadopte les fichiers. **Sans `/store`**, on
@@ -119,5 +126,58 @@ phrase de passe donnent **la même phrase** (volontairement).
    perdu), l'état est `store_lost` et **rien n'est marqué** (montez `/store`, ou `store reinit`) ;
    présent mais une copie absente, l'Unité passe en `store_missing`. Dans les deux cas aucune
    suppression n'a lieu ; une copie qui revient avec la bonne empreinte remet l'Unité en `stored`.
+
+### Après la restauration : passkeys et mots de passe
+
+Tant que l'avertissement est là, **la connexion par passkey est refusée pour tous les comptes**
+(ainsi que la preuve de ré-authentification par passkey) : une passkey révoquée depuis la sauvegarde
+serait sinon de nouveau valide.
+
+- Si `backup restore` peut lire la base en service (`/data` d'origine encore là), il en reporte les
+  révocations de passkeys et les empreintes de mots de passe : un `admin reset-password` fait depuis
+  la sauvegarde est conservé. Les comptes **supprimés depuis la sauvegarde** reviennent sans mot de
+  passe et avec leurs passkeys révoquées ; l'avertissement les nomme. Il liste aussi les passkeys
+  créées ou révoquées depuis la sauvegarde.
+- Sinon (base remise à la main, ou `/data` d'origine perdu), les mots de passe changés depuis la
+  sauvegarde **sont revenus à l'ancienne valeur**, peut-être une valeur qui a fuité. **La connexion
+  par mot de passe est alors suspendue aussi** (409 `password_login_suspended`).
+
+**Se reconnecter après une restauration** (aucune session HTTP ne peut lever l'avertissement) :
+sur la machine hôte, avec la CLI locale (socket ops locale),
+
+```sh
+shelfhold admin reset-password <compte>   # pour chaque compte, si les mots de passe n'ont pas été reportés
+shelfhold status                          # liste `restored_credentials`, les passkeys et comptes concernés
+shelfhold restore acknowledge             # CLI de l'hôte uniquement ; après `restore adopt` si la restauration a aussi gelé des racines : ni session, ni clé, jamais via HTTP
+```
+
+`restore acknowledge` liste les passkeys créées ou révoquées depuis la sauvegarde, rétablit les
+connexions (passkey, et mot de passe s'il était suspendu) et est audité
+(`restore.credentials_acknowledged`). `shelfhold status` affiche `restored_credentials` tant que ce
+n'est pas acquitté, redémarrages compris.
+
+### Compteur d'identité
+
+Une base remise à la main n'est pas toujours « en retard » sur des fichiers (restauration sans
+bibliothèque, ou sentinelles identiques). Shelfhold tient donc un **compteur d'identité monotone**
+dans `/data/.identity-counter` (écrit de façon atomique, droits `0600`, **jamais sauvegardé**),
+copié dans la base dans la même transaction. Chaque révocation (session, clé d'API, passkey) et
+chaque changement de mot de passe l'augmente ; le fichier est écrit **en deux temps** : avant la validation
+`committed=N` et `pending=N+1`, après la validation `committed=N+1`. Au démarrage, `committed` au-dessus
+de la base = restauration (révocation) ; `committed` égal à la base avec un `pending` = écriture
+interrompue (aucune révocation : le `pending` est effacé, ou adopté si la base l'a validé). Un ancien
+fichier (un nombre seul) est lu comme `committed`. Avant toute écriture d'identité
+et au démarrage, avant toute requête : si le fichier est au-dessus de la base, la base est plus
+ancienne que l'état connu, toutes les sessions et clés d'API sont révoquées et l'avertissement est
+posé (une commande lancée sur la copie avant le démarrage ne masque donc pas l'écart). Un fichier
+vide ou illisible compte comme en avance (une révocation, puis il est réécrit) ; un **dossier** à sa
+place refuse le démarrage avec un message clair ; une base verrouillée ou en erreur est retentée
+puis arrête le démarrage. Pendant `instance.starting`, `/api/v1/auth/*` répond aussi 503.
+
+Limite : si **tout `/data`** est remplacé, le fichier part avec la base ; il ne reste alors que la
+détection par les sentinelles (`restored_behind`).
+
+La même révocation a lieu quand une base copiée à la main est trouvée en retard sur ses fichiers
+(`restored_behind`, première fois seulement), pour une restauration faite sans `backup restore`.
 
 RPO 24 h; RTO 1 h = remise en service, pas recopie du contenu.

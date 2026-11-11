@@ -1,4 +1,7 @@
-"""`GET /api/v1/about` (ENF-LEG-012) and `GET /api/v1/openapi.json` (A6), both authenticated."""
+"""`GET /api/v1/about` (ENF-LEG-012) and `GET /api/v1/openapi.json` (A6).
+
+`/about` is for any principal and lists no action; the schema, which names every route, is the
+admin's."""
 
 from typing import Annotated, Any
 
@@ -7,6 +10,7 @@ from pydantic import BaseModel
 
 from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.auth import require_principal
+from shelfhold.interfaces.http_api.stats import require_admin
 
 SOURCE_REPOSITORY = "https://github.com/Themlaw/shelfhold"
 
@@ -30,7 +34,7 @@ def build_about_router(*, version: str, source_url: str) -> APIRouter:
 
     @router.get("/openapi.json", include_in_schema=False)
     def openapi(
-        request: Request, _principal: Annotated[Principal, Depends(require_principal)]
+        request: Request, _admin: Annotated[Principal, Depends(require_admin)]
     ) -> dict[str, Any]:
         schema: dict[str, Any] = request.app.openapi()
         return schema

@@ -106,7 +106,9 @@ def test_the_only_destination_is_the_default_and_none_is_refused(
         inst.configure()
         destination = tree_destinations(inst.comp)[0].id
         assert _ops(inst)._destination(None) == destination
-        assert _ops(inst)._destination("given") == "given"
+        assert _ops(inst)._destination(destination) == destination
+        with pytest.raises(UnknownSubjectError):  # an id nobody holds: a 404, not a failure later
+            _ops(inst)._destination("given")
 
 
 def test_pairing_and_giving_back_need_a_connected_service(settings: Settings, tmp_path) -> None:

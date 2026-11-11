@@ -410,6 +410,10 @@ def _store_reinit(ops: OpsServices, by: Principal, _p: Params) -> object:
     return ops.store_reinit(principal=by)
 
 
+def _restore_acknowledge(ops: OpsServices, by: Principal, _p: Params) -> object:
+    return {"ok": True, "passkey_changes": ops.restore_acknowledge(principal=by)}
+
+
 def _rebaseline_inodes(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.reconcile_rebaseline_inodes(_optional(p, "destination_id"))
 
@@ -470,6 +474,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.root_reinit": (_root_reinit, "root.reinit"),
     "ops.root_restored": (_root_restored, None),
     "ops.store_reinit": (_store_reinit, "store.reinit"),
+    "ops.restore_acknowledge": (_restore_acknowledge, "restore.acknowledge"),
     "ops.rebaseline_inodes": (_rebaseline_inodes, None),
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
@@ -493,7 +498,8 @@ READS_AND_RESTORE_EXITS = frozenset(
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
         "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
         "ops.rate_pending",
-        "ops.restore_adopt", "ops.tombstone_set_aside_journal", "ops.secrets_import",
+        "ops.restore_adopt", "ops.restore_acknowledge", "ops.tombstone_set_aside_journal",
+        "ops.secrets_import",
         "ops.tombstone_accept_lost_keyring",
     }
 )  # fmt: skip

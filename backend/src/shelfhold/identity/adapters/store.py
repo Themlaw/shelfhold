@@ -1,8 +1,11 @@
 """SQL storage of users, sessions, API keys and audit entries (tables of migration 0002)."""
 
 import secrets
-from collections.abc import Sequence
-from datetime import datetime
+import time
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -20,7 +23,14 @@ from shelfhold.identity.application.ports import (
     SessionRecord,
     UserRecord,
 )
+from shelfhold.infrastructure.identity_counter import DAMAGED, IdentityCounter
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.restore_notice import (
+    RestoreNoticeData,
+    notice_active,
+    read_notice,
+    write_notice,
+)
 from shelfhold.infrastructure.schema import identity
 
 _user = identity.user
@@ -47,6 +57,98 @@ _USER_COLUMNS = (
     _user.c.password_hash.label("u_password_hash"),
     _user.c.can_rate.label("u_can_rate"),
 )
+
+
+def revoke_all_credentials(
+    connection: sa.Connection,
+    *,
+    now: datetime,
+    notice: RestoreNoticeData | None = None,
+    counter: IdentityCounter | None = None,
+    counter_at_least: int = 0,
+    keep_notice: bool = True,
+) -> tuple[int, int, int | None]:
+    """Every live session and API key closed, one audit line and the restore notice written: after
+    a restore, the credentials of the backup are the ones of a past (a key revoked since would be
+    live again). Returns `(sessions, api_keys, counter)`: the numbers closed, and the new value of
+    the identity counter (to `publish` once the transaction has committed; None without one).
+    A key is made again in one command; the audit line names no user and holds no secret."""
+    sessions = connection.execute(
+        sa.update(_session).where(_session.c.revoked_at.is_(None)).values(revoked_at=now)
+    ).rowcount
+    keys = connection.execute(
+        sa.update(_key).where(_key.c.revoked_at.is_(None)).values(revoked_at=now)
+    ).rowcount
+    connection.execute(
+        audit_insert(
+            AuditEntry(
+                actor_id=None,
+                action="restore.credentials_revoked",
+                target=f"sessions={sessions} api_keys={keys}",
+                at=now,
+            )
+        )
+    )
+    write_notice(
+        connection,
+        replace(
+            notice or RestoreNoticeData(now.isoformat(), None, 0, 0),
+            sessions=sessions,
+            api_keys=keys,
+        ),
+        keep_existing=keep_notice,  # a notice nobody has seen yet is not replaced by a later one
+    )
+    value = counter.bump(connection, at_least=counter_at_least) if counter else None  # + the file
+    return sessions, keys, value
+
+
+def revoke_if_behind(
+    connection: sa.Connection, counter: IdentityCounter, *, now: datetime
+) -> tuple[int, int] | None:
+    """The file of /data ahead of the database means the database was put back from an older
+    state: every session and API key is revoked and the notice written, in the caller's
+    transaction. Returns `(sessions, api_keys)` when it acted. Every write of identity runs this
+    first (`SqlIdentityStore._changing`): a command that revokes something on a copied database,
+    or a password rehashed at login, cannot bring the database level with the file unnoticed."""
+    on_file = counter.file_value()
+    if on_file is None or not (on_file == DAMAGED or on_file > counter.db_value(connection)):
+        return None
+    sessions, keys, _ = revoke_all_credentials(
+        connection, now=now, counter=counter, counter_at_least=max(on_file, 0)
+    )
+    return sessions, keys
+
+
+_LOCKED_RETRIES = 4
+
+
+def reconcile_identity_counter(
+    engine: Engine, counter: IdentityCounter, *, now: datetime
+) -> tuple[int, int] | None:
+    """At start, before any authenticated request. Returns `(sessions, api_keys)` when it revoked
+    (see `revoke_if_behind`). Otherwise the file follows the database (a missing file is created).
+    A database not migrated yet ("no such table") has nothing to compare; any other database
+    error (a lock held by a shell, say) is retried and then stops the start: it is never skipped."""
+    for attempt in range(_LOCKED_RETRIES + 1):
+        try:
+            with engine.begin() as connection:
+                acted = revoke_if_behind(connection, counter, now=now)
+                value = counter.db_value(connection)
+            break
+        except sa.exc.OperationalError as error:
+            if "no such table" in str(error.orig):
+                return None
+            if attempt == _LOCKED_RETRIES:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+    if acted is None:
+        if counter.file_value() is None:
+            counter.publish(value)
+        else:
+            counter.settle(value)
+    else:
+        counter.publish(value)  # the revocation committed: the file follows
+    return acted
 
 
 def audit_insert(entry: AuditEntry) -> sa.Insert:
@@ -85,8 +187,39 @@ class _NoLiveKeyError(Exception):
 
 
 class SqlIdentityStore:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, counter: IdentityCounter | None = None) -> None:
         self._engine = engine
+        self._counter = counter
+
+    @contextmanager
+    def _changing(self, *, immediate: bool = False) -> Iterator[sa.Connection]:
+        """A transaction that revokes a credential or changes a password: it also adds one to the
+        identity counter (in the database, same transaction; the file is written first, see
+        `IdentityCounter.bump`). A database found behind the file is revoked before the change."""
+        engine = (
+            self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+            if immediate
+            else self._engine
+        )
+        value: int | None = None
+        with engine.begin() as conn:
+            if self._counter is not None:
+                revoke_if_behind(conn, self._counter, now=datetime.now(UTC))
+            yield conn
+            if self._counter is not None:
+                value = self._counter.bump(conn)
+        if self._counter is not None and value is not None:
+            self._counter.publish(value)  # committed
+
+    def restore_notice_active(self) -> bool:
+        with self._engine.connect() as conn:
+            return notice_active(conn)
+
+    def password_login_suspended(self) -> bool:
+        """A restore warning is up and the live passwords were not carried over."""
+        with self._engine.connect() as conn:
+            notice = read_notice(conn)
+        return notice is not None and not notice.passwords_carried
 
     # --- users -------------------------------------------------------------------------------
 
@@ -141,7 +274,7 @@ class SqlIdentityStore:
         id outside the hashed fields. Returns the pseudonym, or None if there was no such user.
         """
         pseudonym = f"deleted:{secrets.token_hex(8)}"
-        with self._engine.begin() as conn:
+        with self._changing() as conn:
             gone = conn.execute(sa.delete(_user).where(_user.c.id == user_id)).rowcount
             if not gone:
                 return None
@@ -155,7 +288,7 @@ class SqlIdentityStore:
         return pseudonym
 
     def set_password_hash(self, user_id: str, password_hash: str) -> None:
-        with self._engine.begin() as conn:
+        with self._changing() as conn:
             conn.execute(
                 sa.update(_user).where(_user.c.id == user_id).values(password_hash=password_hash)
             )
@@ -218,8 +351,7 @@ class SqlIdentityStore:
         return result.rowcount == 1
 
     def revoke_passkey(self, user_id: str, passkey_id: str, *, now: datetime) -> str:
-        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
-        with immediate.begin() as conn:
+        with self._changing(immediate=True) as conn:
             live = (
                 conn.execute(
                     sa.select(_passkey.c.id).where(
@@ -258,8 +390,7 @@ class SqlIdentityStore:
     def reset_credentials(
         self, user_id: str, password_hash: str, *, now: datetime
     ) -> tuple[int, int]:
-        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
-        with immediate.begin() as conn:
+        with self._changing(immediate=True) as conn:
             conn.execute(
                 sa.update(_user).where(_user.c.id == user_id).values(password_hash=password_hash)
             )
@@ -351,7 +482,7 @@ class SqlIdentityStore:
             )
 
     def revoke_session_by_token_hash(self, token_hash: str, *, now: datetime) -> None:
-        with self._engine.begin() as conn:
+        with self._changing() as conn:
             conn.execute(
                 sa.update(_session)
                 .where(_session.c.token_hash == token_hash, _session.c.revoked_at.is_(None))
@@ -366,7 +497,7 @@ class SqlIdentityStore:
             query = query.where(_session.c.user_id == user_id)
         if session_id is not None:
             query = query.where(_session.c.id == session_id)
-        with self._engine.begin() as conn:
+        with self._changing() as conn:
             return conn.execute(query.values(revoked_at=now)).rowcount
 
     # --- API keys ----------------------------------------------------------------------------
@@ -422,7 +553,7 @@ class SqlIdentityStore:
             conn.execute(sa.update(_key).where(_key.c.id == key_id).values(last_used_at=now))
 
     def revoke_api_key(self, prefix: str, *, now: datetime) -> bool:
-        with self._engine.begin() as conn:
+        with self._changing() as conn:
             result = conn.execute(
                 sa.update(_key)
                 .where(_key.c.prefix == prefix, _key.c.revoked_at.is_(None))
@@ -432,7 +563,7 @@ class SqlIdentityStore:
 
     def rotate_api_key(self, old_prefix: str, new: NewApiKey, *, audit: AuditEntry) -> bool:
         try:
-            with self._engine.begin() as conn:  # one transaction: both or neither
+            with self._changing() as conn:  # one transaction: both or neither
                 revoked = conn.execute(
                     sa.update(_key)
                     .where(_key.c.prefix == old_prefix, _key.c.revoked_at.is_(None))

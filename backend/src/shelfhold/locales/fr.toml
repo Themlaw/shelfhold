@@ -202,6 +202,7 @@ error = "Connexion impossible."
 source = "Code source"
 
 [passkeys.unavailable]
+restore_pending = "Une restauration vient d'avoir lieu : la connexion par clé d'accès est suspendue pour tous les comptes. Connectez-vous avec un mot de passe, revoyez les clés d'accès, puis l'administrateur lance « shelfhold restore acknowledge »."
 no_public_url = "Les clés d'accès demandent que l'adresse publique (public_url) soit définie en https:// ou en http://localhost."
 invalid_url = "L'adresse publique (public_url) n'est pas une adresse web valide : les clés d'accès sont indisponibles."
 insecure_context = "Les clés d'accès demandent HTTPS, ou http://localhost : elles sont indisponibles sur cette adresse en http://."
@@ -226,6 +227,7 @@ too_costly = "Sauvegarde non ouverte : elle demande un coût de dérivation (scr
 damaged = "Sauvegarde refusée : le fichier est abîmé ou altéré, ou la phrase de passe n'est pas la bonne."
 passphrase_refused = "Phrase de passe refusée : le fichier est illisible, trop court (12 caractères au moins), ou ses droits sont trop ouverts (0600 attendu)."
 restored = "Restauration faite sous {path} ({files} fichiers)."
+credentials_revoked = "{sessions} session(s) et {keys} clé(s) d'API ont été révoquées dans la base restaurée (elles se recréent). Les passkeys et les mots de passe changés depuis la sauvegarde sont revenus à leur état d'alors : revérifiez-les, puis lancez « shelfhold restore acknowledge » (« status » le rappelle d'ici là)."
 next_steps = "Étapes suivantes : démarrez Shelfhold avec SHELFHOLD_DATA_DIR={path} (il démarre en « restored_behind » si la bibliothèque est en avance sur la base), puis lancez « shelfhold reconcile --adopt-after-restore »."
 restore_incomplete = "Restauration interrompue (l'archive a changé pendant l'écriture, ou l'écriture a échoué) : {path} est incomplet et inutilisable. Rien n'a été supprimé : videz ce dossier vous-même, puis recommencez."
 destination_not_empty = "{path} existe et n'est pas un dossier vide (ou c'est un lien) : choisissez un dossier inexistant ou vide."
@@ -310,6 +312,10 @@ help_root_reinit = "Estampille la racine et passe ses éléments en « missing �
 help_root_restored = "Racine remise depuis une copie plus ancienne : replanifie ce qui manque pour le prochain export, par le pipeline."
 help_root_arg = "Identifiant de la racine (celui que montre « shelfhold status ») ou chemin absolu du dossier."
 help_store = "Le dossier /store (copies conservées)."
+help_restore = "Après une restauration : les identifiants révoqués."
+help_restore_acknowledge = "Confirme que les passkeys et les mots de passe changés depuis la sauvegarde ont été revérifiés (action réservée) ; ôte l'avertissement de « status »."
+restore_acknowledged = "Noté : l'avertissement de restauration est levé, la connexion par clé d'accès est rétablie."
+restore_passkey_change = "Clé d'accès modifiée depuis la sauvegarde : {change}"
 help_store_reinit = "Estampille /store ; les chapitres dont la copie conservée y était passent en « store_missing » (action réservée)."
 root_done = "{command} : racine {root} ({path}), état quitté : {previous}. Aucun fichier n'a été supprimé."
 root_predecessors = "{count} identité(s) précédente(s) conservée(s) (les pierres tombales restent lisibles)."
@@ -654,6 +660,10 @@ action = "Générez une nouvelle clé pour chaque nouvelle requête."
 title = "Une autre instance de Shelfhold écrit sur ces données."
 action = "Arrêtez l'autre instance ; une seule instance doit utiliser ces volumes."
 
+[errors."instance.starting"]
+title = "Shelfhold démarre : une migration tient encore les données."
+action = "Patientez : l'instance reprend d'elle-même quand la migration est finie."
+
 [errors."instance.restored_behind"]
 title = "La base est en retard sur les fichiers : lecture seule."
 action = "Lancez « shelfhold reconcile --adopt-after-restore » pour rapprocher la base et les fichiers."
@@ -665,6 +675,10 @@ action = "Réessayez ; si l'erreur persiste, relevez l'identifiant de requête e
 [errors."remember_needs_confirmation"]
 title = "Le profil durci demande de confirmer « se souvenir de moi »."
 action = "Décochez « se souvenir de moi » pour une session de navigateur, ou confirmez-le explicitement (confirm_remember) : la session durera alors le temps du profil durci."
+
+[errors."password_login_suspended"]
+title = "La connexion par mot de passe est suspendue : une restauration a pu ramener d'anciens mots de passe."
+action = "Sur la machine hôte : « shelfhold admin reset-password » pour chaque compte, puis « shelfhold restore acknowledge »."
 
 [errors."invalid_credentials"]
 title = "Identifiant ou mot de passe incorrect."

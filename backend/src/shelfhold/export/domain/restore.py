@@ -52,6 +52,9 @@ class RestoreStatus:
     # The freeze is persisted (`instance.restore_generation` > 0): it lasts until the adoption,
     # whatever the sentinels say after a restart.
     pending: bool = False
+    # `(sessions, api_keys)` revoked by this very call (the first start behind the disk): the
+    # caller leaves the durable notice. None: nothing was revoked now.
+    revoked: tuple[int, int] | None = None
 
     @property
     def behind_roots(self) -> tuple[RootFinding, ...]:

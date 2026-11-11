@@ -54,6 +54,7 @@ ENDPOINTS: Final = MappingProxyType(
         "root reinit": ("POST", "/api/v1/roots/{root}/reinit"),
         "root restored": ("POST", "/api/v1/roots/{root}/restored"),
         "store reinit": ("POST", "/api/v1/store/reinit"),
+        "restore acknowledge": ("POST", "/api/v1/restore/acknowledge"),
     }
 )  # fmt: skip
 
@@ -96,6 +97,7 @@ M1B_SERVED_STATES: Final = frozenset(
         WaitingState.ROOT_LOST,
         WaitingState.ROOT_BEHIND,  # `root restored`
         WaitingState.STORE_LOST,  # `store reinit`
+        WaitingState.RESTORED_CREDENTIALS,  # `restore acknowledge`
         WaitingState.SAFEGUARD_BACKLOG,  # `jobs list`: the window job plays it (L16)
         WaitingState.TOMBSTONE_JOURNAL_TRUNCATED,  # `tombstone set-aside-journal` (L26, D12)
     }

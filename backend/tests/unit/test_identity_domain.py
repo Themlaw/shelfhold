@@ -115,7 +115,10 @@ def test_local_cli_and_fresh_session_may_run_every_reserved_action(effect: Effec
         verdict = authorize_reserved(
             principal, action, now=T0, fresh_auth_s=900, restricted_profile_exists=True
         )
-        assert isinstance(verdict, Allowed)
+        if effect is Effect.ACKNOWLEDGES_RESTORE and principal.credential is Credential.SESSION:
+            assert isinstance(verdict, CredentialNotAllowed)  # the host CLI only
+        else:
+            assert isinstance(verdict, Allowed)
 
 
 @pytest.mark.req("EF-USR-022")
@@ -132,6 +135,7 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
                 Effect.ACCEPTS_ADMIN_RISK,  # L38: a third party's admin password
                 Effect.SETTLES_FS_INTENT,  # L51: `intents resolve`
                 Effect.MIGRATES_IDENTITY,  # L55: `normalize migrate`
+                Effect.ACKNOWLEDGES_RESTORE,  # `restore acknowledge`
             }
         )
         == set(Effect) - NO_REAUTH_EFFECTS
@@ -141,6 +145,8 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
         action = ReservedAction(f"test.{effect.value}", frozenset({effect}))
         verdict = authorize_reserved(stale, action, now=T0, fresh_auth_s=900)
         expected = ReauthRequired if effect not in NO_REAUTH_EFFECTS else Allowed
+        if effect is Effect.ACKNOWLEDGES_RESTORE:
+            expected = CredentialNotAllowed  # the host CLI only: freshness never comes into it
         assert isinstance(verdict, expected), effect
 
 

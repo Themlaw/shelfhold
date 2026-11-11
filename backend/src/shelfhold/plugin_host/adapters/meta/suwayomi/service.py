@@ -170,7 +170,7 @@ class SuwayomiService:
         self._raise_for_status(response, f)
         try:
             payload = json.loads(response.body)
-        except ValueError as exc:
+        except (ValueError, RecursionError) as exc:  # a body nested past the stack is no JSON
             raise SourceChanged("the server did not answer with JSON") from exc
         if not isinstance(payload, dict):
             raise SourceChanged("unexpected GraphQL envelope")

@@ -12,12 +12,13 @@ from shelfhold.identity.application.service import LocalAuth
 from shelfhold.identity.domain.passkeys import relying_party
 from shelfhold.identity.webauthn.library import WebAuthnLibrary
 from shelfhold.infrastructure.clock import Clock, SystemClock
+from shelfhold.infrastructure.identity_counter import IdentityCounter
 
 ANONYMOUS_CAPACITY = 4096  # sign-in challenges in flight, a store apart from the sessions' own
 
 
 def local_auth(engine: Engine, settings: Settings, clock: Clock | None = None) -> LocalAuth:
-    store = SqlIdentityStore(engine)
+    store = SqlIdentityStore(engine, IdentityCounter(settings.data_dir))
     clock = clock or SystemClock()
     # The relying party is the public URL and nothing else (ADR-0050); without a secure context
     # the ceremony stays, but every step refuses and the login page offers nothing.

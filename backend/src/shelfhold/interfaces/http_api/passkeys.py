@@ -99,6 +99,7 @@ def _why(reason: str) -> str:
         "invalid_url": t("passkeys.unavailable.invalid_url"),
         "insecure_context": t("passkeys.unavailable.insecure_context"),
         "ip_host": t("passkeys.unavailable.ip_host"),
+        "restore_pending": t("passkeys.unavailable.restore_pending"),
     }
     return messages.get(reason, messages["no_public_url"])
 

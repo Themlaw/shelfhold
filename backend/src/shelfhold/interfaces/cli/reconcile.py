@@ -41,6 +41,7 @@ from shelfhold.i18n import t
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.identity_counter import IdentityCounter
 from shelfhold.infrastructure.instance import (
     GenerationCounter,
     InstanceLock,
@@ -104,7 +105,9 @@ def open_restore(resolved: ResolvedSettings) -> Iterator[tuple[RestoreAdopter, R
         fsops = open_fsops(loaded, umask=settings.umask)
         clock = SystemClock()
         bus = operating_bus(clock)
-        guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)
+        guard = RestoreGuard(
+            engine, fsops, clock=clock, bus=bus, counter=IdentityCounter(settings.data_dir)
+        )
         keyring = diagnostics.store_for(settings).load()
         service = TombstoneService(engine, keyring, fsops, bus)
         with engine.connect() as connection:

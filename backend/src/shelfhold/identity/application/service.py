@@ -10,7 +10,7 @@ Invariants this module keeps (EF-USR-021, EF-USR-022, EF-USR-003, ENF-SEC-008):
 
 import math
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
@@ -98,6 +98,15 @@ class RememberNeedsConfirmationError(AuthError):
 
     def __init__(self) -> None:
         super().__init__("remember_needs_confirmation")
+
+
+class PasswordLoginSuspendedError(AuthError):
+    """After a restore that could not carry the passwords over: a password changed since the
+    backup is back to its old value, so no password signs in until the admin has reset the
+    accounts from the host (`shelfhold admin reset-password`) and run `restore acknowledge`."""
+
+    def __init__(self) -> None:
+        super().__init__("password_login_suspended")
 
 
 class AdminExistsError(AuthError):
@@ -199,10 +208,15 @@ class PasskeyReauth:
 
     name = "passkey"
 
-    def __init__(self, ceremony: PasskeyCeremony) -> None:
+    def __init__(
+        self, ceremony: PasskeyCeremony, suspended: Callable[[], bool] = lambda: False
+    ) -> None:
         self._ceremony = ceremony
+        self._suspended = suspended  # true while a restore warning has passkeys suspended
 
     def verify(self, user: UserRecord, payload: Mapping[str, object]) -> bool:
+        if self._suspended():
+            return False
         flow, credential, session_id = (
             payload.get("flow"),
             payload.get("credential"),
@@ -249,7 +263,7 @@ class LocalAuth:
             per_address=OPTIONS_PER_MINUTE, per_account=OPTIONS_PER_MINUTE
         )
         if passkeys is not None and passkeys.available:  # the method exists in a secure context
-            methods.append(PasskeyReauth(passkeys))
+            methods.append(PasskeyReauth(passkeys, store.restore_notice_active))
         self._reauth = {method.name: method for method in methods}
 
     @property
@@ -397,6 +411,8 @@ class LocalAuth:
         presented_token: str | None = None,
         device_proof: str | None = None,
     ) -> IssuedSession:
+        if self._store.password_login_suspended():
+            raise PasswordLoginSuspendedError
         known_device = self._device_proof is not None and self._device_proof.verify(
             device_proof, username, self.now()
         )
@@ -514,6 +530,12 @@ class LocalAuth:
             raise PasskeyUnavailableError("no_public_url")
         return self._passkeys
 
+    def _refuse_while_restore_pending(self) -> None:
+        """After a restore a passkey revoked since the backup is live again: no passkey signs in
+        until the admin has looked at them and run `restore acknowledge`."""
+        if self._store.restore_notice_active():
+            raise PasskeyUnavailableError("restore_pending")
+
     def passkey_status(self) -> PasskeyStatus:
         ceremony = self._passkeys
         if ceremony is None:
@@ -565,11 +587,13 @@ class LocalAuth:
         self._audit("passkey.revoked", principal, target=passkey_id)
 
     def passkey_reauth_options(self, principal: Principal) -> PasskeyOptions:
+        self._refuse_while_restore_pending()
         user = self._account(principal)
         return self._ceremony().reauth_options(user, str(principal.session_id))
 
     def passkey_login_options(self, *, ip: str) -> PasskeyOptions:
         """Anonymous and cheap to call: each address gets a few per minute (429 beyond)."""
+        self._refuse_while_restore_pending()
         ceremony = self._ceremony()
         wait = self._options_throttle.reserve(ip=ip, account=ip, now=self.now())
         if wait is not None:
@@ -590,6 +614,7 @@ class LocalAuth:
         """Discoverable login: the credential names the account. Same throttle as a password
         (every attempt is counted before it is checked), same answer for every refusal, a new
         session whatever the browser held (no fixation), `auth_time` = now."""
+        self._refuse_while_restore_pending()
         ceremony = self._ceremony()
         account = f"passkey:{ip}"  # no account is known before the assertion: one key per address
         at = self._reserve_attempt(ip=ip, account=account)
@@ -628,6 +653,8 @@ class LocalAuth:
             owner = admins[0] if admins else None
         if owner is None:
             raise UnknownUserError
+        if not read_only and owner.role != "admin":  # the `admin` scope is an admin's alone
+            raise ValueError("scope_requires_admin")
         now = self.now()
         if expires_days is not None and expires_days < 1:
             raise ValueError("invalid_expiry")

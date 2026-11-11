@@ -13,7 +13,11 @@ destination by someone else is not followed. Nothing is ever deleted, here or by
 restore that stops half way leaves its folder and says so.
 
 The database is written last, so a half restore has no database and cannot be started by
-mistake, and is integrity-checked where it lands. The keyring is written as the file the
+mistake, and is integrity-checked where it lands. Before it takes its name, every session and
+API key in it is revoked (a key revoked after the backup would be live again otherwise) and a
+notice is left in the folder: `status` of the restored instance asks for the passkeys and
+passwords changed since the backup to be checked, until `shelfhold restore acknowledge`. The
+keyring is written as the file the
 instance reads (`keyring`, 0600) from the armored member, unless the instance keeps its keyring
 elsewhere (`SHELFHOLD_SECRET_KEY_FILE`): then that file is the operator's and nothing is
 recreated in the new folder. What follows is the operator's: start Shelfhold on the new folder
@@ -29,9 +33,19 @@ import os
 import sqlite3
 import stat
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
+import sqlalchemy as sa
+
+from shelfhold.identity.public import revoke_all_credentials
+from shelfhold.infrastructure.identity_counter import (
+    COUNTER_KEY,
+    IdentityCounter,
+    IdentityCounterError,
+)
+from shelfhold.infrastructure.restore_notice import RestoreNoticeData
 from shelfhold.infrastructure.secrets.errors import ExportError
 from shelfhold.infrastructure.secrets.export import read_passphrase_file
 from shelfhold.ops.backup.archive import (
@@ -81,6 +95,8 @@ class RestoreReport:
     schema_revision: str
     created_at: str
     keyring_written: bool
+    sessions_revoked: int = 0
+    api_keys_revoked: int = 0
 
 
 def _check_destination(destination: Path, live_data_dir: Path | None) -> Path:
@@ -239,19 +255,181 @@ def restore_archive(
             resolved = _check_destination(destination, live_data_dir)
             keyring_json = None if keep_external_keyring else checked.keyring.to_json()
             stream.seek(0)
-            _write_all_members(stream, passphrase, resolved, keyring_json, checked.file_sha256)
+            revoked = _write_all_members(
+                stream,
+                passphrase,
+                resolved,
+                keyring_json,
+                checked.file_sha256,
+                (checked.created_at, live_data_dir),
+            )
     finally:
         del passphrase
     files = len(checked.members) - 1 + int(keyring_json is not None)  # `keyring.age` -> `keyring`
     return RestoreReport(
         resolved, files, checked.schema_revision, checked.created_at,
         keyring_written=keyring_json is not None,
+        sessions_revoked=revoked[0], api_keys_revoked=revoked[1],
     )  # fmt: skip
 
 
+@dataclass(frozen=True)
+class _Live:
+    """What the live database says about the identities, when it can be read."""
+
+    passkeys: tuple[tuple[str, str, str, str | None], ...]  # id, name, created_at, revoked_at
+    passwords: tuple[tuple[str, str | None], ...]  # user id, password hash (None: none)
+    counter: int
+
+
+def _when(text: str | None) -> datetime | None:
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _read_live(live_data_dir: Path | None) -> _Live | None:
+    """The live database, read only. None when it is not there or not readable (then nothing is
+    carried over and the notice says so)."""
+    if live_data_dir is None:
+        return None
+    path = live_data_dir / DATABASE_MEMBER
+    try:
+        connection = sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        passkeys = tuple(
+            (str(i), str(n), str(c), None if r is None else str(r))
+            for i, n, c, r in connection.execute(
+                "SELECT id, name, created_at, revoked_at FROM webauthn_credential"
+            )
+        )
+        passwords = tuple(
+            (str(i), None if h is None else str(h))  # a passkey-only account has no hash
+            for i, h in connection.execute("SELECT id, password_hash FROM user")
+        )
+        row = connection.execute(
+            "SELECT value FROM app_setting WHERE key = ?", (COUNTER_KEY,)
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        connection.close()
+    in_db = int(row[0]) if row and str(row[0]).isdigit() else 0
+    return _Live(passkeys, passwords, max(in_db, _file_counter(live_data_dir)))
+
+
+def _file_counter(directory: Path) -> int:
+    try:
+        return max(IdentityCounter(directory).file_value() or 0, 0)
+    except IdentityCounterError:
+        return 0
+
+
+def _passkey_changes(live: _Live, since: datetime | None, restored_ids: set[str]) -> list[str]:
+    """The passkeys the live database created or revoked after the backup was made."""
+    changes: list[str] = []
+    for key_id, name, created, revoked in live.passkeys:
+        made, closed = _when(created), _when(revoked)
+        if since is not None and made is not None and made > since and key_id not in restored_ids:
+            changes.append(f"created: {name}")
+        if since is not None and closed is not None and closed > since:
+            changes.append(f"revoked: {name}")
+    return changes
+
+
+def _revoke_credentials(
+    database: Path, destination: Path, created_at: str, live_data_dir: Path | None
+) -> tuple[int, int]:
+    """On the restored database, before it can be started: no live session, no live API key, the
+    notice written, the identity counter moved past the live one. When the live database can be
+    read, its revocations of passkeys and its password hashes are carried over (a passkey revoked
+    or a password reset since the backup stays so) and the passkeys it created or revoked since
+    are listed in the notice."""
+    now = datetime.now(UTC)
+    live = _read_live(live_data_dir)
+    counter = IdentityCounter(destination)
+    engine = sa.create_engine(f"sqlite+pysqlite:///{database}", hide_parameters=True)
+    sessions = keys = 0
+    value: int | None = None
+    try:
+        with engine.begin() as connection:
+            tables = set(sa.inspect(connection).get_table_names())
+            if {"session", "api_key", "audit", "app_setting"} <= tables:
+                changes: list[str] = []
+                deleted: list[str] = []
+                if live is not None:
+                    restored = {
+                        str(r[0])
+                        for r in connection.exec_driver_sql("SELECT id FROM webauthn_credential")
+                    }
+                    for key_id, _name, _made, revoked in live.passkeys:
+                        if revoked is not None:
+                            connection.exec_driver_sql(
+                                "UPDATE webauthn_credential SET revoked_at = ? "
+                                "WHERE id = ? AND revoked_at IS NULL",
+                                (revoked, key_id),
+                            )
+                    for user_id, password_hash in live.passwords:
+                        connection.exec_driver_sql(
+                            "UPDATE user SET password_hash = ? WHERE id = ?",
+                            (password_hash, user_id),
+                        )
+                    changes = _passkey_changes(live, _when(created_at), restored)
+                    # an account deleted since the backup comes back with its password and its
+                    # passkeys: it gets neither (no hash, passkeys revoked) and is named
+                    alive = {user_id for user_id, _hash in live.passwords}
+                    for user_id, username in connection.exec_driver_sql(
+                        "SELECT id, username FROM user"
+                    ).fetchall():
+                        if user_id not in alive:
+                            deleted.append(str(username))
+                            connection.exec_driver_sql(
+                                "UPDATE user SET password_hash = NULL WHERE id = ?", (user_id,)
+                            )
+                            connection.exec_driver_sql(
+                                "UPDATE webauthn_credential SET revoked_at = ? "
+                                "WHERE user_id = ? AND revoked_at IS NULL",
+                                (now, user_id),
+                            )
+                sessions, keys, value = revoke_all_credentials(
+                    connection,
+                    now=now,
+                    notice=RestoreNoticeData(
+                        now.isoformat(),
+                        created_at,
+                        0,
+                        0,
+                        passwords_carried=live is not None,
+                        passkey_changes=tuple(changes),
+                        deleted_accounts=tuple(deleted),
+                    ),
+                    counter=counter,
+                    counter_at_least=live.counter if live else 0,
+                    keep_notice=False,  # this restore's notice, not one the backup carried
+                )
+    except sa.exc.SQLAlchemyError:
+        raise RestoreIncompleteError from None  # no `shelfhold.db` yet: it cannot be started
+    finally:
+        engine.dispose()
+    if value is not None:
+        counter.publish(value)
+    return sessions, keys
+
+
 def _write_all_members(
-    stream: BinaryIO, passphrase: str, resolved: Path, keyring_json: bytes | None, sha256: str
-) -> None:
+    stream: BinaryIO,
+    passphrase: str,
+    resolved: Path,
+    keyring_json: bytes | None,
+    sha256: str,
+    origin: tuple[str, Path | None],
+) -> tuple[int, int]:
     root_fd = os.open(resolved, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     extractor = _Extractor(root_fd, keyring_json)
     reader = HashingReader(stream)
@@ -264,8 +442,10 @@ def _write_all_members(
         extractor.close()
         if reader.digest.hexdigest() != sha256 or not _database_ok(resolved / DATABASE_TEMP):
             raise RestoreIncompleteError
+        revoked = _revoke_credentials(resolved / DATABASE_TEMP, resolved, *origin)
         os.rename(DATABASE_TEMP, DATABASE_MEMBER, src_dir_fd=root_fd, dst_dir_fd=root_fd)
         os.fsync(root_fd)
+        return revoked
     finally:
         extractor.close()
         os.close(root_fd)

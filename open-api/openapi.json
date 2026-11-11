@@ -19,6 +19,25 @@
         "title": "About",
         "type": "object"
       },
+      "AcknowledgedOut": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "passkey_changes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Passkey Changes",
+            "type": "array"
+          }
+        },
+        "title": "AcknowledgedOut",
+        "type": "object"
+      },
       "ActivityOut": {
         "properties": {
           "event_id": {
@@ -5392,6 +5411,58 @@
         ]
       }
     },
+    "/api/v1/restore/acknowledge": {
+      "post": {
+        "description": "The passkeys and passwords changed since the backup were looked at: passkey sign-in\ncomes back. Lists the passkeys created or revoked since the backup, as far as known.",
+        "operationId": "restore_acknowledge",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcknowledgedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Restore Acknowledge",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/roots/{root}/reinit": {
       "post": {
         "description": "The disk is not what the database remembers: its records go to `missing`. Reserved.",
@@ -7601,6 +7672,10 @@
       "code": "instance.restored_behind",
       "status": 503
     },
+    "/api/v1/problems/instance.starting": {
+      "code": "instance.starting",
+      "status": 503
+    },
     "/api/v1/problems/internal-error": {
       "code": "internal_error",
       "status": 500
@@ -7711,6 +7786,10 @@
     },
     "/api/v1/problems/passkey-unavailable": {
       "code": "passkey_unavailable",
+      "status": 409
+    },
+    "/api/v1/problems/password-login-suspended": {
+      "code": "password_login_suspended",
       "status": 409
     },
     "/api/v1/problems/plan.stale": {

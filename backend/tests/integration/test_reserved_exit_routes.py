@@ -21,6 +21,8 @@ from tests.auth_env import AuthEnv, auth_env, run_cli
 
 RESERVED_ROUTES = [r for r in EXIT_ROUTES if r.reserved is not None]
 SERVED = [r for r in RESERVED_ROUTES if r.command in ENDPOINTS]  # a route of `create_app()`
+HOST_ONLY = {"restore acknowledge"}  # the host CLI only: a session, however fresh, is refused
+SESSION_SERVED = [r for r in SERVED if r.command not in HOST_ONLY]
 KEY = re.compile(r"shk_[0-9a-f]{8}_[A-Za-z0-9_-]{43}")
 BODIES: dict[str, dict[str, object]] = {
     "target rotate-key": {"password": "x"},
@@ -34,6 +36,7 @@ BODIES: dict[str, dict[str, object]] = {
     "root takeover": {},
     "root reinit": {},
     "store reinit": {},
+    "restore acknowledge": {},
 }
 
 
@@ -64,6 +67,10 @@ class _Ops:
 
     def tombstone_accept_lost_keyring(self, **_: object) -> list[str]:
         self.calls.append("tombstone_accept_lost_keyring")
+        return []
+
+    def restore_acknowledge(self, **_: object) -> list[str]:
+        self.calls.append("restore_acknowledge")
         return []
 
     def secrets_import(self, **_: object) -> dict[str, object]:
@@ -125,9 +132,14 @@ def test_reserved_exit_commands_require_fresh_session_or_cli(
     by_name = {r.reserved.name: r.reserved for r in RESERVED_ROUTES if r.reserved}
     assert SERVED, "no reserved exit is served"
     # fresh session: every served reserved exit goes through
-    for route in SERVED:
+    for route in SESSION_SERVED:
         assert api.post(_path(route), json=BODIES[route.command]).status_code == 200, route
-    assert len(ops.calls) == len(SERVED)
+    for route in SERVED:
+        if route.command in HOST_ONLY:  # never over HTTP, a fresh session included
+            denied = api.post(_path(route), json=BODIES[route.command])
+            assert denied.status_code == 403, route
+            assert denied.json()["type"] == "/api/v1/problems/credential-not-allowed"
+    assert len(ops.calls) == len(SESSION_SERVED)
     ops.calls.clear()
     # an API key, admin scope included, never does
     for route in SERVED:
@@ -137,7 +149,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli(
     assert ops.calls == []
     # a stale session needs re-authentication exactly where the property says so
     api.clock.advance(timedelta(minutes=20))
-    for route in SERVED:
+    for route in SESSION_SERVED:
         assert route.reserved is not None
         stale = api.post(_path(route), json=BODIES[route.command])
         wants_fresh = route.reserved.needs_fresh_auth(

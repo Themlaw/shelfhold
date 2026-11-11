@@ -107,6 +107,10 @@ def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
     assert len(routes) >= 4
     for method, path, action in routes:
         api.login()
+        if action == "restore.acknowledge":  # the host CLI only: a fresh session is refused too
+            assert call(api, method, path).status_code == 403
+            assert audit_rows(api, action) == []
+            continue
         needs = RESERVED_ACTIONS[action].needs_fresh_auth(
             restricted_profile_exists=False, hardened=False
         )
@@ -181,6 +185,10 @@ def test_service_audits_session_and_auth_time_on_every_reserved_action(
     service = _service(api)
     principal = service.login(ADMIN, PASSWORD, ip=IP).principal
     verdict = service.authorize(principal, RESERVED_ACTIONS[name], restricted_profile_exists=False)
+    if name == "restore.acknowledge":  # the host CLI only: a session is refused, nothing audited
+        assert type(verdict).__name__ == "CredentialNotAllowed"
+        assert audit_rows(api, name) == []
+        return
     assert type(verdict).__name__ == "Allowed"
     [(session_id, auth_time)] = audit_rows(api, name)
     assert session_id == principal.session_id and auth_time
