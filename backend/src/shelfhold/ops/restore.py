@@ -9,7 +9,6 @@ offers. A call through the server therefore says so instead of acting.
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
 from sqlalchemy import Engine
 
@@ -18,7 +17,7 @@ from shelfhold.export.application.restore import RestoreGuard
 from shelfhold.identity.public import AuditEntry, Principal, audit_insert
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.restore_notice import RestoreNotice
+from shelfhold.infrastructure.restore_notice import clear_notice, read_notice
 from shelfhold.ops.errors import ExitUnavailableError, NotWaitingError
 from shelfhold.ops.ports import WaitingItem
 
@@ -55,30 +54,37 @@ class RestoreGuardExit:
 
 class RestoreCredentialsExit:
     """`restore acknowledge`: the person has looked at the passkeys and the passwords changed
-    since the backup. The notice is a file (`/data/.restore-notice.json`), so it outlasts every
-    restart until then; the acknowledgement is audited and removes it."""
+    since the backup. The notice is a row of the database (written in the transaction of the
+    revocation, so it outlasts every restart and every crash); until it is acknowledged, `status`
+    lists it and no passkey signs in. The acknowledgement is audited, in one transaction."""
 
-    def __init__(self, data_dir: Path, engine: Engine, clock: Clock) -> None:
-        self._notice = RestoreNotice(data_dir)
+    def __init__(self, engine: Engine, clock: Clock) -> None:
         self._engine = engine
         self._clock = clock
 
     def waiting(self) -> list[WaitingItem]:
-        data = self._notice.read()
+        with self._engine.connect() as connection:
+            data = read_notice(connection)
         if data is None:
             return []
         since = data.backup_created_at or "the backup"
         reason = (
-            f"sessions and API keys were revoked after a restore ({data.sessions} session(s), "
-            f"{data.api_keys} key(s)); check the passkeys and the passwords changed since "
-            f"{since}, then acknowledge"
+            f"{data.sessions} session(s) and {data.api_keys} API key(s) were revoked by a "
+            f"restore; passkeys sign-in is suspended. Check the passkeys created or revoked "
+            f"since {since}"
         )
+        if data.passwords_carried:
+            reason += " (revocations and password hashes of the live database carried over)"
+        else:
+            reason += "; passwords changed since then are back to their old value"
         return [WaitingItem("restored_credentials", "instance", "instance", reason)]
 
-    def acknowledge(self, *, principal: Principal) -> None:
-        if self._notice.read() is None:
-            raise NotWaitingError("no restore is waiting for an acknowledgement")
+    def acknowledge(self, *, principal: Principal) -> list[str]:
+        """The passkeys that changed since the backup, as far as they are known."""
         with self._engine.begin() as connection:
+            data = read_notice(connection)
+            if data is None:
+                raise NotWaitingError("no restore is waiting for an acknowledgement")
             connection.execute(
                 audit_insert(
                     AuditEntry(
@@ -91,4 +97,5 @@ class RestoreCredentialsExit:
                     )
                 )
             )
-        self._notice.acknowledge()  # audited first: no acknowledgement without its line
+            clear_notice(connection)
+        return list(data.passkey_changes)

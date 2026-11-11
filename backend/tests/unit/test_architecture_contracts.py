@@ -397,7 +397,6 @@ WRITERS_ALLOWED = (
     "shelfhold/infrastructure/migrate.py",
     "shelfhold/infrastructure/volumes.py",
     "shelfhold/infrastructure/secrets/atomic.py",  # keyring and export file, owner-only
-    "shelfhold/infrastructure/restore_notice.py",  # /data/.restore-notice.json, owner-only
     "shelfhold/plugin_host/install.py",  # /data/plugins: staging, site-packages, state file
     "shelfhold/infrastructure/local_socket/server.py",  # the CLI socket (and staging dir), /data
     "shelfhold/docgen/release_assets.py",  # release tooling: two files in a directory it is given

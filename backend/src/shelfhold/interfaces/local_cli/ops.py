@@ -391,8 +391,7 @@ def _store_reinit(ops: OpsServices, by: Principal, _p: Params) -> object:
 
 
 def _restore_acknowledge(ops: OpsServices, by: Principal, _p: Params) -> object:
-    ops.restore_acknowledge(principal=by)
-    return {"ok": True}
+    return {"ok": True, "passkey_changes": ops.restore_acknowledge(principal=by)}
 
 
 def _rebaseline_inodes(ops: OpsServices, _by: Principal, p: Params) -> object:

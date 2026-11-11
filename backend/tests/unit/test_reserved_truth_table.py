@@ -44,6 +44,7 @@ P3 = {
     "accepts_admin_risk",  # the admin password of Kavita goes through it (L38)
     "settles_fs_intent",  # `intents resolve` frees the paths of an interrupted operation (L51)
     "migrates_identity",  # `normalize migrate` rewrites the identity keys of live rows (L55)
+    "acknowledges_restore",  # `restore acknowledge`: passkey logins come back with it
 }
 
 
@@ -263,6 +264,7 @@ FRESHNESS_LINE = {
             "config.path_map",
             "intents.resolve",
             "normalize.migrate",
+            "restore.acknowledge",
             "admin_risk.accept",
             "shelf.purge_upstream",
         ),
@@ -289,7 +291,6 @@ FRESHNESS_LINE = {
             "device_token.manage",
             "passkey.register",
             "passkey.revoke",
-            "restore.acknowledge",
         ),
         "none",
     ),

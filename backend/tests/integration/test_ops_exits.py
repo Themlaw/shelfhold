@@ -26,8 +26,9 @@ from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
 from shelfhold.identity.public import EXIT_ROUTES, EXIT_STATES_LATER
+from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.restore_notice import RestoreNotice, RestoreNoticeData
+from shelfhold.infrastructure.restore_notice import RestoreNoticeData, write_notice
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.secrets.diagnostics import store_for
 from shelfhold.infrastructure.secrets.keyring import Keyring
@@ -484,11 +485,16 @@ def restored_credentials(
     settings: Settings,
     tmp_path: Path,
 ) -> None:
-    """After a restore: the notice (a file of /data) is listed with its command until the reserved
+    """After a restore: the notice (a row of the database) is listed with its command until the reserved
     `restore acknowledge` runs; a second run finds nothing to acknowledge."""
     with seeded(settings, tmp_path):
         ctx = L53Context(monkeypatch, capsys, settings)
-        RestoreNotice(settings.data_dir).write(RestoreNoticeData("2026-11-11T00:00:00", None, 1, 2))
+        with create_db_engine(settings.database_path).begin() as connection:
+            write_notice(
+                connection,
+                RestoreNoticeData("2026-11-11T00:00:00", None, 1, 2),
+                keep_existing=False,
+            )
         (item,) = ctx.listed("restored_credentials")
         assert item["command"] == "shelfhold restore acknowledge"
         assert item["reserved"] is True

@@ -77,6 +77,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError
+from shelfhold.infrastructure.identity_counter import IdentityCounter
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import log_outcome
 from shelfhold.infrastructure.schema import (
@@ -298,11 +299,20 @@ class AdoptionResult:
 
 
 class RestoreGuard:
-    def __init__(self, engine: Engine, fsops: Fsops, *, clock: Clock, bus: EventBus) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        fsops: Fsops,
+        *,
+        clock: Clock,
+        bus: EventBus,
+        counter: IdentityCounter | None = None,
+    ) -> None:
         self._engine = engine
         self._fsops = fsops
         self._clock = clock
         self._bus = bus
+        self._counter = counter  # the identity counter of /data, moved by the revocation
 
     def assess(self) -> RestoreStatus:
         """Read only: every read-write root against its sentinel, as the database stands now."""
@@ -354,6 +364,7 @@ class RestoreGuard:
         epoch = status.epoch
         published: list[Any] = []
         revoked: tuple[int, int] | None = None
+        counted: int | None = None
         if not status.pending:  # this restore has not been counted yet
             seen = max(
                 (
@@ -381,7 +392,11 @@ class RestoreGuard:
                 # a key or a session revoked after the backup is live again in this database:
                 # all of them go, in the transaction that counts the restore (they can be made
                 # again; the notice asks for the passkeys and the passwords to be looked at)
-                revoked = revoke_all_credentials(connection, now=self._clock.now())
+                closed = revoke_all_credentials(
+                    connection, now=self._clock.now(), counter=self._counter
+                )
+                revoked = (closed[0], closed[1])
+                counted = closed[2]
                 published.append(
                     self._bus.publish(
                         connection,
@@ -390,6 +405,8 @@ class RestoreGuard:
                     )
                 )
             self._fsops.freeze_state.follow(written)  # committed: this writer follows
+            if counted is not None and self._counter is not None:
+                self._counter.publish(counted)
         self._bus.deliver(published)
         self._fsops.freeze()
         return RestoreStatus(epoch, status.findings, pending=True, revoked=revoked)

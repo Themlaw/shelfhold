@@ -17,7 +17,6 @@ import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -42,6 +41,7 @@ from shelfhold.i18n import t
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.identity_counter import IdentityCounter
 from shelfhold.infrastructure.instance import (
     GenerationCounter,
     InstanceLock,
@@ -50,7 +50,6 @@ from shelfhold.infrastructure.instance import (
 )
 from shelfhold.infrastructure.local_socket import Peer
 from shelfhold.infrastructure.migrate import current_revision, head_revision
-from shelfhold.infrastructure.restore_notice import RestoreNotice
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import diagnostics
 from shelfhold.integrations.apprise import operating_bus
@@ -106,7 +105,9 @@ def open_restore(resolved: ResolvedSettings) -> Iterator[tuple[RestoreAdopter, R
         fsops = open_fsops(loaded, umask=settings.umask)
         clock = SystemClock()
         bus = operating_bus(clock)
-        guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)
+        guard = RestoreGuard(
+            engine, fsops, clock=clock, bus=bus, counter=IdentityCounter(settings.data_dir)
+        )
         keyring = diagnostics.store_for(settings).load()
         service = TombstoneService(engine, keyring, fsops, bus)
         with engine.connect() as connection:
@@ -231,10 +232,6 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     try:
         with open_restore(resolved) as (adopter, guard):
             status = guard.enter_restored_behind()
-            if status.revoked is not None:  # this run counted the restore: leave the notice
-                RestoreNotice(resolved.values.data_dir).note_revoked(
-                    status.revoked, now=datetime.now(UTC)
-                )
             if not status.behind:
                 print(t("reconcile.not_behind"))
                 return 0

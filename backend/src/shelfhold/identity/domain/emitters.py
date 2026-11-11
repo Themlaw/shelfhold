@@ -68,8 +68,6 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
             {
                 f"{_FSOPS}/facade.py::_claim_lease",
                 "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",
-                # the restore notice of /data, removed by its reserved acknowledgement
-                "shelfhold/infrastructure/restore_notice.py::RestoreNotice.acknowledge",
                 "shelfhold/infrastructure/secrets/atomic.py::write_private",
                 # the CLI socket this process bound (and its staging directory), in /data
                 "shelfhold/infrastructure/local_socket/server.py::LocalSocketServer._remove_socket",

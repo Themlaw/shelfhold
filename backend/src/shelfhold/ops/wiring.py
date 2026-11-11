@@ -126,7 +126,7 @@ def open_ops(
         headless=_LazyHeadless(settings),
         keyring=TombstoneKeyringExit(settings, engine, clock, composition),
         restore=RestoreGuardExit(engine, read_only, clock, bus),
-        credentials=RestoreCredentialsExit(settings.data_dir, engine, clock),
+        credentials=RestoreCredentialsExit(engine, clock),
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), backfill=BackfillOps(composition),
         normalize=NormalizeOps(composition), meta=MetaOps(composition),

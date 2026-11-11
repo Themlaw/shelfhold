@@ -43,6 +43,11 @@ class Done(BaseModel):
     ok: bool = True
 
 
+class AcknowledgedOut(BaseModel):
+    ok: bool = True
+    passkey_changes: list[str] = []
+
+
 class ResolveIn(BaseModel):
     action: str = Field(pattern="^(reexport|unfollow)$")
 
@@ -300,11 +305,14 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             return RootOut(**get_ops().store_reinit(principal=principal))
 
     @router.post(_path("restore", "acknowledge"))
-    def restore_acknowledge(principal: Annotated[Principal, Depends(_RESTORE_ACK)]) -> Done:
-        """The passkeys and passwords changed since the backup were looked at. Reserved."""
+    def restore_acknowledge(
+        principal: Annotated[Principal, Depends(_RESTORE_ACK)],
+    ) -> AcknowledgedOut:
+        """The passkeys and passwords changed since the backup were looked at: passkey sign-in
+        comes back. Lists the passkeys created or revoked since the backup, as far as known."""
         with refusals():
-            get_ops().restore_acknowledge(principal=principal)
-        return Done()
+            changes = get_ops().restore_acknowledge(principal=principal)
+        return AcknowledgedOut(passkey_changes=changes)
 
     @router.post(_path("target", "rotate-key"))
     def target_rotate_key(

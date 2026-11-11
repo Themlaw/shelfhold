@@ -83,6 +83,7 @@ class AuthGate:
 
     auth: LocalAuth
     public_url: str | None = None
+    ready: Callable[[], bool] = lambda: True  # False while the start-up is not finished
 
     def cookies_for(self, scope: Scope) -> CookieNames:
         https = scope.get("scheme") == "https" or (self.public_url or "").startswith("https://")
@@ -193,6 +194,11 @@ class AuthMiddleware:
         headers = Headers(scope=scope)
         names = self.gate.cookies_for(scope)
 
+        if not self.gate.ready() and (
+            _bearer(headers) is not None or _cookie_value(headers, names.session) is not None
+        ):
+            await self._problem(scope, receive, send, "instance.starting")
+            return
         principal, session = await self._resolve(headers, names)
         state["principal"] = principal
 

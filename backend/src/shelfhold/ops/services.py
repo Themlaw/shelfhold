@@ -524,10 +524,11 @@ class OpsServices:
             raise ExitUnavailableError("the restore guard is not connected")
         self._restore.adopt_after_restore(confirm_deletion=confirm_deletion, principal=principal)
 
-    def restore_acknowledge(self, *, principal: Principal) -> None:
+    def restore_acknowledge(self, *, principal: Principal) -> list[str]:
+        """The passkeys created or revoked since the backup, as far as they are known."""
         if self._credentials is None:
             raise ExitUnavailableError("the restore notice is not connected")
-        self._credentials.acknowledge(principal=principal)
+        return self._credentials.acknowledge(principal=principal)
 
     def tombstone_accept_lost_keyring(
         self, *, confirmation: str, principal: Principal

@@ -19,6 +19,20 @@ export type About = {
 };
 
 /**
+ * AcknowledgedOut
+ */
+export type AcknowledgedOut = {
+    /**
+     * Ok
+     */
+    ok?: boolean;
+    /**
+     * Passkey Changes
+     */
+    passkey_changes?: Array<string>;
+};
+
+/**
  * ActivityOut
  */
 export type ActivityOut = {
@@ -3277,7 +3291,7 @@ export type RestoreAcknowledgeResponses = {
     /**
      * Successful Response
      */
-    200: Done;
+    200: AcknowledgedOut;
 };
 
 export type RestoreAcknowledgeResponse = RestoreAcknowledgeResponses[keyof RestoreAcknowledgeResponses];

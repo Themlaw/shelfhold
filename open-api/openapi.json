@@ -19,6 +19,25 @@
         "title": "About",
         "type": "object"
       },
+      "AcknowledgedOut": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "passkey_changes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Passkey Changes",
+            "type": "array"
+          }
+        },
+        "title": "AcknowledgedOut",
+        "type": "object"
+      },
       "ActivityOut": {
         "properties": {
           "event_id": {
@@ -5341,14 +5360,14 @@
     },
     "/api/v1/restore/acknowledge": {
       "post": {
-        "description": "The passkeys and passwords changed since the backup were looked at. Reserved.",
+        "description": "The passkeys and passwords changed since the backup were looked at: passkey sign-in\ncomes back. Lists the passkeys created or revoked since the backup, as far as known.",
         "operationId": "restore_acknowledge",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Done"
+                  "$ref": "#/components/schemas/AcknowledgedOut"
                 }
               }
             },
@@ -7598,6 +7617,10 @@
     },
     "/api/v1/problems/instance.restored-behind": {
       "code": "instance.restored_behind",
+      "status": 503
+    },
+    "/api/v1/problems/instance.starting": {
+      "code": "instance.starting",
       "status": 503
     },
     "/api/v1/problems/internal-error": {

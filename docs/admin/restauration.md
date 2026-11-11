@@ -62,7 +62,7 @@ un trousseau absent ou aux droits trop ouverts ; il ne sait pas si vous l'avez e
 
 1. Arrêtez Shelfhold. Remettez `/data` à son état sauvegardé (et le trousseau, s'il n'y est pas).
    **Une base remise à la main garde les identifiants de ce jour-là** : au premier démarrage où elle
-   est trouvée en retard sur les fichiers, Shelfhold révoque toutes les sessions et toutes les clés
+   est trouvée en retard sur le compteur d'identité de `/data` (voir [sauvegarde.md](sauvegarde.md)) ou sur les fichiers, Shelfhold révoque toutes les sessions et toutes les clés
    d'API (audit `restore.credentials_revoked`) et pose l'état d'attente `restored_credentials` :
    revérifiez les passkeys et les mots de passe changés depuis la sauvegarde, puis
    `shelfhold restore acknowledge` (réservée). `shelfhold backup restore` fait la même révocation

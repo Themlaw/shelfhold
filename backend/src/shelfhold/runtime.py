@@ -33,13 +33,13 @@ from shelfhold.export.application.root_bootstrap import (
 from shelfhold.export.application.roots import LoadedRoots, load_roots
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import LEGACY_RECEIVED_DIR, RECEIVED_DIR
-from shelfhold.export.domain.restore import RestoreStatus
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import BootReport, Fsops
 from shelfhold.infrastructure.fsops.capabilities import unprobed
 from shelfhold.infrastructure.fsops.probe import ProbeReport, probe_failure, probe_folder
+from shelfhold.infrastructure.identity_counter import IdentityCounter
 from shelfhold.infrastructure.instance import (
     GenerationCounter,
     InstanceLock,
@@ -55,7 +55,6 @@ from shelfhold.infrastructure.observability.shutdown import (
     WriteBarrier,
 )
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
-from shelfhold.infrastructure.restore_notice import RestoreNotice
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
 from shelfhold.jobs.maintenance import MaintenanceGate, register_sqlite_maintenance
@@ -198,24 +197,19 @@ class InstanceRuntime:
             )  # fmt: skip
             journal = IntentJournal(engine, fsops, clock=clock)
             # Before anything else: a database older than the disk is read only (EF-INT-026).
-            restore_guard = RestoreGuard(engine, fsops, clock=clock, bus=bus)
-
-            def enter() -> RestoreStatus:
-                status = restore_guard.enter_restored_behind()
-                if status.revoked is not None:  # the credentials went with this restore: say so
-                    RestoreNotice(self.settings.data_dir).note_revoked(
-                        status.revoked, now=clock.now()
-                    )
-                return status
+            restore_guard = RestoreGuard(
+                engine, fsops, clock=clock, bus=bus,
+                counter=IdentityCounter(self.settings.data_dir),
+            )  # fmt: skip
 
             def freeze() -> None:
-                status = enter()
+                status = restore_guard.enter_restored_behind()
                 if status.behind:
                     self.freeze_state.freeze()  # the scheduler reads the persisted freeze itself
 
             fsops.on_restored_behind(freeze)
             self._recheck = freeze
-            status = enter()
+            status = restore_guard.enter_restored_behind()
             if status.behind:
                 freeze()
                 structlog.get_logger().error("instance.restored_behind", epoch=status.epoch)

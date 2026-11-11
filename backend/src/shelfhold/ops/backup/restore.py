@@ -40,7 +40,8 @@ from typing import BinaryIO
 import sqlalchemy as sa
 
 from shelfhold.identity.public import revoke_all_credentials
-from shelfhold.infrastructure.restore_notice import RestoreNotice, RestoreNoticeData
+from shelfhold.infrastructure.identity_counter import COUNTER_KEY, IdentityCounter
+from shelfhold.infrastructure.restore_notice import RestoreNoticeData
 from shelfhold.infrastructure.secrets.errors import ExportError
 from shelfhold.infrastructure.secrets.export import read_passphrase_file
 from shelfhold.ops.backup.archive import (
@@ -251,7 +252,12 @@ def restore_archive(
             keyring_json = None if keep_external_keyring else checked.keyring.to_json()
             stream.seek(0)
             revoked = _write_all_members(
-                stream, passphrase, resolved, keyring_json, checked.file_sha256, checked.created_at
+                stream,
+                passphrase,
+                resolved,
+                keyring_json,
+                checked.file_sha256,
+                (checked.created_at, live_data_dir),
             )
     finally:
         del passphrase
@@ -263,22 +269,126 @@ def restore_archive(
     )  # fmt: skip
 
 
-def _revoke_credentials(database: Path, destination: Path, created_at: str) -> tuple[int, int]:
-    """On the restored database, before it can be started: no live session, no live API key."""
+@dataclass(frozen=True)
+class _Live:
+    """What the live database says about the identities, when it can be read."""
+
+    passkeys: tuple[tuple[str, str, str, str | None], ...]  # id, name, created_at, revoked_at
+    passwords: tuple[tuple[str, str], ...]  # user id, password hash
+    counter: int
+
+
+def _when(text: str | None) -> datetime | None:
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _read_live(live_data_dir: Path | None) -> _Live | None:
+    """The live database, read only. None when it is not there or not readable (then nothing is
+    carried over and the notice says so)."""
+    if live_data_dir is None:
+        return None
+    path = live_data_dir / DATABASE_MEMBER
+    try:
+        connection = sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        passkeys = tuple(
+            (str(i), str(n), str(c), None if r is None else str(r))
+            for i, n, c, r in connection.execute(
+                "SELECT id, name, created_at, revoked_at FROM webauthn_credential"
+            )
+        )
+        passwords = tuple(
+            (str(i), str(h)) for i, h in connection.execute("SELECT id, password_hash FROM user")
+        )
+        row = connection.execute(
+            "SELECT value FROM app_setting WHERE key = ?", (COUNTER_KEY,)
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        connection.close()
+    in_db = int(row[0]) if row and str(row[0]).isdigit() else 0
+    return _Live(passkeys, passwords, max(in_db, IdentityCounter(live_data_dir).file_value() or 0))
+
+
+def _passkey_changes(live: _Live, since: datetime | None, restored_ids: set[str]) -> list[str]:
+    """The passkeys the live database created or revoked after the backup was made."""
+    changes: list[str] = []
+    for key_id, name, created, revoked in live.passkeys:
+        made, closed = _when(created), _when(revoked)
+        if since is not None and made is not None and made > since and key_id not in restored_ids:
+            changes.append(f"created: {name}")
+        if since is not None and closed is not None and closed > since:
+            changes.append(f"revoked: {name}")
+    return changes
+
+
+def _revoke_credentials(
+    database: Path, destination: Path, created_at: str, live_data_dir: Path | None
+) -> tuple[int, int]:
+    """On the restored database, before it can be started: no live session, no live API key, the
+    notice written, the identity counter moved past the live one. When the live database can be
+    read, its revocations of passkeys and its password hashes are carried over (a passkey revoked
+    or a password reset since the backup stays so) and the passkeys it created or revoked since
+    are listed in the notice."""
     now = datetime.now(UTC)
+    live = _read_live(live_data_dir)
+    counter = IdentityCounter(destination)
     engine = sa.create_engine(f"sqlite+pysqlite:///{database}", hide_parameters=True)
+    sessions = keys = 0
+    value: int | None = None
     try:
         with engine.begin() as connection:
             tables = set(sa.inspect(connection).get_table_names())
-            if {"session", "api_key", "audit"} <= tables:
-                sessions, keys = revoke_all_credentials(connection, now=now)
-            else:  # not a Shelfhold schema (a bare test database): no credential to revoke
-                sessions = keys = 0
+            if {"session", "api_key", "audit", "app_setting"} <= tables:
+                changes: list[str] = []
+                if live is not None:
+                    restored = {
+                        str(r[0])
+                        for r in connection.exec_driver_sql("SELECT id FROM webauthn_credential")
+                    }
+                    for key_id, _name, _made, revoked in live.passkeys:
+                        if revoked is not None:
+                            connection.exec_driver_sql(
+                                "UPDATE webauthn_credential SET revoked_at = ? "
+                                "WHERE id = ? AND revoked_at IS NULL",
+                                (revoked, key_id),
+                            )
+                    for user_id, password_hash in live.passwords:
+                        connection.exec_driver_sql(
+                            "UPDATE user SET password_hash = ? WHERE id = ?",
+                            (password_hash, user_id),
+                        )
+                    changes = _passkey_changes(live, _when(created_at), restored)
+                sessions, keys, value = revoke_all_credentials(
+                    connection,
+                    now=now,
+                    notice=RestoreNoticeData(
+                        now.isoformat(),
+                        created_at,
+                        0,
+                        0,
+                        passwords_carried=live is not None,
+                        passkey_changes=tuple(changes),
+                    ),
+                    counter=counter,
+                    counter_at_least=live.counter if live else 0,
+                    keep_notice=False,  # this restore's notice, not one the backup carried
+                )
     except sa.exc.SQLAlchemyError:
         raise RestoreIncompleteError from None  # no `shelfhold.db` yet: it cannot be started
     finally:
         engine.dispose()
-    RestoreNotice(destination).write(RestoreNoticeData(now.isoformat(), created_at, sessions, keys))
+    if value is not None:
+        counter.publish(value)
     return sessions, keys
 
 
@@ -288,7 +398,7 @@ def _write_all_members(
     resolved: Path,
     keyring_json: bytes | None,
     sha256: str,
-    created_at: str,
+    origin: tuple[str, Path | None],
 ) -> tuple[int, int]:
     root_fd = os.open(resolved, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     extractor = _Extractor(root_fd, keyring_json)
@@ -302,7 +412,7 @@ def _write_all_members(
         extractor.close()
         if reader.digest.hexdigest() != sha256 or not _database_ok(resolved / DATABASE_TEMP):
             raise RestoreIncompleteError
-        revoked = _revoke_credentials(resolved / DATABASE_TEMP, resolved, created_at)
+        revoked = _revoke_credentials(resolved / DATABASE_TEMP, resolved, *origin)
         os.rename(DATABASE_TEMP, DATABASE_MEMBER, src_dir_fd=root_fd, dst_dir_fd=root_fd)
         os.fsync(root_fd)
         return revoked

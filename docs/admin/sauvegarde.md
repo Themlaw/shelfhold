@@ -117,8 +117,8 @@ phrase de passe donnent **la même phrase** (volontairement).
    sauvegarde. Sans cela, une clé révoquée après la sauvegarde (ou une session fermée après une
    compromission) serait de nouveau valide. La commande dit combien en ont été fermées ; la ligne
    d'audit `restore.credentials_revoked` le garde. Les clés se recréent (`shelfhold admin keys
-   create`) et on se reconnecte. Un fichier `.restore-notice.json` est laissé dans le nouveau
-   dossier : il rend l'avertissement **durable** (voir plus bas).
+   create`) et on se reconnecte. L'avertissement est écrit dans la base elle-même, dans la même
+   transaction : il est **durable** (voir plus bas).
 2. Démarrez Shelfhold avec `SHELFHOLD_DATA_DIR=/nouveau/data`. Si une racine de la bibliothèque est en
    avance sur la base, l'instance démarre en **`restored_behind`** (lecture seule).
 3. `shelfhold reconcile --adopt-after-restore` réadopte les fichiers. **Sans `/store`**, on
@@ -129,17 +129,39 @@ phrase de passe donnent **la même phrase** (volontairement).
 
 ### Après la restauration : passkeys et mots de passe
 
-Les **passkeys** et les **mots de passe** ne sont pas révoqués (le compte doit rester joignable) :
-ils reviennent dans l'état de la sauvegarde. Un `admin reset-password` ou la révocation d'une
-passkey faits depuis la sauvegarde sont donc **annulés**. `shelfhold status` affiche l'état
-`restored_credentials` tant que ce n'est pas acquitté, redémarrages compris : revérifiez la liste
-des passkeys, refaites les changements de mot de passe, puis lancez
+Tant que l'avertissement est là, **la connexion par passkey est refusée pour tous les comptes**
+(message : se connecter par mot de passe et voir l'administrateur) : une passkey révoquée depuis la
+sauvegarde serait sinon de nouveau valide. Les mots de passe, eux, ne sont pas révoqués (le compte
+doit rester joignable).
+
+- Si `backup restore` peut lire la base en service (`/data` d'origine encore là), il en reporte les
+  révocations de passkeys et les empreintes de mots de passe : un `admin reset-password` fait depuis
+  la sauvegarde est conservé. Il liste aussi les passkeys créées ou révoquées depuis la sauvegarde.
+- Sinon, les mots de passe changés depuis la sauvegarde **sont revenus à l'ancienne valeur**, et
+  l'avertissement le dit.
+
+`shelfhold status` affiche `restored_credentials` tant que ce n'est pas acquitté, redémarrages
+compris. Revoyez les passkeys, puis lancez
 
 ```sh
-shelfhold restore acknowledge     # action réservée : session récente ou CLI de l'hôte, jamais une clé
+shelfhold restore acknowledge     # réservée : session récente (fraîche) ou CLI de l'hôte, jamais une clé
 ```
 
-(API : `POST /api/v1/restore/acknowledge`). L'acquittement est audité (`restore.credentials_acknowledged`).
+(API : `POST /api/v1/restore/acknowledge`). La commande liste les passkeys créées ou révoquées depuis
+la sauvegarde, rétablit la connexion par passkey et est auditée (`restore.credentials_acknowledged`).
+
+### Compteur d'identité
+
+Une base remise à la main n'est pas toujours « en retard » sur des fichiers (restauration sans
+bibliothèque, ou sentinelles identiques). Shelfhold tient donc un **compteur d'identité monotone**
+dans `/data/.identity-counter` (écrit de façon atomique, droits `0600`, **jamais sauvegardé**),
+copié dans la base dans la même transaction. Chaque révocation (session, clé d'API, passkey) et
+chaque changement de mot de passe l'augmente. Au démarrage, avant toute requête : si le fichier est
+au-dessus de la base, la base est plus ancienne que l'état connu, toutes les sessions et clés d'API
+sont révoquées et l'avertissement est posé.
+
+Limite : si **tout `/data`** est remplacé, le fichier part avec la base ; il ne reste alors que la
+détection par les sentinelles (`restored_behind`).
 
 La même révocation a lieu quand une base copiée à la main est trouvée en retard sur ses fichiers
 (`restored_behind`, première fois seulement), pour une restauration faite sans `backup restore`.

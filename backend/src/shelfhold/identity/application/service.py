@@ -514,6 +514,12 @@ class LocalAuth:
             raise PasskeyUnavailableError("no_public_url")
         return self._passkeys
 
+    def _refuse_while_restore_pending(self) -> None:
+        """After a restore a passkey revoked since the backup is live again: no passkey signs in
+        until the admin has looked at them and run `restore acknowledge`."""
+        if self._store.restore_notice_active():
+            raise PasskeyUnavailableError("restore_pending")
+
     def passkey_status(self) -> PasskeyStatus:
         ceremony = self._passkeys
         if ceremony is None:
@@ -570,6 +576,7 @@ class LocalAuth:
 
     def passkey_login_options(self, *, ip: str) -> PasskeyOptions:
         """Anonymous and cheap to call: each address gets a few per minute (429 beyond)."""
+        self._refuse_while_restore_pending()
         ceremony = self._ceremony()
         wait = self._options_throttle.reserve(ip=ip, account=ip, now=self.now())
         if wait is not None:
@@ -590,6 +597,7 @@ class LocalAuth:
         """Discoverable login: the credential names the account. Same throttle as a password
         (every attempt is counted before it is checked), same answer for every refusal, a new
         session whatever the browser held (no fixation), `auth_time` = now."""
+        self._refuse_while_restore_pending()
         ceremony = self._ceremony()
         account = f"passkey:{ip}"  # no account is known before the assertion: one key per address
         at = self._reserve_attempt(ip=ip, account=account)

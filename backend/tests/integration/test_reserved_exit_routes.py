@@ -67,6 +67,10 @@ class _Ops:
         self.calls.append("tombstone_accept_lost_keyring")
         return []
 
+    def restore_acknowledge(self, **_: object) -> list[str]:
+        self.calls.append("restore_acknowledge")
+        return []
+
     def secrets_import(self, **_: object) -> dict[str, object]:
         self.calls.append("secrets_import")
         return {"added": [], "present": 0, "replayed": 0}

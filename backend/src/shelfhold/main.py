@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import os
+import signal
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import cache
@@ -21,11 +22,12 @@ from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
 from shelfhold.headless import HeadlessAdmin, wiring
 from shelfhold.headless.applied import record_applied_public_url
-from shelfhold.identity.public import local_auth
+from shelfhold.identity.public import local_auth, reconcile_identity_counter
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.health import HealthProbe
 from shelfhold.infrastructure.idempotency_store import IdempotencyStore
+from shelfhold.infrastructure.identity_counter import IdentityCounter
 from shelfhold.infrastructure.local_socket import SOCKET_NAME, LocalSocketServer
 from shelfhold.infrastructure.logging import configure_logging, strip_url_queries
 from shelfhold.infrastructure.migrate import check_schema_not_newer
@@ -62,6 +64,22 @@ from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
 from shelfhold.runtime_jobs import PlanService
 
 PACKAGED_FRONTEND = Path(__file__).parent / "static"
+
+
+class Readiness:
+    """False until the start-up has run to its end: an instance that waits for a migration's lock
+    serves no authenticated request (503) before it owns the volumes and has finished."""
+
+    def __init__(self) -> None:
+        self._ready = False
+
+    def set(self, value: bool) -> None:
+        self._ready = value
+
+    def is_set(self) -> bool:
+        return self._ready
+
+
 _KEYRING_REASONS: tuple[tuple[type[KeyringError], str], ...] = (
     (KeyringCorruptError, "keyring_corrupt"),
     (KeyringPermissionsError, "keyring_permissions"),
@@ -140,7 +158,8 @@ def create_app(
     composition = Composition(resolved, engine, clock=clock, network=network, gates=runtime.gates())
     runtime.composition = composition
     auth = local_auth(engine, resolved, clock)
-    gate = AuthGate(auth, public_url=resolved.public_url)
+    ready = Readiness()
+    gate = AuthGate(auth, public_url=resolved.public_url, ready=ready.is_set)
 
     opened: list[tuple[object, ExportPipeline]] = []
 
@@ -200,6 +219,17 @@ def create_app(
     def start_owned() -> None:
         """What follows the lock, in the order of the spec; also run when the lock is taken
         later, once the migration that held it has ended."""
+        # Before any request: a database older than the identity counter of /data (put back by
+        # hand, or by `backup restore`) has its sessions and API keys revoked, with a notice.
+        if runtime.owns_volumes:
+            acted = reconcile_identity_counter(
+                engine, IdentityCounter(resolved.data_dir), now=clock.now()
+            )
+            if acted is not None:
+                structlog.get_logger().warning(
+                    "instance.credentials_revoked_after_restore",
+                    sessions=acted[0], api_keys=acted[1],
+                )  # fmt: skip
         check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
         try:
             boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops it
@@ -219,6 +249,7 @@ def create_app(
             # EF-SRC-019: third-party code only once this process owns /data and the schema is ours
             start_plugins(resolved)
             start_owned()
+            ready.set(runtime.owns_volumes)  # waiting for a migration's lock: not ready yet
         except BaseException:
             runtime.stop()
             raise
@@ -244,15 +275,19 @@ def create_app(
 
     async def take_over_when_free() -> LocalSocketServer | None:
         """The start found `/data/.lock` held by a migration and wrote nothing (it said so:
-        `instance.waiting_for_lock`). Look again until it is free, then finish the start-up."""
-        while not await asyncio.to_thread(runtime.try_take_over):
-            await asyncio.sleep(RETAKE_INTERVAL_S)
+        `instance.waiting_for_lock`). Look again until it is free, then finish the start-up.
+        Until then every authenticated request answers 503; if the late start fails, the process
+        stops (it must not serve a half-started instance)."""
         try:
+            while not await asyncio.to_thread(runtime.try_take_over):
+                await asyncio.sleep(RETAKE_INTERVAL_S)
             await asyncio.to_thread(start_owned)
         except Exception:
             structlog.get_logger().exception("instance.start_after_wait_failed")
             runtime.stop()
+            os.kill(os.getpid(), signal.SIGTERM)  # the server's own graceful stop
             return None
+        ready.set(True)
         return await open_socket()
 
     @asynccontextmanager

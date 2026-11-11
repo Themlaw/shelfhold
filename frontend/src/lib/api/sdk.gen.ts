@@ -391,7 +391,8 @@ export const restoreAdopt = <ThrowOnError extends boolean = false>(options: Opti
 /**
  * Restore Acknowledge
  *
- * The passkeys and passwords changed since the backup were looked at. Reserved.
+ * The passkeys and passwords changed since the backup were looked at: passkey sign-in
+ * comes back. Lists the passkeys created or revoked since the backup, as far as known.
  */
 export const restoreAcknowledge = <ThrowOnError extends boolean = false>(options?: Options<RestoreAcknowledgeData, ThrowOnError>): RequestResult<RestoreAcknowledgeResponses, RestoreAcknowledgeErrors, ThrowOnError> => (options?.client ?? client).post<RestoreAcknowledgeResponses, RestoreAcknowledgeErrors, ThrowOnError>({ url: '/api/v1/restore/acknowledge', ...options });
 

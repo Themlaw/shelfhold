@@ -1,7 +1,11 @@
 """What the interfaces and the composition root may use from the identity context."""
 
 from shelfhold.identity.adapters.factory import local_auth
-from shelfhold.identity.adapters.store import audit_insert, revoke_all_credentials
+from shelfhold.identity.adapters.store import (
+    audit_insert,
+    reconcile_identity_counter,
+    revoke_all_credentials,
+)
 from shelfhold.identity.application.passkeys import (
     PasskeyError,
     PasskeyOptions,
@@ -151,6 +155,7 @@ __all__ = [
     "credential_axis",
     "holds_rate_right",
     "local_auth",
+    "reconcile_identity_counter",
     "relying_party",
     "revoke_all_credentials",
     "same_secret",

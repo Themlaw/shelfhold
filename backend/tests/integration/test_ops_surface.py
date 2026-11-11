@@ -387,8 +387,9 @@ class _Credentials:
     def waiting(self) -> list[object]:
         return []
 
-    def acknowledge(self, **_: object) -> None:
+    def acknowledge(self, **_: object) -> list[str]:
         self.acknowledged += 1
+        return []
 
 
 class _Headless:
