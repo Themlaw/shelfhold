@@ -159,7 +159,7 @@ def test_lncrawl_api_key_and_crawler_name_never_reach_the_database_or_the_events
     server.leak_name = True
     with lncrawl_bench(server) as bench:
         bench.finish()
-        dump = repr(  # noqa: S608 - fixed table names, no input
+        dump = repr(
             [bench.rows(f"SELECT * FROM {t}") for t in
              ("download_request", "source_item", "source_binding", "unit", "unit_variant",
               "export_item", "unit_coverage", "team", "edition", "work")]
