@@ -76,6 +76,7 @@ from shelfhold.ops.status import (
     stale_report,
     tombstoned_report,
     unverifiable_download_dirs,
+    wal_pending_report,
 )
 
 __all__ = ["JobRow", "OpsServices", "RecheckOutcome", "StatusReport", "user_of"]
@@ -106,6 +107,7 @@ class StatusReport:
     jurisdiction: dict[str, object] | None = None  # EF-SRC-024: the country, confirmed or not
     rights_warnings: list[dict[str, object]] = field(default_factory=list)
     kept_in_service: list[dict[str, object]] = field(default_factory=list)
+    wal_pending: list[dict[str, object]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -121,6 +123,7 @@ class StatusReport:
             "jurisdiction": self.jurisdiction,
             "rights_warnings": self.rights_warnings,
             "kept_in_service": self.kept_in_service,
+            "wal_pending": self.wal_pending,
         }
 
 
@@ -221,7 +224,7 @@ class OpsServices:
                 known_bad_report(connection, now.date()), service_url_report(connection),
                 unverifiable_download_dirs(connection), candidate_report(connection),
                 jurisdiction_report(connection), rights_report(connection, now.date()),
-                kept_in_service_report(connection),
+                kept_in_service_report(connection), wal_pending_report(connection),
             )  # fmt: skip
 
     def restored_behind(self) -> bool:

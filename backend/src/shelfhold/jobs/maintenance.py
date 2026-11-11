@@ -41,6 +41,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.schema import platform
+from shelfhold.infrastructure.wal import settle_pending, truncate_wal
 from shelfhold.jobs.huey_app import JobContext, JobPools
 from shelfhold.jobs.window import MaintenanceWindow, WindowRun
 
@@ -170,9 +171,9 @@ def compact_database(database: Path, gate: MaintenanceGate) -> None:
         connection = sqlite3.connect(database, timeout=VACUUM_WAIT_S, isolation_level=None)
         try:
             connection.execute("VACUUM")
-            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         finally:
             connection.close()
+        truncate_wal(database, mark_on_failure=True)  # a reader keeps the log: `WalBusyError`
     log.info("sqlite.compacted", database=database.name)
 
 
@@ -254,6 +255,8 @@ class SqliteMaintenance:
             if busy:
                 partial.append(name)
                 log.info("sqlite.checkpoint_partial", database=name)
+            elif name == "main":
+                settle_pending(self._files[name])  # an erasure that waited for the log is done
         return CheckpointReport(len(self._files), partial)
 
     def _last_vacuum(self) -> datetime | None:

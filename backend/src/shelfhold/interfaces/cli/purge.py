@@ -22,6 +22,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     purge.add_argument("--now", action="store_true", help=t("purge.now_help"))
     target = purge.add_mutually_exclusive_group(required=True)
     target.add_argument("--leftovers", action="store_true", help=t("purge.leftovers_help"))
+    target.add_argument("--checkpoint", action="store_true", help=t("purge.checkpoint_help"))
     target.add_argument("--kept-ack", action="store_true", help=t("purge.kept_ack_help"))
     target.add_argument("--unit", default=None, help=t("purge.unit_help"))
     target.add_argument("--work", default=None, help=t("purge.work_help"))
@@ -65,6 +66,13 @@ def _leftovers(args: argparse.Namespace, channel: OpsChannel) -> int:
 
 
 @ops_command
+def _checkpoint(args: argparse.Namespace, channel: OpsChannel) -> int:
+    channel.call("ops.purge_checkpoint")
+    print(t("purge.checkpoint_done"))
+    return 0
+
+
+@ops_command
 def _kept_ack(args: argparse.Namespace, channel: OpsChannel) -> int:
     print(t("purge.kept_ack_done", count=channel.call("ops.kept_ack")["cleared"]))
     return 0
@@ -93,6 +101,8 @@ def _purge(args: argparse.Namespace, channel: OpsChannel) -> int:
 
 
 def run(args: argparse.Namespace, resolved: object) -> int:
+    if args.checkpoint:
+        return _checkpoint(args, resolved)  # type: ignore[arg-type]
     if args.kept_ack:
         return _kept_ack(args, resolved)  # type: ignore[arg-type]
     if args.leftovers:  # a plan first (read only), then the same command with its version

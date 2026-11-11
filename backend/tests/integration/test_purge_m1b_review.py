@@ -593,9 +593,11 @@ def test_purge_refuses_to_say_clean_while_a_reader_holds_the_wal(
     flag `busy` of the checkpoint is read: a log still held is `purge.wal_busy`, and once the
     reader leaves, a checkpoint empties it."""
     from shelfhold.export.application import purge as purge_module
+    from shelfhold.infrastructure import wal
     from shelfhold.ops.library import refusal_of
+    from shelfhold.ops.status import wal_pending_report
 
-    monkeypatch.setattr(purge_module, "CHECKPOINT_PAUSE_S", 0.01)
+    monkeypatch.setattr(wal, "PAUSE_S", 0.01)
     with export_env() as env:
         service = FakeService(tmp_path)
         series = env.new_series(TITLE)
@@ -614,13 +616,15 @@ def test_purge_refuses_to_say_clean_while_a_reader_holds_the_wal(
                     series.work_id, principal=ADMIN, typed=series.work_id, now=purge.clock.now()
                 )
             assert getattr(refusal_of(refused.value), "code", None) == "purge.wal_busy"
+            with env.engine.connect() as connection:  # `status` says: an erasure to finalise
+                assert len(wal_pending_report(connection)) == 1
         finally:
             reader.execute("COMMIT")
             reader.close()
+        # the relaunch redoes only the checkpoint (a second purge would be `PurgeUnknownError`)
+        assert wal.settle_pending(Path(database))
         with env.engine.connect() as connection:
-            row = connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-        assert row is not None
-        assert row[0] == 0
+            assert wal_pending_report(connection) == []
         raw = _database_bytes(env.engine)
         assert TITLE.encode() not in raw
 
@@ -702,3 +706,50 @@ def test_backups_floor_counts_the_series_rows_older_than_the_units(tmp_path: Pat
             )
             floor = created_since(connection, [unit], series.work_id)
             assert floor is not None and floor.astimezone(UTC).year == 2019
+
+
+def test_compact_refuses_while_a_reader_holds_the_wal_and_settles_later(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P12: `VACUUM` answers, but the log a reader holds keeps the old pages. The same helper as
+    the purge reads the busy flag: `purge.wal_busy`, a mark, and once the reader left the
+    nightly/start/relaunch settles it and the title is gone from every file."""
+    from shelfhold.infrastructure import wal
+    from shelfhold.jobs.maintenance import MaintenanceGate, compact_database
+    from shelfhold.ops.library import refusal_of
+
+    monkeypatch.setattr(wal, "PAUSE_S", 0.01)
+    with export_env() as env:
+        database = Path(str(env.engine.url.database))
+        raw = sqlite3.connect(database)
+        raw.execute("PRAGMA secure_delete=OFF")
+        raw.execute("CREATE TABLE m1a_probe(x TEXT)")
+        raw.executemany("INSERT INTO m1a_probe VALUES (?)", [(TITLE + "p" * 3000,)] * 20)
+        raw.commit()
+        raw.execute("DELETE FROM m1a_probe")
+        raw.commit()
+        raw.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        raw.close()
+        reader = sqlite3.connect(database, isolation_level=None)
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM sqlite_master").fetchone()
+        try:
+            with pytest.raises(wal.WalBusyError) as refused:
+                compact_database(database, MaintenanceGate(tmp_path / "gate.lock"))
+            assert getattr(refusal_of(refused.value), "code", None) == "purge.wal_busy"
+            assert wal.wal_pending_since(database) is not None
+        finally:
+            reader.execute("COMMIT")
+            reader.close()
+        assert wal.settle_pending(database)
+        assert wal.wal_pending_since(database) is None
+        assert TITLE.encode() not in _database_bytes(env.engine)
+
+
+def test_a_locked_database_is_a_purge_busy_refusal() -> None:
+    from shelfhold.ops.library import refusal_of
+
+    error = sa.exc.OperationalError("INSERT", {}, sqlite3.OperationalError("database is locked"))
+    assert getattr(refusal_of(error), "code", None) == "purge.busy"
+    assert refusal_of(sqlite3.OperationalError("database is locked")) is not None
+    assert refusal_of(sqlite3.OperationalError("no such table: x")) is None

@@ -269,6 +269,7 @@ yes = "oui"
 no = "non"
 stale_series_line = "Série silencieuse : « {title} » n'a reçu aucun chapitre depuis {silent_days} jours (seuil : {threshold_days} jours). Vérifiez la source ou mettez le suivi en pause."
 irreplaceable_candidate_line = "Candidate irremplaçable : l'unité {unit_id} (source « {source_key} », {errors} erreurs de contenu de suite, copies indépendantes : {independent_copies}). Rien n'est copié ni supprimé pour l'instant."
+wal_pending_line = "Effacement à finaliser depuis {since} : le journal de la base est encore tenu par un lecteur. Lancez « shelfhold purge --checkpoint » (ou arrêtez le serveur)."
 kept_in_service_line = "Téléchargement laissé dans Suwayomi par une purge (demande {request}, depuis {since}) : supprimez-le dans Suwayomi, puis « shelfhold purge --kept-ack »."
 tombstoned_upstream_line = "Série purgée encore présente dans Suwayomi : « {title} ». Shelfhold l'ignore ; retirez-la manuellement dans Suwayomi."
 capabilities_line = "Racine {root} ({filesystem}) : reflink {reflink} ; lien dur vers /store {link} ; inodes stables {inodes}{fallback}"
@@ -556,7 +557,7 @@ action = "Relancez la commande dans un instant, quand le travail en cours (copie
 
 [errors."purge.wal_busy"]
 title = "L'effacement est fait, mais le serveur tient encore le journal de la base : il peut garder un titre jusqu'à son prochain vidage."
-action = "Relancez « shelfhold purge » quand le serveur est inactif, ou arrêtez le serveur : le journal est vidé chaque nuit et à l'arrêt."
+action = "Lancez « shelfhold purge --checkpoint » quand le serveur est inactif (ou arrêtez-le) : il ne refait que le vidage du journal. Il l'est aussi chaque nuit et au démarrage."
 
 [errors."pairing.batch_stale"]
 title = "Le lot d'appariements confirmé n'est plus celui qui a été proposé."
@@ -1271,6 +1272,8 @@ root_pending = "Racine {root} : la pierre tombale lui sera écrite à son retour
 alert = "À faire à la main : {alert}"
 upstream = "Service : {released} téléchargement(s) libéré(s), {kept} gardé(s) par un autre compte, {unfollowed} série(s) retirée(s) de la bibliothèque."
 retained_backup = "Sauvegarde conservée qui contient encore ces données (à écarter à la main, jamais réécrite) : {name}"
+checkpoint_help = "Refait seulement le vidage du journal de la base, après un effacement dont le journal était tenu."
+checkpoint_done = "Journal vidé : l'effacement est finalisé."
 kept_ack_help = "Efface la marque des téléchargements laissés dans le service (à faire après les avoir supprimés dans Suwayomi)."
 kept_ack_done = "{count} marque(s) effacée(s)."
 leftovers_help = "Propose de libérer, dans le service, les téléchargements laissés par les purges de la version précédente (plan, puis --confirm)."

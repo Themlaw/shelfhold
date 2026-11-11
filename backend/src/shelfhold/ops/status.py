@@ -27,6 +27,7 @@ from shelfhold.export.domain.kavita_compat import (
 )
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
+from shelfhold.infrastructure.wal import WAL_PENDING_KEY
 from shelfhold.library.public import KEPT_PREFIX, backlog_row, content_error_candidates
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 
@@ -41,6 +42,7 @@ __all__ = [
     "rights_report",
     "stale_report",
     "tombstoned_report",
+    "wal_pending_report",
 ]
 
 UNKNOWN_LANGUAGE = "x-unknown"  # what an adopted Edition without a language carries
@@ -383,6 +385,15 @@ def kept_in_service_report(connection: Connection) -> list[dict[str, object]]:
         .order_by(setting.c.value, setting.c.key)
     )
     return [{"request": r.key.removeprefix(KEPT_PREFIX), "since": r.value} for r in rows]
+
+
+def wal_pending_report(connection: Connection) -> list[dict[str, object]]:
+    """An erasure whose log a reader still held (`purge.wal_busy`): to finalise with
+    `shelfhold purge --checkpoint`, or by itself at the next night or start."""
+    value = connection.execute(
+        sa.select(platform.app_setting.c.value).where(platform.app_setting.c.key == WAL_PENDING_KEY)
+    ).scalar()
+    return [] if value is None else [{"since": value}]
 
 
 def known_bad_report(connection: Connection, today: date) -> dict[str, object]:

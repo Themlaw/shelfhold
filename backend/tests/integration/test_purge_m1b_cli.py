@@ -157,6 +157,11 @@ def test_kept_in_service_is_shown_by_status_until_the_admin_clears_it(
         assert request in capsys.readouterr().out
         assert b.cli("purge", "--kept-ack") == 0
         assert "1 marque(s)" in capsys.readouterr().out
+        with b.engine.connect() as connection:  # a reserved action: the trace is in the audit log
+            acted = connection.execute(
+                sa.text("SELECT count(*) FROM audit WHERE action = 'purge.kept_acknowledged'")
+            ).scalar_one()
+        assert acted == 1
         b.cli("status")
         assert request not in capsys.readouterr().out
 
@@ -182,3 +187,27 @@ def test_purge_sweeps_the_backup_snapshots_a_dead_run_left_behind(
         (orphan / "snapshot.db").write_bytes(b"a title in the clear")
         assert b.cli("purge", "--now", "--work", work, "--confirm", work) == 0
         assert not orphan.exists()
+
+
+def test_purge_checkpoint_redoes_only_the_log_and_lifts_the_status_mark(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from shelfhold.infrastructure.wal import WAL_PENDING_KEY
+
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        with b.engine.begin() as connection:
+            connection.execute(
+                sa.insert(platform.app_setting).values(
+                    key=WAL_PENDING_KEY, value="2099-01-01T00:00:00+00:00"
+                )
+            )
+        capsys.readouterr()
+        b.cli("status")
+        assert "shelfhold purge --checkpoint" in capsys.readouterr().out
+        assert b.cli("purge", "--checkpoint") == 0
+        assert "finalisé" in capsys.readouterr().out
+        b.cli("status")
+        assert "purge --checkpoint" not in capsys.readouterr().out

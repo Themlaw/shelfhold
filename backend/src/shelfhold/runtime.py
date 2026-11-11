@@ -55,6 +55,7 @@ from shelfhold.infrastructure.observability.shutdown import (
 )
 from shelfhold.infrastructure.observability.wiring import disk_guard_for, register_ops_jobs
 from shelfhold.infrastructure.schema import platform
+from shelfhold.infrastructure.wal import settle_pending
 from shelfhold.jobs.huey_app import JobPools, boot_jobs
 from shelfhold.jobs.maintenance import MaintenanceGate, register_sqlite_maintenance
 from shelfhold.jobs.window import MaintenanceWindow
@@ -303,6 +304,13 @@ class InstanceRuntime:
             return
         threading.Thread(
             target=self._repair_projections, args=(self.engine,), name="meta-repair", daemon=True
+        ).start()
+        # an erasure that waited for a reader to leave the log: done at start, if it can be
+        threading.Thread(
+            target=settle_pending,
+            args=(self.settings.database_path,),
+            name="wal-settle",
+            daemon=True,
         ).start()
 
     def _repair_projections(self, engine: Engine) -> None:

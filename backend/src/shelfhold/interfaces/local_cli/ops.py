@@ -278,8 +278,12 @@ def _purge(ops: OpsServices, by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
-def _kept_ack(ops: OpsServices, _by: Principal, _p: Params) -> object:
-    return ops.library.kept_ack()
+def _kept_ack(ops: OpsServices, by: Principal, _p: Params) -> object:
+    return ops.library.kept_ack(principal=by)
+
+
+def _purge_checkpoint(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.library.purge_checkpoint()
 
 
 def _leftovers_plan(ops: OpsServices, _by: Principal, _p: Params) -> object:
@@ -446,7 +450,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.repatriate_check": (_repatriate_check, None),
     "ops.detach_restore_upstream": (_give_back, None),
     "ops.purge": (_purge, "purge.now"),
-    "ops.kept_ack": (_kept_ack, None),
+    "ops.kept_ack": (_kept_ack, "purge.now"),
+    "ops.purge_checkpoint": (_purge_checkpoint, None),
     "ops.leftovers_plan": (_leftovers_plan, None),
     "ops.leftovers_apply": (_leftovers_apply, "purge.now"),
     "ops.probe": (_probe, None),

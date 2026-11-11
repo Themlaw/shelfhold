@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -63,7 +64,6 @@ from shelfhold.export.application.purge import (
     PurgeReport,
     PurgeService,
     PurgeUnknownError,
-    PurgeWalBusyError,
 )
 from shelfhold.export.application.purge_leftovers import PurgeLeftovers
 from shelfhold.export.application.repatriate import (
@@ -92,11 +92,19 @@ from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.series import refresh_names
-from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
+from shelfhold.identity.public import (
+    RESERVED_ACTIONS,
+    Allowed,
+    AuditEntry,
+    Principal,
+    audit_insert,
+    authorize_reserved,
+)
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, identity, platform
+from shelfhold.infrastructure.wal import WalBusyError, truncate_wal
 from shelfhold.jobs.maintenance import MaintenanceBusyError, MaintenanceGate, compact_database
 from shelfhold.library.public import KEPT_PREFIX, ConfirmationRequiredError
 from shelfhold.ops.backup.report import retained_since
@@ -219,7 +227,7 @@ OWN_CODES = frozenset({"pairing", "repatriate", "backfill", "instance"})
 _CODED: tuple[tuple[type[Exception], str], ...] = (
     (PurgeUnknownError, "ops.unknown_subject"),
     (PurgeCollateralError, "purge.collateral"),
-    (PurgeWalBusyError, "purge.wal_busy"),
+    (WalBusyError, "purge.wal_busy"),
     (LockBusyError, "purge.busy"),
     (MaintenanceBusyError, "purge.busy"),
     (ConfirmationRequiredError, "unit.confirmation_required"),
@@ -233,6 +241,10 @@ _CODED: tuple[tuple[type[Exception], str], ...] = (
 
 def refusal_of(error: Exception) -> OpsError | None:
     """The refusal that stands for a service's exception, or None when it is a real failure."""
+    if isinstance(error, sa.exc.OperationalError | sqlite3.OperationalError) and (
+        "locked" in str(error).lower()
+    ):  # the database is held by another writer: ask again in a moment
+        return CodedRefusal("purge.busy", "database is locked")
     if isinstance(error, RootBlockedError):  # the exit command is in the message and the catalog
         frozen = error.state is RootState.RESTORED_BEHIND
         code = "instance.restored_behind" if frozen else "root.blocked"
@@ -856,14 +868,36 @@ class LibraryOps:
     # -- what the purges of M1a left in the service (L17): a plan, then a confirmation ------------
 
     @_refused
-    def kept_ack(self) -> dict[str, Any]:
-        """The admin deleted in the service what a purge left there: the marks `status` shows go."""
+    def kept_ack(self, *, principal: Principal) -> dict[str, Any]:
+        """The admin deleted in the service what a purge left there: the marks `status` shows go.
+        A reserved action (the marks are the only reminder), with its trace in the audit log."""
+        now = self._comp.clock.now()
+        verdict = authorize_reserved(
+            principal, RESERVED_ACTIONS["purge.now"], now=now,
+            fresh_auth_s=self._comp.settings.fresh_auth_s,
+        )  # fmt: skip
+        if not isinstance(verdict, Allowed):
+            raise CodedRefusal("forbidden", type(verdict).__name__)
         setting = platform.app_setting
         with self._comp.engine.begin() as connection:
             count = connection.execute(
                 sa.delete(setting).where(setting.c.key.like(KEPT_PREFIX + "%"))
             ).rowcount
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=principal.actor_id, action="purge.kept_acknowledged", at=now,
+                        target=f"requests:{count}",
+                    )
+                )
+            )  # fmt: skip
         return {"cleared": count}
+
+    @_refused
+    def purge_checkpoint(self) -> dict[str, Any]:
+        """Only the emptying of the log, after a `purge.wal_busy`: no purge is run again."""
+        truncate_wal(Path(str(self._comp.engine.url.database)))
+        return {"done": True}
 
     @_refused
     def leftovers_plan(self) -> dict[str, Any]:
