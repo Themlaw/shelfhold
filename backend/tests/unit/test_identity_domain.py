@@ -137,6 +137,8 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
                 Effect.MIGRATES_IDENTITY,  # L55: `normalize migrate`
                 Effect.ACKNOWLEDGES_RESTORE,  # `restore acknowledge`
                 Effect.REWRITES_EXPORTED_FILES,  # M2 L17: `revisions apply|force`
+                Effect.RATES_CONTENT,  # porteur 2026-11-11: classing needs a fresh session
+                Effect.ENROLS_PASSKEY,  # porteur 2026-11-11: so does adding a passkey
             }
         )
         == set(Effect) - NO_REAUTH_EFFECTS
@@ -175,7 +177,7 @@ def test_parental_change_reauth_only_with_restricted_profile() -> None:
 @pytest.mark.req("EF-USR-022")
 def test_hardened_profile_extends_freshness_to_every_reserved_action() -> None:
     stale = _principal(Credential.SESSION, auth_age=timedelta(minutes=20))
-    action = ReservedAction("test.rate", frozenset({Effect.RATES_CONTENT}))
+    action = ReservedAction("test.rate", frozenset({Effect.MANAGES_CREDENTIALS}))
     assert isinstance(authorize_reserved(stale, action, now=T0, fresh_auth_s=900), Allowed)
     assert isinstance(
         authorize_reserved(stale, action, now=T0, fresh_auth_s=900, hardened=True),
@@ -225,3 +227,42 @@ def test_a_look_alike_credential_is_not_local_cli() -> None:
     action = ReservedAction("test.purge", frozenset({Effect.DELETES_PERMANENTLY}))
     principal = Principal("u", "u", "admin", Impostor("local_cli"))  # type: ignore[arg-type]
     assert isinstance(authorize_reserved(principal, action, now=T0), CredentialNotAllowed)
+
+
+@pytest.mark.req("EF-USR-022", "EF-BIB-036")
+@pytest.mark.parametrize("name", ["rate", "passkey.register"])
+@pytest.mark.parametrize("hardened", [False, True])
+def test_rate_and_passkey_enrolment_need_a_fresh_session_in_every_profile(
+    name: str, hardened: bool
+) -> None:
+    from shelfhold.identity.public import RESERVED_ACTIONS
+
+    action = RESERVED_ACTIONS[name]
+    stale = _principal(Credential.SESSION, auth_age=timedelta(minutes=20))
+    verdict = authorize_reserved(stale, action, now=T0, fresh_auth_s=900, hardened=hardened)
+    assert isinstance(verdict, ReauthRequired)
+    assert (verdict.auth_age_s, verdict.max_age_s) == (1200, 900)
+    edge = _principal(Credential.SESSION, auth_age=timedelta(seconds=901))
+    assert isinstance(
+        authorize_reserved(edge, action, now=T0, fresh_auth_s=900, hardened=hardened),
+        ReauthRequired,
+    )
+    fresh = _principal(Credential.SESSION, auth_age=timedelta(seconds=899))
+    assert isinstance(
+        authorize_reserved(fresh, action, now=T0, fresh_auth_s=900, hardened=hardened), Allowed
+    )
+    for credential in (Credential.API_KEY, Credential.DEVICE_TOKEN):
+        key = _principal(credential, auth_age=timedelta(seconds=1))
+        assert isinstance(
+            authorize_reserved(key, action, now=T0, fresh_auth_s=900, hardened=hardened),
+            CredentialNotAllowed,
+        )
+
+
+@pytest.mark.req("EF-USR-022")
+def test_passkey_revocation_keeps_the_existing_rule() -> None:
+    from shelfhold.identity.public import RESERVED_ACTIONS
+
+    revoke = RESERVED_ACTIONS["passkey.revoke"]
+    assert not revoke.needs_fresh_auth(restricted_profile_exists=False, hardened=False)
+    assert revoke.needs_fresh_auth(restricted_profile_exists=False, hardened=True)

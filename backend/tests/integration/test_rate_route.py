@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from shelfhold.config import Settings
-from tests.auth_env import AuthEnv, auth_env, run_cli
+from tests.auth_env import PASSWORD, AuthEnv, auth_env, run_cli
 
 KEY = re.compile(r"shk_[0-9a-f]{8}_[A-Za-z0-9_-]{43}")
 PATH = "/api/v1/works/01JWORK0000000000000000000/rating"
@@ -82,3 +82,25 @@ def test_read_or_request_key_setting_age_gets_403(
     body = done.json()
     assert body["effective"] == 13 and body["withdrawals"][0]["reason"] == "above_ceiling"
     assert ops.rating.calls == [("13+", "01JWORK0000000000000000000", "session")]
+
+
+@pytest.mark.req("EF-USR-022", "EF-BIB-036")
+@pytest.mark.parametrize("hardened", [False, True])
+def test_rating_needs_a_session_fresher_than_900_s_in_every_profile(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, ops: _Ops, hardened: bool
+) -> None:
+    """Porteur, 2026-11-11: a stolen session must not file adult content as "0"."""
+    from datetime import timedelta
+
+    with auth_env(monkeypatch, settings, ops_services=ops, hardened=hardened) as env:
+        env.login(remember=False)
+        assert env.post(PATH, json={"age": "13+"}).status_code == 200  # just opened: fresh
+        env.clock.advance(timedelta(minutes=20))
+        stale = env.post(PATH, json={"age": "0+"})
+        assert stale.status_code == 401
+        assert stale.json()["type"] == "/api/v1/problems/reauth-required"
+        assert len(ops.rating.calls) == 1  # the service was never reached
+        reauth = env.post("/api/v1/auth/reauth", json={"method": "password", "password": PASSWORD})
+        assert reauth.status_code == 200
+        assert env.post(PATH, json={"age": "0+"}).status_code == 200
+        assert len(ops.rating.calls) == 2

@@ -46,6 +46,8 @@ P3 = {
     "migrates_identity",  # `normalize migrate` rewrites the identity keys of live rows (L55)
     "acknowledges_restore",  # `restore acknowledge`: passkey logins come back with it
     "rewrites_exported_files",  # `revisions apply|force`: KOReader positions reset (M2 L17)
+    "rates_content",  # fresh session in every profile (porteur, 2026-11-11): a stolen session
+    "enrols_passkey",  # must not file adult content as "0" nor add a passkey that outlives it
 }
 
 
@@ -79,7 +81,6 @@ def principal_for(axis: str, role: str = "admin") -> Principal:
 # the default of an unclassified effect is the safe one (freshness required).
 NON_P3 = {
     "parental_control",
-    "rates_content",
     "unmasks_request",
     "manages_credentials",
     "attests_trust",  # D15 (M2 L07)
