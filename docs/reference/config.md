@@ -50,6 +50,8 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_BACKUP_PASSPHRASE_FILE` | `backup_passphrase_file` | Path (optionnel) | aucun |  | variable seule, jamais dans `config.toml` |
 | `SHELFHOLD_BACKUP_RETENTION` | `backup_retention` | int | `14` | >= 1, <= 30 | `SHELFHOLD_BACKUP_RETENTION_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_BACKUP_STALE_HOURS` | `backup_stale_hours` | int | `36` | >= 25, <= 1440 | `SHELFHOLD_BACKUP_STALE_HOURS_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_FETCHER_CACHE` | `fetcher_cache` | bool | `true` |  | `SHELFHOLD_FETCHER_CACHE_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_FETCHER_CACHE_OFF_SOURCES` | `fetcher_cache_off_sources` | liste de str | aucun |  | `SHELFHOLD_FETCHER_CACHE_OFF_SOURCES_FILE` en lit la valeur dans un fichier |
 
 ## Clés de `config get|set|apply`
 
