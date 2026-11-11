@@ -7,7 +7,7 @@ def forget_secret_values() -> None:
     shelfhold_logging._known_values.clear()
 
 
-def fresh_secret(seed: str, *, specials: bool = False) -> str:
+def synthetic_text(seed: str, *, specials: bool = False) -> str:
     """A synthetic credential built at run time from a seed: no literal in the sources, so the
     secret scanner of the repository has nothing to find, and the value is the same on every run.
 

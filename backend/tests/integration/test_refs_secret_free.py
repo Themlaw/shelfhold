@@ -35,11 +35,11 @@ from shelfhold.sdk.refs import SeriesRef
 from tests.backup_env import backup_bench, read_members
 from tests.follow_env import Bench, follow_bench
 from tests.library_env import lib_env
-from tests.redaction_support import forget_secret_values, fresh_secret
+from tests.redaction_support import forget_secret_values, synthetic_text
 
 PLACEHOLDER = "{secret}"
-KEY_A = fresh_secret("opds-a", specials=True)
-KEY_B = fresh_secret("opds-b", specials=True)
+KEY_A = synthetic_text("opds-a", specials=True)
+KEY_B = synthetic_text("opds-b", specials=True)
 
 
 @pytest.fixture(autouse=True)
@@ -252,7 +252,7 @@ def test_upstream_snapshot_payload_schema_has_no_secret() -> None:
     """The payload is validated at write: plain, small, and free of any secret (a registered
     value, a userinfo, a token-shaped value). Nothing is stored when it is refused."""
     register_secret_value(KEY_A)
-    token = fresh_secret("jwt")
+    token = synthetic_text("jwt")
     bad: list[dict[str, Any]] = [
         {"password": "x"},
         {"a": {"api_key": "x"}},
@@ -278,7 +278,7 @@ def test_upstream_snapshot_payload_schema_has_no_secret() -> None:
 def test_a_sensitive_snapshot_field_is_sealed_in_the_envelope() -> None:
     """A field the service declares sensitive is not refused: it is sealed (ENF-SEC-005) with the
     row as associated data, and comes back as it was for the restoration."""
-    secret_text = fresh_secret("sealed-field")
+    secret_text = synthetic_text("sealed-field")
     payload: dict[str, object] = {"categories": [], "hint": secret_text}
     with lib_env() as lib:
         plain = UpstreamSnapshots(lib.engine, clock=SystemClock())

@@ -1,6 +1,6 @@
 """M2 L04 (EF-SRC-035, EF-SRC-023 ApiKey path/query): a remote reference never holds a secret.
 
-Every credential here is built at run time (`fresh_secret`): no literal, so the scanner of the
+Every credential here is built at run time (`synthetic_text`): no literal, so the scanner of the
 repository has nothing to find. The registry of secret values is process-wide and is emptied around
 each test.
 """
@@ -45,12 +45,12 @@ from shelfhold.sdk.refs import (
     SeriesRef,
     UnitInfo,
 )
-from tests.redaction_support import forget_secret_values, fresh_secret
+from tests.redaction_support import forget_secret_values, synthetic_text
 
 pytestmark = pytest.mark.req("EF-SRC-035")
 
-KEY = fresh_secret("key-a")
-SPECIAL = fresh_secret("key-b", specials=True)
+KEY = synthetic_text("key-a")
+SPECIAL = synthetic_text("key-b", specials=True)
 
 
 @pytest.fixture(autouse=True)
@@ -168,7 +168,7 @@ def test_declared_template_rewrites_the_key_segment(
 
 def test_the_rewrite_is_the_same_whatever_the_key() -> None:
     """EF-SRC-035: a rotation changes no identifier."""
-    first, second = fresh_secret("rot-1"), fresh_secret("rot-2", specials=True)
+    first, second = synthetic_text("rot-1"), synthetic_text("rot-2", specials=True)
     ids = {
         rewrite_ref(f"/api/opds/{quote(k, safe='')}/series/12", (first, second))
         for k in (first, second)
@@ -207,7 +207,7 @@ def test_screen_walks_every_reference_of_every_model() -> None:
 
 def test_sensitive_names_in_a_stored_reference_are_refused_even_when_unregistered() -> None:
     """A secret nobody registered still shows by its place: a key-named parameter, a key segment."""
-    blob = fresh_secret("unregistered")
+    blob = synthetic_text("unregistered")
     for ref in (
         f"/series/1?token={blob}",
         f"/series/1?x=1&api_key={blob}",
@@ -230,7 +230,7 @@ def test_sensitive_names_in_a_stored_reference_are_refused_even_when_unregistere
 def test_log_redaction_covers_path_segments_and_query() -> None:
     register_secret_value(KEY)
     register_secret_value(SPECIAL)
-    blob = fresh_secret("unregistered-2")
+    blob = synthetic_text("unregistered-2")
     for form in (*_encodings(KEY).values(), *_encodings(SPECIAL).values()):
         out = redact_url(f"https://host.example/api/opds/{form}/series/1?page=2")
         assert "host.example/api/opds/" in out and "page=2" in out
@@ -369,7 +369,7 @@ def test_a_dict_of_parameters_is_scanned_too() -> None:
 
 
 def test_a_secret_with_json_special_characters_is_found_in_a_serialised_column() -> None:
-    secret = 'q"u\\o\u00e9te\n' + fresh_secret("json")
+    secret = 'q"u\\o\u00e9te\n' + synthetic_text("json")
     register_secret_value(secret)
     for document in (json.dumps({"a": secret}), json.dumps([{"b": [secret]}], ensure_ascii=False)):
         assert secret not in document  # the serialised text hides the raw value
