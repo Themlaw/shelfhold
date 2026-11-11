@@ -26,7 +26,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, identity, reading
 from shelfhold.infrastructure.volumes import write_data_file
 from tests.library_env import LibEnv, lib_env
-from tests.ranged_env import RangedBench, ranged_bench, volume_epub
+from tests.ranged_env import RangedBench, ranged_bench, signer, volume_epub
 
 ARGON = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"
 
@@ -606,8 +606,8 @@ def test_read_state_counts_the_children_of_a_re_cut_chapter(lib: LibEnv) -> None
             sa.text("SELECT number_norm FROM unit WHERE id = :u"), {"u": parent}
         ).scalar_one()
         child = unit_of(connection, bench.edition, f"{number}.1")
-        proposal = propose_resplit(connection, parent, [child])
-        apply_resplit(connection, proposal, confirmation=proposal.token)
+        proposal = propose_resplit(connection, parent, [child], signer(lib))
+        apply_resplit(connection, proposal, signer(lib), confirmation=proposal.token)
     # a reader finished the child on the file of its own (another carrier covers it)
     other = new_ulid()
     with lib.engine.begin() as connection:

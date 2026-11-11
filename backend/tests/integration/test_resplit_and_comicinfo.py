@@ -13,6 +13,7 @@ import sqlalchemy as sa
 from shelfhold.catalog.public import (
     ConfirmationRequiredError,
     ResplitError,
+    ResplitSigner,
     apply_resplit,
     propose_resplit,
 )
@@ -25,7 +26,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from tests.integration.test_schema_catalog import add_edition, add_unit, add_work
 from tests.library_env import LibEnv, lib_env
-from tests.ranged_env import ranged_bench
+from tests.ranged_env import ranged_bench, signer
 
 
 @pytest.fixture
@@ -67,10 +68,10 @@ def test_resplit_chapter_proposes_coverage_never_removes(lib: LibEnv) -> None:
     children = new_children(lib, parent)
     before = counts(lib)
     with lib.engine.begin() as connection:
-        proposal = propose_resplit(connection, parent, children)
+        proposal = propose_resplit(connection, parent, children, signer(lib))
     assert counts(lib) == before  # a proposal writes nothing
     with lib.engine.begin() as connection:
-        assert apply_resplit(connection, proposal, confirmation=proposal.token) == 2
+        assert apply_resplit(connection, proposal, signer(lib), confirmation=proposal.token) == 2
     after = counts(lib)
     assert after["coverage"] == before["coverage"] + 2  # added...
     assert after["units"] == before["units"] and after["items"] == before["items"]  # ...no removal
@@ -90,7 +91,7 @@ def test_resplit_chapter_proposes_coverage_never_removes(lib: LibEnv) -> None:
         ).scalar_one()
         assert held == bench.item_id
     with lib.engine.begin() as connection:  # again: nothing more
-        assert apply_resplit(connection, proposal, confirmation=proposal.token) == 0
+        assert apply_resplit(connection, proposal, signer(lib), confirmation=proposal.token) == 0
     assert counts(lib) == after
 
 
@@ -99,12 +100,14 @@ def test_resplit_proposal_applied_only_when_confirmed(lib: LibEnv) -> None:
     bench = ranged_bench(lib, 2)
     children = new_children(lib, bench.unit_ids[0])
     with lib.engine.begin() as connection:
-        proposal = propose_resplit(connection, bench.unit_ids[0], children)
-        again = propose_resplit(connection, bench.unit_ids[0], children)  # another nonce
+        proposal = propose_resplit(connection, bench.unit_ids[0], children, signer(lib))
+        again = propose_resplit(
+            connection, bench.unit_ids[0], children, signer(lib)
+        )  # another nonce
     before = counts(lib)
     for wrong in (None, "", "yes", "x" * 24, again.token):
         with lib.engine.begin() as connection, pytest.raises(ConfirmationRequiredError):
-            apply_resplit(connection, proposal, confirmation=wrong)
+            apply_resplit(connection, proposal, signer(lib), confirmation=wrong)
     assert counts(lib) == before
 
 
@@ -116,26 +119,28 @@ def test_resplit_proposal_refuses_what_is_not_one(lib: LibEnv) -> None:
     with lib.engine.begin() as connection:
         for bad_children in ([], [parent], [new_ulid()], [children[0], new_ulid()]):
             with pytest.raises(ResplitError):
-                propose_resplit(connection, parent, bad_children)
+                propose_resplit(connection, parent, bad_children, signer(lib))
         with pytest.raises(ResplitError):
-            propose_resplit(connection, new_ulid(), children)
+            propose_resplit(connection, new_ulid(), children, signer(lib))
         work = add_work(connection)
         foreign = add_unit(connection, add_edition(connection, work), "77")
         unrelated = add_unit(connection, lib.chain["edition"], "99")  # no sub-number of the parent
         with pytest.raises(ResplitError, match="different Editions"):
-            propose_resplit(connection, parent, [children[0], foreign])
+            propose_resplit(connection, parent, [children[0], foreign], signer(lib))
         with pytest.raises(ResplitError, match="sub-numbers"):
-            propose_resplit(connection, parent, [children[0], unrelated])
+            propose_resplit(connection, parent, [children[0], unrelated], signer(lib))
         with pytest.raises(ResplitError, match="sub-numbers"):  # a sibling is no re-cut
-            propose_resplit(connection, parent, [bench.unit_ids[1]])
+            propose_resplit(connection, parent, [bench.unit_ids[1]], signer(lib))
         with pytest.raises(ResplitError, match="already carried"):  # held by a file already
-            propose_resplit(connection, parent, [unrelated_carried(lib, connection, parent)])
+            propose_resplit(
+                connection, parent, [unrelated_carried(lib, connection, parent)], signer(lib)
+            )
         with pytest.raises(ResplitError):
-            propose_resplit(connection, parent, [new_ulid() for _ in range(201)])
-        proposal = propose_resplit(connection, parent, children)
+            propose_resplit(connection, parent, [new_ulid() for _ in range(201)], signer(lib))
+        proposal = propose_resplit(connection, parent, children, signer(lib))
         connection.execute(sa.delete(catalog.unit).where(catalog.unit.c.id == children[0]))
         with pytest.raises(ResplitError, match="does not hold"):  # stale: a child is gone
-            apply_resplit(connection, proposal, confirmation=proposal.token)
+            apply_resplit(connection, proposal, signer(lib), confirmation=proposal.token)
 
 
 # -- the range read from ComicInfo -----------------------------------------------------------
@@ -273,8 +278,11 @@ def test_resplit_never_loses_series_age_and_new_units_wait_for_the_barrier() -> 
         before = age_columns()
         first, second = add_book(env, book, "10.1"), add_book(env, book, "10.2")  # the re-cut
         with env.engine.begin() as connection:
-            proposal = propose_resplit(connection, parent, [first, second])
-            assert apply_resplit(connection, proposal, confirmation=proposal.token) == 2
+            proposal = propose_resplit(connection, parent, [first, second], signer(env.lib))
+            applied = apply_resplit(
+                connection, proposal, signer(env.lib), confirmation=proposal.token
+            )
+            assert applied == 2
         assert age_columns() == before  # nothing of the age moved with the coverage
         with env.engine.connect() as connection:
             (task,) = due_ages(connection, env.destination_id)
@@ -332,12 +340,12 @@ def test_resplit_token_is_not_forgeable_and_binds_the_coverage_it_saw(lib: LibEn
     for token in (bare, "0" * 32):
         forged = ResplitProposal(edition, parent, forged_children, "s", "n", token)
         with lib.engine.begin() as connection, pytest.raises(ConfirmationRequiredError):
-            apply_resplit(connection, forged, confirmation=token)
+            apply_resplit(connection, forged, signer(lib), confirmation=token)
     with lib.engine.begin() as connection:
-        proposal = propose_resplit(connection, parent, children)
+        proposal = propose_resplit(connection, parent, children, signer(lib))
     swapped = replace(proposal, child_unit_ids=(*proposal.child_unit_ids, missing))
     with lib.engine.begin() as connection, pytest.raises(ConfirmationRequiredError):
-        apply_resplit(connection, swapped, confirmation=proposal.token)  # the token binds them
+        apply_resplit(connection, swapped, signer(lib), confirmation=proposal.token)
     assert counts(lib) == before
     with lib.engine.begin() as connection:  # the coverage moved since the proposal: stale
         connection.execute(
@@ -347,4 +355,23 @@ def test_resplit_token_is_not_forgeable_and_binds_the_coverage_it_saw(lib: LibEn
             )
         )  # fmt: skip
     with lib.engine.begin() as connection, pytest.raises(ResplitError):
-        apply_resplit(connection, proposal, confirmation=proposal.token)
+        apply_resplit(connection, proposal, signer(lib), confirmation=proposal.token)
+
+
+@pytest.mark.req("EF-BIB-044")
+def test_resplit_proposed_then_confirmed_after_a_restart_or_in_another_process(
+    lib: LibEnv,
+) -> None:
+    bench = ranged_bench(lib, 2)
+    parent = bench.unit_ids[0]
+    children = new_children(lib, parent)
+    with lib.engine.begin() as connection:
+        proposal = propose_resplit(connection, parent, children, signer(lib))  # the API
+    assert (lib.data / "resplit.key").stat().st_mode & 0o077 == 0  # owner only
+    with lib.engine.begin() as connection:  # the CLI, or the same service after a restart
+        assert apply_resplit(connection, proposal, signer(lib), confirmation=proposal.token) == 2
+    # another instance (another /data, so another key) does not accept it
+    other = ResplitSigner(lib.tmp / "elsewhere")
+    (lib.tmp / "elsewhere").mkdir()
+    with lib.engine.begin() as connection, pytest.raises(ConfirmationRequiredError):
+        apply_resplit(connection, proposal, other, confirmation=proposal.token)

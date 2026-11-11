@@ -17,6 +17,7 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
+from shelfhold.catalog.public import ResplitSigner
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.volumes import write_data_file
@@ -186,3 +187,9 @@ def ranged_bench(
             )  # fmt: skip
     write_data_file(lib.data, f"ranged/{item_id}.epub", data or volume_epub(count))
     return RangedBench(lib, item_id, units)
+
+
+def signer(lib: LibEnv) -> ResplitSigner:
+    """A signer of resplit tokens over the /data of the environment: each call is a new object
+    (a new process, a restart), the key is the file."""
+    return ResplitSigner(lib.data)

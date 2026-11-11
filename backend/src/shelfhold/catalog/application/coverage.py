@@ -20,6 +20,7 @@ is not touched here: the new Units are exported through the same age barrier as 
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -29,12 +30,14 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from itertools import pairwise
+from pathlib import Path
 from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.infrastructure.schema import catalog, export
+from shelfhold.infrastructure.secrets.atomic import write_private
 
 __all__ = [
     "Bound",
@@ -43,6 +46,7 @@ __all__ = [
     "CoverageReport",
     "ResplitError",
     "ResplitProposal",
+    "ResplitSigner",
     "apply_resplit",
     "bounds_from_toc",
     "check_coverage",
@@ -306,12 +310,28 @@ class ConfirmationRequiredError(PermissionError):
     """A proposal is applied only with its token, which an admin read and confirmed."""
 
 
-_KEY: Final = secrets.token_bytes(32)  # per process: a token cannot be computed by a caller
+KEY_FILE: Final = "resplit.key"
 
 
-def _sign(*parts: object) -> str:
-    document = json.dumps(parts, separators=(",", ":"), default=str)
-    return hmac.new(_KEY, document.encode(), hashlib.sha256).hexdigest()[:32]
+class ResplitSigner:
+    """Signs the tokens of the proposals with a key kept in `/data` (made once, owner-only, as
+    the device cookie's): a proposal made by the API is confirmed by the CLI or after a restart,
+    and a caller who does not hold the file cannot compute a token."""
+
+    def __init__(self, data_dir: Path) -> None:
+        self._path = Path(data_dir) / KEY_FILE
+        self._key: bytes | None = None
+
+    def _secret(self) -> bytes:
+        if self._key is None:
+            with contextlib.suppress(FileExistsError):  # another process made it first
+                write_private(self._path, secrets.token_bytes(32), overwrite=False)
+            self._key = self._path.read_bytes()
+        return self._key
+
+    def sign(self, *parts: object) -> str:
+        document = json.dumps(parts, separators=(",", ":"), default=str)
+        return hmac.new(self._secret(), document.encode(), hashlib.sha256).hexdigest()[:32]
 
 
 @dataclass(frozen=True)
@@ -344,7 +364,10 @@ def _sub_number(parent: str, child: str) -> bool:
 
 
 def propose_resplit(
-    connection: Connection, parent_unit_id: str, child_unit_ids: Sequence[str]
+    connection: Connection,
+    parent_unit_id: str,
+    child_unit_ids: Sequence[str],
+    signer: ResplitSigner,
 ) -> ResplitProposal:
     """The old Unit `parent_unit_id` is cut again into `child_unit_ids` (10 into 10.1 and 10.2):
     the proposal says the children are covered by the parent. Only the sub-numbers of the parent,
@@ -383,18 +406,22 @@ def propose_resplit(
         raise ResplitError("a chapter is already carried by a file")
     snapshot = _snapshot(connection, parent_unit_id, children)
     nonce = secrets.token_hex(8)
-    token = _sign(parent.edition_id, parent_unit_id, children, snapshot, nonce)
+    token = signer.sign(parent.edition_id, parent_unit_id, children, snapshot, nonce)
     return ResplitProposal(str(parent.edition_id), parent_unit_id, children, snapshot, nonce, token)
 
 
 def apply_resplit(
-    connection: Connection, proposal: ResplitProposal, *, confirmation: str | None
+    connection: Connection,
+    proposal: ResplitProposal,
+    signer: ResplitSigner,
+    *,
+    confirmation: str | None,
 ) -> int:
     """Write the coverage `carrier_type = unit` of a proposal the admin confirmed (the token it
     carries). The old Unit and its coverage by its file stay as they are. Returns the number of
     children newly covered. A proposal built by hand, or made stale by a change of the coverage
     since, is refused."""
-    genuine = proposal.token == _sign(
+    genuine = proposal.token == signer.sign(
         proposal.edition_id, proposal.parent_unit_id, proposal.child_unit_ids,
         proposal.snapshot, proposal.nonce,
     )  # fmt: skip
@@ -411,7 +438,9 @@ def apply_resplit(
     if held == set(proposal.child_unit_ids):  # already applied: nothing changes
         return 0
     try:
-        again = propose_resplit(connection, proposal.parent_unit_id, proposal.child_unit_ids)
+        again = propose_resplit(
+            connection, proposal.parent_unit_id, proposal.child_unit_ids, signer
+        )
     except ResplitError:
         raise ResplitError("the proposal does not hold any more") from None
     if again.snapshot != proposal.snapshot or again.edition_id != proposal.edition_id:
