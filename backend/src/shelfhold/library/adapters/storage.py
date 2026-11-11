@@ -224,7 +224,7 @@ class PassthroughStore:
             )  # fmt: skip
         except BaseException:
             with suppress(FileNotFoundError, FsopsError):
-                self._fsops.unlink(dest)  # the rows did not take it: no readable orphan
+                self._fsops.purge_unlink(dest)  # the rows did not take it: no readable orphan
             raise
 
     def _record(
@@ -541,7 +541,7 @@ def complete_keep(
             # the rows are gone (a purge ran between the copy and its bookkeeping): the copy would
             # be readable with nothing that knows it, so it goes, never closed as if it counted
             with suppress(FileNotFoundError, FsopsError):
-                fsops.unlink(target)
+                fsops.purge_unlink(target)
             return False
         return True  # already completed: a replayed intent changes nothing
     found = fsops.observe(target)
