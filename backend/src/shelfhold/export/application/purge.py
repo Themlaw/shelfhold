@@ -471,6 +471,12 @@ class PurgeService:
     # -- the run ------------------------------------------------------------------------------
 
     def _run(self, plan: _Plan, allowed: PurgeAuthorization, job_id: str) -> PurgeReport:
+        report = self._run_locked(plan, allowed, job_id)
+        if report.complete:
+            self._checkpoint()  # after the locks went: their rows spell the folder (a title)
+        return report
+
+    def _run_locked(self, plan: _Plan, allowed: PurgeAuthorization, job_id: str) -> PurgeReport:
         held = plan
         for _ in range(3):
             with self._locks.hold_resources(job_id, held.resources):
@@ -717,6 +723,13 @@ class PurgeService:
                 progress.unfollowed += 1
             else:
                 progress.refused.append(Refused("upstream", result.reason or "unfollow_failed"))
+
+    def _checkpoint(self) -> None:
+        """The write-ahead log holds the pages the purge rewrote, with the rows it erased in their
+        earlier state: it is folded into the file and emptied (the pages were blanked by
+        `secure_delete`). Best effort: a reader that holds the log keeps it for the next run."""
+        with self._engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
 
     def _with_backups(self, report: PurgeReport, plan: _Plan) -> PurgeReport:
         """The integrated backups taken while these rows existed, read only (EF-BIB-052 (5))."""

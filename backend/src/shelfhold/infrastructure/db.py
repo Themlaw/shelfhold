@@ -20,6 +20,9 @@ def create_db_engine(path: Path) -> Engine:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        # a deleted row is overwritten with zeros, not left readable in a free page until reuse
+        # (EF-BIB-053: a purge leaves no readable title in the file)
+        cursor.execute("PRAGMA secure_delete=ON")
         cursor.close()
         # SQLAlchemy's recipe for pysqlite: the driver stops guessing when to BEGIN (its legacy
         # mode emits no BEGIN before a SAVEPOINT, so `begin_nested()` would open the transaction
