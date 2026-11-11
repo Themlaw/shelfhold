@@ -140,7 +140,7 @@ class Composition:
         self.gates = gates or Gates()
         self.bus = bus or operating_bus(self.clock)
         self._tombstones: (
-            tuple[tuple[tuple[str, str, bool, tuple[str, ...]], ...], TombstoneService] | None
+            tuple[tuple[tuple[str, str, tuple[str, ...]], ...], TombstoneService] | None
         ) = None
         self._lock = threading.Lock()
         self._boot_id = uuid.uuid4().hex
@@ -192,8 +192,9 @@ class Composition:
         with self._lock:
             if self._watcher is None:
                 self._watcher = RootWatcher(
-                    self.engine, umask=self.settings.umask, store_path=str(self.settings.store_dir)
-                )
+                    self.engine, umask=self.settings.umask, store_path=str(self.settings.store_dir),
+                    on_root_ok=self.roots_changed,
+                )  # fmt: skip
             return self._watcher
 
     def open_fsops(self, loaded: LoadedRoots) -> Fsops:
@@ -207,14 +208,13 @@ class Composition:
         """The tombstone service, replayed (a purged file is never acquired again). One per
         process while the roots stay the same; the flush gate is posed on the `fsops` given.
 
-        "The same" includes whether each root is mounted and who its predecessors are: a root that
-        comes back (remount, `takeover`, `reinit`, `restored`, `store reinit`) is replayed before
-        the index answers, whatever the process did while it was away."""
+        "The same" includes the predecessors of each root. A root that comes back (remount,
+        `takeover`, `reinit`, `restored`, `store reinit`) is replayed through `roots_changed` (the
+        exits and `RootWatcher.refresh` call it): looking at the sentinel here would wake the disks
+        at every call (ENF-OPS-014)."""
         signature = tuple(
             sorted(
-                (r.root_id, r.path, fsops.root_state(r.path) is RootState.OK, r.predecessors)
-                for r in loaded.roots
-                if r.mode is PathMode.RW
+                (r.root_id, r.path, r.predecessors) for r in loaded.roots if r.mode is PathMode.RW
             )
         )
         with self._lock:
