@@ -101,7 +101,7 @@ def test_the_host_ships_the_source_switched_off_and_with_its_xml_reader() -> Non
     from shelfhold.plugin_host.registry import PluginRegistry
     from tests.gutenberg_env import TRANSLATIONS_RDF
 
-    (candidate,) = first_party_candidates()
+    (candidate,) = [c for c in first_party_candidates() if c.key == "gutenberg"]
     registry = PluginRegistry(active_keys=())
     (record,) = registry.load_all([candidate])
     assert record.key == "gutenberg" and not registry.active()  # a fresh install switches none on

@@ -67,6 +67,10 @@ class SeriesInfo(SdkModel):
     translators: list[str] = Field(default_factory=list)  # credited, one text version each
     author_death_years: dict[str, int] = Field(default_factory=dict)  # name as in `authors`
     work_key: str | None = None  # the source's own key for "the same work": groups its books
+    # The attribution the licence of the text asks for: who wrote it, which licence, and the link
+    # to the origin, as plain text. Stored on the Edition once and copied into the exported file
+    # when that file does not carry it (EF-BIB-033). Bounded and cleaned by the host.
+    rights: str | None = None
 
 
 class UnitInfo(SdkModel):

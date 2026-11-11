@@ -144,6 +144,18 @@ def _chosen(flows: Collection[AuthFlow], choice: str) -> AuthFlow | None:
     return None
 
 
+def _pinned_origin(manifest: Any) -> str | None:
+    """The origin a source that talks to one fixed site pins in its schema: `base_url` limited to
+    a single value. The credential goes there, whatever a setting says; the others use the address
+    the admin gave."""
+    schema = getattr(manifest, "settings_schema", None) or {}
+    declared = (schema.get("properties") or {}).get("base_url") or {}
+    values = declared.get("enum")
+    if isinstance(values, list) and len(values) == 1 and isinstance(values[0], str):
+        return values[0]
+    return None
+
+
 def authenticated(
     fetcher: Any,
     manifest: Any,
@@ -158,7 +170,7 @@ def authenticated(
     if not isinstance(choice, str) or choice in ("", "none"):
         return fetcher
     flow = _chosen(manifest.auth if manifest is not None else (), choice)
-    base = settings.get("base_url")
+    base = _pinned_origin(manifest) or settings.get("base_url")
     if flow is None:
         raise AuthRequired("the chosen authentication is not one this source declares")
     if not isinstance(base, str) or not base.strip():

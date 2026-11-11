@@ -78,6 +78,10 @@ class OpfEdit:
     series_index: str | None = None  # `3`, `3.5`; anything else is not written
     rights: str | None = None  # written only if the OPF has no `dc:rights`
     source: str | None = None  # written only if the OPF has no `dc:source`
+    # A licence the text is under: when the OPF has a `dc:rights` of its own that does not carry
+    # the origin link, `rights` is written as one more `dc:rights`, so that the attribution the
+    # licence asks for cannot be lost. The book's own line is never changed (EF-BIB-033).
+    licence: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,8 +240,15 @@ def rewrite_opf(raw: bytes, edit: OpfEdit) -> OpfRewrite:
     declared = _DC_DECLARATION.search(text)
     dc_prefix = declared["p"] if declared else "dc"
     local = "" if declared else f' xmlns:{dc_prefix}="{DC_URI}"'
+    own = [(c.text or "") for c in metadata if c.tag == f"{DC}rights"]
+    licence = edit.licence or ""
+    origin = (edit.source or "").strip()
+    # The book's own line is enough only when it names the origin link: a bare licence name does
+    # not carry the contributors, and `ccby` is contained in `ccbync`.
+    carries = bool(origin) and any(origin in t for t in own)
     for tag, value in (("rights", edit.rights), ("source", edit.source)):
-        if value and value.strip() and f"{DC}{tag}" not in have:
+        extra = tag == "rights" and bool(licence) and bool(own) and not carries
+        if value and value.strip() and (f"{DC}{tag}" not in have or extra):
             lines.append(f"<{dc_prefix}:{tag}{local}>{_text(value.strip())}</{dc_prefix}:{tag}>")
     if not lines and inner == original_inner:
         return OpfRewrite(bytes(raw), changed=False)
