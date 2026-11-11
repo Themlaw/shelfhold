@@ -296,3 +296,36 @@ def test_a_suggested_attach_is_refused_once_its_identifier_is_tombstoned() -> No
             pytest.raises(AttachRefusedError, match="tombstoned"),
         ):
             w.service.plan(connection, arrival.attach_id)  # type: ignore[attr-defined]
+
+
+@pytest.mark.req("EF-BIB-054")
+@pytest.mark.parametrize(
+    ("provider", "stored", "again"),
+    [
+        ("wikidata", "Q42", "q42"),
+        ("openlibrary", "OL123W", "/works/OL123W"),
+        ("anilist", "30013", "030013"),
+    ],
+)
+def test_work_tombstone_compares_under_a_versioned_normalizer(
+    provider: str, stored: str, again: str
+) -> None:
+    """Review PoC: a spelling the provider accepts for the same identifier does not escape."""
+    with family_env(13) as env:
+        w = world(env)
+        with env.engine.begin() as connection:
+            add_external_id(
+                connection,
+                w.series.work_id,
+                ExternalId("work", provider, stored),
+                origin="provider",
+            )
+        purge_the_work(w)
+        new = arriving(env)
+        got = arrive(w, IncomingEdition(new.edition_id, ids=(ExternalId("work", provider, again),)))
+        assert got.state == "conflict"  # type: ignore[attr-defined]
+        other = arriving(env, "Other")
+        free = arrive(
+            w, IncomingEdition(other.edition_id, ids=(ExternalId("work", provider, "999"),))
+        )
+        assert free.state != "conflict"  # type: ignore[attr-defined]

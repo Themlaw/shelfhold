@@ -13,9 +13,11 @@ from dataclasses import dataclass
 __all__ = [
     "EXTERNAL_ID_ENTITY_TYPES",
     "ISBN_PROVIDER",
+    "WORK_ID_SEPARATOR",
     "ExternalId",
     "ExternalIdError",
     "normalize_external_id",
+    "normalize_work_id_key",
 ]
 
 EXTERNAL_ID_ENTITY_TYPES = ("series", "work", "edition", "volume", "contributor")
@@ -78,3 +80,18 @@ def normalize_external_id(
     if not value:
         raise ExternalIdError("an empty identifier")
     return ExternalId(entity_type, provider, value, id_scheme)
+
+
+WORK_ID_SEPARATOR = "\x1f"
+
+
+def normalize_work_id_key(raw: str) -> str:
+    """The comparison form of a `work` tombstone's identifier (`work_id@1`): `provider SEP value`
+    in, the same out, with the spellings a provider accepts for one identifier made equal
+    (`Q42` and `q42`, `OL123W` and `/works/OL123W`, `30013` and `030013`). It over-matches rather
+    than under-matches: a tombstone blocks, it never frees."""
+    provider, _, value = raw.partition(WORK_ID_SEPARATOR)
+    text = value.strip().rstrip("/").rsplit("/", 1)[-1].strip().casefold()
+    if text.isascii() and text.isdigit():
+        text = text.lstrip("0") or "0"
+    return f"{provider.strip().casefold()}{WORK_ID_SEPARATOR}{text}"

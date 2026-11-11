@@ -11,6 +11,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
+from shelfhold.catalog.domain.external_ids import normalize_work_id_key
 from shelfhold.catalog.domain.numbering import (
     NUMBER_NORMALIZER_NAME,
     NUMBER_NORMALIZER_VERSION,
@@ -192,4 +193,6 @@ def default_registry() -> NormalizerRegistry:
         REMOTE_UNIT_ID_NORMALIZER_VERSION,
         normalize_remote_unit_id,
     )
+    # An external identifier of a Work, compared by a `work` tombstone (L14).
+    registry.register("work_id", 1, normalize_work_id_key)
     return registry

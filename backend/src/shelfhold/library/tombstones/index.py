@@ -35,6 +35,8 @@ NORMALIZED_FIELDS: Final[Mapping[str, str]] = {
     "edition_key.lang": "lang",
     "edition_key.publisher": "publisher",
     "edition_key.text_version": "text_version",
+    # `provider SEP value` of a Work identifier: the spellings a provider accepts are one (L14)
+    "work_id": "work_id",
 }
 # An empty number (unnumbered) says nothing; an empty segment or publisher is a real value.
 EMPTY_MEANS_UNKNOWN: Final = frozenset({"number_raw"})
@@ -91,7 +93,7 @@ def flatten(values: TombstoneValues) -> dict[str, str]:
             "series_ref": values.series_ref,
         }
     if isinstance(values, WorkRef):
-        return {"id_scheme": values.id_scheme, "value": values.value}
+        return {"work_id": f"{values.id_scheme}\x1f{values.value}"}
     raise TypeError(type(values).__name__)
 
 

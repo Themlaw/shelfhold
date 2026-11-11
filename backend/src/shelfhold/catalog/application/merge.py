@@ -266,7 +266,7 @@ def plan_edition_merge(
         "volumes": volumes, "bindings": bindings, "blockers": sorted(set(blockers)),
         "places": tombstoned_units, "ids": tombstoned_ids, "keep_age": _label(keep_age),
         "drop_age": _label(drop_age), "merged": _label(merged), "unrated": unrated_after,
-        "shelf": keep.shelf_id,
+        "shelf": keep.shelf_id, "carried": _carried(connection, drop_id),
     }  # fmt: skip
     digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()[:16]
     return EditionMergePlan(
@@ -274,6 +274,64 @@ def plan_edition_merge(
         tuple(bindings), tuple(sorted(set(blockers))), tuple(tombstoned_units), tombstoned_ids,
         _label(keep_age), _label(drop_age), _label(merged), unrated_after, keep.shelf_id, digest,
     )  # fmt: skip
+
+
+def _carry_fields(connection: Connection, keep_id: str, drop_id: str) -> None:
+    """The values, provenances and locks of the deleted Edition go to the survivor. Where both
+    hold the same field, the survivor's stays unless the donor's is locked and its own is not (a
+    lock is never lost). The external identifiers of the deleted Edition cannot move (the table
+    is append-only): they stay and name an Edition that is no longer there."""
+    m = catalog.metadata_field
+    kept = {
+        (r.field, r.lang): r.locked
+        for r in connection.execute(
+            sa.select(m.c.field, m.c.lang, m.c.locked).where(
+                m.c.entity_type == "edition", m.c.entity_id == keep_id
+            )
+        )
+    }
+    for r in connection.execute(
+        sa.select(m.c.field, m.c.lang, m.c.locked).where(
+            m.c.entity_type == "edition", m.c.entity_id == drop_id
+        )
+    ).all():
+        mine = kept.get((r.field, r.lang))
+        if mine is not None and not (r.locked and not mine):
+            continue
+        if mine is not None:
+            connection.execute(
+                sa.delete(m).where(
+                    m.c.entity_type == "edition", m.c.entity_id == keep_id,
+                    m.c.field == r.field, m.c.lang == r.lang,
+                )
+            )  # fmt: skip
+        connection.execute(
+            sa.update(m)
+            .where(
+                m.c.entity_type == "edition", m.c.entity_id == drop_id,
+                m.c.field == r.field, m.c.lang == r.lang,
+            )
+            .values(entity_id=keep_id)
+        )  # fmt: skip
+    connection.execute(sa.delete(m).where(m.c.entity_type == "edition", m.c.entity_id == drop_id))
+
+
+def _carried(connection: Connection, drop_id: str) -> dict[str, int]:
+    """What follows the Edition that goes, counted for the fingerprint."""
+    count = {}
+    for name, table in (
+        ("suggestions", catalog.age_suggestion),
+        ("fields", catalog.metadata_field),
+        ("external_ids", catalog.external_id),
+    ):
+        count[name] = int(
+            connection.execute(
+                sa.select(sa.func.count())
+                .select_from(table)
+                .where(table.c.entity_id == drop_id, table.c.entity_type == "edition")
+            ).scalar_one()
+        )
+    return count
 
 
 def apply_edition_merge(
@@ -311,7 +369,10 @@ def apply_edition_merge(
         ):
             connection.execute(sa.update(table).where(column == drop_id).values(edition_id=keep_id))
         values: dict[str, Any] = {}
-        raised = merged is not None and (ages[0] is None or merged > ages[0])
+        # against the survivor's own explicit age: what it inherits is what the deleted Edition
+        # still counts for in the Work's effective age, and goes with it
+        explicit = _age(keep.age_rating, keep.age_x)
+        raised = merged is not None and (explicit is None or merged > explicit)
         if raised:
             age, x = to_columns(merged)
             values.update(age_rating=age, age_x=x)
@@ -330,6 +391,7 @@ def apply_edition_merge(
             )
             .values(entity_id=keep_id)
         )
+        _carry_fields(connection, keep_id, drop_id)
         connection.execute(sa.delete(catalog.edition).where(catalog.edition.c.id == drop_id))
         savepoint.commit()
     except exc.IntegrityError:

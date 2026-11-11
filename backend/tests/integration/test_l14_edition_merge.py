@@ -468,3 +468,88 @@ def merge_with(env: ExportEnv, screen: CatalogScreenAdapter, shown: EditionMerge
             confirm=shown.fingerprint,
             screen=screen,
         )
+
+
+@pytest.mark.req("EF-BIB-055")
+def test_survivor_without_an_age_of_its_own_takes_the_donors_age() -> None:
+    """Review PoC: Work 0+, survivor rated with no explicit age, donor 16+ on the 13 shelf's
+    Work. Once the donor is deleted the 16+ must still stand, in the survivor's own age."""
+    from shelfhold.catalog.public import RatingService
+
+    with family_env(13) as env:
+        p = pair(env)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(catalog.edition)
+                .where(catalog.edition.c.id == p.series.edition_id)
+                .values(age_rating=None, age_x=False, rated_at=NOW)
+            )
+            connection.execute(
+                sa.update(catalog.work)
+                .where(catalog.work.c.id == p.series.work_id)
+                .values(age_rating=0)
+            )
+            connection.execute(
+                sa.update(catalog.edition)
+                .where(catalog.edition.c.id == p.donor)
+                .values(age_rating=16, rated_at=NOW)
+            )
+        unit(env, p.donor, "7")
+        merge(p)
+        row = edition(env, p.series.edition_id)
+        assert row is not None and row.age_rating == 16
+        with env.engine.connect() as connection:
+            verdict = RatingService().admission_of(
+                connection, p.series.edition_id, shelf_id=env.shelf_id
+            )
+        assert verdict.value != "allowed"
+
+
+@pytest.mark.req("EF-BIB-049")
+def test_the_fingerprint_covers_what_follows_the_donor_and_the_fields_move() -> None:
+    with family_env(13) as env:
+        p = pair(env)
+        unit(env, p.donor, "7")
+        first = plan(p).fingerprint
+        with env.engine.begin() as connection:
+            for eid, field, locked in ((p.donor, "summary", True), (p.donor, "title", False)):
+                connection.execute(
+                    sa.insert(catalog.metadata_field).values(
+                        entity_type="edition",
+                        entity_id=eid,
+                        field=field,
+                        lang="und",
+                        value="v",
+                        provider="manual",
+                        provenance="manual",
+                        locked=locked,
+                        fetched_at=NOW,
+                    )
+                )
+            connection.execute(
+                sa.insert(catalog.metadata_field).values(
+                    entity_type="edition",
+                    entity_id=p.series.edition_id,
+                    field="title",
+                    lang="und",
+                    value="mine",
+                    provider="manual",
+                    provenance="manual",
+                    locked=False,
+                    fetched_at=NOW,
+                )
+            )
+        with pytest.raises(StaleMergePlanError):
+            merge(p, confirm=first)  # the plan moved: new fields follow the donor
+        merge(p)
+        with env.engine.connect() as connection:
+            rows = {
+                (r.field, r.value, r.locked)
+                for r in connection.execute(
+                    sa.select(catalog.metadata_field).where(
+                        catalog.metadata_field.c.entity_type == "edition"
+                    )
+                )
+            }
+        assert ("summary", "v", True) in rows  # the lock came along
+        assert ("title", "mine", False) in rows and ("title", "v", False) not in rows
