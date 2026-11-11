@@ -13,7 +13,7 @@ est éteint. Un passage automatique a lieu toutes les dix minutes ; à la main :
 ```
 shelfhold import scan --dry-run    # liste ce qui est prêt, ne range ni ne retire rien
 shelfhold import scan              # range ce qui est prêt
-shelfhold import scan --purchase   # déclare ces fichiers comme un achat (voir plus bas)
+shelfhold import scan --purchase   # prend aussi le sous-dossier achats/ comme un achat déclaré
 ```
 
 Chaque fichier devient une Œuvre, une Édition et une Unité, rangée par la barrière des nouvelles
@@ -38,6 +38,14 @@ déverrouillé.
 
 L'obfuscation de polices d'un EPUB n'est pas une protection : elle n'est pas refusée comme telle.
 
+## Le retrait d'un fichier rangé
+
+Le fichier n'est pas supprimé sous son nom (un nom peut être repris par une autre version entre
+deux instants) : il est d'abord déplacé dans `.shelfhold-removing/`, comparé au fichier qui a été lu
+(même disque, même inode), et supprimé seulement s'il est identique. Sinon il est remis en place.
+Ce sous-dossier est ignoré par le passage ; ce qu'un arrêt brutal y laisse est remis dans le
+dossier au passage suivant, puis relu comme un fichier ordinaire.
+
 ## Un fichier encore en cours d'écriture attend
 
 Un fichier n'est lu que si sa taille et sa date de modification n'ont pas bougé entre deux
@@ -50,7 +58,10 @@ passages, et s'il a plus de quelques dizaines de secondes. Un nom en `.part`, `.
   neutraliseur et ne sort que sous sa forme neutralisée ; un PDF est rangé tel quel et **n'est pas
   exporté** (« À ranger », raison `content.untrusted_pdf`).
 - Un import **déclaré comme un achat** est `publisher` : le fichier n'est jamais réécrit, et il est
-  marqué `watermarked`.
+  marqué `watermarked`. Seuls les fichiers du sous-dossier `achats/` peuvent l'être, et seulement
+  quand vous lancez `shelfhold import scan --purchase` : le passage automatique les laisse en place
+  (message « il n'est pris que si vous déclarez un achat ») au lieu de les prendre comme non
+  fiables. Tout le reste du dossier est toujours non fiable.
 - Une heuristique (entrées ou métadonnées typiques d'une copie personnalisée) peut aussi poser le
   drapeau `watermarked`. C'est une **suggestion** : elle ne refuse jamais un fichier, elle ne
   dispense jamais un EPUB non fiable du neutraliseur, et elle est toujours dite dans le résultat.

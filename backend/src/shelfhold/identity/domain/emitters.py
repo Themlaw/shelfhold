@@ -106,7 +106,10 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
         ),
         # The import folder: the one removal of a source file, after a hash-verified storage.
         IMPORT_FOLDER: frozenset(
-            {"shelfhold/library/adapters/import_scan.py::ImportFolder._remove_verified"}
+            {
+                "shelfhold/library/adapters/import_scan.py::ImportFolder._quarantine_and_drop",
+                "shelfhold/library/adapters/import_scan.py::ImportFolder._restore_quarantine",
+            }
         ),
         # Completes an `rmdir` of an empty folder a classed emitter journaled before a crash.
         REPLAY: frozenset(

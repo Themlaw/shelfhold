@@ -16,6 +16,7 @@ The watermark hint is a **suggestion**: it sets a flag that only makes the file 
 EPUB from the neutralizer, and it never refuses a file.
 """
 
+import mmap
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,8 +45,21 @@ _FONT_EXTENSIONS: Final = (".ttf", ".otf", ".woff", ".woff2", ".ttc")
 _LICENCE_MARK: Final = "readium.org/2014/01/lcp"
 _LICENCE_ENTRIES: Final = ("meta-inf/rights.xml", "meta-inf/license.lcpl")
 _ENCRYPTION: Final = "meta-inf/encryption.xml"
-_PDF_ENCRYPT = re.compile(rb"/Encrypt\s*(?:\d+\s+\d+\s+R|<<)")
-_CHUNK: Final = 1 << 20
+
+
+def _pdf_name(word: str) -> bytes:
+    """A PDF name matches itself or any `#xx` spelling of each of its letters."""
+    parts = []
+    for letter in word:
+        digits = "".join(f"[{d}{d.upper()}]" if d.isalpha() else d for d in f"{ord(letter):02x}")
+        parts.append(f"(?:{re.escape(letter)}|#{digits})")
+    return "".join(parts).encode()
+
+
+_GAP = rb"(?:[\x00\t\n\f\r ]|%[^\r\n]*[\r\n])"  # white space and comments
+_PDF_ENCRYPT = re.compile(
+    b"/" + _pdf_name("Encrypt") + _GAP + b"*(?:\\d+" + _GAP + b"+\\d+" + _GAP + b"+R|<<)"
+)
 
 
 @dataclass(frozen=True)
@@ -119,13 +133,17 @@ def zip_protection(
 
 def pdf_protection(path: Path) -> Protection | None:
     """An `/Encrypt` entry anywhere in the file (the trailer, or the dictionary of a cross-reference
-    stream), read in blocks to the end: padding cannot push it out of the window."""
-    carry = b""
+    stream). The whole file is searched as one, so no padding can push it out of a window; a name
+    written with `#xx` escapes and a comment between the key and its value are read as a reader
+    reads them. A file that cannot be read raises, and stays where it is."""
     with path.open("rb") as stream:
-        while chunk := stream.read(_CHUNK):
-            if _PDF_ENCRYPT.search(carry + chunk):
+        try:
+            view = mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ)
+        except ValueError:  # empty: there is nothing in it
+            return None
+        with view:
+            if _PDF_ENCRYPT.search(view):
                 return Protection(PROTECTED, "pdf_encrypted")
-            carry = chunk[-32:]
     return None
 
 

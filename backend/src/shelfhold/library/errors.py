@@ -28,6 +28,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("import.unsafe_name", 422, "user"),
     ErrorCode("import.name_collision", 422, "user"),
     ErrorCode("import.not_ready", 409, "user"),
+    ErrorCode("import.purchase_pending", 409, "user"),
     ErrorCode("import.changed_while_reading", 409, "user"),
     ErrorCode("import.hash_mismatch", 500, "admin"),
     ErrorCode("import.disk_full", 507, "admin"),

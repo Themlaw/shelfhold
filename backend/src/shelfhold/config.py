@@ -264,7 +264,17 @@ class Settings(BaseModel):
             other = getattr(self, name)
             if folder == other or folder in other.parents or other in folder.parents:
                 raise ValueError(f"import_dir must be distinct from {name} and not nested in it")
+            try:  # a bind mount of a root shows another path but the same device and inode
+                if _identity(folder) == _identity(other):
+                    raise ValueError(f"import_dir is the same directory as {name}")
+            except OSError:
+                continue
         return self
+
+
+def _identity(path: Path) -> tuple[int, int]:
+    info = path.stat()
+    return info.st_dev, info.st_ino
 
 
 @dataclass(frozen=True)

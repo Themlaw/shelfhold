@@ -108,7 +108,7 @@ def test_the_import_is_untrusted_unless_declared_a_purchase() -> None:
 @pytest.mark.req("EF-SRC-012", "EF-BIB-041")
 def test_a_declared_purchase_is_publisher_and_watermarked() -> None:
     with import_env() as env:
-        env.drop("bought.epub", CLEAN_EPUB)
+        env.drop("achats/bought.epub", CLEAN_EPUB)
         _scan, outcomes = outcome_of(env, declared_purchase=True)
         assert [i.trust for i in env.items] == ["publisher"]
         row = env.contents()[0]
@@ -180,8 +180,8 @@ def test_font_obfuscation_not_treated_as_protection() -> None:
         refused = only(outcome_of(env)[1])
         assert refused.state == "refused" and refused.code == "import.archive_refused"
     with import_env() as env:
-        env.drop("a.epub", book(IDPF))
-        env.drop("b.epub", book(ADOBE_FONTS))
+        env.drop("achats/a.epub", book(IDPF))
+        env.drop("achats/b.epub", book(ADOBE_FONTS))
         _scan, outcomes = outcome_of(env, declared_purchase=True)
         assert [o.state for o in outcomes] == ["stored", "stored"], outcomes
         assert all(o.removed for o in outcomes)
@@ -283,7 +283,7 @@ def test_the_heuristic_never_blocks_and_always_says_so() -> None:
 @pytest.mark.req("EF-BIB-041")
 def test_a_user_flag_is_never_lowered_by_the_heuristic() -> None:
     with import_env() as env:
-        env.drop("a.epub", epub_with(Member("META-INF/anything.bin", b"x")))
+        env.drop("achats/a.epub", epub_with(Member("META-INF/anything.bin", b"x")))
         outcome_of(env, declared_purchase=True)
         assert env.contents()[0].watermark_origin == "user"
 
@@ -947,3 +947,70 @@ def test_a_refusal_known_beforehand_makes_no_unit() -> None:
         env.drop("a.cbz", CBZ)
         assert only(outcome_of(env)[1]).code == "import.tombstoned"
         assert env.items == [] and (env.incoming / "a.cbz").exists()
+
+
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+def test_a_protected_pdf_in_any_spelling_stays_in_the_folder() -> None:
+    trailer = b"<< /Root 1 0 R /Encr#79pt 2 0 R >>"
+    data = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n" + trailer + b"\n%%EOF\n"
+    with import_env() as env:
+        env.drop("p.pdf", data)
+        _, outcomes = env.folder.run()
+        assert (env.incoming / "p.pdf").read_bytes() == data, outcomes
+        assert outcomes[0].code == "import.protected"
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_a_newer_version_arriving_during_the_removal_is_never_deleted() -> None:
+    """An atomic save (a rename) between the re-read and the removal: the name now points at a file
+    that was never stored. It must still be there afterwards, whole."""
+    newer_bytes = b"PK-a-newer-version-that-was-never-stored"
+    with import_env() as env:
+        env.drop("a.cbz", CBZ)
+        newer = env.lib.tmp / "newer.cbz"
+        newer.write_bytes(newer_bytes)
+        real = ImportFolder._rehash
+
+        def swap_after_reading(fd: int) -> str:
+            digest = real(fd)
+            os.rename(newer, env.incoming / "a.cbz")
+            return digest
+
+        ImportFolder._rehash = staticmethod(swap_after_reading)  # type: ignore[method-assign]
+        try:
+            _, outcomes = env.folder.run()
+        finally:
+            ImportFolder._rehash = staticmethod(real)  # type: ignore[method-assign]
+        assert (env.incoming / "a.cbz").read_bytes() == newer_bytes, outcomes
+        assert not outcomes[0].removed
+        assert not list((env.incoming / import_scan.QUARANTINE).iterdir())
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_the_quarantine_is_not_scanned_and_is_restored_at_the_start() -> None:
+    """What a crash left in the quarantine was not verified: it goes back, and the scan never
+    takes the quarantine itself for a folder of books."""
+    with import_env() as env:
+        held = env.incoming / import_scan.QUARANTINE
+        held.mkdir()
+        (held / "01ARZ3NDEKTSV4RRFFQ69G5FAV~left.cbz").write_bytes(CBZ)
+        env.age(held / "01ARZ3NDEKTSV4RRFFQ69G5FAV~left.cbz", OLD)
+        assert env.folder.scan().ready == ()
+        env.folder.run()
+        assert not list(held.iterdir())  # restored, then read as a file like any other
+        assert not (env.incoming / "left.cbz").exists()  # and, stored and verified, removed
+
+
+@pytest.mark.req("EF-SRC-012", "EF-BIB-041")
+def test_only_the_purchase_folder_is_a_declared_purchase_and_only_by_command() -> None:
+    with import_env() as env:
+        env.drop("achats/bought.cbz", CBZ)
+        env.drop("other.epub", CLEAN_EPUB)
+        _, scheduled = env.folder.run()  # the scheduled scan declares nothing
+        by_name = {o.rel: o for o in scheduled}
+        assert by_name["achats/bought.cbz"].code == "import.purchase_pending"
+        assert (env.incoming / "achats" / "bought.cbz").exists()
+        assert by_name["other.epub"].state == "stored"
+        _, commanded = env.folder.run(declared_purchase=True)
+        assert commanded[0].rel == "achats/bought.cbz" and commanded[0].state == "stored"
+        assert commanded[0].watermark == "user"

@@ -476,7 +476,7 @@ backfill_needs_confirmation = "Cette estimation dépasse 100 chapitres ou 5 Gio.
 help_import = "Le dossier d'import : vos propres CBZ, EPUB et PDF."
 help_import_scan = "Examine le dossier d'import et range ce qui est prêt ; un fichier refusé reste en place avec son message."
 help_import_dry_run = "Montre ce que le dossier contient et ce qui serait pris, sans rien ranger ni retirer."
-help_import_purchase = "Déclare ces fichiers comme un achat : non réécrits, marqués tatoués (watermarked)."
+help_import_purchase = "Prend aussi le sous-dossier « achats » comme un achat déclaré : non réécrit, marqué tatoué (watermarked). Le reste du dossier reste non fiable."
 import_ready = "Prêt à être rangé : {path}"
 import_waiting = "En attente : {path} ({message})"
 import_refused = "Refusé et laissé en place : {path} : {message}"
@@ -1621,6 +1621,10 @@ action = "Renommez l'un d'eux. Les deux restent dans le dossier d'import."
 [errors."import.not_ready"]
 title = "Fichier pas encore prêt : il est encore en cours d'écriture ou vient d'être déposé."
 action = "Rien à faire : Shelfhold le relira quand sa taille et sa date n'auront plus bougé."
+
+[errors."import.purchase_pending"]
+title = "Fichier du dossier « achats » : il n'est pris que si vous déclarez un achat."
+action = "Lancez « shelfhold import scan --purchase » ; sinon il reste où il est."
 
 [errors."import.changed_while_reading"]
 title = "Le fichier a changé pendant sa lecture : il n'a pas été rangé."

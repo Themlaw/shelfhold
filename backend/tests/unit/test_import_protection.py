@@ -294,3 +294,41 @@ def test_unicode_variants_of_one_name_collide() -> None:
 def test_a_shown_path_carries_no_control_character() -> None:
     shown = display_path("a\x1b[31m/\u202ename.cbz")
     assert shown.isascii() and "\x1b" not in shown and "\u202e" not in shown
+
+
+PDF_HEAD = (
+    b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n2 0 obj\n<< /Filter /Standard >>\nendobj\n"
+)
+
+
+def _pdf_with(trailer: bytes) -> bytes:
+    return PDF_HEAD + b"trailer\n" + trailer + b"\n%%EOF\n"
+
+
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+@pytest.mark.parametrize(
+    "trailer",
+    [
+        b"<< /Root 1 0 R /Encr#79pt 2 0 R >>",  # a name spelled with an escape
+        b"<< /Root 1 0 R /#45ncrypt 2 0 R >>",
+        b"<< /Root 1 0 R /Encrypt%c\n2 0 R >>",  # a comment between the key and its value
+        b"<< /Root 1 0 R /Encrypt 2%c\r0 R >>",
+        b"<< /Root 1 0 R /Encrypt\x00\x00<< /Filter /Standard >> >>",
+    ],
+)
+def test_pdf_protection_in_any_spelling_is_found(tmp_path: Path, trailer: bytes) -> None:
+    found = detect_protection(at(tmp_path, _pdf_with(trailer), "x.pdf"), "pdf")
+    assert found is not None and found.code == PROTECTED
+
+
+@pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
+def test_pdf_protection_padded_across_blocks_is_found(tmp_path: Path) -> None:
+    """A long run of blanks cannot push the value out of the window that is read."""
+    body = PDF_HEAD + b"%" + b"x" * ((1 << 20) - len(PDF_HEAD) - 60)
+    body += b"\ntrailer\n<< /Root 1 0 R /Encrypt" + b" " * 100 + b"2 0 R >>\n%%EOF\n"
+    assert detect_protection(at(tmp_path, body, "x.pdf"), "pdf") is not None
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_pdf_without_encrypt_is_clean(tmp_path: Path) -> None:
+    assert detect_protection(at(tmp_path, _pdf_with(b"<< /Root 1 0 R >>"), "x.pdf"), "pdf") is None

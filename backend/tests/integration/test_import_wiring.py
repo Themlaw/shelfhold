@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from shelfhold.config import Settings
 from shelfhold.import_jobs import IMPORT_KIND, import_handler, register_import_job
 from shelfhold.infrastructure.schema import acquisition, catalog, storage
+from shelfhold.library.adapters.import_scan import QUARANTINE
 from shelfhold.library.adapters.storage import sha256_file
 from shelfhold.main import LOGGED_SETTINGS
 from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member
@@ -73,6 +74,21 @@ def test_the_import_dir_may_not_overlap_the_volumes(settings: Settings, tmp_path
     ):  # fmt: skip
         with pytest.raises(ValidationError, match="import_dir"):
             Settings.model_validate({**settings.model_dump(), "import_dir": bad})
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_another_name_for_a_root_is_refused_by_device_and_inode(
+    settings: Settings, tmp_path: Path
+) -> None:
+    """A link (the same device and inode as a bind mount would show) under another path."""
+    library = tmp_path / "lib"
+    library.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(library)
+    with pytest.raises(ValidationError, match="import_dir"):
+        Settings.model_validate(
+            {**settings.model_dump(), "library_dir": library, "import_dir": alias}
+        )
 
 
 @pytest.mark.req("EF-SRC-012", "ENF-LEG-009")
@@ -184,7 +200,7 @@ def test_the_scheduled_job_takes_in_the_folder_and_asks_for_the_export(
         exported: list[int] = []
         import_handler(comp, lambda: exported.append(1))(context(IMPORT_KIND))
         assert exported == [1] and counts(env)["unit"] == 1
-        assert not any(folder.iterdir())
+        assert [p.name for p in folder.iterdir() if p.name != QUARANTINE] == []
         scheduled: list[str] = []
 
         class Pools:
@@ -230,7 +246,7 @@ def test_a_declared_purchase_is_published_and_flagged(
     folder = folder_for(tmp_path)
     monkeypatch.setenv("SHELFHOLD_IMPORT_DIR", str(folder))
     with seeded(settings, tmp_path / "inst") as env:
-        drop(folder, "bought.epub", CLEAN_EPUB)
+        drop(folder, "achats/bought.epub", CLEAN_EPUB)
         assert run_cli(monkeypatch, settings, "import", "scan", "--purchase") == 0
         with env.inst.engine.connect() as connection:
             row = connection.execute(sa.select(storage.content)).one()

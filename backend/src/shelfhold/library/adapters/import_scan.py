@@ -27,6 +27,7 @@ message, never with silence:
   it is.
 """
 
+import contextlib
 import errno
 import hashlib
 import os
@@ -65,6 +66,7 @@ from shelfhold.infrastructure.content_trust.protection import (
     watermark_hint,
 )
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.adapters.pdf_store import NotAPdfError, check_pdf_shape
 from shelfhold.library.adapters.receive import sniff_kind
@@ -96,6 +98,9 @@ LINK: Final = "import.link_refused"
 UNSAFE_NAME: Final = "import.unsafe_name"
 NAME_COLLISION: Final = "import.name_collision"
 NOT_READY: Final = "import.not_ready"
+PURCHASE_PENDING: Final = "import.purchase_pending"
+PURCHASE_DIR: Final = "achats"  # what the admin declares a purchase, by the command only
+QUARANTINE: Final = ".shelfhold-removing"  # the step between "verified" and "gone"
 CHANGED: Final = "import.changed_while_reading"
 HASH_MISMATCH: Final = "import.hash_mismatch"
 DISK_FULL: Final = "import.disk_full"
@@ -314,10 +319,22 @@ class ImportFolder:
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._root = root.resolve()
+        self._apart: set[tuple[int, int]] = set()
         for other in keep_apart:
             resolved = other.resolve()
             if self._root.is_relative_to(resolved) or resolved.is_relative_to(self._root):
                 raise ImportFolderOverlapError("the import folder overlaps a root Shelfhold writes")
+            try:
+                info = resolved.stat()
+            except OSError:
+                continue
+            self._apart.add((info.st_dev, info.st_ino))  # a bind mount shows the same pair
+        try:
+            mine = self._root.stat()
+        except OSError:
+            mine = None
+        if mine is not None and (mine.st_dev, mine.st_ino) in self._apart:
+            raise ImportFolderOverlapError("the import folder is a root Shelfhold writes")
         self._engine = engine
         self._fsops = fsops
         self._store = store
@@ -385,6 +402,8 @@ class ImportFolder:
         for entry in listing:
             groups.setdefault(collision_key(entry.name), []).append(entry.name)
         for entry in listing:
+            if not parents and entry.name == QUARANTINE:
+                continue  # ours: what is on its way out is not a file to take in
             counter[0] += 1
             rel = "/".join((*parents, entry.name))
             shown = display_path(rel)
@@ -405,8 +424,8 @@ class ImportFolder:
             if stat.S_ISLNK(info.st_mode):
                 refused.append(Verdict(shown, LINK))
             elif stat.S_ISDIR(info.st_mode):
-                if info.st_dev != device:
-                    refused.append(Verdict(shown, LINK))
+                if info.st_dev != device or (info.st_dev, info.st_ino) in self._apart:
+                    refused.append(Verdict(shown, LINK))  # another disk, or a root of ours
                     continue
                 try:
                     child = os.open(
@@ -455,11 +474,20 @@ class ImportFolder:
 
     def run(self, *, declared_purchase: bool = False) -> tuple[Scan, list[ImportOutcome]]:
         """Scan, then take in each file that is ready. A file already refused and unchanged is not
-        read again."""
+        read again. Only what lies under `achats/` can be a declared purchase, and only when the
+        command says so; everything else is untrusted."""
+        self._restore_quarantine()
         scan = self.scan()
         for verdict in scan.refused:
             self._record(verdict.rel, 0, 0, None, "refused", verdict.code)
-        outcomes = [self.import_one(f, declared_purchase=declared_purchase) for f in scan.ready]
+        outcomes: list[ImportOutcome] = []
+        for item in scan.ready:
+            if item.rel.split("/")[0] != PURCHASE_DIR:
+                outcomes.append(self.import_one(item))
+            elif declared_purchase:  # only the command declares: the schedule never does
+                outcomes.append(self.import_one(item, declared_purchase=True))
+            else:
+                outcomes.append(ImportOutcome(display_path(item.rel), "waiting", PURCHASE_PENDING))
         return scan, outcomes
 
     def import_one(self, item: Found, *, declared_purchase: bool = False) -> ImportOutcome:
@@ -652,32 +680,108 @@ class ImportFolder:
 
     def _remove_verified(self, root_fd: int, item: Found, sha: str) -> bool:
         """Take the file out of the folder: only if it is still the file that was read (same
-        inode, same size, same hash). Called only once a stored copy was verified by hash."""
+        inode, same size, same hash). Called only once a stored copy was verified by hash.
+
+        A name can be re-pointed at another file at any moment, so the name is never unlinked
+        directly: it is moved into the quarantine, the moved entry is compared with the file that
+        was read, and only an identical one is deleted. Anything else is put back."""
         parts = item.rel.split("/")
         try:
-            fd = self._open_under(root_fd, parts, directory=False)
+            parent = self._parent_fd(root_fd, parts)  # one parent: to open, to move, to put back
         except OSError:
+            return False
+        try:
+            fd = os.open(
+                parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+                dir_fd=parent,
+            )  # fmt: skip
+        except OSError:
+            os.close(parent)
             return False  # gone, or swapped for a link: nothing to remove
         try:
             now = os.fstat(fd)
             if (now.st_ino, now.st_size) != (item.ino, item.size) or now.st_nlink > 1:
                 return False
-            digest = hashlib.sha256()
-            with os.fdopen(os.dup(fd), "rb", closefd=True) as stream:
-                while chunk := stream.read(1 << 20):
-                    digest.update(chunk)
-            if "sha256:" + digest.hexdigest() != sha:
+            if self._rehash(fd) != sha:
                 return False  # replaced since it was read: it is somebody's other file
-            parent = self._parent_fd(root_fd, parts)
-            try:
-                os.unlink(parts[-1], dir_fd=parent)
-            finally:
-                os.close(parent)
+            return self._quarantine_and_drop(root_fd, parent, parts[-1], now)
         except OSError:
             return False
         finally:
             os.close(fd)
-        return True
+            os.close(parent)
+
+    @staticmethod
+    def _rehash(fd: int) -> str:
+        digest = hashlib.sha256()
+        with os.fdopen(os.dup(fd), "rb", closefd=True) as stream:
+            while chunk := stream.read(1 << 20):
+                digest.update(chunk)
+        return "sha256:" + digest.hexdigest()
+
+    @staticmethod
+    def _quarantine_dir(root_fd: int) -> int:
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(QUARANTINE, 0o700, dir_fd=root_fd)
+        return os.open(
+            QUARANTINE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=root_fd
+        )
+
+    def _quarantine_and_drop(
+        self, root_fd: int, parent: int, name: str, verified: os.stat_result
+    ) -> bool:
+        quarantine = self._quarantine_dir(root_fd)
+        try:
+            held = f"{new_ulid()}~{name.encode()[:150].decode(errors='ignore')}"
+            os.rename(name, held, src_dir_fd=parent, dst_dir_fd=quarantine)
+            moved = os.stat(held, dir_fd=quarantine, follow_symlinks=False)
+            if (moved.st_dev, moved.st_ino) == (verified.st_dev, verified.st_ino):
+                os.unlink(held, dir_fd=quarantine)
+                return True
+            try:  # another file took the name meanwhile: give it back untouched
+                os.link(held, name, src_dir_fd=quarantine, dst_dir_fd=parent, follow_symlinks=False)
+                os.unlink(held, dir_fd=quarantine)
+            except OSError:
+                log.warning("import.removal_conflict")  # it stays in the quarantine, to restore
+            return False
+        finally:
+            os.close(quarantine)
+
+    def _restore_quarantine(self) -> None:
+        """What a crash left in the quarantine was not verified (a verified file is deleted at
+        once): it goes back into the folder, where the next scan reads it again."""
+        try:
+            root_fd = os.open(self._root, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        except OSError:
+            return
+        try:
+            try:
+                quarantine = os.open(
+                    QUARANTINE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    dir_fd=root_fd,
+                )  # fmt: skip
+            except OSError:
+                return
+            try:
+                with os.scandir(quarantine) as entries:
+                    held = sorted(e.name for e in entries)
+                for entry in held:
+                    base = entry.split("~", 1)[-1] or entry
+                    for target in (base, entry):
+                        try:
+                            os.link(entry, target, src_dir_fd=quarantine, dst_dir_fd=root_fd,
+                                    follow_symlinks=False)  # fmt: skip
+                        except FileExistsError:
+                            continue
+                        except OSError:
+                            break
+                        os.unlink(entry, dir_fd=quarantine)
+                        log.warning("import.quarantine_restored")
+                        break
+            finally:
+                os.close(quarantine)
+        finally:
+            os.close(root_fd)
 
     @staticmethod
     def _parent_fd(root_fd: int, parts: list[str]) -> int:
