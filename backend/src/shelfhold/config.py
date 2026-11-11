@@ -77,6 +77,9 @@ class Settings(BaseModel):
     # (argon2id, CSRF, cookies, CSP, attempt limiting) have no setting at all.
     auth_hardened: bool = False
     fresh_auth_s: int = Field(default=900, ge=60, le=86_400)
+    # EF-BIB-024: a new version of a chapter that counts less than this share of the pages of the
+    # stored one is quarantined and the stored one stays exported. 0.5 by default.
+    revision_min_page_ratio: float = Field(default=0.5, ge=0.05, le=1.0)
     # Q50: a non-empty numbering segment stays in `numbering_conflict`, unexported, until the
     # naming golden (one Kavita series per segment) is confirmed by the nightly against a real
     # Kavita (L40). Leave it false; the lot that records the confirmation flips the default.

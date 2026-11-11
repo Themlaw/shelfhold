@@ -305,6 +305,24 @@ def _intents_resolve(ops: OpsServices, by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _revisions_list(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.revisions.list_pending()
+
+
+def _revisions_apply(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.revisions.apply(
+        confirm=_optional(p, "confirm"), include_read=bool(p.get("include_read")),
+        principal=by,
+    )  # fmt: skip
+
+
+def _revisions_force(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.revisions.apply(
+        confirm=_optional(p, "confirm"), include_read=bool(p.get("include_read")),
+        force_ids=tuple(str(i) for i in p.get("force_ids") or ()), principal=by,
+    )  # fmt: skip
+
+
 def _normalize_migrate(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.normalize.migrate(_text(p, "name"), confirm=_optional(p, "confirm"), principal=by)
 
@@ -528,6 +546,9 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.rebaseline_inodes": (_rebaseline_inodes, None),
     "ops.intents_list": (_intents_list, None),
     "ops.intents_resolve": (_intents_resolve, "intents.resolve"),
+    "ops.revisions_list": (_revisions_list, None),
+    "ops.revisions_apply": (_revisions_apply, "revisions.apply"),
+    "ops.revisions_force": (_revisions_force, "revisions.force"),
     "ops.normalize_migrate": (_normalize_migrate, "normalize.migrate"),
     "ops.content_reneutralize": (_content_reneutralize, None),
     "ops.meta_rebuild": (_meta_rebuild, None),

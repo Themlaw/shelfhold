@@ -53,6 +53,10 @@ class Effect(StrEnum):
     # `plugin attest`: a non-first-party plugin's declared trust value (`content_trust:
     # publisher`, `access_partitioning`, `egress`) applied on the admin's word (EF-EXP-065, D15)
     ATTESTS_TRUST = "attests_trust"
+    # `revisions apply|force`: asks that exported files be replaced by the revision of a source
+    # (the "to rewrite" queue, EF-BIB-043), or that the suspect-revision guard be lifted for one
+    # (EF-BIB-024): KOReader positions are reset and the old version only survives in the bin
+    REWRITES_EXPORTED_FILES = "rewrites_exported_files"
 
 
 # P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody

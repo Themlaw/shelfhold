@@ -51,6 +51,10 @@ _DECLARED = (
     _action("config.path_map", Effect.REINITS_STORAGE),  # which folders are written (`path_map.*`)
     # File-system journal
     _action("intents.resolve", Effect.SETTLES_FS_INTENT),  # EF-INT-014
+    # Exported files replaced by a source's revision (EF-BIB-043); `force` lifts the guard of
+    # EF-BIB-024 for a quarantined one
+    _action("revisions.apply", Effect.REWRITES_EXPORTED_FILES),
+    _action("revisions.force", Effect.REWRITES_EXPORTED_FILES),
     # Identity keys
     _action("normalize.migrate", Effect.MIGRATES_IDENTITY),  # EF-BIB-054, ENF-OPS-021
     # Parental control

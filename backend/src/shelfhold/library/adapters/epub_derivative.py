@@ -38,6 +38,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
 
+from shelfhold.catalog.public import guard_received
 from shelfhold.infrastructure.archives import (
     DEFAULT_LIMITS,
     ArchiveLimits,
@@ -284,6 +285,26 @@ def _under_work[F: Callable[..., Any]](method: F) -> F:
     return locked  # type: ignore[return-value]
 
 
+def spine_count(path: Path, limits: ArchiveLimits = DEFAULT_LIMITS) -> int | None:
+    """The number of items of the reading order of an EPUB the neutralizer already cleaned, or
+    None when it cannot be read (the guard then says nothing, it never invents a verdict)."""
+    import re
+
+    try:
+        with safe_open_archive(path, name="x.epub", limits=limits) as archive:
+            container = bytes(archive.read("META-INF/container.xml", max_bytes=65536))
+            found = re.search(rb'full-path="([^"]+)"', container)
+            if found is None:
+                return None
+            opf = bytes(
+                archive.read(found.group(1).decode("utf-8", "replace"), max_bytes=4_000_000)
+            )
+    except (OSError, KeyError, ValueError, UnsafeArchiveError):
+        return None
+    spine = re.search(rb"<(?:\w+:)?spine\b.*?</(?:\w+:)?spine>", opf, flags=re.S)
+    return len(re.findall(rb"<(?:\w+:)?itemref\b", spine.group(0))) if spine else None
+
+
 class UntrustedEpubStore:
     def __init__(
         self,
@@ -407,7 +428,15 @@ class UntrustedEpubStore:
                 )  # fmt: skip
         device, now = self._fsops.device_of(dest), datetime.now(UTC)
         kept = kept_local is not None
+        sections = spine_count(
+            derived_path, self._limits
+        )  # an EPUB's pages are its reading order (EF-BIB-024)
         with self._engine.begin() as connection:
+            if sections is not None and guard_received(
+                connection, variant_id=variant_id, pages=sections,
+                content_hash=made.original_hash, seen_at=now,
+            ):  # fmt: skip
+                log.warning("content.suspect_revision", unit_id=unit_id, reason="fewer_pages")
             connection.execute(
                 sa.insert(storage.content).values(
                     id=content_id, unit_id=unit_id, variant_id=variant_id, kind="text",
@@ -417,6 +446,7 @@ class UntrustedEpubStore:
                     content_hash_by=_EPUB_HASH_BY, store_provenance="received",
                     derived_hash=made.derived_hash, derived_by=made.derived_by,
                     derived_hash_by=made.derived_hash_by, size=identity.size,
+                    page_count=sections,
                 )
             )  # fmt: skip
             replica_id = record_replica(

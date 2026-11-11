@@ -1219,7 +1219,7 @@ def test_upstream_snapshot_is_kept_until_detach(engine: Engine) -> None:
 
 
 @pytest.mark.req("EF-BIB-043")
-def test_revision_pending_waits_for_m2(engine: Engine, chain: dict[str, str]) -> None:
+def test_revision_pending_closed_vocabulary(engine: Engine, chain: dict[str, str]) -> None:
     table = acquisition.revision_pending
     with engine.begin() as connection:
         connection.execute(

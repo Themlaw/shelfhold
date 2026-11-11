@@ -45,6 +45,7 @@ P3 = {
     "settles_fs_intent",  # `intents resolve` frees the paths of an interrupted operation (L51)
     "migrates_identity",  # `normalize migrate` rewrites the identity keys of live rows (L55)
     "acknowledges_restore",  # `restore acknowledge`: passkey logins come back with it
+    "rewrites_exported_files",  # `revisions apply|force`: KOReader positions reset (M2 L17)
 }
 
 
@@ -266,6 +267,8 @@ FRESHNESS_LINE = {
             "store.reinit",
             "config.path_map",
             "intents.resolve",
+            "revisions.apply",
+            "revisions.force",
             "normalize.migrate",
             "restore.acknowledge",
             "admin_risk.accept",

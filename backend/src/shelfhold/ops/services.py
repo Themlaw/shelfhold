@@ -65,6 +65,7 @@ from shelfhold.ops.ports import (
     WaitingItem,
 )
 from shelfhold.ops.rating import RatingOps
+from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
 from shelfhold.ops.status import (
     UNKNOWN_LANGUAGE,
@@ -178,6 +179,7 @@ class OpsServices:
         adoption: AdoptionExit | None = None,
         library: LibraryOps | None = None,
         intents: IntentOps | None = None,
+        revisions: RevisionOps | None = None,
         backfill: BackfillOps | None = None,
         normalize: NormalizeOps | None = None,
         meta: MetaOps | None = None,
@@ -200,6 +202,7 @@ class OpsServices:
         self._adoption = adoption
         self._library = library
         self._intents = intents
+        self._revisions = revisions
         self._backfill = backfill
         self._normalize = normalize
         self._meta = meta
@@ -671,6 +674,13 @@ class OpsServices:
         if self._intents is None:
             raise ExitUnavailableError("the intent journal is not connected")
         return self._intents
+
+    @property
+    def revisions(self) -> RevisionOps:
+        """`revisions list|apply` (EF-BIB-043)."""
+        if self._revisions is None:
+            raise ExitUnavailableError("the revision queue is not connected")
+        return self._revisions
 
     @property
     def backfill(self) -> BackfillOps:

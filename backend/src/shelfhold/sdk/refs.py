@@ -84,9 +84,13 @@ class UnitInfo(SdkModel):
     published_at: datetime | None = None  # a zero upload date is None, never 1970-01-01
     published_on: str | None = None  # ISO 8601 partial ("2023", "2023-05", "2023-05-14")
     date_precision: Literal["year", "month", "day"] | None = None  # with published_on, never finer
-    availability: Literal["free", "purchased", "expiring", "locked", "stubbed", "removed"] = "free"
+    # Open vocabulary (EF-BIB-009, D20): the host knows free, purchased, expiring, locked, stubbed
+    # and removed; any other word is kept as said and treated as `locked`, never refused.
+    availability: str = Field(default="free", max_length=64)
     available_until: datetime | None = None
     revision_hint: str | None = None
+    # Pages the source says the chapter has (EF-BIB-024): what the suspect-revision guard reads
+    page_count: int | None = Field(default=None, ge=0)
     memo: dict[str, Any] = Field(default_factory=dict)
     memo_version: int = 1
 

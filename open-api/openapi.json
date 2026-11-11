@@ -147,6 +147,57 @@
         "title": "ActivityOut",
         "type": "object"
       },
+      "AppliedOut": {
+        "properties": {
+          "metadata_applied": {
+            "title": "Metadata Applied",
+            "type": "integer"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "integer"
+          },
+          "skipped_read": {
+            "title": "Skipped Read",
+            "type": "integer"
+          },
+          "skipped_suspect": {
+            "title": "Skipped Suspect",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "metadata_applied",
+          "requested",
+          "skipped_read",
+          "skipped_suspect"
+        ],
+        "title": "AppliedOut",
+        "type": "object"
+      },
+      "ApplyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm"
+          },
+          "include_read": {
+            "default": false,
+            "title": "Include Read",
+            "type": "boolean"
+          }
+        },
+        "title": "ApplyIn",
+        "type": "object"
+      },
       "AttestationIn": {
         "properties": {
           "field": {
@@ -743,6 +794,40 @@
           "sent"
         ],
         "title": "FollowOut",
+        "type": "object"
+      },
+      "ForceIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm"
+          },
+          "include_read": {
+            "default": false,
+            "title": "Include Read",
+            "type": "boolean"
+          },
+          "revision_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Revision Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision_ids"
+        ],
+        "title": "ForceIn",
         "type": "object"
       },
       "GuardsTriggered": {
@@ -2119,6 +2204,104 @@
           }
         },
         "title": "RestoreIn",
+        "type": "object"
+      },
+      "RevisionOut": {
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "koreader_reset": {
+            "title": "Koreader Reset",
+            "type": "boolean"
+          },
+          "nature": {
+            "title": "Nature",
+            "type": "string"
+          },
+          "read": {
+            "title": "Read",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "suspect": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suspect"
+          },
+          "unit_id": {
+            "title": "Unit Id",
+            "type": "string"
+          },
+          "variant_id": {
+            "title": "Variant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "unit_id",
+          "variant_id",
+          "revision",
+          "nature",
+          "suspect",
+          "field",
+          "read",
+          "koreader_reset"
+        ],
+        "title": "RevisionOut",
+        "type": "object"
+      },
+      "RevisionsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RevisionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "koreader_positions": {
+            "title": "Koreader Positions",
+            "type": "integer"
+          },
+          "newly_queued": {
+            "title": "Newly Queued",
+            "type": "integer"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "koreader_positions",
+          "token",
+          "newly_queued"
+        ],
+        "title": "RevisionsOut",
         "type": "object"
       },
       "RootIn": {
@@ -6030,6 +6213,179 @@
         ]
       }
     },
+    "/api/v1/revisions": {
+      "get": {
+        "operationId": "revisions_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Revisions List",
+        "tags": [
+          "revisions"
+        ]
+      }
+    },
+    "/api/v1/revisions/apply": {
+      "post": {
+        "operationId": "revisions_apply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppliedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Revisions Apply",
+        "tags": [
+          "revisions"
+        ]
+      }
+    },
+    "/api/v1/revisions/force": {
+      "post": {
+        "operationId": "revisions_force",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppliedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Revisions Force",
+        "tags": [
+          "revisions"
+        ]
+      }
+    },
     "/api/v1/roots/{root}/reinit": {
       "post": {
         "description": "The disk is not what the database remembers: its records go to `missing`. Reserved.",
@@ -9089,6 +9445,10 @@
       "code": "resync_required",
       "status": 410
     },
+    "/api/v1/problems/revisions.confirmation-required": {
+      "code": "revisions.confirmation_required",
+      "status": 409
+    },
     "/api/v1/problems/root.blocked": {
       "code": "root.blocked",
       "status": 409
@@ -9359,6 +9719,10 @@
     },
     "/api/v1/problems/unit.confirmation-required": {
       "code": "unit.confirmation_required",
+      "status": 409
+    },
+    "/api/v1/problems/unit.revision-suspect": {
+      "code": "unit.revision_suspect",
       "status": 409
     },
     "/api/v1/problems/unit.safeguard-backlog": {

@@ -16,6 +16,7 @@ from shelfhold.catalog.application.dto import (
     IncomingUnit,
 )
 from shelfhold.catalog.application.ports import StoredVariant
+from shelfhold.catalog.domain.availability import Availability
 from shelfhold.catalog.domain.identity import sort_title
 from shelfhold.catalog.domain.normalizers import (
     REMOTE_UNIT_ID_NORMALIZER_ID,
@@ -25,8 +26,10 @@ from shelfhold.catalog.domain.normalizers import (
 from shelfhold.catalog.domain.numbering import NUMBER_NORMALIZER_ID, UnitNumber
 from shelfhold.catalog.domain.placement import NUMBERING_CONFLICT, Place, VariantFacts
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, variant_lang
+from shelfhold.events.bus import EventBus
+from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog
+from shelfhold.infrastructure.schema import acquisition, catalog, storage
 
 
 class SqlWorkStore:
@@ -259,29 +262,92 @@ class SqlUnitStore:
         ).first()
         return None if row is None else StoredVariant(*row)
 
-    def _last_revision(self, variant: StoredVariant) -> tuple[str | None, str | None, int | None]:
+    def last_revision(self, variant: StoredVariant) -> tuple[str | None, str | None, int | None]:
+        """The latest revision seen, healthy or not: what the next item is compared with, so a
+        suspect item seen again is the same revision, not a new one."""
+        return self._revision_row(variant, healthy=False)
+
+    def last_healthy_revision(
+        self, variant: StoredVariant
+    ) -> tuple[str | None, str | None, int | None]:
+        """The latest revision the guard did not quarantine: all a new revision may inherit.
+        A quarantined page count or hash never becomes anybody's baseline."""
+        return self._revision_row(variant, healthy=True)
+
+    def _revision_row(
+        self, variant: StoredVariant, *, healthy: bool
+    ) -> tuple[str | None, str | None, int | None]:
         r = catalog.variant_revision.c
+        where = [r.variant_id == variant.id]
+        if healthy:
+            where.append(r.quarantined_at.is_(None))
         row = self._c.execute(
-            sa.select(r.revision_hint, r.content_hash, r.page_count).where(
-                r.variant_id == variant.id, r.revision == variant.revision
-            )
+            sa.select(r.revision_hint, r.content_hash, r.page_count)
+            .where(*where)
+            .order_by(r.revision.desc())
+            .limit(1)
         ).first()
         return (None, None, None) if row is None else (row[0], row[1], row[2])
 
-    def revision_changed(self, variant: StoredVariant, item: IncomingUnit) -> bool:
-        """Only the fields the source gave count: an absent field (`None`) is not a change."""
-        last = self._last_revision(variant)
-        seen = (item.revision_hint, item.content_hash, item.page_count)
-        return any(new is not None and new != old for new, old in zip(seen, last, strict=True))
+    def latest_quarantine(self, variant: StoredVariant) -> str | None:
+        """Why the latest revision is quarantined, None when it is not."""
+        r = catalog.variant_revision.c
+        row = self._c.execute(
+            sa.select(r.quarantine_reason, r.quarantined_at)
+            .where(r.variant_id == variant.id)
+            .order_by(r.revision.desc())
+            .limit(1)
+        ).first()
+        return None if row is None or row[1] is None else str(row[0] or "fewer_pages")
 
-    def add_revision(self, variant: StoredVariant, item: IncomingUnit) -> int:
+    def stored_pages(self, variant: StoredVariant) -> int | None:
+        """The page count of the version that is really stored and served: the `content` of the
+        Variant (the oldest one, the one exported), not the last revision seen: a chain of
+        slightly smaller revisions never moves the baseline (EF-BIB-024). A Variant with no
+        content yet falls back to its first healthy revision."""
+        c = storage.content.c
+        pages = self._c.execute(
+            sa.select(c.page_count)
+            .where(c.variant_id == variant.id, c.page_count.is_not(None))
+            .order_by(c.created_at.asc(), c.id.asc())
+            .limit(1)
+        ).scalar()
+        if pages is not None:
+            return int(pages)
+        r = catalog.variant_revision.c
+        first = self._c.execute(
+            sa.select(r.page_count)
+            .where(
+                r.variant_id == variant.id, r.quarantined_at.is_(None), r.page_count.is_not(None)
+            )
+            .order_by(r.revision.asc())
+            .limit(1)
+        ).scalar()
+        return None if first is None else int(first)
+
+    def revision_changed(self, variant: StoredVariant, item: IncomingUnit) -> bool:
+        """Only the fields the source gave count: an absent field (`None`) is not a change, and a
+        page count the source gives for the first time fills a gap, it is not a revision."""
+        hint, content_hash, pages = self.last_revision(variant)
+        return any(
+            (
+                item.revision_hint is not None and item.revision_hint != hint,
+                item.content_hash is not None and item.content_hash != content_hash,
+                item.page_count is not None and pages is not None and item.page_count != pages,
+            )
+        )
+
+    def add_revision(
+        self, variant: StoredVariant, item: IncomingUnit, *, quarantine: str | None = None
+    ) -> int:
         """Append-only: the history gains a row, the Variant's identity is not touched.
 
         A field the source left out keeps its previous value in the new row, so the next
-        comparison does not read the gap as a change.
+        comparison does not read the gap as a change. A revision the guard quarantines is marked
+        in the row it is born in (set once, never lifted) and the admin is warned.
         """
         revision = variant.revision + 1
-        last = self._last_revision(variant)
+        last = self.last_healthy_revision(variant)
         hint, content_hash, pages = (
             (new if new is not None else old)
             for new, old in zip(
@@ -298,13 +364,70 @@ class SqlUnitStore:
                 page_count=pages,
                 content_hash=content_hash,
                 revision_hint=hint,
+                quarantined_at=item.seen_at if quarantine else None,
+                quarantine_reason=quarantine,
             )
         )
         v = catalog.unit_variant
         self._c.execute(
             sa.update(v).where(v.c.id == variant.id).values(revision=revision, revision_hint=hint)
         )
+        if quarantine:
+            EventBus(SystemClock()).publish(
+                self._c,
+                "unit.revision_suspect",
+                {"unit_id": variant.unit_id, "variant_id": variant.id, "reason": quarantine},
+            )
         return revision
+
+    def queue_revision(
+        self,
+        variant: StoredVariant,
+        revision: int,
+        *,
+        nature: str,
+        field: str | None,
+        value: str | None,
+    ) -> None:
+        """A revision waits in `revision_pending`: nothing is applied from here (EF-BIB-043)."""
+        self._c.execute(
+            sa.insert(acquisition.revision_pending)
+            .values(
+                id=new_ulid(), variant_id=variant.id, revision=revision, nature=nature,
+                field=field, value=value,
+            )
+            .prefix_with("OR IGNORE")
+        )  # fmt: skip
+
+    def apply_availability(
+        self, unit_id: str, variant_id: str, availability: Availability, item: IncomingUnit
+    ) -> None:
+        """What the source says of the Unit. `removed` upstream never deletes anything: the
+        Variant is marked, the Unit says `removed` only when no other Variant still lives, and
+        every stored file stays where it is (EF-BIB-009)."""
+        v, u = catalog.unit_variant, catalog.unit
+        if availability.value == "removed":
+            self._c.execute(
+                sa.update(v)
+                .where(v.c.id == variant_id, v.c.removed_at.is_(None))
+                .values(removed_at=item.seen_at)
+            )
+            others = self._c.execute(
+                sa.select(sa.func.count()).where(
+                    v.c.unit_id == unit_id, v.c.id != variant_id, v.c.removed_at.is_(None)
+                )
+            ).scalar_one()
+            if others:
+                return
+        self._c.execute(
+            sa.update(u)
+            .where(u.c.id == unit_id)
+            .values(
+                availability=availability.value,
+                availability_detail=availability.detail,
+                available_until=item.available_until,
+            )
+        )
 
     def reappear(self, variant_id: str) -> None:
         v = catalog.unit_variant

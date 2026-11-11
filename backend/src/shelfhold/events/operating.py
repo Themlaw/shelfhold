@@ -68,6 +68,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "unit.safeguard_backlog",
         "unit.safeguard_failed",
         "unit.stored",  # M2 L19 (EF-SRC-015): a requested file is filed ("rangé")
+        "unit.revision_suspect",  # M2 L17 (EF-BIB-024): a suspect version was quarantined
         "unit.upgraded",  # M2 L16 (EF-EXP-016, D21): KOReader's position was reset
         "wake.deferred",
     }

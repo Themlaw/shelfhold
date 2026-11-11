@@ -413,6 +413,21 @@ help_intent_id = "Identifiant de l'intention (voir `intents list`)."
 help_intents_abandon = "Renonce à l'intention sans toucher au disque : ses chemins ne sont plus protégés (demande --confirm)."
 help_intents_confirm = "Avec --abandon : l'identifiant de l'intention, saisi à nouveau."
 intents_none = "Aucune intention ouverte."
+help_revisions = "File des révisions enregistrées sans remplacer de fichier."
+help_revisions_list = "Liste les révisions en attente, l'impact estimé sur KOReader et le jeton du lot."
+help_revisions_apply = "Pousse par l'API Kavita les révisions de métadonnées seules ; avec --confirm, demande la réécriture des autres (action réservée)."
+help_revisions_confirm = "Le jeton du lot affiché par `revisions list`."
+help_revisions_include_read = "Inclut les Unités déjà lues (leur position KOReader repartirait du début)."
+help_revisions_force = "Accepte la révision en quarantaine nommée par cet identifiant (action réservée distincte, une révision à la fois, répétable)."
+revision_line = "{id}  unité {unit}  révision {revision}  {nature}  {flags}"
+revision_suspect_mark = "[suspecte : {reason}]"
+revision_flag_sep = " "
+revision_read_mark = "[déjà lue : la position KOReader repartirait du début]"
+revisions_none = "Aucune révision en attente."
+revisions_impact = "Positions KOReader qui seraient réinitialisées : {count}."
+revisions_token = "Pour réécrire ce lot : shelfhold revisions apply --confirm {token}"
+revisions_needs_confirm = "Rien n'a été réécrit : confirmez le lot avec --confirm {token}."
+revisions_applied = "Métadonnées poussées par l'API : {api} ; réécritures demandées : {requested} ; ignorées (déjà lues) : {read} ; ignorées (suspectes) : {suspect}."
 intent_line = "{id}  {op}  {state}  {dst}  (de {created}){stale}"
 intent_stale_mark = "  [issue d'une sauvegarde : jamais rejouée]"
 intent_resolved = "Intention {id} : {outcome}."
@@ -1144,6 +1159,14 @@ action = "Tapez l'identifiant du chapitre pour confirmer. Aucune copie ne sera s
 [errors."unit.safeguard_failed"]
 title = "La mise à l'abri d'un chapitre a échoué."
 action = "Consultez l'Activité et relancez la mise à l'abri du chapitre."
+
+[errors."unit.revision_suspect"]
+title = "Une nouvelle version d'un chapitre est bien plus petite que celle rangée : elle est en quarantaine."
+action = "L'ancienne version reste exportée. Si la nouvelle est bonne, `shelfhold revisions list` la montre et `revisions apply --force-suspect` (action réservée) l'accepte."
+
+[errors."revisions.confirmation_required"]
+title = "La file « à réécrire » se confirme par lot."
+action = "Lancez `shelfhold revisions list`, relisez le nombre de positions KOReader touchées, puis donnez le jeton affiché avec `--confirm`."
 
 [errors."unit.upgraded"]
 title = "Un chapitre a été remplacé par une meilleure version, au même emplacement."

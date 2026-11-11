@@ -136,6 +136,7 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
                 Effect.SETTLES_FS_INTENT,  # L51: `intents resolve`
                 Effect.MIGRATES_IDENTITY,  # L55: `normalize migrate`
                 Effect.ACKNOWLEDGES_RESTORE,  # `restore acknowledge`
+                Effect.REWRITES_EXPORTED_FILES,  # M2 L17: `revisions apply|force`
             }
         )
         == set(Effect) - NO_REAUTH_EFFECTS

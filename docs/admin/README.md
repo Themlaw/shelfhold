@@ -20,6 +20,7 @@ Une commande marquée **[M1b]** n'existe pas encore en 0.2 : la page dit ce qu'o
 | Sauvegarder et restaurer | [sauvegarde.md](sauvegarde.md) (sauvegarde intégrée), [restauration.md](restauration.md) |
 | Comprendre « libre de droits aux États-Unis », régler le pays de l'instance | [domaine-public.md](domaine-public.md) |
 | Remplacer un chapitre par une meilleure version, ce que voient Kavita et KOReader | [mise-a-niveau.md](mise-a-niveau.md) |
+| Révisions republiées par une source, version suspecte, chapitre retiré à la source | [revisions-en-attente.md](revisions-en-attente.md) |
 | Effacer pour de bon | [purge.md](purge.md) |
 | Garder une copie dans `/store`, ce que compte la page Santé, l'index de `/store` | [copie-conservee.md](copie-conservee.md) |
 | Comprendre la pause « disque presque plein » | [garde-disque.md](garde-disque.md) |

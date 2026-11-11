@@ -79,6 +79,7 @@ from shelfhold.acquisition.domain.team_policy import DEFAULT_INACTIVE_MONTHS
 from shelfhold.acquisition.domain.watermark import Watermark
 from shelfhold.catalog.public import (
     ARTIST,
+    DEFAULT_MIN_PAGE_RATIO,
     WRITER,
     BindingRef,
     Catalog,
@@ -256,7 +257,9 @@ class FollowCycle:
         wakes: Wakes | None = None,
         check_mode: Literal["always_on", "piloted"] = "always_on",
         refresh_delay: Callable[[list[str]], list[float]] = refresh_delays,
+        min_page_ratio: float = DEFAULT_MIN_PAGE_RATIO,
     ) -> None:
+        self._min_page_ratio = min_page_ratio
         self._engine = engine
         self._bus = bus
         self._clock = clock
@@ -813,8 +816,12 @@ class FollowCycle:
                     source_order=info.source_order, team_label=info.team, lang=info.lang,
                     title=info.title, published_at=info.published_at, kind=info.kind,
                     published_on=info.published_on, date_precision=info.date_precision,
+                    revision_hint=info.revision_hint, page_count=info.page_count,
+                    availability=info.availability,
+                    available_until=info.available_until,
                 ),
                 then=self._hook(info, look, budget),
+                min_page_ratio=self._min_page_ratio,
             )  # fmt: skip
             report.discovered += int(result.outcome is IngestOutcome.NEW_VARIANT)
             log.debug(

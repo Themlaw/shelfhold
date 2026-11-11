@@ -25,7 +25,7 @@ LIBRARY = f"query {{ mangas(condition: {{inLibrary: true}}) {{ nodes {{ {_MANGA_
 ALL_MANGAS = f"query {{ mangas {{ nodes {{ {_MANGA_FIELDS} }} }} }}"
 CHAPTERS = (
     "query ($mangaId: Int!) { chapters(condition: {mangaId: $mangaId}) { nodes "
-    "{ id url name chapterNumber sourceOrder scanlator uploadDate } } }"
+    "{ id url name chapterNumber sourceOrder scanlator uploadDate pageCount } } }"
 )
 CHAPTER = (
     "query ($id: Int!) { chapter(id: $id) { id mangaId url name chapterNumber isDownloaded } }"

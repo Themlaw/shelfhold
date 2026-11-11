@@ -63,6 +63,7 @@ from shelfhold.catalog.application.fields import (
 from shelfhold.catalog.application.ingest import UnsupportedFileError, announced_kind
 from shelfhold.catalog.application.new_edition_gate import Filing, file_new_edition
 from shelfhold.catalog.application.places import place_key
+from shelfhold.catalog.application.ports import StoredVariant
 from shelfhold.catalog.application.rating import (
     EditionSuggestion,
     RatingRefusedError,
@@ -83,6 +84,17 @@ from shelfhold.catalog.application.relink import (
     RelinkRefusedError,
     RelinkRequest,
     RelinkResult,
+)
+from shelfhold.catalog.application.revisions import (
+    ApplyReport,
+    ConfirmationError,
+    ForceRefusedError,
+    MetadataPusher,
+    PendingRevision,
+    RevisionQueue,
+    RevisionReport,
+    RewriteRequester,
+    RewriteUnavailableError,
 )
 from shelfhold.catalog.application.rights import Rights, RightsReport
 from shelfhold.catalog.application.series import SeriesAlreadyAttachedError
@@ -126,9 +138,14 @@ from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, place_of
 from shelfhold.catalog.domain.provenance import FieldKey
 from shelfhold.catalog.domain.public_domain import Verdict
+from shelfhold.catalog.domain.revisions import DEFAULT_MIN_PAGE_RATIO, suspect_reason
 from shelfhold.catalog.domain.sort_key import sort_key
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
+from shelfhold.events.bus import EventBus
 from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.clock import SystemClock
+from shelfhold.infrastructure.schema import catalog as catalog_schema
+from shelfhold.infrastructure.schema import storage as storage_schema
 
 
 class Catalog(CatalogService):
@@ -186,6 +203,7 @@ def ingest_isolated(
     item: IncomingUnit,
     *,
     then: Callable[[sa.Connection, IngestResult], None] | None = None,
+    min_page_ratio: float = DEFAULT_MIN_PAGE_RATIO,
 ) -> IngestResult:
     """Ingest one release in its own `BEGIN IMMEDIATE` transaction, replayed once on a clash.
 
@@ -194,12 +212,80 @@ def ingest_isolated(
     """
 
     def work(connection: sa.Connection) -> IngestResult:
-        result = Catalog(connection).ingest(item)
+        result = Catalog(connection).ingest(item, min_page_ratio=min_page_ratio)
         if then is not None:
             then(connection, result)
         return result
 
     return run_immediate(engine, work)
+
+
+def guard_received(
+    connection: sa.Connection,
+    *,
+    variant_id: str,
+    pages: int,
+    content_hash: str | None,
+    seen_at: datetime,
+    min_page_ratio: float = DEFAULT_MIN_PAGE_RATIO,
+) -> str | None:
+    """The suspect-revision guard at reception (EF-BIB-024): a file received for a Variant that
+    already has one is compared with the page count of the stored version, whatever the source
+    said. Call it **before** the new content is recorded. A file under the ratio is recorded as a
+    quarantined revision (warning, queued as a rewrite): the caller keeps the received file, but
+    nothing promotes it. Returns the reason, or None."""
+    store = SqlUnitStore(connection)
+    v, r, c = (
+        catalog_schema.unit_variant.c,
+        catalog_schema.variant_revision.c,
+        storage_schema.content.c,
+    )
+    row = connection.execute(
+        sa.select(v.id, v.unit_id, v.team_id, v.revision).where(v.id == variant_id)
+    ).first()
+    if row is None:
+        return None
+    variant = StoredVariant(*row)
+    baseline = store.stored_pages(variant)
+    if baseline is None:  # another Variant of the Unit is the one stored and exported
+        baseline = connection.execute(
+            sa.select(c.page_count)
+            .where(c.unit_id == variant.unit_id, c.page_count.is_not(None))
+            .order_by(c.created_at.asc(), c.id.asc())
+            .limit(1)
+        ).scalar()
+    reason = suspect_reason(
+        stored_pages=baseline, new_pages=pages, availability="free", min_ratio=min_page_ratio
+    )
+    if reason is None:
+        return None
+    latest = connection.execute(
+        sa.select(r.id, r.revision, r.page_count, r.quarantined_at)
+        .where(r.variant_id == variant_id)
+        .order_by(r.revision.desc())
+        .limit(1)
+    ).first()
+    if latest is not None and latest.quarantined_at is None and latest.page_count is None:
+        # the revision recorded when the Variant was listed, never given a count: it gets the mark
+        # (the one column the history lets change, once); its own count stays unknown
+        connection.execute(
+            sa.update(catalog_schema.variant_revision)
+            .where(r.id == latest.id)
+            .values(quarantined_at=seen_at, quarantine_reason=reason)
+        )
+        revision = int(latest.revision)
+        EventBus(SystemClock()).publish(
+            connection, "unit.revision_suspect",
+            {"unit_id": variant.unit_id, "variant_id": variant_id, "reason": reason},
+        )  # fmt: skip
+    else:
+        item = IncomingUnit(
+            binding=BindingRef("", ""), remote_unit_id="", raw_number=None, seen_at=seen_at,
+            page_count=pages, content_hash=content_hash,
+        )  # fmt: skip
+        revision = store.add_revision(variant, item, quarantine=reason)
+    store.queue_revision(variant, revision, nature="rewrite", field=None, value=None)
+    return reason
 
 
 def place_parts(raw_number: str | None, source_order: int = 0) -> tuple[str, str, str]:
@@ -229,10 +315,12 @@ __all__ = [
     "ATTACH_SUGGESTED",
     "AUTO_ATTACHED",
     "BOOK_KINDS",
+    "DEFAULT_MIN_PAGE_RATIO",
     "LANG_NORMALIZER_ID",
     "TEXT_VERSION_LABELS",
     "WRITER",
     "Admission",
+    "ApplyReport",
     "Arrival",
     "AttachPlan",
     "AttachPlanStaleError",
@@ -241,6 +329,7 @@ __all__ = [
     "AutoAttachService",
     "BindingRef",
     "Catalog",
+    "ConfirmationError",
     "ContributorName",
     "Detached",
     "Discriminant",
@@ -257,16 +346,19 @@ __all__ = [
     "FieldKey",
     "FieldReport",
     "Filing",
+    "ForceRefusedError",
     "IncomingEdition",
     "IncomingUnit",
     "IngestOutcome",
     "IngestResult",
     "LanguageError",
     "ListedUnit",
+    "MetadataPusher",
     "NameKind",
     "NoPersonFieldName",
     "NormalizerId",
     "NormalizerRegistry",
+    "PendingRevision",
     "PersonField",
     "RatingRefusedError",
     "RatingResult",
@@ -278,6 +370,10 @@ __all__ = [
     "RelinkRequest",
     "RelinkResult",
     "RelinkService",
+    "RevisionQueue",
+    "RevisionReport",
+    "RewriteRequester",
+    "RewriteUnavailableError",
     "RightsReport",
     "RightsService",
     "SeriesAlreadyAttachedError",
@@ -299,6 +395,7 @@ __all__ = [
     "effective_age",
     "external_ids_of",
     "file_new_edition",
+    "guard_received",
     "holder_of",
     "ingest_isolated",
     "join_people",
@@ -320,6 +417,7 @@ __all__ = [
     "sort_key",
     "stored_date",
     "suggest_age",
+    "suspect_reason",
     "translation_discriminant",
     "translation_type_for",
     "unlock_field",

@@ -26,7 +26,12 @@ from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.series_age import SeriesAgeTask, due_ages, verified_age
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import DestinationPausedError, FieldRegistry
-from shelfhold.export.domain.field_owner import AGE_RATING, effective_age, should_push
+from shelfhold.export.domain.field_owner import (
+    AGE_RATING,
+    FieldAction,
+    effective_age,
+    should_push,
+)
 from shelfhold.export.domain.kavita_access import age_of_rating, rating_for_age, reaches, tier
 from shelfhold.export.domain.kavita_compat import blocks_family_shelf
 from shelfhold.export.domain.kavita_instance import covering_libraries
@@ -319,6 +324,52 @@ class SeriesAges:
         except (TargetError, DestinationPausedError):
             with self._engine.begin() as connection:
                 FieldRegistry(connection).restore(destination_id, series, AGE_RATING, owned)
+            raise
+        return True
+
+
+class SeriesFields:
+    """Set one metadata field of a series by the API: what a revision that rewrites no file asks
+    (EF-BIB-043). Same rule as the age (EF-EXP-057): a lock Shelfhold does not hold is a third
+    party's and is never rewritten (the answer is False, and the revision goes to the rewrite
+    queue); the registry row is written before the request and put back if it fails."""
+
+    def __init__(self, engine: Engine, clock: Clock, events: TargetEvents) -> None:
+        self._engine = engine
+        self._clock = clock
+        self._events = events
+
+    async def push(
+        self,
+        client: KavitaClient,
+        destination_id: str,
+        export_series_id: str,
+        kavita_series_id: int,
+        field: str,
+        value: str,
+    ) -> bool:
+        key = dto.SERIES_METADATA_FIELDS.get(field)
+        if key is None:
+            return False
+        current = await client.series_age(kavita_series_id)
+        locked = bool(current.document.get(f"{key}Locked", False))
+        with self._engine.begin() as connection:
+            registry = FieldRegistry(connection)
+            owned = registry.get(destination_id, export_series_id, field)
+            action = FieldGuard(registry, self._events).decide(
+                destination_id, export_series_id, field,
+                locked_in_kavita=locked, kavita_value=current.document.get(key),
+            )  # fmt: skip
+            if action is FieldAction.LEAVE:
+                return False
+            if not should_push(action, wanted=value, owned=owned):
+                return True  # Shelfhold's own value is already there
+            registry.record_push(destination_id, export_series_id, field, value, self._clock.now())
+        try:
+            await client.set_series_field(current, key, value)
+        except (TargetError, DestinationPausedError):
+            with self._engine.begin() as connection:
+                FieldRegistry(connection).restore(destination_id, export_series_id, field, owned)
             raise
         return True
 

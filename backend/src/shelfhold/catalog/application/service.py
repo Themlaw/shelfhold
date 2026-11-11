@@ -17,6 +17,7 @@ from shelfhold.catalog.domain.placement import (
     VariantFacts,
     missing_numbers,
 )
+from shelfhold.catalog.domain.revisions import DEFAULT_MIN_PAGE_RATIO
 
 
 class CatalogService:
@@ -79,8 +80,10 @@ class CatalogService:
         return self._teams.priority(edition_id)
 
     # Units and Variants
-    def ingest(self, item: IncomingUnit) -> IngestResult:
-        return ingest.ingest_unit(self._units, self._teams, item)
+    def ingest(
+        self, item: IncomingUnit, *, min_page_ratio: float = DEFAULT_MIN_PAGE_RATIO
+    ) -> IngestResult:
+        return ingest.ingest_unit(self._units, self._teams, item, min_page_ratio=min_page_ratio)
 
     def variant_facts(self, unit_id: str) -> list[VariantFacts]:
         """What the election of the exported Variant needs to know of a Unit's Variants."""

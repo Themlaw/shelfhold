@@ -249,6 +249,20 @@ class SeriesAge:
         return {"seriesMetadata": document}
 
 
+# The fields of a series that Shelfhold may set by the API when a revision changes only metadata
+# (EF-BIB-043): Shelfhold's name for the field -> the key of Kavita's metadata document.
+SERIES_METADATA_FIELDS: Final = {"summary": "summary"}
+
+
+def field_update(
+    document: Mapping[str, Any], series_id: int, key: str, value: str
+) -> dict[str, Any]:
+    """`UpdateSeriesMetadataDto`: the document as read, with one field and its lock changed and
+    nothing else (the whole document is applied: a field left out would be emptied)."""
+    updated = {**document, "seriesId": series_id, key: value, f"{key}Locked": True}
+    return {"seriesMetadata": updated}
+
+
 SERIES_FILTER_LIBRARIES: Final = (
     19  # `SeriesFilterField.Libraries` (18 is Genres: found by the nightly)
 )
