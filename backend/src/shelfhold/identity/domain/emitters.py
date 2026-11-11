@@ -163,8 +163,11 @@ DELETION_SITES: Mapping[str, str] = MappingProxyType(
 # writes a staged file, reads it back against a hash and swaps it in; none unlinks first.
 REPLACEMENT_SITES: Mapping[str, str] = MappingProxyType(
     {
-        "shelfhold/library/adapters/storage.py::KeepCopier.declare_derivative": (
+        "shelfhold/library/adapters/storage.py::KeepCopier._declare": (
             "a declared derivative replaces the received file, the original having been kept first"
+        ),
+        "shelfhold/export/application/purge.py::PurgeService._write_index": (
+            "the index of /store rewritten without the purged Units, under its lock, never a copy"
         ),
         "shelfhold/library/adapters/storage.py::KeepCopier._copy": (
             "the copy to /store of a file read back against its hash, the target of its own intent"

@@ -188,7 +188,7 @@ def test_neutralizer_never_rewrites_opf_or_meta_inf() -> None:
         b"&lt;script&gt;alert(1)&lt;/script&gt; watermark:abc123</dc:contributor></metadata></package>"
     )
     extra = [
-        Member("META-INF/metadata.xml", b'<metadata onload="x"/>'),  # a known container file
+        Member("META-INF/metadata.xml", b'<metadata note="x"/>'),  # a known container file
         Member("OEBPS/other.opf", hostile_opf_like),
     ]
     original = epub_bytes(xhtml("<p>x</p>"), extra=extra)
