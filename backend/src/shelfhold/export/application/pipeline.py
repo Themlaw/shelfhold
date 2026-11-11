@@ -13,7 +13,7 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
 import structlog
@@ -80,6 +80,7 @@ from shelfhold.library.public import (
     require_servable_derivative,
     servable_epub,
 )
+from shelfhold.sdk.age import AgeRating
 
 __all__ = [
     "ApplyReport",
@@ -252,6 +253,14 @@ class FamilyBarrierClosedError(Exception):
     """The shelf below 18+ does not take this Edition (any more): nothing is written."""
 
 
+class _Refused:
+    """What `_execute` returns for an operation a last look refused: nothing was written, and
+    the report does not list it."""
+
+
+REFUSED: Final = _Refused()
+
+
 class SeriesAgeGateClosedError(Exception):
     """The age of the EPUB series is not read back locked: nothing more of it is written."""
 
@@ -290,7 +299,8 @@ class ExportPipeline:
         self._renderer = renderer or CbzRenderer(fsops, staging_dir=self._staging)
         self._epub_renderer = EpubRenderer(fsops, staging_dir=self._staging)
         self._age_gate: AgeGateFacts = GATE_CLOSED  # bound per run by the export job
-        self._age_reader: Callable[[int], tuple[int, bool]] | None = None
+        self._age_reader: Callable[[int], tuple[int, bool] | None] | None = None
+        self._tier_reader: Callable[[], int | None] | None = None
         self._locks = ResourceLocks(engine, clock=clock)
         self.mirror = mirror or ProvenanceMirror(
             engine, fsops, clock=clock, operating_bus=operating_bus
@@ -328,14 +338,19 @@ class ExportPipeline:
         self._parse_verified = verified
 
     def bind_age_gate(
-        self, facts: AgeGateFacts, reader: Callable[[int], tuple[int, bool]] | None = None
+        self,
+        facts: AgeGateFacts,
+        reader: Callable[[int], tuple[int, bool] | None] | None = None,
+        tier: Callable[[], int | None] | None = None,
     ) -> None:
         """Put what Kavita said of the series ages (read just before) behind the planner and the
-        last look before an EPUB is written (EF-EXP-040). `reader` gives `(age_rating, locked)`
-        of a Kavita series now: the series is read again under the locks, right before the
-        write. Unbound, the gate is closed."""
+        last look before an EPUB is written (EF-EXP-040). Both readers ask Kavita now, under the
+        locks, right before the write: `reader` gives `(age_rating, locked)` of a Kavita series
+        (None: Kavita no longer shows it), `tier` the lowest tier of a restricted account that
+        sees the "unknown" series of the shelf. Unbound, the gate is closed."""
         self._age_gate = facts
         self._age_reader = reader
+        self._tier_reader = tier
 
     def wanted_names(self, destination_id: str) -> tuple[list[str], str | None]:
         """See the module function: fetched in bulk, then `bind_parse` makes the plan applicable."""
@@ -515,8 +530,10 @@ class ExportPipeline:
         def run(op: PlanOp) -> None:
             planned = decode_op(op.payload or {})
             folder = self._execute(ctx, planned, plan_id, job_id)
+            if folder is REFUSED:
+                return  # a last look refused it: not written, not reported as done
             done.append(planned)
-            if folder is not None:
+            if isinstance(folder, str):
                 folders.add(folder)
 
         store = PlanStore(
@@ -568,7 +585,7 @@ class ExportPipeline:
 
     def _execute(
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, job_id: str
-    ) -> str | None:
+    ) -> str | _Refused | None:
         with bound_contextvars(
             unit_id=planned.unit_id,
             series_id=planned.work_id,
@@ -581,18 +598,18 @@ class ExportPipeline:
                 "export.op_done",
                 kind=planned.kind,
                 duration_ms=elapsed_ms(started),
-                wrote=folder is not None,
+                wrote=isinstance(folder, str),
             )
             return folder
 
     def _execute_bound(
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, job_id: str
-    ) -> str | None:
+    ) -> str | _Refused | None:
         folder = planned.rel_path.split("/", 1)[0] if planned.rel_path else ""
         with self._engine.connect() as connection:
             if planned.series.export_series_id in paused_series(connection, ctx.destination_id):
                 log.debug("export.series_paused", export_series_id=planned.series.export_series_id)
-                return None  # paused since the plan was stored: nothing is written into it
+                return REFUSED  # paused since the plan was stored: nothing is written into it
         library = (
             library_resource(ctx.remote_library_id, planned.series.normalized_name)
             if ctx.remote_library_id is not None
@@ -609,12 +626,12 @@ class ExportPipeline:
                 self._write(ctx, planned, plan_id, held.ensure)
             except SeriesAgeGateClosedError:
                 log.warning("export.series_age_unverified", edition_id=planned.series.edition_id)
-                return None
+                return REFUSED
             except FamilyBarrierClosedError:
                 # read again under the `work` lock, in the very transaction that reserves the line
                 # (a withdrawal takes the same lock): the shelf below 18+ no longer takes it
                 log.warning("export.family_barrier", edition_id=planned.series.edition_id)
-                return None
+                return REFUSED
             except DestinationPermissionError:
                 if self._preflight is None:
                     raise
@@ -624,7 +641,7 @@ class ExportPipeline:
                     raise
                 self._preflight.mark_denied(ctx.destination_id, series_id)
                 log.warning("export.write_denied", export_series_id=series_id)
-                return None
+                return REFUSED
         return ctx.local(folder)
 
     def _series_of(self, ctx: DestinationContext, planned: PlannedOp) -> str | None:
@@ -735,29 +752,46 @@ class ExportPipeline:
             first = series_id is None or series_id not in seeded_series(
                 connection, ctx.destination_id
             )
-        hidden = gate.unknowns_tier is None or age_rank(age) <= gate.unknowns_tier
-        if not (gate.open and first and hidden):
+        if not (gate.open and first and self._hidden_while_unknown(age, gate)):
             raise SeriesAgeGateClosedError(planned.series.edition_id)
+
+    def _hidden_while_unknown(self, age: AgeRating, gate: AgeGateFacts) -> bool:
+        """No account that sees the "unknown" series is restricted below this age: by what the
+        gate read, and by the accounts read again now (one may have been added or changed)."""
+        if gate.unknowns_tier is not None and age_rank(age) > gate.unknowns_tier:
+            return False
+        if self._tier_reader is None:
+            return False
+        try:
+            now = self._tier_reader()
+        except Exception as error:  # Kavita does not answer now: fail closed
+            log.info("export.accounts_reread_failed", reason=type(error).__name__)
+            return False
+        return now is None or age_rank(age) <= now
 
     def _reads_locked(
         self, connection: sa.Connection, ctx: DestinationContext, series_id: str
     ) -> bool:
         (task,) = due_ages(connection, ctx.destination_id, only=series_id) or (None,)
-        if task is None or task.split or not task.kavita_series_ids or self._age_reader is None:
+        if task is None or not task.kavita_series_ids or self._age_reader is None:
             return False
         owned = FieldRegistry(connection).get(ctx.destination_id, series_id, AGE_RATING)
+        shown: list[tuple[int, bool]] = []
         for kavita_id in task.kavita_series_ids:
             try:
-                rating, locked = self._age_reader(kavita_id)
+                reading = self._age_reader(kavita_id)
             except Exception as error:  # Kavita does not answer now: fail closed
                 log.info(
                     "export.age_reread_failed", export_series_id=series_id,
                     reason=type(error).__name__,
                 )  # fmt: skip
                 return False
-            if not verified_age(task.wanted, owned, locked=locked, kavita_value=rating):
-                return False
-        return True
+            if reading is not None:  # a series Kavita no longer shows is no half of this one
+                shown.append(reading)
+        if len(shown) != 1:  # none indexed, or Kavita split the series
+            return False
+        ((rating, locked),) = shown
+        return verified_age(task.wanted, owned, locked=locked, kavita_value=rating)
 
     def _place(
         self,

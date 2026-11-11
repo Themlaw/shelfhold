@@ -189,3 +189,81 @@ def test_crash_between_registry_and_push_heals_at_the_next_round() -> None:
         w.client.set_series_age = real  # type: ignore[method-assign]
         assert len(export_round(w)) == 1
         assert w.fake.ages[sid]["ageRatingLocked"] and w.fake.ages[sid]["ageRating"] == EVERYONE_10
+
+
+# -- counter-review of #140: the bypasses of the first fixes -------------------------------------
+
+
+def test_account_added_after_the_gate_opened_is_read_again_before_the_first_epub() -> None:
+    """B1: the accounts are read again under the locks: a child added since the gate opened
+    withholds the first EPUB, and the report does not list the write it refused."""
+    with export_env() as env:
+        w = wire(env)
+        _seed(env, n=2, age=16)
+        assert open_gate(w).unknowns_tier is None
+        _kid(w, include_unknowns=True)
+        report = env.pipeline.run(env.destination_id, job_id=new_ulid())
+        assert written(env) == [] and env.files() == []
+        assert report.ops == ()
+
+
+def test_include_unknowns_switched_on_after_the_gate_opened_withholds_the_first_epub() -> None:
+    """B1b"""
+    with export_env() as env:
+        w = wire(env)
+        _seed(env, n=2, age=16)
+        _kid(w, include_unknowns=False)
+        open_gate(w)
+        w.fake.users[-1]["ageRestriction"]["includeUnknowns"] = True
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        assert written(env) == []
+
+
+def test_account_reaching_the_files_by_another_library_withholds_the_first_epub() -> None:
+    """B2: another Kavita library over the same folder reaches the files just as well."""
+    with export_env() as env:
+        w = wire(env)
+        _seed(env, n=2, age=16)
+        wider = {**w.fake.libraries[0], "id": 9, "name": "Tout", "folders": ["/manga"]}
+        w.fake.libraries.append(wider)
+        w.fake.users.append(member("kid", libraries=(9,), age_rating=TEEN, include_unknowns=True))
+        assert export_round(w) == [] and written(env) == []
+        assert w.events.details("target.child_exposure")[0]["setting"] == "include_unknowns"
+
+
+def test_split_holds_when_the_other_half_leaves_resolved() -> None:
+    """B3: a rescan or a rewrite takes the other half out of `resolved`, not out of Kavita: the
+    series stays split while Kavita shows two series for it."""
+    with family_env(13) as env:
+        w = wire(env)
+        book = _seed(env, n=2)
+        export_round(w)
+        sid = kavita_scans(w, "Le Livre")
+        open_gate(w)
+        (second,) = export_round(w)
+        folder = written(env)[0].rsplit("/", 1)[0]
+        other = w.fake.add_series("Le Livre bis", f"/manga/Kavita/{folder}", [w.remote(second)])
+        w.fake.files[sid] = [f for f in w.fake.files[sid] if not f.endswith(second)]
+        record = export.export_record
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(record).where(record.c.rel_path == second)
+                .values(remote_ref=str(other), state="resolved")
+            )  # fmt: skip
+        add_book(env, book, "3")
+        assert open_gate(w).verified == frozenset() and "series_split" in _states(env)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(record).where(record.c.rel_path == second).values(state="scanned")
+            )
+        assert open_gate(w).verified == frozenset()
+        assert export_round(w) == [] and len(written(env)) == 2
+        assert "series_split" in _states(env)
+
+        # Kavita merges the halves again: only one series shows, the split lifts itself
+        w.fake.series = [s for s in w.fake.series if s["id"] != other]
+        del w.fake.ages[other], w.fake.files[other]
+        w.fake.files[sid].append(w.remote(second))
+        assert open_gate(w).verified
+        assert "series_split" not in _states(env)
+        assert len(export_round(w)) == 1

@@ -84,6 +84,7 @@ from shelfhold.export.targets.kavita.series import (
     SeriesAgeGate,
     SeriesAges,
     blocking_age_reader,
+    blocking_unknowns_tier,
     refresh_foreign_names,
     refresh_names,
 )
@@ -444,6 +445,9 @@ async def _export_bound(
                 await gate.open(client, destination.id),
                 # the last look before an EPUB write reads Kavita again, under the locks
                 blocking_age_reader(lambda: comp.kavita_client(destination.target_id)),
+                blocking_unknowns_tier(
+                    comp.engine, lambda: comp.kavita_client(destination.target_id), destination.id
+                ),
             )
             if apply is None:
                 report = pipeline.run(destination.id, job_id=context.job_id)

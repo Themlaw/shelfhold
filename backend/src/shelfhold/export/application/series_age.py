@@ -42,12 +42,9 @@ class SeriesAgeTask:
     kavita_series_id: int | None  # the id cached by the arrival polling, if Kavita indexed it
     folder: str  # the remote folder of the series: how a reinstalled Kavita finds it again
     wanted: AgeRating
-    # every Kavita series its resolved files are in: more than one is a series Kavita split
+    # every Kavita series its files were resolved to: more than one that Kavita still shows is
+    # a series Kavita split
     kavita_series_ids: tuple[int, ...] = ()
-
-    @property
-    def split(self) -> bool:
-        return len(self.kavita_series_ids) > 1
 
 
 def due_ages(
@@ -119,7 +116,12 @@ def due_ages(
             for r in series_rows
             if r.state == "resolved" and str(r.remote_ref).isdigit()
         ]
-        ids = tuple(dict.fromkeys(resolved))  # in the order of the files, each id once
+        # every Kavita series a file of the series was ever resolved to, whatever the state of
+        # its line now (a rescan or a rewrite takes it out of `resolved`, not out of Kavita):
+        # whether one of them is gone is for Kavita to say (`SeriesAgeGate`)
+        ids = tuple(
+            dict.fromkeys(int(r.remote_ref) for r in series_rows if str(r.remote_ref).isdigit())
+        )
         folder = posixpath.dirname(posixpath.join(root, series_rows[0].rel_path))
         tasks.append(
             SeriesAgeTask(series_id, resolved[0] if resolved else None, folder, wanted, ids)

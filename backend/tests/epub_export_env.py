@@ -15,7 +15,11 @@ from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR
 from shelfhold.export.targets.kavita import AdminKey, KavitaClient
 from shelfhold.export.targets.kavita.arrival import ArrivalPoller
-from shelfhold.export.targets.kavita.series import SeriesAgeGate, blocking_age_reader
+from shelfhold.export.targets.kavita.series import (
+    SeriesAgeGate,
+    blocking_age_reader,
+    blocking_unknowns_tier,
+)
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
@@ -83,7 +87,11 @@ def open_gate(w: Wired) -> Any:
     """What the export job does before it plans: push the ages due, then read them back."""
     gate = SeriesAgeGate(w.env.engine, w.env.clock, w.events)
     facts = run(gate.open(w.client, w.env.destination_id))
-    w.env.pipeline.bind_age_gate(facts, blocking_age_reader(lambda: fresh_client(w)))
+    w.env.pipeline.bind_age_gate(
+        facts,
+        blocking_age_reader(lambda: fresh_client(w)),
+        blocking_unknowns_tier(w.env.engine, lambda: fresh_client(w), w.env.destination_id),
+    )
     return facts
 
 
