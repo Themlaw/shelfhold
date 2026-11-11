@@ -16,7 +16,7 @@ import contextlib
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import groupby
 from typing import Any
 
@@ -42,6 +42,10 @@ MAX_ATTEMPTS = 8
 RangeReceiver = Callable[[FileAsset], AbstractAsyncContextManager[Received]]
 # (received file, payload, export_item id): the host keeps the bytes as that item
 Keeper = Callable[[Received, RangedPayload, str], None]
+
+
+ABANDON_DELAY = timedelta(days=1)  # first wait before an abandoned range is asked again
+ABANDON_CAP = timedelta(days=30)
 
 
 @dataclass(frozen=True)
@@ -107,7 +111,7 @@ class RangeTickets:
         with self._engine.connect() as connection:
             closed, rolling = self._covered_by(connection)
             asked = self._asked(connection)
-            given_up = self._given_up(connection)
+            given_up = self._given_up(connection, self._clock.now())
             readable = readable_unit_ids(connection, self._edition_id)
             suppressed = set(
                 connection.execute(
@@ -127,9 +131,11 @@ class RangeTickets:
                 and u.unit_id not in suppressed
                 and (u.unit_id in rolling or u.unit_id not in readable)
             ]
-            # a range given up (a queue that never ends, a refused file) is not asked again until
-            # a Unit that was never asked joins it: a service that fails is not hammered
-            if any(u.unit_id not in rolling and u.unit_id not in given_up for u in group):
+            # a range given up (a queue that never ends, a refused file) waits, whatever joins it,
+            # for a delay that doubles with each abandon: a service that fails is not hammered
+            if any(u.unit_id in given_up for u in group):
+                continue
+            if any(u.unit_id not in rolling for u in group):
                 plan.append(group)
         return plan
 
@@ -171,15 +177,22 @@ class RangeTickets:
             ).scalars()
         )
 
-    def _given_up(self, connection: Connection) -> set[str]:
+    def _given_up(self, connection: Connection, now: datetime) -> set[str]:
+        """Units whose range was abandoned and whose delay has not run out (a day, doubled by
+        each abandon of that Unit, at most a month)."""
         r, ru = acquisition.download_request, acquisition.download_request_unit
-        return set(
-            connection.execute(
-                sa.select(ru.c.unit_id)
-                .join(r, r.c.id == ru.c.download_request_id)
-                .where(r.c.state == "abandoned", ru.c.state == "requested")
-            ).scalars()
-        )
+        abandons: dict[str, list[datetime]] = {}
+        for row in connection.execute(
+            sa.select(ru.c.unit_id, r.c.updated_at)
+            .join(r, r.c.id == ru.c.download_request_id)
+            .where(r.c.state == "abandoned", ru.c.state == "requested")
+        ):
+            abandons.setdefault(row.unit_id, []).append(row.updated_at)
+        return {
+            unit
+            for unit, stamps in abandons.items()
+            if now - max(stamps) < min(ABANDON_DELAY * 2 ** (len(stamps) - 1), ABANDON_CAP)
+        }
 
     # -- requesting --------------------------------------------------------------------------
     def _grant(

@@ -23,6 +23,7 @@ install runs every job and none of them touches anything.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 import time
 from collections.abc import Callable, Iterable
@@ -265,11 +266,21 @@ def acquire_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext]
 def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
         arrived: list[int] = []
-        links = [link for link in (comp.suwayomi(), comp.lncrawl()) if link is not None]
+        links: list[Any] = []
+        for build in (comp.suwayomi, comp.lncrawl):
+            try:
+                link = build()
+            except KeyringUnavailableError as error:
+                # a locked keyring stops the service that needs a key, never the others
+                log.info("follow.link_skipped", reason=type(error).__name__)
+                continue
+            if link is not None:
+                links.append(link)
         if not links:
             log.debug("follow.skipped", reason="no_connected_service")
             context.record(skipped="no_connected_service")
             return  # no connected service configured yet
+        closed: set[int] = set()
         try:
             with ExitStack() as stack:
                 lazy = _LazyWrite(comp, stack)
@@ -306,6 +317,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                         try:
                             return await cycle.run()
                         finally:
+                            closed.add(id(link))
                             await link.guarded.aclose()
 
                     report = asyncio.run(once())
@@ -315,6 +327,11 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
             log.info("follow.cycle_skipped", reason=type(error).__name__)
             context.record(skipped=type(error).__name__)
             return
+        finally:
+            for link in links:  # a service the cycle never reached has its fetcher closed too
+                if id(link) not in closed:
+                    with contextlib.suppress(Exception):
+                        asyncio.run(link.guarded.aclose())
         if any(arrived):  # what arrived goes out; a quiet cycle asks for nothing (the cron does)
             pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)
 

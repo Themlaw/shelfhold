@@ -18,7 +18,7 @@ import pytest
 import structlog
 
 from shelfhold.config import Settings
-from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService
+from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService, api
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
 from shelfhold.sdk.connected import ConnectedCapability
 from shelfhold.sdk.refs import FileAsset, RangedPayload, RangeRef, SeriesRef, UnitInfo, UnitRef
@@ -458,3 +458,81 @@ def test_lncrawl_search_reads_only_the_library_of_the_account() -> None:
     assert run(service.resolve_url(f, "https://example.org/x")) is None
     assert server.violations == []
     assert service.filters() == []
+
+
+# --- review of the PR: regression tests -------------------------------------------------------
+def _second_novel(server: FakeLncrawl) -> None:
+    import copy
+
+    beta = copy.deepcopy(server.novels[0])
+    beta["id"], beta["title"] = "nv-beta", "Novel Beta"
+    server.novels.append(beta)  # the chapter ids are local to a novel: the same ch-1..ch-10
+
+
+@pytest.mark.req("EF-SRC-034", "ENF-SEC-009")
+def test_a_job_answer_without_its_novel_is_refused_not_taken_for_ours() -> None:
+    service, f, server = make()
+    _second_novel(server)
+    ref = next(r for r in run(service.followed_series(f)) if r.remote_id == "nv-alpha")
+    units = run(service.list_units(f, ref))
+    beta = json.loads(
+        server._post("/jobs", {"novel": "nv-beta", "first": "ch-1", "last": "ch-6"}).body
+    )
+    ticket = run(service.request(f, volume_target(ref, units, "Vol.1")))
+
+    def tamper(answer: dict[str, Any]) -> dict[str, Any]:
+        if answer["state"] != "done":
+            return answer
+        return {k: v for k, v in answer.items() if k != "novel"} | {
+            "artifact": f"art-{beta['job']}"
+        }
+
+    server.tamper_job = tamper
+    with pytest.raises(SourceChanged):
+        ready(service, f, ticket)
+        run(service.fetch(f, ticket))
+
+
+@pytest.mark.req("EF-SRC-010", "ENF-SEC-015")
+def test_a_team_that_looks_like_a_host_or_an_address_is_dropped() -> None:
+    service, f, server = make()
+    for number, chapter in enumerate(server.novels[0]["chapters"]):
+        chapter["team"] = (
+            "some-host.invalid",
+            "http://some-host.invalid/x",
+            "host.example:80/p",
+            "Team A",
+        )[number % 4]
+        chapter["title"] = "see some-host.invalid"
+    server.novels[0]["authors"] = ["some-host.invalid"]
+    _ref, units = alpha(service, f)
+    assert {u.team for u in units} == {None, "Team A"}
+
+
+@pytest.mark.req("EF-SRC-034", "ENF-SEC-009")
+def test_a_listing_keeps_only_the_fields_that_are_read_and_bounds_before_it_grows() -> None:
+    service, f, server = make()
+    pad = "x" * 4900
+    chapters = server.novels[0]["chapters"]
+    chapters[:] = [
+        {"id": f"c{n}", "order": n, "volume": "Vol.1", "junk": pad, "title": pad}
+        for n in range(1, 301)
+    ]
+    ref = run(service.followed_series(f))[0]
+    entries = run(service._pages(f, api.CHAPTERS.format(novel=ref.remote_id)))
+    assert len(entries) == 300
+    assert all(set(e) <= {"id", "order", "title", "volume", "closed", "team"} for e in entries)
+    assert all(len(e["title"]) <= 400 for e in entries)
+    server.page_size = 100
+    chapters[:] = [{"id": f"c{n}", "order": n} for n in range(1, api.MAX_ITEMS + 150)]
+    with pytest.raises(SourceChanged):  # refused before the excess is kept
+        run(service._pages(f, api.CHAPTERS.format(novel=ref.remote_id)))
+
+
+@pytest.mark.req("EF-SRC-034", "EF-BIB-051")
+def test_a_refused_answer_is_untrusted_never_a_pause_of_the_service() -> None:
+    from shelfhold.acquisition.application.lncrawl_ranges import RangeAnswerRefused
+    from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
+
+    failure = classify(RangeAnswerRefused("the file is not an EPUB container"))
+    assert failure == "untrusted" and disposition_of(failure) is Disposition.REFUSE

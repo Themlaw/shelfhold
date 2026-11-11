@@ -103,3 +103,26 @@ def covers(value: object) -> list[str]:
     if not isinstance(value, list) or not 0 < len(value) <= MAX_COVERED:
         raise SourceChanged("the instance named chapters that are not a range")
     return [identifier(entry) for entry in value]
+
+
+_KEPT = ("id", "order", "title", "volume", "closed", "team")
+_HOSTLIKE = re.compile(r"^\S+\.[A-Za-z]{2,}(:\d+)?(/\S*)?$")
+
+
+def slim(entry: dict[str, Any]) -> dict[str, Any]:
+    """The fields of a listing entry that are read, strings cut short: what the instance adds
+    to an entry is not kept alive."""
+    return {
+        k: (v[:400] if isinstance(v, str) else v)
+        for k, v in entry.items()
+        if k in _KEPT and (v is None or isinstance(v, str | int | float | bool))
+    }
+
+
+def team(value: object) -> str | None:
+    """A translation team is a name; what looks like an address or a host is not one and is
+    dropped (Shelfhold shows no source name an instance could slip in there)."""
+    name = text(value, limit=200)
+    if name is None or "://" in name or _HOSTLIKE.match(name):
+        return None
+    return name

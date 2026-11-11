@@ -17,9 +17,9 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Final
 from urllib.parse import urlsplit
 
+from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.library.public import Received, sniff_kind
 from shelfhold.sdk.refs import RangedPayload
-from shelfhold.sdk.source import SourceChanged
 
 if TYPE_CHECKING:
     from shelfhold.acquisition.application.ranges import Keeper, RangeUnit
@@ -37,8 +37,10 @@ MAX_COVERED: Final = 5_000  # Units of one file
 MAX_TICKET_AGE: Final = timedelta(hours=12)  # a job still queued after this is let go
 
 
-class RangeAnswerRefused(SourceChanged):
-    """The answer is not the one the request announced: a change of the source, never a state."""
+class RangeAnswerRefused(UntrustedEntryError):
+    """The answer is not the one the request announced, or the file is not an EPUB: the same
+    answer would be refused again, so the request is closed for good (`untrusted`), and one file
+    never pauses the whole service."""
 
 
 def ticket_expired(now: datetime, since: datetime) -> bool:

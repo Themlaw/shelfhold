@@ -200,9 +200,9 @@ class LncrawlService:
             if cursor is not None:
                 query["cursor"] = cursor
             entries, cursor = api.items(await self._get(f, path, query or None))
-            found.extend(entries)
-            if len(found) > api.MAX_ITEMS:
-                break
+            if len(found) + len(entries) > api.MAX_ITEMS:
+                break  # before the memory is spent
+            found.extend(api.slim(e) for e in entries)  # only what is read, bounded in size
             if cursor is None:
                 return found
             if cursor in seen:
@@ -300,7 +300,7 @@ class LncrawlService:
                     number=str(order), number_sort=Decimal(order), kind="chapter",
                     title=api.text(entry.get("title"), limit=300), volume_label=label,
                     volume_closed=closed if label and isinstance(closed, bool) else None,
-                    team=api.text(entry.get("team"), limit=200), lang=lang, lang_raw=lang_raw,
+                    team=api.team(entry.get("team")), lang=lang, lang_raw=lang_raw,
                 )
             )  # fmt: skip
         return sorted(units, key=lambda u: u.source_order)
@@ -372,7 +372,7 @@ class LncrawlService:
         if not isinstance(state, str) or state not in api.JOB_STATES:
             raise SourceChanged("the instance sent an unknown job state")
         novel = answer.get("novel")
-        if novel is not None and novel != announced["n"]:
+        if novel != announced["n"]:  # present and the one asked for: ids are local to a novel
             raise SourceChanged("the job is about another novel than the one asked for")
         return announced, answer
 

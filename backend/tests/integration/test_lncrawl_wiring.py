@@ -92,3 +92,44 @@ def test_a_missing_key_is_refused_by_the_instance_and_leaks_nothing(
         configure(inst, key=None)
         follow_handler(inst.comp, _Pools())(context("follow.cycle"))  # type: ignore[arg-type]
         assert {r.headers.get("x-api-key") for r in inst.lncrawl.requests} <= {None}
+
+
+@pytest.mark.req("EF-SRC-010", "ENF-SEC-009")
+def test_a_locked_keyring_stops_lncrawl_alone_and_the_other_service_still_follows(
+    settings: Settings, tmp_path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    from types import SimpleNamespace
+
+    import shelfhold.runtime_jobs as rj
+    from shelfhold.composition_errors import KeyringUnavailableError
+
+    closed: list[str] = []
+
+    class Guarded:
+        async def aclose(self) -> None:
+            closed.append("suwayomi")
+
+    ran: list[str] = []
+
+    class Cycle:
+        def __init__(self, _e, _b, _c, service, *_a, **_k) -> None:  # type: ignore[no-untyped-def]
+            self.service = service
+
+        async def run(self):  # type: ignore[no-untyped-def]
+            ran.append(self.service)
+            return SimpleNamespace(fetched=0, counters=dict)
+
+    def locked():  # type: ignore[no-untyped-def]
+        raise KeyringUnavailableError("locked")
+
+    with instance(settings, tmp_path) as inst:
+        link = SimpleNamespace(
+            service="suwayomi-service", fetcher=object(), guarded=Guarded(), url="https://x"
+        )
+        monkeypatch.setattr(inst.comp, "suwayomi", lambda: link)
+        monkeypatch.setattr(inst.comp, "lncrawl", locked)
+        monkeypatch.setattr(rj, "FollowCycle", Cycle)
+        monkeypatch.setattr(rj, "bounded_receiver", lambda *_a, **_k: None)
+        monkeypatch.setattr(rj, "epub_only", lambda keep: keep)
+        follow_handler(inst.comp, _Pools())(context("follow.cycle"))  # type: ignore[arg-type]
+    assert ran == ["suwayomi-service"] and closed == ["suwayomi"]

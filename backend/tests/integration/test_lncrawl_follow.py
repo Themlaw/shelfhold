@@ -98,14 +98,14 @@ def test_lncrawl_queue_that_never_ends_is_cancelled_and_retried_a_bounded_number
     with lncrawl_bench(server) as bench:
         bench.run(3)
         assert count(bench, "download_request") == 2 and count(bench, "export_item") == 0
-        for _ in range(12):  # every time the ticket is older than the bound, it is let go
+        for _ in range(9):  # every time the ticket is older than the bound, it is let go
             bench.clock.advance(seconds=MAX_TICKET_AGE.total_seconds() + 60)
             bench.run(2)
         states = {r["state"] for r in bench.rows("SELECT state FROM download_request")}
         assert states == {"abandoned"}  # asked a bounded number of times, then left
         assert server.cancelled  # the instance was told to drop what it was holding
         assert count(bench, "export_item") == 0 and bench.kept_files() == []
-        assert len(server.jobs) <= 2 * 8  # MAX_ATTEMPTS per range, never unbounded
+        assert len(server.jobs) <= 2 * 8  # MAX_ATTEMPTS per range, then it waits for its delay
 
 
 @pytest.mark.req("EF-SRC-034", "ENF-SEC-009")
@@ -240,3 +240,40 @@ def _epub_with_chapter(chapter: bytes) -> bytes:
             data = chapter if info.filename.endswith("ch1.xhtml") else source.read(info)
             archive.writestr(info, data)
     return out.getvalue()
+
+
+@pytest.mark.req("EF-SRC-034", "EF-BIB-051", "ENF-SEC-009")
+def test_lncrawl_a_file_that_is_not_an_epub_closes_its_request_and_pauses_nothing() -> None:
+    server = FakeLncrawl()
+    server.epub_override = b"<html><script>alert(1)</script></html>"
+    with lncrawl_bench(server) as bench:
+        bench.finish()
+        assert bench.events("source.broken") == [] and bench.events("source.paused") == []
+        assert {r["state"] for r in bench.rows("SELECT state FROM download_request")} == {
+            "abandoned"
+        }  # closed for good: the same bytes would be refused again
+        hits, jobs = len(server.artifact_hits), len(server.jobs)
+        bench.run(5)  # a pause would come back at each resume, and the file be fetched again
+        assert (len(server.artifact_hits), len(server.jobs)) == (hits, jobs)
+        assert count(bench, "export_item") == 0 and bench.kept_files() == []
+
+
+@pytest.mark.req("EF-SRC-034", "ENF-SEC-009")
+def test_lncrawl_an_abandoned_range_is_not_asked_again_at_each_new_chapter() -> None:
+    server = FakeLncrawl()
+    server.stuck = True
+    with lncrawl_bench(server) as bench:
+        bench.run(3)
+        for _ in range(9):
+            bench.clock.advance(seconds=MAX_TICKET_AGE.total_seconds() + 60)
+            bench.run(2)
+        base = len(server.jobs)
+        for _ in range(3):  # three new chapters, one an hour
+            server.add_chapter("nv-alpha")
+            bench.clock.advance(seconds=3600)
+            bench.run(3)
+        assert len(server.jobs) == base  # the range waits, whatever joins it
+        bench.clock.advance(days=2)
+        server.add_chapter("nv-alpha")
+        bench.run(3)
+        assert len(server.jobs) > base  # after its delay it is asked again

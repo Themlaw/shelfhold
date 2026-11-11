@@ -20,9 +20,9 @@ from shelfhold.acquisition.application.lncrawl_ranges import (
     verify_range_answer,
 )
 from shelfhold.acquisition.application.ranges import RangeUnit
+from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.library.public import Received
 from shelfhold.sdk.refs import FileAsset, ImageRequest, RangedPayload, UnitInfo
-from shelfhold.sdk.source import SourceChanged
 from tests.ranged_env import volume_epub
 
 ORIGIN = "http://lncrawl.lan:8080"
@@ -62,7 +62,7 @@ def test_a_faithful_answer_passes_and_a_partial_one_too() -> None:
 def test_an_answer_that_covers_more_or_other_than_asked_is_refused(covers: list[str]) -> None:
     with pytest.raises(RangeAnswerRefused) as refused:
         verify_range_answer(units(), payload(covers), origin=ORIGIN)
-    assert isinstance(refused.value, SourceChanged)  # a change of the source, not a state
+    assert isinstance(refused.value, UntrustedEntryError)  # closed for good, never a pause
 
 
 @pytest.mark.req("EF-SRC-034", "ENF-SEC-009")
