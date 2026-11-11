@@ -33,6 +33,7 @@ import ipaddress
 import json
 import platform as host_platform
 import re
+import shlex
 import sqlite3
 import unicodedata
 from collections import Counter
@@ -84,6 +85,7 @@ __all__ = [
     "reduce_config",
     "reduce_log_line",
     "reduce_status",
+    "rerun_options",
 ]
 
 BUNDLE_FORMAT: Final = "1.0"
@@ -93,6 +95,12 @@ MAX_LOG_FILES: Final = 8
 MAX_LINE_BYTES: Final = 64 * 1024
 _VIRTUAL_ROOTS: Final = (Path("/proc"), Path("/sys"), Path("/dev"))
 MAX_LOG_LINES: Final = 50_000  # the last ones are kept
+# The members that carry the instance's data, by the name `--exclude` takes. `manifest.json` is
+# always there: its keys and labels are the code's own, known before any instance exists.
+SECTIONS: Final = {
+    "config": "config.json", "status": "status.json", "schema": "schema.sql",
+    "content": "content.json", "sources": "sources.json", "logs": "logs.jsonl",
+}  # fmt: skip
 FIRST_PARTY_PLUGINS: Final = frozenset({"suwayomi", "lncrawl"})  # named as is; others: <plugin-N>
 
 # -- the settings, each in one class: a new setting is in none, and the test of the classes fails
@@ -122,7 +130,7 @@ SETTING_CLASSES: Final[Mapping[str, str]] = {
 
 # -- closed shapes of what may be written ----------------------------------------------------
 _CLOSED_WORD = re.compile(r"^(?:[a-z][a-z0-9_.:-]{0,63}|<(?:source|host|user|plugin)-\d+>)$")
-_PSEUDONYM = re.compile(r"^<(?:source|host|user|plugin)-\d+>$")
+_PSEUDONYM = re.compile(r"^<(?:source|host|user|plugin|id)-\d+>$")
 _SETTING_WORD = re.compile(r"^[A-Za-z0-9_:/+.-]{1,40}$")  # INFO, Europe/Paris, 03:00
 _LOGGER = re.compile(r"^shelfhold(?:\.[a-z_][a-z0-9_]*)*$")
 _TIMESTAMP = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)?$")
@@ -202,10 +210,11 @@ _PRODUCT_WORDS = frozenset({"shelfhold", "localhost"})
 class DiagnosticLeakError(Exception):
     """A member would carry a value that must not leave the instance: nothing is written."""
 
-    def __init__(self, category: str, member: str) -> None:
+    def __init__(self, category: str, member: str, sections: tuple[str, ...] = ()) -> None:
         super().__init__(f"{category} in {member}")
         self.category = category
         self.member = member
+        self.sections = sections  # every section that refused: what `--exclude` leaves out
 
 
 class DiagnosticInputRefusedError(Exception):
@@ -247,6 +256,7 @@ class Pseudonyms:
     users: dict[str, str] = field(default_factory=dict)
     plugins: dict[str, str] = field(default_factory=dict)
     hosts: dict[str, str] = field(default_factory=dict)
+    ids: dict[str, str] = field(default_factory=dict)
 
     def source(self, plugin_id: str, source_key: str) -> str:
         key = (plugin_id, source_key)
@@ -265,6 +275,10 @@ class Pseudonyms:
 
     def user(self, value: str) -> str:
         return self.users.setdefault(value, f"<user-{len(self.users) + 1}>")
+
+    def id(self, value: str) -> str:
+        """An identifier this instance does not hold: what it spells is not looked at."""
+        return self.ids.setdefault(value, f"<id-{len(self.ids) + 1}>")
 
     def url(self, url: str) -> str:
         """A URL becomes its host's stand-in: a known source's `<source-N>`, else `<host-N>`."""
@@ -472,10 +486,13 @@ def reduce_log_line(
     names: Pseudonyms,
     users: frozenset[str] = frozenset(),
     words: Vocabulary | None = None,
+    ids: frozenset[str] = frozenset(),
 ) -> dict[str, object]:
     """One JSON log line, reduced to the closed vocabulary of the code. A field the code never
     writes is dropped (its name included); a value outside the field's vocabulary becomes
-    `<other>`: free text, paths, URLs, names, a title spelled as a slug or as a class name."""
+    `<other>`: free text, paths, URLs, names, a title spelled as a slug or as a class name. An
+    identifier stays as is only when this instance holds it (`ids`); any other text shaped like
+    a ULID (`01J0000000BERSERK000000000`) becomes `<id-N>`."""
     words = words or vocabulary()
     kept: dict[str, object] = {}
     for key, value in line.items():
@@ -499,7 +516,10 @@ def reduce_log_line(
         elif key not in words.keys and key not in words.words:
             continue  # a field the code never writes: not even its name enters
         elif key.endswith("_id"):
-            kept[key] = value if isinstance(value, str) and _plausible_ulid(value) else OTHER
+            if isinstance(value, str) and _plausible_ulid(value):
+                kept[key] = value if value in ids else names.id(value)
+            else:
+                kept[key] = OTHER
         elif isinstance(value, str):
             kept[key] = _log_word(key, value, names, words) if key in words.words else OTHER
         elif isinstance(value, bool | int | float) or value is None:
@@ -724,6 +744,17 @@ def _sensitive_columns() -> Iterator[tuple[sa.Column[object], bool]]:
                 yield column, word
 
 
+def _known_ids(connection: sa.Connection) -> frozenset[str]:
+    """The identifiers this instance holds (the `id` of every table): the only ULIDs a log line
+    keeps as they are."""
+    found: set[str] = set()
+    for table in metadata.tables.values():
+        if "id" in table.c:
+            values = connection.execute(sa.select(table.c.id).distinct()).scalars()
+            found.update(v for v in map(str, values) if _ULID.fullmatch(v))
+    return frozenset(found)
+
+
 def _collect_forbidden(connection: sa.Connection, forbidden: _Forbidden) -> frozenset[str]:
     """What the database holds of the household. Returns the user ids (kept as `<user-N>`)."""
     for column, word in _sensitive_columns():
@@ -817,17 +848,33 @@ def _write_zip(out: Path, members: Mapping[str, str]) -> None:
         raise DiagnosticOutputExistsError(out.name) from None
 
 
+def rerun_options(sections: Iterable[str]) -> str:
+    """The options that leave the refused sections out, as the admin types them."""
+    return shlex.join(arg for section in sections for arg in ("--exclude", section))
+
+
+_MANIFEST_VALUES: Final = ("shelfhold_version", "created_at", "schema_revision", "schema_head")
+
+
 def build_bundle(
     resolved: ResolvedSettings,
     out: Path,
     *,
     status: Callable[[], Mapping[str, object]],
     log_files: Sequence[Path] = (),
+    exclude: Iterable[str] = (),
     now: datetime,
 ) -> BundleReport:
     """Build, check and write the bundle. `status` gives the report of `shelfhold status`
-    (the CLI's), read only. Raises before writing anything when an input is refused, when a
-    value that must not leave is found, or when `out` exists."""
+    (the CLI's), read only; `exclude` names sections (`SECTIONS`) left out. Raises before
+    writing anything when an input is refused, when a value that must not leave is found (the
+    error names every section that refused, so that `--exclude` can leave them out), or when
+    `out` exists."""
+    excluded = frozenset(exclude)
+    if unknown := excluded - SECTIONS.keys():
+        raise ValueError(f"unknown sections: {sorted(unknown)}")
+    if "logs" in excluded:
+        log_files = ()
     settings = resolved.values
     if out.exists() or out.is_symlink():
         raise DiagnosticOutputExistsError(out.name)
@@ -838,6 +885,7 @@ def build_bundle(
     forbidden = _Forbidden()
     users: frozenset[str] = frozenset()
     content_hashes: frozenset[str] = frozenset()
+    ids: frozenset[str] = frozenset()
     roots = [settings.store_dir, settings.library_dir]
     secrets: dict[str, int] = {}
     members: dict[str, str] = {}
@@ -848,6 +896,7 @@ def build_bundle(
             with engine.connect() as connection:
                 secrets = _register_instance_secrets(settings, connection, forbidden)
                 users = _collect_forbidden(connection, forbidden)
+                ids = _known_ids(connection)
                 content_hashes = frozenset(
                     connection.execute(sa.select(storage.content.c.original_sha256)).scalars()
                 )
@@ -903,12 +952,21 @@ def build_bundle(
                     dropped += 1
                     continue
                 reduced.append(
-                    json.dumps(reduce_log_line(line, names, users, words), sort_keys=True)
+                    json.dumps(reduce_log_line(line, names, users, words, ids), sort_keys=True)
                 )
         dropped += max(0, len(reduced) - MAX_LOG_LINES)
         reduced = reduced[-MAX_LOG_LINES:]
         kept = len(reduced)
         members["logs.jsonl"] = "".join(f"{line}\n" for line in reduced)
+    for section in sorted(excluded):
+        members.pop(SECTIONS[section], None)
+        sections[section] = "excluded"
+    refused: list[DiagnosticLeakError] = []
+    for name, text in members.items():
+        try:
+            forbidden.check(name, text, words_in=_json_strings(name, text))
+        except DiagnosticLeakError as leak:
+            refused.append(leak)
     manifest = {
         "format": BUNDLE_FORMAT,
         "shelfhold_version": __version__,
@@ -924,8 +982,18 @@ def build_bundle(
             "source_urls", "sub_source_names", "secrets", "addresses", "user_identifiers",
         ],
     }  # fmt: skip
+    # Of the manifest, only what this run wrote is looked at: its keys and labels (`secrets`,
+    # `titles`, `paths`...) are the code's, and a title `Secrets` must not refuse every bundle.
+    dynamic = [str(manifest[k]) for k in _MANIFEST_VALUES if manifest[k] is not None]
+    try:
+        forbidden.check("manifest.json", "\n".join(dynamic), words_in=dynamic)
+    except DiagnosticLeakError as leak:
+        refused.append(leak)
+    if refused:
+        by_member = {v: k for k, v in SECTIONS.items()}
+        first = refused[0]
+        named = tuple(by_member[leak.member] for leak in refused if leak.member in by_member)
+        raise DiagnosticLeakError(first.category, first.member, named)
     members = {"manifest.json": _dump(manifest), **dict(sorted(members.items()))}
-    for name, text in members.items():
-        forbidden.check(name, name + "\n" + text, words_in=[name, *_json_strings(name, text)])
     _write_zip(out, members)
     return BundleReport(out, tuple(members), kept, dropped)

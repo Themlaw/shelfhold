@@ -34,7 +34,15 @@ from shelfhold.ops.diagnostic import (
     vocabulary,
 )
 from tests.auth_env import run_cli
-from tests.diagnostic_env import SERIES_TITLE, UNIT_TITLE, WORK_TITLE, Traps, trap_instance
+from tests.diagnostic_env import (
+    SERIES_TITLE,
+    UNIT_TITLE,
+    WORK_TITLE,
+    Traps,
+    leaks,
+    log_file,
+    trap_instance,
+)
 from tests.integration.test_schema_catalog import add_work
 from tests.tools_loader import load_tool
 
@@ -334,3 +342,71 @@ def test_review_no_log_call_names_a_folder_or_a_path_of_a_title() -> None:
             ):
                 offending.append(f"{path.relative_to(source)}:{node.lineno}")
     assert offending == []
+
+
+def test_review_ulid_shaped_text_the_instance_does_not_hold_becomes_a_pseudonym() -> None:
+    """An `*_id` field is a channel: a ULID-shaped text can spell a title. It stays as is only
+    when the instance holds it; otherwise it becomes `<id-N>`."""
+    smuggled = "01J0000000BERSERK000000000"
+    assert diagnostic._plausible_ulid(smuggled)
+    held = new_ulid()
+    names = Pseudonyms()
+    line = {"event": "n", "job_id": smuggled, "unit_id": held, "series_id": smuggled}
+    reduced = reduce_log_line(line, names, ids=frozenset({held}))
+    assert reduced["job_id"] == reduced["series_id"] == "<id-1>"
+    assert reduced["unit_id"] == held
+    assert "BERSERK" not in json.dumps(reduced).upper()
+
+
+def _title_works(settings: Settings, *titles: str) -> None:
+    engine = create_db_engine(settings.database_path)
+    try:
+        with engine.begin() as connection:
+            for title in titles:
+                add_work(connection, title=title, sort_title=title.lower())
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("title", ["Secrets", "Titles", "Paths", "Status", "Logs", "Error"])
+def test_review_a_title_named_like_a_manifest_label_never_refuses_the_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    tmp_path: Path,
+    traps: Traps,
+    title: str,
+) -> None:
+    """The manifest's keys and labels (`never_included`: secrets, titles, paths...) and the
+    member names are the code's, known before any instance: a title spelled like one of them
+    does not make every bundle impossible."""
+    _title_works(settings, title)
+    code, out = _run(monkeypatch, settings, tmp_path)
+    assert code == 0 and out.exists()
+
+
+def test_review_refusal_says_which_sections_to_exclude_and_the_rerun_works(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+    traps: Traps,
+) -> None:
+    """A common title (`Info`) can be a word of the code itself: the refusal names the sections
+    that refused and the option that leaves them out; rerun with it, the bundle is written,
+    and the title is still nowhere in it."""
+    _title_works(settings, "Info")  # the level of most log lines
+    logs = log_file(tmp_path / "compose.log", traps)
+    code, out = _run(monkeypatch, settings, tmp_path, "--log-file", str(logs))
+    err = capsys.readouterr().err
+    assert code == 1 and not out.exists()
+    assert "--exclude logs" in err, err
+    options = [word for part in err.split("--exclude ")[1:] for word in part.split()[:1]]
+    argv = [arg for section in options for arg in ("--exclude", section)]
+    code, out = _run(monkeypatch, settings, tmp_path, "--log-file", str(logs), *argv)
+    assert code == 0, capsys.readouterr().err
+    bundle = out.read_bytes()
+    assert not leaks(bundle, traps)
+    with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+        assert "logs.jsonl" not in archive.namelist()
+        manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["sections"]["logs"] == "excluded"

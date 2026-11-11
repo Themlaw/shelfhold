@@ -90,6 +90,7 @@ stats_help = "Indicateurs de valeur, calculés sur l'instance seulement (aucune 
 diagnostic_help = "Diagnostic local de l'instance (aucune connexion sortante)."
 diagnostic_bundle_help = "Écrit un paquet de diagnostic sans secret, sans contenu ni fichier tatoué, sources masquées."
 diagnostic_out_help = "Fichier à écrire (zip) ; il ne doit pas exister."
+diagnostic_exclude_help = "Section à laisser hors du paquet ; répétable. Utile quand un titre courant fait refuser une section."
 diagnostic_log_file_help = "Journal à inclure, une fois réduit à ses champs autorisés (par exemple la sortie de docker compose logs) ; répétable."
 stats_since_help = "Fenêtre d'observation, en jours : 30d par défaut."
 admin_help = "Administre les comptes locaux, les sessions et les clés d'API."
@@ -472,7 +473,9 @@ out_dir_missing = "Le dossier du fichier demandé n'existe pas."
 out_exists = "Le fichier demandé existe déjà : un paquet de diagnostic n'écrase jamais rien."
 out_in_content_area = "Un paquet de diagnostic ne s'écrit ni dans /store, ni dans la bibliothèque, ni sous une racine physique : choisissez un autre dossier (par exemple /data)."
 input_refused = "Journal n° {index} refusé ({reason}) : un paquet n'accepte ni contenu, ni archive, ni fichier du miroir de provenance, ni fichier de /store ou de la bibliothèque."
-leak_refused = "Paquet non écrit : une valeur de la catégorie {category} serait sortie dans {member}. Rien n'a été écrit ; signalez ce défaut (sans le paquet)."
+leak_refused = "Paquet non écrit : une valeur de la catégorie {category} serait sortie dans {member}. Rien n'a été écrit."
+leak_exclude = "Un titre ou un nom de l'instance peut s'écrire comme un mot du code (« Error », « Status ») : relancez avec {options} pour obtenir un paquet sans ces sections. Si le refus persiste, signalez ce défaut (sans le paquet)."
+leak_report = "Signalez ce défaut (sans le paquet)."
 written = "Paquet de diagnostic écrit : {members} fichiers, {kept} lignes de journal gardées, {dropped} écartées."
 
 [stats]

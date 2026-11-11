@@ -119,7 +119,7 @@
       }),
       dict({
         'event': 'fsops.write_atomic',
-        'job_id': '<ulid>',
+        'job_id': '<id-1>',
         'level': 'debug',
         'logger': 'shelfhold.infrastructure.fsops.facade',
         'path': '<other>',

@@ -28,7 +28,7 @@ Le paquet est **fermé par défaut** : une liste positive dit ce qui entre, rien
 | `schema.sql` | la structure de la base, sans aucune ligne |
 | `content.json` | nombre et taille des fichiers par format ; un fichier **tatoué** n'est cité que par son empreinte et sa taille |
 | `sources.json` | sous-sources et séries amont sous `<source-1>`, `<source-2>`… |
-| `logs.jsonl` | chaque ligne JSON du journal donné, réduite au **vocabulaire du code** : un événement, un champ, un mot (`outcome`, `code`…), un module ou une classe d'erreur que le code écrit lui-même ; toute autre valeur devient `<other>`, un champ inconnu est retiré ; identifiants internes (ULID) et nombres gardés ; un identifiant d'utilisateur devient `<user-N>` |
+| `logs.jsonl` | chaque ligne JSON du journal donné, réduite au **vocabulaire du code** : un événement, un champ, un mot (`outcome`, `code`…), un module ou une classe d'erreur que le code écrit lui-même ; toute autre valeur devient `<other>`, un champ inconnu est retiré ; identifiants internes (ULID) gardés s'ils existent dans la base de l'instance, sinon remplacés par `<id-N>` ; nombres gardés ; un identifiant d'utilisateur devient `<user-N>` |
 
 ## Ce qui n'entre jamais
 
@@ -56,8 +56,17 @@ identifiants d'utilisateurs, URL configurées, nom de la machine. Elle les cherc
 encodées dans une URL et en base64, et cherche aussi toute adresse e-mail, adresse IP ou URL.
 
 Si l'une d'elles est trouvée, **rien n'est écrit** et la commande sort en erreur (code 1) en
-nommant la catégorie et le fichier du paquet, jamais la valeur. C'est un défaut de Shelfhold :
-signalez-le, sans le paquet.
+nommant la catégorie et le fichier du paquet, jamais la valeur. Un titre courant peut s'écrire
+comme un mot du code (« Info », le niveau de la plupart des lignes de journal) : le message
+donne alors les options à ajouter, par exemple `--exclude logs`, pour obtenir un paquet sans
+les sections refusées. Si le refus persiste, c'est un défaut de Shelfhold : signalez-le, sans le
+paquet.
+
+`--exclude <section>` (répétable) laisse une section hors du paquet : `config`, `status`,
+`schema`, `content`, `sources` ou `logs`. Le manifeste la note `excluded`. Le manifeste
+lui-même est toujours là ; seules les valeurs que la commande y écrit (version, date,
+révisions du schéma) sont vérifiées, ses clés et libellés fixes (`secrets`, `titles`…) ne le
+sont pas : un titre « Secrets » ne bloque aucun paquet.
 
 Codes de sortie : `0` paquet écrit ; `1` paquet refusé par la dernière barrière ; `2` fichier
 existant, dossier absent, sortie demandée dans `/store`, la bibliothèque ou une racine physique, ou

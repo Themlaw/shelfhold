@@ -14,11 +14,13 @@ from shelfhold.config import ResolvedSettings
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli import status
 from shelfhold.ops.diagnostic import (
+    SECTIONS,
     DiagnosticInputRefusedError,
     DiagnosticLeakError,
     DiagnosticOutputExistsError,
     DiagnosticOutputRefusedError,
     build_bundle,
+    rerun_options,
 )
 
 
@@ -30,6 +32,10 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     bundle.add_argument(
         "--log-file", action="append", default=[], type=Path, dest="log_files",
         help=t("cli.diagnostic_log_file_help"),
+    )  # fmt: skip
+    bundle.add_argument(
+        "--exclude", action="append", default=[], choices=sorted(SECTIONS), dest="exclude",
+        help=t("cli.diagnostic_exclude_help"),
     )  # fmt: skip
     bundle.set_defaults(handler=run_bundle, configure_logging=False)
 
@@ -45,6 +51,7 @@ def run_bundle(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             out,
             status=lambda: status.report(resolved),
             log_files=args.log_files,
+            exclude=args.exclude,
             now=datetime.now(UTC),
         )
     except DiagnosticOutputExistsError:
@@ -64,6 +71,12 @@ def run_bundle(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             t("diagnostic.leak_refused", category=leak.category, member=leak.member),
             file=sys.stderr,
         )
+        if leak.sections:  # what to do: leave the sections that refused out
+            print(
+                t("diagnostic.leak_exclude", options=rerun_options(leak.sections)), file=sys.stderr
+            )
+        else:
+            print(t("diagnostic.leak_report"), file=sys.stderr)
         return 1
     print(
         t(

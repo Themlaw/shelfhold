@@ -1197,12 +1197,12 @@ class Fsops:
     ) -> FileIdentity:
         """Step 1: the new version, flushed and read back against `verify_digest()` (hex), put
         in the host folder of the target's root under the token. Absent or whole, never half."""
-        log.debug("fsops.same_path_stage", path=escaped(target))
+        log.debug("fsops.same_path_stage", **self._where(target))
         located, staged, _recycled = self._same_path(target, token)
         self._require_space()
         with self._gated(located) as root:
             if root.lstat_kind(located.rel) != "file":
-                raise NotRegularFileError(f"{escaped(target)} is not a served file")
+                raise NotRegularFileError(f"{located.rel!r} is not a served file")
             return write_atomic(
                 root, staged, data, parents=True, replace=False, verify_digest=verify_digest,
                 file_mode=0o666,  # a library file (umask applies), not a host-only one
@@ -1211,7 +1211,7 @@ class Fsops:
     def same_path_swap(self, target: str, token: str) -> None:
         """Step 2: the staged version takes the path in one step; the old one is then staged
         (`RENAME_EXCHANGE`) or already in the bin (copy, then the replacing `rename`)."""
-        log.debug("fsops.same_path_swap", path=escaped(target))
+        log.debug("fsops.same_path_swap", **self._where(target))
         located, staged, recycled = self._same_path(target, token)
         with self._gated(located) as root:
             for rel in (staged, located.rel):
@@ -1242,7 +1242,7 @@ class Fsops:
     def same_path_recycle_old(self, target: str, token: str) -> str:
         """Step 3: the old version, staged by the swap, into the root's bin under the token
         (never replacing). Returns where it is; a no-op when it is there already."""
-        log.debug("fsops.same_path_recycle_old", path=escaped(target))
+        log.debug("fsops.same_path_recycle_old", **self._where(target))
         located, staged, recycled = self._same_path(target, token)
         with self._gated(located) as root:
             if root.lstat_kind(staged) is not None:
