@@ -20,8 +20,8 @@ from collections.abc import Collection, Iterable, Mapping
 from typing import Any, Final
 
 from shelfhold.infrastructure.fetcher.refs import has_userinfo
-from shelfhold.infrastructure.logging import known_secret_values
-from shelfhold.infrastructure.secret_text import contains_secret
+from shelfhold.infrastructure.logging import known_secret_index
+from shelfhold.infrastructure.secret_text import SecretIndex, contains_secret
 from shelfhold.infrastructure.secrets.envelope import Envelope
 from shelfhold.infrastructure.secrets.vault import SecretVault
 
@@ -67,7 +67,7 @@ def _plain(value: object, depth: int = 0) -> None:
         raise SnapshotRefusedError("snapshot holds a value that is not plain data")
 
 
-def _walk(value: object, known: tuple[str, ...], depth: int = 0) -> None:
+def _walk(value: object, known: SecretIndex, depth: int = 0) -> None:
     if depth > _MAX_DEPTH:
         raise SnapshotRefusedError("snapshot too deep")
     if isinstance(value, Mapping):
@@ -99,7 +99,7 @@ def validate_payload(
 ) -> dict[str, Any]:
     """Plain JSON, small, and with no secret in it (key or value): it is stored in the clear.
     `known` defaults to every registered secret value."""
-    values = tuple(known_secret_values() if known is None else known)
+    values = known_secret_index() if known is None else SecretIndex(known)
     _walk(payload, values)
     _size(payload)
     return dict(payload)

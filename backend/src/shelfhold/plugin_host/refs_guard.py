@@ -20,8 +20,8 @@ from typing import Any, Final, cast
 from pydantic import BaseModel
 
 from shelfhold.infrastructure.fetcher.refs import SecretInRef, check_ref, rewrite_ref
-from shelfhold.infrastructure.logging import known_secret_values
-from shelfhold.infrastructure.secret_text import contains_secret
+from shelfhold.infrastructure.logging import known_secret_index
+from shelfhold.infrastructure.secret_text import SecretIndex, contains_secret
 from shelfhold.plugin_host.errors import RefHasSecret
 
 __all__ = ["RefsGuard", "ScreenedService", "screened", "values_of"]
@@ -37,7 +37,7 @@ _ADDRESSES: Final = frozenset({"url", "href", "referer", "token", "bounds", "loc
 class RefsGuard:
     def __init__(
         self,
-        known: Callable[[], Iterable[str]],
+        known: "Callable[[], Iterable[str] | SecretIndex]",
         *,
         template: str | Callable[[], str | None] | None = None,
     ) -> None:
@@ -51,7 +51,7 @@ class RefsGuard:
 
     def ref(self, text: str, *, field: str, patterns: bool = True) -> str:
         """`text` free of secrets: as it is, or rewritten to the template; else `RefHasSecret`."""
-        known = tuple(self._known())
+        known = self._known()
         template = self._template
         try:
             if template is None:
@@ -99,26 +99,33 @@ class RefsGuard:
             return self.ref(text, field=field)
         if kind == "address":
             return self.ref(text, field=field, patterns=False)
-        known = tuple(self._known())
-        if contains_secret(text, known):
+        if contains_secret(text, self._known()):
             raise RefHasSecret(f"{field or 'value'}: the value holds a secret (secret)")
         return text
 
 
-def values_of(fetcher: Any) -> Callable[[], frozenset[str]]:
+def values_of(fetcher: Any) -> Callable[[], SecretIndex]:
     """The values to check references against: every registered secret, and what this Fetcher
-    says it injects (`secret_values()`, when it has one)."""
+    says it injects (`secret_values()`, when it has one). The index is rebuilt only when either
+    changes."""
+    last: list[Any] = [None, None, SecretIndex()]  # registry index, injected values, result
 
-    def known() -> frozenset[str]:
+    def known() -> SecretIndex:
+        base = known_secret_index()
         own = getattr(fetcher, "secret_values", None)
-        return known_secret_values() | (own() if callable(own) else frozenset())
+        extra: frozenset[str] = own() if callable(own) else frozenset()
+        if last[0] is not base or last[1] != extra:
+            merged = SecretIndex(base.values | extra) if extra - base.values else base
+            last[:] = [base, extra, merged]
+        result: SecretIndex = last[2]
+        return result
 
     return known
 
 
 def screened(
     service: Any,
-    known: Callable[[], Iterable[str]],
+    known: "Callable[[], Iterable[str] | SecretIndex]",
     template: str | Callable[[], str | None] | None = None,
 ) -> Any:
     """`service` whose every answer goes through the guard."""

@@ -15,7 +15,12 @@ from collections.abc import Iterable
 from typing import Final
 from urllib.parse import unquote
 
-from shelfhold.infrastructure.secret_text import contains_secret, decoded_views, secret_forms
+from shelfhold.infrastructure.secret_text import (
+    SecretIndex,
+    contains_secret,
+    decoded_views,
+    secret_forms,
+)
 from shelfhold.sdk.refs import SECRET_PLACEHOLDER
 
 __all__ = [
@@ -91,14 +96,18 @@ def _pattern_reason(ref: str) -> str | None:
     return None
 
 
-def check_ref(ref: str, known: Iterable[str], *, patterns: bool = True) -> str:
+def _index(known: "Iterable[str] | SecretIndex") -> SecretIndex:
+    return known if isinstance(known, SecretIndex) else SecretIndex(known)
+
+
+def check_ref(ref: str, known: "Iterable[str] | SecretIndex", *, patterns: bool = True) -> str:
     """`ref` when it is free of secrets, else `SecretInRef`.
 
     `known` is the set of values the Fetcher injects (and any registered secret). `patterns=False`
     is for a URL that is used and not stored (a file to download, a signed image address): only a
     known value and a userinfo part are refused, a signature in a query is its business.
     """
-    values = tuple(known)
+    values = _index(known)
     if contains_secret(ref, values):
         raise SecretInRef("secret")
     if has_userinfo(ref):
@@ -110,7 +119,11 @@ def check_ref(ref: str, known: Iterable[str], *, patterns: bool = True) -> str:
 
 
 def rewrite_ref(
-    ref: str, known: Iterable[str], template: str = SECRET_PLACEHOLDER, *, patterns: bool = True
+    ref: str,
+    known: "Iterable[str] | SecretIndex",
+    template: str = SECRET_PLACEHOLDER,
+    *,
+    patterns: bool = True,
 ) -> str:
     """The reference with every known value (in any form a URL carries it) replaced by `template`.
 
@@ -118,15 +131,18 @@ def rewrite_ref(
     identifier. The result is checked again: a form this function did not find, a userinfo part or
     a token left over is still refused, never written.
     """
-    values = tuple(known)
-    forms = sorted({f for value in values for f in secret_forms(value) if f}, key=len, reverse=True)
+    values = _index(known)
     text = ref
-    for form in forms:
-        text = text.replace(form, template)
+    if contains_secret(ref, values):  # the common case holds nothing: no form is computed
+        forms = sorted(
+            {f for value in values.values for f in secret_forms(value) if f}, key=len, reverse=True
+        )
+        for form in forms:
+            text = text.replace(form, template)
     return check_ref(text, values, patterns=patterns)
 
 
-def projectable(ref: str | None, known: Iterable[str]) -> str | None:
+def projectable(ref: str | None, known: "Iterable[str] | SecretIndex") -> str | None:
     """A stored reference as it may be copied into a file the host writes (the provenance mirror,
     `unit.json`): rewritten to the placeholder when it holds a known value, `None` when it still
     cannot be shown. A row written before the guards existed never leaks through a projection."""

@@ -21,7 +21,12 @@ from urllib.parse import unquote, urlsplit
 import structlog
 from structlog.typing import EventDict, Processor, WrappedLogger
 
-from shelfhold.infrastructure.secret_text import contains_secret, decoded_views, secret_forms
+from shelfhold.infrastructure.secret_text import (
+    SecretIndex,
+    contains_secret,
+    decoded_views,
+    secret_forms,
+)
 
 _WORDS = (
     r"kavita[-_]?key|komga|secret|token|passw?o?r?d?|passphrase|pwd|pass|key|auth|cookie|session"
@@ -66,7 +71,30 @@ _TOKEN_SEGMENT = re.compile(
 _URL_SENSITIVE = re.compile(rf"{_WORDS}|signature|^sig$|^sas$|jsessionid|^sid$", re.IGNORECASE)
 _URL_IN_TEXT = re.compile(r"""\b[a-z][a-z0-9+.-]*://[^\s'"<>)\]}]+""", re.IGNORECASE)
 _SOURCE_URL = re.compile(r"""\b[a-z][a-z0-9+.-]*://[^\s'"<>)\]}]+""", re.IGNORECASE)
-_known_values: set[str] = set()
+
+
+class _Registry(set[str]):
+    """The registered values. Every change bumps `generation`, which is what the cached views of
+    it (`known_secret_values`, `known_secret_index`) are keyed by; a test that empties it with
+    `clear()` is seen too."""
+
+    generation = 0
+
+    def update(self, *others: Any) -> None:
+        super().update(*others)
+        self.generation += 1
+
+    def add(self, element: str) -> None:
+        super().add(element)
+        self.generation += 1
+
+    def clear(self) -> None:
+        super().clear()
+        self.generation += 1
+
+
+_known_values = _Registry()
+_views: dict[str, Any] = {"generation": -1, "values": frozenset(), "index": SecretIndex()}
 
 
 _QUERY_OF_URL = re.compile(
@@ -110,6 +138,8 @@ def route_of(url: str) -> str:
 
 
 def _mask_known(text: str) -> str:
+    if not known_secret_index().find(text):  # nearly always: nothing to mask
+        return text
     for known in sorted(_known_values, key=len, reverse=True):
         text = text.replace(known, REDACTED)
     return text
@@ -127,7 +157,7 @@ def _redact_path(path: str) -> str:
             previous.lower() == "opds" and index >= 2 and segments[index - 2].lower() == "api"
         )
         if segment and (
-            contains_secret(segment, _known_values)
+            contains_secret(segment, known_secret_index())
             or (named and segment != _PLACEHOLDER)
             or _TOKEN_SEGMENT.fullmatch(decoded)
         ):
@@ -150,11 +180,11 @@ def _redact_pairs(text: str, separators: str = "&;") -> str:
         name, equals, value = piece.partition("=")
         if equals and (
             _URL_SENSITIVE.search(unquote(name))
-            or contains_secret(value, _known_values)
+            or contains_secret(value, known_secret_index())
             or _TOKEN_SEGMENT.fullmatch(unquote(value))
         ):
             pieces[index] = f"{name}={REDACTED}"
-        elif contains_secret(piece, _known_values):
+        elif contains_secret(piece, known_secret_index()):
             pieces[index] = REDACTED
     return "".join(pieces)
 
@@ -259,10 +289,25 @@ def register_secret_value(value: str) -> None:
     _known_values.update(secret_forms(value))
 
 
+def _refresh() -> None:
+    if _views["generation"] != _known_values.generation:
+        values = frozenset(_known_values)
+        _views.update(generation=_known_values.generation, values=values, index=SecretIndex(values))
+
+
 def known_secret_values() -> frozenset[str]:
     """Every value registered so far, with its encoded forms: what the guards check references,
     snapshots and database writes against (EF-SRC-035)."""
-    return frozenset(_known_values)
+    _refresh()
+    values: frozenset[str] = _views["values"]
+    return values
+
+
+def known_secret_index() -> SecretIndex:
+    """The same values, ready to be looked for in a text in one pass."""
+    _refresh()
+    index: SecretIndex = _views["index"]
+    return index
 
 
 def redact_source_urls(text: str) -> str:
@@ -277,7 +322,7 @@ def _scrub_text(text: str) -> str:
         # a secret written in a form nobody registered (one character in percent form, the rest as
         # is) shows once decoded; the line is then written decoded and masked
         for view in decoded_views(text)[1:]:
-            if contains_secret(view, _known_values):
+            if contains_secret(view, known_secret_index()):
                 text = _mask_known(view)
                 break
     text = _URL_IN_TEXT.sub(lambda m: redact_url(m.group()), text)

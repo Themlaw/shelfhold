@@ -21,7 +21,7 @@ from typing import Any, Final
 
 from sqlalchemy import Engine, event
 
-from shelfhold.infrastructure.logging import known_secret_values
+from shelfhold.infrastructure.logging import known_secret_index
 from shelfhold.infrastructure.secret_text import contains_secret
 
 __all__ = [
@@ -119,7 +119,7 @@ def check_write(statement: str, parameters: Any, *, many: bool) -> None:
     tables = [t for t in _written(statement) if t not in EXEMPT_TABLES]
     if not tables:
         return
-    known = known_secret_values()
+    known = known_secret_index()
     if not known:
         return
     rows: Sequence[Any] = parameters if many else [parameters]

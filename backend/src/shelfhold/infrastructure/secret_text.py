@@ -9,10 +9,10 @@ Nothing here logs, and nothing quotes the value it was given.
 """
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from urllib.parse import quote, quote_plus, unquote, unquote_plus
 
-__all__ = ["contains_secret", "decoded_views", "secret_forms"]
+__all__ = ["SecretIndex", "contains_secret", "decoded_views", "secret_forms"]
 
 _DECODE_ROUNDS = 4
 _HEX = re.compile(r"%[0-9A-Fa-f]{2}")
@@ -53,10 +53,44 @@ def decoded_views(text: str) -> tuple[str, ...]:
     return tuple(views)
 
 
-def contains_secret(text: str, known: Iterable[str]) -> bool:
-    """True when `text` holds one of the known values, as is, in a URL form or after decoding."""
-    values = [k for k in known if k]
-    if not values or not text:
+class SecretIndex:
+    """A set of known values that finds any of them in a text in one pass.
+
+    The registry holds a dozen forms of every secret, and the guards look at every parameter of
+    every write: a loop over the values for each text costs too much once a long-running process
+    has registered a few hundred secrets. The text is slid over once, each window of the width of
+    the shortest value is looked up in a table keyed by the value's start, and only a hit is
+    compared.
+    """
+
+    __slots__ = ("_table", "_width", "values")
+
+    def __init__(self, values: Iterable[str] = ()) -> None:
+        self.values: frozenset[str] = frozenset(v for v in values if v)
+        self._width = min((len(v) for v in self.values), default=1)
+        table: dict[str, list[str]] = {}
+        for value in self.values:
+            table.setdefault(value[: self._width], []).append(value)
+        self._table = table
+
+    def __bool__(self) -> bool:
+        return bool(self.values)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.values)
+
+    def find(self, text: str) -> bool:
+        width, table = self._width, self._table
+        for start in range(len(text) - width + 1):
+            candidates = table.get(text[start : start + width])
+            if candidates is not None and any(text.startswith(v, start) for v in candidates):
+                return True
         return False
-    views = decoded_views(text)
-    return any(value in view for value in values for view in views)
+
+
+def contains_secret(text: str, known: "Iterable[str] | SecretIndex") -> bool:
+    """True when `text` holds one of the known values, as is, in a URL form or after decoding."""
+    index = known if isinstance(known, SecretIndex) else SecretIndex(known)
+    if not index or not text:
+        return False
+    return any(index.find(view) for view in decoded_views(text))
