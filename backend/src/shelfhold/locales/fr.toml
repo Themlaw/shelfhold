@@ -1626,6 +1626,10 @@ action = "Rien à faire : Shelfhold le relira quand sa taille et sa date n'auron
 title = "PDF non pris : il n'a pas pu être vérifié, ou il contient des fichiers joints ou une enveloppe."
 action = "Il reste dans le dossier d'import, intact. Réexportez-le en PDF simple, sans pièce jointe."
 
+[errors."import.left_in_quarantine"]
+title = "Un fichier a été mis de côté dans « .shelfhold-removing » et n'a pas pu être remis en place."
+action = "Ne l'écrasez pas : récupérez-le à la main dans ce sous-dossier du dossier d'import."
+
 [errors."import.purchase_pending"]
 title = "Fichier du dossier « achats » : il n'est pris que si vous déclarez un achat."
 action = "Lancez « shelfhold import scan --purchase » ; sinon il reste où il est."

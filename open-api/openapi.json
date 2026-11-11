@@ -9261,6 +9261,10 @@
       "code": "import.hash_mismatch",
       "status": 500
     },
+    "/api/v1/problems/import.left-in-quarantine": {
+      "code": "import.left_in_quarantine",
+      "status": 409
+    },
     "/api/v1/problems/import.link-refused": {
       "code": "import.link_refused",
       "status": 422

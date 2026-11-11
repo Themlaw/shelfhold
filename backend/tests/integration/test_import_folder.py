@@ -1128,3 +1128,45 @@ def test_a_quarantine_that_is_a_link_is_never_followed() -> None:
         env.drop("a.cbz", CBZ)
         env.folder.run()
         assert not list(elsewhere.iterdir()) and (env.incoming / "a.cbz").exists()
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_without_renameat2_nothing_is_put_back_by_overwriting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A newer file took the name; the put-back cannot be done without replacing: the held file
+    stays in the quarantine, the newer one is untouched, and the status says so."""
+    newer_bytes = b"PK-newer"
+
+    def unsupported(*_a: object) -> None:
+        raise OSError(errno.ENOSYS, "no renameat2")
+
+    with import_env() as env:
+        env.drop("a.cbz", CBZ)
+        newer = env.lib.tmp / "newer.cbz"
+        newer.write_bytes(newer_bytes)
+        monkeypatch.setattr(import_scan, "_rename_noreplace", unsupported)
+
+        def make() -> None:
+            os.rename(newer, env.incoming / "a.cbz")
+
+        _swap_before_the_move(env, make)
+        held = env.incoming / import_scan.QUARANTINE
+        assert any(p.read_bytes() == newer_bytes for p in held.iterdir() if p.suffix != ".from")
+        assert env.entries()["a.cbz"][0] == "refused"
+
+
+@pytest.mark.req("EF-SRC-012")
+def test_a_taken_name_is_never_overwritten_by_the_put_back() -> None:
+    with import_env() as env:
+        env.drop("a.cbz", CBZ)
+        root_fd = os.open(env.incoming, os.O_RDONLY | os.O_DIRECTORY)
+        quarantine = env.folder._quarantine_dir(root_fd)
+        try:
+            (env.incoming / import_scan.QUARANTINE / "HELD").write_bytes(b"held")
+            assert not env.folder._put_back(quarantine, "HELD", root_fd, "a.cbz", "a.cbz")
+            assert (env.incoming / "a.cbz").read_bytes() == CBZ
+            assert (env.incoming / import_scan.QUARANTINE / "HELD").read_bytes() == b"held"
+        finally:
+            os.close(quarantine)
+            os.close(root_fd)

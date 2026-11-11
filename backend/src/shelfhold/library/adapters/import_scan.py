@@ -28,6 +28,7 @@ message, never with silence:
 """
 
 import contextlib
+import ctypes
 import errno
 import fcntl
 import hashlib
@@ -101,6 +102,7 @@ UNSAFE_NAME: Final = "import.unsafe_name"
 NAME_COLLISION: Final = "import.name_collision"
 NOT_READY: Final = "import.not_ready"
 PURCHASE_PENDING: Final = "import.purchase_pending"
+LEFT_IN_QUARANTINE: Final = "import.left_in_quarantine"
 PURCHASE_DIR: Final = "achats"  # what the admin declares a purchase, by the command only
 COMPANION: Final = ".from"  # beside a held entry: the path it came from
 QUARANTINE: Final = ".shelfhold-removing"  # the step between "verified" and "gone"
@@ -115,7 +117,7 @@ REFUSED_CODES: Final = (
     PROTECTED_FILE, PROTECTED_LICENCE, PDF_REFUSED, AUDIO, UNSUPPORTED, TOO_LARGE, ARCHIVE, LINK,
     UNSAFE_NAME,
     NAME_COLLISION, NOT_READY, CHANGED, HASH_MISMATCH, DISK_FULL, NOT_STORED, TOMBSTONED,
-    ORIGINAL_NOT_KEPT,
+    ORIGINAL_NOT_KEPT, LEFT_IN_QUARANTINE,
 )  # fmt: skip
 
 DEFAULT_SETTLE_SECONDS: Final = 30.0
@@ -292,6 +294,23 @@ def make_precheck(tombstones: Any, limits: ArchiveLimits = DEFAULT_LIMITS) -> Pr
 class ImportFolderOverlapError(ValueError):
     """The import folder is, holds or sits inside a root Shelfhold writes: it would re-import what
     it exported (the echo)."""
+
+
+_RENAME_NOREPLACE: Final = 1
+
+
+def _rename_noreplace(old_dir: int, old: str, new_dir: int, new: str) -> None:
+    """`renameat2(old_dir, old, new_dir, new, RENAME_NOREPLACE)` through the C library. Raises
+    `FileExistsError` when `new` exists, `OSError` (ENOSYS, EINVAL...) where it is unsupported."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    call = getattr(libc, "renameat2", None)
+    if call is None:
+        raise OSError(errno.ENOSYS, "renameat2 is not available")
+    call.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    call.restype = ctypes.c_int
+    if call(old_dir, os.fsencode(old), new_dir, os.fsencode(new), _RENAME_NOREPLACE) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code))
 
 
 def _escaped_key(rel: str) -> str:
@@ -777,9 +796,7 @@ class ImportFolder:
                 os.unlink(held, dir_fd=quarantine)
                 os.unlink(held + COMPANION, dir_fd=quarantine)
                 return True
-            self._put_back(
-                quarantine, held, parent, name
-            )  # another file, or a folder, took the name
+            self._put_back(quarantine, held, parent, name, rel)  # another file took the name
             return False
         finally:
             os.close(quarantine)
@@ -794,22 +811,22 @@ class ImportFolder:
         with os.fdopen(fd, "wb") as stream:
             stream.write(rel.encode())
 
-    @staticmethod
-    def _put_back(quarantine: int, held: str, parent: int, name: str) -> bool:
-        """Return what is held to `name` without ever replacing anything: a link for a file (it
-        fails if the name is taken), a rename for a folder (it fails if the folder is not empty)."""
+    def _put_back(self, quarantine: int, held: str, parent: int, name: str, rel: str) -> bool:
+        """Return what is held to `name` by a rename that refuses to replace anything
+        (`renameat2` with RENAME_NOREPLACE). A taken name leaves it held. Where the kernel or the
+        file system cannot do that, it stays in the quarantine and the status says so: nothing is
+        ever put back by overwriting."""
         try:
-            kind = os.stat(held, dir_fd=quarantine, follow_symlinks=False).st_mode
-            if stat.S_ISDIR(kind):
-                os.rename(held, name, src_dir_fd=quarantine, dst_dir_fd=parent)
-            else:
-                os.link(held, name, src_dir_fd=quarantine, dst_dir_fd=parent, follow_symlinks=False)
-                os.unlink(held, dir_fd=quarantine)
-            with contextlib.suppress(OSError):
-                os.unlink(held + COMPANION, dir_fd=quarantine)
-        except OSError:
-            log.warning("import.removal_conflict")  # it stays in the quarantine, to restore
+            _rename_noreplace(quarantine, held, parent, name)
+        except FileExistsError:
+            log.warning("import.removal_conflict")  # the name is taken: it stays held
             return False
+        except OSError:
+            log.warning("import.left_in_quarantine")
+            self._record(rel, 0, 0, None, "refused", LEFT_IN_QUARANTINE)  # a message that lasts
+            return False
+        with contextlib.suppress(OSError):
+            os.unlink(held + COMPANION, dir_fd=quarantine)
         return True
 
     def _restore_quarantine(self, root_fd: int) -> None:
@@ -829,9 +846,10 @@ class ImportFolder:
                 except OSError:
                     continue
                 try:
-                    if not self._put_back(quarantine, entry, parent, parts[-1]):
+                    rel = "/".join(parts)
+                    if not self._put_back(quarantine, entry, parent, parts[-1], rel):
                         # the name is taken: keep both, the held one under a name of its own
-                        self._put_back(quarantine, entry, parent, f"{entry}~{parts[-1]}"[:200])
+                        self._put_back(quarantine, entry, parent, f"{entry}~{parts[-1]}"[:200], rel)
                 finally:
                     os.close(parent)
                 log.warning("import.quarantine_restored")
