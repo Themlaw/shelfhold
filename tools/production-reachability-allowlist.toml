@@ -251,3 +251,16 @@ until = "M2"
 symbols = [
   "shelfhold.catalog.application.revisions:RevisionQueue.apply_metadata",
 ]
+
+[[allow]]
+category = "unwired-m2-l26"
+reason = "2026-11-11 (M2 L26): the volume policy, the bounds read from the table of contents, the re-cut chapter proposals and the export of a file kept under /data/ranged are proved by their tests over a fake provider (no crawler adapter yet: M2 L25). `RangedExporter` takes the two doors of a destination as ports (the placement of the export pipeline, the same-path upgrade of L16, whose CBZ renderer does not carry an EPUB): their binding belongs to L25, which is the first caller of a ranged EPUB. `apply_comicinfo_range` waits for the adoption cycle to hand over the ComicInfo it already reads."
+until = "M2"
+symbols = [
+  "shelfhold.catalog.application.coverage:*",
+  "shelfhold.export.application.coverage:apply_comicinfo_range",
+  "shelfhold.export.application.coverage:comicinfo_range",
+  "shelfhold.export.application.ranged_export:*",
+  "shelfhold.infrastructure.packaging.epub.toc:*",
+  "shelfhold.library.domain.volume_policy:*",
+]
