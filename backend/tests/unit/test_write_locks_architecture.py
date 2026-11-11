@@ -47,3 +47,34 @@ def test_no_production_code_builds_a_writer_without_its_lock() -> None:
             if LOCKED[called][1] not in keywords:
                 offences.append(f"{path.relative_to(SRC)}:{node.lineno}:{called}")
     assert offences == []
+
+
+# a class that writes a file under /store or received/ must hold a lock; no list of the writers to
+# keep up to date: any class of the sources that calls `write_atomic` or `copy_independent`
+LOCK_NAMES = ("hold_work", "index_lock", "_hold(", "hold_resources")
+WRITES = ("write_atomic", "copy_independent")
+# classes that write elsewhere than under /store or received/ (and the reason)
+NOT_UNDER_STORE = {
+    "ExportPipeline": "writes the export targets, under the export locks (L-EXP)",
+    "Safeguard": "restores /library from a verified copy, under the intent journal",
+    "UntrustedEpubStore": "received/ writer of #129, which takes the Work lock there",
+}
+
+
+def test_every_class_that_writes_a_file_names_a_lock() -> None:
+    offences = []
+    for path in sorted(SRC.rglob("*.py")):
+        if "infrastructure" in path.parts:
+            continue  # fsops itself: the primitives
+        source = path.read_text(encoding="utf-8")
+        for cls in ast.walk(ast.parse(source)):
+            if not isinstance(cls, ast.ClassDef) or cls.name in NOT_UNDER_STORE:
+                continue
+            writes = any(
+                isinstance(n, ast.Call) and getattr(n.func, "attr", "") in WRITES
+                for n in ast.walk(cls)
+            )
+            body = ast.get_source_segment(source, cls) or ""
+            if writes and not any(name in body for name in LOCK_NAMES):
+                offences.append(f"{path.relative_to(SRC)}:{cls.name}")
+    assert offences == []

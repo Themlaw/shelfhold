@@ -361,3 +361,39 @@ def test_store_index_regenerable_and_excludes_tombstoned() -> None:
         assert (report.lines, report.tombstoned) == (1, 1)
         text = index_path.read_text()
         assert found[0][0] not in text and found[1][0] in text  # no line under a tombstone
+
+
+@pytest.mark.req("EF-BIB-052")
+def test_declare_derivative_is_work_busy_while_a_purge_holds_the_work() -> None:
+    """The derivative is written under the Work lock (the one `purge --now` takes): a held Work
+    stops it before /store or /library is touched."""
+    from shelfhold.export.application.locks import ResourceLocks, work_resource
+    from shelfhold.infrastructure.clock import SystemClock
+    from shelfhold.library.adapters.storage import work_of_unit
+    from shelfhold.work_locks import holder_over
+
+    scrambled = cbz_bytes((("001.png", PNG + b"scrambled"), ("002.jpg", JPEG)))
+    derived = cbz_bytes((("001.png", PNG), ("002.jpg", JPEG)))
+    with lib_env() as env:
+        prepare(env)
+        unit = env.chain["unit"]
+        library = ingest(env, scrambled, unit, env.chain["variant"], "Dr Stone - 1.cbz")
+        file = env.stage(derived, "derived.cbz")
+        busy = KeepCopier(
+            env.engine, env.fsops, env.locate, str(env.store), env.data,
+            IntentJournal(env.engine, env.fsops),
+            hold_work=holder_over(env.engine, SystemClock(), wait=0.0),
+        )  # fmt: skip
+        with env.engine.connect() as connection:
+            work_id = work_of_unit(connection, unit)
+        assert work_id is not None
+        with (
+            ResourceLocks(env.engine, clock=SystemClock()).hold_resources(
+                new_ulid(), [work_resource(work_id)]
+            ),
+            pytest.raises(SafeguardFailedError) as refused,
+        ):
+            busy.declare_derivative(unit, file, "descrambler@v1")
+        assert refused.value.reason == "work_busy"
+        assert library.read_bytes() == scrambled  # /library untouched
+        assert env.files_under(env.store) == []  # nothing copied

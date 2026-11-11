@@ -434,7 +434,21 @@ class KeepCopier:
         The original is copied to /store first (an independent copy, under its intent); only then
         is the derivative written over the /library file, atomically and read back. A crash in
         between leaves the original kept and /library unchanged: the same call, repeated, goes on
-        from there. The derivative is audited as any archive is before it replaces anything."""
+        from there. The derivative is audited as any archive is before it replaces anything.
+
+        Under the lock of the Work, as `keep`: a purge that ran in between would find the copy in
+        /store and the rewritten file in /library with no row that knows them (EF-BIB-052)."""
+        with self._engine.connect() as connection:
+            work_id = work_of_unit(connection, unit_id)
+        if work_id is None:
+            raise SafeguardFailedError("no_content", "the Unit is gone")
+        try:
+            with self._hold_work(work_id):
+                return self._declare(unit_id, derived, derived_by)
+        except WorkBusyError as busy:
+            raise SafeguardFailedError("work_busy", "the Work is held by another job") from busy
+
+    def _declare(self, unit_id: str, derived: Path, derived_by: str) -> Derivative:
         with self._engine.connect() as connection:
             content = connection.execute(
                 sa.select(storage.content)
