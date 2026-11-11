@@ -34,7 +34,14 @@ def _leftovers(args: argparse.Namespace, channel: OpsChannel) -> int:
     it only reads and prints the plan; with the version it printed, it lets the service go."""
     if args.confirm:
         done = channel.call("ops.leftovers_apply", if_match=args.confirm)
-        print(t("purge.leftovers_done", released=done["released"], forgotten=done["forgotten"]))
+        print(
+            t(
+                "purge.leftovers_done",
+                released=done["released"],
+                forgotten=done["forgotten"],
+                unfollowed=done.get("unfollowed", 0),
+            )
+        )
         return 0 if not done["unsettled"] else REFUSED
     plan = channel.call("ops.leftovers_plan")
     if not plan["connected"]:

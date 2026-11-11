@@ -9,7 +9,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 import sqlalchemy as sa
@@ -92,6 +92,10 @@ class _Service(FakeService):
     """The connected service, with the calls `FollowRequests.unfollow` really makes."""
 
     series_known = False
+    library: ClassVar[list[tuple[str, str]]] = []  # the series the service holds
+
+    async def followed_series(self, f: Any) -> list[Any]:
+        return [SimpleNamespace(source_key=k, remote_id=r) for k, r in self.library]
 
     async def instance_fingerprint(self, f: Any) -> str:
         return "fp-1"
@@ -102,6 +106,8 @@ class _Service(FakeService):
         if not self.series_known:
             raise ContentRemoved(f"{ref.remote_id} is no longer known to the server")
         self.unfollowed.append(("suwayomi", ref.source_key, ref.remote_id))
+        if remove_upstream:
+            self.library[:] = [k for k in self.library if k != (ref.source_key, ref.remote_id)]
 
 
 def _followed_work(env: ExportEnv, tmp_path: Path) -> tuple[_Service, Any, str, str, PurgeEnv]:
@@ -462,3 +468,42 @@ def test_window_index_render_never_overwrites_a_purge_that_ran_meanwhile() -> No
         assert unit not in index_units(purge) and other in index_units(purge)
         assert index_is_coherent(purge)
         assert unit not in (env.lib.store / "INDEX.jsonl").read_text()
+
+
+# -- the M1b migration offers the series M1a left in the library ----------------------------------
+
+
+def test_migration_offers_and_unfollows_series_buried_by_m1a(tmp_path: Path) -> None:
+    """P7: a Work purged in M1a (no service in reach) left its series in the service's library.
+    The plan lists the series the service still holds that a tombstone buries (asked, never read,
+    named by a digest), `apply` needs the reserved action and the version, and takes them out
+    through the real `FollowRequests.unfollow`."""
+    from shelfhold.export.application.plans import StalePlanError
+    from shelfhold.export.application.purge_leftovers import PurgeLeftovers
+    from tests.purge_env import KEY
+
+    with export_env() as env:
+        service, series, _unit, key, built = _followed_work(env, tmp_path)
+        service.series_known = True
+        service.library[:] = [(key, SLUG), ("suwayomi:other", "/manga/not-ours")]
+        m1a = make_m1b_env(env)  # no service in reach: the claim is withdrawn on our side
+        assert m1a.purge.purge_work(
+            series.work_id, principal=ADMIN, typed=series.work_id, now=m1a.clock.now()
+        ).complete
+        leftovers = PurgeLeftovers(
+            env.engine, built.purge._upstream, clock=built.clock, fresh_auth_s=900,
+            tombstones=m1a.tombstones,
+        )  # fmt: skip
+        plan = leftovers.plan()
+        assert len(plan.series) == 1  # only the buried one: the other series is not ours
+        assert SLUG not in repr(plan) and "dr-stone" not in repr(plan)
+        assert service.unfollowed == []  # a plan reads only
+        with pytest.raises(PermissionError):
+            leftovers.apply(if_match=plan.version, principal=KEY, now=built.clock.now())
+        with pytest.raises(StalePlanError):
+            leftovers.apply(if_match="0" * 32, principal=ADMIN, now=built.clock.now())
+        assert service.library == [(key, SLUG), ("suwayomi:other", "/manga/not-ours")]
+        done = leftovers.apply(if_match=plan.version, principal=ADMIN, now=built.clock.now())
+        assert done.unfollowed == 1 and service.unfollowed == [("suwayomi", key, SLUG)]
+        assert service.library == [("suwayomi:other", "/manga/not-ours")]
+        assert leftovers.plan().series == []

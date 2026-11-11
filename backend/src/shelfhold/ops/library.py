@@ -852,13 +852,15 @@ class LibraryOps:
         with self._leftovers() as leftovers:
             if leftovers is None:
                 return {"connected": False, "downloads": [], "dead_tickets": [], "unknown": 0,
-                        "version": ""}  # fmt: skip
+                        "series": [], "series_unknown": False, "version": ""}  # fmt: skip
             plan = leftovers.plan()
         return {
             "connected": True,
             "downloads": [i.request_id for i in plan.downloads],
             "dead_tickets": [i.request_id for i in plan.dead_tickets],
             "unknown": plan.unknown,
+            "series": [i.request_id for i in plan.series],
+            "series_unknown": plan.series_unknown,
             "version": plan.version,
         }
 
@@ -880,6 +882,7 @@ class LibraryOps:
             "kept_by_other_account": report.kept_by_other_account,
             "forgotten": report.forgotten,
             "unsettled": report.unsettled,
+            "unfollowed": report.unfollowed,
         }
 
     @contextmanager
@@ -895,7 +898,7 @@ class LibraryOps:
             yield (
                 None if upstream is None else PurgeLeftovers(
                     self._comp.engine, upstream, clock=self._comp.clock,
-                    fresh_auth_s=settings.fresh_auth_s,
+                    fresh_auth_s=settings.fresh_auth_s, tombstones=w.tombstones,
                 )
             )  # fmt: skip
 

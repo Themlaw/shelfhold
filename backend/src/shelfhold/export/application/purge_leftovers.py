@@ -14,10 +14,16 @@ let the service go of those chapters, and to forget the tickets the service no l
 
 The version covers every request a purge closed, with a ticket or without: a request let go of
 leaves it unchanged (the second `apply` has nothing more to do), a new purge changes it.
+
+The series too (EF-BIB-053 (2)): a Work purged in M1a left its series in the service's library, and
+only the told "delete in Suwayomi" kept it out. The plan lists the series the service still holds
+that a `series_binding` tombstone buries (`UpstreamPort.followed()` read, each series asked of the
+tombstones, which are sealed: nothing is decrypted, nothing here names a title: a series is an
+opaque digest), and `apply` takes them out of the library (`unfollow`, confirmed by the version).
 """
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Final
 
@@ -42,6 +48,8 @@ from shelfhold.identity.public import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.library.public import (
+    SeriesBindingRef,
+    TombstoneGate,
     closed_request_ids,
     leftover_tickets,
     let_go_tickets,
@@ -51,6 +59,12 @@ __all__ = ["LeftoverItem", "LeftoverPlan", "LeftoverReport", "PurgeLeftovers"]
 
 log = structlog.get_logger(__name__)
 ACTION: Final = "purge.now"
+PLUGIN_ID: Final = "suwayomi"  # the connected service whose library holds series
+
+
+def _digest(key: tuple[str, str]) -> str:
+    """What the plan says of a series: never its key (a URL slug spells the title)."""
+    return hashlib.sha256("|".join(key).encode()).hexdigest()[:16]
 
 
 @dataclass(frozen=True)
@@ -64,6 +78,8 @@ class LeftoverPlan:
     dead_tickets: list[LeftoverItem]  # the service no longer knows it: the ticket is forgotten
     unknown: int  # the service could not answer for them: left alone, offered again later
     version: str
+    series: list[LeftoverItem] = field(default_factory=list)  # buried, still in the library
+    series_unknown: bool = False  # the service could not list its library: none are offered
 
 
 @dataclass(frozen=True)
@@ -71,15 +87,21 @@ class LeftoverReport:
     released: int = 0
     kept_by_other_account: int = 0
     forgotten: int = 0
-    unsettled: int = (
-        0  # refused, unresolved or unavailable: nothing more is sent, said to the admin
-    )
+    unsettled: int = 0  # refused, unresolved or unavailable: nothing more is sent
+    unfollowed: int = 0  # series taken out of the service's library
 
 
 class PurgeLeftovers:
     def __init__(
-        self, engine: Engine, upstream: UpstreamPort, *, clock: Clock, fresh_auth_s: int
+        self,
+        engine: Engine,
+        upstream: UpstreamPort,
+        *,
+        clock: Clock,
+        fresh_auth_s: int,
+        tombstones: TombstoneGate | None = None,
     ) -> None:
+        self._tombstones = tombstones
         self._engine = engine
         self._upstream = upstream
         self._clock = clock
@@ -89,8 +111,10 @@ class PurgeLeftovers:
         """Read only. Nothing is erased, and no ticket is changed."""
         with self._engine.connect() as connection:
             tickets = leftover_tickets(connection)
-            version = self._version(closed_request_ids(connection))
+            closed = closed_request_ids(connection)
         held = self._upstream.holds(tickets) if tickets else {}
+        series, series_unknown = self._buried_series()
+        digests = sorted(_digest(key) for key in series)
         return LeftoverPlan(
             downloads=[
                 LeftoverItem(t.request_id) for t in tickets if held.get(t.request_id) is True
@@ -99,8 +123,25 @@ class PurgeLeftovers:
                 LeftoverItem(t.request_id) for t in tickets if held.get(t.request_id) is False
             ],
             unknown=sum(1 for t in tickets if t.request_id not in held),
-            version=version,
+            version=self._version([*closed, *digests]),
+            series=[LeftoverItem(d) for d in digests],
+            series_unknown=series_unknown,
         )
+
+    def _buried_series(self) -> tuple[list[tuple[str, str]], bool]:
+        """The series the service still lists that a `series_binding` tombstone buries. The
+        tombstones are asked, never read: a series that is not buried is none of our business."""
+        if self._tombstones is None:
+            return [], False
+        listed = self._upstream.followed()
+        if listed is None:
+            return [], True
+        buried = [
+            key
+            for key in sorted(listed)
+            if self._tombstones.check(SeriesBindingRef(PLUGIN_ID, *key), root_id=None).blocked
+        ]
+        return buried, False
 
     @staticmethod
     def _version(ids: list[str]) -> str:
@@ -127,11 +168,25 @@ class PurgeLeftovers:
             elif result.outcome not in (ALREADY_GONE, CANCELLED):
                 unsettled += 1
         forgotten = self._forget([i.request_id for i in current.dead_tickets], principal, now)
+        unfollowed, failed = self._unfollow(current)
         log.info(
             "purge.leftovers_applied", released=released, kept=kept, forgotten=forgotten,
             unsettled=unsettled,
         )  # fmt: skip
-        return LeftoverReport(released, kept, forgotten, unsettled)
+        return LeftoverReport(released, kept, forgotten, unsettled + failed, unfollowed)
+
+    def _unfollow(self, plan: LeftoverPlan) -> tuple[int, int]:
+        """The series of the plan, asked again of the service (the plan is stale if it moved), go
+        out of its library. Idempotent in the service; a refusal is counted, never retried."""
+        wanted = {i.request_id for i in plan.series}
+        keys = [key for key in self._buried_series()[0] if _digest(key) in wanted]
+        done = failed = 0
+        for result in self._upstream.unfollow([(PLUGIN_ID, *key) for key in keys]):
+            if result.done:
+                done += 1
+            else:
+                failed += 1
+        return done, failed
 
     def _forget(self, request_ids: list[str], principal: Principal, now: datetime) -> int:
         if not request_ids:

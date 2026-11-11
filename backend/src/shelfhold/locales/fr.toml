@@ -1264,9 +1264,10 @@ upstream = "Service : {released} téléchargement(s) libéré(s), {kept} gardé(
 retained_backup = "Sauvegarde conservée qui contient encore ces données (à écarter à la main, jamais réécrite) : {name}"
 leftovers_help = "Propose de libérer, dans le service, les téléchargements laissés par les purges de la version précédente (plan, puis --confirm)."
 leftovers_not_connected = "Aucun service connecté : rien à proposer."
-leftovers_plan = "{downloads} téléchargement(s) encore tenu(s) par le service, {dead} ticket(s) oublié(s) par le service. Rien n'a été effacé."
+leftovers_plan = "{downloads} téléchargement(s) encore tenu(s) par le service, {dead} ticket(s) oublié(s) par le service, {series} série(s) purgée(s) encore dans sa bibliothèque. Rien n'a été effacé."
+leftovers_series_unknown = "Le service n'a pas pu lister sa bibliothèque : les séries purgées ne sont pas proposées cette fois."
 leftovers_confirm = "Pour libérer ces téléchargements : shelfhold purge --leftovers --confirm {version}"
-leftovers_done = "{released} téléchargement(s) libéré(s), {forgotten} ticket(s) oublié(s)."
+leftovers_done = "{released} téléchargement(s) libéré(s), {forgotten} ticket(s) oublié(s), {unfollowed} série(s) retirée(s) de la bibliothèque."
 out_of_reach = "Hors de portée d'un effacement :"
 out_of_reach_item = "  - {item}"
 
