@@ -9,6 +9,7 @@ boundary, no joker that spans a public suffix by itself.
 
 import asyncio
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx2
 import pytest
@@ -180,7 +181,7 @@ def test_base_url_override_is_logged() -> None:
     (entry,) = lines
     assert entry["plugin_id"] == "plugin-o" and entry["setting"] == "server_url"
     assert entry["log_level"] == "warning"
-    assert "books.example.net" in entry["url"] and planted not in str(entry)
+    assert urlsplit(entry["url"]).hostname == "books.example.net" and planted not in str(entry)
     # the override replaces the declared host, it does not add to it
     assert allowlist.allows("books.example.net")
     assert not allowlist.allows("api.example.org")
@@ -190,7 +191,7 @@ def test_base_url_override_is_logged() -> None:
         DomainAllowlist("plugin-o", _override_rule(), {})  # back to the declared host
     forget_secret_values()
     changes = [e for e in logs if e["event"] == "plugin.base_url_override"]
-    assert [("other.example.net" in (e["url"] or "")) for e in changes] == [True, False]
+    assert [urlsplit(e["url"] or "").hostname for e in changes] == ["other.example.net", None]
     assert changes[1]["url"] is None
 
 

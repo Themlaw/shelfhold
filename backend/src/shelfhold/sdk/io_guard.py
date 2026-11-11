@@ -93,8 +93,10 @@ _FAMILIES: Final = (
     "_posixsubprocess", "urllib.", "http.", "ftplib.", "smtplib.", "imaplib.", "poplib.",
     "telnetlib.", "nntplib.", "webbrowser.", "sqlite3.", "glob.", "pathlib.", "tempfile.",
     "fcntl.", "mmap.", "signal.", "resource.", "syslog.", "winreg.", "msvcrt.", "_winapi.",
-    "sys.addaudithook", "sys.remote_exec", "sys.setprofile", "sys.settrace", "marshal.dump",
+    "sys.addaudithook", "sys.remote_exec",
 )  # fmt: skip
+# Not I/O, never refused: `marshal.dumps` (the import system compiles a module the plugin imports,
+# its cache write is what is refused), tracing and profiling (coverage, debuggers).
 # Path events: allowed when every path is in the sandbox (reads: also code the plugin imports).
 _READS: Final = frozenset({"os.listdir", "os.scandir", "os.listxattr", "os.getxattr"})
 _WRITES: Final = frozenset(
