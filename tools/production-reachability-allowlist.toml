@@ -258,6 +258,7 @@ until = "M2"
 symbols = [
   "shelfhold.infrastructure.packaging.epub.opf:OpfEdit",
   "shelfhold.infrastructure.packaging.epub.opf:OpfError",
+  "shelfhold.infrastructure.packaging.epub.opf:_check",
   "shelfhold.infrastructure.packaging.epub.opf:rewrite_opf",
   "shelfhold.library.adapters.origin_opf:keep_origin_opf",
 ]

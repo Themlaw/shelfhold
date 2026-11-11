@@ -293,7 +293,7 @@ def test_check_refuses_anything_outside_the_list() -> None:
         "<dc:subject>18+</dc:subject>",
         '<meta name="calibre:rating" content="1"/>',
         '<meta property="ibooks:age-rating">17+</meta>',
-        # not on the list: other elements, look-alikes, renamed namespaces
+        # not on the list: other elements, near-identical names, renamed namespaces
         '<meta name="Calibre:Series" content="x"/>',
         '<meta name="calibre:series" content="x" extra="1"/>',
         '<meta name="shelfhold:anything" content="1"/>',
