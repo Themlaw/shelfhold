@@ -10,9 +10,10 @@ secret, a path outside /store, a destination's name. The write is atomic and goe
 (a reader sees the old file or the new one, never half of one)."""
 
 import json
-from collections.abc import Collection
+from collections.abc import Callable, Collection
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
@@ -36,8 +37,15 @@ class IndexReport:
 
 class StoreIndex:
     def __init__(
-        self, engine: Engine, fsops: Fsops, store_dir: str, tombstones: ContentTombstones
+        self,
+        engine: Engine,
+        fsops: Fsops,
+        store_dir: str,
+        tombstones: ContentTombstones,
+        *,
+        hold: Callable[[], AbstractContextManager[Any]] | None = None,
     ) -> None:
+        self._hold = hold  # the lock of the index, shared with `purge --now`
         self._engine = engine
         self._fsops = fsops
         self._path = f"{store_dir.rstrip('/')}/{INDEX_NAME}"
@@ -104,11 +112,15 @@ class StoreIndex:
         return text.encode("utf-8"), len(lines), left_out
 
     def rewrite(self) -> IndexReport:
-        data, count, left_out = self.render()
-        try:
-            same = self._fsops.read_bytes(self._path) == data
-        except (FileNotFoundError, FsopsError):
-            same = False
-        if not same:
-            self._fsops.write_atomic(self._path, data, replace=True)
+        """Rendered and written under the lock of the index: a purge that rewrites the file in
+        between (its Units gone from the index before their copies go) is never overwritten by a
+        render that was made before it (EF-BIB-052)."""
+        with self._hold() if self._hold is not None else nullcontext():
+            data, count, left_out = self.render()
+            try:
+                same = self._fsops.read_bytes(self._path) == data
+            except (FileNotFoundError, FsopsError):
+                same = False
+            if not same:
+                self._fsops.write_atomic(self._path, data, replace=True)
         return IndexReport(count, left_out, rewritten=not same)

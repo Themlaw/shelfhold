@@ -78,7 +78,11 @@ def connected(env: PurgeEnv, service: FakeService) -> ConnectedUpstream:
 
 
 def make_m1b_env(
-    export: ExportEnv, service: FakeService | None = None, *, backups: Any = None
+    export: ExportEnv,
+    service: FakeService | None = None,
+    *,
+    backups: Any = None,
+    index_lock: Any = None,
 ) -> PurgeEnv:
     """The purge of M1a, with what M1b adds: /store, the service, the retained backups."""
     lib = export.lib
@@ -87,6 +91,7 @@ def make_m1b_env(
         lib.engine, lib.fsops, env.tombstones, clock=env.clock, data_dir=lib.data, bus=env.bus,
         fresh_auth_s=900, store_dir=lib.store,
         upstream=connected(env, service) if service is not None else None, backups=backups,
+        index_lock=index_lock,
     )  # fmt: skip
     return env
 

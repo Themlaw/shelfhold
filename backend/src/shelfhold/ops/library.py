@@ -99,6 +99,7 @@ from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
 from shelfhold.purge_upstream import connected_upstream
 from shelfhold.sdk.refs import SeriesRef
+from shelfhold.work_locks import index_holder
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition, WriteContext
@@ -817,6 +818,7 @@ class LibraryOps:
                 self._comp.engine, w.fsops, w.tombstones, clock=self._comp.clock,
                 data_dir=settings.data_dir, bus=w.bus, fresh_auth_s=settings.fresh_auth_s,
                 store_dir=settings.store_dir, upstream=upstream, backups=backups,
+                index_lock=index_holder(self._comp),
             )  # fmt: skip
             run = service.purge_work if kind == "work" else service.purge_unit
             report: PurgeReport = run(

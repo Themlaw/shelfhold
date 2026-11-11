@@ -26,17 +26,25 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.library.adapters.storage import KeepCopier, complete_keep, keep_rel
-from shelfhold.library.public import PassthroughStore, PinnedCopy, UnitGoneError
+from shelfhold.library.public import PassthroughStore, PinnedCopy, StoreIndex, UnitGoneError
 from shelfhold.purge_upstream import ConnectedUpstream
 from shelfhold.safeguard_jobs import service_refusal
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.source import ContentRemoved
-from shelfhold.work_locks import holder_over
+from shelfhold.work_locks import holder_over, index_holder_over
 from tests.export_env import ExportEnv, export_env
 from tests.integration.test_schema_catalog import add_unit, add_variant
 from tests.library_env import cbz_bytes
 from tests.purge_env import ADMIN, TITLE, PurgeEnv, make_purge_env, spread
-from tests.purge_m1b_env import FakeService, cite, fetched_ticket, make_m1b_env, write_index
+from tests.purge_m1b_env import (
+    FakeService,
+    cite,
+    fetched_ticket,
+    index_is_coherent,
+    index_units,
+    make_m1b_env,
+    write_index,
+)
 
 pytestmark = pytest.mark.req("EF-BIB-052", "EF-BIB-053", "EF-SRC-033")
 
@@ -397,3 +405,60 @@ def test_ingest_failing_after_the_write_takes_the_file_away() -> None:
         finally:
             Fsops.write_atomic = real  # type: ignore[method-assign]
         assert not dest.exists()
+
+
+# -- the index of /store, one writer at a time ----------------------------------------------------
+
+
+def test_window_index_render_never_overwrites_a_purge_that_ran_meanwhile() -> None:
+    """P6: the window's pass renders `INDEX.jsonl`, `purge --now` runs, the pass writes: the file
+    cited the purged Unit again (and its title). Both take the lock of the index, so the purge
+    waits for the pass (and is refused when it is held too long), and the run that follows leaves
+    an index that is coherent and says nothing of the Unit."""
+    from shelfhold.export.application.locks import LockBusyError
+
+    with export_env() as env:
+        series = env.new_series(TITLE)
+        unit, _ = spread(env, series)
+        other, _ = spread(env, series, "2")
+        clock = make_purge_env(env.lib).clock
+        purge = make_m1b_env(env, index_lock=index_holder_over(env.engine, clock, wait=0.2))
+        write_index(purge)
+        window = StoreIndex(
+            env.engine, env.lib.fsops, str(env.lib.store), purge.tombstones,
+            hold=index_holder_over(env.engine, clock),
+        )  # fmt: skip
+        during: list[object] = []
+        real = StoreIndex.render
+
+        def render(self: StoreIndex, **kwargs: Any) -> Any:
+            out = real(self, **kwargs)
+            if self is window:  # the purge starts while the pass holds the lock
+
+                def attempt() -> None:
+                    try:
+                        during.append(
+                            purge.purge.purge_unit(
+                                unit, principal=ADMIN, typed=unit, now=purge.clock.now()
+                            )
+                        )
+                    except Exception as error:
+                        during.append(error)
+
+                thread = threading.Thread(target=attempt)
+                thread.start()
+                thread.join()
+            return out
+
+        StoreIndex.render = render  # type: ignore[method-assign]
+        try:
+            window.rewrite()
+        finally:
+            StoreIndex.render = real  # type: ignore[method-assign]
+        assert len(during) == 1 and isinstance(during[0], LockBusyError)
+        assert index_is_coherent(purge)  # the purge went no further: its copies are still there
+        report = purge.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=purge.clock.now())
+        assert report.complete
+        assert unit not in index_units(purge) and other in index_units(purge)
+        assert index_is_coherent(purge)
+        assert unit not in (env.lib.store / "INDEX.jsonl").read_text()
