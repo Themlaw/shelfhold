@@ -185,7 +185,7 @@ def test_m1b_piloted_wake_journey(journey_m1b: Journey) -> None:
     known = j.units_known()
     j.suwayomi_do("publish_hidden")  # published upstream, unknown to Suwayomi until it refreshes
     j.suwayomi_do("sleep")  # a day later, Sablier has stopped it
-    assert j.sablier()["calls"] == []  # nobody asked for it yet
+    woken_before = len(j.sablier()["calls"])  # the discovery may already have woken it
 
     def chapter_exported() -> bool:
         return any(f.endswith("Ch.2.cbz") for f in j.library_files())
@@ -193,7 +193,8 @@ def test_m1b_piloted_wake_journey(journey_m1b: Journey) -> None:
     assert j.follow_until(chapter_exported, 300), "le chapitre n'est pas vu au réveil"
     assert j.units_known() > known
     calls = j.sablier()["calls"]
-    assert calls and calls[0]["names"] == ["fake-suwayomi"]  # woken by name, through the hook
+    assert len(calls) > woken_before  # woken again after it went to sleep
+    assert all(c["names"] == ["fake-suwayomi"] for c in calls)  # by name, through the hook
     assert j.suwayomi()["refreshed"]  # asked to refresh the series, then read
 
     # (3) the credentials stop working: three cycles answered 401, and nothing is counted
