@@ -44,6 +44,7 @@ from shelfhold.infrastructure.instance.lock import holder_is_alive
 
 LEASE_VALIDITY = timedelta(minutes=3)
 HEARTBEAT_INTERVAL = timedelta(seconds=30)
+_RENEW_ATTEMPTS: Final = 4  # swaps lost to renewals of our own before the lease counts as lost
 
 # A versioned on-disk format (ENF-OPS-013, ADR-0039): `major.minor`. A later minor is additive and
 # is rewritten with every field it carries; a later major is another build's format, whose holder
@@ -232,6 +233,11 @@ class WriteSessions:
         return holder_is_alive(Path(lease.lock_path))
 
     def renew(self, root_path: str) -> None:
+        """Renew our lease. The heartbeat thread and `check` (before a write) may renew at the same
+        time: the swap of the loser fails although the lease is still ours. It then judges again
+        what is on disk: ours and valid, it renews over it; taken by another holder, removed or run
+        out, `decide` says the lease is lost. Bounded: a lease that keeps changing ends as lost."""
+
         def decide(raw: bytes | None) -> bytes | Literal["remove"] | None:
             current = None if raw is None else Lease.parse(raw)
             if current is None or current.incompatible or not self._is_mine(current):
@@ -240,10 +246,13 @@ class WriteSessions:
                 raise LeaseLostError(f"{root_path}: the lease ran out")
             return self._own(current).dumps()
 
-        try:
-            self._fsops.update_lease(root_path, decide)
-        except LeaseRaceError as error:
-            raise LeaseLostError(f"{root_path}: the lease changed under us") from error
+        for attempt in range(_RENEW_ATTEMPTS):
+            try:
+                self._fsops.update_lease(root_path, decide)
+                return
+            except LeaseRaceError as error:
+                if attempt == _RENEW_ATTEMPTS - 1:
+                    raise LeaseLostError(f"{root_path}: the lease changed under us") from error
 
     def _follow_freeze(self, root_path: str) -> None:
         """The database decides: a writer opened before the restore froze the instance stops at
