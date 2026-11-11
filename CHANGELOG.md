@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ## [0.3.0] - 2026-11-11 — M1b
 
-Migration : oui (migrations 0013 à 0017, voir ci-dessous), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde et par `shelfhold reconcile --adopt-after-restore` avec le service complet (`docs/admin/retour-arriere.md`). Version minimale de Kavita prise en charge : **0.9.1** (ENF-COMP-001) ; les étagères famille la refusent en dessous.
+Migration : oui (migrations 0013 à 0017 pour M1b, plus 0020, 0021, 0025, 0026, 0027, 0028, 0035 et 0037 déjà sur `main`, voir ci-dessous), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde et par `shelfhold reconcile --adopt-after-restore` avec le service complet (`docs/admin/retour-arriere.md`). Version minimale de Kavita prise en charge : **0.9.1** (ENF-COMP-001) ; les étagères famille la refusent en dessous.
 
 Migrations :
 
@@ -13,6 +13,17 @@ Migrations :
 - 0015 : RP ID de chaque passkey et passkey à l'origine d'une session.
 - 0016 : `follow_request` (demandes de suivi approuvées, une par série amont).
 - 0017 : `safeguard_backlog` (ce que « Mettre à l'abri » n'a pas pu copier à son dernier passage).
+
+Migrations de M2 que l'image taggée depuis `main` applique aussi (voir « Avant-première M2 ») :
+
+- 0020 : schéma M2 (métadonnées, caches HTTP, quotas, entrées d'import, attestations de plugins, trous de série).
+- 0021 : `export_upgrade` (remplacement d'un fichier exporté au même chemin).
+- 0025 : données : rouvre les suggestions d'âge d'Édition que l'ancien `rate` avait réglées.
+- 0026 : identifiants externes en ajout seul et journal des rattachements.
+- 0027 : réglages par source et secrets scellés (`source_secret`).
+- 0028 : file des révisions en attente (champ et valeur à pousser vers Kavita).
+- 0035 : une seule demande ouverte par Unité.
+- 0037 : `export_record.spine_count` (garde des révisions suspectes).
 
 ### Ajouté
 
@@ -31,6 +42,16 @@ Migrations :
 - **Qualité** (ENF-QUAL-006, ENF-OPS-008) : suite de propriétés sur le classement, parcours de bout en bout sur l'image réelle (famille, mise à l'abri, Sablier, sauvegarde et restauration, compte de service, passkey, retour arrière vers la 0.2.0), additions de nuit contre de vrais Kavita et Suwayomi.
 - **Documentation d'administration** : `docs/admin/` complété (rôles, famille, « À classer », Suwayomi multi-comptes, purge, copie conservée, retour arrière, restauration), `docs/decisions/M1b.md`.
 - Variables : `SHELFHOLD_BACKUP_DIR`, `SHELFHOLD_BACKUP_PASSPHRASE_FILE`, `SHELFHOLD_BACKUP_RETENTION`, `SHELFHOLD_BACKUP_STALE_HOURS`, `SHELFHOLD_WAKE_URL`, `_WAKE_SUWAYOMI`, `_WAKE_KAVITA`, `_WAKE_TIMEOUT_S`, `_WAKE_SESSION_S`, `_WAKE_TOKEN`, `SHELFHOLD_MAINTENANCE_WINDOW_START`, `_END`, `SHELFHOLD_TIMEZONE`, `SHELFHOLD_RETENTION_EVENTS_DAYS`, `SHELFHOLD_RETENTION_AUDIT_DAYS` (`docs/reference/config.md`).
+
+### Avant-première M2
+
+Le code de M2 déjà fusionné sur `main` est joignable dans l'image de la 0.3.0. **Ces fonctions n'ont pas encore eu leur revue de jalon** : considérez-les comme une avant-première, sans garantie de stabilité.
+
+- Sources natives : Project Gutenberg (catalogue officiel et miroir, jamais le site) et OPDS, ajoutables par `shelfhold source add`.
+- Suivi multi-sources (liaisons classées, une demande par Unité et par cycle, repli notifié), filtres de téléchargement avant la demande, détection des trous de numérotation.
+- Dossier d'import (EPUB non fiables neutralisés, PDF protégés refusés).
+- Purge de portée `work` (`shelfhold purge --work`, avec pierres tombales d'Œuvre).
+- Métadonnées (OpenLibrary), droit d'auteur par juridiction, révisions en attente, remplacement au même chemin, politique de volumes des romans.
 
 ### Modifié
 
@@ -62,7 +83,7 @@ Migrations :
 - Sans passkey ni mot de passe récent hors profil durci, une session volée peut enregistrer une passkey (`docs/decisions/M1b.md`, point 1 des points à valider).
 - Une étagère en mode conservation créée par `POST /api/v1/shelves` n'est pas liée à une bibliothèque Kavita : la lier par la CLI.
 - Certains chemins du journal structuré (`fsops.write_atomic`, `export.op_done`) contiennent encore le titre.
-- Les migrations 0020 et suivantes (M2) sont déjà sur `main` ; elles ne font pas partie des exigences de M1b.
+- Les migrations M2 listées plus haut ne font pas partie des exigences de M1b.
 
 ## [0.2.0] - 2026-11-07 — M1a
 

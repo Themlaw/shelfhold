@@ -38,7 +38,7 @@ les autres continuent.
 
 ## Revenir de la 0.3 à la 0.2.0
 
-La 0.3 ajoute des migrations de base (0013 à 0017, voir le CHANGELOG) et **n'est pas réversible
+La 0.3 ajoute des migrations de base (0013 à 0017, puis 0020, 0021, 0025, 0026, 0027, 0028, 0035 et 0037 de M2, voir le CHANGELOG) et **n'est pas réversible
 automatiquement** : la 0.2.0 refuse de démarrer sur un schéma plus récent que le sien. Le retour passe par la
 sauvegarde que `shelfhold migrate` a faite **avant** la migration, dans `/data/backups/pre-migration`. Ce que
 vous avez fait avec la 0.3 depuis (classements, étagères famille, passkeys, comptes de service, purges) n'est
