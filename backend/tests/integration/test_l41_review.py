@@ -17,6 +17,7 @@ from shelfhold.export.application.root_bootstrap import (
     register_roots,
 )
 from shelfhold.export.domain.path_map import PathMode
+from shelfhold.export.domain.planner import GATE_CLOSED
 from shelfhold.export.targets.kavita.errors import TargetUnreachable
 from shelfhold.headless import InvalidConfigValue
 from shelfhold.infrastructure.db import create_db_engine
@@ -129,6 +130,7 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
 
     class Pipeline:
         def bind_parse(self, *_: object, **__: object) -> None: ...
+        def bind_age_gate(self, *_: object, **__: object) -> None: ...  # M2 L09
         def run(self, *_: object, **__: object) -> ApplyReport:
             return ApplyReport(None, ())
 
@@ -142,6 +144,13 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
     async def fetch(*_: object, **__: object) -> object:
         return object()
 
+    class Gate:  # M2 L09: the age gate of the EPUB series asks Kavita nothing here
+        def __init__(self, *_: object) -> None: ...
+
+        async def open(self, *_: object) -> object:
+            return GATE_CLOSED
+
+    monkeypatch.setattr(rj, "SeriesAgeGate", Gate)
     monkeypatch.setattr(rj, "SCAN_QUIET_S", 0)
     monkeypatch.setattr(rj.BulkParse, "fetch", staticmethod(fetch))
 
