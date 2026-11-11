@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import secrets
 from collections.abc import Awaitable
 
 import httpx2
@@ -180,6 +181,35 @@ def test_authenticated_requests_never_reach_the_shared_cache() -> None:
     _run(f.get(PAGE, headers={"Cookie": "s=1"}))
     assert _run(f.get(PAGE, headers={"Cookie": "s=2"})).body == b"anon"
     assert n == 6
+
+
+@pytest.mark.req("ENF-LEG-007", "ENF-SEC-001")
+@pytest.mark.parametrize("where", ["params", "url", "path", "unregistered-name"])
+def test_a_credential_in_the_url_is_never_cached_or_keyed(where: str) -> None:
+    from shelfhold.infrastructure.logging import register_secret_value
+
+    token = secrets.token_urlsafe(16)
+    register_secret_value(token)
+    rec = Recorder(
+        lambda r: httpx2.Response(200, content=b"x", headers={"cache-control": "max-age=600"})
+    )
+    cache = HttpCache(clock=Clock())
+    f = _fetcher(rec, cache=cache)
+
+    def call() -> None:
+        if where == "params":
+            _run(f.get(PAGE, params={"k": token}))
+        elif where == "url":
+            _run(f.get(f"{PAGE}?k={token}"))
+        elif where == "path":
+            _run(f.get(f"https://{HOST}/{token}/page"))
+        else:  # a credential nobody registered: the parameter name gives it away
+            _run(f.get(PAGE, params={"api_key": secrets.token_urlsafe(16)}))
+
+    call()
+    call()
+    assert len(rec.requests) == 2
+    assert not cache._entries  # nothing filed, so no key holds the secret
 
 
 @pytest.mark.req("ENF-LEG-007", "ENF-SEC-001")

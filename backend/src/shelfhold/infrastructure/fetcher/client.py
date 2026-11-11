@@ -45,7 +45,13 @@ from shelfhold.infrastructure.fetcher.guard import (
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.fetcher.resolver import Resolver
 from shelfhold.infrastructure.fetcher.robots import RobotsPolicy
-from shelfhold.infrastructure.logging import elapsed_ms, known_secret_values, route_of
+from shelfhold.infrastructure.logging import (
+    elapsed_ms,
+    known_secret_index,
+    known_secret_values,
+    route_of,
+)
+from shelfhold.infrastructure.secret_text import contains_secret, sensitive_name
 from shelfhold.sdk.fetcher import Response
 
 # ENF-LEG-007: who is calling, and where to reach its maintainers.
@@ -317,7 +323,7 @@ class GuardedFetcher:
         credentials. The source is the plugin id: a cache is never read across sources."""
         if self._cache is None or method != "GET" or tally is not None or hop != 0:
             return None
-        if not cacheable_request(headers):
+        if not cacheable_request(headers) or _carries_credential(url):
             return None
         return (self._domains.plugin_id if self._domains is not None else "-", str(url))
 
@@ -534,3 +540,12 @@ class IntegrationFetcher(GuardedFetcher):
             user_agent=user_agent,
         )  # fmt: skip
         self._lan = lan_targets
+
+
+def _carries_credential(url: httpx2.URL) -> bool:
+    """True when the URL holds a registered secret (the `{secret}` an `AuthInjectingFetcher` put
+    in the path or query) or a parameter named like a credential: such an answer is never filed,
+    and the URL, which would be its key, is never kept."""
+    if contains_secret(str(url), known_secret_index()):
+        return True
+    return any(sensitive_name(name) for name in url.params)
