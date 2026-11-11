@@ -19,10 +19,10 @@ from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.catalog.application.dto import BindingRef, EditionSpec
+from shelfhold.catalog.application.new_edition_gate import file_new_edition
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.rating import RatingService
 from shelfhold.catalog.application.service import CatalogService
-from shelfhold.catalog.domain.age import Admission
 from shelfhold.identity.public import AuditEntry, Credential, Principal, audit_insert
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
@@ -133,21 +133,13 @@ class Relinker:
     def _file_new_edition(
         self, connection: Connection, edition_id: str, base: "_Base | None", work_rated: bool
     ) -> bool:
-        """A new Edition goes where its siblings are only if the shelf would admit it; else it
-        stays unfiled and is reported for "À classer". `rated_at` stays empty: only an admin
-        rating sets it (EF-BIB-055). Returns whether it waits for a rating."""
+        """A new Edition goes where its siblings are only if the shelf would admit it (the gate of
+        the new Edition); else it stays unfiled and is reported for "À classer". `rated_at` stays
+        empty: only an admin rating sets it (EF-BIB-055). Returns whether it waits for a rating."""
         shelf_id = base.shelf_id if base is not None else None
-        waiting = work_rated  # a Work already rated, and an Edition nobody has rated
-        if shelf_id is not None:
-            verdict = self._rating.admission_of(connection, edition_id, shelf_id=shelf_id)
-            if verdict is Admission.ALLOWED:
-                connection.execute(
-                    sa.update(catalog.edition)
-                    .where(catalog.edition.c.id == edition_id)
-                    .values(shelf_id=shelf_id)
-                )
-            else:
-                waiting = True
+        filing = file_new_edition(connection, edition_id, shelf_id, rating=self._rating)
+        # a Work already rated, and an Edition nobody has rated, or one the shelf refused
+        waiting = work_rated or filing.waiting
         return waiting
 
 

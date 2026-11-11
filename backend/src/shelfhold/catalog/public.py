@@ -27,6 +27,7 @@ from shelfhold.catalog.application.dto import (
     UnitView,
 )
 from shelfhold.catalog.application.editions import translation_type_for
+from shelfhold.catalog.application.new_edition_gate import Filing, file_new_edition
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.rating import (
     EditionSuggestion,
@@ -196,6 +197,7 @@ __all__ = [
     "EditionRef",
     "EditionSpec",
     "EditionSuggestion",
+    "Filing",
     "IncomingUnit",
     "IngestOutcome",
     "IngestResult",
@@ -230,6 +232,7 @@ __all__ = [
     "default_registry",
     "edition_key_lang",
     "effective_age",
+    "file_new_edition",
     "ingest_isolated",
     "join_people",
     "numbered_mark",

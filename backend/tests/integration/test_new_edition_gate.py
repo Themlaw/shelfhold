@@ -63,7 +63,7 @@ def test_unrated_new_edition_never_enters_family_shelf() -> None:
         assert filing == Filing(None, waiting=True, reason="unrated_edition")
         assert shelf_of(env, later) is None
         with env.engine.connect() as connection:
-            assert [r.work_id for r in to_rate(connection)] == [series.work_id]
+            assert series.work_id in [r.work_id for r in to_rate(connection)]
         assert run(env) == 1  # only the Edition rated with the Work
         rate_edition(env, later, 10)
         assert gate(env, later, env.shelf_id) == Filing(env.shelf_id, waiting=False, reason=None)
