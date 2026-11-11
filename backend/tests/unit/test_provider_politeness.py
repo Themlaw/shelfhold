@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 from collections.abc import Awaitable
+from pathlib import Path
 
 import pytest
 
@@ -320,3 +321,72 @@ def test_a_provider_reaches_only_its_declared_domains() -> None:
     with pytest.raises(DomainNotAllowed):
         run(f.get("https://elsewhere.example.net/x"))
     assert fake.seen == []
+
+
+# -- the balance outlives the process, the host-side download ----------------------------------
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_the_balance_of_a_bucket_survives_the_process(tmp_path: Path) -> None:
+    """A command run by itself does not start with a full bucket: the debt is in the database."""
+    from shelfhold.infrastructure.db import create_db_engine
+    from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
+    from shelfhold.infrastructure.schema import metadata
+
+    engine = create_db_engine(tmp_path / "quota.db")
+    metadata.create_all(engine)
+    store = SqlBucketStore(engine)
+    assert store.load("openlibrary") is None
+    time = FakeTime()
+    first = TokenBucket(1.0, 1, clock=time.now, sleep=time.sleep, wall=time.now, store=store,
+                        name="openlibrary")  # fmt: skip
+    run(first.acquire())  # the token of the burst
+    run(first.acquire())  # a second at once: it waits a second, and the database knows
+    assert time.slept == [pytest.approx(1.0)]
+    # a new process, 1.25 s after the first call: the debt ended at 1.0, it has 0.25 token
+    later = FakeTime()
+    later.t = time.t + 0.25
+    second = TokenBucket(1.0, 1, clock=later.now, sleep=later.sleep, wall=later.now, store=store,
+                         name="openlibrary")  # fmt: skip
+    run(second.acquire())
+    assert later.slept == [pytest.approx(0.75, abs=0.01)]  # the 1 s debt was paid by 0.25 s
+    other = TokenBucket(1.0, 1, clock=later.now, sleep=later.sleep, wall=later.now, store=store,
+                        name="another")  # fmt: skip
+    run(other.acquire())
+    assert len(later.slept) == 1  # a provider's debt is its own
+    engine.dispose()
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_a_bucket_needs_a_positive_rate() -> None:
+    with pytest.raises(ValueError, match="positive rate"):
+        TokenBucket(0.0)
+    assert ProviderQuota(requests_per_second=1.0).effective(True).requests_per_second == 1.0
+    tiered = ProviderQuota(requests_per_second=1.0, requests_per_second_with_contact=3.0)
+    assert tiered.effective(False).requests_per_second == 1.0
+    assert tiered.effective(True).requests_per_second == 3.0
+
+
+@pytest.mark.req("ENF-SEC-003")
+def test_the_host_downloads_a_cover_bounded_and_only_by_get() -> None:
+    from shelfhold.infrastructure.fetcher import FetchTooLarge
+    from shelfhold.sdk.refs import ImageRequest
+
+    fake = FakeOpenLibrary()
+    f = provider_fetcher(fake, contact=CONTACT)
+    cover = ImageRequest(url=f"https://covers.openlibrary.org/b/isbn/{ISBN}-L.jpg?default=false")
+    got = run(f.fetch_image(cover, max_bytes=1_000_000))
+    assert got is not None and got[:4] == b"\x89PNG"
+    assert {s.user_agent for s in fake.seen} == {identifiable_user_agent(CONTACT)}
+    assert run(f.fetch_image(cover.model_copy(update={"method": "POST", "body": b"x"}),
+                             max_bytes=1_000_000)) is None  # never a POST  # fmt: skip
+    missing = cover.model_copy(update={"url": "https://covers.openlibrary.org/b/isbn/1-L.jpg"})
+    assert run(f.fetch_image(missing, max_bytes=1_000_000)) is None  # a 404 is no cover
+    with pytest.raises(FetchTooLarge):
+        run(f.fetch_image(cover, max_bytes=10))  # above the cap: refused, not truncated
+    done = run(f.download(cover))
+    assert done.size == len(got) and len(done.sha256) == 64
+    assert run(f.download(missing)).size == 0
+    assert f.cookies().cookies == {}
+    assert run(f.post(f"https://{API_HOST}/api/books", json={"a": 1})).status == 200
+    run(f.aclose())
