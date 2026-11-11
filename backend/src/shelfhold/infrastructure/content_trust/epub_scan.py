@@ -92,6 +92,7 @@ _PI: Final = re.compile(rb"<\?(?!xml[\s?])", re.I)
 _BAD_ELEMENTS: Final = frozenset({"html", "svg", "script", "body", "iframe", "object", "embed"})
 _PAGE_NAMESPACES: Final = ("http://www.w3.org/1999/xhtml", "http://www.w3.org/2000/svg")
 _URL_ATTRS: Final = frozenset({"href", "src", "refines", "base"})
+_LINK_ATTRS: Final = frozenset({"href", "src"})
 _MAGIC: Final = {
     ".png": (b"\x89PNG\r\n\x1a\n",), ".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",),
     ".gif": (b"GIF87a", b"GIF89a"), ".woff": (b"wOFF",), ".woff2": (b"wOF2",),
@@ -174,6 +175,9 @@ def _read_xml(archive: SafeArchive, name: str, reason: str) -> Element:
             raise NeutralizationError("page_in_xml", name)
         if any(_local(k).lower().startswith("on") for k in element.attrib):
             raise NeutralizationError("page_in_xml", name)  # an event handler is not metadata
+        for key, value in element.attrib.items():  # `href`, `src`, `xlink:href`: as in the OPF
+            if _local(key).lower() in _LINK_ATTRS:
+                _checked_reference(value, posixpath.dirname(name), name)
         if _local(tag).lower() in _BAD_ELEMENTS:
             raise NeutralizationError("page_in_xml", name)
     return root

@@ -305,6 +305,8 @@ def _archives() -> list[Trap]:
         Trap("meta_inf_undeclared_page", "disguise", page(ok, extra=[Member("META-INF/evil.xhtml", xhtml("<p>x</p><script>alert(1)</script>"))]), "neutralized", "META-INF/evil.xhtml"),
         Trap("meta_inf_unknown_file", "disguise", page(ok, extra=[Member("META-INF/evil.dat", b"x")]), "refused", "unexpected_entry"),
         Trap("meta_inf_encryption", "disguise", page(ok, extra=[Member("META-INF/encryption.xml", b"<encryption/>")]), "refused", "encrypted"),
+        Trap("xml_math_href_js", "disguise", page(ok, extra=[Member("OEBPS/extra.xml", b'<r><math xmlns="http://www.w3.org/1998/Math/MathML" href="javascript:alert(1)"><mi>x</mi></math></r>')]), "refused", "OEBPS/extra.xml", "remote_reference"),
+        Trap("xml_xlink_href_js", "disguise", page(ok, extra=[Member("OEBPS/extra.xml", b'<r xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:type="simple" xlink:href="javascript:alert(1)">x</a></r>')]), "refused", "OEBPS/extra.xml", "remote_reference"),
         Trap("zip_opf_missing", "archive", zip_bytes([Member("mimetype", b"application/epub+zip", False), Member("OEBPS/ch1.xhtml", ok)]), "refused", "container"),
     ]  # fmt: skip
 
