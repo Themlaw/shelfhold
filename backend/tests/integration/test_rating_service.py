@@ -176,18 +176,52 @@ def states(h: Harness) -> list[str]:
 
 
 @pytest.mark.req("EF-BIB-055")
-def test_rating_is_the_way_out_of_a_suggestion_block(h: Harness) -> None:
+def test_rating_a_work_does_not_settle_a_higher_edition_suggestion(h: Harness) -> None:
+    """Fail closed: the admin rating the Work did not see the Edition's X suggestion (it is not
+    in the list she rates from): it stays open and keeps the Edition out of the shelf."""
     edition = h.edition()
     family = shelf(h, 10)
     suggest(h, edition.id, X, "sub_source")
     result = SERVICE.rate(h.connection, edition.work_id, AgeRating(10), principal=admin(), now=NOW)
+    assert (
+        SERVICE.admission_of(h.connection, edition.id, shelf_id=family)
+        is Admission.SUGGESTION_ABOVE
+    )
+    assert states(h) == ["open"]
+    assert [(s.edition_id, s.age) for s in result.open_suggestions] == [(edition.id, X)]
+    assert [w.reason for w in result.withdrawals] == []  # nothing is filed there yet
+    # the way out is an explicit rating of the Edition, which rules on its own suggestions
+    SERVICE.rate_edition(h.connection, edition.id, AgeRating(10), principal=admin(), now=NOW)
     assert SERVICE.admission_of(h.connection, edition.id, shelf_id=family) is Admission.ALLOWED
-    assert states(h) == ["rejected"]  # above the rating: the admin ruled
-    assert result.effective == AgeRating(10)
+    assert states(h) == ["rejected"]
     settle = h.connection.execute(
         sa.select(identity.audit.c.target).where(identity.audit.c.action == "age_suggestion.settle")
     ).scalar_one()
     assert settle.endswith("accepted:0;rejected:1")
+
+
+@pytest.mark.req("EF-BIB-055")
+def test_rating_a_work_settles_the_edition_suggestions_up_to_its_age(h: Harness) -> None:
+    edition = h.edition()
+    suggest(h, edition.id, AgeRating(10), "comicinfo")
+    SERVICE.rate(h.connection, edition.work_id, AgeRating(10), principal=admin(), now=NOW)
+    assert states(h) == ["accepted"]
+
+
+@pytest.mark.req("EF-BIB-055")
+def test_a_higher_edition_suggestion_is_listed_to_rate_with_its_edition(h: Harness) -> None:
+    from shelfhold.export.application.to_rate import to_rate
+
+    edition = h.edition()
+    shelf(h, 10)
+    SERVICE.rate(h.connection, edition.work_id, AgeRating(10), principal=admin(), now=NOW)
+    assert to_rate(h.connection) == []
+    suggest(h, edition.id, X, "sub_source")  # arrives after the rating (or was left open by it)
+    listed = to_rate(h.connection)
+    assert [i.work_id for i in listed] == [edition.work_id]
+    assert [(s.edition_id, s.age, s.provenance) for s in listed[0].suggestions] == [
+        (edition.id, X, "sub_source")
+    ]
 
 
 @pytest.mark.req("EF-BIB-055")
@@ -202,6 +236,12 @@ def test_suggestion_after_the_rating_blocks_again_until_rated_again(h: Harness) 
         is Admission.SUGGESTION_ABOVE
     )
     SERVICE.rate(h.connection, edition.work_id, AgeRating(10), principal=admin(), now=NOW)
+    assert (
+        SERVICE.admission_of(h.connection, edition.id, shelf_id=family)
+        is Admission.SUGGESTION_ABOVE
+    )  # rating the Work does not rule on a higher suggestion of an Edition
+    assert states(h) == ["accepted", "open"]
+    SERVICE.rate_edition(h.connection, edition.id, AgeRating(10), principal=admin(), now=NOW)
     assert SERVICE.admission_of(h.connection, edition.id, shelf_id=family) is Admission.ALLOWED
     assert states(h) == ["accepted", "rejected"]
 
