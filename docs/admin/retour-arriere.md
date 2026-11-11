@@ -66,3 +66,5 @@ jugée : sa sentinelle n'est pas relue, et le démarrage suivant retrouve la rac
 
 Les sessions et clés d'API ouvertes depuis la sauvegarde ne sont pas rétablies ; reconnectez-vous
 ([restauration.md](restauration.md), section « Retour à une image antérieure »).
+
+Après un retour à la 0.2.0, une pierre tombale de portée `work` ne bloque plus qu'un identifiant **strictement identique** : le normaliseur `work_id@1` n'existe pas dans la 0.2.0, qui ne reconnaît donc pas les formes voisines d'un même identifiant.
