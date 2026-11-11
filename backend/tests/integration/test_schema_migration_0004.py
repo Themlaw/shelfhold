@@ -44,33 +44,37 @@ OTHER = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
 @pytest.mark.req("ENF-OPS-002")
 def test_single_alembic_head() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0028"]
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     chain = [rev.revision for rev in script.walk_revisions()]
-    assert chain == [
-        "0028",
-        "0027",
-        "0026",
-        "0021",
-        "0025",
-        "0020",
-        "0017",
-        "0016",
-        "0015",
-        "0014",
-        "0013",
-        "0012",
-        "0011",
-        "0010",
-        "0009",
-        "0008",
-        "0007",
-        "0006",
-        "0005",
-        "0004",
-        "0003",
-        "0002",
-        "0001",
-    ]  # linear, newest first
+    assert chain[-len(KNOWN_CHAIN) :] == KNOWN_CHAIN  # linear; later migrations only add above
+    assert chain[0] == script.get_heads()[0]
+
+
+KNOWN_CHAIN = [
+    "0028",
+    "0027",
+    "0026",
+    "0021",
+    "0025",
+    "0020",
+    "0017",
+    "0016",
+    "0015",
+    "0014",
+    "0013",
+    "0012",
+    "0011",
+    "0010",
+    "0009",
+    "0008",
+    "0007",
+    "0006",
+    "0005",
+    "0004",
+    "0003",
+    "0002",
+    "0001",
+]  # newest first, up to 0028 (M2 L17)
 
 
 @pytest.mark.req("ENF-OPS-002", "EF-BIB-045", "EF-EXP-058")
