@@ -53,6 +53,7 @@ __all__ = [
     "MaintenanceGate",
     "SqliteMaintenance",
     "VacuumReport",
+    "compact_database",
     "register_sqlite_maintenance",
 ]
 
@@ -156,6 +157,23 @@ class MaintenanceGate:
                     self._cond.notify_all()
                 if descriptor is not None and descriptor >= 0:
                     os.close(descriptor)
+
+
+def compact_database(database: Path, gate: MaintenanceGate) -> None:
+    """`VACUUM` of one file now, under the exclusive gate, then the log is cut: the free pages of
+    rows deleted before `secure_delete` was on (a title of an earlier purge) are rewritten away.
+    Cost: the whole file is rewritten (about its size in reads and writes, and in free room), and
+    writers wait for it. A gate held (a backup, the nightly VACUUM) is `MaintenanceBusyError`."""
+    with gate.exclusive() as ours:
+        if not ours:
+            raise MaintenanceBusyError("the database is in use by a backup or a VACUUM")
+        connection = sqlite3.connect(database, timeout=VACUUM_WAIT_S, isolation_level=None)
+        try:
+            connection.execute("VACUUM")
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            connection.close()
+    log.info("sqlite.compacted", database=database.name)
 
 
 class SpaceCheck(Protocol):

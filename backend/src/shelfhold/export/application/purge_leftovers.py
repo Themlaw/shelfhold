@@ -23,6 +23,7 @@ opaque digest), and `apply` takes them out of the library (`unfollow`, confirmed
 """
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Final
@@ -99,9 +100,11 @@ class PurgeLeftovers:
         *,
         clock: Clock,
         fresh_auth_s: int,
-        tombstones: TombstoneGate | None = None,
+        tombstones: TombstoneGate,
+        compact: Callable[[], None],
     ) -> None:
         self._tombstones = tombstones
+        self._compact = compact
         self._engine = engine
         self._upstream = upstream
         self._clock = clock
@@ -156,6 +159,9 @@ class PurgeLeftovers:
         current = self.plan()
         if current.version != if_match:
             raise StalePlanError("the purges changed since the plan was read")
+        # first, and alone refusable: the free pages of the purges of the version before keep their
+        # titles (`secure_delete` does not act on the past); a busy database leaves all undone
+        self._compact()
         wanted = {i.request_id for i in current.downloads}
         with self._engine.connect() as connection:
             tickets = [t for t in leftover_tickets(connection) if t.request_id in wanted]

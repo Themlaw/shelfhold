@@ -381,8 +381,9 @@ def test_m1b_migration_offers_release_of_m1a_purged_upstream_copies(tmp_path: Pa
 
         migration = make_m1b_env(env, service)
         leftovers = PurgeLeftovers(
-            env.engine, connected(migration, service), clock=migration.clock, fresh_auth_s=900
-        )
+            env.engine, connected(migration, service), clock=migration.clock, fresh_auth_s=900,
+            tombstones=migration.tombstones, compact=lambda: None,
+        )  # fmt: skip
         plan = leftovers.plan()  # read only: the service is asked what it holds, never to erase
         assert [i.request_id for i in plan.downloads] == [request]
         assert [i.request_id for i in plan.dead_tickets] == [gone]

@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
@@ -96,6 +97,7 @@ from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, identity
+from shelfhold.jobs.maintenance import MaintenanceBusyError, MaintenanceGate, compact_database
 from shelfhold.library.public import ConfirmationRequiredError
 from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
@@ -218,6 +220,7 @@ _CODED: tuple[tuple[type[Exception], str], ...] = (
     (PurgeCollateralError, "purge.collateral"),
     (PurgeWalBusyError, "purge.wal_busy"),
     (LockBusyError, "purge.busy"),
+    (MaintenanceBusyError, "purge.busy"),
     (ConfirmationRequiredError, "unit.confirmation_required"),
     (PurgeRefusedError, "forbidden"),
     (SwitchoverIncompleteError, "pairing.switchover_unconfirmed"),
@@ -903,6 +906,10 @@ class LibraryOps:
                 None if upstream is None else PurgeLeftovers(
                     self._comp.engine, upstream, clock=self._comp.clock,
                     fresh_auth_s=settings.fresh_auth_s, tombstones=w.tombstones,
+                    compact=lambda: compact_database(
+                        Path(str(self._comp.engine.url.database)),
+                        MaintenanceGate(settings.data_dir / ".maintenance.lock"),
+                    ),
                 )
             )  # fmt: skip
 

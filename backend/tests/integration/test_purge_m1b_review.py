@@ -500,7 +500,7 @@ def test_migration_offers_and_unfollows_series_buried_by_m1a(tmp_path: Path) -> 
         ).complete
         leftovers = PurgeLeftovers(
             env.engine, built.purge._upstream, clock=built.clock, fresh_auth_s=900,
-            tombstones=m1a.tombstones,
+            tombstones=m1a.tombstones, compact=lambda: None,
         )  # fmt: skip
         plan = leftovers.plan()
         assert len(plan.series) == 1  # only the buried one: the other series is not ours
@@ -642,3 +642,38 @@ def test_purge_waits_for_a_held_work_then_refuses_with_a_catalog_code(
             assert getattr(refusal_of(busy.value), "code", None) == "purge.busy"
         report = purge.purge.purge_unit(unit, principal=ADMIN, typed=unit, now=purge.clock.now())
         assert report.complete
+
+
+def test_leftovers_apply_compacts_the_titles_an_m1a_purge_left_in_free_pages(
+    tmp_path: Path,
+) -> None:
+    """P11 (M1a): rows deleted before `secure_delete` existed keep their title in a free page.
+    Applying the leftovers VACUUMs under the exclusive gate (a held gate: nothing is done), and
+    the file no longer holds the title."""
+    from shelfhold.export.application.purge_leftovers import PurgeLeftovers
+    from shelfhold.jobs.maintenance import MaintenanceBusyError, MaintenanceGate, compact_database
+
+    with export_env() as env:
+        database = Path(str(env.engine.url.database))
+        raw = sqlite3.connect(database)
+        raw.execute("PRAGMA secure_delete=OFF")  # the M1a release
+        raw.execute("CREATE TABLE m1a_probe(x TEXT)")
+        raw.executemany("INSERT INTO m1a_probe VALUES (?)", [(TITLE + "p" * 3000,)] * 20)
+        raw.commit()
+        raw.execute("DELETE FROM m1a_probe")
+        raw.commit()
+        raw.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        raw.close()
+        assert TITLE.encode() in _database_bytes(env.engine)  # the free pages keep it
+        gate = MaintenanceGate(tmp_path / "gate.lock")
+        built = make_m1b_env(env, FakeService(tmp_path))
+        leftovers = PurgeLeftovers(
+            env.engine, built.purge._upstream, clock=built.clock, fresh_auth_s=900,
+            tombstones=built.tombstones, compact=lambda: compact_database(database, gate),
+        )  # fmt: skip
+        plan = leftovers.plan()
+        with gate.hold("backup"), pytest.raises(MaintenanceBusyError):
+            leftovers.apply(if_match=plan.version, principal=ADMIN, now=built.clock.now())
+        assert TITLE.encode() in _database_bytes(env.engine)  # refused: nothing was done
+        leftovers.apply(if_match=plan.version, principal=ADMIN, now=built.clock.now())
+        assert TITLE.encode() not in _database_bytes(env.engine)
