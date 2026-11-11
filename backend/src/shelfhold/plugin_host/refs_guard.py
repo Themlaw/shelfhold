@@ -47,6 +47,7 @@ class RefsGuard:
         self._known = known
         self._secret = secret  # the key `{secret}` stands for, to give it back to the plugin
         self._declared = template  # read at each call: the adapter may declare it after start
+        self.quarantined: list[str] = []  # the closed reasons of the items left out of a list
 
     @property
     def _template(self) -> str | None:
@@ -114,11 +115,23 @@ class RefsGuard:
             out = {k: self._walk(v, field, kind) for k, v in value.items()}
             return out if any(out[k] is not value[k] for k in out) else value
         if isinstance(value, list | tuple):
-            items = [self._walk(v, field, kind) for v in value]
-            if all(a is b for a, b in zip(items, value, strict=True)):
+            items: list[Any] = []
+            for v in value:
+                try:
+                    items.append(self._walk(v, field, kind))
+                except RefHasSecret as error:
+                    if not isinstance(v, BaseModel):
+                        raise
+                    self.quarantined.append(str(error))  # one Unit out, the others go on
+            if len(items) == len(value) and all(a is b for a, b in zip(items, value, strict=True)):
                 return value
             return type(value)(items) if isinstance(value, tuple) else items
         return value
+
+    def take_quarantined(self) -> list[str]:
+        """The reasons of the items left out since the last call (the field and a closed reason)."""
+        taken, self.quarantined = self.quarantined, []
+        return taken
 
     @staticmethod
     def _kind(name: str, inherited: str | None) -> str | None:
@@ -209,6 +222,10 @@ class ScreenedService:
 
             return guarded_sync
         return attr
+
+    def take_quarantined(self) -> list[str]:
+        guard: RefsGuard = self.__dict__["_guard"]
+        return guard.take_quarantined()
 
     def __setattr__(self, name: str, value: Any) -> None:
         setattr(self.__dict__["_inner"], name, value)

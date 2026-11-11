@@ -32,10 +32,12 @@ class ServiceVersionMismatch(SourceChanged):
     code = "source.version_unsupported"
 
 
-class RefHasSecret(SourceChanged):
-    """A reference handed back by a source holds a secret or a `user:password@` part (EF-SRC-035):
-    a contract error, the plugin is not conforming. A schema problem for the cycle: the service
-    pauses, nothing is stored. The message names the field and a closed reason, never the value."""
+class RefHasSecret(ContentRemoved):
+    """A reference handed back by a source holds a secret or a `user:password@` part (EF-SRC-035).
+    Nothing is stored. It is the Unit's problem, never the service's: a URL that merely looks like
+    a credential must not stop every other series (review of L04), so the cycle counts it as a
+    content error of that series and quarantines the Unit. The message names the field and a
+    closed reason, never the value."""
 
     code = "source.ref_has_secret"
 

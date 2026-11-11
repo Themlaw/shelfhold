@@ -206,6 +206,21 @@ class FailureLedger:
         self._unset(connection, "$.outage")
         self._unset(connection, "$.unavailable")
 
+    # -- units left out because their reference held a secret (EF-SRC-035) -------------------------
+    def quarantine(self, connection: Connection, binding_id: str, reason: str, count: int) -> bool:
+        """Remember why a series has Units left out; True the first time of an episode (the one
+        `source.ref_has_secret` is due). The state shows in `source_config.health`."""
+        value = {"reason": reason, "units": count}
+        fresh = self._set(
+            connection, f"$.quarantine.{json.dumps(binding_id)}", value, if_unset=True
+        )
+        if not fresh:
+            self._set(connection, f"$.quarantine.{json.dumps(binding_id)}", value)
+        return fresh
+
+    def release(self, connection: Connection, binding_id: str) -> None:
+        self._unset(connection, f"$.quarantine.{json.dumps(binding_id)}")
+
     # -- absence from the service's library (EF-SRC-027) ---------------------------------------
     def bump_missing(self, connection: Connection, binding_id: str) -> int:
         """One more consecutive cycle in which the binding's series is absent; returns the count."""

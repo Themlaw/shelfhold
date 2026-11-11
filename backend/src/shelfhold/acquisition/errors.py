@@ -13,7 +13,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source.temporarily_unavailable", 503, "admin"),
     ErrorCode("source.version_unsupported", 503, "admin", event=True),
     # EF-SRC-035: a reference handed back by a source holds a secret or a userinfo part
-    ErrorCode("source.ref_has_secret", 502, "admin"),
+    ErrorCode("source.ref_has_secret", 502, "admin", event=True),
     ErrorCode("source.not_loaded", 503, "admin", event=True),
     ErrorCode("source.downloads_dropped", 503, "admin", event=True),
     ErrorCode("source.auth_mode_unsupported", 503, "admin", event=True),

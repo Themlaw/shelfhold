@@ -46,3 +46,43 @@ def test_a_rewritten_reference_still_downloads_the_file() -> None:
         assert report.fetched == 1, report
         assert bench.library_files()  # the archive was received and filed
         assert bench.rows("SELECT * FROM source_failure WHERE failure_class = 'content'") == []
+
+
+UNREG = synthetic_text("review-unreg")[:16]
+
+
+@pytest.mark.req("EF-SRC-035")
+@pytest.mark.parametrize(
+    "url", ["/manga/secret/chapter-{n}", "/title/{n}?session=2024", "/r?sid=42&c={n}"]
+)
+def test_a_url_that_only_looks_like_a_credential_pauses_nothing(url: str) -> None:
+    """Review: `/manga/secret/...` or `?session=2024` paused the whole service."""
+    with follow_bench() as bench:
+        for number, chapter in enumerate(bench.alpha()["chapters"], start=1):
+            chapter["url"] = url.format(n=number)
+        report = bench.run()
+        assert report.paused is None
+
+
+@pytest.mark.req("EF-SRC-035")
+def test_a_unit_with_a_secret_is_quarantined_and_the_service_goes_on() -> None:
+    """One Unit's reference holds an unregistered token: it is left out, visibly (health and one
+    `source.ref_has_secret`), the others are followed, the service is not paused, and the token is
+    nowhere in the database."""
+    with follow_bench() as bench:
+        chapters = bench.alpha()["chapters"]
+        chapters[0]["url"] = f"/series-alpha/ch-001?accessToken={UNREG}"
+        report = bench.run()
+        assert report.paused is None
+        health = bench.rows("SELECT health FROM source_config")[0]["health"]
+        assert "quarantine" in str(health) and UNREG not in str(health)
+        events = bench.rows("SELECT type FROM event WHERE type = 'source.ref_has_secret'")
+        assert len(events) == 1
+        bench.run()
+        assert len(bench.rows("SELECT type FROM event WHERE type = 'source.ref_has_secret'")) == 1
+        raw = bench.lib.engine.raw_connection()
+        try:
+            dump = "\n".join(raw.driver_connection.iterdump())  # type: ignore[attr-defined]
+        finally:
+            raw.close()
+        assert UNREG not in dump

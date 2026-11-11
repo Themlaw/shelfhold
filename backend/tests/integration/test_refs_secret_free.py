@@ -185,14 +185,15 @@ def test_api_key_rotation_keeps_remote_ids() -> None:
 
 
 @pytest.mark.req("EF-SRC-035")
-def test_a_reference_with_the_key_and_no_template_pauses_the_service(captured: Any) -> None:
-    """No template declared: the reference is refused as a contract error, the service pauses on
-    a schema problem (never a content failure), and nothing carrying the key is stored."""
+def test_a_reference_with_the_key_and_no_template_is_quarantined(captured: Any) -> None:
+    """No template declared: the references are refused as a contract error. The Units are
+    quarantined (never the whole service paused, review of L04) and nothing with the key is stored."""
     register_secret_value(KEY_A)
     with follow_bench() as bench:
         _carry_key(bench, KEY_A)
         report = bench.run()
-        assert report.paused is not None and report.discovered == 0
+        assert report.paused is None and report.discovered == 0
+        assert "quarantine" in str(bench.rows("SELECT health FROM source_config"))
         assert _remote_ids(bench) == []
         assert _leaks(_dump(bench.lib.engine), KEY_A) == []
         assert _leaks(captured(), KEY_A) == []  # the refusal does not quote the reference
