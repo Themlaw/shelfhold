@@ -217,3 +217,27 @@ def test_bad_base_url_override_fails_closed(value: Any) -> None:
 def test_invalid_rule_in_an_allowlist_fails_closed() -> None:
     with pytest.raises(DomainPatternError):
         DomainAllowlist("plugin-i", [DomainRule(pattern="*.com", purpose="api")])
+
+
+@pytest.mark.parametrize(
+    "name", ["a" * 63 + "." + "b" * 63 + "." + "c" * 63 + "." + "d" * 63, "\u0300a.example"]
+)
+def test_canonical_host_refuses_long_and_invalid_idn_names(name: str) -> None:
+    with pytest.raises(DomainPatternError):
+        canonical_host(name)
+    assert not compile_domain_pattern("example.org").matches(name)
+
+
+def test_non_string_pattern_is_refused() -> None:
+    with pytest.raises(DomainPatternError):
+        compile_domain_pattern(42)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "value", ["https://books.example.net:99999/", "https://bad_host.example/", "https://[::1/"]
+)
+def test_override_with_a_bad_port_or_host_fails_closed(value: str) -> None:
+    with structlog.testing.capture_logs() as logs:
+        allowlist = DomainAllowlist("plugin-port", _override_rule(), {"server_url": value})
+    assert not allowlist.allows("books.example.net") and not allowlist.allows("api.example.org")
+    assert [e["event"] for e in logs] == ["plugin.base_url_override_refused"]

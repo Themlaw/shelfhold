@@ -299,3 +299,76 @@ def test_admin_doc_says_the_detector_is_not_a_sandbox() -> None:
     text = (ROOT / "docs" / "admin" / "plugins-tiers.md").read_text(encoding="utf-8")
     assert "sys.addaudithook" in text
     assert "détecteur, pas une isolation" in text
+
+
+@pytest.mark.parametrize("mode", ["report", "raise"])
+def test_real_socket_process_ctypes_and_file_in_both_modes(
+    mode: io_guard.Mode, listener: socket.socket, tmp_path: Path
+) -> None:
+    """Real calls: in `raise` (the kit) each one is refused before it happens; in `report` (the
+    host) each one happens and is reported with the plugin id."""
+    port = listener.getsockname()[1]
+    target = tmp_path / "file.txt"
+    marker = tmp_path / "ran"
+    refused = pytest.raises(ForbiddenIOError) if mode == "raise" else contextlib.nullcontext()
+    with plugin_io("p-both", mode=mode) as seen:
+        with refused:
+            target.write_text("x", encoding="utf-8")
+        with refused:
+            conn = socket.create_connection(("127.0.0.1", port))
+            conn.sendall(b"data")
+            conn.close()
+        with refused:
+            subprocess.run(["touch", str(marker)], check=True)  # noqa: S603, S607
+        with refused:
+            import ctypes
+
+            ctypes.CDLL(None)
+    events = [v.event for v in seen]
+    assert all(v.plugin_id == "p-both" for v in seen)
+    assert "open" in events and "subprocess.Popen" in events
+    assert any(e.startswith("socket.") for e in events)
+    assert any(e.startswith("ctypes.") for e in events)
+    if mode == "raise":
+        assert not target.exists() and not marker.exists() and _nothing_arrived(listener)
+    else:
+        assert target.exists() and marker.exists() and not _nothing_arrived(listener)
+
+
+def test_file_descriptor_and_bytecode_cache(tmp_path: Path) -> None:
+    sandbox = tmp_path / "sandbox"
+    cache = tmp_path / "__pycache__"
+    sandbox.mkdir()
+    cache.mkdir()
+    with plugin_io("p-fd", sandbox=sandbox, mode="raise") as seen:
+        fd = os.open(sandbox / "own", os.O_WRONLY | os.O_CREAT)
+        with pytest.raises(ForbiddenIOError):
+            open(fd, "wb")  # noqa: SIM115 - an unnamed file is never judged by its path
+        os.close(fd)
+        with pytest.raises(ForbiddenIOError):
+            (cache / "m.cpython-313.pyc").write_bytes(b"")  # refused, not a finding
+    assert [v.detail for v in seen] == ["a file descriptor or an unnamed file"]
+    assert not (cache / "m.cpython-313.pyc").exists()
+
+
+def test_extra_code_root_is_readable(tmp_path: Path) -> None:
+    root = tmp_path / "site"
+    root.mkdir()
+    (root / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    (root / "data.txt").write_text("no", encoding="utf-8")
+    audit_hook.allow_code_root(root)
+    with plugin_io("p-root", mode="raise") as seen:
+        assert (root / "mod.py").read_text(encoding="utf-8") == "x = 1\n"
+        with pytest.raises(ForbiddenIOError):
+            (root / "data.txt").read_text(encoding="utf-8")  # code only, not data
+    assert len(seen) == 1
+
+
+def test_attributes_set_on_the_proxy_reach_the_plugin() -> None:
+    class Plain:
+        value = 0
+
+    inner = Plain()
+    proxy = GuardedPlugin(inner, "p-attr")
+    proxy.value = 3
+    assert inner.value == 3 and io_guard.unwrap(proxy) is inner

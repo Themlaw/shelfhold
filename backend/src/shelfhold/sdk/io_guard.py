@@ -202,6 +202,11 @@ def _hook(event: str, args: tuple[Any, ...]) -> None:
     raise ForbiddenIOError(scope.plugin_id, event, "" if refused == _SILENT else refused)
 
 
+# CPython turns tracing off while an audit hook runs unless the hook opts in: without this, a
+# coverage or debugging tracer never sees the detector. The hook itself does no tracing.
+_hook.__cantrace__ = True  # type: ignore[attr-defined]
+
+
 def _verdict(event: str, args: tuple[Any, ...], scope: _Scope) -> str | None:
     """None when plugin code may do this; else why not (or `_SILENT`)."""
     if event == "open":

@@ -148,6 +148,11 @@ def test_no_source_error_does_not_name_the_plugin() -> None:
         ("https://bücher.example/**", "https://xn--bcher-kva.example/x", True),
         ("https://example.org", "https://example.org/anything/at/all", True),
         ("https://example.org/a.b", "https://example.org/aXb", False),  # literal, not a regex
+        ("https://example.org/**", "https://example.org:8443/x", False),  # another origin
+        ("https://example.org/**", "https://example.org:443/x", True),
+        ("https://example.org/**", "https://example.org:abc/x", False),  # malformed port
+        ("https://example.org/**", "https://example.org/" + "x" * 5000, False),  # too long
+        ("https://example.org/**", "https:///x", False),  # no host
     ],
 )
 def test_url_pattern_matching(pattern: str, url: str, expected: bool) -> None:
@@ -181,3 +186,11 @@ def test_plugin_with_an_invalid_pattern_or_rule_is_incompatible() -> None:
     assert [r.status for r in records] == [PluginStatus.INCOMPATIBLE] * 2
     assert "url_patterns" in (records[0].reason or "")
     assert "domain" in (records[1].reason or "")
+
+
+def test_non_source_plugins_are_not_asked() -> None:
+    other = _Plugin("exporter", ["https://example.org/**"])
+    other.manifest = {**other.manifest, "kind": "export-target"}
+    with pytest.raises(NoSourceForUrl):
+        _resolve(_registry(other), "https://example.org/x")
+    assert other.calls == []

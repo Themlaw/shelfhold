@@ -213,7 +213,7 @@ def _a_label(label: str, name: str) -> str:
                 back = idna.encode(idna.decode(low)).decode("ascii")
             except (idna.IDNAError, UnicodeError) as exc:
                 raise DomainPatternError(f"{name!r}: {label!r} is not valid punycode") from exc
-            if back != low:
+            if back != low:  # pragma: no cover - idna already refuses a non-canonical A-label
                 raise DomainPatternError(f"{name!r}: {label!r} is not in canonical form")
         return low
     try:
