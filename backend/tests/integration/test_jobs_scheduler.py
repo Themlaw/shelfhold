@@ -218,3 +218,19 @@ def test_jitter_is_seeded_per_instance_and_bounded(engine: Engine) -> None:
     _, due = row(engine, "check")
     assert 0 <= (due - base).total_seconds() <= 300
     assert (due - base).total_seconds() == jitter_for("inst-7", "check", "", base, 300)
+
+
+@pytest.mark.req("ENF-LEG-007")
+def test_default_schedule_offset_differs_between_instances(tmp_path: Path) -> None:
+    """The default offset of a periodic comes from the instance seed: two installations that
+    register the same cron do not hit a source on the same second."""
+    clock = ManualClock(utc(2026, 1, 1, 0, 0, 0))
+    due: list[datetime | None] = []
+    for name, seed in (("a", "instance-aaaa"), ("b", "instance-bbbb"), ("a2", "instance-aaaa")):
+        engine = create_db_engine(tmp_path / f"{name}.db")
+        metadata.create_all(engine)
+        make(engine, clock, Recorder(), seed).add_default("source.refresh", "0 * * * *")
+        due.append(row(engine, "source.refresh").next_due_at)
+        engine.dispose()
+    assert due[0] != due[1]
+    assert due[0] == due[2]  # a restart of the same instance agrees with itself
