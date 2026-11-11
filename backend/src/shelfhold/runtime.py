@@ -67,6 +67,9 @@ from shelfhold.ops.backup import BackupService, register_backup_job
 from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 
+RETAKE_INTERVAL_S = 2.0  # how often a process that found `/data/.lock` held looks again
+
+
 @dataclass
 class InstanceRuntime:
     settings: Settings
@@ -93,9 +96,25 @@ class InstanceRuntime:
         except InstanceLockHeldError:
             if MigrationStateFile(self.settings.data_dir).read() is None:
                 raise
-            structlog.get_logger().warning("instance_lock_held_by_migration_no_write_mode")
+            structlog.get_logger().warning(
+                "instance.waiting_for_lock",
+                reason="migration_running",
+                detail="no write until the migration ends; the lock is taken again then",
+            )
             return
         self.owns_volumes = True
+
+    def try_take_over(self) -> bool:
+        """After `acquire` found the lock held by a migration: take it once it is free. False
+        while it is still held; True once this process owns the volumes (the caller then runs the
+        rest of the start-up)."""
+        try:
+            self.lock.acquire()
+        except InstanceLockHeldError:
+            return False
+        self.owns_volumes = True
+        structlog.get_logger().info("instance.lock_taken")
+        return True
 
     @property
     def restored_behind(self) -> bool:

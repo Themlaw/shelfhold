@@ -439,9 +439,18 @@ class _Writer:
             return ""
         attrs = self._attributes(el, "meta", "xhtml")
         names = {k for k, _ in attrs}
+        if names == {"charset"}:  # a browser would honour any other label (utf-7...)
+            return self._start("meta", attrs) + "/>" if _charset_ok(dict(attrs)["charset"]) else ""
         if not (names == {"charset"} or names == {"name", "content"}):
             return ""
         return self._start("meta", attrs) + "/>"
+
+
+_CHARSETS: Final = frozenset({"utf-8", "utf-16"})
+
+
+def _charset_ok(value: str) -> bool:
+    return value.strip().lower() in _CHARSETS
 
 
 # --- nh3, the second gate ------------------------------------------------------------------------

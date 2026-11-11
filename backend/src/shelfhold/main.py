@@ -1,5 +1,7 @@
 """Composition root: wires infrastructure into the HTTP interface."""
 
+import asyncio
+import contextlib
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -56,7 +58,7 @@ from shelfhold.ops import OpsServices
 from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host.public import start_plugins
-from shelfhold.runtime import InstanceRuntime
+from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
 from shelfhold.runtime_jobs import PlanService
 
 PACKAGED_FRONTEND = Path(__file__).parent / "static"
@@ -195,6 +197,19 @@ def create_app(
         runtime.stop()
         engine.dispose()
 
+    def start_owned() -> None:
+        """What follows the lock, in the order of the spec; also run when the lock is taken
+        later, once the migration that held it has ended."""
+        check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
+        try:
+            boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops it
+        except KeyringError as error:
+            announce_keyring_failure(engine, composition.bus, error)  # `secret.undecryptable`
+            raise
+        runtime.boot()  # open intents settled, then (and only then) the jobs
+        if runtime.owns_volumes:  # a migration in progress: this process writes nothing
+            record_applied_public_url(engine, resolved.public_url)  # `status` compares
+
     def on_startup() -> None:
         log_effective_config(resolved)
         ensure_volumes(resolved)
@@ -203,25 +218,14 @@ def create_app(
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
             # EF-SRC-019: third-party code only once this process owns /data and the schema is ours
             start_plugins(resolved)
-            try:
-                boot_check(resolved)  # ENF-SEC-005: an unreadable or missing keyring stops it
-            except KeyringError as error:
-                announce_keyring_failure(engine, composition.bus, error)  # `secret.undecryptable`
-                raise
-            runtime.boot()  # open intents settled, then (and only then) the jobs
-            if runtime.owns_volumes:  # a migration in progress: this process writes nothing
-                record_applied_public_url(engine, resolved.public_url)  # `status` compares
+            start_owned()
         except BaseException:
             runtime.stop()
             raise
 
-    @asynccontextmanager
-    async def local_cli_socket() -> AsyncIterator[None]:
-        """EF-USR-024: the host CLI reaches the running server here, and only here. Only the
-        instance that owns the volumes listens (a second one never got this far)."""
-        if not runtime.owns_volumes:
-            yield
-            return
+    async def open_socket() -> LocalSocketServer | None:
+        """The socket of the host CLI, then the projections (ENF-OPS-020). None: it is
+        unavailable and the CLI works on the database."""
         if resolved.cli_allow_host:
             structlog.get_logger().warning("local_cli.allow_host_enabled")
         server = LocalSocketServer(
@@ -233,14 +237,44 @@ def create_app(
             await server.start()
         except OSError as error:  # the HTTP server stays up; the CLI then works on the database
             structlog.get_logger().error("local_cli.socket_unavailable", error=str(error))
-            runtime.start_projection_repair()
-            yield
-            return
-        runtime.start_projection_repair()  # the socket is bound: now the projections (ENF-OPS-020)
+            server = None
+        runtime.start_projection_repair()  # the socket is bound (or not): now the projections
+        return server
+
+    async def take_over_when_free() -> LocalSocketServer | None:
+        """The start found `/data/.lock` held by a migration and wrote nothing (it said so:
+        `instance.waiting_for_lock`). Look again until it is free, then finish the start-up."""
+        while not await asyncio.to_thread(runtime.try_take_over):
+            await asyncio.sleep(RETAKE_INTERVAL_S)
+        try:
+            await asyncio.to_thread(start_owned)
+        except Exception:
+            structlog.get_logger().exception("instance.start_after_wait_failed")
+            runtime.stop()
+            return None
+        return await open_socket()
+
+    @asynccontextmanager
+    async def local_cli_socket() -> AsyncIterator[None]:
+        """EF-USR-024: the host CLI reaches the running server here, and only here. Only the
+        instance that owns the volumes listens; one that waits for a migration's lock listens
+        once it has taken it."""
+        waiting: asyncio.Future[LocalSocketServer | None] | None = None
+        server = None
+        if runtime.owns_volumes:
+            server = await open_socket()  # bound before the first request
+        else:
+            waiting = asyncio.ensure_future(take_over_when_free())
         try:
             yield
         finally:
-            await server.stop()
+            if waiting is not None:
+                if not waiting.done():
+                    waiting.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    server = await waiting
+            if server is not None:
+                await server.stop()
 
     return create_http_app(
         health=OpsHealth(HealthProbe(resolved), ops_services),

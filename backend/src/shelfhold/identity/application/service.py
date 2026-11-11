@@ -628,6 +628,8 @@ class LocalAuth:
             owner = admins[0] if admins else None
         if owner is None:
             raise UnknownUserError
+        if not read_only and owner.role != "admin":  # the `admin` scope is an admin's alone
+            raise ValueError("scope_requires_admin")
         now = self.now()
         if expires_days is not None and expires_days < 1:
             raise ValueError("invalid_expiry")

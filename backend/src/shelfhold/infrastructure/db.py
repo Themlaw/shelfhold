@@ -11,7 +11,7 @@ from shelfhold.infrastructure.write_guard import install_write_guard
 
 
 def create_db_engine(path: Path) -> Engine:
-    engine = create_engine(f"sqlite+pysqlite:///{path}")
+    engine = create_engine(f"sqlite+pysqlite:///{path}", hide_parameters=True)
 
     @event.listens_for(engine, "connect")
     def _pragmas(dbapi_connection: Any, _record: object) -> None:

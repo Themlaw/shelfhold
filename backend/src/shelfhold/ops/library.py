@@ -255,9 +255,15 @@ class LibraryOps:
 
     def _destination(self, destination_id: str | None) -> str:
         """The destination named, or the only tree destination there is."""
-        if destination_id:
-            return destination_id
         table = export.shelf_destination
+        if destination_id:
+            with self._comp.engine.connect() as connection:
+                known = connection.execute(
+                    sa.select(table.c.id).where(table.c.id == destination_id)
+                ).first()
+            if known is None:  # an id nobody holds is a 404, not a failure further down
+                raise UnknownSubjectError("unknown destination")
+            return destination_id
         with self._comp.engine.connect() as connection:
             found = list(
                 connection.execute(
