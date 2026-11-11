@@ -43,9 +43,9 @@ Une source passe le kit de conformité (`shelfhold.sdk.testing`), déclare ses c
 
 ## Tests découpés en shards
 
-- La CI lance `backend-unit` en matrice (hash du nom de chaque test), `backend-integration`, puis `coverage` qui combine les `.coverage.*` et applique les seuils (80 % global, 85 % sur le diff).
-- Un shard en local : `cd backend && uv run pytest tests/unit -n auto --shard 2/4 --no-cov` (intégration : `tests/integration`).
-- Augmenter N : changer `BACKEND_SHARDS` (ou `E2E_SHARDS` pour Playwright) dans le job `changes` de `.github/workflows/ci.yml`, seul endroit à toucher.
+- La CI lance `backend-unit` en matrice (hash du nom de chaque test), `backend-integration` (aussi en matrice), puis `coverage` qui combine les `.coverage.*` et applique les seuils (80 % global, 85 % sur le diff).
+- Un shard en local : `cd backend && uv run pytest tests/unit -n auto --shard 2/4 --no-cov` (intégration : `tests/integration`, 3 shards).
+- Augmenter N : changer `BACKEND_SHARDS` (ou `BACKEND_INTEGRATION_SHARDS` pour l'intégration, `E2E_SHARDS` pour Playwright) dans le job `changes` de `.github/workflows/ci.yml`, seul endroit à toucher.
 - Playwright en local : `cd e2e && npx playwright test --shard=1/2`.
 - Un nouveau test va dans `tests/unit` (rapide, sans E/S lourde) ou `tests/integration` (base, application, sous-processus).
 

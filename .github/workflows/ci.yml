@@ -28,11 +28,14 @@ jobs:
       image: ${{ steps.filter.outputs.image }}
       backend_shards: ${{ steps.shards.outputs.backend }}
       backend_shard_total: ${{ steps.shards.outputs.backend_total }}
+      backend_integration_shards: ${{ steps.shards.outputs.backend_integration }}
+      backend_integration_shard_total: ${{ steps.shards.outputs.backend_integration_total }}
       e2e_shards: ${{ steps.shards.outputs.e2e }}
       e2e_shard_total: ${{ steps.shards.outputs.e2e_total }}
     env:
       # The only place where the number of shards is defined (see CONTRIBUTING.md).
       BACKEND_SHARDS: "4"
+      BACKEND_INTEGRATION_SHARDS: "3"
       E2E_SHARDS: "2"
     steps:
       - id: shards
@@ -40,6 +43,8 @@ jobs:
           {
             echo "backend=$(seq -s, 1 "$BACKEND_SHARDS" | sed 's/^/[/;s/$/]/')"
             echo "backend_total=${BACKEND_SHARDS}"
+            echo "backend_integration=$(seq -s, 1 "$BACKEND_INTEGRATION_SHARDS" | sed 's/^/[/;s/$/]/')"
+            echo "backend_integration_total=${BACKEND_INTEGRATION_SHARDS}"
             echo "e2e=$(seq -s, 1 "$E2E_SHARDS" | sed 's/^/[/;s/$/]/')"
             echo "e2e_total=${E2E_SHARDS}"
           } >> "$GITHUB_OUTPUT"
@@ -251,10 +256,16 @@ jobs:
           retention-days: 1
 
   backend-integration:
+    # Integration tests, sharded like backend-unit (the unsharded job hit its 15 min timeout).
+    name: backend-integration (${{ matrix.shard }}/${{ needs.changes.outputs.backend_integration_shard_total }})
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.changes.outputs.backend_integration_shards) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -269,12 +280,13 @@ jobs:
       - name: pytest (integration, coverage data only)
         working-directory: backend
         env:
-          COVERAGE_FILE: .coverage.integration
-        run: uv run --locked pytest tests/integration -n auto --cov --cov-report= --cov-fail-under=0
+          COVERAGE_FILE: .coverage.integration-${{ matrix.shard }}
+          SHARD: ${{ matrix.shard }}/${{ needs.changes.outputs.backend_integration_shard_total }}
+        run: uv run --locked pytest tests/integration -n auto --shard "$SHARD" --cov --cov-report= --cov-fail-under=0
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: coverage-integration
-          path: backend/.coverage.integration
+          name: coverage-integration-${{ matrix.shard }}
+          path: backend/.coverage.integration-${{ matrix.shard }}
           include-hidden-files: true
           retention-days: 1
 
