@@ -37,3 +37,16 @@ def test_suspect_rule_boundaries() -> None:
     assert suspect_reason(stored_pages=20, new_pages=0, availability="free") == "fewer_pages"
     # the threshold is adjustable
     assert suspect_reason(stored_pages=20, new_pages=15, availability="free", min_ratio=0.9)
+
+
+@pytest.mark.req("EF-BIB-024")
+def test_epub_pages_are_the_spine_items(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from shelfhold.library.adapters.epub_derivative import spine_count
+    from tests.epub_env import epub
+
+    path = tmp_path / "a.epub"
+    path.write_bytes(epub())
+    count = spine_count(path)
+    assert count is not None and count >= 1
+    path.write_bytes(b"not a zip")
+    assert spine_count(path) is None  # unreadable: the guard says nothing
