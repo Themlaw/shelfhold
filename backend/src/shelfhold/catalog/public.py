@@ -55,6 +55,7 @@ from shelfhold.catalog.application.fields import (
     suggest_age,
     unlock_field,
 )
+from shelfhold.catalog.application.ingest import UnsupportedFileError, announced_kind
 from shelfhold.catalog.application.new_edition_gate import Filing, file_new_edition
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.rating import (
@@ -276,11 +277,13 @@ __all__ = [
     "StoredExternalId",
     "TeamRef",
     "TextVersionRef",
+    "UnsupportedFileError",
     "VariantFacts",
     "Verdict",
     "Withdrawal",
     "add_external_id",
     "admission",
+    "announced_kind",
     "ceiling_of",
     "content_warning_age",
     "default_registry",

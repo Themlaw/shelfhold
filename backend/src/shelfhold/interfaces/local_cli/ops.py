@@ -354,6 +354,27 @@ def _unfollow(ops: OpsServices, _by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _source_search(ops: OpsServices, _by: Principal, p: Params) -> object:
+    filters = p.get("filters")
+    return ops.acquire.search(
+        _text(p, "source_key"), _text(p, "query", required=False),
+        filters=dict(filters) if isinstance(filters, Mapping) else None,
+        cursor=_optional(p, "cursor"),
+    )  # fmt: skip
+
+
+def _source_filters(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return {"filters": ops.acquire.filters(_text(p, "source_key"))}
+
+
+def _acquire(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.acquire.acquire(
+        url=_optional(p, "url"), source_key=_optional(p, "source_key"),
+        remote_id=_optional(p, "remote_id"), unit=_optional(p, "unit"),
+        requester_user_id=user_of(by),
+    )  # fmt: skip
+
+
 def _relink(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.library.relink(
         _text(p, "work_id"), source_key=_text(p, "source_key"), remote_id=_text(p, "remote_id"),
@@ -511,6 +532,9 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.backfill_start": (_backfill_start, None),
     "ops.follow": (_follow, None),
     "ops.unfollow": (_unfollow, None),
+    "ops.source_search": (_source_search, None),
+    "ops.source_filters": (_source_filters, None),
+    "ops.acquire": (_acquire, None),
 }
 
 
@@ -522,7 +546,7 @@ READS_AND_RESTORE_EXITS = frozenset(
         "ops.status", "ops.missing_list", "ops.jobs_list", "ops.pair_propose",
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
         "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
-        "ops.rate_pending", "ops.attach_list",
+        "ops.rate_pending", "ops.attach_list", "ops.source_search", "ops.source_filters",
         "ops.restore_adopt", "ops.restore_acknowledge", "ops.tombstone_set_aside_journal",
         "ops.secrets_import",
         "ops.tombstone_accept_lost_keyring",

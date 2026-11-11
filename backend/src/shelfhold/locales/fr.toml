@@ -444,6 +444,21 @@ help_follow_source_key = "Clé de la source de la série, telle que le service l
 help_follow_remote_id = "Identifiant de la série chez la source (son adresse relative)."
 help_unfollow_remove_upstream = "Retire aussi la série de la bibliothèque du service connecté (aucun fichier n'est supprimé)."
 help_unfollow_confirm = "Confirme le retrait de la bibliothèque du service connecté."
+help_source_search = "Cherche une série ou un livre dans une source (lecture seule)."
+help_source_filters = "Liste les filtres de recherche que la source déclare."
+help_source_acquire = "Demande un livre à une source : un fichier, rangé dans la bibliothèque."
+help_acquire_url = "Demande ce que décrit une adresse collée : la première source active qui la reconnaît le fournit."
+help_search_query = "Mots cherchés (vide : tout ce que la source liste)."
+help_search_filter = "Filtre clé=valeur, répétable (voir « source filters »)."
+help_search_cursor = "Jeton de la page suivante, donné par la recherche précédente."
+help_acquire_unit = "Identifiant de l'élément voulu, quand la source en propose plusieurs."
+search_item = "{source_key}  {remote_id}  {title}"
+search_next = "Page suivante : --cursor {cursor}"
+search_nothing = "Aucun résultat."
+filters_item = "{name}  ({kind})  {label}"
+filters_none = "Cette source ne déclare aucun filtre."
+acquire_queued = "Demande enregistrée : le livre sera rangé dès son téléchargement (tâche {job})."
+acquire_stored = "Ce livre est déjà rangé : rien à télécharger."
 follow_done = "Série suivie : une entrée dans la bibliothèque du service."
 follow_already = "Série déjà suivie : rien n'a été ajouté."
 follow_in_progress = "Un autre suivi de cette série est en cours : rien n'a été envoyé."
@@ -948,6 +963,26 @@ action = "L'accès est refusé et journalisé. La source ne respecte pas le cont
 [errors."source.instance_changed"]
 title = "Le service de la source semble avoir été réinstallé."
 action = "Confirmez avec « shelfhold source reconnect » ; rien n'est supprimé en attendant."
+
+[errors."source.filter_invalid"]
+title = "Cette source ne propose pas ce filtre."
+action = "Retirez le filtre, ou demandez la liste de ceux que la source déclare."
+
+[errors."acquire.unsupported_file"]
+title = "La source ne fournit pas un fichier que Shelfhold range."
+action = "Seuls les livres EPUB et les archives d'images (CBZ) sont rangés ; un PDF passe par le dossier d'import."
+
+[errors."acquire.unit_required"]
+title = "La source propose plusieurs éléments : dites lequel prendre."
+action = "Relancez la demande en précisant l'identifiant de l'élément voulu."
+
+[errors."acquire.series_tombstoned"]
+title = "Cette série a été supprimée volontairement : elle n'est pas recréée."
+action = "Levez la pierre tombale de la série si vous la voulez à nouveau."
+
+[errors."unit.stored"]
+title = "Le livre demandé est rangé dans la bibliothèque."
+action = "Il sera exporté au prochain passage vers les étagères concernées."
 
 [errors."source.no_match"]
 title = "Aucune source ne reconnaît cette adresse."

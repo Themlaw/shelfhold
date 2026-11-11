@@ -49,7 +49,7 @@ from shelfhold.library.adapters.purge_inventory import (
     upstream_tokens,
 )
 from shelfhold.library.adapters.ranged import RangedKeeper
-from shelfhold.library.adapters.receive import Received, receive_cbz
+from shelfhold.library.adapters.receive import Received, receive_cbz, sniff_kind
 from shelfhold.library.adapters.received_migration import migrate_received_dirs
 from shelfhold.library.adapters.safeguard import Safeguard, SafeguardResult, payload_hash_at
 from shelfhold.library.adapters.safeguard_inventory import (
@@ -352,6 +352,7 @@ __all__ = [
     "require_servable_derivative",
     "safe_to_clean",
     "servable_epub",
+    "sniff_kind",
     "store_unit_ids",
     "title_needles",
     "unit_tombstoned",

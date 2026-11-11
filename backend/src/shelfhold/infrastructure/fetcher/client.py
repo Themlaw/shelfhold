@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import http.cookiejar
 import ipaddress
 import ssl
 import time
@@ -139,6 +140,10 @@ class GuardedFetcher:
         self._client = httpx2.AsyncClient(
             transport=transport, trust_env=False, follow_redirects=False, timeout=timeout
         )
+        # No cookie jar: a `Set-Cookie` is never kept, so no request carries a cookie the caller
+        # did not write, and the cache (which reads the caller's headers) never files an answer
+        # made for a session. A source that needs a session says so in its manifest (auth flows).
+        self._client.cookies.jar.set_policy(http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -418,8 +423,9 @@ class GuardedFetcher:
         host = url.host
         # the caller cannot choose the Host: it must name the host that was validated
         wire = {k: v for k, v in headers.items() if k.lower() != "host"}
-        if not any(k.lower() == "user-agent" for k in wire):
-            wire["User-Agent"] = self._user_agent
+        # nor the User-Agent (ENF-LEG-007): the one that names Shelfhold is always the one sent
+        wire = {k: v for k, v in wire.items() if k.lower() != "user-agent"}
+        wire["User-Agent"] = self._user_agent
         wire["Host"] = _authority(url)
         extensions: dict[str, Any] = {}
         if url.scheme == "https" and parse_host(host) is None:

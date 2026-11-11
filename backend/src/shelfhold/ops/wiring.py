@@ -26,6 +26,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
+from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.adoption import LibraryAdoptionExit
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
@@ -135,5 +136,5 @@ def open_ops(
         content=ContentOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),
         attach=AttachOps(engine, clock, bus, fresh_auth_s=settings.fresh_auth_s),
-        follows=FollowOps(composition), roots=RootOps(composition),
+        follows=FollowOps(composition), acquire=AcquireOps(composition), roots=RootOps(composition),
     )  # fmt: skip

@@ -53,6 +53,7 @@ from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
 from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
+from shelfhold.interfaces.http_api.sources import build_sources_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
@@ -161,6 +162,7 @@ def create_app(
     # runtime's jobs and the routes below share it; `network` is the one door to other servers.
     composition = Composition(resolved, engine, clock=clock, network=network, gates=runtime.gates())
     runtime.composition = composition
+    composition.pools = lambda: runtime.pools
     auth = local_auth(engine, resolved, clock)
     ready = Readiness()
     gate = AuthGate(auth, public_url=resolved.public_url, ready=ready.is_set)
@@ -204,6 +206,7 @@ def create_app(
             attestations.sync_installed(installed)
             registry.apply_attestations(attestations.valid())
         plugins[:] = [registry]
+        composition.plugins = lambda: plugins[0] if plugins else None
 
     @cache
     def headless_admin() -> HeadlessAdmin:
@@ -226,6 +229,7 @@ def create_app(
         build_intents_router(ops_services),  # EF-INT-014: the open intents and their settlement
         build_backfill_router(ops_services),  # EF-EXP-053: estimate, confirmation, start
         build_follows_router(ops_services),  # EF-SRC-029: follow, unfollow
+        build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command

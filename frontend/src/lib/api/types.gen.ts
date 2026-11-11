@@ -33,6 +33,28 @@ export type AcknowledgedOut = {
 };
 
 /**
+ * AcquireIn
+ */
+export type AcquireIn = {
+    /**
+     * Remote Id
+     */
+    remote_id?: string | null;
+    /**
+     * Source Key
+     */
+    source_key?: string | null;
+    /**
+     * Unit
+     */
+    unit?: string | null;
+    /**
+     * Url
+     */
+    url?: string | null;
+};
+
+/**
  * ActivityOut
  */
 export type ActivityOut = {
@@ -1378,6 +1400,20 @@ export type RotateIn = {
 };
 
 /**
+ * SearchOut
+ */
+export type SearchOut = {
+    /**
+     * Items
+     */
+    items: Array<SeriesOut>;
+    /**
+     * Next
+     */
+    next: string | null;
+};
+
+/**
  * SecretStateOut
  */
 export type SecretStateOut = {
@@ -1452,6 +1488,24 @@ export type SeriesNameOut = {
      * Name
      */
     name: string;
+};
+
+/**
+ * SeriesOut
+ */
+export type SeriesOut = {
+    /**
+     * Remote Id
+     */
+    remote_id: string;
+    /**
+     * Source Key
+     */
+    source_key: string;
+    /**
+     * Title
+     */
+    title: string;
 };
 
 /**
@@ -1641,6 +1695,16 @@ export type StatusOut = {
      * Waiting
      */
     waiting: Array<WaitingOut>;
+};
+
+/**
+ * StoredOut
+ */
+export type StoredOut = {
+    /**
+     * State
+     */
+    state: string;
 };
 
 /**
@@ -1933,6 +1997,41 @@ export type AboutResponses = {
 };
 
 export type AboutResponse = AboutResponses[keyof AboutResponses];
+
+export type AcquireData = {
+    body: AcquireIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/acquire';
+};
+
+export type AcquireErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AcquireError = AcquireErrors[keyof AcquireErrors];
+
+export type AcquireResponses = {
+    /**
+     * Response Acquire
+     *
+     * Successful Response
+     */
+    202: JobAccepted | StoredOut;
+};
+
+export type AcquireResponse = AcquireResponses[keyof AcquireResponses];
 
 export type ListActivityData = {
     body?: never;
@@ -4364,6 +4463,99 @@ export type PatchSettingsResponses = {
 };
 
 export type PatchSettingsResponse = PatchSettingsResponses[keyof PatchSettingsResponses];
+
+export type FiltersData = {
+    body?: never;
+    path: {
+        /**
+         * Source Key
+         */
+        source_key: string;
+    };
+    query?: never;
+    url: '/api/v1/sources/{source_key}/filters';
+};
+
+export type FiltersErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type FiltersError = FiltersErrors[keyof FiltersErrors];
+
+export type FiltersResponses = {
+    /**
+     * Response Filters
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type FiltersResponse = FiltersResponses[keyof FiltersResponses];
+
+export type SearchData = {
+    body?: never;
+    path: {
+        /**
+         * Source Key
+         */
+        source_key: string;
+    };
+    query?: {
+        /**
+         * Q
+         */
+        q?: string;
+        /**
+         * Cursor
+         */
+        cursor?: string | null;
+        /**
+         * Filters
+         */
+        filters?: string | null;
+    };
+    url: '/api/v1/sources/{source_key}/search';
+};
+
+export type SearchErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SearchError = SearchErrors[keyof SearchErrors];
+
+export type SearchResponses = {
+    /**
+     * Successful Response
+     */
+    200: SearchOut;
+};
+
+export type SearchResponse = SearchResponses[keyof SearchResponses];
 
 export type StatsData = {
     body?: never;

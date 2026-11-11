@@ -36,6 +36,7 @@ from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export, platform
+from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
@@ -184,6 +185,7 @@ class OpsServices:
         rating: RatingOps | None = None,
         attach: AttachOps | None = None,
         follows: FollowOps | None = None,
+        acquire: AcquireOps | None = None,
         roots: RootOps | None = None,
     ) -> None:
         self._engine = engine
@@ -205,6 +207,7 @@ class OpsServices:
         self._rating = rating
         self._attach = attach
         self._follows = follows
+        self._acquire = acquire
         self._roots = roots
 
     @property
@@ -654,6 +657,13 @@ class OpsServices:
         if self._follows is None:
             raise ExitUnavailableError("following is not connected")
         return self._follows
+
+    @property
+    def acquire(self) -> AcquireOps:
+        """`source search|filters`, `acquire` (EF-SRC-015, EF-SRC-004)."""
+        if self._acquire is None:
+            raise ExitUnavailableError("acquisition is not connected")
+        return self._acquire
 
     @property
     def intents(self) -> IntentOps:

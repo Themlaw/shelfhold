@@ -37,6 +37,26 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     reconnect = actions.add_parser("reconnect", help=t("ops.help_source_reconnect"),
                                    allow_abbrev=False)  # fmt: skip
     reconnect.set_defaults(handler=run_reconnect, configure_logging=False)
+    # EF-SRC-015, EF-SRC-004: one-shot acquisition
+    search = actions.add_parser("search", help=t("ops.help_source_search"), allow_abbrev=False)
+    search.add_argument("source_key")
+    search.add_argument("query", nargs="?", default="", help=t("ops.help_search_query"))
+    search.add_argument("--filter", action="append", default=[], metavar="CLE=VALEUR",
+                        help=t("ops.help_search_filter"))  # fmt: skip
+    search.add_argument("--cursor", help=t("ops.help_search_cursor"))
+    search.set_defaults(handler=run_search, configure_logging=False)
+    filters = actions.add_parser("filters", help=t("ops.help_source_filters"), allow_abbrev=False)
+    filters.add_argument("source_key")
+    filters.set_defaults(handler=run_filters, configure_logging=False)
+    acquire = actions.add_parser("acquire", help=t("ops.help_source_acquire"), allow_abbrev=False)
+    acquire.add_argument("source_key")
+    acquire.add_argument("remote_id")
+    acquire.add_argument("--unit", help=t("ops.help_acquire_unit"))
+    acquire.set_defaults(handler=run_acquire, configure_logging=False)
+    by_url = commands.add_parser("acquire", help=t("ops.help_acquire_url"), allow_abbrev=False)
+    by_url.add_argument("url")
+    by_url.add_argument("--unit", help=t("ops.help_acquire_unit"))
+    by_url.set_defaults(handler=run_acquire_url, configure_logging=False)
 
 
 @headless_command
@@ -87,3 +107,60 @@ def run_reconnect(_args: argparse.Namespace, channel: OpsChannel) -> int:
     channel.call("ops.source_reconnect")
     print(t("ops.done"))
     return 0
+
+
+def _filters_of(pairs: list[str]) -> dict[str, str]:
+    return {k: v for k, _, v in (p.partition("=") for p in pairs) if k}
+
+
+@ops_command
+def run_search(args: argparse.Namespace, channel: OpsChannel) -> int:
+    params: dict[str, object] = {"source_key": args.source_key}
+    if args.query:
+        params["query"] = args.query
+    if args.filter:
+        params["filters"] = _filters_of(args.filter)
+    if args.cursor:
+        params["cursor"] = args.cursor
+    answer = channel.call("ops.source_search", **params)
+    for item in answer["items"]:
+        print(t("ops.search_item", **item))
+    if not answer["items"]:
+        print(t("ops.search_nothing"))
+    if answer["next"]:
+        print(t("ops.search_next", cursor=answer["next"]))
+    return 0
+
+
+@ops_command
+def run_filters(args: argparse.Namespace, channel: OpsChannel) -> int:
+    answer = channel.call("ops.source_filters", source_key=args.source_key)
+    for spec in answer["filters"]:
+        print(t("ops.filters_item", name=spec["key"], kind=spec["kind"], label=spec["label"]))
+    if not answer["filters"]:
+        print(t("ops.filters_none"))
+    return 0
+
+
+def _acquired(answer: dict[str, object]) -> int:
+    if answer["job_id"] is None:
+        print(t("ops.acquire_stored"))
+    else:
+        print(t("ops.acquire_queued", job=answer["job_id"]))
+    return 0
+
+
+@ops_command
+def run_acquire(args: argparse.Namespace, channel: OpsChannel) -> int:
+    params: dict[str, object] = {"source_key": args.source_key, "remote_id": args.remote_id}
+    if args.unit:
+        params["unit"] = args.unit
+    return _acquired(channel.call("ops.acquire", **params))
+
+
+@ops_command
+def run_acquire_url(args: argparse.Namespace, channel: OpsChannel) -> int:
+    params: dict[str, object] = {"url": args.url}
+    if args.unit:
+        params["unit"] = args.unit
+    return _acquired(channel.call("ops.acquire", **params))
