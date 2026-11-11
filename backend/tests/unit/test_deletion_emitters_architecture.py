@@ -183,7 +183,6 @@ EXPECTED_CLOSED = {
     "import_folder": {
         "shelfhold/library/adapters/import_scan.py::ImportFolder._put_back",
         "shelfhold/library/adapters/import_scan.py::ImportFolder._quarantine_and_drop",
-        "shelfhold/library/adapters/import_scan.py::ImportFolder._restore_quarantine",
     },
     "restore": {"shelfhold/infrastructure/migrate.py::_restore_database"},
     "intent_replay": {"shelfhold/export/application/intents.py::IntentJournal._resolve_rmdir"},

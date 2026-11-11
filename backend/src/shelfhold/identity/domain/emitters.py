@@ -109,7 +109,6 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
             {
                 "shelfhold/library/adapters/import_scan.py::ImportFolder._put_back",
                 "shelfhold/library/adapters/import_scan.py::ImportFolder._quarantine_and_drop",
-                "shelfhold/library/adapters/import_scan.py::ImportFolder._restore_quarantine",
             }
         ),
         # Completes an `rmdir` of an empty folder a classed emitter journaled before a crash.
