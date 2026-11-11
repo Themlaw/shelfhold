@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import secrets
+import time
 from pathlib import Path
 from typing import Any
 
@@ -280,20 +281,31 @@ def test_acquisition_never_ignores_robots() -> None:
 
 
 @pytest.mark.req("ENF-LEG-007")
-def test_robots_that_cannot_be_read_stops_the_acquisition() -> None:
-    """A robots.txt that answers a server error is "unavailable: everything refused", never
-    "nothing restricted"."""
-    with acquire_bench(NativeBooks(), files={FILE: CLEAN}) as b:
+def test_robots_that_cannot_be_read_keeps_the_request_open_until_robots_is_back() -> None:
+    """A robots.txt that answers a server error is an outage: nothing is fetched, the request is
+    kept and asked again (never "nothing restricted", never a final refusal)."""
+    with acquire_bench(NativeBooks(trust="publisher"), files={FILE: CLEAN}) as b:
         original = b.wire.respond
+        down = {"on": True}
 
         def broken(request: Any) -> Any:
             import httpx2
 
-            return httpx2.Response(503) if request.url.path == "/robots.txt" else original(request)
+            if down["on"] and request.url.path == "/robots.txt":
+                return httpx2.Response(503)
+            return original(request)
 
         b.wire.respond = broken  # type: ignore[method-assign]
-        _prepared, outcome = b.prepared_and_fetched()
-        assert outcome.state == "abandoned" and outcome.reason == "fetch.robots_disallowed"
+        prepared, outcome = b.prepared_and_fetched()
+        assert outcome.state == "waiting" and outcome.reason == "RobotsUnavailable"
+        assert f"{HOST}{FILE}" not in b.wire.paths
+        assert b.rows("SELECT state FROM download_request") == [{"state": "requested"}]
+        down["on"] = False  # robots is back, and the short retry delay has passed
+        for policy in b.fetchers._robots.values():
+            policy.clock = lambda: time.time() + 3600
+        assert b.rows("SELECT state FROM download_request") == [{"state": "requested"}]
+        again = run(b.acquirer.fetch(prepared.request_id, b.store(), b.place))
+        assert again.state == "fetched"
 
 
 @pytest.mark.req("ENF-LEG-007")
