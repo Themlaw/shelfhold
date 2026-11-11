@@ -405,3 +405,91 @@ Ce lot ne contient **pas de migration** et ne change aucune route.
 1. **Documentation d'administration de M1b**, relue contre le code et `shelfhold --help` (chaque commande citée dans `docs/admin` est vérifiée, par un contrôle en processus, contre l'arbre de commandes réel : sous-commandes et options). Nouvelles pages : `roles.md`, `famille.md`, `a-classer.md`, `suwayomi-multi-comptes.md`. Pages complétées : `controle-parental.md`, `purge.md` (`--checkpoint`, `--leftovers`, `--kept-ack`), `copie-conservee.md` (« Mettre à l'abri », purge amont), `retour-arriere.md` (retour à la 0.2.0, service complet), `restauration.md`, `reveil-sablier.md`, `etats-attente-et-sorties.md`, `durcir.md`, `topologie-racines-physiques.md`, `configuration.md`. Aucun chemin, hôte ni adresse réels : exemples génériques.
 2. **Traçabilité.** `tools/traceability.py --milestone M1b` : 63/64 exigences couvertes, aucun test orphelin, aucun identifiant inconnu. La seule exigence sans test est ENF-GOV-004, qui dépend de L28 (voir plus haut). Le contrôle manuel des exigences du §1 du plan et des volets M1b reste à faire par le contradicteur.
 3. **Compose d'exemple.** Il reste sur la ligne `0.2` jusqu'à la publication de la 0.3.0 (changer l'étiquette avant que l'image existe casserait l'installation) ; le passage à `0.3` fait partie du commit de release.
+
+## Contradicteur (Opus)
+
+Revue du jalon dans son ensemble (critère (b) de REGLES-GOAL), faite le 2026-11-11 sur `origin/main` (688c0132) et la branche de cette PR (e9e43ac3). Chaque affirmation renvoie à un test ou à un fichier ; « d'après le code » marque ce qui n'a pas été exécuté.
+
+### Les 12 exigences couvertes par du schéma (§1 du plan) : contrôle à la main
+
+| Exigence | Verdict | Preuve de comportement |
+| --- | --- | --- |
+| EF-BIB-037 | Tenue | `test_family_shelves.py` : `test_age_raising_attach_never_automatic_and_plans_removal`, `test_lowering_a_shelf_plans_removal_of_what_no_longer_fits`, `test_explicit_edition_age_admits_youth_edition` |
+| EF-BIB-039 | Tenue (volet modèle de M1b) | `test_work_relations.py` (trois tests : jamais de fusion, types, deux Œuvres distinctes connues) ; UI et poussée Kavita en M4 |
+| EF-BIB-042 | Tenue | `test_content_errors.py`, `test_safeguard_cycle.py`, `test_library_keep_copy.py::test_passthrough_to_keep_catchup_job_under_quota`, `test_failure_matrix.py::test_safeguard_backlog_row_is_closed_by_its_real_test` |
+| EF-EXP-040 | Tenue | `test_kavita_age_push.py` (quatre tests), `test_cbz_packaging.py` (ComicInfo en dernière entrée), `test_epub_kavita_books.py` |
+| EF-EXP-046 | Tenue, **non coupée** | `test_l50_export.py::test_avif_first_page_cover_set_as_jpeg_or_webp` (pages AVIF inchangées, couverture posée par l'API) ; vue « À ranger » côté SPA |
+| EF-EXP-047 | Tenue | `test_family_shelf_service.py::test_family_shelf_to_unpartitioned_destination_refused`, `test_family_shelves_real.py::test_family_shelf_over_a_shared_kavita_library_is_refused` |
+| EF-EXP-048 | Tenue | `test_family_shelves_real.py::test_adoption_into_a_family_shelf_suspends_the_unrated_works`, `test_cli_rate.py::test_rate_batch_requires_confirmation`, `::test_follow_skips_a_suspended_work_until_it_is_rated` |
+| EF-EXP-050 | Tenue | `test_family_shelves_real.py::test_hold_until_rated_for_youth_sub_source` et le cas sans étagère famille |
+| EF-SRC-019 | Tenue | `test_plugin_guard.py` : variable et confirmation tapée, aucun secret transmis, désactivé au démarrage sans la variable, `.pyc` planté jamais exécuté |
+| EF-USR-015 | Tenue | `test_family_shelves.py::test_unrated_work_blocked_from_non_adult_shelf`, `test_triage_routes.py::test_to_rate_screen_requires_session_and_csrf`, parcours `m1b-family` de L30 (faux Kavita) et nuit (vrai Kavita) |
+| ENF-OPS-009 | Tenue | `test_retention.py` (90 j, audit 1 an pseudonymisé, corbeille 30 j, réglable), `faults/test_fsops_kill9.py` (staging orphelin purgé) |
+| ENF-QUAL-007 | **Partiellement tenue** | Tests du **texte** des workflows (`test_release_workflows.py`, `test_image_and_compose.py`), cache des couches dans le registre (`image.yml`). Les preuves de release en assets n'ont jamais été produites par `release.yml` depuis L27 (la 0.2.0 la précède) : la tenue se prouve à la première release, voir B5 |
+
+Hors de ces douze : la DoD 1 donne **63/64** (ENF-GOV-004, L28) et `tools/traceability-exceptions.toml` ne contient **aucune** entrée `[[deferred]]` : le manque n'est déclaré nulle part dans l'outil (B4). Aucun coupable n'a été coupé : le §1 n'appelle donc aucune autre entrée.
+
+### Les quatre écarts relevés par L32 : verdicts
+
+1. **`shelf create` crée une bibliothèque Kavita : pas une violation.** Aucune phrase de 01, 02, 03 ni des ADR ne dit que Shelfhold ne crée jamais de bibliothèque. 02 (tableau des destinations, ligne Kavita) liste `library/create` parmi les routes utilisées ; ADR-0027 et §9 bis demandent des bibliothèques **dédiées** ; EF-EXP-036 parle de « l'étape guidée après la création d'une bibliothèque famille ». Le comportement date de M1a (#48, #66, `export/targets/kavita/linking.py:71`) : seule l'ancienne phrase de `controle-parental.md` était fausse, et L32 l'a corrigée. Sur le fond, une bibliothèque créée ne regarde que le dossier de l'étagère et Kavita ne l'ouvre à aucun compte non administrateur : l'erreur possible est du côté sûr (l'enfant ne voit rien tant que l'admin ne donne pas l'accès), ce que `famille.md` dit. Aucune action.
+2. **`rate` sans fraîcheur hors profil durci : le code est conforme, la décision L11 est fausse.** EF-USR-022 (2) range « classer ou reclasser » parmi les actions **sans fraîcheur par défaut** ; `reserved.py` (`NO_REAUTH_EFFECTS` contient `RATES_CONTENT`) l'applique. Le point 6 de L11 (« session admin fraîche P3 ») est à lire comme corrigé par l'écart 3 de la clôture. **Objection de fond, ci-dessous en P2** : la spec elle-même est incohérente sur ce point.
+3. **Passkeys ajoutées sans réauthentification : conforme à la lettre (P3 ne les liste pas), contraire à l'esprit.** Voir P3.
+4. **Le retour arrière ne refuse pas l'adoption tant qu'une racine n'est pas montée : à corriger en M2 (M4 ci-dessous).** L'échec n'est pas silencieux : la racine non jugée reste `restored_behind` au démarrage suivant, rien n'est supprimé. C'est un piège d'exploitation, pas une perte.
+
+### Où poser `v0.3.0`
+
+**Constat.** Aucun commit de `main` ne contient tout M1b sans M2. Les lots M2 L00, L02 et L01 (#115, #117, #120, migration 0020) sont entrés **avant** les lots M1b L25, L26, L23, L17, L31 et L30, et le correctif de sécurité de la revue transversale (f90e0fc3) s'appuie sur la migration de données **0025**, dont le parent est 0020. La chaîne Alembic n'est d'ailleurs plus monotone : 0017 → 0020 → 0025 → 0021 → 0026 → 0027 → 0028 → 0035 → 0037.
+
+- **(B) Tagger un commit antérieur** : impossible sans branche de release faite de cherry-picks. Elle livrerait une combinaison jamais testée et, surtout, une chaîne de migrations différente de celle de `main` : une installation passée par cette 0.3.0 divergerait de la suite. **Rejetée.**
+- **(C) Fusionner M1b et M2 dans 0.4.0** : laisse les installations 0.2.0 sans contrôle parental ni sauvegarde intégrée jusqu'à la fin de M2, fait manquer le critère (d) de M1b, et grossit le saut de migrations. **Rejetée.**
+- **(A) Tagger `main` en déclarant M2 en avant-première** : **recommandée**, aux conditions B2, B3 et B6.
+
+**Ce qui est joignable en production avec (A)** (d'après le code) : la source Gutenberg, greffon de premier rang enregistré (`plugin_host/public.py:72`), active seulement après `source add` ; le suivi multi-sources avec repli (`acquisition/application/follow.py:310`), actif dès qu'une Édition a plusieurs liaisons ; les filtres de téléchargement et la détection de trous (#156) dans le cycle de suivi de tous ; la politique de tomes des romans en ligne (#153) ; la fusion d'Éditions et les pierres tombales `work` sur identifiants externes (#146), y compris dans `purge --now`.
+
+**Risques de (A).**
+- Les migrations 0020 à 0037 deviennent publiées et figées (`check_patch_migrations.py`) : toute correction du schéma M2 passe ensuite par une nouvelle migration. Aucune PR M2 ouverte (#149, #154, #155, #158) ne touche aux migrations aujourd'hui.
+- Du code M2 sort sans le contradicteur de M2 ni sa revue juridique des sources ; les notes de version doivent le dire.
+- Le retour vers la 0.2.0 n'est plus « sans perte » dans tous les cas : voir B3.
+
+### Objections
+
+**BLOQUANT avant release**
+
+- **B1. CI rouge sur cette PR.** `tests/unit/test_admin_docs.py::test_restore_doc_puts_the_schema_assets_in_the_backup_set` exige la chaîne `M1b` dans `restauration.md`, que L32 a réécrite (« Depuis la 0.3… »). *Correctif* : le test date de M1a et vérifiait une promesse (« la sauvegarde intégrée de M1b les portera ») ; qu'il vérifie maintenant le renvoi à `sauvegarde.md` et la présence de `schema.sql` et `data-dictionary.md` dans le jeu de sauvegarde, au lieu du nom du jalon.
+- **B2. Le CHANGELOG et `retour-arriere.md` annoncent « migrations 0013 à 0017 ».** Avec (A), l'image applique aussi 0020, 0025, 0021, 0026, 0027, 0028, 0035 et 0037. La ligne « Migration : oui… » est ce que lit l'exploitant (ENF-OPS-008). *Correctif* (documentaire, au commit de release) : lister toute la chaîne dans son ordre réel, ajouter une section « Avant-première M2 » (liste ci-dessus, avec ce qui est actif par défaut), et ajouter les treize migrations à `tools/published-migrations.toml`.
+- **B3. Une pierre tombale `work` rend la 0.2.0 inutilisable après un retour arrière** (d'après le code ; à prouver par l'E2E). Depuis #146, `purge --now` d'une Œuvre qui porte des identifiants externes écrit des pierres tombales de portée `work` qui citent le normaliseur `work_id@1`, ajouté à `cited.py`. La 0.2.0 ne le connaît pas (`cited.py` au tag `v0.2.0`). Son index lève `CitedVersionMissingError` dès qu'il construit à partir d'une pierre tombale qui le cite, et la procédure de `retour-arriere.md` rejoue justement le journal hors base dans la base restaurée. Le blocage est sûr, car rien de purgé ne revient, mais la DoD (« retour arrière 0.3 → 0.2 sans perte ») ne tient plus. *Correctif* :
+  1. ajouter au parcours `m1b-rollback` une purge d'Œuvre à identifiant externe avant le retour ;
+  2. si le blocage se confirme, écrire dans `retour-arriere.md` et dans les notes de version que le retour à la 0.2.0 est impossible après une telle purge (seul `detach` reste) ;
+  3. faire signaler ce cas par l'aperçu `reconcile --adopt-after-restore --dry-run`, au lieu d'une exception au démarrage.
+
+  Rendre la 0.2.0 tolérante supposerait une 0.2.1, ce que la garde de version corrective autorise sans migration ; c'est une option, pas une exigence.
+- **B4. 63/64 sans déclaration.** ENF-GOV-004 (L28, second registre) n'a ni test ni entrée `[[deferred]]` ; la DoD 1 (64/64) et la DoD 3 (image sur les deux registres) ne tiennent pas. *Correctif* : soit le porteur fournit le jeton et L28 entre avant le tag, soit une entrée `[[deferred]]` ENF-GOV-004 → M2, avec sa raison et l'accord du porteur, entre au commit de release. Le choix entre les deux est P1.
+- **B5. Preuves de la DoD 3 et 4 pas encore produites.** Il manque trois preuves :
+  - le pic de RSS sur le profil complet : le banc est manuel (exception de `traceability-exceptions.toml`), la DoD veut la preuve en asset ;
+  - le SBOM, les attestations et le rapport de tests en assets : premier passage réel de `release.yml` depuis L27 ;
+  - le nightly Kavita, famille comprise, et le contrat Suwayomi `ui_login`, **sur le commit tagué** : le dernier nightly vert (11-11, 09:51) précède L30 (#150) et ses ajouts de nuit.
+
+  Rien à coder : lancer ces trois jobs sur le commit candidat et attacher les sorties.
+- **B6. Geler `main` entre la fusion de cette PR et le tag.** Le suivi multi-sources (#152) et les filtres de téléchargement (#156) modifient le cycle de suivi **après** le passage de L30. Les parcours `m1b-*` de cette PR, qui tournent sur ce `main`, doivent être verts. Aucune PR M2 ouverte ne doit être fusionnée avant le tag.
+
+**À corriger en M2**
+
+- **M1. `POST /shelves` ne lie pas une étagère en mode conservation à une bibliothèque Kavita** (L30, point 5) : la CLI et l'API divergent sur l'acte qui porte la barrière parentale. Les deux doivent passer par `linking.py`.
+- **M2. Titres dans les journaux structurés** (`fsops.write_atomic`, `export.op_done`) : sur une installation familiale, les journaux révèlent ce qui est lu. C'est une dette de confidentialité, à fermer avant que M3 n'ouvre les profils.
+- **M3. Retrait après élévation d'âge sans relance** (`withdrawal_pending`) : un fichier devenu interdit reste lisible par l'enfant tant que l'admin ne relance pas. Au minimum, une notification répétée et une relance bornée du plan.
+- **M4. Retour arrière avec une racine non montée** : `reconcile --adopt-after-restore` doit refuser tant qu'une racine enregistrée n'a pas de sentinelle lisible, et nommer le service à utiliser.
+- **M5. `retour-arriere.md` ne dit pas que les sauvegardes faites par la 0.3** (`shelfhold-backup/2`, schéma au-delà de 0012) ne sont pas restaurables par la 0.2.0.
+- **M6. Décision L11, point 6** : remplacer « session admin fraîche P3 » par la règle réelle, pour qu'aucun lecteur n'y lise une garantie qui n'existe pas.
+
+**Décisions du porteur**
+
+- **P1. Second registre** (D4) : fournir le jeton avant le tag, ou accepter une 0.3.0 sur GHCR seule avec ENF-GOV-004 reportée en M2 (B4).
+- **P2. Fraîcheur de `rate`** (amende P3). EF-USR-022 exige une fraîcheur pour **changer le plafond** d'une étagère dès qu'un profil restreint existe, mais pas pour **classer**. Or classer `0` une Œuvre adulte la fait entrer dans la bibliothèque famille, ce qui expose l'enfant au même contenu. Une session volée, valable 30 jours glissants, ne peut pas relever le plafond, mais elle peut faire classer `0` ce qu'elle veut. *Recommandation* : donner à l'action `rate` la règle conditionnelle du contrôle parental, c'est-à-dire ajouter `Effect.PARENTAL_CONTROL` à `rate` dans `identity/domain/catalogue.py:71`. La fraîcheur n'est alors exigée que si un profil restreint existe, donc seulement dans les foyers où l'enjeu existe. Coût : une ligne, un test de la table de vérité et la mise à jour de `roles.md`.
+- **P3. Passkeys sans réauthentification.** Une session volée ajoute une passkey qui survit à la révocation des sessions et au changement de mot de passe ; seul `admin reset-password` l'élimine. Le vol temporaire devient ainsi un accès permanent. L'enregistrement est rare, la friction serait négligeable. *Recommandation*, à trancher **avant** le tag : exiger 900 s pour `passkey.register` (`catalogue.py:82`) dans tous les profils, et notifier l'admin à chaque enregistrement.
+- **P4. Tag** : option (A) ci-dessus, avec B2, B3 et B6.
+- **P5. Rappels déjà ouverts** :
+  - D14 (âge d'une Œuvre non classée sur étagère adulte) ;
+  - D15 (historique git public) ;
+  - réglages Suwayomi `excludeUnreadChapters` et `excludeNotStarted` : sans décision, `source add` est refusé sur tout Suwayomi neuf, et c'est la première impression d'une installation ;
+  - fichiers adoptés non classés lisibles jusqu'au classement (L11) ;
+  - `adopt pair --decline`.
