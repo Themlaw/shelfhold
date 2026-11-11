@@ -56,6 +56,14 @@ class RestoreExit(Protocol):
     def adopt_after_restore(self, *, confirm_deletion: bool, principal: Principal) -> None: ...
 
 
+class CredentialsExit(Protocol):
+    """After a restore: sessions and API keys were revoked; the passkeys and the passwords changed
+    since the backup are for a person to look at. `acknowledge` ends the wait."""
+
+    def waiting(self) -> list[WaitingItem]: ...
+    def acknowledge(self, *, principal: Principal) -> None: ...
+
+
 class KeyringExit(Protocol):
     """L33: tombstone lines whose key the keyring lacks."""
 

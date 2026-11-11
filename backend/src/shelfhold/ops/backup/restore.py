@@ -13,7 +13,11 @@ destination by someone else is not followed. Nothing is ever deleted, here or by
 restore that stops half way leaves its folder and says so.
 
 The database is written last, so a half restore has no database and cannot be started by
-mistake, and is integrity-checked where it lands. The keyring is written as the file the
+mistake, and is integrity-checked where it lands. Before it takes its name, every session and
+API key in it is revoked (a key revoked after the backup would be live again otherwise) and a
+notice is left in the folder: `status` of the restored instance asks for the passkeys and
+passwords changed since the backup to be checked, until `shelfhold restore acknowledge`. The
+keyring is written as the file the
 instance reads (`keyring`, 0600) from the armored member, unless the instance keeps its keyring
 elsewhere (`SHELFHOLD_SECRET_KEY_FILE`): then that file is the operator's and nothing is
 recreated in the new folder. What follows is the operator's: start Shelfhold on the new folder
@@ -29,9 +33,14 @@ import os
 import sqlite3
 import stat
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
+import sqlalchemy as sa
+
+from shelfhold.identity.public import revoke_all_credentials
+from shelfhold.infrastructure.restore_notice import RestoreNotice, RestoreNoticeData
 from shelfhold.infrastructure.secrets.errors import ExportError
 from shelfhold.infrastructure.secrets.export import read_passphrase_file
 from shelfhold.ops.backup.archive import (
@@ -81,6 +90,8 @@ class RestoreReport:
     schema_revision: str
     created_at: str
     keyring_written: bool
+    sessions_revoked: int = 0
+    api_keys_revoked: int = 0
 
 
 def _check_destination(destination: Path, live_data_dir: Path | None) -> Path:
@@ -239,19 +250,46 @@ def restore_archive(
             resolved = _check_destination(destination, live_data_dir)
             keyring_json = None if keep_external_keyring else checked.keyring.to_json()
             stream.seek(0)
-            _write_all_members(stream, passphrase, resolved, keyring_json, checked.file_sha256)
+            revoked = _write_all_members(
+                stream, passphrase, resolved, keyring_json, checked.file_sha256, checked.created_at
+            )
     finally:
         del passphrase
     files = len(checked.members) - 1 + int(keyring_json is not None)  # `keyring.age` -> `keyring`
     return RestoreReport(
         resolved, files, checked.schema_revision, checked.created_at,
         keyring_written=keyring_json is not None,
+        sessions_revoked=revoked[0], api_keys_revoked=revoked[1],
     )  # fmt: skip
 
 
+def _revoke_credentials(database: Path, destination: Path, created_at: str) -> tuple[int, int]:
+    """On the restored database, before it can be started: no live session, no live API key."""
+    now = datetime.now(UTC)
+    engine = sa.create_engine(f"sqlite+pysqlite:///{database}", hide_parameters=True)
+    try:
+        with engine.begin() as connection:
+            tables = set(sa.inspect(connection).get_table_names())
+            if {"session", "api_key", "audit"} <= tables:
+                sessions, keys = revoke_all_credentials(connection, now=now)
+            else:  # not a Shelfhold schema (a bare test database): no credential to revoke
+                sessions = keys = 0
+    except sa.exc.SQLAlchemyError:
+        raise RestoreIncompleteError from None  # no `shelfhold.db` yet: it cannot be started
+    finally:
+        engine.dispose()
+    RestoreNotice(destination).write(RestoreNoticeData(now.isoformat(), created_at, sessions, keys))
+    return sessions, keys
+
+
 def _write_all_members(
-    stream: BinaryIO, passphrase: str, resolved: Path, keyring_json: bytes | None, sha256: str
-) -> None:
+    stream: BinaryIO,
+    passphrase: str,
+    resolved: Path,
+    keyring_json: bytes | None,
+    sha256: str,
+    created_at: str,
+) -> tuple[int, int]:
     root_fd = os.open(resolved, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     extractor = _Extractor(root_fd, keyring_json)
     reader = HashingReader(stream)
@@ -264,8 +302,10 @@ def _write_all_members(
         extractor.close()
         if reader.digest.hexdigest() != sha256 or not _database_ok(resolved / DATABASE_TEMP):
             raise RestoreIncompleteError
+        revoked = _revoke_credentials(resolved / DATABASE_TEMP, resolved, created_at)
         os.rename(DATABASE_TEMP, DATABASE_MEMBER, src_dir_fd=root_fd, dst_dir_fd=root_fd)
         os.fsync(root_fd)
+        return revoked
     finally:
         extractor.close()
         os.close(root_fd)

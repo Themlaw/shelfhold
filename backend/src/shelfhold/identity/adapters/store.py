@@ -49,6 +49,30 @@ _USER_COLUMNS = (
 )
 
 
+def revoke_all_credentials(connection: sa.Connection, *, now: datetime) -> tuple[int, int]:
+    """Every live session and API key closed, one audit line written: after a restore, the
+    credentials of the backup are the ones of a past (a key revoked since would be live again).
+    Returns `(sessions, api_keys)` closed; the user, passkeys and passwords are left as they are.
+    A key is made again in one command; the audit line names no user and holds no secret."""
+    sessions = connection.execute(
+        sa.update(_session).where(_session.c.revoked_at.is_(None)).values(revoked_at=now)
+    ).rowcount
+    keys = connection.execute(
+        sa.update(_key).where(_key.c.revoked_at.is_(None)).values(revoked_at=now)
+    ).rowcount
+    connection.execute(
+        audit_insert(
+            AuditEntry(
+                actor_id=None,
+                action="restore.credentials_revoked",
+                target=f"sessions={sessions} api_keys={keys}",
+                at=now,
+            )
+        )
+    )
+    return sessions, keys
+
+
 def audit_insert(entry: AuditEntry) -> sa.Insert:
     """The audit line as an INSERT: a caller with a transaction of its own writes it in there, so
     the action and its trace commit or fail together (EF-USR-016)."""

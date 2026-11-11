@@ -35,6 +35,7 @@ _RATE = reserved_action(RESERVED_ACTIONS["rate"])
 _ROOT_TAKEOVER = reserved_action(RESERVED_ACTIONS["root.takeover"])
 _ROOT_REINIT = reserved_action(RESERVED_ACTIONS["root.reinit"])
 _STORE_REINIT = reserved_action(RESERVED_ACTIONS["store.reinit"])
+_RESTORE_ACK = reserved_action(RESERVED_ACTIONS["restore.acknowledge"])
 Admin = Annotated[Principal, Depends(require_admin)]
 
 
@@ -297,6 +298,13 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         """`/store` is not what the database remembers: its Units go to `store_missing`."""
         with refusals():
             return RootOut(**get_ops().store_reinit(principal=principal))
+
+    @router.post(_path("restore", "acknowledge"))
+    def restore_acknowledge(principal: Annotated[Principal, Depends(_RESTORE_ACK)]) -> Done:
+        """The passkeys and passwords changed since the backup were looked at. Reserved."""
+        with refusals():
+            get_ops().restore_acknowledge(principal=principal)
+        return Done()
 
     @router.post(_path("target", "rotate-key"))
     def target_rotate_key(

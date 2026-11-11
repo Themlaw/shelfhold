@@ -66,7 +66,13 @@ from shelfhold.export.domain.restore import (
     judge_line,
     safe_rel_path,
 )
-from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
+from shelfhold.identity.public import (
+    RESERVED_ACTIONS,
+    Allowed,
+    Principal,
+    authorize_reserved,
+    revoke_all_credentials,
+)
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import Fsops
@@ -347,6 +353,7 @@ class RestoreGuard:
             return status
         epoch = status.epoch
         published: list[Any] = []
+        revoked: tuple[int, int] | None = None
         if not status.pending:  # this restore has not been counted yet
             seen = max(
                 (
@@ -371,6 +378,10 @@ class RestoreGuard:
                     )
                 )
                 written = self._fsops.freeze_state.persist(connection, max(top, 1))
+                # a key or a session revoked after the backup is live again in this database:
+                # all of them go, in the transaction that counts the restore (they can be made
+                # again; the notice asks for the passkeys and the passwords to be looked at)
+                revoked = revoke_all_credentials(connection, now=self._clock.now())
                 published.append(
                     self._bus.publish(
                         connection,
@@ -381,7 +392,7 @@ class RestoreGuard:
             self._fsops.freeze_state.follow(written)  # committed: this writer follows
         self._bus.deliver(published)
         self._fsops.freeze()
-        return RestoreStatus(epoch, status.findings, pending=True)
+        return RestoreStatus(epoch, status.findings, pending=True, revoked=revoked)
 
     def require_writable(self) -> None:
         if self._fsops.frozen:

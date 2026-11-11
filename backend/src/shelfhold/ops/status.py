@@ -66,6 +66,7 @@ _TEMPLATES = {
     "rating_pending": "shelfhold rate <age> --work {subject} (all at once: --pending)",
     "follow_suspended": "shelfhold rate <age> --work {subject} (all at once: --pending)",
     "restored_behind": "shelfhold reconcile --adopt-after-restore",
+    "restored_credentials": "shelfhold restore acknowledge",
     "tombstone_key_unknown": "shelfhold secrets import --passphrase-file <file> --in <file>",
     "tombstone_lines_owed": "shelfhold tombstone flush",
     "tombstone_journal_truncated": "shelfhold tombstone set-aside-journal --root {subject}",

@@ -37,7 +37,7 @@ from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.rating import RatingOps
-from shelfhold.ops.restore import RestoreGuardExit
+from shelfhold.ops.restore import RestoreCredentialsExit, RestoreGuardExit
 from shelfhold.ops.roots import RootOps
 from shelfhold.ops.services import OpsServices
 
@@ -126,6 +126,7 @@ def open_ops(
         headless=_LazyHeadless(settings),
         keyring=TombstoneKeyringExit(settings, engine, clock, composition),
         restore=RestoreGuardExit(engine, read_only, clock, bus),
+        credentials=RestoreCredentialsExit(settings.data_dir, engine, clock),
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), backfill=BackfillOps(composition),
         normalize=NormalizeOps(composition), meta=MetaOps(composition),

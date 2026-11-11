@@ -61,6 +61,12 @@ un trousseau absent ou aux droits trop ouverts ; il ne sait pas si vous l'avez e
 ## Restaurer
 
 1. Arrêtez Shelfhold. Remettez `/data` à son état sauvegardé (et le trousseau, s'il n'y est pas).
+   **Une base remise à la main garde les identifiants de ce jour-là** : au premier démarrage où elle
+   est trouvée en retard sur les fichiers, Shelfhold révoque toutes les sessions et toutes les clés
+   d'API (audit `restore.credentials_revoked`) et pose l'état d'attente `restored_credentials` :
+   revérifiez les passkeys et les mots de passe changés depuis la sauvegarde, puis
+   `shelfhold restore acknowledge` (réservée). `shelfhold backup restore` fait la même révocation
+   dans la base qu'il écrit : voir [sauvegarde.md](sauvegarde.md).
 2. Redémarrez. Au démarrage, Shelfhold compare la base aux **sentinelles** que chaque racine de
    `/library` porte. Si une sentinelle est plus récente que la base, c'est qu'on a restauré en
    arrière : la **époque de restauration** est incrémentée, l'événement `instance.restored_behind`

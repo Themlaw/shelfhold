@@ -53,6 +53,7 @@ from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.ports import (
     AdoptionExit,
+    CredentialsExit,
     HeadlessOps,
     KeyringExit,
     PausedQueue,
@@ -153,6 +154,7 @@ class OpsServices:
         targets: TargetOps | None = None,
         headless: HeadlessOps | None = None,
         restore: RestoreExit | None = None,
+        credentials: CredentialsExit | None = None,
         keyring: KeyringExit | None = None,
         adoption: AdoptionExit | None = None,
         library: LibraryOps | None = None,
@@ -171,6 +173,7 @@ class OpsServices:
         self._targets = targets
         self._headless = headless
         self._restore = restore
+        self._credentials = credentials
         self._keyring = keyring
         self._adoption = adoption
         self._library = library
@@ -199,7 +202,13 @@ class OpsServices:
             self._roots.refresh()  # before the rest reads the marks: one view of the roots
         with self._engine.connect() as connection:
             items = collect(connection)
-            for port in (self._restore, self._keyring, self._adoption, self._roots):
+            for port in (
+                self._restore,
+                self._credentials,
+                self._keyring,
+                self._adoption,
+                self._roots,
+            ):
                 if port is not None:
                     items += [dress(item) for item in port.waiting()]
             if not full:
@@ -514,6 +523,11 @@ class OpsServices:
         if self._restore is None:
             raise ExitUnavailableError("the restore guard is not connected")
         self._restore.adopt_after_restore(confirm_deletion=confirm_deletion, principal=principal)
+
+    def restore_acknowledge(self, *, principal: Principal) -> None:
+        if self._credentials is None:
+            raise ExitUnavailableError("the restore notice is not connected")
+        self._credentials.acknowledge(principal=principal)
 
     def tombstone_accept_lost_keyring(
         self, *, confirmation: str, principal: Principal

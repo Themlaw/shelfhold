@@ -66,6 +66,9 @@ _DECLARED = (
     _action("keys.create", Effect.MANAGES_CREDENTIALS),
     _action("keys.rotate", Effect.MANAGES_CREDENTIALS),
     _action("keys.revoke", Effect.MANAGES_CREDENTIALS),
+    _action(
+        "restore.acknowledge", Effect.MANAGES_CREDENTIALS
+    ),  # passkeys, passwords after a restore
     _action("device_token.manage", Effect.MANAGES_CREDENTIALS),
     # A passkey is a persistent way in: adding or retiring one needs a fresh proof in the hardened
     # profile only (review PR #95; the default is the porteur's call, docs/decisions/M1b.md)
@@ -141,6 +144,7 @@ EXIT_ROUTES: tuple[ExitRoute, ...] = (
     _exit("store reinit", "store_lost", "store.reinit"),
     _exit("source reconnect", "source_instance_changed"),
     _exit("shelf withdraw", "withdrawal_pending", "shelf.withdraw"),
+    _exit("restore acknowledge", "restored_credentials", "restore.acknowledge"),
 )
 
 # States whose exit command is not specified yet (M3): the test fails when one gets routes.

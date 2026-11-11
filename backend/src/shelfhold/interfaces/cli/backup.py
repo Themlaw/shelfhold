@@ -173,6 +173,13 @@ def run_restore(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     except (RestoreIncompleteError, OSError):  # something may be written: the folder is unusable
         return _fail(t("backup.restore_incomplete", path=args.destination))
     print(t("backup.restored", path=report.destination, files=report.files))
+    print(
+        t(
+            "backup.credentials_revoked",
+            sessions=report.sessions_revoked,
+            keys=report.api_keys_revoked,
+        )
+    )
     if not report.keyring_written:
         print(t("backup.keyring_external"))
     print(t("backup.next_steps", path=report.destination))

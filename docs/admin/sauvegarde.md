@@ -112,6 +112,13 @@ phrase de passe donnent **la même phrase** (volontairement).
    dernier puis contrôlée là où elle atterrit. Un nom d'entrée avec `..`, absolu, ou un lien est
    refusé ; rien n'est jamais supprimé. Si l'instance garde son trousseau ailleurs
    (`SHELFHOLD_SECRET_KEY_FILE`), aucun trousseau n'est recréé dans le nouveau dossier.
+   **Les identifiants sont révoqués dans la base restaurée**, avant qu'elle ne prenne son nom : toutes
+   les sessions et toutes les clés d'API, y compris celles qui étaient valides le jour de la
+   sauvegarde. Sans cela, une clé révoquée après la sauvegarde (ou une session fermée après une
+   compromission) serait de nouveau valide. La commande dit combien en ont été fermées ; la ligne
+   d'audit `restore.credentials_revoked` le garde. Les clés se recréent (`shelfhold admin keys
+   create`) et on se reconnecte. Un fichier `.restore-notice.json` est laissé dans le nouveau
+   dossier : il rend l'avertissement **durable** (voir plus bas).
 2. Démarrez Shelfhold avec `SHELFHOLD_DATA_DIR=/nouveau/data`. Si une racine de la bibliothèque est en
    avance sur la base, l'instance démarre en **`restored_behind`** (lecture seule).
 3. `shelfhold reconcile --adopt-after-restore` réadopte les fichiers. **Sans `/store`**, on
@@ -119,5 +126,22 @@ phrase de passe donnent **la même phrase** (volontairement).
    perdu), l'état est `store_lost` et **rien n'est marqué** (montez `/store`, ou `store reinit`) ;
    présent mais une copie absente, l'Unité passe en `store_missing`. Dans les deux cas aucune
    suppression n'a lieu ; une copie qui revient avec la bonne empreinte remet l'Unité en `stored`.
+
+### Après la restauration : passkeys et mots de passe
+
+Les **passkeys** et les **mots de passe** ne sont pas révoqués (le compte doit rester joignable) :
+ils reviennent dans l'état de la sauvegarde. Un `admin reset-password` ou la révocation d'une
+passkey faits depuis la sauvegarde sont donc **annulés**. `shelfhold status` affiche l'état
+`restored_credentials` tant que ce n'est pas acquitté, redémarrages compris : revérifiez la liste
+des passkeys, refaites les changements de mot de passe, puis lancez
+
+```sh
+shelfhold restore acknowledge     # action réservée : session récente ou CLI de l'hôte, jamais une clé
+```
+
+(API : `POST /api/v1/restore/acknowledge`). L'acquittement est audité (`restore.credentials_acknowledged`).
+
+La même révocation a lieu quand une base copiée à la main est trouvée en retard sur ses fichiers
+(`restored_behind`, première fois seulement), pour une restauration faite sans `backup restore`.
 
 RPO 24 h; RTO 1 h = remise en service, pas recopie du contenu.

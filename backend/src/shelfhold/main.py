@@ -233,13 +233,14 @@ def create_app(
             IdentityDispatcher(auth, headless=headless_admin(), ops=ops_services()),
             allow_host=resolved.cli_allow_host,
         )
+        bound: LocalSocketServer | None = server
         try:
             await server.start()
         except OSError as error:  # the HTTP server stays up; the CLI then works on the database
             structlog.get_logger().error("local_cli.socket_unavailable", error=str(error))
-            server = None
+            bound = None
         runtime.start_projection_repair()  # the socket is bound (or not): now the projections
-        return server
+        return bound
 
     async def take_over_when_free() -> LocalSocketServer | None:
         """The start found `/data/.lock` held by a migration and wrote nothing (it said so:
