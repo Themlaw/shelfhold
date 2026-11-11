@@ -52,9 +52,3 @@ def write_private(path: Path, data: bytes, *, overwrite: bool) -> None:
             os.unlink(temporary)
         raise
     _fsync_directory(path.parent)
-
-
-def ensure_private_dir(path: Path) -> None:
-    """Create `path` (and parents) for files this module writes; the mode of the folder is the
-    umask's, the files in it are owner-only."""
-    path.mkdir(parents=True, exist_ok=True)

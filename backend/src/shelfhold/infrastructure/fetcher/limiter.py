@@ -27,13 +27,13 @@ _DAY_S = 86_400
 
 
 class BucketStore(Protocol):
-    """Where a bucket keeps its balance between two processes (`provider_quota`): a command run
-    by itself does not start with a full bucket. `at` is a wall-clock instant at which the balance
-    (never below 0) is `tokens`; a debt is a balance that reaches 0 in the future."""
+    """The shared balance of a provider (`provider_quota`): one atomic read-modify-write, so that
+    two coroutines, two Fetchers and two processes spend one quota. Returns the seconds to wait
+    before using the token it took; raises `ProviderQuotaExceeded` when the day is spent."""
 
-    def load(self, provider: str) -> tuple[float, float] | None: ...
-
-    def save(self, provider: str, tokens: float, at: float) -> None: ...
+    def reserve(
+        self, provider: str, rate: float, burst: int, daily_cap: int | None, now: float
+    ) -> float: ...
 
 
 class TokenBucket:
@@ -60,13 +60,13 @@ class TokenBucket:
         self._day = int(wall() // _DAY_S)
         self._used = 0
         self._store, self._name = store, name
-        kept = store.load(name) if store is not None else None
-        if kept is not None:  # what the previous process left, refilled by the time since
-            tokens, at = kept
-            self._tokens = min(float(burst), tokens + (wall() - at) * rate)
 
     def _reserve(self) -> float:
         """Take one token now; the seconds to wait before using it. Raises when the day is spent."""
+        if self._store is not None:  # the database is the one balance
+            return self._store.reserve(
+                self._name, self.rate, self.burst, self.daily_cap, self._wall()
+            )
         day = int(self._wall() // _DAY_S)
         if day != self._day:
             self._day, self._used = day, 0
@@ -79,10 +79,7 @@ class TokenBucket:
         self._at = now
         self._tokens -= 1.0
         self._used += 1
-        wait = 0.0 if self._tokens >= 0 else -self._tokens / self.rate
-        if self._store is not None:
-            self._store.save(self._name, max(self._tokens, 0.0), self._wall() + wait)
-        return wait
+        return 0.0 if self._tokens >= 0 else -self._tokens / self.rate
 
     async def acquire(self) -> None:
         wait = self._reserve()
@@ -102,8 +99,9 @@ class ProviderBuckets:
     _buckets: dict[str, tuple[ProviderQuota, TokenBucket]] = field(default_factory=dict)
 
     def use_store(self, store: BucketStore) -> None:
-        """Keep the balances in `store` from now on (buckets already open are reopened from it)."""
-        if store is not self.store:
+        """Keep the balances in `store` from now on. Idempotent: the same store (the same
+        database) changes nothing, so open buckets are never dropped."""
+        if store != self.store:
             self.store = store
             self._buckets.clear()
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 
 from shelfhold.catalog.application.external_ids import add_external_id
 from shelfhold.catalog.domain.external_ids import ExternalId
@@ -146,5 +147,7 @@ def test_cli_meta_enrich_says_what_it_kept_suggested_and_refused(
 
         provider_fetcher.default_runtime().robots.clear()
         provider_fetcher.default_runtime().caches.clear()
+        with b.engine.begin() as connection:
+            connection.execute(sa.text("DELETE FROM metadata_cache"))
         assert b.cli("meta", "enrich", ISBN) != 0
         assert "robots.txt" in capsys.readouterr().err

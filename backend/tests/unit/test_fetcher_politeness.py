@@ -15,6 +15,7 @@ from shelfhold.infrastructure.fetcher import (
     DomainNotAllowed,
     GuardedFetcher,
     RobotsDisallowed,
+    RobotsUnavailable,
 )
 from shelfhold.infrastructure.fetcher.cache import HttpCache, cache_for
 from shelfhold.infrastructure.fetcher.client import USER_AGENT
@@ -315,7 +316,7 @@ def test_robots_not_consulted_when_the_source_does_not_respect_it() -> None:
 @pytest.mark.req("ENF-LEG-003")
 def test_robots_absent_allows_and_unavailable_disallows() -> None:
     assert _run(_fetcher(_site(404), robots=RobotsPolicy(clock=Clock())).get(PAGE)).status == 200
-    with pytest.raises(RobotsDisallowed):
+    with pytest.raises(RobotsUnavailable):  # an outage, not a refusal
         _run(_fetcher(_site(503), robots=RobotsPolicy(clock=Clock())).get(PAGE))
 
 

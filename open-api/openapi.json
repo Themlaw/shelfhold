@@ -8809,6 +8809,10 @@
       "code": "fetch.robots_disallowed",
       "status": 403
     },
+    "/api/v1/problems/fetch.robots-unavailable": {
+      "code": "fetch.robots_unavailable",
+      "status": 503
+    },
     "/api/v1/problems/fetch.timeout": {
       "code": "fetch.timeout",
       "status": 504

@@ -70,9 +70,11 @@ class RobotsDisallowed(FetchError):
     code: ClassVar[str] = "fetch.robots_disallowed"
 
 
-class RobotsUnavailable(RobotsDisallowed):
+class RobotsUnavailable(FetchError):
     """robots.txt could not be read (5xx, network error): nothing is read until it can be, but
-    this is an outage of the site, not a refusal of it."""
+    this is an outage of the site, not a refusal of it (not a `RobotsDisallowed`)."""
+
+    code: ClassVar[str] = "fetch.robots_unavailable"
 
 
 class ProviderQuotaExceeded(FetchError):

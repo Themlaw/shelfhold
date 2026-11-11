@@ -336,7 +336,6 @@ def test_the_balance_of_a_bucket_survives_the_process(tmp_path: Path) -> None:
     engine = create_db_engine(tmp_path / "quota.db")
     metadata.create_all(engine)
     store = SqlBucketStore(engine)
-    assert store.load("openlibrary") is None
     time = FakeTime()
     first = TokenBucket(1.0, 1, clock=time.now, sleep=time.sleep, wall=time.now, store=store,
                         name="openlibrary")  # fmt: skip
@@ -390,3 +389,25 @@ def test_the_host_downloads_a_cover_bounded_and_only_by_get() -> None:
     assert f.cookies().cookies == {}
     assert run(f.post(f"https://{API_HOST}/api/books", json={"a": 1})).status == 200
     run(f.aclose())
+
+
+@pytest.mark.req("ENF-LEG-003", "ENF-LEG-007")
+def test_an_unreadable_robots_is_an_outage_not_a_refusal() -> None:
+    from shelfhold.infrastructure.fetcher import RobotsUnavailable
+
+    assert not issubclass(RobotsUnavailable, RobotsDisallowed)
+    assert not issubclass(RobotsDisallowed, RobotsUnavailable)
+    fake = FakeOpenLibrary(robots={API_HOST: "x"})
+    original = fake._handle
+
+    def down(request):  # type: ignore[no-untyped-def]
+        if request.url.path == "/robots.txt":
+            import httpx2
+
+            return httpx2.Response(503)
+        return original(request)
+
+    fake._handle = down  # type: ignore[method-assign]
+    with pytest.raises(RobotsUnavailable):
+        run(provider_fetcher(fake).get(BOOKS))
+    assert fake.api_calls() == []

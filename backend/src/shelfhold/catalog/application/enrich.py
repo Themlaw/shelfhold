@@ -24,8 +24,6 @@ the transaction opens, never inside it.
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import hashlib
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -41,6 +39,7 @@ from shelfhold.catalog.application.rating import RatingService, Withdrawal
 from shelfhold.catalog.domain.external_ids import ExternalId, ExternalIdError, normalize_external_id
 from shelfhold.catalog.domain.provenance import FieldKey, StoredField
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.cover_store import CoverStore
 from shelfhold.infrastructure.fetcher.client import is_identifiable
 from shelfhold.infrastructure.fetcher.errors import (
     DnsBlocked,
@@ -53,6 +52,7 @@ from shelfhold.infrastructure.fetcher.errors import (
     RobotsUnavailable,
     UserAgentNotIdentifiable,
 )
+from shelfhold.infrastructure.fetcher.payload_cache import CachingFetcher, PayloadCache
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.imaging import (
     ImageKind,
@@ -62,7 +62,6 @@ from shelfhold.infrastructure.imaging import (
     make_thumbnail,
 )
 from shelfhold.infrastructure.schema import catalog, platform
-from shelfhold.infrastructure.secrets.atomic import ensure_private_dir, write_private
 from shelfhold.sdk.age import AgeRating
 from shelfhold.sdk.metadata import (
     EntityRef,
@@ -156,7 +155,8 @@ class EnrichService:
         self._engine = engine
         self._clock = clock
         self._bus = bus
-        self._covers = data_dir / "covers"
+        self._cover_store = CoverStore(data_dir)
+        self._payloads = PayloadCache(engine, clock)
         self._limits = limits
         self._rating = rating or RatingService()
 
@@ -226,13 +226,14 @@ class EnrichService:
     ) -> EnrichReport:
         if not is_identifiable(getattr(fetcher, "user_agent", "")):
             raise UserAgentNotIdentifiable("a provider is only called with an identifying agent")
+        fetcher = CachingFetcher(fetcher, self._payloads, provider.manifest.key)
         with self._engine.connect() as connection:
             ids = self._ids_of(connection, edition_id)
             cover_open = self._cover_open(connection, edition_id)
         target = EntityRef(entity_type="edition", ids=ids, entity_id=edition_id)
         manifest = provider.manifest
         try:
-            result = await provider.identify(fetcher, target, MatchHints())  # type: ignore[arg-type]
+            result = await provider.identify(fetcher, target, MatchHints())
         except RobotsUnavailable:  # the site's robots.txt cannot be read: its outage, not its no
             return self._down(edition_id, "unreachable")
         except RobotsDisallowed:
@@ -355,15 +356,7 @@ class EnrichService:
             )  # fmt: skip
         except ImageRejected as refused:
             return None, refused.code, None
-        return self._store(thumbnail.data), None, request.url.split("?", 1)[0]
-
-    def _store(self, data: bytes) -> str:
-        """Content-addressed under `/data/covers`: the same image is one file."""
-        name = f"{hashlib.sha256(data).hexdigest()}.webp"
-        ensure_private_dir(self._covers)
-        with contextlib.suppress(FileExistsError):
-            write_private(self._covers / name, data, overwrite=False)
-        return f"covers/{name}"
+        return self._cover_store.put(thumbnail.data), None, request.url.split("?", 1)[0]
 
     # -- a provider that is down -------------------------------------------------------------
     def _down(self, edition_id: str, reason: str) -> EnrichReport:

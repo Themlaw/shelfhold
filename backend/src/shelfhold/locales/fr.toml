@@ -705,6 +705,10 @@ action = "Corrigez l'adresse : schéma http ou https, sans identifiants dans l'U
 title = "Le site demande aux robots de ne pas lire cette page."
 action = "Shelfhold respecte le fichier robots.txt de la source ; ouvrez la page depuis un navigateur."
 
+[errors."fetch.robots_unavailable"]
+title = "Le fichier robots.txt du site ne peut pas être lu pour le moment."
+action = "Rien n'est demandé au site tant qu'il n'est pas lisible ; l'opération sera reprise plus tard."
+
 [errors."fetch.quota_exceeded"]
 title = "Le plafond du jour de ce fournisseur de métadonnées est atteint."
 action = "Rien n'est envoyé d'ici demain ; les valeurs déjà reçues sont conservées."

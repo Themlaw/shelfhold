@@ -309,6 +309,7 @@ def test_a_value_from_another_provider_is_replaced_and_the_same_one_twice_writes
     assert first.written and again.written == ()  # same value, same provider
     bench.fake.books[ISBN] = record(title="A newer title")
     bench.runtime.caches.clear()
+    bench.clock.advance(hours=25)  # the host's cache life is over
     third = bench.enrich()
     assert key(bench, "title") in third.written
     title = bench.field("title")
@@ -425,6 +426,7 @@ def test_the_enrichment_stops_when_the_bucket_is_empty_and_writes_nothing(bench:
     first = bench.enrich(fetcher=fetcher)  # robots.txt + the call: the day's two tokens
     assert first.outcome == "enriched"
     bench.runtime.caches.clear()
+    bench.clock.advance(hours=25)
     with bench.engine.begin() as connection:
         connection.execute(sa.delete(catalog.metadata_field))
     limited = bench.enrich(fetcher=fetcher)
