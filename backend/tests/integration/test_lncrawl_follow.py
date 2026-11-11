@@ -160,7 +160,7 @@ def test_lncrawl_api_key_and_crawler_name_never_reach_the_database_or_the_events
     with lncrawl_bench(server) as bench:
         bench.finish()
         dump = repr(
-            [bench.rows(f"SELECT * FROM {t}") for t in
+            [bench.rows(f"SELECT * FROM {t}") for t in  # noqa: S608
              ("download_request", "source_item", "source_binding", "unit", "unit_variant",
               "export_item", "unit_coverage", "team", "edition", "work")]
         ) + repr([e.payload for e in bench.delivered])  # fmt: skip
