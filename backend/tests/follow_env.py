@@ -60,7 +60,7 @@ class Bench:
     clock: ManualClock
     bus: EventBus
     cycle: FollowCycle
-    new_cycle: Callable[[], FollowCycle]
+    new_cycle: Callable[..., FollowCycle]
     work_id: str
     edition_id: str
     binding_id: str
@@ -257,7 +257,7 @@ def follow_bench(
         if requeue_cap is not None:
             knobs["requeue_cap"] = requeue_cap
 
-        def new_cycle() -> FollowCycle:
+        def new_cycle(**extra: Any) -> FollowCycle:
             return FollowCycle(
                 lib.engine, bus, clock, service, fetcher,
                 store=PassthroughStore(
@@ -266,7 +266,7 @@ hold_work=work_lock(lib.engine),
                 ),
                 receive=bounded_receiver(guarded, staging_dir=lib.tmp, max_bytes=8 << 20),
                 place=_placement(lib), sleep=sleep, stale_k=stale_k, max_attempts=max_attempts,
-                tombstones=guard, wakes=coordinator, check_mode=check_mode, **knobs,
+                tombstones=guard, wakes=coordinator, check_mode=check_mode, **knobs, **extra,
             )  # fmt: skip
 
         cycle = new_cycle()
