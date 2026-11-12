@@ -24,7 +24,10 @@ from tests.integration.test_schema_migration_0002 import (
 )
 from tests.integration.test_schema_migration_0003 import ACQUISITION_TABLES, CATALOG_TABLES
 
-STORAGE_TABLES = {"content", "trash_item", "replica", "safeguard_backlog", "import_entry"}
+STORAGE_TABLES = {
+    "content", "trash_item", "replica", "safeguard_backlog", "import_entry",
+    "thumbnail",  # migration 0046 (M3 L01)
+}  # fmt: skip
 EXPORT_TABLES = {
     "export_target", "kavita_instance", "shelf", "shelf_destination", "remote_library",
     "shelf_destination_remote_library", "export_item", "unit_coverage", "export_record",
@@ -39,7 +42,7 @@ M2_TABLES = {  # migration 0020, the tables of the other modules included
 }  # fmt: skip
 M3_TABLES = {  # migration 0046 (M3 L01)
     "profile_source_policy", "user_state", "request", "pending_source_item", "merge_log",
-    "work_redirect", "thumbnail", "time_window", "notification_digest", "source_alias_migration",
+    "work_redirect", "time_window", "notification_digest", "source_alias_migration",
 }  # fmt: skip
 ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 OTHER = "01ARZ3NDEKTSV4RRFFQ69G5FAW"

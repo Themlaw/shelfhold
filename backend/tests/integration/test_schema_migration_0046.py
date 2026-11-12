@@ -419,3 +419,9 @@ def test_source_alias_migration_check(db: sqlite3.Connection) -> None:
             to_scheme="v1", state="previewed", preview="{}")  # nothing to migrate  # fmt: skip
     refused(db, "source_alias_migration", id=new_ulid(), source_key="s", from_scheme="v1",
             to_scheme="v2", state="previewed", preview="[]")  # fmt: skip
+
+
+@pytest.mark.req("EF-USR-001", "ENF-OPS-002")
+def test_rebuilt_user_table_still_compares_usernames_without_case(db: sqlite3.Connection) -> None:
+    add_user(db, username="Lea")
+    refused(db, "user", id=new_ulid(), username="lea", role="member", can_rate=0)

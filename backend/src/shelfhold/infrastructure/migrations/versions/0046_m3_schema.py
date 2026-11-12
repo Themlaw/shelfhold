@@ -107,9 +107,26 @@ def _rebuild(table: str, restated: tuple[sa.Column[Any], ...] = ()) -> Iterator[
 STAMP = '"stamp"'
 
 
+def _user_restated() -> tuple[sa.Column[Any], ...]:
+    """What reflection would render differently: the clock default and the NOCASE collation."""
+    return (
+        _now("created_at"),
+        sa.Column("username", sa.String(collation="NOCASE"), nullable=False),
+    )
+
+
+def _unit_restated() -> tuple[sa.Column[Any], ...]:
+    """Reflection renders the empty-string defaults as `('')`."""
+    blanks = (
+        sa.Column(n, sa.String(), server_default=sa.text("''"), nullable=False)
+        for n in ("part", "number_segment")
+    )
+    return (_now("created_at"), *blanks)
+
+
 def upgrade() -> None:
     _tables()
-    with _rebuild("user", (_now("created_at"),)) as batch:
+    with _rebuild("user", _user_restated()) as batch:
         batch.add_column(sa.Column("max_age_rating", sa.Integer(), nullable=True))
         batch.add_column(sa.Column("kavita_username", sa.String(), nullable=True))
         batch.add_column(
@@ -150,7 +167,7 @@ def upgrade() -> None:
         batch.create_unique_constraint(op.f("uq_user_kavita_username"), ["kavita_username"])
     # A child that exists keeps the strictest ceiling: NULL is never "all ages".
     op.execute("UPDATE \"user\" SET max_age_rating = 0 WHERE role = 'child'")
-    with _rebuild("user", (_now("created_at"),)) as batch:
+    with _rebuild("user", _user_restated()) as batch:
         batch.create_check_constraint(op.f("ck_user_child_has_age_ceiling"), CHILD_CEILING)
 
     with _rebuild("trash_item") as batch:
@@ -161,7 +178,7 @@ def upgrade() -> None:
             op.f("ck_trash_item_level_values"),
             "\"level\" IN ('unfollow', 'remove_destinations', 'delete_content')",
         )
-    with _rebuild("unit", (_now("created_at"),)) as batch:
+    with _rebuild("unit", _unit_restated()) as batch:
         batch.add_column(
             sa.Column("integrity_state", sa.String(), server_default="unchecked", nullable=False)
         )
@@ -384,14 +401,14 @@ def downgrade() -> None:
     with _rebuild("team", (_now("created_at"),)) as batch:
         batch.drop_constraint(op.f("ck_team_number_offset_integer"), type_="check")
         batch.drop_column("number_offset")
-    with _rebuild("unit", (_now("created_at"),)) as batch:
+    with _rebuild("unit", _unit_restated()) as batch:
         batch.drop_constraint(op.f("ck_unit_integrity_state_values"), type_="check")
         batch.drop_column("integrity_checked_at")
         batch.drop_column("integrity_state")
     with _rebuild("trash_item") as batch:
         batch.drop_constraint(op.f("ck_trash_item_level_values"), type_="check")
         batch.drop_column("level")
-    with _rebuild("user", (_now("created_at"),)) as batch:
+    with _rebuild("user", _user_restated()) as batch:
         batch.drop_constraint(op.f("ck_user_child_has_age_ceiling"), type_="check")
         batch.drop_constraint(op.f("uq_user_kavita_username"), type_="unique")
         for name in (
