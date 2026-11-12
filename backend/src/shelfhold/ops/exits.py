@@ -106,8 +106,7 @@ M1B_SERVED_STATES: Final = frozenset(
     }
 )
 
-# The M3 states whose exit is served: `maintenance off` (L13, EF-INT-018). `library_type_changed`
-# has no exit yet (EXIT_STATES_LATER).
+# The M3 states whose exit is served by this lot: `maintenance off` (L13, EF-INT-018).
 M3_SERVED_STATES: Final = frozenset({WaitingState.MAINTENANCE})
 
 # Commands whose CLI module belongs to a lot still in flight (the route and the service exist

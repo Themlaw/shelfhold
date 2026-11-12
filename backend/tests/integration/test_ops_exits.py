@@ -96,9 +96,7 @@ M3_STATES = frozenset({WaitingState.LIBRARY_TYPE_CHANGED})  # EF-EXP-049, `targe
 PLAYED_STATES = (
     M1A_STATES | M1B_SERVED_STATES | M3_STATES | M3_SERVED_STATES
 )  # the states with an end-to-end scenario below
-LATER_STATES = (M1B_STATES - M1B_SERVED_STATES) | frozenset(
-    s for s in WaitingState if s.value in EXIT_STATES_LATER
-)
+LATER_STATES = M1B_STATES - M1B_SERVED_STATES
 
 
 def _waiting(ops: OpsServices, state: str) -> list[object]:
