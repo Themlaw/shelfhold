@@ -29,8 +29,8 @@ def _damage(rig: Rig, how: str) -> str:
     if how == "crc":
         flip_page_byte(rig.received())
     else:
-        with rig.env.engine.begin() as connection:
-            connection.execute(sa.text("UPDATE content SET page_count = 9"))
+        with rig.env.engine.begin() as connection:  # a page is missing: two were recorded
+            connection.execute(sa.text("UPDATE content SET page_count = 2"))
     return how if how == "crc" else "page_count"
 
 
@@ -97,7 +97,8 @@ def test_corrupt_irreplaceable_unit_alerts_never_deleted() -> None:
     with export_env() as env:
         rig = _rig(env)
         _damage(rig, "crc")
-        make_irreplaceable(env)  # no live source: nothing upstream can give it back
+        better_copy(env, rig.exported)  # a good copy exists, as a file...
+        make_irreplaceable(env)  # ...but no live source lists the Unit any more
         received, served = rig.received(), rig.exported.target
         before = (received.read_bytes(), served.read_bytes())
 
@@ -105,8 +106,7 @@ def test_corrupt_irreplaceable_unit_alerts_never_deleted() -> None:
         assert rig.reacquirer().reacquire(rig.exported.unit_id) is ReacquireOutcome.IRREPLACEABLE
         assert len(rig.events("ops.integrity_irreplaceable")) == 1  # the alert
         assert rig.requests() == []  # nothing is asked of anyone
-        # even a good copy that turns up is not swapped in on its own
-        better_copy(env, rig.exported)
+        # even a good copy that is there is not swapped in on its own
         assert _complete(rig).outcome == "irreplaceable"
         assert (received.read_bytes(), served.read_bytes()) == before
         assert bin_files(env) == []
@@ -130,7 +130,9 @@ def test_original_stays_until_the_new_copy_is_verified() -> None:
                 sa.text("SELECT variant_id FROM content WHERE id = :c"), {"c": bad}
             ).scalar_one()
         with env.engine.begin() as connection:  # the new copy is damaged too
-            connection.execute(sa.text("UPDATE content SET page_count = 9 WHERE id = :c"), {"c": bad})
+            connection.execute(
+                sa.text("UPDATE content SET page_count = 9 WHERE id = :c"), {"c": bad}
+            )
         assert variant
         done = _complete(rig)
         assert done.outcome == "fresh_copy_corrupt"
@@ -166,7 +168,7 @@ def test_checked_units_are_not_due_again_before_the_interval() -> None:
         assert checker.due_units(10) == [rig.exported.unit_id]
         checker.check_unit(rig.exported.unit_id)
         assert checker.due_units(10) == []  # the disks are not read again every cycle
-        env.clock.advance(timedelta(days=31))
+        env.clock.advance(days=31)
         assert checker.due_units(10) == [rig.exported.unit_id]
         assert checker.due_units(0) == []
 
@@ -195,10 +197,10 @@ def test_koreader_reset_never_touches_anyones_reading_position() -> None:
                     sa.text(
                         "INSERT INTO reading_position (id, user_id, carrier_type, carrier_id, "
                         "content_hash, locator, percent, client_ts, server_ts) VALUES "
-                        "(:id, :u, 'export_item', :item, 'h', '{}', 0.4, :ts, :ts)"
+                        "(:id, :u, 'export_item', :item, 'sha256:' || :h, '{}', 0.4, :ts, :ts)"
                     ),
                     {"id": new_ulid(), "u": user_id, "item": rig.exported.export_item_id,
-                     "ts": env.clock.now()},
+                     "h": "0" * 64, "ts": env.clock.now()},
                 )  # fmt: skip
         _damage(rig, "crc")
         rig.checker().check_unit(rig.exported.unit_id)
@@ -207,9 +209,11 @@ def test_koreader_reset_never_touches_anyones_reading_position() -> None:
         assert _complete(rig).outcome == "replaced"
 
         with env.engine.connect() as connection:
-            kept = connection.execute(
-                sa.text("SELECT user_id FROM reading_position ORDER BY user_id")
-            ).scalars().all()
+            kept = (
+                connection.execute(sa.text("SELECT user_id FROM reading_position ORDER BY user_id"))
+                .scalars()
+                .all()
+            )
         assert kept == sorted(users)  # both positions are still there
         (event,) = rig.events("unit.upgraded")
         for role in ("member", "child"):

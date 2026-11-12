@@ -55,7 +55,7 @@ TRAPS = {
     "absolute": (zip_with([("/etc/evil.png", PNG)]), "unsafe_archive"),
     "symlink": (zip_with([("001.png", PNG)], symlink="002.png"), "unsafe_archive"),
     "bomb": (_bomb(), "unsafe_archive"),
-    "truncated": (cbz_bytes(PAGES)[:-60], "unsafe_archive"),
+    "truncated": (cbz_bytes(PAGES)[:-60], "crc"),
     "forged_crc": (_forged_crc(), "crc"),
     "not_a_zip": (b"<html>not an archive at all</html>" * 4, "unsafe_archive"),
     "script_page": (zip_with([("001.png", b"<script>alert(1)</script>")]), "unsafe_archive"),

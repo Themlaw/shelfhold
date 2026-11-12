@@ -107,6 +107,7 @@ from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
+from shelfhold.jobs.integrity_job import register_integrity_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.library.public import (
     KeepCopier,
@@ -941,6 +942,7 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     register_notification_job(pools, LazyDispatcher(comp))  # type: ignore[arg-type]
     register_store_jobs(pools, comp)  # the window jobs of /store (L14)
     register_safeguard_job(pools, comp)  # "Mettre à l'abri" and the optional purge (L16)
+    register_integrity_job(pools, comp)  # the rolling integrity check (M3 L23)
 
     def export_stored() -> None:
         pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)

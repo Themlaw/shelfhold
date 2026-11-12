@@ -372,7 +372,9 @@ class SamePathUpgrade:
             served, new, reason="better_version", automatic=True, restores=None
         )
 
-    def upgrade_unit(self, unit_id: str, content_id: str) -> list[UpgradeResult]:
+    def upgrade_unit(
+        self, unit_id: str, content_id: str, *, reason: str = "better_version"
+    ) -> list[UpgradeResult]:
         """The door of a better copy received for a Unit (EF-SRC-037, a better rank listed late):
         every file served for the Unit, in every destination, goes through `upgrade` and so
         through every guard of it (read Unit, suspect revision, irreplaceable Unit, frozen root).
@@ -410,9 +412,7 @@ class SamePathUpgrade:
             ).all()
         return [
             self.upgrade(
-                UpgradeRequest(
-                    row.shelf_destination_id, row.export_item_id, content_id, "better_version"
-                )
+                UpgradeRequest(row.shelf_destination_id, row.export_item_id, content_id, reason)
             )
             for row in served
         ]
