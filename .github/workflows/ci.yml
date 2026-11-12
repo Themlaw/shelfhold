@@ -704,7 +704,7 @@ jobs:
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish, scan]
+    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, frontend-e2e, client-drift, image-pr, image-main, image-publish, scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}
@@ -735,6 +735,8 @@ jobs:
           OPENAPI_CHANGED: ${{ needs.changes.outputs.openapi }}
           E2E: ${{ needs.e2e-front.result }}
           E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
+          FRONTEND_E2E: ${{ needs.frontend-e2e.result }}
+          CLIENT_DRIFT: ${{ needs.client-drift.result }}
         run: |
           echo "dco=${DCO} conventional-title=${TITLE} traceability=${TRACEABILITY} (image changed=${IMAGE_CHANGED})"
           echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH} scan=${SCAN} (informational)"
@@ -759,6 +761,8 @@ jobs:
           check_filtered "$FRONTEND" "$FRONTEND_CHANGED"
           check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
           check_filtered "$E2E" "$E2E_CHANGED"
+          check_filtered "$FRONTEND_E2E" "$E2E_CHANGED"
+          check_filtered "$CLIENT_DRIFT" "$OPENAPI_CHANGED"
           # Exactly one image path per event: pull request -> image-pr, push -> image-main + image-publish.
           # dco and conventional-title only run on pull requests.
           if [ "$EVENT" = "pull_request" ]; then
