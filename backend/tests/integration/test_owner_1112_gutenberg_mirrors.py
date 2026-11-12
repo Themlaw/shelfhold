@@ -25,7 +25,7 @@ OFFICIAL = f"https://{OFFICIAL_MIRROR_HOST}/gutenberg"
 def test_the_list_is_frozen_and_holds_aleph_but_never_the_website() -> None:
     hosts = mirror.OFFICIAL_MIRRORS
     assert isinstance(hosts, frozenset)
-    assert "aleph.gutenberg.org" in hosts
+    assert hosts >= {"aleph.gutenberg.org"}
     assert not hosts & {"www.gutenberg.org", "gutenberg.org", "gutenberg.net", "www.gutenberg.net"}
     assert all(h == h.lower() and "/" not in h and not h.startswith(".") for h in hosts)
 
