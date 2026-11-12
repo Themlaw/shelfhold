@@ -261,10 +261,13 @@ def build_edition_shelf_router(get_service: Callable[[], ShelfService]) -> APIRo
     ) -> FiledOut:
         """File an Edition on a shelf; a shelf below 18+ takes it only through the admission."""
         service = get_service()
-        if body.shelf_id is None:
-            result = service.file_default(edition_id, actor=_actor(principal))
-        else:
-            result = service.file_edition(edition_id, body.shelf_id, actor=_actor(principal))
+        try:
+            if body.shelf_id is None:
+                result = service.file_default(edition_id, actor=_actor(principal))
+            else:
+                result = service.file_edition(edition_id, body.shelf_id, actor=_actor(principal))
+        except (LookupError, sa.exc.NoResultFound, sa.exc.IntegrityError):
+            raise ProblemError("not_found") from None
         return FiledOut(filed=result.filed, reason=result.reason)
 
     return router
