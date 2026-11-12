@@ -93,3 +93,15 @@ def test_check_route_needs_a_session_the_csrf_token_and_the_admin(
         assert done.json() == {"queued": 1}
         assert {"kind": "follow.cycle", "priority_class": "new"} in _jobs(api)
         assert _next_expected(api) is not None
+
+
+@pytest.mark.req("EF-SRC-038")
+def test_jobs_run_by_hand_makes_every_series_due(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The cadence is the periodic pace: an admin who runs the follow job asks for a look."""
+    with live(monkeypatch, settings, tmp_path, chapters=()) as api:
+        _follow(api)
+        assert _next_expected(api) is None
+        assert run_cli(monkeypatch, settings, "jobs", "run", "follow.cycle") == 0
+        assert _next_expected(api) is not None

@@ -15,6 +15,7 @@ from shelfhold.acquisition.application.cadence import (
     CadencePolicy,
     SeriesPausedError,
     UnknownSeriesError,
+    make_all_due,
     request_check_job,
 )
 from shelfhold.acquisition.application.discovery import decline_pairing
@@ -159,6 +160,7 @@ __all__ = [
     "follow_dedupe_key",
     "follow_job",
     "is_stale",
+    "make_all_due",
     "oriented_name",
     "pending",
     "present_for_acquisition",

@@ -47,6 +47,7 @@ __all__ = [
     "UnknownSeriesError",
     "check_interval",
     "check_now",
+    "make_all_due",
     "next_check",
     "request_check_job",
 ]
@@ -135,6 +136,13 @@ def check_now(connection: sa.Connection, edition_id: str, now: datetime) -> list
         sa.update(b).where(b.c.id.in_([r.id for r in rows])).values(next_expected=now)
     )
     return sorted({str(r.plugin_id) for r in rows})
+
+
+def make_all_due(connection: sa.Connection, now: datetime) -> None:
+    """An admin who runs the follow job by hand asks for a look at every series: the cadence
+    is for the periodic pace, not for a request."""
+    b = acquisition.source_binding
+    connection.execute(sa.update(b).where(b.c.active).values(next_expected=now))
 
 
 def request_check_job(engine: sa.Engine, clock: Any, pools: Any, edition_id: str) -> list[str]:

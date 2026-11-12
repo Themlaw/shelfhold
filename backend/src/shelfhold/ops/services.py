@@ -20,6 +20,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.acquisition.application.unit_follow import suppress_follow
+from shelfhold.acquisition.public import FOLLOW_JOB_KIND, make_all_due
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import root_capabilities, waiting_marks
@@ -360,6 +361,8 @@ class OpsServices:
                     table.c.job_kind == kind, table.c.enabled
                 )
             ).all()
+            if rows and kind == FOLLOW_JOB_KIND:
+                make_all_due(connection, now)  # by hand: every series is looked at (EF-SRC-038)
             for row in rows:
                 values: dict[str, Any] = {"next_due_at": now}
                 if row.window:
