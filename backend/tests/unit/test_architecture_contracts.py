@@ -803,3 +803,12 @@ def test_registry_contracts_list_every_infrastructure_module(contract: str) -> N
         if p.name not in ("__init__.py", "__pycache__", "schema")
     }
     assert listed == actual, listed ^ actual
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_search_tables_module_exposes_the_fts_schema_module() -> None:
+    from shelfhold.catalog.application.search import tables
+    from shelfhold.infrastructure.schema import search
+
+    assert tables.fts_tables is search
+    assert tables.__all__ == ["fts_tables"]
