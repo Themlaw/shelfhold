@@ -24,6 +24,7 @@ from shelfhold.infrastructure.schema import metadata
 from tests.integration.test_schema_catalog import add_edition, add_unit, add_work
 from tests.integration.test_schema_migration_0002 import alembic_config, tables
 
+ARGON_STUB = "$argon2id$stub"  # a stored hash, never checked here
 HASH = "sha256:" + "ab" * 32
 NOW = "2026-11-12 10:00:00"
 M3_TABLES = {
@@ -425,3 +426,30 @@ def test_source_alias_migration_check(db: sqlite3.Connection) -> None:
 def test_rebuilt_user_table_still_compares_usernames_without_case(db: sqlite3.Connection) -> None:
     add_user(db, username="Lea")
     refused(db, "user", id=new_ulid(), username="lea", role="member", can_rate=0)
+
+
+@pytest.mark.req("EF-USR-001", "EF-USR-015")
+def test_the_production_store_gives_every_child_a_ceiling(
+    settings: Settings, db: sqlite3.Connection
+) -> None:
+    from datetime import UTC, datetime
+
+    from shelfhold.identity.adapters.store import SqlIdentityStore
+
+    engine = create_db_engine(settings.database_path)
+    store = SqlIdentityStore(engine)
+    now = datetime(2026, 11, 12, tzinfo=UTC)
+    kid, older, adult = new_ulid(), new_ulid(), new_ulid()
+    store.insert_user(id=kid, username="kid", role="child", password_hash=ARGON_STUB, now=now)
+    store.insert_user(
+        id=older,
+        username="teen",
+        role="child",
+        password_hash=ARGON_STUB,
+        now=now,
+        max_age_rating=13,
+    )
+    store.insert_user(id=adult, username="adult", role="member", password_hash=ARGON_STUB, now=now)
+    with engine.connect() as conn:
+        rows = dict(conn.execute(sa.text('SELECT username, max_age_rating FROM "user"')).all())
+    assert rows == {"kid": 0, "teen": 13, "adult": None}  # no path leaves a child unbounded

@@ -31,6 +31,7 @@ from shelfhold.interfaces.local_cli.dispatch import IdentityDispatcher
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
 from tests.auth_env import ADMIN, CSRF_HEADER, PASSWORD, AuthEnv, auth_env, db_rows, run_cli
 from tests.integration.test_auth_keys_reserved import _reserved_routes
+from tests.support.users import with_ceiling
 
 KEY = re.compile(r"shk_([0-9a-f]{8})_[A-Za-z0-9_-]{43}")
 PROBLEM_FIELDS = {
@@ -54,13 +55,14 @@ def api(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[AuthEnv
 def add_user(env: AuthEnv, role: str, *, can_rate: bool = False) -> str:
     username = f"{role}1"
     digest = Argon2Hasher().hash(PASSWORD)
+    ceiling = with_ceiling(role, {}).get("max_age_rating")
     connection = sqlite3.connect(env.settings.database_path)
     try:
         with connection:
             connection.execute(
-                "INSERT INTO user (id, username, role, can_rate, password_hash) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (ULIDS[role], username, role, int(can_rate), digest),
+                "INSERT INTO user (id, username, role, can_rate, password_hash, max_age_rating) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (ULIDS[role], username, role, int(can_rate), digest, ceiling),
             )
     finally:
         connection.close()

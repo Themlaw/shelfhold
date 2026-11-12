@@ -248,8 +248,19 @@ class SqlIdentityStore:
             )
 
     def insert_user(
-        self, *, id: str, username: str, role: str, password_hash: str, now: datetime
+        self,
+        *,
+        id: str,
+        username: str,
+        role: str,
+        password_hash: str,
+        now: datetime,
+        max_age_rating: int | None = None,
     ) -> None:
+        """A child never has a NULL ceiling (NULL is not "all ages"): without one, the strictest
+        (0) is laid down, whoever calls."""
+        if role == "child" and max_age_rating is None:
+            max_age_rating = 0
         with self._engine.begin() as conn:
             conn.execute(
                 sa.insert(_user).values(
@@ -259,6 +270,7 @@ class SqlIdentityStore:
                     can_rate=role == "admin",
                     password_hash=password_hash,
                     created_at=now,
+                    max_age_rating=max_age_rating,
                 )
             )
 
