@@ -5,21 +5,20 @@ Each guard has a test that tries to get round it."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import sqlalchemy as sa
-from fastapi import APIRouter, FastAPI
-from fastapi.testclient import TestClient
 
+from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import identity, platform
-from shelfhold.interfaces.http_api.app import create_http_app
-from shelfhold.interfaces.http_api.auth import ANONYMOUS_JSON_PATHS
-from shelfhold.interfaces.http_api.maintenance import EXIT_PATH
 from shelfhold.interfaces.local_cli.ops import (
     MAINTENANCE_OPEN,
     OPS_METHODS,
@@ -31,6 +30,7 @@ from shelfhold.jobs.mode import PARK_CODE
 from shelfhold.ops import OpsServices
 from shelfhold.ops.errors import CodedRefusal
 from shelfhold.ops.status import collect
+from tests.auth_env import AuthEnv, auth_env
 from tests.fakes_clock import ManualClock
 from tests.maintenance_env import Env, env
 
@@ -260,90 +260,161 @@ def test_a_method_added_tomorrow_is_refused_by_default() -> None:
     assert set(OPS_METHODS) >= MAINTENANCE_OPEN
 
 
-# -- HTTP ------------------------------------------------------------------------------------------
+# -- HTTP: `create_app()` as composed, the flag in the real database -------------------------------
 
 
-class Health:
-    def migration_progress(self) -> None:
-        return None
+class _Ops:
+    """The services behind the routes of the mode, which the tests of the service cover; what is
+    played here is the gate in front of the routes."""
 
-    def readiness(self) -> dict[str, bool]:
-        return {"database_writable": True}
+    def __init__(self) -> None:
+        self.left = 0
+        self.maintenance = SimpleNamespace(
+            leave=self._leave, status=self._status, enter=self._leave
+        )
+
+    def _leave(self, **_: object) -> dict[str, object]:
+        self.left += 1
+        return {"active": False, "changed": True}
+
+    @staticmethod
+    def paused_queues() -> list[object]:
+        return []
+
+    def __getattr__(self, name: str) -> Callable[..., None]:  # any other service: does nothing
+        return lambda *_a, **_k: None
+
+    @staticmethod
+    def _status() -> dict[str, object]:
+        span = {
+            "start_utc": "2026-11-13T02:00:00Z", "end_utc": "2026-11-13T06:00:00Z",
+            "start_local": "2026-11-13T03:00:00+01:00", "end_local": "2026-11-13T07:00:00+01:00",
+            "duration_s": 14400, "open": False,
+        }  # fmt: skip
+        return {
+            "maintenance": {"active": True, "since": None, "running_jobs": 0},
+            "queue": {"paused": [], "parked_jobs": 0},
+            "window": {
+                "timezone": "Europe/Paris", "start": "03:00", "end": "07:00",
+                "crosses_midnight": False, "current": None, "next": span, "upcoming": [span],
+            },
+        }  # fmt: skip
 
 
-def app(flag: Callable[[], bool], tmp_path: Path) -> FastAPI:
-    router = APIRouter()
-    router.add_api_route(
-        "/api/v1/things", lambda: {"ok": True}, methods=["GET", "POST", "PUT", "PATCH", "DELETE"]
-    )
-    router.add_api_route(EXIT_PATH, lambda: {"ok": "exit"}, methods=["POST"])
-    router.add_api_route("/api/v1/secrets/import", lambda: {"ok": "reserved"}, methods=["POST"])
-    build = tmp_path / "build"
-    build.mkdir(exist_ok=True)
-    (build / "index.html").write_text("<html></html>", encoding="utf-8")
-    return create_http_app(
-        health=Health(), on_startup=lambda: None, version="9.9.9", routers=[router],
-        maintenance_active=flag,
-    )  # fmt: skip
+@pytest.fixture
+def api(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[tuple[AuthEnv, _Ops]]:
+    ops = _Ops()
+    with auth_env(monkeypatch, settings, ops_services=ops) as live:
+        live.login()
+        yield live, ops
+
+
+def set_mode(api: AuthEnv, on: bool) -> None:
+    engine = create_db_engine(api.settings.database_path)
+    try:
+        with engine.begin() as conn:
+            if conn.execute(sa.select(platform.instance.c.instance_id)).first() is None:
+                conn.execute(
+                    sa.insert(platform.instance).values(instance_id=new_ulid(), jurisdiction="FR")
+                )
+            conn.execute(
+                sa.update(platform.instance).values(
+                    maintenance_since=datetime(2026, 11, 12, tzinfo=UTC) if on else None
+                )
+            )
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
 def test_http_writes_are_refused_with_a_503_and_the_catalog_code(
-    tmp_path: Path, method: str
+    api: tuple[AuthEnv, _Ops], method: str
 ) -> None:
-    with TestClient(app(lambda: True, tmp_path), raise_server_exceptions=False) as client:
-        refused = client.request(method, "/api/v1/things")
-        assert refused.status_code == 503
-        assert refused.json()["type"] == "/api/v1/problems/maintenance-active"
-        assert refused.headers["retry-after"] == "60"
-        assert refused.headers["x-request-id"]  # inside the request context, headers included
+    live, _ops = api
+    set_mode(live, True)
+    refused = live.client.request(
+        method, "/api/v1/nope", headers={"X-CSRF-Token": live.csrf()}
+    )  # a route that does not exist: the gate is in front of the routing
+    assert refused.status_code == 503
+    assert refused.json()["type"] == "/api/v1/problems/maintenance.active"
+    assert refused.headers["retry-after"] == "60"
+    assert refused.headers["x-request-id"]  # inside the request context, headers included
+    assert refused.headers["x-robots-tag"] == "noindex, nofollow"  # and the security headers
+    set_mode(live, False)
+    assert live.client.request(method, "/api/v1/nope").status_code != 503  # off: no gate
 
 
-def test_http_reserved_routes_are_refused_too(tmp_path: Path) -> None:
-    with TestClient(app(lambda: True, tmp_path), raise_server_exceptions=False) as client:
-        assert client.post("/api/v1/secrets/import").status_code == 503
-        assert client.post("/api/v1/maintenance/enter").status_code == 503  # entering twice: no
+def test_http_reserved_routes_are_refused_too(api: tuple[AuthEnv, _Ops]) -> None:
+    """A fresh admin session, the very one that may do the reserved action, is refused all the
+    same: the mode comes before the route."""
+    live, _ops = api
+    set_mode(live, True)
+    for path in ("/api/v1/secrets/import", "/api/v1/maintenance/enter", "/api/v1/store/reinit"):
+        refused = live.post(path, json={})
+        assert refused.status_code == 503, path
+        assert refused.json()["type"] == "/api/v1/problems/maintenance.active", path
 
 
-def test_http_reading_and_healthz_go_through(tmp_path: Path) -> None:
-    with TestClient(app(lambda: True, tmp_path), raise_server_exceptions=False) as client:
-        assert client.get("/api/v1/things").status_code == 200
-        assert client.head("/healthz").status_code == 200
-        assert client.get("/healthz").status_code == 200
-        assert client.get("/readyz").status_code == 200
-        assert client.options("/api/v1/things").status_code != 503
+def test_http_reading_and_healthz_go_through(api: tuple[AuthEnv, _Ops]) -> None:
+    live, _ops = api
+    set_mode(live, True)
+    assert live.client.get("/api/v1/maintenance").status_code == 200  # the admin reads the mode
+    assert live.client.get("/healthz").status_code == 200
+    assert live.client.head("/healthz").status_code == 200
+    assert live.client.get("/readyz").status_code == 200
+    assert live.client.options("/api/v1/maintenance").status_code != 503
 
 
-def test_http_exit_and_sign_in_stay_open_and_nothing_else(tmp_path: Path) -> None:
-    with TestClient(app(lambda: True, tmp_path), raise_server_exceptions=False) as client:
-        assert client.post(EXIT_PATH).status_code == 200
-        for path in sorted(ANONYMOUS_JSON_PATHS):
-            answer = client.post(path, json={})
-            assert answer.json().get("type") != "/api/v1/problems/maintenance-active", path
-        # a trailing slash, a case change or a double slash does not make a closed path an open one
-        for path in (EXIT_PATH + "/", EXIT_PATH.upper(), "/api/v1//maintenance/exit"):
-            assert client.post(path).status_code in (404, 405, 503), path
-            assert client.post(path).json().get("ok") != "exit", path
+def test_http_exit_and_sign_in_stay_open_and_nothing_else(api: tuple[AuthEnv, _Ops]) -> None:
+    live, ops = api
+    set_mode(live, True)
+    assert live.login().status_code == 200  # a session fresh enough to leave is one sign-in away
+    assert live.post("/api/v1/maintenance/exit", json={}).status_code == 200
+    assert ops.left == 1
+    # a trailing slash, a case change or a double slash does not make a closed path an open one
+    for path in (
+        "/api/v1/maintenance/exit/", "/API/V1/MAINTENANCE/EXIT", "/api/v1//maintenance/exit",
+    ):  # fmt: skip
+        answer = live.post(path, json={})
+        assert answer.status_code in (404, 405, 503), path
+    assert ops.left == 1
 
 
-def test_http_everything_is_open_when_the_mode_is_off(tmp_path: Path) -> None:
-    with TestClient(app(lambda: False, tmp_path), raise_server_exceptions=False) as client:
-        assert client.post("/api/v1/things").status_code == 200
+def test_http_the_flag_is_read_at_every_request(api: tuple[AuthEnv, _Ops]) -> None:
+    live, _ops = api
+    for on, expected in ((False, 200), (True, 503), (False, 200)):
+        set_mode(live, on)
+        got = live.post("/api/v1/maintenance/enter", json={}).status_code
+        assert (got == 503) is (expected == 503), on
 
 
-def test_http_the_flag_is_read_at_every_request(tmp_path: Path) -> None:
-    state = {"on": False}
-    with TestClient(app(lambda: state["on"], tmp_path), raise_server_exceptions=False) as client:
-        assert client.post("/api/v1/things").status_code == 200
-        state["on"] = True
-        assert client.post("/api/v1/things").status_code == 503
-        state["on"] = False
-        assert client.post("/api/v1/things").status_code == 200
+# -- the other methods of the socket ---------------------------------------------------------------
 
 
-def test_the_mode_is_not_a_window_it_lasts_until_it_is_left(tmp_path: Path) -> None:
+def test_the_socket_refuses_every_config_and_identity_write_while_the_mode_is_on(
+    tmp_path: Path,
+) -> None:
+    """`config set`, `target add`, `source add`, `shelf create`, `admin create-key`...: the two
+    tables of the socket other than `ops.*` are writes too, and only their reads stay."""
+    import asyncio
+
+    from shelfhold.infrastructure.local_socket import Peer, RpcError
+    from shelfhold.interfaces.local_cli.dispatch import (
+        HEADLESS_METHODS,
+        MAINTENANCE_READS,
+        METHODS,
+        IdentityDispatcher,
+    )
+
     with env(tmp_path) as e:
-        e.ops.enter(principal=e.principal())
-        e.clock.advance(days=40)
-        assert e.ops.mode.active()
-        assert e.ops.status()["maintenance"]["since"] is not None
+        ops = OpsServices(e.engine, clock=e.clock, bus=EventBus(e.clock), maintenance=e.ops)
+        dispatcher = IdentityDispatcher(None, headless=object(), ops=ops)  # type: ignore[arg-type]
+        peer = Peer(1, 1000, 1000)
+        e.ops.enter(principal=e.principal("cli"))
+        writes = (set(METHODS) | set(HEADLESS_METHODS)) - MAINTENANCE_READS
+        assert len(writes) >= 10
+        for method in sorted(writes):
+            with pytest.raises(RpcError) as refused:
+                asyncio.run(dispatcher(peer, method, {}))
+            assert (refused.value.data or {}).get("code") == "maintenance.active", method
+        assert set(METHODS) | set(HEADLESS_METHODS) >= MAINTENANCE_READS

@@ -33,6 +33,12 @@ from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.logging import elapsed_ms, exception_detail
+from shelfhold.jobs.control import (
+    PAUSE_CODE,
+    REPAIR_PRIORITY,
+    SECURITY_REPAIR_KINDS,
+    QueueControl,
+)
 from shelfhold.jobs.errors import JobFailedError
 from shelfhold.jobs.ledger import (
     MAX_ATTEMPTS,
@@ -41,6 +47,7 @@ from shelfhold.jobs.ledger import (
     JobLedger,
     PendingJob,
 )
+from shelfhold.jobs.mode import PARK_CODE, MaintenanceMode
 from shelfhold.jobs.scheduler import ScanReport, Scheduler
 from shelfhold.jobs.slots import RETRY_DELAY_S, DomainSlots
 from shelfhold.jobs.window import (
@@ -154,9 +161,12 @@ class JobPools:
         self.window = window
         self.ledger = JobLedger(engine, clock)
         self.slots = DomainSlots(engine, clock)
+        self.mode = MaintenanceMode(engine, clock)  # EF-INT-018: the instance's own flag
+        self.control = QueueControl(revoke=self.revoke)  # EF-INT-017
         self.scheduler = Scheduler(
-            engine, clock=clock, seed=seed, dispatcher=self, window=window, freeze=freeze
-        )
+            engine, clock=clock, seed=seed, dispatcher=self, window=window, freeze=freeze,
+            mode=self.mode,
+        )  # fmt: skip
         self._engine = engine
         self._handlers: dict[str, tuple[str, Handler, bool, bool]] = {}
         self._pause_lock = threading.RLock()  # pause, resume and the park of one job agree
@@ -284,6 +294,27 @@ class JobPools:
                 self._send_again(self.ledger.resume_paused(code, job_id))
             return True
 
+    def revoke(self, task_id: str) -> None:
+        """The Huey task of a job that must not run as queued any more (a task not found is fine:
+        a worker that gets it anyway finds the row not `queued` and leaves it.)"""
+        for huey in self._hueys.values():
+            huey.revoke_by_id(task_id)
+
+    def end_maintenance_parks(self) -> int:
+        """Once the mode is off, the jobs it parked go back to the queue (the tick and the boot
+        call this, so the exit works from any process that wrote the flag)."""
+        if self.mode.active():
+            return 0
+        return self._send_again(self.ledger.resume_paused(PARK_CODE))
+
+    def _cancel_asked(self, job_id: str) -> bool:
+        with self._engine.connect() as conn:
+            return self.control.cancel_requested(conn, job_id)
+
+    def _settle_cancel(self, job_id: str) -> bool:
+        with self._engine.begin() as conn:
+            return self.control.settle_cancelled(conn, job_id, now=self.clock.now())
+
     def flush_huey_locks(self) -> int:
         """`flush_locks` on every pool: the locks a worker of this run still held (boot and
         shutdown both)."""
@@ -349,6 +380,7 @@ class JobPools:
         """The one periodic: scan `schedule` and queue what is due."""
         if self._stopping:
             return ScanReport(())
+        self.end_maintenance_parks()
         report = self.scheduler.scan()
         self.promote_aged_backfill()
         log.debug("scheduler.scanned", queued=len(report.queued))
@@ -363,6 +395,8 @@ class JobPools:
             return f"unrouted:{job.job_id}"
         pool = route[0]
         priority = CLASS_PRIORITY.get(job.priority_class, CLASS_PRIORITY["new"])
+        if job.kind in SECURITY_REPAIR_KINDS:
+            priority = REPAIR_PRIORITY  # above every class a user can pick (EF-INT-017)
         task = self._run_job[pool].s(job.job_id, priority=priority)
         self._hueys[pool].enqueue(task)
         log.debug(
@@ -384,6 +418,16 @@ class JobPools:
         if route is None:
             log.warning("job.unknown_kind", job_id=job_id, job_kind=job.kind)
             self.ledger.mark_finished(job_id, error="no handler", error_code="job.unknown_kind")
+            return
+        if self.mode.active():  # EF-INT-018: nothing starts, queued before or after the entry
+            self.ledger.pause_one(job_id, PARK_CODE)
+            log.debug("job.skipped", job_id=job_id, job_kind=job.kind, reason="maintenance")
+            return  # parked, not failed, not retried: the exit puts it back
+        with self._engine.connect() as conn:
+            queue_paused = self.control.is_paused(conn, job.source_key)
+        if queue_paused:  # EF-INT-017: a paused queue or source waits, it does not fail
+            self.ledger.pause_one(job_id, PAUSE_CODE)
+            log.debug("job.skipped", job_id=job_id, job_kind=job.kind, reason="queue_paused")
             return
         if route[3] and self._park_if_paused(job_id):
             log.debug("job.skipped", job_id=job_id, job_kind=job.kind, reason="writes_paused")
@@ -416,18 +460,24 @@ class JobPools:
         outcome = "ok"
         context = JobContext(
             job_id, job.kind, job.dedupe_key, job.scope_key, job.limit_key, window_end,
-            job.cursor_index, self.clock, self.ledger, stop=lambda: self._stopping,
+            job.cursor_index, self.clock, self.ledger,
+            stop=lambda: self._stopping or self._cancel_asked(job_id),
         )  # fmt: skip
         with bound_contextvars(job_id=job_id, job_kind=job.kind, pool=route[0]):
             log.info("job.started", attempts=self.ledger.attempts_of(job_id))
             try:
                 route[1](context)
             except JobFailedError as exc:
-                outcome = "failed"
-                self.ledger.mark_finished(job_id, error=exc.code, error_code=exc.code)
-                log.error("job.failed", error_code=exc.code)
+                if self._settle_cancel(job_id):
+                    outcome = "cancelled"
+                else:
+                    outcome = "failed"
+                    self.ledger.mark_finished(job_id, error=exc.code, error_code=exc.code)
+                    log.error("job.failed", error_code=exc.code)
             except OSError as exc:
-                if getattr(exc, "code", None) != "disk.low":  # DiskLowError: the disk filled
+                if self._settle_cancel(job_id):
+                    outcome = "cancelled"
+                elif getattr(exc, "code", None) != "disk.low":  # DiskLowError: the disk filled
                     outcome = "error"
                     retry_in = self._failed(job_id, job.kind, exc)
                 else:
@@ -435,10 +485,15 @@ class JobPools:
                     self.ledger.park_running(job_id, "disk.low")
                     self.pause_writes("disk.low")
             except Exception as exc:
-                outcome = "error"
-                retry_in = self._failed(job_id, job.kind, exc)
+                if self._settle_cancel(job_id):
+                    outcome = "cancelled"
+                else:
+                    outcome = "error"
+                    retry_in = self._failed(job_id, job.kind, exc)
             else:
-                if context.preempted:
+                if self._settle_cancel(job_id):
+                    outcome = "cancelled"  # asked to stop: it ends cancelled, never succeeded
+                elif context.preempted:
                     outcome = "preempted"
                     self.ledger.mark_preempted(job_id)
                 else:
@@ -509,5 +564,6 @@ def boot_jobs(
     released = pools.slots.release_all()
     requeued = pools.ledger.requeue_running()
     pools.forget_lost_dispatches()  # taken from the queue by a worker that was killed
+    pools.end_maintenance_parks()  # the mode may have been left while the server was down
     report = pools.scheduler.startup_scan()  # also sends the requeued rows
     return BootReport(flushed, released, len(requeued), len(report.queued))

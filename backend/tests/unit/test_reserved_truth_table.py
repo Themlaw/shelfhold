@@ -89,6 +89,7 @@ NON_P3 = {
     "unmasks_request",
     "manages_credentials",
     "attests_trust",  # D15 (M2 L07)
+    "controls_queue",  # M3 L13: `queue pause|resume`, `jobs cancel|priority|replay`
 }
 
 

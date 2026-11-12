@@ -57,6 +57,7 @@ FOREIGN_WRITER = "foreign_writer"  # `export_series.paused_reason`
 
 # state -> the command, with `{subject}` and `{extra}` filled by the reader
 _TEMPLATES = {
+    "maintenance": "shelfhold maintenance off",
     "missing": "shelfhold missing resolve {extra} {subject} (--reexport | --unfollow)",
     "paused_foreign_writer": "shelfhold series resume {subject}",
     "dead_letter": "shelfhold jobs retry {subject}",
@@ -144,6 +145,7 @@ def collect(connection: Connection) -> list[WaitingItem]:
     found += _to_rate(connection)
     found += _safeguard_backlog(connection)
     found += _held_bins(connection)
+    found += _maintenance(connection)
     return found
 
 
@@ -157,6 +159,15 @@ def _held_bins(connection: Connection) -> list[WaitingItem]:
         )
         for unit, count in sorted(held_for_irreplaceable_units(connection).items())
     ]
+
+
+def _maintenance(connection: Connection) -> list[WaitingItem]:
+    """The mode freezes every write until an admin leaves it (EF-INT-018): `status` says so, with
+    the command, for as long as it lasts, however long ago it was entered."""
+    since = connection.execute(sa.select(platform.instance.c.maintenance_since)).scalar()
+    if since is None:
+        return []
+    return [_item("maintenance", "instance", "instance", f"maintenance since {since.isoformat()}")]
 
 
 def _safeguard_backlog(connection: Connection) -> list[WaitingItem]:

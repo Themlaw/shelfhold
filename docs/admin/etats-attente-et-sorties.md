@@ -69,6 +69,7 @@ moins de 15 minutes, ou la ligne de commande locale ; une clé d'API est refusé
 | `root_lost` | Une racine n'a plus de sentinelle : disque remplacé, fichier retiré | `shelfhold root reinit <racine>` (ou `root takeover` si le contenu est intact) | oui |
 | `root_behind` | Une racine est plus ancienne que la base : une vieille copie a été remise | `shelfhold root restored <racine>` | non |
 | `store_lost` | La sentinelle de `/store` manque, est étrangère ou en retard | `shelfhold store reinit` | oui |
+| `maintenance` | Le mode maintenance est actif (vous l'avez demandé) : plus aucune écriture, ni acquisition, ni export, ni tâche planifiée ; la lecture et `/healthz` restent ouverts ; il dure jusqu'à la sortie, même après un redémarrage | `shelfhold maintenance off` (ou `POST /api/v1/maintenance/exit`) ; les tâches mises en attente repartent, les périodiques manqués ne tournent qu'une fois ; `maintenance on` y entre | oui (session récente ou CLI de l'hôte, jamais une clé) |
 
 Notes :
 

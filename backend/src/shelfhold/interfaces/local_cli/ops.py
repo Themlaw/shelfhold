@@ -600,6 +600,40 @@ def _probe(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.library.probe(_text(p, "folder"))
 
 
+def _maintenance_status(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.maintenance.status()
+
+
+def _maintenance_on(ops: OpsServices, by: Principal, _p: Params) -> object:
+    return ops.maintenance.enter(principal=by)
+
+
+def _maintenance_off(ops: OpsServices, by: Principal, _p: Params) -> object:
+    return ops.maintenance.leave(principal=by)
+
+
+def _queue_pause(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.maintenance.pause(_optional(p, "source"), principal=by)
+
+
+def _queue_resume(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.maintenance.resume(_optional(p, "source"), principal=by)
+
+
+def _job_cancel(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.maintenance.cancel(_text(p, "job_id"), principal=by)
+
+
+def _job_replay(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.maintenance.replay(_text(p, "job_id"), principal=by)
+
+
+def _job_priority(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.maintenance.set_priority(
+        _text(p, "job_id"), _text(p, "priority_class"), principal=by
+    )
+
+
 # method -> (implementation, the reserved action it performs, if any)
 OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.status": (_status, None),
@@ -697,31 +731,48 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.source_search": (_source_search, None),
     "ops.source_filters": (_source_filters, None),
     "ops.acquire": (_acquire, None),
+    "ops.maintenance_status": (_maintenance_status, None),
+    "ops.maintenance_on": (_maintenance_on, "maintenance.enter"),
+    "ops.maintenance_off": (_maintenance_off, "maintenance.exit"),
+    "ops.queue_pause": (_queue_pause, "queue.control"),
+    "ops.queue_resume": (_queue_resume, "queue.control"),
+    "ops.job_cancel": (_job_cancel, "queue.control"),
+    "ops.job_replay": (_job_replay, "queue.control"),
+    "ops.job_priority": (_job_priority, "queue.control"),
 }
 
 
-# While the instance is `restored_behind` (the database older than the disks, EF-INT-026) nothing
-# of the operating surface writes, even before the first start that follows the restore has frozen
-# the roots; what stays: reading, the exits of the restore, and `secrets import` (its /data half).
-READS_AND_RESTORE_EXITS = frozenset(
+# What the operating surface may do without writing: reading, and the `status` of the maintenance
+# mode. While the mode is on (EF-INT-018) these and `maintenance off` are the only methods that run;
+# every other one, a method added tomorrow included, is refused (closed by default).
+READS = frozenset(
     {
         "ops.status", "ops.missing_list", "ops.jobs_list", "ops.pair_propose",
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
         "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
         "ops.rate_pending", "ops.attach_list", "ops.source_search", "ops.source_filters",
-        "ops.edition_list", "ops.export_item_show",
-        "ops.restore_adopt", "ops.restore_forget_root", "ops.restore_acknowledge",
-        "ops.tombstone_set_aside_journal",
-        "ops.secrets_import",
-        "ops.tombstone_accept_lost_keyring",
+        "ops.edition_list", "ops.export_item_show", "ops.maintenance_status",
     }
 )  # fmt: skip
+MAINTENANCE_OPEN = READS | {"ops.maintenance_off"}
+
+# While the instance is `restored_behind` (the database older than the disks, EF-INT-026) nothing
+# of the operating surface writes, even before the first start that follows the restore has frozen
+# the roots; what stays: reading, the exits of the restore, and `secrets import` (its /data half).
+READS_AND_RESTORE_EXITS = READS | {
+    "ops.restore_adopt", "ops.restore_forget_root", "ops.restore_acknowledge",
+    "ops.tombstone_set_aside_journal",
+    "ops.secrets_import",
+    "ops.tombstone_accept_lost_keyring",
+}  # fmt: skip
 
 
 def run_ops_method(ops: OpsServices, principal: Principal, method: str, params: Params) -> object:
     """One call, refusals as `RpcError` (the socket) with the catalog code in `data`."""
     implementation, _reserved = OPS_METHODS[method]
     try:
+        if method not in MAINTENANCE_OPEN and ops.maintenance_active():
+            raise CodedRefusal("maintenance.active", t("local_cli.maintenance_active"))
         if method not in READS_AND_RESTORE_EXITS and ops.restored_behind():
             raise CodedRefusal(
                 "instance.restored_behind",

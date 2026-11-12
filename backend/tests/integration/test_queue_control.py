@@ -330,7 +330,8 @@ def test_replaying_a_failed_or_cancelled_job_twice_is_one_job(tmp_path: Path) ->
         e.pools.tick()
         e.run()
         assert sorted(ran) == ["c", "f"]  # each ran once
-        assert e.ops.replay(failed, principal=e.principal())["replayed"] is False  # it succeeded
+        with pytest.raises(NotWaitingError):  # it succeeded: there is nothing to replay
+            e.ops.replay(failed, principal=e.principal())
 
 
 def test_replaying_a_job_whose_key_is_held_by_another_returns_that_one(tmp_path: Path) -> None:
@@ -463,10 +464,11 @@ def test_an_admin_and_the_host_may_control_the_queue_with_an_audit_line(
     tmp_path: Path, who: str, command: str
 ) -> None:
     with env(tmp_path) as e:
-        call(e, command, who)
+        principal = e.principal(who)
+        getattr(e.ops, command)(None, principal=principal)
         (line,) = e.rows(identity.audit)
         assert (line.action, line.target) == ("queue.control", f"{command}:all")
-        assert line.actor_id == e.principal(who).actor_id
+        assert line.actor_id == principal.actor_id
 
 
 def test_every_mutating_queue_and_maintenance_route_is_reserved_and_the_read_is_admin_only() -> (

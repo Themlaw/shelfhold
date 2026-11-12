@@ -23,6 +23,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.cron import CronSpec
 from shelfhold.jobs.ledger import JobLedger, PendingJob
+from shelfhold.jobs.mode import MaintenanceMode
 from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow, Span, window_rank
 
 schedule = platform.schedule
@@ -69,6 +70,7 @@ class Scheduler:
         dispatcher: Dispatcher,
         window: MaintenanceWindow = DEFAULT_WINDOW,
         freeze: FreezeState | None = None,
+        mode: MaintenanceMode | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -77,6 +79,7 @@ class Scheduler:
         self._window = window
         self._ledger = JobLedger(engine, clock)
         self._freeze = freeze if freeze is not None else FreezeState()  # shared with the runtime
+        self._mode = mode if mode is not None else MaintenanceMode(engine, clock)
 
     @property
     def held(self) -> bool:
@@ -188,6 +191,8 @@ class Scheduler:
 
     def scan(self) -> ScanReport:
         if self.held:
+            return ScanReport(())
+        if self._mode.active():  # EF-INT-018: what falls due waits, and is caught up once after
             return ScanReport(())
         now = self._clock.now()
         stranded = self._ledger.undispatched()  # queued by an earlier scan, never sent: first

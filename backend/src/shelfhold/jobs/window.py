@@ -50,6 +50,12 @@ class Span:
     def contains(self, instant: datetime) -> bool:
         return self.start <= instant < self.end
 
+    @property
+    def empty(self) -> bool:
+        """A window that sits wholly in the hour the clocks skip (02:00-03:00 on the night of the
+        change to summer time) opens and closes at the same instant: that day has no occurrence."""
+        return self.end <= self.start
+
 
 _CLOCK_TEXT = re.compile(r"([01]\d|2[0-3]):([0-5]\d)")
 
@@ -95,7 +101,7 @@ class MaintenanceWindow:
         local_day = instant.astimezone(self.tz).date()
         for offset in (0, -1):  # the occurrence of the day before may still be open after midnight
             span = self.bounds_on(local_day + timedelta(days=offset))
-            if span.contains(instant):
+            if span.contains(instant):  # (an empty span contains nothing)
                 return span
         return None
 
@@ -104,7 +110,7 @@ class MaintenanceWindow:
         day = instant.astimezone(self.tz).date()
         for offset in range(-1, 3):
             span = self.bounds_on(day + timedelta(days=offset))
-            if span.end > instant:
+            if span.end > instant and not span.empty:
                 return span
         raise AssertionError("unreachable: a window opens every day")
 

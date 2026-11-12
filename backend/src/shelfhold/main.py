@@ -57,6 +57,7 @@ from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.me import build_me_router
+from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
@@ -68,6 +69,7 @@ from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
+from shelfhold.jobs.mode import MaintenanceMode
 from shelfhold.ops import OpsServices
 from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.wiring import open_ops
@@ -241,7 +243,11 @@ def create_app(
 
     @cache
     def ops_services() -> OpsServices:
-        return open_ops(resolved, engine=engine, composition=composition)  # lazy parts
+        def revoke(task_id: str) -> None:  # a queued job cancelled or re-ranked: its Huey task
+            if runtime.pools is not None:
+                runtime.pools.revoke(task_id)
+
+        return open_ops(resolved, engine=engine, composition=composition, revoke=revoke)
 
     @cache
     def plans() -> PlanService:
@@ -253,6 +259,7 @@ def create_app(
         build_headless_router(headless_admin, lambda: resolved.public_url),
         build_plans_router(plans),
         build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202
+        build_maintenance_router(ops_services),  # EF-INT-018, EF-INT-017: mode and queue control
         build_intents_router(ops_services),  # EF-INT-014: the open intents and their settlement
         build_revisions_router(ops_services),  # EF-BIB-043: the queue of pending revisions
         build_backfill_router(ops_services),  # EF-EXP-053: estimate, confirmation, start
@@ -406,6 +413,7 @@ def create_app(
         idempotency=IdempotencyStore(engine, clock=clock.now),  # actor: the real principal
         source_url=resolved.source_url,
         forward_auth_trusted_cidrs=resolved.forward_auth_trusted_cidrs,
+        maintenance_active=MaintenanceMode(engine, clock).active,  # EF-INT-018
     )
 
 

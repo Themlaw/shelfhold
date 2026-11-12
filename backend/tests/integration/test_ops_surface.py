@@ -6,6 +6,7 @@ import json
 import re
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -334,6 +335,15 @@ def _body(command: str) -> dict[str, Any]:
     }.get(command, {})
 
 
+class _Maintenance:
+    """`maintenance off`: the service behind it is tested with a real database in L13's tests."""
+
+    mode = SimpleNamespace(active=lambda: False)  # the gate of the socket asks this
+
+    def leave(self, **_: object) -> dict[str, object]:
+        return {"active": False, "changed": True}
+
+
 class _Roots:
     """The root exits: the services behind them are tested with real roots elsewhere (L25)."""
 
@@ -395,6 +405,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
             headless=_Headless(),
             roots=_Roots(),
             credentials=_Credentials(),
+            maintenance=_Maintenance(),
         )
         put_health(env, child_exposure=True)
         ids = {"target_id": env.target_id, "work_id": env.new_series().work_id, "root": "x"}

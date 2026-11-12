@@ -26,6 +26,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import platform
+from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import MaintenanceWindow
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.adoption import LibraryAdoptionExit
@@ -45,6 +46,7 @@ from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
 from shelfhold.ops.library import LibraryOps
+from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.rating import RatingOps
@@ -111,6 +113,7 @@ def open_ops(
     engine: Engine | None = None,
     mount: bool = True,
     composition: Composition | None = None,
+    revoke: Callable[[str], None] | None = None,
 ) -> OpsServices:
     """`mount=False`: the library is not opened (a read of the database, as `status` does).
     `composition`: the one of the running server; a command run by itself builds its own."""
@@ -135,6 +138,9 @@ def open_ops(
         return _fsops(engine, settings.umask)
 
     library = LibraryOps(composition)
+    window = MaintenanceWindow.from_text(
+        settings.maintenance_window_start, settings.maintenance_window_end, settings.timezone
+    )
     return OpsServices(
         engine, clock=clock, bus=bus, fsops=live, targets=targets,
         headless=_LazyHeadless(settings),
@@ -156,7 +162,9 @@ def open_ops(
         resplit=ResplitOps(composition), contributors=ContributorOps(composition),
         export_items=ExportItemOps(composition), export_all=ExportAllOps(composition),
         follows=FollowOps(composition), acquire=AcquireOps(composition), roots=RootOps(composition),
-        window=MaintenanceWindow.from_text(
-            settings.maintenance_window_start, settings.maintenance_window_end, settings.timezone
+        maintenance=MaintenanceOps(
+            engine, clock, fresh_auth_s=settings.fresh_auth_s, window=window,
+            control=QueueControl(revoke=revoke),
         ),
+        window=window,
     )  # fmt: skip

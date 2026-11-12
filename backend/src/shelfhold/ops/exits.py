@@ -16,6 +16,7 @@ __all__ = [
     "ENDPOINTS",
     "M1A_STATES",
     "M1B_SERVED_STATES",
+    "M3_SERVED_STATES",
     "UNSERVED",
     "bare",
     "endpoint_of",
@@ -56,6 +57,7 @@ ENDPOINTS: Final = MappingProxyType(
         "root restored": ("POST", "/api/v1/roots/{root}/restored"),
         "store reinit": ("POST", "/api/v1/store/reinit"),
         "restore acknowledge": ("POST", "/api/v1/restore/acknowledge"),
+        "maintenance off": ("POST", "/api/v1/maintenance/exit"),
     }
 )  # fmt: skip
 
@@ -103,6 +105,10 @@ M1B_SERVED_STATES: Final = frozenset(
         WaitingState.TOMBSTONE_JOURNAL_TRUNCATED,  # `tombstone set-aside-journal` (L26, D12)
     }
 )
+
+# The M3 states whose exit is served: `maintenance off` (L13, EF-INT-018). `library_type_changed`
+# has no exit yet (EXIT_STATES_LATER).
+M3_SERVED_STATES: Final = frozenset({WaitingState.MAINTENANCE})
 
 # Commands whose CLI module belongs to a lot still in flight (the route and the service exist
 # here). The lot that lands the CLI removes its entry: a test fails while it is listed and the

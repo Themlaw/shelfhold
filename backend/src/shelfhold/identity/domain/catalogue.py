@@ -100,6 +100,12 @@ _DECLARED = (
     _action("passkey.register", Effect.ENROLS_PASSKEY),
     _action("passkey.revoke", Effect.MANAGES_CREDENTIALS),
     _action("admin_risk.accept", Effect.ACCEPTS_ADMIN_RISK),
+    # Maintenance mode (EF-INT-018): every write of the instance stops, so entering it and leaving
+    # it are the admin's, on a fresh session or from the host CLI, never a key
+    _action("maintenance.enter", Effect.FREEZES_INSTANCE),
+    _action("maintenance.exit", Effect.FREEZES_INSTANCE),
+    # The queue by hand (EF-INT-017): pause, resume, cancel, priority, replay
+    _action("queue.control", Effect.CONTROLS_QUEUE),
     # Trust boundary (EF-EXP-065, D15): a third-party plugin's declared trust value; for
     # `access_partitioning` it is also parental control (which shelves may be bound to it)
     _action("plugin.attest", Effect.ATTESTS_TRUST),
@@ -176,4 +182,6 @@ EXIT_ROUTES: tuple[ExitRoute, ...] = (
     _exit("source reconnect", "source_instance_changed"),
     _exit("shelf withdraw", "withdrawal_pending", "shelf.withdraw"),
     _exit("restore acknowledge", "restored_credentials", "restore.acknowledge"),
+    # M3
+    _exit("maintenance off", "maintenance", "maintenance.exit"),
 )

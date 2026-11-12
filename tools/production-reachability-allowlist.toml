@@ -197,3 +197,11 @@ symbols = [
   "shelfhold.catalog.application.queries:list_visible_works",
   "shelfhold.catalog.application.queries:work_is_visible",
 ]
+
+[[allow]]
+category = "m3-l13-served-states"
+reason = "2026-11-12: the table of the M3 waiting states whose exit is served (`maintenance`) is read by the exit-table tests only; production reads the catalogue and the routes, which say where each exit is."
+until = "M3"
+symbols = [
+  "shelfhold.ops.exits:M3_SERVED_STATES",
+]

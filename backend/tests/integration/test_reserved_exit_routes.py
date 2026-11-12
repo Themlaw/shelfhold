@@ -105,6 +105,10 @@ class _Ops:
         self.calls.append("tombstone_set_aside_journal")
         return {}
 
+    @staticmethod
+    def maintenance_active() -> bool:
+        return False  # asked by the gate of the socket methods, not an operation of a route
+
     def __getattr__(self, name: str) -> Callable[..., None]:
         def operation(*_a: object, **_k: object) -> None:
             self.calls.append(name)

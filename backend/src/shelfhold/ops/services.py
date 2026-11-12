@@ -61,6 +61,7 @@ from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.import_folder import ImportOps
 from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.library import LibraryOps
+from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.ports import (
@@ -208,6 +209,7 @@ class OpsServices:
         follows: FollowOps | None = None,
         acquire: AcquireOps | None = None,
         roots: RootOps | None = None,
+        maintenance: MaintenanceOps | None = None,
         window: MaintenanceWindow | None = None,
     ) -> None:
         self._window = window or DEFAULT_WINDOW
@@ -241,6 +243,7 @@ class OpsServices:
         self._follows = follows
         self._acquire = acquire
         self._roots = roots
+        self._maintenance = maintenance
 
     @property
     def _fsops(self) -> Fsops | None:
@@ -722,6 +725,18 @@ class OpsServices:
         if self._resplit is None:
             raise ExitUnavailableError("the re-cut chapters are not connected")
         return self._resplit
+
+    @property
+    def maintenance(self) -> MaintenanceOps:
+        """`maintenance on|off` and the control of the queue (EF-INT-018, EF-INT-017)."""
+        if self._maintenance is None:
+            raise ExitUnavailableError("the maintenance mode is not connected")
+        return self._maintenance
+
+    def maintenance_active(self) -> bool:
+        """While it is on, only reads, `/healthz` and the exit go through (the socket and the
+        routes both ask this before they let a write in)."""
+        return self._maintenance is not None and self._maintenance.mode.active()
 
     @property
     def contributors(self) -> ContributorOps:

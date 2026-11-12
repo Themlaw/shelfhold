@@ -6,6 +6,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("job.unknown_kind", 500, "admin"),
     ErrorCode("job.failed", 500, "admin"),
     ErrorCode("window.preempted", 503, "admin"),
+    # EF-INT-018: every write is refused while the mode is on; the only way out is `maintenance off`
+    ErrorCode("maintenance.active", 503, "admin"),
+    # EF-INT-017: a security repair keeps its place above every class a user may choose
+    ErrorCode("queue.priority_locked", 409, "admin"),
 )
 
 

@@ -375,6 +375,11 @@ HEADLESS_METHODS: Mapping[str, tuple[HeadlessMethod, str | None]] = {
 }
 
 
+# What the socket still answers while the maintenance mode is on (EF-INT-018): reading. Every other
+# method of the two tables above, one added tomorrow included, is a write and is refused.
+MAINTENANCE_READS = frozenset({"ping", "identity.keys_list", "config.get", "config.list"})
+
+
 class IdentityDispatcher:
     """The `Handler` of the socket server."""
 
@@ -413,6 +418,13 @@ class IdentityDispatcher:
         if plan:
             self._authorize(principal, "admin_risk.accept")
 
+    def _refuse_while_frozen(self, method: str) -> None:
+        if method in MAINTENANCE_READS or self._ops is None or not self._ops.maintenance_active():
+            return
+        raise RpcError(
+            APPLICATION_ERROR, t("local_cli.maintenance_active"), {"code": "maintenance.active"}
+        )
+
     async def __call__(self, peer: Peer, method: str, params: dict[str, Any]) -> object:
         operating = OPS_METHODS.get(method)
         if operating is not None and self._ops is not None:  # EF-INT-023
@@ -421,6 +433,7 @@ class IdentityDispatcher:
             return await asyncio.to_thread(run_ops_method, self._ops, principal, method, params)
         headless = HEADLESS_METHODS.get(method)
         if headless is not None and self._headless is not None:
+            self._refuse_while_frozen(method)
             principal = principal_for_peer(peer)
             self._authorize(principal, headless[1])
             audited = {**params, ACTOR: _actor_of(principal)}  # whatever the peer sent is replaced
@@ -431,6 +444,7 @@ class IdentityDispatcher:
         if entry is None:
             raise RpcError(METHOD_NOT_FOUND, t("local_cli.unknown_method", method=method))
         implementation, reserved = entry
+        self._refuse_while_frozen(method)
         principal = principal_for_peer(peer)
         self._authorize(principal, reserved)
         try:
