@@ -331,3 +331,57 @@ def test_a_proposal_without_a_work_key_still_cites_the_address_of_the_book() -> 
     found = provider._proposals({"title": "Un titre"}, target)
     urls = {p.provenance.source_url for p in found.proposals}
     assert urls == {provider.url_for({"isbn13": "9780306406157"})}
+
+
+@pytest.mark.req("EF-INT-026")
+def test_the_server_exit_refuses_a_library_not_connected_and_an_instance_not_behind() -> None:
+    from shelfhold.ops.restore import RestoreGuardExit
+
+    with restore_env() as env:
+        env.open_instance()
+        admin = Principal("01J00000000000000000000ADM", "admin", "admin", Credential.LOCAL_CLI)
+        not_connected = RestoreGuardExit(env.engine, lambda: None, env.ex.clock, env.bus)
+        with pytest.raises(OpsError):
+            not_connected.forget_root(root_id="x", confirm="x", principal=admin)
+        calm = RestoreGuardExit(env.engine, lambda: env.fsops, env.ex.clock, env.bus)
+        with pytest.raises(OpsError):  # not restored_behind: nothing to leave
+            calm.forget_root(root_id="x", confirm="x", principal=admin)
+
+
+@pytest.mark.req("EF-INT-026")
+def test_the_ops_methods_route_forget_root_to_the_restore_port() -> None:
+    from shelfhold.interfaces.local_cli.ops import run_ops_method
+    from tests.export_env import export_env
+    from tests.ops_env import FakeRestore, make_ops
+
+    admin = Principal("01J00000000000000000000ADM", "admin", "admin", Credential.LOCAL_CLI)
+    with export_env() as env:
+        restore = FakeRestore()
+        ops = make_ops(env, restore=restore)
+        run_ops_method(ops, admin, "ops.restore_forget_root", {"root_id": "r", "confirm": "c"})
+        assert restore.forgotten == ["r"]
+        unconnected = make_ops(env)  # no restore guard wired
+        with pytest.raises(Exception, match="not connected"):
+            unconnected.restore_forget_root(root_id="r", confirm="c", principal=admin)
+
+
+class PurgedMeanwhile(Purged):
+    """The Work is purged between the first look (before the transaction) and the arrival."""
+
+    def __init__(self, held: set[tuple[str, str]]) -> None:
+        super().__init__(held)
+        self.looks = 0
+
+    def work_ids(self, ids: Any) -> set[tuple[str, str]]:
+        self.looks += 1
+        return super().work_ids(ids) if self.looks > 1 else set()
+
+
+@pytest.mark.req("EF-BIB-053", "EF-SRC-015")
+def test_a_work_purged_between_the_first_look_and_the_arrival_is_still_refused() -> None:
+    screen = PurgedMeanwhile({GUTENBERG_ID})
+    with acquire_bench(WithIds(), work_screen=lambda: screen) as b:
+        with pytest.raises(AcquireRefused) as refused:
+            run(b.acquirer.prepare(b.plugin._series()))
+        assert refused.value.code == "acquire.work_tombstoned"
+        assert nothing_made(b)
