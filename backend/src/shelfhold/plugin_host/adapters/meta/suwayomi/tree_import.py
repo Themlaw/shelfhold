@@ -44,6 +44,7 @@ from shelfhold.infrastructure.content_trust import (
     UntrustedEntryError,
     check_cbz_entries,
     sniff_image_kind,
+    sniff_svg,
 )
 from shelfhold.infrastructure.packaging.cbz.packager import write_cbz
 from shelfhold.infrastructure.packaging.comicinfo import ComicInfoData, render_comicinfo
@@ -549,10 +550,9 @@ class SuwayomiTree(ImportFolder):
                 raise _Refused(TOO_LARGE)
             kind = sniff_image_kind(data[:16])
             extension = _EXTENSION.get(kind or "")
+            if extension is None and sniff_svg(data[:16]):
+                extension = "svg"  # packaged as it is: the CBZ then meets `SvgCbzStore` (L10)
             if extension is None:
-                # TODO(2026-11-12, #164): a `.svg` page is refused here (`sniff_image_kind` does not
-                # know it) while the same SVG inside a CBZ goes through `SvgCbzStore`. Once #164
-                # is on main, package the page as it is (`NN.svg`) so the CBZ meets that store.
                 raise _Refused(ARCHIVE)  # not an image, whatever its name says
             yield f"{index:05d}.{extension}", data
 
