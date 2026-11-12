@@ -370,7 +370,7 @@ class NameMisreadNumber(NamingGuardError):
 
 def checked_export_path(
     frozen: FrozenAttrs,
-    parse: Callable[[str], "Parsed"],
+    parse: Callable[[str], "Parsed"] | None,
     template: NamingTemplate = DEFAULT_TEMPLATE,
     extension: str = ".cbz",
     *,
@@ -378,13 +378,16 @@ def checked_export_path(
 ) -> ExportPath:
     """`export_path`, with the file name AND every folder component read by `plugin/parse`.
 
-    `parse` is the route (the planner fills it from `parse-bulk`). A volume deduced anywhere, in
+    `parse` is the route (the planner fills it from `parse-bulk`); `None` skips the reads, for
+    the preview that only lists names (the pipeline never binds it). A volume deduced anywhere, in
     a chapter's path, refuses the export; so does a chapter number that is not the unit's. A
     closed volume (`kind = volume`) is meant to carry one: only its folders are checked.
     """
     if frozen.segment and not segment_policy_confirmed:
         raise SegmentPolicyUnconfirmed("segment naming not confirmed", component=frozen.segment)
     path = export_path(frozen, template, extension)
+    if parse is None:  # a preview of the names alone (EF-EXP-005): nothing is read, nothing written
+        return path
     components = list(path.directory)
     if frozen.kind != "volume":
         components += [path.filename, path.filename.removesuffix(extension)]

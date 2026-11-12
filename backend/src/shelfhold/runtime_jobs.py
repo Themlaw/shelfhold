@@ -59,6 +59,7 @@ from shelfhold.export.application import blocked_memo
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
+from shelfhold.export.application.naming_preview import NamingPreview, preview_names
 from shelfhold.export.application.pipeline import (
     ExportPipeline,
     PlanPreview,
@@ -75,6 +76,7 @@ from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.upgrade import SamePathUpgrade
 from shelfhold.export.application.waiting_marks import mark_mount_blocked
 from shelfhold.export.application.wiring import NoRemoteParse
+from shelfhold.export.domain.naming import DEFAULT_TEMPLATE, NamingTemplate
 from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
@@ -82,6 +84,7 @@ from shelfhold.export.targets.kavita.arrival import ArrivalPoller
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.cover import SeriesCovers
+from shelfhold.export.targets.kavita.dto import LibraryType
 from shelfhold.export.targets.kavita.errors import (
     RouteMissing,
     TargetError,
@@ -717,6 +720,17 @@ def export_plan_destination(comp: Composition, plan_id: str) -> str:
         )
 
 
+async def _read_names(
+    client: KavitaClient, names: list[str], library_type: LibraryType
+) -> BulkParse:
+    """The answers of `plugin/parse` for the names: in bulk, or one by one when the bulk route is
+    gone from this Kavita (the single-name route is then the way to check a name)."""
+    try:
+        return await BulkParse.fetch(client, names, library_type)
+    except RouteMissing:
+        return BulkParse({name: await client.parse_name(name, library_type) for name in set(names)})
+
+
 class PlanService:
     """What the routes of the plans need (EF-EXP-008, EF-INT-001): a preview whose names Kavita
     has read, and the application of a plan queued as a job (the route answers 202 and the job)."""
@@ -749,6 +763,38 @@ class PlanService:
             except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound, TargetError):
                 pipeline.bind_parse(_no_remote_parse, verified=False)
             return pipeline.preview(destination_id)
+
+    def naming_preview(
+        self, destination_id: str, template: NamingTemplate | None = None
+    ) -> NamingPreview:
+        """What `template` would call each Unit the shelf is yet to write, each name read by
+        Kavita's `plugin/parse` (EF-EXP-005). Read-only: nothing is written, no disk is looked at.
+        A Kavita that cannot be asked, or that the parser replica does not cover, leaves the
+        names "unverified"; it never blocks."""
+        pipeline = self._pipeline()
+        candidate = template or DEFAULT_TEMPLATE
+        with self._lock:
+            items, existing, kind = pipeline.naming_inputs(destination_id)
+            asked: list[str] = []
+
+            def record(name: str) -> Any:
+                asked.append(name)
+                return _no_remote_parse(name)
+
+            preview_names(items, candidate, parse=record, verified=True, existing=existing)
+            try:
+                destination = _destination_of(self._comp, destination_id)
+                client = self._comp.kavita_client(destination.target_id)
+                asyncio.run(client.probe())  # the version the replica must cover is read now
+                bulk = asyncio.run(_read_names(client, asked, library_type_named(kind)))
+                verified = client.preview_verified
+                return preview_names(
+                    items, candidate, parse=bulk, verified=verified, existing=existing
+                )
+            except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound, TargetError):
+                return preview_names(
+                    items, candidate, parse=None, verified=False, existing=existing
+                )
 
     def queue_apply(self, plan_id: str, *, if_match: str) -> str:
         """The 412 and the pauses are answered now; what needs the disks and Kavita is the job's."""

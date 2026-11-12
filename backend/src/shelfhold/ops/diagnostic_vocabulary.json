@@ -992,6 +992,7 @@
   "shelfhold.export.application.manifest_write",
   "shelfhold.export.application.migration_detect",
   "shelfhold.export.application.mirror",
+  "shelfhold.export.application.naming_preview",
   "shelfhold.export.application.pairing",
   "shelfhold.export.application.pipeline",
   "shelfhold.export.application.plans",

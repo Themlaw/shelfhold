@@ -465,3 +465,12 @@ def test_kavita_401_revoked_key_pauses_destination_with_target_unreachable() -> 
         run(h.client.list_libraries())
     assert again.value.code == "target.unreachable"
     assert len(h.fake.requests) == count and h.events.codes() == ["target.unreachable"]
+
+
+@pytest.mark.req("EF-EXP-005")
+def test_preview_is_not_verified_on_a_version_the_replica_does_not_cover() -> None:
+    h = harness()
+    h.fake.version = "0.9.2.0"
+    run(h.client.probe())
+    assert h.client.collision_check_available  # the routes answer...
+    assert not h.client.preview_verified  # ...but the replica of the parser is of 0.9.1.x

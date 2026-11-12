@@ -52,6 +52,19 @@ MINIMUM_VERSION: Final = KavitaVersion((0, 9, 1, 0))
 MAXIMUM_EXCLUSIVE: Final = KavitaVersion((0, 10, 0, 0))
 
 
+# The replica of `plugin/parse` (tests/fakes/kavita/plugin_parse.py) follows the 0.9.1 line (tag
+# v0.9.1.4). A release outside it may parse differently: its preview is "not verified" (EF-EXP-005).
+REPLICA_FROM: Final = KavitaVersion((0, 9, 1, 0))
+REPLICA_BELOW: Final = KavitaVersion((0, 9, 2, 0))
+
+
+def parser_replica_covers(raw: str | None) -> bool:
+    """True when the version read from Kavita lies in the line the parser replica was taken from;
+    an unread or unreadable version is not covered."""
+    version = KavitaVersion.parse(raw)
+    return version is not None and REPLICA_FROM <= version < REPLICA_BELOW
+
+
 @dataclass(frozen=True)
 class KnownBad:
     """A vulnerable release line: warned about, never refused (ENF-COMP-001)."""

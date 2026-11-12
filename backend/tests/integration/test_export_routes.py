@@ -7,8 +7,10 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
+from shelfhold.export.application.naming_preview import NameEntry, NamingPreview
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.target_state import DestinationPausedError
+from shelfhold.export.domain.naming import NamingTemplate
 from shelfhold.infrastructure.db import create_db_engine
 from tests.auth_env import auth_env
 
@@ -28,9 +30,15 @@ class FakePipeline:
     stale: bool = False
     paused: str | None = None
     applied: list[tuple[str, str]] = field(default_factory=list)
+    previewed: list[object] = field(default_factory=list)
 
     def preview(self, shelf_destination_id: str) -> FakePreview:
         return FakePreview()
+
+    def naming_preview(self, shelf_destination_id: str, template: NamingTemplate | None) -> object:
+        self.previewed.append(template)
+        entry = NameEntry("u1", "A/A Ch 1.cbz", template_ref="t@1", status="unverified", flags=())
+        return NamingPreview(verified=False, entries=(entry,), collisions=())
 
     def queue_apply(self, plan_id: str, *, if_match: str) -> str:
         if self.paused:
@@ -111,3 +119,30 @@ def test_apply_on_a_paused_destination_answers_a_target_code_not_a_500(
         url = f"/api/v1/plans/{FakePreview.plan_id}/apply"
         paused = api.post(url, headers={"If-Match": '"4242"'})
         assert (paused.status_code, paused.json()["code"]) == (409, code)
+
+
+@pytest.mark.req("EF-EXP-005")
+def test_naming_preview_route_is_admin_only_reads_only_and_carries_the_mark(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    pipeline = FakePipeline()
+    url = "/api/v1/plans/naming-preview"
+    body = {
+        "shelf_destination_id": "01JDEST0000000000000000A1",
+        "template": {"chapter": "{series} Ch {number}"},
+    }
+    with auth_env(monkeypatch, settings, plan_service=pipeline) as api:
+        assert api.client.post(url, json=body).status_code == 401
+        assert api.login().status_code == 200
+        shown = api.post(url, json=body)
+        assert shown.status_code == 200, shown.text
+        data = shown.json()
+        assert data["verified"] is False  # the "not verified" mark reaches the client
+        assert data["entries"][0]["status"] == "unverified"
+        assert isinstance(pipeline.previewed[0], NamingTemplate)
+        assert pipeline.previewed[0].chapter == "{series} Ch {number}"
+        assert pipeline.applied == []
+        unknown = api.post(url, json={**body, "template": {"chapter": "x", "unknown": "y"}})
+        assert unknown.status_code == 422  # a template field that does not exist is refused
+        bad = api.post(url, json={**body, "template": {"chapter": "{nope}"}})
+        assert bad.status_code == 422  # a placeholder that does not exist is refused

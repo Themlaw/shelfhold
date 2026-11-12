@@ -116,22 +116,15 @@ tests = [
 
 [[allow]]
 category = "deferred-l31-adoption-and-preview"
-reason = "M1a features whose production caller is a screen or a command that does not exist yet: the journaled rename of a series folder (EF-EXP-041, `apply_rename`), the adoption of a foreign library (EF-EXP-044, EF-EXP-051, EF-EXP-055: download folder verdict, library link, bulk parse), the `ParseSeriesName` collision check and the \"not verified\" mark of the preview (EF-EXP-009, ENF-COMP-001), the naming pre-checks of an incoming file (EF-EXP-028) and the discovery of physical roots (EF-EXP-059). Wiring any of them adds a check or a refusal to the export path."
+reason = "M1a features whose production caller is a screen or a command that does not exist yet: the journaled rename of a series folder (EF-EXP-041, `apply_rename`), the adoption of a foreign library (EF-EXP-044, EF-EXP-051, EF-EXP-055: download folder verdict, library link, bulk parse), and the discovery of physical roots (EF-EXP-059). Wiring any of them adds a check or a refusal to the export path."
 until = "M3"
 symbols = [
   "shelfhold.export.application.intents:IntentJournal.apply_rename",
   "shelfhold.export.application.intents:RenameStep",
   "shelfhold.export.application.migration_detect:SwitchoverDetector.classify_download_dir",
-  "shelfhold.export.domain.naming:check_incoming",
-  "shelfhold.export.domain.naming:find_number_collisions",
-  "shelfhold.export.domain.naming:manifest_entry",
   "shelfhold.export.domain.physical_roots:discover_physical_roots",
   "shelfhold.export.targets.kavita.adopt:Adopter.link_library",
   "shelfhold.export.targets.kavita.adopt:BulkParse.for_plan",
-  "shelfhold.export.targets.kavita.client:KavitaClient.collision_check_available",
-  "shelfhold.export.targets.kavita.client:KavitaClient.parse_name",
-  "shelfhold.export.targets.kavita.client:KavitaClient.preview_verified",
-  "shelfhold.export.targets.kavita.destination:KavitaDestination.parse_name_call",
   "shelfhold.export.targets.kavita.series:Resolution.renamed",
   "shelfhold.export.targets.kavita.series:SeriesResolver",
 ]

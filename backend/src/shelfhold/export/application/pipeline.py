@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
@@ -27,6 +27,7 @@ from shelfhold.export.application.intents import IntentJournal, open_intent_path
 from shelfhold.export.application.locks import ResourceLocks, library_resource
 from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
+from shelfhold.export.application.naming_preview import NamingItem
 from shelfhold.export.application.plans import PlanOp, PlanStore, StalePlanError
 from shelfhold.export.application.ranged_export import (
     PreparedRange,
@@ -60,7 +61,7 @@ from shelfhold.export.application.snapshot import (
 from shelfhold.export.application.target_state import FieldRegistry, ensure_active
 from shelfhold.export.application.upgrade import SamePathUpgrade, UpgradeOutcome
 from shelfhold.export.domain.field_owner import AGE_RATING
-from shelfhold.export.domain.naming import Parsed
+from shelfhold.export.domain.naming import FrozenAttrs, Parsed
 from shelfhold.export.domain.planner import (
     GATE_CLOSED,
     AgeGateFacts,
@@ -379,6 +380,37 @@ class ExportPipeline:
             segment_policy_confirmed=self._segment_policy_confirmed,
             ranged_hash=self._ranged.source_hash,
         )
+
+    def naming_inputs(self, destination_id: str) -> tuple[list[NamingItem], list[str], str | None]:
+        """What a naming preview renders: the Units the plan would write, the paths already on
+        the shelf, and the Kavita library type. From the database alone: no disk, no write."""
+        with self._engine.connect() as connection:
+            ctx = load_context(connection, destination_id)
+            loaded = load_request(
+                connection, ctx,
+                exists=lambda _path: False,
+                covered_locals=open_intent_paths(connection),
+                segment_policy_confirmed=self._segment_policy_confirmed,
+                age_gate=self._age_gate,
+                ranged_hash=self._ranged.source_hash,
+            )  # fmt: skip
+            kind = connection.execute(
+                sa.select(export.shelf_destination.c.kavita_library_type).where(
+                    export.shelf_destination.c.id == destination_id
+                )
+            ).scalar()
+        plan = plan_destination(loaded.request, None)
+        items = [
+            NamingItem(
+                op.unit_id or op.export_item_id or "",
+                FrozenAttrs.stored(op.frozen),
+                PurePosixPath(op.rel_path).suffix,
+            )
+            for op in plan.ops
+            if op.rel_path is not None
+        ]
+        existing = [r.rel_path for r in loaded.request.records if r.rel_path]
+        return items, existing, kind
 
     def _compute(
         self, destination_id: str, *, disk: bool = True
