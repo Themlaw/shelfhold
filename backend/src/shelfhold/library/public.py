@@ -1,5 +1,6 @@
 """What the interfaces and the composition root may use from the library context."""
 
+from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.library.adapters.epub_derivative import (
     EpubIngested,
     Regenerated,
@@ -99,6 +100,7 @@ from shelfhold.library.adapters.storage import (
     verify_kept,
 )
 from shelfhold.library.adapters.store_index import INDEX_NAME, IndexReport, StoreIndex
+from shelfhold.library.adapters.svg_derivative import SVG_DERIVED_BY, rasterize_svg_pages
 from shelfhold.library.adapters.units import (
     ContentErrorCandidate,
     DeletionAuthorization,
@@ -248,6 +250,7 @@ __all__ = [
     "SOURCE_NOT_LOADED",
     "STORE_COPY_CHANGED",
     "STORE_COPY_MISSING",
+    "SVG_DERIVED_BY",
     "TOMBSTONED",
     "UNIT_JSON_VERSION",
     "Batch",
@@ -335,6 +338,7 @@ __all__ = [
     "UnitGoneError",
     "UnitJson",
     "UnitJsonCorruptError",
+    "UntrustedEntryError",
     "UntrustedEpubStore",
     "UpstreamPurge",
     "VariantAlreadyStoredError",
@@ -393,6 +397,7 @@ __all__ = [
     "parse_policy",
     "payload_hash_at",
     "plan_batch",
+    "rasterize_svg_pages",
     "readable_unit_ids",
     "receive_cbz",
     "received_content_hash",

@@ -9,12 +9,14 @@ from shelfhold.infrastructure.imaging.caps import (
 )
 from shelfhold.infrastructure.imaging.client import (
     ImageInfo,
+    RasterizedSvg,
     Thumbnail,
     WorkerLimits,
     check_pdf,
     diagnose_worker,
     make_thumbnail,
     probe_image,
+    rasterize_svg,
     run_worker,
 )
 from shelfhold.infrastructure.imaging.errors import ImageRejected
@@ -26,6 +28,7 @@ __all__ = [
     "ImageInfo",
     "ImageKind",
     "ImageRejected",
+    "RasterizedSvg",
     "Thumbnail",
     "WorkerLimits",
     "caps_for",
@@ -33,5 +36,6 @@ __all__ = [
     "diagnose_worker",
     "make_thumbnail",
     "probe_image",
+    "rasterize_svg",
     "run_worker",
 ]

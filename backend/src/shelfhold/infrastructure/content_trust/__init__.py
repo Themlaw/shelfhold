@@ -8,6 +8,7 @@ from shelfhold.infrastructure.content_trust.cbz_entries import (
     UntrustedEntryError,
     check_cbz_entries,
     sniff_image_kind,
+    sniff_svg,
 )
 from shelfhold.infrastructure.content_trust.epub_scan import (
     DERIVED_HASH_BY,
@@ -48,4 +49,5 @@ __all__ = [
     "neutralize_epub",
     "sanitize_upstream_text",
     "sniff_image_kind",
+    "sniff_svg",
 ]

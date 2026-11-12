@@ -56,6 +56,19 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
   exacte `6.21.4` (publiée le 2026-10-28, plus de 14 jours). Importée par le seul worker de décodage
   (contrat `pypdf-confined`), donc dans un sous-processus borné en mémoire et en temps ; un PDF
   n'est rangé que si elle l'ouvre sans erreur, sans chiffrement, sans fichier joint.
+- **resvg-py** (MPL-2.0, liaison Python de resvg) : rastérise les pages SVG d'un CBZ `untrusted`
+  en PNG sans perte (EF-BIB-051 (6), M2 L10, D10). **Seule exception au gel de `uv.lock`** : version
+  exacte `==0.5.0`, publiée le 2026-08-24 (plus de 14 jours, donc dans la fenêtre `exclude-newer`),
+  roues binaires pour toutes les plateformes visées, sans autre dépendance. Justification : un
+  moteur sans script, sans réseau et sans accès au système de fichiers par construction (resvg ne
+  charge une ressource que depuis le répertoire qu'on lui donne, et on ne lui en donne aucun ni
+  aucune police système), plutôt que cairosvg (bibliothèque C cairo, fait des requêtes par défaut).
+  Importée par le seul worker de décodage (contrat `resvg-confined`), donc dans un sous-processus
+  borné en mémoire (`RLIMIT_AS`) et en temps, dans un espace réseau vide. Le document est audité
+  d'abord (`imaging/svg_audit.py` : aucun DTD, script, `foreignObject`, police, référence hors du
+  document, taille et nombre de nœuds bornés) et tout ce qui n'est pas clairement un SVG simple est
+  refusé. Conséquence assumée : le texte d'une page SVG n'est pas dessiné (aucune police chargée).
+  Repli : refuser les pages SVG comme en M1a (`content.untrusted_entry`).
 - **webauthn** (py_webauthn, BSD-3-Clause) : passkeys (P8), plancher `>=3.0.1,<4` (3.0.1 publiée le
   2026-09-25) ; dépendances transitives verrouillées : cbor2 (MIT), cryptography (Apache-2.0 ou
   BSD-3-Clause), pyOpenSSL (Apache-2.0), pyasn1 et pyasn1-modules (BSD). Importée par le seul

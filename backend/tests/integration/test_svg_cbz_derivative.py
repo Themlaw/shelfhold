@@ -38,7 +38,12 @@ def stores(env: LibEnv) -> tuple[PassthroughStore, KeepCopier]:
             sa.insert(platform.instance).values(instance_id=env.instance_id, jurisdiction="FR")
         )
     store = PassthroughStore(
-        env.engine, env.fsops, env.locate, env.data, tombstones=_none(), hold_work=work_lock(env.engine)
+        env.engine,
+        env.fsops,
+        env.locate,
+        env.data,
+        tombstones=_none(),
+        hold_work=work_lock(env.engine),
     )
     keeper = KeepCopier(
         env.engine, env.fsops, env.locate, str(env.store), env.data,
@@ -93,7 +98,10 @@ def test_a_refused_svg_leaves_library_untouched_and_declares_nothing() -> None:
         unit, variant = env.chain["unit"], env.chain["variant"]
         dest = env.manga / "Dr Stone" / "Dr Stone - 1.cbz"
         store.ingest(
-            unit_id=unit, variant_id=variant, staged=env.stage(original), dest=str(dest),
+            unit_id=unit,
+            variant_id=variant,
+            staged=env.stage(original),
+            dest=str(dest),
             allow_svg_pages=True,
         )
         with pytest.raises(SafeguardFailedError):

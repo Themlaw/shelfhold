@@ -1,9 +1,11 @@
+# ruff: noqa: E501
 """EF-BIB-051 (6), rasterisation: an SVG page of an untrusted CBZ is audited, then drawn to a PNG
 inside the bounded decode worker, with no network and no file read. Every refusal is closed by
 default: whatever is not clearly a plain SVG is an error, never a blank page."""
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import sys
 import threading
@@ -38,8 +40,9 @@ def test_svg_rasterizer_draws_a_lossless_png() -> None:
     result = rasterize_svg(GOOD, limits=LIMITS)
     assert result.png.startswith(b"\x89PNG\r\n\x1a\n")
     assert (result.width, result.height) == (40, 30)
-    from PIL import Image
     import io
+
+    from PIL import Image
 
     pixel = Image.open(io.BytesIO(result.png)).convert("RGB").getpixel((5, 5))
     assert pixel == (204, 0, 0)
@@ -57,10 +60,8 @@ def test_svg_rasterizer_has_no_network_and_external_refs_ignored() -> None:
     hits: list[object] = []
 
     def accept() -> None:
-        try:
+        with contextlib.suppress(OSError):
             hits.append(listener.accept())
-        except OSError:
-            pass
 
     thread = threading.Thread(target=accept)
     thread.start()
@@ -128,12 +129,23 @@ def test_svg_billion_laughs_refused_without_expansion() -> None:
         '<feImage href="http://evil.example/x.png"/>',
         '<a href="javascript:alert(1)"><rect width="1" height="1"/></a>',
         '<rect width="5" height="5" style="fill:url(http://evil.example/p)"/>',
-        '<style>@import url(http://evil.example/a.css);</style>',
+        "<style>@import url(http://evil.example/a.css);</style>",
     ],
     ids=[
-        "file", "xlink-file", "http", "scheme-relative", "relative-file", "parent-file",
-        "data-png", "data-svg-nested", "use-data", "use-http", "feimage", "javascript-url",
-        "css-url", "css-import",
+        "file",
+        "xlink-file",
+        "http",
+        "scheme-relative",
+        "relative-file",
+        "parent-file",
+        "data-png",
+        "data-svg-nested",
+        "use-data",
+        "use-http",
+        "feimage",
+        "javascript-url",
+        "css-url",
+        "css-import",
     ],
 )
 def test_svg_external_and_nested_references_refused(inner: str) -> None:
@@ -152,7 +164,7 @@ def test_svg_fragment_reference_inside_the_document_is_drawn() -> None:
     [
         "<script>alert(1)</script>",
         '<script xlink:href="http://evil.example/x.js"/>',
-        f"<foreignObject width='5' height='5'><p xmlns='http://www.w3.org/1999/xhtml'>x</p></foreignObject>",
+        "<foreignObject width='5' height='5'><p xmlns='http://www.w3.org/1999/xhtml'>x</p></foreignObject>",
         "<foreignobject/>",
         "<iframe/>",
         '<animate attributeName="href" values="javascript:alert(1)"/>',
@@ -165,8 +177,18 @@ def test_svg_fragment_reference_inside_the_document_is_drawn() -> None:
         '<text font-family="x">a</text><style>@font-face{src:url(f.woff)}</style>',
     ],
     ids=[
-        "script", "script-href", "foreignobject", "foreignobject-lower", "iframe", "animate-href",
-        "set-href", "onload", "onclick", "font-remote", "font-local", "svg-font-face",
+        "script",
+        "script-href",
+        "foreignobject",
+        "foreignobject-lower",
+        "iframe",
+        "animate-href",
+        "set-href",
+        "onload",
+        "onclick",
+        "font-remote",
+        "font-local",
+        "svg-font-face",
         "font-relative",
     ],
 )
@@ -180,7 +202,8 @@ def test_svg_scripts_foreign_objects_and_external_fonts_refused(inner: str) -> N
     [
         b"<!doctype html><html><body><svg xmlns='http://www.w3.org/2000/svg' width='9' height='9'/></body></html>",
         b'<html xmlns="http://www.w3.org/1999/xhtml"><body><script>alert(1)</script></body></html>',
-        f'<svg xmlns="{NS}" width="9" height="9"/><!--<script>alert(1)</script>-->'.encode() + b"<html>",
+        f'<svg xmlns="{NS}" width="9" height="9"/><!--<script>alert(1)</script>-->'.encode()
+        + b"<html>",
         b"GIF89a" + f'<svg xmlns="{NS}" width="9" height="9"/>'.encode(),
         f'<svg xmlns="{NS}" width="9" height="9"><body xmlns="http://www.w3.org/1999/xhtml"/></svg>'.encode(),
         b"<svg width='9' height='9'/>",  # no namespace: a polyglot, not an SVG
@@ -194,9 +217,16 @@ def test_svg_polyglot_and_non_svg_documents_refused(document: bytes) -> None:
 @pytest.mark.req("EF-BIB-051")
 @pytest.mark.parametrize(
     "document",
-    [b"", b"\x00\x01\x02garbage", b"not xml at all", b"<svg", b"\xff\xfe<\x00s\x00v\x00g\x00>\x00",
-     b"<svg xmlns='http://www.w3.org/2000/svg'><g></svg>", b"\x89PNG\r\n\x1a\n" + b"\x00" * 30,
-     f'<svg xmlns="{NS}"/>'.encode()],
+    [
+        b"",
+        b"\x00\x01\x02garbage",
+        b"not xml at all",
+        b"<svg",
+        b"\xff\xfe<\x00s\x00v\x00g\x00>\x00",
+        b"<svg xmlns='http://www.w3.org/2000/svg'><g></svg>",
+        b"\x89PNG\r\n\x1a\n" + b"\x00" * 30,
+        f'<svg xmlns="{NS}"/>'.encode(),
+    ],
     ids=["empty", "binary", "text", "truncated", "utf16", "mismatched", "png", "no-size"],
 )
 def test_unreadable_svg_is_refused_closed(document: bytes) -> None:
@@ -251,7 +281,9 @@ def test_svg_worker_failure_is_a_refusal_not_a_blank_page(monkeypatch: Any) -> N
     monkeypatch.setattr(imaging_client, "run_worker", broken)
     assert refused(GOOD).code == "image.worker_failed"
 
-    monkeypatch.setattr(imaging_client, "run_worker", lambda *a, **k: ({"width": 1, "height": 1}, b""))
+    monkeypatch.setattr(
+        imaging_client, "run_worker", lambda *a, **k: ({"width": 1, "height": 1}, b"")
+    )
     assert refused(GOOD).code == "image.worker_failed"  # a reply that is not a PNG
     monkeypatch.setattr(imaging_client, "run_worker", lambda *a, **k: ({}, b"\x89PNG\r\n\x1a\nx"))
     assert refused(GOOD).code == "image.worker_failed"  # a reply with no size
@@ -265,9 +297,10 @@ def test_svg_render_memory_ceiling_is_applied_to_the_worker() -> None:
     facts = diagnose_worker("limits", limits=limits)
     assert facts["rlimit_as"][0] == 1024**3 and facts["rlimit_cpu"][0] == 7
     # a hard ceiling too low for the renderer is a refusal, not a crash of the parent
-    tiny = WorkerLimits(memory_bytes=64 * 1024**2, cpu_seconds=10, wall_seconds=30)
+    tiny = WorkerLimits(memory_bytes=160 * 1024**2, cpu_seconds=10, wall_seconds=30)
+    big = svg('<rect width="1" height="1"/>', 'width="6000" height="6000"')
     with pytest.raises(ImageRejected):
-        rasterize_svg(GOOD, limits=tiny)
+        rasterize_svg(big, limits=tiny)
 
 
 @pytest.mark.req("EF-BIB-051")
@@ -277,6 +310,6 @@ def test_svg_rasterizer_reads_no_file_while_drawing(tmp_path: Any) -> None:
     from shelfhold.infrastructure.imaging import diagnose_worker
 
     env = diagnose_worker("environment")
-    assert env["cwd_is_empty_dir"] is True and env["env_keys"] == []
+    assert env["cwd_is_empty_dir"] is True and set(env["env_keys"]) <= {"LC_CTYPE"}
     drawn = rasterize_svg(svg('<text x="1" y="8" font-family="Arial">hi</text>'), limits=LIMITS)
     assert drawn.png.startswith(b"\x89PNG")

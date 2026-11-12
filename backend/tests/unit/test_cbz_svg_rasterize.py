@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 from pathlib import Path
 from types import ModuleType
-from typing import Any
 
 import pytest
 
@@ -59,7 +58,9 @@ def test_html_xhtml_script_entries_stay_refused_even_with_svg_allowed(
 def test_html_hiding_behind_an_svg_extension_stays_refused(
     malicious: ModuleType, tmp_path: Path
 ) -> None:
-    path = archive_of(malicious, tmp_path, ("001.png", PNG_A), ("002.svg", malicious.HTML_WITH_SCRIPT))
+    path = archive_of(
+        malicious, tmp_path, ("001.png", PNG_A), ("002.svg", malicious.HTML_WITH_SCRIPT)
+    )
     with safe_open_archive(path) as archive, pytest.raises(UntrustedEntryError) as caught:
         check_cbz_entries(archive, allow_svg=True)
     assert caught.value.kind == "magic_mismatch"
@@ -70,7 +71,11 @@ def test_rasterize_cbz_replaces_svg_pages_in_order_and_keeps_the_rest(
     malicious: ModuleType, tmp_path: Path
 ) -> None:
     path = archive_of(
-        malicious, tmp_path, ("001.png", PNG_A), ("002.svg", SVG), ("003.jpg", malicious.JPEG_MAGIC + b"x" * 20)
+        malicious,
+        tmp_path,
+        ("001.png", PNG_A),
+        ("002.svg", SVG),
+        ("003.jpg", malicious.JPEG_MAGIC + b"x" * 20),
     )
     out = io.BytesIO()
     with safe_open_archive(path) as archive:
@@ -82,7 +87,9 @@ def test_rasterize_cbz_replaces_svg_pages_in_order_and_keeps_the_rest(
         assert listing.images == ("001.png", "002.png", "003.jpg")
         assert derived.read("002.png", max_bytes=1000) == PNG_A
         assert derived.read("001.png", max_bytes=1000) == PNG_A
-        assert [e.name for e in derived.entries][-1] == "ComicInfo.xml"  # ComicInfo last, as write_cbz
+        assert [e.name for e in derived.entries][
+            -1
+        ] == "ComicInfo.xml"  # ComicInfo last, as write_cbz
 
 
 @pytest.mark.req("EF-BIB-051")
