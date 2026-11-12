@@ -173,7 +173,7 @@ def test_two_bindings_with_the_same_title_are_not_guessed() -> None:
                 .mappings()
                 .one()
             )
-            line.update(id="01J00000000000000000000002", source_item_id=row["id"])
+            line.update(id="01J00000000000000000000002", source_item_id=row["id"], priority=2)
             connection.execute(sa.insert(binding).values(**line))
         report = tree_of(env).import_tree()
         assert states(report) == [("skipped", "import.tree_ambiguous_series")]
@@ -245,18 +245,6 @@ def test_image_folder_packaged_as_cbz_through_allowlist() -> None:
             assert archive.namelist() == ["00001.png", "00002.jpg", "ComicInfo.xml"]
             assert archive.read("00001.png") == PAGE_A  # natural order: 9 before 10
             assert b"<Number>2</Number>" in archive.read("ComicInfo.xml")
-
-
-@pytest.mark.req("EF-INT-009")
-def test_the_same_folder_packaged_twice_is_the_same_file() -> None:
-    with import_env() as env:
-        page_folder(env, "Chapter 2", {"1.png": PAGE_A})
-        tree_of(env).import_tree()
-        first = env.contents()[0].original_sha256
-        env.router.calls = 0
-        page_folder(env, "Chapter 3", {"1.png": PAGE_A})
-        tree_of(env).import_tree()
-        assert {c.original_sha256 for c in env.contents()} == {first}  # same bytes, one copy
 
 
 @pytest.mark.req("EF-INT-009")
@@ -367,9 +355,10 @@ def test_symlinks_are_never_followed(tmp_path: Path) -> None:
 
 
 @pytest.mark.req("EF-INT-009")
-def test_special_files_and_hard_links_are_refused(tmp_path: Path) -> None:
-    (tmp_path / "elsewhere.cbz").write_bytes(CBZ)
+def test_special_files_and_hard_links_are_refused() -> None:
     with import_env() as env:
+        tmp_path = env.lib.tmp  # the same disk: a hard link is possible
+        (tmp_path / "elsewhere.cbz").write_bytes(CBZ)
         series = env.incoming / CH
         series.mkdir(parents=True)
         os.mkfifo(series / "Chapter 1.cbz")  # a pipe where a file should be

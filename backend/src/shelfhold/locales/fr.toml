@@ -485,6 +485,11 @@ import_stored = "Rangé : {path} ({kind}){removed}"
 import_removed = ", retiré du dossier"
 import_kept = ", laissé dans le dossier : {message}"
 import_watermark = " ; drapeau tatoué posé ({origin})"
+help_import_tree = "Importe un arbre de téléchargements Suwayomi existant (CBZ ou dossiers d'images) sans rien retélécharger ; l'arbre n'est jamais modifié."
+help_import_tree_path = "Chemin absolu de l'arbre (le dossier qui contient « mangas »)."
+import_tree_skipped = "Ignoré : {path} ({message})"
+import_tree_stored = "Rangé : {path} ({kind}), l'arbre est laissé en place"
+import_tree_summary = "{stored} rangé(s), {skipped} ignoré(s), {refused} refusé(s), {waiting} en attente."
 import_summary = "{stored} rangé(s), {refused} refusé(s), {waiting} en attente."
 backfill_choose_mode = "Choisissez --gaps ou --all."
 backfill_confirm_pair = "--confirm-units et --confirm-bytes vont ensemble."
@@ -1662,6 +1667,26 @@ action = "Le fichier reste dans le dossier d'import. Retirez-le vous-même si vo
 [errors."import.original_not_kept"]
 title = "Fichier rangé sous sa forme neutralisée seulement : l'original n'est conservé nulle part."
 action = "Le fichier reste dans le dossier d'import, car il serait perdu sinon. Configurez /store pour conserver les originaux."
+
+[errors."import.tree_unreadable"]
+title = "L'arbre à importer n'est pas lisible."
+action = "Donnez le chemin absolu d'un dossier réel (pas un lien), distinct de /library, /store et /data."
+
+[errors."import.tree_no_series"]
+title = "Aucune liaison Suwayomi ne correspond à ce dossier de série."
+action = "L'arbre n'est pas modifié. Suivez d'abord la série (« shelfhold follow »), puis relancez l'import."
+
+[errors."import.tree_ambiguous_series"]
+title = "Plusieurs liaisons Suwayomi portent ce titre de série."
+action = "L'arbre n'est pas modifié. Rien n'est deviné : retirez la liaison en double, puis relancez l'import."
+
+[errors."import.tree_unnumbered"]
+title = "Le numéro de ce chapitre n'est pas lisible dans son nom."
+action = "L'arbre n'est pas modifié. Renommez le chapitre avec « Chapter N » ou téléchargez-le de nouveau."
+
+[errors."import.tree_duplicate"]
+title = "Ce chapitre est déjà rangé."
+action = "Rien n'est à faire : la copie existante est gardée et l'arbre n'est pas modifié."
 
 [errors."content.untrusted_pdf"]
 title = "PDF rangé tel quel, non exporté : sa provenance n'est pas déclarée."

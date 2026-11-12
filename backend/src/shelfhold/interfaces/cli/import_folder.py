@@ -12,6 +12,7 @@ import argparse
 
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli._ops import ops_command
+from shelfhold.interfaces.cli.import_tree import add_tree
 from shelfhold.interfaces.local_cli import OpsChannel
 
 
@@ -22,6 +23,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     scan.add_argument("--dry-run", action="store_true", help=t("ops.help_import_dry_run"))
     scan.add_argument("--purchase", action="store_true", help=t("ops.help_import_purchase"))
     scan.set_defaults(handler=run_scan, configure_logging=False)
+    add_tree(actions)
 
 
 def _message(code: str | None) -> str:

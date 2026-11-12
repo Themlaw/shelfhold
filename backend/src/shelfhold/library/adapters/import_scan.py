@@ -246,6 +246,7 @@ class ImportItem:
     title: str  # a clean title taken from the name
     trust: str  # `publisher` (a declared purchase) or `untrusted`
     sha256: str
+    rel: str = ""  # where it lay, raw and relative to the folder (never printed)
 
 
 @dataclass(frozen=True)
@@ -334,6 +335,8 @@ class ImportFolder:
         keep_apart: tuple[Path, ...] = (),
         precheck: Precheck | None = None,
         default_trust: str = "untrusted",
+        keep_source: bool = False,
+        entry_prefix: str = "",
         max_bytes: int = DEFAULT_MAX_RECEIVED_BYTES,
         settle_seconds: float = DEFAULT_SETTLE_SECONDS,
         recheck_seconds: float = DEFAULT_RECHECK_SECONDS,
@@ -366,6 +369,8 @@ class ImportFolder:
         self._place = place
         self._precheck = precheck
         self._default_trust = default_trust
+        self._keep_source = keep_source  # a tree that is someone else's: read, never removed
+        self._prefix = entry_prefix  # its own namespace in the table of decisions
         self._max = max_bytes
         self._settle = settle_seconds
         self._recheck = recheck_seconds
@@ -656,7 +661,7 @@ class ImportFolder:
             code = self._precheck(staged, kind, sha, trust)
             if code is not None:
                 return self._refuse(item, shown, code, sha, kind=kind)
-        unit_id, variant_id = self._target(ImportItem(kind, _title_of(name), trust, sha))
+        unit_id, variant_id = self._target(ImportItem(kind, _title_of(name), trust, sha, item.rel))
         return self._ingest_into(staged, sha, kind, unit_id, variant_id, item, shown)
 
     def _ingest_into(
@@ -697,7 +702,7 @@ class ImportFolder:
         if not self._stored_verified(unit_id, sha):
             code = HASH_MISMATCH if self._claims(unit_id, sha) else ORIGINAL_NOT_KEPT
             return ImportOutcome(shown, "stored", code, False, unit_id, kind, mark)
-        removed = self._remove_verified(root_fd, item, sha)
+        removed = False if self._keep_source else self._remove_verified(root_fd, item, sha)
         if removed:
             self._record(shown, item.size, item.mtime_ns, sha, "removed", None)
             log.info("import.removed", kind=kind)
@@ -929,7 +934,7 @@ class ImportFolder:
         with self._engine.connect() as connection:
             row = connection.execute(
                 sa.select(table.c.state, table.c.reason, table.c.size, table.c.mtime).where(
-                    table.c.rel_path == _escaped_key(display_path(item.rel))
+                    table.c.rel_path == self._prefix + _escaped_key(display_path(item.rel))
                 )
             ).first()
         if row is None or row.state != "refused" or row.size != item.size or not row.reason:
@@ -942,7 +947,7 @@ class ImportFolder:
         self, rel: str, size: int, mtime_ns: int, sha: str | None, state: str, reason: str | None
     ) -> None:
         table = storage.import_entry
-        key, now = _escaped_key(rel), datetime.now(UTC)
+        key, now = self._prefix + _escaped_key(rel), datetime.now(UTC)
         values = {
             "size": max(size, 1), "mtime": datetime.fromtimestamp(mtime_ns / 1e9, UTC),
             "sha256": sha, "state": state, "reason": reason, "decided_at": now,

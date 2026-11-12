@@ -57,6 +57,13 @@ from shelfhold.acquisition.application.tickets import (
     bounded_receiver,
     oriented_name,
 )
+from shelfhold.acquisition.application.tree_target import (
+    SUWAYOMI_PLUGIN,
+    SeriesBinding,
+    TreeTargets,
+    chapter_number,
+    series_key,
+)
 from shelfhold.acquisition.application.unit_follow import suppress_follow
 from shelfhold.acquisition.application.upstream import (
     Detacher,
@@ -80,6 +87,7 @@ __all__ = [
     "IMPORT_PLUGIN",
     "MAX_COVERED",
     "MAX_TICKET_AGE",
+    "SUWAYOMI_PLUGIN",
     "AcquireOutcome",
     "AcquireRefused",
     "Backfill",
@@ -111,6 +119,7 @@ __all__ = [
     "RangeUnit",
     "Receiver",
     "RequestBudget",
+    "SeriesBinding",
     "ServiceLink",
     "ServiceNotConnectedError",
     "SnapshotRefusedError",
@@ -121,11 +130,13 @@ __all__ = [
     "TeamPreference",
     "TeamStats",
     "TicketReport",
+    "TreeTargets",
     "UpstreamSnapshots",
     "Watermark",
     "acquire_dedupe_key",
     "bounded_receiver",
     "cadence",
+    "chapter_number",
     "choose_team",
     "classify",
     "decline_pairing",
@@ -138,6 +149,7 @@ __all__ = [
     "pending",
     "present_for_acquisition",
     "present_in",
+    "series_key",
     "stale_series",
     "stale_threshold",
     "submit_follow",

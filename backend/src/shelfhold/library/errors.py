@@ -37,4 +37,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("import.not_stored", 500, "admin"),
     ErrorCode("import.tombstoned", 409, "user"),
     ErrorCode("import.original_not_kept", 409, "admin"),
+    # An existing Suwayomi download tree (EF-INT-009): a chapter left alone, or a tree not read
+    ErrorCode("import.tree_unreadable", 422, "admin"),
+    ErrorCode("import.tree_no_series", 409, "user"),
+    ErrorCode("import.tree_ambiguous_series", 409, "user"),
+    ErrorCode("import.tree_unnumbered", 409, "user"),
+    ErrorCode("import.tree_duplicate", 409, "user"),
 )
