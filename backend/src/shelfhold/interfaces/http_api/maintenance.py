@@ -49,7 +49,9 @@ def _stays_open(method: str, path: str) -> bool:
 # the guard writes the audit line of a route, as for every reserved route: the service is told so
 _ENTER = reserved_action(RESERVED_ACTIONS["maintenance.enter"])
 _EXIT = reserved_action(RESERVED_ACTIONS["maintenance.exit"])
-_QUEUE = reserved_action(RESERVED_ACTIONS["queue.control"])
+# the queue routes write their own line, with its target (`pause:<source>`, `cancel:<id>`...), by
+# the service, in the transaction of the change: the guard writes none
+_QUEUE = reserved_action(RESERVED_ACTIONS["queue.control"], audit=False)
 Admin = Annotated[Principal, Depends(require_admin)]
 
 
@@ -173,23 +175,17 @@ def build_maintenance_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     @router.post("/queue/pause")
     def queue_pause(body: ScopeIn, principal: Annotated[Principal, Depends(_QUEUE)]) -> PausedOut:
         with refusals():
-            return PausedOut(
-                **get_ops().maintenance.pause(body.source, principal=principal, audit=False)
-            )
+            return PausedOut(**get_ops().maintenance.pause(body.source, principal=principal))
 
     @router.post("/queue/resume")
     def queue_resume(body: ScopeIn, principal: Annotated[Principal, Depends(_QUEUE)]) -> ResumedOut:
         with refusals():
-            return ResumedOut(
-                **get_ops().maintenance.resume(body.source, principal=principal, audit=False)
-            )
+            return ResumedOut(**get_ops().maintenance.resume(body.source, principal=principal))
 
     @router.post("/jobs/{job_id}/cancel")
     def job_cancel(job_id: str, principal: Annotated[Principal, Depends(_QUEUE)]) -> CancelOut:
         with refusals():
-            return CancelOut(
-                **get_ops().maintenance.cancel(job_id, principal=principal, audit=False)
-            )
+            return CancelOut(**get_ops().maintenance.cancel(job_id, principal=principal))
 
     @router.post("/jobs/{job_id}/priority")
     def job_priority(
@@ -197,15 +193,13 @@ def build_maintenance_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     ) -> PriorityOut:
         with refusals():
             done: dict[str, Any] = get_ops().maintenance.set_priority(
-                job_id, body.priority_class, principal=principal, audit=False
+                job_id, body.priority_class, principal=principal
             )
             return PriorityOut(**done)
 
     @router.post("/jobs/{job_id}/replay")
     def job_replay(job_id: str, principal: Annotated[Principal, Depends(_QUEUE)]) -> ReplayOut:
         with refusals():
-            return ReplayOut(
-                **get_ops().maintenance.replay(job_id, principal=principal, audit=False)
-            )
+            return ReplayOut(**get_ops().maintenance.replay(job_id, principal=principal))
 
     return router

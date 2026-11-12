@@ -33,7 +33,7 @@ _STEPS: Final = KindTraits(cancellable=True)
 DECLARED: Final[dict[str, KindTraits]] = {
     "library.safeguard": _REPAIR,  # "Mettre à l'abri": the copy of /store that keeps a file safe
     "store.keep_catchup": _REPAIR,
-    "store.index": _REPAIR,
+    "store.index": KindTraits(security_repair=True),  # one `rewrite()`: no step to stop between
     "reconcile.cycle": _REPAIR,  # the coherence of the disks against the database
     "reconcile.hash": _REPAIR,
     "integrity_rolling": _REPAIR,  # replaces the damaged copies (L23)

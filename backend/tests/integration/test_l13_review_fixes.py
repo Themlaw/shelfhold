@@ -4,6 +4,7 @@ kinds, one gate for the commands of the host, the typed pause scopes, the cancel
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -45,6 +46,14 @@ def test_every_declared_kind_is_a_registered_kind(tmp_path: Path) -> None:
         assert set(DECLARED) <= registered, set(DECLARED) - registered
         for kind in security_repair_kinds():
             assert traits_of(kind).security_repair
+        # the trait follows the handler: a kind is cancellable only if its handler reads `stop`
+        # (directly or by running its steps), or the ledger records a cancel that stopped nothing
+        for kind, traits in DECLARED.items():
+            source = inspect.getsource(e.pools._handlers[kind][1])
+            reads_stop = "stop_requested" in source or "run_steps" in source or ".stop" in source
+            assert traits.cancellable == reads_stop or (reads_stop and not traits.cancellable), kind
+            if traits.cancellable:
+                assert reads_stop, f"{kind} is declared cancellable and its handler never looks"
 
 
 def test_every_leaf_of_the_cli_tree_is_a_read_a_revocation_or_behind_the_gate() -> None:
