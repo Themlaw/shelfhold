@@ -95,10 +95,11 @@ tests = [
 
 [[route_test]]
 category = "generic-mechanics"
-reason = "2026-11-12 (M3 L09): proves that the child-surface meta-test walks the routes left out of the OpenAPI document (a stream, a thumbnail, a cover are `include_in_schema=False`): the test declares one such route to show it is counted. No product route has the case before L12 (SSE) and L24 (thumbnails), which add their own child case."
+reason = "2026-11-12 (M3 L09): proves that the child-surface meta-test walks the routes left out of the OpenAPI document (a stream, a thumbnail, a cover are `include_in_schema=False`): the tests declare one such route (and a mount, and a WebSocket) to show they are counted. No product route has the case before L12 (SSE) and L24 (thumbnails), which add their own child case."
 until = "M3"
 tests = [
   "backend/tests/integration/test_l09_review_poc.py::test_review_poc_meta_test_sees_routes_outside_openapi",
+  "backend/tests/integration/test_child_surfaces.py::test_meta_test_counts_mounts_and_websockets",
 ]
 
 [[allow]]

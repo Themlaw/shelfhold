@@ -144,11 +144,11 @@ def visible_editions_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
         return sa.false()
     work, edition, suggestion = catalog.work.c, catalog.edition.c, catalog.age_suggestion.c
     parent = catalog.work.alias("parent_work").c
-    # what the Edition counts for: the stricter of its own age and its Work's (`age.EditionAge`)
-    eff_age = sa.func.max(
-        sa.func.coalesce(edition.age_rating, 0), sa.func.coalesce(parent.age_rating, 0)
-    )
-    eff_x = sa.or_(edition.age_x.is_(True), parent.age_x.is_(True))
+    # what the Edition counts for, by the one definition of the shelves (`age.EditionAge.age`,
+    # `rating._age`): its own age when an admin fixed one (an X counts as X), else its Work's
+    own = sa.or_(edition.age_x.is_(True), edition.age_rating.is_not(None))
+    eff_age = sa.case((own, edition.age_rating), else_=parent.age_rating)
+    eff_x = sa.case((own, edition.age_x), else_=parent.age_x).is_(True)
     waiting = (
         sa.select(sa.literal(1))
         .where(

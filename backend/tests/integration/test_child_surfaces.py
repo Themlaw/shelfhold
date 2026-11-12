@@ -18,8 +18,9 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from fastapi.routing import iter_route_contexts
+from fastapi.routing import APIWebSocketRoute, iter_route_contexts
 from fastapi.testclient import TestClient
+from starlette.routing import WebSocketRoute
 
 from shelfhold.catalog.public import (
     count_visible_works,
@@ -255,14 +256,23 @@ def world(monkeypatch: pytest.MonkeyPatch, api: AuthEnv) -> Iterator[World]:
 
 
 def _routes(app: Any) -> set[str]:
-    """Every route of the application, the ones left out of the OpenAPI document included: a
-    stream, a thumbnail or a cover is usually declared `include_in_schema=False`."""
-    return {
-        f"{m} {context.path}"
-        for context in iter_route_contexts(app.routes)  # routers included lazily are walked too
-        if context.path is not None
-        for m in (context.methods or set()) - {"HEAD", "OPTIONS"}
-    }
+    """Every route of the application, the ones left out of the OpenAPI document included (a
+    stream, a thumbnail or a cover is usually `include_in_schema=False`). A route with no HTTP
+    method (a mounted application, a WebSocket) is counted too, as `MOUNT` or `WEBSOCKET`: it
+    serves a child as well, and needs its case."""
+    found: set[str] = set()
+    for context in iter_route_contexts(app.routes):  # routers included lazily are walked too
+        if context.path is None:
+            continue
+        own = context.methods or getattr(context.original_route, "methods", None) or set()
+        methods = set(own) - {"HEAD", "OPTIONS"}
+        if own:  # a HEAD-only route has only the twin of a GET: nothing more to serve
+            found.update(f"{m} {context.path}" for m in methods)
+        elif isinstance(context.original_route, WebSocketRoute | APIWebSocketRoute):
+            found.add(f"WEBSOCKET {context.path}")
+        else:
+            found.add(f"MOUNT {context.path}")
+    return found
 
 
 def _shape(response: Any) -> tuple[Any, ...]:
@@ -316,6 +326,20 @@ def test_new_route_without_a_child_case_is_caught(api: AuthEnv) -> None:
     assert ({*_routes(api.app), "GET /api/v1/zz-new-surface"} - known) == {
         "GET /api/v1/zz-new-surface"
     }
+
+
+@pytest.mark.req("EF-USR-006", "ENF-SEC-010")
+def test_meta_test_counts_mounts_and_websockets() -> None:
+    """A route with no HTTP method serves a child as well: it is listed, not skipped."""
+    from fastapi import FastAPI
+    from starlette.responses import PlainTextResponse
+
+    app = FastAPI()
+    app.mount(
+        "/zz-static", lambda scope, receive, send: PlainTextResponse("x")(scope, receive, send)
+    )
+    app.add_api_websocket_route("/zz-socket", lambda websocket: None)
+    assert _routes(app) >= {"MOUNT /zz-static", "WEBSOCKET /zz-socket"}
 
 
 # -- the closed routes -----------------------------------------------------------------------
