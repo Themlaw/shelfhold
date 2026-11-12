@@ -49,10 +49,13 @@ def test_fsops_never_hardlinks() -> None:
 
 @pytest.mark.req("EF-BIB-027")
 def test_the_write_path_of_a_copy_places_by_rename_not_by_link() -> None:
+    """Every function of the writer but the option's own: no second name, a rename."""
     writer = ast.parse((SRC / "infrastructure/fsops/writer.py").read_text(encoding="utf-8"))
     called = {
         n.func.attr
-        for n in ast.walk(writer)
+        for f in writer.body
+        if isinstance(f, ast.FunctionDef) and f.name != "link_replaceable"
+        for n in ast.walk(f)
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
     }
     assert "link" not in called and "link_to" not in called
@@ -64,13 +67,17 @@ def test_the_write_path_of_a_copy_places_by_rename_not_by_link() -> None:
 # road of the option may call `link_replaceable`.
 LINK_METHODS = {"link", "link_to"}
 LINK_CALLERS = {
+    "infrastructure/fsops/facade.py": {"_claim_lease"},  # the lease of a root: a host file
     "infrastructure/fsops/capabilities.py": {"_hardlink"},  # the probe: a name made and removed
     "infrastructure/fsops/writer.py": {"link_replaceable"},  # the option, checked inside
 }
 OPTION_CALLERS = {
     "infrastructure/fsops/facade.py": {"link_replaceable"},  # the facade of the writer
-    "library/adapters/storage.py": {"_copy"},  # `KeepCopier`, given `LinkPolicy` by the catch-up
+    "library/adapters/storage.py": {"_link"},  # `KeepCopier`, given `LinkPolicy` by the catch-up
 }
+
+
+ROOTS = {"root", "source", "target", "other"}  # what a `ConfinedRoot` is called in the source
 
 
 def method_calls(path: Path, names: set[str]) -> list[tuple[str, int]]:
@@ -84,12 +91,17 @@ def method_calls(path: Path, names: set[str]) -> list[tuple[str, int]]:
                 isinstance(child, ast.Call)
                 and isinstance(child.func, ast.Attribute)
                 and child.func.attr in names
+                and (child.func.attr != "link" or _receiver(child.func.value) in ROOTS)
             ):
                 found.append((function, child.lineno))
             walk(child, name)
 
     walk(tree, "<module>")
     return found
+
+
+def _receiver(node: ast.expr) -> str:
+    return node.id if isinstance(node, ast.Name) else getattr(node, "attr", "")
 
 
 def offenders_of(names: set[str], allowed: dict[str, set[str]]) -> list[str]:

@@ -178,6 +178,7 @@
   "LibraryAdoptionExit",
   "LibraryNotDedicatedError",
   "LimitOverrunError",
+  "LinkUnavailableError",
   "ListingIncomplete",
   "LockBusyError",
   "LockLostError",
@@ -684,6 +685,7 @@
   "startup.probe_failed",
   "store.keep_failed",
   "store.keep_skipped",
+  "store.link_fallback_copy",
   "switchover.download_dir_unreadable",
   "target.access_audit",
   "target.key_expiry_failed",
@@ -2958,6 +2960,7 @@
    "after",
    "auth_mode",
    "before",
+   "link_mode",
    "mode"
   ],
   "outcome": [

@@ -11,6 +11,7 @@ __all__ = [
     "EmitterPerimeterError",
     "FsopsError",
     "JournalChangedError",
+    "LinkUnavailableError",
     "NotRegularFileError",
     "OutsidePathMapError",
     "PathEscapeError",
@@ -98,3 +99,14 @@ class EmitterConditionError(FsopsError):
 class JournalChangedError(FsopsError):
     """The journal is not the file the rewrite was built from: somebody wrote it meanwhile, so
     nothing is replaced (the caller reads it again)."""
+
+
+class LinkUnavailableError(FsopsError):
+    """The hard link of the option (EF-EXP-015) cannot be made, and nothing was placed: the caller
+    falls back to an independent copy and says so. `reason` is one of `cross_mount` (another file
+    system or another mount), `not_regular`, `shared_name` (the file already has a second name that
+    is not ours) or `unsupported` (the file system refuses links)."""
+
+    def __init__(self, reason: str, message: str = "") -> None:
+        super().__init__(message or f"no hard link: {reason}", code=errno.EXDEV)
+        self.reason = reason

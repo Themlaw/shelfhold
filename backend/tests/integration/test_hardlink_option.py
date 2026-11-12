@@ -17,7 +17,7 @@ from shelfhold.export.application.shelves import ShelfService
 from shelfhold.infrastructure.fsops import LinkUnavailableError
 from shelfhold.infrastructure.fsops import writer as fs_writer
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, export, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.library.public import KeepCopier, LinkPolicy, independent_copies, verify_kept
 from tests.integration.test_library_keep_copy import ingest, keeper, prepare
 from tests.library_env import LibEnv, cbz_bytes, lib_env
@@ -95,7 +95,7 @@ def test_import_mode_copy_default_hardlink_option_same_fs() -> None:
 
 def test_the_default_of_a_shelf_is_copy() -> None:
     with lib_env() as env:
-        unit, library, _ = filed(env, "copy")
+        unit, _library, _ = filed(env, "copy")
         with env.engine.connect() as c:
             assert LinkPolicy(env.engine).allows(unit) is False
             assert c.execute(sa.select(export.shelf.c.link_mode)).scalar_one() == "copy"
@@ -140,12 +140,16 @@ def test_exdev_from_the_kernel_is_a_mount_boundary_too(monkeypatch: pytest.Monke
 @pytest.mark.parametrize("how", ["removed", "no_binding"])
 def test_irreplaceable_unit_never_hardlinked(how: str) -> None:
     with lib_env() as env:
-        unit, library, data = filed(env)
+        unit, library, _data = filed(env)
         if how == "removed":
             make_irreplaceable(env)
         else:
             with env.engine.begin() as c:
-                c.execute(sa.text("UPDATE source_binding SET active = 0"))
+                c.execute(
+                    sa.update(acquisition.source_binding).values(
+                        active=False, disabled_reason="manual"
+                    )
+                )
         assert LinkPolicy(env.engine).allows(unit) is False
         kept = linking(env).keep(unit)
         assert kept.method in {"reflink", "copy"}
@@ -181,14 +185,16 @@ def test_unit_that_became_irreplaceable_gets_an_independent_copy_from_the_safegu
 
 def test_never_symlink_the_source_is_never_followed(tmp_path: Path) -> None:
     with lib_env() as env:
-        unit, library, data = filed(env)
+        _unit, library, data = filed(env)
         outside = tmp_path / "outside.cbz"
         outside.write_bytes(data)
         library.unlink()
         library.symlink_to(outside)
-        with pytest.raises(Exception) as refused:  # noqa: PT011 - a link in a managed tree
+        with pytest.raises(Exception) as refused:
             env.fsops.link_replaceable(
-                str(library), str(env.store / "x.cbz"), expected_sha256=hashlib.sha256(data).hexdigest()
+                str(library),
+                str(env.store / "x.cbz"),
+                expected_sha256=hashlib.sha256(data).hexdigest(),
             )
         assert not isinstance(refused.value, FileNotFoundError)
         assert not (env.store / "x.cbz").exists()
@@ -221,7 +227,7 @@ def test_a_name_shared_with_a_third_party_is_not_linked_again() -> None:
 
 def test_the_link_is_checked_after_it_is_made() -> None:
     with lib_env() as env:
-        unit, library, data = filed(env)
+        _unit, library, data = filed(env)
         done = env.fsops.link_replaceable(
             str(library), str(env.store / "units" / "a.cbz"), parents=True,
             expected_sha256=hashlib.sha256(data).hexdigest(),
@@ -266,7 +272,12 @@ def test_modification_through_the_other_name_is_seen_by_the_integrity_checks() -
         assert served != original  # the file_hash of what is served no longer matches
         assert verify_kept(env.engine, env.fsops, unit) == 0
         with env.engine.connect() as c:
-            assert independent_copies(c, unit) == 0
+            (flag,) = c.execute(
+                sa.select(storage.replica.c.independent).where(
+                    storage.replica.c.location == "store"
+                )
+            ).scalars()
+            assert flag is False  # the kept copy no longer counts as one
 
 
 def test_purge_of_one_side_leaves_the_other_whole() -> None:
@@ -307,12 +318,12 @@ def test_replacing_a_linked_name_goes_by_rename_and_leaves_the_other_name() -> N
 
 def test_link_replaceable_refuses_a_target_that_is_not_regular_or_missing() -> None:
     with lib_env() as env:
-        unit, library, data = filed(env)
+        _unit, library, _data = filed(env)
         with pytest.raises((LinkUnavailableError, OSError)):
             env.fsops.link_replaceable(
                 str(env.library / "manga"), str(env.store / "d.cbz"), expected_sha256="0" * 64
             )
-        with pytest.raises(Exception):  # noqa: B017, PT011 - the digest read now is not the one given
+        with pytest.raises(Exception):  # noqa: B017 - the digest read now is not the one given
             env.fsops.link_replaceable(
                 str(library), str(env.store / "e.cbz"), expected_sha256="0" * 64
             )
@@ -335,7 +346,9 @@ def test_shelf_link_mode_has_one_audited_writer_and_never_accepts_symlink() -> N
             service.set_link_mode(new_ulid(), "copy")
 
 
-def test_cli_shelf_link_mode(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_shelf_link_mode(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     from contextlib import contextmanager
 
     from shelfhold.interfaces import cli

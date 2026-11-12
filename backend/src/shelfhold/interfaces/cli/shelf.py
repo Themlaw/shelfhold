@@ -44,6 +44,13 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     switch.add_argument("--off", dest="enabled", action="store_false",
                         help=t("cli.shelf_purge_upstream_off_help"))  # fmt: skip
     purge.set_defaults(handler=run_purge_upstream, configure_logging=False)
+    link = actions.add_parser("link-mode", help=t("cli.shelf_link_mode_help"), allow_abbrev=False)
+    link.add_argument("shelf", help=t("cli.shelf_purge_upstream_shelf_help"))
+    link.add_argument(
+        "--link-mode", required=True, choices=("copy", "hardlink"),
+        help=t("cli.shelf_link_mode_choice_help"),
+    )  # fmt: skip
+    link.set_defaults(handler=run_link_mode, configure_logging=False)
 
 
 @headless_command
@@ -66,6 +73,13 @@ def run_purge_upstream(args: argparse.Namespace, channel: OpsChannel) -> int:
         print(t("cli.shelf_purge_upstream_on", shelf=args.shelf))
     else:
         print(t("cli.shelf_purge_upstream_off", shelf=args.shelf))
+    return 0
+
+
+@ops_command
+def run_link_mode(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.shelf_link_mode", shelf=args.shelf, link_mode=args.link_mode)
+    print(t("cli.shelf_link_mode_done", shelf=args.shelf, mode=done["link_mode"]))
     return 0
 
 
