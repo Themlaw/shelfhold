@@ -176,10 +176,14 @@ def wait_epubs(j: Journey, wanted: int) -> None:
 
 
 def store_files(j: Journey) -> list[str]:
+    """The Unit copies kept in /store. `/store/INDEX.jsonl` (the index of what /store says about
+    itself, rewritten by the `store.index` job) is a legitimate non-archive file there, so it is
+    no copy: `find` lists it before or after the copies depending on the directory order, which
+    made the journey fail only when it came first."""
     done = j.compose(
         "exec", "-T", "shelfhold", "find", "/store", "-type", "f", check=False
     )
-    return done.stdout.split()
+    return [f for f in done.stdout.split() if f.rsplit("/", 1)[-1] != "INDEX.jsonl"]
 
 
 @pytest.mark.e2e_timeout(900)
