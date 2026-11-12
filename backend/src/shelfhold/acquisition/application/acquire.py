@@ -525,6 +525,7 @@ class NativeAcquirer:
             else (None, None)
         )
         publisher = _clean(info.publisher) or ""
+        joined = False  # an Edition that already existed: its shelf is not ours to move
         if lang is None:
             edition_id = new_ulid()
             connection.execute(
@@ -534,7 +535,7 @@ class NativeAcquirer:
                 )
             )  # fmt: skip
         else:
-            edition_id = books.ensure_edition(
+            ensured = books.ensure_edition(
                 EditionSpec(
                     work_id,
                     lang,
@@ -543,7 +544,9 @@ class NativeAcquirer:
                     publisher=publisher,
                     text_version=version,
                 )
-            ).id
+            )
+            edition_id = ensured.id
+            joined = not ensured.created
         write_rights(
             connection, edition_id, basis=manifest.rights_basis,
             jurisdiction=manifest.rights_jurisdiction, attribution=_attribution(info.rights),
@@ -561,8 +564,12 @@ class NativeAcquirer:
             suggest_age(
                 connection, "edition", edition_id, suggested, provenance="sub_source", now=now
             )
-        # the one door of the shelf of a new Edition: a shelf below 18+ never takes it unrated
-        file_new_edition(connection, edition_id, shelf_id or _shelf(connection))
+        # the one door of the shelf of a new Edition: a shelf below 18+ never takes it unrated. An
+        # Edition that already sits on a shelf stays there (no withdrawal is automatic, EF-BIB-037):
+        # a suggestion above its rating shows as `withdrawal_pending` (`shelf withdraw`) and the
+        # export refuses the Edition, so the new file does not reach the shelf
+        if not (joined and _filed(connection, edition_id)):
+            file_new_edition(connection, edition_id, shelf_id or _shelf(connection))
         item_id = new_ulid()
         connection.execute(
             sa.insert(item).values(
@@ -575,7 +582,7 @@ class NativeAcquirer:
         connection.execute(
             sa.insert(binding).values(
                 id=binding_id, work_id=work_id, edition_id=edition_id, source_item_id=item_id,
-                priority=1, active=True,
+                priority=_next_priority(connection, edition_id), active=True,
                 # as the manifest stands now: a third-party plugin's value only after attestation
                 content_trust=manifest.content_trust,
             )
@@ -859,6 +866,25 @@ def _language(raw: str | None) -> str | None:
         return str(edition_key_lang(raw))
     except LanguageError:
         return None
+
+
+def _filed(connection: Connection, edition_id: str) -> bool:
+    return (
+        connection.execute(
+            sa.select(catalog.edition.c.shelf_id).where(catalog.edition.c.id == edition_id)
+        ).scalar()
+        is not None
+    )
+
+
+def _next_priority(connection: Connection, edition_id: str) -> int:
+    """The next free priority of an Edition's sources (`UNIQUE (edition_id, priority)`): a book
+    that joins an Edition already bound to another source comes after it."""
+    table = acquisition.source_binding
+    top = connection.execute(
+        sa.select(sa.func.max(table.c.priority)).where(table.c.edition_id == edition_id)
+    ).scalar()
+    return int(top or 0) + 1
 
 
 def _shelf(connection: Connection) -> str | None:
