@@ -463,3 +463,112 @@ def test_a_demoted_profile_loses_its_sessions_and_a_removed_one_its_traces_pseud
     assert _send(api, "DELETE", f"{PROFILES}/{mum}").status_code == 204
     assert _row(api, "mum") == ()
     assert db_rows(api.settings, "SELECT COUNT(*) FROM audit WHERE target = ?", mum) == [(0,)]
+
+
+# -- review of #186: inherited policy, caller re-check under the lock, stale writes ---------------
+
+
+def _store(env: AuthEnv) -> Any:
+    return _auth(env)._store  # type: ignore[attr-defined]
+
+
+@pytest.mark.req("EF-USR-005", "EF-USR-014")
+def test_a_demotion_to_child_drops_every_stored_policy_back_to_the_defaults(api: AuthEnv) -> None:
+    mum = _add(api, "mum", "member")
+    _family_source(api, FAMILY, family=True)
+    _family_source(api, OTHER, family=False)
+    service = _auth(api)
+    service.profile_policy_set(mum, FAMILY, "add_directly", by=None)
+    service.profile_policy_set(mum, OTHER, "add_directly", by=None)
+    service.profile_set(mum, role="child", max_age_rating=8, by=None)
+    assert db_rows(api.settings, "SELECT * FROM profile_source_policy") == []
+    assert service.effective_source_policy(mum, FAMILY) == "request"  # D14, not the adult's row
+    assert service.effective_source_policy(mum, OTHER) == "forbidden"
+    _family_source(api, OTHER, family=True)  # marking it family later brings nothing back
+    assert service.effective_source_policy(mum, OTHER) == "request"
+
+
+@pytest.mark.req("EF-USR-005", "ENF-SEC-008")
+def test_the_store_rechecks_the_admin_caller_under_the_lock(api: AuthEnv) -> None:
+    boss = _add(api, "boss", "admin")
+    kid = _add(api, "kid", "child", max_age_rating=5)
+    store = _store(api)
+    now = api.clock.now()
+    _sql(api, "UPDATE user SET role = 'member', can_rate = 0 WHERE id = ?", boss)  # demoted
+    before = _users(api)
+    with pytest.raises(ProfileError) as refused:
+        store.create_profile(
+            id="01HZZZZZZZZZZZZZZZZZZZZZZA", username="new", role="member", password_hash="x",
+            max_age_rating=None, can_rate=False, now=now, max_admins=2, actor_id=boss,
+        )  # fmt: skip
+    assert refused.value.code == "not_allowed"
+    for call in (
+        lambda: store.update_profile(
+            kid, expected_role="child", expected_max_age_rating=5, expected_can_rate=False,
+            role="child", max_age_rating=99, can_rate=False, max_admins=2, now=now, actor_id=boss,
+        ),  # fmt: skip
+        lambda: store.delete_user(kid, keep_one_admin=True, actor_id=boss),
+        lambda: store.set_source_policy(kid, FAMILY, "forbidden", now=now, actor_id=boss),
+    ):
+        with pytest.raises(ProfileError) as refused:
+            call()
+        assert refused.value.code == "not_allowed"
+    assert _users(api) == before
+
+
+@pytest.mark.req("EF-USR-005", "EF-USR-015")
+def test_a_stale_ceiling_or_rate_right_is_a_conflict_not_a_last_write_wins(api: AuthEnv) -> None:
+    mum = _add(api, "mum", "member", can_rate=True)
+    kid = _add(api, "kid", "child", max_age_rating=5)
+    store = _store(api)
+    now = api.clock.now()
+    common = {"max_admins": 2, "now": now}
+    with pytest.raises(ProfileError) as stale:  # read 5, someone made it 12 meanwhile
+        store.update_profile(
+            kid, expected_role="child", expected_max_age_rating=4, expected_can_rate=False,
+            role="child", max_age_rating=9, can_rate=False, **common,
+        )  # fmt: skip
+    assert stale.value.code == "changed_meanwhile"
+    with pytest.raises(ProfileError) as stale:
+        store.update_profile(
+            mum, expected_role="member", expected_max_age_rating=None, expected_can_rate=False,
+            role="member", max_age_rating=None, can_rate=False, **common,
+        )  # fmt: skip
+    assert stale.value.code == "changed_meanwhile"
+    assert _row(api, "kid") == ("child", 0, 5) and _row(api, "mum") == ("member", 1, None)
+
+
+@pytest.mark.req("EF-USR-005")
+def test_a_validated_creation_answers_from_the_returned_record(api: AuthEnv) -> None:
+    record = _auth(api).profile_add_record("mum", PASSWORD, "member", by=None)
+    assert (record.username, record.role, record.can_rate) == ("mum", "member", False)
+    assert _row(api, "mum") == ("member", 0, None)
+
+
+@pytest.mark.req("EF-USR-005", "ENF-SEC-008")
+def test_policy_audit_names_the_source_and_the_policy_and_follows_the_pseudonym(
+    api: AuthEnv,
+) -> None:
+    mum = _add(api, "mum", "member")
+    _auth(api).profile_policy_set(mum, OTHER, "request", by=None)
+    (line,) = db_rows(api.settings, "SELECT target FROM audit WHERE action = 'profile.policy_set'")
+    assert OTHER in str(line[0]) and "request" in str(line[0])
+    _auth(api).profile_remove(mum, by=None)
+    rows = db_rows(api.settings, "SELECT target FROM audit WHERE target LIKE ?", f"%{mum}%")
+    assert rows == []  # the id is replaced inside a composite target too
+
+
+@pytest.mark.req("EF-USR-005", "EF-USR-014")
+def test_add_directly_for_a_child_is_the_admins_choice_on_a_family_source_only(
+    api: AuthEnv,
+) -> None:
+    kid = _add(api, "kid", "child", max_age_rating=9)
+    _family_source(api, FAMILY, family=True)
+    _family_source(api, OTHER, family=False)
+    api.login()
+    path = f"{PROFILES}/{kid}/source-policies"
+    assert _send(api, "PUT", f"{path}/{FAMILY}", {"policy": "add_directly"}).status_code == 200
+    assert _auth(api).effective_source_policy(kid, FAMILY) == "add_directly"
+    refused = _send(api, "PUT", f"{path}/{OTHER}", {"policy": "add_directly"})
+    assert refused.status_code == 422 and refused.json()["reason"] == "child_source_not_family"
+    assert _auth(api).effective_source_policy(kid, OTHER) == "forbidden"
