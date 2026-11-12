@@ -32,11 +32,14 @@ from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.source import Capability, SourceManifest
 from tests.auth_env import AuthEnv, auth_env, db_rows
 
-Hit = tuple[str, str, Mapping[str, str]]  # (remote_id, title, external ids)
+Hit = tuple[str, str, Mapping[str, str], Mapping[str, Any]]  # id, title, external ids, memo
 
 
-def hit(remote_id: str, title: str, **external_ids: str) -> Hit:
-    return remote_id, title, external_ids
+def hit(
+    remote_id: str, title: str, *, memo: Mapping[str, Any] | None = None, **external_ids: str
+) -> Hit:
+    """`memo`: what else the source says about the result (subjects, a cover, a summary...)."""
+    return remote_id, title, external_ids, memo or {}
 
 
 @dataclass
@@ -79,9 +82,9 @@ class FakeSource:
         refs = [
             SeriesRef(
                 source_key=self.key, remote_id=remote_id, title=title,
-                memo={"external_ids": dict(ids)} if ids else {},
+                memo={**extra, **({"external_ids": dict(ids)} if ids else {})},
             )
-            for remote_id, title, ids in page
+            for remote_id, title, ids, extra in page
         ]  # fmt: skip
         more = index + 1 < len(self.pages)
         return Page[SeriesRef](items=refs, next=Cursor(token=str(index + 1)) if more else None)

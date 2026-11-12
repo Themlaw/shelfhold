@@ -95,10 +95,15 @@ def _is_navigation(link: Link) -> bool:
 def _entry(element: Any, base: str) -> Entry:
     ident = title = summary = language = ""
     authors: list[str] = []
+    categories: list[str] = []
     links: list[Link] = []
     for child in element:
         local = _local(child.tag)
-        if local == "id" and not ident:
+        if local == "category" and len(categories) < MAX_LINKS:
+            label = (child.attrib.get("label") or child.attrib.get("term") or "").strip()
+            if label:
+                categories.append(label[:MAX_TEXT])
+        elif local == "id" and not ident:
             ident = _text(child).strip()
         elif local == "title" and not title:
             title = _text(child)
@@ -123,7 +128,7 @@ def _entry(element: Any, base: str) -> Entry:
     return Entry(
         id=ident, title=title, summary=summary, authors=tuple(authors), language=language,
         acquisitions=tuple(free), subsection=section, locked=locked,
-        digest=digest_of(_canonical(element)), links=tuple(links),
+        digest=digest_of(_canonical(element)), links=tuple(links), categories=tuple(categories),
     )  # fmt: skip
 
 

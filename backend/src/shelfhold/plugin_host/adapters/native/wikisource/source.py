@@ -209,6 +209,8 @@ class WikisourceSource:
                 "srlimit": str(PAGE_SIZE), "sroffset": str(offset),
             },
         )  # fmt: skip
+        # a search page names no categories: no `"subjects"` in the memo, the family filter reads
+        # the title only (the honest limit of this source)
         found = body.get("query", {}).get("search", [])
         refs: list[SeriesRef] = []
         for item in found if isinstance(found, list) else []:

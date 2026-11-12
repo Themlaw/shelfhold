@@ -116,6 +116,12 @@ def _publication(item: dict[str, Any], base: str) -> Entry:
         name = person.get("name") if isinstance(person, dict) else person
         if isinstance(name, str) and name.strip():
             names.append(name[:MAX_TEXT])
+    subjects = meta.get("subject")
+    categories: list[str] = []
+    for subject in subjects if isinstance(subjects, list) else [subjects]:
+        label = subject.get("name") if isinstance(subject, dict) else subject
+        if isinstance(label, str) and label.strip() and len(categories) < MAX_LINKS:
+            categories.append(label.strip()[:MAX_TEXT])
     language = meta.get("language")
     if isinstance(language, list):
         language = language[0] if language else ""
@@ -125,6 +131,7 @@ def _publication(item: dict[str, Any], base: str) -> Entry:
         id=ident or own, title=_str(meta.get("title")), summary=_str(meta.get("description")),
         authors=tuple(names), language=_str(language, 35).strip(), acquisitions=tuple(free),
         locked=locked, digest=digest_of(_canonical(item)), links=tuple(links),
+        categories=tuple(categories),
     )  # fmt: skip
 
 

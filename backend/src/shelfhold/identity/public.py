@@ -1,7 +1,12 @@
 """What the interfaces and the composition root may use from the identity context."""
 
 from shelfhold.identity.adapters.factory import local_auth
-from shelfhold.identity.adapters.reader_scope import reader_scope
+from shelfhold.identity.adapters.reader_scope import (
+    FamilyProfile,
+    family_profile,
+    family_source_keys,
+    reader_scope,
+)
 from shelfhold.identity.adapters.store import (
     audit_insert,
     reconcile_identity_counter,
@@ -104,6 +109,7 @@ from shelfhold.identity.domain.visibility import (
     check_visibility,
     default_visibility,
     effective_visibility,
+    family_search_mode,
     scope_of,
 )
 
@@ -145,6 +151,7 @@ __all__ = [
     "CredentialNotAllowed",
     "Effect",
     "ExitRoute",
+    "FamilyProfile",
     "InvalidCredentialsError",
     "IssuedSession",
     "LastLoginFactorError",
@@ -185,6 +192,9 @@ __all__ = [
     "credential_axis",
     "default_visibility",
     "effective_visibility",
+    "family_profile",
+    "family_search_mode",
+    "family_source_keys",
     "holds_rate_right",
     "local_auth",
     "reader_scope",

@@ -126,6 +126,7 @@ class FederatedEdition:
     remote_id: str
     title: str
     format: str
+    memo: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)  # host only
 
 
 @dataclass(frozen=True)
@@ -188,13 +189,16 @@ class _Walk:
     sources: dict[str, _SourceWalk]
     works: list[_Work] = field(default_factory=list)
     by_id: dict[tuple[str, str], int] = field(default_factory=dict)
-    editions: set[tuple[str, str]] = field(default_factory=set)
+    editions: set[tuple[str, str, str]] = field(default_factory=set)
     served: int = 0
 
     def add(self, source: FederatedSource, ref: SeriesRef, fresh: dict[int, int]) -> None:
         """Append one result. `fresh`: position of each Work -> editions already given before this
         page (so the page can say which are new)."""
-        identity = (source.key, ref.remote_id)
+        entry = ref.memo.get(
+            "entry"
+        )  # one feed page can hold many books: the entry tells them apart
+        identity = (source.key, ref.remote_id, entry if isinstance(entry, str) else "")
         if identity in self.editions:
             return
         self.editions.add(identity)
@@ -212,7 +216,13 @@ class _Walk:
             if self.by_id.setdefault(found, position) == position:
                 work.ids.add(found)
         work.editions.append(
-            FederatedEdition(source.key, ref.remote_id, ref.title[:MAX_TITLE_CHARS], source.format)
+            FederatedEdition(
+                source.key,
+                ref.remote_id,
+                ref.title[:MAX_TITLE_CHARS],
+                source.format,
+                dict(ref.memo),
+            )
         )
 
 
@@ -312,11 +322,17 @@ def _code_of(error: BaseException) -> str:
 
 class FederatedSearch:
     def __init__(
-        self, searcher: Searcher, cursors: FederatedCursors, *, timeout_s: float = SOURCE_TIMEOUT_S
+        self,
+        searcher: Searcher,
+        cursors: FederatedCursors,
+        *,
+        timeout_s: float = SOURCE_TIMEOUT_S,
+        keep: Callable[[SeriesRef], bool] | None = None,
     ) -> None:
         self._searcher = searcher
         self._cursors = cursors
         self._timeout = timeout_s
+        self._keep = keep  # a result it refuses never enters a walk: no page, count or cursor
 
     async def search(
         self,
@@ -355,8 +371,10 @@ class FederatedSearch:
             token = answer.next.token if answer.next else None
             sent, held.cursor = held.cursor, token
             held.done = token is None or token == sent  # a source that repeats itself is done
-            held.returned += len(items)
             for ref in items:
+                if self._keep is not None and not self._keep(ref):
+                    continue  # dropped before it is counted: it leaves no trace
+                held.returned += 1
                 walk.add(held.info, ref, fresh)
 
     async def _ask(self, key: str, query: str, cursor: str | None) -> Page[SeriesRef] | _Failed:

@@ -441,6 +441,18 @@ class LocalAuth:
     ) -> str:
         return self._profiles.set_visibility(profile_id, visibility, by=by)
 
+    def profile_set_family_search(
+        self,
+        profile_id: str,
+        hide_unrated_remote: bool,
+        subject_filter: tuple[str, ...],
+        *,
+        by: Principal | None = None,
+    ) -> ProfileRecord:
+        return self._profiles.set_family_search(
+            profile_id, hide_unrated_remote, subject_filter, by=by
+        )
+
     def set_own_visibility(self, by: Principal, visibility: object) -> str:
         return self._profiles.set_own_visibility(by, visibility)
 

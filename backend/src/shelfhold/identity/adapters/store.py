@@ -187,6 +187,13 @@ def _passkey_of(row: Any) -> PasskeyRecord:
     )
 
 
+def _words_of(raw: object) -> tuple[str, ...]:
+    """The words stored for a profile: text only (the column is JSON, whatever was written)."""
+    if not isinstance(raw, list):
+        return ()
+    return tuple(w for w in raw if isinstance(w, str))
+
+
 def _require_admin_caller(conn: sa.Connection, actor_id: str | None) -> None:
     """The caller is still an admin, read under the lock that writes (no demotion slips in)."""
     if actor_id is None:  # the host: nobody to re-check
@@ -343,11 +350,14 @@ class SqlIdentityStore:
             max_age_rating=row.max_age_rating,
             can_rate=bool(row.can_rate),
             visibility=row.visibility,
+            hide_unrated_remote=row.hide_unrated_remote is not False,  # the safe side
+            subject_filter=_words_of(row.subject_filter),
         )
 
     def profiles(self) -> Sequence[ProfileRecord]:
         columns = (_user.c.id, _user.c.username, _user.c.role, _user.c.max_age_rating,
-                   _user.c.can_rate, _user.c.visibility)  # fmt: skip
+                   _user.c.can_rate, _user.c.visibility, _user.c.hide_unrated_remote,
+                   _user.c.subject_filter)  # fmt: skip
         with self._engine.connect() as conn:
             rows = conn.execute(sa.select(*columns).order_by(_user.c.created_at, _user.c.id)).all()
         return [self._profile_of(row) for row in rows]
@@ -413,6 +423,11 @@ class SqlIdentityStore:
             if current != role:  # a changed role starts again: no session or key of the old one
                 policies = identity.profile_source_policy  # nor a policy of the old one: D14 again
                 conn.execute(sa.delete(policies).where(policies.c.user_id == user_id))
+                conn.execute(  # nor the family search of the old role: back to hide, no words
+                    sa.update(_user)
+                    .where(_user.c.id == user_id)
+                    .values(hide_unrated_remote=True, subject_filter=[])
+                )
                 conn.execute(
                     sa.update(_session)
                     .where(_session.c.user_id == user_id, _session.c.revoked_at.is_(None))
@@ -425,7 +440,8 @@ class SqlIdentityStore:
                 )
             written = conn.execute(
                 sa.select(_user.c.id, _user.c.username, _user.c.role, _user.c.max_age_rating,
-                          _user.c.can_rate, _user.c.visibility).where(_user.c.id == user_id)
+                          _user.c.can_rate, _user.c.visibility, _user.c.hide_unrated_remote,
+                          _user.c.subject_filter).where(_user.c.id == user_id)
             ).one()  # fmt: skip
             return self._profile_of(written)  # what this transaction wrote, never a later read
 
@@ -504,6 +520,40 @@ class SqlIdentityStore:
             after = effective_visibility(row.role, chosen)
             entry = None if audit is None else audit(before, after)
             if entry is not None:  # the change and its trace stand or fall together
+                conn.execute(self._audit_insert(entry))
+        return before, after
+
+    def set_family_search(
+        self, user_id: str, hide_unrated_remote: bool, subject_filter: tuple[str, ...], *,
+        actor_id: str | None = None,
+        audit: Callable[[ProfileRecord, ProfileRecord], AuditEntry | None] | None = None,
+    ) -> tuple[ProfileRecord, ProfileRecord]:  # fmt: skip
+        """The change and its audit entry stand or fall together; the admin caller is re-read
+        under the lock that writes."""
+        columns = (_user.c.id, _user.c.username, _user.c.role, _user.c.max_age_rating,
+                   _user.c.can_rate, _user.c.visibility, _user.c.hide_unrated_remote,
+                   _user.c.subject_filter)  # fmt: skip
+        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with immediate.begin() as conn:
+            _require_admin_caller(conn, actor_id)
+            row = conn.execute(sa.select(*columns).where(_user.c.id == user_id)).first()
+            if row is None:
+                raise ProfileError("not_found")
+            if row.role != "child":  # only a child has a family search: nothing is left to wake up
+                raise ProfileError("not_a_child")
+            before = self._profile_of(row)
+            conn.execute(
+                sa.update(_user)
+                .where(_user.c.id == user_id)
+                .values(
+                    hide_unrated_remote=hide_unrated_remote, subject_filter=list(subject_filter)
+                )
+            )
+            after = self._profile_of(
+                conn.execute(sa.select(*columns).where(_user.c.id == user_id)).one()
+            )
+            entry = None if audit is None else audit(before, after)
+            if entry is not None:
                 conn.execute(self._audit_insert(entry))
         return before, after
 

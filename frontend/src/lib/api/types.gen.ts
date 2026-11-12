@@ -684,6 +684,83 @@ export type ExternalIdOut = {
 };
 
 /**
+ * FamilyItemOut
+ *
+ * What a child sees of a remote result: a title and the one action. No cover, no summary, no
+ * format, no source name or key: only what a request needs, by an opaque reference.
+ */
+export type FamilyItemOut = {
+    /**
+     * Action
+     */
+    action: 'request';
+    /**
+     * Request Ref
+     */
+    request_ref: string;
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
+ * FamilyOut
+ *
+ * The family search of a child (EF-USR-014): the sources marked "family" and the rated
+ * catalogue, with no total, no count and no word on what was dropped or hidden.
+ */
+export type FamilyOut = {
+    /**
+     * Items
+     */
+    items: Array<FamilyItemOut>;
+    /**
+     * Local
+     */
+    local: Array<SearchHitOut>;
+    /**
+     * Next Cursor
+     */
+    next_cursor: string | null;
+    /**
+     * State
+     */
+    state: 'results' | 'empty';
+};
+
+/**
+ * FamilySearchIn
+ *
+ * The family search of a child profile (EF-USR-018): both fields are given, so a call never
+ * changes one by leaving the other out; the words are bounded (and folded when stored).
+ */
+export type FamilySearchIn = {
+    /**
+     * Hide Unrated Remote
+     */
+    hide_unrated_remote: boolean;
+    /**
+     * Subject Filter
+     */
+    subject_filter: Array<string>;
+};
+
+/**
+ * FamilySearchOut
+ */
+export type FamilySearchOut = {
+    /**
+     * Hide Unrated Remote
+     */
+    hide_unrated_remote: boolean;
+    /**
+     * Subject Filter
+     */
+    subject_filter: Array<string>;
+};
+
+/**
  * FederatedOut
  */
 export type FederatedOut = {
@@ -1859,6 +1936,10 @@ export type ProfileOut = {
      */
     can_rate: boolean;
     /**
+     * Hide Unrated Remote
+     */
+    hide_unrated_remote: boolean;
+    /**
      * Id
      */
     id: string;
@@ -1870,6 +1951,10 @@ export type ProfileOut = {
      * Role
      */
     role: string;
+    /**
+     * Subject Filter
+     */
+    subject_filter: Array<string>;
     /**
      * Username
      */
@@ -6411,6 +6496,44 @@ export type UpdateProfileResponses = {
 
 export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
 
+export type SetFamilySearchData = {
+    body: FamilySearchIn;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/family-search';
+};
+
+export type SetFamilySearchErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetFamilySearchError = SetFamilySearchErrors[keyof SetFamilySearchErrors];
+
+export type SetFamilySearchResponses = {
+    /**
+     * Successful Response
+     */
+    200: FamilySearchOut;
+};
+
+export type SetFamilySearchResponse = SetFamilySearchResponses[keyof SetFamilySearchResponses];
+
 export type SourcePoliciesData = {
     body?: never;
     path: {
@@ -6958,7 +7081,7 @@ export type SearchResponses = {
      *
      * Successful Response
      */
-    200: ShelfholdInterfacesHttpApiSearchSearchOut | FederatedOut;
+    200: ShelfholdInterfacesHttpApiSearchSearchOut | FederatedOut | FamilyOut;
 };
 
 export type SearchResponse = SearchResponses[keyof SearchResponses];

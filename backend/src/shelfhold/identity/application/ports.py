@@ -25,6 +25,8 @@ class ProfileRecord:
     max_age_rating: int | None
     can_rate: bool
     visibility: str | None = None  # the stored choice; `effective_visibility` says what holds
+    hide_unrated_remote: bool = True  # EF-USR-018: the child's family search hides the unrated
+    subject_filter: tuple[str, ...] = ()  # the words the profile added (EF-USR-018)
 
 
 @dataclass(frozen=True)
@@ -218,6 +220,20 @@ class IdentityStore(Protocol):
         """`(visibility that held, visibility that holds)`, the role read under the lock that
         writes; `ProfileError` of the rule that refuses; `not_allowed` when `by_admin` and the
         caller is no longer an admin."""
+        ...
+
+    def set_family_search(
+        self,
+        user_id: str,
+        hide_unrated_remote: bool,
+        subject_filter: tuple[str, ...],
+        *,
+        actor_id: str | None = None,
+        audit: Callable[[ProfileRecord, ProfileRecord], AuditEntry | None] | None = None,
+    ) -> tuple[ProfileRecord, ProfileRecord]:
+        """Store the family search settings of a profile in one transaction with its audit entry:
+        `(record that held, record that holds)`. The admin caller is re-read under the lock
+        (`not_allowed`); `not_found` for a profile that is not there."""
         ...
 
     def source_family(self, source_key: str) -> bool: ...

@@ -80,6 +80,7 @@ class Entry:
     subsection: str | None = None  # another feed, for a navigation entry
     locked: bool = False  # offered, but to buy or to borrow: not a free file
     digest: str = ""  # sha256 of the entry as the source wrote it
+    categories: tuple[str, ...] = ()  # the subjects the source gives (the family filter reads them)
     links: tuple[Link, ...] = field(default=(), repr=False)
 
 

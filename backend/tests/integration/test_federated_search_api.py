@@ -1,6 +1,7 @@
 """`GET /api/v1/search?scope=all` (M3 L18, EF-SRC-005, EF-UX-011, EF-USR-014): the federated search
 behind the real route, the session and the roles. Admin only: a child or a member, with a session or
-a key, is refused before one source is asked (the family search of L19 is the child's door)."""
+a key, is refused before one source is asked (the child's own door, a session, is the family
+search of L19: `test_family_search.py`)."""
 
 from __future__ import annotations
 
@@ -140,18 +141,23 @@ def test_child_and_member_never_reach_the_federated_search(
             client = api.other_client(f"10.0.0.{40 + index}")
             assert api.login(username, PASSWORD, client=client).status_code == 200
             key = api_key_of(api, username)
-            attempts = [
+            by_key = api.other_client(f"10.0.0.{50 + index}").get(
+                "/api/v1/search", params=ALL, headers={"Authorization": f"Bearer {key}"}
+            )
+            assert by_key.status_code == 403, (username, by_key.text)
+            by_session = [
                 client.get("/api/v1/search", params=ALL),
                 client.get("/api/v1/search", params={**ALL, "cursor": admin_cursor}),
                 client.get("/api/v1/search", params={"scope": "all", "q": "Unrated Shocker"}),
-                api.other_client(f"10.0.0.{50 + index}").get(
-                    "/api/v1/search", params=ALL, headers={"Authorization": f"Bearer {key}"}
-                ),
             ]
-            for response in attempts:
-                assert response.status_code == 403, (username, response.text)
+            for response in [by_key, *by_session]:
                 assert "Hobbit" not in response.text and "Shocker" not in response.text
                 assert "searched_in" not in response.text and "editions" not in response.text
+            if username == "member":  # the family search is the child's, no other profile's
+                assert all(r.status_code == 403 for r in by_session)
+            else:  # nothing is marked "family": nothing found, no admin cursor
+                assert by_session[0].status_code == 200 and by_session[0].json()["items"] == []
+                assert by_session[1].status_code in (200, 400, 403)
         anonymous = api.other_client("10.0.0.60").get("/api/v1/search", params=ALL)
         assert anonymous.status_code in (401, 403) and "Hobbit" not in anonymous.text
         assert (len(alpha.calls), len(beta.calls)) == asked  # no source was asked for any of them

@@ -322,7 +322,9 @@ def test_search_api_answers_each_profile_through_the_one_filter(
         assert by_key.status_code == 200
         assert [hit["title"] for hit in by_key.json()["items"]] == expected[username]
         wide = client.get("/api/v1/search", params={"q": "quiet", "scope": "all"})
-        assert wide.status_code == 403 and "Quiet" not in wide.text
+        # a member never has the remote search; a child has her reduced form (no source here)
+        assert wide.status_code == (403 if username == "member" else 200)
+        assert "Quiet" not in wide.text
     assert api.other_client("10.0.0.22").get(
         "/api/v1/search", params={"q": "quiet"}
     ).status_code in (401, 403)

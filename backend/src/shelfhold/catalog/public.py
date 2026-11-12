@@ -206,6 +206,15 @@ from shelfhold.catalog.domain.provenance import FieldKey, is_age_field
 from shelfhold.catalog.domain.public_domain import Verdict
 from shelfhold.catalog.domain.revisions import DEFAULT_MIN_PAGE_RATIO, suspect_reason
 from shelfhold.catalog.domain.sort_key import sort_key
+from shelfhold.catalog.domain.subject_filter import (
+    MAX_TERM_CHARS,
+    MAX_TERMS,
+    InvalidTermError,
+    check_terms,
+    clean_terms,
+    is_flagged,
+    visible_title,
+)
 from shelfhold.catalog.domain.team_offset import (
     OffsetVerdict,
     TeamFacts,
@@ -394,6 +403,8 @@ __all__ = [
     "DEFAULT_MIN_PAGE_RATIO",
     "EDITION_KEY",
     "LANG_NORMALIZER_ID",
+    "MAX_TERMS",
+    "MAX_TERM_CHARS",
     "TEXT_VERSION_LABELS",
     "WRITER",
     "Admission",
@@ -436,6 +447,7 @@ __all__ = [
     "IncomingUnit",
     "IngestOutcome",
     "IngestResult",
+    "InvalidTermError",
     "LanguageError",
     "ListedUnit",
     "MergedPlace",
@@ -492,6 +504,8 @@ __all__ = [
     "ceiling_of",
     "check_before_fallback",
     "check_coverage",
+    "check_terms",
+    "clean_terms",
     "content_warning_age",
     "count_visible_works",
     "default_registry",
@@ -507,6 +521,7 @@ __all__ = [
     "index_work",
     "ingest_isolated",
     "is_age_field",
+    "is_flagged",
     "join_people",
     "list_visible_works",
     "lock_current",
@@ -550,6 +565,7 @@ __all__ = [
     "visible_edition_ids",
     "visible_editions_clause",
     "visible_series_ids",
+    "visible_title",
     "visible_unit_ids",
     "visible_work_ids",
     "visible_works_clause",

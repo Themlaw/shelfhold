@@ -206,6 +206,7 @@ class StandardEbooksSource:
         *,
         sub: str | None = None,
     ) -> Page[SeriesRef]:
+        # the feed's categories travel in the memo as `"subjects"` (the family filter reads them)
         page = await self._feed().search(f, q, filters, cursor, sub=sub)
         return Page[SeriesRef](
             items=[r.model_copy(update={"source_key": KEY}) for r in page.items], next=page.next

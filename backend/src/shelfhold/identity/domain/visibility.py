@@ -59,6 +59,24 @@ def scope_of(role: object, max_age_rating: object) -> ViewerScope:
     return NOBODY
 
 
+FamilySearchMode = Literal["full", "reduced", "hidden", "closed"]
+
+
+def family_search_mode(scope: ViewerScope, hide_unrated_remote: bool) -> FamilySearchMode:
+    """The form of the remote search a reader gets (EF-USR-014, EF-USR-018).
+
+    `full`: an adult, the federated search as it is. `reduced`: a child who chose to see the
+    unrated remote results as a title and one action ("Demander"), nothing more. `hidden`: a child
+    in the "hide the unrated ones" mode (the default): nothing remote, not even reduced. `closed`:
+    a reader the rules do not know. Only the value `False` opens the reduced form: a malformed
+    setting reads as hide."""
+    if scope.kind == "all":
+        return "full"
+    if scope.kind == "ceiling":
+        return "reduced" if hide_unrated_remote is False else "hidden"
+    return "closed"
+
+
 def default_visibility(role: str) -> str:
     return "household" if role == "child" else "private"
 

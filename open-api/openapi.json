@@ -1053,6 +1053,123 @@
         "title": "ExternalIdOut",
         "type": "object"
       },
+      "FamilyItemOut": {
+        "description": "What a child sees of a remote result: a title and the one action. No cover, no summary, no\nformat, no source name or key: only what a request needs, by an opaque reference.",
+        "properties": {
+          "action": {
+            "const": "request",
+            "title": "Action",
+            "type": "string"
+          },
+          "request_ref": {
+            "title": "Request Ref",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "action",
+          "request_ref"
+        ],
+        "title": "FamilyItemOut",
+        "type": "object"
+      },
+      "FamilyOut": {
+        "description": "The family search of a child (EF-USR-014): the sources marked \"family\" and the rated\ncatalogue, with no total, no count and no word on what was dropped or hidden.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FamilyItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "local": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHitOut"
+            },
+            "title": "Local",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "state": {
+            "enum": [
+              "results",
+              "empty"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "local",
+          "state",
+          "next_cursor"
+        ],
+        "title": "FamilyOut",
+        "type": "object"
+      },
+      "FamilySearchIn": {
+        "additionalProperties": false,
+        "description": "The family search of a child profile (EF-USR-018): both fields are given, so a call never\nchanges one by leaving the other out; the words are bounded (and folded when stored).",
+        "properties": {
+          "hide_unrated_remote": {
+            "title": "Hide Unrated Remote",
+            "type": "boolean"
+          },
+          "subject_filter": {
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Subject Filter",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hide_unrated_remote",
+          "subject_filter"
+        ],
+        "title": "FamilySearchIn",
+        "type": "object"
+      },
+      "FamilySearchOut": {
+        "properties": {
+          "hide_unrated_remote": {
+            "title": "Hide Unrated Remote",
+            "type": "boolean"
+          },
+          "subject_filter": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Subject Filter",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hide_unrated_remote",
+          "subject_filter"
+        ],
+        "title": "FamilySearchOut",
+        "type": "object"
+      },
       "FederatedOut": {
         "properties": {
           "action": {
@@ -2962,6 +3079,10 @@
             "title": "Can Rate",
             "type": "boolean"
           },
+          "hide_unrated_remote": {
+            "title": "Hide Unrated Remote",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2981,6 +3102,13 @@
             "title": "Role",
             "type": "string"
           },
+          "subject_filter": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Subject Filter",
+            "type": "array"
+          },
           "username": {
             "title": "Username",
             "type": "string"
@@ -2996,7 +3124,9 @@
           "role",
           "max_age_rating",
           "can_rate",
-          "visibility"
+          "visibility",
+          "hide_unrated_remote",
+          "subject_filter"
         ],
         "title": "ProfileOut",
         "type": "object"
@@ -10530,6 +10660,78 @@
         ]
       }
     },
+    "/api/v1/profiles/{profile_id}/family-search": {
+      "put": {
+        "operationId": "set_family_search",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FamilySearchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FamilySearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Set Family Search",
+        "tags": [
+          "profiles"
+        ]
+      }
+    },
     "/api/v1/profiles/{profile_id}/source-policies": {
       "get": {
         "operationId": "source_policies",
@@ -11503,6 +11705,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/FederatedOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FamilyOut"
                     }
                   ],
                   "title": "Response Search"
