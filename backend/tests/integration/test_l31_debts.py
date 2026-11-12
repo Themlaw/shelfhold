@@ -16,7 +16,13 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.acquisition.public import AcquireRefused
-from shelfhold.export.application.restore import AdoptionBlockedError
+from shelfhold.export.application.restore import (
+    AdoptionBlockedError,
+    DeletionRefusedError,
+    ForgetRootRefusedError,
+    forget_root_phrase,
+)
+from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from shelfhold.library.application.anti_echo import received_content_hash
@@ -155,6 +161,17 @@ def test_import_folder_echo_is_recognised_by_its_payload_not_only_its_bytes(
         assert row.export_item_id == own.export_item_id
 
 
+@pytest.mark.req("EF-SRC-006")
+def test_import_folder_another_copy_with_the_same_data_is_not_called_an_echo() -> None:
+    """Same payload as the content an export was made from, other bytes: a duplicate copy of the
+    book, not our own file coming back (the refusal would be misleading)."""
+    with import_env() as env:
+        payload = received_content_hash(env.drop("a.epub", CLEAN_EPUB), ".epub")
+        seed_own_export(env.lib, kept_content_hash=payload)
+        _scan, outcomes = env.folder.run()
+        assert [o.code for o in outcomes] != ["import.own_export"]
+
+
 @pytest.mark.req("EF-SRC-012")
 def test_import_folder_file_that_is_not_an_export_is_still_imported() -> None:
     with import_env() as env:
@@ -191,6 +208,70 @@ def test_the_adoption_refuses_while_a_known_root_is_not_mounted() -> None:
             adopter.adopt(confirm=preview.fingerprint)
         assert blocked.value.reason == "root_not_mounted"
         assert env.guard().assess().behind  # still frozen, nothing was judged
+
+
+@pytest.mark.req("EF-INT-026")
+def test_a_root_that_will_not_come_back_is_forgotten_then_the_adoption_succeeds() -> None:
+    with restore_env() as env:
+        env.add_chapters(3, 4)
+        backup = env.backup()
+        env.export()
+        env.restore(backup)
+        dead = env.library.parent / "dead-disk"
+        dead.mkdir()
+        dead_id = new_ulid()
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.insert(platform.physical_root).values(root_id=dead_id, path_entry=str(dead))
+            )
+        env.open_instance()
+        env.guard().enter_restored_behind()
+        adopter = env.adopter()
+        assert set(adopter.preview().blocked_roots.values()) == {"root_not_mounted"}
+        admin = Principal("01J00000000000000000000ADM", "admin", "admin", Credential.LOCAL_CLI)
+        phrase = forget_root_phrase(dead_id)
+        with pytest.raises(ForgetRootRefusedError) as wrong:
+            adopter.forget_root(dead_id, confirm="yes", principal=admin)
+        assert wrong.value.reason == "phrase_mismatch"
+        with pytest.raises(ForgetRootRefusedError) as unknown:
+            adopter.forget_root(new_ulid(), confirm=phrase, principal=admin)
+        assert unknown.value.reason == "unknown_root"
+        key = Principal("01J00000000000000000000KEY", "api", "admin", Credential.API_KEY)
+        with pytest.raises(DeletionRefusedError):  # a key never forgets a root
+            adopter.forget_root(dead_id, confirm=phrase, principal=key)
+        adopter.forget_root(dead_id, confirm=phrase, principal=admin)
+        with env.engine.connect() as connection:
+            mode = connection.execute(
+                sa.select(platform.physical_root.c.mode).where(
+                    platform.physical_root.c.root_id == dead_id
+                )
+            ).scalar_one()
+            audited = connection.execute(
+                sa.text("SELECT count(*) FROM audit WHERE action = 'reconcile.forget_root'")
+            ).scalar_one()
+        assert (mode, audited) == ("adopt_ro", 1)
+        preview = adopter.preview()
+        assert not preview.blocked_roots
+        adopter.adopt(confirm=preview.fingerprint)
+        assert not env.guard().assess().behind
+
+
+@pytest.mark.req("EF-INT-026")
+def test_a_root_that_is_mounted_and_readable_cannot_be_forgotten() -> None:
+    with restore_env() as env:
+        env.add_chapters(3, 4)
+        backup = env.backup()
+        env.export()
+        env.restore(backup)
+        env.open_instance()
+        env.guard().enter_restored_behind()
+        [finding] = [f for f in env.guard().assess().findings][:1]
+        admin = Principal("01J00000000000000000000ADM", "admin", "admin", Credential.LOCAL_CLI)
+        with pytest.raises(ForgetRootRefusedError) as refused:
+            env.adopter().forget_root(
+                finding.root_id, confirm=forget_root_phrase(finding.root_id), principal=admin
+            )
+        assert refused.value.reason == "still_readable"
 
 
 # -- a metadata plugin written for a later SDK is refused (L11 follow-up) -------------------------

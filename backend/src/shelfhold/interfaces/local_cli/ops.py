@@ -149,6 +149,11 @@ def _edition_set_series_name(ops: OpsServices, _by: Principal, p: Params) -> obj
     return {"export_series_id": series_id, "name": name}
 
 
+def _restore_forget_root(ops: OpsServices, by: Principal, p: Params) -> object:
+    ops.restore_forget_root(root_id=_text(p, "root_id"), confirm=_text(p, "confirm"), principal=by)
+    return {"ok": True}
+
+
 def _restore_adopt(ops: OpsServices, by: Principal, p: Params) -> object:
     ops.restore_adopt(confirm_deletion=_flag(p, "confirm_deletion"), principal=by)
     return {"ok": True}
@@ -593,6 +598,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.edition_set_lang": (_edition_set_lang, None),
     "ops.edition_set_series_name": (_edition_set_series_name, None),
     "ops.restore_adopt": (_restore_adopt, "reconcile.confirm_deletion"),
+    "ops.restore_forget_root": (_restore_forget_root, "reconcile.forget_root"),
     "ops.tombstone_accept_lost_keyring": (_accept_lost_keyring, "tombstone.accept_lost_keyring"),
     "ops.secrets_import": (_secrets_import, "secrets.import"),
     "ops.tombstone_set_aside_journal": (_set_aside_journal, "tombstone.set_aside_journal"),
@@ -678,7 +684,8 @@ READS_AND_RESTORE_EXITS = frozenset(
         "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
         "ops.rate_pending", "ops.attach_list", "ops.source_search", "ops.source_filters",
         "ops.edition_list", "ops.export_item_show",
-        "ops.restore_adopt", "ops.restore_acknowledge", "ops.tombstone_set_aside_journal",
+        "ops.restore_adopt", "ops.restore_forget_root", "ops.restore_acknowledge",
+        "ops.tombstone_set_aside_journal",
         "ops.secrets_import",
         "ops.tombstone_accept_lost_keyring",
     }

@@ -1043,6 +1043,26 @@
         "title": "ForceIn",
         "type": "object"
       },
+      "ForgetRootIn": {
+        "properties": {
+          "confirm": {
+            "minLength": 1,
+            "title": "Confirm",
+            "type": "string"
+          },
+          "root_id": {
+            "minLength": 1,
+            "title": "Root Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root_id",
+          "confirm"
+        ],
+        "title": "ForgetRootIn",
+        "type": "object"
+      },
       "GuardsTriggered": {
         "properties": {
           "foreign_writer": {
@@ -7178,6 +7198,67 @@
           }
         },
         "summary": "Restore Adopt",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/reconcile/forget-root": {
+      "post": {
+        "operationId": "restore_forget_root",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgetRootIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Restore Forget Root",
         "tags": [
           "operations"
         ]

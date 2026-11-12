@@ -672,6 +672,20 @@ export type ForceIn = {
 };
 
 /**
+ * ForgetRootIn
+ */
+export type ForgetRootIn = {
+    /**
+     * Confirm
+     */
+    confirm: string;
+    /**
+     * Root Id
+     */
+    root_id: string;
+};
+
+/**
  * GuardsTriggered
  */
 export type GuardsTriggered = {
@@ -4365,6 +4379,39 @@ export type RestoreAdoptResponses = {
 };
 
 export type RestoreAdoptResponse = RestoreAdoptResponses[keyof RestoreAdoptResponses];
+
+export type RestoreForgetRootData = {
+    body: ForgetRootIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/reconcile/forget-root';
+};
+
+export type RestoreForgetRootErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RestoreForgetRootError = RestoreForgetRootErrors[keyof RestoreForgetRootErrors];
+
+export type RestoreForgetRootResponses = {
+    /**
+     * Successful Response
+     */
+    200: Done;
+};
+
+export type RestoreForgetRootResponse = RestoreForgetRootResponses[keyof RestoreForgetRootResponses];
 
 export type RestoreAcknowledgeData = {
     body?: never;

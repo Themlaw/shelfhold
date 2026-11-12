@@ -51,6 +51,12 @@ class RestoreGuardExit:
             "`shelfhold reconcile --adopt-after-restore`"
         )
 
+    def forget_root(self, *, root_id: str, confirm: str, principal: Principal) -> None:
+        raise ExitUnavailableError(
+            "forgetting a root needs the instance lock: stop Shelfhold and run "
+            "`shelfhold reconcile --forget-root <id> --confirm <phrase>`"
+        )
+
 
 class RestoreCredentialsExit:
     """`restore acknowledge`: the person has looked at the passkeys and the passwords changed

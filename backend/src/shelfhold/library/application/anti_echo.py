@@ -82,8 +82,12 @@ def own_export_of(
     *,
     file_hash: str | None,
     content_hash: str | None,
+    records_only: bool = False,
 ) -> OwnExport | None:
-    """The `export_item` whose file or payload this is, or None. NULL never matches."""
+    """The `export_item` whose file or payload this is, or None. NULL never matches.
+    `records_only`: compare only what an export recorded (`export_record`, `document_alias`), not
+    the payload of the content it was made from: a file dropped by hand that merely holds the same
+    data as an export is another copy of the book, not our own file coming back."""
     item, record, alias, content = (
         export.export_item,
         export.export_record,
@@ -126,17 +130,18 @@ def own_export_of(
                 ),
             )
         )
-        probes.append(
-            (
-                "export_content",
-                base.join(content, content.c.id == item.c.content_id).where(
-                    sa.or_(
-                        content.c.content_hash == content_hash,
-                        content.c.derived_hash == content_hash,
-                    )
-                ),
+        if not records_only:
+            probes.append(
+                (
+                    "export_content",
+                    base.join(content, content.c.id == item.c.content_id).where(
+                        sa.or_(
+                            content.c.content_hash == content_hash,
+                            content.c.derived_hash == content_hash,
+                        )
+                    ),
+                )
             )
-        )
     for matched_by, query in probes:
         found = _first(connection, query)
         if found is not None:
@@ -218,7 +223,9 @@ def absorb_import_echo(
     with engine.connect() as connection:
         connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
         with connection.begin():
-            own = own_export_of(connection, file_hash=file_hash, content_hash=payload)
+            own = own_export_of(
+                connection, file_hash=file_hash, content_hash=payload, records_only=True
+            )
             if own is None:
                 return None
             replica_id = upstream_echo_of(connection, own.export_item_id, IMPORT_REF, file_hash)

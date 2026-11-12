@@ -104,6 +104,17 @@ un trousseau absent ou aux droits trop ouverts ; il ne sait pas si vous l'avez e
    **Rien n'est supprimé.** Si la clé d'un journal est inconnue ou si le journal est illisible,
    la réadoption est bloquée et rien n'est dégelé : retrouvez le trousseau, ou
    `tombstone accept-lost-keyring` ([etats-attente-et-sorties.md](etats-attente-et-sorties.md)).
+
+   Si l'adoption est refusée avec `root_not_mounted` (une racine connue n'est pas montée), remontez-la.
+   Si elle ne reviendra pas (disque mort, cible retirée après la sauvegarde), oubliez-la :
+   ```sh
+   docker compose run --rm shelfhold shelfhold reconcile --forget-root <racine>
+   docker compose run --rm shelfhold shelfhold reconcile --forget-root <racine> --confirm "forget root <racine>"
+   ```
+   La première commande dit ce que cela coûte : la racine n'est plus ni écrite ni vérifiée, ses copies
+   restent enregistrées mais ne sont retrouvées que si vous la réadoptez (`root takeover`). **Aucun
+   fichier n'est supprimé.** Action réservée : session fraîche, jamais une clé d'API ; elle est auditée.
+   Seule une racine dont la sentinelle est illisible peut être oubliée.
 6. Si la restauration doit faire disparaître des fichiers recouverts par une pierre tombale (ce que
    vous aviez purgé après la sauvegarde), ils sont **proposés** à la suppression, pas supprimés.
    Ajoutez `--confirm-deletion` pour les supprimer ; c'est une action réservée
