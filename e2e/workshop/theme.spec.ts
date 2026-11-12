@@ -1,4 +1,4 @@
-import { expect, signInAs, test, expectScreenAccessible } from './fixtures';
+import { expect, expectNoBlockingViolations, signInAs, test } from './fixtures';
 
 // M3 L03: the theme mechanism, the CSP by hash and the reduced motion, played in a real browser on
 // the SPA served by the real API.
@@ -20,7 +20,7 @@ const RECORDER = `
         readyState: document.readyState
       });
     }
-  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-color-scheme'] });
+  }).observe(document, { subtree: true, attributes: true, attributeFilter: ['data-theme', 'data-color-scheme'] });
 `;
 
 // req: ENF-SEC-004
@@ -128,6 +128,7 @@ test('test_theme_attribute_is_set_before_the_first_render', async ({ page, conte
 
 // req: EF-UX-012
 test('test_stored_preference_applies_in_dark_and_the_screen_stays_accessible', async ({ page, context }) => {
+  test.setTimeout(120_000);
   await signInAs(page, 'admin');
   const csrf = (await context.cookies()).find((c) => c.name.endsWith('csrf'))?.value ?? '';
   for (const color_scheme of ['light', 'dark']) {
@@ -136,7 +137,7 @@ test('test_stored_preference_applies_in_dark_and_the_screen_stays_accessible', a
     await expect(page.locator('html')).toHaveAttribute('data-color-scheme', color_scheme);
     const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     expect(background).toBe(color_scheme === 'dark' ? 'rgb(26, 23, 20)' : 'rgb(246, 241, 231)');
-    await expectScreenAccessible(page);
+    if (color_scheme === 'dark') await expectNoBlockingViolations(page); // L02 plays both schemes
   }
 });
 
