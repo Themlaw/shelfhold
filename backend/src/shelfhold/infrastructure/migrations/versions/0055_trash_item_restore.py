@@ -19,8 +19,8 @@ import sqlalchemy as sa
 from alembic import op
 from alembic.operations.base import BatchOperations
 
-revision = "0054"
-down_revision = "0053"
+revision = "0055"
+down_revision = "0054"
 branch_labels = None
 depends_on = None
 
@@ -65,7 +65,7 @@ def downgrade() -> None:
     )
     if open_unbin:  # a restore whose files are still in a bin: never erase what finishes it
         raise RuntimeError(
-            f"cannot downgrade past 0054: {open_unbin} restore intent(s) (fs_intent.op = 'unbin') "
+            f"cannot downgrade past 0055: {open_unbin} restore intent(s) (fs_intent.op = 'unbin') "
             "are still open. Start the instance so that it finishes them (or resolve them with "
             "`shelfhold intents`), then downgrade."
         )

@@ -228,7 +228,6 @@ from shelfhold.library.replica import (
     destination_identities,
     distrust_root_copies,
     fresh_repair_content,
-
     drop_replicas,
     has_independent_store_copy,
     has_readable_copy,

@@ -508,7 +508,10 @@ class IntentJournal:
             # a deletion named the bin entry before the move (`dst`): the replay uses it, so that
             # the bin index still points at the file
             named = intent.dst if intent.dst and re.fullmatch(r"[0-9a-f]{32}", intent.dst) else None
-            self._disk.recycle(intent.src, entry=named)
+            if named is None:
+                self._disk.recycle(intent.src)  # a withdrawal's intent: the bin names its entry
+            else:
+                self._disk.recycle(intent.src, entry=named)
             self._finish(intent, on_done)
             report.replayed.append(intent.id)
         else:

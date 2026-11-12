@@ -1,4 +1,4 @@
-"""Migration 0054 (M3 L25, EF-BIB-021): `trash_item.deletion_id` and `trash_item.snapshot`, both
+"""Migration 0055 (M3 L25, EF-BIB-021): `trash_item.deletion_id` and `trash_item.snapshot`, both
 nullable, what a restore from the bin needs. The bin entries of before keep NULL and are not
 restorable; no row is touched, and the DDL is what `create_all` makes."""
 
@@ -20,7 +20,7 @@ pytestmark = pytest.mark.req("EF-BIB-021", "ENF-OPS-002")
 
 
 def _previous() -> str:
-    down = ScriptDirectory(str(default_script_location())).get_revision("0054").down_revision
+    down = ScriptDirectory(str(default_script_location())).get_revision("0055").down_revision
     assert isinstance(down, str)
     return down
 
@@ -41,7 +41,7 @@ def test_upgrade_adds_the_columns_and_downgrade_removes_them(settings: Settings)
         )
         db.commit()
         assert "snapshot" not in _info(db)
-    assert "0054" in migrate(settings).applied
+    assert "0055" in migrate(settings).applied
     with closing(sqlite3.connect(database)) as db:
         assert {"deletion_id", "snapshot"} <= set(_info(db))
         row = db.execute("SELECT deletion_id, snapshot, level FROM trash_item").fetchone()
@@ -63,7 +63,7 @@ def test_downgrade_refuses_while_a_restore_intent_is_open(settings: Settings) ->
     and changes nothing; once the intent is done it goes through."""
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    assert "0054" in migrate(settings).applied
+    assert "0055" in migrate(settings).applied
     with closing(sqlite3.connect(database)) as db:
         db.execute(
             "INSERT INTO fs_intent (id, op, intent_schema_version, state, epoch) VALUES "

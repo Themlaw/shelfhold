@@ -142,7 +142,6 @@ def independent_copies(
             replica_table.c.unit_id == unit_id,
             replica_table.c.independent,
             replica_table.c.damaged_at.is_(None),  # a copy found damaged counts for nothing
-
             replica_table.c.id.not_in(list(without)) if without else sa.true(),
             sa.or_(same, readable),
             # the origin is a copy only while it still lists the Unit: decided here, at counting
