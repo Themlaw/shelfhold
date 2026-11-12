@@ -1457,6 +1457,44 @@ export type PlanOut = {
 };
 
 /**
+ * PolicyIn
+ */
+export type PolicyIn = {
+    /**
+     * Policy
+     */
+    policy: string;
+};
+
+/**
+ * PolicyList
+ */
+export type PolicyList = {
+    /**
+     * Items
+     */
+    items: Array<PolicyOut>;
+};
+
+/**
+ * PolicyOut
+ */
+export type PolicyOut = {
+    /**
+     * Effective
+     */
+    effective: string;
+    /**
+     * Policy
+     */
+    policy: string;
+    /**
+     * Source Key
+     */
+    source_key: string;
+};
+
+/**
  * PrecreateIn
  */
 export type PrecreateIn = {
@@ -1555,6 +1593,86 @@ export type Problem = {
      */
     type: string;
     [key: string]: unknown;
+};
+
+/**
+ * ProfileIn
+ */
+export type ProfileIn = {
+    /**
+     * Can Rate
+     */
+    can_rate?: boolean | null;
+    /**
+     * Max Age Rating
+     */
+    max_age_rating?: number | null;
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
+ * ProfileList
+ */
+export type ProfileList = {
+    /**
+     * Items
+     */
+    items: Array<ProfileOut>;
+};
+
+/**
+ * ProfileOut
+ */
+export type ProfileOut = {
+    /**
+     * Can Rate
+     */
+    can_rate: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Max Age Rating
+     */
+    max_age_rating: number | null;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
+ * ProfilePatch
+ */
+export type ProfilePatch = {
+    /**
+     * Can Rate
+     */
+    can_rate?: boolean | null;
+    /**
+     * Max Age Rating
+     */
+    max_age_rating?: number | null;
+    /**
+     * Role
+     */
+    role?: string | null;
 };
 
 /**
@@ -5051,6 +5169,228 @@ export type ProbeResponses = {
 };
 
 export type ProbeResponse = ProbeResponses[keyof ProbeResponses];
+
+export type ListProfilesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/profiles';
+};
+
+export type ListProfilesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListProfilesError = ListProfilesErrors[keyof ListProfilesErrors];
+
+export type ListProfilesResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProfileList;
+};
+
+export type ListProfilesResponse = ListProfilesResponses[keyof ListProfilesResponses];
+
+export type CreateProfileData = {
+    body: ProfileIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/profiles';
+};
+
+export type CreateProfileErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type CreateProfileError = CreateProfileErrors[keyof CreateProfileErrors];
+
+export type CreateProfileResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProfileOut;
+};
+
+export type CreateProfileResponse = CreateProfileResponses[keyof CreateProfileResponses];
+
+export type RemoveProfileData = {
+    body?: never;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}';
+};
+
+export type RemoveProfileErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RemoveProfileError = RemoveProfileErrors[keyof RemoveProfileErrors];
+
+export type RemoveProfileResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RemoveProfileResponse = RemoveProfileResponses[keyof RemoveProfileResponses];
+
+export type UpdateProfileData = {
+    body: ProfilePatch;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}';
+};
+
+export type UpdateProfileErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type UpdateProfileError = UpdateProfileErrors[keyof UpdateProfileErrors];
+
+export type UpdateProfileResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProfileOut;
+};
+
+export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
+
+export type SourcePoliciesData = {
+    body?: never;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/source-policies';
+};
+
+export type SourcePoliciesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SourcePoliciesError = SourcePoliciesErrors[keyof SourcePoliciesErrors];
+
+export type SourcePoliciesResponses = {
+    /**
+     * Successful Response
+     */
+    200: PolicyList;
+};
+
+export type SourcePoliciesResponse = SourcePoliciesResponses[keyof SourcePoliciesResponses];
+
+export type SetSourcePolicyData = {
+    body: PolicyIn;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+        /**
+         * Source Key
+         */
+        source_key: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/source-policies/{source_key}';
+};
+
+export type SetSourcePolicyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetSourcePolicyError = SetSourcePolicyErrors[keyof SetSourcePolicyErrors];
+
+export type SetSourcePolicyResponses = {
+    /**
+     * Successful Response
+     */
+    200: PolicyOut;
+};
+
+export type SetSourcePolicyResponse = SetSourcePolicyResponses[keyof SetSourcePolicyResponses];
 
 export type RestoreAdoptData = {
     body: ShelfholdInterfacesHttpApiOpsRestoreIn;
