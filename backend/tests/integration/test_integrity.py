@@ -162,6 +162,54 @@ def test_a_repair_that_is_not_the_recorded_payload_is_refused() -> None:
         assert rig.state()[0] == "corrupt" and _copies(rig) == 0
 
 
+def _keep_in_store(rig: Rig, good: bytes):  # type: ignore[no-untyped-def]
+    """A kept original in /store, independent and verified, as the safeguard leaves it."""
+    env = rig.env
+    kept = env.lib.store / "kept.cbz"
+    kept.write_bytes(good)
+    with env.engine.begin() as connection:
+        row = connection.execute(sa.text("SELECT content_hash, original_sha256 FROM content")).one()
+        record_replica(
+            connection, unit_id=rig.exported.unit_id, location="store",
+            content_hash=row[0], file_hash=row[1], independent=True,
+            physical_root_id=env.lib.store_root, rel_path="kept.cbz", size=len(good),
+            verified_at=env.clock.now(),
+        )  # fmt: skip
+    return kept
+
+
+def _damaged_at(rig: Rig, location: str):  # type: ignore[no-untyped-def]
+    with rig.env.engine.connect() as connection:
+        return connection.execute(
+            sa.text("SELECT damaged_at FROM replica WHERE unit_id = :u AND location = :l"),
+            {"u": rig.exported.unit_id, "l": location},
+        ).scalar_one()
+
+
+def test_an_intact_store_copy_is_read_and_the_unit_returns_ok_after_a_repair() -> None:
+    with export_env() as env:
+        rig = _rig(env)
+        good = rig.received().read_bytes()
+        kept = _keep_in_store(rig, good)
+        flip_page_byte(rig.received())
+        assert rig.checker().check_unit(rig.exported.unit_id).state == "corrupt"
+        assert _damaged_at(rig, "store") is None  # the intact kept original is not marked
+        env.clock.advance(days=1)
+        assert rig.repair_copy(good) is True
+        assert _complete(rig).outcome == "replaced"
+        assert rig.state()[0] == "ok" and kept.read_bytes() == good
+
+
+def test_a_corrupt_store_copy_is_detected() -> None:
+    with export_env() as env:
+        rig = _rig(env)
+        kept = _keep_in_store(rig, rig.received().read_bytes())
+        flip_page_byte(kept)
+        verdict = rig.checker().check_unit(rig.exported.unit_id)
+        assert (verdict.state, verdict.reason) == ("corrupt", "crc")
+        assert _damaged_at(rig, "store") is not None and kept.exists()
+
+
 def test_the_unit_is_not_ok_while_a_place_holds_only_damaged_copies() -> None:
     """A damaged copy in /store is not made good by a repaired one in /library."""
     with export_env() as env:
@@ -188,6 +236,7 @@ def test_the_unit_is_not_ok_while_a_place_holds_only_damaged_copies() -> None:
         done = _complete(rig)
         assert done.outcome == "fresh_copy_corrupt"
         assert rig.state()[0] == "corrupt" and kept.exists()
+        assert _damaged_at(rig, "store") is not None  # it was read, found damaged and marked
 
 
 def test_no_new_copy_no_new_read() -> None:

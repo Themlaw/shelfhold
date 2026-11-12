@@ -171,17 +171,20 @@ class LibraryRepair:
             if irreplaceability(connection, unit_id).irreplaceable:  # no source: never swapped
                 log.warning("integrity.repair_refused", unit_id=unit_id, error="irreplaceable")
                 return "refused"
-            copies = damaged_library_copies(connection, unit_id)
-            if copies and barrier_closed_for(connection, unit_id) is not None:
-                return "blocked"
+            if not damaged_library_copies(connection, unit_id):
+                return "none"
             work_id = connection.execute(
                 sa.select(catalog.edition.c.work_id)
                 .join(catalog.unit, catalog.unit.c.edition_id == catalog.edition.c.id)
                 .where(catalog.unit.c.id == unit_id)
             ).scalar_one_or_none()
         done = 0
-        for copy in copies:
-            with self._hold_work(work_id) if work_id else nullcontext():
+        with self._hold_work(work_id) if work_id else nullcontext():
+            with self._engine.connect() as connection:  # read under the lock: no gap to change in
+                if barrier_closed_for(connection, unit_id) is not None:
+                    return "blocked"
+                copies = damaged_library_copies(connection, unit_id)
+            for copy in copies:
                 done += self._swap(unit_id, copy.replica_id, copy.local, staged, new_hash)
         return "replaced" if done else "none"
 

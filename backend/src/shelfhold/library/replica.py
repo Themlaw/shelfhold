@@ -401,7 +401,6 @@ def store_copies(
             replica_table.c.rel_path,
             replica_table.c.file_hash,
             root.c.path_entry,
-            replica_table.c.independent,
             replica_table.c.damaged_at,
         )
         .join(root, root.c.root_id == replica_table.c.physical_root_id)
@@ -410,7 +409,7 @@ def store_copies(
     )
     return [
         StoreCopy(
-            r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash, bool(r.independent)
+            r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash, r.damaged_at is not None
         )
         for r in rows
         if include_untrusted or not r.rel_path.startswith("untrusted/")
