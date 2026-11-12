@@ -556,6 +556,7 @@ def test_a_scope_nobody_defined_is_told_nothing_and_foreign_events_are_ignored(
     from shelfhold.identity.domain.visibility import NOBODY
 
     with world.seed.engine.begin() as connection:
+        head = changes.window(connection).head  # the seed exists at this token
         changes.record_work_removed(connection, world.work("ok"))
         for payload in ({}, {"work_id": 5, "need_before": 1}, {"work_id": "x", "need_before": "1"}):
             connection.execute(
@@ -564,8 +565,8 @@ def test_a_scope_nobody_defined_is_told_nothing_and_foreign_events_are_ignored(
                     occurred_at=RATED, visibility="ops",
                 )
             )  # fmt: skip
-        assert changes.removed_ids(connection, NOBODY, 0) == []
-        assert changes.removed_ids(connection, scope_of("admin", None), 0) == [world.work("ok")]
+        assert changes.removed_ids(connection, NOBODY, head) == []
+        assert changes.removed_ids(connection, scope_of("admin", None), head) == [world.work("ok")]
         with changes.track_work_changes(connection, []):
             pass  # nothing to track, nothing written
     assert [e.type for e in world.change_events()].count("ops.work_removed") == 4
