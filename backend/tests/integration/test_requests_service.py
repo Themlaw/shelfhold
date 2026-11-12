@@ -247,7 +247,10 @@ def test_approval_that_fails_halfway_leaves_the_request_pending(settings: Settin
         rid = ask(r, MEMBER_ID, "member")
         with pytest.raises(RuntimeError):
             r.service.approve(rid, admin())
-        assert r.state_of(rid) == "pending" and r.audit("request.approved") == []
+        # back to pending, and the journal keeps both lines: the decision and its undoing
+        assert r.state_of(rid) == "pending"
+        assert len(r.audit("request.approved")) == 1
+        assert len(r.audit("request.approve_reverted")) == 1
         ports.fail_follow = None
         r.service.approve(rid, admin())
         assert r.state_of(rid) == "approved" and len(ports.follows) == 1
@@ -302,7 +305,10 @@ def test_approval_preview_prefills_edition_source_and_shelf(settings: Settings) 
         r.rows("SELECT 1")
         with r.engine.begin() as connection:
             connection.execute(
-                sa.text("UPDATE \"user\" SET locale = 'en' WHERE id = :u"), {"u": MEMBER_ID}
+                sa.text(
+                    "UPDATE \"user\" SET locale = 'en', visibility = 'household' WHERE id = :u"
+                ),
+                {"u": MEMBER_ID},
             )
         with r.engine.begin() as connection:
             from tests.integration.test_schema_catalog import add_edition
@@ -498,3 +504,65 @@ def test_decision_and_its_audit_are_one_transaction(settings: Settings) -> None:
         with pytest.raises(sa.exc.DBAPIError):
             r.service.reject(rid, admin(), "no")
         assert r.state_of(rid) == "pending"
+
+
+@pytest.mark.req("EF-USR-010", "EF-SRC-029")
+def test_preview_of_a_follow_says_units_will_come_and_size_is_unknown(settings: Settings) -> None:
+    ports = FakePorts(kinds={"alpha": "manga"}, estimate_of=Estimate(units=3, size_bytes=None))
+    with rig(settings, ports=ports) as r:
+        rid = ask(r, MEMBER_ID, "member")
+        preview = r.service.preview(rid, admin())
+        assert preview.size_bytes is None and preview.units_minimum is True
+        assert preview.units == 3 and preview.confirmation_required is False
+
+
+@pytest.mark.req("EF-USR-010")
+def test_approval_returns_the_masked_view_and_a_stranded_request_is_shown_as_such(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ports = FakePorts(kinds={"alpha": "manga"}, fail_follow=RuntimeError("down"))
+    with rig(settings, ports=ports) as r:
+        rid = ask(r, MEMBER_ID, "member")
+        monkeypatch.setattr(type(r.service), "_revert", lambda *_a, **_k: None)
+        with pytest.raises(RuntimeError):
+            r.service.approve(rid, admin())
+        monkeypatch.undo()
+        (stranded,) = [v for v in r.service.mine(MEMBER_ID) if v.id == rid]
+        assert stranded.stranded is True and stranded.state == "approved"
+        ports.fail_follow = None
+        done = r.service.approve(rid, admin())
+        assert done.title is None and done.stranded is False  # masked: a private adult request
+        assert [a.target for a in r.audit("request.approve_resumed")] == [f"request:{rid}"]
+        assert len(ports.follows) == 1
+        with pytest.raises(RequestRefusedError) as again:  # a started request is not resumed
+            r.service.approve(rid, admin())
+        assert code_of(again) == "not_pending"
+
+
+@pytest.mark.req("EF-USR-010")
+def test_work_the_library_holds_arrives_at_once_and_a_stricter_age_replaces_a_laxer(
+    settings: Settings,
+) -> None:
+    with rig(settings) as r:
+        work = r.work()
+        first = r.service.create_from_ref(requester(CHILD_ID, "child"), REF).id
+        r.service.approve(first, admin(), age=10)  # kind: novel -> prepared by the fake port
+        assert r.state_of(first) == "approved"
+        held = r.service.create(requester(MEMBER_ID, "member"), RequestTarget("work_id", work)).id
+        r.service.approve(held, admin())
+        assert r.state_of(held) == "arrived"  # nothing to wait for: the Work is in the library
+
+
+@pytest.mark.req("EF-USR-010")
+def test_an_age_is_written_over_a_laxer_one_never_over_a_stricter_one(settings: Settings) -> None:
+    from shelfhold.acquisition.application.requests import _to_apply
+    from shelfhold.sdk.age import AgeRating
+
+    with rig(settings) as r, r.engine.begin() as connection:
+        rated = bind_work(connection, "alpha", "x1", rated=True)  # rated 6
+        fresh = bind_work(connection, "alpha", "x2")
+        assert _to_apply(connection, rated, AgeRating(10)) == AgeRating(10)  # stricter: written
+        assert _to_apply(connection, rated, AgeRating(6)) is None  # same: nothing to do
+        assert _to_apply(connection, rated, AgeRating(3)) is None  # laxer: the 6 stands
+        assert _to_apply(connection, fresh, AgeRating(3)) == AgeRating(3)  # nobody rated it
+        assert _to_apply(connection, fresh, None) is None

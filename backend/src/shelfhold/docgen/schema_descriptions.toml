@@ -1064,6 +1064,8 @@ decided_at = "When the decision was made (UTC)."
 approved_age = "Minimum age chosen at approval of a child's request; applied to the Work when it appears."
 approved_x = "Whether the age chosen at approval is X."
 arrived_at = "When the first book of the approved request was filed (UTC)."
+started_at = "When the effects of the approval were all made (UTC); an approved request without it was left half done and is resumed."
+shown_title = "The title the requester was shown when she asked, kept as it was (a child's request)."
 
 [tables.notification_digest]
 description = "The digest being built for a user, sent at its due time."

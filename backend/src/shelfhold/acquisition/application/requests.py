@@ -33,7 +33,7 @@ from shelfhold.acquisition.domain.request_target import (
     parse_target,
     pick_edition,
 )
-from shelfhold.catalog.public import RatingRefusedError, RatingService
+from shelfhold.catalog.public import RatingService
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -55,6 +55,7 @@ __all__ = [
     "ApprovalPreview",
     "Estimate",
     "Ports",
+    "PreparedAcquisition",
     "RequestRefusedError",
     "RequestService",
     "RequestView",
@@ -97,7 +98,18 @@ class SourceRef:
 @dataclass(frozen=True)
 class Estimate:
     units: int
-    size_bytes: int
+    size_bytes: int | None  # None: unknown (the sources do not tell a size), not zero
+    ongoing: bool = False  # a follow: Units will keep coming, `units` is what is known now
+
+
+@dataclass(frozen=True)
+class PreparedAcquisition:
+    """What a source-held result became before anything is fetched: its Work and Edition exist,
+    `handle` is what `Ports.start` needs to begin the download."""
+
+    work_id: str | None
+    edition_id: str | None
+    handle: str | None
 
 
 @dataclass(frozen=True)
@@ -113,17 +125,21 @@ class RequestView:
     created_at: datetime
     updated_at: datetime
     needs_age: bool = False
+    stranded: bool = False  # approved, nothing started: an approval can resume it
 
 
 @dataclass(frozen=True)
 class ApprovalPreview:
     units: int
-    size_bytes: int
+    size_bytes: int | None
     needs_age: bool
     confirmation_required: bool
     edition_id: str | None
     shelf_id: str | None
     resolved: bool
+    units_minimum: bool = False  # a follow: more Units will be added later
+    decided_age: int | None = None  # an age already decided for this Work or series
+    decided_x: bool = False
 
 
 class Ports(Protocol):
@@ -139,15 +155,25 @@ class Ports(Protocol):
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str
     ) -> None: ...
 
-    def acquire(
+    def prepare(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str
-    ) -> str | None:
-        """The Work that now exists for this result."""
+    ) -> PreparedAcquisition:
+        """The Work and Edition this result becomes; nothing is fetched yet."""
+        ...
+
+    def start(self, handle: str | None) -> None:
+        """Begin the download of a prepared result (idempotent: a replay queues nothing more)."""
         ...
 
     def proposed_shelf(self, edition_id: str) -> str | None: ...
 
-    def file(self, edition_id: str, shelf_id: str, *, approver_id: str) -> None: ...
+    def settle(
+        self, work_id: str, edition_id: str | None, rating: AgeRating | None,
+        shelf_id: str | None, *, principal: Principal,
+    ) -> str | None:  # fmt: skip
+        """Rate the Work (when `rating`) and file the Edition (the shelf named, else the proposed
+        one) in one transaction; a refusal undoes both (`RequestRefusedError`). The shelf used."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -194,7 +220,10 @@ class RequestService:
         with self._engine.begin() as connection:
             owner = self._owner(connection, who.user_id)
             item = _upsert_item(connection, ref, self._clock.now())
-            return self._insert(connection, who.user_id, owner, RequestTarget("source_ref", item))
+            return self._insert(
+                connection, who.user_id, owner, RequestTarget("source_ref", item),
+                shown_title=_clean_title(ref.title),
+            )  # fmt: skip
 
     def create(self, who: Requester, target: RequestTarget) -> RequestView:
         """A request on a Work, an ISBN or a text. A child has no such door (`kind_not_allowed`,
@@ -224,8 +253,9 @@ class RequestService:
         return _Owner(row.role, row.visibility)
 
     def _insert(
-        self, connection: Connection, user_id: str, owner: _Owner, target: RequestTarget
-    ) -> RequestView:
+        self, connection: Connection, user_id: str, owner: _Owner, target: RequestTarget,
+        shown_title: str | None = None,
+    ) -> RequestView:  # fmt: skip
         if target.kind == "source_ref" and not child_may_ask(target.kind):  # pragma: no cover
             raise RequestRefusedError("kind_not_allowed")
         same = connection.execute(
@@ -252,6 +282,7 @@ class RequestService:
                 id=request_id, requester_user_id=user_id, target_kind=target.kind,
                 target_value=target.value, state="pending", created_at=now, updated_at=now,
                 visibility=effective_visibility(owner.role, owner.visibility),
+                shown_title=shown_title,
             )
         )  # fmt: skip
         connection.execute(
@@ -306,14 +337,16 @@ class RequestService:
     def preview(self, request_id: str, principal: Principal) -> ApprovalPreview:
         self._admin_session(principal)
         with self._engine.connect() as connection:
-            row = self._pending(connection, request_id)
+            row = self._approvable(connection, request_id)
             owner = self._owner(connection, row.requester_user_id)
             resolved = self._resolve(connection, row)
             estimate = self._estimate(resolved)
             work = resolved.work_id
+            masked = _masked(row, owner.role)
             edition = self._edition(connection, work, row.requester_user_id) if work else None
             shelf = self._ports.proposed_shelf(edition) if edition else None
             rated = _rated(connection, work) if work else False
+            decided = _decided(connection, row, work)
             return ApprovalPreview(
                 estimate.units, estimate.size_bytes,
                 needs_age=needs_age(owner.role) and not rated,
@@ -321,7 +354,10 @@ class RequestService:
                     requester_role="member", age=None, already_rated=True, units=estimate.units,
                     size_bytes=estimate.size_bytes, confirmed=False,
                 ) is not None,
-                edition_id=edition, shelf_id=shelf, resolved=resolved.found,
+                edition_id=None if masked else edition, shelf_id=None if masked else shelf,
+                resolved=resolved.found, units_minimum=estimate.ongoing,
+                decided_age=None if decided is None else decided.min_age,
+                decided_x=bool(decided and decided.x),
             )  # fmt: skip
 
     # -- deciding -------------------------------------------------------------------------------
@@ -330,6 +366,11 @@ class RequestService:
         self, request_id: str, principal: Principal, *, age: int | None = None, x: bool = False,
         shelf_id: str | None = None, confirm_size: bool = False,
     ) -> RequestView:  # fmt: skip
+        """Order: everything that can be refused (the shelf, the rating) comes before anything
+        irreversible; the decision and its audit line come next; the source is asked last. A
+        failure of that last step puts the request back to pending with an audit line saying so
+        (an audit line is never deleted); a crash in between leaves it `approved` with nothing
+        started, which a new approval resumes."""
         verdict = authorize_reserved(
             principal, RESERVED_ACTIONS["request.approve"], now=self._clock.now(),
             fresh_auth_s=self._fresh_auth_s,
@@ -338,42 +379,80 @@ class RequestService:
             raise RequestRefusedError("not_allowed")
         rating = _rating_of(age, x)
         with self._engine.connect() as connection:
-            row = self._pending(connection, request_id)
+            row = self._approvable(connection, request_id)
+            resume = row.state == "approved"
+            if rating is None and resume and row.approved_age is not None:
+                rating = AgeRating(int(row.approved_age), x=bool(row.approved_x))
             owner = self._owner(connection, row.requester_user_id)
             resolved = self._resolve(connection, row)
             if not resolved.found:
                 raise RequestRefusedError("unresolved")
             estimate = self._estimate(resolved)
-            work = resolved.work_id
             refusal = approval_refusal(
-                requester_role=owner.role, age=age if rating is None else rating.min_age,
-                already_rated=bool(work) and _rated(connection, work or ""),
-                units=estimate.units, size_bytes=estimate.size_bytes, confirmed=confirm_size,
+                requester_role=owner.role, age=None if rating is None else rating.min_age,
+                already_rated=bool(resolved.work_id) and _rated(connection, resolved.work_id or ""),
+                units=estimate.units, size_bytes=estimate.size_bytes,
+                confirmed=confirm_size or resume,
             )  # fmt: skip
             if refusal is not None:
                 raise RequestRefusedError(refusal)
-        now = self._clock.now()
-        visibility = _stored(self._engine, request_id).visibility
-        audit_id = self._claim(request_id, principal, rating, now, shelf_id)
+        manga = resolved.source is not None and self._ports.kind_of(resolved.source[0]) == "manga"
+        work, edition, handle = resolved.work_id, None, None
+        if resolved.source is not None and not manga:
+            prepared = self._ports.prepare(
+                *resolved.source, requester_user_id=row.requester_user_id,
+                visibility=row.visibility,
+            )  # fmt: skip
+            work, edition, handle = prepared.work_id, prepared.edition_id, prepared.handle
+        shelf: str | None = None
+        if work is not None:
+            with self._engine.connect() as connection:
+                edition = edition or self._edition(connection, work, row.requester_user_id)
+                to_apply = _to_apply(connection, work, rating)
+            shelf = self._ports.settle(work, edition, to_apply, shelf_id, principal=principal)
+        self._claim(request_id, principal, rating, shelf_id, resume=resume)
         try:
-            self._materialize(request_id, row, resolved, rating, principal, shelf_id, visibility)
+            if resolved.source is not None:
+                if manga:
+                    self._ports.follow(
+                        *resolved.source, requester_user_id=row.requester_user_id,
+                        visibility=row.visibility,
+                    )  # fmt: skip
+                else:
+                    self._ports.start(handle)
         except BaseException:
-            self._revert(request_id, audit_id)
+            self._revert(request_id, principal)
             raise
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(request)
+                .where(request.c.id == request_id)
+                .values(
+                    started_at=self._clock.now(), work_id=work, edition_id=edition,
+                    shelf_id=shelf or shelf_id,
+                )
+            )  # fmt: skip
+        if resolved.source is None and edition is not None:
+            self.arrived(work or "")  # the library already holds it: nothing to wait for
         with self._engine.connect() as connection:
-            return self._view(connection, request_id)
+            return self._view(connection, request_id, for_admin=True)
 
     def _claim(
-        self, request_id: str, principal: Principal, rating: AgeRating | None, now: datetime,
-        shelf_id: str | None,
-    ) -> str:  # fmt: skip
-        """Phase 1: the decision and its audit line, in one transaction. Whoever loses the race
-        finds the request no longer pending."""
-        audit_id = new_ulid()
+        self, request_id: str, principal: Principal, rating: AgeRating | None,
+        shelf_id: str | None, *, resume: bool,
+    ) -> None:  # fmt: skip
+        """The decision and its audit line, in one transaction. Whoever loses the race finds the
+        request no longer pending (or no longer waiting to be resumed)."""
+        now = self._clock.now()
+        waiting = (
+            sa.and_(request.c.state == "approved", request.c.started_at.is_(None))
+            if resume
+            else request.c.state == "pending"
+        )
         with self._engine.begin() as connection:
             changed = connection.execute(
                 sa.update(request)
-                .where(request.c.id == request_id, request.c.state == "pending")
+                .where(request.c.id == request_id, waiting)
                 .values(
                     state="approved", decided_by=principal.user_id, decided_at=now, updated_at=now,
                     approved_age=None if rating is None else rating.min_age,
@@ -384,62 +463,34 @@ class RequestService:
                 raise RequestRefusedError("not_pending")
             connection.execute(
                 sa.insert(identity.audit).values(
-                    id=audit_id, actor_id=principal.actor_id, action="request.approved", at=now,
+                    id=new_ulid(), actor_id=principal.actor_id,
+                    action="request.approve_resumed" if resume else "request.approved", at=now,
                     target=f"request:{request_id}"
                     + ("" if rating is None else f";age:{rating.min_age}{'x' if rating.x else ''}"),
                     session_id=principal.session_id, auth_time=principal.auth_time,
                 )
             )  # fmt: skip
-        return audit_id
 
-    def _revert(self, request_id: str, audit_id: str) -> None:
+    def _revert(self, request_id: str, principal: Principal) -> None:
+        """The source refused after the decision: back to pending, and the journal says so."""
+        now = self._clock.now()
         with self._engine.begin() as connection:
-            connection.execute(
+            changed = connection.execute(
                 sa.update(request)
                 .where(request.c.id == request_id, request.c.state == "approved")
                 .values(
                     state="pending", decided_by=None, decided_at=None, approved_age=None,
-                    approved_x=False, shelf_id=None, updated_at=self._clock.now(),
+                    approved_x=False, shelf_id=None, updated_at=now, started_at=None,
                 )
             )  # fmt: skip
-            connection.execute(sa.delete(identity.audit).where(identity.audit.c.id == audit_id))
-
-    def _materialize(
-        self, request_id: str, row: Any, resolved: _Resolved, rating: AgeRating | None,
-        principal: Principal, shelf_id: str | None, visibility: str,
-    ) -> None:  # fmt: skip
-        work = resolved.work_id
-        if resolved.source is not None:
-            source_key, remote_id = resolved.source
-            if self._ports.kind_of(source_key) == "manga":
-                self._ports.follow(
-                    source_key, remote_id, requester_user_id=row.requester_user_id,
-                    visibility=visibility,
+            if changed.rowcount == 1:
+                connection.execute(
+                    sa.insert(identity.audit).values(
+                        id=new_ulid(), actor_id=principal.actor_id,
+                        action="request.approve_reverted", at=now, target=f"request:{request_id}",
+                        session_id=principal.session_id, auth_time=principal.auth_time,
+                    )
                 )  # fmt: skip
-            else:
-                work = self._ports.acquire(
-                    source_key, remote_id, requester_user_id=row.requester_user_id,
-                    visibility=visibility,
-                )  # fmt: skip
-        if work is None:  # a followed series: the Work comes with the next cycle
-            return
-        now = self._clock.now()
-        with self._engine.begin() as connection:
-            if rating is not None and not _rated(connection, work):
-                try:
-                    self._rating.rate(connection, work, rating, principal=principal, now=now)
-                except RatingRefusedError:
-                    raise RequestRefusedError("not_allowed") from None
-            edition = self._edition(connection, work, row.requester_user_id)
-        shelf = shelf_id or (self._ports.proposed_shelf(edition) if edition else None)
-        if edition is not None and shelf is not None:
-            self._ports.file(edition, shelf, approver_id=principal.user_id)
-        with self._engine.begin() as connection:
-            connection.execute(
-                sa.update(request)
-                .where(request.c.id == request_id)
-                .values(work_id=work, edition_id=edition, shelf_id=shelf)
-            )
 
     def reject(self, request_id: str, principal: Principal, reason: object) -> RequestView:
         self._admin_session(principal)
@@ -471,7 +522,7 @@ class RequestService:
                 connection, request_id, state, action, principal.actor_id, reason,
                 decided_by=principal.user_id, principal=principal,
             )  # fmt: skip
-            return self._view(connection, request_id)
+            return self._view(connection, request_id, for_admin=True)
 
     def _move(
         self, connection: Connection, request_id: str, state: str, action: str, actor: str,
@@ -517,13 +568,16 @@ class RequestService:
         published: list[PublishedEvent] = []
         now = self._clock.now()
         with self._engine.begin() as connection:
-            for row in self._waiting_for(connection, work_id):
-                if row.approved_age is not None:
-                    self._rating.rate_decided(
-                        connection, work_id,
-                        AgeRating(int(row.approved_age), x=bool(row.approved_x)),
-                        request_id=row.id, decided_by=row.decided_by or "", now=now,
-                    )  # fmt: skip
+            rows = sorted(self._waiting_for(connection, work_id), key=lambda r: r.id)
+            decided = [r for r in rows if r.approved_age is not None]
+            if decided:  # several ages for one Work: the strictest, whatever the order of rows
+                top = max(decided, key=lambda r: (int(r.approved_age), bool(r.approved_x), r.id))
+                self._rating.rate_decided(
+                    connection, work_id,
+                    AgeRating(int(top.approved_age), x=bool(top.approved_x)),
+                    request_id=top.id, decided_by=top.decided_by or "", now=now,
+                )  # fmt: skip
+            for row in rows:
                 edition = self._edition(connection, work_id, row.requester_user_id)
                 changed = connection.execute(
                     sa.update(request)
@@ -585,10 +639,14 @@ class RequestService:
             raise RequestRefusedError("not_allowed")
 
     @staticmethod
-    def _pending(connection: Connection, request_id: str) -> Any:
+    def _approvable(connection: Connection, request_id: str) -> Any:
+        """A pending request, or an approved one nothing was started for (a crash after the
+        decision): both can be approved."""
         row = connection.execute(sa.select(request).where(request.c.id == request_id)).first()
         if row is None:
             raise RequestRefusedError("not_found")
+        if row.state == "approved" and row.started_at is None:
+            return row
         if row.state != "pending":
             raise RequestRefusedError("not_pending")
         return row
@@ -596,7 +654,9 @@ class RequestService:
     def _estimate(self, resolved: _Resolved) -> Estimate:
         if resolved.source is None:
             return Estimate(0, 0)  # a Work the library holds: nothing to fetch
-        return self._ports.estimate(*resolved.source)
+        found = self._ports.estimate(*resolved.source)
+        ongoing = self._ports.kind_of(resolved.source[0]) == "manga"
+        return Estimate(found.units, found.size_bytes, ongoing=ongoing)
 
     @staticmethod
     def _edition(connection: Connection, work_id: str | None, requester_user_id: str) -> str | None:
@@ -647,7 +707,7 @@ class RequestService:
             )
             .where(request.c.id == request_id)
         ).one()
-        masked = for_admin and row.visibility == "private" and not needs_age(row.owner_role)
+        masked = for_admin and _masked(row, row.owner_role)
         title = None if masked else _title(connection, row)
         return RequestView(
             id=row.id, state=row.state, target_kind=row.target_kind, title=title,
@@ -655,6 +715,7 @@ class RequestService:
             requester_id=row.requester_user_id, requester_role=row.owner_role,
             created_at=row.created_at, updated_at=row.updated_at,
             needs_age=row.state == "pending" and needs_age(row.owner_role),
+            stranded=row.state == "approved" and row.started_at is None,
         )  # fmt: skip
 
 
@@ -664,11 +725,50 @@ class _Owner:
     visibility: str | None
 
 
-def _stored(engine: Engine, request_id: str) -> Any:
-    with engine.connect() as connection:
-        return connection.execute(
-            sa.select(request.c.visibility).where(request.c.id == request_id)
-        ).one()
+def _masked(row: Any, owner_role: str) -> bool:
+    """The admin sees the operation, not the title, of a private request of an adult."""
+    return bool(row.visibility == "private" and not needs_age(owner_role))
+
+
+def _clean_title(title: str) -> str:
+    return " ".join(title.split())[:MAX_TITLE] or "-"
+
+
+def _strictness(rating: AgeRating) -> tuple[int, bool]:
+    return (rating.min_age, rating.x)
+
+
+def _to_apply(connection: Connection, work_id: str, rating: AgeRating | None) -> AgeRating | None:
+    """The age to write on the Work: when nobody rated it, or when it is stricter than the one
+    there (two decisions on one Work never leave the laxer one standing)."""
+    if rating is None:
+        return None
+    row = connection.execute(
+        sa.select(catalog.work.c.rated_at, catalog.work.c.age_rating, catalog.work.c.age_x).where(
+            catalog.work.c.id == work_id
+        )
+    ).first()
+    if row is None or row.rated_at is None:
+        return rating
+    return rating if _strictness(rating) > (int(row.age_rating), bool(row.age_x)) else None
+
+
+def _decided(connection: Connection, row: Any, work_id: str | None) -> AgeRating | None:
+    """The strictest age already decided (approved, not yet applied) for the same target."""
+    same = sa.and_(
+        request.c.target_kind == row.target_kind, request.c.target_value == row.target_value
+    )
+    where = same if work_id is None else sa.or_(same, request.c.work_id == work_id)
+    ages = connection.execute(
+        sa.select(request.c.approved_age, request.c.approved_x).where(
+            request.c.id != row.id, request.c.state == "approved",
+            request.c.approved_age.is_not(None), where,
+        )
+    ).all()  # fmt: skip
+    if not ages:
+        return None
+    top = max(ages, key=lambda a: (int(a.approved_age), bool(a.approved_x)))
+    return AgeRating(int(top.approved_age), x=bool(top.approved_x))
 
 
 def _rating_of(age: int | None, x: bool) -> AgeRating | None:
@@ -730,7 +830,7 @@ def _work_by_title(connection: Connection, text: str) -> str | None:
 
 def _upsert_item(connection: Connection, ref: SourceRef, now: datetime) -> str:
     item = acquisition.pending_source_item
-    title = " ".join(ref.title.split())[:MAX_TITLE] or "-"
+    title = _clean_title(ref.title)
     found = connection.execute(
         sa.select(item.c.id).where(
             item.c.source_key == ref.source_key, item.c.series_ref == ref.remote_id
@@ -760,6 +860,8 @@ def _upsert_item(connection: Connection, ref: SourceRef, now: datetime) -> str:
 def _title(connection: Connection, row: Any) -> str | None:
     kind, value = row.target_kind, row.target_value
     if kind == "source_ref":
+        if row.shown_title is not None:
+            return str(row.shown_title)
         return connection.execute(
             sa.select(acquisition.pending_source_item.c.title).where(
                 acquisition.pending_source_item.c.id == value

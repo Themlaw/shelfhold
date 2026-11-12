@@ -266,6 +266,8 @@ request = sa.Table(
     sa.Column("approved_age", sa.Integer(), nullable=True),  # a child's request: applied on arrival
     bool_column("approved_x", default=False),
     sa.Column("arrived_at", UtcDateTime(), nullable=True),
+    sa.Column("started_at", UtcDateTime(), nullable=True),  # the effects of the approval are made
+    sa.Column("shown_title", sa.String(), nullable=True),  # what a child was shown, kept as is
     ulid_check("id"),
     in_check("target_kind", REQUEST_TARGET_KINDS),
     in_check("state", REQUEST_STATES),

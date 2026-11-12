@@ -263,6 +263,21 @@
             "title": "Confirmation Required",
             "type": "boolean"
           },
+          "decided_age": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided Age"
+          },
+          "decided_x": {
+            "title": "Decided X",
+            "type": "boolean"
+          },
           "edition_id": {
             "anyOf": [
               {
@@ -294,17 +309,31 @@
             "title": "Shelf Id"
           },
           "size_bytes": {
-            "title": "Size Bytes",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
           },
           "units": {
             "title": "Units",
             "type": "integer"
+          },
+          "units_minimum": {
+            "title": "Units Minimum",
+            "type": "boolean"
           }
         },
         "required": [
           "units",
           "size_bytes",
+          "units_minimum",
+          "decided_age",
+          "decided_x",
           "needs_age",
           "confirmation_required",
           "edition_id",

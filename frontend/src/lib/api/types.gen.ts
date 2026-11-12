@@ -177,6 +177,14 @@ export type ApprovalOut = {
      */
     confirmation_required: boolean;
     /**
+     * Decided Age
+     */
+    decided_age: number | null;
+    /**
+     * Decided X
+     */
+    decided_x: boolean;
+    /**
      * Edition Id
      */
     edition_id: string | null;
@@ -195,11 +203,15 @@ export type ApprovalOut = {
     /**
      * Size Bytes
      */
-    size_bytes: number;
+    size_bytes: number | null;
     /**
      * Units
      */
     units: number;
+    /**
+     * Units Minimum
+     */
+    units_minimum: boolean;
 };
 
 /**

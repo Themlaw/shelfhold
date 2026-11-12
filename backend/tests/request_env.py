@@ -14,15 +14,19 @@ import sqlalchemy as sa
 
 from shelfhold.acquisition.application.requests import (
     Estimate,
+    PreparedAcquisition,
     Requester,
+    RequestRefusedError,
     RequestService,
 )
+from shelfhold.catalog.public import RatingRefusedError, RatingService
 from shelfhold.config import Settings
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import acquisition
+from shelfhold.sdk.age import AgeRating
 from tests.auth_env import T0, ManualClock
 
 ADMIN_ID = "01J0000000000000000000ADMX"
@@ -64,6 +68,7 @@ class FakePorts:
     shelf: str | None = None
     engine: sa.Engine | None = None
     fail_follow: Exception | None = None
+    fail_start: Exception | None = None
 
     def kind_of(self, source_key: str) -> str:
         return self.kinds.get(source_key, "novel")
@@ -78,17 +83,45 @@ class FakePorts:
             raise self.fail_follow
         self.follows.append((source_key, remote_id, requester_user_id, visibility))
 
-    def acquire(
+    def prepare(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str
-    ) -> str:  # fmt: skip
-        """A novel arrives at once: a Work with an Edition, bound to the source item."""
-        self.acquired.append((source_key, remote_id, requester_user_id, visibility))
+    ) -> PreparedAcquisition:
+        """A novel's Work and Edition exist before anything is fetched."""
         assert self.engine is not None
         with self.engine.begin() as connection:
-            return bind_work(connection, source_key, remote_id)
+            work = bind_work(connection, source_key, remote_id)
+            edition = connection.execute(
+                sa.text("SELECT id FROM edition WHERE work_id = :w"), {"w": work}
+            ).scalar_one()
+        handle = f"{source_key}|{remote_id}|{requester_user_id}|{visibility}"
+        return PreparedAcquisition(work, edition, handle)
+
+    def start(self, handle: str | None) -> None:
+        if self.fail_start is not None:
+            raise self.fail_start
+        assert handle is not None
+        source_key, remote_id, user, visibility = handle.split("|")
+        self.acquired.append((source_key, remote_id, None if user == "None" else user, visibility))
 
     def proposed_shelf(self, edition_id: str) -> str | None:
         return self.shelf
+
+    def settle(
+        self, work_id: str, edition_id: str | None, rating: AgeRating | None,
+        shelf_id: str | None, *, principal: Principal,
+    ) -> str | None:  # fmt: skip
+        """The shelf first (it may refuse), then the rating, as the real port does in one go."""
+        shelf = shelf_id or (self.proposed_shelf(edition_id) if edition_id else None)
+        if edition_id is not None and shelf is not None:
+            self.file(edition_id, shelf, approver_id=principal.user_id)
+        if rating is not None:
+            assert self.engine is not None
+            with self.engine.begin() as connection:
+                try:
+                    RatingService().rate(connection, work_id, rating, principal=principal, now=T0)
+                except RatingRefusedError:
+                    raise RequestRefusedError("not_allowed") from None
+        return shelf
 
     def file(self, edition_id: str, shelf_id: str, *, approver_id: str) -> None:
         self.filed.append((edition_id, shelf_id, approver_id))

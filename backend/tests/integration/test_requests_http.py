@@ -334,7 +334,7 @@ def test_admin_approves_a_child_request_with_an_age_in_one_gesture(
             db_rows(api.settings, "SELECT count(*) FROM audit WHERE action = 'request.approve'")[0][
                 0
             ]
-            == 2  # the door's line for each attempt: refused for the age, then done
+            == 0  # the route has no guard line: the service writes the one that counts
         )
 
 

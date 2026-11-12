@@ -109,7 +109,7 @@ def audit_rows(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
 # transaction that demotes the root, so a refused HTTP call (the host holds the lock) leaves none;
 # the queue routes (M3 L13) leave their line, with its target (`pause:<source>`), to the service:
 # one for a change made, none for a refusal or a job that does not exist
-SELF_AUDITED = {"request.unmask", "reconcile.forget_root"}
+SELF_AUDITED = {"request.unmask", "reconcile.forget_root", "request.approve"}
 SERVICE_AUDITED = {"queue.control"}
 
 

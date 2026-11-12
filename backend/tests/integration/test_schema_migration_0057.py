@@ -17,7 +17,7 @@ from tests.integration.test_schema_migration_0002 import alembic_config
 
 NEW = {
     "visibility", "work_id", "edition_id", "shelf_id", "decided_by", "decided_at",
-    "approved_age", "approved_x", "arrived_at",
+    "approved_age", "approved_x", "arrived_at", "started_at", "shown_title",
 }  # fmt: skip
 USER = "01J00000000000000000000001"
 

@@ -108,16 +108,17 @@ def _valid_age(age: object) -> bool:
 
 
 def approval_refusal(
-    *, requester_role: str, age: object, already_rated: bool, units: int, size_bytes: int,
-    confirmed: bool,
+    *, requester_role: str, age: object, already_rated: bool, units: int,
+    size_bytes: int | None, confirmed: bool,
 ) -> str | None:  # fmt: skip
     """Why this approval may not go ahead: `choose_age` (a child's request with no age, and no
     rating the admin already made), `confirmation_required` (over 100 Units or 5 GiB); else None."""
-    if units < 0 or size_bytes < 0:
+    if units < 0 or (size_bytes is not None and size_bytes < 0):
         raise ValueError("a size cannot be negative")
     if needs_age(requester_role) and not already_rated and not _valid_age(age):
         return "choose_age"
-    if (units > SIZE_CONFIRM_UNITS or size_bytes > SIZE_CONFIRM_BYTES) and not confirmed:
+    over_bytes = size_bytes is not None and size_bytes > SIZE_CONFIRM_BYTES  # None: unknown
+    if (units > SIZE_CONFIRM_UNITS or over_bytes) and not confirmed:
         return "confirmation_required"
     return None
 

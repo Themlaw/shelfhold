@@ -269,7 +269,7 @@ class AcquireOps:
         except InvalidFamilyRefError:
             raise CodedRefusal("invalid_ref", "the reference is not one this search gave") from None
 
-    def acquire(
+    def prepare(
         self,
         *,
         url: str | None,
@@ -278,11 +278,12 @@ class AcquireOps:
         unit: str | None,
         requester_user_id: str | None,
         visibility: str = "ops",
-    ) -> dict[str, Any]:
+    ) -> Any:
+        """Record what an acquisition names (the Work, its Edition, the request for the file)
+        without queueing the download: nothing is fetched until `enqueue`."""
         if (url is None) == (source_key is None or remote_id is None):
             raise CodedRefusal("validation_failed", "give a URL, or a source and a series")
-        pools = self._comp.pools()
-        if pools is None:
+        if self._comp.pools() is None:
             raise ExitUnavailableError("the job queue is not running")
         acquirer = self.acquirer()
 
@@ -298,11 +299,33 @@ class AcquireOps:
                 tombstoned=lambda c: bool(tombstones.check(c, root_id=None).blocked),
             )  # fmt: skip
 
-        prepared = self._run(go())
-        if prepared.request_id is None:
+        return self._run(go())
+
+    def enqueue(self, request_id: str | None) -> dict[str, Any]:
+        """Queue the download of a prepared request (the class of a person's request)."""
+        pools = self._comp.pools()
+        if pools is None:
+            raise ExitUnavailableError("the job queue is not running")
+        if request_id is None:
             return {"state": "stored", "request_id": None, "job_id": None}
         job = pools.submit(
-            ACQUIRE_JOB_KIND, dedupe_key=acquire_dedupe_key(prepared.request_id),
+            ACQUIRE_JOB_KIND, dedupe_key=acquire_dedupe_key(request_id),
             priority_class=REQUEST_CLASS,
         )  # fmt: skip
-        return {"state": "queued", "request_id": prepared.request_id, "job_id": job.job_id}
+        return {"state": "queued", "request_id": request_id, "job_id": job.job_id}
+
+    def acquire(
+        self,
+        *,
+        url: str | None,
+        source_key: str | None,
+        remote_id: str | None,
+        unit: str | None,
+        requester_user_id: str | None,
+        visibility: str = "ops",
+    ) -> dict[str, Any]:
+        prepared = self.prepare(
+            url=url, source_key=source_key, remote_id=remote_id, unit=unit,
+            requester_user_id=requester_user_id, visibility=visibility,
+        )  # fmt: skip
+        return self.enqueue(prepared.request_id)

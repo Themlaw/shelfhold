@@ -20,16 +20,19 @@ import structlog
 from shelfhold.acquisition.application.requests import (
     Estimate,
     Ports,
+    PreparedAcquisition,
     RequestRefusedError,
     RequestService,
     SourceRef,
 )
+from shelfhold.catalog.public import RatingRefusedError, RatingService
 from shelfhold.events.bus import PublishedEvent
 from shelfhold.export.application.shelves import ShelfService
-from shelfhold.infrastructure.schema import acquisition
+from shelfhold.identity.public import Principal
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import CodedRefusal
 from shelfhold.ops.follows import FollowOps
+from shelfhold.sdk.age import AgeRating
 from shelfhold.sdk.source import SourceManifest
 
 if TYPE_CHECKING:
@@ -53,6 +56,7 @@ class _Ports:
     def __init__(self, comp: Composition) -> None:
         self._comp = comp
         self._shelves = ShelfService(comp.engine, clock=comp.clock)
+        self._rating = RatingService(fresh_auth_s=comp.settings.fresh_auth_s)
 
     def kind_of(self, source_key: str) -> str:
         if source_key.partition(":")[0] == CONNECTED:
@@ -66,7 +70,7 @@ class _Ports:
         return "novel"
 
     def estimate(self, source_key: str, remote_id: str) -> Estimate:
-        return Estimate(AcquireOps(self._comp).unit_count(source_key, remote_id), 0)
+        return Estimate(AcquireOps(self._comp).unit_count(source_key, remote_id), None)
 
     def follow(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str
@@ -75,35 +79,44 @@ class _Ports:
             source_key, remote_id, requester_user_id=requester_user_id, visibility=visibility
         )
 
-    def acquire(
+    def prepare(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str
-    ) -> str | None:
-        AcquireOps(self._comp).acquire(
+    ) -> PreparedAcquisition:
+        prepared = AcquireOps(self._comp).prepare(
             url=None, source_key=source_key, remote_id=remote_id, unit=None,
             requester_user_id=requester_user_id, visibility=visibility,
         )  # fmt: skip
-        item, binding = acquisition.source_item, acquisition.source_binding
-        with self._comp.engine.connect() as connection:
-            found: str | None = connection.execute(
-                sa.select(binding.c.work_id)
-                .select_from(binding.join(item, item.c.id == binding.c.source_item_id))
-                .where(item.c.source_key == source_key, item.c.remote_id == remote_id)
-                .limit(1)
-            ).scalar_one_or_none()
-        return found
+        return PreparedAcquisition(prepared.work_id, prepared.edition_id, prepared.request_id)
+
+    def start(self, handle: str | None) -> None:
+        AcquireOps(self._comp).enqueue(handle)
 
     def proposed_shelf(self, edition_id: str) -> str | None:
         return self._shelves.proposed_shelf(edition_id)
 
-    def file(self, edition_id: str, shelf_id: str, *, approver_id: str) -> None:
+    def settle(
+        self, work_id: str, edition_id: str | None, rating: AgeRating | None,
+        shelf_id: str | None, *, principal: Principal,
+    ) -> str | None:  # fmt: skip
+        """Rate then file, in one transaction: a family shelf only admits an Edition that is
+        rated, and a refused shelf must leave no rating behind."""
+        now = self._comp.clock.now()
         try:
-            result = self._shelves.file_edition(
-                edition_id, shelf_id, actor=_Approver(actor_id=approver_id)
-            )
+            with self._shelves.transaction() as connection:
+                if rating is not None:
+                    self._rating.rate(connection, work_id, rating, principal=principal, now=now)
+                if edition_id is None:
+                    return None
+                result, used = self._shelves.file_in(
+                    connection, edition_id, shelf_id, actor=_Approver(principal.actor_id)
+                )
+                if not result.filed and shelf_id is not None:
+                    raise RequestRefusedError("shelf_refused")
+                return used if result.filed else None
+        except RatingRefusedError:
+            raise RequestRefusedError("not_allowed") from None
         except (LookupError, sa.exc.NoResultFound):  # no such Edition or shelf
             raise RequestRefusedError("shelf_refused") from None
-        if not result.filed:
-            raise RequestRefusedError("shelf_refused")
 
 
 def build_ports(comp: Composition) -> Ports:

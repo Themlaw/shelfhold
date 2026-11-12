@@ -3160,7 +3160,7 @@
    "purge.kept_acknowledged",
    "purge.leftovers_forgotten",
    "relink",
-   "request.approved",
+   "request.approve_reverted",
    "request.created",
    "restore.credentials_acknowledged",
    "restore.credentials_revoked",

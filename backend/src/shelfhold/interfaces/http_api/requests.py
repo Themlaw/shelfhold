@@ -45,7 +45,7 @@ def admin_session(principal: Session) -> Principal:
 
 
 Admin = Annotated[Principal, Depends(admin_session)]
-Approver = Annotated[Principal, Depends(reserved_action(_APPROVE))]
+Approver = Annotated[Principal, Depends(reserved_action(_APPROVE, audit=False))]
 
 
 class RequestIn(BaseModel):
@@ -95,7 +95,10 @@ class QueueOut(BaseModel):
 
 class ApprovalOut(BaseModel):
     units: int
-    size_bytes: int
+    size_bytes: int | None  # None: the source does not tell it
+    units_minimum: bool  # a follow: the Units known now, more will come
+    decided_age: int | None  # an age already decided for this series, to see before choosing
+    decided_x: bool
     needs_age: bool  # a child's request: "Choisir un âge"
     confirmation_required: bool  # over 100 Units or 5 GiB
     edition_id: str | None
