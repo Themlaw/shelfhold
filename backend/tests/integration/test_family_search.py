@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from shelfhold.config import Settings
 from tests.auth_env import CSRF_HEADER, PASSWORD, AuthEnv, db_rows, run_cli
-from tests.federated_env import CHILD_ID, FakeSource, api_key_of, hit, instance
+from tests.federated_env import CHILD_ID, MEMBER_ID, FakeSource, api_key_of, hit, instance
 from tests.visibility_env import HIDDEN_TITLES, VISIBLE_TITLES, add_profile, seed_catalogue
 
 SEARCH = "/api/v1/search"
@@ -46,13 +46,11 @@ def mark_family(api: AuthEnv, key: str, family: bool = True) -> None:
 
 
 def set_profile(api: AuthEnv, profile_id: str, **columns: Any) -> None:
+    names = ", ".join(f"{c} = ?" for c in columns)
+    values = [json.dumps(v) if isinstance(v, list | dict) else v for v in columns.values()]
     connection = sqlite3.connect(api.settings.database_path)
     try:
-        for column, value in columns.items():
-            connection.execute(
-                f'UPDATE "user" SET {column} = ? WHERE id = ?',  # noqa: S608 (test column names)
-                (json.dumps(value) if isinstance(value, list) else value, profile_id),
-            )
+        connection.execute(f'UPDATE "user" SET {names} WHERE id = ?', [*values, profile_id])  # noqa: S608
         connection.commit()
     finally:
         connection.close()
@@ -237,10 +235,11 @@ def test_subject_filter_drops_flagged_remote_results(
         assert titles(kid.get(SEARCH, params=ALL).json()) == ["A Quiet Tale"]
         set_profile(api, CHILD_ID, subject_filter=["dragons"])  # a word of the title
         assert titles(kid.get(SEARCH, params=ALL).json()) == ["A Quiet Tale"]
-        # a setting that is not a list of words is ignored, the default list still holds
-        set_profile(api, CHILD_ID, subject_filter={"x": 1})
+        # a list that is not made of words is ignored, the default list still holds
+        set_profile(api, CHILD_ID, subject_filter=[1, None, {"x": 1}])
         assert "Erotica Tale" not in kid.get(SEARCH, params=ALL).text
         # the admin is not filtered: the federated search is hers whole
+        assert api.login().status_code == 200
         admin = api.client.get(SEARCH, params=ALL).json()
         assert "Erotica Tale" in str(admin)
 
@@ -306,7 +305,7 @@ def test_a_child_key_never_reaches_the_remote_search(
 
 
 @pytest.mark.req("EF-USR-014")
-def test_a_child_cannot_use_the_cursor_of_the_admin_and_the_admin_not_the_childs(
+def test_a_child_cannot_use_the_cursor_of_the_admin_and_not_the_other_way_round(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     alpha, beta = sources()
@@ -343,7 +342,9 @@ def test_a_demoted_admin_cursor_cannot_open_other_sources_to_the_child(
         admin_id = db_rows(api.settings, "SELECT id FROM user WHERE role = 'admin'")[0][0]
         assert api.login().status_code == 200
         cursor = api.client.get(SEARCH, params=ALL).json()["next_cursor"]
-        set_profile(api, admin_id, role="child", max_age_rating=6)  # the admin becomes a child
+        set_profile(
+            api, admin_id, role="child", max_age_rating=6, hide_unrated_remote=0
+        )  # the admin becomes a child
         answer = api.client.get(SEARCH, params={**ALL, "cursor": cursor})
         assert answer.status_code in (400, 403) and "Beta Tale" not in answer.text
         del kid
@@ -364,22 +365,21 @@ def test_member_and_anonymous_still_never_reach_the_remote_search(
 
 
 @pytest.mark.req("EF-USR-014")
-def test_a_child_with_no_valid_ceiling_or_removed_profile_gets_nothing(
+def test_a_child_promoted_to_member_loses_the_family_search_at_once(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
+    """The scope is read from the profile at each request: a session that began as a child's is
+    not one after the role changed, and nothing is asked of a source."""
     alpha, beta = sources()
     with instance(monkeypatch, settings, alpha, beta) as api:
         open_door(api)
         kid = kid_client(api)
-        connection = sqlite3.connect(api.settings.database_path)
-        try:
-            connection.execute('UPDATE "user" SET role = ? WHERE id = ?', ("martian", CHILD_ID))
-            connection.commit()
-        finally:
-            connection.close()
+        assert kid.get(SEARCH, params=ALL).json()["items"]
+        asked = len(alpha.calls)
+        set_profile(api, CHILD_ID, role="member", max_age_rating=None)
         answer = kid.get(SEARCH, params=ALL)
-        assert answer.status_code in (200, 401, 403)
-        assert "Tale" not in answer.text and alpha.calls == []
+        assert answer.status_code in (401, 403) and "Tale" not in answer.text
+        assert len(alpha.calls) == asked
 
 
 @pytest.mark.req("EF-USR-014")
@@ -513,3 +513,52 @@ def test_a_child_a_member_or_a_key_cannot_change_the_family_search(
         )
         assert stored[0][0] in (1, True)  # still hidden
         assert kid.get(SEARCH, params=ALL).json()["items"] == []
+
+
+@pytest.mark.req("EF-USR-014")
+def test_no_source_loaded_is_the_empty_answer_for_a_child(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    from tests.auth_env import auth_env
+
+    with auth_env(monkeypatch, settings) as api:
+        add_profile(api, "kid", "child", "10.0.0.2", max_age_rating=6)
+        kid_id = db_rows(api.settings, "SELECT id FROM user WHERE username = 'kid'")[0][0]
+        set_profile(api, kid_id, hide_unrated_remote=0)
+        kid = kid_client(api)
+        answer = kid.get(SEARCH, params=ALL)
+        assert answer.status_code == 200
+        assert answer.json() == {"items": [], "local": [], "state": "empty", "next_cursor": None}
+
+
+@pytest.mark.req("EF-USR-014", "EF-USR-018")
+def test_the_family_settings_are_read_from_the_row_and_closed_when_it_is_not_there(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    from shelfhold.identity.public import family_profile, family_source_keys
+    from shelfhold.infrastructure.db import create_db_engine
+
+    alpha, _ = sources()
+    with instance(monkeypatch, settings, alpha) as api:
+        mark_family(api, "alpha")
+        set_profile(api, CHILD_ID, hide_unrated_remote=0, subject_filter=["dragons"])
+        engine = create_db_engine(api.settings.database_path)
+        try:
+            known = family_profile(engine, CHILD_ID)
+            assert known.scope.kind == "ceiling" and known.hide_unrated_remote is False
+            assert known.subject_filter == ["dragons"]
+            for nobody in (None, "", "01J000000000000000000NONE0"):
+                gone = family_profile(engine, nobody)
+                assert gone.scope.kind == "none" and gone.hide_unrated_remote is True
+            with engine.connect() as connection:
+                assert family_source_keys(connection, CHILD_ID, "child", []) == frozenset()
+                assert family_source_keys(connection, CHILD_ID, "child", ["alpha", "x"]) == {
+                    "alpha"
+                }
+                # a policy row of another profile closes nothing for this one
+                set_policy(api, MEMBER_ID, "alpha", "forbidden")
+            with engine.connect() as connection:
+                assert family_source_keys(connection, CHILD_ID, "child", ["alpha"]) == {"alpha"}
+                assert family_source_keys(connection, MEMBER_ID, "child", ["alpha"]) == frozenset()
+        finally:
+            engine.dispose()

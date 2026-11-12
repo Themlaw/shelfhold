@@ -18,8 +18,9 @@ own, session only: a key or a token is a program, it has no visibility to choose
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints
 
+from shelfhold.catalog.public import MAX_TERM_CHARS, MAX_TERMS, clean_terms
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
     Principal,
@@ -75,6 +76,22 @@ class VisibilityIn(BaseModel):
     visibility: Literal["private", "household"]
 
 
+class FamilySearchIn(BaseModel):
+    """The family search of a child profile (EF-USR-018): both fields are given, so a call never
+    changes one by leaving the other out; the words are bounded (and folded when stored)."""
+
+    model_config = ConfigDict(extra="forbid")
+    hide_unrated_remote: StrictBool
+    subject_filter: list[Annotated[str, StringConstraints(max_length=MAX_TERM_CHARS)]] = Field(
+        max_length=MAX_TERMS
+    )
+
+
+class FamilySearchOut(BaseModel):
+    hide_unrated_remote: bool
+    subject_filter: list[str]
+
+
 class VisibilityOut(BaseModel):
     visibility: str  # what holds now: the choice, else the default of the role
 
@@ -86,6 +103,8 @@ class ProfileOut(BaseModel):
     max_age_rating: int | None
     can_rate: bool
     visibility: str  # what holds now (EF-USR-016): `private` for an adult, `household` for a child
+    hide_unrated_remote: bool  # EF-USR-018: a child hides the unrated remote results (default)
+    subject_filter: list[str]  # the words this profile adds to the default list
 
 
 class ProfileList(BaseModel):
@@ -110,6 +129,8 @@ def _out(record: ProfileRecord) -> ProfileOut:
         max_age_rating=record.max_age_rating,
         can_rate=record.can_rate,
         visibility=effective_visibility(record.role, record.visibility),
+        hide_unrated_remote=record.hide_unrated_remote,
+        subject_filter=list(record.subject_filter),
     )
 
 
@@ -188,6 +209,23 @@ def build_profiles_router() -> APIRouter:
             lambda auth: auth.profile_set_visibility(profile_id, body.visibility, by=principal),
         )
         return VisibilityOut(visibility=chosen)
+
+    @router.put("/{profile_id}/family-search", response_model=FamilySearchOut)
+    def set_family_search(
+        request: Request,
+        profile_id: str,
+        body: FamilySearchIn,
+        principal: Annotated[Principal, Depends(_UPDATE)],
+    ) -> Any:
+        saved = run(
+            request,
+            lambda auth: auth.profile_set_family_search(
+                profile_id, body.hide_unrated_remote, clean_terms(body.subject_filter), by=principal
+            ),
+        )
+        return FamilySearchOut(
+            hide_unrated_remote=saved.hide_unrated_remote, subject_filter=list(saved.subject_filter)
+        )
 
     @router.delete("/{profile_id}", status_code=204)
     def remove_profile(

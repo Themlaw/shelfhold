@@ -312,11 +312,17 @@ def _code_of(error: BaseException) -> str:
 
 class FederatedSearch:
     def __init__(
-        self, searcher: Searcher, cursors: FederatedCursors, *, timeout_s: float = SOURCE_TIMEOUT_S
+        self,
+        searcher: Searcher,
+        cursors: FederatedCursors,
+        *,
+        timeout_s: float = SOURCE_TIMEOUT_S,
+        keep: Callable[[SeriesRef], bool] | None = None,
     ) -> None:
         self._searcher = searcher
         self._cursors = cursors
         self._timeout = timeout_s
+        self._keep = keep  # a result it refuses never enters a walk: no page, count or cursor
 
     async def search(
         self,
@@ -355,8 +361,10 @@ class FederatedSearch:
             token = answer.next.token if answer.next else None
             sent, held.cursor = held.cursor, token
             held.done = token is None or token == sent  # a source that repeats itself is done
-            held.returned += len(items)
             for ref in items:
+                if self._keep is not None and not self._keep(ref):
+                    continue  # dropped before it is counted: it leaves no trace
+                held.returned += 1
                 walk.add(held.info, ref, fresh)
 
     async def _ask(self, key: str, query: str, cursor: str | None) -> Page[SeriesRef] | _Failed:

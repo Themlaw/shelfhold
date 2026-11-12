@@ -224,6 +224,44 @@ class ProfileService:
             self._log("profile.visibility_set", by)
         return after
 
+    def set_family_search(
+        self,
+        profile_id: str,
+        hide_unrated_remote: bool,
+        subject_filter: tuple[str, ...],
+        *,
+        by: Principal | None = None,
+    ) -> ProfileRecord:
+        """Change the family search of someone's profile (EF-USR-018): a profile management action
+        (an admin session or the host, never a key), audited when it changes what holds. The audit
+        entry names the profile and the two modes, and how many words, never the words."""
+        self._manager(by)
+        self._existing(profile_id)
+
+        def trace(before: ProfileRecord, after: ProfileRecord) -> AuditEntry | None:
+            if (before.hide_unrated_remote, before.subject_filter) == (
+                after.hide_unrated_remote,
+                after.subject_filter,
+            ) or self._entry is None:
+                return None
+            target = (
+                f"{profile_id}|hide={int(before.hide_unrated_remote)}>"
+                f"{int(after.hide_unrated_remote)}|words={len(before.subject_filter)}>"
+                f"{len(after.subject_filter)}"
+            )
+            return self._entry("profile.family_search_set", by, target)
+
+        before, after = self._store.set_family_search(
+            profile_id, hide_unrated_remote, subject_filter, actor_id=self._actor_id(by),
+            audit=trace,
+        )  # fmt: skip
+        if (before.hide_unrated_remote, before.subject_filter) != (
+            after.hide_unrated_remote,
+            after.subject_filter,
+        ):
+            self._log("profile.family_search_set", by)
+        return after
+
     def set_own_visibility(self, by: Principal, visibility: object) -> str:
         """A person changes their own visibility: theirs to do, so no audit of "someone else's".
         A session only: a key or a token is a program, it has no visibility to choose."""

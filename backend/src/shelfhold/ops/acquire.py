@@ -14,6 +14,11 @@ from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 
+from shelfhold.acquisition.application.family_search import (
+    FamilyPage,
+    FamilySearch,
+    empty_page,
+)
 from shelfhold.acquisition.application.federated_search import (
     FederatedCursors,
     FederatedPage,
@@ -28,6 +33,8 @@ from shelfhold.acquisition.public import (
     NativeAcquirer,
     acquire_dedupe_key,
 )
+from shelfhold.catalog.public import clean_terms, is_flagged
+from shelfhold.identity.public import family_profile, family_search_mode, family_source_keys
 from shelfhold.infrastructure.fetcher import FetchError
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
@@ -50,6 +57,8 @@ class AcquireOps:
     def __init__(self, comp: Composition) -> None:
         self._comp = comp
         self._walks = FederatedCursors(comp.clock.now)  # the cursors of the federated search
+        # the child's walks are kept apart: an adult's cursor is never a child's
+        self._family_walks = FederatedCursors(comp.clock.now)
 
     # -- the acquirer -------------------------------------------------------------------------
 
@@ -144,6 +153,44 @@ class AcquireOps:
             page: FederatedPage = comp.run(
                 service.search(sources, query, owner=owner, cursor=cursor)
             )
+        except InvalidFederatedCursorError:
+            raise CodedRefusal("invalid_cursor", "the cursor is not one this search gave") from None
+        return page
+
+    def family_search(self, query: str, *, owner: str, cursor: str | None = None) -> FamilyPage:
+        """The family search of a child (EF-USR-014, EF-USR-018): the sources marked "family" that
+        her policy leaves open, one title and the action "request" per result, the flagged ones
+        dropped before a page is made. The profile is read here, from the database: in "hide" mode,
+        or for a reader the rules do not know, not one source is asked."""
+        comp = self._comp
+        with comp.engine.connect() as connection:
+            profile = family_profile(connection, owner)
+            if family_search_mode(profile.scope, profile.hide_unrated_remote) != "reduced":  # type: ignore[arg-type]
+                return empty_page()
+            registry = comp.plugins()
+            if registry is None:
+                return empty_page()  # no source is loaded: nothing to search, nothing to say
+            known: dict[str, SourceManifest] = {}
+            for record in registry.active():
+                manifest = record.manifest
+                if (
+                    isinstance(manifest, SourceManifest)
+                    and Capability.SEARCH in manifest.capabilities
+                ):
+                    known[record.key] = manifest
+            open_keys = family_source_keys(connection, owner, "child", known)
+        sources = [
+            FederatedSource(key, manifest.name, format_of(manifest.content_kinds))
+            for key, manifest in known.items()
+            if key in open_keys
+        ]
+        terms = clean_terms(profile.subject_filter)
+        service = FamilySearch(
+            self.acquirer(), self._family_walks,
+            keep=lambda ref: not is_flagged(ref.title, ref.memo, terms),
+        )  # fmt: skip
+        try:
+            page: FamilyPage = comp.run(service.search(sources, query, owner=owner, cursor=cursor))
         except InvalidFederatedCursorError:
             raise CodedRefusal("invalid_cursor", "the cursor is not one this search gave") from None
         return page

@@ -5,11 +5,13 @@ The local search answers every profile through the one filter of the catalogue (
 reader's scope (an adult sees everything, a child what is rated and under her ceiling) is a
 condition of the query, so a hidden Work is neither returned nor counted, and is answered exactly
 like a Work that does not exist. A key or a token reads as its own profile, never as who issued it.
-`scope=all` stays the administrator's: a member or a child, or a key of either, is refused (403)
-before one source is asked, because a remote result has no rating and for a child it is never
-shown (the family search, M3 L19, is her door). The query is words, never FTS syntax. A federated
-search is continued with the `next_cursor` it gave, which only the same person can use, for the
-same query, for a short while.
+`scope=all` is the administrator's (by session or key). A member, or the key of a member or a
+child, is refused (403) before one source is asked. A child has her own form of it (M3 L19,
+EF-USR-014): the family search, by her session only, over the sources marked "family", where a
+remote result is a title and the action "request" and nothing else, and where the rated catalogue
+she may see comes through the same filter as the local search. The query is words, never FTS
+syntax. A federated search is continued with the `next_cursor` it gave, which only the same person
+can use, for the same query, for a short while.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from shelfhold.acquisition.application.federated_search import (
     SourceReport,
 )
 from shelfhold.catalog.public import search_page
-from shelfhold.identity.public import Principal, reader_scope
+from shelfhold.identity.public import Credential, Principal, reader_scope
 from shelfhold.interfaces.http_api.auth import require_principal
 from shelfhold.interfaces.http_api.ops import refusals
 from shelfhold.interfaces.http_api.problems import ProblemError
@@ -125,6 +127,26 @@ class SearchedInOut(BaseModel):
         )  # fmt: skip
 
 
+class FamilyItemOut(BaseModel):
+    """What a child sees of a remote result: a title and the one action. No cover, no summary, no
+    format, no source name: only what a request needs, by opaque reference."""
+
+    title: str
+    action: Literal["request"]
+    source_key: str
+    remote_id: str
+
+
+class FamilyOut(BaseModel):
+    """The family search of a child (EF-USR-014): the sources marked "family" and the rated
+    catalogue, with no total, no count and no word on what was dropped or hidden."""
+
+    items: list[FamilyItemOut]
+    local: list[SearchHitOut]  # the catalogue she may see, through the one filter of L09
+    state: Literal["results", "empty"]
+    next_cursor: str | None
+
+
 class FederatedOut(BaseModel):
     items: list[WorkOut]
     searched_in: list[SearchedInOut]
@@ -149,7 +171,7 @@ def build_search_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["search"])
 
-    @router.get("/search", response_model=SearchOut | FederatedOut)
+    @router.get("/search", response_model=SearchOut | FederatedOut | FamilyOut)
     def search(
         principal: Annotated[Principal, Depends(require_principal)],
         q: Annotated[str, Query(max_length=MAX_QUERY)],
@@ -157,10 +179,18 @@ def build_search_router(
         offset: Annotated[int, Query(ge=0)] = 0,
         scope: Literal["local", "all"] = "local",
         cursor: Annotated[str | None, Query(max_length=MAX_CURSOR)] = None,
-    ) -> SearchOut | FederatedOut:
+    ) -> SearchOut | FederatedOut | FamilyOut:
         if scope == "all":
-            if principal.role != "admin":  # before the query is read, before one source is asked
-                raise ProblemError("forbidden")
+            with get_engine().connect() as connection:
+                viewer = reader_scope(connection, principal.user_id)
+            if viewer.kind == "ceiling":  # a child: the reduced form, by her session only
+                if principal.credential is not Credential.SESSION:
+                    raise ProblemError("forbidden")
+                return _family(principal, q, limit, offset, cursor)
+            if principal.role != "admin" or not viewer.unrestricted:
+                raise ProblemError(
+                    "forbidden"
+                )  # before the query is read, before a source is asked
             if not q.strip():
                 raise ProblemError("validation_failed")
             with refusals():
@@ -175,5 +205,33 @@ def build_search_router(
             items=[SearchHitOut(work_id=h.work_id, title=h.title, kind=h.kind) for h in found.hits],
             total=found.total,
         )
+
+    def _family(
+        principal: Principal, q: str, limit: int, offset: int, cursor: str | None
+    ) -> FamilyOut:
+        if not q.strip():
+            raise ProblemError("validation_failed")
+        with refusals():
+            page = get_ops().acquire.family_search(q, owner=principal.user_id, cursor=cursor)
+        local: list[SearchHitOut] = []
+        if cursor is None:  # the catalogue is the first page only: a cursor walks the sources
+            with get_engine().connect() as connection:
+                found = search_page(
+                    connection, q, limit=limit, offset=offset,
+                    scope=reader_scope(connection, principal.user_id),
+                )  # fmt: skip
+            local = [
+                SearchHitOut(work_id=h.work_id, title=h.title, kind=h.kind) for h in found.hits
+            ]
+        return FamilyOut(
+            items=[
+                FamilyItemOut(
+                    title=r.title, action=r.action, source_key=r.source_key,
+                    remote_id=r.remote_id,
+                )
+                for r in page.items
+            ],
+            local=local, state=page.state, next_cursor=page.next_cursor,
+        )  # fmt: skip
 
     return router

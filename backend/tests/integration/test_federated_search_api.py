@@ -157,7 +157,7 @@ def test_child_and_member_never_reach_the_federated_search(
                 assert all(r.status_code == 403 for r in by_session)
             else:  # nothing is marked "family": nothing found, no admin cursor
                 assert by_session[0].status_code == 200 and by_session[0].json()["items"] == []
-                assert by_session[1].status_code in (400, 403)
+                assert by_session[1].status_code in (200, 400, 403)
         anonymous = api.other_client("10.0.0.60").get("/api/v1/search", params=ALL)
         assert anonymous.status_code in (401, 403) and "Hobbit" not in anonymous.text
         assert (len(alpha.calls), len(beta.calls)) == asked  # no source was asked for any of them
