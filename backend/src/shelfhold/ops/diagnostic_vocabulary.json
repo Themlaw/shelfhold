@@ -1168,6 +1168,7 @@
   "shelfhold.infrastructure.fsops.tombstone_journal",
   "shelfhold.infrastructure.fsops.writer",
   "shelfhold.infrastructure.health",
+  "shelfhold.infrastructure.held_files",
   "shelfhold.infrastructure.http_headers",
   "shelfhold.infrastructure.idempotency_store",
   "shelfhold.infrastructure.identity_counter",
