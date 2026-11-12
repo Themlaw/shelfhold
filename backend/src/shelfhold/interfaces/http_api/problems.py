@@ -43,6 +43,7 @@ class Problem(BaseModel):
     status: int
     code: str
     action: str
+    cause: str
     detail: str | None = None
     request_id: str | None = None
 
@@ -54,6 +55,7 @@ class ReauthRequiredProblem(Problem):
     auth_age_s: int
     max_age_s: int
     action: str
+    cause: str
     reauth_method: str | None = None
     reauth_methods: list[str] = []
 
@@ -71,6 +73,7 @@ class ProblemError(Exception):
         *,
         status: int | None = None,
         detail: str | None = None,
+        cause: str | None = None,
         extensions: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> None:
@@ -78,6 +81,7 @@ class ProblemError(Exception):
         self.spec: ErrorCode = error_code(code)
         self.status = status or self.spec.status
         self.detail = detail
+        self.cause = cause if cause is not None else detail
         self.extensions = dict(extensions or {})
         self.headers = dict(headers or {})
 
@@ -92,6 +96,7 @@ def problem_body(
     *,
     status: int | None = None,
     detail: str | None = None,
+    cause: str | None = None,
     request_id: str | None = None,
     extensions: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -102,6 +107,10 @@ def problem_body(
         "code": spec.code,
         "action": t(spec.action_key),
     }
+    resolved_cause = cause if cause is not None else detail
+    body["cause"] = (
+        mask_known_secrets(resolved_cause) if resolved_cause else body["title"]
+    )  # always present (EF-UX-003); a quoted upstream answer may hold one
     if detail:
         body["detail"] = mask_known_secrets(detail)  # a quoted upstream answer may hold one
     if request_id:
@@ -119,12 +128,18 @@ def build_problem_response(
     request_id: str | None,
     status: int | None = None,
     detail: str | None = None,
+    cause: str | None = None,
     extensions: Mapping[str, Any] | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     """A complete problem response, discretion headers included (usable outside the app stack)."""
     body = problem_body(
-        spec, status=status, detail=detail, request_id=request_id, extensions=extensions
+        spec,
+        status=status,
+        detail=detail,
+        cause=cause,
+        request_id=request_id,
+        extensions=extensions,
     )
     response = JSONResponse(
         body, status_code=body["status"], media_type=PROBLEM_MEDIA_TYPE, headers=dict(headers or {})
@@ -141,6 +156,7 @@ def problem_response(request: Request, error: ProblemError) -> JSONResponse:
         request_id=_request_id(request),
         status=error.status,
         detail=error.detail,
+        cause=error.cause,
         extensions=error.extensions,
         headers=error.headers,
     )

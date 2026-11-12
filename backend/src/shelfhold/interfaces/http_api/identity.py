@@ -24,6 +24,15 @@ class PreferencesOut(BaseModel):
     color_scheme: Literal["auto", "light", "dark"]
 
 
+class MeOut(BaseModel):
+    """Who the signed-in person is, including their role (EF-UX-005): the family/admin
+    navigation of the UI is derived from it."""
+
+    id: str
+    username: str
+    role: str
+
+
 class PreferencesIn(BaseModel):
     """Only what is named is changed; `theme: null` goes back to the instance default."""
 
@@ -43,6 +52,10 @@ def _out(preferences: Preferences) -> PreferencesOut:
 
 def build_identity_router(service: Callable[[], PreferencesService]) -> APIRouter:
     router = APIRouter(prefix="/api/v1/me")
+
+    @router.get("", response_model=MeOut)
+    def me(principal: Annotated[Principal, Depends(require_session)]) -> MeOut:
+        return MeOut(id=principal.user_id, username=principal.username, role=principal.role)
 
     @router.get("/preferences", response_model=PreferencesOut)
     def get_preferences(
