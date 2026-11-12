@@ -40,6 +40,7 @@ from shelfhold.ops import (
     ENDPOINTS,
     M1A_STATES,
     M1B_SERVED_STATES,
+    M3_SERVED_STATES,
     UNSERVED,
     OpsServices,
     bare,
@@ -92,8 +93,12 @@ M1B_STATES = frozenset(
     }
 )
 M3_STATES = frozenset({WaitingState.LIBRARY_TYPE_CHANGED})  # EF-EXP-049, `target reconnect`
-PLAYED_STATES = M1A_STATES | M1B_SERVED_STATES | M3_STATES  # with an end-to-end scenario below
-LATER_STATES = M1B_STATES - M1B_SERVED_STATES
+PLAYED_STATES = (
+    M1A_STATES | M1B_SERVED_STATES | M3_STATES | M3_SERVED_STATES
+)  # the states with an end-to-end scenario below
+LATER_STATES = (M1B_STATES - M1B_SERVED_STATES) | frozenset(
+    s for s in WaitingState if s.value in EXIT_STATES_LATER
+)
 
 
 def _waiting(ops: OpsServices, state: str) -> list[object]:
@@ -712,6 +717,30 @@ def rating_pending(
         )
 
 
+def maintenance(settings: Settings) -> None:
+    """M3 L13 (EF-INT-018): the mode is listed by `status` with `maintenance off` for as long as it
+    lasts, and that command (a reserved one: the host here) ends it."""
+    from shelfhold.identity.public import Credential, Principal
+    from shelfhold.infrastructure.schema import platform
+    from shelfhold.ops.maintenance import MaintenanceOps
+
+    with headless(settings) as h:
+        with h.engine.begin() as connection:
+            if connection.execute(sa.select(platform.instance.c.instance_id)).first() is None:
+                connection.execute(
+                    sa.insert(platform.instance).values(instance_id=new_ulid(), jurisdiction="FR")
+                )
+        ops = OpsServices(
+            h.engine, clock=h.clock, bus=_bus(h), headless=h.admin,
+            maintenance=MaintenanceOps(h.engine, h.clock),
+        )  # fmt: skip
+        host = Principal("1000", "uid:1000", "admin", Credential.LOCAL_CLI)
+        ops.maintenance.enter(principal=host)
+        (item,) = _waiting(ops, "maintenance")
+        assert item.command == "shelfhold maintenance off"  # type: ignore[attr-defined]
+        _listed_then_gone(ops, "maintenance", lambda: ops.maintenance.leave(principal=host))
+
+
 def _bus(h: Headless):  # type: ignore[no-untyped-def]
     from shelfhold.events.bus import EventBus
 
@@ -728,7 +757,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         series_name_collision, mount_sentinel_missing, rating_pending, follow_suspended,
         source_instance_changed, foreign_root, root_lost, root_behind, store_lost,
         safeguard_backlog, library_type_changed,
-        tombstone_journal_truncated,
+        tombstone_journal_truncated, maintenance,
     )
 }  # fmt: skip
 
@@ -785,7 +814,7 @@ def test_exit_tables_agree() -> None:
 
 
 def test_the_enumeration_is_partitioned_into_m1a_and_later() -> None:
-    unplaced = set(WaitingState) - M1A_STATES - M1B_STATES - M3_STATES
+    unplaced = set(WaitingState) - M1A_STATES - M1B_STATES - M3_STATES - M3_SERVED_STATES
     assert not unplaced, f"{sorted(map(str, unplaced))}: neither M1a, M1b nor M3 (decide)"
     assert {WaitingState.LIBRARY_TYPE_CHANGED} == M3_STATES
     assert not (M1A_STATES & M1B_STATES) and not (M1A_STATES & M3_STATES)

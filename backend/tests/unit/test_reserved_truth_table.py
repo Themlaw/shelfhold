@@ -49,6 +49,7 @@ P3 = {
     "changes_coverage",  # `coverage resplit apply`: says which chapters a file carries (M2 L26)
     "records_legal_fact",  # `contributor set-died-for-france`: hides or shows a warning (L15b)
     "moves_instance_data",  # `export-all`, `import-all`: all profiles' data goes out or in (L37)
+    "freezes_instance",  # `maintenance on|off` (M3 L13): a stolen session stops the household
     "rates_content",  # fresh session in every profile (porteur, 2026-11-11): a stolen session
     "enrols_passkey",  # must not file adult content as "0" nor add a passkey that outlives it
     "manages_profiles",  # M3 L05: a stolen session makes no admin, lifts no child's ceiling
@@ -290,6 +291,8 @@ FRESHNESS_LINE = {
             "profile.update",
             "profile.remove",
             "profile.source_policy",
+            "maintenance.enter",  # M3 L13: a stolen session freezes every write of the instance
+            "maintenance.exit",
         ),
         "p3",
     ),
@@ -314,6 +317,7 @@ FRESHNESS_LINE = {
             "device_token.manage",
             "passkey.revoke",
             "plugin.attest",  # D15: freshness only in the hardened profile
+            "queue.control",  # M3 L13: reversible; freshness only in the hardened profile
         ),
         "none",
     ),
