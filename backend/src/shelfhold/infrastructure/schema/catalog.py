@@ -211,6 +211,8 @@ contributor = sa.Table(
     sa.Column("birth_precision", sa.String(), nullable=True),
     sa.Column("death_date", sa.String(), nullable=True),
     sa.Column("death_precision", sa.String(), nullable=True),
+    # "mort pour la France" (EF-SRC-024): NULL = unknown, which the rights review reads cautiously
+    sa.Column("died_for_france", sa.Boolean(), nullable=True),
     now_column(),
     ulid_check("id"),
     in_check("kind", CONTRIBUTOR_KINDS),

@@ -42,6 +42,7 @@ from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
+from shelfhold.ops.contributors import ContributorOps
 from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.editions import EditionOps
 from shelfhold.ops.errors import (
@@ -198,6 +199,7 @@ class OpsServices:
         edition_merge: EditionMergeOps | None = None,
         editions: EditionOps | None = None,
         resplit: ResplitOps | None = None,
+        contributors: ContributorOps | None = None,
         export_items: ExportItemOps | None = None,
         follows: FollowOps | None = None,
         acquire: AcquireOps | None = None,
@@ -228,6 +230,7 @@ class OpsServices:
         self._edition_merge = edition_merge
         self._editions = editions
         self._resplit = resplit
+        self._contributors = contributors
         self._export_items = export_items
         self._follows = follows
         self._acquire = acquire
@@ -706,6 +709,13 @@ class OpsServices:
         if self._resplit is None:
             raise ExitUnavailableError("the re-cut chapters are not connected")
         return self._resplit
+
+    @property
+    def contributors(self) -> ContributorOps:
+        """`contributor set-died-for-france` (EF-SRC-024)."""
+        if self._contributors is None:
+            raise ExitUnavailableError("the contributor commands are not connected")
+        return self._contributors
 
     @property
     def export_items(self) -> ExportItemOps:

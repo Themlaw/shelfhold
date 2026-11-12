@@ -27,8 +27,8 @@ from shelfhold.ops.contributors import ContributorOps
 from shelfhold.ops.errors import CodedRefusal, UnknownSubjectError
 from tests.auth_env import run_cli
 from tests.catalog_env import Harness, harness
-from tests.l50_env import seeded
 from tests.integration.test_rights import _book, _credit, _instance, _person
+from tests.l50_env import seeded
 
 pytestmark = pytest.mark.req("EF-SRC-024", "EF-BIB-046")
 
@@ -70,14 +70,14 @@ def test_an_author_marked_no_who_died_in_1960_keeps_the_existing_behaviour() -> 
 
 def test_marked_no_beats_the_cautious_reading_for_a_war_death() -> None:
     with harness() as h:
-        no = _review(h, 1916, False, published="1910", today=date(2015, 6, 1))
-        assert no.verdict == "no_warning"  # 1916 + 70 + 6 y 152 d: over in 1992
+        no = _review(h, 1916, False, published="1910")
+        assert no.verdict == "no_warning"  # 1916 + 70 + the two war extensions: over in 2001
 
 
 def test_an_unknown_author_who_died_in_1916_triggers_the_warning() -> None:
     with harness() as h:
-        report = _review(h, 1916, None, published="1910", today=date(2015, 6, 1))
-        assert report.verdict == "may_be_protected"  # the 30 years could run until 2022
+        report = _review(h, 1916, None, published="1910")
+        assert report.verdict == "may_be_protected"  # the 30 years could run until 2031
         assert report.warnings[0].protected_until >= TODAY
 
 
@@ -93,7 +93,7 @@ def test_the_warning_for_an_unknown_value_is_an_event_and_never_a_block() -> Non
         author = _person(h, "Auteur", 1916)
         _credit(h, author, edition.id, edition.work_id, "aut")
         rights = RightsService(h.connection)
-        report = rights.review(edition.id, today=date(2015, 6, 1))
+        report = rights.review(edition.id, today=TODAY)
         assert report.verdict == "may_be_protected"
         again = h.edition(edition.work_id, kind="novel", lang="en", media="text")
         assert again.id != edition.id  # the next Edition is accepted all the same
@@ -112,7 +112,7 @@ def _contributor(settings: Settings, tmp_path: Path):  # type: ignore[no-untyped
 
 
 def _value(env, who: str):  # type: ignore[no-untyped-def]
-    row = [r for r in env.rows(catalog.contributor) if r.id == who][0]
+    row = next(r for r in env.rows(catalog.contributor) if r.id == who)
     return row.died_for_france
 
 
@@ -127,14 +127,19 @@ def _make(env) -> str:  # type: ignore[no-untyped-def]
 
 @pytest.mark.parametrize(("flag", "expected"), [("--yes", True), ("--no", False)])
 def test_set_died_for_france_writes_the_value_and_audits_it_without_a_name(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path, flag: str,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    tmp_path: Path,
+    flag: str,
     expected: bool,
 ) -> None:
     with _contributor(settings, tmp_path) as env:
         who = _make(env)
         assert run_cli(monkeypatch, settings, "contributor", "set-died-for-france", who, flag) == 0
         assert _value(env, who) is expected
-        audit = [r for r in env.rows(identity.audit) if r.action == "contributor.set_died_for_france"]
+        audit = [
+            r for r in env.rows(identity.audit) if r.action == "contributor.set_died_for_france"
+        ]
         assert len(audit) == 1
         assert who in audit[0].target and "Auteur" not in audit[0].target  # an id, never a name
 
@@ -144,8 +149,13 @@ def test_set_died_for_france_unknown_resets_to_null_and_is_audited(
 ) -> None:
     with _contributor(settings, tmp_path) as env:
         who = _make(env)
-        assert run_cli(monkeypatch, settings, "contributor", "set-died-for-france", who, "--yes") == 0
-        assert run_cli(monkeypatch, settings, "contributor", "set-died-for-france", who, "--unknown") == 0
+        assert (
+            run_cli(monkeypatch, settings, "contributor", "set-died-for-france", who, "--yes") == 0
+        )
+        assert (
+            run_cli(monkeypatch, settings, "contributor", "set-died-for-france", who, "--unknown")
+            == 0
+        )
         assert _value(env, who) is None
         actions = [r.action for r in env.rows(identity.audit)]
         assert actions.count("contributor.set_died_for_france") == 2
@@ -160,18 +170,29 @@ def test_set_died_for_france_wants_exactly_one_answer_and_a_known_contributor(
             code = run_cli(monkeypatch, settings, "contributor", "set-died-for-france", who, *flags)
             assert code != 0
         assert _value(env, who) is None
-        assert run_cli(monkeypatch, settings, "contributor", "set-died-for-france",
-                       new_ulid(), "--yes") != 0  # no such contributor
-        assert run_cli(monkeypatch, settings, "contributor", "set-died-for-france",
-                       "not-an-id", "--yes") != 0
-        assert [r for r in env.rows(identity.audit)
-                if r.action == "contributor.set_died_for_france"] == []  # a refusal leaves no trace
+        assert (
+            run_cli(
+                monkeypatch, settings, "contributor", "set-died-for-france", new_ulid(), "--yes"
+            )
+            != 0
+        )  # no such contributor
+        assert (
+            run_cli(
+                monkeypatch, settings, "contributor", "set-died-for-france", "not-an-id", "--yes"
+            )
+            != 0
+        )
+        assert [
+            r for r in env.rows(identity.audit) if r.action == "contributor.set_died_for_france"
+        ] == []  # a refusal leaves no trace
 
 
 def test_set_died_for_france_is_reserved_never_for_a_key_or_a_stale_session(
     settings: Settings, tmp_path: Path
 ) -> None:
-    assert OPS_METHODS["ops.contributor_set_died_for_france"][1] == "contributor.set_died_for_france"
+    assert (
+        OPS_METHODS["ops.contributor_set_died_for_france"][1] == "contributor.set_died_for_france"
+    )
     action = RESERVED_ACTIONS["contributor.set_died_for_france"]
     key = Principal("u", "admin", "admin", Credential.API_KEY, key_id="k")
     stale = Principal("u", "admin", "admin", Credential.SESSION, session_id="s")
@@ -185,8 +206,12 @@ def test_set_died_for_france_is_reserved_never_for_a_key_or_a_stale_session(
             with pytest.raises(CodedRefusal):
                 ops.set_died_for_france(who, True, principal=who_asks)
         assert _value(env, who) is None
-        assert [r for r in env.rows(identity.audit)
-                if r.action == "contributor.set_died_for_france"] == []
+        assert [
+            r for r in env.rows(identity.audit) if r.action == "contributor.set_died_for_france"
+        ] == []
         with pytest.raises(UnknownSubjectError):
-            ops.set_died_for_france(new_ulid(), True, principal=Principal(
-                "1000", "uid:1000", "admin", Credential.LOCAL_CLI))
+            ops.set_died_for_france(
+                new_ulid(),
+                True,
+                principal=Principal("1000", "uid:1000", "admin", Credential.LOCAL_CLI),
+            )

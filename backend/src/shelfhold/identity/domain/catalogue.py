@@ -65,6 +65,8 @@ _DECLARED = (
     _action("edition.merge", Effect.MIGRATES_IDENTITY, Effect.PARENTAL_CONTROL),
     # `coverage resplit propose|apply`: a re-cut chapter is covered by its old Unit (EF-BIB-044)
     _action("coverage.resplit", Effect.CHANGES_COVERAGE),
+    # `contributor set-died-for-france --yes|--no|--unknown` (M2 L15b, EF-SRC-024)
+    _action("contributor.set_died_for_france", Effect.RECORDS_LEGAL_FACT),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),

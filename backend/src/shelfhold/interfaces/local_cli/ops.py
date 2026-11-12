@@ -395,6 +395,18 @@ def _coverage_resplit_apply(ops: OpsServices, by: Principal, p: Params) -> objec
     )
 
 
+_DIED_FOR_FRANCE_ANSWERS: Mapping[str, bool | None] = {"yes": True, "no": False, "unknown": None}
+
+
+def _contributor_set_died_for_france(ops: OpsServices, by: Principal, p: Params) -> object:
+    answer = _text(p, "answer")
+    if answer not in _DIED_FOR_FRANCE_ANSWERS:
+        raise RpcError(INVALID_PARAMS, t("local_cli.param_invalid", name="answer", expected="text"))
+    return ops.contributors.set_died_for_france(
+        _text(p, "contributor"), _DIED_FOR_FRANCE_ANSWERS[answer], principal=by
+    )
+
+
 def _export_item_show(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.export_items.show(_text(p, "item"))
 
@@ -659,6 +671,10 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.edition_list": (_edition_list, None),
     "ops.coverage_resplit_propose": (_coverage_resplit_propose, "coverage.resplit"),
     "ops.coverage_resplit_apply": (_coverage_resplit_apply, "coverage.resplit"),
+    "ops.contributor_set_died_for_france": (
+        _contributor_set_died_for_france,
+        "contributor.set_died_for_france",
+    ),
     "ops.export_item_show": (_export_item_show, None),
     "ops.backfill_estimate": (_backfill_estimate, None),
     "ops.backfill_start": (_backfill_start, None),

@@ -103,7 +103,8 @@ class Rights:
         if facts is None:
             raise LookupError(edition_id)
         holders = [
-            Holder(h.role, h.death_year, h.died_for_france or h.contributor_id in died_for_france,
+            Holder(h.role, h.death_year,
+                   True if h.contributor_id in died_for_france else h.died_for_france,
                    h.contributor_id)
             for h in facts.holders
         ]  # fmt: skip

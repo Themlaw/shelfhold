@@ -138,6 +138,7 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
                 Effect.ACKNOWLEDGES_RESTORE,  # `restore acknowledge`
                 Effect.REWRITES_EXPORTED_FILES,  # M2 L17: `revisions apply|force`
                 Effect.CHANGES_COVERAGE,  # M2 L26: `coverage resplit apply`
+                Effect.RECORDS_LEGAL_FACT,  # M2 L15b: `contributor set-died-for-france`
                 Effect.RATES_CONTENT,  # porteur 2026-11-11: classing needs a fresh session
                 Effect.ENROLS_PASSKEY,  # porteur 2026-11-11: so does adding a passkey
             }

@@ -1,4 +1,4 @@
-"""Migration 0041 (M2 L15b, EF-SRC-024, EF-BIB-046): `contributor.died_for_france`, nullable,
+"""Migration 0047 (M2 L15b, EF-SRC-024, EF-BIB-046): `contributor.died_for_france`, nullable,
 NULL = unknown. No row is touched, the DDL is what `create_all` makes."""
 
 import sqlite3
@@ -19,7 +19,7 @@ pytestmark = pytest.mark.req("EF-SRC-024", "EF-BIB-046", "ENF-OPS-002")
 
 
 def _previous() -> str:
-    down = ScriptDirectory(str(default_script_location())).get_revision("0041").down_revision
+    down = ScriptDirectory(str(default_script_location())).get_revision("0047").down_revision
     assert isinstance(down, str)
     return down
 
@@ -34,7 +34,7 @@ def test_upgrade_adds_the_column_and_downgrade_removes_it(settings: Settings) ->
     command.upgrade(alembic_config(database), _previous())
     with closing(sqlite3.connect(database)) as db:
         assert "died_for_france" not in _info(db, "contributor")
-    assert "0041" in migrate(settings).applied
+    assert "0047" in migrate(settings).applied
     with closing(sqlite3.connect(database)) as db:
         assert "died_for_france" in _info(db, "contributor")
     command.downgrade(alembic_config(database), _previous())

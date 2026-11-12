@@ -25,7 +25,13 @@ class SqlRightsStore:
             return None
         credit, person = catalog.contribution.c, catalog.contributor.c
         credited = self._c.execute(
-            sa.select(person.id, person.primary_name, person.death_date, credit.role)
+            sa.select(
+                person.id,
+                person.primary_name,
+                person.death_date,
+                person.died_for_france,
+                credit.role,
+            )
             .select_from(
                 catalog.contribution.join(catalog.contributor, person.id == credit.contributor_id)
             )
@@ -43,7 +49,9 @@ class SqlRightsStore:
             if (c.id, c.role) in seen:
                 continue
             seen.add((c.id, c.role))
-            holders.append(Holder(c.role, year_of(c.death_date), contributor_id=c.id))
+            holders.append(
+                Holder(c.role, year_of(c.death_date), c.died_for_france, contributor_id=c.id)
+            )
         return EditionFacts(
             edition_id, row.work_id, row.rights_basis, row.first_published, tuple(holders),
             {c.id: c.primary_name for c in credited},
