@@ -43,6 +43,7 @@ from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.follow_env import empty_catalog
 from tests.gutenberg_env import FakeTime, RoutedStore, host_of
 from tests.library_env import LibEnv, lib_env
+from tests.null_tombstones import NO_CATALOG_HITS
 from tests.opds_env import Wire, document, file
 
 KEY = "standardebooks"
@@ -191,6 +192,7 @@ def standardebooks_bench(
             lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
             max_bytes=8 * 1024 * 1024, source_settings=lambda _key: dict(settings),
             source_secrets=lambda _key: dict(held),
+            work_screen=lambda: NO_CATALOG_HITS,
         )  # fmt: skip
         bench = Bench(lib, wire, registry, fetchers, acquirer, settings, held, fake)
         yield bench

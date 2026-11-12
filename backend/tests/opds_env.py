@@ -42,6 +42,7 @@ from tests.fakes.opds.feeds import link
 from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.follow_env import empty_catalog
 from tests.library_env import LibEnv, lib_env
+from tests.null_tombstones import NO_CATALOG_HITS
 
 KEY = "opds"
 HOST = "opds.example.org"
@@ -201,6 +202,7 @@ def opds_bench(
             max_bytes=8 * 1024 * 1024,
             source_settings=lambda _key: dict(settings),
             source_secrets=lambda _key: dict(held),
+            work_screen=lambda: NO_CATALOG_HITS,
         )  # fmt: skip
         yield Bench(lib, wire, registry, fetchers, acquirer, settings, held, bus, delivered)
 

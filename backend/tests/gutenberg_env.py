@@ -41,7 +41,7 @@ from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.follow_env import empty_catalog
 from tests.library_env import LibEnv, lib_env
-from tests.null_tombstones import NONE_PURGED
+from tests.null_tombstones import NO_CATALOG_HITS, NONE_PURGED
 
 KEY = "gutenberg"
 CATALOG_HOST = "catalog.example.org"
@@ -302,6 +302,7 @@ def gutenberg_bench(
         acquirer = NativeAcquirer(
             lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
             max_bytes=8 * 1024 * 1024, source_settings=lambda _key: dict(chosen),
+            work_screen=lambda: NO_CATALOG_HITS,
         )  # fmt: skip
         yield Bench(
             lib, source, served, registry, fetchers, acquirer, bus, fake, chosen, bench_warnings

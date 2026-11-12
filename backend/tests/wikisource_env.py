@@ -36,6 +36,7 @@ from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.follow_env import empty_catalog
 from tests.gutenberg_env import FakeTime, RoutedStore, host_of
 from tests.library_env import LibEnv, lib_env
+from tests.null_tombstones import NO_CATALOG_HITS
 
 KEY = "wikisource"
 API_HOST = "fr.wikisource.org"
@@ -175,5 +176,6 @@ def wikisource_bench(
         acquirer = NativeAcquirer(
             lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
             max_bytes=8 * 1024 * 1024, source_settings=lambda _key: dict(chosen),
+            work_screen=lambda: NO_CATALOG_HITS,
         )  # fmt: skip
         yield Bench(lib, source, served, registry, fetchers, acquirer, bus, fake, chosen)

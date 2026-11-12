@@ -37,7 +37,7 @@ from shelfhold.sdk.source import Capability, SourceManifest
 from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.follow_env import empty_catalog
 from tests.library_env import LibEnv, lib_env
-from tests.null_tombstones import NONE_PURGED
+from tests.null_tombstones import NO_CATALOG_HITS, NONE_PURGED
 
 KEY = "native-books"
 HOST = "books.example.org"
@@ -46,6 +46,7 @@ PUBLIC = "93.184.216.34"
 BOOK = "book/42"
 UNIT = "native-books:42:ebook"
 PAGE = f"https://{HOST}/{BOOK}"
+NO_SCREEN: Callable[[], Any] = lambda: NO_CATALOG_HITS  # noqa: E731 (a screen that blocks nothing)
 
 
 class NativeBooks:
@@ -54,7 +55,11 @@ class NativeBooks:
     def __init__(self, *, trust: str = "untrusted", file_url: str | None = None,
                  mime: str = "application/epub+zip", remote_id: str = BOOK,
                  domains: tuple[str, ...] = (HOST,), patterns: tuple[str, ...] = (f"https://{HOST}/book/*",),
-                 filters: tuple[str, ...] = ("language",)) -> None:  # fmt: skip
+                 filters: tuple[str, ...] = ("language",), content_warning: str = "safe",
+                 work_key: str | None = None,
+                 external_ids: dict[str, str] | None = None) -> None:  # fmt: skip
+        self.work_key = work_key
+        self.external_ids = dict(external_ids or {})
         self.file_url = file_url or f"https://{HOST}/files/book-42.epub"
         self.mime = mime
         self.remote_id = remote_id
@@ -70,6 +75,9 @@ class NativeBooks:
             ),
             content_trust=trust,  # type: ignore[arg-type]
         )  # fmt: skip
+        # what the manifest declares, set past the validation so that a test can hand over a
+        # value the SDK would refuse (a plugin loaded from an older release, a corrupted row)
+        object.__setattr__(self.manifest, "content_warning", content_warning)
 
     def filters(self) -> list[Any]:
         from shelfhold.sdk.models import FilterSpec
@@ -99,10 +107,17 @@ class NativeBooks:
         return self._series()
 
     async def get_series(self, f: Any, ref: SeriesRef) -> SeriesInfo:
-        return SeriesInfo(ref=ref, title="Un livre de test", authors=["Personne"])
+        return SeriesInfo(
+            ref=ref,
+            title="Un livre de test",
+            authors=["Personne"],
+            work_key=self.work_key,
+            external_ids=dict(self.external_ids),
+        )
 
     async def list_units(self, f: Any, ref: SeriesRef) -> list[UnitInfo]:
-        return [UnitInfo(remote_unit_id=UNIT, source_order=1, kind="book", number=None)]
+        unit = UNIT if ref.remote_id == BOOK else f"{KEY}:{ref.remote_id}:ebook"
+        return [UnitInfo(remote_unit_id=unit, source_order=1, kind="book", number=None)]
 
     async def fetch_unit(self, f: Any, ref: SeriesRef, u: UnitInfo) -> FileAsset:
         return FileAsset(
@@ -202,6 +217,7 @@ def acquire_bench(
     hosts: tuple[str, ...] = (HOST, EVIL),
     cache_enabled: bool = True,
     known: bool = True,
+    work_screen: Callable[[], Any] | None = NO_SCREEN,
 ) -> Iterator[Bench]:
     plugin = plugin or NativeBooks()
     # `known`: the host's own plugin (a `publisher` value is taken as declared); otherwise a plugin
@@ -228,6 +244,6 @@ def acquire_bench(
         (lib.tmp / "recv").mkdir()
         acquirer = NativeAcquirer(
             lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
-            max_bytes=8 * 1024 * 1024,
+            max_bytes=8 * 1024 * 1024, work_screen=work_screen,
         )  # fmt: skip
         yield Bench(lib, plugin, wire, registry, fetchers, acquirer, bus, delivered)
