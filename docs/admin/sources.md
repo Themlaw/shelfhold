@@ -62,7 +62,10 @@ La source ne lit **jamais les pages du site**. Elle prend :
   à l'adresse du réglage `catalog_url`. Il est lu au plus une fois par semaine, avec une requête
   conditionnelle (`ETag` / `If-Modified-Since`) ;
 - **les fichiers d'un miroir** de la liste officielle, que vous choisissez : réglage `mirror_url`,
-  obligatoire. Un miroir n'est jamais le site lui-même.
+  obligatoire. Un miroir n'est jamais le site lui-même. Une **liste blanche figée** de miroirs
+  officiels (`aleph.gutenberg.org`, `gutenberg.pglaf.org`) est reconnue dans le code, y compris sous le
+  nom du projet : tout autre nom en `gutenberg.org` ou `gutenberg.net`, dont `www.gutenberg.org` et
+  `gutenberg.org`, reste refusé comme miroir. La liste ne se modifie pas par un réglage.
 
 Aucun hôte n'est écrit dans le code : sans ces deux réglages, la source n'est pas configurée
 (`source.not_configured`) et n'envoie rien. Les règles de domaine ne laissent passer que ces deux

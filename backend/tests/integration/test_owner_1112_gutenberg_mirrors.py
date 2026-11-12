@@ -36,7 +36,7 @@ def test_the_list_is_frozen_and_holds_aleph_but_never_the_website() -> None:
     [
         "https://aleph.gutenberg.org/gutenberg",
         "https://ALEPH.Gutenberg.org./gutenberg",
-        "https://ａleph.gutenberg.org/gutenberg",  # a full-width letter: the same host
+        "https://ａleph.gutenberg.org/gutenberg",  # noqa: RUF001 - a full-width letter: the same host
         "http://aleph.gutenberg.org/",
     ],
 )

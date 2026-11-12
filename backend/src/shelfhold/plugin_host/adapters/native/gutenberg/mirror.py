@@ -16,11 +16,25 @@ from urllib.parse import urlsplit
 
 from shelfhold.sdk.source import NotConfigured
 
-__all__ = ["CATALOG_PATH_PREFIX", "SETTINGS_KEYS", "SiteRefused", "epub_url", "setting_url"]
+__all__ = [
+    "CATALOG_PATH_PREFIX",
+    "OFFICIAL_MIRRORS",
+    "SETTINGS_KEYS",
+    "SiteRefused",
+    "epub_url",
+    "setting_url",
+]
 
 SETTINGS_KEYS = ("catalog_url", "mirror_url")
 CATALOG_PATH_PREFIX = "/cache/epub/feeds/"  # where the official feeds are served, on any host
 _PROJECT = ("gutenberg.org", "gutenberg.net")  # the project and every host under it
+# Owner decision 2026-11-12: the official mirrors of the project that may be the `mirror_url`,
+# frozen in the code, never read from a setting, a catalogue or a redirection. Taken from the
+# mirror list the project publishes (`gutenberg.org/MIRRORS.ALL`, "Project Gutenberg" providers)
+# and from its mirroring how-to (`aleph.gutenberg.org`); none is invented. The website itself
+# (`gutenberg.org`, `www.gutenberg.org`) is not on it, and a host under an official name is not
+# official: the match is on the whole canonical host name.
+OFFICIAL_MIRRORS = frozenset({"aleph.gutenberg.org", "gutenberg.pglaf.org"})
 _FEED_HOSTS = frozenset({"gutenberg.org", "www.gutenberg.org"})  # where the feeds are served
 
 
@@ -70,6 +84,8 @@ def setting_url(settings: dict[str, Any], key: str) -> str:
     url = value.strip()
     host = _host_of(url)
     path = urlsplit(url).path
+    if key == "mirror_url" and host in OFFICIAL_MIRRORS:
+        return url  # the shape (scheme, credential, query) was checked by `_host_of` above
     if _of_project(host) and (key == "mirror_url" or host not in _FEED_HOSTS):
         raise SiteRefused("the address is the project's website: a mirror, an official feed")
     if key == "catalog_url" and (not path.startswith(CATALOG_PATH_PREFIX) or path.endswith("/")):

@@ -157,7 +157,9 @@ class Wire:
             if request.headers.get("if-none-match") == self.etag:
                 return httpx2.Response(304, headers={"etag": self.etag})
             return httpx2.Response(200, content=self.catalog, headers={"etag": self.etag})
-        if host in (MIRROR_HOST, OFFICIAL_MIRROR_HOST) and path.startswith("/gutenberg/cache/epub/"):
+        if host in (MIRROR_HOST, OFFICIAL_MIRROR_HOST) and path.startswith(
+            "/gutenberg/cache/epub/"
+        ):
             if self.redirect_files_to is not None:
                 return httpx2.Response(302, headers={"location": self.redirect_files_to})
             if path in self.files:
