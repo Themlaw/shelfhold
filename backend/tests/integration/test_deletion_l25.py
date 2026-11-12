@@ -5,7 +5,7 @@ Unit. Real files, real SQLite, real pipeline; every "never" below is a test that
 
 import os
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -263,21 +263,23 @@ def test_level_two_never_takes_a_store_original_or_the_last_copy() -> None:
     with export_env() as env:
         d = make_deletion(env)
         unit = spread_unit(env, env.new_series("Dr Stone"))
-        with env.engine.begin() as connection:  # the destination file is the only original left
-            connection.execute(sa.text("DELETE FROM replica WHERE location IN ('library','store')"))
-            connection.execute(sa.text("UPDATE replica SET independent = 1"))
-        plan = d.service.preview(LEVEL2, [unit])
-        assert plan.units[0].blocked == ("last_independent_copy",)
-        assert plan.units[0].independent_copies == 1 and plan.units[0].independent_copies_after == 0
-        tree, dump = d.tree(), d.dump()
-        with pytest.raises(DeletionBlockedError):
-            d.apply(LEVEL2, [unit], plan=plan)
-        assert d.tree() == tree and d.dump() == dump
-        # only the third level, with its confirmation, may take it
         make_irreplaceable(env, unit)
+        for root in (env.lib.library, env.lib.store):  # both disks were lost: one readable file
+            for p in list(root.rglob("*.cbz")):
+                if "Kavita" not in p.parts and ".shelfhold" not in p.parts:
+                    p.unlink()
+        with env.engine.begin() as connection:
+            connection.execute(sa.text("DELETE FROM replica WHERE location IN ('library','store')"))
+        plan = d.service.preview(LEVEL2, [unit])
+        assert plan.units[0].irreplaceable and plan.units[0].needs_confirmation
+        assert plan.confirmations == (unit,)
+        tree, dump = d.tree(), d.dump()
+        with pytest.raises(ConfirmationRequiredError):  # the last readable copy: its word
+            d.apply(LEVEL2, [unit], plan=plan)
         with pytest.raises(ConfirmationRequiredError):
-            d.apply(LEVEL3, [unit])
-        assert d.tree() == tree
+            d.apply(LEVEL2, [unit], plan=plan, typed={unit: "not the identifier"})
+        assert d.tree() == tree and d.dump() == dump
+        assert d.apply(LEVEL2, [unit], plan=plan, typed={unit: unit}).moved == 1  # type: ignore[attr-defined]
 
 
 @pytest.mark.req("EF-BIB-021")
@@ -316,7 +318,17 @@ def test_level_two_refuses_an_adopted_original_and_shared_files() -> None:
 
 
 def age_bins(d: Deletion, days: int) -> None:
-    """The bin entries are `days` old: the sweep reads the age from the file system."""
+    """The bin entries are `days` old: the term the deletion gave them (`purge_after`) moves with
+    them, and so does the date of the folder (`fsops` still refuses a younger one)."""
+    term = d.now + timedelta(days=30 - days)
+    with d.env.engine.begin() as connection:
+        connection.execute(
+            sa.text("UPDATE trash_item SET purge_after = :p, deleted_at = :d"),
+            {
+                "p": term.replace(tzinfo=None).isoformat(sep=" "),
+                "d": (term - timedelta(days=30)).replace(tzinfo=None).isoformat(sep=" "),
+            },
+        )
     then = time.time() - days * 86400
     for root in (d.env.lib.library, d.env.lib.store):
         for entry in (root / ".shelfhold" / "recycle").glob("*"):
@@ -406,6 +418,7 @@ def test_restore_refuses_what_would_not_be_exact() -> None:
         with pytest.raises(RestoreBlockedError) as occupied:
             d.service.restore(unit, principal=ADMIN, now=d.now)
         assert occupied.value.reason == "path_taken"
+        assert [reason for _path, reason in occupied.value.files] == ["path_taken"]  # that one only
         assert taken.read_bytes() == b"somebody else's file"  # never replaced
         taken.unlink()
         taken.parent.rmdir()
@@ -683,32 +696,142 @@ def test_a_read_only_root_is_never_written(monkeypatch: pytest.MonkeyPatch) -> N
         assert [r[1] for r in replicas(d, unit)] == ["destination"]
 
 
+class Crash(BaseException):
+    """The process goes down: nothing after the raise runs (not even an `except Exception`)."""
+
+
 @pytest.mark.req("EF-BIB-021")
-def test_a_restore_that_fails_midway_leaves_nothing_half_restored(
+def test_a_restore_that_crashes_is_finished_by_its_intents_at_the_next_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rows and the intents of every move are one transaction; the files follow. A crash
+    after it leaves open `unbin` intents, and the start puts every file back: nothing half done,
+    nothing lost, the same paths and bytes."""
+    with export_env() as env:
+        d = make_deletion(env)
+        unit = spread_unit(env, env.new_series("Dr Stone"))
+        tree = d.tree()
+        d.apply(LEVEL3, [unit])
+        real = type(env.lib.fsops).restore_from_bin
+        calls: list[str] = []
+
+        def goes_down_on_the_second(self: object, local: str, path: str) -> None:
+            calls.append(local)
+            if len(calls) == 2:
+                raise Crash
+            real(self, local, path)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(type(env.lib.fsops), "restore_from_bin", goes_down_on_the_second)
+        with pytest.raises(Crash):
+            d.service.restore(unit, principal=ADMIN, now=d.now)
+        monkeypatch.undo()
+        assert len(open_intents(env)) == 2  # the two moves that did not happen
+        assert d.rows("SELECT count(*) FROM trash_item") == [(0,)]  # rows and intents: one piece
+        report = IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open()
+        assert len(report.replayed) == 2 and open_intents(env) == []
+        assert d.tree() == tree  # every file back, same paths, same bytes
+        assert len(replicas(d, unit)) == 3
+
+
+@pytest.mark.req("EF-BIB-021")
+def test_a_restore_whose_move_fails_stays_pending_without_losing_a_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with export_env() as env:
         d = make_deletion(env)
         unit = spread_unit(env, env.new_series("Dr Stone"))
+        tree = d.tree()
         d.apply(LEVEL3, [unit])
-        tree, dump = d.tree(), d.dump()
         real = type(env.lib.fsops).restore_from_bin
-        calls: list[str] = []
 
-        def second_fails(self: object, local: str, path: str) -> None:
-            calls.append(local)
-            if len(calls) == 2:
-                raise OSError("the disk went away")
-            real(self, local, path)  # type: ignore[arg-type]
+        def disk_is_away(self: object, local: str, path: str) -> None:
+            raise OSError("the disk went away")
 
-        monkeypatch.setattr(type(env.lib.fsops), "restore_from_bin", second_fails)
-        with pytest.raises(OSError, match="went away"):
+        monkeypatch.setattr(type(env.lib.fsops), "restore_from_bin", disk_is_away)
+        report = d.service.restore(unit, principal=ADMIN, now=d.now)
+        monkeypatch.setattr(type(env.lib.fsops), "restore_from_bin", real)
+        assert len(report.pending) == 3 and len(open_intents(env)) == 3
+        assert len(d.binned()) == 3  # every file is still in its entry
+        IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open()
+        assert d.tree() == tree and open_intents(env) == []
+
+
+@pytest.mark.req("EF-BIB-021")
+def test_a_restore_is_of_one_deletion() -> None:
+    """Two deletions of the same Unit (the served copy, then the content): a restore names one,
+    the latest by default, and never touches the files of the other."""
+    with export_env() as env:
+        d = make_deletion(env)
+        unit = spread_unit(env, env.new_series("Dr Stone"))
+        tree = d.tree()
+        d.apply(LEVEL2, [unit])  # A: the destination file
+        d.apply(LEVEL3, [unit])  # B: the copies of /library and /store
+        [(first,), (second,)] = d.rows("SELECT DISTINCT deletion_id FROM trash_item ORDER BY id")
+        assert d.service.restore(unit, principal=ADMIN, now=d.now).restored == 2  # B, the latest
+        assert d.rows("SELECT DISTINCT deletion_id FROM trash_item") == [(first,)]
+        assert len(d.binned()) == 1  # A's file is still in its entry
+        assert second not in {r[0] for r in d.rows("SELECT deletion_id FROM trash_item")}
+        assert d.service.restore(unit, principal=ADMIN, now=d.now, deletion_id=first).restored == 1
+        assert d.tree() == tree
+
+
+@pytest.mark.req("EF-BIB-021")
+def test_a_taken_path_blocks_only_its_file() -> None:
+    """Refused as a whole, with the file named, or restored in part with a report of what stayed
+    in the bin; the way freed, the rest goes back."""
+    with export_env() as env:
+        d = make_deletion(env)
+        unit = spread_unit(env, env.new_series("Dr Stone"))
+        tree = d.tree()
+        d.apply(LEVEL3, [unit])
+        taken = sorted(p for p in tree if p.startswith("library/") and ".shelfhold" not in p)[0]
+        target = env.lib.library.parent / taken
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"somebody else's file")
+        with pytest.raises(RestoreBlockedError) as refused:
             d.service.restore(unit, principal=ADMIN, now=d.now)
-        assert len(calls) == 2
-        assert d.tree().keys() == tree.keys()  # the first file left again for its entry
-        assert d.dump() == dump  # no row came back, no bin row was forgotten
-        monkeypatch.undo()
-        assert d.service.restore(unit, principal=ADMIN, now=d.now).restored == 3
+        assert [r for _p, r in refused.value.files] == ["path_taken"]
+        assert len(d.binned()) == 3  # nothing moved
+        report = d.service.restore(unit, principal=ADMIN, now=d.now, partial=True)
+        assert report.restored == 2 and [r for _p, r in report.left_in_bin] == ["path_taken"]
+        assert target.read_bytes() == b"somebody else's file"  # never replaced
+        assert len(d.binned()) == 1 and d.rows("SELECT count(*) FROM trash_item") == [(1,)]
+        target.unlink()  # the way is free: the rest goes back
+        assert d.service.restore(unit, principal=ADMIN, now=d.now).restored == 1
+        assert d.tree() == tree
+
+
+@pytest.mark.req("EF-BIB-021")
+def test_a_restore_follows_the_unit_again_and_rewrites_the_store_index() -> None:
+    """`follow_suppressed` is undone by the restore, and `store/INDEX.jsonl` stops citing a
+    /store copy while it sits in the bin and cites it again when it is back."""
+    with export_env() as env:
+        d = make_deletion(env)
+        unit = spread_unit(env, env.new_series("Dr Stone"))
+        index = env.lib.store / "INDEX.jsonl"
+        d.index.rewrite()  # the index as the window writes it
+        assert unit in index.read_text(encoding="utf-8")
+        d.apply(LEVEL3, [unit])
+        assert d.rows("SELECT follow_suppressed FROM unit WHERE id = :u", u=unit) == [(1,)]
+        assert unit not in index.read_text(encoding="utf-8")
+        d.service.restore(unit, principal=ADMIN, now=d.now)
+        assert d.rows("SELECT follow_suppressed FROM unit WHERE id = :u", u=unit) == [(0,)]
+        assert unit in index.read_text(encoding="utf-8")
+
+
+@pytest.mark.req("EF-BIB-021", "EF-BIB-031")
+def test_the_sweep_reads_the_term_of_the_index_not_the_date_of_the_folder() -> None:
+    with export_env() as env:
+        d = make_deletion(env)
+        unit = spread_unit(env, env.new_series("Dr Stone"))
+        d.apply(LEVEL3, [unit])
+        age_bins(d, 31)
+        with env.engine.begin() as connection:  # the folders look old, the term is still ahead
+            connection.execute(
+                sa.text("UPDATE trash_item SET purge_after = :p"),
+                {"p": (d.now + timedelta(days=5)).replace(tzinfo=None).isoformat(sep=" ")},
+            )
+        assert sweeper(d).sweep().removed == 0 and len(d.binned()) == 3
 
 
 @pytest.mark.req("EF-BIB-021")
@@ -723,3 +846,39 @@ def test_a_deleted_unit_is_not_exported_or_followed_again() -> None:
         assert list((env.lib.manga / "Kavita").rglob("*.cbz")) == []
         assert d.rows("SELECT state FROM export_record") == [("recycled",)]
         assert d.rows("SELECT follow_suppressed FROM unit WHERE id = :u", u=unit) == [(1,)]
+
+
+@pytest.mark.req("EF-BIB-021")
+def test_an_unbin_whose_move_was_done_before_the_crash_is_closed_at_the_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with export_env() as env:
+        d = make_deletion(env)
+        unit = spread_unit(env, env.new_series("Dr Stone"))
+        tree = d.tree()
+        d.apply(LEVEL2, [unit])
+        real = IntentJournal.mark_done
+
+        def down(self: IntentJournal, intent_id: str, **kw: object) -> None:
+            raise Crash
+
+        monkeypatch.setattr(IntentJournal, "mark_done", down)
+        with pytest.raises(Crash):
+            d.service.restore(unit, principal=ADMIN, now=d.now)
+        monkeypatch.setattr(IntentJournal, "mark_done", real)
+        assert d.tree() == tree and len(open_intents(env)) == 1  # moved, the intent still open
+        report = IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open()
+        assert len(report.completed) == 1 and open_intents(env) == []
+
+
+@pytest.mark.req("EF-BIB-031")
+def test_the_sweep_flags_the_entry_it_keeps_for_an_irreplaceable_unit() -> None:
+    with export_env() as env:
+        d = make_deletion(env)
+        unit = spread_unit(env, env.new_series("Dr Stone"))
+        d.apply(LEVEL3, [unit])
+        make_irreplaceable(env, unit)
+        age_bins(d, 31)
+        report = sweeper(d).sweep()
+        assert report.removed == 0 and report.held_irreplaceable == 3 and len(d.binned()) == 3
+        assert d.service.restore(unit, principal=ADMIN, now=d.now).restored == 3  # still there

@@ -33,7 +33,9 @@ class _Library:
         )
         return {"moved": 0}
 
-    def delete_restore(self, *, unit_id: str, principal: Principal) -> dict[str, object]:
+    def delete_restore(
+        self, *, unit_id: str, principal: Principal, deletion_id: str | None, partial: bool
+    ) -> dict[str, object]:
         self._effects.append(f"restore-{unit_id}")
         return {"restored": 0}
 

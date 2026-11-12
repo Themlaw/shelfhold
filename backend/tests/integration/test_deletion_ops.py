@@ -35,7 +35,9 @@ def test_ops_preview_apply_and_restore_on_a_real_instance(
         preview = ops.delete_preview(level="remove_destinations", unit_ids=[unit])
         assert preview["files"] == 1 and preview["blocked"] is False
         assert preview["units"][0]["exports"] == 1 and file.exists()
-        assert "Dr Stone" not in str(preview) and str(file) not in str(preview)  # counts only
+        [shown] = preview["units"][0]["files"]  # each file, by its path in its root (relative)
+        assert not shown["path"].startswith("/") and file.as_posix().endswith(shown["path"])
+        assert str(file) not in str(preview)
         with pytest.raises(CodedRefusal) as stale:
             ops.delete_apply(level="remove_destinations", unit_ids=[unit], if_match="nope",
                              typed={}, principal=ADMIN)  # fmt: skip

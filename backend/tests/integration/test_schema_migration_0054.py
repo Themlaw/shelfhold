@@ -46,10 +46,16 @@ def test_upgrade_adds_the_columns_and_downgrade_removes_them(settings: Settings)
         assert {"deletion_id", "snapshot"} <= set(_info(db))
         row = db.execute("SELECT deletion_id, snapshot, level FROM trash_item").fetchone()
         assert row == (None, None, "delete_content")  # the entry of before: not restorable
+        db.execute(
+            "INSERT INTO fs_intent (id, op, intent_schema_version, state, epoch) VALUES "
+            "('01J00000000000000000000003', 'unbin', '1', 'pending', 0)"
+        )  # the restore's own intent is allowed now
+        db.commit()
     command.downgrade(alembic_config(database), _previous())
     with closing(sqlite3.connect(database)) as db:
         assert not {"deletion_id", "snapshot"} & set(_info(db))
         assert db.execute("SELECT count(*) FROM trash_item").fetchone() == (1,)
+        assert db.execute("SELECT count(*) FROM fs_intent WHERE op = 'unbin'").fetchone() == (0,)
 
 
 def test_migrated_columns_equal_create_all(settings: Settings, tmp_path: Path) -> None:

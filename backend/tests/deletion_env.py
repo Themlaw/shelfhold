@@ -3,6 +3,7 @@
 /store and in the destination, and the real `DeletionService` over them. Nothing is mocked."""
 
 import hashlib
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -11,8 +12,9 @@ import sqlalchemy as sa
 from shelfhold.export.application.deletion import DeletionService
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.library.public import DeletionLevel, DeletionPlan, Safeguard
+from shelfhold.library.public import DeletionLevel, DeletionPlan, Safeguard, StoreIndex
 from tests.export_env import ExportEnv, Series
+from tests.null_tombstones import NONE_PURGED
 from tests.purge_env import ADMIN
 
 
@@ -24,6 +26,7 @@ def file_hash(path: Path) -> str:
 class Deletion:
     env: ExportEnv
     service: DeletionService
+    index: StoreIndex
     scans: list[str] = field(default_factory=list)
     order: list[str] = field(default_factory=list)  # `scan:<folder exists>` as it happened
 
@@ -36,7 +39,7 @@ class Deletion:
         found: dict[str, str] = {}
         for root in (self.env.lib.library, self.env.lib.store):
             for path in sorted(root.rglob("*")):
-                if path.is_file() and path.name != ".shelfhold-mount-id":
+                if path.is_file() and path.name not in {".shelfhold-mount-id", "INDEX.jsonl"}:
                     rel = path.relative_to(root).parts
                     if rel[:2] in {(".shelfhold", "tombstones"), (".shelfhold", "lease")}:
                         continue
@@ -86,11 +89,15 @@ def make_deletion(env: ExportEnv, *, fail_scan: bool = False) -> Deletion:
         if fail_scan:
             raise RuntimeError("Kavita is down")
 
+    index = StoreIndex(
+        env.lib.engine, env.lib.fsops, str(env.lib.store), NONE_PURGED,
+        hold=nullcontext,
+    )  # fmt: skip
     service = DeletionService(
         env.lib.engine, env.lib.fsops, clock=env.clock, locate=env.lib.locate,
-        request_scan=scan, fresh_auth_s=900,
+        request_scan=scan, refresh_index=index.rewrite, fresh_auth_s=900,
     )  # fmt: skip
-    deletion = Deletion(env, service)
+    deletion = Deletion(env, service, index)
     holder.append(deletion)
     return deletion
 
