@@ -123,6 +123,8 @@ diagnostic_log_file_help = "Journal à inclure, une fois réduit à ses champs a
 stats_since_help = "Fenêtre d'observation, en jours : 30d par défaut."
 admin_help = "Administre les comptes locaux, les sessions et les clés d'API."
 admin_create_help = "Crée le compte administrateur local (mot de passe haché en argon2id)."
+admin_acknowledge_through_help = "Référence affichée par « status » : acquitte les enregistrements jusqu'à celle-ci, pas ceux qui sont arrivés après."
+admin_acknowledge_passkeys_help = "Acquitte les enregistrements de clés d'accès signalés par « status » (action de l'hôte, journalisée)."
 admin_reset_help = "Change le mot de passe d'un compte et ferme toutes ses sessions."
 admin_username_help = "Identifiant du compte."
 admin_password_file_help = "Fichier contenant le mot de passe ; « - » pour l'entrée standard (jamais en argument)."
@@ -298,6 +300,9 @@ failed_verify_failed = "Sauvegarde annulée : le fichier écrit n'a pas passé l
 [status]
 public_url_restart = "public_url a changé depuis le démarrage du serveur : redémarrez-le pour qu'il en tienne compte."
 roles_unverified = "Le compte de service Suwayomi (ui_login) n'a pas pu être vérifié : le serveur n'expose pas ses rôles, Shelfhold ne peut pas s'assurer qu'il ne peut ni administrer Suwayomi ni installer d'extensions. Utilisez un compte aux droits minimaux, puis confirmez avec « shelfhold source confirm-roles »."
+passkey_registered = "{count} clé(s) d'accès enregistrée(s) depuis le dernier acquittement : {items}. Vérifiez qu'elles sont attendues (révoquez les inconnues), puis acquittez ce que vous avez vu avec « shelfhold admin acknowledge-passkeys --through {through} »."
+passkey_item = "« {name} » ({user})"
+passkey_items_separator = ", "
 passkey_rp_changed = "Des clés d'accès sont liées à {old}, qui n'est plus le domaine de public_url : elles ne fonctionnent plus. Le mot de passe reste en repli ; révoquez-les puis enregistrez-en de nouvelles."
 waiting_line = "En attente ({state}) : {reason}. Commande : {command}"
 no_warning = "Aucun avertissement."
@@ -593,6 +598,8 @@ unknown_method = "Méthode inconnue : {method}."
 not_allowed = "Action refusée à ce canal."
 
 [admin]
+passkeys_unknown_reference = "Aucun enregistrement en attente n'a la référence {through} : relisez « shelfhold status »."
+passkeys_acknowledged = "{count} enregistrement(s) de clé d'accès acquitté(s)."
 created = "Compte administrateur « {username} » créé."
 exists = "Un administrateur existe déjà : un seul compte local en M1a. Pour changer son mot de passe : « shelfhold admin reset-password »."
 unknown_user = "Compte inconnu : {username}."
@@ -712,6 +719,10 @@ action = "Effectuez l'action depuis l'interface après connexion ; les clés d'A
 [errors."csrf_failed"]
 title = "La requête n'a pas été reconnue comme venant de cette page."
 action = "Rechargez la page puis recommencez ; un script utilise une clé d'API plutôt qu'une session."
+
+[errors."auth.passkey_registered"]
+title = "Une clé d'accès (passkey) vient d'être enregistrée sur un compte."
+action = "Vérifiez dans `shelfhold status` qu'elle est attendue (compte, nom), puis acquittez avec `shelfhold admin acknowledge-passkeys --through <référence>` depuis l'hôte. Une clé d'accès inconnue se révoque dans la page des clés d'accès du compte, ou par `shelfhold admin reset-password`."
 
 [errors."disk.low"]
 title = "Espace disque presque épuisé."

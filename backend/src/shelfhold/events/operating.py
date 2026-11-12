@@ -21,6 +21,7 @@ M1B: frozenset[str] = frozenset(
 
 OPERATING_EVENTS: frozenset[str] = frozenset(
     {
+        "auth.passkey_registered",  # owner decision 2026-11-12: any new passkey, any account
         "backup.failed",
         "backup.stale",
         "content.untrusted_entry",

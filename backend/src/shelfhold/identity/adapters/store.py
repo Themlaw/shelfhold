@@ -295,7 +295,7 @@ class SqlIdentityStore:
 
     # --- passkeys (EF-USR-025) ---------------------------------------------------------------
 
-    def insert_passkey(self, passkey: NewPasskey) -> bool:
+    def insert_passkey(self, passkey: NewPasskey, audit: AuditEntry | None = None) -> bool:
         try:
             with self._engine.begin() as conn:
                 conn.execute(
@@ -312,6 +312,8 @@ class SqlIdentityStore:
                         created_at=passkey.now,
                     )
                 )
+                if audit is not None:  # the registration and its trace stand or fall together
+                    conn.execute(self._audit_insert(audit))
         except sa.exc.IntegrityError:
             return False
         return True
@@ -377,6 +379,30 @@ class SqlIdentityStore:
                 .values(revoked_at=now)
             )
         return "revoked"
+
+    def passkey_registrations_since_acknowledgement(self) -> list[tuple[str, str, str, datetime]]:
+        """`(reference, username, passkey name, registered at)`; the reference is the id of the
+        audit line of the registration, the one `acknowledge-passkeys --through` takes."""
+        audit, user = identity.audit, _user
+        with self._engine.connect() as conn:
+            last = conn.execute(
+                sa.select(sa.func.max(audit.c.target)).where(
+                    audit.c.action == "passkey.registrations_acknowledged"
+                )
+            ).scalar_one()
+            query = (
+                sa.select(audit.c.id, user.c.username, _passkey.c.name, audit.c.at)
+                .select_from(
+                    audit.join(_passkey, _passkey.c.id == audit.c.target).join(
+                        user, user.c.id == _passkey.c.user_id
+                    )
+                )
+                .where(audit.c.action == "passkey.registered")
+                .order_by(audit.c.id)
+            )
+            if last is not None:
+                query = query.where(audit.c.id > last)
+            return [(r.id, r.username, r.name, r.at) for r in conn.execute(query)]
 
     def passkey_rp_ids(self) -> set[str]:
         with self._engine.connect() as conn:

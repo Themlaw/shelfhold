@@ -249,8 +249,11 @@ class LocalAuth:
         reauth_methods: Sequence[ReauthMethod] | None = None,
         device_proof: DeviceProofPort | None = None,
         passkeys: PasskeyCeremony | None = None,
+        on_passkey_registered: Callable[[PasskeyRecord], None] | None = None,
     ) -> None:
         self._store = store
+        # Owner decision 2026-11-12: told after every registration, on any account (the event)
+        self._on_passkey_registered = on_passkey_registered
         self._hasher = hasher
         self._clock = clock
         self.hardened = hardened
@@ -276,12 +279,10 @@ class LocalAuth:
     def _policy(self, role: str) -> SessionPolicy:
         return session_policy(role, hardened=self.hardened)
 
-    def _audit(
-        self, action: str, principal: Principal | None = None, *, target: str | None = None
-    ) -> None:
-        """Offline host CLI actions have no principal; through the local socket the principal is
-        `local_cli` and the actor is `local_cli:<uid>` (L23)."""
-        entry = AuditEntry(
+    def _entry(
+        self, action: str, principal: Principal | None = None, target: str | None = None
+    ) -> AuditEntry:
+        return AuditEntry(
             actor_id=audit_actor(principal),
             action=action,
             at=self.now(),
@@ -289,6 +290,13 @@ class LocalAuth:
             session_id=principal.session_id if principal else None,
             auth_time=principal.auth_time if principal else None,
         )
+
+    def _audit(
+        self, action: str, principal: Principal | None = None, *, target: str | None = None
+    ) -> None:
+        """Offline host CLI actions have no principal; through the local socket the principal is
+        `local_cli` and the actor is `local_cli:<uid>` (L23)."""
+        entry = self._entry(action, principal, target)
         self._store.audit(entry)
         # INFO for the actions that change who can do what; never the target (a key prefix...)
         structlog.get_logger().info(
@@ -570,13 +578,47 @@ class LocalAuth:
         user = self._account(principal)
         try:
             passkey = self._ceremony().finish_registration(
-                user, str(principal.session_id), flow, credential, name
+                user,
+                str(principal.session_id),
+                flow,
+                credential,
+                name,
+                # the audit line is written with the passkey, in one transaction
+                audit_for=lambda passkey_id: self._entry(
+                    "passkey.registered", principal, passkey_id
+                ),
             )
         except PasskeyRefusedError as refused:
             structlog.get_logger().warning("auth.passkey_refused", reason=refused.reason)
             raise
-        self._audit("passkey.registered", principal, target=passkey.id)
+        structlog.get_logger().info(
+            "auth.audit",
+            action="passkey.registered",
+            actor_id=audit_actor(principal),
+            role=getattr(principal, "role", None),
+        )
+        if self._on_passkey_registered is not None:
+            try:
+                self._on_passkey_registered(passkey)
+            except Exception:  # the status line is read from the audit: the event is a plus
+                structlog.get_logger().warning("auth.passkey_event_failed")
         return passkey
+
+    def unacknowledged_passkeys(self) -> list[tuple[str, str, str, datetime]]:
+        """The registrations `status` shows until `acknowledge_passkeys` (owner decision
+        2026-11-12): `(passkey id, username, name, registered at)`."""
+        return self._store.passkey_registrations_since_acknowledgement()
+
+    def acknowledge_passkeys(self, through: str, by: Principal | None = None) -> int:
+        """The admin has looked at the registrations of `status`, up to the reference it showed
+        last (`through`): one audit line closes them, and what registered after stays listed. The
+        count acknowledged. `ValueError("unknown_reference")`: no waiting registration has it."""
+        waiting = self._store.passkey_registrations_since_acknowledgement()
+        if through not in {reference for reference, *_ in waiting}:
+            raise ValueError("unknown_reference")
+        covered = [reference for reference, *_ in waiting if reference <= through]
+        self._audit("passkey.registrations_acknowledged", by, target=through)
+        return len(covered)
 
     def passkey_revoke(self, principal: Principal, passkey_id: str) -> None:
         outcome = self._store.revoke_passkey(principal.user_id, passkey_id, now=self.now())

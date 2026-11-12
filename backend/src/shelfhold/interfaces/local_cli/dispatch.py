@@ -41,8 +41,11 @@ Method = Callable[[LocalAuth, Principal, Params], object]
 HeadlessMethod = Callable[[HeadlessAdmin, Params], object]
 ACTOR = "_actor"  # the audit `Actor` of the peer, written by the dispatcher over any given value
 _PASSWORD_REASONS = frozenset(
-    {"invalid_username", "password_too_short", "password_too_long", "invalid_expiry"}
-)
+    {
+        "invalid_username", "password_too_short", "password_too_long", "invalid_expiry",
+        "unknown_reference",  # `admin acknowledge-passkeys --through`: nothing waits under it
+    }
+)  # fmt: skip
 
 
 def _invalid(name: str, expected: str) -> RpcError:
@@ -96,6 +99,10 @@ def _reset_password(auth: LocalAuth, by: Principal, params: Params) -> object:
     )
 
 
+def _acknowledge_passkeys(auth: LocalAuth, by: Principal, params: Params) -> object:
+    return auth.acknowledge_passkeys(str(_text(params, "through")), by)
+
+
 def _sessions_revoke(auth: LocalAuth, by: Principal, params: Params) -> object:
     return auth.revoke_sessions(
         username=_text(params, "username", required=False),
@@ -147,6 +154,7 @@ METHODS: Mapping[str, tuple[Method, str | None]] = {
     "ping": (lambda _a, _b, _c: "pong", None),
     "identity.create_admin": (_create_admin, None),
     "identity.reset_password": (_reset_password, None),
+    "identity.acknowledge_passkeys": (_acknowledge_passkeys, None),
     "identity.sessions_revoke": (_sessions_revoke, None),
     "identity.keys_create": (_keys_create, "keys.create"),
     "identity.keys_rotate": (_keys_rotate, "keys.rotate"),

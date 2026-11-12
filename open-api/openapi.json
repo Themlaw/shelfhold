@@ -10160,6 +10160,10 @@
       "code": "acquire.work_tombstoned",
       "status": 409
     },
+    "/api/v1/problems/auth.passkey-registered": {
+      "code": "auth.passkey_registered",
+      "status": 409
+    },
     "/api/v1/problems/backfill.confirmation-required": {
       "code": "backfill.confirmation_required",
       "status": 409

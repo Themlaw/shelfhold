@@ -22,7 +22,7 @@ from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
 from shelfhold.headless import HeadlessAdmin, wiring
 from shelfhold.headless.applied import record_applied_public_url
-from shelfhold.identity.public import local_auth, reconcile_identity_counter
+from shelfhold.identity.public import PasskeyRecord, local_auth, reconcile_identity_counter
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.health import HealthProbe
@@ -171,7 +171,18 @@ def create_app(
     composition = Composition(resolved, engine, clock=clock, network=network, gates=runtime.gates())
     runtime.composition = composition
     composition.pools = lambda: runtime.pools
-    auth = local_auth(engine, resolved, clock)
+
+    def passkey_registered(record: PasskeyRecord) -> None:
+        # Owner decision 2026-11-12: any registration, any account, tells the admin (identifiers
+        # only: the name of a passkey is typed by a person and never goes in an event)
+        with engine.begin() as connection:
+            composition.bus.publish(
+                connection,
+                "auth.passkey_registered",
+                {"user_id": record.user_id, "passkey_id": record.id},
+            )
+
+    auth = local_auth(engine, resolved, clock, on_passkey_registered=passkey_registered)
     ready = Readiness()
     gate = AuthGate(auth, public_url=resolved.public_url, ready=ready.is_set)
 

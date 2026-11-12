@@ -157,7 +157,7 @@ class IdentityStore(Protocol):
         False: no live key has that prefix (nothing written). `KeyConflictError`: prefix taken."""
         ...
 
-    def insert_passkey(self, passkey: NewPasskey) -> bool:
+    def insert_passkey(self, passkey: NewPasskey, audit: AuditEntry | None = None) -> bool:
         """False: that credential id is already stored (by anyone, revoked or not)."""
         ...
 
@@ -177,6 +177,12 @@ class IdentityStore(Protocol):
     def revoke_passkey(self, user_id: str, passkey_id: str, *, now: datetime) -> str:
         """`revoked`, `not_found`, or `last_factor` (no password and no other live passkey);
         decided and written in one transaction, with the sessions that passkey opened."""
+        ...
+
+    def passkey_registrations_since_acknowledgement(self) -> list[tuple[str, str, str, datetime]]:
+        """`(reference, username, passkey name, registered at)` for each registration audited
+        after the last `passkey.registrations_acknowledged` entry, oldest first; the reference is
+        the id of the audit line of the registration."""
         ...
 
     def passkey_rp_ids(self) -> set[str]:
