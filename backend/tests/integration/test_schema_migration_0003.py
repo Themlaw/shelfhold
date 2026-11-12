@@ -23,6 +23,7 @@ CATALOG_TABLES = {
     "unit_variant", "variant_revision", "team", "team_alias", "team_priority",
     "merge_suggestion", "age_suggestion", "normalizer", "work_relation", "work_relation_kind",
     "metadata_field", "edition_attach",
+    "merge_log", "work_redirect",  # migration 0046 (M3 L01)
 }  # fmt: skip
 ACQUISITION_TABLES = {
     "follow_notice",
@@ -31,6 +32,7 @@ ACQUISITION_TABLES = {
     "source_account", "upstream_snapshot", "plugin_install", "plugin_state", "revision_pending",
     "follow_request", "plugin_attestation", "series_gap", "binding_release_sample",
     "source_secret",
+    "pending_source_item", "source_alias_migration",  # migration 0046 (M3 L01)
 }  # fmt: skip
 
 
