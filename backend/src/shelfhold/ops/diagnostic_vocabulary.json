@@ -940,7 +940,6 @@
   "shelfhold.acquisition.application.filtering",
   "shelfhold.acquisition.application.follow",
   "shelfhold.acquisition.application.follow_request",
-  "shelfhold.acquisition.application.follows_export",
   "shelfhold.acquisition.application.gap_watch",
   "shelfhold.acquisition.application.import_target",
   "shelfhold.acquisition.application.instance",

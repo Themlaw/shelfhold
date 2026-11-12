@@ -1,22 +1,37 @@
 """Export the followed series as OPML or CSV (EF-INT-027 (3)).
 
-The two formats carry the same four fields: title, source, series URL and last number read.
-Neither is a contract: the file is meant to be read by a human (or pasted into another tool)
-long after Shelfhold is gone, so the output stays plain text and self-describing.
+Both formats carry the same four fields: title, source, series URL and last number read. Neither
+is a contract: the file is meant to be re-imported by hand elsewhere, so it stays plain text.
+The URL is the one the source gave for the series, stripped of anything that could authenticate
+(user info, fragment, and query parameters that look like a token, key or session).
 """
 
 from __future__ import annotations
 
 import csv
 import io
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from decimal import Decimal
-from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import sqlalchemy as sa
 
 from shelfhold.infrastructure.schema import acquisition, catalog
+
+FORMATS = ("opml", "csv")
+CSV_HEADER = ("title", "source", "url", "last_number")
+
+_SENSITIVE_PARAM = re.compile(
+    r"token|key|secret|sig|auth|pass|pwd|session|cookie|jwt|bearer|credential|code", re.IGNORECASE
+)
+# Characters XML 1.0 cannot carry at all, not even escaped.
+_XML_FORBIDDEN = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
+_XML_ESCAPES = {
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;",
+    "\n": "&#10;", "\r": "&#13;", "\t": "&#9;",
+}  # fmt: skip
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
 @dataclass(frozen=True)
@@ -24,166 +39,118 @@ class FollowRow:
     title: str
     source: str
     url: str
-    last_number: str
+    last_number: str  # empty when nothing was read yet
 
 
-def _as_connection(source: Any) -> tuple[Any, bool]:
-    """Return (connection, owned). Engines are opened here; connections are borrowed."""
-    if hasattr(source, "dialect"):
-        return source.connect(), True
-    return source, False
+def public_url(raw: str | None) -> str:
+    """The series URL without user info, fragment or credential-looking query parameters.
 
-
-def _value(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, Decimal):
-        return (
-            format(value, "f").rstrip("0").rstrip(".") if "." in format(value, "f") else str(value)
-        )
-    return str(value)
-
-
-def _load_rows(source: Any) -> list[FollowRow]:
-    connection, owned = _as_connection(source)
-    try:
-        si = acquisition.source_item
-        sb = acquisition.source_binding
-        sf = acquisition.series_follow
-        w = catalog.work
-        u = catalog.unit
-
-        stmt = (
-            sa.select(
-                sf.c.edition_id.label("edition_id"),
-                w.c.title.label("title"),
-                si.c.source_key.label("source_key"),
-                si.c.url.label("source_url"),
-                si.c.remote_id.label("remote_id"),
-                sf.c.follow_from_number.label("follow_from_number"),
-                sb.c.priority.label("priority"),
-            )
-            .select_from(
-                sf.join(w, w.c.id == sf.c.work_id)
-                .outerjoin(sb, (sb.c.edition_id == sf.c.edition_id) & (sb.c.active.is_(True)))
-                .outerjoin(si, si.c.id == sb.c.source_item_id)
-            )
-            .order_by(sf.c.edition_id, sb.c.priority)
-        )
-
-        seen: set[str] = set()
-        result: list[FollowRow] = []
-        for row in connection.execute(stmt).mappings():
-            edition_id = str(row["edition_id"])
-            if edition_id in seen:
-                continue
-            seen.add(edition_id)
-
-            title = str(row["title"] or "")
-            source = str(row["source_key"] or "")
-            url = row["source_url"] or row["remote_id"]
-            url = str(url or "")
-            last_number = _value(row["follow_from_number"])
-
-            if not last_number:
-                # Fall back to the highest numbered Unit known for this Edition.
-                unit_rows = (
-                    connection.execute(
-                        sa.select(u.c.number_norm).where(
-                            u.c.edition_id == edition_id, u.c.track != "unnumbered"
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                if unit_rows:
-                    try:
-                        last_number = _value(max(unit_rows, key=lambda v: Decimal(str(v))))
-                    except Exception:  # pragma: no cover - defensive
-                        last_number = str(unit_rows[-1])
-
-            result.append(FollowRow(title=title, source=source, url=url, last_number=last_number))
-        return result
-    finally:
-        if owned:
-            connection.close()
-
-
-def export_follows(source: Any, format: str = "opml", **kwargs: Any) -> str:
-    """Return the followed series as OPML or CSV text.
-
-    ``format`` (or ``fmt``) accepts ``"opml"`` or ``"csv"``.
+    Anything that is not an http(s) URL is dropped: the export never carries a bare identifier
+    that a source might use as a capability.
     """
-    fmt = kwargs.pop("fmt", None)
-    if fmt is not None:
-        format = fmt
-    fmt = str(format).lower().strip()
-    rows = _load_rows(source)
-    if fmt == "csv":
-        return render_csv(rows)
-    return render_opml(rows)
+    if not raw:
+        return ""
+    try:
+        parts = urlsplit(raw.strip())
+        port = parts.port
+    except ValueError:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return ""
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    netloc = f"{host}:{port}" if port else host
+    query = urlencode(
+        [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+         if not _SENSITIVE_PARAM.search(k)]
+    )  # fmt: skip
+    return urlunsplit((parts.scheme, netloc, parts.path, query, ""))
 
 
-def _xml_attr(value: str) -> str:
-    return (
-        value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
-    )
+def collect_follows(engine: sa.Engine) -> list[FollowRow]:
+    """One row per followed Edition, by title: its best active binding, its last read Unit."""
+    sf, sb, si = acquisition.series_follow, acquisition.source_binding, acquisition.source_item
+    work, unit = catalog.work, catalog.unit
+    with engine.connect() as connection:
+        follows = connection.execute(
+            sa.select(sf.c.edition_id, work.c.title).join(work, work.c.id == sf.c.work_id)
+        ).all()
+        bindings: dict[str, tuple[str, str | None]] = {}
+        for edition_id, source_key, url in connection.execute(
+            sa.select(sb.c.edition_id, si.c.source_key, si.c.url)
+            .join(si, si.c.id == sb.c.source_item_id)
+            .where(sb.c.active.is_(True))
+            .order_by(sb.c.priority.desc())  # the lowest priority number wins: written last
+        ):
+            bindings[edition_id] = (source_key, url)
+        last_read: dict[str, str] = {}
+        for edition_id, number in connection.execute(
+            sa.select(unit.c.edition_id, unit.c.number_norm)
+            .where(
+                unit.c.track == "main",
+                unit.c.id.in_(sa.text("SELECT unit_id FROM reading_progress WHERE state = 'read'")),
+            )
+            .order_by(unit.c.number_sort.asc(), unit.c.number_segment_ordinal.asc())
+        ):
+            last_read[edition_id] = number  # the highest number is written last
+    rows = []
+    for edition_id, title in follows:
+        source_key, url = bindings.get(edition_id, ("", None))
+        rows.append(FollowRow(title, source_key, public_url(url), last_read.get(edition_id, "")))
+    return sorted(rows, key=lambda r: (r.title.casefold(), r.source, r.url))
 
 
 def render_opml(rows: Iterable[FollowRow]) -> str:
-    rows = list(rows)
-    parts: list[str] = [
+    """OPML 2.0, one `outline` per series. Written by hand: the only XML entry point of the
+    project is the parser (ENF-SEC-014), and every value is escaped as an attribute."""
+    lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<opml version="2.0">',
-        "  <head><title>Shelfhold follows</title></head>",
+        "  <head>",
+        "    <title>Shelfhold follows</title>",
+        "  </head>",
         "  <body>",
     ]
     for row in rows:
-        attrs = {
-            "text": row.title,
-            "title": row.title,
-            "type": "link",
-            "source": row.source,
-            "url": row.url,
-            "xmlUrl": row.url,
-            "htmlUrl": row.url,
-            "lastNumber": row.last_number,
-            "last_number": row.last_number,
-            "lastRead": row.last_number,
-        }
-        attr_text = " ".join(f'{key}="{_xml_attr(str(value))}"' for key, value in attrs.items())
-        parts.append(f"    <outline {attr_text}/>")
-    parts += ["  </body>", "</opml>"]
-    return "\n".join(parts) + "\n"
+        attributes = (
+            ("text", row.title),
+            ("type", "link"),
+            ("url", row.url),
+            ("source", row.source),
+            ("lastNumber", row.last_number),
+        )
+        text = " ".join(f'{name}="{_attribute(value)}"' for name, value in attributes)
+        lines.append(f"    <outline {text} />")
+    lines += ["  </body>", "</opml>", ""]
+    return "\n".join(lines)
 
 
 def render_csv(rows: Iterable[FollowRow]) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(["title", "source", "url", "last_number"])
+    writer.writerow(CSV_HEADER)
     for row in rows:
-        writer.writerow([row.title, row.source, row.url, row.last_number])
+        writer.writerow(
+            [_cell(row.title), _cell(row.source), _cell(row.url), _cell(row.last_number)]
+        )
     return buffer.getvalue()
 
 
-class FollowsExporter:
-    """Small facade for callers that prefer an object."""
-
-    def __init__(self, source: Any) -> None:
-        self._source = source
-
-    def export(self, format: str = "opml", **kwargs: Any) -> str:
-        return export_follows(self._source, format=format, **kwargs)
-
-    def opml(self) -> str:
-        return render_opml(_load_rows(self._source))
-
-    def csv(self) -> str:
-        return render_csv(_load_rows(self._source))
+def export_follows(engine: sa.Engine, fmt: str) -> str:
+    """The followed series as `opml` or `csv` text; any other format is a `ValueError`."""
+    if fmt not in FORMATS:
+        raise ValueError(fmt)
+    rows = collect_follows(engine)
+    return render_opml(rows) if fmt == "opml" else render_csv(rows)
 
 
-# Aliases that a caller might expect.
-export = export_follows
-follows_export = export_follows
-export_follows_opml = lambda source, **kw: render_opml(_load_rows(source))  # noqa: E731
-export_follows_csv = lambda source, **kw: render_csv(_load_rows(source))  # noqa: E731
+def _attribute(value: str) -> str:
+    """Escaped for a double-quoted attribute; line breaks and tabs are kept as references."""
+    escaped = _XML_FORBIDDEN.sub("", value)
+    for raw, reference in _XML_ESCAPES.items():
+        escaped = escaped.replace(raw, reference)
+    return escaped
+
+
+def _cell(value: str) -> str:
+    """A title that a spreadsheet would run as a formula is kept as text (leading quote)."""
+    return "'" + value if value.startswith(_FORMULA_START) else value
