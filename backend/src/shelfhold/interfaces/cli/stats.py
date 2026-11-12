@@ -62,4 +62,14 @@ def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             writer=result.guards_triggered["foreign_writer"],
         )
     )
+    for row in result.requests_by_profile:
+        print(
+            t(
+                "stats.requests_profile",
+                username=row["username"],
+                requested=row["requested"],
+                delivered=row["delivered"],
+                share=row["delivered_share_percent"],
+            )
+        )
     return 0

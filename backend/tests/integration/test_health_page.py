@@ -6,8 +6,9 @@ secret, passphrase or real path is ever part of an answer.
 import json
 import sqlite3
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -31,6 +32,8 @@ from tests.health_env import (
     seed_units,
 )
 
+DATABASE_FILES = (".db", ".db-wal", ".db-shm", ".db-journal")
+
 
 @pytest.fixture
 def api(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[AuthEnv]:
@@ -41,21 +44,23 @@ def api(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[AuthEnv
 def _key_of(api: AuthEnv, username: str) -> str:
     engine = create_db_engine(api.settings.database_path)
     try:
-        return local_auth(engine, api.settings).create_api_key(
-            name="k", username=username, read_only=True
-        ).value
+        return (
+            local_auth(engine, api.settings)
+            .create_api_key(name="k", username=username, read_only=True)
+            .value
+        )
     finally:
         engine.dispose()
 
 
-def _page(api: AuthEnv) -> dict[str, object]:
+def _page(api: AuthEnv) -> Any:
     assert api.login().status_code == 200
     response = api.client.get(HEALTH_PATH)
     assert response.status_code == 200, response.text
-    return dict(response.json())
+    return response.json()
 
 
-# -- access: the administrator alone ---------------------------------------------------------------
+# -- access: the administrator alone ----------------------------------------------------------
 
 
 @pytest.mark.req("ENF-OBS-005")
@@ -98,7 +103,7 @@ def test_health_page_admin_session_and_key_read_the_same_page(api: AuthEnv) -> N
     )
     assert keyed.status_code == 200
     assert {s["plugin_id"] for s in keyed.json()["sources"]} == {
-        s["plugin_id"] for s in body["sources"]  # type: ignore[attr-defined]
+        s["plugin_id"] for s in body["sources"]
     }
 
 
@@ -110,13 +115,13 @@ def test_health_page_is_get_only(api: AuthEnv) -> None:
         assert response.status_code in (403, 405), verb
 
 
-# -- sources ----------------------------------------------------------------------------------------
+# -- sources ----------------------------------------------------------------------------------
 
 
 @pytest.mark.req("EF-SRC-014")
 def test_source_degraded_after_three_failures_with_action(api: AuthEnv) -> None:
     seed_sources(api.settings)
-    sources = {s["plugin_id"]: s for s in _page(api)["sources"]}  # type: ignore[attr-defined]
+    sources = {s["plugin_id"]: s for s in _page(api)["sources"]}
     assert sources["good-source"]["state"] == "ok"  # one failure is a blip, not a verdict
     assert sources["good-source"]["code"] is None
     down = sources["down-source"]
@@ -141,7 +146,7 @@ def test_source_two_failures_are_not_degraded_three_are(api: AuthEnv) -> None:
                 )
             )
     engine.dispose()
-    sources = {s["plugin_id"]: s["state"] for s in _page(api)["sources"]}  # type: ignore[attr-defined]
+    sources = {s["plugin_id"]: s["state"] for s in _page(api)["sources"]}
     assert sources == {"two": "ok", "three": "degraded"}
 
 
@@ -162,31 +167,33 @@ def test_health_page_never_carries_a_source_url_or_a_secret(api: AuthEnv) -> Non
     assert "http" not in text.replace("https://testserver", "")
 
 
-# -- irreplaceable, lost originals, backup ----------------------------------------------------------
+# -- irreplaceable, lost originals, backup ----------------------------------------------------
 
 
 @pytest.mark.req("EF-BIB-031")
 def test_health_page_counts_irreplaceable_units(api: AuthEnv) -> None:
     seed_units(api.settings)
     irreplaceable = _page(api)["irreplaceable"]
-    assert irreplaceable["count"] == 3  # type: ignore[index]  # bare, single, kept
-    assert irreplaceable["without_kept_copy"] == 1  # type: ignore[index]
-    assert irreplaceable["single_copy"] == 1  # type: ignore[index]
-    assert irreplaceable["store_backup"] == {"declared": False, "age_days": None}  # type: ignore[index]
+    assert irreplaceable["count"] == 3  # bare, single, kept
+    assert irreplaceable["without_kept_copy"] == 1
+    assert irreplaceable["single_copy"] == 1
+    assert irreplaceable["store_backup"] == {"declared": False, "age_days": None}
 
 
 @pytest.mark.req("EF-BIB-031")
 def test_health_page_store_backup_age_is_the_declared_one(api: AuthEnv) -> None:
+    declared = datetime(2026, 11, 12, 8, 0, tzinfo=UTC)
+    api.clock.current = declared + timedelta(hours=3)
     connection = sqlite3.connect(api.settings.database_path)
     try:
         connection.execute(
             "INSERT INTO app_setting (key, value) VALUES ('store.backup_declared_at', ?)",
-            (datetime.now(UTC).replace(microsecond=0).isoformat(),),
+            (declared.isoformat(),),
         )
         connection.commit()
     finally:
         connection.close()
-    backup = _page(api)["irreplaceable"]["store_backup"]  # type: ignore[index]
+    backup = _page(api)["irreplaceable"]["store_backup"]
     assert backup["declared"] is True
     assert backup["age_days"] == 0
 
@@ -195,10 +202,10 @@ def test_health_page_store_backup_age_is_the_declared_one(api: AuthEnv) -> None:
 def test_health_lists_lost_original_with_derivative(api: AuthEnv) -> None:
     unit, content = seed_lost_original(api.settings)
     lost = _page(api)["lost_originals"]
-    assert [(i["unit_id"], i["content_id"]) for i in lost] == [(unit, content)]  # type: ignore[attr-defined]
-    assert lost[0]["code"] == "content.original_lost"  # type: ignore[index]
-    assert lost[0]["derivative_present"] is True  # type: ignore[index]
-    assert cli_exists(lost[0]["action"]["command"])  # type: ignore[index]
+    assert [(i["unit_id"], i["content_id"]) for i in lost] == [(unit, content)]
+    assert lost[0]["code"] == "content.original_lost"
+    assert lost[0]["derivative_present"] is True
+    assert cli_exists(lost[0]["action"]["command"])
 
 
 @pytest.mark.req("EF-INT-015")
@@ -228,12 +235,18 @@ def test_backup_passphrase_in_data_warns(
         page = build_health_page(engine, settings, NOW)
     finally:
         engine.dispose()
-    warnings = {w["code"]: w for w in page["backup"]["warnings"]}  # type: ignore[index]
+    warnings = {w["code"]: w for w in page["backup"]["warnings"]}
     assert warnings["backup_passphrase_colocated"]["action"]["command"].startswith(
         "shelfhold backup run"
     )
     text = json.dumps(page)
-    for leaked in (phrase, str(file), str(api.settings.data_dir), str(destination), "backup-phrase"):
+    for leaked in (
+        phrase,
+        str(file),
+        str(api.settings.data_dir),
+        str(destination),
+        "backup-phrase",
+    ):
         assert leaked not in text
     file.unlink()  # the page does not read it: the warning is the database's, and stays
     engine = engine_of(api.settings)
@@ -241,17 +254,17 @@ def test_backup_passphrase_in_data_warns(
         again = build_health_page(engine, settings, NOW)
     finally:
         engine.dispose()
-    assert "backup_passphrase_colocated" in {w["code"] for w in again["backup"]["warnings"]}  # type: ignore[index]
+    assert "backup_passphrase_colocated" in {w["code"] for w in again["backup"]["warnings"]}
 
 
 @pytest.mark.req("EF-INT-015")
 def test_backup_not_configured_is_an_entry_with_an_action(api: AuthEnv) -> None:
-    warnings = _page(api)["backup"]["warnings"]  # type: ignore[index]
+    warnings = _page(api)["backup"]["warnings"]
     assert {w["code"] for w in warnings} == {"backup_not_configured"}
     assert cli_exists(warnings[0]["action"]["command"])
 
 
-# -- what waits: withdrawal, Kavita audit, jurisdiction ---------------------------------------------
+# -- what waits: withdrawal, Kavita audit, jurisdiction ---------------------------------------
 
 
 @pytest.mark.req("EF-BIB-031")
@@ -269,11 +282,12 @@ def test_health_page_lists_withdrawal_pending_without_relaunching_it(api: AuthEn
         page = build_health_page(engine, api.settings, NOW, waiting=waiting)
     finally:
         engine.dispose()
-    pending = page["withdrawal_pending"]  # type: ignore[index]
+    pending = page["withdrawal_pending"]
     assert pending["count"] == 1
-    assert pending["action"] == {"command": "shelfhold shelf withdraw", "reserved": True}
-    assert [a["code"] for a in page["kavita_audit"]] == ["child_exposure"]  # type: ignore[index]
-    assert all(cli_exists(a["action"]["command"]) for a in page["kavita_audit"])  # type: ignore[index]
+    assert pending["action"]["command"] == "shelfhold shelf withdraw"
+    assert pending["action"]["reserved"] is True
+    assert [a["code"] for a in page["kavita_audit"]] == ["child_exposure"]
+    assert all(cli_exists(a["action"]["command"]) for a in page["kavita_audit"])
 
 
 @pytest.mark.req("EF-BIB-031")
@@ -286,11 +300,17 @@ def test_health_page_reads_and_never_writes(api: AuthEnv) -> None:
     def snapshot() -> list[tuple[str, int]]:
         connection = sqlite3.connect(api.settings.database_path)
         try:
-            tables = [r[0] for r in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-            )]
-            return [(t, connection.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0])
-                    for t in sorted(tables)]  # noqa: S608
+            tables = [
+                r[0]
+                for r in connection.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+                )
+            ]
+            return [
+                (t, connection.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0])  # noqa: S608
+                for t in sorted(tables)
+            ]
         finally:
             connection.close()
 
@@ -314,11 +334,11 @@ def test_health_page_reads_the_database_only(api: AuthEnv, monkeypatch: pytest.M
     touched: list[str] = []
     real_open, real_scandir, real_stat = builtins.open, os.scandir, os.stat
 
-    def spy(real):  # type: ignore[no-untyped-def]
-        def wrapper(path, *args, **kwargs):  # type: ignore[no-untyped-def]
-            if isinstance(path, str | Path) and str(path).startswith(guarded):
-                if not str(path).endswith((".db", ".db-wal", ".db-shm", ".db-journal")):
-                    touched.append(str(path))
+    def spy(real):
+        def wrapper(path, *args, **kwargs):
+            named = str(path) if isinstance(path, str | Path) else ""
+            if named.startswith(guarded) and not named.endswith(DATABASE_FILES):
+                touched.append(named)
             return real(path, *args, **kwargs)
 
         return wrapper
@@ -336,9 +356,9 @@ def test_health_page_every_entry_has_a_stable_code_and_an_action(api: AuthEnv) -
     seed_lost_original(api.settings)
     page = _page(api)
     entries: list[dict[str, object]] = []
-    entries += [s for s in page["sources"] if s["state"] != "ok"]  # type: ignore[attr-defined]
-    entries += page["lost_originals"]  # type: ignore[operator]
-    entries += page["backup"]["warnings"]  # type: ignore[index]
+    entries += [s for s in page["sources"] if s["state"] != "ok"]
+    entries += page["lost_originals"]
+    entries += page["backup"]["warnings"]
     assert entries
     for entry in entries:
         assert isinstance(entry["code"], str) and entry["code"]
@@ -346,7 +366,7 @@ def test_health_page_every_entry_has_a_stable_code_and_an_action(api: AuthEnv) -
         assert isinstance(action, dict) and cli_exists(str(action["command"])), entry
 
 
-# -- stats: requests by profile ---------------------------------------------------------------------
+# -- stats: requests by profile ---------------------------------------------------------------
 
 
 @pytest.mark.req("EF-INT-025")

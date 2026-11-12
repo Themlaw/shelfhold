@@ -88,6 +88,29 @@
         "title": "AcquireIn",
         "type": "object"
       },
+      "ActionOut": {
+        "properties": {
+          "command": {
+            "title": "Command",
+            "type": "string"
+          },
+          "reserved": {
+            "title": "Reserved",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "reserved",
+          "text"
+        ],
+        "title": "ActionOut",
+        "type": "object"
+      },
       "ActivityOut": {
         "properties": {
           "event_id": {
@@ -1100,6 +1123,83 @@
           "foreign_writer"
         ],
         "title": "GuardsTriggered",
+        "type": "object"
+      },
+      "HealthPageOut": {
+        "description": "The Health page (EF-SRC-014, EF-BIB-031, EF-BIB-051, EF-INT-015, EF-INT-025). The nested\ndocuments are typed by the code of their entries; none holds a secret, a phrase or a path.",
+        "properties": {
+          "backup": {
+            "additionalProperties": true,
+            "title": "Backup",
+            "type": "object"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "irreplaceable": {
+            "additionalProperties": true,
+            "title": "Irreplaceable",
+            "type": "object"
+          },
+          "jurisdiction": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jurisdiction"
+          },
+          "kavita_audit": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Kavita Audit",
+            "type": "array"
+          },
+          "lost_originals": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Lost Originals",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceHealthOut"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "stats": {
+            "additionalProperties": true,
+            "title": "Stats",
+            "type": "object"
+          },
+          "withdrawal_pending": {
+            "additionalProperties": true,
+            "title": "Withdrawal Pending",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generated_at",
+          "sources",
+          "irreplaceable",
+          "lost_originals",
+          "withdrawal_pending",
+          "kavita_audit",
+          "jurisdiction",
+          "backup",
+          "stats"
+        ],
+        "title": "HealthPageOut",
         "type": "object"
       },
       "HealthzResponse": {
@@ -2201,6 +2301,39 @@
           "action"
         ],
         "title": "Problem",
+        "type": "object"
+      },
+      "ProfileRequests": {
+        "properties": {
+          "delivered": {
+            "title": "Delivered",
+            "type": "integer"
+          },
+          "delivered_share_percent": {
+            "title": "Delivered Share Percent",
+            "type": "integer"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "integer"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_id",
+          "username",
+          "requested",
+          "delivered",
+          "delivered_share_percent"
+        ],
+        "title": "ProfileRequests",
         "type": "object"
       },
       "ProfilesIn": {
@@ -3404,6 +3537,64 @@
         "title": "SkipReadUpgradesIn",
         "type": "object"
       },
+      "SourceHealthOut": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "plugin_id": {
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "paused",
+              "degraded"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "state",
+          "code",
+          "since",
+          "action"
+        ],
+        "title": "SourceHealthOut",
+        "type": "object"
+      },
       "SourceIn": {
         "properties": {
           "fix_suwayomi_settings": {
@@ -3462,6 +3653,13 @@
             ],
             "title": "Median Detection To Visible S"
           },
+          "requests_by_profile": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileRequests"
+            },
+            "title": "Requests By Profile",
+            "type": "array"
+          },
           "since_days": {
             "title": "Since Days",
             "type": "integer"
@@ -3477,7 +3675,8 @@
           "units_exported",
           "median_detection_to_visible_s",
           "arrivals_pending",
-          "guards_triggered"
+          "guards_triggered",
+          "requests_by_profile"
         ],
         "title": "StatsOut",
         "type": "object"
@@ -6602,6 +6801,57 @@
         "summary": "Follow",
         "tags": [
           "follows"
+        ]
+      }
+    },
+    "/api/v1/health/page": {
+      "get": {
+        "operationId": "health_page",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthPageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Health Page",
+        "tags": [
+          "health"
         ]
       }
     },

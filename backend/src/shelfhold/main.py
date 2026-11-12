@@ -48,6 +48,7 @@ from shelfhold.interfaces.http_api.backfill import build_backfill_router
 from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
 from shelfhold.interfaces.http_api.follows import build_follows_router
 from shelfhold.interfaces.http_api.headless import build_headless_router
+from shelfhold.interfaces.http_api.health import build_health_page_router
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
@@ -258,6 +259,7 @@ def create_app(
         build_search_router(lambda: engine),  # EF-BIB-010: admin only until the barrier (L09)
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command
+        build_health_page_router(lambda: engine, resolved, clock.now),  # M3 L15: admin only
         build_ops_router(ops_services),  # EF-INT-023: the exits
         build_triage_router(ops_services),  # EF-USR-015, EF-EXP-046: the two lists, the batch
         build_library_router(ops_services),  # pairing, repatriation, detach, purge, probe

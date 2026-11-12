@@ -55,6 +55,24 @@ export type AcquireIn = {
 };
 
 /**
+ * ActionOut
+ */
+export type ActionOut = {
+    /**
+     * Command
+     */
+    command: string;
+    /**
+     * Reserved
+     */
+    reserved: boolean;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
  * ActivityOut
  */
 export type ActivityOut = {
@@ -711,6 +729,65 @@ export type GuardsTriggered = {
      * Sentinel
      */
     sentinel: number;
+};
+
+/**
+ * HealthPageOut
+ *
+ * The Health page (EF-SRC-014, EF-BIB-031, EF-BIB-051, EF-INT-015, EF-INT-025). The nested
+ * documents are typed by the code of their entries; none holds a secret, a phrase or a path.
+ */
+export type HealthPageOut = {
+    /**
+     * Backup
+     */
+    backup: {
+        [key: string]: unknown;
+    };
+    /**
+     * Generated At
+     */
+    generated_at: string;
+    /**
+     * Irreplaceable
+     */
+    irreplaceable: {
+        [key: string]: unknown;
+    };
+    /**
+     * Jurisdiction
+     */
+    jurisdiction: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Kavita Audit
+     */
+    kavita_audit: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Lost Originals
+     */
+    lost_originals: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Sources
+     */
+    sources: Array<SourceHealthOut>;
+    /**
+     * Stats
+     */
+    stats: {
+        [key: string]: unknown;
+    };
+    /**
+     * Withdrawal Pending
+     */
+    withdrawal_pending: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -1372,6 +1449,32 @@ export type Problem = {
      */
     type: string;
     [key: string]: unknown;
+};
+
+/**
+ * ProfileRequests
+ */
+export type ProfileRequests = {
+    /**
+     * Delivered
+     */
+    delivered: number;
+    /**
+     * Delivered Share Percent
+     */
+    delivered_share_percent: number;
+    /**
+     * Profile Id
+     */
+    profile_id: string;
+    /**
+     * Requested
+     */
+    requested: number;
+    /**
+     * Username
+     */
+    username: string;
 };
 
 /**
@@ -2155,6 +2258,29 @@ export type SkipReadUpgradesIn = {
 };
 
 /**
+ * SourceHealthOut
+ */
+export type SourceHealthOut = {
+    action: ActionOut | null;
+    /**
+     * Code
+     */
+    code: string | null;
+    /**
+     * Plugin Id
+     */
+    plugin_id: string;
+    /**
+     * Since
+     */
+    since: string | null;
+    /**
+     * State
+     */
+    state: 'ok' | 'paused' | 'degraded';
+};
+
+/**
  * SourceIn
  */
 export type SourceIn = {
@@ -2190,6 +2316,10 @@ export type StatsOut = {
      * Median Detection To Visible S
      */
     median_detection_to_visible_s: number | null;
+    /**
+     * Requests By Profile
+     */
+    requests_by_profile: Array<ProfileRequests>;
     /**
      * Since Days
      */
@@ -4058,6 +4188,39 @@ export type FollowResponses = {
 };
 
 export type FollowResponse = FollowResponses[keyof FollowResponses];
+
+export type HealthPageData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/health/page';
+};
+
+export type HealthPageErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type HealthPageError = HealthPageErrors[keyof HealthPageErrors];
+
+export type HealthPageResponses = {
+    /**
+     * Successful Response
+     */
+    200: HealthPageOut;
+};
+
+export type HealthPageResponse = HealthPageResponses[keyof HealthPageResponses];
 
 export type IntentsListData = {
     body?: never;

@@ -666,6 +666,17 @@ written = "Paquet de diagnostic écrit : {members} fichiers, {kept} lignes de jo
 [search]
 rebuilt = "Index de recherche refait : {count} Œuvre(s), mode {mode}."
 
+[health]
+original_lost_action = "L'original est perdu, le dérivé est conservé : « shelfhold content reneutralize » repart du dérivé."
+withdrawal_action = "Des fichiers n'ont plus leur place sur une étagère famille : « shelfhold shelf withdraw » (action réservée) les retire, rien n'est fait tout seul."
+kavita_audit_action = "Un compte Kavita voit plus que l'étagère ne le permet : corrigez-le dans Kavita, puis relancez la vérification."
+jurisdiction_action = "La juridiction n'est pas confirmée : « shelfhold config set instance.jurisdiction <pays> »."
+backup_not_configured = "Aucune sauvegarde n'est configurée : « shelfhold config set » (dossier et phrase de passe)."
+backup_incomplete = "La sauvegarde est à moitié configurée : « shelfhold config set » pour le dossier et la phrase de passe."
+backup_passphrase_colocated = "La phrase de passe est rangée dans /data : rangez-la ailleurs, puis « shelfhold backup run »."
+backup_same_device = "La destination est sur le disque de /data : « shelfhold config set » vers un autre disque."
+backup_stale = "La dernière sauvegarde est trop ancienne : « shelfhold backup run »."
+
 [stats]
 invalid_since = "Fenêtre invalide : {value} (attendu : un nombre de jours, par exemple 30d)."
 header = "Indicateurs des {days} derniers jours (calculés sur cette instance, aucune requête sortante)."
@@ -675,6 +686,7 @@ units_exported = "Unités exportées : {count}"
 arrivals_pending = "Arrivées en attente dans Kavita : {count}"
 median_delay = "Délai médian entre détection et visibilité dans Kavita (secondes) : {value}"
 guards = "Gardes déclenchées : sentinelle {sentinel}, autre écrivain {writer}"
+requests_profile = "Demandes de « {username} » : {requested}, livrées : {delivered} ({share} %)"
 
 [content]
 preview_stale = "Ce n'est pas le plan qui a été montré : relancez l'aperçu (aucun fichier n'a été touché)."

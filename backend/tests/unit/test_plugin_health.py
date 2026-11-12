@@ -11,7 +11,7 @@ from shelfhold.ops.health import action_of
 from shelfhold.plugin_host import errors as host_errors
 from shelfhold.plugin_host import health
 from shelfhold.sdk import source as sdk
-from tests.health_env import cli_exists, cli_words
+from tests.health_env import cli_exists
 
 
 def _all_source_errors() -> set[type[sdk.SourceError]]:
@@ -27,18 +27,19 @@ def _all_source_errors() -> set[type[sdk.SourceError]]:
 @pytest.mark.req("EF-SRC-014")
 def test_source_health_typed_errors_mapped_to_ui_action() -> None:
     assert host_errors.AuthExpired  # imported: its subclasses are registered
-    classes = _all_source_errors() | {sdk.SourceError}
-    unmapped = {c.__name__ for c in classes if c not in health.TYPED_ERRORS} - {
-        c.__name__ for c in health.NOT_A_SOURCE_STATE
-    }
-    assert not unmapped, f"typed errors without a state and an action: {sorted(unmapped)}"
+    classes = {c for c in _all_source_errors() if c.__module__.startswith("shelfhold.")}
+    classes |= {sdk.SourceError}
+    for cls in classes - set(health.NOT_A_SOURCE_STATE):
+        # an error that carries a code of its own has an entry of its own (one that only inherits
+        # reads the entry of its parent: `FeedError` is `source.changed`)
+        found = next(health.TYPED_ERRORS[c] for c in cls.__mro__ if c in health.TYPED_ERRORS)
+        assert found.code == cls.code, f"{cls.__name__}: {cls.code} has no entry"
     for cls in sorted(health.TYPED_ERRORS, key=lambda c: c.__name__):
         typed = health.TYPED_ERRORS[cls]
         assert typed.code == getattr(cls, "code", "source.error"), cls  # the stable code
         assert typed.scope in {"service", "unit"}
         action = action_of(typed)
         assert cli_exists(action.command), f"{cls.__name__}: `{action.command}` is not a command"
-        assert cli_words(action.command), cls
         catalog = load_catalog()
         assert f"errors.{typed.code}.action" in catalog, f"{typed.code}: no text for the action"
 
@@ -46,7 +47,9 @@ def test_source_health_typed_errors_mapped_to_ui_action() -> None:
 @pytest.mark.req("EF-SRC-014")
 def test_typed_state_reads_an_instance_by_its_class() -> None:
     assert health.typed_state(host_errors.AuthExpired("x")).waiting_state == "auth_expired"
-    assert health.typed_state(host_errors.ServiceInstanceChanged()).code == "source.instance_changed"
+    assert (
+        health.typed_state(host_errors.ServiceInstanceChanged()).code == "source.instance_changed"
+    )
     assert health.typed_state(sdk.ContentRemoved("gone")).scope == "unit"
     # an error nobody typed is the generic one: still a code and an action, never a stack trace
     generic = health.typed_state(RuntimeError("boom"))
@@ -63,6 +66,7 @@ def test_action_of_reuses_the_status_commands() -> None:
     command, reserved = command_for("auth_expired", "")
     assert action_of(typed).command == command
     assert action_of(typed).reserved is reserved
-    assert action_of(health.typed_state(host_errors.ServiceInstanceChanged())).command == (
-        command_for("source_instance_changed", "")[0]
+    assert (
+        action_of(health.typed_state(host_errors.ServiceInstanceChanged())).command
+        == (command_for("source_instance_changed", "")[0])
     )

@@ -181,26 +181,17 @@ def seed_requests(settings: Settings, now: datetime, ids: dict[str, str]) -> Non
         engine.dispose()
 
 
-def cli_words(command: str) -> list[str]:
-    """`shelfhold source set-secret --secret-file <file>` -> the words that name a command."""
+def cli_exists(command: str) -> bool:
+    """Is `shelfhold <group> <action> ...` a command of the parser? The words after the leaf
+    (identifiers, `--flags`, `<placeholders>`) are its arguments and are not looked at."""
     words = command.split()
     assert words[0] == "shelfhold", command
-    named: list[str] = []
-    for word in words[1:]:
-        if word.startswith(("-", "<", "(", '"', "{")):
-            break
-        named.append(word)
-    return named
-
-
-def cli_exists(command: str) -> bool:
-    """Is it a command of the parser (a group, then its action)? A `--flag` is not looked at."""
     parser = build_parser()
-    for word in cli_words(command):
+    for index, word in enumerate(words[1:]):
         sub = next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
-        if sub is None or word not in sub.choices:
+        if sub is None:
+            return index > 0  # a leaf: what follows is an argument
+        if word not in sub.choices:
             return False
         parser = sub.choices[word]
-    return bool(cli_words(command))
-
-
+    return len(words) > 1
