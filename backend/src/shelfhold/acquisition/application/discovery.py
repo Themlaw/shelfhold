@@ -34,6 +34,7 @@ from shelfhold.catalog.public import (
     translation_type_for,
 )
 from shelfhold.export.public import forget_coverage_unknown, pending_pairing
+from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import Destination, sanitize_upstream_text
 from shelfhold.infrastructure.ids import new_ulid
@@ -206,6 +207,7 @@ class SeriesDiscovery:
             return found
         langs = {s.source_key: s.lang for s in subs}
         warned = {s.source_key: content_warning_age(s.content_warning) for s in subs}
+        unknown_age = content_warning_age(None)
         if self._nature == "unknown":  # the kind then decides the discriminant (EF-BIB-049)
             log.info("discovery.translation_nature_unknown", plugin_id=self._plugin_id)
         for ref in todo:
@@ -221,7 +223,8 @@ class SeriesDiscovery:
             held = ref.source_key in held_sources
             binding_id = self._create(
                 ref, lang, None if held else shelf_id, _watermark(units),
-                suggested=warned.get(ref.source_key),
+                # a series whose sub-source was not listed is not known to be safe either
+                suggested=warned.get(ref.source_key, unknown_age),
             )  # fmt: skip
             log.debug(
                 "discovery.series_created",
@@ -377,7 +380,8 @@ class SeriesDiscovery:
                 connection.execute(
                     sa.insert(acquisition.source_binding).values(
                         id=binding_id, work_id=work_id, edition_id=edition_id,
-                        source_item_id=item_id, priority=1, active=True,
+                        source_item_id=item_id, active=True,
+                        priority=next_binding_priority(connection, edition_id),
                     )
                 )  # fmt: skip
                 follow = acquisition.series_follow

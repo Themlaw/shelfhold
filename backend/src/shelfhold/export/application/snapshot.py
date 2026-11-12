@@ -14,7 +14,7 @@ import json
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Literal
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
@@ -64,6 +64,7 @@ __all__ = [
     "DestinationContext",
     "LoadedRequest",
     "admissions_of",
+    "barrier_closed_by",
     "barrier_holds",
     "edition_age",
     "inputs_version_of",
@@ -330,26 +331,35 @@ def barrier_holds(connection: Connection, destination_id: str, edition_id: str) 
     18+ (the destination partitions, Kavita has no known flaw) takes this Edition. An adult shelf
     has nothing to ask. A plan that waited, a record put back to `planned`, a rating that moved:
     none of them gets a file into the library of the children."""
+    return barrier_closed_by(connection, destination_id, edition_id) is None
+
+
+def barrier_closed_by(
+    connection: Connection, destination_id: str, edition_id: str
+) -> Literal["destination", "age"] | None:
+    """Why `barrier_holds` is false: the destination (paused, not partitioned, a known flaw of the
+    access control, read-only) or the age (the Edition is not filed here, or its admission is
+    refused). `None`: the barrier holds."""
     ctx = load_context(connection, destination_id)
     try:
         # a pause set since the run began (a ceiling changed, an audit, a reinstalled server) is
         # read here, under the lock, whatever the ceiling has become
         ensure_active(connection, destination_id)
     except DestinationPausedError:
-        return False
+        return "destination"
     if not is_family(ctx.max_age_rating):
-        return True
+        return None
     if ctx.partitioning not in PARTITIONED or ctx.access_control_known_bad:
-        return False
+        return "destination"
     if load_health(connection, ctx.target_id).mode is TargetMode.DEGRADED_READONLY:
-        return False  # preview only: a write of any kind stays out of the library of the children
+        return "destination"  # preview only: nothing is written for the children
     shelved = connection.execute(
         sa.select(catalog.edition.c.shelf_id).where(catalog.edition.c.id == edition_id)
     ).scalar()
     if shelved != ctx.shelf_id:
-        return False  # an Edition withdrawn (or never filed here) writes nothing into this shelf
+        return "age"  # an Edition withdrawn (or never filed here) writes nothing into this shelf
     verdict = RatingService().admission_of(connection, edition_id, shelf_id=ctx.shelf_id)
-    return verdict is Admission.ALLOWED
+    return None if verdict is Admission.ALLOWED else "age"
 
 
 def admissions_of(

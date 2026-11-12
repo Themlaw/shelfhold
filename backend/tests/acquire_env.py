@@ -55,7 +55,11 @@ class NativeBooks:
     def __init__(self, *, trust: str = "untrusted", file_url: str | None = None,
                  mime: str = "application/epub+zip", remote_id: str = BOOK,
                  domains: tuple[str, ...] = (HOST,), patterns: tuple[str, ...] = (f"https://{HOST}/book/*",),
-                 filters: tuple[str, ...] = ("language",)) -> None:  # fmt: skip
+                 filters: tuple[str, ...] = ("language",), content_warning: str = "safe",
+                 work_key: str | None = None,
+                 external_ids: dict[str, str] | None = None) -> None:  # fmt: skip
+        self.work_key = work_key
+        self.external_ids = dict(external_ids or {})
         self.file_url = file_url or f"https://{HOST}/files/book-42.epub"
         self.mime = mime
         self.remote_id = remote_id
@@ -71,6 +75,9 @@ class NativeBooks:
             ),
             content_trust=trust,  # type: ignore[arg-type]
         )  # fmt: skip
+        # what the manifest declares, set past the validation so that a test can hand over a
+        # value the SDK would refuse (a plugin loaded from an older release, a corrupted row)
+        object.__setattr__(self.manifest, "content_warning", content_warning)
 
     def filters(self) -> list[Any]:
         from shelfhold.sdk.models import FilterSpec
@@ -100,10 +107,17 @@ class NativeBooks:
         return self._series()
 
     async def get_series(self, f: Any, ref: SeriesRef) -> SeriesInfo:
-        return SeriesInfo(ref=ref, title="Un livre de test", authors=["Personne"])
+        return SeriesInfo(
+            ref=ref,
+            title="Un livre de test",
+            authors=["Personne"],
+            work_key=self.work_key,
+            external_ids=dict(self.external_ids),
+        )
 
     async def list_units(self, f: Any, ref: SeriesRef) -> list[UnitInfo]:
-        return [UnitInfo(remote_unit_id=UNIT, source_order=1, kind="book", number=None)]
+        unit = UNIT if ref.remote_id == BOOK else f"{KEY}:{ref.remote_id}:ebook"
+        return [UnitInfo(remote_unit_id=unit, source_order=1, kind="book", number=None)]
 
     async def fetch_unit(self, f: Any, ref: SeriesRef, u: UnitInfo) -> FileAsset:
         return FileAsset(

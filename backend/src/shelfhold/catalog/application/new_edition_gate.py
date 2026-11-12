@@ -67,6 +67,7 @@ def file_new_edition(
     *,
     hold_unrated_work: bool = False,
     rating: RatingService | None = None,
+    keep_filed: bool = False,
 ) -> Filing:
     """File an Edition that arrives on `shelf_id` (`None`: unfiled), if the shelf takes it.
 
@@ -74,7 +75,24 @@ def file_new_edition(
     allows (rated by an admin, under the ceiling, no suggested age above) is filed; any other one
     is left unfiled and waits. `hold_unrated_work` lets an Edition of a Work nobody rated wait on
     the shelf instead (the planner still refuses it); it never applies to a rated Work.
+
+    `keep_filed`: a book joins an Edition that may already sit on a shelf. That Edition is never
+    moved, whatever the admission says: the withdrawal of a shelf below 18+ is never automatic
+    (a reserved action, `shelf withdraw`). The refusal is only reported (`waiting`, `reason`): the
+    Edition shows in `status` as `withdrawal_pending` and the export refuses it.
     """
+    if keep_filed:
+        current = connection.execute(
+            sa.select(catalog.edition.c.shelf_id).where(catalog.edition.c.id == edition_id)
+        ).scalar()
+        if current is not None:
+            if _family(connection, current):
+                verdict = (rating or RatingService()).admission_of(
+                    connection, edition_id, shelf_id=current
+                )
+                if verdict is not Admission.ALLOWED:
+                    return Filing(current, waiting=True, reason=verdict.value)
+            return Filing(current, waiting=False)
     if shelf_id is None:
         _set(connection, edition_id, None)
         return Filing(None, waiting=False)

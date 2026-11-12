@@ -22,7 +22,7 @@ one counted) closes the request for good; a transport failure leaves it to be as
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
@@ -46,6 +46,7 @@ from shelfhold.catalog.public import (
     BindingRef,
     Catalog,
     EditionSpec,
+    ExternalId,
     IncomingEdition,
     IncomingUnit,
     LanguageError,
@@ -53,11 +54,14 @@ from shelfhold.catalog.public import (
     TombstoneScreen,
     UnsupportedFileError,
     announced_kind,
+    content_warning_age,
     edition_key_lang,
     file_new_edition,
+    suggest_age,
     translation_type_for,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
+from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import (
     Destination,
@@ -400,7 +404,12 @@ class NativeAcquirer:
             raise AcquireRefused(
                 "acquire.tombstones_unavailable", "the Work tombstones cannot be checked here"
             )
-        return self._work_screen()
+        try:
+            return self._work_screen()
+        except Exception as error:  # a screen that cannot be opened: no arrival either
+            raise AcquireRefused(
+                "acquire.tombstones_unavailable", "the Work tombstones cannot be checked here"
+            ) from error
 
     @staticmethod
     def _choose(units: list[UnitInfo], wanted: str | None) -> UnitInfo:
@@ -514,10 +523,9 @@ class NativeAcquirer:
             return found.id, found.work_id, found.edition_id, False
         books = Catalog(connection)
         ids = incoming_work_ids(record.key, info)
-        if ids and screen is not None and screen.work_ids(ids):
-            # a Work purged on purpose does not come back by an identifier it carried (EF-BIB-053):
-            # asked before anything is made, so that nothing is left of the refusal
-            raise AcquireRefused("acquire.work_tombstoned", "the work was deleted on purpose")
+        # a Work purged on purpose does not come back by an identifier it carried (EF-BIB-053):
+        # asked before anything is made, so that nothing is left of the refusal
+        _refuse_tombstoned(screen, ids)
         # a book of a source that groups its books joins the Work its sibling made (EF-BIB-049)
         work_id = known_work(connection, record.key, info) or books.create_work(
             WORK_KIND, _title(title, ref.remote_id)
@@ -530,6 +538,7 @@ class NativeAcquirer:
             else (None, None)
         )
         publisher = _clean(info.publisher) or ""
+        joined = False  # an Edition that already existed: its shelf is not ours to move
         if lang is None:
             edition_id = new_ulid()
             connection.execute(
@@ -539,7 +548,7 @@ class NativeAcquirer:
                 )
             )  # fmt: skip
         else:
-            edition_id = books.edition_for_translation(
+            ensured = books.edition_for_translation(
                 EditionSpec(
                     work_id,
                     lang,
@@ -550,7 +559,9 @@ class NativeAcquirer:
                 kind=WORK_KIND,
                 nature=manifest.translation_nature,
                 text_version=version,
-            ).id
+            )
+            edition_id = ensured.id
+            joined = not ensured.created
         write_rights(
             connection, edition_id, basis=manifest.rights_basis,
             jurisdiction=manifest.rights_jurisdiction, attribution=_attribution(info.rights),
@@ -559,18 +570,29 @@ class NativeAcquirer:
         # the one door of the shelf and of the identifiers of a new Edition: a shelf below 18+
         # never takes it unrated, and the Work tombstones are asked again under the lock
         shelf = shelf_id or _shelf(connection)
+        # the age the source declares is a suggestion on the Edition the book joins, so that the
+        # one door of the shelf holds it "À classer" when it is above the Work's rating, or the
+        # source is not known to be safe (EF-BIB-055); a suggestion is never a rating
+        suggested = content_warning_age(self._declared_warning(connection, record, manifest, ref))
+        if suggested is not None:
+            suggest_age(
+                connection, "edition", edition_id, suggested, provenance="sub_source", now=now
+            )
+        # An Edition that already sits on a shelf stays there (no withdrawal is automatic,
+        # EF-BIB-037): a suggestion above its rating shows as `withdrawal_pending` (`shelf
+        # withdraw`) and the export refuses the Edition, so the new file does not reach the shelf
         if ids:
             if screen is None:  # pragma: no cover (`prepare` refuses it before the transaction)
                 raise AcquireRefused("acquire.tombstones_unavailable")
             arrival = AutoAttachService(tombstones=screen).arrive(
-                connection, IncomingEdition(edition_id, shelf, ids), now=now
+                connection, IncomingEdition(edition_id, shelf, ids, keep_filed=joined), now=now
             )
             if "tombstoned" in arrival.conflicts:
                 raise AcquireRefused("acquire.work_tombstoned", "the work was deleted on purpose")
             attached = arrival.work_id != work_id  # an identifier it carried named another Work
             work_id = arrival.work_id
         else:
-            file_new_edition(connection, edition_id, shelf)
+            file_new_edition(connection, edition_id, shelf, keep_filed=joined)
             attached = False
         if not attached:  # an Edition attached to a known Work leaves that Work's credits alone
             credit_authors(connection, work_id, info, _clean)
@@ -588,12 +610,28 @@ class NativeAcquirer:
         connection.execute(
             sa.insert(binding).values(
                 id=binding_id, work_id=work_id, edition_id=edition_id, source_item_id=item_id,
-                priority=1, active=True,
+                priority=next_binding_priority(connection, edition_id), active=True,
                 # as the manifest stands now: a third-party plugin's value only after attestation
                 content_trust=manifest.content_trust,
             )
         )  # fmt: skip
         return binding_id, work_id, edition_id, True
+
+    @staticmethod
+    def _declared_warning(
+        connection: Connection, record: Any, manifest: SourceManifest, ref: SeriesRef
+    ) -> str | None:
+        """The `content_warning` of the source of a book: the manifest's, or the one stored for
+        its sub-source. A sub-source nobody listed has none (`None`: not known to be safe)."""
+        if ref.source_key == record.key:
+            return str(manifest.content_warning) if manifest.content_warning is not None else None
+        table = acquisition.sub_source
+        found = connection.execute(
+            sa.select(table.c.content_warning).where(
+                table.c.plugin_id == record.key, table.c.source_key == ref.source_key
+            )
+        ).scalar()
+        return None if found is None else str(found)
 
     @staticmethod
     def _open_request(
@@ -856,6 +894,23 @@ def _language(raw: str | None) -> str | None:
         return str(edition_key_lang(raw))
     except LanguageError:
         return None
+
+
+def _refuse_tombstoned(screen: TombstoneScreen | None, ids: Sequence[ExternalId]) -> None:
+    """Fails closed: identifiers to check and no screen, or one that cannot answer, refuse."""
+    if not ids:
+        return
+    unavailable = AcquireRefused(
+        "acquire.tombstones_unavailable", "the Work tombstones cannot be checked here"
+    )
+    if screen is None:
+        raise unavailable
+    try:
+        blocked = screen.work_ids(ids)
+    except Exception as error:
+        raise unavailable from error
+    if blocked:
+        raise AcquireRefused("acquire.work_tombstoned", "the work was deleted on purpose")
 
 
 def _shelf(connection: Connection) -> str | None:

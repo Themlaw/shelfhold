@@ -21,6 +21,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.application.acquire import UNKNOWN_LANGUAGE, _shelf
 from shelfhold.catalog.public import BindingRef, Catalog, IncomingUnit, file_new_edition
+from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
@@ -93,7 +94,8 @@ class ImportTargets:
         connection.execute(
             sa.insert(binding).values(
                 id=binding_id, work_id=work_id, edition_id=edition_id, source_item_id=item_id,
-                priority=1, active=True, content_trust=item.trust,
+                priority=next_binding_priority(connection, edition_id), active=True,
+                content_trust=item.trust,
             )
         )  # fmt: skip
         return binding_id, work_id, edition_id, True

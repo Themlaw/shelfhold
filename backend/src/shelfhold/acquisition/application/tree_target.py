@@ -45,7 +45,6 @@ __all__ = [
 ]
 
 SUWAYOMI_PLUGIN = "suwayomi"
-_KNOWN_WARNINGS = frozenset({"safe", "mixed", "nsfw"})
 _NUMBER = re.compile(
     r"(?:(?<![^\W_])(?:ch(?:apter|\.)?|chap\.?|ep(?:isode|\.)?|#)\s*)(\d{1,5}(?:\.\d{1,2})?)\b",
     re.IGNORECASE,
@@ -88,14 +87,9 @@ def _folders(name: str | None, lang: str | None) -> frozenset[str]:
 
 
 def source_suggestion(warning: str | None) -> AgeRating | None:
-    """The age a sub-source's `content_warning` suggests, by the very rule of the follow cycle
-    (`content_warning_age`: `safe` nothing, `mixed` 18+, `nsfw` X). Case and spaces are
-    normalised; a value outside that domain, or none, is not known to be safe: it counts for
-    18+."""
-    word = fold(warning or "")
-    if word not in _KNOWN_WARNINGS:
-        return AgeRating(X_MIN_AGE)
-    return content_warning_age(word)
+    """The age a sub-source's `content_warning` suggests: `content_warning_age`, the rule of the
+    follow cycle and of the acquisition of a book, with no variant of its own."""
+    return content_warning_age(warning)
 
 
 @dataclass(frozen=True)

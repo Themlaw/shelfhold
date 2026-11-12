@@ -143,6 +143,7 @@ class IncomingEdition:
     ids: tuple[ExternalId, ...] = ()  # of its Work and of itself
     fields: tuple[FieldProposal, ...] = ()
     origin: str = "source"  # the provenance of its fields: source, provider, embedded, import
+    keep_filed: bool = False  # it joined an Edition already on a shelf: never moved (no withdrawal)
 
 
 @dataclass(frozen=True)
@@ -258,7 +259,10 @@ class AutoAttachService:
             raise TombstoneScreenMissingError("an arrival is screened by the Work tombstones")
         from_work = _work_of(connection, edition_id)
         # The gate first: whatever follows, a shelf below 18+ does not take it unrated.
-        filing = file_new_edition(connection, edition_id, incoming.shelf_id, rating=self._rating)
+        filing = file_new_edition(
+            connection, edition_id, incoming.shelf_id, rating=self._rating,
+            keep_filed=incoming.keep_filed,
+        )  # fmt: skip
         id_origin = _ID_ORIGINS.get(incoming.origin, "source")
         conflicts: list[str] = []
         work_ids: list[ExternalId] = []
