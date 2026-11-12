@@ -21,6 +21,7 @@ from shelfhold.infrastructure.content_trust import (
     epub_payload_hash,
     neutralize_epub,
 )
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.public import (
     EpubRefusedError,
@@ -549,7 +550,7 @@ def test_an_orphan_derivative_of_a_killed_filing_is_reused_by_the_retry() -> Non
         _r, library = ingest(env)
         data = library.read_bytes()
         with env.engine.begin() as c:
-            c.execute(sa.delete(storage.replica))
+            c.execute(sa.delete(replica_schema.replica))
             c.execute(sa.delete(storage.content))
         for f in env.files_under(env.store):
             f.unlink()

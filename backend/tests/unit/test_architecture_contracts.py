@@ -301,6 +301,30 @@ VIOLATIONS = [
      "import shelfhold.plugin_host.registry\n", None),
     ("metadata-not-export", "catalog/application/metadata.py",
      "from shelfhold.export import public\n", "interfaces/other.py"),
+    # M3 L00: `replica-single-reader` was blind (root source); it now names `schema.replica`
+    ("replica-single-reader", "export/synthetic.py",
+     "import shelfhold.infrastructure.schema.replica\n", "library/replica.py"),
+    ("replica-single-reader", "library/adapters/synthetic.py",
+     "from shelfhold.infrastructure.schema import replica\n", "library/replica.py"),
+    ("replica-single-reader", "infrastructure/clock.py",
+     "import shelfhold.infrastructure.schema.replica\n", None),
+    ("fts-sole-reader", "infrastructure/clock.py",
+     "import shelfhold.infrastructure.schema.search\n", None),
+    # M3 L00: synthetic modules, one violation per new contract
+    ("http-no-infrastructure-adapter", "interfaces/http_api/synthetic.py",
+     "import shelfhold.infrastructure.fsops\n", "interfaces/cli/synthetic.py"),
+    ("http-no-infrastructure-adapter", "interfaces/http_api/synthetic.py",
+     "from shelfhold.library.adapters import storage\n", "jobs/synthetic.py"),
+    ("http-no-infrastructure-adapter", "interfaces/http_api/synthetic.py",
+     "import shelfhold.infrastructure.db\n", "catalog/application/synthetic.py"),
+    ("fts-sole-reader", "catalog/application/synthetic.py",
+     "import shelfhold.infrastructure.schema.search\n", "catalog/application/search/reader.py"),
+    ("fts-sole-reader", "export/synthetic.py",
+     "from shelfhold.infrastructure.schema import search\n", None),
+    ("identity-not-export-acquisition", "identity/application/synthetic.py",
+     "from shelfhold.export import public\n", "jobs/synthetic.py"),
+    ("identity-not-export-acquisition", "identity/adapters/synthetic.py",
+     "import shelfhold.acquisition.application\n", None),
 ]  # fmt: skip
 
 
@@ -323,10 +347,10 @@ def test_each_contract_breaks_on_a_violation_and_allows_its_sanctioned_module(
 ) -> None:
     result = _run_in_copy(tmp_path / "bad", {module: code})
     assert result.returncode != 0, result.stdout
-    assert f"{_contract_name(contract)} BROKEN" in result.stdout, result.stdout
+    assert f"{_contract_name(contract)} BROKEN" in " ".join(result.stdout.split()), result.stdout
     if sanctioned:
         ok = _run_in_copy(tmp_path / "ok", {sanctioned: code})
-        assert f"{_contract_name(contract)} BROKEN" not in ok.stdout, ok.stdout
+        assert f"{_contract_name(contract)} BROKEN" not in " ".join(ok.stdout.split()), ok.stdout
         assert ok.returncode == 0, ok.stdout
 
 
@@ -703,3 +727,88 @@ def test_upgrade_records_its_intent_before_the_first_step() -> None:
         assert "record" in names and "mark_applying" in names, func.name
         assert names.index("record") < names.index("mark_applying") < steps[0], func.name
     assert stepping >= 1
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_m3_search_packages_exist_and_are_documented() -> None:
+    for rel in ("catalog/application/search/__init__.py", "infrastructure/schema/search.py"):
+        path = SRC / "shelfhold" / rel
+        assert path.is_file(), rel
+        assert ast.get_docstring(ast.parse(path.read_text("utf-8"))), f"{rel}: undocumented"
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_http_contract_ignores_are_named_with_the_lot_that_settles_them() -> None:
+    """Debts found on main are ignored with the lot that removes them, never silently."""
+    text = CONFIG.read_text("utf-8")
+    block = text.split("[importlinter:contract:http-no-infrastructure-adapter]")[1].split(
+        "[importlinter"
+    )[0]
+    assert "M3 L41" in block
+    assert "M3 L56" in block
+
+
+@pytest.mark.req("ENF-GOV-006")
+def test_gate_p2_is_recorded_as_waiting_for_the_owner() -> None:
+    portes = (BACKEND.parent / "docs" / "governance" / "portes.md").read_text("utf-8")
+    row = [ln for ln in portes.splitlines() if ln.startswith("| P2 | ")][-1]
+    assert "en attente de la réponse du porteur (D1 de PLAN-M3)" in row
+    assert "réussi" not in row.lower()
+    assert "échec" not in row.lower()
+
+
+@pytest.mark.req("ENF-GOV-006", "EF-EXP-017")
+def test_ef_exp_017_is_deferred_to_m4_and_gov_006_stays_partial() -> None:
+    import tomllib
+
+    path = BACKEND.parent / "tools" / "traceability-exceptions.toml"
+    data = tomllib.loads(path.read_text("utf-8"))
+    deferred = [d for d in data["deferred"] if d["requirement"] == "EF-EXP-017"]
+    assert len(deferred) == 1
+    assert "M4" in deferred[0]["reason"]
+    assert "passe 2, B15" in deferred[0]["reason"]
+    partial = [p for p in data["partial"] if p["requirement"] == "ENF-GOV-006"]
+    assert [p["milestone"] for p in partial] == ["M3"]
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_no_forbidden_contract_on_the_root_guards_a_module_inside_it() -> None:
+    """A `forbidden` contract whose source is the root `shelfhold` never reports a forbidden module
+    that sits under the root: it must list the top-level packages instead."""
+    parser = _config()
+    blind = [
+        s
+        for s in parser.sections()
+        if s.startswith("importlinter:contract:")
+        and parser[s].get("type") == "forbidden"
+        and _lines(parser[s]["source_modules"]) == ["shelfhold"]
+        and any(m.startswith("shelfhold.") for m in _lines(parser[s]["forbidden_modules"]))
+    ]
+    assert not blind, blind
+
+
+@pytest.mark.req("ENF-QUAL-002")
+@pytest.mark.parametrize("contract", ["replica-single-reader", "fts-sole-reader"])
+def test_registry_contracts_list_every_infrastructure_module(contract: str) -> None:
+    """import-linter ignores an import between two modules of one source, so `infrastructure` is
+    listed module by module (schema aside); a new module must be added to the list."""
+    listed = {
+        m.removeprefix("shelfhold.infrastructure.")
+        for m in _lines(_config()[f"importlinter:contract:{contract}"]["source_modules"])
+        if m.startswith("shelfhold.infrastructure.")
+    }
+    actual = {
+        p.stem if p.is_file() else p.name
+        for p in (SRC / "shelfhold" / "infrastructure").iterdir()
+        if p.name not in ("__init__.py", "__pycache__", "schema")
+    }
+    assert listed == actual, listed ^ actual
+
+
+@pytest.mark.req("ENF-QUAL-002")
+def test_search_tables_module_exposes_the_fts_schema_module() -> None:
+    from shelfhold.catalog.application.search import tables
+    from shelfhold.infrastructure.schema import search
+
+    assert tables.fts_tables is search
+    assert tables.__all__ == ["fts_tables"]

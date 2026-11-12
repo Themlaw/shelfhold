@@ -26,6 +26,7 @@ from shelfhold.infrastructure.archives import safe_open_archive
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.content_trust import DERIVED_BY, epub_payload_hash, neutralize_epub
 from shelfhold.infrastructure.schema import catalog, storage
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.library.public import (
     EpubRefusedError,
     OriginalNotServableError,
@@ -94,7 +95,11 @@ def content_row(env: LibEnv) -> Any:
 
 def replicas(env: LibEnv) -> list[Any]:
     with env.engine.connect() as connection:
-        return list(connection.execute(sa.select(storage.replica).order_by(storage.replica.c.id)))
+        return list(
+            connection.execute(
+                sa.select(replica_schema.replica).order_by(replica_schema.replica.c.id)
+            )
+        )
 
 
 def set_binding_trust(env: LibEnv, value: str) -> None:

@@ -23,6 +23,7 @@ from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform, storage
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.library.domain.copies import Copy
 
 __all__ = [
@@ -61,7 +62,7 @@ __all__ = [
     "withdraw_upstream_claims",
 ]
 
-replica_table = storage.replica
+replica_table = replica_schema.replica
 _ORIGINAL_PLACES = ("library", "destination")
 # Where a file is readable by Shelfhold itself: its library, its store, an adopted read-only
 # root. A destination copy or the upstream is not "a file we hold" (I20, EF-BIB-044).

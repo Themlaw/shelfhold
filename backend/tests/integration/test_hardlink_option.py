@@ -20,6 +20,7 @@ from shelfhold.infrastructure.fsops import LinkUnavailableError
 from shelfhold.infrastructure.fsops import writer as fs_writer
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.library.public import KeepCopier, LinkPolicy, independent_copies, verify_kept
 from tests.integration.test_library_keep_copy import ingest, keeper, prepare
 from tests.library_env import LibEnv, cbz_bytes, lib_env
@@ -275,8 +276,8 @@ def test_modification_through_the_other_name_is_seen_by_the_integrity_checks() -
         assert verify_kept(env.engine, env.fsops, unit) == 0
         with env.engine.connect() as c:
             (flag,) = c.execute(
-                sa.select(storage.replica.c.independent).where(
-                    storage.replica.c.location == "store"
+                sa.select(replica_schema.replica.c.independent).where(
+                    replica_schema.replica.c.location == "store"
                 )
             ).scalars()
             assert flag is False  # the kept copy no longer counts as one
@@ -547,8 +548,8 @@ def test_a_restore_that_made_a_link_is_seen_on_the_disk_not_in_the_rows(
         with env.engine.connect() as c:
             assert independent_copies(c, unit) == 2
             rows = c.execute(
-                sa.select(storage.replica.c.location, storage.replica.c.ino).where(
-                    storage.replica.c.unit_id == unit
+                sa.select(replica_schema.replica.c.location, replica_schema.replica.c.ino).where(
+                    replica_schema.replica.c.unit_id == unit
                 )
             ).all()
         assert {r.location: r.ino for r in rows} == {

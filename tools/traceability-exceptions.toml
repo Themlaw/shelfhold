@@ -98,6 +98,11 @@ path = "backend/tests/unit/test_sdk_export_target.py"
 reason = "dépréciations du contrat SDK ExportTarget (D9, M1b L31) : le contrat reste lisible, ce n'est pas une exigence EF-/ENF-"
 
 [[deferred]]
+requirement = "EF-EXP-017"
+aspect = "suppression et renommage avec resolve_remote et préservation de la progression pour chaque membre (jetons par utilisateur)"
+reason = "M4 : passe 2, B15 ; avant M4, l'avertissement EF-EXP-037 s'applique"
+
+[[deferred]]
 requirement = "ENF-GOV-004"
 aspect = "second registre d'images, miroir du dépôt, vérificateur de mises à jour non bloquant"
 reason = "accord du porteur 2026-11-11, second registre livré avec un lot M2"

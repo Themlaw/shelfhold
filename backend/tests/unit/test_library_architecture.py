@@ -54,9 +54,10 @@ def test_independent_copies_single_source_of_truth() -> None:
     config.read(BACKEND / "importlinter.ini", encoding="utf-8")
     contract = config["importlinter:contract:replica-single-reader"]
     assert contract["type"] == "forbidden"
-    assert "shelfhold.infrastructure.schema.storage" in contract["forbidden_modules"]
+    assert "shelfhold.infrastructure.schema.replica" in contract["forbidden_modules"]
     allowed = contract["ignore_imports"]
-    assert "shelfhold.library.replica -> shelfhold.infrastructure.schema.storage" in allowed
+    assert "shelfhold.library.replica -> shelfhold.infrastructure.schema.replica" in allowed
+    assert "shelfhold.library.adapters" not in allowed  # the registry's reader is one module
     assert contract.get("unmatched_ignore_imports_alerting") != "none"
 
 

@@ -28,6 +28,7 @@ from shelfhold.infrastructure.schema import (
     platform,
     storage,
 )
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.library.public import ConfirmationRequiredError, record_replica
 from shelfhold.library.tombstones import PlaceRef
 from tests.export_env import ExportEnv, export_env
@@ -101,7 +102,7 @@ def test_purge_now_removes_all_replicas_and_thumbnails() -> None:
                 )
                 == 0
             )
-        assert purge.count(storage.replica, storage.replica.c.unit_id == unit) == 0
+        assert purge.count(replica_schema.replica, replica_schema.replica.c.unit_id == unit) == 0
         assert purge.count(storage.trash_item, storage.trash_item.c.ref == unit) == 0
         assert purge.count(catalog.unit, catalog.unit.c.id == other) == 1  # the neighbour is intact
         assert [e for e in report.out_of_reach] == list(OUT_OF_REACH)
@@ -301,10 +302,16 @@ def test_purge_m1a_releases_claim_without_writing_suwayomi() -> None:
     with export_env() as env:
         purge = make_purge_env(env.lib)
         unit, _ = spread(env, env.new_series(TITLE))
-        assert purge.count(storage.replica, storage.replica.c.location == "upstream") == 1
+        assert (
+            purge.count(replica_schema.replica, replica_schema.replica.c.location == "upstream")
+            == 1
+        )
         report = run(purge, unit)
         # the claim is withdrawn on our side, and the admin is told to delete upstream
-        assert purge.count(storage.replica, storage.replica.c.location == "upstream") == 0
+        assert (
+            purge.count(replica_schema.replica, replica_schema.replica.c.location == "upstream")
+            == 0
+        )
         assert report.upstream_copies == 1
         assert report.alerts == ("unit.delete_in_suwayomi",)
         # the purge holds no client of the service: it cannot write upstream (structural)

@@ -37,5 +37,5 @@ Décision M0 : la porte P0 est jugée sur S1, S2, S4, S5 et une veille concurren
 |---|---|---|---|
 | P0 | | à venir | |
 | P1 | | à venir | |
-| P2 | | à venir | |
+| P2 | | en attente | P2 : en attente de la réponse du porteur (D1 de PLAN-M3). Aucun résultat consigné. |
 | P3 | | à venir | |
