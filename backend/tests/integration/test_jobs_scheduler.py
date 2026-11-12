@@ -229,7 +229,7 @@ def test_default_schedule_offset_differs_between_instances(tmp_path: Path) -> No
     for name, seed in (("a", "instance-aaaa"), ("b", "instance-bbbb"), ("a2", "instance-aaaa")):
         engine = create_db_engine(tmp_path / f"{name}.db")
         metadata.create_all(engine)
-        make(engine, clock, Recorder(), seed).add_default("source.refresh", "0 * * * *")
+        make(engine, clock, Recorder(), seed).add("source.refresh", "0 * * * *", jitter_s=900)
         due.append(row(engine, "source.refresh").next_due_at)
         engine.dispose()
     assert due[0] != due[1]

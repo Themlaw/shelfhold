@@ -163,25 +163,15 @@ symbols = [
   "shelfhold.sdk.export_target:ExportTarget",
 ]
 
-# What waited for M2 and is neither wired nor deleted (M2 L31, 2026-11-12): each group names the
-# lot that owns it. A group whose lot is a cut (L10, L21, L29) goes with that lot; the others have
-# their first caller in the screens and commands of M3, written down here for the owner to
-# arbitrate (docs/decisions/M2-L31-debts.md).
+# What waited for M2 and is neither wired nor deleted (M2 L31 and closure, 2026-11-12): each group
+# is written down for M3, where it has its first caller (docs/decisions/M2-L31-debts.md).
 [[allow]]
-category = "m2-l31-pending-l10-derivative"
-reason = "2026-11-12 (M2 L31): wired by M2 L10 (in progress, delivered in M2): `declare_derivative` (the derivative of a CBZ made by a descrambler, a Processor or the SVG rasterizer), and the probe and the sandbox report of the decode worker (`probe_image` asks the worker about the pages of an arriving CBZ, `diagnose_worker` reports what the sandbox really allows). The neutralizer of M2 L03 does not go through the first, and the cover of the OpenLibrary enrichment already runs the worker through `make_thumbnail`. L10 removes this entry."
-until = "M2"
+category = "m2-l31-deferred-m3-decode-probe"
+reason = "2026-11-12 (M2 closure, L10 and L29 merged): `probe_image` (format and size of an untrusted image, decoded once in the worker) and `diagnose_worker` (what the sandbox really allows) have no production caller after L10: the rasterizer and `make_thumbnail` (OpenLibrary cover) go through `run_worker` directly, and no M2 requirement asks the pages of an arriving CBZ to be probed or the sandbox report to be exposed. They stay as the proof surface of ENF-SEC-003 (decode caps, no network, RLIMIT_AS), tested in test_decode_worker*.py and test_imaging_*.py. Written down for M3, whose reader and diagnostic screens are their first callers; deleted there if none is planned."
+until = "M3"
 symbols = [
   "shelfhold.infrastructure.imaging.client:diagnose_worker",
   "shelfhold.infrastructure.imaging.client:probe_image",
-]
-
-[[allow]]
-category = "m2-l31-pending-l29-cadence"
-reason = "2026-11-12 (M2 L31): the periodic spread `Scheduler.add_default` (ENF-LEG-007) has its first caller in the adaptive check cadence (M2 L29, in progress, delivered in M2), which removes this entry: the follow cycle keeps its fixed cron until then."
-until = "M2"
-symbols = [
-  "shelfhold.jobs.scheduler:Scheduler.add_default",
 ]
 
 [[allow]]
