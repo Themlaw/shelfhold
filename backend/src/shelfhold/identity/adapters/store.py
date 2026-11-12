@@ -2,7 +2,7 @@
 
 import secrets
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -483,6 +483,7 @@ class SqlIdentityStore:
         *,
         actor_id: str | None = None,
         by_admin: bool = False,
+        audit: Callable[[str, str], AuditEntry | None] | None = None,
     ) -> tuple[str, str]:
         """Store the choice of a profile: `(visibility that held, visibility that holds)`. The role
         is read under the lock that writes, so a child just demoted or promoted meets the rule of
@@ -500,7 +501,11 @@ class SqlIdentityStore:
             before = effective_visibility(row.role, row.visibility)
             chosen = check_visibility(row.role, visibility)
             conn.execute(sa.update(_user).where(_user.c.id == user_id).values(visibility=chosen))
-        return before, effective_visibility(row.role, chosen)
+            after = effective_visibility(row.role, chosen)
+            entry = None if audit is None else audit(before, after)
+            if entry is not None:  # the change and its trace stand or fall together
+                conn.execute(self._audit_insert(entry))
+        return before, after
 
     def source_policy_state(
         self, user_id: str, source_key: str

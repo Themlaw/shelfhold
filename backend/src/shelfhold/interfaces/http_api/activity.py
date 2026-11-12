@@ -59,10 +59,15 @@ class UnmaskedOut(BaseModel):
     title: str
 
 
-def viewer_of(principal: Principal) -> Viewer:
-    """A key or a token is a program: it reads like the integration role, whoever issued it."""
+def viewer_of(principal: Principal, scope_kind: str = "all") -> Viewer:
+    """A session reads as its profile. A key or a token of an adult is a program: it reads like
+    the integration role. One of a child never reads more than the child does: it is the child
+    (`scope_kind` is the one of her profile, read at the request), never the integration role,
+    which sees every `ops` event and every sibling's `household` entry."""
     if principal.credential is Credential.SESSION:
         return Viewer(principal.user_id, principal.role)
+    if scope_kind != "all":  # a child, a profile that is gone, a role nobody knows
+        return Viewer(principal.user_id, "child")
     return Viewer(None, INTEGRATION_ROLE)
 
 
@@ -149,11 +154,11 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
         principal: Annotated[Principal, Depends(require_principal)],
         limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = 50,
     ) -> list[ActivityOut]:
-        viewer = viewer_of(principal)
         found: list[ActivityOut] = []
         with get_engine().connect() as connection:
             # the reader's own profile, a key or a token included: never who issued the key
             scope = reader_scope(connection, principal.user_id)
+            viewer = viewer_of(principal, scope.kind)
             events = connection.execute(
                 sa.select(platform.event).order_by(platform.event.c.id.desc()).limit(limit * 4)
             )

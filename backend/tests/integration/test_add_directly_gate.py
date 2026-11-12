@@ -59,13 +59,15 @@ def _audit(seed: Seed, action: str) -> list[str]:
 
 @pytest.mark.req("EF-BIB-055", "ENF-SEC-010")
 def test_adult_add_directly_blocked_for_unrated_edition(api: tuple[AuthEnv, Seed]) -> None:
-    """The acceptance of EF-BIB-055 (M3): a member without the right to classify chooses
-    "Ajouter directement" towards a family shelf for an Edition nobody rated, and it does not go."""
+    """The acceptance of EF-BIB-055 (M3): an adult chooses "Ajouter directement" towards a family
+    shelf for an Edition nobody rated, and it does not go. A member never reaches that door (it
+    is `shelf.choose_family`'s: 403); the admin's attempt is refused and on record."""
     env, seed = api
     mum = add_profile(env, "mum", "member", "10.0.0.3")  # no right to classify
     family, edition = seed.shelves["family"], seed.editions["mixed_new"]  # new, unrated Edition
     assert _shelf_of(seed, edition) is None
-    answer = _add(env, mum, edition, family)
+    assert _add(env, mum, edition, family).status_code == 403  # the reserved door, not a second
+    answer = _add(env, env.client, edition, family)
     assert answer.status_code == 200, answer.text
     assert answer.json() == {"filed": False, "reason": "unrated_edition"}
     assert _shelf_of(seed, edition) is None  # it did not enter: it waits in "À classer"
@@ -74,21 +76,21 @@ def test_adult_add_directly_blocked_for_unrated_edition(api: tuple[AuthEnv, Seed
 
 @pytest.mark.req("EF-BIB-055", "ENF-SEC-010")
 def test_add_directly_truth_table_row(api: tuple[AuthEnv, Seed]) -> None:
-    """role x right to classify x Edition x shelf: only what the row allows goes through."""
+    """role x Edition x shelf, through the door: a family shelf is the admin's (reserved action),
+    an adult shelf is every adult's choice; the admission still decides after."""
     env, seed = api
     family, adult = seed.shelves["family"], seed.shelves["adult"]
     plain = add_profile(env, "plain", "member", "10.0.0.3")
     rater = add_profile(env, "rater", "member", "10.0.0.4", can_rate=True)
     rated, unrated = seed.editions["twelve"], seed.editions["mixed_new"]  # 12+ on a 13+ shelf
-    # no right to classify: a family shelf is refused, rated or not (she asks, D14)
-    assert _add(env, plain, rated, family).json() == {
-        "filed": False, "reason": "rate_right_required",
-    }  # fmt: skip
-    assert _add(env, plain, unrated, family).json()["reason"] == "unrated_edition"
-    # with the right to classify: an Edition nobody rated is still refused, a rated one is filed
-    assert _add(env, rater, unrated, family).json() == {"filed": False, "reason": "unrated_edition"}
+    # a member, with or without the right to classify: no family shelf by this road
+    for member in (plain, rater):
+        assert _add(env, member, rated, family).status_code == 403
+        assert _add(env, member, unrated, family).status_code == 403
     assert _shelf_of(seed, unrated) is None and _shelf_of(seed, rated) is None
-    assert _add(env, rater, rated, family).json() == {"filed": True, "reason": None}
+    # the admin: an Edition nobody rated is refused, a rated one is filed
+    assert _add(env, env.client, unrated, family).json()["reason"] == "unrated_edition"
+    assert _add(env, env.client, rated, family).json() == {"filed": True, "reason": None}
     assert _shelf_of(seed, rated) == family
     # an adult shelf takes anything, for every adult
     assert _add(env, plain, unrated, adult).json() == {"filed": True, "reason": None}
@@ -96,6 +98,20 @@ def test_add_directly_truth_table_row(api: tuple[AuthEnv, Seed]) -> None:
     assert _audit(seed, "edition.add_directly") == [
         f"edition:{rated};shelf:{family}", f"edition:{unrated};shelf:{adult}",
     ]  # fmt: skip
+
+
+@pytest.mark.req("EF-BIB-055", "ENF-SEC-010")
+def test_leaving_a_family_shelf_is_the_reserved_door_too(api: tuple[AuthEnv, Seed]) -> None:
+    """Moving an Edition off a family shelf to an adult one is a parental decision (m5): a member
+    without the right to classify is refused, the Edition stays where it is."""
+    env, seed = api
+    family, adult, edition = seed.shelves["family"], seed.shelves["adult"], seed.editions["twelve"]
+    assert _add(env, env.client, edition, family).json()["filed"] is True
+    plain = add_profile(env, "plain", "member", "10.0.0.3")
+    assert _add(env, plain, edition, adult).status_code == 403
+    assert _shelf_of(seed, edition) == family
+    assert _add(env, env.client, edition, adult).json()["filed"] is True  # the admin may
+    assert _shelf_of(seed, edition) == adult
 
 
 @pytest.mark.req("EF-BIB-055", "ENF-SEC-010")

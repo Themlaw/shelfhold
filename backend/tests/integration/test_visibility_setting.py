@@ -124,7 +124,7 @@ def test_visibility_change_audited(api: AuthEnv) -> None:
     actor, target, session = rows[0]
     admin_id = str(db_rows(api.settings, "SELECT id FROM user WHERE role = 'admin'")[0][0])
     assert actor == admin_id and session is not None  # who did it, and from which session
-    assert target == f"{mum_id}|household"  # the profile and the word, nothing else
+    assert target == f"{mum_id}|private>household"  # the profile, what held, what holds
     # the same value again changes nothing and leaves no second line
     assert _put(api, api.client, path, {"visibility": "household"}).status_code == 200
     assert len(_audit(api, "profile.visibility_set")) == 1
@@ -141,7 +141,7 @@ def test_visibility_change_audited(api: AuthEnv) -> None:
     # the next change by the admin (back to household, over her own choice) is a second line
     assert _put(api, api.client, path, {"visibility": "household"}).status_code == 200
     assert [r[1] for r in _audit(api, "profile.visibility_set")] == [
-        f"{mum_id}|household", f"{mum_id}|household",
+        f"{mum_id}|private>household", f"{mum_id}|private>household",
     ]  # fmt: skip
 
 

@@ -15,7 +15,7 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from shelfhold.export.application.plans import StalePlanError
@@ -273,12 +273,17 @@ def build_edition_shelf_router(get_service: Callable[[], ShelfService]) -> APIRo
     def add_directly(
         edition_id: str,
         body: AddDirectlyIn,
+        request: Request,
         principal: Principal = Depends(_adult_session),  # noqa: B008
     ) -> FiledOut:
         """ "Ajouter directement": the row of the truth table, then the admission of every road.
         Refused (`filed: false`, with the reason) is an answer, not an error: the Edition waits in
         "À classer" and the adult may ask instead."""
         try:
+            if get_service().touches_family(edition_id, body.shelf_id):
+                # not a second door: a family shelf, in or out, is `shelf.choose_family`'s, with its
+                # roles and its freshness; the guard answers 403 or 401 as it does on `/shelf`
+                principal = reserved_action(_FAMILY)(request)
             result = get_service().add_directly(
                 edition_id, body.shelf_id, role=principal.role, can_rate=principal.can_rate,
                 actor=_actor(principal),

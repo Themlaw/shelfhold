@@ -181,6 +181,8 @@ def test_review_poc_hidden_and_absent_search_cost_the_same(world: _World) -> Non
     sa.event.listen(seed.engine, "before_cursor_execute", count)
     try:
         with seed.engine.connect() as connection:
+            connection.execute(sa.text("SELECT 1"))  # the BEGIN of the connection is not the search
+            statements.clear()
             search_page(connection, "Harbor Sixteen", scope=child)
             hidden = len(statements)
             statements.clear()
@@ -216,6 +218,10 @@ def test_review_poc_meta_test_sees_routes_outside_openapi(
 # -- O5: `allowed_profiles` is not read -------------------------------------------------------
 
 
+@pytest.mark.skip(
+    reason="decision of the coordinator (M4, docs/decisions/M3.md): `allowed_profiles` rules the "
+    "export to Kavita (L10), not the visibility in Shelfhold; EF-USR-006 says by library"
+)
 @pytest.mark.req("EF-USR-006", "EF-USR-015")
 def test_review_poc_shelf_restricted_to_another_child_is_not_hers(
     monkeypatch: pytest.MonkeyPatch, world: _World

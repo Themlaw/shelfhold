@@ -277,6 +277,7 @@ class LocalAuth:
             hasher,
             clock.now,
             lambda action, by, target: self._audit(action, by, target=target),
+            lambda action, by, target: self._entry(action, by, target),
         )
 
     @property

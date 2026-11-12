@@ -1,6 +1,6 @@
 """What the local authentication needs from storage and from a password hasher."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -213,6 +213,7 @@ class IdentityStore(Protocol):
         *,
         actor_id: str | None = None,
         by_admin: bool = False,
+        audit: Callable[[str, str], AuditEntry | None] | None = None,
     ) -> tuple[str, str]:
         """`(visibility that held, visibility that holds)`, the role read under the lock that
         writes; `ProfileError` of the rule that refuses; `not_allowed` when `by_admin` and the

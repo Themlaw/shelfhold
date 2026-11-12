@@ -108,8 +108,8 @@ def search_page(
     if not terms:
         return SearchPage([], 0)
     ids = _matching(connection, terms, search_capability(connection))
-    if not ids:
-        return SearchPage([], 0)
+    # no early return on "nothing matched": a hidden title and an absent one cost the same
+    # statements, so the time of an answer tells nothing about which of the two it is
     w = catalog.work.c
     wanted: list[sa.ColumnElement[bool]] = [] if scope is None else [visible_works_clause(scope)]
     langs = {
@@ -122,7 +122,7 @@ def search_page(
     }
     hits: list[SearchHit] = []
     ordered = sorted(ids)
-    for start in range(0, len(ordered), 500):
+    for start in range(0, max(len(ordered), 1), 500):
         rows = connection.execute(
             sa.select(w.id, w.title, w.kind).where(w.id.in_(ordered[start : start + 500]), *wanted)
         )

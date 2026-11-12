@@ -18,7 +18,10 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
+import structlog
+
 from shelfhold.identity.application.ports import (
+    AuditEntry,
     IdentityStore,
     PasswordHasherPort,
     ProfileRecord,
@@ -36,6 +39,7 @@ from shelfhold.identity.domain.visibility import effective_visibility
 from shelfhold.infrastructure.ids import new_ulid
 
 Audit = Callable[[str, Principal | None, str | None], None]
+Entry = Callable[[str, Principal | None, str | None], AuditEntry]
 MAX_USERNAME = 128
 MAX_SOURCE_KEY = 200
 
@@ -47,7 +51,9 @@ class ProfileService:
         hasher: PasswordHasherPort,
         now: Callable[[], datetime],
         audit: Audit,
+        entry: Entry | None = None,
     ) -> None:
+        self._entry = entry
         self._store = store
         self._hasher = hasher
         self._now = now
@@ -203,11 +209,19 @@ class ProfileService:
         the profile and the word, nothing else."""
         self._manager(by)
         self._existing(profile_id)
+
+        def trace(before: str, after: str) -> AuditEntry | None:
+            """Written in the transaction of the change, with what held and what holds."""
+            if before == after or self._entry is None:
+                return None
+            return self._entry("profile.visibility_set", by, f"{profile_id}|{before}>{after}")
+
         before, after = self._store.set_visibility(
-            profile_id, visibility, actor_id=self._actor_id(by), by_admin=by is not None
+            profile_id, visibility, actor_id=self._actor_id(by), by_admin=by is not None,
+            audit=trace,
         )  # fmt: skip
         if before != after:
-            self._audit("profile.visibility_set", by, f"{profile_id}|{after}")
+            self._log("profile.visibility_set", by)
         return after
 
     def set_own_visibility(self, by: Principal, visibility: object) -> str:
@@ -217,6 +231,13 @@ class ProfileService:
             raise ProfileError("not_allowed")
         _, after = self._store.set_visibility(by.user_id, visibility)
         return after
+
+    def _log(self, action: str, by: Principal | None) -> None:
+        """The log line of an audit written elsewhere: the word of the action, nothing else."""
+        structlog.get_logger().info(
+            "auth.audit", action=action, actor_id=None if by is None else by.user_id,
+            role=getattr(by, "role", None),
+        )  # fmt: skip
 
     # --- the policy per source ---------------------------------------------------------------
 

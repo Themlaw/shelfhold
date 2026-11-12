@@ -85,6 +85,18 @@ def _above(
     return sa.or_(x.is_(True), sa.and_(age.is_not(None), age > ceiling))
 
 
+def _exceeds(
+    value: sa.ColumnElement[int], x: sa.ColumnElement[bool],
+    age: sa.ColumnElement[int], age_x: sa.ColumnElement[bool],
+) -> sa.ColumnElement[bool]:  # fmt: skip
+    """A suggested age that is stricter than the rating (EF-BIB-055: the same comparison as
+    `age.admission`): X over anything that is not X, or a number over a lower number."""
+    return sa.and_(
+        age_x.is_(False),
+        sa.or_(x.is_(True), sa.and_(age.is_not(None), value > age)),
+    )
+
+
 def _ceiling(scope: ReaderScope) -> int | None:
     if scope.kind == "ceiling" and isinstance(scope.ceiling, int):
         return scope.ceiling
@@ -98,7 +110,17 @@ def visible_works_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
     ceiling = _ceiling(scope)
     if ceiling is None:  # closed by default: a scope nobody defined sees nothing
         return sa.false()
-    work, edition = catalog.work.c, catalog.edition.c
+    work, edition, suggestion = catalog.work.c, catalog.edition.c, catalog.age_suggestion.c
+    open_work_suggestion = (
+        sa.select(sa.literal(1))
+        .where(
+            suggestion.entity_type == "work",
+            suggestion.entity_id == work.id,
+            suggestion.state == "open",
+            _exceeds(suggestion.value, suggestion.x, work.age_rating, work.age_x),
+        )
+        .exists()
+    )  # the shelves block such a Work (`suggestion_above`): so does the filter
     above_edition = (
         sa.select(sa.literal(1))
         .where(edition.work_id == work.id, _above(edition.age_rating, edition.age_x, ceiling))
@@ -109,6 +131,7 @@ def visible_works_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
         _age_within(work.age_rating, work.age_x, ceiling),
         work.is_adult.is_(False),
         ~above_edition,
+        ~open_work_suggestion,
     )
 
 
@@ -120,21 +143,30 @@ def visible_editions_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
     if ceiling is None:
         return sa.false()
     work, edition, suggestion = catalog.work.c, catalog.edition.c, catalog.age_suggestion.c
-    open_above = (
+    parent = catalog.work.alias("parent_work").c
+    # what the Edition counts for: the stricter of its own age and its Work's (`age.EditionAge`)
+    eff_age = sa.func.max(
+        sa.func.coalesce(edition.age_rating, 0), sa.func.coalesce(parent.age_rating, 0)
+    )
+    eff_x = sa.or_(edition.age_x.is_(True), parent.age_x.is_(True))
+    waiting = (
         sa.select(sa.literal(1))
         .where(
-            suggestion.entity_type == "edition",
-            suggestion.entity_id == edition.id,
+            parent.id == edition.work_id,
             suggestion.state == "open",
-            _above(suggestion.value, suggestion.x, ceiling),
+            sa.or_(
+                sa.and_(suggestion.entity_type == "edition", suggestion.entity_id == edition.id),
+                sa.and_(suggestion.entity_type == "work", suggestion.entity_id == edition.work_id),
+            ),
+            _exceeds(suggestion.value, suggestion.x, eff_age, eff_x),
         )
         .exists()
-    )
+    )  # a suggested age over the rating: "À classer", out of every shelf, so out of sight
     of_visible_work = edition.work_id.in_(sa.select(work.id).where(visible_works_clause(scope)))
     return sa.and_(
         edition.rated_at.is_not(None),
         sa.not_(_above(edition.age_rating, edition.age_x, ceiling)),
-        ~open_above,
+        ~waiting,
         of_visible_work,
     )
 

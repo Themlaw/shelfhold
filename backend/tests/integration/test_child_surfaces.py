@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
 
 from shelfhold.catalog.public import (
@@ -48,6 +49,9 @@ ME = "/api/v1/me"
 
 PUBLIC = (
     "GET /api/v1/source",
+    "GET /robots.txt",
+    "GET /login",
+    "GET /login/passkey.js",
     "POST /api/v1/auth/login",
     "POST /api/v1/auth/passkeys/login",
     "POST /api/v1/auth/passkeys/login/options",
@@ -80,6 +84,7 @@ OPEN = {
     "GET /api/v1/search": "search",
 }
 CLOSED = (
+    "GET /api/v1/openapi.json",
     "POST /api/v1/acquire",
     "POST /api/v1/activity/{ref}/unmask",
     "POST /api/v1/adoption/{destination_id}/confirm-migration",
@@ -249,8 +254,14 @@ def world(monkeypatch: pytest.MonkeyPatch, api: AuthEnv) -> Iterator[World]:
 
 
 def _routes(app: Any) -> set[str]:
-    spec = app.openapi()
-    return {f"{m.upper()} {p}" for p, ops in spec["paths"].items() for m in ops if m in METHODS}
+    """Every route of the application, the ones left out of the OpenAPI document included: a
+    stream, a thumbnail or a cover is usually declared `include_in_schema=False`."""
+    return {
+        f"{m} {context.path}"
+        for context in iter_route_contexts(app.routes)  # routers included lazily are walked too
+        if context.path is not None
+        for m in (context.methods or set()) - {"HEAD", "OPTIONS"}
+    }
 
 
 def _shape(response: Any) -> tuple[Any, ...]:

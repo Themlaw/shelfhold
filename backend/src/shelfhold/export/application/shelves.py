@@ -332,6 +332,32 @@ class ShelfService:
                 )
         return result
 
+    @staticmethod
+    def _family_involved(connection: Connection, edition_id: str, shelf_id: str) -> bool | None:
+        """Does filing this Edition on this shelf touch a family shelf, as the target or as the
+        shelf it leaves? None: no such Edition or shelf."""
+        shelf = export.shelf
+        target = connection.execute(
+            sa.select(shelf.c.max_age_rating).where(shelf.c.id == shelf_id)
+        ).first()
+        current = connection.execute(
+            sa.select(shelf.c.max_age_rating)
+            .select_from(catalog.edition.outerjoin(shelf, shelf.c.id == catalog.edition.c.shelf_id))
+            .where(catalog.edition.c.id == edition_id)
+        ).first()
+        if target is None or current is None:
+            return None
+        return is_family(target[0]) or (current[0] is not None and is_family(current[0]))
+
+    def touches_family(self, edition_id: str, shelf_id: str) -> bool:
+        """The door of the route: a family shelf, going in or out, is `shelf.choose_family`'s.
+        `LookupError`: no such Edition or shelf."""
+        with self._immediate().connect() as connection:
+            touched = self._family_involved(connection, edition_id, shelf_id)
+        if touched is None:
+            raise LookupError("no such Edition or shelf")
+        return touched
+
     def add_directly(
         self,
         edition_id: str,
@@ -347,18 +373,18 @@ class ShelfService:
         uses. A refusal is audited, with the Edition and the shelf; the Edition stays where it was
         (unrated: unfiled, waiting in "À classer"). `LookupError`: no such Edition or shelf."""
         with self._immediate().begin() as connection:
-            ceiling = connection.execute(
-                sa.select(export.shelf.c.max_age_rating).where(export.shelf.c.id == shelf_id)
-            ).first()
+            family = self._family_involved(connection, edition_id, shelf_id)
             rated = connection.execute(
                 sa.select(catalog.edition.c.rated_at).where(catalog.edition.c.id == edition_id)
             ).first()
-            if ceiling is None or rated is None:
+            if family is None or rated is None:
                 raise LookupError("no such Edition or shelf")
             reason = add_directly_refusal(
-                role, can_rate=can_rate, edition_rated=rated[0] is not None,
-                shelf_family=is_family(ceiling[0]),
-            )  # fmt: skip
+                role,
+                can_rate=can_rate,
+                edition_rated=rated[0] is not None,
+                shelf_family=family,
+            )  # a family shelf, going in or out: the adult without the right does not move it
             result = (
                 FileResult(False, reason)
                 if reason
