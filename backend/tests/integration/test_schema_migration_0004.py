@@ -37,6 +37,10 @@ M1B_TABLES = {"webauthn_credential", "backup_run"}  # migration 0013
 M2_TABLES = {  # migration 0020, the tables of the other modules included
     "provider_quota", "metadata_cache", "http_cache",
 }  # fmt: skip
+M3_TABLES = {  # migration 0046 (M3 L01)
+    "profile_source_policy", "user_state", "request", "pending_source_item", "merge_log",
+    "work_redirect", "thumbnail", "time_window", "notification_digest", "source_alias_migration",
+}  # fmt: skip
 ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 OTHER = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
 
@@ -90,6 +94,7 @@ def test_metadata_covers_exactly_the_migrated_tables(tmp_path: Path) -> None:
         | READING_TABLES
         | M1B_TABLES
         | M2_TABLES
+        | M3_TABLES
     )
     assert tables(database) == {t.name for t in metadata.sorted_tables} == expected
     for module, names in ((storage, STORAGE_TABLES), (export, EXPORT_TABLES)):
