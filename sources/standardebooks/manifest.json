@@ -87,5 +87,6 @@
   "rights_jurisdiction": "US",
   "translation_nature": "unknown",
   "content_trust": "untrusted",
-  "tests": []
+  "tests": [],
+  "waiting_states": []
 }

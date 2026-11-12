@@ -154,3 +154,10 @@ N6 (AB1).
 - Test : `test_kit_refuses_push_transport_before_m4`.
 
 Source : `deliverables/review/chasseur-trous-passe13.md`, `deliverables/review/explorateur-passe13.md`, `deliverables/review/ARBITRAGES-passe13.md` (passe 13)
+
+## Amendement SDK 1.3 (M3 L34, gel avant la documentation des auteurs)
+Ajouts compatibles (un plugin écrit pour 1.2 passe le kit 1.3) :
+- Le plan `FsOp` est sérialisable en JSON (`FsOpPlan`) et enraciné ; tout chemin réservé (`.shelfhold`, `.shelfhold-*`, sous toute casse, forme Unicode, séparateur, point ou espace final) est refusé ; `unlink` reste à l'hôte et n'entre jamais dans un plan de destination. L'hôte revalide le plan juste avant de l'exécuter.
+- Les événements d'un plugin vivent sous `plugin.<clé>.<nom>`, la clé étant celle sous laquelle l'hôte a chargé le plugin.
+- `PluginManifest.waiting_states` : chaque état d'attente propre déclare une sortie (`retry`, `recheck`, `reconfigure`) ; le kit le vérifie (`waiting_states_declare_exit`).
+- D10 : `Source.fetch_range` devient facultatif (défaut `NotImplementedError`) ; le kit ne l'appelle plus, l'adaptateur lncrawl ne l'implémente plus (le ticket reste le chemin de production).

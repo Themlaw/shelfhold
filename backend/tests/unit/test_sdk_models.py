@@ -74,8 +74,14 @@ def _samples() -> dict[type[BaseModel], BaseModel]:
         models.DomainRule(pattern="*.sample.invalid", purpose="api"),
         models.Permissions(domains=[models.DomainRule(pattern="sample.invalid", purpose="pages")]),
         models.RateLimit(requests_per_second=1.5, concurrency=2),
+        models.PluginWaitingState(name="login_wall", exit="recheck"),
         models.PluginManifest(
-            key="plain", kind=models.PluginKind.EXPORT_TARGET, version="1", api=1, name="Plain"
+            key="plain",
+            kind=models.PluginKind.EXPORT_TARGET,
+            version="1",
+            api=1,
+            name="Plain",
+            waiting_states=[models.PluginWaitingState(name="login_wall", exit="retry")],
         ),
         models.Cursor(token=OPAQUE),
         models.Page[refs.SeriesRef](items=[_series()], next=models.Cursor(token=OPAQUE)),

@@ -28,8 +28,10 @@ from shelfhold.sdk.lang import LanguageTag
 API_VERSION = 1
 """Major of the plugin data contract. The host accepts API_VERSION and API_VERSION - 1 (shim)."""
 
-SDK_VERSION = "1.2"
-"""Major.minor of the SDK. 1.2 adds MetadataProvider (EF-BIB-013, D16). A minor only adds optional
+SDK_VERSION = "1.3"
+"""Major.minor of the SDK. 1.3 freezes the plugin boundary (M3 L34): the serialisable `FsOp` plan,
+plugin event spaces, declared exits of plugin waiting states, `fetch_range` optional. 1.2 adds
+MetadataProvider (EF-BIB-013, D16). A minor only adds optional
 fields and new contracts, so a plugin written for 1.1 keeps loading (ADR-0024)."""
 
 
@@ -135,6 +137,19 @@ class RateLimit(SdkModel):
     concurrency: int = 1
 
 
+WaitingExit = Literal["retry", "recheck", "reconfigure"]
+WAITING_EXITS: tuple[str, ...] = ("retry", "recheck", "reconfigure")
+
+
+class PluginWaitingState(SdkModel):
+    """A state in which a plugin waits for a human. It names its way out (EF-INT-023): `retry`
+    (try the same step again), `recheck` (look at the upstream again), `reconfigure` (change a
+    setting). Its event is `plugin.<key>.<name>`."""
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    exit: WaitingExit
+
+
 class PluginManifest(SdkModel):
     key: str  # stable, never derived from the display name
     kind: PluginKind
@@ -148,6 +163,15 @@ class PluginManifest(SdkModel):
     respects_robots: bool = True
     attribution: str | None = None  # attribution text shown in the UI (ENF-LEG-005)
     homepage: str | None = None
+    waiting_states: list[PluginWaitingState] = Field(default_factory=list)  # SDK 1.3
+
+    @field_validator("waiting_states")
+    @classmethod
+    def _states_are_distinct(cls, value: list[PluginWaitingState]) -> list[PluginWaitingState]:
+        names = [s.name for s in value]
+        if len(set(names)) != len(names):
+            raise ValueError("two waiting states with one name")
+        return value
 
 
 class Cursor(SdkModel):
@@ -218,6 +242,7 @@ class SessionState(SdkModel):
 __all__ = [
     "API_VERSION",
     "SDK_VERSION",
+    "WAITING_EXITS",
     "AuthApiKey",
     "AuthBasic",
     "AuthCookieImport",
@@ -236,10 +261,12 @@ __all__ = [
     "PlainValidator",
     "PluginKind",
     "PluginManifest",
+    "PluginWaitingState",
     "RateLimit",
     "SdkModel",
     "SessionState",
     "StrictSdkModel",
+    "WaitingExit",
     "flag_names",
     "flag_parser",
     "sdk_supports",

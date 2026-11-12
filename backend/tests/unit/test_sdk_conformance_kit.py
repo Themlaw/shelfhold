@@ -34,7 +34,7 @@ def test_conformance_kit_runs_offline_on_fake_ranged_plugin() -> None:
     assert report.ok, report.failures
     names = {c.name for c in report.checks}
     assert {"manifest", "api_compatible", "capabilities_implemented", "references_opaque",
-            "unit_identity", "json_roundtrip", "ranged_content", "server_queue",
+            "unit_identity", "json_roundtrip", "waiting_states_declare_exit", "server_queue",
             "simulated_reinstall", "offline"} <= names  # fmt: skip
     assert fetcher.record_mode == "none"
     assert fetcher.unscripted == []  # nothing tried to leave the process

@@ -10,12 +10,12 @@ values or call descriptions (`ApiCall`, `FsOp`) that the host validates and exec
 parts (version ranges, events, progress) are fixed by the lot that implements the first destination.
 """
 
-from datetime import datetime
 from typing import Any, Literal, Protocol
 from warnings import deprecated
 
 from pydantic import Field
 
+from shelfhold.sdk.fsops import ContentRef, FsOp
 from shelfhold.sdk.models import SdkModel, StrictSdkModel
 
 DEPRECATED_SINCE = "1.1"
@@ -77,23 +77,6 @@ class ApiCall(StrictSdkModel):
     expect: list[int] = Field(default_factory=lambda: [200])
 
 
-class ContentRef(StrictSdkModel):
-    """Reference to bytes the host owns; a plan never carries raw content."""
-
-    kind: Literal["export_item", "sidecar"]
-    ref: str
-
-
-class FsOp(StrictSdkModel):
-    """Serialisable file operation plan; the host validates and executes it (passe 8, H3)."""
-
-    op: Literal["mkdir", "write", "write_inline", "rename", "recycle", "touch_mtime", "unlink"]
-    rel_path: str  # relative to the binding root; the host refuses any escape
-    dst_rel_path: str | None = None
-    content_ref: ContentRef | None = None
-    mtime: datetime | None = None
-
-
 class ExportTarget(Protocol):
     capabilities: TargetCapabilities
 
@@ -125,3 +108,14 @@ class ExportTarget(Protocol):
 
     @deprecated(KAVITA_ONLY)  # Kavita's reading-progress API
     def progress_calls(self, ref: JsonObject, p: JsonObject | None) -> list[ApiCall]: ...
+
+
+__all__ = [
+    "DEPRECATED_SINCE",
+    "ApiCall",
+    "ContentRef",
+    "ExportTarget",
+    "FsOp",
+    "NamingConstraints",
+    "TargetCapabilities",
+]

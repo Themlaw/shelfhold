@@ -338,12 +338,6 @@ class LncrawlService:
             raise SourceChanged("a chapter was asked for and a range came back")
         return payload
 
-    async def fetch_range(self, f: Fetcher, target: RangeRef) -> RangedPayload:
-        payload = await self._drive(f, target)
-        if not isinstance(payload, RangedPayload):
-            raise SourceChanged("a range was asked for and a chapter came back")
-        return payload
-
     async def resolve_page(self, f: Fetcher, u: Any, p: Any) -> ImageRequest:
         raise NotImplementedError("an EPUB is a file; there are no pages to resolve")
 

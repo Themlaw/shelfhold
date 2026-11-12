@@ -29,6 +29,7 @@ from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
+from shelfhold.sdk.events import EVENT_TYPE
 
 log = structlog.get_logger(__name__)
 
@@ -141,7 +142,7 @@ _DEFAULT_ENUMS: Final[dict[str, frozenset[str]]] = {
     "scope": SCOPE_VALUES,
     "volume": frozenset(),
 }
-_EXTENSION_TYPE: Final = re.compile(r"plugin\.[a-z0-9_]+\.[a-z0-9_.]+\Z")
+_EXTENSION_TYPE: Final = EVENT_TYPE  # one definition with the SDK gate (`sdk.events`)
 _OPS_TYPE: Final = re.compile(r"ops\.[a-z0-9_]+\Z")
 _MAX_CODE: Final = 64
 
