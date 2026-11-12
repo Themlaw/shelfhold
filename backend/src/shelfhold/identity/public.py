@@ -31,9 +31,6 @@ from shelfhold.identity.application.recovery_kit import (
     KEYRING_EXPORT_NAME,
     render_recovery_kit,
 )
-from shelfhold.identity.application.recovery_kit import (
-    STYLE as RECOVERY_KIT_STYLE,
-)
 from shelfhold.identity.application.service import (
     IDENTITY_HEADER_AUDIT,
     AdminExistsError,
@@ -143,7 +140,6 @@ __all__ = [
     "PRIMITIVE",
     "PROFILE_ERRORS",
     "RATE_ROLES",
-    "RECOVERY_KIT_STYLE",
     "REPLACEMENT_SITES",
     "REPLAY",
     "RESERVED_ACTIONS",

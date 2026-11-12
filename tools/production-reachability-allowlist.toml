@@ -189,3 +189,12 @@ until = "M3"
 symbols = [
   "shelfhold.ops.exits:M3_SERVED_STATES",
 ]
+
+[[allow]]
+category = "m3-l07-device-token-hook"
+reason = "2026-11-12: the device-token hook of EF-USR-022 (4) (`device_token(subject_user_id, issued_by)` and the principal it gives, whose filters read the subject and never the issuer) is pinned by tests in M3; the token's storage, the pairing and the routes that mint one are M5 (EF-USR-008), which wires it."
+until = "M5"
+symbols = [
+  "shelfhold.identity.domain.device_token:device_token",
+  "shelfhold.identity.domain.device_token:token_principal",
+]

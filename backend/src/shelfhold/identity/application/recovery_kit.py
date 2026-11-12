@@ -15,7 +15,7 @@ KEYRING_EXPORT_NAME = "keyring.age"  # the `--out` of the documented `secrets ex
 _MAX_NAME = 64
 _NAME = re.compile(r"[^A-Za-z0-9._-]")
 
-STYLE = (
+_STYLE = (
     "body{font-family:sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#111}"
     "h1{font-size:1.5rem}h2{font-size:1.1rem;margin-top:1.6rem}"
     "pre{background:#f3f3f3;padding:.6rem;white-space:pre-wrap;border:1px solid #bbb}"
@@ -35,41 +35,42 @@ def render_recovery_kit(*, keyring_export_name: str = KEYRING_EXPORT_NAME) -> st
     parts = [
         "<!doctype html>",
         f'<html lang="fr"><head><meta charset="utf-8"><title>{escape(t("recovery_kit.title"))}'
-        f"</title><style>{STYLE}</style></head><body>",
+        f"</title><style>{_STYLE}</style></head><body>",
         f"<h1>{escape(t('recovery_kit.title'))}</h1>",
         f"<p>{escape(t('recovery_kit.intro'))}</p>",
     ]
+    export = export_name
     section = [
-        ("recovery_kit.passphrase_title", "recovery_kit.passphrase_body", None, True),
+        (t("recovery_kit.passphrase_title"), t("recovery_kit.passphrase_body"), None, True),
         (
-            "recovery_kit.reset_title",
-            "recovery_kit.reset_body",
+            t("recovery_kit.reset_title"),
+            t("recovery_kit.reset_body"),
             "shelfhold admin reset-password --username NOM --password-file -",
             False,
         ),
         (
-            "recovery_kit.sessions_title",
-            "recovery_kit.sessions_body",
+            t("recovery_kit.sessions_title"),
+            t("recovery_kit.sessions_body"),
             "shelfhold admin sessions revoke --all",
             False,
         ),
-        ("recovery_kit.kavita_title", "recovery_kit.kavita_body", None, False),
+        (t("recovery_kit.kavita_title"), t("recovery_kit.kavita_body"), None, False),
         (
-            "recovery_kit.follows_title",
-            "recovery_kit.follows_body",
+            t("recovery_kit.follows_title"),
+            t("recovery_kit.follows_body"),
             "shelfhold maintenance on",
             False,
         ),
         (
-            "recovery_kit.keyring_title",
-            "recovery_kit.keyring_body",
-            f"shelfhold secrets export --passphrase-file PHRASE.txt --out {export_name}",
+            t("recovery_kit.keyring_title"),
+            t("recovery_kit.keyring_body", export=export),
+            f"shelfhold secrets export --passphrase-file PHRASE.txt --out {export}",
             False,
         ),
     ]
     for title, body, command, blank in section:
-        parts.append(f"<h2>{escape(t(title))}</h2>")
-        parts.append(f"<p>{escape(t(body, export=export_name))}</p>")
+        parts.append(f"<h2>{escape(title)}</h2>")
+        parts.append(f"<p>{escape(body)}</p>")
         if command:
             parts.append(f"<pre>{escape(command)}</pre>")
         if blank:

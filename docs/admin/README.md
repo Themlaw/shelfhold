@@ -31,6 +31,7 @@ l'installation.
 | Mettre à jour ou recréer le conteneur | [redeploiement.md](redeploiement.md) |
 | Plusieurs disques sous `/library` | [topologie-racines-physiques.md](topologie-racines-physiques.md), [montage-adopt-ro.md](montage-adopt-ro.md) |
 | Se connecter avec une clé d'accès, la révoquer, que faire si l'appareil est perdu | [passkeys.md](passkeys.md) |
+| Retrouver l'accès (`admin reset-password`), fermer des sessions, imprimer le kit de secours | [secours.md](secours.md) |
 | Durcir, exposer sur Internet | [durcir.md](durcir.md), [exposition-publique.md](exposition-publique.md) |
 | Plugins tiers (désactivés par défaut, installation, activation, attestation) | [plugins-tiers.md](plugins-tiers.md) |
 | Réglages d'une source (secrets et cookies chiffrés, réglages réservés) | [sources.md](sources.md) |

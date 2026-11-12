@@ -9,8 +9,6 @@
   accepts or lists a recovery code: the way back in is `admin reset-password` on the host.
 """
 
-import base64
-import hashlib
 from datetime import datetime
 from typing import Annotated
 
@@ -19,13 +17,13 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from shelfhold.identity.public import (
-    RECOVERY_KIT_STYLE,
     RESERVED_ACTIONS,
     Principal,
     SessionView,
     UnknownSessionError,
     render_recovery_kit,
 )
+from shelfhold.infrastructure.http_headers import hash_csp
 from shelfhold.interfaces.http_api.auth import gate_of, require_session, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
 
@@ -37,11 +35,8 @@ _LIST_ALL = reserved_action(RESERVED_ACTIONS["session.list_all"])
 _REVOKE_OTHER = reserved_action(RESERVED_ACTIONS["session.revoke_other"])
 _KIT = reserved_action(RESERVED_ACTIONS["recovery_kit.read"])
 
-_STYLE_HASH = base64.b64encode(hashlib.sha256(RECOVERY_KIT_STYLE.encode()).digest()).decode()
-KIT_CSP = (
-    f"default-src 'none'; style-src 'sha256-{_STYLE_HASH}'; "
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-)
+KIT_PAGE = render_recovery_kit()  # static: the same bytes every time
+KIT_CSP = hash_csp(KIT_PAGE)  # its one inline style by hash, nothing else (ENF-SEC-004)
 
 
 class SessionItem(BaseModel):
@@ -72,17 +67,17 @@ class Revoked(BaseModel):
     revoked: int
 
 
-def _item(view: SessionView, current_id: str | None) -> dict[str, object]:
-    return {
-        "id": view.id,
-        "device": view.device,
-        "ip": view.ip,
-        "created_at": view.created_at,
-        "auth_time": view.auth_time,
-        "last_seen_at": view.last_seen_at,
-        "remember": view.remember,
-        "current": view.id == current_id,
-    }
+def _item(view: SessionView, current_id: str | None) -> SessionItem:
+    return SessionItem(
+        id=view.id,
+        device=view.device,
+        ip=view.ip,
+        created_at=view.created_at,
+        auth_time=view.auth_time,
+        last_seen_at=view.last_seen_at,
+        remember=view.remember,
+        current=view.id == current_id,
+    )
 
 
 def build_sessions_router() -> APIRouter:
@@ -93,7 +88,7 @@ def build_sessions_router() -> APIRouter:
         request: Request, principal: Annotated[Principal, Depends(require_session)]
     ) -> SessionList:
         views = gate_of(request).auth.sessions_list(principal)
-        return SessionList(items=[SessionItem(**_item(v, principal.session_id)) for v in views])
+        return SessionList(items=[_item(v, principal.session_id) for v in views])
 
     @router.post(f"{SESSIONS_PATH}/revoke-others", response_model=Revoked)
     def sessions_revoke_others(
@@ -121,7 +116,9 @@ def build_sessions_router() -> APIRouter:
         return AdminSessionList(
             items=[
                 AdminSessionItem(
-                    **_item(v, principal.session_id), user_id=v.user_id, username=v.username
+                    **_item(v, principal.session_id).model_dump(),
+                    user_id=v.user_id,
+                    username=v.username,
                 )
                 for v in views
             ]
@@ -142,7 +139,7 @@ def build_sessions_router() -> APIRouter:
     @router.get(RECOVERY_KIT_PATH, response_class=HTMLResponse)
     def recovery_kit(_principal: Annotated[Principal, Depends(_KIT)]) -> HTMLResponse:
         return HTMLResponse(
-            render_recovery_kit(),
+            KIT_PAGE,
             headers={"Content-Security-Policy": KIT_CSP, "Cache-Control": "no-store"},
         )
 

@@ -99,3 +99,13 @@ def test_recovery_kit_takes_no_value_that_could_be_a_secret() -> None:
     page = render_recovery_kit(keyring_export_name='<b onload="x">' + "k" * 500)
     assert "<b onload" not in page and "k" * 200 not in page
     assert base64.b64encode(b"x" * 32).decode() not in page
+
+
+@pytest.mark.req("EF-USR-022")
+def test_device_token_keeps_a_given_identifier() -> None:
+    chosen, blank = "abc123", " "
+    token = device_token(subject_user_id=CHILD_ID, issued_by=ADMIN_ID, token_id=chosen)
+    assert token.token_id == chosen
+    with pytest.raises(ValueError, match="token_id"):
+        device_token(subject_user_id=CHILD_ID, issued_by=ADMIN_ID, token_id=blank)
+    assert device_token(subject_user_id=CHILD_ID, issued_by=ADMIN_ID).token_id != chosen
