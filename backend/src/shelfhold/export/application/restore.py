@@ -69,7 +69,9 @@ from shelfhold.export.domain.restore import (
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
     Allowed,
+    AuditEntry,
     Principal,
+    audit_insert,
     authorize_reserved,
     revoke_all_credentials,
 )
@@ -106,6 +108,7 @@ __all__ = [
     "DeletionExecutor",
     "DeletionRefusedError",
     "DeletionUnavailableError",
+    "ForgetRootRefusedError",
     "PreviewStaleError",
     "ReadoptLine",
     "ReplayConfirmationRequiredError",
@@ -125,6 +128,7 @@ _SHA: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _NUMBER: Final = re.compile(r"^\d{1,9}(\.\d{1,6})?$")
 _CHUNK: Final = 400
 _DELETION = RESERVED_ACTIONS["reconcile.confirm_deletion"]
+_FORGET = RESERVED_ACTIONS["reconcile.forget_root"]
 KIND_VALUES: Final = frozenset(export.EXPORT_ITEM_KINDS)
 MAX_FIELD: Final = 512
 MAX_DEPTH: Final = 8
@@ -159,6 +163,21 @@ class DeletionRefusedError(PermissionError):
     def __init__(self, verdict: object) -> None:
         super().__init__(f"reconcile.confirm_deletion refused: {type(verdict).__name__}")
         self.verdict = verdict
+
+
+class ForgetRootRefusedError(RuntimeError):
+    """The root cannot be forgotten: `unknown_root`, `still_readable` (its sentinel is there,
+    readable or not: it is judged, never forgotten) or `phrase_mismatch` (the typed sentence is
+    not the one asked)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"forget-root refused: {reason}")
+        self.reason = reason
+
+
+def forget_root_phrase(root_id: str) -> str:
+    """What must be typed to forget a root: the id, so that a pasted command names its target."""
+    return f"forget root {root_id}"
 
 
 class ReplayConfirmationRequiredError(RuntimeError):
@@ -354,6 +373,45 @@ class RestoreGuard:
                 )
             )
         return RestoreStatus(int(head.restore_epoch), tuple(findings), pending=pending)
+
+    def forget_root(self, root_id: str, *, confirm: str, principal: Principal) -> None:
+        """The way out of `restored_behind` when a known root will never come back (a dead disk,
+        a target removed after the backup): `root_not_mounted` blocks the adoption for good and no
+        command removes a root. The root is demoted to read-only (`adopt_ro`): Shelfhold neither
+        writes it nor reads its sentinel any more, its copies stay recorded, nothing is deleted
+        on any disk. A reserved action (fresh session, never a key), typed and audited in the
+        transaction that demotes it. Only a root whose sentinel is absent is forgotten; one that
+        comes back stays read-only until `root takeover`."""
+        verdict = authorize_reserved(principal, _FORGET, now=self._clock.now())
+        if not isinstance(verdict, Allowed):
+            raise DeletionRefusedError(verdict)
+        finding = next((f for f in self.assess().findings if f.root_id == root_id), None)
+        if finding is None:
+            raise ForgetRootRefusedError("unknown_root")
+        if finding.state is not RootState.MISSING:
+            raise ForgetRootRefusedError("still_readable")
+        if not hmac.compare_digest(confirm.strip().encode(), forget_root_phrase(root_id).encode()):
+            raise ForgetRootRefusedError("phrase_mismatch")
+        now = self._clock.now()
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(platform.physical_root)
+                .where(platform.physical_root.c.root_id == root_id)
+                .values(mode="adopt_ro")
+            )
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=principal.actor_id,
+                        action=_FORGET.name,
+                        at=now,
+                        target=root_id,
+                        session_id=principal.session_id,
+                        auth_time=principal.auth_time,
+                    )
+                )
+            )
+        log.info("restore.root_forgotten", root_id=root_id)
 
     def enter_restored_behind(self) -> RestoreStatus:
         """Start-up: if the database is behind, move the epoch counter (once per restore), say so
@@ -666,7 +724,7 @@ class RestoreAdopter:
         blocked = {
             f.root_id: reason
             for f in survey.status.findings
-            if (reason := self._screen.root_blocked(f.root_id)) is not None
+            if (reason := self._root_blocked(f)) is not None
         }
         report = replace(self._report(survey), unverified_tombstone_lines=self._screen.unverified())
         irreplaceable = self._irreplaceable(deletions)
@@ -694,6 +752,18 @@ class RestoreAdopter:
             fingerprint_of(document), report, readopt, deletions, unresolved, blocked,
             irreplaceable,
         )  # fmt: skip
+
+    def forget_root(self, root_id: str, *, confirm: str, principal: Principal) -> None:
+        """See `RestoreGuard.forget_root`."""
+        self._guard.forget_root(root_id, confirm=confirm, principal=principal)
+
+    def _root_blocked(self, finding: RootFinding) -> str | None:
+        """Why a root cannot be reconciled now. A root the database knows and that is not mounted
+        has no sentinel to read: it is not judged, and adopting without it would stamp the others
+        and leave it behind (a rollback to 0.2.0 reads the sentinels once, at its adoption)."""
+        if finding.state is RootState.MISSING:
+            return "root_not_mounted"
+        return self._screen.root_blocked(finding.root_id)
 
     def _irreplaceable(self, deletions: tuple[DeletionCandidate, ...]) -> tuple[str, ...]:
         """What is to be typed: the id of each irreplaceable Unit the database knows under a

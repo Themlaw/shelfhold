@@ -42,6 +42,7 @@ ENDPOINTS: Final = MappingProxyType(
         "edition set-lang": ("POST", "/api/v1/editions/{edition_id}/language"),
         "edition set-series-name": ("POST", "/api/v1/editions/{edition_id}/series-name"),
         "reconcile --adopt-after-restore": ("POST", "/api/v1/reconcile/adopt-after-restore"),
+        "reconcile --forget-root": ("POST", "/api/v1/reconcile/forget-root"),
         "reconcile --adopt-after-restore [confirm-deletion]": (
             "POST", "/api/v1/reconcile/adopt-after-restore",
         ),

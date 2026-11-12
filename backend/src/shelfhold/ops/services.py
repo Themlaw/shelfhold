@@ -589,6 +589,11 @@ class OpsServices:
             raise ExitUnavailableError("the restore guard is not connected")
         self._restore.adopt_after_restore(confirm_deletion=confirm_deletion, principal=principal)
 
+    def restore_forget_root(self, *, root_id: str, confirm: str, principal: Principal) -> None:
+        if self._restore is None:
+            raise ExitUnavailableError("the restore guard is not connected")
+        self._restore.forget_root(root_id=root_id, confirm=confirm, principal=principal)
+
     def restore_acknowledge(self, *, principal: Principal) -> list[str]:
         """The passkeys created or revoked since the backup, as far as they are known."""
         if self._credentials is None:

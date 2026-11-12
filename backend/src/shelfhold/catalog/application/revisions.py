@@ -4,8 +4,8 @@ A revision of a Variant is recorded without replacing the exported file. Those r
 are never applied by themselves, and none is applied in bulk without a confirmation:
 
 - a revision that changes only a metadata field the Kavita API can take is pushed there, with no
-  file touched (`apply_metadata`); one the API cannot take (a third party locked the field) joins
-  the rewrite queue;
+  file touched (`metadata_candidates`, then `settle_metadata`); one the API cannot take (a third
+  party locked the field) joins the rewrite queue;
 - the others wait in the "to rewrite" queue. `report` shows them with the KOReader impact (how
   many files already read would start again) and a batch token; `apply_rewrites` needs that token
   typed back, so a queue that moved since it was read is never confirmed blind. Units already
@@ -34,7 +34,6 @@ __all__ = [
     "ApplyReport",
     "ConfirmationError",
     "ForceRefusedError",
-    "MetadataPusher",
     "PendingRevision",
     "RevisionQueue",
     "RevisionReport",
@@ -53,13 +52,6 @@ class RewriteUnavailableError(Exception):
 
 class ForceRefusedError(Exception):
     """`force` asked without the grant of the reserved action."""
-
-
-class MetadataPusher(Protocol):
-    def push(self, connection: sa.Connection, *, unit_id: str, field: str, value: str) -> bool:
-        """Set one field through the Kavita API; False when it cannot be (a lock that is not
-        Shelfhold's, no series known there). Idempotent: a replay sets the same value."""
-        ...
 
 
 class RewriteRequester(Protocol):
@@ -117,13 +109,11 @@ class RevisionQueue:
         self,
         connection: sa.Connection,
         *,
-        pusher: MetadataPusher | None = None,
         requester: RewriteRequester | None = None,
         is_read: Callable[[sa.Connection, str], bool] = default_is_read,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._c = connection
-        self._pusher = pusher
         self._requester = requester
         self._is_read = is_read
         self._now = now
@@ -207,24 +197,6 @@ class RevisionQueue:
             return
         p = acquisition.revision_pending
         self._c.execute(sa.update(p).where(p.c.id == row_id).values(nature="rewrite"))
-
-    def apply_metadata(self) -> list[str]:
-        """Push the revisions that change only a metadata field. No file is rewritten, so no
-        confirmation. A push that raises leaves its row open (the next run sets the same value
-        again)."""
-        if self._pusher is None:
-            return []
-        applied: list[str] = []
-        for item in self.metadata_candidates():
-            if item.field is None or item.value is None:
-                continue
-            taken = self._pusher.push(
-                self._c, unit_id=item.unit_id, field=item.field, value=item.value
-            )
-            self.settle_metadata(item.id, taken=taken)
-            if taken:
-                applied.append(item.id)
-        return applied
 
     def apply_rewrites(
         self,

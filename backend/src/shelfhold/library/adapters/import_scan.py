@@ -78,6 +78,7 @@ from shelfhold.library.adapters.storage import (
     WorkBusyError,
 )
 from shelfhold.library.adapters.svg_derivative import draw_svg, svg_derivative_of
+from shelfhold.library.application.anti_echo import absorb_import_echo
 from shelfhold.library.domain.content_hash import FILE_HASH_BY
 from shelfhold.library.domain.failures import (
     EpubRefusedError,
@@ -112,13 +113,14 @@ HASH_MISMATCH: Final = "import.hash_mismatch"
 DISK_FULL: Final = "import.disk_full"
 NOT_STORED: Final = "import.not_stored"
 TOMBSTONED: Final = "import.tombstoned"
+OWN_EXPORT: Final = "import.own_export"  # Shelfhold's own export coming back: a replica
 ORIGINAL_NOT_KEPT: Final = "import.original_not_kept"
 UNTRUSTED_PDF: Final = "content.untrusted_pdf"  # a note on a stored PDF, not a refusal (D9)
 REFUSED_CODES: Final = (
     PROTECTED_FILE, PROTECTED_LICENCE, PDF_REFUSED, AUDIO, UNSUPPORTED, TOO_LARGE, ARCHIVE, LINK,
     UNSAFE_NAME,
     NAME_COLLISION, NOT_READY, CHANGED, HASH_MISMATCH, DISK_FULL, NOT_STORED, TOMBSTONED,
-    ORIGINAL_NOT_KEPT, LEFT_IN_QUARANTINE,
+    ORIGINAL_NOT_KEPT, LEFT_IN_QUARANTINE, OWN_EXPORT,
 )  # fmt: skip
 
 DEFAULT_SETTLE_SECONDS: Final = 30.0
@@ -642,6 +644,12 @@ class ImportFolder:
         if protection is not None:
             log.info("import.refused", code=protection.code, reason=protection.reason, kind=kind)
             return self._refuse(item, shown, protection.code, sha, kind=kind)
+        # I50, for every source: what Shelfhold exported and comes back is a replica, no Unit
+        echo = absorb_import_echo(
+            self._engine, staged=staged, kind=f".{kind}", file_hash=sha, size=staged.stat().st_size
+        )
+        if echo is not None:
+            return self._refuse(item, shown, OWN_EXPORT, sha, kind=kind)
         mark = "user" if declared else ("heuristic" if hint else None)
         present = self._stored_unit(sha)
         if present is not None:  # the same bytes were filed before (a replay, or a second copy)

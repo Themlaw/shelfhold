@@ -253,6 +253,7 @@ FRESHNESS_LINE = {
             "destination.remove_all",
             "reserved_dir.erase",
             "reconcile.confirm_deletion",
+            "reconcile.forget_root",
             "secrets.export",
             "secrets.rotate",
             "secrets.import",

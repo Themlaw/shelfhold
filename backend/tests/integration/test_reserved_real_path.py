@@ -102,6 +102,11 @@ def audit_rows(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
     return db_rows(env.settings, "SELECT session_id, auth_time FROM audit WHERE action = ?", action)
 
 
+# one disclosure, one line, written by the route; `forget_root` writes its own line in the
+# transaction that demotes the root, so a refused HTTP call (the host holds the lock) leaves none
+SELF_AUDITED = {"request.unmask", "reconcile.forget_root"}
+
+
 @pytest.mark.req("EF-USR-022", "EF-USR-024", "ENF-SEC-010")
 def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
     api: AuthEnv,
@@ -121,14 +126,16 @@ def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
         fresh = call(api, method, path)
         assert fresh.status_code not in (401, 403), (path, fresh.text)
         written = audit_rows(api, action)[before:]
-        assert len(written) == 1
-        assert written[0][0] and written[0][1]  # EF-USR-022 (3): on every action, fresh or not
+        own = 1 if action in SELF_AUDITED else 0  # the route writes its own line, on a disclosure
+        assert len(written) == 1 - own
+        for line in written:
+            assert line[0] and line[1]  # EF-USR-022 (3): on every action, fresh or not
         api.clock.advance(timedelta(minutes=20))  # beyond the 900 s of P3
         stale = call(api, method, path)
         if needs:
             assert stale.status_code == 401, (path, action)
             assert stale.json()["type"] == "/api/v1/problems/reauth-required"
-            assert len(audit_rows(api, action)) == before + 1  # the refusal wrote no entry
+            assert len(audit_rows(api, action)) == before + 1 - own  # the refusal wrote no entry
         else:
             assert stale.status_code not in (401, 403), (path, action)
 
@@ -410,6 +417,25 @@ def test_unmask_reauth_problem_carries_action_and_methods_like_other_reserved_ro
         assert set(problem) == set(other)  # the same members as any reserved route
         assert (problem["auth_age_s"], problem["max_age_s"]) == (1200, 900)
         assert problem["reauth_methods"] == ["password"] and problem["reauth_method"] == "password"
+
+
+@pytest.mark.req("EF-USR-016", "ENF-SEC-010")
+def test_unmask_writes_single_audit_line(api: AuthEnv) -> None:
+    """M1b debt: the guard and the unmasking each wrote a line. One disclosure, one line, with
+    its target; a refused or empty unmasking writes none."""
+    add_user(api, "member")
+    work_id = _insert_work(api)
+    event_id = _insert_event(
+        api, visibility="private", actor=ULID_MEMBER, payload=f'{{"work_id": "{work_id}"}}'
+    )
+    api.login()
+    nothing = api.post("/api/v1/activity/999999/unmask")
+    assert nothing.status_code == 404
+    assert db_rows(api.settings, "SELECT 1 FROM audit WHERE action = 'request.unmask'") == []
+    shown = api.post(f"/api/v1/activity/{event_id}/unmask")
+    assert shown.status_code == 200
+    rows = db_rows(api.settings, "SELECT target FROM audit WHERE action = 'request.unmask'")
+    assert rows == [(f"event:{event_id}",)]
 
 
 @pytest.mark.req("EF-USR-016", "ENF-SEC-010")

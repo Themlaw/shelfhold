@@ -350,6 +350,7 @@ def _body(command: str) -> dict[str, Any]:
         "secrets import": {"passphrase_file": "p", "in_file": "export.age"},
         "reconcile --adopt-after-restore [confirm-deletion]": {"confirm_deletion": True},
         "reconcile --adopt-after-restore": {"confirm_deletion": False},
+        "reconcile --forget-root": {"root_id": "r", "confirm": "forget root r"},
         "target recheck [child_exposure]": {},
         "rate": {"age": "13+"},
     }.get(command, {})
@@ -425,6 +426,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
             "source set-secret", "target rotate-key", "tombstone accept-lost-keyring",
             "secrets import", "target recheck [child_exposure]",
             "reconcile --adopt-after-restore [confirm-deletion]",
+            "reconcile --forget-root",
         }  # fmt: skip
         with auth_env(monkeypatch, settings, ops_services=ops) as api:
             capsys.readouterr()
@@ -444,6 +446,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
                 assert refused.status_code == 403, route.command
                 assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed"
             assert keyring.waived == [] and restore.calls == []  # nothing ran
+            assert restore.forgotten == []
             assert keyring.imports == []
             for route in served:
                 method, path = _url(route.command, **ids)
@@ -454,6 +457,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
                 done = api.post(path, json=_body(route.command)) if method == "POST" else None
                 assert done is not None and done.status_code in (200, 202, 204), route.command
             assert keyring.waived and restore.calls == [True]
+            assert restore.forgotten == ["r"]  # the fresh session reached the effective route
             # a session older than 15 minutes must prove itself again where the property says so
             api.clock.advance(timedelta(minutes=20))
             env.clock.set(api.clock.now())

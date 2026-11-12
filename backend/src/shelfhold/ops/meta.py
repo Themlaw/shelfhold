@@ -80,12 +80,24 @@ class MetaOps:
         found = {d: names for d in destinations if (names := mirror.drifted(d))}
         return found, list(mirror.skipped)
 
+    @staticmethod
+    def _pasted(target: str) -> str:
+        """An OpenLibrary address pasted as the target names the book it points at: its ISBN."""
+        ids = OpenLibraryProvider().ids_from_url(target.strip())
+        if ids is None:
+            return target
+        isbn = ids.get("isbn13") or ids.get("isbn10")
+        if isbn is None:  # an address by OpenLibrary key: the catalog holds no Edition under it
+            raise UnknownSubjectError("that address names no ISBN: give the ISBN or the Edition")
+        return isbn
+
     def enrich(self, target: str) -> dict[str, Any]:
         """`meta enrich <isbn|edition>`: ask OpenLibrary about one Edition (EF-BIB-013).
 
         The proposals are stored with their provenance and the age only as a suggestion; a
         provider that is down is a notification and a refusal of this command, nothing else."""
         settings = self._comp.settings
+        target = self._pasted(target)
         service = EnrichService(
             self._comp.engine, self._comp.clock, self._comp.bus, data_dir=settings.data_dir
         )

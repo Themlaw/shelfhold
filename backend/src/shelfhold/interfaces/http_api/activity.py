@@ -166,7 +166,7 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
     def unmask(
         ref: str,
         request: Request,
-        principal: Annotated[Principal, Depends(reserved_action(_UNMASK))],
+        principal: Annotated[Principal, Depends(reserved_action(_UNMASK, audit=False))],
     ) -> UnmaskedOut:
         """`ref`: the number of an event, or the ULID of a download request."""
         auth = gate_of(request).auth

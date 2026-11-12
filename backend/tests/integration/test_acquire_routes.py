@@ -19,10 +19,11 @@ from shelfhold.config import Settings
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
 from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
-from tests.acquire_env import HOST, KEY, PAGE, PUBLIC, NativeBooks, Wire
+from tests.acquire_env import HOST, KEY, PAGE, NativeBooks, Wire
 from tests.auth_env import run_cli
 from tests.fakes_fetcher import Recorder
 from tests.l51_env import Live, live
+from tests.support.sources import PUBLIC
 
 TRAPPED = epub_bytes(xhtml("<p>chapitre</p><script>alert(1)</script>"))
 FILE = "/files/book-42.epub"

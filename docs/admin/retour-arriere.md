@@ -62,6 +62,8 @@ jugée : sa sentinelle n'est pas relue, et le démarrage suivant retrouve la rac
    L'aperçu annonce les racines en retard et dit « Rien ne sera supprimé ». La 0.2.0 relit la sentinelle
    que la 0.3 a écrite (format `1.2`, avec la chaîne des pierres tombales) sans perdre un champ, et la
    réestampille. Les pierres tombales posées sous la 0.3 restent respectées.
+   Si la commande dit `root_not_mounted` et que le volume est définitivement perdu, voir
+   `reconcile --forget-root` dans [restauration.md](restauration.md).
 5. Redémarrez : `docker compose up -d shelfhold`. `shelfhold status` ne doit plus lister `restored_behind`.
 
 Les sessions et clés d'API ouvertes depuis la sauvegarde ne sont pas rétablies ; reconnectez-vous

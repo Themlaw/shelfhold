@@ -1129,6 +1129,14 @@ action = "Relancez la demande en précisant l'identifiant de l'élément voulu."
 title = "Cette série a été supprimée volontairement : elle n'est pas recréée."
 action = "Levez la pierre tombale de la série si vous la voulez à nouveau."
 
+[errors."acquire.work_tombstoned"]
+title = "Cette œuvre a été supprimée volontairement : elle ne revient pas par un identifiant qu'elle portait."
+action = "Levez la pierre tombale de l'œuvre si vous la voulez à nouveau."
+
+[errors."acquire.tombstones_unavailable"]
+title = "Les pierres tombales ne peuvent pas être lues ici : rien n'est ajouté."
+action = "Vérifiez la bibliothèque montée et le trousseau, puis recommencez."
+
 [errors."unit.stored"]
 title = "Le livre demandé est rangé dans la bibliothèque."
 action = "Il sera exporté au prochain passage vers les étagères concernées."
@@ -1369,6 +1377,12 @@ action = "Consultez les journaux ; si cela se répète, vérifiez la mémoire di
 help = "Rapproche la base et les fichiers après une restauration (aperçu, empreinte, confirmation)."
 adopt_after_restore_help = "Sort de l'état « restored_behind » : réadopte les fichiers présents depuis le miroir de provenance, ne supprime rien, puis réestampille les sentinelles."
 dry_run_help = "Affiche l'aperçu et l'empreinte sans rien écrire."
+forget_root_help = "Oublie une racine qui ne reviendra pas (disque mort, cible retirée après la sauvegarde) : elle passe en lecture seule, rien n'est supprimé (action réservée ; à confirmer avec --confirm)."
+forget_root_cost = "Oublier la racine {root} : elle ne sera plus ni écrite ni vérifiée, ses copies restent enregistrées mais Shelfhold ne les retrouvera que si vous la réadoptez (« root takeover »). Aucun fichier n'est supprimé. Si la racine revient plus tard, elle reste en lecture seule : on la récupère avec « shelfhold root takeover ». Pour confirmer, retapez : --confirm \"{phrase}\"."
+forget_root_done = "Racine {root} oubliée (lecture seule). Relancez « shelfhold reconcile --adopt-after-restore »."
+forget_root_unknown_root = "Racine {root} inconnue : rien n'a été modifié."
+forget_root_still_readable = "La racine {root} a une sentinelle (lisible ou non) : elle est jugée par l'adoption, pas oubliée. Rien n'a été modifié."
+forget_root_phrase_mismatch = "Phrase de confirmation incorrecte : retapez --confirm \"{phrase}\". Rien n'a été modifié."
 store_missing = "{count} Unité(s) dont la copie conservée n'est pas sous /store passent en « store_missing » : rien n'est supprimé ; restaurez /store depuis l'outil de l'hôte, ou « store reinit »."
 store_lost = "/store est absent ou n'est pas le volume attendu (pas de fichier .shelfhold-mount-id) : {count} Unité(s) en dépendent et rien n'est marqué ni supprimé. Montez /store, ou « shelfhold store reinit » s'il est perdu."
 store_restored = "{count} Unité(s) retrouvent leur copie conservée sous /store (même empreinte) et repassent à « stored »."
@@ -1726,6 +1740,10 @@ action = "Le fichier reste dans le dossier d'import. Consultez le diagnostic pui
 
 [errors."import.tombstoned"]
 title = "Ce contenu a été purgé : il n'est pas rangé de nouveau."
+action = "Le fichier reste dans le dossier d'import. Retirez-le vous-même si vous n'en voulez plus."
+
+[errors."import.own_export"]
+title = "Ce fichier est un export de Shelfhold lui-même : il est noté comme réplique, pas rangé de nouveau."
 action = "Le fichier reste dans le dossier d'import. Retirez-le vous-même si vous n'en voulez plus."
 
 [errors."import.original_not_kept"]

@@ -44,7 +44,7 @@ def _view(item: PendingRevision) -> dict[str, Any]:
 
 
 class _KavitaFields:
-    """`MetadataPusher` over the Kavita series of the Unit's Edition. It opens its own
+    """The pusher of metadata over the Kavita series of the Unit's Edition. It opens its own
     connections: the network is never awaited inside a write transaction."""
 
     def __init__(self, comp: Composition) -> None:

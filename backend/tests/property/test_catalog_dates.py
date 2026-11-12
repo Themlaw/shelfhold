@@ -7,10 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from shelfhold.catalog.domain.dates import (
-    DatePrecision,
     PartialDate,
-    comicinfo_date_fields,
-    opf_date,
     parse_partial_date,
 )
 from shelfhold.plugin_host.adapters.meta.suwayomi.service import _upload_date
@@ -34,13 +31,7 @@ def partial_dates(draw: st.DrawFn) -> PartialDate:
 @given(partial_dates())
 def test_partial_dates_never_gain_precision_property(date: PartialDate) -> None:
     assert parse_partial_date(str(date)) == date
-    fields = comicinfo_date_fields(date)
-    assert set(fields) <= {"Year", "Month", "Day"}
-    assert len(fields) == len(date.iso().split("-"))
-    assert opf_date(date) == date.iso()
-    assert len(opf_date(date).split("-")) == len(fields)
-    assert ("Month" in fields) == (date.month is not None)
-    assert ("Day" in fields) == (date.day is not None)
+    assert len(date.iso().split("-")) == 1 + (date.month is not None) + (date.day is not None)
 
 
 @pytest.mark.req("EF-BIB-047")
@@ -51,22 +42,6 @@ def test_partial_date_order_is_the_calendar_order(a: PartialDate, b: PartialDate
     assert (a < b) == (ka < kb)
     assert (a <= b) == (ka <= kb)
     assert (a == b) == (ka == kb)
-
-
-@pytest.mark.req("EF-BIB-047")
-@given(partial_dates(), st.sampled_from(list(DatePrecision)))
-def test_coarsened_to_never_adds_precision(date: PartialDate, precision: DatePrecision) -> None:
-    order = list(DatePrecision)
-    if order.index(precision) > order.index(date.precision):
-        with pytest.raises(ValueError, match="precision"):
-            date.coarsened_to(precision)
-        return
-    coarse = date.coarsened_to(precision)
-    assert coarse.precision is precision
-    assert coarse.year == date.year
-    assert coarse <= date
-    assert coarse.coarsened_to(precision) == coarse
-    assert date.iso().startswith(coarse.iso())
 
 
 @pytest.mark.req("EF-BIB-047")

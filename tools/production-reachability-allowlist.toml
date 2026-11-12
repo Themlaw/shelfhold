@@ -50,19 +50,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m2"
-reason = "Consumers arrive with the content and plugin features of M2: image decode worker and caps (B1), CBZ writer from pages, EPUB/OPF dates, and the per-key limits of the Source contract (Suwayomi downloads through tickets)."
-until = "M2"
-symbols = [
-  "shelfhold.catalog.application.editions:edition_for_translation",
-  "shelfhold.catalog.domain.dates:comicinfo_date_fields",
-  "shelfhold.catalog.domain.dates:PartialDate.coarsened_to",
-  "shelfhold.catalog.domain.identity:Discriminant",
-  "shelfhold.catalog.domain.identity:translation_discriminant",
-  "shelfhold.catalog.domain.dates:opf_date",
-]
-
-[[allow]]
 category = "unwired-m3-series"
 reason = "A Series attached after its Works exist, and the explicit plan that moves the exported link of an Edition to the series (EF-BIB-025, EF-EXP-062, I26): the model and the guard of an adopted series are here, the plan with its path warning (EF-EXP-037) and the merge and split of Works (EF-BIB-019) are M3's, the only callers."
 until = "M3"
@@ -128,50 +115,6 @@ tests = [
 ]
 
 [[allow]]
-category = "unwired-m2-l11"
-reason = "MetadataProvider contract (SDK 1.2, EF-BIB-013, M2 L11): the SDK version check is proved by the conformance kit and the fake provider; its first host caller is the plugin installer of the metadata plugins (M2 L11 follow-up); the proposal types are wired since the OpenLibrary enrichment (M2 L13)."
-until = "M2"
-symbols = [
-  "shelfhold.sdk.models:SDK_VERSION",
-  "shelfhold.sdk.models:sdk_supports",
-]
-
-[[allow]]
-category = "unwired-m2-l12"
-reason = "The arrival of an Edition with its external identifiers and field proposals (`AutoAttachService.arrive`, EF-BIB-003, EF-BIB-008, EF-BIB-055, M2 L12), the append-only identifier store, the field locks and the suggested ages are proved by their tests; their first production callers are the ingest pipeline of the M2 sources (L19); the OpenLibrary enrichment (M2 L13) already reads the identifiers and stores the proposals and suggested ages. The undo, the confirmation and the list of attaches are already wired (`shelfhold edition detach|attach-confirm|attach-decline|attachments`)."
-until = "M2"
-symbols = [
-  "shelfhold.catalog.application.auto_attach:IncomingEdition",
-]
-
-[[allow]]
-category = "unwired-m2-l14"
-reason = "The arrival of an Edition now asks the Work tombstones first (`AutoAttachService.arrive`, EF-BIB-053, EF-BIB-054, M2 L14): a purged Work does not come back by an external identifier it carried, and an arrival without a screen fails closed. Its first production caller is the ingest pipeline of the M2 sources (L19), which hands it the screen (`ops.tombstone_screens.CatalogScreens`); the plan and the confirmation of a suggested attach, and `edition merge`, already use that screen."
-until = "M2"
-symbols = [
-  "shelfhold.catalog.application.auto_attach:AutoAttachService.arrive",
-]
-
-[[allow]]
-category = "unwired-m2-l15"
-reason = "The rights review that announces the non-blocking warning (`Rights.review`), the derived death-year cache and the article-free sort key (EF-SRC-024, EF-BIB-046, ENF-I18N-003, M2 L15) are proved by their tests; their first production callers are the Gutenberg / Standard Ebooks ingest of the M2 source lots (review, cache) and the atelier list (sort key, M3). `status` already reads the calculation through `Rights.protected`."
-until = "M2"
-symbols = [
-  "shelfhold.catalog.application.rights:Rights.refresh_cache",
-]
-
-[[allow]]
-category = "unwired-m2-l06"
-reason = "The periodic spread `Scheduler.add_default` (ENF-LEG-007, M2 L06) is proved by its tests; its first caller is the adaptive check cadence of M2 L29. The per-source cache factory (`cache_for`) and the robots.txt policy are wired by the native acquisition (M2 L19, `SourceFetchers`)."
-until = "M2"
-symbols = [
-  "shelfhold.jobs.scheduler:Scheduler.add_default",
-]
-
-# What L31 (M1b) did not wire: wiring it would change what production does (a refusal, a check, a
-# screen, a command), which the refactor does not do. Each group names the milestone that owns the
-# feature and the first caller; docs/decisions/M1b.md (L31) lists them for the owner to arbitrate.
-[[allow]]
 category = "deferred-l31-adoption-and-preview"
 reason = "M1a features whose production caller is a screen or a command that does not exist yet: the journaled rename of a series folder (EF-EXP-041, `apply_rename`), the adoption of a foreign library (EF-EXP-044, EF-EXP-051, EF-EXP-055: download folder verdict, library link, bulk parse), the `ParseSeriesName` collision check and the \"not verified\" mark of the preview (EF-EXP-009, ENF-COMP-001), the naming pre-checks of an incoming file (EF-EXP-028) and the discovery of physical roots (EF-EXP-059). Wiring any of them adds a check or a refusal to the export path."
 until = "M3"
@@ -220,29 +163,31 @@ symbols = [
   "shelfhold.sdk.export_target:ExportTarget",
 ]
 
+# What waited for M2 and is neither wired nor deleted (M2 L31, 2026-11-12): each group names the
+# lot that owns it. A group whose lot is a cut (L10, L21, L29) goes with that lot; the others have
+# their first caller in the screens and commands of M3, written down here for the owner to
+# arbitrate (docs/decisions/M2-L31-debts.md).
 [[allow]]
-category = "unwired-m2-l13"
-reason = "`probe_image` and `diagnose_worker` of the decode worker client (ENF-SEC-003) have no production caller yet: the cover of the OpenLibrary enrichment (M2 L13) is the first one to run the worker (`make_thumbnail`, wired); the probe of an arriving page belongs to the CBZ writer from pages and the Source download (M2 L19), the sandbox report to `status`. The URL <-> identifier mapping of the OpenLibrary provider is proved by the conformance kit; its first host caller is the resolution of a pasted URL to a provider (M2 L19)."
+category = "m2-l31-pending-l10-derivative"
+reason = "2026-11-12 (M2 L31): wired by M2 L10 (in progress, delivered in M2): `declare_derivative` (the derivative of a CBZ made by a descrambler, a Processor or the SVG rasterizer), and the probe and the sandbox report of the decode worker (`probe_image` asks the worker about the pages of an arriving CBZ, `diagnose_worker` reports what the sandbox really allows). The neutralizer of M2 L03 does not go through the first, and the cover of the OpenLibrary enrichment already runs the worker through `make_thumbnail`. L10 removes this entry."
 until = "M2"
 symbols = [
   "shelfhold.infrastructure.imaging.client:diagnose_worker",
   "shelfhold.infrastructure.imaging.client:probe_image",
-  "shelfhold.plugin_host.adapters.native.openlibrary.provider:OpenLibraryProvider.ids_from_url",
-  "shelfhold.plugin_host.adapters.native.openlibrary.provider:OpenLibraryProvider.url_for",
 ]
 
 [[allow]]
-category = "m2-l17-revision-queue-single-connection"
-reason = "2026-11-11 (M2 L17): `RevisionQueue.apply_metadata` is the whole metadata push on one connection, as the tests drive it. The operating surface (`ops.revisions`) composes its parts (`metadata_candidates`, then `settle_metadata` in a transaction of its own per row), because the Kavita call must never be awaited inside a write transaction. The rewrite requester (`RewriteRequester`) has no production binding until the acquisition lot that fetches a revised file: `revisions apply` answers `ops.exit_unavailable` after the batch token is checked."
+category = "m2-l31-pending-l29-cadence"
+reason = "2026-11-12 (M2 L31): the periodic spread `Scheduler.add_default` (ENF-LEG-007) has its first caller in the adaptive check cadence (M2 L29, in progress, delivered in M2), which removes this entry: the follow cycle keeps its fixed cron until then."
 until = "M2"
 symbols = [
-  "shelfhold.catalog.application.revisions:RevisionQueue.apply_metadata",
+  "shelfhold.jobs.scheduler:Scheduler.add_default",
 ]
 
 [[allow]]
 category = "unwired-m2-l25-sync-range"
-reason = "2026-11-11 (M2 L25): `fetch_range` is the synchronous case of the two steps of a request (ask, wait a bounded time, receive): the `Source` contract requires them and the conformance kit calls them, but the follow cycle drives the same service through the persisted ticket (`request`, `poll`, `fetch`), which is the production path and is proved by its own tests. Nothing in production waits inside one call."
-until = "M2"
+reason = "2026-11-12 (M2 L31): `fetch_range` is the synchronous case of the two steps of a request (ask, wait a bounded time, receive): the `Source` contract requires it (`sdk/source.py`) and the conformance kit calls it, but the follow cycle drives the same service through the persisted ticket (`request`, `poll`, `fetch`), which is the production path and is proved by its own tests. Nothing in production waits inside one call: it is neither wired nor deletable (the contract and the kit need it), so it is written down for M3, when the contract may drop the synchronous step."
+until = "M3"
 symbols = [
   "shelfhold.plugin_host.adapters.meta.lncrawl.service:LncrawlService.fetch_range",
 ]

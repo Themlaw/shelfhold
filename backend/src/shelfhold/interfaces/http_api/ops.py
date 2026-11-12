@@ -109,6 +109,11 @@ class RestoreIn(BaseModel):
     confirm_deletion: bool = False
 
 
+class ForgetRootIn(BaseModel):
+    root_id: str = Field(min_length=1)
+    confirm: str = Field(min_length=1)
+
+
 class KeyringIn(BaseModel):
     confirmation: str = Field(min_length=1)
 
@@ -391,6 +396,16 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             principal = conditional(request, "reconcile.confirm_deletion")
         with refusals():
             get_ops().restore_adopt(confirm_deletion=body.confirm_deletion, principal=principal)
+        return Done()
+
+    @router.post(_path("reconcile", "--forget-root"))
+    def restore_forget_root(body: ForgetRootIn, request: Request) -> Done:
+        # a fresh session, never a key; the guard writes no line (the host path writes its own)
+        principal = reserved_action(RESERVED_ACTIONS["reconcile.forget_root"], audit=False)(request)
+        with refusals():
+            get_ops().restore_forget_root(
+                root_id=body.root_id, confirm=body.confirm, principal=principal
+            )
         return Done()
 
     @router.post(_path("tombstone", "accept-lost-keyring"), response_model=KeyringOut)

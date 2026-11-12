@@ -16,6 +16,7 @@ novel, that range and chapters inside it. The host checks the same again before 
 import asyncio
 import hashlib
 import json
+import re
 from decimal import Decimal
 from typing import Any, Final, Literal
 from urllib.parse import urlsplit
@@ -133,6 +134,7 @@ class LncrawlService:
             | ConnectedCapability.HEALTH_PROBE
             | ConnectedCapability.INSTANCE_FINGERPRINT
         )
+        self._names: set[str] = set()  # what the instance says of itself: never shown (below)
         self._poll_delay = poll_delay
         self._poll_limit = poll_limit
 
@@ -177,7 +179,32 @@ class LncrawlService:
     ) -> dict[str, Any]:
         response = await f.get(self._url(path), params=params)
         self._raise_for_status(response, f)
-        return api.mapping(api.loads(response))
+        return self._learned(api.mapping(api.loads(response)))
+
+    def _learned(self, node: dict[str, Any]) -> dict[str, Any]:
+        """The crawler or source name an instance volunteers is remembered, so that it is cut
+        from every title, team and author the instance sends after or beside it."""
+        stack: list[Any] = [node]
+        while stack:
+            item = stack.pop()
+            if isinstance(item, dict):
+                for key, value in item.items():
+                    if key in api.SELF_NAMING and isinstance(value, str) and value.strip():
+                        self._names.add(value.strip())
+                    elif isinstance(value, dict | list):
+                        stack.append(value)
+            elif isinstance(item, list):
+                stack.extend(item)
+        return node
+
+    def _shown(self, value: object, *, limit: int = 200) -> str | None:
+        """A display string without any name the instance gave of itself."""
+        shown = api.text(value, limit=limit)
+        for name in self._names:
+            if shown is not None:
+                shown = re.sub(re.escape(name), "", shown, flags=re.IGNORECASE)
+                shown = " ".join(shown.split()) or None
+        return shown
 
     async def _post(self, f: Fetcher, path: str, body: dict[str, Any]) -> dict[str, Any]:
         response = await f.post(
@@ -225,7 +252,7 @@ class LncrawlService:
     def _ref(self, entry: dict[str, Any]) -> SeriesRef:
         return SeriesRef(
             source_key=KEY, remote_id=api.identifier(entry.get("id")),
-            title=api.text(entry.get("title"), limit=300) or "",
+            title=self._shown(entry.get("title"), limit=300) or "",
         )  # fmt: skip
 
     # -- Source ------------------------------------------------------------------------------
@@ -259,12 +286,12 @@ class LncrawlService:
     async def get_series(self, f: Fetcher, ref: SeriesRef) -> SeriesInfo:
         node = await self._novel(f, ref)
         authors = node.get("authors")
-        names = [a for a in (api.text(x, limit=200) for x in authors) if a] if isinstance(
+        names = [a for a in (self._shown(x, limit=200) for x in authors) if a] if isinstance(
             authors, list
         ) else []  # fmt: skip
         return SeriesInfo(
-            ref=ref.model_copy(update={"title": api.text(node.get("title"), limit=300) or ""}),
-            title=api.text(node.get("title"), limit=300) or ref.title,
+            ref=ref.model_copy(update={"title": self._shown(node.get("title"), limit=300) or ""}),
+            title=self._shown(node.get("title"), limit=300) or ref.title,
             description=api.text(node.get("synopsis"), limit=4000),
             authors=names[:20],
         )
@@ -298,9 +325,9 @@ class LncrawlService:
                 UnitInfo(
                     remote_unit_id=self._unit_id(novel, chapter), source_order=order,
                     number=str(order), number_sort=Decimal(order), kind="chapter",
-                    title=api.text(entry.get("title"), limit=300), volume_label=label,
+                    title=self._shown(entry.get("title"), limit=300), volume_label=label,
                     volume_closed=closed if label and isinstance(closed, bool) else None,
-                    team=api.team(entry.get("team")), lang=lang, lang_raw=lang_raw,
+                    team=api.team(self._shown(entry.get("team"))), lang=lang, lang_raw=lang_raw,
                 )
             )  # fmt: skip
         return sorted(units, key=lambda u: u.source_order)
