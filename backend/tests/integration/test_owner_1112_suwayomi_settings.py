@@ -89,7 +89,7 @@ def test_source_add_with_confirmation_fixes_audits_and_adds(mode: str, settings:
         assert server.settings_writes == [
             {"excludeUnreadChapters": False, "excludeNotStarted": False}
         ]
-        assert _actions(env).count("source.suwayomi_settings_fixed") == 1
+        assert _actions(env).count("source.suwayomi_settings_write_attempted") == 1
 
 
 @pytest.mark.req("EF-SRC-026")
@@ -104,7 +104,7 @@ def test_source_add_without_confirmation_never_writes(settings: Any) -> None:
         assert "--fix-suwayomi-settings" in str(refused.value)
         assert server.settings_writes == []
         assert server.exclude_unread is True and server.exclude_not_started is True
-        assert "source.suwayomi_settings_fixed" not in _actions(env)
+        assert "source.suwayomi_settings_write_attempted" not in _actions(env)
         assert env.count("source_config") == 0
 
 
@@ -116,7 +116,7 @@ def test_confirmation_with_nothing_to_fix_writes_nothing(settings: Any) -> None:
     with _env(settings, server) as env:
         env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True)
         assert server.settings_writes == []
-        assert "source.suwayomi_settings_fixed" not in _actions(env)
+        assert "source.suwayomi_settings_write_attempted" not in _actions(env)
 
 
 @pytest.mark.req("EF-SRC-026")
@@ -129,7 +129,9 @@ def test_a_write_that_does_not_stick_leaves_the_refusal(settings: Any) -> None:
         with pytest.raises(SourceUpdateFiltersBlocking):
             env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True)
         assert env.count("source_config") == 0
-        assert "source.suwayomi_settings_fixed" not in _actions(env)
+        assert (
+            _actions(env).count("source.suwayomi_settings_write_attempted") == 1
+        )  # sent, so traced
 
 
 @pytest.mark.req("EF-SRC-026")
@@ -171,7 +173,9 @@ def test_a_refused_or_failed_write_keeps_the_refusal_and_stores_nothing(settings
         with pytest.raises(SourceUpdateFiltersBlocking):  # a server that refuses the write
             env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True)
         assert env.count("source_config") == 0
-        assert "source.suwayomi_settings_fixed" not in _actions(env)
+        assert (
+            _actions(env).count("source.suwayomi_settings_write_attempted") == 3
+        )  # three sends, three rows
 
 
 @pytest.mark.req("EF-SRC-026")
@@ -249,3 +253,41 @@ def test_cli_in_process_sends_the_flag_through_the_socket(
         assert "--fix-suwayomi-settings" in capsys.readouterr().err
         assert _run(monkeypatch, settings, *args, "--fix-suwayomi-settings") == 0
         assert any(c.get("fix") for c in env.suwayomi.calls)
+
+
+@pytest.mark.req("EF-SRC-026")
+def test_a_write_whose_reread_fails_is_still_audited_with_the_real_actor(
+    settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of the PR: the mutation may have landed when the read after it fails."""
+    from shelfhold.headless.actor import Actor
+    from shelfhold.infrastructure.ids import new_ulid
+    from shelfhold.plugin_host.adapters.meta.suwayomi import service as svc
+    from tests.headless_env import SUWAYOMI_URL
+
+    original = svc.SuwayomiService.blocking_update_filters
+    reads = {"n": 0}
+
+    async def flaky(self: Any, f: Any) -> list[str]:
+        reads["n"] += 1
+        if reads["n"] >= 2:
+            raise RuntimeError("500 on the re-read")
+        return await original(self, f)
+
+    monkeypatch.setattr(svc.SuwayomiService, "blocking_update_filters", flaky)
+    server = _server()
+    actor = Actor("user:" + new_ulid(), new_ulid(), None)
+    with _env(settings, server) as env:
+        with pytest.raises(SourceUpdateFiltersBlocking):
+            env.admin.source_add_suwayomi(
+                url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True, actor=actor
+            )
+        assert server.exclude_unread is False  # Suwayomi was modified
+        with env.engine.connect() as connection:
+            rows = connection.execute(
+                sa.text(
+                    "SELECT actor_id, session_id FROM audit "
+                    "WHERE action = 'source.suwayomi_settings_write_attempted'"
+                )
+            ).all()
+        assert rows == [(actor.actor_id, actor.session_id)]

@@ -2551,7 +2551,7 @@
   "source.roles_confirmed",
   "source.roles_unverified",
   "source.set_secret",
-  "source.suwayomi_settings_fixed",
+  "source.suwayomi_settings_write_attempted",
   "source.use_readback",
   "source.version_unsupported",
   "source_binding",

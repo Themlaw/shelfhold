@@ -27,7 +27,7 @@ Deux voies :
 
 Cette désactivation est **la seule écriture que Shelfhold fait dans les réglages de Suwayomi** (mutation
 `setSettings`, ces deux clés à `false`, rien d'autre). Sans l'option, rien n'est écrit. Elle est journalisée
-(`source.suwayomi_settings_fixed`). Si Suwayomi refuse l'écriture (compte sans droit), l'ajout reste refusé et
+(`source.suwayomi_settings_write_attempted`, écrite avant l'envoi avec le compte et la session de l'admin, même si Suwayomi ne répond pas ensuite). Si Suwayomi refuse l'écriture (compte sans droit), l'ajout reste refusé et
 vous les désactivez à la main. Si Suwayomi ne répond pas lisiblement à la question, l'ajout n'est pas bloqué.
 
 ## Ajouter Suwayomi

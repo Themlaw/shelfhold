@@ -91,7 +91,7 @@ KEY_DAYS = 90  # the Kavita key expires; `target.key_expiring` warns at 14 and 1
 ADMIN_RISK_ACTION = "target.admin_risk_accepted"  # ENF-SEC-013
 MIN_PASSWORD_LENGTH = 8  # the log scrubber ignores shorter secrets (`MIN_KNOWN_SECRET`)
 ROLES_UNVERIFIED_ACTION = "source.roles_unverified"  # EF-SRC-031, D1: the roles cannot be read
-SETTINGS_FIXED_ACTION = "source.suwayomi_settings_fixed"  # the one write in Suwayomi's settings
+SETTINGS_WRITE_ACTION = "source.suwayomi_settings_write_attempted"  # the one write in its settings
 ROLES_CONFIRMED_ACTION = "source.roles_confirmed"  # the admin vouches for the account
 SUPPORTED_AUTH_MODES = frozenset({"none", "basic_auth", "ui_login"})
 X_CEILING = 99
@@ -666,17 +666,20 @@ class HeadlessAdmin:
         with self._engine.begin() as connection:
             return reconnect(connection, "suwayomi", self._clock.now())
 
-    def _audit_source(self, connection: Connection, action: str) -> None:
-        """One row in the transaction of the change: no unverified account without its trace."""
+    def _audit_source(
+        self, connection: Connection, action: str, actor: Actor | None = None
+    ) -> None:
+        """One row in the transaction of the change: no unverified account without its trace.
+        Behind a server call the row names the real actor and session; offline, the host uid."""
         records.insert_audit(
             connection,
             audit_id=new_ulid(),
-            actor_id=None,
+            actor_id=actor.actor_id if actor else None,
             action=action,
-            target=f"suwayomi uid={os.getuid()}",
+            target="suwayomi" if actor else f"suwayomi uid={os.getuid()}",
             at=self._clock.now(),
-            session_id=None,
-            auth_time=None,
+            session_id=actor.session_id if actor else None,
+            auth_time=actor.auth_time if actor else None,
         )
 
     def source_confirm_roles(self) -> bool:
@@ -695,7 +698,12 @@ class HeadlessAdmin:
     # -- source add suwayomi ------------------------------------------------------------------
 
     def source_add_suwayomi(
-        self, *, url: str, secret: str | None, fix_suwayomi_settings: bool = False
+        self,
+        *,
+        url: str,
+        secret: str | None,
+        fix_suwayomi_settings: bool = False,
+        actor: Actor | None = None,
     ) -> SourceAdded:
         clean_url = _suwayomi_address(url)
         username: str | None = None
@@ -721,9 +729,12 @@ class HeadlessAdmin:
             raise SourceAuthModeUnsupported(t("headless.auth_mode_unsupported", mode=mode))
         if mode in ("basic_auth", "ui_login") and not (username and password):
             raise InvalidConfigValue("this server needs a user:password secret")
-        fixed = False
         if self._suwayomi.blocking_filters and fix_suwayomi_settings:
-            # Owner decision 2026-11-12: the admin confirmed; the only write in Suwayomi's settings
+            # Owner decision 2026-11-12: the admin confirmed; the only write in Suwayomi's
+            # settings. The audit row comes first and stands alone: whatever happens to the
+            # call or to the read that follows, a write that may have landed has its trace.
+            with self._engine.begin() as connection:
+                self._audit_source(connection, SETTINGS_WRITE_ACTION, actor)
             try:
                 self._suwayomi.blocking_filters = self._suwayomi.disable_update_filters(
                     url=clean_url, mode=mode, username=username, password=password
@@ -734,7 +745,6 @@ class HeadlessAdmin:
                 raise InvalidConfigValue("Suwayomi refuses this user:password account") from None
             except Exception:  # the server refused the write: the refusal below tells the way out
                 _log.warning("headless.suwayomi_settings_fix_failed", url=clean_url)
-            fixed = not self._suwayomi.blocking_filters
         if self._suwayomi.blocking_filters:  # EF-SRC-026 (d): blocks the wizard, with the fix
             raise SourceUpdateFiltersBlocking(
                 t(
@@ -750,8 +760,6 @@ class HeadlessAdmin:
         with self._engine.begin() as connection:
             if unverified:
                 self._audit_source(connection, ROLES_UNVERIFIED_ACTION)
-            if fixed:
-                self._audit_source(connection, SETTINGS_FIXED_ACTION)
             created = records.source_row(connection) is None
             if created:
                 records.insert_source(connection, settings)
