@@ -14,6 +14,7 @@ import sqlalchemy as sa
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.content_trust import find_active_content
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.public import (
     OriginalNotServableError,
@@ -128,7 +129,7 @@ def test_the_origin_is_recorded_as_a_copy_that_is_not_ours() -> None:
             upstream_ref="remote-1",
         )
         with env.engine.connect() as c:
-            places = {r.location for r in c.execute(sa.select(storage.replica))}
+            places = {r.location for r in c.execute(sa.select(replica_schema.replica))}
         assert places == {"library", "store", "upstream"}
 
 
@@ -144,7 +145,7 @@ def test_a_publisher_epub_records_its_origin_too() -> None:
             upstream_ref="remote-1",
         )
         with env.engine.connect() as c:
-            assert {r.location for r in c.execute(sa.select(storage.replica))} == {
+            assert {r.location for r in c.execute(sa.select(replica_schema.replica))} == {
                 "library", "upstream",
             }  # fmt: skip
 
@@ -227,7 +228,11 @@ def test_regeneration_without_a_library_copy_is_blocked() -> None:
     with lib_env() as env:
         _result, library = ingest(env)
         with env.engine.begin() as c:
-            c.execute(sa.delete(storage.replica).where(storage.replica.c.location == "library"))
+            c.execute(
+                sa.delete(replica_schema.replica).where(
+                    replica_schema.replica.c.location == "library"
+                )
+            )
         with pytest.raises(RegenerationBlockedError):
             store(env).regenerate(env.chain["unit"])
         assert library.exists()

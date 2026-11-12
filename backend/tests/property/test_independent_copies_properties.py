@@ -6,6 +6,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.public import independent_copies
 from tests.library_env import lib_env
@@ -48,7 +49,7 @@ def test_independent_copies_counts_by_content_hash(model: list[dict[str, object]
             )  # fmt: skip
             for i, r in enumerate(model):
                 c.execute(
-                    sa.insert(storage.replica).values(
+                    sa.insert(replica_schema.replica).values(
                         id=new_ulid(), unit_id=unit, location=r["location"],
                         physical_root_id=env.library_root if r["location"] != "store" else None,
                         rel_path=f"f{i}.cbz", dev=1, ino=r["inode"],
@@ -76,7 +77,7 @@ def test_file_hash_never_enters_the_count() -> None:
             )  # fmt: skip
             for i, file_hash in enumerate((B, None, A, FILE_HASHES[3])):  # four renderings
                 c.execute(
-                    sa.insert(storage.replica).values(
+                    sa.insert(replica_schema.replica).values(
                         id=new_ulid(), unit_id=unit, location="library",
                         physical_root_id=env.library_root, rel_path=f"d{i}/x.cbz",
                         dev=1, ino=10 + i, content_hash=A, file_hash=file_hash, independent=True,

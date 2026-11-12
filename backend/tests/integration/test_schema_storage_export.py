@@ -20,6 +20,7 @@ from shelfhold.infrastructure.schema import (
     reading,
     storage,
 )
+from shelfhold.infrastructure.schema import replica as replica_schema
 from tests.integration.test_schema_catalog import (
     add_binding,
     add_edition,
@@ -159,7 +160,7 @@ def chain(engine: Engine) -> dict[str, str]:
 API_ID_TABLES = [
     (storage.content, "id"),
     (storage.trash_item, "id"),
-    (storage.replica, "id"),
+    (replica_schema.replica, "id"),
     (export.export_target, "id"),
     (export.shelf, "id"),
     (export.shelf_destination, "id"),
@@ -366,7 +367,7 @@ def test_hash_fields_prefixed_with_algorithm(engine: Engine, chain: dict[str, st
             for field in ("content_hash", "file_hash"):
                 with pytest.raises(exc.IntegrityError, match=f"ck_replica_{field}_sha256"):
                     insert(
-                        connection, storage.replica, unit_id=chain["unit"], location="store",
+                        connection, replica_schema.replica, unit_id=chain["unit"], location="store",
                         rel_path="a", **{field: bad},
                     )  # fmt: skip
             for field in ("content_hash", "sidecar_sha256", "file_hash"):
@@ -387,11 +388,13 @@ def test_replica_belongs_to_a_unit_or_an_export_item(engine: Engine, chain: dict
     with engine.begin() as connection:
         rejected(
             connection,
-            sa.insert(storage.replica).values(id=new_ulid(), location="store", rel_path="a"),
+            sa.insert(replica_schema.replica).values(id=new_ulid(), location="store", rel_path="a"),
             "ck_replica_has_owner",
         )
         item = add_export_item(connection, chain["edition"])
-        insert(connection, storage.replica, export_item_id=item, location="store", rel_path="a")
+        insert(
+            connection, replica_schema.replica, export_item_id=item, location="store", rel_path="a"
+        )
 
 
 @pytest.mark.req("EF-BIB-045", "EF-EXP-059")
@@ -406,19 +409,19 @@ def test_replica_in_a_library_names_its_physical_root_and_path(
         for location in ("library", "adopted_ro"):
             rejected(
                 connection,
-                sa.insert(storage.replica).values(
+                sa.insert(replica_schema.replica).values(
                     id=new_ulid(), unit_id=chain["unit"], location=location, rel_path="a"
                 ),
                 "ck_replica_library_has_root_and_path",
             )
         insert(
-            connection, storage.replica, unit_id=chain["unit"], location="library",
+            connection, replica_schema.replica, unit_id=chain["unit"], location="library",
             physical_root_id=root, rel_path="a.cbz",
         )  # fmt: skip
         # the same file is never two replicas: it would count twice as an independent copy
         rejected(
             connection,
-            sa.insert(storage.replica).values(
+            sa.insert(replica_schema.replica).values(
                 id=new_ulid(),
                 unit_id=chain["unit"],
                 location="library",
@@ -427,10 +430,16 @@ def test_replica_in_a_library_names_its_physical_root_and_path(
             ),
             "UNIQUE constraint failed",
         )
-        insert(connection, storage.replica, unit_id=chain["unit"], location="store", rel_path="s")
+        insert(
+            connection,
+            replica_schema.replica,
+            unit_id=chain["unit"],
+            location="store",
+            rel_path="s",
+        )
         rejected(
             connection,
-            sa.insert(storage.replica).values(
+            sa.insert(replica_schema.replica).values(
                 id=new_ulid(), unit_id=chain["unit"], location="store", rel_path="s"
             ),
             "UNIQUE constraint failed",
@@ -441,18 +450,20 @@ def test_replica_in_a_library_names_its_physical_root_and_path(
 def test_replica_defaults_are_the_cautious_ones(engine: Engine, chain: dict[str, str]) -> None:
     with engine.begin() as connection:
         key = insert(
-            connection, storage.replica, unit_id=chain["unit"], location="upstream",
+            connection, replica_schema.replica, unit_id=chain["unit"], location="upstream",
             remote_ref="chapter/12",
         )  # fmt: skip
         row = connection.execute(
-            sa.select(storage.replica).where(storage.replica.c.id == key)
+            sa.select(replica_schema.replica).where(replica_schema.replica.c.id == key)
         ).one()
         assert row.independent is False  # never counted as a copy until proven (inode distinct)
         assert row.mutable_by_third_party is False
         assert row.fidelity == "original"
         rejected(
             connection,
-            sa.update(storage.replica).where(storage.replica.c.id == key).values(fidelity="x"),
+            sa.update(replica_schema.replica)
+            .where(replica_schema.replica.c.id == key)
+            .values(fidelity="x"),
             "ck_replica_fidelity_values",
         )
 
@@ -1303,7 +1314,7 @@ def test_replica_path_stays_relative(engine: Engine, chain: dict[str, str], bad:
     with engine.begin() as connection:
         rejected(
             connection,
-            sa.insert(storage.replica).values(
+            sa.insert(replica_schema.replica).values(
                 id=new_ulid(), unit_id=chain["unit"], location="store", rel_path=bad
             ),
             "ck_replica_rel_path_relative",

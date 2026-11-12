@@ -206,21 +206,6 @@ def _run_in_copy(tmp_path: Path, files: dict[str, str]) -> subprocess.CompletedP
     return _run_lint_imports(tmp_path)
 
 
-# Contracts that report violations already on main (found when `replica-single-reader` stopped
-# being blind, M3 L00). They are described in the PR, not ignored; the owner settles them.
-KNOWN_BROKEN_ON_MAIN = {"replica-single-reader"}
-
-
-def _broken(stdout: str) -> set[str]:
-    flat = " ".join(stdout.split())  # the report wraps long contract names
-    sections = [x for x in _config().sections() if x.startswith("importlinter:contract:")]
-    return {
-        x.split(":", 2)[2]
-        for x in sections
-        if f"{' '.join(_config()[x]['name'].split())} BROKEN" in flat
-    }
-
-
 def _contract_name(contract: str) -> str:
     return _config()[f"importlinter:contract:{contract}"]["name"]
 
@@ -316,12 +301,15 @@ VIOLATIONS = [
      "import shelfhold.plugin_host.registry\n", None),
     ("metadata-not-export", "catalog/application/metadata.py",
      "from shelfhold.export import public\n", "interfaces/other.py"),
-    # M3 L00: `replica-single-reader` was blind (root source); a reader of the table outside
-    # library is now reported
+    # M3 L00: `replica-single-reader` was blind (root source); it now names `schema.replica`
     ("replica-single-reader", "export/synthetic.py",
-     "import shelfhold.infrastructure.schema.storage\n", None),
-    ("replica-single-reader", "identity/adapters/synthetic.py",
-     "from shelfhold.infrastructure.schema import storage\n", None),
+     "import shelfhold.infrastructure.schema.replica\n", "library/replica.py"),
+    ("replica-single-reader", "library/adapters/synthetic.py",
+     "from shelfhold.infrastructure.schema import replica\n", "library/replica.py"),
+    ("replica-single-reader", "infrastructure/clock.py",
+     "import shelfhold.infrastructure.schema.replica\n", None),
+    ("fts-sole-reader", "infrastructure/clock.py",
+     "import shelfhold.infrastructure.schema.search\n", None),
     # M3 L00: synthetic modules, one violation per new contract
     ("http-no-infrastructure-adapter", "interfaces/http_api/synthetic.py",
      "import shelfhold.infrastructure.fsops\n", "interfaces/cli/synthetic.py"),
@@ -359,21 +347,18 @@ def test_each_contract_breaks_on_a_violation_and_allows_its_sanctioned_module(
 ) -> None:
     result = _run_in_copy(tmp_path / "bad", {module: code})
     assert result.returncode != 0, result.stdout
-    assert contract in _broken(result.stdout), result.stdout
-    # the contract also breaks on main: the synthetic module itself must be among the offenders
-    dotted = "shelfhold." + module.removesuffix(".py").replace("/", ".")
-    assert dotted in result.stdout, result.stdout
+    assert f"{_contract_name(contract)} BROKEN" in " ".join(result.stdout.split()), result.stdout
     if sanctioned:
         ok = _run_in_copy(tmp_path / "ok", {sanctioned: code})
-        assert contract not in _broken(ok.stdout) or contract in KNOWN_BROKEN_ON_MAIN, ok.stdout
-        assert _broken(ok.stdout) <= KNOWN_BROKEN_ON_MAIN, ok.stdout
+        assert f"{_contract_name(contract)} BROKEN" not in " ".join(ok.stdout.split()), ok.stdout
+        assert ok.returncode == 0, ok.stdout
 
 
 @pytest.mark.req("ENF-QUAL-002", "EF-SRC-033")
 def test_native_adapter_may_import_the_sdk(tmp_path: Path) -> None:
     code = "from shelfhold.sdk import models\n"
     result = _run_in_copy(tmp_path, {"plugin_host/adapters/native/demo/client.py": code})
-    assert _broken(result.stdout) <= KNOWN_BROKEN_ON_MAIN, result.stdout
+    assert result.returncode == 0, result.stdout
 
 
 @pytest.mark.req("ENF-QUAL-002")
@@ -800,3 +785,21 @@ def test_no_forbidden_contract_on_the_root_guards_a_module_inside_it() -> None:
         and any(m.startswith("shelfhold.") for m in _lines(parser[s]["forbidden_modules"]))
     ]
     assert not blind, blind
+
+
+@pytest.mark.req("ENF-QUAL-002")
+@pytest.mark.parametrize("contract", ["replica-single-reader", "fts-sole-reader"])
+def test_registry_contracts_list_every_infrastructure_module(contract: str) -> None:
+    """import-linter ignores an import between two modules of one source, so `infrastructure` is
+    listed module by module (schema aside); a new module must be added to the list."""
+    listed = {
+        m.removeprefix("shelfhold.infrastructure.")
+        for m in _lines(_config()[f"importlinter:contract:{contract}"]["source_modules"])
+        if m.startswith("shelfhold.infrastructure.")
+    }
+    actual = {
+        p.stem if p.is_file() else p.name
+        for p in (SRC / "shelfhold" / "infrastructure").iterdir()
+        if p.name not in ("__init__.py", "__pycache__", "schema")
+    }
+    assert listed == actual, listed ^ actual

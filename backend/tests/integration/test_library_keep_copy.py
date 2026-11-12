@@ -15,6 +15,7 @@ import sqlalchemy as sa
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, export, platform, storage
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.jobs.window import run_until
 from shelfhold.library.public import (
     KeepCopier,
@@ -223,7 +224,9 @@ def test_declared_canonical_derivative_keeps_original_and_derived_sha256() -> No
                 sha(scrambled), sha(derived), "descrambler@v1",
             )  # fmt: skip
             assert row.retention == "keep"
-            replicas = c.execute(sa.select(storage.replica.c.location, storage.replica.c.file_hash))
+            replicas = c.execute(
+                sa.select(replica_schema.replica.c.location, replica_schema.replica.c.file_hash)
+            )
             assert sorted(replicas.all()) == sorted(
                 [("library", sha(derived)), ("store", sha(scrambled))]
             )

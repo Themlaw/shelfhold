@@ -14,7 +14,8 @@ import structlog.testing
 
 from shelfhold.export.application.purge import PurgeReport
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog, coherence, platform, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, coherence, platform
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.backup.store import archive_name
 from tests.export_env import ExportEnv, export_env
@@ -163,7 +164,9 @@ def test_purge_now_deletes_suwayomi_download_from_m1b(tmp_path: Path) -> None:
                 )
             ).one()
         assert row.state == "closed_by_purge" and row.ticket is None and row.variant_id is None
-        assert count(env, storage.replica, storage.replica.c.location == "upstream") == 0
+        assert (
+            count(env, replica_schema.replica, replica_schema.replica.c.location == "upstream") == 0
+        )
         with env.engine.connect() as connection:  # the deed is over, nothing is left open
             open_ones = connection.execute(
                 sa.select(coherence.fs_intent.c.id).where(

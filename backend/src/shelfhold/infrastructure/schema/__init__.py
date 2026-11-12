@@ -8,6 +8,7 @@ from shelfhold.infrastructure.schema import (
     identity,
     platform,
     reading,
+    replica,
     storage,
 )
 from shelfhold.infrastructure.schema._base import UtcDateTime, metadata
@@ -22,5 +23,6 @@ __all__ = [
     "metadata",
     "platform",
     "reading",
+    "replica",
     "storage",
 ]

@@ -24,7 +24,8 @@ from shelfhold.identity.public import (
     authorize_reserved,
 )
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, export, identity, storage
+from shelfhold.infrastructure.schema import catalog, export, identity
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.ops.errors import CodedRefusal
 from shelfhold.ops.resplit import ResplitOps
 from tests.auth_env import run_cli
@@ -265,7 +266,7 @@ def test_the_chapters_a_resplit_made_are_present_as_long_as_their_parent_is(
         n = novel(env, "Un roman")
         with env.inst.engine.begin() as connection:
             connection.execute(
-                sa.insert(storage.replica).values(
+                sa.insert(replica_schema.replica).values(
                     id=new_ulid(), export_item_id=n.item, location="store", rel_path="v.epub"
                 )
             )
@@ -277,6 +278,6 @@ def test_the_chapters_a_resplit_made_are_present_as_long_as_their_parent_is(
             assert all(has_readable_copy(connection, k) for k in n.children)
             assert readable_unit_ids(connection, n.edition) == {n.parent, *n.children}
         with env.inst.engine.begin() as connection:  # the parent's copy goes: so do its chapters
-            connection.execute(sa.delete(storage.replica))
+            connection.execute(sa.delete(replica_schema.replica))
         with env.inst.engine.connect() as connection:
             assert not any(has_readable_copy(connection, k) for k in (n.parent, *n.children))

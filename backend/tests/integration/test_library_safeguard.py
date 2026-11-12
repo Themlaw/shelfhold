@@ -11,6 +11,7 @@ import sqlalchemy as sa
 
 from shelfhold.infrastructure.archives import safe_open_archive
 from shelfhold.infrastructure.packaging.cbz import repackage_cbz
+from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.public import (
     PassthroughStore,
@@ -68,7 +69,7 @@ def ingest_and_render(env: LibEnv, received: bytes) -> Path:
     identity = dest.stat()  # replacing the file changed its inode: the registry records the new one
     with env.engine.begin() as c:  # the exporter's manifest: the file hash of this destination
         c.execute(
-            sa.update(storage.replica).values(
+            sa.update(replica_schema.replica).values(
                 file_hash=sha(rendered),
                 dev=identity.st_dev,
                 ino=identity.st_ino,
@@ -125,7 +126,7 @@ def test_safeguard_refuses_and_writes_nothing_when_the_content_hash_does_not_ver
         tampered = render(cbz_bytes((("001.png", PNG), ("002.jpg", JPEG + b"edited"))))
         env.fsops.write_atomic(str(dest), tampered)
         with env.engine.begin() as c:  # still the manifest's file hash: only the bytes changed
-            c.execute(sa.update(storage.replica).values(file_hash=sha(tampered)))
+            c.execute(sa.update(replica_schema.replica).values(file_hash=sha(tampered)))
         with pytest.raises(SafeguardFailedError) as raised:
             safeguard(env).run(
                 env.chain["unit"]
@@ -140,8 +141,8 @@ def test_safeguard_refuses_and_writes_nothing_when_the_content_hash_does_not_ver
             assert (
                 c.execute(
                     sa.select(sa.func.count())
-                    .select_from(storage.replica)
-                    .where(storage.replica.c.location == "store")
+                    .select_from(replica_schema.replica)
+                    .where(replica_schema.replica.c.location == "store")
                 ).scalar_one()
                 == 0
             )
@@ -162,7 +163,9 @@ def test_safeguard_reads_upstream_when_library_file_differs_from_manifest() -> N
             # the registry reflects the real state: the altered library file is not a copy of it
             assert independent_copies(c, env.chain["unit"]) == 1
             library = c.execute(
-                sa.select(storage.replica).where(storage.replica.c.location == "library")
+                sa.select(replica_schema.replica).where(
+                    replica_schema.replica.c.location == "library"
+                )
             ).one()
             assert library.content_hash == hash_of(third_party) and library.file_hash == sha(
                 render(received)
