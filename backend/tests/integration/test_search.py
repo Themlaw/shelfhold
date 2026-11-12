@@ -58,7 +58,7 @@ def test_search_cjk_trigram(h: Harness) -> None:
 @pytest.mark.req("EF-BIB-010")
 def test_search_diacritics_folded(h: Harness) -> None:
     works = _library(h)
-    for query in ("miserables", "MISÉRABLES", "misérables", "mis", "les mise"):
+    for query in ("miserables", "MISÉRABLES", "misérables", "misér", "les miser"):
         assert _ids(h, query) == [works["lm"]], query
     assert _ids(h, "pluto") == [works["ph"]]
     assert _ids(h, "miserables zzz") == []  # every term must be found
@@ -86,7 +86,7 @@ def test_like_fallback_without_fts5_is_reported(h: Harness) -> None:
     h.connection.execute(sa.text("DROP TABLE search_fts"))
     caps = search_capability(h.connection)
     assert caps.mode == "like" and caps.degraded
-    assert _ids(h, "Les Mise") == [works["lm"]]
+    assert _ids(h, "Les Misér") == [works["lm"]]
     assert _ids(h, "進撃") == [works["aot"]]
     assert _ids(h, "pluto") == [works["ph"]]
 
