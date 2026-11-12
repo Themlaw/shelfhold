@@ -153,7 +153,9 @@ class IdentityStore(Protocol):
         max_age_rating: int | None = None,
     ) -> None: ...
     def set_password_hash(self, user_id: str, password_hash: str) -> None: ...
-    def delete_user(self, user_id: str, *, keep_one_admin: bool = False) -> str | None:
+    def delete_user(
+        self, user_id: str, *, keep_one_admin: bool = False, actor_id: str | None = None
+    ) -> str | None:
         """`keep_one_admin`: the last admin is refused (`ProfileError("last_admin")`), decided in
         the transaction that deletes."""
         ...
@@ -172,6 +174,7 @@ class IdentityStore(Protocol):
         can_rate: bool,
         now: datetime,
         max_admins: int,
+        actor_id: str | None = None,
     ) -> None:
         """`ProfileError`: `username_taken`, `too_many_admins` (counted in the transaction)."""
         ...
@@ -181,20 +184,35 @@ class IdentityStore(Protocol):
         user_id: str,
         *,
         expected_role: str,
+        expected_max_age_rating: int | None,
+        expected_can_rate: bool,
         role: str,
         max_age_rating: int | None,
         can_rate: bool,
         max_admins: int,
         now: datetime,
+        actor_id: str | None = None,
     ) -> None:
         """One transaction: `ProfileError` `changed_meanwhile` (the role moved since it was read),
-        `last_admin`, `too_many_admins`. A change of role closes the sessions of the profile."""
+        `last_admin`, `too_many_admins`; the same `changed_meanwhile` when the ceiling or the
+        right to classify differ from what was read. `actor_id`: an admin caller is re-read under
+        the lock (`not_allowed`). A change of role closes the sessions and keys of the profile and
+        drops its stored policies (D14 again)."""
         ...
 
     def source_family(self, source_key: str) -> bool: ...
     def set_source_policy(
-        self, user_id: str, source_key: str, policy: str, *, now: datetime
-    ) -> None: ...
+        self,
+        user_id: str,
+        source_key: str,
+        policy: str,
+        *,
+        now: datetime,
+        actor_id: str | None = None,
+    ) -> None:
+        """Role and family mark re-read under the lock: `ProfileError` of the rule that refuses."""
+        ...
+
     def stored_source_policies(self, user_id: str) -> Mapping[str, str]: ...
 
     def insert_session(self, session: NewSession) -> None:

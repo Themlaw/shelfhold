@@ -16,6 +16,7 @@ caller (the host socket, a test, a later route that forgets the guard) can escal
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
+from typing import Any
 
 from shelfhold.identity.application.ports import (
     IdentityStore,
@@ -70,6 +71,12 @@ class ProfileService:
         return by
 
     @staticmethod
+    def _actor_id(by: Principal | None) -> str | None:
+        """Whose admin role the store re-reads under its lock: a session's user (the host has no
+        row to read)."""
+        return by.user_id if by is not None and by.credential is Credential.SESSION else None
+
+    @staticmethod
     def _is_self(by: Principal | None, profile_id: str) -> bool:
         return by is not None and by.credential is Credential.SESSION and by.user_id == profile_id
 
@@ -91,7 +98,10 @@ class ProfileService:
         self._manager(by)
         return self._store.profiles()
 
-    def add(
+    def add(self, *args: Any, **kwargs: Any) -> str:
+        return self.add_profile(*args, **kwargs).id
+
+    def add_profile(
         self,
         username: str,
         password: str,
@@ -100,8 +110,8 @@ class ProfileService:
         max_age_rating: int | None = None,
         can_rate: bool | None = None,
         by: Principal | None = None,
-    ) -> str:
-        """Create a profile; returns its id. `ValueError` for a username or a password that has
+    ) -> ProfileRecord:
+        """Create a profile; returns it. `ValueError` for a username or a password that has
         no acceptable shape (the same refusals as the first admin's)."""
         self._manager(by)
         username = username.strip()
@@ -117,9 +127,10 @@ class ProfileService:
         self._store.create_profile(
             id=profile_id, username=username, role=role, password_hash=self._hasher.hash(password),
             max_age_rating=ceiling, can_rate=rate, now=self._now(), max_admins=MAX_ADMINS,
+            actor_id=self._actor_id(by),
         )  # fmt: skip
         self._audit("profile.created", by, profile_id)
-        return profile_id
+        return ProfileRecord(profile_id, username, role, ceiling, rate)
 
     def set(
         self,
@@ -154,8 +165,10 @@ class ProfileService:
         if ceiling is not None:
             check_child_ceiling(self._creator_ceiling(by), ceiling)
         self._store.update_profile(
-            profile_id, expected_role=current.role, role=new_role, max_age_rating=ceiling,
-            can_rate=rate, max_admins=MAX_ADMINS, now=self._now(),
+            profile_id, expected_role=current.role,
+            expected_max_age_rating=current.max_age_rating, expected_can_rate=current.can_rate,
+            role=new_role, max_age_rating=ceiling, can_rate=rate, max_admins=MAX_ADMINS,
+            now=self._now(), actor_id=self._actor_id(by),
         )  # fmt: skip
         self._audit("profile.updated", by, profile_id)
         return self._existing(profile_id)
@@ -166,7 +179,9 @@ class ProfileService:
         self._existing(profile_id)
         if self._is_self(by, profile_id):
             raise ProfileError("cannot_remove_self")
-        pseudonym = self._store.delete_user(profile_id, keep_one_admin=True)
+        pseudonym = self._store.delete_user(
+            profile_id, keep_one_admin=True, actor_id=self._actor_id(by)
+        )
         if pseudonym is None:
             raise ProfileError("not_found")
         self._audit("profile.removed", by, pseudonym)
@@ -181,8 +196,10 @@ class ProfileService:
         if not source_key or len(source_key) > MAX_SOURCE_KEY:
             raise ProfileError("invalid_policy")
         check_source_policy(profile.role, policy, family=self._store.source_family(source_key))
-        self._store.set_source_policy(profile_id, source_key, policy, now=self._now())
-        self._audit("profile.policy_set", by, profile_id)
+        self._store.set_source_policy(
+            profile_id, source_key, policy, now=self._now(), actor_id=self._actor_id(by)
+        )
+        self._audit("profile.policy_set", by, f"{profile_id}|{source_key}|{policy}")
 
     def source_policies(
         self, profile_id: str, *, by: Principal | None = None

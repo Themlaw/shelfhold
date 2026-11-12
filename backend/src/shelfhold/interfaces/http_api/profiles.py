@@ -127,14 +127,11 @@ def build_profiles_router() -> APIRouter:
         request: Request, body: ProfileIn, principal: Annotated[Principal, Depends(_CREATE)]
     ) -> Any:
         def create(auth: Any) -> ProfileRecord:
-            profile_id = auth.profile_add(
+            created: ProfileRecord = auth.profile_add_record(
                 body.username, body.password, body.role, max_age_rating=body.max_age_rating,
                 can_rate=body.can_rate, by=principal,
             )  # fmt: skip
-            created: ProfileRecord = next(
-                p for p in auth.profile_list(by=principal) if p.id == profile_id
-            )
-            return created
+            return created  # answered from what was written, never from a second, guarded read
 
         return _out(run(request, create))
 

@@ -386,6 +386,20 @@ class LocalAuth:
             username, password, role, max_age_rating=max_age_rating, can_rate=can_rate, by=by
         )
 
+    def profile_add_record(
+        self,
+        username: str,
+        password: str,
+        role: str,
+        *,
+        max_age_rating: int | None = None,
+        can_rate: bool | None = None,
+        by: Principal | None = None,
+    ) -> ProfileRecord:
+        return self._profiles.add_profile(
+            username, password, role, max_age_rating=max_age_rating, can_rate=can_rate, by=by
+        )
+
     def profile_list(self, *, by: Principal | None = None) -> Sequence[ProfileRecord]:
         return self._profiles.list(by=by)
 

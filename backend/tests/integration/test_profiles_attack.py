@@ -498,15 +498,23 @@ def test_the_store_rechecks_the_admin_caller_under_the_lock(api: AuthEnv) -> Non
     before = _users(api)
     with pytest.raises(ProfileError) as refused:
         store.create_profile(
-            id="01HZZZZZZZZZZZZZZZZZZZZZZA", username="new", role="member", password_hash="x",
+            id="01HZZZZZZZZZZZZZZZZZZZZZZA", username="new", role="member", password_hash="x",  # noqa: S106
             max_age_rating=None, can_rate=False, now=now, max_admins=2, actor_id=boss,
         )  # fmt: skip
     assert refused.value.code == "not_allowed"
     for call in (
         lambda: store.update_profile(
-            kid, expected_role="child", expected_max_age_rating=5, expected_can_rate=False,
-            role="child", max_age_rating=99, can_rate=False, max_admins=2, now=now, actor_id=boss,
-        ),  # fmt: skip
+            kid,
+            expected_role="child",
+            expected_max_age_rating=5,
+            expected_can_rate=False,
+            role="child",
+            max_age_rating=99,
+            can_rate=False,
+            max_admins=2,
+            now=now,
+            actor_id=boss,
+        ),
         lambda: store.delete_user(kid, keep_one_admin=True, actor_id=boss),
         lambda: store.set_source_policy(kid, FAMILY, "forbidden", now=now, actor_id=boss),
     ):
