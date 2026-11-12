@@ -64,6 +64,13 @@ class FakeSuwayomiProbe:
         self.calls.append({"url": url, "username": username, "password": password})
         return self.mode
 
+    def disable_update_filters(
+        self, *, url: str, mode: str, username: str | None, password: str | None
+    ) -> list[str]:
+        self.calls.append({"fix": True, "url": url, "mode": mode})
+        self.blocking_filters = []
+        return []
+
 
 @dataclass
 class FakeChannels:

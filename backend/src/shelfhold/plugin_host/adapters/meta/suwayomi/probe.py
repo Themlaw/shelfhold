@@ -41,6 +41,40 @@ class HttpSuwayomiProbe:
         except FetchError:
             raise ConnectionError("unreachable") from None  # the port's way to say so
 
+    def disable_update_filters(
+        self, *, url: str, mode: str, username: str | None, password: str | None
+    ) -> list[str]:
+        """Owner decision 2026-11-12: the admin confirmed it, so the two global update filters are
+        switched off (the only write in the settings of Suwayomi). Returns the names that still
+        block afterwards. `ConnectionError`: unreachable; any other failure of the server is one
+        too, and nothing is stored by the caller."""
+        try:
+            return asyncio.run(self._disable(self._fetchers(url), url, mode, username, password))
+        except FetchError:
+            raise ConnectionError("unreachable") from None
+        except (AuthExpired, AuthRequired):
+            raise PermissionError("the server refuses this account") from None
+
+    async def _disable(
+        self, inner: GuardedFetcher, url: str, mode: str, username: str | None, password: str | None
+    ) -> list[str]:
+        writer: Any = inner
+        try:
+            if mode == "ui_login" and username and password:
+                writer = suwayomi_jwt_fetcher(
+                    cast("Any", inner), {"username": username, "password": password}, origin=url
+                )
+            elif username and password:
+                writer = AuthInjectingFetcher(
+                    cast("Any", inner),
+                    AuthBasic(),
+                    {"username": username, "password": password},
+                    origin=url,
+                )
+            return await SuwayomiService(url).disable_update_filters(writer)
+        finally:
+            await inner.aclose()
+
     async def _mode(
         self, inner: GuardedFetcher, url: str, username: str | None, password: str | None
     ) -> str:

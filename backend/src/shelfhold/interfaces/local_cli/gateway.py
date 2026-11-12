@@ -182,7 +182,9 @@ class HeadlessCommands(Protocol):
         self, *, name: str, url: str, username: str, password: str, accept_admin_risk: bool,
         path_map: PathMapSpec | None = None,
     ) -> TargetAdded: ...  # fmt: skip
-    def source_add_suwayomi(self, *, url: str, secret: str | None) -> SourceAdded: ...
+    def source_add_suwayomi(
+        self, *, url: str, secret: str | None, fix_suwayomi_settings: bool = False
+    ) -> SourceAdded: ...
     def source_confirm_roles(self) -> bool: ...
     def shelf_create(
         self, *, name: str, max_age: str, target: str, subpath: str = "", phrase: str | None = None
@@ -252,8 +254,11 @@ class SocketHeadless:
     def source_confirm_roles(self) -> bool:
         return bool(self._call("source.confirm_roles"))
 
-    def source_add_suwayomi(self, *, url: str, secret: str | None) -> SourceAdded:
-        raw = self._call("source.add", kind="suwayomi", url=url, secret=secret)
+    def source_add_suwayomi(
+        self, *, url: str, secret: str | None, fix_suwayomi_settings: bool = False
+    ) -> SourceAdded:
+        raw = self._call("source.add", kind="suwayomi", url=url, secret=secret,
+                         fix_suwayomi_settings=fix_suwayomi_settings)  # fmt: skip
         if not isinstance(raw, dict):
             raise ValueError("malformed_reply")
         return SourceAdded(raw["id"], raw["auth_mode"], raw["created"])

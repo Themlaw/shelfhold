@@ -58,7 +58,7 @@ def test_the_fake_refuses_any_other_setting_write() -> None:
     for body in (
         "mutation { setSettings(input: {settings: {authMode: NONE}}) { settings { authMode } } }",
         "mutation { setSettings(input: {settings: {excludeUnreadChapters: false, "
-        "downloadsPath: \"/x\"}}) { settings { authMode } } }",
+        'downloadsPath: "/x"}}) { settings { authMode } } }',
         "mutation { setSettings(input: {settings: {excludeUnreadChapters: true, "
         "excludeNotStarted: true}}) { settings { authMode } } }",
     ):
@@ -69,12 +69,7 @@ def test_the_fake_refuses_any_other_setting_write() -> None:
 
 
 async def _post(fetcher: Any, query: str) -> Any:
-    import json
-
-    return await fetcher.fetch(
-        BASE_URL + "/api/graphql", method="POST",
-        headers={"content-type": "application/json"}, body=json.dumps({"query": query}).encode(),
-    )
+    return await fetcher.post(BASE_URL + "/api/graphql", json={"query": query})
 
 
 @pytest.mark.req("EF-SRC-026")
@@ -119,9 +114,7 @@ def test_confirmation_with_nothing_to_fix_writes_nothing(settings: Any) -> None:
 
     server = FakeSuwayomi(auth_mode="none")
     with _env(settings, server) as env:
-        env.admin.source_add_suwayomi(
-            url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True
-        )
+        env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True)
         assert server.settings_writes == []
         assert "source.suwayomi_settings_fixed" not in _actions(env)
 
@@ -134,9 +127,7 @@ def test_a_write_that_does_not_stick_leaves_the_refusal(settings: Any) -> None:
     server.ignore_settings_writes = True  # the server accepts the call but keeps the values
     with _env(settings, server) as env:
         with pytest.raises(SourceUpdateFiltersBlocking):
-            env.admin.source_add_suwayomi(
-                url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True
-            )
+            env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True)
         assert env.count("source_config") == 0
         assert "source.suwayomi_settings_fixed" not in _actions(env)
 

@@ -360,6 +360,13 @@ class SuwayomiService:
             name for name in ("excludeNotStarted", "excludeUnreadChapters") if settings.get(name)
         ]
 
+    async def disable_update_filters(self, f: Fetcher) -> list[str]:
+        """Owner decision 2026-11-12: switch off the two global update filters, the only write
+        Shelfhold makes in the settings of Suwayomi (`setSettings`, those two keys alone). The
+        admin has confirmed it. Returns what still blocks afterwards (empty when it stuck)."""
+        await self._query(f, q.DISABLE_UPDATE_FILTERS)
+        return await self.blocking_update_filters(f)
+
     async def request_refresh(self, f: Fetcher, refs: list[SeriesRef]) -> None:
         """Always-on: Suwayomi follows its own schedule and nothing is sent. Driven (piloted,
         EF-SRC-025 a): `fetchChapters` for each series, which returns once Suwayomi has asked the

@@ -91,6 +91,7 @@ KEY_DAYS = 90  # the Kavita key expires; `target.key_expiring` warns at 14 and 1
 ADMIN_RISK_ACTION = "target.admin_risk_accepted"  # ENF-SEC-013
 MIN_PASSWORD_LENGTH = 8  # the log scrubber ignores shorter secrets (`MIN_KNOWN_SECRET`)
 ROLES_UNVERIFIED_ACTION = "source.roles_unverified"  # EF-SRC-031, D1: the roles cannot be read
+SETTINGS_FIXED_ACTION = "source.suwayomi_settings_fixed"  # the one write in Suwayomi's settings
 ROLES_CONFIRMED_ACTION = "source.roles_confirmed"  # the admin vouches for the account
 SUPPORTED_AUTH_MODES = frozenset({"none", "basic_auth", "ui_login"})
 X_CEILING = 99
@@ -693,7 +694,9 @@ class HeadlessAdmin:
 
     # -- source add suwayomi ------------------------------------------------------------------
 
-    def source_add_suwayomi(self, *, url: str, secret: str | None) -> SourceAdded:
+    def source_add_suwayomi(
+        self, *, url: str, secret: str | None, fix_suwayomi_settings: bool = False
+    ) -> SourceAdded:
         clean_url = _suwayomi_address(url)
         username: str | None = None
         password: str | None = None
@@ -718,6 +721,20 @@ class HeadlessAdmin:
             raise SourceAuthModeUnsupported(t("headless.auth_mode_unsupported", mode=mode))
         if mode in ("basic_auth", "ui_login") and not (username and password):
             raise InvalidConfigValue("this server needs a user:password secret")
+        fixed = False
+        if self._suwayomi.blocking_filters and fix_suwayomi_settings:
+            # Owner decision 2026-11-12: the admin confirmed; the only write in Suwayomi's settings
+            try:
+                self._suwayomi.blocking_filters = self._suwayomi.disable_update_filters(
+                    url=clean_url, mode=mode, username=username, password=password
+                )
+            except ConnectionError:
+                raise SourceUnreachable("Suwayomi cannot be reached at this address") from None
+            except PermissionError:
+                raise InvalidConfigValue("Suwayomi refuses this user:password account") from None
+            except Exception:  # the server refused the write: the refusal below tells the way out
+                _log.warning("headless.suwayomi_settings_fix_failed", url=clean_url)
+            fixed = not self._suwayomi.blocking_filters
         if self._suwayomi.blocking_filters:  # EF-SRC-026 (d): blocks the wizard, with the fix
             raise SourceUpdateFiltersBlocking(
                 t(
@@ -733,6 +750,8 @@ class HeadlessAdmin:
         with self._engine.begin() as connection:
             if unverified:
                 self._audit_source(connection, ROLES_UNVERIFIED_ACTION)
+            if fixed:
+                self._audit_source(connection, SETTINGS_FIXED_ACTION)
             created = records.source_row(connection) is None
             if created:
                 records.insert_source(connection, settings)

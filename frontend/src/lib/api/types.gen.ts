@@ -2032,6 +2032,10 @@ export type SkipReadUpgradesIn = {
  */
 export type SourceIn = {
     /**
+     * Fix Suwayomi Settings
+     */
+    fix_suwayomi_settings?: boolean;
+    /**
      * Kind
      */
     kind?: string;

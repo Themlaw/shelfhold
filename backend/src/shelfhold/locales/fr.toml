@@ -29,6 +29,7 @@ source_add_help = "Ajoute une source."
 source_add_suwayomi_help = "Ajoute Suwayomi : lit son mode d'authentification (none, basic_auth ou ui_login)."
 source_confirm_roles_help = "Confirme que le compte de service Suwayomi (ui_login) a des droits minimaux, quand le serveur n'expose pas ses rôles."
 source_url_help = "Adresse du serveur Suwayomi (http(s)://hôte[:port])."
+source_fix_suwayomi_settings_help = "Confirme que Shelfhold désactive dans Suwayomi les deux exclusions de mise à jour globale (seule écriture dans ses réglages, journalisée)."
 source_secret_file_help = "Fichier contenant « utilisateur:mot_de_passe » ; « - » pour l'entrée standard."
 shelf_help = "Étagères."
 shelf_withdraw_help = "Montre (puis, avec --apply --confirm, applique) le retrait des Éditions que l'étagère famille n'admet plus."
@@ -1059,7 +1060,7 @@ action = "Changez le mode d'authentification du service, puis lancez « shelfhol
 
 [errors."source.update_filters_blocking"]
 title = "La mise à jour globale de Suwayomi exclut des séries suivies."
-action = "Désactivez l'exclusion des séries non lues ou non commencées dans Suwayomi, puis relancez la commande."
+action = "Désactivez l'exclusion des séries non lues ou non commencées dans Suwayomi, ou confirmez la désactivation par Shelfhold (--fix-suwayomi-settings, ou fix_suwayomi_settings dans l'API), puis relancez la commande."
 
 [errors."source.auth_required"]
 title = "La source demande une connexion."
@@ -1458,7 +1459,7 @@ roles_nothing_to_confirm = "Rien à confirmer."
 refused = "Refusé ({code}) : {detail}"
 admin_risk_warning = "ATTENTION : la clé Kavita est celle d'un compte administrateur ; elle donne tout pouvoir sur Kavita (comptes, bibliothèques, fichiers lus). Relancez avec --accept-admin-risk pour confirmer."
 auth_mode_unsupported = "Suwayomi utilise le mode d'authentification « {mode} » : mode non pris en charge dans cette version. Passez Suwayomi en « basic_auth », en « ui_login » (compte de service) ou sans authentification, puis relancez la commande."
-update_filters_blocking = "Les réglages de mise à jour globale de Suwayomi ({settings}) excluent les séries non lues ou non commencées : Suwayomi ne rafraîchirait jamais les séries suivies. Désactivez-les dans Suwayomi (Paramètres, Bibliothèque, mise à jour globale), puis relancez la commande."
+update_filters_blocking = "Les réglages de mise à jour globale de Suwayomi ({settings}) excluent les séries non lues ou non commencées : Suwayomi ne rafraîchirait jamais les séries suivies. Désactivez-les dans Suwayomi (Paramètres, Bibliothèque, mise à jour globale), ou demandez à Shelfhold de les désactiver avec --fix-suwayomi-settings (seule écriture de Shelfhold dans les réglages de Suwayomi, journalisée), puis relancez la commande."
 secret_unreadable = "Impossible de lire le secret : {detail}."
 secret_file_world_readable = "Le fichier {path} est lisible par tous : restreignez-le (chmod 600)."
 secret_key_needs_file = "{name} est un secret : fournissez-le avec --value-file (fichier ou « - »), jamais en argument."

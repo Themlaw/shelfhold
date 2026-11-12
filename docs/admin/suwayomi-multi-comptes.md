@@ -13,10 +13,22 @@ serveur épinglé, **les deux sont activés par défaut**. Les séries que Shelf
 personne dans Suwayomi : avec ces filtres, elles risquent de ne plus être rafraîchies, et Shelfhold ne verrait
 plus de nouveau chapitre.
 
-**Désactivez les deux** dans Suwayomi avant d'ajouter la source. `shelfhold source add suwayomi` est
-refusé tant qu'ils sont actifs (`source.update_filters_blocking`) et dit lequel. Shelfhold ne les règle
-pas à votre place : c'est une écriture dans le réglage de Suwayomi. Si Suwayomi ne répond pas
-lisiblement à la question, l'ajout n'est pas bloqué.
+**Désactivez les deux** avant d'ajouter la source. `shelfhold source add suwayomi` est refusé tant qu'ils
+sont actifs (`source.update_filters_blocking`) : il affiche lequel pose problème et propose la correction.
+Deux voies :
+
+- dans Suwayomi (Paramètres, Bibliothèque, mise à jour globale) ;
+- ou en laissant Shelfhold le faire, après confirmation explicite :
+
+      shelfhold source add suwayomi --url http://suwayomi:4567 --secret-file <fichier> --fix-suwayomi-settings
+
+  Dans l'API, `POST /api/v1/sources` accepte `"fix_suwayomi_settings": true` ; c'est une action réservée
+  (nouvelle authentification).
+
+Cette désactivation est **la seule écriture que Shelfhold fait dans les réglages de Suwayomi** (mutation
+`setSettings`, ces deux clés à `false`, rien d'autre). Sans l'option, rien n'est écrit. Elle est journalisée
+(`source.suwayomi_settings_fixed`). Si Suwayomi refuse l'écriture (compte sans droit), l'ajout reste refusé et
+vous les désactivez à la main. Si Suwayomi ne répond pas lisiblement à la question, l'ajout n'est pas bloqué.
 
 ## Ajouter Suwayomi
 

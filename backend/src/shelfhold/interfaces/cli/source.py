@@ -23,6 +23,8 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
                                 allow_abbrev=False)  # fmt: skip
     suwayomi.add_argument("--url", required=True, help=t("cli.source_url_help"))
     suwayomi.add_argument("--secret-file", help=t("cli.source_secret_file_help"))
+    suwayomi.add_argument("--fix-suwayomi-settings", action="store_true",
+                          help=t("cli.source_fix_suwayomi_settings_help"))  # fmt: skip
     suwayomi.set_defaults(handler=run_add_suwayomi, configure_logging=False)
     confirm = actions.add_parser("confirm-roles", help=t("cli.source_confirm_roles_help"),
                                  allow_abbrev=False)  # fmt: skip
@@ -67,7 +69,9 @@ def run_add_suwayomi(args: argparse.Namespace, commands: HeadlessCommands) -> in
             secret = read_secret(args.secret_file)
         except (OSError, UnicodeDecodeError) as error:
             return fail(t("headless.secret_unreadable", detail=error))
-    added = commands.source_add_suwayomi(url=args.url, secret=secret)
+    added = commands.source_add_suwayomi(
+        url=args.url, secret=secret, fix_suwayomi_settings=args.fix_suwayomi_settings
+    )
     if added.created:
         print(t("headless.source_added", mode=added.auth_mode))
     else:
