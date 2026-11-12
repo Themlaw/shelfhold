@@ -148,6 +148,7 @@ CLOSED = (
     "PATCH /api/v1/profiles/{profile_id}",
     "GET /api/v1/profiles/{profile_id}/source-policies",
     "PUT /api/v1/profiles/{profile_id}/source-policies/{source_key}",
+    "PUT /api/v1/profiles/{profile_id}/family-search",
     "PUT /api/v1/profiles/{profile_id}/visibility",
     "POST /api/v1/reconcile/adopt-after-restore",
     "POST /api/v1/reconcile/forget-root",
@@ -511,10 +512,27 @@ def _surface_search_key(world: World) -> None:
 
 
 def _surface_federated(world: World) -> None:
-    """A remote result has no rating: the federated search is not a child's door (L19)."""
+    """A remote result has no rating: the child's door is the family search (L19), a reduced form
+    that holds no source that is not marked "family", and by key none at all."""
     answer = world.kid.get(SEARCH, params={"q": "Tale", "scope": "all"})
-    assert answer.status_code == 403
+    assert answer.status_code == 200, answer.text
+    body = answer.json()
+    assert set(body) == {"items", "local", "state", "next_cursor"}  # no total, no count
+    assert body["items"] == [] and body["state"] == "empty"  # no source is marked "family"
+    assert sorted(h["title"] for h in body["local"]) == sorted(
+        world.seed.title_of(k) for k in VISIBLE_FOR_CEILING_10
+    )
     world.clean(answer.text)
+    key = (
+        local_auth(world.seed.engine, world.env.settings)
+        .create_api_key(name="kidkey2", username="kid", read_only=True)
+        .value
+    )
+    keyed = world.env.other_client("10.0.0.53").get(
+        SEARCH, params={"q": "Tale", "scope": "all"}, headers={"Authorization": f"Bearer {key}"}
+    )
+    assert keyed.status_code == 403
+    world.clean(keyed.text)
 
 
 def _gone(world: World, method: str, path_of: Any, body: Any = None) -> None:
@@ -739,5 +757,5 @@ def test_reader_scope_comes_from_the_profile_row(world: World) -> None:
 def test_adults_search_the_whole_catalogue_children_do_not(world: World) -> None:
     mum = add_profile(world.env, "mum", "member", "10.0.0.3")
     assert len(mum.get(SEARCH, params={"q": "Tale", "limit": 200}).json()["items"]) == 11
-    # `scope=all` stays the administrator's until the family search (L19)
+    # `scope=all` stays the administrator's: a child has the family search, a member nothing
     assert mum.get(SEARCH, params={"q": "Tale", "scope": "all"}).status_code == 403
