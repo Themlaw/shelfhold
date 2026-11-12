@@ -497,3 +497,92 @@ def test_a_name_that_is_not_the_checked_inode_is_discarded(monkeypatch: pytest.M
         assert kept.method in {"reflink", "copy"}  # `unverified`: nothing placed, the copy is made
         assert stored(env).read_bytes() == data
         assert list((env.store / ".shelfhold" / "staging").glob("*")) == []
+
+
+def _cycle(env: LibEnv) -> Any:
+    from shelfhold.library.public import CycleReport, SafeguardCycle
+    from tests.fakes_clock import ManualClock
+    from tests.null_tombstones import NONE_PURGED
+    from tests.safeguard_env import NOW, ROOMY
+
+    cycle = SafeguardCycle(
+        env.engine, env.fsops, keeper(env), NONE_PURGED, lambda: ROOMY,
+        lambda connection, event, payload: None, ManualClock(NOW),
+    )  # fmt: skip
+    report = CycleReport()
+    for step in cycle.steps(cycle.plan(report), report):
+        step()
+    return report
+
+
+@pytest.mark.parametrize("side", ["store_to_library", "library_to_store"])
+@pytest.mark.parametrize("verify_first", [False, True])
+def test_a_restore_that_made_a_link_is_seen_on_the_disk_not_in_the_rows(
+    side: str, verify_first: bool
+) -> None:
+    """Review of #171 (B2): one name made a link to the other behind the registry's back. The
+    rows keep the old inodes and `independent = true`; the decision reads the disk."""
+    with lib_env() as env:
+        unit, library, data = filed(env, "copy")
+        keeper(env).keep(unit)
+        path = stored(env)
+        assert path.stat().st_ino != library.stat().st_ino
+        gone, origin = (path, library) if side == "store_to_library" else (library, path)
+        gone.unlink()
+        os.link(origin, gone)  # a restore with links
+        _owe(env, "removed")
+        if verify_first:
+            verify_kept(env.engine, env.fsops, unit)
+        from shelfhold.library.public import SafeguardInventory
+
+        owed = SafeguardInventory(env.engine, env.fsops).owed_candidates()
+        assert unit in [c.unit_id for c in owed]  # still owed a copy of its own
+        report = _cycle(env)
+        assert (report.kept, report.failed) == (1, 0)
+        assert path.stat().st_ino != library.stat().st_ino
+        assert path.stat().st_nlink == 1 == library.stat().st_nlink
+        assert path.read_bytes() == data == library.read_bytes()
+        with env.engine.connect() as c:
+            assert independent_copies(c, unit) == 2
+            rows = c.execute(
+                sa.select(storage.replica.c.location, storage.replica.c.ino).where(
+                    storage.replica.c.unit_id == unit
+                )
+            ).all()
+        assert {r.location: r.ino for r in rows} == {
+            "library": library.stat().st_ino,
+            "store": path.stat().st_ino,
+        }  # both sides say what the disk says
+
+
+@pytest.mark.parametrize("side", ["store_to_library", "library_to_store"])
+def test_a_link_made_behind_the_registry_refuses_the_upstream_purge(side: str) -> None:
+    from tests.integration.test_safeguard_review118 import owed_and_kept, sweep
+    from tests.safeguard_env import World
+
+    with lib_env() as env:
+        world = World(env)
+        item = owed_and_kept(world)
+        (path,) = world.store_files()
+        gone, origin = (path, item.library) if side == "store_to_library" else (item.library, path)
+        gone.unlink()
+        os.link(origin, gone)  # the rows still say: two inodes, both independent
+        report = sweep(world)
+        assert world.upstream.released == [] and report.purged == 0
+        assert world.ticket_of(item) == item.ticket
+
+
+def test_the_stored_rows_are_never_the_proof_of_independence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`verify_kept` reads the library side on the disk: a stale library row (old inode) does not
+    hide a store file that is the library file now."""
+    with lib_env() as env:
+        unit, library, _ = filed(env, "copy")
+        keeper(env).keep(unit)
+        path = stored(env)
+        path.unlink()
+        os.link(library, path)
+        assert verify_kept(env.engine, env.fsops, unit) == 0
+        with env.engine.connect() as c:
+            assert independent_copies(c, unit) == 1

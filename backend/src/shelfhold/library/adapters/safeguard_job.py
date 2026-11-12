@@ -41,6 +41,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.infrastructure.fsops import FileIdentity, Fsops, FsopsError
 from shelfhold.infrastructure.schema import acquisition, catalog, coherence, platform, storage
+from shelfhold.library.adapters.fresh_inodes import fresh_library_inodes, is_own_inode
 from shelfhold.library.adapters.safeguard import payload_hash_at
 from shelfhold.library.adapters.safeguard_inventory import (
     PurgeCandidate,
@@ -274,7 +275,7 @@ class SafeguardCycle:
         self._budget = budget
         self._publish = publish
         self._clock = clock
-        self._inventory = SafeguardInventory(engine)
+        self._inventory = SafeguardInventory(engine, fsops)
         self._failures: dict[str, int] = {}
 
     def plan(self, report: CycleReport) -> list[Candidate]:
@@ -476,7 +477,10 @@ class UpstreamPurge:
                 for p in store_proofs(connection, candidate.unit_id)
                 if p.content_hash == content_hash
             ]
+            siblings = fresh_library_inodes(connection, self._fsops, candidate.unit_id)
         for proof in proofs:
+            if not is_own_inode(self._fsops, proof.local, siblings)[0]:
+                continue  # one inode with a library name, or two names: no copy of its own
             try:
                 self._check_pinned(candidate.unit_id, proof)
             except PurgeRefused:

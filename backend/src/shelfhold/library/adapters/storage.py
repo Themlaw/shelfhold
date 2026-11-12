@@ -36,6 +36,11 @@ from shelfhold.infrastructure.fsops import (
 )
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
+from shelfhold.library.adapters.fresh_inodes import (
+    fresh_library_inodes,
+    is_own_inode,
+    refresh_library_rows,
+)
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.library.adapters.origin_comicinfo import keep_origin_comicinfo
 from shelfhold.library.adapters.units import irreplaceability
@@ -701,7 +706,8 @@ def complete_keep(
     identity = found[1]
     device = fsops.device_of(target)
     seen_hash = fsops.sha256_of(target)
-    siblings = sibling_inodes(connection, row.unit_id)
+    siblings = sibling_inodes(connection, row.unit_id, skip=("library",))
+    siblings |= fresh_library_inodes(connection, fsops, row.unit_id)  # never the stored rows
     if source is not None and (origin := fsops.observe(source)) is not None:
         siblings.add((fsops.device_of(source), origin[1].ino))  # the file it was copied from
     independent = is_independent(
@@ -746,12 +752,16 @@ _KEEP_NAME: Final = re.compile(r"/units/[0-9A-Z]{2}/[0-9A-Z]{26}/(?P<content>[0-
 
 
 def verify_kept(engine: Engine, fsops: Fsops, unit_id: str) -> int:
-    """Look at the Unit's /store copies again: each counts only with a distinct inode and the
-    hash it was stored at. Returns how many count."""
+    """Look at the Unit's /store copies again: each counts only with an inode of its own (one name,
+    and not the inode of any library file) and the hash it was stored at. Both sides are read on
+    the disk now, never in the stored rows; the library rows are brought up to date. Returns how
+    many count."""
     counted = 0
     now = datetime.now(UTC)
     with engine.begin() as connection:
-        siblings = sibling_inodes(connection, unit_id)
+        refresh_library_rows(connection, fsops, unit_id, now)
+        siblings = sibling_inodes(connection, unit_id, skip=("library",))
+        siblings |= fresh_library_inodes(connection, fsops, unit_id)
         for copy in store_copies(connection, unit_id):
             try:
                 found = fsops.observe(copy.local)
@@ -765,7 +775,8 @@ def verify_kept(engine: Engine, fsops: Fsops, unit_id: str) -> int:
                 )  # fmt: skip
                 continue
             identity, device = found[1], fsops.device_of(copy.local)
-            good = is_independent(
+            own, _ = is_own_inode(fsops, copy.local, siblings)
+            good = own and is_independent(
                 CopyFacts(device, identity.ino, seen or ""), stored_sha256=copy.file_hash,
                 siblings=siblings,
             )  # fmt: skip

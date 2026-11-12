@@ -397,14 +397,18 @@ def kept_file_hashes(connection: Connection) -> dict[str, str]:
     return {r.unit_id: r.file_hash for r in rows}
 
 
-def sibling_inodes(connection: Connection, unit_id: str) -> set[tuple[int, int]]:
+def sibling_inodes(
+    connection: Connection, unit_id: str, *, skip: tuple[str, ...] = ()
+) -> set[tuple[int, int]]:
     """`(dev, ino)` of the Unit's other copies on disk (library, destinations, adopted files):
-    a /store file that is one of them is not a copy of its own."""
+    a /store file that is one of them is not a copy of its own. `skip` names locations whose rows
+    the caller reads on the disk instead (the library: a stored inode can be stale)."""
     rows = connection.execute(
         sa.select(replica_table.c.dev, replica_table.c.ino).where(
             replica_table.c.unit_id == unit_id,
             replica_table.c.location != "store",
             replica_table.c.location != "upstream",
+            replica_table.c.location.not_in(skip),
             replica_table.c.dev.is_not(None),
             replica_table.c.ino.is_not(None),
         )

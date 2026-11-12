@@ -20,9 +20,12 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
+from shelfhold.library.adapters.fresh_inodes import fresh_library_inodes, is_own_inode
 from shelfhold.library.adapters.units import content_error_candidates
 from shelfhold.library.domain.store_budget import Candidate
+from shelfhold.library.replica import store_copies
 
 __all__ = [
     "PurgeCandidate",
@@ -123,8 +126,9 @@ def _kept_as_a_link(content: sa.Table) -> sa.ColumnElement[bool]:
 
 
 class SafeguardInventory:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, fsops: Fsops | None = None) -> None:
         self._engine = engine
+        self._fsops = fsops  # given: a kept copy is a link or not as the disk says now
 
     def owed_candidates(self) -> list[Candidate]:
         content = storage.content
@@ -133,18 +137,39 @@ class SafeguardInventory:
             if not owed:
                 return []
             rows = connection.execute(
-                sa.select(content.c.unit_id, content.c.size, content.c.id)
+                sa.select(content.c.unit_id, content.c.size, content.c.id, content.c.retention)
                 .where(
-                    sa.or_(content.c.retention == "passthrough", _kept_as_a_link(content)),
+                    sa.or_(
+                        content.c.retention == "passthrough",
+                        content.c.retention == "keep"
+                        if self._fsops is not None
+                        else _kept_as_a_link(content),
+                    ),
                     content.c.unit_id.in_(owed),
                     sa.exists().where(catalog.unit_variant.c.unit_id == content.c.unit_id),
                 )
                 .order_by(content.c.id)
             ).all()
+            kept = {r.unit_id for r in rows if r.retention == "keep"}
+            linked = {u for u in kept if self._linked_now(connection, u)}
         found: dict[str, Candidate] = {}
         for r in rows:
+            if r.retention == "keep" and r.unit_id not in linked:
+                continue
             found.setdefault(r.unit_id, Candidate(r.unit_id, int(r.size)))
         return list(found.values())
+
+    def _linked_now(self, connection: Connection, unit_id: str) -> bool:
+        """Is a kept copy of the Unit not a copy of its own, on the disk now (a name shared with a
+        library file, or a second name)? Only the disk answers."""
+        if self._fsops is None:
+            return True  # the rows already said so (`_kept_as_a_link`)
+        siblings = fresh_library_inodes(connection, self._fsops, unit_id)
+        return any(
+            not is_own_inode(self._fsops, c.local, siblings)[0]
+            for c in store_copies(connection, unit_id)
+            if self._fsops.observe(c.local) is not None
+        )
 
     def upstream_candidates(self, *, request_id: str | None = None) -> list[PurgeCandidate]:
         """Downloads fetched and not yet let go of, whose content was exported to a shelf that
