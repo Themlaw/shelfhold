@@ -153,6 +153,78 @@ def test_names_of_a_served_tail_are_not_asked_again() -> None:
         assert wanted_names(env.engine, env.destination_id, ranged_hash=kept_hash(env))[0] == []
 
 
+@pytest.mark.req("EF-BIB-040", "ENF-OPS-014")
+def test_export_job_asks_kavita_no_name_for_a_served_tail_on_the_second_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through the real job (`runtime_jobs`), nothing supplied by hand: once the tail is served, two
+    cycles with no change ask Kavita no name and wake no disk."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import shelfhold.runtime_jobs as rj
+    from shelfhold.export.domain.planner import GATE_CLOSED
+    from shelfhold.export.targets.kavita.errors import TargetUnreachable
+
+    asked: list[list[str]] = []
+    disks_read: list[int] = []
+
+    async def fetch(_client: object, names: list[str], _kind: object) -> object:
+        asked.append(list(names))
+        raise TargetUnreachable("the names are not wanted")  # the job stops there
+
+    class Gate:
+        def __init__(self, *_: object) -> None: ...
+
+        async def open(self, *_: object) -> object:
+            return GATE_CLOSED
+
+    async def nothing(*_: object, **__: object) -> int:
+        return 0
+
+    monkeypatch.setattr(rj.BulkParse, "fetch", staticmethod(fetch))
+    monkeypatch.setattr(rj, "SeriesAgeGate", Gate)
+    monkeypatch.setattr(rj, "_probe_version", nothing)
+    monkeypatch.setattr(rj, "_names_may_refresh", lambda *_: False)
+    monkeypatch.setattr(rj, "refresh_names", nothing)
+    monkeypatch.setattr(rj, "refresh_foreign_names", nothing)
+    monkeypatch.setattr(rj, "settle_arrival", nothing)
+    with export_env() as env:
+        _, _bench = volume_on_shelf(env, 2, closed=False, policy="rolling_tail")
+        assert run(env) == 1  # served
+
+        class Disks:
+            fsops = None
+
+            def get(self) -> tuple[object, object]:
+                disks_read.append(1)
+                return env.pipeline, None
+
+        class Wakes:
+            def session(self, *_: object) -> object:
+                from contextlib import asynccontextmanager
+
+                @asynccontextmanager
+                async def opened() -> object:
+                    yield
+
+                return opened()
+
+        comp = SimpleNamespace(
+            engine=env.engine, clock=None, bus=None, wakes=lambda: Wakes(),
+            settings=SimpleNamespace(
+                naming_segment_policy_confirmed=False, data_dir=env.lib.data
+            ),
+        )  # fmt: skip
+        destination = rj.Destination(env.destination_id, "t")
+        context = SimpleNamespace(stop_requested=False, job_id="j")
+        for _cycle in range(2):
+            asyncio.run(
+                rj._export_bound(comp, Disks(), None, destination, rj.ScanRelay(), context, None)  # type: ignore[arg-type]
+            )
+        assert asked == [] and disks_read == []
+
+
 @pytest.mark.req("EF-BIB-040")
 def test_open_volume_never_leaves() -> None:
     with export_env() as env:
