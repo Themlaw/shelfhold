@@ -89,3 +89,11 @@ def test_terms_of_a_profile_are_cleaned_and_bounded() -> None:
     # a term that normalises to nothing flags nothing (an empty term would flag everything)
     assert clean_terms(["--", "   ", "!!!"]) == ()
     assert not is_flagged("A Quiet Tale", {}, clean_terms(["--"]))
+
+
+@pytest.mark.req("EF-USR-018")
+def test_ordinary_titles_that_hold_a_root_across_separators_pass() -> None:
+    for title in ("Essex", "Sussex Tales", "Middlesex", "Sextant", "Wessex", "Se Xtant", "Cost $5"):
+        assert not is_flagged(title, {}), title
+    for title in ("Por-no", "se x", "Seㅤx", "p o r n", "Ⓟorn", "The Sex Pistols"):
+        assert is_flagged(title, {}), title

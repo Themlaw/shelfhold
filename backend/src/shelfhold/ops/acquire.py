@@ -212,6 +212,13 @@ class AcquireOps:
         ceiling) or already in her catalogue (found by the local half), never offered again."""
         item, binding = acquisition.source_item, acquisition.source_binding
         work, edition = catalog.work, catalog.edition
+        # A feed source (OPDS and the source built on it) names a book by the search page it is
+        # on: `remote_id` is the path of that page, the book is `memo["entry"]`. That identity is
+        # stable whatever the query, so it is the one that counts when the result has one.
+        entry = ref.memo.get("entry")
+        same_book = item.c.remote_id == ref.remote_id
+        if isinstance(entry, str) and entry:
+            same_book = sa.or_(same_book, sa.func.json_extract(item.c.memo, "$.entry") == entry)
         query = (
             sa.select(sa.literal(1))
             .select_from(
@@ -221,7 +228,7 @@ class AcquireOps:
             )
             .where(
                 item.c.source_key == ref.source_key,
-                item.c.remote_id == ref.remote_id,
+                same_book,
                 sa.or_(work.c.rated_at.is_not(None), edition.c.rated_at.is_not(None)),
             )
             .limit(1)
