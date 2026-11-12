@@ -1,6 +1,6 @@
 # Shelfhold reference compose (= homelab example, docs/spec/04-structure-repo.md section 5).
 # The image is defined here and in env.IMAGE of the workflows, nowhere else.
-# Pinned on X.Y (patch releases only, never a migration): `0.2` is published with the 0.2.0 release.
+# Pinned on X.Y (patch releases only, never a migration): `0.4` is published with the 0.4.0 release.
 # Use `edge` meanwhile (development image).
 #
 # Hardened by default (ENF-SEC-006). Shelfhold still starts if you run it differently
@@ -9,7 +9,7 @@
 # Host directories must be writable by uid 1000:  mkdir -p data store && chown 1000:1000 data store && chmod 750 data store
 
 x-shelfhold: &shelfhold
-  image: ghcr.io/themlaw/shelfhold:0.2
+  image: ghcr.io/themlaw/shelfhold:0.4
   user: "1000:1000"
   read_only: true
   cap_drop: [ALL]
@@ -18,9 +18,16 @@ x-shelfhold: &shelfhold
     core: 0            # no core dump of decrypted data
   environment: &shelfhold-env
     TZ: Etc/UTC
+    # SHELFHOLD_IMPORT_DIR: /import   # with the ./import volume below; unset = import off
   volumes:
     - ./data:/data     # database, config, thumbnails (local disk, SSD advised, not NFS)
-    - ./store:/store   # kept copies only; a separate volume from /data (ENF-OPS-012)
+    - ./store:/store   # kept copies only; a separate volume from /data (ENF-OPS-012).
+                       # Recommended for every untrusted source (web EPUBs, import folder): without it
+                       # the original of an EPUB is kept nowhere, only its neutralised derivative.
+    # Import folder (docs/admin/dossier-import.md): your own CBZ, EPUB and PDF files. A folder of its
+    # own, never inside or above /library, /store or /data; Shelfhold removes what it has stored.
+    # Uncomment both lines, then run `shelfhold import scan --dry-run` to see what is ready.
+    # - ./import:/import
     # Switchover from an existing automation (adoption, repatriation; EF-EXP-060): uncomment the
     # next line to mount, read-only, the folder Suwayomi downloads to, and declare it in the path
     # map of the target with mode = adopt_ro. Shelfhold reads it and never writes there (the :ro is

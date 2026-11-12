@@ -1,7 +1,7 @@
 ---
 status: accepté (amende ADR-0009)
 date: 2026-11-02
-amended: 2026-11-02 (passe 2) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 8) ; 2026-11-03 (passe 10) ; 2026-11-04 (porteur 2)
+amended: 2026-11-02 (passe 2) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 8) ; 2026-11-03 (passe 10) ; 2026-11-04 (porteur 2) ; 2026-11-12 (M2 L33)
 decision-makers: mainteneur
 ---
 # ADR-0021 — Entité Series, définition de l'Édition et identité des Unités
@@ -104,3 +104,7 @@ EF-BIB-001, EF-BIB-002, EF-BIB-003, EF-BIB-004, EF-BIB-005, EF-BIB-019, EF-BIB-0
 - `deliverables/review/chasseur-trous-passe7.md`, `deliverables/review/explorateur-passe7.md`, `deliverables/review/ARBITRAGES-passe7.md` (passe 7)
 - `deliverables/review/chasseur-trous-passe8.md`, `deliverables/review/explorateur-passe8.md`, `deliverables/review/ARBITRAGES-passe8.md` (passe 8)
 - `deliverables/review/chasseur-trous-passe10.md`, `deliverables/review/explorateur-passe10.md`, `deliverables/review/ARBITRAGES-passe10.md` (passe 10)
+
+## Amendement M2 (2026-11-12)
+
+Lot M2 L33. `edition.packaging` est dans la clé d'Édition **dès le schéma de M1a** (colonne à sentinelle `''`, même mécanisme que `performance`) : le backlog qui le situait en M2 est levé sur ce point. Ce que M2 livre est le **comportement** : une Édition `omnibus` (ou `kanzenban`, `deluxe`) est une série Kavita distincte de la même Œuvre, avec son propre dossier (PR #140, M2 L09, voir `docs/admin/controle-parental.md`). Le reste de l'ADR est inchangé.

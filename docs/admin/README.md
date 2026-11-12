@@ -38,6 +38,12 @@ l'installation.
 | Règles du contrôle parental, âge dans Kavita, retrait, livres EPUB (âge de série poussé verrouillé, omnibus) | [controle-parental.md](controle-parental.md) |
 | Classer les œuvres (« À classer », « À ranger », `shelfhold rate`) | [a-classer.md](a-classer.md) |
 | Qui peut faire quoi : rôles, actions réservées, fraîcheur du mot de passe | [roles.md](roles.md) |
+| Conditions, limites et `terms_url` de chaque source native | [sources.md](sources.md) |
+| Suivre une série sur plusieurs sources, rang, repli, cadence, trous de numérotation | [suivi-multi-sources.md](suivi-multi-sources.md) |
+| Métadonnées OpenLibrary, verrous de champ, rattachement d'Éditions | [metadonnees.md](metadonnees.md) |
+| Ce que fait le neutraliseur d'un EPUB non fiable, PDF et SVG | [neutraliseur.md](neutraliseur.md) |
+| Un achat tatoué : ce que Shelfhold en fait | [fichiers-tatoues.md](fichiers-tatoues.md) |
+| Vue d'ensemble des révisions (mise à niveau, quarantaine, file) | [revisions.md](revisions.md) |
 | Brancher votre propre instance lncrawl (romans web en EPUB, sans crawler fourni) | [lncrawl.md](lncrawl.md) |
 | Secrets, notifications, qui possède quel champ | [secrets.md](secrets.md), [notifications.md](notifications.md), [proprietaire-des-champs.md](proprietaire-des-champs.md) |
 | Lire les journaux, régler leur niveau | [journaux.md](journaux.md) |

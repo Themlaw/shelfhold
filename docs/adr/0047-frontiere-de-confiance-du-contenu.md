@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-03
-amended: 2026-11-03 (passe 10) ; 2026-11-03 (passe 11)
+amended: 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-12 (M2 L33)
 decision-makers: mainteneur
 ---
 # ADR-0047 — Frontière de confiance du contenu
@@ -74,3 +74,7 @@ EF-BIB-051, ENF-SEC-015, ENF-SEC-004, ENF-SEC-003, EF-SRC-001, EF-SRC-010, EF-SR
 - https://github.com/messense/nh3 · https://www.w3.org/TR/epub-33/ · https://github.com/johnfactotum/foliate-js#security
 - `deliverables/review/chasseur-trous-passe10.md`, `deliverables/review/explorateur-passe10.md`, `deliverables/review/ARBITRAGES-passe10.md` (passe 10)
 - `deliverables/review/chasseur-trous-passe11.md`, `deliverables/review/explorateur-passe11.md`, `deliverables/review/ARBITRAGES-passe11.md` (passe 11)
+
+## Amendement M2 (2026-11-12) : PDF (D9) et SVG (D10)
+
+Lot M2 L33. **PDF (D9).** Le neutraliseur ne traite que l'EPUB, et un PDF peut porter du JavaScript que le lecteur de Kavita exécuterait. Un PDF `untrusted` est donc rangé tel quel et **non exporté** (`content.untrusted_pdf`, visible « À ranger » avec sa raison) ; un PDF `publisher` (achat déclaré) est exporté tel quel. Un PDF n'est de toute façon rangé qu'après une lecture stricte par **pypdf dans le worker de décodage** : sous-processus borné en mémoire et en temps, sans chiffrement, sans fichier joint ni enveloppe d'un fichier protégé ; au moindre doute il est refusé et reste en place (PR #154, M2 L20, `docs/dependencies.md`). **SVG (D10).** Une entrée SVG d'un CBZ `untrusted` est **rastérisée** en un dérivé déclaré, par un moteur de rendu sans script ni chargement externe (resvg-py) appelé dans le worker de décodage (sans réseau, `RLIMIT_AS`), après un audit qui refuse tout ce qui n'est pas clairement un SVG simple ; sans cela le refus de M1a s'applique (PR #164, M2 L10).

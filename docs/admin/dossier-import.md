@@ -4,6 +4,27 @@ Le dossier d'import prend vos propres fichiers : CBZ, EPUB et PDF (EF-SRC-012). 
 lu, vérifié, rangé comme une Unité, puis **retiré du dossier seulement quand sa copie rangée a été
 relue et reconnue identique** (même empreinte SHA-256). Au moindre doute, il reste où il est.
 
+## Conditions et limites
+
+- `terms_url` : cette page. Les fichiers sont les vôtres : Shelfhold n'interroge aucun site, la source n'ouvre aucune
+  connexion (`import_folder`, droits `user_supplied`, non fiable).
+- Types pris : CBZ, EPUB et PDF, reconnus à leur contenu. Rythme déclaré : un fichier par seconde au plus.
+- Un fichier retiré du dossier l'est seulement après relecture de sa copie rangée par empreinte.
+
+## Dans le compose
+
+Montez un dossier **distinct** de `/library`, `/store` et `/data`, et gardez `/store` : sans lui, l'original d'un EPUB non
+fiable n'est gardé nulle part ([neutraliseur.md](neutraliseur.md)). Exemple générique, dans le fichier `compose.yaml`
+fourni (adaptez les chemins à votre machine) :
+
+```yaml
+    environment:
+      SHELFHOLD_IMPORT_DIR: /import
+    volumes:
+      - ./import:/import          # écriture nécessaire : Shelfhold y retire ce qu'il a rangé
+      - ./store:/store            # recommandé pour toute source non fiable
+```
+
 ## Le mettre en route
 
 Définissez `SHELFHOLD_IMPORT_DIR` : un dossier **distinct** de `/library`, `/store` et `/data` (et
