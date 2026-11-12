@@ -10,8 +10,10 @@ The check is for the maintenance window (ENF-OPS-014): `guard` is called before 
 opened and refuses outside it; the reads are paced by a `Throttle`; a Unit checked recently is not
 due again, so the disks are not woken every cycle. A file that is not there is not "corrupt" (the
 store verification says so, not this check) and changes nothing. This module marks and says; it
-never deletes, replaces or moves a file. What follows a corrupt mark is the reacquisition
-(`acquisition.application.reacquire`).
+never deletes, replaces or moves a file. A damaged copy stops being an independent copy at once
+(`replica.mark_damaged`: nothing counts it, no reader picks it) and stays on disk. What follows a
+corrupt mark is the reacquisition (`acquisition.application.reacquire`). Every copy is checked,
+`/library` and `/store`; only the independent ones are (a damaged one is already known).
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ from shelfhold.infrastructure.content_trust.cbz_entries import (
     check_cbz_entries,
 )
 from shelfhold.infrastructure.schema import catalog, storage
-from shelfhold.library.replica import library_copies, store_copies
+from shelfhold.library.replica import library_copies, mark_damaged, store_copies
 
 __all__ = [
     "DEFAULT_RATE",
@@ -158,6 +160,8 @@ class _Target:
     path: Path
     expected_pages: int | None
     expected_hash: str | None
+    replica_id: str
+    location: str
 
 
 class IntegrityChecker:
@@ -202,7 +206,9 @@ class IntegrityChecker:
             )  # fmt: skip
             return [str(r[0]) for r in rows]
 
-    def _targets(self, unit_id: str, content_id: str | None) -> list[_Target]:
+    def _targets(self, unit_id: str) -> tuple[list[_Target], set[str]]:
+        """The independent copies to read (`/library` and `/store`), and the places that hold a
+        copy already known damaged (they each need an intact one before the Unit is whole)."""
         content = storage.content
         with self._engine.connect() as connection:
             rows = connection.execute(
@@ -212,71 +218,94 @@ class IntegrityChecker:
             store = list(store_copies(connection, unit_id))
         pages = {r.content_hash: r.page_count for r in rows if r.content_hash}
         by_original = {r.original_sha256: r.page_count for r in rows}
-        wanted = next((r for r in rows if r.id == content_id), None) if content_id else None
         found: list[_Target] = []
+        damaged: set[str] = set()
         for copy in library:
-            if wanted is not None and copy.content_hash != wanted.content_hash:
+            if not copy.independent:
+                damaged.add("library")
                 continue
             found.append(
-                _Target(Path(copy.local), pages.get(copy.content_hash or ""), copy.file_hash)
-            )
-        if wanted is None:
-            for kept in store:
-                found.append(
-                    _Target(Path(kept.local), by_original.get(kept.file_hash or ""), kept.file_hash)
+                _Target(
+                    Path(copy.local), pages.get(copy.content_hash or ""), copy.file_hash,
+                    copy.replica_id, "library",
                 )
-        return found
+            )  # fmt: skip
+        for kept in store:
+            if not kept.independent:
+                damaged.add("store")
+                continue
+            found.append(
+                _Target(
+                    Path(kept.local), by_original.get(kept.file_hash or ""), kept.file_hash,
+                    kept.replica_id, "store",
+                )
+            )  # fmt: skip
+        return found, damaged
 
-    def _verdicts(self, targets: list[_Target]) -> tuple[list[FileVerdict], int]:
+    def _verdicts(self, targets: list[_Target]) -> list[tuple[_Target, FileVerdict]]:
         if self._guard is not None and targets:
             self._guard()  # the window: before any disk is touched
-        verdicts: list[FileVerdict] = []
+        verdicts: list[tuple[_Target, FileVerdict]] = []
         for target in targets:
             try:
-                verdicts.append(
-                    check_cbz(
-                        target.path,
-                        expected_pages=target.expected_pages,
-                        expected_hash=target.expected_hash,
-                        throttle=self._throttle,
-                        limits=self._limits,
-                    )
+                verdict = check_cbz(
+                    target.path,
+                    expected_pages=target.expected_pages,
+                    expected_hash=target.expected_hash,
+                    throttle=self._throttle,
+                    limits=self._limits,
                 )
             except FileNotFoundError:
                 continue  # not here: the store verification's business, not a corrupt archive
-        return verdicts, len(verdicts)
+            verdicts.append((target, verdict))
+        return verdicts
 
     def check_unit(self, unit_id: str) -> UnitVerdict:
-        """Check every copy of the Unit; mark it `ok` or `corrupt` and say so once."""
-        verdicts, count = self._verdicts(self._targets(unit_id, None))
+        """Check every independent copy of the Unit; mark it `ok` or `corrupt` and say so once.
+        A copy found damaged is no longer an independent copy."""
+        targets, damaged = self._targets(unit_id)
+        verdicts = self._verdicts(targets)
         unit = catalog.unit
         announced = []
         with self._engine.begin() as connection:
             previous = connection.execute(
                 sa.select(unit.c.integrity_state).where(unit.c.id == unit_id)
             ).scalar_one()
-            if count == 0:
+            if not verdicts:
                 return UnitVerdict(unit_id, str(previous), "missing", 0)  # nothing was read
-            failed = next((v for v in verdicts if not v.ok), None)
-            state = "ok" if failed is None else "corrupt"
+            failed = [(t, v) for t, v in verdicts if not v.ok]
+            for target, _verdict in failed:
+                mark_damaged(connection, target.replica_id)
+            # a place with a damaged copy and no intact one left is not whole
+            intact_places = {t.location for t, v in verdicts if v.ok}
+            unrepaired = damaged - intact_places
+            state = "ok" if not failed and not unrepaired else "corrupt"
             connection.execute(
                 sa.update(unit)
                 .where(unit.c.id == unit_id)
                 .values(integrity_state=state, integrity_checked_at=self._clock.now())
             )
-            if failed is not None and previous != "corrupt":
+            reason = failed[0][1].reason if failed else None
+            if failed and previous != "corrupt":
                 announced.append(
                     self._bus.publish(
-                        connection, CORRUPT_EVENT, {"unit_id": unit_id, "reason": failed.reason}
+                        connection, CORRUPT_EVENT, {"unit_id": unit_id, "reason": reason}
                     )
                 )
         self._bus.deliver(announced)
-        reason = failed.reason if failed is not None else None
         log.info("integrity.checked", unit_id=unit_id, state=state, reason=reason)
-        return UnitVerdict(unit_id, state, reason, count)
+        return UnitVerdict(unit_id, state, reason, len(verdicts))
 
-    def verify_content(self, unit_id: str, content_id: str) -> bool:
-        """The copies of one content are all intact (a fresh copy, before it replaces anything)."""
-        targets = self._targets(unit_id, content_id)
-        verdicts, count = self._verdicts(targets)
-        return count > 0 and all(v.ok for v in verdicts)
+    def repaired(self, unit_id: str) -> bool:
+        """After a repair copy arrived: every independent copy reads intact, and every place that
+        held a damaged copy (`/library`, `/store`) holds an intact one now. Marks what it finds
+        damaged, changes nothing else."""
+        targets, damaged = self._targets(unit_id)
+        verdicts = self._verdicts(targets)
+        with self._engine.begin() as connection:
+            for target, verdict in verdicts:
+                if not verdict.ok:
+                    mark_damaged(connection, target.replica_id)
+        if not verdicts or any(not v.ok for _t, v in verdicts):
+            return False
+        return damaged <= {t.location for t, _v in verdicts}

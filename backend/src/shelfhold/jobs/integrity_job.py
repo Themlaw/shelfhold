@@ -84,8 +84,8 @@ def integrity_handler(comp: Composition, window: MaintenanceWindow) -> Callable[
                     context.preempted = True
                     break
                 requested += reacquirer.reacquire(unit_id).value == "requested"
-                done = reacquirer.complete(unit_id, verify=checker.verify_content, upgrade=swap)
-                replaced += done.outcome in ("replaced", "fresh_copy_ready")
+                done = reacquirer.complete(unit_id, repaired=checker.repaired, upgrade=swap)
+                replaced += done.outcome in ("replaced", "repaired")
             context.record(corrupt=corrupt, requested=requested, replaced=replaced)
         except OutsideMaintenanceWindowError:
             context.preempted = True  # the window closed under the batch: tomorrow night

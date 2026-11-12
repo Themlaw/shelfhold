@@ -34,12 +34,14 @@ __all__ = [
     "demote_shared_inodes",
     "distrust_root_copies",
     "erase_replicas",
+    "fresh_repair_content",
     "has_independent_store_copy",
     "has_readable_copy",
     "independent_copies",
     "kept_file_hashes",
     "library_copies",
     "manifest_file_hashes",
+    "mark_damaged",
     "median_unit_bytes",
     "paths_under",
     "readable_unit_ids",
@@ -138,6 +140,43 @@ def independent_copies(connection: Connection, unit_id: str) -> int:
         (r.dev, r.ino) if r.dev is not None and r.ino is not None else ("row", r.id) for r in rows
     }
     return len(keys)
+
+
+def fresh_repair_content(
+    connection: Connection, unit_id: str, since: datetime | None
+) -> str | None:
+    """The content of an independent `/library` copy of the Unit filed after `since` (a repair
+    copy that arrived), None when no new copy has: the nightly pass reads nothing for nothing."""
+    content = storage.content
+    query = (
+        sa.select(content.c.id)
+        .select_from(
+            content.join(replica_table, replica_table.c.content_hash == content.c.content_hash)
+        )
+        .where(
+            content.c.unit_id == unit_id,
+            content.c.format == "cbz",
+            replica_table.c.unit_id == unit_id,
+            replica_table.c.location == "library",
+            replica_table.c.independent,
+        )
+        .order_by(replica_table.c.verified_at.desc())
+        .limit(1)
+    )
+    if since is not None:
+        query = query.where(replica_table.c.verified_at > since)
+    return connection.execute(query).scalar()
+
+
+def mark_damaged(connection: Connection, replica_id: str) -> None:
+    """The integrity check read this file and it is damaged (EF-BIB-012): it is no longer an
+    independent copy, so it is counted by nothing (`independent_copies`, irreplaceability) and no
+    reader picks it. The file itself is left where it is; nothing is deleted here."""
+    connection.execute(
+        sa.update(replica_table)
+        .where(replica_table.c.id == replica_id)
+        .values(independent=False, verified_at=None)
+    )
 
 
 def record_replica(
@@ -279,6 +318,7 @@ class LibraryCopy:
     local: str  # absolute local path: the physical root's path plus the relative one
     file_hash: str | None  # what the manifest says
     content_hash: str | None
+    independent: bool = True  # false once the integrity check found the file damaged
 
 
 def library_copies(connection: Connection, unit_id: str) -> Sequence[LibraryCopy]:
@@ -290,13 +330,20 @@ def library_copies(connection: Connection, unit_id: str) -> Sequence[LibraryCopy
             replica_table.c.file_hash,
             replica_table.c.content_hash,
             root.c.path_entry,
+            replica_table.c.independent,
         )
         .join(root, root.c.root_id == replica_table.c.physical_root_id)
         .where(replica_table.c.unit_id == unit_id, replica_table.c.location == "library")
         .order_by(replica_table.c.id)
     )
     return [
-        LibraryCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash, r.content_hash)
+        LibraryCopy(
+            r.id,
+            f"{r.path_entry.rstrip('/')}/{r.rel_path}",
+            r.file_hash,
+            r.content_hash,
+            bool(r.independent),
+        )
         for r in rows
     ]
 
@@ -306,6 +353,7 @@ class StoreCopy:
     replica_id: str
     local: str
     file_hash: str | None  # the bytes that were put in /store
+    independent: bool = True
 
 
 def store_copies(
@@ -322,13 +370,16 @@ def store_copies(
             replica_table.c.rel_path,
             replica_table.c.file_hash,
             root.c.path_entry,
+            replica_table.c.independent,
         )
         .join(root, root.c.root_id == replica_table.c.physical_root_id)
         .where(replica_table.c.unit_id == unit_id, replica_table.c.location == "store")
         .order_by(replica_table.c.id)
     )
     return [
-        StoreCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash)
+        StoreCopy(
+            r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash, bool(r.independent)
+        )
         for r in rows
         if include_untrusted or not r.rel_path.startswith("untrusted/")
     ]

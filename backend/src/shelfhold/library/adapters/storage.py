@@ -43,6 +43,7 @@ from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY,
 from shelfhold.library.domain.copies import CopyFacts, is_independent
 from shelfhold.library.domain.failures import (
     ReceivedTooLargeError,
+    RepairRefusedError,
     SafeguardFailedError,
     TombstonedContentError,
     VariantAlreadyStoredError,
@@ -158,8 +159,14 @@ class PassthroughStore:
         expected_sha256: str | None = None,
         upstream_ref: str | None = None,
         allow_svg_pages: bool = False,
+        repair: bool = False,
     ) -> Ingested:
-        """File `staged` at the local path `dest` in /library. Raises, having changed nothing,
+        """File `staged` at the local path `dest` in /library.
+
+        `repair` (EF-BIB-012) files a repair copy of a Variant that already has its archive: the
+        fresh bytes must carry the payload the content records, no content is created, and the
+        file lands as one more copy of that content at `dest` (never over another file).
+        Raises, having changed nothing,
         for a file too large, off the allowlist, not what was announced, or already there.
 
         `allow_svg_pages` (M2 L10) lets an archive with `.svg` pages in: it is the original of a
@@ -180,8 +187,11 @@ class PassthroughStore:
             ingested = self._file(
                 unit_id, variant_id, staged, dest, expected_sha256, upstream_ref,
                 original=original, payload_hash=payload_hash, images=len(listing.pages),
+                repair=repair,
             )  # fmt: skip
-        if origin_xml:  # EF-BIB-048: the exporter will replace it; a safeguard needs it later
+        if (
+            origin_xml and not repair
+        ):  # EF-BIB-048: the exporter will replace it; a safeguard needs it later
             with suppress(OSError, ValueError):
                 keep_origin_comicinfo(self._data_dir, unit_id, bytes(origin_xml))
         self._projection.project(unit_id)  # after the commit: the database is the authority
@@ -205,6 +215,7 @@ class PassthroughStore:
         original: str,
         payload_hash: str,
         images: int,
+        repair: bool = False,
     ) -> Ingested:
         """Under the lock of the Work: the tombstone and the Unit are looked at again, then the
         file is written and recorded. A file that landed for rows that are no longer there (a
@@ -217,12 +228,17 @@ class PassthroughStore:
             raise ValueError("received_hash_mismatch: the file is not what the download counted")
         with self._engine.connect() as connection:
             taken = connection.execute(
-                sa.select(storage.content.c.id).where(
+                sa.select(storage.content.c.id, storage.content.c.content_hash).where(
                     storage.content.c.variant_id == variant_id,
                     storage.content.c.media_type == CBZ_MEDIA_TYPE,
                 )
             ).first()
-        if taken is not None:
+        if repair:
+            if taken is None:
+                raise RepairRefusedError("the Variant has no archive to repair")
+            if taken.content_hash != payload_hash:
+                raise RepairRefusedError("the fresh archive is not the payload the content records")
+        elif taken is not None:
             raise VariantAlreadyStoredError(f"the Variant {variant_id} already has its archive")
         with self._engine.connect() as connection:
             gone = work_of_unit(connection, unit_id) is None
@@ -240,6 +256,7 @@ class PassthroughStore:
             return self._record(
                 unit_id, variant_id, dest, upstream_ref, identity,
                 original=original, payload_hash=payload_hash, images=images, root=(root_id, rel),
+                repair_of=taken.id if repair and taken is not None else None,
             )  # fmt: skip
         except BaseException:
             with suppress(FileNotFoundError, FsopsError):
@@ -258,12 +275,23 @@ class PassthroughStore:
         payload_hash: str,
         images: int,
         root: tuple[str, str],
+        repair_of: str | None = None,
     ) -> Ingested:
         root_id, rel = root
         device = self._fsops.device_of(dest)
         now = datetime.now(UTC)
         content_id = new_ulid()
         with self._engine.begin() as connection:
+            if repair_of is not None:  # one more copy of the content that is there: no new content
+                replica_id = record_replica(
+                    connection, unit_id=unit_id, location="library", content_hash=payload_hash,
+                    file_hash=original, independent=True, mutable_by_third_party=True,
+                    physical_root_id=root_id, rel_path=rel, dev=device, ino=identity.ino,
+                    size=identity.size, mtime_ns=identity.mtime_ns, verified_at=now,
+                )  # fmt: skip
+                return Ingested(
+                    repair_of, replica_id, original, payload_hash, identity.size, images
+                )
             # before the new content exists: the baseline is the version already stored (EF-BIB-024)
             suspect = guard_received(
                 connection, variant_id=variant_id, pages=images, content_hash=payload_hash,

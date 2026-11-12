@@ -66,7 +66,8 @@ def export_sources(
     for row in rows:
         if row.unit_id in found:
             continue
-        copies = library_copies(connection, row.unit_id)
+        # a copy the integrity check found damaged is not what is exported (EF-BIB-012)
+        copies = [c for c in library_copies(connection, row.unit_id) if c.independent]
         found[row.unit_id] = ExportSource(
             row.unit_id,
             row.content_id,
@@ -133,7 +134,11 @@ def upgrade_source(connection: Connection, unit_id: str, content_id: str) -> Exp
     ).one_or_none()
     if row is None:
         return None
-    copies = [c for c in library_copies(connection, unit_id) if c.content_hash == row.content_hash]
+    copies = [  # a copy the integrity check found damaged is never the source of a rewrite
+        c
+        for c in library_copies(connection, unit_id)
+        if c.content_hash == row.content_hash and c.independent
+    ]
     if not copies:
         return None
     return ExportSource(

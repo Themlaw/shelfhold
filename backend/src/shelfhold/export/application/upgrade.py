@@ -290,7 +290,14 @@ class SamePathUpgrade:
                 raise LookupError(f"no file served for {request.export_item_id}")
             if len(served.unit_ids) != 1:  # a volume is rewritten whole, by `replace_volume`
                 raise LookupError(f"{request.export_item_id} covers several Units: not a chapter")
-            refused = self._refusal(connection, served, request.typed, check_read=True)
+            # a repair replaces a broken file: the read Unit is repaired too, KOReader's position is
+            # reset and said (EF-BIB-012)
+            refused = self._refusal(
+                connection,
+                served,
+                request.typed,
+                check_read=request.reason != "integrity_reacquire",
+            )
             if refused is not None:
                 return UpgradeResult(refused)
             source = upgrade_source(connection, served.unit_id, request.content_id)

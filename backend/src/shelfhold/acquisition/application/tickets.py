@@ -12,7 +12,7 @@ to the cycle, which pauses the whole service.
 import hashlib
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
-from contextlib import AbstractAsyncContextManager, suppress
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePath
@@ -36,6 +36,7 @@ from shelfhold.jobs.public import DomainSlots
 from shelfhold.library.public import (
     PassthroughStore,
     Received,
+    RepairRefusedError,
     VariantAlreadyStoredError,
     absorb_echo,
     receive_cbz,
@@ -398,9 +399,49 @@ class DownloadTickets:
             ),
         )
         ticket = await from_service(self._service.request(self._fetcher, target))
+        self._hand_over(request, ticket.token)
         self._update(request.id, ticket=ticket.token)  # the token itself is never logged
         log.debug("follow.ticket_requested", request_id=request.id, unit_id=request.unit_id)
         return ticket.token
+
+    def _hand_over(self, request: OpenRequest, token: str) -> None:
+        """The service names a chapter's download by one token, whoever asks (the reacquisition of
+        a corrupt Unit asks again for what a finished request already holds): the token follows
+        the live request, the finished one lets go of it (the key is unique per binding)."""
+        table = acquisition.download_request
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(table)
+                .where(
+                    table.c.source_binding_id == request.binding_id,
+                    table.c.ticket == token,
+                    table.c.id != request.id,
+                    table.c.state.not_in(("requested", "downloaded")),
+                )
+                .values(ticket=None)
+            )
+
+    def _corrupt(self, unit_id: str) -> bool:
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    sa.select(catalog.unit.c.integrity_state).where(catalog.unit.c.id == unit_id)
+                ).scalar_one_or_none()
+                == "corrupt"
+            )
+
+    def _repair(self, request: OpenRequest, staged: Path, sha256: str, dest: str) -> None:
+        path = PurePath(dest)
+        fresh = str(path.with_name(f"repair-{new_ulid()}-{path.name}"))
+        try:
+            self._store.ingest(
+                unit_id=request.unit_id, variant_id=request.variant_id, staged=staged,
+                expected_sha256=sha256, dest=fresh, upstream_ref=None, repair=True,
+            )  # fmt: skip
+        except RepairRefusedError as error:
+            log.warning("integrity.repair_refused", unit_id=request.unit_id, error=str(error)[:80])
+            return
+        log.info("integrity.repair_filed", unit_id=request.unit_id)
 
     async def _fetch(self, request: OpenRequest, ticket: Ticket, report: TicketReport) -> None:
         payload = await from_service(self._service.fetch(self._fetcher, ticket))
@@ -422,13 +463,18 @@ class DownloadTickets:
             if echo is not None:
                 report.echoed += 1
                 return
-            with suppress(VariantAlreadyStoredError):  # a replay after a crash: already there
+            dest = self._place(request.unit_id, request.variant_id, oriented)
+            try:
                 self._store.ingest(
                     unit_id=request.unit_id, variant_id=request.variant_id,
                     staged=received.path, expected_sha256=received.sha256,
-                    dest=self._place(request.unit_id, request.variant_id, oriented),
-                    upstream_ref=request.remote_unit_id,
+                    dest=dest, upstream_ref=request.remote_unit_id,
                 )  # fmt: skip
+            except VariantAlreadyStoredError:
+                # a replay after a crash is a no-op; the reacquisition of a corrupt Unit
+                # (EF-BIB-012) files its fresh bytes as one more copy, never over the damaged one
+                if self._corrupt(request.unit_id):
+                    self._repair(request, received.path, received.sha256, dest)
         now = self._clock.now()
         with self._engine.begin() as connection:
             connection.execute(

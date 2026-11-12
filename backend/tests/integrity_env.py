@@ -13,10 +13,15 @@ from pathlib import Path
 import sqlalchemy as sa
 
 from shelfhold.acquisition.application.reacquire import Reacquirer
+from shelfhold.export.domain.physical_roots import RECEIVED_DIR
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from shelfhold.library.application.integrity import IntegrityChecker, Throttle
+from shelfhold.library.public import PassthroughStore
 from shelfhold.library.replica import library_copies
 from tests.export_env import ExportEnv
+from tests.locks_env import work_lock
+from tests.null_tombstones import NONE_PURGED
 from tests.upgrade_env import Exported, service
 
 
@@ -81,6 +86,24 @@ class Rig:
 
     def upgrader(self) -> object:
         return service(self.env)
+
+    def repair_copy(self, data: bytes) -> str:
+        """The fresh bytes of the Unit, filed as one more copy of its content (the ticket's own
+        path, `PassthroughStore.ingest(repair=True)`); the content id."""
+        with self.env.engine.connect() as connection:
+            variant, content = connection.execute(
+                sa.text("SELECT variant_id, id FROM content WHERE unit_id = :u"),
+                {"u": self.exported.unit_id},
+            ).one()
+        lib = self.env.lib
+        PassthroughStore(
+            self.env.engine, lib.fsops, lib.locate, lib.data, tombstones=NONE_PURGED,
+            hold_work=work_lock(self.env.engine),
+        ).ingest(
+            unit_id=self.exported.unit_id, variant_id=variant, staged=lib.stage(data),
+            dest=str(lib.manga / RECEIVED_DIR / f"repair-{new_ulid()}.cbz"), repair=True,
+        )  # fmt: skip
+        return str(content)
 
 
 def _bus(env: ExportEnv) -> object:

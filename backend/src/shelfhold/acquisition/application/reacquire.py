@@ -1,10 +1,13 @@
 """Whole-Unit reacquisition after a failed integrity check (EF-BIB-012).
 
 A Unit the check marked `corrupt` is asked for again in full, from a live source, like any other
-request (one open ticket per Unit, I52). Nothing is written over the damaged file and nothing is
-deleted: the old archive stays where it is until a fresh copy has been verified, and the swap is
-the same-path upgrade (`reason = integrity_reacquire`), which keeps every guard of its own and
-tells the Activity that KOReader's position was reset (EF-EXP-016, D21).
+request (one open ticket per Unit, I52). The fresh bytes are filed as one more copy of the
+content (`PassthroughStore.ingest(repair=True)`, the ticket's own path): nothing is written over
+the damaged file and nothing is deleted, the damaged copy only stops counting as an independent
+copy. The Unit is `ok` once every place that held a damaged copy holds an intact one that was
+read again; the served files are then offered the content through the same-path upgrade
+(`reason = integrity_reacquire`, a read Unit included), which keeps its other guards and tells the
+Activity that KOReader's position was reset when it replaces a file (EF-EXP-016, D21).
 
 A Unit with no live source (irreplaceable, EF-BIB-031) has nothing to be asked of: it is flagged
 in the Activity (`ops.integrity_irreplaceable`, at most once a month) and left exactly as it is;
@@ -25,11 +28,11 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
 
-from shelfhold.acquisition.application.acquire import OPEN_STATES
+from shelfhold.acquisition.application.tickets import DownloadTickets
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog, platform, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, platform
+from shelfhold.library.public import fresh_repair_content
 
 __all__ = ["ALERT_EVENT", "ReacquireOutcome", "Reacquirer", "Replacement"]
 
@@ -51,8 +54,7 @@ class ReacquireOutcome(enum.Enum):
 
 @dataclass(frozen=True, slots=True)
 class Replacement:
-    # replaced | fresh_copy_ready | irreplaceable | no_fresh_copy | fresh_copy_corrupt
-    # | not_upgraded | not_corrupt
+    # replaced | repaired | irreplaceable | no_fresh_copy | fresh_copy_corrupt | not_corrupt
     outcome: str
     content_id: str | None = None
 
@@ -95,8 +97,12 @@ class Reacquirer:
         now = self._clock.now()
         announced = []
         with self._engine.begin() as connection:
+            flagged = connection.execute(
+                sa.select(catalog.unit.c.integrity_checked_at).where(catalog.unit.c.id == unit_id)
+            ).scalar()
             if not self._is_corrupt(connection, unit_id):
                 return ReacquireOutcome.NOT_CORRUPT
+            flagged = flagged or now - COOLDOWN
             variant = self._live_variant(connection, unit_id)
             if variant is None or self._irreplaceable(connection, unit_id):
                 if self._alerted_recently(connection, unit_id):
@@ -107,24 +113,26 @@ class Reacquirer:
                 table = acquisition.download_request
                 if connection.execute(
                     sa.select(table.c.id).where(
-                        sa.or_(table.c.unit_id == unit_id, table.c.variant_id == variant[0]),
-                        table.c.state.in_(OPEN_STATES),
+                        table.c.unit_id == unit_id, table.c.state.in_(("requested", "downloaded"))
                     )
                 ).first():
                     return ReacquireOutcome.ALREADY_OPEN
                 if connection.execute(
                     sa.select(table.c.id).where(
-                        table.c.unit_id == unit_id, table.c.requested_at >= now - COOLDOWN
+                        table.c.unit_id == unit_id,
+                        table.c.requested_at >= now - COOLDOWN,
+                        table.c.requested_at >= flagged,  # the reception itself is not an attempt
                     )
                 ).first():
                     return ReacquireOutcome.COOLING_DOWN
-                connection.execute(
-                    sa.insert(table).values(
-                        id=new_ulid(), target_kind="unit", variant_id=variant[0],
-                        source_binding_id=variant[1], state="requested", requested_at=now,
-                        unit_id=unit_id, visibility=None,  # an operation, for the admin
-                    )
-                )  # fmt: skip
+                if not DownloadTickets.open(  # one open ticket per Unit, its Unit row with it
+                    connection,
+                    binding_id=variant[1],
+                    variant_id=variant[0],
+                    unit_id=unit_id,
+                    now=now,
+                ):
+                    return ReacquireOutcome.ALREADY_OPEN
                 outcome = ReacquireOutcome.REQUESTED
         self._bus.deliver(announced)
         log.info("integrity.reacquire", unit_id=unit_id, outcome=outcome.value)
@@ -159,43 +167,47 @@ class Reacquirer:
         self,
         unit_id: str,
         *,
-        verify: Callable[[str, str], bool],
+        repaired: Callable[[str], bool],
         upgrade: Callable[[str, str], Sequence[str]],
     ) -> Replacement:
-        """Once a fresh copy has arrived and been verified, the same-path upgrade swaps it in.
+        """After a repair copy of the Unit arrived (`PassthroughStore.ingest(repair=True)`).
 
-        `verify(unit_id, content_id)` reads the copy (the integrity check); `upgrade(unit_id,
-        content_id)` is `SamePathUpgrade.upgrade_unit` with `integrity_reacquire`, its outcomes as
-        words. An irreplaceable Unit is never swapped; the damaged file is never touched here."""
-        content = storage.content
+        Nothing is read until a new copy has arrived since the last attempt. Then `repaired(unit)`
+        reads every independent copy, `/library` and `/store`, and says whether each place that
+        held a damaged copy now holds an intact one; only then is the Unit `ok`, and the served
+        files are offered the content through the same-path upgrade (`upgrade(unit, content)`, its
+        outcomes as words), which says KOReader's position was reset when it replaces one. An
+        irreplaceable Unit is never touched; the damaged files are never deleted here."""
         with self._engine.connect() as connection:
-            if not self._is_corrupt(connection, unit_id):
+            row = connection.execute(
+                sa.select(catalog.unit.c.integrity_state, catalog.unit.c.integrity_checked_at)
+                .where(catalog.unit.c.id == unit_id)
+            ).one_or_none()  # fmt: skip
+            if row is None or row.integrity_state != "corrupt":
                 return Replacement("not_corrupt")
             if self._live_variant(connection, unit_id) is None or self._irreplaceable(
                 connection, unit_id
             ):
                 return Replacement("irreplaceable")
-            contents = [
-                str(r[0])
-                for r in connection.execute(
-                    sa.select(content.c.id)
-                    .where(content.c.unit_id == unit_id, content.c.format == "cbz")
-                    .order_by(content.c.id.desc())
-                )
-            ]
-        if len(contents) < 2:
-            return Replacement("no_fresh_copy")  # only the damaged one: the ticket is still open
-        fresh = next((c for c in contents if verify(unit_id, c)), None)
-        if fresh is None:
-            return Replacement("fresh_copy_corrupt")  # the old file stays; asked again later
-        outcomes = list(upgrade(unit_id, fresh))
-        if any(o not in _GOOD for o in outcomes):
-            return Replacement("not_upgraded", fresh)
-        with self._engine.begin() as connection:
+            content_id = fresh_repair_content(connection, unit_id, row.integrity_checked_at)
+        if content_id is None:
+            return Replacement("no_fresh_copy")  # the ticket is open, or nothing new came
+        now = self._clock.now()
+        done = repaired(unit_id)
+        with self._engine.begin() as connection:  # the attempt is dated: no new copy, no new read
             connection.execute(
                 sa.update(catalog.unit)
                 .where(catalog.unit.c.id == unit_id)
-                .values(integrity_state="ok", integrity_checked_at=self._clock.now())
+                .values(integrity_state="ok" if done else "corrupt", integrity_checked_at=now)
             )
-        log.info("integrity.replaced", unit_id=unit_id, content_id=fresh)
-        return Replacement("replaced" if outcomes else "fresh_copy_ready", fresh)
+        if not done:
+            return Replacement(
+                "fresh_copy_corrupt", content_id
+            )  # the damaged ones stay as they are
+        try:
+            outcomes = list(upgrade(unit_id, content_id))
+        except LookupError:  # nothing served for it, or no source: the copies are repaired anyway
+            outcomes = []
+        log.info("integrity.repaired", unit_id=unit_id, content_id=content_id)
+        good = all(o in _GOOD for o in outcomes)
+        return Replacement("replaced" if outcomes and good else "repaired", content_id)

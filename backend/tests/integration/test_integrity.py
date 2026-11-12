@@ -1,8 +1,9 @@
 """EF-BIB-012: the integrity check, the reacquisition of the whole Unit, the KOReader reset.
 
-A damaged archive is marked and asked for again in full; the old file stays where it is until the
-new one is verified, then the same-path upgrade replaces it (and says KOReader starts again). An
-irreplaceable Unit has nothing to be asked of: it is flagged and left alone, never replaced.
+A damaged archive is marked, stops counting as a copy, and is asked for again in full; the fresh
+bytes are filed beside it, the damaged file stays where it is, and the Unit is `ok` only once
+every place that held a damaged copy holds an intact one that was read again. An irreplaceable
+Unit has nothing to be asked of: it is flagged and left alone.
 """
 
 from datetime import timedelta
@@ -10,13 +11,17 @@ from datetime import timedelta
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.acquisition.application.reacquire import ReacquireOutcome, Replacement
+from shelfhold.acquisition.application.reacquire import ReacquireOutcome
 from shelfhold.events.activity import ActivityEvent, Viewer, activity_view
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.schema import platform
+from shelfhold.library.domain.failures import RepairRefusedError
+from shelfhold.library.replica import independent_copies, record_replica
 from shelfhold.ops.status import koreader_reset_report
 from tests.export_env import export_env
 from tests.integrity_env import Rig, flip_page_byte
-from tests.upgrade_env import better_copy, bin_files, export_one, make_irreplaceable
+from tests.library_env import PNG, cbz_bytes
+from tests.upgrade_env import better_copy, bin_files, export_one, make_irreplaceable, mark_read
 
 pytestmark = pytest.mark.req("EF-BIB-012")
 
@@ -28,17 +33,17 @@ def _rig(env) -> Rig:  # type: ignore[no-untyped-def]
 def _damage(rig: Rig, how: str) -> str:
     if how == "crc":
         flip_page_byte(rig.received())
-    else:
-        with rig.env.engine.begin() as connection:  # a page is missing: two were recorded
-            connection.execute(sa.text("UPDATE content SET page_count = 2"))
-    return how if how == "crc" else "page_count"
+        return "crc"
+    with rig.env.engine.begin() as connection:  # a page is missing: two were recorded
+        connection.execute(sa.text("UPDATE content SET page_count = 2"))
+    return "page_count"
 
 
-def _complete(rig: Rig, content_id_hint: str | None = None) -> Replacement:
+def _complete(rig: Rig, repaired=None):  # type: ignore[no-untyped-def]
     checker = rig.checker()
     return rig.reacquirer().complete(
         rig.exported.unit_id,
-        verify=checker.verify_content,
+        repaired=repaired or checker.repaired,
         upgrade=lambda unit, content: [
             r.outcome.value
             for r in rig.upgrader().upgrade_unit(unit, content, reason="integrity_reacquire")  # type: ignore[attr-defined]
@@ -46,42 +51,60 @@ def _complete(rig: Rig, content_id_hint: str | None = None) -> Replacement:
     )
 
 
-@pytest.mark.parametrize("how", ["crc", "pages"])
-def test_integrity_crc_and_page_count_reacquires_whole_unit(how: str) -> None:
+def _copies(rig: Rig) -> int:
+    with rig.env.engine.connect() as connection:
+        return independent_copies(connection, rig.exported.unit_id)
+
+
+def test_integrity_page_count_failure_marks_the_unit_and_frees_its_copy() -> None:
     with export_env() as env:
         rig = _rig(env)
-        reason = _damage(rig, how)
-        before_served = rig.exported.target.read_bytes()
-        before_received = rig.received().read_bytes()
+        _damage(rig, "pages")
+        verdict = rig.checker().check_unit(rig.exported.unit_id)
+        assert (verdict.state, verdict.reason) == ("corrupt", "page_count")
+        assert _copies(rig) == 0
+        assert rig.reacquirer().reacquire(rig.exported.unit_id) is ReacquireOutcome.REQUESTED
+
+
+def test_integrity_crc_and_page_count_reacquires_whole_unit() -> None:
+    with export_env() as env:
+        rig = _rig(env)
+        good = rig.received().read_bytes()
+        assert _copies(rig) == 1
+        reason = _damage(rig, "crc")
+        damaged = rig.received()
+        before = damaged.read_bytes()
 
         verdict = rig.checker().check_unit(rig.exported.unit_id)
         assert (verdict.state, verdict.reason) == ("corrupt", reason)
-        assert rig.state()[0] == "corrupt"
-
+        assert _copies(rig) == 0  # a damaged file is no copy at all
         assert rig.reacquirer().reacquire(rig.exported.unit_id) is ReacquireOutcome.REQUESTED
         (request,) = rig.requests()
         assert (request.target_kind, request.state) == ("unit", "requested")
-        # the whole Unit is asked for again; nothing is replaced or deleted yet
-        assert rig.exported.target.read_bytes() == before_served
-        assert rig.received().read_bytes() == before_received
+        assert rig.state()[0] == "corrupt"
 
-        better_copy(env, rig.exported)  # the file arrives (a new content of the same Unit)
+        # the fresh bytes arrive: filed beside the damaged file, which is not touched
+        rig.env.clock.advance(days=1)  # the check is older than the arrival
+        rig.repair_copy(good)
         done = _complete(rig)
-        assert done.outcome == "replaced"
-        assert rig.exported.target.read_bytes() != before_served  # same path, new file
-        assert len(bin_files(env)) == 1  # the old version is in the bin, not gone
-        assert rig.state()[0] == "ok"
+        assert done.outcome in ("replaced", "repaired"), done
+        assert rig.state()[0] == "ok" and _copies(rig) == 1
+        assert damaged.exists() and damaged.read_bytes() == before  # never deleted, never replaced
 
 
 def test_integrity_reacquire_logs_koreader_reset() -> None:
+    """The same-path upgrade, asked with `integrity_reacquire`, replaces the served file even of a
+    read Unit (it is a broken file), moves the old one to the bin and says KOReader starts again."""
     with export_env() as env:
         rig = _rig(env)
-        _damage(rig, "crc")
-        rig.checker().check_unit(rig.exported.unit_id)
-        rig.reacquirer().reacquire(rig.exported.unit_id)
-        better_copy(env, rig.exported)
-        assert _complete(rig).outcome == "replaced"
-
+        old = rig.exported.target.read_bytes()
+        content_id = better_copy(env, rig.exported)
+        mark_read(env, rig.exported)
+        results = rig.upgrader().upgrade_unit(  # type: ignore[attr-defined]
+            rig.exported.unit_id, content_id, reason="integrity_reacquire"
+        )
+        assert [r.outcome.value for r in results] == ["upgraded"]
+        assert rig.exported.target.read_bytes() != old and len(bin_files(env)) == 1
         (event,) = rig.events("unit.upgraded")
         assert event.payload["reason"] == "integrity_reacquire"
         assert event.payload["koreader_reset"] is True
@@ -93,52 +116,91 @@ def test_integrity_reacquire_logs_koreader_reset() -> None:
         ]
 
 
+def test_a_better_version_still_skips_a_read_unit() -> None:
+    with export_env() as env:
+        rig = _rig(env)
+        content_id = better_copy(env, rig.exported)
+        mark_read(env, rig.exported)
+        results = rig.upgrader().upgrade_unit(rig.exported.unit_id, content_id)  # type: ignore[attr-defined]
+        assert [r.outcome.value for r in results] == ["skipped_read"]
+
+
 def test_corrupt_irreplaceable_unit_alerts_never_deleted() -> None:
     with export_env() as env:
         rig = _rig(env)
+        good = rig.received().read_bytes()
         _damage(rig, "crc")
-        better_copy(env, rig.exported)  # a good copy exists, as a file...
-        make_irreplaceable(env)  # ...but no live source lists the Unit any more
+        make_irreplaceable(env)  # no live source lists the Unit any more
         received, served = rig.received(), rig.exported.target
         before = (received.read_bytes(), served.read_bytes())
 
         assert rig.checker().check_unit(rig.exported.unit_id).state == "corrupt"
         assert rig.reacquirer().reacquire(rig.exported.unit_id) is ReacquireOutcome.IRREPLACEABLE
-        assert len(rig.events("ops.integrity_irreplaceable")) == 1  # the alert
+        assert rig.reacquirer().reacquire(rig.exported.unit_id) is ReacquireOutcome.IRREPLACEABLE
+        assert len(rig.events("ops.integrity_irreplaceable")) == 1  # said once
         assert rig.requests() == []  # nothing is asked of anyone
-        # even a good copy that is there is not swapped in on its own
+        env.clock.advance(days=1)
+        rig.repair_copy(good)  # even good bytes that are there are not swapped in on their own
         assert _complete(rig).outcome == "irreplaceable"
         assert (received.read_bytes(), served.read_bytes()) == before
-        assert bin_files(env) == []
-        assert rig.state()[0] == "corrupt"
-        with env.engine.connect() as connection:
-            assert connection.execute(sa.text("SELECT count(*) FROM content")).scalar_one() == 2
+        assert bin_files(env) == [] and rig.state()[0] == "corrupt"
 
 
-def test_original_stays_until_the_new_copy_is_verified() -> None:
+def test_a_repair_that_is_not_the_recorded_payload_is_refused() -> None:
     with export_env() as env:
         rig = _rig(env)
         _damage(rig, "crc")
         rig.checker().check_unit(rig.exported.unit_id)
-        rig.reacquirer().reacquire(rig.exported.unit_id)
-        received, served = rig.received(), rig.exported.target
-        before = (received.read_bytes(), served.read_bytes())
+        with pytest.raises(RepairRefusedError):
+            rig.repair_copy(cbz_bytes((("1-001.png", PNG + b"another page"),)))
+        assert rig.state()[0] == "corrupt" and _copies(rig) == 0
 
-        bad = better_copy(env, rig.exported)
-        with env.engine.connect() as connection:
-            variant = connection.execute(
-                sa.text("SELECT variant_id FROM content WHERE id = :c"), {"c": bad}
-            ).scalar_one()
-        with env.engine.begin() as connection:  # the new copy is damaged too
-            connection.execute(
-                sa.text("UPDATE content SET page_count = 9 WHERE id = :c"), {"c": bad}
-            )
-        assert variant
+
+def test_the_unit_is_not_ok_while_a_place_holds_only_damaged_copies() -> None:
+    """A damaged copy in /store is not made good by a fresh one in /library."""
+    with export_env() as env:
+        rig = _rig(env)
+        good = rig.received().read_bytes()
+        lib = env.lib
+        kept = lib.store / "kept.cbz"
+        kept.write_bytes(good)
+        with env.engine.begin() as connection:
+            row = connection.execute(
+                sa.text("SELECT content_hash, original_sha256 FROM content")
+            ).one()
+            record_replica(
+                connection, unit_id=rig.exported.unit_id, location="store",
+                content_hash=row[0], file_hash=row[1], independent=True,
+                physical_root_id=lib.store_root, rel_path="kept.cbz", size=len(good),
+            )  # fmt: skip
+        flip_page_byte(kept)
+        assert rig.checker().check_unit(rig.exported.unit_id).state == "corrupt"
+        assert _copies(rig) == 1  # the library copy still counts; the store one does not
+        env.clock.advance(days=1)
+        rig.repair_copy(good)
         done = _complete(rig)
         assert done.outcome == "fresh_copy_corrupt"
-        assert (received.read_bytes(), served.read_bytes()) == before
-        assert received.exists() and bin_files(env) == []
-        assert rig.state()[0] == "corrupt"
+        assert rig.state()[0] == "corrupt" and kept.exists()
+        # the store gets its intact copy back (the safeguard's catch-up): now the Unit is whole
+        kept.write_bytes(good)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE replica SET independent = 1 WHERE location = 'store'")
+            )
+        env.clock.advance(days=1)
+        rig.repair_copy(good)
+        assert _complete(rig).outcome in ("replaced", "repaired") and rig.state()[0] == "ok"
+
+
+def test_no_new_copy_no_new_read() -> None:
+    with export_env() as env:
+        rig = _rig(env)
+        _damage(rig, "crc")
+        rig.checker().check_unit(rig.exported.unit_id)
+        env.clock.advance(days=1)
+        reads: list[str] = []
+        done = _complete(rig, repaired=lambda unit: reads.append(unit) or False)  # type: ignore[func-returns-value]
+        assert done.outcome == "no_fresh_copy" and reads == []  # nothing arrived: nothing is read
 
 
 def test_a_healthy_unit_is_marked_ok_and_not_asked_again() -> None:
@@ -148,7 +210,7 @@ def test_a_healthy_unit_is_marked_ok_and_not_asked_again() -> None:
         assert (verdict.state, verdict.reason) == ("ok", None)
         assert rig.state()[0] == "ok" and rig.state()[1] is not None
         assert rig.reacquirer().reacquire(rig.exported.unit_id) is ReacquireOutcome.NOT_CORRUPT
-        assert rig.requests() == []
+        assert rig.requests() == [] and _copies(rig) == 1
 
 
 def test_reacquisition_is_not_repeated_while_one_is_open_or_cooling() -> None:
@@ -182,8 +244,8 @@ def test_check_is_bounded_in_throughput() -> None:
 
 
 def test_koreader_reset_never_touches_anyones_reading_position() -> None:
-    """IDOR: replacing the file records a reset notice for the admin; it deletes no one's
-    position, and the notice is not shown to a member or a child."""
+    """IDOR: a repair records a reset notice for the admin; it deletes no one's position, and the
+    notice is not shown to a member or a child."""
     with export_env() as env:
         rig = _rig(env)
         users = [new_ulid(), new_ulid()]
@@ -202,12 +264,10 @@ def test_koreader_reset_never_touches_anyones_reading_position() -> None:
                     {"id": new_ulid(), "u": user_id, "item": rig.exported.export_item_id,
                      "h": "0" * 64, "ts": env.clock.now()},
                 )  # fmt: skip
-        _damage(rig, "crc")
-        rig.checker().check_unit(rig.exported.unit_id)
-        rig.reacquirer().reacquire(rig.exported.unit_id)
-        better_copy(env, rig.exported)
-        assert _complete(rig).outcome == "replaced"
-
+        content_id = better_copy(env, rig.exported)
+        rig.upgrader().upgrade_unit(  # type: ignore[attr-defined]
+            rig.exported.unit_id, content_id, reason="integrity_reacquire"
+        )
         with env.engine.connect() as connection:
             kept = (
                 connection.execute(sa.text("SELECT user_id FROM reading_position ORDER BY user_id"))
@@ -225,3 +285,4 @@ def test_koreader_reset_never_touches_anyones_reading_position() -> None:
                 ),
             )  # fmt: skip
             assert seen is None
+        assert platform  # the event table is the Activity's source
