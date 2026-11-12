@@ -14,18 +14,24 @@ for an admin) the entry may hold the only copy of it. A removed entry leaves the
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
+import sqlalchemy as sa
 import structlog
 
 from shelfhold.export.application.intents import IntentJournal, open_intent_ids
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import EmitterConditionError, FsopsError
+from shelfhold.infrastructure.schema import catalog, platform, storage
 from shelfhold.library.public import adopted_original_unprotected, forget_binned_export_files
 
 log = structlog.get_logger(__name__)
+
+
+BackupsSince = Callable[[datetime], list[tuple[str, datetime]]]  # `ops.backup.report` shape
 
 
 @dataclass(frozen=True)
@@ -36,10 +42,53 @@ class RecycleReport:
 
 
 class RecycleSweeper:
-    def __init__(self, fsops: Fsops, journal: IntentJournal, roots: Sequence[str]) -> None:
+    def __init__(
+        self,
+        fsops: Fsops,
+        journal: IntentJournal,
+        roots: Sequence[str],
+        *,
+        backups: BackupsSince | None = None,
+    ) -> None:
         self._fsops: Fsops = fsops
         self._journal = journal
         self._roots = tuple(roots)
+        self._backups = backups
+
+    def _retained_by_backup(self, name: str) -> bool:
+        """The entry holds a copy kept in /store (a deletion of content put it in the bin) of a
+        Unit that an integrated backup still retained would find in its database: the copy stays
+        in the bin, past its 30 days, until no retained backup taken since the Unit existed is
+        left (EF-BIB-021, GAP-2-17). Only `/store`: the other copies are Shelfhold's own, which
+        a restored database does not wait for."""
+        if self._backups is None:
+            return False
+        trash, unit, root = storage.trash_item, catalog.unit, platform.physical_root
+        with self._journal.engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(trash.c.snapshot, unit.c.created_at)
+                .select_from(
+                    trash.join(root, root.c.root_id == trash.c.physical_root_id).join(
+                        unit, unit.c.id == trash.c.ref
+                    )
+                )
+                .where(
+                    trash.c.kind == "unit",
+                    trash.c.snapshot.is_not(None),
+                    sa.or_(
+                        trash.c.path == name,
+                        trash.c.path.startswith(f"{name}/", autoescape=True),
+                    ),
+                )
+            ).all()
+        for snapshot, created in rows:
+            if (
+                isinstance(snapshot, dict)
+                and snapshot.get("place") == "store"
+                and (self._backups(created))
+            ):
+                return True
+        return False
 
     def _files(self, path: str) -> list[str]:
         try:
@@ -83,6 +132,10 @@ class RecycleSweeper:
                     continue
                 if not self._fsops.trash_expired(entry):
                     kept += 1  # younger than the retention: no intention for nothing
+                    continue
+                if self._retained_by_backup(name):
+                    kept += 1  # a retained backup may be restored and look for this copy
+                    log.info("retention.recycle_held_by_backup", entry=name)
                     continue
                 if self._holds_only_copy(entry):
                     kept += 1  # an adopted original with no verified copy in /store: never swept

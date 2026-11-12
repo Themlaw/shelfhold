@@ -488,6 +488,8 @@ kind = "What was binned: a Unit, a Work or an export item."
 ref = "Identifier of the binned object."
 deleted_at = "When the object was binned (UTC)."
 purge_after = "When the entry may be emptied (UTC)."
+deletion_id = "The deletion that binned it (one run, one restore); NULL for an entry of before M3."
+snapshot = "The registry row and the export record as they were, JSON: what a restore puts back; NULL when it cannot."
 
 [tables.work]
 description = "A creative work, independent of language and edition."

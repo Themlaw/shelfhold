@@ -387,9 +387,13 @@ class WriteSession:
         self._guard(src, dst)
         self._fsops.rename(src, dst, replace=replace)
 
-    def recycle(self, local: str) -> str:
+    def recycle(self, local: str, *, entry: str | None = None) -> str:
         self._guard(local)
-        return self._fsops.recycle(local)
+        return self._fsops.recycle(local, entry=entry)
+
+    def restore_from_bin(self, local: str, path: str) -> None:
+        self._guard(local)
+        self._fsops.restore_from_bin(local, path)
 
     def copy_across(
         self, src: str, dst: str, *, parents: bool = False, replace: bool = False

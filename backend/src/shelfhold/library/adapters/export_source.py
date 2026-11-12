@@ -179,12 +179,12 @@ def record_binned_export_file(
 
 
 def forget_binned_export_files(connection: Connection, entry: str) -> int:
-    """The bin entry `entry` (its name under the recycle directory) was removed: its exported
-    files leave the bin index too, so that no restore points at a file the sweep took."""
+    """The bin entry `entry` (its name under the recycle directory) was removed: what it held
+    leaves the bin index too (an exported file, a Unit's copy), so that no restore points at a file
+    the sweep took."""
     trash = storage.trash_item
     result = connection.execute(
         sa.delete(trash).where(
-            trash.c.kind == "export_file",
             sa.or_(trash.c.path == entry, trash.c.path.startswith(f"{entry}/", autoescape=True)),
         )
     )

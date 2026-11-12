@@ -107,6 +107,12 @@ from shelfhold.library.adapters.svg_derivative import (
     SvgCbzStore,
     draw_svg,
 )
+from shelfhold.library.adapters.trash import (
+    BinnedUnitFile,
+    binned_for_unit,
+    forget_bin_rows,
+    record_binned_file,
+)
 from shelfhold.library.adapters.units import (
     ContentErrorCandidate,
     DeletionAuthorization,
@@ -119,6 +125,7 @@ from shelfhold.library.adapters.units import (
     irreplaceability,
     require_deletion_allowed,
     require_purge_allowed,
+    require_reserved_deletion,
     safe_to_clean,
 )
 from shelfhold.library.application.anti_echo import (
@@ -141,6 +148,14 @@ from shelfhold.library.domain.content_hash import (
     is_rendered_sidecar,
 )
 from shelfhold.library.domain.copies import Copy, CopyFacts, Hash, is_independent
+from shelfhold.library.domain.deletion import (
+    BIN_DAYS,
+    DeletionLevel,
+    DeletionPlan,
+    FileImpact,
+    UnitImpact,
+    plan_version,
+)
 from shelfhold.library.domain.failures import (
     EpubRefusedError,
     OriginalNotServableError,
@@ -201,12 +216,15 @@ from shelfhold.library.domain.volume_policy import (
     volume_slices,
 )
 from shelfhold.library.replica import (
+    UnitFile,
     adopted_original_unprotected,
     damaged_library_copies,
     demote_shared_inodes,
     destination_identities,
     distrust_root_copies,
     fresh_repair_content,
+
+    drop_replicas,
     has_independent_store_copy,
     has_readable_copy,
     independent_copies,
@@ -217,7 +235,10 @@ from shelfhold.library.replica import (
     record_replica,
     refresh_destination_identity,
     relocate_destination_copy,
+    replica_snapshot,
+    restore_replica,
     store_unit_ids,
+    unit_files,
     upstream_claims,
     withdraw_upstream_claims,
 )
@@ -242,6 +263,7 @@ from shelfhold.library.tombstones import (
 from shelfhold.library.tombstones.screen import CatalogScreenAdapter
 
 __all__ = [
+    "BIN_DAYS",
     "CANDIDATE_AFTER",
     "CONFIRMATION_CODE",
     "CONTENT_HASH_BY",
@@ -268,6 +290,7 @@ __all__ = [
     "UNIT_JSON_VERSION",
     "Batch",
     "BinnedFile",
+    "BinnedUnitFile",
     "Candidate",
     "CatalogScreenAdapter",
     "ConfirmationRequiredError",
@@ -278,6 +301,8 @@ __all__ = [
     "CopyFacts",
     "CycleReport",
     "DeletionAuthorization",
+    "DeletionLevel",
+    "DeletionPlan",
     "DeletionRefusedError",
     "Derivative",
     "DownloadTicket",
@@ -287,6 +312,7 @@ __all__ = [
     "ExportDecision",
     "ExportSource",
     "ExportVerdict",
+    "FileImpact",
     "Hash",
     "ImportFolder",
     "ImportFolderOverlapError",
@@ -351,7 +377,9 @@ __all__ = [
     "TombstoneRoot",
     "TombstoneService",
     "TombstonedContentError",
+    "UnitFile",
     "UnitGoneError",
+    "UnitImpact",
     "UnitJson",
     "UnitJsonCorruptError",
     "UntrustedEntryError",
@@ -371,6 +399,7 @@ __all__ = [
     "backlog_row",
     "binding_warning",
     "binned_export_file",
+    "binned_for_unit",
     "closed_request_ids",
     "complete_interrupted_keep",
     "confirmation_phrase",
@@ -389,11 +418,13 @@ __all__ = [
     "distrust_root_copies",
     "download_tickets",
     "draw_svg",
+    "drop_replicas",
     "epub_units",
     "erase_history",
     "erase_units",
     "erase_work_rows",
     "export_sources",
+    "forget_bin_rows",
     "forget_binned_export_files",
     "fresh_repair_content",
     "has_active_content",
@@ -420,24 +451,30 @@ __all__ = [
     "parse_policy",
     "payload_hash_at",
     "plan_batch",
+    "plan_version",
     "readable_unit_ids",
     "receive_cbz",
     "received_content_hash",
     "record_binned_export_file",
+    "record_binned_file",
     "record_destination_copy",
     "record_repaired_copy",
     "record_replica",
     "refresh_destination_identity",
     "relocate_destination_copy",
+    "replica_snapshot",
     "request_ids",
     "require_deletion_allowed",
     "require_purge_allowed",
+    "require_reserved_deletion",
     "require_servable_derivative",
+    "restore_replica",
     "safe_to_clean",
     "servable_epub",
     "sniff_kind",
     "store_unit_ids",
     "title_needles",
+    "unit_files",
     "unit_tombstoned",
     "unresolved_bin_items",
     "upgrade_source",

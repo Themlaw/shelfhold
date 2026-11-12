@@ -42,6 +42,12 @@ from shelfhold.export.application.coverage import (
     flag_unknown_coverage,
     set_volume_coverage,
 )
+from shelfhold.export.application.deletion import (
+    DeletionBlockedError,
+    DeletionService,
+    DeletionUnknownError,
+    RestoreBlockedError,
+)
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import LockBusyError
 from shelfhold.export.application.migration_detect import (
@@ -108,7 +114,13 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, identity, platform
 from shelfhold.infrastructure.wal import WalBusyError, truncate_wal
 from shelfhold.jobs.maintenance import MaintenanceBusyError, MaintenanceGate, compact_database
-from shelfhold.library.public import KEPT_PREFIX, ConfirmationRequiredError
+from shelfhold.library.public import (
+    KEPT_PREFIX,
+    ConfirmationRequiredError,
+    DeletionLevel,
+    DeletionPlan,
+    DeletionRefusedError,
+)
 from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.backup.scratch import sweep_orphans
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
@@ -211,6 +223,37 @@ def _withdrawal_plan(plan: WithdrawalPlan) -> dict[str, Any]:
     }
 
 
+def _deletion_plan(plan: DeletionPlan) -> dict[str, Any]:
+    """The preview: counts and codes, never a path, a title or a folder name."""
+    return {
+        "level": plan.level.value,
+        "version": plan.version,
+        "blocked": plan.blocked,
+        "files": plan.files,
+        "bytes": plan.bytes,
+        "folders": len(plan.folders),
+        "confirmations": list(plan.confirmations),
+        "units": [
+            {
+                "unit_id": u.unit_id,
+                "irreplaceable": u.irreplaceable,
+                "independent_copies": u.independent_copies,
+                "independent_copies_after": u.independent_copies_after,
+                "files": [
+                    {"place": f.place, "size": f.size, "export_item_id": f.export_item_id}
+                    for f in u.files
+                ],
+                "untouched": list(u.untouched),
+                "blocked": list(u.blocked),
+                "exports": u.exports,
+                "progress": u.progress,
+                "needs_confirmation": u.needs_confirmation,
+            }
+            for u in plan.units
+        ],
+    }
+
+
 def _check(check: RepatriationCheck) -> dict[str, Any]:
     return {
         "series": check.series,
@@ -234,6 +277,10 @@ _CODED: tuple[tuple[type[Exception], str], ...] = (
     (MaintenanceBusyError, "purge.busy"),
     (ConfirmationRequiredError, "unit.confirmation_required"),
     (PurgeRefusedError, "forbidden"),
+    (DeletionRefusedError, "forbidden"),
+    (DeletionBlockedError, "deletion.blocked"),
+    (RestoreBlockedError, "deletion.blocked"),
+    (DeletionUnknownError, "ops.unknown_subject"),
     (SwitchoverIncompleteError, "pairing.switchover_unconfirmed"),
     (NoLibraryError, "ops.exit_unavailable"),
     (KeyringUnavailableError, "ops.exit_unavailable"),
@@ -1039,6 +1086,63 @@ class LibraryOps:
             "files": report.files,
             "pending": list(report.pending),
         }
+
+    # -- deletion at three levels (L25, EF-BIB-021) ----------------------------------------------
+
+    @_refused
+    def delete_preview(self, *, level: str, unit_ids: list[str]) -> dict[str, Any]:
+        """What the deletion would do, to the file. Reads only: nothing is written."""
+        fsops, loaded, _tombstones = self._comp.read_context()
+        service = DeletionService(
+            self._comp.engine, fsops, clock=self._comp.clock, locate=loaded.locate
+        )
+        return _deletion_plan(service.preview(DeletionLevel(level), unit_ids))
+
+    @_refused
+    def delete_apply(
+        self,
+        *,
+        level: str,
+        unit_ids: list[str],
+        if_match: str,
+        typed: dict[str, str],
+        principal: Principal,
+    ) -> dict[str, Any]:
+        """Applied for the version the admin read, and for nothing else (`plan.stale`). The
+        reserved rule and the typed words are the service's own."""
+        with self._comp.write_context() as w:
+            service = DeletionService(
+                self._comp.engine, w.fsops, clock=self._comp.clock, locate=w.loaded.locate,
+                request_scan=lambda path: self._scan_everywhere([path]),
+                fresh_auth_s=self._comp.settings.fresh_auth_s,
+            )  # fmt: skip
+            try:
+                report = service.apply(
+                    DeletionLevel(level), unit_ids, if_match=if_match, typed=typed,
+                    principal=principal, now=self._comp.clock.now(),
+                )  # fmt: skip
+            except StalePlanError as error:
+                raise CodedRefusal("plan.stale", str(error)) from None
+        return {
+            "level": report.level.value,
+            "deletion_id": report.deletion_id,
+            "units": list(report.units),
+            "moved": report.moved,
+            "pending": len(report.pending),
+            "folders_removed": len(report.folders_removed),
+            "folders_kept": len(report.folders_kept),
+        }
+
+    @_refused
+    def delete_restore(self, *, unit_id: str, principal: Principal) -> dict[str, Any]:
+        """Put back what a deletion binned, as it was (same path, same bytes)."""
+        with self._comp.write_context() as w:
+            service = DeletionService(
+                self._comp.engine, w.fsops, clock=self._comp.clock, locate=w.loaded.locate,
+                fresh_auth_s=self._comp.settings.fresh_auth_s,
+            )  # fmt: skip
+            report = service.restore(unit_id, principal=principal, now=self._comp.clock.now())
+        return {"unit_id": report.unit_id, "restored": report.restored}
 
     # -- the erasure of the upstream download, per shelf (L16, EF-SRC-009) ------------------------
 

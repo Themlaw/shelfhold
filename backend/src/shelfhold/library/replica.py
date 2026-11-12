@@ -30,10 +30,12 @@ __all__ = [
     "LibraryCopy",
     "StoreCopy",
     "StoreProof",
+    "UnitFile",
     "adopted_original_unprotected",
     "damaged_library_copies",
     "demote_shared_inodes",
     "distrust_root_copies",
+    "drop_replicas",
     "erase_replicas",
     "fresh_repair_content",
     "has_independent_store_copy",
@@ -56,10 +58,13 @@ __all__ = [
     "rendered_file_hashes",
     "replica_copies",
     "replica_hashes",
+    "replica_snapshot",
+    "restore_replica",
     "sibling_inodes",
     "store_copies",
     "store_proofs",
     "store_unit_ids",
+    "unit_files",
     "update_observation",
     "upstream_claims",
     "upstream_echo_of",
@@ -116,7 +121,11 @@ def _derived_hashes(connection: Connection, unit_id: str) -> set[str]:
     }
 
 
-def independent_copies(connection: Connection, unit_id: str) -> int:
+def independent_copies(
+    connection: Connection, unit_id: str, *, without: Collection[str] = ()
+) -> int:
+    """`without`: registry rows to leave out of the count, to ask what it would be once those
+    copies are gone (the preview of a deletion, EF-BIB-021). Nothing is written."""
     reference = reference_content_hash(connection, unit_id)
     derived = _derived_hashes(connection, unit_id)
     if reference is None and not derived:
@@ -133,6 +142,8 @@ def independent_copies(connection: Connection, unit_id: str) -> int:
             replica_table.c.unit_id == unit_id,
             replica_table.c.independent,
             replica_table.c.damaged_at.is_(None),  # a copy found damaged counts for nothing
+
+            replica_table.c.id.not_in(list(without)) if without else sa.true(),
             sa.or_(same, readable),
             # the origin is a copy only while it still lists the Unit: decided here, at counting
             # time, not by a row someone must remember to update
@@ -1006,3 +1017,72 @@ def adopted_original_unprotected(
     return adopted is not None and not has_independent_store_copy(
         connection, disk, file_hash, besides=besides
     )
+
+
+# -- what a deletion moves, forgets and puts back (EF-BIB-021) ------------------------------------
+
+
+@dataclass(frozen=True)
+class UnitFile:
+    """A file of a Unit that Shelfhold manages, as the registry knows it."""
+
+    replica_id: str
+    unit_id: str | None
+    export_item_id: str | None
+    location: str  # library | store | destination | adopted_ro
+    root_id: str
+    root_path: str
+    root_mode: str  # rw | adopt_ro
+    rel_path: str
+    size: int | None
+    file_hash: str | None
+    independent: bool
+
+
+def unit_files(
+    connection: Connection, unit_ids: Collection[str], export_item_ids: Collection[str] = ()
+) -> list[UnitFile]:
+    """The copies of these Units (and of these export items) that are files under a root."""
+    roots = platform.physical_root
+    rows = connection.execute(
+        sa.select(replica_table, roots.c.path_entry, roots.c.mode)
+        .select_from(replica_table.join(roots, roots.c.root_id == replica_table.c.physical_root_id))
+        .where(
+            _owned(unit_ids, export_item_ids),
+            replica_table.c.rel_path.is_not(None),
+            replica_table.c.location.in_(("library", "store", "destination", "adopted_ro")),
+        )
+        .order_by(replica_table.c.id)
+    )
+    return [
+        UnitFile(r.id, r.unit_id, r.export_item_id, r.location, r.physical_root_id,
+                 r.path_entry, r.mode, r.rel_path, r.size, r.file_hash, bool(r.independent))
+        for r in rows
+    ]  # fmt: skip
+
+
+_STAMPS = ("verified_at", "created_at")
+
+
+def replica_snapshot(connection: Connection, replica_id: str) -> dict[str, Any] | None:
+    """The row as JSON, to put it back exactly (a restore from the bin)."""
+    row = connection.execute(
+        sa.select(replica_table).where(replica_table.c.id == replica_id)
+    ).one_or_none()
+    if row is None:
+        return None
+    return {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in row._mapping.items()}
+
+
+def restore_replica(connection: Connection, snapshot: dict[str, Any]) -> None:
+    values = dict(snapshot)
+    for key in _STAMPS:
+        if isinstance(values.get(key), str):
+            values[key] = datetime.fromisoformat(values[key])
+    connection.execute(sa.insert(replica_table).values(**values))
+
+
+def drop_replicas(connection: Connection, replica_ids: Collection[str]) -> None:
+    """The rows of copies that left for the bin: they no longer count, whatever the disk says."""
+    if replica_ids:
+        connection.execute(sa.delete(replica_table).where(replica_table.c.id.in_(replica_ids)))

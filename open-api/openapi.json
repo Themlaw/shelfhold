@@ -591,6 +591,75 @@
         "title": "CsrfToken",
         "type": "object"
       },
+      "DeletionIn": {
+        "properties": {
+          "level": {
+            "enum": [
+              "unfollow",
+              "remove_destinations",
+              "delete_content"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "typed": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Typed",
+            "type": "object"
+          },
+          "unit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Unit Ids",
+            "type": "array"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "unit_ids",
+          "version"
+        ],
+        "title": "DeletionIn",
+        "type": "object"
+      },
+      "DeletionPreviewIn": {
+        "properties": {
+          "level": {
+            "enum": [
+              "unfollow",
+              "remove_destinations",
+              "delete_content"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "unit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Unit Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "level",
+          "unit_ids"
+        ],
+        "title": "DeletionPreviewIn",
+        "type": "object"
+      },
       "DestinationIn": {
         "properties": {
           "attested_egress": {
@@ -5869,6 +5938,132 @@
         ]
       }
     },
+    "/api/v1/deletions": {
+      "post": {
+        "operationId": "deletion_apply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Deletion Apply",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Deletion Apply",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/deletions/preview": {
+      "post": {
+        "operationId": "deletion_preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletionPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Deletion Preview",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Deletion Preview",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/detach": {
       "post": {
         "operationId": "restore_upstream",
@@ -10986,6 +11181,70 @@
         ]
       }
     },
+    "/api/v1/units/{unit_id}/restore": {
+      "post": {
+        "operationId": "deletion_restore",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Deletion Restore",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Deletion Restore",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/works/rating-batch": {
       "post": {
         "description": "\"Classer tout en lot\": reserved (EF-BIB-036); all of them or none.",
@@ -11334,6 +11593,10 @@
     "/api/v1/problems/csrf-failed": {
       "code": "csrf_failed",
       "status": 403
+    },
+    "/api/v1/problems/deletion.blocked": {
+      "code": "deletion.blocked",
+      "status": 409
     },
     "/api/v1/problems/disk.low": {
       "code": "disk.low",

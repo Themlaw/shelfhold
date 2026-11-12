@@ -16,6 +16,7 @@ Paths under an open intent are invisible to reconciliation and planning (I9, `sk
 """
 
 import contextlib
+import re
 from collections.abc import Callable, Iterable
 from contextlib import nullcontext
 from dataclasses import dataclass, field
@@ -56,7 +57,7 @@ class DiskPort(Protocol):
 
     def rename(self, src: str, dst: str, *, replace: bool = False) -> None: ...
     def rmdir(self, local: str) -> None: ...
-    def recycle(self, local: str) -> str: ...
+    def recycle(self, local: str, *, entry: str | None = None) -> str: ...
     def observe(self, local: str) -> tuple[Kind, FileIdentity] | None: ...
     def sha256_of(self, local: str) -> str: ...
 
@@ -489,7 +490,10 @@ class IntentJournal:
             self._finish(intent, on_done)
             report.completed.append(intent.id)
         elif found[0] == "file" and self._is_expected(intent, intent.src, found[1]):
-            self._disk.recycle(intent.src)
+            # a deletion named the bin entry before the move (`dst`): the replay uses it, so that
+            # the bin index still points at the file
+            named = intent.dst if intent.dst and re.fullmatch(r"[0-9a-f]{32}", intent.dst) else None
+            self._disk.recycle(intent.src, entry=named)
             self._finish(intent, on_done)
             report.replayed.append(intent.id)
         else:
