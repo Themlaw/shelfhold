@@ -105,16 +105,19 @@ test('test_inline_style_attribute_is_refused_by_the_browser', async ({ page }) =
   expect(sheet).not.toBe('7px');
 });
 
+// One test writes the preference, as a user of its own per project: the desktop and the mobile
+// projects run at the same time on the same server, and a preference is per user.
 // req: EF-UX-012
-test('test_theme_attribute_is_set_before_the_first_render', async ({ page, context }) => {
-  await signInAs(page, 'admin');
-  const answer = await page.request.patch('/api/v1/me/preferences', {
-    data: { color_scheme: 'dark' },
-    headers: { 'X-CSRF-Token': (await context.cookies()).find((c) => c.name.endsWith('csrf'))?.value ?? '' }
-  });
-  expect(answer.status()).toBe(200);
-  await page.goto('/a-classer'); // first visit: the layout remembers the preference
-  await expect(page.locator('html')).toHaveAttribute('data-color-scheme', 'dark');
+test('test_theme_attribute_is_set_before_the_first_render', async ({ page, context }, testInfo) => {
+  test.setTimeout(120_000);
+  await signInAs(page, testInfo.project.name.endsWith('mobile') ? 'child' : 'member');
+  const csrf = (await context.cookies()).find((c) => c.name.endsWith('csrf'))?.value ?? '';
+  const patch = (color_scheme: string) =>
+    page.request.patch('/api/v1/me/preferences', { data: { color_scheme }, headers: { 'X-CSRF-Token': csrf } });
+  expect((await patch('dark')).status()).toBe(200);
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-color-scheme', 'dark'); // the layout applies it
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(26, 23, 20)');
   await page.addInitScript(RECORDER);
   await page.reload(); // second visit: the boot script knows it before the body exists
   const sets = await page.evaluate(
@@ -124,21 +127,12 @@ test('test_theme_attribute_is_set_before_the_first_render', async ({ page, conte
   expect(first, 'the attribute is set by the boot script').toBeDefined();
   expect(first!.bodyExisted).toBe(false);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'bibliotheque');
-});
-
-// req: EF-UX-012
-test('test_stored_preference_applies_in_dark_and_the_screen_stays_accessible', async ({ page, context }) => {
-  test.setTimeout(120_000);
-  await signInAs(page, 'admin');
-  const csrf = (await context.cookies()).find((c) => c.name.endsWith('csrf'))?.value ?? '';
-  for (const color_scheme of ['light', 'dark']) {
-    await page.request.patch('/api/v1/me/preferences', { data: { color_scheme }, headers: { 'X-CSRF-Token': csrf } });
-    await page.goto('/a-classer');
-    await expect(page.locator('html')).toHaveAttribute('data-color-scheme', color_scheme);
-    const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    expect(background).toBe(color_scheme === 'dark' ? 'rgb(26, 23, 20)' : 'rgb(246, 241, 231)');
-    if (color_scheme === 'dark') await expectNoBlockingViolations(page); // L02 plays both schemes
-  }
+  await expectNoBlockingViolations(page); // dark; L02 plays both schemes on "A classer"
+  expect((await patch('light')).status()).toBe(200);
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-color-scheme', 'light');
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(246, 241, 231)');
+  expect((await patch('auto')).status()).toBe(200);
 });
 
 // req: ENF-A11Y-003
