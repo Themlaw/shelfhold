@@ -172,17 +172,8 @@ category = "m2-l31-pending-l10-derivative"
 reason = "2026-11-12 (M2 L31): wired by M2 L10 (in progress, delivered in M2): `declare_derivative` (the derivative of a CBZ made by a descrambler, a Processor or the SVG rasterizer), and the probe and the sandbox report of the decode worker (`probe_image` asks the worker about the pages of an arriving CBZ, `diagnose_worker` reports what the sandbox really allows). The neutralizer of M2 L03 does not go through the first, and the cover of the OpenLibrary enrichment already runs the worker through `make_thumbnail`. L10 removes this entry."
 until = "M2"
 symbols = [
-  "shelfhold.library.adapters.storage:KeepCopier.declare_derivative",
   "shelfhold.infrastructure.imaging.client:diagnose_worker",
   "shelfhold.infrastructure.imaging.client:probe_image",
-]
-
-[[allow]]
-category = "m2-l31-pending-l10-l21-cbz-from-pages"
-reason = "2026-11-12 (M2 L31): the CBZ made from pages, for the folders of images of a Suwayomi download tree (L21) and the pages a Source hands over (L10): wired by M2 L21 or L10 (in progress, delivered in M2), which remove this entry. `repackage_cbz` is wired."
-until = "M2"
-symbols = [
-  "shelfhold.infrastructure.packaging.cbz.packager:write_cbz",
 ]
 
 [[allow]]
@@ -191,37 +182,6 @@ reason = "2026-11-12 (M2 L31): the periodic spread `Scheduler.add_default` (ENF-
 until = "M2"
 symbols = [
   "shelfhold.jobs.scheduler:Scheduler.add_default",
-]
-
-[[allow]]
-category = "m2-l31-metadata-editor"
-reason = "2026-11-12 (M2 L31), reported to M3 until a dedicated M2 lot wires them. `lock_field` and `unlock_field` (plan lot L12, EF-BIB-008): missing, a command `shelfhold meta lock|unlock <edition> <field> [value]` over the ops socket and its admin route. `renumber_external_id` (plan lot L12, EF-BIB-003): missing, a command or a job that applies a provider renumbering (`edition renumber-id`; the bulk identity migration of EF-SRC-022 is M3). `sort_key` (plan lot L15, ENF-I18N-003): missing, a sorted list of Editions (`shelfhold edition list --sort` or the list route with a sort key)."
-until = "M3"
-symbols = [
-  "shelfhold.catalog.application.external_ids:renumber_external_id",
-  "shelfhold.catalog.application.fields:lock_field",
-  "shelfhold.catalog.application.fields:unlock_field",
-  "shelfhold.catalog.domain.sort_key:sort_key",
-]
-
-[[allow]]
-category = "m2-l31-volume-resplit"
-reason = "2026-11-12 (M2 L31), reported to M3 until a dedicated M2 lot wires them. All of plan lot L26 (EF-BIB-044): `propose_resplit`, `apply_resplit` and the signed-confirmation types (`ConfirmationRequiredError`, `ResplitError`, `ResplitProposal`, `ResplitSigner`): missing, a command `shelfhold coverage resplit propose|apply --confirm` (and its route). `comicinfo_range`, `apply_comicinfo_range`: missing, the call from the adoption cycle that reads the ComicInfo of an adopted file. `volume_slices`, `DEFAULT_POLICY`, `DEFAULT_VOLUME_SIZE`, `ExportDecision.exports`: missing, the cut of a closed volume when a source declares no volumes (called by the ranged export or the follow cycle of M2 L25 once lncrawl is merged). `locate_ranged`: missing, a display of the kept file of an export item (`shelfhold export item show` or `status`)."
-until = "M3"
-symbols = [
-  "shelfhold.catalog.application.coverage:ConfirmationRequiredError",
-  "shelfhold.catalog.application.coverage:ResplitError",
-  "shelfhold.catalog.application.coverage:ResplitProposal",
-  "shelfhold.catalog.application.coverage:ResplitSigner",
-  "shelfhold.catalog.application.coverage:apply_resplit",
-  "shelfhold.catalog.application.coverage:propose_resplit",
-  "shelfhold.export.application.coverage:apply_comicinfo_range",
-  "shelfhold.export.application.coverage:comicinfo_range",
-  "shelfhold.export.application.ranged_export:locate_ranged",
-  "shelfhold.library.domain.volume_policy:DEFAULT_POLICY",
-  "shelfhold.library.domain.volume_policy:DEFAULT_VOLUME_SIZE",
-  "shelfhold.library.domain.volume_policy:ExportDecision.exports",
-  "shelfhold.library.domain.volume_policy:volume_slices",
 ]
 
 [[allow]]
