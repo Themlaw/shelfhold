@@ -5,7 +5,7 @@
 </script>
 
 <main>
-  <ProblemCard problem={genericProblem()} />
+  <ProblemCard problem={genericProblem()} level={1} />
 </main>
 
 <style>

@@ -4,11 +4,11 @@
   import type { ProblemView } from '#lib/problems.ts';
   import { t } from '#lib/i18n/index.ts';
 
-  let { problem }: { problem: ProblemView } = $props();
+  let { problem, level = 2 }: { problem: ProblemView; level?: 1 | 2 | 3 } = $props();
 </script>
 
 <section role="alert" class="problem" aria-labelledby="problem-title">
-  <p class="title" id="problem-title">{problem.title}</p>
+  <svelte:element this={`h${level}`} class="title" id="problem-title">{problem.title}</svelte:element>
   <dl>
     {#if problem.code}
       <dt>{t('problem.code')}</dt>
@@ -37,6 +37,7 @@
   }
   .title {
     margin: 0 0 0.5rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--color-err);
   }

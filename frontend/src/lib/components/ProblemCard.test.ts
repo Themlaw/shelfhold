@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import { genericProblem, problemView } from '#lib/problems.ts';
+import ErrorPage from '../../routes/+error.svelte';
 import ProblemCard from './ProblemCard.svelte';
 
 describe('ProblemCard (EF-UX-003)', () => {
@@ -9,16 +10,16 @@ describe('ProblemCard (EF-UX-003)', () => {
     render(ProblemCard, {
       problem: problemView({
         code: 'not_found',
-        title: 'Ressource introuvable.',
+        title: 'Page introuvable.',
         cause: 'L’élément n’existe pas.',
-        action: 'Vérifiez l’adresse.',
+        action: 'Vérifiez le lien.',
         request_id: 'req-1'
       })
     });
-    expect(screen.getByRole('alert')).toHaveTextContent('Ressource introuvable.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Page introuvable.');
     expect(screen.getByText('not_found')).toBeInTheDocument();
     expect(screen.getByText('L’élément n’existe pas.')).toBeInTheDocument();
-    expect(screen.getByText('Vérifiez l’adresse.')).toBeInTheDocument();
+    expect(screen.getByText('Vérifiez le lien.')).toBeInTheDocument();
     expect(screen.getByText('req-1')).toBeInTheDocument();
   });
 
@@ -43,5 +44,12 @@ describe('ProblemCard (EF-UX-003)', () => {
   it('shows no request id when there is none', () => {
     render(ProblemCard, { problem: genericProblem() });
     expect(screen.queryByText('Identifiant de requête')).toBeNull();
+  });
+
+  // req: EF-UX-003
+  it('the error screen has a level-one heading (the SPA fallback of a client route)', () => {
+    render(ErrorPage);
+    expect(screen.getByRole('heading', { level: 1, name: 'Une erreur est survenue.' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 });

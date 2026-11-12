@@ -3,10 +3,10 @@ import { genericProblem, problemFromResponse, problemView } from './problems';
 
 const problem = {
   type: '/api/v1/problems/not-found',
-  title: 'Ressource introuvable.',
+  title: 'Page introuvable.',
   status: 404,
   code: 'not_found',
-  action: 'Vérifiez l’adresse.',
+  action: 'Vérifiez le lien.',
   cause: 'L’élément n’existe pas.',
   request_id: 'req-1'
 };
@@ -19,9 +19,9 @@ describe('problem view (EF-UX-003)', () => {
   it('keeps the code, the text, the cause, the action and the request id of a problem', () => {
     expect(problemView(problem)).toEqual({
       code: 'not_found',
-      title: 'Ressource introuvable.',
+      title: 'Page introuvable.',
       cause: 'L’élément n’existe pas.',
-      action: 'Vérifiez l’adresse.',
+      action: 'Vérifiez le lien.',
       requestId: 'req-1'
     });
   });
