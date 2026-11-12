@@ -142,3 +142,110 @@ def test_cli_option_and_api_flag_carry_the_confirmation() -> None:
     assert args.fix_suwayomi_settings is True
     args = build_parser().parse_args(["source", "add", "suwayomi", "--url", "http://s:4567"])
     assert args.fix_suwayomi_settings is False
+
+
+# -- the refusals, the other doors and the other modes -------------------------------------------
+
+
+@pytest.mark.req("EF-SRC-026")
+def test_a_refused_or_failed_write_keeps_the_refusal_and_stores_nothing(settings: Any) -> None:
+    from shelfhold.headless.errors import InvalidConfigValue, SourceUnreachable
+    from tests.headless_env import SUWAYOMI_URL, headless
+
+    def failing(error: Exception) -> Any:
+        def disable(**_kw: object) -> list[str]:
+            raise error
+
+        return disable
+
+    with headless(settings) as env:
+        env.suwayomi.mode = "none"
+        env.suwayomi.blocking_filters = list(TWO)
+        env.suwayomi.disable_update_filters = failing(ConnectionError())  # type: ignore[method-assign]
+        with pytest.raises(SourceUnreachable):
+            env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True)
+        env.suwayomi.disable_update_filters = failing(PermissionError())  # type: ignore[method-assign]
+        with pytest.raises(InvalidConfigValue):
+            env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True)
+        env.suwayomi.disable_update_filters = failing(RuntimeError("boom"))  # type: ignore[method-assign]
+        with pytest.raises(SourceUpdateFiltersBlocking):  # a server that refuses the write
+            env.admin.source_add_suwayomi(url=SUWAYOMI_URL, secret=None, fix_suwayomi_settings=True)
+        assert env.count("source_config") == 0
+        assert "source.suwayomi_settings_fixed" not in _actions(env)
+
+
+@pytest.mark.req("EF-SRC-026")
+def test_probe_writes_with_basic_auth_and_maps_failures(settings: Any) -> None:
+    from shelfhold.infrastructure.fetcher import FetchError
+    from shelfhold.plugin_host.adapters.meta.suwayomi.probe import HttpSuwayomiProbe
+    from tests.fakes.suwayomi.server import PASSWORD, USER
+    from tests.fakes.suwayomi.server import FakeSuwayomiFetcher as Fetcher
+    from tests.headless_env import SUWAYOMI_URL
+
+    server = _server("basic_auth")
+    probe = HttpSuwayomiProbe(lambda _url: Fetcher(server, SUWAYOMI_URL))  # type: ignore[arg-type,return-value]
+    left = probe.disable_update_filters(
+        url=SUWAYOMI_URL, mode="basic_auth", username=USER, password=PASSWORD
+    )
+    assert left == [] and server.settings_writes and server.exclude_unread is False
+    # wrong password: the server refuses, nothing is written, the caller hears a refusal
+    server = _server("basic_auth")
+    probe = HttpSuwayomiProbe(lambda _url: Fetcher(server, SUWAYOMI_URL))  # type: ignore[arg-type,return-value]
+    with pytest.raises(PermissionError):
+        probe.disable_update_filters(
+            url=SUWAYOMI_URL,
+            mode="basic_auth",
+            username=USER,
+            password="wrong-synthetic-pw",  # noqa: S106 - throwaway synthetic value
+        )
+    assert server.settings_writes == [] and server.exclude_unread is True
+
+    def unreachable(_url: str) -> Any:
+        raise FetchError("down")
+
+    with pytest.raises(ConnectionError):
+        HttpSuwayomiProbe(unreachable).disable_update_filters(  # type: ignore[arg-type]
+            url=SUWAYOMI_URL, mode="none", username=None, password=None
+        )
+
+
+@pytest.mark.req("EF-SRC-026")
+def test_http_route_and_cli_carry_the_confirmation(
+    monkeypatch: pytest.MonkeyPatch, settings: Any, capsys: Any
+) -> None:
+    from tests.auth_env import auth_env
+    from tests.headless_env import SUWAYOMI_URL, headless
+
+    with (
+        headless(settings) as env,
+        auth_env(
+            monkeypatch, settings, headless_admin=env.admin, public_url="https://shelf.example.org"
+        ) as api,
+    ):
+        assert api.login().status_code == 200
+        env.suwayomi.mode = "none"
+        env.suwayomi.blocking_filters = list(TWO)
+        body = {"kind": "suwayomi", "url": SUWAYOMI_URL}
+        refused = api.post("/api/v1/sources", json=body)
+        assert refused.status_code == 409 and "update_filters_blocking" in refused.json()["code"]
+        assert not any(c.get("fix") for c in env.suwayomi.calls)  # no write without the flag
+        done = api.post("/api/v1/sources", json={**body, "fix_suwayomi_settings": True})
+        assert done.status_code == 201
+        assert any(c.get("fix") for c in env.suwayomi.calls)
+
+
+@pytest.mark.req("EF-SRC-026")
+def test_cli_in_process_sends_the_flag_through_the_socket(
+    monkeypatch: pytest.MonkeyPatch, settings: Any, capsys: Any
+) -> None:
+    from tests.integration.test_headless_coverage import _run, running_server
+
+    with running_server(settings) as env:
+        env.suwayomi.mode = "none"
+        env.suwayomi.blocking_filters = list(TWO)
+        args = ("source", "add", "suwayomi", "--url", "http://suwayomi.internal:4567")
+        capsys.readouterr()
+        assert _run(monkeypatch, settings, *args) == 1
+        assert "--fix-suwayomi-settings" in capsys.readouterr().err
+        assert _run(monkeypatch, settings, *args, "--fix-suwayomi-settings") == 0
+        assert any(c.get("fix") for c in env.suwayomi.calls)
