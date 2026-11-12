@@ -531,6 +531,9 @@ class SuwayomiTree(ImportFolder):
             kind = sniff_image_kind(data[:16])
             extension = _EXTENSION.get(kind or "")
             if extension is None:
+                # TODO(2026-11-12, #164): a `.svg` page is refused here (`sniff_image_kind` does not
+                # know it) while the same SVG inside a CBZ goes through `SvgCbzStore`. Once #164
+                # is on main, package the page as it is (`NN.svg`) so the CBZ meets that store.
                 raise _Refused(ARCHIVE)  # not an image, whatever its name says
             yield f"{index:05d}.{extension}", data
 
