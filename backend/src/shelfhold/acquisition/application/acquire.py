@@ -36,11 +36,14 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.application.describe import (
     credit_authors,
+    incoming_work_ids,
     known_work,
+    refuse_tombstoned,
     remember_work,
     text_version_for,
     write_rights,
 )
+from shelfhold.acquisition.application.refusal import AcquireRefused
 from shelfhold.catalog.public import (
     BindingRef,
     Catalog,
@@ -48,10 +51,13 @@ from shelfhold.catalog.public import (
     IncomingUnit,
     LanguageError,
     RightsService,
+    TombstoneScreen,
     UnsupportedFileError,
     announced_kind,
+    content_warning_age,
     edition_key_lang,
     file_new_edition,
+    suggest_age,
     translation_type_for,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
@@ -128,14 +134,6 @@ class OwnExportEcho(Exception):
     def __init__(self, export_item_id: str) -> None:
         super().__init__(export_item_id)
         self.export_item_id = export_item_id
-
-
-class AcquireRefused(Exception):
-    """A refusal under a catalog code (never the text of the source)."""
-
-    def __init__(self, code: str, message: str = "") -> None:
-        super().__init__(message or code)
-        self.code = code
 
 
 class SourceDirectory(Protocol):
@@ -220,6 +218,7 @@ class NativeAcquirer:
         source_settings: Callable[[str], Mapping[str, object]] | None = None,
         source_secrets: Callable[[str], Mapping[str, str]] | None = None,
         connected: Callable[[str], Any] | None = None,
+        work_screen: Callable[[], TombstoneScreen] | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -231,6 +230,9 @@ class NativeAcquirer:
         self._settings = source_settings or (lambda _key: {})
         self._secrets = source_secrets or (lambda _key: {})  # the sealed secrets of a source (L07)
         self._connected = connected  # the connected service (Suwayomi): search only
+        # The Work tombstones (EF-BIB-053), opened before the write transaction (the replay of the
+        # journal may write). None: there is none, and a book with identifiers is not taken.
+        self._work_screen = work_screen
 
     # -- opening a source ---------------------------------------------------------------------
 
@@ -377,10 +379,27 @@ class NativeAcquirer:
         finally:
             await handle.aclose()
         chosen = self._choose(units, unit)
+        screen = self._screen_for(record, info)
         return self._record_request(
             record, manifest, ref, info, chosen,
             requester_user_id=requester_user_id, visibility=visibility, shelf_id=shelf_id,
+            screen=screen,
         )  # fmt: skip
+
+    def _screen_for(self, record: Any, info: SeriesInfo) -> TombstoneScreen | None:
+        """The Work tombstones, when the source gives identifiers for its Work. No screen to ask,
+        or one that cannot be opened, means no arrival, never an unscreened one."""
+        if not incoming_work_ids(record.key, info):
+            return None
+        unavailable = AcquireRefused(
+            "acquire.tombstones_unavailable", "the Work tombstones cannot be checked here"
+        )
+        if self._work_screen is None:
+            raise unavailable
+        try:
+            return self._work_screen()
+        except Exception as error:
+            raise unavailable from error
 
     @staticmethod
     def _choose(units: list[UnitInfo], wanted: str | None) -> UnitInfo:
@@ -405,6 +424,7 @@ class NativeAcquirer:
         requester_user_id: str | None,
         visibility: str,
         shelf_id: str | None,
+        screen: TombstoneScreen | None = None,
     ) -> Prepared:
         now = self._clock.now()
         title = info.title or ref.title
@@ -413,7 +433,7 @@ class NativeAcquirer:
             connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
             with connection.begin():
                 binding_id, work_id, edition_id, created = self._binding(
-                    connection, record, manifest, ref, title, unit, shelf_id, now, info
+                    connection, record, manifest, ref, title, unit, shelf_id, now, info, screen
                 )
                 if created:  # the warning of the rights review is announced, never blocking
                     announced = self._review_rights(connection, edition_id, now)
@@ -475,6 +495,7 @@ class NativeAcquirer:
         shelf_id: str | None,
         now: datetime,
         info: SeriesInfo,
+        screen: TombstoneScreen | None = None,
     ) -> tuple[str, str, str, bool]:
         item, binding = acquisition.source_item, acquisition.source_binding
         found = connection.execute(
@@ -489,6 +510,9 @@ class NativeAcquirer:
         if found is not None:
             return found.id, found.work_id, found.edition_id, False
         books = Catalog(connection)
+        # a Work purged on purpose does not come back by an identifier it carried (EF-BIB-053):
+        # asked before anything is made, so that nothing is left of the refusal
+        refuse_tombstoned(screen, incoming_work_ids(record.key, info))
         # a book of a source that groups its books joins the Work its sibling made (EF-BIB-049)
         work_id = known_work(connection, record.key, info) or books.create_work(
             WORK_KIND, _title(title, ref.remote_id)
@@ -525,10 +549,18 @@ class NativeAcquirer:
             jurisdiction=manifest.rights_jurisdiction, attribution=_attribution(info.rights),
             plugin_key=record.key, now=now,
         )  # fmt: skip
-        remember_work(connection, work_id, record.key, info)
+        remember_work(connection, work_id, record.key, info, screen=screen)
         credit_authors(connection, work_id, info, _clean)
         if translator is not None:
             books.credit_edition(edition_id, translator, "trl")
+        # the age the source declares is a suggestion on the Edition the book joins, so that the
+        # one door of the shelf holds it "À classer" when it is above the Work's rating, or the
+        # source is not known to be safe (EF-BIB-055); a suggestion is never a rating
+        suggested = content_warning_age(self._declared_warning(connection, record, manifest, ref))
+        if suggested is not None:
+            suggest_age(
+                connection, "edition", edition_id, suggested, provenance="sub_source", now=now
+            )
         # the one door of the shelf of a new Edition: a shelf below 18+ never takes it unrated
         file_new_edition(connection, edition_id, shelf_id or _shelf(connection))
         item_id = new_ulid()
@@ -549,6 +581,22 @@ class NativeAcquirer:
             )
         )  # fmt: skip
         return binding_id, work_id, edition_id, True
+
+    @staticmethod
+    def _declared_warning(
+        connection: Connection, record: Any, manifest: SourceManifest, ref: SeriesRef
+    ) -> str | None:
+        """The `content_warning` of the source of a book: the manifest's, or the one stored for
+        its sub-source. A sub-source nobody listed has none (`None`: not known to be safe)."""
+        if ref.source_key == record.key:
+            return str(manifest.content_warning) if manifest.content_warning is not None else None
+        table = acquisition.sub_source
+        found = connection.execute(
+            sa.select(table.c.content_warning).where(
+                table.c.plugin_id == record.key, table.c.source_key == ref.source_key
+            )
+        ).scalar()
+        return None if found is None else str(found)
 
     @staticmethod
     def _open_request(

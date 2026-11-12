@@ -206,6 +206,7 @@ class SeriesDiscovery:
             return found
         langs = {s.source_key: s.lang for s in subs}
         warned = {s.source_key: content_warning_age(s.content_warning) for s in subs}
+        unknown_age = content_warning_age(None)
         if self._nature == "unknown":  # the kind then decides the discriminant (EF-BIB-049)
             log.info("discovery.translation_nature_unknown", plugin_id=self._plugin_id)
         for ref in todo:
@@ -221,7 +222,8 @@ class SeriesDiscovery:
             held = ref.source_key in held_sources
             binding_id = self._create(
                 ref, lang, None if held else shelf_id, _watermark(units),
-                suggested=warned.get(ref.source_key),
+                # a series whose sub-source was not listed is not known to be safe either
+                suggested=warned.get(ref.source_key, unknown_age),
             )  # fmt: skip
             log.debug(
                 "discovery.series_created",

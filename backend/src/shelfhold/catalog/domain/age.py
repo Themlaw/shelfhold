@@ -5,6 +5,7 @@ ages that files and sources only suggest, and the rule of the Edition nobody has
 suggestion is never a rating; a Work nobody rated is never under 18+.
 """
 
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -23,12 +24,17 @@ def effective_age(work: AgeRating | None, editions: Iterable[AgeRating | None]) 
     return max_rating(a for a in (work, *editions) if a is not None)
 
 
-def content_warning_age(warning: str) -> AgeRating | None:
-    """The age a sub-source's `content_warning` suggests, never a rating: `nsfw` says X, `mixed`
-    says 18+ (it may hold adult Works, so a shelf below 18+ waits for an admin), `safe` nothing."""
-    if warning == "nsfw":
-        return AgeRating(X_MIN_AGE, x=True)
-    return AgeRating(X_MIN_AGE) if warning == "mixed" else None
+def content_warning_age(warning: str | None) -> AgeRating | None:
+    """The age a source's `content_warning` suggests, never a rating: `nsfw` says X, `mixed` says
+    18+ (it may hold adult Works, so a shelf below 18+ waits for an admin), `safe` nothing.
+
+    The one rule of the follow cycle, the import of a tree and the acquisition of a book. Case,
+    spaces and Unicode compatibility forms are folded; a value outside that domain, or none (NULL),
+    is not known to be safe: it counts for 18+."""
+    word = " ".join(unicodedata.normalize("NFKC", warning or "").casefold().split())
+    if word == "safe":
+        return None
+    return AgeRating(X_MIN_AGE, x=True) if word == "nsfw" else AgeRating(X_MIN_AGE)
 
 
 def ceiling_of(max_age_rating: int | None) -> AgeRating | None:

@@ -30,6 +30,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("acquire.unsupported_file", 422, "user"),  # a PDF, audio, or no file at all
     ErrorCode("acquire.unit_required", 422, "user"),  # several Units offered, none chosen
     ErrorCode("acquire.series_tombstoned", 409, "user"),  # the series was deleted on purpose
+    ErrorCode("acquire.work_tombstoned", 409, "user"),  # the Work was deleted on purpose
+    ErrorCode("acquire.tombstones_unavailable", 409, "admin"),  # the tombstones cannot be read
     ErrorCode("unit.stored", 409, "user", event=True),  # "rangé": the file is in the library
     # EF-SRC-013: a per-source setting refused (the field and a reason, never the value)
     ErrorCode("source.setting_invalid", 422, "admin"),

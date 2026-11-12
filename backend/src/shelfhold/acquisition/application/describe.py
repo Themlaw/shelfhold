@@ -16,18 +16,20 @@ Every text is made safe by the caller's `clean` before it is stored (ENF-SEC-015
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 
 import sqlalchemy as sa
 import structlog
 
+from shelfhold.acquisition.application.refusal import AcquireRefused
 from shelfhold.catalog.public import (
     Catalog,
     ExternalId,
     ExternalIdConflictError,
     ExternalIdError,
     TextVersionRef,
+    TombstoneScreen,
     add_external_id,
     holder_of,
     propose_fields,
@@ -36,7 +38,15 @@ from shelfhold.infrastructure.schema import catalog
 from shelfhold.sdk.metadata import FieldProposal, Provenance
 from shelfhold.sdk.refs import SeriesInfo
 
-__all__ = ["credit_authors", "known_work", "remember_work", "text_version_for", "write_rights"]
+__all__ = [
+    "credit_authors",
+    "incoming_work_ids",
+    "known_work",
+    "refuse_tombstoned",
+    "remember_work",
+    "text_version_for",
+    "write_rights",
+]
 
 log = structlog.get_logger(__name__)
 WRITER = "aut"
@@ -57,20 +67,53 @@ def known_work(connection: sa.Connection, plugin_key: str, info: SeriesInfo) -> 
         return None
 
 
-def remember_work(
-    connection: sa.Connection, work_id: str, plugin_key: str, info: SeriesInfo
-) -> None:
-    """The source's own identifiers, and the key that groups its books."""
+def incoming_work_ids(plugin_key: str, info: SeriesInfo) -> tuple[ExternalId, ...]:
+    """The source's own identifiers of its Work, and the key that groups its books."""
     pairs = [(_provider(plugin_key), info.work_key), *info.external_ids.items()]
-    for provider, value in pairs:
-        if not value:
-            continue
+    return tuple(ExternalId("work", provider, value) for provider, value in pairs if value)
+
+
+def refuse_tombstoned(screen: TombstoneScreen | None, ids: Sequence[ExternalId]) -> None:
+    """A Work purged on purpose does not come back by an identifier it carried (EF-BIB-053).
+
+    Fails closed: with identifiers to check and no screen, or a screen that cannot answer, the
+    arrival is refused. Asked before anything is written."""
+    if not ids:
+        return
+    if screen is None:
+        raise AcquireRefused(
+            "acquire.tombstones_unavailable", "the Work tombstones cannot be checked here"
+        )
+    try:
+        blocked = screen.work_ids(ids)
+    except Exception as error:
+        log.warning("acquire.tombstones_unavailable", error_type=type(error).__name__)
+        raise AcquireRefused(
+            "acquire.tombstones_unavailable", "the Work tombstones cannot be checked here"
+        ) from error
+    if blocked:
+        raise AcquireRefused("acquire.work_tombstoned", "the work was deleted on purpose")
+
+
+def remember_work(
+    connection: sa.Connection,
+    work_id: str,
+    plugin_key: str,
+    info: SeriesInfo,
+    *,
+    screen: TombstoneScreen | None,
+) -> None:
+    """The source's own identifiers, and the key that groups its books: attached to the Work only
+    once no one of them is tombstoned (`AcquireRefused`, nothing is attached)."""
+    ids = incoming_work_ids(plugin_key, info)
+    refuse_tombstoned(screen, ids)
+    for external in ids:
         try:
-            add_external_id(
-                connection, work_id, ExternalId("work", provider, value), origin="source"
-            )
+            add_external_id(connection, work_id, external, origin="source")
         except (ExternalIdError, ExternalIdConflictError):
-            log.info("acquire.external_id_skipped", plugin_id=plugin_key, provider=provider)
+            log.info(
+                "acquire.external_id_skipped", plugin_id=plugin_key, provider=external.provider
+            )
 
 
 def credit_authors(

@@ -391,7 +391,7 @@ class SuwayomiService:
                     source_key=key,
                     name=str(node["displayName"]),
                     lang=_lang(str(node.get("lang", ""))),
-                    content_warning="nsfw" if node.get("isNsfw") else "safe",
+                    content_warning=_warning(node.get("isNsfw")),
                     limit_key=key,
                 )
             )
@@ -914,6 +914,14 @@ def _filename(unit_id: str, number: str | None, name: str) -> str:
     while len(stem.encode()) > budget:
         stem = stem[:-1]
     return f"{stem.rstrip(' .-')}.cbz"
+
+
+def _warning(is_nsfw: object) -> Literal["safe", "mixed", "nsfw"]:
+    """`safe` only when Suwayomi says `isNsfw: false`; an absent, null or odd value is not known to
+    be safe (it may hold adult Works): `mixed`, which waits for an admin below 18+."""
+    if is_nsfw is True:
+        return "nsfw"
+    return "safe" if is_nsfw is False else "mixed"
 
 
 def _lang(raw: str) -> LanguageTag | Literal["mul"]:
