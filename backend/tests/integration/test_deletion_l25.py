@@ -29,6 +29,7 @@ from shelfhold.library.public import (
     DeletionLevel,
     DeletionRefusedError,
 )
+from shelfhold.ops.status import collect
 from tests.deletion_env import (
     Deletion,
     file_hash,
@@ -882,3 +883,30 @@ def test_the_sweep_flags_the_entry_it_keeps_for_an_irreplaceable_unit() -> None:
         report = sweeper(d).sweep()
         assert report.removed == 0 and report.held_irreplaceable == 3 and len(d.binned()) == 3
         assert d.service.restore(unit, principal=ADMIN, now=d.now).restored == 3  # still there
+
+
+@pytest.mark.req("EF-BIB-031", "EF-INT-023")
+def test_status_lists_the_bins_kept_for_an_irreplaceable_unit() -> None:
+    """The sweep keeps and the status says so, with the way out; a replaceable Unit's expired
+    entries are not listed (they go at the next sweep), and neither are young ones."""
+    with export_env() as env:
+        d = make_deletion(env)
+        unit = spread_unit(env, env.new_series("Dr Stone"))
+        d.apply(LEVEL3, [unit])
+        with env.engine.connect() as connection:
+            assert collect(connection) == []  # young entries: nothing to say
+        age_bins(d, 31)
+        with env.engine.begin() as connection:  # the term is in the real past
+            connection.execute(
+                sa.text(
+                    "UPDATE trash_item SET purge_after = '2000-01-02 00:00:00', "
+                    "deleted_at = '2000-01-01 00:00:00'"
+                )
+            )
+        with env.engine.connect() as connection:
+            assert [i for i in collect(connection) if i.state == "bin_held_irreplaceable"] == []
+        make_irreplaceable(env, unit)
+        with env.engine.connect() as connection:
+            [item] = [i for i in collect(connection) if i.state == "bin_held_irreplaceable"]
+        assert item.subject == unit and "3 bin entries kept" in item.reason  # one entry per file
+        assert f"/units/{unit}/restore" in item.command and f"--unit {unit}" in item.command

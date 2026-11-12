@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import storage
+from shelfhold.infrastructure.schema import catalog, storage
 from shelfhold.library.domain.deletion import BIN_DAYS
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "bin_entry",
     "binned_for_unit",
     "forget_bin_rows",
+    "held_for_irreplaceable_units",
     "latest_deletion",
     "record_binned_file",
     "units_binned_from_store",
@@ -127,6 +128,29 @@ def bin_entry(connection: Connection, entry: str) -> BinEntry:
         r.purge_after for r in rows if r.purge_after is not None and isinstance(r.snapshot, dict)
     ]
     return BinEntry(units, max(terms) if terms else None)
+
+
+def held_for_irreplaceable_units(connection: Connection) -> dict[str, int]:
+    """`unit -> bin entries` past their term that the sweep keeps because the Unit is
+    irreplaceable now (EF-BIB-031): what `shelfhold status` shows, read from the index."""
+    from shelfhold.library.adapters.units import safe_to_clean
+
+    rows = connection.execute(
+        sa.select(_trash.c.snapshot, _trash.c.path).where(
+            _trash.c.snapshot.is_not(None), _trash.c.purge_after <= sa.func.current_timestamp()
+        )
+    ).all()
+    entries: dict[str, set[str]] = {}
+    for r in rows:
+        if isinstance(r.snapshot, dict) and r.snapshot.get("unit_id"):
+            entries.setdefault(str(r.snapshot["unit_id"]), set()).add(r.path.split("/", 1)[0])
+    known = set(
+        connection.execute(
+            sa.select(catalog.unit.c.id).where(catalog.unit.c.id.in_(entries))
+        ).scalars()
+    )  # a Unit purged since has no row left to ask
+    _allowed, kept = safe_to_clean(connection, sorted(known))
+    return {unit: len(entries[unit]) for unit in kept}
 
 
 def units_binned_from_store(connection: Connection) -> frozenset[str]:

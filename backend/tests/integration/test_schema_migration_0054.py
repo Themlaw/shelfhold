@@ -48,7 +48,7 @@ def test_upgrade_adds_the_columns_and_downgrade_removes_them(settings: Settings)
         assert row == (None, None, "delete_content")  # the entry of before: not restorable
         db.execute(
             "INSERT INTO fs_intent (id, op, intent_schema_version, state, epoch) VALUES "
-            "('01J00000000000000000000003', 'unbin', '1', 'pending', 0)"
+            "('01J00000000000000000000003', 'unbin', '1', 'done', 0)"
         )  # the restore's own intent is allowed now
         db.commit()
     command.downgrade(alembic_config(database), _previous())
@@ -56,6 +56,32 @@ def test_upgrade_adds_the_columns_and_downgrade_removes_them(settings: Settings)
         assert not {"deletion_id", "snapshot"} & set(_info(db))
         assert db.execute("SELECT count(*) FROM trash_item").fetchone() == (1,)
         assert db.execute("SELECT count(*) FROM fs_intent WHERE op = 'unbin'").fetchone() == (0,)
+
+
+def test_downgrade_refuses_while_a_restore_intent_is_open(settings: Settings) -> None:
+    """An open `unbin` intent is a restore whose files are still in a bin: the downgrade says so
+    and changes nothing; once the intent is done it goes through."""
+    database = settings.database_path
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    assert "0054" in migrate(settings).applied
+    with closing(sqlite3.connect(database)) as db:
+        db.execute(
+            "INSERT INTO fs_intent (id, op, intent_schema_version, state, epoch) VALUES "
+            "('01J00000000000000000000004', 'unbin', '1', 'applying', 0)"
+        )
+        db.commit()
+    with pytest.raises(RuntimeError, match="restore intent"):
+        command.downgrade(alembic_config(database), _previous())
+    with closing(sqlite3.connect(database)) as db:
+        assert db.execute("SELECT state FROM fs_intent WHERE op = 'unbin'").fetchall() == [
+            ("applying",)
+        ]
+        assert {"deletion_id", "snapshot"} <= set(_info(db))  # nothing was undone
+        db.execute("UPDATE fs_intent SET state = 'done' WHERE op = 'unbin'")
+        db.commit()
+    command.downgrade(alembic_config(database), _previous())
+    with closing(sqlite3.connect(database)) as db:
+        assert not {"deletion_id", "snapshot"} & set(_info(db))
 
 
 def test_migrated_columns_equal_create_all(settings: Settings, tmp_path: Path) -> None:

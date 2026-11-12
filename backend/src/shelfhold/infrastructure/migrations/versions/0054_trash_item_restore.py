@@ -53,7 +53,23 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DELETE FROM fs_intent WHERE op = 'unbin'")
+    open_unbin = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                "SELECT count(*) FROM fs_intent "
+                "WHERE op = 'unbin' AND state IN ('pending', 'applying')"
+            )
+        )
+        .scalar_one()
+    )
+    if open_unbin:  # a restore whose files are still in a bin: never erase what finishes it
+        raise RuntimeError(
+            f"cannot downgrade past 0054: {open_unbin} restore intent(s) (fs_intent.op = 'unbin') "
+            "are still open. Start the instance so that it finishes them (or resolve them with "
+            "`shelfhold intents`), then downgrade."
+        )
+    op.execute("DELETE FROM fs_intent WHERE op = 'unbin'")  # the closed ones only
     with _rebuild() as batch:
         batch.drop_constraint(op.f(CHECK), type_="check")
         batch.create_check_constraint(op.f(CHECK), _listing(BEFORE))
