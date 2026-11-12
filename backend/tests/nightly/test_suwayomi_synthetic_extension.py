@@ -170,21 +170,28 @@ def test_nightly_source_stub_shape_when_the_extension_is_gone(bench: ExtensionBe
     only through the adapter's own reading, so a third shape fails the test)."""
     from shelfhold.plugin_host.adapters.meta.suwayomi.service import _unusable
 
-    listing = "{ sources { nodes { id displayName lang isNsfw } } }"
-    sources = bench.gql(listing)["sources"]["nodes"]
-    synthetic = next((s for s in sources if s["displayName"] == "Synthetic"), None)
-    if synthetic is None:  # the extension of the previous test is not installed: do it here
+    listing = "{ sources { nodes { id name displayName lang isNsfw } } }"
+    extensions = "{ extensions { nodes { pkgName isInstalled } } }"
+
+    def installed_package() -> str | None:
+        nodes = bench.gql(extensions)["extensions"]["nodes"]
+        return next(
+            (
+                e["pkgName"]
+                for e in nodes
+                if e["isInstalled"] and e["pkgName"].endswith(".synthetic")
+            ),
+            None,
+        )
+
+    # Idempotent: the extension may or may not be there, depending on the tests that ran before.
+    if installed_package() is None:
         bench.install_extension(APK.read_bytes())
-        sources = bench.gql(listing)["sources"]["nodes"]
-        synthetic = next(s for s in sources if s["displayName"] == "Synthetic")
+    package = installed_package()
+    assert package is not None
+    sources = bench.gql(listing)["sources"]["nodes"]
+    synthetic = next(s for s in sources if "Synthetic" in (s["displayName"], s["name"]))
     assert not _unusable(synthetic)  # installed: usable
-    package = next(
-        e["pkgName"]
-        for e in bench.gql("{ extensions { nodes { pkgName isInstalled } } }")["extensions"][
-            "nodes"
-        ]
-        if e["isInstalled"] and e["pkgName"].endswith(".synthetic")
-    )
     bench.gql(
         f'mutation {{ updateExtension(input: {{id: "{package}", patch: {{uninstall: true}}}}) '
         "{ extension { pkgName isInstalled } } }"
