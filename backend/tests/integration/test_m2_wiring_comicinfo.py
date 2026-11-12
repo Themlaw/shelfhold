@@ -154,3 +154,30 @@ def test_a_hostile_volume_number_is_no_volume_and_costs_nothing(
         adopt_volumes(b, capsys, {f"{SERIES} - Vol.1.cbz": info(volume, "1-5")})
         assert under(b, "1") == []
         assert b.rows("SELECT count(*) AS n FROM export_item")[0]["n"] == 1
+
+
+def test_a_range_wider_than_the_cap_is_proposed_in_the_preview_and_never_applied(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """Review of #172: a ComicInfo is trusted for 200 chapters, not for 2000."""
+    from shelfhold.export.application.coverage import (
+        ADOPTED_RANGE_CAP,
+        CoverageError,
+        apply_comicinfo_range,
+        comicinfo_range_too_wide,
+    )
+
+    assert ADOPTED_RANGE_CAP == 200
+    wide = {"Volume": "1", "Number": "1-1000"}
+    assert comicinfo_range_too_wide(wide)
+    assert not comicinfo_range_too_wide({"Volume": "1", "Number": "1-200"})
+    assert comicinfo_range_too_wide({"Volume": "1", "Number": "1-201"})
+    with pytest.raises(CoverageError):  # refused before any read of the database
+        apply_comicinfo_range(None, "e", wide)  # type: ignore[arg-type]
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        adopt_volumes(b, capsys, {f"{SERIES} - Vol.1.cbz": info("1", "1-1000")})
+        assert under(b, "1") == []
+        assert b.rows("SELECT count(*) AS n FROM export_item")[0]["n"] == 1

@@ -216,3 +216,48 @@ def test_edition_list_sorts_by_the_title_without_the_article_of_the_edition_lang
         assert run_cli(monkeypatch, settings, "edition", "list", "--sort", "price") != 0
         assert run_cli(monkeypatch, settings, "edition", "list", "--limit", "0") != 0
         assert run_cli(monkeypatch, settings, "edition", "list", "--limit", "100000") != 0
+
+
+@pytest.mark.req("EF-BIB-008")
+def test_renumbering_to_itself_or_back_to_a_superseded_value_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """Review of #172: A to A, or A to B to A, left the Edition with no current identifier."""
+    with seeded(settings, tmp_path / "inst") as env:
+        edition = env.new_series("Un roman").edition_id
+        with env.inst.engine.begin() as connection:
+            add_external_id(connection, edition, ExternalId("edition", "anilist", "1"),
+                            origin="provider")  # fmt: skip
+
+        def states() -> dict[str, str]:
+            with env.inst.engine.connect() as connection:
+                return {
+                    s.external.value: s.state
+                    for s in external_ids_of(connection, "edition", edition)
+                }
+
+        run = lambda *a: run_cli(monkeypatch, settings, "edition", "renumber-id", edition,  # noqa: E731
+                                 "anilist", *a)  # fmt: skip
+        assert run("1", "1") != 0 and run("1", " 1 ") != 0  # nothing changes
+        assert states() == {"1": "current"}
+        assert run("1", "2") == 0
+        assert (
+            run("2", "1") != 0
+        )  # back: the first stays superseded, the Edition keeps a current one
+        assert states() == {"1": "superseded", "2": "current"}
+
+
+@pytest.mark.req("EF-BIB-008")
+@pytest.mark.parametrize("field_name", ["age_rating", "age", "maturity", "content_rating_x"])
+def test_lock_refuses_the_age_fields_whatever_their_spelling(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    tmp_path: Path,
+    field_name: str,
+) -> None:
+    with seeded(settings, tmp_path / "inst") as env:
+        edition = env.new_series("Un roman").edition_id
+        assert run_cli(monkeypatch, settings, "meta", "lock", edition, field_name, "x") != 0
+        assert env.rows(catalog.metadata_field) == []

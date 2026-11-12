@@ -3,9 +3,13 @@ source declares none. Pure decisions over the listing of a source: nothing reads
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
+from shelfhold.acquisition.application.ranges import RangeTickets, RangeUnit
 from shelfhold.acquisition.application.volume_cut import cut_volumes
+from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.library.public import DEFAULT_VOLUME_SIZE
 from shelfhold.sdk.refs import UnitInfo
 
@@ -96,3 +100,52 @@ def test_an_empty_listing_and_a_huge_one() -> None:
     assert cut_volumes([], policy="closed_only", size=50, finished=True, adopted=False).infos == []
     big = cut_volumes(listing(20000), policy="closed_only", size=50, finished=False, adopted=False)
     assert len(big.cut) == 20000 and len(labels(big.infos)) == 400
+
+
+def test_a_volume_never_exceeds_the_cap_of_a_key() -> None:
+    """Review of #172: 50 Units were granted in one cycle against a cap of 10."""
+    cut = cut_volumes(
+        listing(120), policy="closed_only", size=None, finished=False, adopted=False, cap=10
+    )
+    sizes = labels(cut.infos)
+    assert max(sizes.values()) == 10 and sum(sizes.values()) == 120
+    whole = cut_volumes(
+        listing(120), policy="whole", finished=True, adopted=False, size=None, cap=10
+    )
+    assert max(labels(whole.infos).values()) == 10
+
+
+def _tickets() -> RangeTickets:
+    tickets = RangeTickets.__new__(RangeTickets)
+    tickets._series = SimpleNamespace(source_key="lncrawl")  # type: ignore[attr-defined]
+    return tickets
+
+
+def test_a_waiting_volume_is_not_starved_by_the_other_series_of_its_key() -> None:
+    """Review of #172: with another series asking a chapter first each cycle, the volume was
+    never granted (100 cycles out of 100). It now keeps the key free for the next cycle."""
+    cut = cut_volumes(
+        listing(120), policy="closed_only", size=None, finished=False, adopted=False, cap=10
+    )
+    volume = [RangeUnit(f"u{i}", x) for i, x in enumerate(cut.infos[:10])]
+    tickets, held, granted_at = _tickets(), {}, None
+    for cycle in range(100):
+        budget = RequestBudget(held=held)
+        assert budget.take("lncrawl", 1) == (0 if held else 1)  # the other series is kept out
+        granted, _ = tickets._grant(volume, budget)
+        held = budget.holds
+        if granted:
+            granted_at = cycle
+            break
+    assert granted_at == 1 and len(granted) == 10  # the cycle after the first refusal
+    budget = RequestBudget(held={})
+    assert budget.take("lncrawl", 10) == 10  # nothing stays held once it went
+
+
+def test_one_volume_holds_a_key_at_a_time_and_a_hold_lasts_one_cycle() -> None:
+    first = RequestBudget()
+    first.hold("lncrawl", 10)
+    first.hold("lncrawl", 3)  # a second volume of the same key waits behind
+    assert first.holds == {"lncrawl": 10}
+    later = RequestBudget(held={})  # the volume went (or the series left): the hold is gone
+    assert later.room("lncrawl") == 10

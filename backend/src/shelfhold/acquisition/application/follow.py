@@ -307,6 +307,7 @@ class FollowCycle:
         )  # fmt: skip
         self._pending: list[PublishedEvent] = []
         self._caps = (service_cap, key_cap)
+        self._held: dict[str, int] = {}
         self._prefs = TeamPreference(inactive_months=inactive_months)
         self._fallback = Fallback(self._emit, return_to_origin=fallback_return)
         self._fallback_return = fallback_return
@@ -450,7 +451,7 @@ class FollowCycle:
         self._unloaded = unloaded
         present = self._reconcile_library(in_library, report)
         self._rank_fallback(unloaded, report)
-        budget = RequestBudget(*self._caps)
+        budget = RequestBudget(*self._caps, held=self._held)
         self._series_taken = {}
         self._asked_units = set()
         self._capped = set()
@@ -477,6 +478,7 @@ class FollowCycle:
             await self._discover_isolated(binding, report, budget)
         self._fill(followed, budget, report)
         await self._ranges(followed, budget, report)
+        self._held = budget.holds  # what a waiting volume keeps free, for the next cycle only
         self._watch_gaps(followed, report)
         started = self._clock.now()
         report.tickets = await self._tickets.advance()
@@ -886,7 +888,7 @@ class FollowCycle:
         if row is None:
             return units
         cut = cut_volumes(
-            units, policy=row.volume_policy, size=row.volume_size,
+            units, policy=row.volume_policy, size=row.volume_size, cap=self._caps[1],
             finished=row.upstream_status == "finished", adopted=adopted,
         )  # fmt: skip
         self._cut_ids[binding.id] = cut.cut

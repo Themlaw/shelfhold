@@ -43,6 +43,8 @@ from shelfhold.catalog.public import (
 from shelfhold.export.application.coverage import (
     CoverageError,
     apply_comicinfo_range,
+    comicinfo_range,
+    comicinfo_range_too_wide,
     flag_unknown_coverage,
 )
 from shelfhold.export.application.export_items import add_coverage
@@ -199,6 +201,19 @@ class AdoptionReport:
         if not self.child_library:
             return ()
         return tuple(s.frozen_series for s in self.series if s.unrated and s.files)
+
+    @property
+    def proposed_ranges(self) -> tuple[str, ...]:
+        """`"file: volume V, chapters A-B"`: the ranges a volume's ComicInfo names beyond what a
+        file is trusted with. They are not applied; the admin sets them (`adopt set-coverage`)."""
+        found = []
+        for s in self.series:
+            for f in s.files:
+                info = dict(f.comicinfo)
+                if f.kind == "volume" and comicinfo_range_too_wide(info):
+                    volume, first, last = comicinfo_range(info) or ("", "", "")
+                    found.append(f"{f.rel_path}: volume {volume}, chapters {first}-{last}")
+        return tuple(found)
 
     @property
     def tombstoned(self) -> tuple[str, ...]:

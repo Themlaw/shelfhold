@@ -570,7 +570,14 @@ def _readable_rows() -> sa.Select[tuple[str]]:
             )
         )
     )
-    both = own.union(via_item).subquery()
+    base = own.union(via_item).subquery()
+    # A re-cut Unit (resplit) leaves its chapters covered by `carrier_type = unit`: they are
+    # there as long as their parent is.
+    child = export.unit_coverage.alias("via_unit")
+    via_unit = sa.select(child.c.unit_id.label("unit_id")).where(
+        child.c.carrier_type == "unit", child.c.carrier_id.in_(sa.select(base.c.unit_id))
+    )
+    both = sa.union(sa.select(base.c.unit_id.label("unit_id")), via_unit).subquery()
     return sa.select(both.c.unit_id).where(both.c.unit_id.is_not(None))
 
 

@@ -59,6 +59,7 @@ from shelfhold.catalog.application.enrich import (
     EnrichReport,
     EnrichService,
     UnknownTargetError,
+    is_age_field,
 )
 from shelfhold.catalog.application.external_ids import (
     ExternalIdConflictError,
@@ -448,6 +449,7 @@ __all__ = [
     "guard_received",
     "holder_of",
     "ingest_isolated",
+    "is_age_field",
     "join_people",
     "lock_current",
     "lock_field",

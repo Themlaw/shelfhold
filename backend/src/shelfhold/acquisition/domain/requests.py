@@ -23,11 +23,14 @@ class RequestBudget:
     """One cycle's allowance. `take` grants as many of the asked Units as still fit."""
 
     def __init__(
-        self, service_cap: int = DEFAULT_SERVICE_CAP, key_cap: int = DEFAULT_KEY_CAP
-    ) -> None:
+        self, service_cap: int = DEFAULT_SERVICE_CAP, key_cap: int = DEFAULT_KEY_CAP,
+        *, held: dict[str, int] | None = None,
+    ) -> None:  # fmt: skip
         self._service = service_cap
         self._key_cap = key_cap
         self._used: dict[str, int] = {}
+        self._held = dict(held or {})  # keys kept free this cycle for a waiting volume
+        self.holds: dict[str, int] = {}  # keys to keep free next cycle (one volume per key)
 
     @property
     def remaining(self) -> int:
@@ -38,12 +41,27 @@ class RequestBudget:
         """The most Units one range can ever be granted in a cycle."""
         return min(self._service, self._key_cap)
 
-    def room(self, limit_key: str, *, series_cap: int | None = None) -> int:
-        room = min(self._service, self._key_cap - self._used.get(limit_key, 0))
+    def room(self, limit_key: str, *, series_cap: int | None = None, claiming: bool = False) -> int:
+        """What is left for `limit_key`; what a waiting volume holds is left only to the volume
+        (`claiming`)."""
+        held_here = 0 if claiming else self._held.get(limit_key, 0)
+        held_all = 0 if claiming else sum(self._held.values()) - held_here
+        room = min(
+            self._service - held_all, self._key_cap - self._used.get(limit_key, 0) - held_here
+        )
         return max(0, room if series_cap is None else min(room, series_cap))
 
-    def take(self, limit_key: str, units: int, *, series_cap: int | None = None) -> int:
-        granted = max(0, min(units, self.room(limit_key, series_cap=series_cap)))
+    def hold(self, limit_key: str, units: int) -> None:
+        """A volume that did not fit keeps `units` of the key free for the next cycle: the
+        volume goes first there, and only one waits per key."""
+        self.holds.setdefault(limit_key, min(units, self.capacity))
+
+    def take(
+        self, limit_key: str, units: int, *, series_cap: int | None = None, claiming: bool = False
+    ) -> int:
+        granted = max(0, min(units, self.room(limit_key, series_cap=series_cap, claiming=claiming)))
+        if claiming:
+            self._held.pop(limit_key, None)
         self._service -= granted
         self._used[limit_key] = self._used.get(limit_key, 0) + granted
         return granted

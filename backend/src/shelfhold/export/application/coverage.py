@@ -23,6 +23,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 
 __all__ = [
+    "ADOPTED_RANGE_CAP",
     "MAX_RANGE",
     "AdoptedVolume",
     "CoverageError",
@@ -31,6 +32,7 @@ __all__ = [
     "attach_chapter",
     "attach_to_volume",
     "comicinfo_range",
+    "comicinfo_range_too_wide",
     "flag_unknown_coverage",
     "has_chapter_files",
     "set_volume_coverage",
@@ -38,6 +40,9 @@ __all__ = [
 ]
 
 MAX_RANGE: Final = 2000  # chapters under one volume: a typo (`1 100000`) must not fill the table
+# chapters a ComicInfo may put under its volume by itself: a file is not trusted for more, the
+# range is then proposed to the admin in the preview (EF-BIB-044)
+ADOPTED_RANGE_CAP: Final = 200
 
 
 class CoverageError(ValueError):
@@ -253,6 +258,12 @@ def comicinfo_range(info: Mapping[str, str]) -> tuple[str, str, str] | None:
     return wanted, first, last
 
 
+def comicinfo_range_too_wide(info: Mapping[str, str]) -> bool:
+    """The ComicInfo names a range, and one wider than `ADOPTED_RANGE_CAP` chapters."""
+    named = comicinfo_range(info)
+    return named is not None and int(named[2]) - int(named[1]) >= ADOPTED_RANGE_CAP
+
+
 def apply_comicinfo_range(
     connection: Connection, edition_id: str, info: Mapping[str, str], *, item_id: str | None = None
 ) -> int:
@@ -265,6 +276,8 @@ def apply_comicinfo_range(
     named = comicinfo_range(info)
     if named is None:
         return 0
+    if comicinfo_range_too_wide(info):  # proposed to the admin in the preview, never applied
+        raise CoverageError(f"more than {ADOPTED_RANGE_CAP} chapters: the admin sets this range")
     if item_id is not None:
         owner = next(
             (v for v in adopted_volumes(connection, edition_id) if v.number == named[0]), None

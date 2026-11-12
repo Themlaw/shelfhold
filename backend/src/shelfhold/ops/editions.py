@@ -25,6 +25,7 @@ from shelfhold.catalog.public import (
     ExternalIdError,
     FieldKey,
     holder_of,
+    is_age_field,
     lock_current,
     lock_field,
     normalize_external_id,
@@ -52,6 +53,8 @@ _ON: Final = ("edition", "work")
 def _clean_field(name: str) -> str:
     if not _FIELD.fullmatch(name):
         raise InvalidChoiceError("a field is a lowercase name of at most 64 characters")
+    if is_age_field(name):  # the age rating has its own safeguards: a lock must not pin it
+        raise InvalidChoiceError("the age rating is not locked as a field")
     return name
 
 

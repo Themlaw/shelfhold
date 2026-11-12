@@ -202,13 +202,15 @@ class RangeTickets:
         """A range is asked whole or not at all this cycle. Only a range larger than any cycle
         could ever grant is cut at the cap (EF-SRC-034); the rest follows next cycle."""
         key = self._series.source_key
-        if units and all(is_cut(u.info) for u in units) and len(units) > budget.capacity:
-            # a volume that Shelfhold cut is one file, one `export_item`: it is never split at the
-            # cap (its pieces would be as many closed "volumes"). It takes a whole cycle of its
-            # key, and waits for one when the key was used already.
-            if budget.room(key) < budget.capacity:
+        if units and all(is_cut(u.info) for u in units):
+            # A volume that Shelfhold cut is one file, one `export_item` (never split at the cap;
+            # its size is bounded by the cap already, see `cut_volumes`). The key is shared by
+            # every series of the plugin: a volume that does not fit keeps the key free for the
+            # next cycle, where it goes before anything else (no starvation).
+            if len(units) > budget.room(key, claiming=True) or len(units) > budget.capacity:
+                budget.hold(key, len(units))
                 return [], list(units)
-            budget.take(key, budget.capacity)
+            budget.take(key, len(units), claiming=True)
             return list(units), []
         if not units or (len(units) > budget.room(key) and len(units) <= budget.capacity):
             return [], list(units)

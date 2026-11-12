@@ -121,7 +121,7 @@ class EnrichReport:
     source_url: str | None = None
 
 
-def _is_age_field(name: str) -> bool:
+def is_age_field(name: str) -> bool:
     return bool(_AGE_WORDS & set(re.split(r"[^a-z0-9]+", name.lower())))
 
 
@@ -291,7 +291,7 @@ class EnrichService:
         return (
             p.field in manifest.touched_fields
             and p.field != COVER_FIELD
-            and not _is_age_field(p.field)
+            and not is_age_field(p.field)
             and p.entity_type == "edition"
             and p.provenance.provider == manifest.key
         )

@@ -49,8 +49,11 @@ def cut_volumes(
     size: int | None,
     finished: bool,
     adopted: bool,
+    cap: int | None = None,
 ) -> VolumeCut:
-    """`infos` with a volume on each main chapter when no chapter of the source has one."""
+    """`infos` with a volume on each main chapter when no chapter of the source has one. A volume
+    is asked in one cycle, so it holds at most `cap` chapters (the politeness cap of a key): the
+    size of the Edition is bounded by it."""
     unchanged = VolumeCut(list(infos), frozenset(), frozenset())
     if adopted or any(i.volume_label for i in infos):
         return unchanged
@@ -65,6 +68,8 @@ def cut_volumes(
         per = len(chapters)
     else:
         per = size if size is not None and size >= 1 else DEFAULT_VOLUME_SIZE
+    if cap is not None and cap >= 1:
+        per = min(per, cap)
     slices = volume_slices(len(chapters), per, finished=finished)
     labelled: dict[str, UnitInfo] = {}
     waiting: set[str] = set()
