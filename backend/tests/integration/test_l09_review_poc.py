@@ -116,6 +116,35 @@ def test_review_poc_suggestion_above_rating_under_ceiling(world: _World) -> None
         ), "an Edition waiting in 'À classer' is shown to the child"
 
 
+@pytest.mark.req("EF-USR-006", "EF-BIB-055")
+def test_counter_review_poc_edition_rated_below_its_work_waits_out_of_sight(world: _World) -> None:
+    """Counter-review of the M1 fix: an Edition an admin rated below its Work (an adaptation for
+    children of a 13+ Work, `rate_edition`) counts for its OWN age (`EditionAge.age`: the explicit
+    one, else the Work's), not for the stricter of the two. A 10+ suggestion on that 6+ Edition
+    sends it to "À classer" (`suggestion_above`), out of every family shelf; the filter compares
+    the suggestion to max(6, 13) = 13 and shows it to a 13+ child. Two rules again."""
+    seed = world.seed
+    work_id, edition_id = seed.works["ok"], seed.editions["ok"]
+    with seed.engine.begin() as connection:
+        connection.execute(
+            sa.update(catalog.work).where(catalog.work.c.id == work_id).values(age_rating=13)
+        )
+        connection.execute(
+            sa.update(catalog.edition)
+            .where(catalog.edition.c.id == edition_id)
+            .values(age_rating=6, age_x=False, rated_at=NOW)
+        )
+    _suggest(seed, "edition", edition_id, 10)
+    with seed.engine.connect() as connection:
+        verdict = RatingService().admission_of(
+            connection, edition_id, shelf_id=seed.shelves["family"]
+        )
+        assert verdict is Admission.SUGGESTION_ABOVE  # the shelves: "À classer"
+        assert edition_id not in visible_edition_ids(
+            connection, scope_of("child", 13), [edition_id]
+        ), "an Edition waiting in 'À classer' is shown to the child"
+
+
 # -- O2: a child's API key reads the activity as the integration role --------------------------
 
 
