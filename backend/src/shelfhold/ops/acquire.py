@@ -14,6 +14,14 @@ from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 
+from shelfhold.acquisition.application.federated_search import (
+    FederatedCursors,
+    FederatedPage,
+    FederatedSearch,
+    FederatedSource,
+    InvalidFederatedCursorError,
+    format_of,
+)
 from shelfhold.acquisition.public import (
     ACQUIRE_JOB_KIND,
     AcquireRefused,
@@ -26,8 +34,9 @@ from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
 from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
 from shelfhold.plugin_host.settings import SourceSettings
+from shelfhold.plugin_host.trust_card import trust_card
 from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.source import SourceError
+from shelfhold.sdk.source import Capability, SourceError, SourceManifest
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition
@@ -40,6 +49,7 @@ REQUEST_CLASS = "request"  # EF-INT-017: a person's request, ahead of the catch-
 class AcquireOps:
     def __init__(self, comp: Composition) -> None:
         self._comp = comp
+        self._walks = FederatedCursors(comp.clock.now)  # the cursors of the federated search
 
     # -- the acquirer -------------------------------------------------------------------------
 
@@ -104,6 +114,39 @@ class AcquireOps:
             ],
             "next": page.next.token if page.next else None,
         }
+
+    def federated_search(
+        self, query: str, *, owner: str, cursor: str | None = None
+    ) -> FederatedPage:
+        """One query to every source that is switched on and searches (EF-SRC-005). A source that
+        fails is reported, not raised; a cursor that is not ours is `invalid_cursor`."""
+        comp = self._comp
+        registry = comp.plugins()
+        if registry is None:
+            raise ExitUnavailableError("the sources are not loaded: the server is not running")
+        acquirer = self.acquirer()
+        sources: list[FederatedSource] = []
+        with comp.engine.connect() as connection:
+            for record in registry.active():
+                manifest = record.manifest
+                if not isinstance(manifest, SourceManifest):
+                    continue
+                if Capability.SEARCH not in manifest.capabilities:
+                    continue
+                sources.append(
+                    FederatedSource(
+                        record.key, manifest.name, format_of(manifest.content_kinds),
+                        trust_card(record, connection).as_dict(),
+                    )
+                )  # fmt: skip
+        service = FederatedSearch(acquirer, self._walks)
+        try:
+            page: FederatedPage = comp.run(
+                service.search(sources, query, owner=owner, cursor=cursor)
+            )
+        except InvalidFederatedCursorError:
+            raise CodedRefusal("invalid_cursor", "the cursor is not one this search gave") from None
+        return page
 
     def acquire(
         self,

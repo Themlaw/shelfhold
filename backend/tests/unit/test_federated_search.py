@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+
 from shelfhold.acquisition.application.federated_search import (
     FederatedCursors,
     FederatedPage,
@@ -19,7 +20,7 @@ from shelfhold.acquisition.application.federated_search import (
     InvalidFederatedCursorError,
     format_of,
 )
-
+from shelfhold.sdk.models import Cursor
 from shelfhold.sdk.source import RateLimited, SourceError
 from tests.fakes_clock import ManualClock
 from tests.federated_env import FakeSearcher, FakeSource, hit
@@ -394,3 +395,23 @@ def test_a_later_empty_page_is_not_the_empty_state() -> None:
     assert first.next_cursor is not None
     second = bench.search(cursor=first.next_cursor)
     assert second.items == [] and second.state == "results" and second.action is None
+
+
+def test_an_empty_first_page_goes_on_to_the_next_one() -> None:
+    """A source whose first page is empty but which has more: asked again, not called empty."""
+    a = FakeSource("alpha", pages=[[], [hit("a1", "Late")]])
+    page = Bench(a).search()
+    assert titles(page) == ["Late"] and page.state == "results"
+    assert [c[1] for c in a.calls] == [None, "1"]
+
+
+def test_a_source_that_repeats_its_cursor_is_not_asked_forever() -> None:
+    class Loop(FakeSource):
+        async def answer(self, q: str, cursor: str | None) -> Any:
+            page = await super().answer(q, None)
+            page.next = Cursor(token="page-0")  # noqa: S106 - a page cursor, no secret
+            return page
+
+    looping = Loop("alpha", pages=[[]])
+    page = Bench(looping).search()
+    assert page.next_cursor is None and len(looping.calls) <= 3

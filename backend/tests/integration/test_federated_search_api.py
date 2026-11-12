@@ -97,6 +97,12 @@ def test_only_the_switched_on_sources_are_searched(
         assert api.login().status_code == 200
         body = api.client.get("/api/v1/search", params=ALL).json()
         assert [s["source_key"] for s in body["searched_in"]] == ["alpha"] and beta.calls == []
+
+
+@pytest.mark.req("EF-UX-011")
+def test_federated_route_with_no_source_switched_on_is_the_honest_empty_state(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
     gamma = FakeSource("gamma", pages=[[hit("g1", "Hobbit")]])
     with instance(monkeypatch, settings, gamma, active=[]) as api:
         assert api.login().status_code == 200

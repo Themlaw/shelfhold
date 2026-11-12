@@ -698,6 +698,11 @@ leak_exclude = "Un titre ou un nom de l'instance peut s'écrire comme un mot du 
 leak_report = "Signalez ce défaut (sans le paquet)."
 written = "Paquet de diagnostic écrit : {members} fichiers, {kept} lignes de journal gardées, {dropped} écartées."
 
+[trust_card]
+official = "Officiel"
+community = "Communauté"
+unknown = "Inconnu"
+
 [search]
 rebuilt = "Index de recherche refait : {count} Œuvre(s), mode {mode}."
 
