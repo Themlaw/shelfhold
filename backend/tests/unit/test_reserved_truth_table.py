@@ -273,6 +273,7 @@ FRESHNESS_LINE = {
             "revisions.force",
             "normalize.migrate",
             "edition.merge",
+            "coverage.resplit",  # M2 L26: which chapters a file carries
             "restore.acknowledge",
             "admin_risk.accept",
             "shelf.purge_upstream",

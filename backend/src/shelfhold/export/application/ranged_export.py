@@ -90,7 +90,9 @@ def _kept(data_dir: Path, item_id: str, *, read: bool) -> tuple[str, bytes]:
             name = f"{item_id}.epub"
             if name not in names:
                 raise RangedExportError("ranged.missing" if not names else "ranged.not_epub")
-            if not read:
+            if not read:  # a display reads nothing, but never names a link as the kept file
+                if not folder.is_regular(name):
+                    raise ValueError("a link or a special file")
                 return name, b""
             data = folder.read(name, DEFAULT_LIMITS.max_total_bytes)
     except FileNotFoundError:

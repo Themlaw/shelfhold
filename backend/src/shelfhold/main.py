@@ -44,6 +44,7 @@ from shelfhold.interfaces.http_api.activity import build_activity_router
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.backfill import build_backfill_router
+from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
 from shelfhold.interfaces.http_api.follows import build_follows_router
 from shelfhold.interfaces.http_api.headless import build_headless_router
 from shelfhold.interfaces.http_api.intents import build_intents_router
@@ -236,6 +237,8 @@ def create_app(
         build_intents_router(ops_services),  # EF-INT-014: the open intents and their settlement
         build_revisions_router(ops_services),  # EF-BIB-043: the queue of pending revisions
         build_backfill_router(ops_services),  # EF-EXP-053: estimate, confirmation, start
+        # EF-BIB-008, EF-BIB-003, ENF-I18N-003, EF-BIB-044: locks, renumbering, sorted list, resplit
+        build_catalog_admin_router(ops_services),
         build_follows_router(ops_services),  # EF-SRC-029: follow, unfollow
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited

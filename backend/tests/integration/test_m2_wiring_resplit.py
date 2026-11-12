@@ -45,7 +45,7 @@ class Novel:
 
 
 def novel(env: Seeded, title: str, kids: int = 2) -> Novel:
-    """An Edition whose chapter 10 is carried by a file, and the sub-numbers the source cut it into."""
+    """An Edition whose chapter 10 is carried by a file, and the sub-numbers it was cut into."""
     series = env.new_series(title, lang="en")
     item = new_ulid()
     with env.inst.engine.begin() as connection:
@@ -158,6 +158,7 @@ def test_resplit_code_of_another_instance_key_is_refused(
         (settings.data_dir / "resplit.key").unlink()  # the instance made another one
         assert apply(monkeypatch, settings, n, code) != 0
         assert unit_rows(env) == []
+        (tmp_path / "elsewhere").mkdir()
         forged = ResplitSigner(tmp_path / "elsewhere").sign("x")  # any signature of a stranger
         assert apply(monkeypatch, settings, n, f"{'1' * 16}.{'2' * 64}.{forged}") != 0
 

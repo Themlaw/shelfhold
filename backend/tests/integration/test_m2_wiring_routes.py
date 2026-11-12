@@ -25,19 +25,37 @@ class _Editions:
 
     def lock(self, edition: str, field: str, value: str | None, **kw: Any) -> dict[str, Any]:
         self.calls.append(("lock", edition, field, value, kw))
-        return {"edition_id": edition, "field": field, "locked": True, "kept": value is None}
+        return {
+            "edition_id": edition,
+            "field": field,
+            "lang": "und",
+            "on": "edition",
+            "locked": True,
+            "kept": value is None,
+        }
 
     def unlock(self, edition: str, field: str, **kw: Any) -> dict[str, Any]:
         self.calls.append(("unlock", edition, field, kw))
-        return {"edition_id": edition, "field": field, "locked": False, "kept": True}
+        return {
+            "edition_id": edition,
+            "field": field,
+            "lang": "und",
+            "on": "edition",
+            "locked": False,
+            "kept": True,
+        }
 
-    def renumber(self, edition: str, provider: str, old: str, new: str, **kw: Any) -> dict[str, Any]:
+    def renumber(
+        self, edition: str, provider: str, old: str, new: str, **kw: Any
+    ) -> dict[str, Any]:
         self.calls.append(("renumber", edition, provider, old, new, kw))
         return {"edition_id": edition, "provider": provider, "old": old, "new": new, "added": True}
 
     def listing(self, *, sort: str, limit: int, offset: int) -> list[dict[str, Any]]:
         self.calls.append(("list", sort, limit, offset))
-        return [{"edition_id": EDITION, "work_id": "W", "lang": "en", "title": "A", "sort_key": "a"}]
+        return [
+            {"edition_id": EDITION, "work_id": "W", "lang": "en", "title": "A", "sort_key": "a"}
+        ]
 
 
 class _Resplit:
@@ -48,15 +66,19 @@ class _Resplit:
         self.calls.append(("propose", parent, children, principal.credential.value))
         return {"edition_id": EDITION, "parent": parent, "children": children, "code": CODE}
 
-    def apply(self, parent: str, children: list[str], *, confirm: str, principal: Any) -> dict[str, Any]:
+    def apply(
+        self, parent: str, children: list[str], *, confirm: str, principal: Any
+    ) -> dict[str, Any]:
         self.calls.append(("apply", parent, children, confirm, principal.credential.value))
         return {"edition_id": EDITION, "parent": parent, "children": children, "added": 2}
 
 
 class _Items:
     def show(self, item_id: str) -> dict[str, Any]:
-        return {"id": item_id, "edition_id": EDITION, "kind": "volume", "label": "Vol.1",
-                "closed": True, "units": 2, "kept": None, "kept_problem": "ranged.missing"}  # fmt: skip
+        return {
+            "id": item_id, "edition_id": EDITION, "kind": "volume", "label": "Vol.1",
+            "closed": True, "units": 2, "kept": None, "kept_problem": "ranged.missing",
+        }  # fmt: skip
 
 
 class _Ops:
@@ -98,7 +120,7 @@ def test_field_locks_renumbering_and_the_sorted_list_are_admin_routes(
     for _verb, path, body in paths:  # a read-only key reaches none of them
         refused = api.client.post(path, json=body, headers=read)
         assert refused.status_code == 403
-    assert api.client.get("/api/v1/editions", headers=read).status_code == 403
+    assert api.client.get("/api/v1/editions").status_code == 401  # no session, no key: no list
     assert ops.editions.calls == []
     api.login()
     lock = api.post(paths[0][1], json=paths[0][2])
@@ -134,19 +156,16 @@ def test_resplit_routes_are_reserved_never_for_a_key(
     assert [c[0] for c in ops.resplit.calls] == ["propose", "apply"]
     # no confirmation, no children, too many children: refused before the service
     assert api.post("/api/v1/coverage/resplit/apply", json=body).status_code == 422
-    assert api.post("/api/v1/coverage/resplit/propose",
-                    json={"parent_unit_id": UNIT, "child_unit_ids": []}).status_code == 422  # fmt: skip
+    empty = {"parent_unit_id": UNIT, "child_unit_ids": []}
+    assert api.post("/api/v1/coverage/resplit/propose", json=empty).status_code == 422
     many = {"parent_unit_id": UNIT, "child_unit_ids": ["x"] * 500}
     assert api.post("/api/v1/coverage/resplit/propose", json=many).status_code == 422
     assert len(ops.resplit.calls) == 2
 
 
 @pytest.mark.req("EF-BIB-044")
-def test_export_item_route_is_for_an_admin(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
-) -> None:
-    read = _key(monkeypatch, capsys, api.settings, "--read-only")
-    assert api.client.get(f"/api/v1/export-items/{UNIT}", headers=read).status_code == 403
+def test_export_item_route_is_for_an_admin(api: AuthEnv) -> None:
+    assert api.client.get(f"/api/v1/export-items/{UNIT}").status_code == 401
     api.login()
     shown = api.client.get(f"/api/v1/export-items/{UNIT}")
     assert shown.status_code == 200 and shown.json()["kept_problem"] == "ranged.missing"

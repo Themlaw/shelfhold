@@ -45,6 +45,24 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     )
     decline.add_argument("attach_id")
     decline.set_defaults(handler=run_attach_decline, configure_logging=False)
+    renumber = actions.add_parser(
+        "renumber-id", help=t("ops.help_edition_renumber_id"), allow_abbrev=False
+    )
+    renumber.add_argument("edition_id")
+    renumber.add_argument("provider", help=t("ops.help_edition_renumber_provider"))
+    renumber.add_argument("old", help=t("ops.help_edition_renumber_old"))
+    renumber.add_argument("new", help=t("ops.help_edition_renumber_new"))
+    renumber.add_argument("--id-scheme", default=None, help=t("ops.help_edition_renumber_scheme"))
+    renumber.set_defaults(handler=run_renumber_id, configure_logging=False)
+    listing_all = actions.add_parser("list", help=t("ops.help_edition_list"), allow_abbrev=False)
+    listing_all.add_argument("--sort", default="title", help=t("ops.help_edition_list_sort"))
+    listing_all.add_argument(
+        "--limit", type=int, default=200, help=t("ops.help_edition_list_limit")
+    )
+    listing_all.add_argument(
+        "--offset", type=int, default=0, help=t("ops.help_edition_list_offset")
+    )
+    listing_all.set_defaults(handler=run_list, configure_logging=False)
     merge = actions.add_parser("merge", help=t("ops.help_edition_merge"), allow_abbrev=False)
     merge.add_argument("keep", help=t("ops.help_edition_merge_keep"))
     merge.add_argument("drop", help=t("ops.help_edition_merge_drop"))
@@ -73,6 +91,25 @@ def run_set_lang(args: argparse.Namespace, channel: OpsChannel) -> int:
 def run_set_series_name(args: argparse.Namespace, channel: OpsChannel) -> int:
     answer = channel.call("ops.edition_set_series_name", edition_id=args.edition_id, name=args.name)
     print(t("ops.series_name_set", name=answer["name"], series=answer["export_series_id"]))
+    return 0
+
+
+@ops_command
+def run_renumber_id(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.edition_renumber_id", edition=args.edition_id,
+                        provider=args.provider, old=args.old, new=args.new,
+                        id_scheme=args.id_scheme)  # fmt: skip
+    print(t("ops.id_renumbered", edition=done["edition_id"], provider=done["provider"],
+            old=done["old"], new=done["new"]))  # fmt: skip
+    return 0
+
+
+@ops_command
+def run_list(args: argparse.Namespace, channel: OpsChannel) -> int:
+    for found in channel.call("ops.edition_list", sort=args.sort, limit=args.limit,
+                              offset=args.offset):  # fmt: skip
+        print(t("ops.edition_line", edition=found["edition_id"], lang=found["lang"],
+                title=found["title"]))  # fmt: skip
     return 0
 
 

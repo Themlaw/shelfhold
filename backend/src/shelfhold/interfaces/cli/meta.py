@@ -26,6 +26,15 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     enrich = actions.add_parser("enrich", help=t("cli.meta_enrich_help"), allow_abbrev=False)
     enrich.add_argument("target", help=t("cli.meta_target_help"))
     enrich.set_defaults(handler=run_enrich)
+    for name, help_key in (("lock", "cli.meta_lock_help"), ("unlock", "cli.meta_unlock_help")):
+        lock = actions.add_parser(name, help=t(help_key), allow_abbrev=False)
+        lock.add_argument("edition", help=t("cli.meta_edition_help"))
+        lock.add_argument("field", help=t("cli.meta_field_help"))
+        if name == "lock":
+            lock.add_argument("value", nargs="?", default=None, help=t("cli.meta_value_help"))
+        lock.add_argument("--lang", default="und", help=t("cli.meta_lang_help"))
+        lock.add_argument("--on", default="edition", help=t("cli.meta_on_help"))
+        lock.set_defaults(handler=run_lock if name == "lock" else run_unlock)
     check = actions.add_parser("check", help=t("cli.meta_check_help"), allow_abbrev=False)
     check.set_defaults(handler=run_check)
 
@@ -67,6 +76,24 @@ def run_check(args: argparse.Namespace, channel: OpsChannel) -> int:
     if drift:
         print(t("meta.run_rebuild"), file=sys.stderr)
     return 1 if drift else 0
+
+
+@ops_command
+def run_lock(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.meta_lock", edition=args.edition, field=args.field,
+                        value=args.value, lang=args.lang, on=args.on)  # fmt: skip
+    key = "meta.locked_kept" if done["kept"] else "meta.locked"
+    print(t(key, edition=done["edition_id"], field=done["field"], lang=done["lang"], on=done["on"]))
+    return 0
+
+
+@ops_command
+def run_unlock(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.meta_unlock", edition=args.edition, field=args.field,
+                        lang=args.lang, on=args.on)  # fmt: skip
+    print(t("meta.unlocked", edition=done["edition_id"], field=done["field"], lang=done["lang"],
+            on=done["on"]))  # fmt: skip
+    return 0
 
 
 @ops_command

@@ -60,7 +60,9 @@ def test_the_tail_is_asked_once_the_novel_is_finished_and_a_closed_volume_stays_
                            "FROM export_item ORDER BY l")  # fmt: skip
         assert [(i["l"], i["closed"]) for i in items] == [("Vol.1", 1), ("Vol.2", 1), ("Vol.3", 1)]
         assert {j["first"] for j in bench.server.jobs.values()} == {"ch-1", "ch-51", "ch-101"}
-        assert all(frozen[name] == (bench.lib.data / "ranged" / name).read_bytes() for name in frozen)
+        assert all(
+            frozen[name] == (bench.lib.data / "ranged" / name).read_bytes() for name in frozen
+        )
 
 
 def test_a_source_that_declares_its_volumes_keeps_them() -> None:

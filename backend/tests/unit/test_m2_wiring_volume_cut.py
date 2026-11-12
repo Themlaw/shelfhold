@@ -75,7 +75,11 @@ def test_only_main_chapters_are_cut_and_the_order_is_the_one_of_the_source() -> 
     by_id = {i.remote_unit_id: i.volume_label for i in cut.infos}
     assert by_id["extra"] is None  # an extra belongs to no volume
     assert (by_id["r5"], by_id["r4"], by_id["r3"], by_id["r2"], by_id["r1"]) == (
-        "Vol.1", "Vol.1", "Vol.2", "Vol.2", "Vol.3",
+        "Vol.1",
+        "Vol.1",
+        "Vol.2",
+        "Vol.2",
+        "Vol.3",
     )  # source_order 0.. is r5 first: the cut follows the order the source gives
 
 
@@ -83,7 +87,9 @@ def test_the_cut_is_stable_when_chapters_join_the_tail() -> None:
     before = cut_volumes(listing(120), policy="closed_only", size=50, finished=False, adopted=False)
     after = cut_volumes(listing(131), policy="closed_only", size=50, finished=False, adopted=False)
     kept = {i.remote_unit_id: i.volume_label for i in before.infos if i.volume_closed}
-    assert kept == {i.remote_unit_id: i.volume_label for i in after.infos if i.remote_unit_id in kept}
+    assert kept == {
+        i.remote_unit_id: i.volume_label for i in after.infos if i.remote_unit_id in kept
+    }
 
 
 def test_an_empty_listing_and_a_huge_one() -> None:

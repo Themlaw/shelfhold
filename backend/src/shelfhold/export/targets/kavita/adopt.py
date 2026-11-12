@@ -40,7 +40,11 @@ from shelfhold.catalog.public import (
     edition_key_lang,
     translation_type_for,
 )
-from shelfhold.export.application.coverage import flag_unknown_coverage
+from shelfhold.export.application.coverage import (
+    CoverageError,
+    apply_comicinfo_range,
+    flag_unknown_coverage,
+)
 from shelfhold.export.application.export_items import add_coverage
 from shelfhold.export.application.migration_detect import (
     SwitchoverDetector,
@@ -135,6 +139,9 @@ class AdoptedFile:
     ino: int
     tombstoned: bool = False  # purged for good: never adopted again (EF-BIB-052 (2))
     active_content: bool = False  # an EPUB the neutralizer would change or refuse (EF-BIB-051)
+    # the ComicInfo of a volume file, what `apply_comicinfo_range` reads (EF-BIB-044); as pairs so
+    # that the file stays hashable
+    comicinfo: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -581,6 +588,7 @@ class Adopter:
                     name, rel, local, kind, number, origin, seen[1].size, seen[1].mtime_ns,
                     seen[1].ino, purged,
                     local.lower().endswith(".epub") and has_active_content(self._fsops, local),
+                    tuple(sorted(info.items())) if kind == "volume" else (),
                 )
             )  # fmt: skip
         parsed_names = [
@@ -772,9 +780,17 @@ class Adopter:
         self._freeze_series(connection, ctx, item, edition_id, now)
         self._suggest_age(connection, item, edition_id, now)
         order = _next_order(connection, edition_id)
+        volumes: list[tuple[AdoptedFile, str]] = []
         for file in fresh:
             unit_id, order = self._unit(connection, edition_id, file, order, now)
-            self._record(connection, ctx, item, edition_id, unit_id, file, now)
+            item_id = self._record(connection, ctx, item, edition_id, unit_id, file, now)
+            if file.kind == "volume" and file.comicinfo:
+                volumes.append((file, item_id))
+        # the range a volume's ComicInfo names, once every file of the series is recorded: a
+        # chapter that has a file of its own is never also put under a volume (EF-BIB-044)
+        for file, item_id in volumes:
+            with contextlib.suppress(CoverageError, LookupError):  # hostile or absurd: no range
+                apply_comicinfo_range(connection, edition_id, dict(file.comicinfo), item_id=item_id)
         return len(fresh), len([f for f in item.files if not f.tombstoned]) - len(fresh)
 
     @staticmethod
@@ -953,7 +969,7 @@ class Adopter:
         unit_id: str,
         file: AdoptedFile,
         now: datetime,
-    ) -> None:
+    ) -> str:
         digest = self._fsops.sha256_of(file.local_path)
         item_id = new_ulid()
         content_id = new_ulid()
@@ -1003,6 +1019,7 @@ class Adopter:
             mtime_ns=file.mtime_ns, ino=file.ino, dev=self._fsops.device_of(file.local_path),
             verified_at=now,
         )  # fmt: skip
+        return item_id
 
 
 def _fingerprint(library_ref: str, series: Sequence[AdoptedSeries]) -> str:

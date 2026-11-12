@@ -25,6 +25,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.application.failures import from_service
 from shelfhold.acquisition.application.lncrawl_ranges import ticket_expired, verify_range_answer
+from shelfhold.acquisition.application.volume_cut import is_cut
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.infrastructure.clock import Clock
@@ -201,6 +202,14 @@ class RangeTickets:
         """A range is asked whole or not at all this cycle. Only a range larger than any cycle
         could ever grant is cut at the cap (EF-SRC-034); the rest follows next cycle."""
         key = self._series.source_key
+        if units and all(is_cut(u.info) for u in units) and len(units) > budget.capacity:
+            # a volume that Shelfhold cut is one file, one `export_item`: it is never split at the
+            # cap (its pieces would be as many closed "volumes"). It takes a whole cycle of its
+            # key, and waits for one when the key was used already.
+            if budget.room(key) < budget.capacity:
+                return [], list(units)
+            budget.take(key, budget.capacity)
+            return list(units), []
         if not units or (len(units) > budget.room(key) and len(units) <= budget.capacity):
             return [], list(units)
         granted = budget.take(key, len(units))
@@ -342,13 +351,17 @@ class RangeTickets:
         ]
         item_id = self._rolling_item(connection, [unit for _, unit in covered])
         label = units[0].info.volume_label
+        # a volume the cut closed is closed whatever the source says: it knows no volumes
+        closed = payload.volume_closed or all(
+            is_cut(u.info) and bool(u.info.volume_closed) for u in units
+        )
         if item_id is None:
             item_id = new_ulid()
             connection.execute(
                 sa.insert(export.export_item).values(
                     id=item_id, edition_id=self._edition_id, kind="volume" if label else "bundle",
                     frozen_attrs={"volume_label": label} if label else {},
-                    closed=payload.volume_closed,
+                    closed=closed,
                 )
             )  # fmt: skip
         else:  # the rolling volume grew: same item, new coverage
@@ -361,7 +374,7 @@ class RangeTickets:
             connection.execute(
                 sa.update(export.export_item)
                 .where(export.export_item.c.id == item_id)
-                .values(closed=payload.volume_closed)
+                .values(closed=closed)
             )
         for position, (remote, unit_id) in enumerate(covered):
             start, end = payload.bounds.get(remote, (None, None))

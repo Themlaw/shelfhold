@@ -175,8 +175,12 @@ def test_renumbering_never_steals_an_identifier_and_never_invents_the_old_one(
         assert run(one, "ANI LIST", "1", "7") != 0  # not a provider key
         assert run(one, "anilist", "1", " ") != 0  # an empty new value
         with env.inst.engine.connect() as connection:
-            assert [(s.external.value, s.state) for s in external_ids_of(connection, "edition", one)] == [("1", "current")]
-            assert [(s.external.value, s.state) for s in external_ids_of(connection, "edition", other)] == [("2", "current")]
+            assert [
+                (s.external.value, s.state) for s in external_ids_of(connection, "edition", one)
+            ] == [("1", "current")]
+            assert [
+                (s.external.value, s.state) for s in external_ids_of(connection, "edition", other)
+            ] == [("2", "current")]
 
 
 @pytest.mark.req("ENF-I18N-003")
@@ -188,7 +192,10 @@ def test_edition_list_sorts_by_the_title_without_the_article_of_the_edition_lang
 ) -> None:
     with seeded(settings, tmp_path / "inst") as env:
         for title, lang in (
-            ("The Hobbit", "en"), ("Le Petit Prince", "fr"), ("Alpha", "en"), ("An Apple", "en"),
+            ("The Hobbit", "en"),
+            ("Le Petit Prince", "fr"),
+            ("Alpha", "en"),
+            ("An Apple", "en"),
             ("Le Petit Prince", "en"),  # an English Edition keeps the French title as it is
             ("A", "en"),
         ):

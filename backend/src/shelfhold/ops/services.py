@@ -43,6 +43,7 @@ from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
 from shelfhold.ops.edition_merge import EditionMergeOps
+from shelfhold.ops.editions import EditionOps
 from shelfhold.ops.errors import (
     CodedRefusal,
     ExitUnavailableError,
@@ -52,6 +53,7 @@ from shelfhold.ops.errors import (
     StillWaitingError,
     UnknownSubjectError,
 )
+from shelfhold.ops.export_item import ExportItemOps
 from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.import_folder import ImportOps
 from shelfhold.ops.intents import IntentOps
@@ -69,6 +71,7 @@ from shelfhold.ops.ports import (
     WaitingItem,
 )
 from shelfhold.ops.rating import RatingOps
+from shelfhold.ops.resplit import ResplitOps
 from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
 from shelfhold.ops.status import (
@@ -193,6 +196,9 @@ class OpsServices:
         rating: RatingOps | None = None,
         attach: AttachOps | None = None,
         edition_merge: EditionMergeOps | None = None,
+        editions: EditionOps | None = None,
+        resplit: ResplitOps | None = None,
+        export_items: ExportItemOps | None = None,
         follows: FollowOps | None = None,
         acquire: AcquireOps | None = None,
         roots: RootOps | None = None,
@@ -220,6 +226,9 @@ class OpsServices:
         self._rating = rating
         self._attach = attach
         self._edition_merge = edition_merge
+        self._editions = editions
+        self._resplit = resplit
+        self._export_items = export_items
         self._follows = follows
         self._acquire = acquire
         self._roots = roots
@@ -678,6 +687,27 @@ class OpsServices:
         if self._edition_merge is None:
             raise ExitUnavailableError("the merge of Editions is not connected")
         return self._edition_merge
+
+    @property
+    def editions(self) -> EditionOps:
+        """Field locks, renumbered identifiers and the sorted list (EF-BIB-008, EF-BIB-003)."""
+        if self._editions is None:
+            raise ExitUnavailableError("the Edition commands are not connected")
+        return self._editions
+
+    @property
+    def resplit(self) -> ResplitOps:
+        """`coverage resplit propose|apply`: a chapter the source cut again (EF-BIB-044)."""
+        if self._resplit is None:
+            raise ExitUnavailableError("the re-cut chapters are not connected")
+        return self._resplit
+
+    @property
+    def export_items(self) -> ExportItemOps:
+        """`export item show`: a volume, its chapters and its kept file (EF-BIB-044)."""
+        if self._export_items is None:
+            raise ExitUnavailableError("the export items are not connected")
+        return self._export_items
 
     @property
     def rating(self) -> RatingOps:

@@ -73,9 +73,15 @@ def test_adoption_reads_the_range_of_each_volume_from_its_comicinfo(
     "hostile",
     [
         "1-100000",  # a typo that would fill the table
-        "5-1", "1-", "-5", "1-2-3", "0x1-0x5", "1e3-1e4", "1 - 5 6",
-        "１-５",  # full-width digits
-        "١-٥",  # Arabic-Indic digits
+        "5-1",
+        "1-",
+        "-5",
+        "1-2-3",
+        "0x1-0x5",
+        "1e3-1e4",
+        "1 - 5 6",
+        chr(0xFF11) + "-" + chr(0xFF15),  # full-width digits
+        chr(0x661) + "-" + chr(0x665),  # Arabic-Indic digits
         "1-" + "9" * 400,
     ],
 )
@@ -134,3 +140,17 @@ def test_a_chapter_file_never_takes_a_range_from_its_comicinfo(
             f"{SERIES} - Ch.3.cbz": info("1", "1-5"), f"{SERIES} - Vol.1.cbz": None,
         })  # fmt: skip
         assert under(b, "1") == []
+
+
+@pytest.mark.parametrize("volume", ["1e999999", "\uff11", "Infinity", "NaN", "-1", "1/2", "1" * 50])
+def test_a_hostile_volume_number_is_no_volume_and_costs_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+    volume: str,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        adopt_volumes(b, capsys, {f"{SERIES} - Vol.1.cbz": info(volume, "1-5")})
+        assert under(b, "1") == []
+        assert b.rows("SELECT count(*) AS n FROM export_item")[0]["n"] == 1

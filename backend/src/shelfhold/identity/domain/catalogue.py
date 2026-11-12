@@ -60,6 +60,8 @@ _DECLARED = (
     # `edition merge`: one Edition takes the Units of another (EF-BIB-049); it also decides the
     # age and the filing of what it takes, so it is a parental decision too
     _action("edition.merge", Effect.MIGRATES_IDENTITY, Effect.PARENTAL_CONTROL),
+    # `coverage resplit propose|apply`: a re-cut chapter is covered by its old Unit (EF-BIB-044)
+    _action("coverage.resplit", Effect.CHANGES_COVERAGE),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),

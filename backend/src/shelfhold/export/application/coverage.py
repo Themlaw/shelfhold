@@ -234,14 +234,16 @@ def set_volume_coverage(
     return added
 
 
-_RANGE: Final = re.compile(r"(\d{1,7})\s*[-\u2013]\s*(\d{1,7})")
+_RANGE: Final = re.compile(r"([0-9]{1,7})\s*[-\u2013]\s*([0-9]{1,7})")  # ASCII digits only
+_VOLUME: Final = re.compile(r"[0-9]{1,6}(\.[0-9]{1,3})?")  # `1e999999` is no volume number
 
 
 def comicinfo_range(info: Mapping[str, str]) -> tuple[str, str, str] | None:
     """`(volume, first, last)` from the ComicInfo of an adopted volume: `Volume` is the volume's
     number and `Number` the chapters it holds, as a range (`41-50`). Anything else says nothing
     (the range is then asked of the admin, never guessed)."""
-    wanted = volume_number_of(f"vol {info.get('Volume', '')}")
+    raw = info.get("Volume", "").strip()
+    wanted = volume_number_of(f"vol {raw}") if _VOLUME.fullmatch(raw) else None
     found = _RANGE.fullmatch(info.get("Number", "").strip())
     if wanted is None or found is None:
         return None
@@ -251,12 +253,24 @@ def comicinfo_range(info: Mapping[str, str]) -> tuple[str, str, str] | None:
     return wanted, first, last
 
 
-def apply_comicinfo_range(connection: Connection, edition_id: str, info: Mapping[str, str]) -> int:
+def apply_comicinfo_range(
+    connection: Connection, edition_id: str, info: Mapping[str, str], *, item_id: str | None = None
+) -> int:
     """Put the chapters a ComicInfo names under its adopted volume (origin `comicinfo`). Returns
-    the number of chapters newly put there; 0 when the ComicInfo names no range."""
+    the number of chapters newly put there; 0 when the ComicInfo names no range.
+
+    `item_id` is the export item of the file the ComicInfo was read from: a file puts chapters
+    only under its own volume, never under another one that it names (a hostile ComicInfo cannot
+    take the range of a volume that has a file of its own)."""
     named = comicinfo_range(info)
     if named is None:
         return 0
+    if item_id is not None:
+        owner = next(
+            (v for v in adopted_volumes(connection, edition_id) if v.number == named[0]), None
+        )
+        if owner is None or owner.export_item_id != item_id:
+            return 0
     return set_volume_coverage(connection, edition_id, *named, origin="comicinfo")
 
 

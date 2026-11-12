@@ -70,6 +70,7 @@ from shelfhold.catalog.application.external_ids import (
 )
 from shelfhold.catalog.application.fields import (
     FieldReport,
+    lock_current,
     lock_field,
     propose_fields,
     suggest_age,
@@ -448,6 +449,7 @@ __all__ = [
     "holder_of",
     "ingest_isolated",
     "join_people",
+    "lock_current",
     "lock_field",
     "normalize_external_id",
     "numbered_mark",
