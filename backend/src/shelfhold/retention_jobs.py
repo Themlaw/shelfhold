@@ -71,7 +71,12 @@ def register_retention_jobs(pools: JobPools, comp: Composition) -> None:
         except (NoLibraryError, KeyringUnavailableError) as error:
             context.record(skipped=type(error).__name__)
             return
-        context.record(removed=report.removed, kept=report.kept, failed=report.failed)
+        context.record(
+            removed=report.removed,
+            kept=report.kept,
+            failed=report.failed,
+            held_irreplaceable=report.held_irreplaceable,
+        )
 
     pools.register(RETENTION_KIND, pool="maint", handler=expire, writes=False)
     pools.scheduler.add(RETENTION_KIND, RETENTION_CRON, jitter_s=300)

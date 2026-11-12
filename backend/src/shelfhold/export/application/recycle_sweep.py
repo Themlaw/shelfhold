@@ -21,12 +21,21 @@ from datetime import datetime
 import sqlalchemy as sa
 import structlog
 
-from shelfhold.export.application.intents import IntentJournal, open_intent_ids
+from shelfhold.export.application.intents import (
+    IntentJournal,
+    open_intent_ids,
+    open_intent_paths,
+)
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import EmitterConditionError, FsopsError
 from shelfhold.infrastructure.schema import catalog, platform, storage
-from shelfhold.library.public import adopted_original_unprotected, forget_binned_export_files
+from shelfhold.library.public import (
+    adopted_original_unprotected,
+    bin_entry,
+    forget_binned_export_files,
+    safe_to_clean,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -39,6 +48,9 @@ class RecycleReport:
     removed: int
     kept: int
     failed: int = 0
+    held_irreplaceable: int = (
+        0  # entries kept, and flagged, because their Unit became irreplaceable
+    )
 
 
 class RecycleSweeper:
@@ -114,8 +126,32 @@ class RecycleSweeper:
                     return True
         return False
 
+    def _expired(self, name: str, entry: str) -> bool:
+        """The term the deletion gave the entry (`trash_item.purge_after`), not the date of a
+        folder on the disk. An entry the index does not know (a same-path upgrade's old version)
+        keeps the age that `Fsops` reads from the file system."""
+        with self._journal.engine.connect() as connection:
+            term = bin_entry(connection, name).purge_after
+        if term is None:
+            return self._fsops.trash_expired(entry)
+        return self._journal.clock.now() >= term.replace(tzinfo=self._journal.clock.now().tzinfo)
+
+    def _became_irreplaceable(self, name: str) -> bool:
+        """A Unit deleted while its source still listed it may have lost that source since: the
+        bin then holds the only bytes there are. Read again, now, never from the day of the
+        deletion (EF-BIB-031: kept and flagged, never erased in silence)."""
+        with self._journal.engine.connect() as connection:
+            named = bin_entry(connection, name).units
+            units = sorted(  # a Unit purged since has no registry row left to ask
+                connection.execute(
+                    sa.select(catalog.unit.c.id).where(catalog.unit.c.id.in_(named))
+                ).scalars()
+            )
+            _allowed, kept = safe_to_clean(connection, units) if units else ([], [])
+        return bool(kept)
+
     def sweep(self) -> RecycleReport:
-        removed = kept = failed = 0
+        removed = kept = failed = held = 0
         for root in self._roots:
             bin_path = f"{root}/{RECYCLE_DIR}"
             try:
@@ -125,13 +161,20 @@ class RecycleSweeper:
             for name in entries:
                 entry = f"{bin_path}/{name}"
                 with self._journal.engine.connect() as connection:
-                    held = name in open_intent_ids(connection)
-                if held:
-                    kept += 1  # the old version of an open upgrade: never swept
+                    busy = name in open_intent_ids(connection) or any(
+                        p == name or p.startswith(f"{name}/") for p in open_intent_paths(connection)
+                    )
+                if busy:
+                    kept += 1  # an open upgrade's old version, or a restore on its way: never swept
                     log.info("retention.recycle_held_by_intent", entry=name)
                     continue
-                if not self._fsops.trash_expired(entry):
+                if not self._expired(name, entry):
                     kept += 1  # younger than the retention: no intention for nothing
+                    continue
+                if self._became_irreplaceable(name):
+                    kept += 1
+                    held += 1
+                    log.warning("retention.recycle_held_irreplaceable", entry=name)
                     continue
                 if self._retained_by_backup(name):
                     kept += 1  # a retained backup may be restored and look for this copy
@@ -157,4 +200,4 @@ class RecycleSweeper:
                         self._journal.mark_done(intent, within=connection)
                         forget_binned_export_files(connection, name)
                     removed += 1
-        return RecycleReport(removed, kept, failed)
+        return RecycleReport(removed, kept, failed, held)

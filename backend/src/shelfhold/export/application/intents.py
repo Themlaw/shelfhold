@@ -16,12 +16,13 @@ Paths under an open intent are invisible to reconciliation and planning (I9, `sk
 """
 
 import contextlib
+import hashlib
 import re
 from collections.abc import Callable, Iterable
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, BinaryIO, Protocol, runtime_checkable
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
@@ -60,6 +61,14 @@ class DiskPort(Protocol):
     def recycle(self, local: str, *, entry: str | None = None) -> str: ...
     def observe(self, local: str) -> tuple[Kind, FileIdentity] | None: ...
     def sha256_of(self, local: str) -> str: ...
+
+
+@runtime_checkable
+class BinDisk(Protocol):
+    """The steps of a restore out of a bin (EF-BIB-021), which `Fsops` has."""
+
+    def restore_from_bin(self, local: str, path: str) -> None: ...
+    def open_bin_entry(self, target: str, path: str) -> AbstractContextManager[BinaryIO]: ...
 
 
 @runtime_checkable
@@ -164,6 +173,10 @@ class IntentJournal:
         self._clock = clock or SystemClock()
         # runs in the transaction that closes an intent (the audit of an admin's resolution)
         self._settled = settled
+
+    @property
+    def clock(self) -> Clock:
+        return self._clock
 
     @property
     def engine(self) -> Engine:
@@ -422,6 +435,8 @@ class IntentJournal:
                 self._resolve_expired_bin_entry(intent, report, on_done)
             elif intent.op == "recycle" and intent.src:
                 self._resolve_recycle(intent, report, on_done)
+            elif intent.op == "unbin" and intent.src and intent.dst:
+                self._resolve_unbin(intent, report, on_done)
             elif intent.op == "write" and intent.dst:
                 self._resolve_write(intent, report, on_done)
             elif intent.op == "upgrade" and intent.dst:
@@ -498,6 +513,43 @@ class IntentJournal:
             report.replayed.append(intent.id)
         else:
             self._drift(intent, report, "the file in the shelf is not the one to be recycled")
+
+    def _resolve_unbin(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """A file put back from a bin (a restore, EF-BIB-021). The rows were committed first: the
+        file is either still in its entry with the target free (it goes back now, the very bytes
+        the intent names) or already at the target with the entry empty (nothing more to do)."""
+        if intent.src is None or intent.dst is None:
+            return self._drift(intent, report, "an unbin needs its target and its entry")
+        if not isinstance(self._disk, BinDisk):
+            return self._drift(intent, report, "this disk cannot read a bin")
+        at_target = self._disk.observe(intent.src)
+        in_bin = self._bin_digest(self._disk, intent.src, intent.dst)
+        if at_target is None and in_bin is not None:
+            if in_bin != intent.expected_sha256:
+                return self._drift(intent, report, "the file in the bin is not the expected one")
+            self._disk.restore_from_bin(intent.src, intent.dst)
+            self._finish(intent, on_done)
+            report.replayed.append(intent.id)
+        elif at_target is not None and at_target[0] == "file" and in_bin is None:
+            if not self._is_expected(intent, intent.src, at_target[1]):
+                return self._drift(intent, report, "the file at the target is not the expected one")
+            self._finish(intent, on_done)
+            report.completed.append(intent.id)
+        else:
+            self._drift(intent, report, "neither one entry-only nor one target-only state")
+
+    @staticmethod
+    def _bin_digest(disk: BinDisk, target: str, path: str) -> str | None:
+        try:
+            with disk.open_bin_entry(target, path) as stream:
+                digest = hashlib.sha256()
+                for chunk in iter(lambda: stream.read(1 << 20), b""):
+                    digest.update(chunk)
+        except FileNotFoundError:
+            return None
+        return f"sha256:{digest.hexdigest()}"
 
     def _resolve_expired_bin_entry(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

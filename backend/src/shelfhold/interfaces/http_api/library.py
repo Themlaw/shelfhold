@@ -64,6 +64,11 @@ class DeletionIn(DeletionPreviewIn):
     typed: dict[str, str] = Field(default_factory=dict)  # unit id -> the identifier typed
 
 
+class RestoreIn(BaseModel):
+    deletion_id: str | None = None  # one deletion (the latest when absent)
+    partial: bool = False  # the files that can go back do, the others stay in the bin
+
+
 class ProbeIn(BaseModel):
     folder: str = Field(min_length=1)
 
@@ -148,9 +153,17 @@ def build_library_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             )  # fmt: skip
 
     @router.post("/units/{unit_id}/restore", response_model=Body)
-    def deletion_restore(unit_id: str, principal: Annotated[Principal, Depends(_DELETE)]) -> Body:
+    def deletion_restore(
+        unit_id: str,
+        principal: Annotated[Principal, Depends(_DELETE)],
+        body: RestoreIn | None = None,
+    ) -> Body:
+        asked = body or RestoreIn()
         with refusals():
-            return get_ops().library.delete_restore(unit_id=unit_id, principal=principal)
+            return get_ops().library.delete_restore(
+                unit_id=unit_id, principal=principal,
+                deletion_id=asked.deletion_id, partial=asked.partial,
+            )  # fmt: skip
 
     @router.post("/probe", response_model=Body)
     def probe(body: ProbeIn, _admin: Admin) -> Body:

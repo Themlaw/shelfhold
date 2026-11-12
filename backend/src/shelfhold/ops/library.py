@@ -120,6 +120,7 @@ from shelfhold.library.public import (
     DeletionLevel,
     DeletionPlan,
     DeletionRefusedError,
+    StoreIndex,
 )
 from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.backup.scratch import sweep_orphans
@@ -224,14 +225,15 @@ def _withdrawal_plan(plan: WithdrawalPlan) -> dict[str, Any]:
 
 
 def _deletion_plan(plan: DeletionPlan) -> dict[str, Any]:
-    """The preview: counts and codes, never a path, a title or a folder name."""
+    """The preview: what each file is (its place, its path in its root, its size) and codes;
+    never a title."""
     return {
         "level": plan.level.value,
         "version": plan.version,
         "blocked": plan.blocked,
         "files": plan.files,
         "bytes": plan.bytes,
-        "folders": len(plan.folders),
+        "folders": list(plan.folders),
         "confirmations": list(plan.confirmations),
         "units": [
             {
@@ -240,7 +242,12 @@ def _deletion_plan(plan: DeletionPlan) -> dict[str, Any]:
                 "independent_copies": u.independent_copies,
                 "independent_copies_after": u.independent_copies_after,
                 "files": [
-                    {"place": f.place, "size": f.size, "export_item_id": f.export_item_id}
+                    {
+                        "place": f.place,
+                        "path": f.rel_path,
+                        "size": f.size,
+                        "export_item_id": f.export_item_id,
+                    }
                     for f in u.files
                 ],
                 "untouched": list(u.untouched),
@@ -1114,6 +1121,7 @@ class LibraryOps:
             service = DeletionService(
                 self._comp.engine, w.fsops, clock=self._comp.clock, locate=w.loaded.locate,
                 request_scan=lambda path: self._scan_everywhere([path]),
+                refresh_index=self._index_refresher(w),
                 fresh_auth_s=self._comp.settings.fresh_auth_s,
             )  # fmt: skip
             try:
@@ -1133,16 +1141,44 @@ class LibraryOps:
             "folders_kept": len(report.folders_kept),
         }
 
+    def _index_refresher(self, w: Any) -> Callable[[], object] | None:
+        """`store/INDEX.jsonl` rewritten under the lock it shares with `purge --now`."""
+        store = self._comp.settings.store_dir
+        if store is None:
+            return None
+        index = StoreIndex(
+            self._comp.engine, w.fsops, str(store), w.tombstones,
+            hold=index_holder(self._comp),
+        )  # fmt: skip
+        return index.rewrite
+
     @_refused
-    def delete_restore(self, *, unit_id: str, principal: Principal) -> dict[str, Any]:
-        """Put back what a deletion binned, as it was (same path, same bytes)."""
+    def delete_restore(
+        self,
+        *,
+        unit_id: str,
+        principal: Principal,
+        deletion_id: str | None = None,
+        partial: bool = False,
+    ) -> dict[str, Any]:
+        """Put back what ONE deletion binned, as it was (same path, same bytes). A file that
+        cannot go back blocks only itself: refused as a whole, or `partial`."""
         with self._comp.write_context() as w:
             service = DeletionService(
                 self._comp.engine, w.fsops, clock=self._comp.clock, locate=w.loaded.locate,
+                refresh_index=self._index_refresher(w),
                 fresh_auth_s=self._comp.settings.fresh_auth_s,
             )  # fmt: skip
-            report = service.restore(unit_id, principal=principal, now=self._comp.clock.now())
-        return {"unit_id": report.unit_id, "restored": report.restored}
+            report = service.restore(
+                unit_id, principal=principal, now=self._comp.clock.now(),
+                deletion_id=deletion_id, partial=partial,
+            )  # fmt: skip
+        return {
+            "unit_id": report.unit_id,
+            "restored": report.restored,
+            "left_in_bin": [{"path": p, "reason": r} for p, r in report.left_in_bin],
+            "pending": len(report.pending),
+        }
 
     # -- the erasure of the upstream download, per shelf (L16, EF-SRC-009) ------------------------
 

@@ -3117,17 +3117,6 @@
         "title": "ResplitProposedOut",
         "type": "object"
       },
-      "RestoreIn": {
-        "properties": {
-          "confirm_deletion": {
-            "default": false,
-            "title": "Confirm Deletion",
-            "type": "boolean"
-          }
-        },
-        "title": "RestoreIn",
-        "type": "object"
-      },
       "RevisionOut": {
         "properties": {
           "field": {
@@ -4348,6 +4337,28 @@
         "title": "ResolveIn",
         "type": "object"
       },
+      "shelfhold__interfaces__http_api__library__RestoreIn": {
+        "properties": {
+          "deletion_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Id"
+          },
+          "partial": {
+            "default": false,
+            "title": "Partial",
+            "type": "boolean"
+          }
+        },
+        "title": "RestoreIn",
+        "type": "object"
+      },
       "shelfhold__interfaces__http_api__ops__ResolveIn": {
         "properties": {
           "action": {
@@ -4360,6 +4371,17 @@
           "action"
         ],
         "title": "ResolveIn",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__ops__RestoreIn": {
+        "properties": {
+          "confirm_deletion": {
+            "default": false,
+            "title": "Confirm Deletion",
+            "type": "boolean"
+          }
+        },
+        "title": "RestoreIn",
         "type": "object"
       },
       "shelfhold__interfaces__http_api__ops__SecretIn": {
@@ -8270,7 +8292,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RestoreIn"
+                "$ref": "#/components/schemas/shelfhold__interfaces__http_api__ops__RestoreIn"
               }
             }
           },
@@ -11195,6 +11217,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/shelfhold__interfaces__http_api__library__RestoreIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

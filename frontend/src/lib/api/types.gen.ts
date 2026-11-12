@@ -1953,16 +1953,6 @@ export type ResplitProposedOut = {
 };
 
 /**
- * RestoreIn
- */
-export type RestoreIn = {
-    /**
-     * Confirm Deletion
-     */
-    confirm_deletion?: boolean;
-};
-
-/**
  * RevisionOut
  */
 export type RevisionOut = {
@@ -2753,6 +2743,20 @@ export type ShelfholdInterfacesHttpApiIntentsResolveIn = {
 };
 
 /**
+ * RestoreIn
+ */
+export type ShelfholdInterfacesHttpApiLibraryRestoreIn = {
+    /**
+     * Deletion Id
+     */
+    deletion_id?: string | null;
+    /**
+     * Partial
+     */
+    partial?: boolean;
+};
+
+/**
  * ResolveIn
  */
 export type ShelfholdInterfacesHttpApiOpsResolveIn = {
@@ -2760,6 +2764,16 @@ export type ShelfholdInterfacesHttpApiOpsResolveIn = {
      * Action
      */
     action: string;
+};
+
+/**
+ * RestoreIn
+ */
+export type ShelfholdInterfacesHttpApiOpsRestoreIn = {
+    /**
+     * Confirm Deletion
+     */
+    confirm_deletion?: boolean;
 };
 
 /**
@@ -5039,7 +5053,7 @@ export type ProbeResponses = {
 export type ProbeResponse = ProbeResponses[keyof ProbeResponses];
 
 export type RestoreAdoptData = {
-    body: RestoreIn;
+    body: ShelfholdInterfacesHttpApiOpsRestoreIn;
     path?: never;
     query?: never;
     url: '/api/v1/reconcile/adopt-after-restore';
@@ -6692,7 +6706,10 @@ export type PurgeUnitResponses = {
 export type PurgeUnitResponse = PurgeUnitResponses[keyof PurgeUnitResponses];
 
 export type DeletionRestoreData = {
-    body?: never;
+    /**
+     * Body
+     */
+    body?: ShelfholdInterfacesHttpApiLibraryRestoreIn | null;
     path: {
         /**
          * Unit Id

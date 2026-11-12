@@ -635,15 +635,17 @@ def manifest_file_hashes(connection: Connection, unit_id: str) -> list[dict[str,
     ]
 
 
-def _readable_rows() -> sa.Select[tuple[str]]:
+def _readable_rows(without: Collection[str] = ()) -> sa.Select[tuple[str]]:
     """Units with a readable copy of their own, or covered by an item that has one. A file the
     admin already had in Kavita and Shelfhold adopted is a carrier that is there (I20): it is
     referenced where it is, as a copy of the destination, and counts as long as it is not gone."""
     coverage, item = export.unit_coverage, export.export_item
+    left = replica_table.c.id.not_in(list(without)) if without else sa.true()
     own = sa.select(replica_table.c.unit_id.label("unit_id")).where(
         replica_table.c.location.in_(_READABLE_PLACES),
         replica_table.c.unit_id.is_not(None),
         replica_table.c.damaged_at.is_(None),
+        left,
     )
     record = export.export_record
     adopted_item = (
@@ -668,10 +670,11 @@ def _readable_rows() -> sa.Select[tuple[str]]:
             )
         )
         .where(
+            left,
             sa.or_(
                 replica_table.c.location.in_(_READABLE_PLACES),
                 sa.and_(replica_table.c.location == "destination", adopted_item),
-            )
+            ),
         )
     )
     base = own.union(via_item).subquery()
@@ -699,8 +702,12 @@ def readable_unit_ids(connection: Connection, edition_id: str) -> set[str]:
     )
 
 
-def has_readable_copy(connection: Connection, unit_id: str) -> bool:
-    both = _readable_rows().subquery()
+def has_readable_copy(
+    connection: Connection, unit_id: str, *, without: Collection[str] = ()
+) -> bool:
+    """`without`: registry rows to leave out, to ask whether a readable copy would remain once
+    those files are gone (the preview of a deletion, EF-BIB-021). Nothing is written."""
+    both = _readable_rows(without).subquery()
     return (
         connection.execute(
             sa.select(sa.literal(1)).where(sa.literal(unit_id).in_(sa.select(both.c.unit_id)))

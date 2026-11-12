@@ -28,7 +28,6 @@ A file the registry does not know, a folder it did not create and a read-only ro
 touched. The expiry of the bin is the retention sweep's (`RecycleSweeper`).
 """
 
-import contextlib
 import hashlib
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -61,6 +60,7 @@ from shelfhold.library.public import (
     binned_for_unit,
     drop_replicas,
     forget_bin_rows,
+    has_readable_copy,
     independent_copies,
     plan_version,
     record_binned_file,
@@ -92,7 +92,6 @@ LEVEL_TO_KIND: Final = {
 # why a Unit cannot be deleted at a level (codes, never a path or a title)
 COLLATERAL: Final = "collateral"  # a file that also covers other Units
 ADOPTED_ORIGINAL: Final = "adopted_original"  # the file is the only original there is
-LAST_COPY: Final = "last_independent_copy"
 BUSY: Final = "open_intent"  # an operation is already moving that file
 
 
@@ -111,13 +110,16 @@ class DeletionBlockedError(Exception):
 
 
 class RestoreBlockedError(Exception):
-    """A restore that cannot put every file back exactly as it was (nothing was moved)."""
+    """A restore that cannot put every file back exactly as it was (nothing was moved). `files`:
+    `(path in its root, reason)` for each file that cannot go back, so that the rest may be
+    restored with `partial`."""
 
     code = "deletion.blocked"
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, files: tuple[tuple[str, str], ...] = ()) -> None:
         super().__init__(f"restore blocked: {reason}")
         self.reason = reason
+        self.files = files
 
 
 @dataclass(frozen=True)
@@ -135,6 +137,10 @@ class DeletionReport:
 class RestoreReport:
     unit_id: str
     restored: int
+    left_in_bin: tuple[
+        tuple[str, str], ...
+    ] = ()  # `(path, reason)` a partial restore did not put back
+    pending: tuple[str, ...] = ()  # files whose move waits for the next start (an intent is open)
 
 
 @dataclass
@@ -172,6 +178,7 @@ class DeletionService:
         clock: Clock,
         locate: Callable[[str], tuple[str, str]],
         request_scan: Callable[[str], None] | None = None,
+        refresh_index: Callable[[], object] | None = None,
         fresh_auth_s: int = 900,
         lock_wait: float = 5.0,
     ) -> None:
@@ -180,6 +187,7 @@ class DeletionService:
         self._clock = clock
         self._locate = locate
         self._scan = request_scan
+        self._index = refresh_index
         self._fresh_auth_s = fresh_auth_s
         self._locks = ResourceLocks(engine, clock=clock)
         self._lock_wait = lock_wait
@@ -216,12 +224,19 @@ class DeletionService:
             blocked = list(scope.blocked)
             if scope.unit_id in collateral:
                 blocked.append(COLLATERAL)
-            if level is DeletionLevel.REMOVE_DESTINATIONS and before > 0 and after == 0:
-                blocked.append(LAST_COPY)  # only the third level may take the last copy
+            irreplaceable = scope.unit_id in kept
+            # the last READABLE copy of an irreplaceable Unit, wherever it sits: the destination
+            # rows are never "independent", so the count above cannot see it (EF-BIB-031)
+            takes_last_readable = (
+                level is DeletionLevel.REMOVE_DESTINATIONS
+                and irreplaceable
+                and bool(scope.items)
+                and not has_readable_copy(connection, scope.unit_id, without=moved)
+            )
             impacts.append(
                 UnitImpact(
                     scope.unit_id,
-                    scope.unit_id in kept,
+                    irreplaceable,
                     before,
                     after,
                     tuple(i.impact for i in scope.items) if level.moves_files else (),
@@ -229,8 +244,8 @@ class DeletionService:
                     tuple(sorted(set(blocked))),
                     scope.exports,
                     scope.progress,
-                    needs_confirmation=level is DeletionLevel.DELETE_CONTENT
-                    and scope.unit_id in kept,
+                    needs_confirmation=(level is DeletionLevel.DELETE_CONTENT and irreplaceable)
+                    or takes_last_readable,
                 )
             )
         folders = self._empty_folders(connection, scopes) if level.moves_files else []
@@ -477,10 +492,12 @@ class DeletionService:
         now: datetime,
         typed: Mapping[str, str],
     ) -> None:
-        if level is not DeletionLevel.DELETE_CONTENT:
+        if level is DeletionLevel.UNFOLLOW:
             return
         with self._engine.connect() as connection:
             for unit in plan.units:  # irreplaceability is read again, now, for each Unit
+                if level is DeletionLevel.REMOVE_DESTINATIONS and not unit.needs_confirmation:
+                    continue
                 require_deletion_allowed(
                     connection, unit.unit_id, principal=principal, now=now,
                     typed=typed.get(unit.unit_id), fresh_auth_s=self._fresh_auth_s,
@@ -509,6 +526,8 @@ class DeletionService:
                     moved += 1
                 else:
                     pending.append(local)
+        if level is DeletionLevel.DELETE_CONTENT and moved:
+            self._refresh_index()  # /store/INDEX.jsonl stops citing the copies now in the bin
         removed: tuple[str, ...] = ()
         kept: tuple[str, ...] = ()
         if folders and not pending:
@@ -561,7 +580,6 @@ class DeletionService:
                     ],
                     "follow_set": follow_set,
                 }
-                follow_set = False  # carried by the first file of the Unit only
                 kind = LEVEL_TO_KIND[level]
                 owner = item.impact.export_item_id if kind == "export_file" else scope.unit_id
                 record_binned_file(
@@ -707,13 +725,23 @@ class DeletionService:
 
     # -- the restore ----------------------------------------------------------------------------
 
-    def restore(self, unit_id: str, *, principal: Principal, now: datetime) -> RestoreReport:
-        """Put back every file of the Unit that a deletion binned, as it was: the same path, the
-        same bytes (checked), the same registry rows and records. All or none: one file that is
-        gone, changed or in the way, and nothing moves."""
+    def restore(
+        self,
+        unit_id: str,
+        *,
+        principal: Principal,
+        now: datetime,
+        deletion_id: str | None = None,
+        partial: bool = False,
+    ) -> RestoreReport:
+        """Put back the files of ONE deletion of the Unit (the latest, or the one named), as they
+        were: the same path, the same bytes (checked), the same registry rows and records. A file
+        that cannot go back (gone, changed, its path taken, its root away) blocks only itself:
+        by default the restore then refuses as a whole and says which; with `partial` the others
+        go back and the report lists the ones left in the bin."""
         require_reserved_deletion(principal=principal, now=now, fresh_auth_s=self._fresh_auth_s)
         with self._engine.connect() as connection:
-            found = binned_for_unit(connection, unit_id)
+            found = binned_for_unit(connection, unit_id, deletion_id=deletion_id)
             work = connection.execute(
                 sa.select(catalog.edition.c.work_id)
                 .select_from(
@@ -730,20 +758,41 @@ class DeletionService:
         with self._locks.hold_resources(
             new_ulid(), [work_resource(str(work))], timeout=self._lock_wait
         ):
-            return self._restore_locked(unit_id, found, principal, now)
+            return self._restore_locked(unit_id, found, principal, now, partial)
 
     def _restore_locked(
-        self, unit_id: str, found: Sequence[BinnedUnitFile], principal: Principal, now: datetime
+        self,
+        unit_id: str,
+        found: Sequence[BinnedUnitFile],
+        principal: Principal,
+        now: datetime,
+        partial: bool,
     ) -> RestoreReport:
+        good: list[tuple[BinnedUnitFile, str]] = []
+        left: list[tuple[str, str]] = []
         with self._engine.connect() as connection:
-            plan = [(b, self._target(connection, b)) for b in found]
-        for binned, local in plan:
-            self._check_restorable(binned, local)
-        # the rows and the moves are one piece: the rows change in a transaction that stays open
-        # while the files go back, and a file that cannot is followed by the ones already moved,
-        # which leave again for their entry (nothing half restored)
+            for binned in found:
+                reason = "root_gone"
+                local = None
+                try:
+                    local = self._target(connection, binned)
+                    self._check_restorable(binned, local)
+                except RestoreBlockedError as error:
+                    reason = error.reason
+                else:
+                    good.append((binned, local))
+                    continue
+                left.append((str(binned.snapshot.get("rel_path", "")), reason))
+        if left and (not partial or not good):
+            raise RestoreBlockedError(left[0][1], files=tuple(left))
+        journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
+        intents: list[tuple[str, str, str]] = []
+        # the rows, the bin index and the intents of every move: one transaction. A crash after
+        # it leaves the intents, which the start replays (the file goes back into its place); a
+        # failure before it leaves the files where they are
         with self._engine.begin() as connection:
-            for binned, _local in plan:
+            follow = any(b.snapshot.get("follow_set") for b, _ in good)
+            for binned, local in good:
                 snap = binned.snapshot
                 for row in snap.get("replicas", []):
                     restore_replica(connection, row)
@@ -756,34 +805,57 @@ class DeletionService:
                         )
                         .values(state=snap["record_state"])
                     )
-                if snap.get("follow_set"):
-                    connection.execute(
-                        sa.update(catalog.unit)
-                        .where(catalog.unit.c.id == unit_id)
-                        .values(follow_suppressed=False, follow_suppressed_at=None)
-                    )
-            forget_bin_rows(connection, [b.trash_id for b, _ in plan])
+                intent = journal.record(
+                    op="unbin", src=local, dst=binned.path, expected_sha256=snap["sha256"],
+                    within=connection,
+                )  # fmt: skip
+                intents.append((intent, local, binned.path))
+            if follow:
+                connection.execute(
+                    sa.update(catalog.unit)
+                    .where(catalog.unit.c.id == unit_id)
+                    .values(follow_suppressed=False, follow_suppressed_at=None)
+                )
+            forget_bin_rows(connection, [b.trash_id for b, _ in good])
             connection.execute(
                 audit_insert(
                     AuditEntry(
                         actor_id=principal.actor_id, action="unit.restore", at=now,
-                        target=f"unit:{unit_id}",
+                        target=f"unit:{unit_id};{found[0].deletion_id}",
                         session_id=principal.session_id, auth_time=principal.auth_time,
                     )
                 )
             )  # fmt: skip
-            back: list[tuple[BinnedUnitFile, str]] = []
+        pending: list[str] = []
+        for intent, local, path in intents:
+            if not self._unbin(journal, intent, local, path):
+                pending.append(local)
+        self._refresh_index()
+        log.info("deletion.restored", files=len(good), left=len(left), pending=len(pending))
+        return RestoreReport(unit_id, len(good), tuple(left), tuple(pending))
+
+    def _unbin(self, journal: IntentJournal, intent_id: str, local: str, path: str) -> bool:
+        """The file goes back for the entry its row names; a failure is replayed at once through
+        the intent, and if it still fails the intent stays open (the next start finishes)."""
+        try:
+            journal.mark_applying(intent_id)
+            self._fsops.restore_from_bin(local, path)
+            journal.mark_done(intent_id)
+            return True
+        except Exception:
+            log.warning("deletion.unbin_failed", intent_id=intent_id)
+        try:
+            report = journal.resolve_one(intent_id)
+        except Exception:
+            return False
+        return report is None or intent_id in {*report.completed, *report.replayed}
+
+    def _refresh_index(self) -> None:
+        if self._index is not None:
             try:
-                for binned, local in plan:
-                    self._fsops.restore_from_bin(local, binned.path)
-                    back.append((binned, local))
-            except BaseException:
-                for binned, local in reversed(back):
-                    with contextlib.suppress(FsopsError, OSError):
-                        self._fsops.recycle(local, entry=binned.path.split("/", 1)[0])
-                raise
-        log.info("deletion.restored", files=len(plan))
-        return RestoreReport(unit_id, len(plan))
+                self._index()  # /store/INDEX.jsonl follows what /store holds now
+            except Exception:
+                log.warning("deletion.index_not_rewritten")  # the window's own pass draws it
 
     def _target(self, connection: Connection, binned: BinnedUnitFile) -> str:
         entry = connection.execute(

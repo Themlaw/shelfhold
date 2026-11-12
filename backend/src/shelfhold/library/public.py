@@ -108,10 +108,14 @@ from shelfhold.library.adapters.svg_derivative import (
     draw_svg,
 )
 from shelfhold.library.adapters.trash import (
+    BinEntry,
     BinnedUnitFile,
+    bin_entry,
     binned_for_unit,
     forget_bin_rows,
+    latest_deletion,
     record_binned_file,
+    units_binned_from_store,
 )
 from shelfhold.library.adapters.units import (
     ContentErrorCandidate,
@@ -289,6 +293,7 @@ __all__ = [
     "TOMBSTONED",
     "UNIT_JSON_VERSION",
     "Batch",
+    "BinEntry",
     "BinnedFile",
     "BinnedUnitFile",
     "Candidate",
@@ -397,6 +402,7 @@ __all__ = [
     "adopted_original_unprotected",
     "audit_repair_archive",
     "backlog_row",
+    "bin_entry",
     "binding_warning",
     "binned_export_file",
     "binned_for_unit",
@@ -437,6 +443,7 @@ __all__ = [
     "is_rendered_sidecar",
     "keep_candidates",
     "keep_origin_opf",
+    "latest_deletion",
     "leftover_tickets",
     "let_go_tickets",
     "make_precheck",
@@ -476,6 +483,7 @@ __all__ = [
     "title_needles",
     "unit_files",
     "unit_tombstoned",
+    "units_binned_from_store",
     "unresolved_bin_items",
     "upgrade_source",
     "upstream_claims",
