@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from shelfhold.sdk.connected import ConnectedCapability
 from shelfhold.sdk.events import PluginEventError, check_plugin_event, plugin_event_type
 from shelfhold.sdk.export_target import ExportTarget, TargetCapabilities
 from shelfhold.sdk.fsops import (
@@ -234,7 +235,7 @@ def test_plugin_events_namespaced() -> None:
     ):
         with pytest.raises(PluginEventError):
             check_plugin_event("acme", outside)
-    for bad_key in ("", "a.b", "Acme", "a b", "a/b"):
+    for bad_key in ("", "-", "_", "a b", "a/b", "a\n"):
         with pytest.raises(PluginEventError):
             plugin_event_type(bad_key, "x")
     with pytest.raises(PluginEventError):
@@ -387,3 +388,134 @@ def test_remote_ids_stable_across_connected_tool_reinstall() -> None:
     for moved in (MovesUnits(), MovesSeries()):
         failed = {c.name for c in _run(moved).failures}
         assert failed == {"simulated_reinstall"}, (type(moved).__name__, failed)
+
+
+# --- review of #178 -------------------------------------------------------------------------
+
+
+@pytest.mark.req("EF-EXP-065")
+def test_a_plan_is_copied_by_the_host_so_a_subclass_cannot_flip_after_the_check() -> None:
+    class Flip(FsOp):
+        calls: int = 0
+
+        @property  # type: ignore[override]
+        def op(self) -> str:  # "write" for the check, "unlink" for the executor
+            object.__setattr__(self, "calls", self.calls + 1)
+            return "write" if self.calls == 1 else "unlink"
+
+    flip = Flip.model_construct(rel_path="a.cbz", dst_rel_path=None, content_ref=None, mtime=None)
+    for build in (
+        lambda: FsOpPlan(ops=[flip]),  # type: ignore[list-item]
+        lambda: parse_destination_plan(FsOpPlan.model_construct(ops=(flip,))),
+        lambda: check_destination_plan(FsOpPlan.model_construct(ops=(flip,))),
+    ):
+        with pytest.raises(ValueError):
+            build()
+    # what comes back is the host's own copy, made of exact FsOp instances
+    plan = parse_destination_plan(_plan(_write("a.cbz")))
+    assert all(type(op) is FsOp for op in plan.ops)
+    again = parse_destination_plan(plan)
+    assert again == plan and again is not plan and again.ops[0] is not plan.ops[0]
+
+
+@pytest.mark.req("EF-EXP-065")
+def test_a_validated_plan_cannot_be_mutated() -> None:
+    plan = parse_destination_plan(_plan(_write("a.cbz")))
+    with pytest.raises(ValidationError):
+        plan.ops[0].op = "unlink"  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        plan.ops[0].rel_path = ".shelfhold/x"  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        plan.ops = ()  # type: ignore[misc]
+    assert isinstance(plan.ops, tuple)  # no append either
+    ref = plan.ops[0].content_ref
+    assert ref is not None
+    with pytest.raises(ValidationError):
+        ref.ref = "other"  # type: ignore[misc]
+
+
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
+@pytest.mark.parametrize(
+    "path",
+    ["SHELFH~1", "SHELFH~1/x", "a/SHELFH~2", "x~9.cbz", "\uff5e1", "SHELFH\uff5e1/x"],
+)
+def test_fsop_plan_refuses_a_short_8_3_name(path: str) -> None:
+    assert is_reserved_path(path)
+    with pytest.raises(ValueError):
+        parse_destination_plan(_plan(_write(path)))
+    assert not is_reserved_path("a~b.cbz") and not is_reserved_path("a~")
+
+
+@pytest.mark.req("EF-EXP-065")
+def test_a_plan_never_overwrites_what_it_wrote_or_moved_onto() -> None:
+    clash = [
+        (_write("a.cbz"), _write("a.cbz")),
+        (_write("a.cbz"), _write("A.CBZ")),  # a file system that ignores case
+        (_write("a.cbz"), {"op": "rename", "rel_path": "b", "dst_rel_path": "a.cbz"}),
+        ({"op": "rename", "rel_path": "b", "dst_rel_path": "a.cbz"}, _write("a.cbz")),
+        (
+            {"op": "rename", "rel_path": "b", "dst_rel_path": "a.cbz"},
+            {"op": "rename", "rel_path": "c", "dst_rel_path": "a.cbz"},
+        ),
+        (_write("a.cbz"), {"op": "write_inline", **{k: v for k, v in _write("a.cbz").items()
+                                                      if k != "op"}}),
+    ]  # fmt: skip
+    for first, second in clash:
+        with pytest.raises(ValueError, match="overwrite"):
+            parse_destination_plan(_plan(first, second))
+    parse_destination_plan(_plan(_write("a.cbz"), _write("b.cbz")))
+    parse_destination_plan(  # a folder is made once or twice: it is not an overwrite
+        _plan({"op": "mkdir", "rel_path": "d"}, {"op": "mkdir", "rel_path": "d"})
+    )
+    assert "RENAME_NOREPLACE" in FSOPS_DOC
+    assert "never overwrites" in FSOPS_DOC
+
+
+@pytest.mark.req("ENF-OBS-003")
+def test_the_bus_and_the_sdk_agree_on_what_a_plugin_event_type_is() -> None:
+    from shelfhold.events.bus import UnknownEventType, check_event_type
+
+    check_event_type("plugin.acme.sync_done")
+    check_event_type("plugin.foo-bar.sync_done")
+    for bad in ("plugin.-.x", "plugin.a-.x", "plugin.-a.x", "plugin.a--b.x", "plugin.acme.a.b",
+                "plugin.acme.", "plugin.foo_bar.x", "plugin.Acme.x"):  # fmt: skip
+        with pytest.raises(UnknownEventType):
+            check_event_type(bad)
+        with pytest.raises(PluginEventError):
+            check_plugin_event(bad.split(".")[1] or "x", bad)
+
+
+@pytest.mark.req("ENF-OBS-003")
+def test_one_plugin_has_one_event_space_however_its_key_is_spelled() -> None:
+    from shelfhold.plugin_host.registry import normalise_name
+
+    assert plugin_event_type("foo_bar", "x") == plugin_event_type("foo-bar", "x")
+    assert plugin_event_type("Foo.Bar", "x") == "plugin.foo-bar.x"
+    assert plugin_event_type("foo_bar", "x") == f"plugin.{normalise_name('foo_bar')}.x"
+    check_plugin_event("foo_bar", "plugin.foo-bar.x")
+    check_plugin_event("foo-bar", "plugin.foo-bar.x")
+    with pytest.raises(PluginEventError):  # the spelling with an underscore is no space of its own
+        check_plugin_event("foo-bar", "plugin.foo_bar.x")
+
+
+@pytest.mark.req("EF-SRC-036", "ENF-QUAL-003")
+def test_the_default_fetch_range_does_not_count_as_an_implementation() -> None:
+    class Inherits(FakeRangedConnectedService):
+        fetch_range = Source.fetch_range  # type: ignore[assignment]
+        fetch_unit = None  # type: ignore[assignment]
+
+        def __init__(self, handle_offset: int = 0) -> None:
+            super().__init__(handle_offset)
+            self.connected = ConnectedCapability.HEALTH_PROBE  # no ticket: nothing delivers
+
+    failed = {c.name for c in _run(Inherits()).failures}
+    assert "capabilities_implemented" in failed
+
+    class Real(Inherits):
+        async def fetch_range(self, f: Any, target: Any) -> Any:  # a 1.2 plugin's own
+            return await self._range_payload(target)
+
+    assert "capabilities_implemented" not in {c.name for c in _run(Real()).failures}
+
+
+FSOPS_DOC = __import__("shelfhold.sdk.fsops", fromlist=["x"]).__doc__ or ""
