@@ -70,6 +70,8 @@ def run_cancel(args: argparse.Namespace, channel: OpsChannel) -> int:
     done = channel.call("ops.job_cancel", job_id=args.job_id)
     if done["outcome"] == "cancelled":
         print(t("ops.job_cancelled", id=done["id"]))
+    elif done["outcome"] == "too_late":
+        print(t("ops.job_too_late", id=done["id"]))
     else:
         print(t("ops.job_cancelling", id=done["id"]))
     return 0

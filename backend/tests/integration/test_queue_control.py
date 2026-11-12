@@ -189,8 +189,8 @@ def test_cancelling_a_running_job_releases_its_locks_and_its_slot(tmp_path: Path
             seen["stop"] = context.stop_requested  # the worker is told, like SIGTERM
             raise RuntimeError("died holding its locks")  # the handler does not clean up
 
-        e.pools.register("work", pool="io", handler=work)
-        job = e.pools.submit("work", dedupe_key="w", limit_key="upstream").job_id
+        e.pools.register("export.run", pool="io", handler=work)
+        job = e.pools.submit("export.run", dedupe_key="w", limit_key="upstream").job_id
         e.run()
         assert seen == {"outcome": "cancelling", "stop": True}
         assert status_of(e, job) == ("cancelled", None)  # not failed, not retried
@@ -236,8 +236,8 @@ def test_cancelling_between_two_steps_leaves_no_open_intent(tmp_path: Path) -> N
             job_id.append(context.job_id)
             context.run_steps([step(1), step(2), step(3)])
 
-        e.pools.register("steps", pool="io", handler=handler)
-        job = e.pools.submit("steps", dedupe_key="s").job_id
+        e.pools.register("export.run", pool="io", handler=handler)
+        job = e.pools.submit("export.run", dedupe_key="s").job_id
         e.run()
         assert done == [1]  # step 2 and 3 never started
         assert status_of(e, job) == ("cancelled", None)
@@ -265,8 +265,8 @@ def test_cancelling_a_running_job_twice_asks_once(tmp_path: Path) -> None:
             for _ in range(2):
                 e.ops.cancel(context.job_id, principal=e.principal())
 
-        e.pools.register("work", pool="io", handler=work)
-        job = e.pools.submit("work", dedupe_key="w").job_id
+        e.pools.register("export.run", pool="io", handler=work)
+        job = e.pools.submit("export.run", dedupe_key="w").job_id
         e.run()
         assert status_of(e, job) == ("cancelled", None)
         assert [r.action for r in e.rows(identity.audit)] == ["queue.control"] * 2

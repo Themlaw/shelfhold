@@ -37,6 +37,7 @@ from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export, platform
+from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.attach import AttachOps
@@ -407,14 +408,7 @@ class OpsServices:
             if row is not None:
                 if row.status not in DEAD:
                     raise NotWaitingError("this job did not give up")
-                connection.execute(
-                    sa.update(job)
-                    .where(job.c.id == subject)
-                    .values(
-                        status="queued", huey_task_id=None, attempts=0, last_error=None,
-                        error_code=None, started_at=None, finished_at=None,
-                    )
-                )  # fmt: skip
+                QueueControl().replay(connection, subject)  # the same rules as `jobs replay`
             else:
                 cleared = connection.execute(
                     sa.update(record)

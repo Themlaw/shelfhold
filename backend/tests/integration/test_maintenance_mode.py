@@ -401,7 +401,7 @@ def test_the_socket_refuses_every_config_and_identity_write_while_the_mode_is_on
     from shelfhold.infrastructure.local_socket import Peer, RpcError
     from shelfhold.interfaces.local_cli.dispatch import (
         HEADLESS_METHODS,
-        MAINTENANCE_READS,
+        MAINTENANCE_OPEN,
         METHODS,
         IdentityDispatcher,
     )
@@ -411,10 +411,10 @@ def test_the_socket_refuses_every_config_and_identity_write_while_the_mode_is_on
         dispatcher = IdentityDispatcher(None, headless=object(), ops=ops)  # type: ignore[arg-type]
         peer = Peer(1, 1000, 1000)
         e.ops.enter(principal=e.principal("cli"))
-        writes = (set(METHODS) | set(HEADLESS_METHODS)) - MAINTENANCE_READS
+        writes = (set(METHODS) | set(HEADLESS_METHODS)) - MAINTENANCE_OPEN
         assert len(writes) >= 10
         for method in sorted(writes):
             with pytest.raises(RpcError) as refused:
                 asyncio.run(dispatcher(peer, method, {}))
             assert (refused.value.data or {}).get("code") == "maintenance.active", method
-        assert set(METHODS) | set(HEADLESS_METHODS) >= MAINTENANCE_READS
+        assert set(METHODS) | set(HEADLESS_METHODS) >= MAINTENANCE_OPEN

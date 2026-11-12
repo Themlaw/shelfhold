@@ -64,7 +64,7 @@ def create_http_app(
     auth: AuthGate | None = None,
     source_url: str | None = None,
     forward_auth_trusted_cidrs: Sequence[str] = (),
-    maintenance_active: Callable[[], bool] | None = None,
+    maintenance_active: Callable[[], bool | None] | None = None,
 ) -> FastAPI:
     """Without `auth` (offline schema export, protocol tests) the authentication routes are still
     declared, so that the exported schema documents them, but nobody is ever authenticated."""

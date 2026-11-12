@@ -13470,6 +13470,10 @@
       "code": "csrf_failed",
       "status": 403
     },
+    "/api/v1/problems/db.busy": {
+      "code": "db.busy",
+      "status": 503
+    },
     "/api/v1/problems/deletion.blocked": {
       "code": "deletion.blocked",
       "status": 409

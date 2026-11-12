@@ -587,7 +587,11 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("normalize.migrate")  # L55: reserved; no waiting state either
     declared |= {"revisions.apply", "revisions.force"}  # M2 L17: the confirmed rewrite batch
     declared.add("contributor.set_died_for_france")  # M2 L15b: no waiting state
-    declared |= {"maintenance.enter", "maintenance.exit", "queue.control"}  # M3 L13
+    declared |= {
+        "maintenance.enter",
+        "maintenance.exit",
+        "queue.control",
+    }  # M3 L13
     declared.add("coverage.resplit")  # M2 L26: a re-cut chapter confirmed (EF-BIB-044)
     declared.add("edition.merge")  # M2 L14: reserved; the merge of two Editions, no waiting state
     declared.add("shelf.withdraw")  # M1b L10: applying the removal plan of a family shelf

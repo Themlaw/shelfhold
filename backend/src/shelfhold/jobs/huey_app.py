@@ -36,10 +36,10 @@ from shelfhold.infrastructure.logging import elapsed_ms, exception_detail
 from shelfhold.jobs.control import (
     PAUSE_CODE,
     REPAIR_PRIORITY,
-    SECURITY_REPAIR_KINDS,
     QueueControl,
 )
 from shelfhold.jobs.errors import JobFailedError
+from shelfhold.jobs.kinds import traits_of
 from shelfhold.jobs.ledger import (
     MAX_ATTEMPTS,
     RETRY_BACKOFF_S,
@@ -396,7 +396,7 @@ class JobPools:
             return f"unrouted:{job.job_id}"
         pool = route[0]
         priority = CLASS_PRIORITY.get(job.priority_class, CLASS_PRIORITY["new"])
-        if job.kind in SECURITY_REPAIR_KINDS:
+        if traits_of(job.kind).security_repair:
             priority = REPAIR_PRIORITY  # above every class a user can pick (EF-INT-017)
         task = self._run_job[pool].s(job.job_id, priority=priority)
         self._hueys[pool].enqueue(task)
@@ -420,12 +420,15 @@ class JobPools:
             log.warning("job.unknown_kind", job_id=job_id, job_kind=job.kind)
             self.ledger.mark_finished(job_id, error="no handler", error_code="job.unknown_kind")
             return
-        if self.mode.active():  # EF-INT-018: nothing starts, queued before or after the entry
+        frozen = self.mode.probe()
+        if frozen is None:  # the database was busy: not the mode, ask again shortly
+            raise RetryTask(delay=RETRY_DELAY_S)
+        if frozen:  # EF-INT-018: nothing starts, queued before or after the entry
             self.ledger.pause_one(job_id, PARK_CODE)
             log.debug("job.skipped", job_id=job_id, job_kind=job.kind, reason="maintenance")
             return  # parked, not failed, not retried: the exit puts it back
         with self._engine.connect() as conn:
-            queue_paused = self.control.is_paused(conn, job.source_key)
+            queue_paused = self.control.is_paused(conn, job.source_key, job.kind)
         if queue_paused:  # EF-INT-017: a paused queue or source waits, it does not fail
             self.ledger.pause_one(job_id, PAUSE_CODE)
             log.debug("job.skipped", job_id=job_id, job_kind=job.kind, reason="queue_paused")
@@ -449,8 +452,8 @@ class JobPools:
             ensure_store_access(StoreOrigin.PERIODIC, now=now, window=self.window)
             window_end = end
         if not self.ledger.claim_running(job_id):
-            log.debug("job.skipped", job_id=job_id, job_kind=job.kind, reason="already_claimed")
-            return  # the same job reached us twice: the other task has it, or it is done
+            self._not_claimed(job_id, job.kind)
+            return  # the same job reached us twice, or an entry or a pause came in just now
         if job.limit_key is not None and not self.slots.try_acquire(job.limit_key):
             self.ledger.mark_deferred(job_id)
             raise RetryTask(delay=RETRY_DELAY_S)  # asked again later, no thread kept waiting
@@ -514,6 +517,22 @@ class JobPools:
                 )
         if retry_in is not None:
             raise RetryTask(delay=retry_in)  # Huey keeps the task and runs it again later
+
+    def _not_claimed(self, job_id: str, kind: str) -> None:
+        """The claim found the row taken, or the mode or a pause came in since the checks above
+        (the claim reads them itself, so no job starts under a mode that counted it out). In that
+        case the row is still `queued` and is parked, as it would have been a moment earlier."""
+        if self.mode.probe():
+            self.ledger.pause_one(job_id, PARK_CODE)
+            reason = "maintenance"
+        else:
+            job = self.ledger.get(job_id)
+            with self._engine.connect() as conn:
+                paused = self.control.is_paused(conn, job.source_key, kind)
+            if paused:
+                self.ledger.pause_one(job_id, PAUSE_CODE)
+            reason = "queue_paused" if paused else "already_claimed"
+        log.debug("job.skipped", job_id=job_id, job_kind=kind, reason=reason)
 
     def _failed(self, job_id: str, kind: str, exc: Exception) -> float | None:
         """A job raised. Attempts left: the wait before the next one. None: it gave up, and is a

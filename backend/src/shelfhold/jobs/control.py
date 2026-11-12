@@ -10,12 +10,14 @@ stopped server. The optional `revoke` drops the Huey task of a job that must no 
   without failing, and a job that arrives later (or reaches a worker later) waits as well. A job
   already running goes on. `resume` puts back only the jobs this pause parked: the jobs parked by
   the window (`window.preempted`), the disk guard or the maintenance mode keep their own reason.
-- **Cancel**: a job that waits is cancelled at once. A running one is asked to stop (a marker the
-  worker reads between two steps, like SIGTERM): it ends `cancelled` when its handler returns, its
-  locks and its domain slot released then, and a retry never starts it again.
-- **Priority**: one of the three user classes. A security repair (`SECURITY_REPAIR_KINDS`) is above
-  all of them at every moment: its priority cannot be changed, and no class a user can pick
-  reaches it.
+- **Cancel**: a job that waits is cancelled at once. A running one whose kind stops between steps
+  (`jobs.kinds`) is asked to stop (a marker the worker reads, like SIGTERM): it ends `cancelled`
+  when its handler returns, its locks and its domain slot released then, and a retry never starts
+  it again. Any other kind is left to finish and the answer is `too_late`. The marker belongs to the
+  run it was asked in: the next claim and a replay both clear it.
+- **Priority**: one of the three user classes. A security repair (`jobs.kinds`) is above
+  all of them at every moment: its priority cannot be changed, no class a user can pick reaches it,
+  and a pause does not park it.
 - **Replay**: a failed, cancelled or dead-lettered job goes back to the queue as the same row, so
   that replaying twice is one job; if another job holds its dedupe key now, that one is the answer.
 """
@@ -33,7 +35,8 @@ from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.schema import coherence, platform
-from shelfhold.jobs.ledger import ACTIVE
+from shelfhold.jobs.kinds import security_repair_kinds, traits_of
+from shelfhold.jobs.ledger import ACTIVE, CANCEL_PREFIX, PAUSE_PREFIX
 
 __all__ = [
     "CANCEL_PREFIX",
@@ -50,19 +53,9 @@ __all__ = [
 ]
 
 PAUSE_CODE: Final = "queue.paused"  # `job_view.error_code` of a job parked by a pause
-PAUSE_PREFIX: Final = "queue.pause."  # `app_setting` keys: `.all`, `.source.<key>`
-CANCEL_PREFIX: Final = "job.cancel."  # `app_setting` key: a running job asked to stop
 USER_CLASSES: Final = ("new", "request", "backfill")  # what a user may pick, highest first
 REPAIR_PRIORITY: Final = 50  # above CLASS_PRIORITY["new"] (30): no class reaches it
-SECURITY_REPAIR_KINDS: Final = frozenset(
-    {
-        "library.safeguard",  # "Mettre à l'abri": the copy of /store that keeps a file safe
-        "store.keep_catchup",
-        "store.index",
-        "reconcile.cycle",  # the coherence of the disks against the database
-        "reconcile.hash",
-    }
-)
+SECURITY_REPAIR_KINDS: Final = security_repair_kinds()  # declared in `jobs.kinds`, with the kinds
 _FINAL = ("failed", "cancelled", "dead_letter")  # what a replay takes back
 
 job_view = platform.job_view
@@ -84,7 +77,11 @@ class PriorityRefusedError(ValueError):
 @dataclass(frozen=True)
 class CancelOutcome:
     job_id: str
-    outcome: str  # "cancelled" or "cancelling" (running: it stops at its next step)
+    outcome: str  # "cancelled", "cancelling" (it stops at its next step) or "too_late"
+
+
+Scope = tuple[str, str | None]  # ("all", None) or ("source", key): a source called `all` is one
+ALL: Final[Scope] = ("all", None)
 
 
 def _scope_key(source: str | None) -> str:
@@ -105,7 +102,7 @@ class QueueControl:
             .values(key=_scope_key(source), value=value)
             .on_conflict_do_nothing(index_elements=["key"])  # the first pause keeps its date
         )
-        where = [job_view.c.status == "queued"]
+        where = [job_view.c.status == "queued", job_view.c.kind.not_in(SECURITY_REPAIR_KINDS)]
         if source is not None:
             where.append(job_view.c.source_key == source)
         return int(
@@ -122,7 +119,7 @@ class QueueControl:
             where = [job_view.c.status == "paused", job_view.c.error_code == PAUSE_CODE]
         else:
             conn.execute(sa.delete(app_setting).where(app_setting.c.key == _scope_key(source)))
-            if "all" in self.paused_scopes(conn):
+            if ALL in self.paused_scopes(conn):
                 return 0
             where = [
                 job_view.c.status == "paused",
@@ -138,19 +135,25 @@ class QueueControl:
         )
 
     @staticmethod
-    def paused_scopes(conn: Connection) -> set[str]:
-        """`all` and the `source:<key>` that are paused."""
-        found: set[str] = set()
+    def paused_scopes(conn: Connection) -> set[Scope]:
+        """`("all", None)` and the `("source", key)` that are paused."""
+        found: set[Scope] = set()
         for key in conn.execute(
             sa.select(app_setting.c.key).where(app_setting.c.key.like(f"{PAUSE_PREFIX}%"))
         ).scalars():
             rest = key[len(PAUSE_PREFIX) :]
-            found.add("all" if rest == "all" else rest.replace("source.", "", 1))
+            if rest == "all":
+                found.add(ALL)
+            elif rest.startswith("source."):
+                found.add(("source", rest[len("source.") :]))
         return found
 
-    def is_paused(self, conn: Connection, source_key: str | None) -> bool:
+    def is_paused(self, conn: Connection, source_key: str | None, kind: str | None = None) -> bool:
+        """A security repair is never parked by a pause (EF-INT-017): only the mode stops it."""
+        if kind is not None and kind in SECURITY_REPAIR_KINDS:
+            return False
         scopes = self.paused_scopes(conn)
-        return "all" in scopes or (source_key is not None and source_key in scopes)
+        return ALL in scopes or (source_key is not None and ("source", source_key) in scopes)
 
     # -- cancel -------------------------------------------------------------------------------
 
@@ -167,10 +170,16 @@ class QueueControl:
                 self._revoke(row.huey_task_id)
             return CancelOutcome(job_id, "cancelled")
         if row.status == "running":
+            if not traits_of(row.kind).cancellable:
+                return CancelOutcome(job_id, "too_late")  # it never looks: it finishes, as it is
+            # the statement that writes checks the status: a run that just ended gets no marker
             conn.execute(
-                sqlite_insert(app_setting)
-                .values(key=f"{CANCEL_PREFIX}{job_id}", value=now.isoformat())
-                .on_conflict_do_nothing(index_elements=["key"])
+                sa.text(
+                    "INSERT INTO app_setting (key, value) SELECT :key, :value "
+                    "WHERE EXISTS (SELECT 1 FROM job_view WHERE id = :id AND status = 'running') "
+                    "ON CONFLICT (key) DO NOTHING"
+                ),
+                {"key": f"{CANCEL_PREFIX}{job_id}", "value": now.isoformat(), "id": job_id},
             )
             return CancelOutcome(job_id, "cancelling")
         raise JobStateError(f"a job that is {row.status} cannot be cancelled")
@@ -252,6 +261,7 @@ class QueueControl:
             ).scalar()
             if holder is not None:
                 return str(holder), False
+        conn.execute(sa.delete(app_setting).where(app_setting.c.key == f"{CANCEL_PREFIX}{job_id}"))
         conn.execute(
             sa.update(job_view)
             .where(job_view.c.id == job_id, job_view.c.status.in_(_FINAL))

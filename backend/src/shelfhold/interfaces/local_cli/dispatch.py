@@ -377,7 +377,15 @@ HEADLESS_METHODS: Mapping[str, tuple[HeadlessMethod, str | None]] = {
 
 # What the socket still answers while the maintenance mode is on (EF-INT-018): reading. Every other
 # method of the two tables above, one added tomorrow included, is a write and is refused.
-MAINTENANCE_READS = frozenset({"ping", "identity.keys_list", "config.get", "config.list"})
+MAINTENANCE_READS = frozenset(
+    {"ping", "identity.keys_list", "identity.profile_list", "config.get", "config.list"}
+)
+# What takes an access away stays open too: a stolen session or key must be closable while the mode
+# lasts (the exit would reopen every write before it). A password reset by the host is the same.
+MAINTENANCE_REVOCATIONS = frozenset(
+    {"identity.sessions_revoke", "identity.keys_revoke", "identity.reset_password"}
+)
+MAINTENANCE_OPEN = MAINTENANCE_READS | MAINTENANCE_REVOCATIONS
 
 
 class IdentityDispatcher:
@@ -419,7 +427,11 @@ class IdentityDispatcher:
             self._authorize(principal, "admin_risk.accept")
 
     def _refuse_while_frozen(self, method: str) -> None:
-        if method in MAINTENANCE_READS or self._ops is None or not self._ops.maintenance_active():
+        if method in MAINTENANCE_OPEN:
+            return
+        # the services of a test fake have no maintenance service: not frozen
+        asks = getattr(self._ops, "maintenance_active", None)
+        if asks is None or not asks():
             return
         raise RpcError(
             APPLICATION_ERROR, t("local_cli.maintenance_active"), {"code": "maintenance.active"}

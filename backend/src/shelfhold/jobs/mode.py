@@ -1,15 +1,17 @@
 """The maintenance mode of the instance (EF-INT-018): one persisted flag that freezes the writes.
 
-While `instance.maintenance_since` is set, nothing writes on the instance's behalf:
+While `instance.maintenance_since` is set, nothing starts on the instance's behalf (the writes of
+recovery at start-up, which settle what a crash left open, are not work and go on):
 
 - every HTTP request that is not a read is refused (`maintenance.active`, 503), reserved routes
-  included; what stays open is reading, `/healthz`, the sign-in that a fresh session needs, and the
-  exit itself;
+  included; what stays open is reading, `/healthz`, the sign-in that a fresh session needs, what
+  takes an access away (sign-out, a revoked session, key or passkey) and the exit itself;
 - the scheduler claims nothing: what falls due waits in `schedule` and is caught up once, after the
   exit (run-once, as after an outage);
 - a job that reaches a worker, queued before or after the entry, is parked under `PARK_CODE` (no
   attempt spent, nothing failed); the exit puts them back in the queue;
-- the operating commands of the host CLI that write are refused as well (`ops.*` except reads).
+- every command of the host CLI that is not a read, a revocation or the exit is refused as well, by
+  one gate (`interfaces.cli.registry`), and the socket refuses its writes the same way.
 
 The flag is the database's, so it survives a restart: the server that comes back is still frozen.
 A job that was running when the mode was entered finishes (nothing interrupts a step, ENF-OPS-007);
@@ -61,14 +63,19 @@ class MaintenanceMode:
             return MaintenanceState(False)
         return MaintenanceState(True, row.maintenance_since, row.maintenance_by)
 
-    def active(self) -> bool:
+    def probe(self) -> bool | None:
         """Read from the database at every call, never cached: the flag may be set by another
-        process (the host CLI of a stopped server). A database that cannot be read counts as
-        active: the refusal is the safe side, and a write could not have succeeded anyway."""
+        process (the host CLI of a stopped server). None when the database could not be read
+        (locked, busy): that is not the mode, and must not be told as if it were."""
         try:
             return self.state().active
         except sa.exc.OperationalError:
-            return True
+            return None
+
+    def active(self) -> bool:
+        """`probe`, on the safe side: a database that cannot be read counts as active for whoever
+        only needs to know whether a write may go (it could not have succeeded anyway)."""
+        return self.probe() is not False
 
     def enter(self, connection: Connection, *, by: str | None) -> bool:
         """In the caller's transaction. False when the mode was already on (the first entry keeps

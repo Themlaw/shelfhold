@@ -163,7 +163,8 @@ def open_ops(
         export_items=ExportItemOps(composition), export_all=ExportAllOps(composition),
         follows=FollowOps(composition), acquire=AcquireOps(composition), roots=RootOps(composition),
         maintenance=MaintenanceOps(
-            engine, clock, fresh_auth_s=settings.fresh_auth_s, window=window,
+            engine, clock, fresh_auth_s=settings.fresh_auth_s, hardened=settings.auth_hardened,
+            window=window,
             control=QueueControl(revoke=revoke),
         ),
         window=window,

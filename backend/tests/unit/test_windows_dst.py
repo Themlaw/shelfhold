@@ -58,13 +58,13 @@ def test_default_window_is_four_real_hours_on_the_change_days(day: date) -> None
 @pytest.mark.req("EF-INT-004")
 def test_a_window_across_midnight_over_the_change_of_hour() -> None:
     late = window("23:00", "02:30")
-    # Saturday night into the Sunday of the change to summer time: 02:30 does not exist and is read
-    # as 03:30 CEST, so the window lasts 3.5 real hours, not 3.5 clock hours' worth of a plain night
+    # Saturday night into the Sunday of the change to summer time: 02:30 does not exist, so the
+    # window is cut at the change itself (02:00 CET = 01:00Z), never moved to 03:30 CEST
     spring = late.bounds_on(date(2026, 3, 28))
     assert spring.start == utc(2026, 3, 28, 22)
-    assert spring.end == utc(2026, 3, 29, 1, 30)
-    assert spring.contains(utc(2026, 3, 29, 1, 29))
-    assert not spring.contains(utc(2026, 3, 29, 1, 30))
+    assert spring.end == utc(2026, 3, 29, 1)
+    assert spring.contains(utc(2026, 3, 29, 0, 59))
+    assert not spring.contains(utc(2026, 3, 29, 1))
     # into the Sunday of the change back: 02:30 happens twice; the first one closes the window
     autumn = late.bounds_on(date(2026, 10, 24))
     assert autumn.start == utc(2026, 10, 24, 21)

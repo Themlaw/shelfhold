@@ -10,6 +10,7 @@ import json
 import re
 import sqlite3
 from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from itertools import product
 from types import SimpleNamespace
@@ -128,6 +129,12 @@ def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
         fresh = call(api, method, path)
         assert fresh.status_code not in (401, 403), (path, fresh.text)
         written = audit_rows(api, action)[before:]
+        if action == "maintenance.enter":  # the fresh call really entered the mode: leave it, or
+            with closing(sqlite3.connect(api.settings.database_path)) as db:  # the gate (503)
+                db.execute(
+                    "UPDATE instance SET maintenance_since = NULL, maintenance_by = NULL"
+                )  # answers before auth
+                db.commit()
         own = 1 if action in SELF_AUDITED else 0  # the route writes its own line, on a disclosure
         assert len(written) == 1 - own
         for line in written:

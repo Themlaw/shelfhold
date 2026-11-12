@@ -294,6 +294,7 @@ FRESHNESS_LINE = {
             "profile.source_policy",
             "maintenance.enter",  # M3 L13: a stolen session freezes every write of the instance
             "maintenance.exit",
+            "queue.cancel_repair",  # M3 L13: a stolen session stops what protects the library
         ),
         "p3",
     ),

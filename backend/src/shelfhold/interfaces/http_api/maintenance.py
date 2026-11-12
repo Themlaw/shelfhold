@@ -3,7 +3,8 @@
 `MaintenanceGuard` is the ASGI gate: while the mode is on, a request that is not a read is refused
 with 503 `maintenance.active` before it reaches a route, reserved routes included. Open: reading
 (`GET`, `HEAD`, `OPTIONS`, so `/healthz` as well), the sign-in routes (a session has to be fresh to
-leave the mode, and signing in writes only the session), and the exit itself.
+leave the mode, and signing in writes only the session), what takes an access away (sign-out,
+removing a passkey), and the exit itself.
 
 The routes are the twins of `shelfhold maintenance on|off` and of the queue commands, and call the
 same services. Entering and leaving are reserved (a fresh session, never a key); the queue commands
@@ -23,6 +24,7 @@ from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.interfaces.http_api.auth import ANONYMOUS_JSON_PATHS, SAFE_METHODS, reserved_action
 from shelfhold.interfaces.http_api.catalog import error_code
 from shelfhold.interfaces.http_api.ops import refusals
+from shelfhold.interfaces.http_api.passkeys import PASSKEYS_PATH
 from shelfhold.interfaces.http_api.problems import build_problem_response
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.jobs.mode import ACTIVE_CODE
@@ -31,8 +33,20 @@ from shelfhold.ops import OpsServices
 __all__ = ["EXIT_PATH", "MaintenanceGuard", "build_maintenance_router"]
 
 EXIT_PATH = "/api/v1/maintenance/exit"
-OPEN_PATHS = frozenset({EXIT_PATH, *ANONYMOUS_JSON_PATHS})
+LOGOUT_PATH = "/api/v1/auth/logout"
+# What takes an access away is not a write of the library: it stays open, or a stolen session would
+# read on until the exit, which reopens every write first. Sign-out and the removal of a passkey.
+OPEN_PATHS = frozenset({EXIT_PATH, LOGOUT_PATH, *ANONYMOUS_JSON_PATHS})
+OPEN_DELETE_PREFIXES = (f"{PASSKEYS_PATH}/",)
 
+
+def _stays_open(method: str, path: str) -> bool:
+    return path in OPEN_PATHS or (
+        method == "DELETE" and any(path.startswith(prefix) for prefix in OPEN_DELETE_PREFIXES)
+    )
+
+
+# the guard writes the audit line of a route, as for every reserved route: the service is told so
 _ENTER = reserved_action(RESERVED_ACTIONS["maintenance.enter"])
 _EXIT = reserved_action(RESERVED_ACTIONS["maintenance.exit"])
 _QUEUE = reserved_action(RESERVED_ACTIONS["queue.control"])
@@ -40,7 +54,7 @@ Admin = Annotated[Principal, Depends(require_admin)]
 
 
 class MaintenanceGuard:
-    def __init__(self, app: ASGIApp, *, active: Callable[[], bool]) -> None:
+    def __init__(self, app: ASGIApp, *, active: Callable[[], bool | None]) -> None:
         self.app = app
         self._active = active
 
@@ -48,12 +62,13 @@ class MaintenanceGuard:
         if (
             scope["type"] == "http"
             and scope["method"] not in SAFE_METHODS
-            and scope["path"] not in OPEN_PATHS
-            and self._active()
+            and not _stays_open(scope["method"], scope["path"])
+            and (state := self._active()) is not False
         ):
             request_id = scope.get("state", {}).get("request_id")
             response = build_problem_response(
-                error_code(ACTIVE_CODE),
+                # None: the database was locked just now. That is not the mode: say so
+                error_code("db.busy" if state is None else ACTIVE_CODE),
                 request_id=request_id if isinstance(request_id, str) else None,
                 headers={"Retry-After": "60"},
             )
@@ -120,7 +135,7 @@ class ResumedOut(BaseModel):
 
 class CancelOut(BaseModel):
     id: str
-    outcome: str  # cancelled | cancelling
+    outcome: str  # cancelled | cancelling | too_late
 
 
 class PriorityIn(BaseModel):
@@ -148,27 +163,33 @@ def build_maintenance_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     @router.post("/maintenance/enter")
     def maintenance_enter(principal: Annotated[Principal, Depends(_ENTER)]) -> ModeOut:
         with refusals():
-            return ModeOut(**get_ops().maintenance.enter(principal=principal))
+            return ModeOut(**get_ops().maintenance.enter(principal=principal, audit=False))
 
     @router.post("/maintenance/exit")
     def maintenance_exit(principal: Annotated[Principal, Depends(_EXIT)]) -> ModeOut:
         with refusals():
-            return ModeOut(**get_ops().maintenance.leave(principal=principal))
+            return ModeOut(**get_ops().maintenance.leave(principal=principal, audit=False))
 
     @router.post("/queue/pause")
     def queue_pause(body: ScopeIn, principal: Annotated[Principal, Depends(_QUEUE)]) -> PausedOut:
         with refusals():
-            return PausedOut(**get_ops().maintenance.pause(body.source, principal=principal))
+            return PausedOut(
+                **get_ops().maintenance.pause(body.source, principal=principal, audit=False)
+            )
 
     @router.post("/queue/resume")
     def queue_resume(body: ScopeIn, principal: Annotated[Principal, Depends(_QUEUE)]) -> ResumedOut:
         with refusals():
-            return ResumedOut(**get_ops().maintenance.resume(body.source, principal=principal))
+            return ResumedOut(
+                **get_ops().maintenance.resume(body.source, principal=principal, audit=False)
+            )
 
     @router.post("/jobs/{job_id}/cancel")
     def job_cancel(job_id: str, principal: Annotated[Principal, Depends(_QUEUE)]) -> CancelOut:
         with refusals():
-            return CancelOut(**get_ops().maintenance.cancel(job_id, principal=principal))
+            return CancelOut(
+                **get_ops().maintenance.cancel(job_id, principal=principal, audit=False)
+            )
 
     @router.post("/jobs/{job_id}/priority")
     def job_priority(
@@ -176,13 +197,15 @@ def build_maintenance_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     ) -> PriorityOut:
         with refusals():
             done: dict[str, Any] = get_ops().maintenance.set_priority(
-                job_id, body.priority_class, principal=principal
+                job_id, body.priority_class, principal=principal, audit=False
             )
             return PriorityOut(**done)
 
     @router.post("/jobs/{job_id}/replay")
     def job_replay(job_id: str, principal: Annotated[Principal, Depends(_QUEUE)]) -> ReplayOut:
         with refusals():
-            return ReplayOut(**get_ops().maintenance.replay(job_id, principal=principal))
+            return ReplayOut(
+                **get_ops().maintenance.replay(job_id, principal=principal, audit=False)
+            )
 
     return router

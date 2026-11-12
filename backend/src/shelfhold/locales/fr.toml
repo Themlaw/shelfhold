@@ -416,6 +416,7 @@ help_queue_source = "Ne vise que cette source ; sans cette option, toute la file
 queue_paused = "File en pause ({scope}) : {parked} tâche(s) mises en attente."
 queue_resumed = "File reprise ({scope}) : {resumed} tâche(s) remises en file."
 job_cancelled = "Tâche {id} annulée."
+job_too_late = "Tâche {id} : elle ne sait pas s'arrêter en route, elle va au bout ; rien n'a été interrompu."
 job_cancelling = "Tâche {id} : annulation demandée, elle s'arrête à sa prochaine étape."
 job_replayed = "Tâche {id} remise en file."
 job_not_replayed = "Tâche {id} : déjà en file ou déjà reprise sous un autre identifiant, rien de plus."
@@ -1519,6 +1520,10 @@ action = "Aucune action : elle reprendra à la prochaine fenêtre de maintenance
 [errors."maintenance.active"]
 title = "Le mode maintenance est actif : aucune écriture n'est acceptée."
 action = "Lisez à votre aise ; pour reprendre, lancez « shelfhold maintenance off » (ou, dans l'interface, sortez du mode maintenance avec une session récente)."
+
+[errors."db.busy"]
+title = "La base de données est occupée : la requête n'a pas pu être traitée."
+action = "Réessayez dans un instant ; ce n'est pas le mode maintenance."
 
 [errors."queue.priority_locked"]
 title = "Cette priorité n'est pas modifiable : une réparation de sécurité passe toujours avant les autres tâches."

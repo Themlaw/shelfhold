@@ -56,8 +56,8 @@ from shelfhold.interfaces.http_api.identity import build_identity_router
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
-from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
+from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
@@ -413,7 +413,7 @@ def create_app(
         idempotency=IdempotencyStore(engine, clock=clock.now),  # actor: the real principal
         source_url=resolved.source_url,
         forward_auth_trusted_cidrs=resolved.forward_auth_trusted_cidrs,
-        maintenance_active=MaintenanceMode(engine, clock).active,  # EF-INT-018
+        maintenance_active=MaintenanceMode(engine, clock).probe,  # EF-INT-018
     )
 
 
