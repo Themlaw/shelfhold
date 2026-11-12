@@ -13790,6 +13790,10 @@
       "code": "target.key_expiring",
       "status": 409
     },
+    "/api/v1/problems/target.library-type-changed": {
+      "code": "target.library_type_changed",
+      "status": 409
+    },
     "/api/v1/problems/target.library-type-mismatch": {
       "code": "target.library_type_mismatch",
       "status": 409
