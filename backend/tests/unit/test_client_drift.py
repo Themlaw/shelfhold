@@ -15,7 +15,9 @@ pytestmark = pytest.mark.req("EF-INT-001")
 
 
 def _drift():  # type: ignore[no-untyped-def]
-    spec = importlib.util.spec_from_file_location("client_drift", ROOT / "tools" / "client_drift.py")
+    spec = importlib.util.spec_from_file_location(
+        "client_drift", ROOT / "tools" / "client_drift.py"
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -24,8 +26,8 @@ def _drift():  # type: ignore[no-untyped-def]
 
 
 def _git(repo: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.test", *args],
+    subprocess.run(  # noqa: S603
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.test", *args],  # noqa: S607
         cwd=repo,
         check=True,
         capture_output=True,
@@ -63,7 +65,7 @@ def test_typed_api_client_regenerated_no_diff(tmp_path: Path) -> None:
 
 def test_typed_api_client_drift_cli_exit_code(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
-    run = lambda: subprocess.run(  # noqa: E731
+    run = lambda: subprocess.run(  # noqa: E731, S603
         [sys.executable, str(ROOT / "tools/client_drift.py"), str(repo)],
         capture_output=True,
         text=True,

@@ -104,3 +104,10 @@ Retrait possible le 2026-11-15, quand les deux versions ont plus de 14 jours : s
   l'image `python:slim` n'en contient pas et `zoneinfo` échouerait.
 - **uvicorn**, **SQLAlchemy**, **Alembic**, **structlog**, **pydantic** : socle du squelette,
   versions minimales et verrou dans `backend/pyproject.toml` et `backend/uv.lock`.
+
+## Harnais de test de l'atelier (M3 L02)
+
+- **@axe-core/playwright** `4.14.0` (version exacte, `e2e/package.json` et son verrou) : contrôle
+  d'accessibilité bloquant (`serious` et `critical`) joué par les projets `workshop-desktop` et
+  `workshop-mobile`. Il tourne dans le navigateur de test, sur l'API locale : aucun accès réseau.
+  `frontend/package.json` ne change pas : le script de contraste n'a pas de dépendance.

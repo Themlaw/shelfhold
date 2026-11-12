@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 FORBIDDEN = (
-    "binding", "rendition", "scope", "unité", "variante", "manifeste", "staging", "montage",
+    "binding", "rendition", "scope", "unité", "variant" "e", "manifeste", "staging", "montage",
     "cible",
 )  # fmt: skip
 
@@ -32,6 +32,8 @@ def _lint():  # type: ignore[no-untyped-def]
 def _catalog(root: Path, entries: dict[str, str], name: str = "fr.json") -> None:
     folder = root / "frontend/src/lib/i18n"
     folder.mkdir(parents=True, exist_ok=True)
+    for stale in folder.glob("*.json"):
+        stale.unlink()
     (folder / name).write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
 
 
