@@ -38,12 +38,12 @@ from sqlalchemy import Connection, Engine
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal, ManifestHook, OpenIntent
 from shelfhold.export.application.snapshot import barrier_closed_by
-from shelfhold.export.application.upgrade import UpgradeMark
+from shelfhold.export.application.upgrade import UpgradeMark, place_under_intent
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.logging import escaped
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.infrastructure.volumes import write_data_file
+from shelfhold.infrastructure.volumes import remove_data_file, write_data_file
 from shelfhold.library.public import (
     RepairRefusedError,
     audit_repair_archive,
@@ -147,7 +147,7 @@ class LibraryRepair:
         sha = "sha256:" + hashlib.sha256(kept.read_bytes()).hexdigest()
         outcome = self._apply(unit_id, str(variant), kept, sha)
         if outcome in ("replaced", "refused", "none"):
-            kept.unlink(missing_ok=True)  # our own working copy, never a library file
+            remove_data_file(held_path(self._data_dir, unit_id))  # our own working data
         return outcome == "replaced"
 
     def _hold(self, unit_id: str, staged: Path) -> None:
@@ -200,24 +200,10 @@ class LibraryRepair:
             old_identity.ino, old_identity.size, old_identity.mtime_ns, old_sha256=old_sha,
             fields=(("kind", REPAIR_KIND), ("unit_id", unit_id), ("replica_id", replica_id)),
         )  # fmt: skip
-        intent = self._journal.record(
-            op="upgrade", src=target, dst=target, expected_sha256=new_hash, expected_file_id=mark
-        )
-        self._journal.mark_applying(intent)
-        try:
-            with staged.open("rb") as stream:
-                self._fsops.same_path_stage(
-                    target, intent, stream, verify_digest=lambda: new_hash.removeprefix("sha256:")
-                )
-        except BaseException:
-            try:
-                self._fsops.same_path_discard(target, intent)
-            finally:
-                self._journal.cancel(intent)
-            raise
-        # from here an error leaves the intent open: the boot settles it
-        self._fsops.same_path_swap(target, intent)
-        self._fsops.same_path_recycle_old(target, intent)
+        with staged.open("rb") as stream:
+            intent = place_under_intent(
+                self._journal, self._fsops, target, mark=mark, new_hash=new_hash, data=stream
+            )
         with self._engine.begin() as connection:
             event = self._complete(connection, intent, mark.to_json())
             self._journal.mark_done(intent, within=connection)

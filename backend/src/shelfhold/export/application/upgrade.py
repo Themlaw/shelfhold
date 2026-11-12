@@ -251,6 +251,40 @@ def _served(connection: Connection, destination_id: str, export_item_id: str) ->
     )  # fmt: skip
 
 
+def place_under_intent(
+    journal: IntentJournal,
+    fsops: Fsops,
+    target: str,
+    *,
+    mark: UpgradeMark,
+    new_hash: str,
+    data: BinaryIO,
+) -> str:
+    """The one place a served file is replaced at its own path: the intent is recorded and marked
+    before the first step, the new bytes are staged and checked against `new_hash`, then swapped
+    in and the old file goes to the root's bin. Returns the intent, still open: the caller
+    settles it with its bookkeeping (`mark_done`, in the same transaction)."""
+    intent = journal.record(
+        op="upgrade", src=target, dst=target, expected_sha256=new_hash, expected_file_id=mark
+    )
+    journal.mark_applying(intent)
+    try:
+        fsops.same_path_stage(
+            target, intent, data, verify_digest=lambda: new_hash.removeprefix("sha256:")
+        )
+    except BaseException:
+        # the served file was not touched: what was staged goes, the intent is closed
+        try:
+            fsops.same_path_discard(target, intent)
+        finally:
+            journal.cancel(intent)
+        raise
+    # From here an error leaves the intent open: the boot (or `intents resolve`) settles it.
+    fsops.same_path_swap(target, intent)
+    fsops.same_path_recycle_old(target, intent)
+    return intent
+
+
 class SamePathUpgrade:
     def __init__(
         self,
@@ -571,26 +605,9 @@ class SamePathUpgrade:
                 ("spine_count", new.spine_count),
             ),
         )  # fmt: skip
-        intent = self._journal.record(
-            op="upgrade", src=target, dst=target, expected_sha256=new.file_hash,
-            expected_file_id=mark,
-        )  # fmt: skip
-        self._journal.mark_applying(intent)
-        try:
-            self._fsops.same_path_stage(
-                target, intent, new.data,
-                verify_digest=lambda: new.file_hash.removeprefix("sha256:"),
-            )  # fmt: skip
-        except BaseException:
-            # the served file was not touched: what was staged goes, the intent is closed
-            try:
-                self._fsops.same_path_discard(target, intent)
-            finally:
-                self._journal.cancel(intent)
-            raise
-        # From here an error leaves the intent open: the boot (or `intents resolve`) settles it.
-        self._fsops.same_path_swap(target, intent)
-        self._fsops.same_path_recycle_old(target, intent)
+        intent = place_under_intent(
+            self._journal, self._fsops, target, mark=mark, new_hash=new.file_hash, data=new.data
+        )
         with self._engine.begin() as connection:
             upgrade_id, event = self._complete(connection, intent, mark.to_json())
             self._journal.mark_done(intent, within=connection)

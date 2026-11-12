@@ -56,6 +56,13 @@ def write_data_file(data_dir: Path, rel: str, data: bytes) -> None:
     write_private(data_dir.joinpath(*parts), data, overwrite=True)
 
 
+def remove_data_file(path: Path) -> None:
+    """Remove one regular file of working data under /data (a held repair, EF-BIB-012); a link or
+    a missing file is left alone. Never a library or /store path."""
+    if path.is_file() and not path.is_symlink():
+        path.unlink()
+
+
 def read_data_file(path: Path, limit: int) -> bytes:
     """The file's bytes, never following a link and never more than `limit`.
 
