@@ -202,6 +202,7 @@ def acquire_bench(
     hosts: tuple[str, ...] = (HOST, EVIL),
     cache_enabled: bool = True,
     known: bool = True,
+    work_screen: Any = None,
 ) -> Iterator[Bench]:
     plugin = plugin or NativeBooks()
     # `known`: the host's own plugin (a `publisher` value is taken as declared); otherwise a plugin
@@ -228,6 +229,6 @@ def acquire_bench(
         (lib.tmp / "recv").mkdir()
         acquirer = NativeAcquirer(
             lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
-            max_bytes=8 * 1024 * 1024,
+            max_bytes=8 * 1024 * 1024, **({"work_screen": work_screen} if work_screen else {}),
         )  # fmt: skip
         yield Bench(lib, plugin, wire, registry, fetchers, acquirer, bus, delivered)
