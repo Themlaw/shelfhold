@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import sqlalchemy as sa
-
 import pytest
+import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.schema import acquisition
