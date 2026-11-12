@@ -86,6 +86,9 @@ _DECLARED = (
     # Classing needs a fresh session in every profile (porteur, 2026-11-11), and is refused to
     # every key and token
     _action("rate", Effect.RATES_CONTENT),
+    # Approving a request (EF-USR-010): for a child's it is the rating of the book (B2), so it is
+    # classed like `rate`: an admin session, fresh, holding the right to classify, never a key
+    _action("request.approve", Effect.RATES_CONTENT),
     # Without freshness by default (P3), still refused to every key and token
     _action("request.unmask", Effect.UNMASKS_REQUEST),
     _action("keys.create", Effect.MANAGES_CREDENTIALS),

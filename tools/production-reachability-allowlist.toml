@@ -117,14 +117,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "deferred-l31-accounts-and-sync"
-reason = "Deleting an account with its audit entries kept under a pseudonym (EF-USR-013: Shelfhold has one administrator until the accounts of M3), the in-process subscribers of the event bus (the notifications go through the outbox; the first subscriber is a live view of M3) and the last-write-wins merge of a client write (reading progress, M3)."
-until = "M3"
-symbols = [
-  "shelfhold.events.bus:EventBus.subscribe",
-]
-
-[[allow]]
 category = "deferred-l31-bulk-parse-for-plan"
 reason = "2026-11-12 (M3 L31): `BulkParse.for_plan` reads the names a plan asks `plugin/parse` about, in bulk, for the adoption of a foreign library (EF-EXP-045, EF-EXP-060). The export job reads them with `wanted_names` and the replay of EF-EXP-049 asks the names of the manifest (`Revalidator`), both through `BulkParse.fetch`: no caller needs the pipeline form before the adoption screen; redated to M4 with the cut, as the sheet of L31 allows."
 until = "M4"

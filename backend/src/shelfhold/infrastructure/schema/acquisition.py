@@ -551,6 +551,7 @@ pending_source_item = sa.Table(
     sa.Column("series_ref", sa.String(), nullable=False),
     sa.Column("title", sa.String(), nullable=False),
     sa.Column("fetched_at", UtcDateTime(), nullable=False),
+    sa.Column("memo", sa.JSON(), nullable=True),  # what the search knew (M3 L35, migration 0057)
     ulid_check("id"),
     sa.CheckConstraint(
         "\"source_key\" <> '' AND \"series_ref\" <> '' AND \"title\" <> ''", name="named"

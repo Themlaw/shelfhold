@@ -71,4 +71,18 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("follow.confirmation_required", 409, "user"),
     # EF-SRC-027: the series left the upstream library (not a purge: EF-BIB-053 is apart).
     ErrorCode("series.removed_upstream", 409, "admin", event=True),
+    # EF-USR-010 (M3 L35): requests. The answer for another profile's request is `not_found`, the
+    # one of a request that does not exist; a child has no door but the reference of her search
+    ErrorCode("request.not_found", 404, "user"),
+    ErrorCode("request.not_pending", 409, "user"),
+    ErrorCode("request.not_allowed", 403, "user"),
+    ErrorCode("request.kind_not_allowed", 403, "user"),
+    ErrorCode("request.invalid_ref", 422, "user"),
+    ErrorCode("request.invalid_target", 422, "user"),
+    ErrorCode("request.too_many_pending", 429, "user"),
+    ErrorCode("request.invalid_reason", 422, "admin"),
+    ErrorCode("request.choose_age", 422, "admin"),  # rating a child's request is approving it
+    ErrorCode("request.confirmation_required", 409, "admin"),  # over 100 Units or 5 GiB
+    ErrorCode("request.unresolved", 409, "admin"),  # a text or an ISBN the library does not hold
+    ErrorCode("request.shelf_refused", 409, "admin"),
 )

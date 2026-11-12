@@ -174,15 +174,7 @@ class AcquireOps:
             registry = comp.plugins()
             if registry is None:
                 return empty_page()  # no source is loaded: nothing to search, nothing to say
-            known: dict[str, SourceManifest] = {}
-            for record in registry.active():
-                manifest = record.manifest
-                if (
-                    isinstance(manifest, SourceManifest)
-                    and Capability.SEARCH in manifest.capabilities
-                    and manifest.content_warning == "safe"  # one that says it is not for children
-                ):  # is never asked for a child, whatever the admin ticked
-                    known[record.key] = manifest
+            known = self._family_known(registry)
             open_keys = family_source_keys(connection, owner, "child", known)
         sources = [
             FederatedSource(key, manifest.name, format_of(manifest.content_kinds))
@@ -205,6 +197,34 @@ class AcquireOps:
         except InvalidFederatedCursorError:
             raise CodedRefusal("invalid_cursor", "the cursor is not one this search gave") from None
         return page
+
+    @staticmethod
+    def _family_known(registry: Any) -> dict[str, SourceManifest]:
+        known: dict[str, SourceManifest] = {}
+        for record in registry.active():
+            manifest = record.manifest
+            if (
+                isinstance(manifest, SourceManifest)
+                and Capability.SEARCH in manifest.capabilities
+                and manifest.content_warning == "safe"  # one that says it is not for children
+            ):  # is never asked for a child, whatever the admin ticked
+                known[record.key] = manifest
+        return known
+
+    def family_door_open(self, owner: str, source_key: str) -> bool:
+        """Whether this child may still ask for a result of this source now: the same rules as
+        her search, read again (a source taken off the family list, a policy changed, the mode
+        set to hide, all close the reference she holds). A request is made at this door only."""
+        comp = self._comp
+        registry = comp.plugins()
+        if registry is None:
+            return False
+        with comp.engine.connect() as connection:
+            profile = family_profile(connection, owner)
+            if family_search_mode(profile.scope, profile.hide_unrated_remote) != "reduced":  # type: ignore[arg-type]
+                return False
+            known = self._family_known(registry)
+            return source_key in family_source_keys(connection, owner, "child", known)
 
     def _classified(self, ref: SeriesRef) -> bool:
         """Whether the catalogue already holds this result as a rated Work or Edition. Its rating
@@ -236,6 +256,11 @@ class AcquireOps:
         with self._comp.engine.connect() as connection:
             return connection.execute(query).first() is not None
 
+    def unit_count(self, source_key: str, remote_id: str) -> int:
+        """What an approval shows before it asks a source for a series (EF-USR-010)."""
+        ref = SeriesRef(source_key=source_key, remote_id=remote_id, title="")
+        return int(self._run(self.acquirer().count_units(ref)))
+
     def resolve_family_ref(self, token: str, *, owner: str) -> FamilyRef:
         """What a reference of the family search stands for, for the child it was shown to (the
         request of L35 takes it); `invalid_ref` for any other."""
@@ -252,6 +277,7 @@ class AcquireOps:
         remote_id: str | None,
         unit: str | None,
         requester_user_id: str | None,
+        visibility: str = "ops",
     ) -> dict[str, Any]:
         if (url is None) == (source_key is None or remote_id is None):
             raise CodedRefusal("validation_failed", "give a URL, or a source and a series")
@@ -268,7 +294,7 @@ class AcquireOps:
             )
             tombstones = self._comp.read_context()[2]
             return await acquirer.prepare(
-                ref, unit=unit, requester_user_id=requester_user_id, visibility="ops",
+                ref, unit=unit, requester_user_id=requester_user_id, visibility=visibility,
                 tombstoned=lambda c: bool(tombstones.check(c, root_id=None).blocked),
             )  # fmt: skip
 

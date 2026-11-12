@@ -61,6 +61,7 @@ from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
+from shelfhold.interfaces.http_api.requests import build_requests_router
 from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.search import build_search_router
 from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
@@ -72,6 +73,7 @@ from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.jobs.mode import MaintenanceMode
 from shelfhold.ops import OpsServices
 from shelfhold.ops.health import OpsHealth
+from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe_arrivals
 from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host.attestation import AttestationStore
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
@@ -180,6 +182,7 @@ def create_app(
     # runtime's jobs and the routes below share it; `network` is the one door to other servers.
     composition = Composition(resolved, engine, clock=clock, network=network, gates=runtime.gates())
     runtime.composition = composition
+    subscribe_arrivals(composition, build_service(composition))  # EF-USR-010: a book arrived
     composition.pools = lambda: runtime.pools
 
     def passkey_registered(record: PasskeyRecord) -> None:
@@ -266,6 +269,10 @@ def create_app(
         # EF-BIB-008, EF-BIB-003, ENF-I18N-003, EF-BIB-044: locks, renumbering, sorted list, resplit
         build_catalog_admin_router(ops_services),
         build_follows_router(ops_services),  # EF-SRC-029: follow, unfollow
+        build_requests_router(  # EF-USR-010: ask, approve, refuse, follow a request
+            lambda: ops_services().requests,
+            lambda token, owner: resolve_request_ref(ops_services().acquire, token, owner),
+        ),
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited

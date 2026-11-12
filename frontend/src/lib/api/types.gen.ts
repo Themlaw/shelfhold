@@ -169,6 +169,62 @@ export type ApplyIn = {
 };
 
 /**
+ * ApprovalOut
+ */
+export type ApprovalOut = {
+    /**
+     * Confirmation Required
+     */
+    confirmation_required: boolean;
+    /**
+     * Edition Id
+     */
+    edition_id: string | null;
+    /**
+     * Needs Age
+     */
+    needs_age: boolean;
+    /**
+     * Resolved
+     */
+    resolved: boolean;
+    /**
+     * Shelf Id
+     */
+    shelf_id: string | null;
+    /**
+     * Size Bytes
+     */
+    size_bytes: number;
+    /**
+     * Units
+     */
+    units: number;
+};
+
+/**
+ * ApproveIn
+ */
+export type ApproveIn = {
+    /**
+     * Age
+     */
+    age?: number | null;
+    /**
+     * Confirm Size
+     */
+    confirm_size?: boolean;
+    /**
+     * Shelf Id
+     */
+    shelf_id?: string | null;
+    /**
+     * X
+     */
+    x?: boolean;
+};
+
+/**
  * AttestationIn
  */
 export type AttestationIn = {
@@ -2040,21 +2096,41 @@ export type PurgeIn = {
 };
 
 /**
- * QueueOut
+ * QueueItemOut
  */
-export type QueueOut = {
+export type QueueItemOut = {
     /**
-     * Command
+     * Created At
      */
-    command: string;
+    created_at: string;
     /**
-     * Queue
+     * Id
      */
-    queue: string;
+    id: string;
     /**
-     * Reason
+     * Needs Age
      */
-    reason: string;
+    needs_age: boolean;
+    /**
+     * Requester Id
+     */
+    requester_id: string;
+    /**
+     * Requester Role
+     */
+    requester_role: string;
+    /**
+     * Target Kind
+     */
+    target_kind: string;
+    /**
+     * Title
+     */
+    title: string | null;
+    /**
+     * Visibility
+     */
+    visibility: string;
 };
 
 /**
@@ -2245,6 +2321,16 @@ export type RecheckOut = {
 };
 
 /**
+ * RejectIn
+ */
+export type RejectIn = {
+    /**
+     * Reason
+     */
+    reason: string;
+};
+
+/**
  * RenumberIn
  */
 export type RenumberIn = {
@@ -2318,6 +2404,66 @@ export type ReplayOut = {
      * Replayed
      */
     replayed: boolean;
+};
+
+/**
+ * RequestIn
+ */
+export type RequestIn = {
+    /**
+     * Request Ref
+     */
+    request_ref?: string | null;
+    /**
+     * Target Kind
+     */
+    target_kind?: 'work_id' | 'source_ref' | 'isbn' | 'free_text' | null;
+    /**
+     * Target Value
+     */
+    target_value?: string | null;
+};
+
+/**
+ * RequestListOut
+ */
+export type RequestListOut = {
+    /**
+     * Items
+     */
+    items: Array<RequestOut>;
+};
+
+/**
+ * RequestOut
+ *
+ * What the person who asked sees: her own request, nothing about how it is handled.
+ */
+export type RequestOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Reject Reason
+     */
+    reject_reason: string | null;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Title
+     */
+    title: string | null;
+    /**
+     * Updated At
+     */
+    updated_at: string;
 };
 
 /**
@@ -3046,7 +3192,7 @@ export type StatusOut = {
     /**
      * Queues
      */
-    queues: Array<QueueOut>;
+    queues: Array<ShelfholdInterfacesHttpApiStatusQueueOut>;
     /**
      * Waiting
      */
@@ -3532,6 +3678,16 @@ export type ShelfholdInterfacesHttpApiPluginsSecretIn = {
 };
 
 /**
+ * QueueOut
+ */
+export type ShelfholdInterfacesHttpApiRequestsQueueOut = {
+    /**
+     * Items
+     */
+    items: Array<QueueItemOut>;
+};
+
+/**
  * SearchOut
  */
 export type ShelfholdInterfacesHttpApiSearchSearchOut = {
@@ -3557,6 +3713,24 @@ export type ShelfholdInterfacesHttpApiSourcesSearchOut = {
      * Next
      */
     next: string | null;
+};
+
+/**
+ * QueueOut
+ */
+export type ShelfholdInterfacesHttpApiStatusQueueOut = {
+    /**
+     * Command
+     */
+    command: string;
+    /**
+     * Queue
+     */
+    queue: string;
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 export type AboutData = {
@@ -6783,6 +6957,333 @@ export type RestoreForgetRootResponses = {
 };
 
 export type RestoreForgetRootResponse = RestoreForgetRootResponses[keyof RestoreForgetRootResponses];
+
+export type MineData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/requests';
+};
+
+export type MineErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MineError = MineErrors[keyof MineErrors];
+
+export type MineResponses = {
+    /**
+     * Successful Response
+     */
+    200: RequestListOut;
+};
+
+export type MineResponse = MineResponses[keyof MineResponses];
+
+export type CreateData = {
+    body: RequestIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/requests';
+};
+
+export type CreateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type CreateError = CreateErrors[keyof CreateErrors];
+
+export type CreateResponses = {
+    /**
+     * Successful Response
+     */
+    201: RequestOut;
+};
+
+export type CreateResponse = CreateResponses[keyof CreateResponses];
+
+export type QueueData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/requests/queue';
+};
+
+export type QueueErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type QueueError = QueueErrors[keyof QueueErrors];
+
+export type QueueResponses = {
+    /**
+     * Successful Response
+     */
+    200: ShelfholdInterfacesHttpApiRequestsQueueOut;
+};
+
+export type QueueResponse = QueueResponses[keyof QueueResponses];
+
+export type OneData = {
+    body?: never;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}';
+};
+
+export type OneErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OneError = OneErrors[keyof OneErrors];
+
+export type OneResponses = {
+    /**
+     * Successful Response
+     */
+    200: RequestOut;
+};
+
+export type OneResponse = OneResponses[keyof OneResponses];
+
+export type ApprovalData = {
+    body?: never;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}/approval';
+};
+
+export type ApprovalErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ApprovalError = ApprovalErrors[keyof ApprovalErrors];
+
+export type ApprovalResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApprovalOut;
+};
+
+export type ApprovalResponse = ApprovalResponses[keyof ApprovalResponses];
+
+export type ApproveData = {
+    body: ApproveIn;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}/approve';
+};
+
+export type ApproveErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ApproveError = ApproveErrors[keyof ApproveErrors];
+
+export type ApproveResponses = {
+    /**
+     * Successful Response
+     */
+    200: RequestOut;
+};
+
+export type ApproveResponse = ApproveResponses[keyof ApproveResponses];
+
+export type CancelData = {
+    body?: never;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}/cancel';
+};
+
+export type CancelErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type CancelError = CancelErrors[keyof CancelErrors];
+
+export type CancelResponses = {
+    /**
+     * Successful Response
+     */
+    200: RequestOut;
+};
+
+export type CancelResponse = CancelResponses[keyof CancelResponses];
+
+export type NotFoundData = {
+    body?: never;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}/not-found';
+};
+
+export type NotFoundErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type NotFoundError = NotFoundErrors[keyof NotFoundErrors];
+
+export type NotFoundResponses = {
+    /**
+     * Successful Response
+     */
+    200: RequestOut;
+};
+
+export type NotFoundResponse = NotFoundResponses[keyof NotFoundResponses];
+
+export type RejectData = {
+    body: RejectIn;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}/reject';
+};
+
+export type RejectErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RejectError = RejectErrors[keyof RejectErrors];
+
+export type RejectResponses = {
+    /**
+     * Successful Response
+     */
+    200: RequestOut;
+};
+
+export type RejectResponse = RejectResponses[keyof RejectResponses];
 
 export type RestoreAcknowledgeData = {
     body?: never;

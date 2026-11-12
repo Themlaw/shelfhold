@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import pytest
 import sqlalchemy as sa
+
 from shelfhold.acquisition.application.requests import (
     Estimate,
     RequestRefusedError,
     SourceRef,
 )
 from shelfhold.acquisition.domain.request_target import RequestTarget
-
 from shelfhold.config import Settings
 from shelfhold.identity.public import Credential
 from tests.request_env import (
@@ -135,7 +135,7 @@ def test_request_approve_one_gesture_notifies_on_arrival(settings: Settings) -> 
         assert r.service.arrived(work_id) == 0  # a replay of the event changes nothing
         events = r.rows("SELECT type, actor_id, visibility, payload FROM event")
         assert [(e.type, e.actor_id, e.visibility) for e in events] == [
-            ("request.arrived", MEMBER_ID, "private")
+            ("ops.request_arrived", MEMBER_ID, "private")
         ]
         assert "Quiet" not in str(events[0].payload)  # an event never carries a title
 
@@ -175,11 +175,11 @@ def test_child_request_requires_age_on_approval(settings: Settings) -> None:
         assert ports.acquired == [] and ports.follows == [] and r.state_of(rid) == "pending"
         assert r.audit("request.approved") == []
         # an age, and the Work that arrives is rated with it: the approval is the rating
-        r.service.approve(rid, admin(), age=6)
+        r.service.approve(rid, admin(), age=10)
         work_id = r.rows("SELECT work_id FROM request WHERE id = :i", i=rid)[0][0]
         assert r.rows("SELECT age_rating, age_x, rated_at FROM work WHERE id = :w", w=work_id)[0][
             :2
-        ] == (6, 0)
+        ] == (10, 0)
         assert r.rows("SELECT rated_at FROM work WHERE id = :w", w=work_id)[0][0] is not None
         assert [row.target.split(";")[0] for row in r.audit("rate")] == [f"work:{work_id}"]
 
@@ -193,7 +193,7 @@ def test_child_request_for_a_manga_rates_the_work_when_it_appears(settings: Sett
         rid = ask(r)
         r.service.approve(rid, admin(), age=10, x=False)
         assert ports.follows == [("alpha", "r1", CHILD_ID, "household")]
-        assert r.rows("SELECT age_rating FROM request WHERE id = :i", i=rid)[0][0] == 10
+        assert r.rows("SELECT approved_age FROM request WHERE id = :i", i=rid)[0][0] == 10
         with r.engine.begin() as connection:
             work = bind_work(connection, "alpha", "r1")  # the cycle made the Work, unrated
         assert r.rows("SELECT rated_at FROM work WHERE id = :w", w=work)[0][0] is None
@@ -234,7 +234,7 @@ def test_approval_needs_the_right_to_rate_and_a_session(settings: Settings) -> N
         ]
         for who in cases:
             with pytest.raises(RequestRefusedError) as refused:
-                r.service.approve(rid, who, age=6)
+                r.service.approve(rid, who, age=10)
             assert code_of(refused) == "not_allowed", who
         assert ports.acquired == [] and ports.follows == [] and r.state_of(rid) == "pending"
         assert r.audit("request.approved") == [] and r.audit("rate") == []
@@ -298,7 +298,12 @@ def test_request_size_confirmation_over_threshold(settings: Settings) -> None:
 def test_approval_preview_prefills_edition_source_and_shelf(settings: Settings) -> None:
     ports = FakePorts(kinds={"alpha": "novel"}, shelf="SHELF")
     with rig(settings, ports=ports) as r:
-        work = r.work()
+        work = r.work(editions=False)
+        r.rows("SELECT 1")
+        with r.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE \"user\" SET locale = 'en' WHERE id = :u"), {"u": MEMBER_ID}
+            )
         with r.engine.begin() as connection:
             from tests.integration.test_schema_catalog import add_edition
 
@@ -310,7 +315,7 @@ def test_approval_preview_prefills_edition_source_and_shelf(settings: Settings) 
         preview = r.service.preview(rid, admin())
         assert preview.edition_id == en and preview.edition_id != fr  # the language of the asker
         assert preview.shelf_id == "SHELF" and preview.needs_age is False
-        child = r.service.create(requester(CHILD_ID, "child"), REF)
+        child = r.service.create_from_ref(requester(CHILD_ID, "child"), REF)
         assert r.service.preview(child.id, admin()).needs_age is True
 
 
@@ -463,7 +468,7 @@ def test_approval_audited(settings: Settings) -> None:
     with rig(settings, ports=ports) as r:
         rid = ask(r)
         who = admin()
-        r.service.approve(rid, who, age=6)
+        r.service.approve(rid, who, age=10)
         (row,) = r.audit("request.approved")
         assert row.actor_id == who.actor_id
         assert row.target.startswith(f"request:{rid}")

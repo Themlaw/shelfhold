@@ -287,6 +287,7 @@ FRESHNESS_LINE = {
             "admin_risk.accept",
             "shelf.purge_upstream",
             "rate",  # porteur 2026-11-11: fresh in every profile
+            "request.approve",  # M3 L35: for a child's request, approving is rating (B2)
             "passkey.register",  # same: a stolen session adds no passkey that outlives it
             "profile.create",  # M3 L05: fresh in every profile (EF-USR-022), not only with a child
             "profile.update",

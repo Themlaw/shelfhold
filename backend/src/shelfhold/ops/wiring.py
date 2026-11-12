@@ -50,6 +50,7 @@ from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.rating import RatingOps
+from shelfhold.ops.requests import build_service
 from shelfhold.ops.resplit import ResplitOps
 from shelfhold.ops.restore import RestoreCredentialsExit, RestoreGuardExit
 from shelfhold.ops.revisions import RevisionOps
@@ -161,7 +162,8 @@ def open_ops(
         dedup=DedupOps(engine, CatalogScreens(composition)),
         resplit=ResplitOps(composition), contributors=ContributorOps(composition),
         export_items=ExportItemOps(composition), export_all=ExportAllOps(composition),
-        follows=FollowOps(composition), acquire=AcquireOps(composition), roots=RootOps(composition),
+        follows=FollowOps(composition), acquire=AcquireOps(composition),
+        requests=build_service(composition), roots=RootOps(composition),
         maintenance=MaintenanceOps(
             engine, clock, fresh_auth_s=settings.fresh_auth_s, hardened=settings.auth_hardened,
             window=window,

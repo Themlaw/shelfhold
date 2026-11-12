@@ -11,12 +11,12 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+
 from shelfhold.acquisition.application.requests import (
     Estimate,
     Requester,
     RequestService,
 )
-
 from shelfhold.config import Settings
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.db import create_db_engine
@@ -27,9 +27,9 @@ from tests.auth_env import T0, ManualClock
 
 ADMIN_ID = "01J0000000000000000000ADMX"
 MEMBER_ID = "01J0000000000000000000MEMB"
-OTHER_ID = "01J0000000000000000000OTHX"
+OTHER_ID = "01J0000000000000000000PEER"
 CHILD_ID = "01J0000000000000000000KKKK"
-SIBLING_ID = "01J0000000000000000000SIBL"
+SIBLING_ID = "01J0000000000000000000SBSB"
 
 
 def principal(
@@ -137,12 +137,13 @@ class Rig:
     def state_of(self, request_id: str) -> str:
         return str(self.rows("SELECT state FROM request WHERE id = :i", i=request_id)[0][0])
 
-    def work(self, **extra: Any) -> str:
+    def work(self, *, editions: bool = True, **extra: Any) -> str:
         from tests.integration.test_schema_catalog import add_edition, add_work
 
         with self.engine.begin() as connection:
             work_id = add_work(connection, **extra)
-            add_edition(connection, work_id)
+            if editions:
+                add_edition(connection, work_id)
             return work_id
 
 

@@ -395,6 +395,21 @@ class NativeAcquirer:
             screen=screen,
         )  # fmt: skip
 
+    async def count_units(self, ref: SeriesRef) -> int:
+        """How many Units the source lists for this series: what an approval tells the admin
+        before it asks for them (EF-USR-010). Nothing is recorded."""
+        record = self._record(ref.source_key)
+        handle = await self._open(record)
+        try:
+            units = await handle.service.list_units(handle.fetcher, handle.guard.screen(ref))
+        except NotConfigured as error:
+            raise AcquireRefused(
+                "source.not_configured", "the source's settings are refused"
+            ) from error
+        finally:
+            await handle.aclose()
+        return len(units)
+
     def _screen_for(self, record: Any, info: SeriesInfo) -> TombstoneScreen | None:
         """The Work tombstones, when the source gives identifiers for its Work: no screen to ask
         means no arrival, never an unscreened one (fails closed)."""

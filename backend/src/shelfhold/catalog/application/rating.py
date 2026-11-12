@@ -93,6 +93,45 @@ class RatingService:
     ) -> RatingResult:  # fmt: skip
         """Fix the age of a Work; the Editions it already holds count as rated with it."""
         self._allow(principal, now)
+        settled = self._write(connection, work_id, rating, now)
+        return self._done(connection, f"work:{work_id}", work_id, rating, principal, now, settled)
+
+    def rate_decided(
+        self, connection: Connection, work_id: str, rating: AgeRating, *,
+        request_id: str, decided_by: str, now: datetime,
+    ) -> RatingResult | None:  # fmt: skip
+        """The age an admin chose when approving a child's request, applied when the Work it
+        asked for exists (L35). It is not a door of its own: the age was fixed by the reserved
+        approval (admin session, fresh, the right to rate) and recorded on the request; this only
+        writes it, and never over a rating that is already there. Same audit line as a rating."""
+        rated = connection.execute(
+            sa.select(catalog.work.c.rated_at).where(catalog.work.c.id == work_id)
+        ).first()
+        if rated is None or rated.rated_at is not None:
+            return None  # no such Work, or an admin rated it meanwhile: that decision stands
+        settled = self._write(connection, work_id, rating, now)
+        target = f"work:{work_id};request:{request_id}"
+        if settled != (0, 0):  # the admin ruled on what files and sources had said, by approving
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=decided_by, action="age_suggestion.settle", at=now,
+                        target=f"{target};accepted:{settled[0]};rejected:{settled[1]}",
+                    )
+                )
+            )  # fmt: skip
+        connection.execute(
+            audit_insert(AuditEntry(actor_id=decided_by, action="rate", at=now, target=target))
+        )
+        return RatingResult(
+            target, rating, label_key(rating), self.effective_age_of(connection, work_id),
+            self._withdrawals(connection, work_id),
+            self.open_suggestions(connection, work_id=work_id),
+        )  # fmt: skip
+
+    def _write(
+        self, connection: Connection, work_id: str, rating: AgeRating, now: datetime
+    ) -> tuple[int, int]:
         _check_tier(rating)
         age, x = to_columns(rating)
         work, edition = catalog.work, catalog.edition
@@ -111,8 +150,7 @@ class RatingService:
         editions = connection.execute(sa.select(edition.c.id).where(edition.c.work_id == work_id))
         covered = [("work", work_id), *(("edition", r[0]) for r in editions)]
         lift(connection, work_id)  # rating is the way out of an adopted child library (EF-EXP-048)
-        settled = _settle(connection, covered, rating, keep_edition_above=True)
-        return self._done(connection, f"work:{work_id}", work_id, rating, principal, now, settled)
+        return _settle(connection, covered, rating, keep_edition_above=True)
 
     def rate_edition(
         self, connection: Connection, edition_id: str, rating: AgeRating, *,

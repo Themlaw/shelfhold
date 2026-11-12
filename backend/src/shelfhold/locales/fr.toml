@@ -1481,6 +1481,54 @@ action = "Sortez le service de sa pause avec la commande indiquée par « shelfh
 title = "Retirer la série de la bibliothèque du service demande une confirmation."
 action = "Ne plus suivre garde la série dans le service ; pour l'en retirer aussi, confirmez explicitement."
 
+[errors."request.not_found"]
+title = "Cette demande n'existe pas."
+action = "Ouvrez « Mes demandes » pour voir celles que vous avez faites."
+
+[errors."request.not_pending"]
+title = "Cette demande a déjà reçu une réponse ou a été annulée."
+action = "Rafraîchissez la liste : l'état de la demande a changé."
+
+[errors."request.not_allowed"]
+title = "Vous ne pouvez pas décider de cette demande."
+action = "Seul un administrateur dont la session est récente, et qui a le droit de classer, approuve une demande."
+
+[errors."request.kind_not_allowed"]
+title = "Ce profil ne peut demander un titre que depuis les résultats de sa recherche."
+action = "Cherchez le titre, puis choisissez « Demander » sur le résultat."
+
+[errors."request.invalid_ref"]
+title = "Ce résultat n'est plus disponible pour une demande."
+action = "Relancez la recherche, puis choisissez « Demander » sur le résultat."
+
+[errors."request.invalid_target"]
+title = "La demande ne désigne pas un titre valide."
+action = "Donnez un identifiant d'œuvre, un ISBN valide ou un titre en texte simple."
+
+[errors."request.too_many_pending"]
+title = "Trop de demandes sont déjà en attente pour ce profil."
+action = "Attendez une réponse, ou annulez une demande, avant d'en faire une autre."
+
+[errors."request.invalid_reason"]
+title = "Le motif du refus est vide, trop long ou contient des caractères invisibles."
+action = "Écrivez un motif court en texte simple."
+
+[errors."request.choose_age"]
+title = "Choisir un âge : classer le livre, c'est approuver la demande d'un enfant."
+action = "Choisissez l'âge minimal du livre, puis approuvez."
+
+[errors."request.confirmation_required"]
+title = "La demande dépasse 100 unités ou 5 Gio : elle demande une confirmation."
+action = "Vérifiez le résumé de taille, puis confirmez pour approuver."
+
+[errors."request.unresolved"]
+title = "Ce texte ou cet ISBN ne correspond à aucune œuvre de la bibliothèque."
+action = "Marquez la demande « introuvable », ou ajoutez le livre par une source."
+
+[errors."request.shelf_refused"]
+title = "L'étagère choisie refuse cette édition."
+action = "Choisissez une autre étagère, ou classez d'abord l'édition."
+
 [errors."series.gap"]
 title = "Il manque des chapitres dans la série."
 action = "Consultez la série et lancez la recherche des chapitres manquants."

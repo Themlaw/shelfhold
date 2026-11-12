@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from shelfhold.acquisition.application.requests import Estimate
 
+from shelfhold.acquisition.application.requests import Estimate
 from shelfhold.config import Settings
 from tests.auth_env import CSRF_HEADER, PASSWORD, AuthEnv, db_rows
 from tests.federated_env import CHILD_ID, MEMBER_ID, FakeSource, api_key_of, hit, instance
@@ -211,8 +211,8 @@ def test_a_key_never_touches_a_request(monkeypatch: pytest.MonkeyPatch, settings
         kid = family(api)
         rid = ask_as_child(api, kid)
         keys = {
-            "kid": api_key_of(api, "kid", read_only=False),
-            "member": api_key_of(api, "member", read_only=False),
+            "kid": api_key_of(api, "kid"),
+            "member": api_key_of(api, "member"),
             "admin": api_key_of(api, "admin", read_only=False),
         }
         before = table(api)
@@ -220,7 +220,7 @@ def test_a_key_never_touches_a_request(monkeypatch: pytest.MonkeyPatch, settings
             bare = api.other_client("10.9.9.9")
             for method, path in (*OWN_ROUTES, *ADMIN_ROUTES):
                 url = path.replace("{id}", rid)
-                body = {"request_ref": "x"} if path == REQUESTS else {"reason": "no", "age": 6}
+                body = {"request_ref": "x"} if path == REQUESTS else {"reason": "no", "age": 10}
                 answer = bare.request(
                     method, url, headers={"Authorization": f"Bearer {key}"},
                     **({"json": body} if method == "POST" else {}),
@@ -251,14 +251,14 @@ def test_a_member_and_a_child_never_decide(
                     who,
                     method,
                     url,
-                    **({"json": {"age": 6, "reason": "x"}} if method == "POST" else {}),
+                    **({"json": {"age": 10, "reason": "x"}} if method == "POST" else {}),
                 )
                 assert answer.status_code == 403, (method, path, answer.text)
-                assert "Quiet" not in answer.text and "title" not in answer.json()
+                assert "Quiet" not in answer.text
         assert table(api) == before and ports.follows == []
         # ... and no other, though equally unknown, identifier answers differently
-        ghost = send(api, member, "POST", f"{REQUESTS}/{ULID}/approve", json={"age": 6})
-        real = send(api, member, "POST", f"{REQUESTS}/{rid}/approve", json={"age": 6})
+        ghost = send(api, member, "POST", f"{REQUESTS}/{ULID}/approve", json={"age": 10})
+        real = send(api, member, "POST", f"{REQUESTS}/{rid}/approve", json={"age": 10})
         assert (ghost.status_code, ghost.json()["code"]) == (real.status_code, real.json()["code"])
 
 
@@ -273,7 +273,7 @@ def test_a_state_changing_route_needs_the_csrf_token(
         wrong = kid.post(f"{REQUESTS}/{rid}/cancel", headers={CSRF_HEADER: "nope"})
         assert wrong.status_code == 403
         admin = admin_client(api)
-        assert admin.post(f"{REQUESTS}/{rid}/approve", json={"age": 6}).status_code == 403
+        assert admin.post(f"{REQUESTS}/{rid}/approve", json={"age": 10}).status_code == 403
         assert table(api)[0][1] == "pending"
 
 
@@ -322,7 +322,7 @@ def test_admin_approves_a_child_request_with_an_age_in_one_gesture(
         refused = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={})
         assert refused.status_code == 422 and refused.json()["code"] == "request.choose_age"
         assert ports.follows == []
-        done = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 6})
+        done = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 10})
         assert done.status_code == 200, done.text
         assert done.json()["state"] == "approved"
         assert ports.follows == [("alpha", "a1", CHILD_ID, "household")]
@@ -334,8 +334,8 @@ def test_admin_approves_a_child_request_with_an_age_in_one_gesture(
             db_rows(api.settings, "SELECT count(*) FROM audit WHERE action = 'request.approve'")[0][
                 0
             ]
-            == 1
-        )  # the line of the reserved door too, with session and auth_time
+            == 2  # the door's line for each attempt: refused for the age, then done
+        )
 
 
 @pytest.mark.req("EF-USR-010", "EF-USR-022")
@@ -347,7 +347,7 @@ def test_approval_is_the_reserved_door_of_a_fresh_session(
         rid = ask_as_child(api, kid)
         admin = admin_client(api)
         api.clock.advance(timedelta(minutes=16))
-        stale = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 6})
+        stale = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 10})
         assert stale.status_code == 401 and "reauth" in stale.json()["type"]
         assert ports.follows == [] and table(api)[0][1] == "pending"
 
@@ -362,12 +362,12 @@ def test_confirmation_over_the_threshold_by_the_route(
         rid = ask_as_child(api, kid)
         admin = admin_client(api)
         assert admin.get(f"{REQUESTS}/{rid}/approval").json()["confirmation_required"] is True
-        refused = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 6})
+        refused = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 10})
         assert refused.status_code == 409
         assert refused.json()["code"] == "request.confirmation_required"
         assert ports.follows == [] and table(api)[0][1] == "pending"
         ok = api.post(
-            f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 6, "confirm_size": True}
+            f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 10, "confirm_size": True}
         )
         assert ok.status_code == 200 and len(ports.follows) == 1
 

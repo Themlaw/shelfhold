@@ -4,6 +4,7 @@ pure. What a child may ask for, what an approval needs, and which states lead wh
 from __future__ import annotations
 
 import pytest
+
 from shelfhold.acquisition.domain.request_target import (
     SIZE_CONFIRM_BYTES,
     SIZE_CONFIRM_UNITS,
@@ -84,7 +85,7 @@ def test_child_request_requires_age_on_approval() -> None:
     assert approval_refusal(requester_role="child", age=None, already_rated=False, **ask) == (
         "choose_age"
     )
-    assert approval_refusal(requester_role="child", age=6, already_rated=False, **ask) is None
+    assert approval_refusal(requester_role="child", age=10, already_rated=False, **ask) is None
     # a Work the admin already rated in bulk needs no second age
     assert approval_refusal(requester_role="child", age=None, already_rated=True, **ask) is None
     assert approval_refusal(requester_role="member", age=None, already_rated=False, **ask) is None
@@ -94,7 +95,7 @@ def test_child_request_requires_age_on_approval() -> None:
         "choose_age"
     )
     # the age is a tier or nothing: 0 is a tier ("all ages"), a bool or a negative is not
-    for bad in (-1, 100, True):
+    for bad in (-1, 100, True, 6, "10", None):
         assert (
             approval_refusal(requester_role="child", age=bad, already_rated=False, **ask)
             == "choose_age"

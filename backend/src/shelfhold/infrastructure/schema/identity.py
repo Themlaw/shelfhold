@@ -255,6 +255,17 @@ request = sa.Table(
     sa.Column("reject_reason", sa.String(), nullable=True),
     now_column(),
     now_column("updated_at"),
+    # M3 L35 (migration 0057). `visibility` is what `effective_visibility` said at creation. The
+    # identifiers are plain columns (no foreign key: a purge removes the Work, not the request).
+    sa.Column("visibility", sa.String(), nullable=False, server_default="private"),
+    sa.Column("work_id", sa.String(26), nullable=True),  # resolved at approval
+    sa.Column("edition_id", sa.String(26), nullable=True),
+    sa.Column("shelf_id", sa.String(26), nullable=True),
+    sa.Column("decided_by", sa.String(), nullable=True),  # `user.id` of the admin, opaque
+    sa.Column("decided_at", UtcDateTime(), nullable=True),
+    sa.Column("approved_age", sa.Integer(), nullable=True),  # a child's request: applied on arrival
+    bool_column("approved_x", default=False),
+    sa.Column("arrived_at", UtcDateTime(), nullable=True),
     ulid_check("id"),
     in_check("target_kind", REQUEST_TARGET_KINDS),
     in_check("state", REQUEST_STATES),
@@ -268,6 +279,7 @@ request = sa.Table(
         '"reject_reason" IS NULL OR "state" = \'rejected\'', name="reason_only_on_refusal"
     ),
     sa.Index("ix_request_requester", "requester_user_id", "state"),
+    sa.Index("ix_request_work", "work_id"),
 )
 
 # The digest being built for a user, sent at `due_at` (EF-INT-021).
