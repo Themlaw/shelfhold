@@ -321,6 +321,9 @@ FRESHNESS_LINE = {
             "passkey.revoke",
             "plugin.attest",  # D15: freshness only in the hardened profile
             "queue.control",  # M3 L13: reversible; freshness only in the hardened profile
+            "session.list_all",  # M3 L07: a read of every profile's sessions
+            "session.revoke_other",  # M3 L07: undone by signing in again; hardened profile only
+            "recovery_kit.read",  # M3 L07: a page with no secret in it
         ),
         "none",
     ),

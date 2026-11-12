@@ -124,7 +124,9 @@ def test_revoke_all_other_sessions_keeps_the_current_one(api: AuthEnv) -> None:
     assert done.status_code == 200 and done.json() == {"revoked": 2}
     assert len(laptop.get(SESSIONS).json()["items"]) == 1
     assert laptop.get("/api/v1/me").status_code == 200
-    audit = db_rows(api.settings, "SELECT actor_id, target FROM audit WHERE action = ?", "auth.sessions_revoked")
+    audit = db_rows(
+        api.settings, "SELECT actor_id, target FROM audit WHERE action = ?", "auth.sessions_revoked"
+    )
     assert audit and all("*" not in str(row[1]) for row in audit[-1:])
 
 
@@ -180,7 +182,7 @@ def test_keys_never_list_or_revoke_sessions(api: AuthEnv) -> None:
     for who in (ADMIN, "kid"):
         if who == "kid":
             _user(api, "kid", "child", "10.0.0.2", max_age_rating=10)
-        key = _key(api, who)
+        key = _key(api, who, read_only=who != ADMIN)
         anonymous = api.other_client("10.0.0.50")
         auth = {"Authorization": f"Bearer {key}"}
         for method, path in (
@@ -217,7 +219,9 @@ def test_admin_session_routes_are_reserved_and_audited(api: AuthEnv) -> None:
     unknown = _send(api, admin, "DELETE", f"{ADMIN_SESSIONS}/01HZZZZZZZZZZZZZZZZZZZZZZM")
     assert unknown.status_code == 404
     lines = db_rows(
-        api.settings, "SELECT actor_id, session_id FROM audit WHERE action = ?", "session.revoke_other"
+        api.settings,
+        "SELECT actor_id, session_id FROM audit WHERE action = ?",
+        "session.revoke_other",
     )
     assert lines and all(line[1] for line in lines)
 
@@ -227,7 +231,7 @@ def test_admin_session_revocation_needs_a_fresh_session_when_hardened(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     with auth_env(monkeypatch, settings, hardened=True) as env:
-        assert env.login().status_code == 200
+        assert env.login(remember=False).status_code == 200
         mum, _ = _user(env, "mum", "member", "10.0.0.3")
         victim = mum.get(SESSIONS).json()["items"][0]["id"]
         env.clock.advance(timedelta(minutes=16))  # past `fresh_auth_s`, inside the idle window
@@ -248,9 +252,15 @@ def test_admin_reset_password_cli(monkeypatch: pytest.MonkeyPatch, settings: Set
         secret.chmod(0o600)
     assert (
         run_cli(
-            monkeypatch, settings, "admin", "reset-password", "--username", ADMIN,
-            "--password-file", str(secret),
-        )  # fmt: skip
+            monkeypatch,
+            settings,
+            "admin",
+            "reset-password",
+            "--username",
+            ADMIN,
+            "--password-file",
+            str(secret),
+        )
         == 0
     )
     with auth_env(monkeypatch, settings, with_admin=False) as env:
@@ -267,7 +277,8 @@ def test_admin_reset_password_cli(monkeypatch: pytest.MonkeyPatch, settings: Set
 def test_no_web_recovery_code_route(api: AuthEnv) -> None:
     """A child who found a recovery code would walk round the parental barrier: no route creates,
     accepts, lists or mentions one, and `reset-password` is not on the web either."""
-    paths = api.client.get("/api/v1/openapi.json").json()["paths"]
+    admin = _admin(api)
+    paths = admin.get("/api/v1/openapi.json").json()["paths"]
     for path in paths:
         lowered = path.lower()
         assert "recover" not in lowered.replace("recovery-kit", ""), path
@@ -280,7 +291,7 @@ def test_no_web_recovery_code_route(api: AuthEnv) -> None:
         "/api/v1/recovery-kit", "/api/v1/admin/recovery-code", "/api/v1/admin/recovery",
     ):  # fmt: skip
         for method in ("GET", "POST", "PUT"):
-            response = api.client.request(method, path, json={}, headers={CSRF_HEADER: api.csrf()})
+            response = admin.request(method, path, json={}, headers={CSRF_HEADER: api.csrf(admin)})
             assert response.status_code in (404, 405), (method, path)
 
 
@@ -324,7 +335,13 @@ def test_recovery_kit_contains_no_secret(api: AuthEnv) -> None:
             assert needle not in page
     cookie = admin.cookies.get(SESSION_COOKIE)
     assert cookie and cookie.encode() not in page
-    for secret in (PASSWORD, NEW_PASSWORD, key, "a very secret export passphrase", admin.cookies.get(CSRF_COOKIE) or "-"):
+    for secret in (
+        PASSWORD,
+        NEW_PASSWORD,
+        key,
+        "a very secret export passphrase",
+        admin.cookies.get(CSRF_COOKIE) or "-",
+    ):
         assert secret.encode() not in page, secret
     text = response.text
     assert "shelfhold admin reset-password" in text

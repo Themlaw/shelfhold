@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from shelfhold.identity.application.sessions import SessionView
+
 
 @dataclass(frozen=True)
 class UserRecord:
@@ -60,6 +62,7 @@ class NewSession:
     remember: bool
     ip: str | None
     passkey_id: str | None = None  # the passkey that opened it: revoking that passkey closes it
+    device: str | None = None  # the coarse label of the device (`device_label`), never the header
 
 
 @dataclass(frozen=True)
@@ -274,6 +277,19 @@ class IdentityStore(Protocol):
     def revoke_sessions(
         self, *, now: datetime, user_id: str | None = None, session_id: str | None = None
     ) -> int: ...
+    def live_sessions(self, *, now: datetime, user_id: str | None = None) -> Sequence[SessionView]:
+        """The sessions neither revoked nor expired, most recently active first."""
+        ...
+
+    def revoke_session_of(self, user_id: str, session_id: str, *, now: datetime) -> bool:
+        """One statement on (owner, id): a session of someone else is False, like an unknown one."""
+        ...
+
+    def revoke_other_sessions(
+        self, user_id: str, *, keep_session_id: str | None, now: datetime
+    ) -> int:
+        """Every live session of this account but `keep_session_id`; no one else's."""
+        ...
 
     def insert_api_key(self, key: NewApiKey) -> None: ...
     def api_key_by_prefix(self, prefix: str) -> ApiKeyRecord | None: ...

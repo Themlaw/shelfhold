@@ -40,6 +40,7 @@ from shelfhold.identity.application.ports import (
     UserRecord,
 )
 from shelfhold.identity.application.profiles import ProfileService
+from shelfhold.identity.application.sessions import SessionView, device_label
 from shelfhold.identity.domain.credentials import (
     HARDENED_KEY_MAX_AGE,
     MAX_PASSWORD_LENGTH,
@@ -121,6 +122,11 @@ class AdminExistsError(AuthError):
 class LastAdminError(AuthError):
     def __init__(self) -> None:
         super().__init__("last_admin")
+
+
+class UnknownSessionError(AuthError):
+    def __init__(self) -> None:
+        super().__init__("no such session")
 
 
 class UnknownUserError(AuthError):
@@ -459,7 +465,13 @@ class LocalAuth:
     # --- sessions ----------------------------------------------------------------------------
 
     def _issue(
-        self, user: UserRecord, *, remember: bool, ip: str | None, passkey_id: str | None = None
+        self,
+        user: UserRecord,
+        *,
+        remember: bool,
+        ip: str | None,
+        passkey_id: str | None = None,
+        user_agent: str | None = None,
     ) -> IssuedSession:
         now = self.now()
         policy = self._policy(user.role)
@@ -476,6 +488,7 @@ class LocalAuth:
                 remember=remember,
                 ip=ip,
                 passkey_id=passkey_id,
+                device=device_label(user_agent),
             )
         )
         principal = Principal(
@@ -517,6 +530,7 @@ class LocalAuth:
         confirm_remember: bool = False,
         presented_token: str | None = None,
         device_proof: str | None = None,
+        user_agent: str | None = None,
     ) -> IssuedSession:
         if self._store.password_login_suspended():
             raise PasswordLoginSuspendedError
@@ -536,7 +550,7 @@ class LocalAuth:
             self._store.set_password_hash(user.id, self._hasher.hash(password))
         if presented_token:  # whatever the browser held is closed, never adopted
             self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
-        issued = self._issue(user, remember=remember, ip=ip)
+        issued = self._issue(user, remember=remember, ip=ip, user_agent=user_agent)
         self._audit("auth.login", issued.principal)
         if self._device_proof is not None:
             issued = replace(issued, device_proof=self._device_proof.issue(username, self.now()))
@@ -595,6 +609,36 @@ class LocalAuth:
         closed = self._store.revoke_sessions(now=self.now(), user_id=user_id, session_id=session_id)
         self._audit("auth.sessions_revoked", by, target=session_id or user_id or "*")
         return closed
+
+    # --- the list of sessions and their revocation (M3 L07, EF-USR-011) ----------------------
+    def sessions_list(self, principal: Principal) -> Sequence[SessionView]:
+        """The caller's own live sessions: the owner comes from the principal, never a request."""
+        return self._store.live_sessions(now=self.now(), user_id=principal.user_id)
+
+    def sessions_list_all(self, principal: Principal) -> Sequence[SessionView]:
+        """Every profile's live sessions; the route's reserved-action guard writes the audit."""
+        return self._store.live_sessions(now=self.now())
+
+    def session_revoke(self, principal: Principal, session_id: str) -> None:
+        """Close one session of the caller's own; another profile's is `UnknownSessionError`."""
+        if not self._store.revoke_session_of(principal.user_id, session_id, now=self.now()):
+            raise UnknownSessionError
+        self._audit("auth.session_revoked", principal, target=session_id)
+
+    def sessions_revoke_others(self, principal: Principal) -> int:
+        """Close the caller's own sessions but the one in use."""
+        closed = self._store.revoke_other_sessions(
+            principal.user_id, keep_session_id=principal.session_id, now=self.now()
+        )
+        self._audit("auth.sessions_revoked", principal, target=f"own:{closed}")
+        return closed
+
+    def session_revoke_of_other(self, principal: Principal, session_id: str) -> None:
+        """Close any session by its id. The route holds the reserved-action guard; the audit line
+        is the guard's (`session.revoke_other`, with the session and its `auth_time`)."""
+        if not self._store.revoke_sessions(now=self.now(), session_id=session_id):
+            raise UnknownSessionError
+        self._audit("auth.session_revoked", principal, target=session_id)
 
     def reauthenticate(
         self, principal: Principal, method: str, payload: Mapping[str, object], *, ip: str
@@ -751,6 +795,7 @@ class LocalAuth:
         remember: bool = True,
         confirm_remember: bool = False,
         presented_token: str | None = None,
+        user_agent: str | None = None,
     ) -> IssuedSession:
         """Discoverable login: the credential names the account. Same throttle as a password
         (every attempt is counted before it is checked), same answer for every refusal, a new
@@ -770,7 +815,9 @@ class LocalAuth:
         if presented_token:  # whatever the browser held is closed, never adopted
             self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
         try:
-            issued = self._issue(user, remember=remember, ip=ip, passkey_id=passkey.id)
+            issued = self._issue(
+                user, remember=remember, ip=ip, passkey_id=passkey.id, user_agent=user_agent
+            )
         except PasskeyGoneError:  # revoked between the assertion and the session
             raise self._fail(ip=ip) from None
         self._audit("auth.passkey_login", issued.principal, target=passkey.id)

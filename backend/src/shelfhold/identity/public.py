@@ -27,6 +27,13 @@ from shelfhold.identity.application.ports import (
     SourcePolicyRecord,
     UserRecord,
 )
+from shelfhold.identity.application.recovery_kit import (
+    KEYRING_EXPORT_NAME,
+    render_recovery_kit,
+)
+from shelfhold.identity.application.recovery_kit import (
+    STYLE as RECOVERY_KIT_STYLE,
+)
 from shelfhold.identity.application.service import (
     IDENTITY_HEADER_AUDIT,
     AdminExistsError,
@@ -43,9 +50,11 @@ from shelfhold.identity.application.service import (
     ThrottledError,
     UnknownPasskeyError,
     UnknownReauthMethodError,
+    UnknownSessionError,
     UnknownUserError,
     audit_actor,
 )
+from shelfhold.identity.application.sessions import SessionView, device_label
 from shelfhold.identity.domain.catalogue import (
     EXIT_ROUTES,
     RESERVED_ACTIONS,
@@ -60,6 +69,7 @@ from shelfhold.identity.domain.credentials import (
     credential_axis,
     session_policy,
 )
+from shelfhold.identity.domain.device_token import DeviceToken, device_token, token_principal
 from shelfhold.identity.domain.emitters import (
     CLOSED_SITES,
     DELETION_SITES,
@@ -124,6 +134,7 @@ __all__ = [
     "EXIT_ROUTES",
     "IDENTITY_HEADER_AUDIT",
     "INTEGRATION_ROLE",
+    "KEYRING_EXPORT_NAME",
     "KNOWN_ROLES",
     "MAX_PASSWORD_LENGTH",
     "NO_REAUTH_EFFECTS",
@@ -132,6 +143,7 @@ __all__ = [
     "PRIMITIVE",
     "PROFILE_ERRORS",
     "RATE_ROLES",
+    "RECOVERY_KIT_STYLE",
     "REPLACEMENT_SITES",
     "REPLAY",
     "RESERVED_ACTIONS",
@@ -149,6 +161,7 @@ __all__ = [
     "CreatedApiKey",
     "Credential",
     "CredentialNotAllowed",
+    "DeviceToken",
     "Effect",
     "ExitRoute",
     "FamilyProfile",
@@ -175,11 +188,13 @@ __all__ = [
     "RoleNotAllowed",
     "SessionAuth",
     "SessionPolicy",
+    "SessionView",
     "SourcePolicyRecord",
     "ThrottledError",
     "TruthRow",
     "UnknownPasskeyError",
     "UnknownReauthMethodError",
+    "UnknownSessionError",
     "UnknownUserError",
     "UserRecord",
     "Verdict",
@@ -191,6 +206,8 @@ __all__ = [
     "check_visibility",
     "credential_axis",
     "default_visibility",
+    "device_label",
+    "device_token",
     "effective_visibility",
     "family_profile",
     "family_search_mode",
@@ -200,9 +217,11 @@ __all__ = [
     "reader_scope",
     "reconcile_identity_counter",
     "relying_party",
+    "render_recovery_kit",
     "revoke_all_credentials",
     "same_secret",
     "scope_of",
     "session_policy",
+    "token_principal",
     "truth_table",
 ]

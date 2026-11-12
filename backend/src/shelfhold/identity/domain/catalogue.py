@@ -70,6 +70,11 @@ _DECLARED = (
     # The open export and its import (M3 L37, EF-INT-016): every profile's data leaves, or enters
     _action("export.all", Effect.MOVES_INSTANCE_DATA),
     _action("import.all", Effect.MOVES_INSTANCE_DATA),
+    # Sessions and the way back in (M3 L07, EF-USR-011): closing the session of ANOTHER profile,
+    # and reading the kit that says how to recover. Own sessions are anyone's own and not here
+    _action("session.list_all", Effect.MANAGES_CREDENTIALS),
+    _action("session.revoke_other", Effect.MANAGES_CREDENTIALS),
+    _action("recovery_kit.read", Effect.MANAGES_CREDENTIALS),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),

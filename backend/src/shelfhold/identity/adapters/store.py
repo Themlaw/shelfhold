@@ -25,6 +25,7 @@ from shelfhold.identity.application.ports import (
     SourcePolicyRecord,
     UserRecord,
 )
+from shelfhold.identity.application.sessions import SessionView
 from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.domain.visibility import check_visibility, effective_visibility
@@ -761,6 +762,7 @@ class SqlIdentityStore:
                     absolute_expiry=session.absolute_expiry,
                     remember=session.remember,
                     ip=session.ip,
+                    user_agent_label=session.device,
                     passkey_id=session.passkey_id,
                 )
             )
@@ -823,6 +825,52 @@ class SqlIdentityStore:
             query = query.where(_session.c.user_id == user_id)
         if session_id is not None:
             query = query.where(_session.c.id == session_id)
+        with self._changing() as conn:
+            return conn.execute(query.values(revoked_at=now)).rowcount
+
+    def live_sessions(self, *, now: datetime, user_id: str | None = None) -> Sequence[SessionView]:
+        query = (
+            sa.select(_session, _user.c.username.label("u_username"))
+            .join(_user, _user.c.id == _session.c.user_id)
+            .where(_session.c.revoked_at.is_(None), _session.c.absolute_expiry > now)
+            .order_by(_session.c.last_seen_at.desc(), _session.c.id)
+        )
+        if user_id is not None:
+            query = query.where(_session.c.user_id == user_id)
+        with self._engine.connect() as conn:
+            rows = conn.execute(query).all()
+        return [
+            SessionView(
+                id=row.id,
+                user_id=row.user_id,
+                username=row.u_username,
+                device=row.user_agent_label,
+                ip=row.ip,
+                created_at=row.created_at,
+                auth_time=row.auth_time,
+                last_seen_at=row.last_seen_at,
+                remember=row.remember,
+            )
+            for row in rows
+        ]
+
+    def revoke_session_of(self, user_id: str, session_id: str, *, now: datetime) -> bool:
+        query = sa.update(_session).where(
+            _session.c.id == session_id,
+            _session.c.user_id == user_id,
+            _session.c.revoked_at.is_(None),
+        )
+        with self._changing() as conn:
+            return conn.execute(query.values(revoked_at=now)).rowcount > 0
+
+    def revoke_other_sessions(
+        self, user_id: str, *, keep_session_id: str | None, now: datetime
+    ) -> int:
+        query = sa.update(_session).where(
+            _session.c.user_id == user_id, _session.c.revoked_at.is_(None)
+        )
+        if keep_session_id is not None:
+            query = query.where(_session.c.id != keep_session_id)
         with self._changing() as conn:
             return conn.execute(query.values(revoked_at=now)).rowcount
 
