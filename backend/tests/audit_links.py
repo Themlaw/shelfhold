@@ -1,9 +1,9 @@
-"""An audit hook on `os.link` and `os.symlink` for the integration tests (EF-EXP-015): whatever
+"""A watch on `os.link` and `os.symlink` for the integration tests (EF-EXP-015): whatever
 the source does, a hard link made from `src/shelfhold` must come from one of the known roads, and
 the option's own (`ConfinedRoot.link_fd`) only under `writer.link_replaceable`. A symbolic link
 is never made by the source. Code of the tests themselves (setting up a world) is not judged."""
 
-import sys
+import os
 import traceback
 from pathlib import Path
 
@@ -24,7 +24,7 @@ _installed = False
 def _frames() -> list[tuple[str, str]]:
     """The source frames of the stack; empty when the caller of `os.link` is test code (a world
     being set up, or an attack played from a patched method)."""
-    if not traceback.extract_stack()[-3].filename.startswith(SRC):
+    if not traceback.extract_stack()[-4].filename.startswith(SRC):
         return []
     return [
         (Path(f.filename).as_posix().removeprefix(Path(SRC).as_posix() + "/"), f.name)
@@ -33,9 +33,7 @@ def _frames() -> list[tuple[str, str]]:
     ]
 
 
-def _hook(event: str, args: tuple[object, ...]) -> None:
-    if event not in {"os.link", "os.symlink"}:
-        return
+def _judge(event: str) -> None:
     frames = _frames()
     if not frames:  # a test setting up its world
         return
@@ -47,7 +45,20 @@ def _hook(event: str, args: tuple[object, ...]) -> None:
 
 
 def install() -> None:
+    """Wrap `os.link` and `os.symlink` (a `sys.addaudithook` stays for the life of the process and
+    slows every event of every test; the wrapper costs only when a link is made). Once only."""
     global _installed
-    if not _installed:
-        sys.addaudithook(_hook)
-        _installed = True
+    if _installed:
+        return
+    _installed = True
+    real_link, real_symlink = os.link, os.symlink
+
+    def link(*args, **kwargs):  # type: ignore[no-untyped-def]
+        _judge("os.link")
+        return real_link(*args, **kwargs)
+
+    def symlink(*args, **kwargs):  # type: ignore[no-untyped-def]
+        _judge("os.symlink")
+        return real_symlink(*args, **kwargs)
+
+    os.link, os.symlink = link, symlink  # type: ignore[assignment]
