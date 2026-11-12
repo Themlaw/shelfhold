@@ -18,6 +18,8 @@ from shelfhold.sdk.age import AGE_TIERS
 
 ADULT_MIN_AGE = 18
 X_CEILING = 99  # `shelf.max_age_rating` stores X as 99
+FAMILY_SHELF_NAME = "Famille"  # the pre-created shelf for children (EF-UX-007)
+FAMILY_SHELF_MAX_AGE = 13  # its ceiling can never be above 13+
 PARTITIONED = ("library", "user")
 Egress = Literal["foyer", "externe"]
 
@@ -35,6 +37,12 @@ class ShelfCeilingError(BindingError):
     """A ceiling that is no tier of the scale (nor X, nor none)."""
 
     code = "shelf.ceiling_invalid"
+
+
+class FamilyCeilingTooHighError(BindingError):
+    """The shelf "Famille" is capped at 13+: no ceiling above it, none at all, and not X."""
+
+    code = "shelf.family_ceiling_too_high"
 
 
 class UnpartitionedDestinationError(BindingError):
@@ -84,6 +92,18 @@ def check_ceiling(max_age_rating: int | None) -> None:
     if max_age_rating is None or max_age_rating == X_CEILING or max_age_rating in AGE_TIERS:
         return
     raise ShelfCeilingError(f"ceiling {max_age_rating} is no tier of {AGE_TIERS}")
+
+
+def check_family_cap(name: str, max_age_rating: int | None) -> None:
+    """ "Famille" never goes above 13+: refused at creation and at every change of its ceiling.
+    `None` (no ceiling), 99 (X) and any tier above 13 are refused."""
+    if name != FAMILY_SHELF_NAME:
+        return
+    if max_age_rating is None or max_age_rating > FAMILY_SHELF_MAX_AGE:
+        raise FamilyCeilingTooHighError(
+            f"shelf {FAMILY_SHELF_NAME!r} is capped at {FAMILY_SHELF_MAX_AGE}+, "
+            f"not {max_age_rating}"
+        )
 
 
 def effective_partitioning(kind: str, stored: str, *, attested: bool) -> str:

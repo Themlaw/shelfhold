@@ -170,6 +170,26 @@
         "title": "ActivityOut",
         "type": "object"
       },
+      "AdoptedLibraryIn": {
+        "properties": {
+          "kind": {
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind"
+        ],
+        "title": "AdoptedLibraryIn",
+        "type": "object"
+      },
       "AppliedOut": {
         "properties": {
           "metadata_applied": {
@@ -719,13 +739,17 @@
       "EditionShelfIn": {
         "properties": {
           "shelf_id": {
-            "title": "Shelf Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shelf Id"
           }
         },
-        "required": [
-          "shelf_id"
-        ],
         "title": "EditionShelfIn",
         "type": "object"
       },
@@ -2230,6 +2254,35 @@
           "checks"
         ],
         "title": "PlanOut",
+        "type": "object"
+      },
+      "PrecreateIn": {
+        "properties": {
+          "adopted": {
+            "items": {
+              "$ref": "#/components/schemas/AdoptedLibraryIn"
+            },
+            "title": "Adopted",
+            "type": "array"
+          }
+        },
+        "title": "PrecreateIn",
+        "type": "object"
+      },
+      "PrecreatedOut": {
+        "properties": {
+          "created": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Created",
+            "type": "array"
+          }
+        },
+        "required": [
+          "created"
+        ],
+        "title": "PrecreatedOut",
         "type": "object"
       },
       "ProbeIn": {
@@ -8659,6 +8712,68 @@
         ]
       }
     },
+    "/api/v1/shelves/precreate": {
+      "post": {
+        "description": "The shelves a new instance starts with and one per adopted library (EF-UX-007);\nidempotent, a shelf that exists is never rewritten.",
+        "operationId": "precreate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrecreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrecreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Precreate",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
     "/api/v1/shelves/withdrawals": {
       "get": {
         "description": "What the admission refuses on the shelves below 18+ (or, with `destination_id`, the\nunrated files of an adopted child library); nothing moves.",
@@ -11532,6 +11647,10 @@
     "/api/v1/problems/shelf.destination-not-partitioned": {
       "code": "shelf.destination_not_partitioned",
       "status": 409
+    },
+    "/api/v1/problems/shelf.family-ceiling-too-high": {
+      "code": "shelf.family_ceiling_too_high",
+      "status": 422
     },
     "/api/v1/problems/shelf.library-not-dedicated": {
       "code": "shelf.library_not_dedicated",

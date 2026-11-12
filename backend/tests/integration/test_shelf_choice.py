@@ -47,7 +47,14 @@ def default_kind_to(env: ExportEnv, shelf_name: str, kind: str = "manga") -> Non
 
 
 def unshelved(env: ExportEnv) -> Series:
-    return env.new_series(shelf_id="")
+    series = env.new_series()
+    with env.engine.begin() as connection:
+        connection.execute(
+            sa.update(catalog.edition)
+            .where(catalog.edition.c.id == series.edition_id)
+            .values(shelf_id=None)
+        )
+    return series
 
 
 def own_series_in_library(env: ExportEnv, edition_id: str, destination_id: str) -> None:
@@ -64,7 +71,7 @@ def own_series_in_library(env: ExportEnv, edition_id: str, destination_id: str) 
         connection.execute(
             sa.insert(export.edition_export_series).values(
                 edition_id=edition_id, remote_library_id=env.remote_library_id,
-                export_series_id=series_id, assigned_at=NOW, assigned_by="auto",
+                export_series_id=series_id, assigned_at=NOW, assigned_by="first_export",
             )
         )  # fmt: skip
 
@@ -348,7 +355,7 @@ def test_precreated_shelves_include_family_capped_13_and_say_it_in_plain_words()
         by_name = shelves_by_name(env)
         assert by_name["Famille"].max_age_rating == 13
         assert by_name["Famille"].hold_until_rated is True
-        assert by_name["Manga"].phrase == "Les mangas vont dans Kavita › Manga"
+        assert by_name["Manga"].phrase == "Les mangas vont dans Kavita \u203a Manga"
         assert by_name["Manga"].max_age_rating is None
         kinds = {r.key: r.default_shelf for r in env.rows(catalog.work_kind)}
         assert kinds["manga"] == "Manga"
@@ -410,7 +417,9 @@ def test_precreated_shelves_one_per_adopted_kavita_library() -> None:
         by_name = shelves_by_name(env)
         for library in libraries:
             assert library.name in by_name
-        assert by_name["Mes BD"].phrase == "Les contenus de « Mes BD » vont dans Kavita › Mes BD"
+        assert (
+            by_name["Mes BD"].phrase == "Les contenus de « Mes BD » vont dans Kavita \u203a Mes BD"
+        )
         assert by_name["Famille"].max_age_rating == 13  # a library named so gets the cap
         assert by_name["Light novels"].max_age_rating is None
         assert "Mes BD" in made.created
@@ -429,7 +438,7 @@ def test_precreation_runs_twice_at_once_without_a_duplicate_or_an_error() -> Non
             barrier.wait()
             try:
                 precreate_shelves(env.engine)
-            except BaseException as error:  # noqa: BLE001
+            except BaseException as error:
                 errors.append(error)
 
         threads = [threading.Thread(target=run) for _ in range(2)]
