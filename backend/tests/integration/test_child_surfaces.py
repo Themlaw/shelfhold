@@ -68,6 +68,9 @@ OWN = (
     "POST /api/v1/auth/passkeys/options",
     "POST /api/v1/auth/passkeys/reauth/options",
     "DELETE /api/v1/auth/passkeys/{passkey_id}",
+    "GET /api/v1/auth/sessions",  # M3 L07: her own sessions, a label and dates, no catalogue data
+    "POST /api/v1/auth/sessions/revoke-others",
+    "DELETE /api/v1/auth/sessions/{session_id}",
     "POST /api/v1/auth/reauth",
     "GET /api/v1/auth/session",
     "GET /api/v1/me/preferences",
@@ -216,6 +219,9 @@ CLOSED = (
     "POST /api/v1/requests/{request_id}/approve",
     "POST /api/v1/requests/{request_id}/reject",
     "POST /api/v1/requests/{request_id}/not-found",
+    "GET /api/v1/admin/sessions",  # M3 L07: every profile's sessions are the admin's
+    "DELETE /api/v1/admin/sessions/{session_id}",
+    "GET /api/v1/admin/recovery-kit",
 )
 
 # The one route whose body is read before its guard answers: it is given a valid one, so that the
