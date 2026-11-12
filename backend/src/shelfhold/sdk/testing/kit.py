@@ -154,6 +154,12 @@ async def _discover(source: Source, f: Fetcher, series_ref: SeriesRef | None) ->
     return _Discovery(refs=refs, series=series_ref, units=units, models=models)
 
 
+def _implements_fetch_range(source: Source) -> bool:
+    """A `fetch_range` of the plugin's own: the default of the contract (D10) is not one."""
+    method = getattr(type(unwrap(source)), "fetch_range", None)
+    return callable(method) and method is not Source.fetch_range
+
+
 def _missing_methods(source: Source) -> list[str]:
     missing = [n for n in ("get_series", "list_units") if not callable(getattr(source, n, None))]
     caps = source.manifest.capabilities
@@ -168,7 +174,7 @@ def _missing_methods(source: Source) -> list[str]:
     )
     has_unit = callable(getattr(source, "fetch_unit", None))
     if Capability.RANGED_CONTENT in caps:
-        delivers = queue or has_unit or callable(getattr(source, "fetch_range", None))
+        delivers = queue or has_unit or _implements_fetch_range(source)
     else:
         delivers = has_unit
     if not delivers:

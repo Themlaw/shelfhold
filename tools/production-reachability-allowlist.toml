@@ -176,13 +176,20 @@ symbols = [
 
 [[allow]]
 category = "m3-l34-sdk-freeze"
-reason = "2026-11-12 (M3 L34): the SDK 1.3 boundary a third-party destination or plugin is written against: the serialisable `FsOp` plan and its checks (`parse_destination_plan`, `check_destination_plan`, `is_reserved_path`), the event space of a plugin (`plugin_event_type`, `check_plugin_event`, `publish_plugin_event`), the closed list of exits of a plugin waiting state, and the optional `fetch_range`. Nothing in production runs a destination plan or lets a plugin raise an event before the first destination adapter plan executor (M4) and the first plugin that declares an event or a waiting state, so the checks are proved by tests and listed until then."
+reason = "2026-11-12 (M3 L34): the SDK 1.3 boundary a third-party destination or plugin is written against: the serialisable `FsOp` plan and its checks (`parse_destination_plan`, `check_destination_plan`, `is_reserved_path`), the event space of a plugin (`plugin_event_type`, `check_plugin_event`, `publish_plugin_event`), the closed list of exits of a plugin waiting state, and the optional `fetch_range`. Nothing in production runs a destination plan or lets a plugin raise an event before the first destination adapter plan executor (M4) and the first plugin that declares an event or a waiting state, so the checks are proved by tests and listed until then. End-of-lot criterion of the M4 destination lot: its executor calls `check_destination_plan` on the copy `parse_destination_plan` returned, right before each operation (docs/decisions/M3.md)."
 until = "M4"
 symbols = [
   "shelfhold.plugin_host.registry:publish_plugin_event",
-  "shelfhold.sdk.events:*",
+  "shelfhold.sdk.events:PluginEventError",
+  "shelfhold.sdk.events:check_plugin_event",
+  "shelfhold.sdk.events:plugin_event_type",
   "shelfhold.sdk.export_target:TargetCapabilities",
-  "shelfhold.sdk.fsops:*",
+  "shelfhold.sdk.fsops:FsOp",
+  "shelfhold.sdk.fsops:FsOpPlan",
+  "shelfhold.sdk.fsops:FsOpPlanError",
+  "shelfhold.sdk.fsops:check_destination_plan",
+  "shelfhold.sdk.fsops:is_reserved_path",
+  "shelfhold.sdk.fsops:parse_destination_plan",
   "shelfhold.sdk.models:WAITING_EXITS",
   "shelfhold.sdk.source:Source.fetch_range",
 ]
