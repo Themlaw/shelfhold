@@ -173,7 +173,10 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
     if applied is not None and applied != (settings.public_url or ""):
         pending.append({"code": "public_url_restart", "message": t("status.public_url_restart")})
     if new_passkeys:  # owner decision 2026-11-12: until the admin acknowledges them
-        shown = ", ".join(f"{name!r} ({user})" for _id, user, name, _at in new_passkeys[:10])
+        shown = t("status.passkey_items_separator").join(
+            t("status.passkey_item", name=name, user=user)
+            for _id, user, name, _at in new_passkeys[:10]
+        )
         pending.append(
             {
                 "code": "passkey_registered",
