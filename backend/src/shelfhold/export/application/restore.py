@@ -374,6 +374,45 @@ class RestoreGuard:
             )
         return RestoreStatus(int(head.restore_epoch), tuple(findings), pending=pending)
 
+    def forget_root(self, root_id: str, *, confirm: str, principal: Principal) -> None:
+        """The way out of `restored_behind` when a known root will never come back (a dead disk,
+        a target removed after the backup): `root_not_mounted` blocks the adoption for good and no
+        command removes a root. The root is demoted to read-only (`adopt_ro`): Shelfhold neither
+        writes it nor reads its sentinel any more, its copies stay recorded, nothing is deleted
+        on any disk. A reserved action (fresh session, never a key), typed and audited in the
+        transaction that demotes it. Only a root whose sentinel is absent is forgotten; one that
+        comes back stays read-only until `root takeover`."""
+        verdict = authorize_reserved(principal, _FORGET, now=self._clock.now())
+        if not isinstance(verdict, Allowed):
+            raise DeletionRefusedError(verdict)
+        finding = next((f for f in self.assess().findings if f.root_id == root_id), None)
+        if finding is None:
+            raise ForgetRootRefusedError("unknown_root")
+        if finding.state is not RootState.MISSING:
+            raise ForgetRootRefusedError("still_readable")
+        if not hmac.compare_digest(confirm.strip().encode(), forget_root_phrase(root_id).encode()):
+            raise ForgetRootRefusedError("phrase_mismatch")
+        now = self._clock.now()
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(platform.physical_root)
+                .where(platform.physical_root.c.root_id == root_id)
+                .values(mode="adopt_ro")
+            )
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=principal.actor_id,
+                        action=_FORGET.name,
+                        at=now,
+                        target=root_id,
+                        session_id=principal.session_id,
+                        auth_time=principal.auth_time,
+                    )
+                )
+            )
+        log.info("restore.root_forgotten", root_id=root_id)
+
     def enter_restored_behind(self) -> RestoreStatus:
         """Start-up: if the database is behind, move the epoch counter (once per restore), say so
         once, and freeze the instance. Not behind: nothing changes."""
@@ -715,43 +754,8 @@ class RestoreAdopter:
         )  # fmt: skip
 
     def forget_root(self, root_id: str, *, confirm: str, principal: Principal) -> None:
-        """The way out of `restored_behind` when a known root will never come back (a dead disk,
-        a target removed after the backup): `root_not_mounted` blocks the adoption for good and no
-        command removes a root. The root is demoted to read-only (`adopt_ro`): Shelfhold neither
-        writes it nor reads its sentinel any more, its copies stay recorded, nothing is deleted
-        on any disk. A reserved action (fresh session, never a key), typed and audited in the
-        transaction that demotes it. Only a root whose sentinel is absent is forgotten; one that
-        comes back stays read-only until `root takeover`."""
-        verdict = authorize_reserved(principal, _FORGET, now=self._clock.now())
-        if not isinstance(verdict, Allowed):
-            raise DeletionRefusedError(verdict)
-        finding = next((f for f in self._guard.assess().findings if f.root_id == root_id), None)
-        if finding is None:
-            raise ForgetRootRefusedError("unknown_root")
-        if finding.state is not RootState.MISSING:
-            raise ForgetRootRefusedError("still_readable")
-        if not hmac.compare_digest(confirm.strip().encode(), forget_root_phrase(root_id).encode()):
-            raise ForgetRootRefusedError("phrase_mismatch")
-        now = self._clock.now()
-        with self._engine.begin() as connection:
-            connection.execute(
-                sa.update(platform.physical_root)
-                .where(platform.physical_root.c.root_id == root_id)
-                .values(mode="adopt_ro")
-            )
-            connection.execute(
-                audit_insert(
-                    AuditEntry(
-                        actor_id=principal.actor_id,
-                        action=_FORGET.name,
-                        at=now,
-                        target=root_id,
-                        session_id=principal.session_id,
-                        auth_time=principal.auth_time,
-                    )
-                )
-            )
-        log.info("restore.root_forgotten", root_id=root_id)
+        """See `RestoreGuard.forget_root`."""
+        self._guard.forget_root(root_id, confirm=confirm, principal=principal)
 
     def _root_blocked(self, finding: RootFinding) -> str | None:
         """Why a root cannot be reconciled now. A root the database knows and that is not mounted

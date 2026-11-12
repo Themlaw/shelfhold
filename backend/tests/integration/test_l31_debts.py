@@ -26,6 +26,7 @@ from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from shelfhold.library.application.anti_echo import received_content_hash
+from shelfhold.ops.errors import OpsError
 from shelfhold.plugin_host import provider_fetcher
 from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider
 from shelfhold.sdk.metadata import EntityRef, MetadataManifest
@@ -254,6 +255,36 @@ def test_a_root_that_will_not_come_back_is_forgotten_then_the_adoption_succeeds(
         assert not preview.blocked_roots
         adopter.adopt(confirm=preview.fingerprint)
         assert not env.guard().assess().behind
+
+
+@pytest.mark.req("EF-INT-026")
+def test_the_server_exit_forgets_a_root_and_writes_exactly_one_audit_line() -> None:
+    from shelfhold.ops.restore import RestoreGuardExit
+
+    with restore_env() as env:
+        env.add_chapters(3, 4)
+        backup = env.backup()
+        env.export()
+        env.restore(backup)
+        dead = env.library.parent / "dead-disk"
+        dead.mkdir()
+        dead_id = new_ulid()
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.insert(platform.physical_root).values(root_id=dead_id, path_entry=str(dead))
+            )
+        env.open_instance()
+        env.guard().enter_restored_behind()
+        exit_ = RestoreGuardExit(env.engine, lambda: env.fsops, env.ex.clock, env.bus)
+        admin = Principal("01J00000000000000000000ADM", "admin", "admin", Credential.LOCAL_CLI)
+        with pytest.raises(OpsError):
+            exit_.forget_root(root_id=dead_id, confirm="wrong", principal=admin)
+        count = "SELECT count(*) FROM audit WHERE action = 'reconcile.forget_root'"
+        with env.engine.connect() as connection:
+            assert connection.execute(sa.text(count)).scalar_one() == 0
+        exit_.forget_root(root_id=dead_id, confirm=forget_root_phrase(dead_id), principal=admin)
+        with env.engine.connect() as connection:
+            assert connection.execute(sa.text(count)).scalar_one() == 1
 
 
 @pytest.mark.req("EF-INT-026")

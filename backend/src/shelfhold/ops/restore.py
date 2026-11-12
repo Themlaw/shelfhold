@@ -13,7 +13,7 @@ from collections.abc import Callable
 from sqlalchemy import Engine
 
 from shelfhold.events.bus import EventBus
-from shelfhold.export.application.restore import RestoreGuard
+from shelfhold.export.application.restore import ForgetRootRefusedError, RestoreGuard
 from shelfhold.identity.public import AuditEntry, Principal, audit_insert
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
@@ -52,10 +52,18 @@ class RestoreGuardExit:
         )
 
     def forget_root(self, *, root_id: str, confirm: str, principal: Principal) -> None:
-        raise ExitUnavailableError(
-            "forgetting a root needs the instance lock: stop Shelfhold and run "
-            "`shelfhold reconcile --forget-root <id> --confirm <phrase>`"
-        )
+        """Effective through the server: one UPDATE and its audit line in one transaction, no
+        instance lock needed (the instance is read only while it waits)."""
+        fsops = self._fsops()
+        if fsops is None:
+            raise ExitUnavailableError("the library is not connected")
+        guard = RestoreGuard(self._engine, fsops, clock=self._clock, bus=self._bus)
+        if not guard.assess().behind:
+            raise NotWaitingError("the instance is not restored_behind")
+        try:
+            guard.forget_root(root_id, confirm=confirm, principal=principal)
+        except ForgetRootRefusedError as refused:
+            raise NotWaitingError(f"forget-root refused: {refused.reason}") from refused
 
 
 class RestoreCredentialsExit:

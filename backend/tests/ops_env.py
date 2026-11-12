@@ -36,6 +36,10 @@ class FakeRestore:
 
     behind: bool = True
     calls: list[bool] = field(default_factory=list)
+    forgotten: list[str] = field(default_factory=list)
+
+    def forget_root(self, *, root_id: str, confirm: str, principal: Principal) -> None:
+        self.forgotten.append(root_id)
 
     def waiting(self) -> list[WaitingItem]:
         if not self.behind:
