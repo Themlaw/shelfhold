@@ -430,6 +430,7 @@
   "UpstreamAlreadyFollowedError",
   "UrlPatternError",
   "UserAgentNotIdentifiable",
+  "UserStateError",
   "UserWarning",
   "ValidationError",
   "ValueError",
@@ -1130,12 +1131,14 @@
   "shelfhold.identity.adapters.passwords",
   "shelfhold.identity.adapters.preferences",
   "shelfhold.identity.adapters.store",
+  "shelfhold.identity.adapters.user_state_store",
   "shelfhold.identity.application",
   "shelfhold.identity.application.passkeys",
   "shelfhold.identity.application.ports",
   "shelfhold.identity.application.preferences",
   "shelfhold.identity.application.profiles",
   "shelfhold.identity.application.service",
+  "shelfhold.identity.application.user_state",
   "shelfhold.identity.domain",
   "shelfhold.identity.domain.catalogue",
   "shelfhold.identity.domain.credentials",
@@ -1147,6 +1150,7 @@
   "shelfhold.identity.domain.throttle",
   "shelfhold.identity.domain.tokens",
   "shelfhold.identity.domain.truth_table",
+  "shelfhold.identity.domain.user_state",
   "shelfhold.identity.errors",
   "shelfhold.identity.public",
   "shelfhold.identity.webauthn",
@@ -1355,6 +1359,7 @@
   "shelfhold.interfaces.http_api.library",
   "shelfhold.interfaces.http_api.lists",
   "shelfhold.interfaces.http_api.login",
+  "shelfhold.interfaces.http_api.me",
   "shelfhold.interfaces.http_api.middleware",
   "shelfhold.interfaces.http_api.ops",
   "shelfhold.interfaces.http_api.pagination",
@@ -2970,7 +2975,8 @@
   "xxe",
   "year",
   "yes",
-  "youth"
+  "youth",
+  "zxx"
  ],
  "words": {
   "action": [

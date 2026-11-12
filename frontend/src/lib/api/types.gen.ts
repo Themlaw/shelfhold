@@ -1080,6 +1080,26 @@ export type LanguageOut = {
 };
 
 /**
+ * LanguagesIn
+ */
+export type LanguagesIn = {
+    /**
+     * Languages
+     */
+    languages: unknown;
+};
+
+/**
+ * LanguagesOut
+ */
+export type LanguagesOut = {
+    /**
+     * Languages
+     */
+    languages: Array<string>;
+};
+
+/**
  * LoginRequest
  */
 export type LoginRequest = {
@@ -2527,6 +2547,64 @@ export type SourceIn = {
 };
 
 /**
+ * StateIn
+ */
+export type StateIn = {
+    /**
+     * Client Ts
+     */
+    client_ts?: string | null;
+    /**
+     * Favorite
+     */
+    favorite?: boolean | null;
+    /**
+     * Followed
+     */
+    followed?: boolean | null;
+    /**
+     * Read
+     */
+    read?: boolean | null;
+};
+
+/**
+ * StateList
+ */
+export type StateList = {
+    /**
+     * Items
+     */
+    items: Array<StateOut>;
+};
+
+/**
+ * StateOut
+ */
+export type StateOut = {
+    /**
+     * Favorite
+     */
+    favorite: boolean;
+    /**
+     * Followed
+     */
+    followed: boolean;
+    /**
+     * Read At
+     */
+    read_at: string | null;
+    /**
+     * Stamp
+     */
+    stamp: string | null;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * StatsOut
  */
 export type StatsOut = {
@@ -2648,6 +2726,24 @@ export type TargetIn = {
      * Username
      */
     username: string;
+};
+
+/**
+ * TitleOut
+ */
+export type TitleOut = {
+    /**
+     * Lang
+     */
+    lang: string | null;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
 };
 
 /**
@@ -4802,6 +4898,219 @@ export type PatchPreferencesResponses = {
 };
 
 export type PatchPreferencesResponse = PatchPreferencesResponses[keyof PatchPreferencesResponses];
+
+export type ListStateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/state';
+};
+
+export type ListStateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListStateError = ListStateErrors[keyof ListStateErrors];
+
+export type ListStateResponses = {
+    /**
+     * Successful Response
+     */
+    200: StateList;
+};
+
+export type ListStateResponse = ListStateResponses[keyof ListStateResponses];
+
+export type GetStateData = {
+    body?: never;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/api/v1/me/state/{work_id}';
+};
+
+export type GetStateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type GetStateError = GetStateErrors[keyof GetStateErrors];
+
+export type GetStateResponses = {
+    /**
+     * Successful Response
+     */
+    200: StateOut;
+};
+
+export type GetStateResponse = GetStateResponses[keyof GetStateResponses];
+
+export type PutStateData = {
+    body: StateIn;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/api/v1/me/state/{work_id}';
+};
+
+export type PutStateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PutStateError = PutStateErrors[keyof PutStateErrors];
+
+export type PutStateResponses = {
+    /**
+     * Successful Response
+     */
+    200: StateOut;
+};
+
+export type PutStateResponse = PutStateResponses[keyof PutStateResponses];
+
+export type GetLanguagesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/title-languages';
+};
+
+export type GetLanguagesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type GetLanguagesError = GetLanguagesErrors[keyof GetLanguagesErrors];
+
+export type GetLanguagesResponses = {
+    /**
+     * Successful Response
+     */
+    200: LanguagesOut;
+};
+
+export type GetLanguagesResponse = GetLanguagesResponses[keyof GetLanguagesResponses];
+
+export type PutLanguagesData = {
+    body: LanguagesIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/title-languages';
+};
+
+export type PutLanguagesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PutLanguagesError = PutLanguagesErrors[keyof PutLanguagesErrors];
+
+export type PutLanguagesResponses = {
+    /**
+     * Successful Response
+     */
+    200: LanguagesOut;
+};
+
+export type PutLanguagesResponse = PutLanguagesResponses[keyof PutLanguagesResponses];
+
+export type GetTitleData = {
+    body?: never;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/api/v1/me/works/{work_id}/title';
+};
+
+export type GetTitleErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type GetTitleError = GetTitleErrors[keyof GetTitleErrors];
+
+export type GetTitleResponses = {
+    /**
+     * Successful Response
+     */
+    200: TitleOut;
+};
+
+export type GetTitleResponse = GetTitleResponses[keyof GetTitleResponses];
 
 export type WorkSuggestionsData = {
     body?: never;
