@@ -184,6 +184,9 @@ def test_only_mutations_verified_by_s5_are_allow_listed() -> None:
         "enqueueChapterDownload", "dequeueChapterDownload", "updateManga", "createCategory",
         "updateCategory", "updateMangaCategories", "deleteDownloadedChapter",
         "fetchChapters",  # the piloted refresh (L21)
+        # owner decision 2026-11-12: the two update filters, only on the admin's confirmation;
+        # shape read in the schema of the pinned v2.4.2366 (`setSettings(input: SetSettingsInput!)`)
+        "setSettings",
     }  # fmt: skip
     _service, f, server = make()
     # any other mutation is refused by the referee, and recorded
