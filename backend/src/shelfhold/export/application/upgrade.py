@@ -52,7 +52,11 @@ from shelfhold.export.application.intents import (
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.rendering import CbzRenderer, comicinfo_xml
-from shelfhold.export.application.snapshot import DestinationContext, barrier_holds, load_context
+from shelfhold.export.application.snapshot import (
+    DestinationContext,
+    barrier_closed_by,
+    load_context,
+)
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import Allowed
 from shelfhold.infrastructure.clock import Clock
@@ -97,6 +101,8 @@ class UpgradeOutcome(enum.Enum):
     TARGET_CHANGED = "target_changed"  # the served file is not the manifest's: left alone
     SUSPECT_REVISION = "suspect_revision"  # quarantined by the guard: never promoted (EF-BIB-024)
     REFUSED_AGE = "refused_age"  # the shelf below 18+ no longer admits the Edition (EF-BIB-037)
+    # the destination is paused, read-only, or not known to partition: nothing is written there
+    REFUSED_DESTINATION = "refused_destination"
 
 
 @dataclass(frozen=True)
@@ -481,9 +487,14 @@ class SamePathUpgrade:
         ):  # frozen, or blocked by its sentinel or its lease: nothing, not even the intent
             log.warning("upgrade.root_frozen", root_id=root_id)
             return UpgradeOutcome.ROOT_FROZEN
-        if not self._admitted(connection, served):
-            log.info("upgrade.refused_age", unit_id=served.unit_id)
-            return UpgradeOutcome.REFUSED_AGE
+        closed = self._barrier(connection, served)
+        if closed is not None:
+            log.info("upgrade.refused_barrier", unit_id=served.unit_id, why=closed)
+            return (
+                UpgradeOutcome.REFUSED_DESTINATION
+                if closed == "destination"
+                else UpgradeOutcome.REFUSED_AGE
+            )
         if check_read and served.skip_read and _is_read(connection, served.unit_ids):
             log.info("upgrade.skipped_read", unit_id=served.unit_id)
             return UpgradeOutcome.SKIPPED_READ
@@ -498,17 +509,22 @@ class SamePathUpgrade:
         return None
 
     @staticmethod
-    def _admitted(connection: Connection, served: _Served) -> bool:
+    def _barrier(connection: Connection, served: _Served) -> str | None:
         """The barrier of the export, read again now: a file already served is not replaced when
-        the shelf below 18+ no longer admits its Edition (a suggested age above the rating, a
-        rating raised, an Edition withdrawn). The very look the planner takes before a write."""
+        the destination is closed (paused, read-only) or the shelf below 18+ no longer admits its
+        Edition (a suggested age above the rating, a rating raised, an Edition withdrawn). The
+        very look the planner takes before a write; the destination is told before the age."""
         unit = catalog.unit
         editions = connection.execute(
             sa.select(unit.c.edition_id).where(unit.c.id.in_(served.unit_ids)).distinct()
         ).scalars()
-        return all(
-            barrier_holds(connection, served.ctx.destination_id, edition) for edition in editions
-        )
+        verdicts = [
+            barrier_closed_by(connection, served.ctx.destination_id, edition)
+            for edition in editions
+        ]
+        if "destination" in verdicts:
+            return "destination"
+        return "age" if "age" in verdicts else None
 
     # -- the replacement --------------------------------------------------------------------
 

@@ -15,6 +15,7 @@ import sqlalchemy as sa
 from shelfhold.export.application.upgrade import UpgradeOutcome
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
+from shelfhold.ops.status import collect
 from tests.export_env import ExportEnv
 from tests.family_env import family_env, rate, rate_edition, suggest
 from tests.upgrade_env import (
@@ -119,6 +120,14 @@ def test_a_served_file_of_an_edition_the_shelf_no_longer_admits_is_not_replaced(
         change(env, exported, edition)
         assert door(env, exported, content_id) is UpgradeOutcome.REFUSED_AGE
         assert exported.target.read_bytes() == old and bin_files(env) == []
+        # the refusal is not a line of the log alone: `status` shows the Edition, with its exit
+        with env.engine.connect() as connection:
+            waiting = [
+                (i.state, i.subject, i.command)
+                for i in collect(connection)
+                if i.state == "withdrawal_pending"
+            ]
+        assert waiting == [("withdrawal_pending", edition, "shelfhold shelf withdraw")]
 
 
 @pytest.mark.parametrize("door", [door_upgrade, door_unit], ids=lambda d: d.__name__)
@@ -151,3 +160,43 @@ def test_a_restore_of_an_upgrade_is_refused_too_when_the_edition_is_above_the_ra
         served = exported.target.read_bytes()
         assert svc.restore(done.upgrade_id).outcome is UpgradeOutcome.REFUSED_AGE
         assert exported.target.read_bytes() == served
+
+
+def pause_shelf(env: ExportEnv, exported: Exported, _edition: str) -> None:
+    with env.engine.begin() as connection:
+        connection.execute(sa.update(export.shelf).values(paused_reason="audit"))
+
+
+def read_only_target(env: ExportEnv, exported: Exported, _edition: str) -> None:
+    from shelfhold.export.application.target_health import TargetHealth
+    from shelfhold.export.application.target_state import save_health
+    from shelfhold.export.domain.kavita_compat import TargetMode
+
+    with env.engine.begin() as connection:
+        save_health(
+            connection, env.target_id, TargetHealth(version_mode=TargetMode.DEGRADED_READONLY)
+        )
+
+
+@pytest.mark.parametrize("closing", [pause_shelf, read_only_target], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("door", DOORS, ids=lambda d: d.__name__)
+def test_a_closed_destination_is_told_apart_from_the_age(
+    door: Callable[..., UpgradeOutcome], closing: Callable[..., None]
+) -> None:
+    """The label says what closed the door: a paused or read-only destination is not an age."""
+    with family_env(13) as env:
+        exported, edition = served_on_family_shelf(env)
+        old = exported.target.read_bytes()
+        content_id = better_copy(env, exported)
+        closing(env, exported, edition)
+        assert door(env, exported, content_id) is UpgradeOutcome.REFUSED_DESTINATION
+        assert exported.target.read_bytes() == old and bin_files(env) == []
+
+
+def test_the_destination_is_told_before_the_age() -> None:
+    with family_env(13) as env:
+        exported, edition = served_on_family_shelf(env)
+        suggest(env, edition, 18)
+        pause_shelf(env, exported, edition)
+        result = door_upgrade(env, exported, better_copy(env, exported))
+        assert result is UpgradeOutcome.REFUSED_DESTINATION
