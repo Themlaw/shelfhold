@@ -61,10 +61,12 @@ Un compte peut ajouter une clé qui survit à la révocation de ses sessions : S
 - `shelfhold status` garde une ligne `passkey_registered` (nombre, comptes et noms des clés) **jusqu'à ce que vous
   l'acquittiez**, depuis l'hôte :
 
-      shelfhold admin acknowledge-passkeys
+      shelfhold admin acknowledge-passkeys --through <référence>
 
-  L'acquittement couvre tout ce que `status` montrait, il est journalisé (`passkey.registrations_acknowledged`) et
-  ne fait rien s'il n'y a rien à acquitter. Une clé inconnue se révoque dans la page des clés d'accès du compte, ou
+  La **référence** est affichée par `status` (la dernière du lot). L'acquittement couvre ce que `status`
+  montrait **jusqu'à cette référence** : une clé enregistrée après votre lecture reste listée. Il est journalisé (`passkey.registrations_acknowledged`) et
+  est refusé si aucune clé en attente n'a cette référence. Un enregistrement non acquitté n'expire jamais de
+  l'historique d'audit, quel que soit son âge ; l'enregistrement et sa ligne d'audit sont écrits ensemble. Une clé inconnue se révoque dans la page des clés d'accès du compte, ou
   par `shelfhold admin reset-password` (qui révoque aussi ses clés). Révoquer une clé n'acquitte pas
   son enregistrement ; un enregistrement refusé (doublon, justificatif invalide) ne signale rien.
 

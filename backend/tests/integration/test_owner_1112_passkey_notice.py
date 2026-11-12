@@ -5,6 +5,7 @@ acknowledges it (`shelfhold admin acknowledge-passkeys`, from the host)."""
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -51,8 +52,15 @@ def _status(api: AuthEnv, monkeypatch: pytest.MonkeyPatch, capsys: Any) -> list[
     return [w for w in found if isinstance(w, dict) and w.get("code") == "passkey_registered"]
 
 
-def _acknowledge(api: AuthEnv, monkeypatch: pytest.MonkeyPatch) -> int:
-    return run_cli(monkeypatch, api.settings, "admin", "acknowledge-passkeys")
+def _through(line: dict[str, str]) -> str:
+    """The last reference `status` showed."""
+    found = re.findall(r"--through ([0-9A-Z]{26})", line["message"])
+    assert found, line
+    return found[-1]
+
+
+def _acknowledge(api: AuthEnv, monkeypatch: pytest.MonkeyPatch, through: str) -> int:
+    return run_cli(monkeypatch, api.settings, "admin", "acknowledge-passkeys", "--through", through)
 
 
 def _member(api: AuthEnv) -> Any:
@@ -93,12 +101,12 @@ def test_status_lists_each_registration_until_it_is_acknowledged(
     (line,) = _status(api, monkeypatch, capsys)
     assert "2" in line["message"] and ADMIN in line["message"] and "member1" in line["message"]
     assert _status(api, monkeypatch, capsys)  # reading it does not acknowledge it
-    assert _acknowledge(api, monkeypatch) == 0
+    assert _acknowledge(api, monkeypatch, _through(line)) == 0
     assert _status(api, monkeypatch, capsys) == []
     register(api, passkey=SoftPasskey(), name="Phone")  # a new one brings the line back
     (again,) = _status(api, monkeypatch, capsys)
     assert "1" in again["message"] and "Phone" in again["message"]
-    assert _acknowledge(api, monkeypatch) == 0
+    assert _acknowledge(api, monkeypatch, _through(again)) == 0
     audited = [r[0] for r in db_rows(api.settings, "SELECT action FROM audit")]
     assert audited.count("passkey.registrations_acknowledged") == 2
 
@@ -111,7 +119,8 @@ def test_a_refused_registration_notifies_nothing(
     api.login()
     passkey, done = register(api, name="First")
     assert done.status_code == 201
-    assert _acknowledge(api, monkeypatch) == 0
+    (first,) = _status(api, monkeypatch, capsys)
+    assert _acknowledge(api, monkeypatch, _through(first)) == 0
     _, duplicate = register(api, passkey=passkey, name="Same device")
     assert duplicate.status_code >= 400
     options = api.post(f"{PASSKEYS}/options", json={}).json()
@@ -134,15 +143,93 @@ def test_revoking_a_passkey_does_not_acknowledge_the_registration(
 
 
 def test_the_acknowledgement_is_a_host_command_only_audited_and_idempotent(
-    api: AuthEnv, monkeypatch: pytest.MonkeyPatch
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch, capsys: Any
 ) -> None:
     api.login()
     register(api, name="Laptop")
+    (line,) = _status(api, monkeypatch, capsys)
     sock = api.settings.data_dir / "shelfhold.sock"
-    assert call(sock, "identity.acknowledge_passkeys", {}) == 1
-    assert call(sock, "identity.acknowledge_passkeys", {}) == 0  # nothing left: no second line
+    through = _through(line)
+    assert call(sock, "identity.acknowledge_passkeys", {"through": through}) == 1
     audited = [r[0] for r in db_rows(api.settings, "SELECT action FROM audit")]
     assert audited.count("passkey.registrations_acknowledged") == 1
+    # the reference is spent: nothing waits under it any more, and nothing is written
+    assert _acknowledge(api, monkeypatch, through) == 1
+    audited = [r[0] for r in db_rows(api.settings, "SELECT action FROM audit")]
+    assert audited.count("passkey.registrations_acknowledged") == 1
+
+
+def test_a_registration_after_status_is_not_acknowledged_with_what_was_shown(
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """Review of the PR (PoC): a key planted between `status` and the acknowledgement stays."""
+    api.login()
+    register(api, name="Laptop")
+    (line,) = _status(api, monkeypatch, capsys)
+    other = _member(api)
+    _, done = register_with(api, other, SoftPasskey())
+    assert done.status_code == 201
+    assert _acknowledge(api, monkeypatch, _through(line)) == 0
+    (still,) = _status(api, monkeypatch, capsys)  # the planted key is listed, alone
+    assert "member1" in still["message"] and "1 clé" in still["message"]
+    assert _through(still) != _through(line)
+
+
+def test_an_unknown_or_foreign_reference_acknowledges_nothing(
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    api.login()
+    register(api, name="Laptop")
+    for bad in ("0" * 26, "ZZZZZZZZZZZZZZZZZZZZZZZZZZ", "not-a-reference"):
+        assert _acknowledge(api, monkeypatch, bad) == 1  # the command refuses
+    assert len(_status(api, monkeypatch, capsys)) == 1
+    audited = [r[0] for r in db_rows(api.settings, "SELECT action FROM audit")]
+    assert "passkey.registrations_acknowledged" not in audited
+
+
+def test_the_registration_and_its_audit_line_are_written_together(
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the audit line cannot be written, no passkey is stored (and no event is sent)."""
+    from shelfhold.identity.adapters.store import SqlIdentityStore
+
+    api.login()
+
+    def broken(_conn: Any) -> Any:  # the audit INSERT fails inside the registration transaction
+        raise RuntimeError("audit down")
+
+    monkeypatch.setattr(
+        SqlIdentityStore, "_audit_insert", staticmethod(lambda entry: broken(entry))
+    )
+    with pytest.raises(RuntimeError):
+        register(api, name="Laptop")
+    monkeypatch.undo()
+    assert db_rows(api.settings, "SELECT count(*) FROM webauthn_credential") == [(0,)]
+    assert _events(api) == []
+
+
+def test_retention_never_expires_an_unacknowledged_registration(
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    from datetime import timedelta
+
+    from shelfhold.infrastructure.db import create_db_engine
+    from shelfhold.jobs.retention import RetentionPolicy, expire_audit
+
+    api.login()
+    register(api, name="Old")
+    (first,) = _status(api, monkeypatch, capsys)
+    assert _acknowledge(api, monkeypatch, _through(first)) == 0
+    register(api, passkey=SoftPasskey(), name="Waiting")
+    engine = create_db_engine(api.settings.database_path)
+    try:
+        later = api.clock.now() + timedelta(days=4000)  # far beyond any retention age
+        expire_audit(engine, now=later, policy=RetentionPolicy())
+    finally:
+        engine.dispose()
+    kinds = [r[0] for r in db_rows(api.settings, "SELECT action FROM audit")]
+    assert kinds.count("passkey.registered") == 1  # the acknowledged one went, the waiting stays
+    assert len(_status(api, monkeypatch, capsys)) == 1
 
 
 def test_the_event_is_an_operating_event() -> None:

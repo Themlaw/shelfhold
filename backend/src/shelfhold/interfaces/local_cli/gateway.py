@@ -25,8 +25,11 @@ from shelfhold.identity.public import AdminExistsError, CreatedApiKey, UnknownUs
 from shelfhold.infrastructure.local_socket import RpcFailure, call
 
 _VALUE_ERRORS = frozenset(
-    {"invalid_username", "password_too_short", "password_too_long", "invalid_expiry"}
-)
+    {
+        "invalid_username", "password_too_short", "password_too_long", "invalid_expiry",
+        "unknown_reference",
+    }
+)  # fmt: skip
 
 
 class KeyView(Protocol):
@@ -51,7 +54,7 @@ class KeyView(Protocol):
 class IdentityCommands(Protocol):
     def create_admin(self, username: str, password: str) -> str: ...
     def reset_password(self, username: str, password: str) -> int: ...
-    def acknowledge_passkeys(self) -> int: ...
+    def acknowledge_passkeys(self, through: str) -> int: ...
     def revoke_sessions(
         self, *, username: str | None = None, session_id: str | None = None
     ) -> int: ...
@@ -114,8 +117,8 @@ class SocketIdentity:
     def reset_password(self, username: str, password: str) -> int:
         return int(str(self._call("identity.reset_password", username=username, password=password)))
 
-    def acknowledge_passkeys(self) -> int:
-        return int(str(self._call("identity.acknowledge_passkeys")))
+    def acknowledge_passkeys(self, through: str) -> int:
+        return int(str(self._call("identity.acknowledge_passkeys", through=through)))
 
     def revoke_sessions(self, *, username: str | None = None, session_id: str | None = None) -> int:
         return int(

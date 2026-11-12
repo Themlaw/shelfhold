@@ -14,7 +14,7 @@ the ceremony honest:
 
 import hashlib
 import secrets
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -178,6 +178,7 @@ class PasskeyCeremony:
         flow: str,
         credential: Mapping[str, object],
         name: str,
+        audit_for: Callable[[str], AuditEntry] | None = None,
     ) -> PasskeyRecord:
         rp = self._require()
         challenge = self._challenges.consume(
@@ -208,7 +209,7 @@ class PasskeyCeremony:
             now=self._now(),
             rp_id=rp.id,
         )
-        if not self._store.insert_passkey(new):
+        if not self._store.insert_passkey(new, audit_for(new.id) if audit_for else None):
             raise PasskeyRefusedError("duplicate")
         stored = self._store.passkey_by_credential(verified.credential_id)
         if stored is None:  # pragma: no cover (just inserted)

@@ -77,6 +77,17 @@ def expire_events_and_jobs(
 
 def expire_audit(engine: Engine, *, now: datetime, policy: RetentionPolicy) -> int:
     audit = identity.audit
+    # Owner decision 2026-11-12: a passkey registration the admin has not acknowledged is never
+    # expired, however old: the line of `status` is read from it.
+    acknowledged = (
+        sa.select(sa.func.coalesce(sa.func.max(audit.c.target), ""))
+        .where(audit.c.action == "passkey.registrations_acknowledged")
+        .scalar_subquery()
+    )
+    waiting = sa.and_(audit.c.action == "passkey.registered", audit.c.id > acknowledged)
     return _delete_older(
-        engine, audit, audit.c.id, audit.c.at < now - timedelta(days=policy.audit_days)
+        engine,
+        audit,
+        audit.c.id,
+        sa.and_(audit.c.at < now - timedelta(days=policy.audit_days), sa.not_(waiting)),
     )

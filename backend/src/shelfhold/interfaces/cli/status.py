@@ -173,6 +173,7 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
     if applied is not None and applied != (settings.public_url or ""):
         pending.append({"code": "public_url_restart", "message": t("status.public_url_restart")})
     if new_passkeys:  # owner decision 2026-11-12: until the admin acknowledges them
+        through = new_passkeys[-1][0]
         shown = t("status.passkey_items_separator").join(
             t("status.passkey_item", name=name, user=user)
             for _id, user, name, _at in new_passkeys[:10]
@@ -180,7 +181,12 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         pending.append(
             {
                 "code": "passkey_registered",
-                "message": t("status.passkey_registered", count=len(new_passkeys), items=shown),
+                "message": t(
+                    "status.passkey_registered",
+                    count=len(new_passkeys),
+                    items=shown,
+                    through=through,
+                ),
             }
         )
     for rp_id in stale_rps:  # ADR-0050: a change of domain strands the passkeys
