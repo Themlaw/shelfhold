@@ -441,8 +441,9 @@ class WithdrawalService:
         digest = self._fsops.sha256_of(local)
         if file.sha256 and digest != file.sha256:
             return False  # changed since the plan was read: it is not the file that was shown
+        source = self._fsops.link_stat(local)[:2]
         with self._engine.connect() as connection:
-            if has_independent_store_copy(connection, digest):
+            if has_independent_store_copy(connection, self._fsops, digest, besides={source}):
                 return True
             unit_id = connection.execute(
                 sa.select(storage.content.c.unit_id)

@@ -61,7 +61,7 @@ class RecycleSweeper:
             except (FsopsError, OSError):
                 return True  # unreadable: it cannot be shown to be safe, so it is not swept
             with self._journal.engine.connect() as connection:
-                if adopted_original_unprotected(connection, digest):
+                if adopted_original_unprotected(connection, self._fsops, digest):
                     return True
         return False
 

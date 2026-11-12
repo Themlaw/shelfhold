@@ -792,33 +792,6 @@ def demote_shared_inodes(connection: Connection, unit_ids: Collection[str]) -> i
     return changed
 
 
-def has_independent_store_copy(connection: Connection, file_hash: str) -> bool:
-    """A verified copy of exactly these bytes lives in /store (a distinct inode, `independent`)."""
-    return (
-        connection.execute(
-            sa.select(replica_table.c.id).where(
-                replica_table.c.location == "store",
-                replica_table.c.independent.is_(True),
-                replica_table.c.file_hash == file_hash,
-            )
-        ).first()
-        is not None
-    )
-
-
-def adopted_original_unprotected(connection: Connection, file_hash: str) -> bool:
-    """These bytes are a file adopted in place (`adopted_ref`: Shelfhold has no copy of its own)
-    and no verified independent copy of them is in /store: a bin holding them holds the only
-    ones, so the 30-day sweep must keep them (EF-BIB-021, EF-BIB-030)."""
-    adopted = connection.execute(
-        sa.select(storage.content.c.id).where(
-            storage.content.c.retention == "adopted_ref",
-            storage.content.c.original_sha256 == file_hash,
-        )
-    ).first()
-    return adopted is not None and not has_independent_store_copy(connection, file_hash)
-
-
 # -- the independence of a copy is read on the disk (EF-BIB-027, EF-EXP-015) -----------------
 
 
@@ -888,4 +861,61 @@ def linked_now(connection: Connection, disk: Disk, unit_id: str) -> bool:
         not is_own_inode(disk, c.local, siblings)[0]
         for c in store_copies(connection, unit_id)
         if disk.observe(c.local) is not None
+    )
+
+
+def has_independent_store_copy(
+    connection: Connection,
+    disk: Disk,
+    file_hash: str,
+    *,
+    besides: Collection[tuple[int, int]] = (),
+) -> bool:
+    """A copy of exactly these bytes is in /store **now**: the rows only say where to look, the
+    disk answers. The file must exist, carry the bytes, have one name and not be the inode of any
+    of `besides` (EF-BIB-027, EF-EXP-015). Whoever owns the row (a Unit or only an export item)
+    does not matter: it is found by its hash."""
+    root = platform.physical_root
+    rows = connection.execute(
+        sa.select(replica_table.c.rel_path, root.c.path_entry)
+        .join(root, root.c.root_id == replica_table.c.physical_root_id)
+        .where(
+            replica_table.c.location == "store",
+            replica_table.c.file_hash == file_hash,
+            replica_table.c.rel_path.is_not(None),
+        )
+    ).all()
+    for row in rows:
+        local = f"{row.path_entry.rstrip('/')}/{row.rel_path}"
+        try:
+            seen = disk.hash_and_identity(local)
+        except OSError:
+            continue
+        if seen is None or seen[0] != file_hash:
+            continue
+        own, _identity = is_own_inode(disk, local, set(besides))
+        if own:
+            return True
+    return False
+
+
+def adopted_original_unprotected(
+    connection: Connection,
+    disk: Disk,
+    file_hash: str,
+    *,
+    besides: Collection[tuple[int, int]] = (),
+) -> bool:
+    """These bytes are a file adopted in place (`adopted_ref`: Shelfhold has no copy of its own)
+    and no independent copy of them is in /store on the disk now: a bin holding them holds the
+    only ones, so the 30-day sweep must keep them (EF-BIB-021, EF-BIB-030). A copy removed by hand,
+    or hard-linked to the original, protects nothing."""
+    adopted = connection.execute(
+        sa.select(storage.content.c.id).where(
+            storage.content.c.retention == "adopted_ref",
+            storage.content.c.original_sha256 == file_hash,
+        )
+    ).first()
+    return adopted is not None and not has_independent_store_copy(
+        connection, disk, file_hash, besides=besides
     )

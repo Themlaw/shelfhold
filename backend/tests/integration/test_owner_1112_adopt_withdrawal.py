@@ -387,3 +387,80 @@ def test_a_destination_that_is_not_a_child_library_has_no_plan() -> None:
             service.apply(
                 if_match="x", principal=admin(), now=NOW, destination_id=env.destination_id
             )
+
+
+# -- the sweep reads the copies on the disk, never the stored rows ----------------------------
+
+
+def _withdrawn_and_aged(env, a):  # type: ignore[no-untyped-def]
+    import os
+    import time
+
+    from shelfhold.export.application.intents import IntentJournal
+    from shelfhold.export.application.recycle_sweep import RecycleSweeper
+
+    service = _service(env, [])
+    service.apply(
+        if_match=service.adopted_unrated_plan(env.destination_id).version,
+        principal=admin(), now=NOW, destination_id=env.destination_id,
+    )  # fmt: skip
+    recycle = next(p for p in a.env.lib.tmp.rglob("recycle") if p.is_dir())
+    old = time.time() - 31 * 86400
+    for entry in recycle.iterdir():
+        os.utime(entry, (old, old))
+    return recycle, RecycleSweeper(
+        env.lib.fsops, IntentJournal(env.engine, env.lib.fsops, clock=env.clock),
+        [str(recycle.parent.parent)],
+    )  # fmt: skip
+
+
+def _binned(a):  # type: ignore[no-untyped-def]
+    return [p for p in a.env.lib.tmp.rglob("*.cbz") if "recycle" in p.parts]
+
+
+@pytest.mark.req("EF-BIB-021")
+def test_a_store_copy_deleted_by_hand_leaves_the_original_in_the_bin() -> None:
+    """The rows still say 'independent', the disk says the copy is gone: the original stays."""
+    with family_env(13) as env:
+        a = _adopted(env)
+        _recycle, sweeper = _withdrawn_and_aged(env, a)
+        for p in env.lib.store.rglob("*.cbz"):
+            p.unlink()
+        with env.engine.connect() as connection:  # the stored rows are untouched and still lie
+            rows = connection.execute(
+                sa.text("SELECT independent FROM replica WHERE location = 'store'")
+            ).all()
+        assert rows and all(r[0] for r in rows)
+        assert sweeper.sweep().removed == 0
+        assert len(_binned(a)) == 4
+
+
+@pytest.mark.req("EF-BIB-027")
+def test_a_store_copy_hard_linked_to_the_original_leaves_it_in_the_bin() -> None:
+    """A second name of the same inode is no copy: losing one loses both."""
+    import os
+
+    with family_env(13) as env:
+        a = _adopted(env)
+        _recycle, sweeper = _withdrawn_and_aged(env, a)
+        binned = {p.read_bytes(): p for p in _binned(a)}
+        for kept in list(env.lib.store.rglob("*.cbz")):
+            original = binned[kept.read_bytes()]
+            kept.unlink()
+            os.link(original, kept)
+        assert sweeper.sweep().removed == 0
+        assert len(_binned(a)) == 4
+
+
+@pytest.mark.req("EF-BIB-021")
+def test_a_copy_without_a_unit_is_found_by_its_bytes() -> None:
+    """`unit_id` may be NULL on the row (owner: the export item only): the copy still protects."""
+    with family_env(13) as env:
+        a = _adopted(env)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE content SET unit_id = NULL WHERE retention = 'adopted_ref'")
+            )
+        _recycle, sweeper = _withdrawn_and_aged(env, a)
+        assert sweeper.sweep().removed >= 1
+        assert len(list(env.lib.store.rglob("*.cbz"))) == 4
