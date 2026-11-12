@@ -10,18 +10,22 @@ not a reserved action by itself: the one deletion is the folder's own, classed i
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
 
 from shelfhold.acquisition.public import ImportTargets, TreeTargets
+from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.i18n import t
 from shelfhold.library.public import (
     ImportFolder,
     ImportFolderOverlapError,
+    KeepCopier,
     PassthroughStore,
     PdfStore,
+    SvgCbzStore,
     UntrustedEpubStore,
     make_precheck,
 )
@@ -39,6 +43,11 @@ OFF = "import.not_configured"
 TREE_BAD = "import.tree_unreadable"
 
 
+@contextmanager
+def _no_hold(_work_id: str) -> Iterator[None]:
+    yield
+
+
 class StoreRouter:
     """The store of each kind, by the extension the bytes were filed under (never the name)."""
 
@@ -47,10 +56,18 @@ class StoreRouter:
         store_dir = str(settings.store_dir)
         mounted = any(e.path == store_dir for e in w.loaded.expected)
         self._stores: dict[str, Any] = {
-            ".cbz": PassthroughStore(
-                comp.engine, w.fsops, w.loaded.locate, settings.data_dir,
-                tombstones=w.tombstones, hold_work=work_holder(comp),
-                min_page_ratio=settings.revision_min_page_ratio,
+            ".cbz": SvgCbzStore(  # EF-BIB-051 (6): SVG pages drawn to PNG, declared a derivative
+                PassthroughStore(
+                    comp.engine, w.fsops, w.loaded.locate, settings.data_dir,
+                    tombstones=w.tombstones, hold_work=_no_hold,
+                    min_page_ratio=settings.revision_min_page_ratio,
+                ),
+                KeepCopier(
+                    comp.engine, w.fsops, w.loaded.locate, store_dir, settings.data_dir,
+                    IntentJournal(comp.engine, w.fsops, clock=comp.clock),
+                    hold_work=_no_hold,
+                ),
+                settings.data_dir, comp.engine, work_holder(comp),  # one hold for both writes
             ),
             ".epub": UntrustedEpubStore(
                 comp.engine, w.fsops, w.loaded.locate, settings.data_dir,
@@ -65,6 +82,12 @@ class StoreRouter:
 
     def ingest(self, **arguments: Any) -> Any:
         return self._stores[PurePath(str(arguments["dest"])).suffix].ingest(**arguments)
+
+    def finish_derivative(self, *, unit_id: str, staged: Path) -> None:
+        self._stores[".cbz"].finish_derivative(unit_id=unit_id, staged=staged)
+
+    def derivative_missing(self, unit_id: str, staged: Path) -> bool:
+        return bool(self._stores[".cbz"].derivative_missing(unit_id, staged))
 
 
 class ImportOps:

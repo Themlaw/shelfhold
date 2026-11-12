@@ -636,3 +636,54 @@ def test_a_refusal_is_kept_apart_from_the_import_folders_own() -> None:
         assert env.entries() and all(
             key.startswith(tree_import.ENTRY_PREFIX) for key in env.entries()
         )
+
+
+SVG_PAGE = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="6" height="6">'
+    b'<rect width="6" height="6" fill="#336699"/></svg>'
+)
+
+
+def _svg_router(env: ImportEnv) -> Any:
+    from contextlib import nullcontext
+
+    from shelfhold.export.application.intents import IntentJournal
+    from shelfhold.export.application.locks import work_lock_for
+    from shelfhold.infrastructure.schema import platform
+    from shelfhold.library.public import KeepCopier, PassthroughStore, SvgCbzStore
+    from shelfhold.ops.import_folder import StoreRouter  # noqa: F401 - the production router
+    from tests.import_env import Router
+
+    lib = env.lib
+    with lib.engine.begin() as connection:  # the journal reads the restore epoch of the instance
+        connection.execute(
+            sa.insert(platform.instance).values(instance_id=lib.instance_id, jurisdiction="FR")
+        )
+    hold = work_lock_for(lib.engine, clock=SystemClock(), timeout=0.0)
+    inner = PassthroughStore(
+        lib.engine, lib.fsops, lib.locate, lib.data, tombstones=NONE_PURGED,
+        hold_work=lambda _w: nullcontext(),
+    )  # fmt: skip
+    keeper = KeepCopier(
+        lib.engine, lib.fsops, lib.locate, str(lib.store), lib.data,
+        IntentJournal(lib.engine, lib.fsops), hold_work=lambda _w: nullcontext(),
+    )  # fmt: skip
+    return Router({".cbz": SvgCbzStore(inner, keeper, lib.data, lib.engine, hold)})
+
+
+@pytest.mark.req("EF-INT-009", "EF-BIB-051")
+def test_an_svg_page_of_an_image_folder_meets_the_rasterizer_and_is_declared_derivative() -> None:
+    """The page is packaged as `NN.svg`: the CBZ goes through `SvgCbzStore` like any other, the
+    library holds the PNG rewrite as the derivative and /store the CBZ with its SVG page."""
+    with import_env() as env:
+        page_folder(env, "Chapter 2", {"1.png": PAGE_A, "2.svg": SVG_PAGE})
+        report = tree_of(env, store=_svg_router(env)).import_tree()
+        assert states(report) == [("stored", None)]
+        (served,) = [p for p in env.lib.files_under(env.lib.library) if p.suffix == ".cbz"]
+        with zipfile.ZipFile(served) as archive:
+            assert archive.namelist()[:2] == ["00001.png", "00002.png"]
+        (kept,) = [p for p in env.lib.files_under(env.lib.store) if p.suffix == ".cbz"]
+        with zipfile.ZipFile(kept) as archive:
+            assert "00002.svg" in archive.namelist()
+        (row,) = env.contents()
+        assert row.derived_hash == sha(served.read_bytes())

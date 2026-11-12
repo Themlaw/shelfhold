@@ -77,6 +77,7 @@ from shelfhold.library.adapters.storage import (
     UnitGoneError,
     WorkBusyError,
 )
+from shelfhold.library.adapters.svg_derivative import draw_svg, svg_derivative_of
 from shelfhold.library.domain.content_hash import FILE_HASH_BY
 from shelfhold.library.domain.failures import (
     EpubRefusedError,
@@ -263,6 +264,10 @@ class ImportOutcome:
 class Filer(Protocol):
     def ingest(self, **arguments: Any) -> Any: ...
 
+    def finish_derivative(self, *, unit_id: str, staged: Path) -> None: ...
+
+    def derivative_missing(self, unit_id: str, staged: Path) -> bool: ...
+
 
 Target = Callable[[ImportItem], tuple[str, str]]  # item -> (unit_id, variant_id)
 # (staged file, kind, sha256, trust) -> the code that refuses it, or None: asked before any Unit
@@ -281,7 +286,10 @@ def make_precheck(tombstones: Any, limits: ArchiveLimits = DEFAULT_LIMITS) -> Pr
         try:
             if kind == "cbz":
                 with safe_open_archive(staged, name="import.cbz", limits=limits) as archive:
-                    check_cbz_entries(archive)
+                    svgs = check_cbz_entries(archive, allow_svg=True).svgs
+                if svgs:  # EF-BIB-051 (6): drawn once here, so a hostile page leaves no Unit
+                    with svg_derivative_of(staged, staged.parent, draw_svg):
+                        pass
             elif kind == "epub" and trust != "publisher":
                 with tempfile.TemporaryFile(dir=staged.parent) as sink:
                     neutralize_epub(staged, sink, name="import.epub", limits=limits)
@@ -644,11 +652,29 @@ class ImportFolder:
             if isinstance(filed, ImportOutcome):
                 return filed
             unit_id, ingested_id = filed
+        if kind == "cbz":  # EF-BIB-051 (6): a source with SVG pages goes only with its derivative
+            waiting = self._derivative_gate(unit_id, staged, shown)
+            if waiting is not None:
+                return waiting
         if mark is not None:
             self._mark(ingested_id, mark)
         return self._settle_and_remove(
             root_fd, item, shown, sha, kind, unit_id, mark, "publisher" if declared else "untrusted"
         )
+
+    def _derivative_gate(self, unit_id: str, staged: Path, shown: str) -> ImportOutcome | None:
+        """Never let the source go while its Unit has SVG pages and no `derived_hash`: finish the
+        derivative (a replay after a failed declaration), and if it cannot be finished yet the
+        file stays and is tried again. A store with no derivatives has nothing to finish."""
+        missing = getattr(self._store, "derivative_missing", None)
+        if missing is None or not missing(unit_id, staged):
+            return None
+        try:
+            self._store.finish_derivative(unit_id=unit_id, staged=staged)
+            still = missing(unit_id, staged)
+        except (OSError, UntrustedEntryError, UnsafeArchiveError, WorkBusyError):
+            still = True
+        return ImportOutcome(shown, "waiting", NOT_READY) if still else None
 
     def _ingest(
         self, staged: Path, sha: str, kind: str, name: str, declared: bool, item: Found,

@@ -4,7 +4,10 @@ A comic archive from an untrusted source may hold only image pages (JPEG, PNG, W
 JPEG XL) and one ComicInfo.xml. Each page's extension must agree with its magic bytes: an extension
 is a promise, and a `.jpg` whose bytes are HTML or SVG is a scripted document in disguise. SVG,
 HTML, XHTML, scripts and anything else off the list are refused with the stable code
-`content.untrusted_entry` (M1a; M2 rasterises SVG pages instead). ComicInfo.xml goes through the
+`content.untrusted_entry`, unless the caller opts in with `allow_svg=True` (M2 L10): a `.svg` page
+whose bytes open like an SVG is then listed in `svgs`, to be drawn to a PNG by the decode worker
+(`packaging.cbz.rasterize_cbz`) before the archive is kept or served. HTML, XHTML and scripts stay
+refused in every mode. ComicInfo.xml goes through the
 hardened XML entry point. Reading is bounded: 16 bytes per page, 1 MiB for ComicInfo.xml.
 """
 
@@ -54,8 +57,13 @@ class UntrustedEntryError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class CbzListing:
+    """`images` are the raster pages, `svgs` the SVG pages (only with `allow_svg`), `pages` both in
+    the archive's order."""
+
     images: tuple[str, ...]
     comicinfo: str | None
+    svgs: tuple[str, ...] = ()
+    pages: tuple[str, ...] = ()
 
 
 def sniff_image_kind(head: bytes) -> str | None:
@@ -75,14 +83,23 @@ def sniff_image_kind(head: bytes) -> str | None:
     return None
 
 
+def sniff_svg(head: bytes) -> bool:
+    """Do the leading bytes open like an SVG document (not HTML, not a binary)? The worker's audit
+    is the real judge; this only keeps an extension honest."""
+    text = head.removeprefix(b"\xef\xbb\xbf").lstrip(b" \t\r\n")
+    return text.startswith((b"<svg", b"<?xml"))
+
+
 def _extension(name: str) -> str:
     base = name.rsplit("/", 1)[-1]
     return base.rsplit(".", 1)[-1].lower() if "." in base else ""
 
 
-def check_cbz_entries(archive: SafeArchive) -> CbzListing:
+def check_cbz_entries(archive: SafeArchive, *, allow_svg: bool = False) -> CbzListing:
     """Refuse the archive on the first entry off the allowlist; otherwise list pages in order."""
     images: list[str] = []
+    svgs: list[str] = []
+    pages: list[str] = []
     comicinfo: str | None = None
     for entry in archive.entries:
         if entry.is_dir:
@@ -94,15 +111,22 @@ def check_cbz_entries(archive: SafeArchive) -> CbzListing:
             comicinfo = name
             _check_comicinfo(archive, name)
             continue
+        if allow_svg and _extension(name) == "svg":
+            if not sniff_svg(archive.read_head(name, _HEAD_BYTES)):
+                raise UntrustedEntryError("magic_mismatch", name)
+            svgs.append(name)
+            pages.append(name)
+            continue
         expected = _EXTENSION_KIND.get(_extension(name))
         if expected is None:
             raise UntrustedEntryError("not_allowlisted", name)
         if sniff_image_kind(archive.read_head(name, _HEAD_BYTES)) != expected:
             raise UntrustedEntryError("magic_mismatch", name)
         images.append(name)
-    if not images:
+        pages.append(name)
+    if not pages:
         raise UntrustedEntryError("no_pages")
-    return CbzListing(tuple(images), comicinfo)
+    return CbzListing(tuple(images), comicinfo, tuple(svgs), tuple(pages))
 
 
 def _check_comicinfo(archive: SafeArchive, name: str) -> None:

@@ -250,6 +250,52 @@ def make_thumbnail(
     return Thumbnail(payload, str(result["format"]), int(result["width"]), int(result["height"]))
 
 
+@dataclass(frozen=True, slots=True)
+class RasterizedSvg:
+    png: bytes
+    width: int
+    height: int
+
+
+SVG_MAX_BYTES: Final = 8 * 1024 * 1024
+SVG_MAX_PIXELS: Final = 25_000_000  # a page, with room to spare: 5000 x 5000
+SVG_MAX_NODES: Final = 20_000
+_PNG_MAGIC: Final = b"\x89PNG\r\n\x1a\n"
+
+
+def rasterize_svg(
+    data: bytes,
+    *,
+    max_pixels: int = SVG_MAX_PIXELS,
+    max_bytes: int = SVG_MAX_BYTES,
+    max_nodes: int = SVG_MAX_NODES,
+    limits: WorkerLimits | None = None,
+) -> RasterizedSvg:
+    """A lossless PNG of an untrusted SVG, drawn inside the bounded worker (EF-BIB-051 (6)).
+
+    Closed by default: a document the audit does not accept, a worker that fails or runs out of
+    time or memory, or a reply that is not a PNG of the size announced all raise `ImageRejected`.
+    There is never a blank page in place of a refused one."""
+    if len(data) > max_bytes:
+        raise ImageRejected("image.too_large", "bytes", "input")
+    limits = limits or WorkerLimits(memory_bytes=_BASE_MEMORY + _BYTES_PER_PIXEL * max_pixels)
+    result, payload = run_worker(
+        "svg_rasterize",
+        {"max_pixels": max_pixels, "max_bytes": max_bytes, "max_nodes": max_nodes},
+        data,
+        limits=limits,
+    )
+    width, height = result.get("width"), result.get("height")
+    if (
+        not payload.startswith(_PNG_MAGIC)
+        or not isinstance(width, int)
+        or not isinstance(height, int)
+        or width * height > max_pixels
+    ):
+        raise _failed("bad svg reply")
+    return RasterizedSvg(payload, width, height)
+
+
 def diagnose_worker(
     what: str, *, limits: WorkerLimits | None = None, **args: Any
 ) -> dict[str, Any]:
@@ -260,11 +306,13 @@ def diagnose_worker(
 
 __all__ = [
     "ImageInfo",
+    "RasterizedSvg",
     "Thumbnail",
     "WorkerLimits",
     "diagnose_worker",
     "make_thumbnail",
     "probe_image",
+    "rasterize_svg",
     "run_worker",
 ]
 

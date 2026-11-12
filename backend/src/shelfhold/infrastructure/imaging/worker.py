@@ -1,4 +1,4 @@
-"""The decode worker: the only module that imports Pillow (ENF-SEC-003).
+"""The decode worker: the only module that imports Pillow, pypdf and resvg_py (ENF-SEC-003).
 
 Run as `python -I -m shelfhold.infrastructure.imaging.worker '<limits json>'`: one request frame on
 stdin, one reply frame on stdout, then exit. Before it reads a byte of the image, the process
@@ -377,6 +377,46 @@ def _pdf_check(data: bytes) -> tuple[dict[str, Any], bytes]:
     return {"verdict": "clean", "reason": "ok"}, b""
 
 
+def _svg_rasterize(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes]:
+    """An SVG page drawn to a lossless PNG. The document is audited first (no DTD, no script, no
+    reference outside itself, bounded size); the renderer is then given neither a resource
+    directory nor a font, so it has no file to read and no address to reach."""
+    from shelfhold.infrastructure.imaging.svg_audit import SvgRefusedError, audit_svg
+
+    try:
+        facts = audit_svg(
+            data,
+            max_pixels=int(args["max_pixels"]),
+            max_bytes=int(args["max_bytes"]),
+            max_nodes=int(args["max_nodes"]),
+        )
+    except SvgRefusedError as refused:
+        code = "image.too_large" if refused.kind == "too_large" else "image.format_refused"
+        raise _Reject(code, refused.reason, "header") from None
+    import resvg_py
+
+    try:
+        png = bytes(
+            resvg_py.svg_to_bytes(
+                svg_string=data.decode("utf-8"),
+                skip_system_fonts=True,
+                resources_dir=None,
+                log_information=False,
+                width=facts.width,
+                height=facts.height,
+            )
+        )
+    except MemoryError as exc:
+        raise _Reject("image.decode_failed", "memory", "decode") from exc
+    except BaseException as exc:
+        raise _Reject(
+            "image.decode_failed", f"renderer_{type(exc).__name__}"[:40], "decode"
+        ) from exc
+    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise _Reject("image.decode_failed", "not_png", "decode")
+    return {"format": "PNG", "width": facts.width, "height": facts.height}, png
+
+
 def _handle(
     op: str, args: dict[str, Any], data: bytes, state: dict[str, Any]
 ) -> tuple[dict[str, Any], bytes]:
@@ -386,6 +426,8 @@ def _handle(
         return _thumbnail(data, args)
     if op == "pdf_check":
         return _pdf_check(data)
+    if op == "svg_rasterize":
+        return _svg_rasterize(data, args)
     return _diagnose(op, args, state), b""
 
 

@@ -148,13 +148,18 @@ class PassthroughStore:
         dest: str,
         expected_sha256: str | None = None,
         upstream_ref: str | None = None,
+        allow_svg_pages: bool = False,
     ) -> Ingested:
         """File `staged` at the local path `dest` in /library. Raises, having changed nothing,
-        for a file too large, off the allowlist, not what was announced, or already there."""
+        for a file too large, off the allowlist, not what was announced, or already there.
+
+        `allow_svg_pages` (M2 L10) lets an archive with `.svg` pages in: it is the original of a
+        derivative the caller must now declare (`rasterize_svg_pages`). Until then the file is
+        refused by every export and serve path, which apply the allowlist with no such opt-in."""
         if staged.stat().st_size > self._max:
             raise ReceivedTooLargeError(f"{staged.stat().st_size} bytes, above {self._max}")
         with safe_open_archive(staged, name=PurePath(dest).name, limits=self._limits) as archive:
-            listing = check_cbz_entries(archive)
+            listing = check_cbz_entries(archive, allow_svg=allow_svg_pages)
             payload_hash = content_hash(archive)
             origin_xml = (
                 archive.read(listing.comicinfo, max_bytes=COMICINFO_MAX_BYTES)
@@ -165,7 +170,7 @@ class PassthroughStore:
         with self._held(unit_id):  # a purge of the Work and this write never interleave
             ingested = self._file(
                 unit_id, variant_id, staged, dest, expected_sha256, upstream_ref,
-                original=original, payload_hash=payload_hash, images=len(listing.images),
+                original=original, payload_hash=payload_hash, images=len(listing.pages),
             )  # fmt: skip
         if origin_xml:  # EF-BIB-048: the exporter will replace it; a safeguard needs it later
             with suppress(OSError, ValueError):

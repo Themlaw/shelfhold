@@ -26,8 +26,8 @@ import asyncio
 import contextlib
 import threading
 import time
-from collections.abc import Callable, Iterable
-from contextlib import ExitStack
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import PurePath
@@ -104,7 +104,13 @@ from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
-from shelfhold.library.public import PassthroughStore, RangedKeeper, UntrustedEpubStore
+from shelfhold.library.public import (
+    KeepCopier,
+    PassthroughStore,
+    RangedKeeper,
+    SvgCbzStore,
+    UntrustedEpubStore,
+)
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
@@ -212,6 +218,11 @@ class _LazyTombstones:
         return getattr(self._service, name)
 
 
+@contextmanager
+def _no_hold(_work_id: str) -> Iterator[None]:
+    yield
+
+
 class _LazyStore:
     def __init__(self, comp: Composition, lazy: _LazyWrite) -> None:
         self._comp = comp
@@ -230,10 +241,21 @@ class _LazyStore:
             return epubs.ingest(**arguments)
         store = PassthroughStore(
             self._comp.engine, w.fsops, w.loaded.locate, self._comp.settings.data_dir,
-            tombstones=w.tombstones, hold_work=work_holder(self._comp),
+            tombstones=w.tombstones, hold_work=_no_hold,
             min_page_ratio=self._comp.settings.revision_min_page_ratio,
         )  # fmt: skip
-        return store.ingest(**arguments)
+        keeper = KeepCopier(
+            self._comp.engine, w.fsops, w.loaded.locate, str(self._comp.settings.store_dir),
+            self._comp.settings.data_dir,
+            IntentJournal(self._comp.engine, w.fsops, clock=self._comp.clock),
+            hold_work=_no_hold,
+        )  # fmt: skip
+        # EF-BIB-051 (6): an untrusted CBZ with SVG pages is drawn to PNG and declared a derivative,
+        # the original and the derivative filed under one hold of the Work
+        return SvgCbzStore(
+            store, keeper, self._comp.settings.data_dir, self._comp.engine,
+            work_holder(self._comp),
+        ).ingest(**arguments)  # fmt: skip
 
 
 def acquire_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext], None]:
