@@ -125,6 +125,18 @@ from shelfhold.catalog.application.revisions import (
     RewriteUnavailableError,
 )
 from shelfhold.catalog.application.rights import Rights, RightsReport
+from shelfhold.catalog.application.search import (
+    SearchCapability,
+    SearchHit,
+    index_work,
+    search_capability,
+    search_works,
+)
+from shelfhold.catalog.application.search import (
+    ensure_tables as ensure_search_tables,
+)
+from shelfhold.catalog.application.search import rebuild as _rebuild_search
+from shelfhold.catalog.application.search import sync as sync_search_index
 from shelfhold.catalog.application.series import SeriesAlreadyAttachedError
 from shelfhold.catalog.application.service import CatalogService
 from shelfhold.catalog.application.tombstone_screen import (
@@ -343,6 +355,11 @@ def numbered_mark(raw_number: str | None, source_order: int = 0) -> tuple[str, s
     return None if place.unnumbered else (place.segment, place.number_norm)
 
 
+def rebuild_search_index(connection: sa.Connection) -> int:
+    """The search index again, from the database alone; the number of Works indexed."""
+    return _rebuild_search(connection)[0]
+
+
 __all__ = [
     "ARTIST",
     "ATTACH_SUGGESTED",
@@ -421,6 +438,8 @@ __all__ = [
     "RewriteUnavailableError",
     "RightsReport",
     "RightsService",
+    "SearchCapability",
+    "SearchHit",
     "SeriesAlreadyAttachedError",
     "StaleMergePlanError",
     "StoredExternalId",
@@ -446,10 +465,12 @@ __all__ = [
     "edit_field",
     "edition_key_lang",
     "effective_age",
+    "ensure_search_tables",
     "external_ids_of",
     "file_new_edition",
     "guard_received",
     "holder_of",
+    "index_work",
     "ingest_isolated",
     "is_age_field",
     "join_people",
@@ -469,16 +490,20 @@ __all__ = [
     "plan_edition_merge",
     "propose_fields",
     "propose_resplit",
+    "rebuild_search_index",
     "relate_works",
     "relations_of",
     "relink_isolated",
     "renumber_external_id",
+    "search_capability",
+    "search_works",
     "sort_key",
     "stored_bounds",
     "stored_date",
     "suggest_age",
     "suggest_duplicates",
     "suspect_reason",
+    "sync_search_index",
     "translation_discriminant",
     "translation_type_for",
     "unlock_field",

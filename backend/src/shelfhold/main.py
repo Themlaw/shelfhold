@@ -14,6 +14,7 @@ import structlog
 from sqlalchemy import Engine
 
 from shelfhold import __version__
+from shelfhold.catalog.public import ensure_search_tables, sync_search_index
 from shelfhold.composition import Composition, Network
 from shelfhold.config import Settings, load_settings
 from shelfhold.events.bus import EventBus
@@ -54,6 +55,7 @@ from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
 from shelfhold.interfaces.http_api.revisions import build_revisions_router
+from shelfhold.interfaces.http_api.search import build_search_router
 from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
 from shelfhold.interfaces.http_api.sources import build_sources_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
@@ -253,6 +255,7 @@ def create_app(
         build_follows_router(ops_services),  # EF-SRC-029: follow, unfollow
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
+        build_search_router(lambda: engine),  # EF-BIB-010: admin only until the barrier (L09)
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command
         build_ops_router(ops_services),  # EF-INT-023: the exits
@@ -294,6 +297,17 @@ def create_app(
         runtime.boot()  # open intents settled, then (and only then) the jobs
         if runtime.owns_volumes:  # a migration in progress: this process writes nothing
             record_applied_public_url(engine, resolved.public_url)  # `status` compares
+            sync_search()
+
+    def sync_search() -> None:
+        """EF-BIB-010: the search index follows the catalog (a Work written by a path that does not
+        index it, a SQLite that gained FTS5): never a reason not to start."""
+        try:
+            with engine.begin() as connection:
+                ensure_search_tables(connection)
+                sync_search_index(connection)
+        except sa.exc.SQLAlchemyError as error:
+            structlog.get_logger().warning("search.sync_failed", error=type(error).__name__)
 
     def on_startup() -> None:
         log_effective_config(resolved)

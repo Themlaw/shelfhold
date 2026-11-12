@@ -37,10 +37,21 @@ def alembic_config(database: Path) -> Config:
     return config
 
 
+def _is_search_projection(name: str) -> bool:
+    return name.startswith(("search_fts", "search_trigram"))
+
+
+def _not_projection(
+    obj: object, name: str | None, type_: str, reflected: bool, compare_to: object
+) -> bool:
+    return not (type_ == "table" and _is_search_projection(name or ""))
+
+
 def tables(database: Path) -> set[str]:
     with closing(sqlite3.connect(database)) as db:
         rows = db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-        return {row[0] for row in rows} - {"alembic_version", "sqlite_sequence"}
+        names = {row[0] for row in rows} - {"alembic_version", "sqlite_sequence"}
+        return {n for n in names if not _is_search_projection(n)}  # FTS5 tables: not in metadata
 
 
 @pytest.mark.req("ENF-OPS-002", "ENF-OPS-020")
@@ -56,6 +67,7 @@ def test_metadata_matches_migrations(tmp_path: Path) -> None:
                     "compare_type": True,
                     "compare_server_default": True,
                     "render_as_batch": True,
+                    "include_object": _not_projection,
                 },
             )
             assert compare_metadata(context, metadata) == []
@@ -153,6 +165,7 @@ def normalized_ddl(database: Path) -> dict[str, str]:
             "SELECT type, name, sql FROM sqlite_master "
             "WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name <> 'alembic_version'"
         ).fetchall()
+    rows = [r for r in rows if not _is_search_projection(r[1])]
     result: dict[str, str] = {}
     for kind, name, sql in rows:
         text = re.sub(r"\s+", " ", sql.replace('"', "")).strip().lower()

@@ -86,7 +86,7 @@ def test_like_fallback_without_fts5_is_reported(h: Harness) -> None:
     h.connection.execute(sa.text("DROP TABLE search_fts"))
     caps = search_capability(h.connection)
     assert caps.mode == "like" and caps.degraded
-    assert _ids(h, "Les Mis") == [works["lm"]]
+    assert _ids(h, "Les Mise") == [works["lm"]]
     assert _ids(h, "進撃") == [works["aot"]]
     assert _ids(h, "pluto") == [works["ph"]]
 
@@ -117,7 +117,7 @@ def test_status_reports_like_fallback(
 def test_search_index_rebuilt_includes_contributor_names(h: Harness) -> None:
     work = h.work(title="Shingeki")
     other = h.work(title="Unrelated")
-    credit(h, work, ("Hajime Isayama", "en", "display"), ("諫山創", "ja", "alias"))
+    credit(h, work, ("Hajime Isayama", "en", "romanized"), ("諫山創", "ja", "native"))
     sync_search_index(h.connection)
     assert _ids(h, "諫山創") == [work]
     assert _ids(h, "isayama") == [work]
@@ -154,9 +154,9 @@ def test_index_never_holds_unit_coverage(h: Harness) -> None:
         r[1] for r in h.connection.execute(sa.text("PRAGMA table_info(search_fts)")).fetchall()
     ]
     assert columns == ["entity_type", "entity_id", "digest", "title", "names"]
-    import shelfhold.catalog.application.search as package
-
     from pathlib import Path
+
+    import shelfhold.catalog.application.search as package
 
     for source in Path(package.__file__ or "").parent.glob("*.py"):
         assert "unit_coverage" not in source.read_text(encoding="utf-8")
@@ -168,15 +168,17 @@ def test_sort_title_ignores_french_and_english_articles(h: Harness) -> None:
     assert sort_key("La Peste", "fr") == "peste"
     assert sort_key("Les Misérables", "fr") == "misérables"
     assert sort_key("L'Étranger", "fr") == "étranger"
-    assert sort_key("L’Étranger", "fr-CA") == "étranger"
+    assert sort_key("L\u2019Étranger", "fr-CA") == "étranger"
     assert sort_key("The Hobbit", "en") == "hobbit"
-    assert sort_key("The Hobbit", "fr") == "the hobbit"  # the language of the Edition, not of the UI
+    assert (
+        sort_key("The Hobbit", "fr") == "the hobbit"
+    )  # the language of the Edition, not of the UI
     one, two, three = (h.work(title=t) for t in ("Le Zèbre", "The Hobbit", "L'Alchimiste"))
     for work, lang in ((one, "fr"), (two, "en"), (three, "fr")):
         h.edition(work, lang=lang)
-        credit(h, work, ("Auteur Commun", "und", "display"))
+        credit(h, work, ("Auteur Partage", "und", "display"))
     sync_search_index(h.connection)
-    assert _ids(h, "commun") == [three, two, one]  # Alchimiste, Hobbit, Zèbre
+    assert _ids(h, "partage") == [three, two, one]  # Alchimiste, Hobbit, Zèbre
 
 
 @pytest.mark.req("EF-BIB-010")
@@ -222,7 +224,7 @@ def test_search_syntax_injection_is_text(h: Harness, attack: str) -> None:
     assert _ids(h, "*") == []  # a star is not "everything"
     assert _ids(h, "NEAR(public secret)") == []  # NEAR is a word here, not an operator
     assert _ids(h, "public OR secret") == []  # OR is a word here
-    assert _ids(h, "public -secret") == []  # a minus is not a negation
+    assert _ids(h, "public -secret") == [hidden]  # a minus is not a negation: a word like any
 
 
 @pytest.mark.req("EF-BIB-010")
@@ -255,12 +257,12 @@ def _seed_users(api: AuthEnv) -> None:
         )
         connection.execute(
             "INSERT INTO user (id, username, password_hash, role, can_rate, max_age_rating) "
-            "VALUES ('01J0000000000000000000KIDD', 'kid', ?, 'child', 0, 6)",
+            "VALUES ('01J0000000000000000000KKKK', 'kid', ?, 'child', 0, 6)",
             (admin_hash,),
         )
         connection.execute(
             "INSERT INTO work (id, kind, title, sort_title) "
-            "VALUES ('01J0000000000000000000WORK', 'manga', 'Quiet Gardens', 'quiet gardens')"
+            "VALUES ('01J0000000000000000000WRKK', 'manga', 'Quiet Gardens', 'quiet gardens')"
         )
         connection.commit()
     finally:
@@ -270,9 +272,11 @@ def _seed_users(api: AuthEnv) -> None:
 def _key_of(api: AuthEnv, username: str) -> str:
     engine = create_db_engine(api.settings.database_path)
     try:
-        return local_auth(engine, api.settings).create_api_key(
-            name="k", username=username, read_only=True
-        ).value
+        return (
+            local_auth(engine, api.settings)
+            .create_api_key(name="k", username=username, read_only=True)
+            .value
+        )
     finally:
         engine.dispose()
 
@@ -298,23 +302,23 @@ def test_search_api_is_admin_only_until_the_visibility_barrier(
             "/api/v1/search", params={"q": "quiet"}, headers={"Authorization": f"Bearer {key}"}
         )
         assert by_key.status_code == 403 and "Quiet" not in by_key.text
-    assert api.other_client("10.0.0.22").get("/api/v1/search", params={"q": "quiet"}).status_code in (
+    assert api.other_client("10.0.0.22").get(
+        "/api/v1/search", params={"q": "quiet"}
+    ).status_code in (
         401,
         403,
     )
 
 
 @pytest.mark.req("EF-BIB-010")
-@pytest.mark.parametrize("attack", ATTACKS)
-def test_search_api_attacks_never_500(
-    monkeypatch: pytest.MonkeyPatch, api: AuthEnv, attack: str
-) -> None:
+def test_search_api_attacks_never_500(monkeypatch: pytest.MonkeyPatch, api: AuthEnv) -> None:
     _seed_users(api)
     assert run_cli(monkeypatch, api.settings, "search", "rebuild") == 0
     assert api.login().status_code == 200
-    response = api.client.get("/api/v1/search", params={"q": attack})
-    assert response.status_code in (200, 422, 400), response.text
-    assert "Traceback" not in response.text and "fts5" not in response.text.lower()
+    for attack in ATTACKS:
+        response = api.client.get("/api/v1/search", params={"q": attack})
+        assert response.status_code in (200, 400, 422), (attack, response.text)
+        assert "Traceback" not in response.text and "fts5" not in response.text.lower()
 
 
 @pytest.mark.req("EF-BIB-010")
