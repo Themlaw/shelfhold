@@ -37,9 +37,6 @@ class FailureRow:
     milestone: str  # first milestone whose emitter ships
     simulated: bool = False  # replayed by `tests/faults/test_failure_matrix.py`
     proof: str = ""  # not simulated: the real test, or the lot that ships the emitter
-    waiting_state: str | None = None  # état d'attente (EF-INT-023), when Shelfhold waits
-    ui_action: str = ""  # action d'UI (code / commande) pour cette ligne (ENF-OPS-011)
-    injection: str = ""  # nom du scénario d'injection (tests/support/faults.py)
 
 
 def _row(
@@ -157,37 +154,14 @@ _CLOSED["metadata_api_down"] = (
 )
 
 
-def _waiting_state_for(event: str) -> str | None:
-    try:
-        from shelfhold.events.operating import WAITING_STATE_EVENT
-    except Exception:  # pragma: no cover
-        return None
-    for state, ev in WAITING_STATE_EVENT.items():
-        if ev == event:
-            return str(state)
-    return None
-
-
 def _proved(row: FailureRow) -> FailureRow:
-    waiting = _waiting_state_for(row.event)
-    ui = row.ui_action or row.event
     if row.key in SIMULATED:
-        return replace(row, simulated=True, waiting_state=waiting, ui_action=ui, injection=row.key)
+        return replace(row, simulated=True)
     if row.key in _CLOSED:
-        return replace(
-            row, proof=_CLOSED[row.key], waiting_state=waiting, ui_action=ui, injection=row.key
-        )
+        return replace(row, proof=_CLOSED[row.key])
     if row.milestone != "M1a":
-        return replace(
-            row,
-            proof=f"lot {row.milestone}: the emitter ships with it",
-            waiting_state=waiting,
-            ui_action=ui,
-            injection=row.key,
-        )
-    return replace(
-        row, proof=_REAL_TESTS[row.key], waiting_state=waiting, ui_action=ui, injection=row.key
-    )  # a missing key is a row without proof
+        return replace(row, proof=f"lot {row.milestone}: the emitter ships with it")
+    return replace(row, proof=_REAL_TESTS[row.key])  # a missing key is a row without proof
 
 
 FAILURE_MATRIX: tuple[FailureRow, ...] = tuple(_proved(row) for row in _ROWS)
