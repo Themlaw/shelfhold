@@ -149,3 +149,24 @@ def test_replay_through_the_store_finishes_a_missing_derivative(
             svg_store.ingest(unit_id=unit, variant_id=variant, staged=staged, dest=str(dest))
         with env.engine.connect() as c:
             assert c.execute(sa.select(storage.content.c.derived_hash)).scalar_one() is not None
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_finish_derivative_completes_a_missing_one_and_leaves_a_complete_unit_alone() -> None:
+    original = cbz_bytes((("001.png", PNG), ("002.svg", SVG)))
+    with lib_env() as env:
+        store, keeper = stores(env)
+        unit, variant = env.chain["unit"], env.chain["variant"]
+        dest = env.manga / "Dr Stone" / "Dr Stone - 1.cbz"
+        staged = env.stage(original)
+        svg_store = SvgCbzStore(store, keeper, env.tmp, env.engine, work_lock(env.engine), draw_svg)
+        store.ingest(
+            unit_id=unit, variant_id=variant, staged=staged, dest=str(dest), allow_svg_pages=True
+        )  # the original is filed, the derivative never declared
+        assert svg_store.derivative_missing(unit, staged)
+        svg_store.finish_derivative(unit_id=unit, staged=staged)
+        assert not svg_store.derivative_missing(unit, staged)
+        svg_store.finish_derivative(unit_id=unit, staged=staged)  # nothing left to do
+        assert not svg_store.derivative_missing(unit, env.stage(cbz_bytes(), "plain.cbz"))
+        garbage = env.stage(b"not a zip", "junk.cbz")
+        assert not svg_store.derivative_missing(unit, garbage)  # the plain store refuses it

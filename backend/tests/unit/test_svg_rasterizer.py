@@ -349,3 +349,21 @@ def test_a_page_drawn_twice_is_drawn_once_by_the_worker(monkeypatch: Any) -> Non
     monkeypatch.setattr(svg_derivative, "rasterize_svg", fake)
     cache = svg_derivative._DrawCache()
     assert cache(GOOD) == cache(GOOD) and calls == [1]
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_the_draw_cache_evicts_the_oldest_page_and_skips_a_page_over_its_limit(
+    monkeypatch: Any,
+) -> None:
+    from shelfhold.library.adapters import svg_derivative
+
+    def fake(data: bytes, **_k: Any) -> Any:
+        return type("R", (), {"png": b"\x89PNG\r\n\x1a\n" + data})()
+
+    monkeypatch.setattr(svg_derivative, "rasterize_svg", fake)
+    cache = svg_derivative._DrawCache(limit=40)
+    first = cache(b"a" * 12)
+    cache(b"b" * 12)
+    cache(b"c" * 12)  # beyond the limit: the first one goes
+    assert len(cache._items) == 2 and first not in cache._items.values()
+    assert len(cache(b"d" * 100)) > 40 and len(cache._items) <= 2  # too big: drawn, not kept
