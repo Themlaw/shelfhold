@@ -194,7 +194,7 @@ hold_work=work_lock(env.engine),
         )  # fmt: skip
 
     def candidates(self) -> list[Any]:
-        return SafeguardInventory(self.env.engine).upstream_candidates()
+        return SafeguardInventory(self.env.engine, self.env.fsops).upstream_candidates()
 
     # -- reading ---------------------------------------------------------------------------------
 

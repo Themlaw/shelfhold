@@ -588,3 +588,72 @@ def test_the_stored_rows_are_never_the_proof_of_independence(
         assert verify_kept(env.engine, env.fsops, unit) == 0
         with env.engine.connect() as c:
             assert independent_copies(c, unit) == 1
+
+
+def test_the_real_composition_cycle_makes_a_linked_unit_independent(
+    settings: Any, tmp_path: Path
+) -> None:
+    """The nightly handler as the composition root builds it (review of #171): the inventory it
+    uses reads the disk through the `fsops` the composition gives it, nothing placed by hand."""
+    from shelfhold.export.application.intents import IntentJournal
+    from shelfhold.jobs.ledger import JobLedger
+    from shelfhold.library.public import PassthroughStore
+    from shelfhold.safeguard_jobs import safeguard_handler
+    from shelfhold.work_locks import work_holder
+    from tests.integration.test_schema_catalog import (
+        add_binding,
+        add_edition,
+        add_source_item,
+        add_unit,
+        add_variant,
+        add_work,
+    )
+    from tests.l41_env import context, instance
+    from tests.null_tombstones import NONE_PURGED
+
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        comp, engine = inst.comp, inst.engine
+        with engine.begin() as c:
+            work = add_work(c)
+            edition = add_edition(c, work)
+            binding = add_binding(c, work, edition, add_source_item(c))
+            unit = add_unit(c, edition)
+            variant = add_variant(c, unit, binding)
+            shelf = c.execute(sa.select(export.shelf.c.id)).scalar_one()
+            c.execute(sa.update(export.shelf).values(link_mode="hardlink"))
+            c.execute(
+                sa.update(catalog.edition)
+                .where(catalog.edition.c.id == edition)
+                .values(shelf_id=shelf)
+            )
+        data = cbz_bytes()
+        staged = tmp_path / "received.cbz"
+        staged.write_bytes(data)
+        library = inst.library / "Kavita" / "One - 1.cbz"
+        with comp.write_context() as w:
+            PassthroughStore(
+                engine,
+                w.fsops,
+                w.loaded.locate,
+                comp.settings.data_dir,
+                tombstones=NONE_PURGED,
+                hold_work=work_holder(comp),
+            ).ingest(unit_id=unit, variant_id=variant, staged=staged, dest=str(library))
+            kept = KeepCopier(
+                engine, w.fsops, w.loaded.locate, str(comp.settings.store_dir),
+                comp.settings.data_dir, IntentJournal(engine, w.fsops),
+                hold_work=work_holder(comp), links=LinkPolicy(engine),
+            ).keep(unit)  # fmt: skip
+        assert kept.method == "hardlink"
+        path = comp.settings.store_dir / kept.rel_path
+        assert path.stat().st_ino == library.stat().st_ino and path.stat().st_nlink == 2
+        with engine.begin() as c:
+            c.execute(sa.update(catalog.unit).values(availability="removed"))
+        ctx = context("safeguard")
+        ctx.ledger = JobLedger(engine, ctx.clock)  # the steps save their cursor
+        safeguard_handler(comp)(ctx)
+        assert ctx.counters.get("kept") == 1
+        assert path.stat().st_ino != library.stat().st_ino
+        assert path.stat().st_nlink == 1 == library.stat().st_nlink
+        assert path.read_bytes() == data == library.read_bytes()

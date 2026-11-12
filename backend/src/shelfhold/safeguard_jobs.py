@@ -111,7 +111,7 @@ def safeguard_handler(comp: Composition) -> Callable[[JobContext], None]:
 def _release_upstream(
     comp: Composition, context: JobContext, fsops: Any, journal: IntentJournal, tombstones: Any
 ) -> None:
-    if not SafeguardInventory(comp.engine).upstream_candidates():
+    if not SafeguardInventory(comp.engine, fsops).upstream_candidates():
         return  # no shelf asked for it, or nothing fetched is waiting: the service is not asked
     link = comp.suwayomi()
     if link is None:

@@ -406,7 +406,7 @@ class UpstreamPurge:
         self._fetcher = fetcher
         self._clock = clock
         self._ticket = ticket  # token -> the SDK's `Ticket`
-        self._inventory = SafeguardInventory(engine)
+        self._inventory = SafeguardInventory(engine, fsops)
 
     # -- the facts, read from the database and the disks, never carried over -------------------
 
